@@ -47,6 +47,8 @@ mod milestone_merged_complement;
 mod milestone_not_set_up_axis;
 #[path = "../milestone_path_subject.rs"]
 mod milestone_path_subject;
+#[path = "../milestone_promote_guards.rs"]
+mod milestone_promote_guards;
 #[path = "../milestone_provision_handoff.rs"]
 mod milestone_provision_handoff;
 #[path = "../milestone_record_add_from_spec.rs"]

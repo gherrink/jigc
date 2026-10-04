@@ -2085,6 +2085,53 @@ pub struct MaterializeOutcome {
     /// no-work sub-task becomes visible instead of silently credited). Id-sorted by
     /// construction ([`BTreeMap`](std::collections::BTreeMap)).
     pub sources: std::collections::BTreeMap<String, String>,
+    /// Each materialized final address → **where its body came from**
+    /// ([`MergedOrigin`]): the provenance its sub-area recorded for it, the address it was
+    /// staged under there, and the sub-tasks of its collision group from its own position
+    /// on. In process only — it is never written into `merged/`, which holds bodies and
+    /// nothing else ([`clear_staged_bodies`] treats a `provenance.json` there as a third
+    /// party's on purpose). It is what the milestone commit boundary's clobber guard reads
+    /// ([`crate::finalize::plan_milestone_finalize`]): the merged area carries no
+    /// provenance manifest of its own, and a suffixed body's final address is one no
+    /// sub-area ever recorded.
+    pub origins: std::collections::BTreeMap<String, MergedOrigin>,
+}
+
+/// **Where one materialized body came from** — the facts the join knows about a final
+/// address and the merged staging area cannot hold (the rc.24 fix pass, `(R6, D-1)`).
+///
+/// The milestone commit boundary promotes out of `merged/docs/`, whose bodies are keyed by
+/// their **final** address. The per-task door answers *"did this task mint the doc, or copy
+/// it in?"* from the task area's own `provenance.json`; here there is no such file, and for a
+/// suffixed instance no sub-area manifest even names the final address — the provenance was
+/// recorded under the address the sub-task staged, one suffix earlier. So the join hands the
+/// answer on directly, beside the bodies it wrote.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MergedOrigin {
+    /// How the contributing sub-area came to stage the doc — `created` (minted there) or
+    /// `edited-from-base` (copied in from the committed store). The discriminator the
+    /// promote clobber guard keys on.
+    pub provenance: crate::state::Provenance,
+    /// The `<type>:<slug>` address the body is staged under **in its sub-area** — equal to
+    /// the final address unless the join suffixed it. It is the address every in-task write
+    /// verb takes, so it is the one a route can hand back.
+    pub minted: String,
+    /// The sub-tasks that staged [`minted`](Self::minted), **from this body's own position
+    /// on**, in task-id order — so the first member is the sub-task this body came from,
+    /// and a lone (uncontended) doc lists exactly that one.
+    ///
+    /// The join numbers a collision group by position in task-id order
+    /// (`design/storage.md` → The by-task-id join, rule 4), so taking one doc out of the
+    /// group moves every later one up a suffix: the docs that have to leave for *this*
+    /// final address to stop being produced are exactly these.
+    pub group_from_here: Vec<String>,
+}
+
+impl MergedOrigin {
+    /// The sub-task whose area contributed this body.
+    pub fn source_task(&self) -> &str {
+        self.group_from_here.first().map_or("", String::as_str)
+    }
 }
 
 /// The parent staging-area subfolder a milestone's merged bodies materialize under,
@@ -2158,10 +2205,14 @@ pub fn materialize(
 
     let mut addresses = Vec::new();
     let mut sources = std::collections::BTreeMap::new();
+    let mut origins = std::collections::BTreeMap::new();
     for (_address, mut staged) in groups {
         // Resolve strictly by task id, the same order `fold_areas` resolves a group in,
         // so the materialized body for a given final address is order-invariant.
         staged.sort_by(|a, b| a.source_task.cmp(&b.source_task));
+        // The group's contributors in that same order — each body's origin names the
+        // sub-tasks from its own position on ([`MergedOrigin::group_from_here`]).
+        let contributors: Vec<String> = staged.iter().map(|d| d.source_task.clone()).collect();
         for (nth, d) in staged.into_iter().enumerate() {
             let (final_address, body) = resolved_body(milestone_id, &d, nth + 1, schemas)?;
             let (ty, slug) = final_address
@@ -2171,6 +2222,14 @@ pub fn materialize(
             std::fs::write(&path, &body)
                 .map_err(|err| io_finding(milestone_id, "write a materialized doc body", &err))?;
             sources.insert(final_address.clone(), d.source_task.clone());
+            origins.insert(
+                final_address.clone(),
+                MergedOrigin {
+                    provenance: d.provenance,
+                    minted: d.address.clone(),
+                    group_from_here: contributors[nth..].to_vec(),
+                },
+            );
             addresses.push(final_address);
         }
     }
@@ -2181,6 +2240,7 @@ pub fn materialize(
         docs_dir,
         addresses,
         sources,
+        origins,
     })
 }
 
@@ -5087,6 +5147,109 @@ A cold node loses its sessions; clients re-authenticate.
                 "commit:alpha-area.md".to_string(),
             ],
             "exactly the three resolved bodies are materialized"
+        );
+    }
+
+    /// **Each materialized body carries where it came from** (the rc.24 fix pass,
+    /// `(R6, D-1)`) — the facts the milestone commit boundary's clobber guard reads, which
+    /// the merged staging area cannot hold: a suffixed body's final address is one no
+    /// sub-area manifest ever recorded.
+    ///
+    /// Three `created` instances of one slug, a lone `created` doc and a lone
+    /// `edited-from-base` one. Every origin names the provenance its sub-area recorded and
+    /// the address it is staged under there; `group_from_here` is the collision group from
+    /// the body's own position on, in task-id order — so it shrinks by one per suffix, and a
+    /// lone doc lists exactly its own sub-task.
+    #[test]
+    fn materialize_reports_each_bodys_origin() {
+        use crate::state::Provenance::{Created, EditedFromBase};
+        let root = TempRoot::new("materialize-origins");
+        let repo = TempRoot::new("materialize-origins-repo");
+        let base = BasePin::new("dddddddddddddddddddddddddddddddddddddddd", "ddddddd");
+        let schemas = join_schemas();
+        let committed = crate::index::EdgeIndex::default();
+        let milestone = mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
+
+        // Added out of id order on purpose; id-sorted: [area-low, area-mid, area-zed, lone].
+        for intent in ["Area zed", "Lone", "Area low", "Area mid"] {
+            add_task(root.path(), &milestone.id, intent, "single-task").expect("a sub-task adds");
+        }
+        let tasks = root.path().join("tasks");
+        // Each ADR references its own slug, so its one edge resolves inside its own area
+        // (the cross-area ref walk runs per sub-area).
+        for sub in ["area-low", "area-mid", "area-zed"] {
+            stage_doc(
+                &tasks.join(sub),
+                "adr",
+                "cache-strategy",
+                &adr_superseding("Cache strategy", "adr:cache-strategy"),
+                Created,
+            );
+        }
+        stage_doc(
+            &tasks.join("lone"),
+            "commit",
+            "lone",
+            "# Subject\n\nBody.\n",
+            Created,
+        );
+        stage_doc(
+            &tasks.join("lone"),
+            "adr",
+            "rate-limit",
+            &adr_superseding("Rate limit", "adr:rate-limit"),
+            EditedFromBase,
+        );
+
+        let outcome = materialize(
+            root.path(),
+            repo.path(),
+            &milestone.id,
+            &schemas,
+            &committed,
+        )
+        .expect("materialize succeeds");
+
+        let origin = |address: &str| {
+            outcome
+                .origins
+                .get(address)
+                .unwrap_or_else(|| panic!("`{address}` has an origin; got {:#?}", outcome.origins))
+                .clone()
+        };
+        let group = |ids: &[&str]| ids.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        for (address, from_here) in [
+            (
+                "adr:cache-strategy",
+                group(&["area-low", "area-mid", "area-zed"]),
+            ),
+            ("adr:cache-strategy-2", group(&["area-mid", "area-zed"])),
+            ("adr:cache-strategy-3", group(&["area-zed"])),
+        ] {
+            let got = origin(address);
+            assert_eq!(got.provenance, Created, "{address}");
+            assert_eq!(
+                got.minted, "adr:cache-strategy",
+                "{address} is staged under the unsuffixed address in its sub-area",
+            );
+            assert_eq!(got.source_task(), from_here[0], "{address}");
+            assert_eq!(got.group_from_here, from_here, "{address}");
+        }
+        let lone = origin("commit:lone");
+        assert_eq!(
+            (lone.provenance, lone.minted.as_str(), lone.group_from_here),
+            (Created, "commit:lone", group(&["lone"])),
+        );
+        assert_eq!(
+            origin("adr:rate-limit").provenance,
+            EditedFromBase,
+            "a copied-in doc keeps the provenance its sub-area recorded",
+        );
+        // One origin per materialized body, and none for anything else.
+        assert_eq!(
+            outcome.origins.keys().cloned().collect::<Vec<_>>(),
+            outcome.addresses,
+            "the origins are keyed by exactly the materialized final addresses",
         );
     }
 

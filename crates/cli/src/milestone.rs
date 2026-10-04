@@ -243,7 +243,11 @@ pub enum MilestoneCommand {
     /// by-task-id join — enumerate sub-areas by sorted task id, disjoint-union their
     /// staged docs (collision-suffixing distinct created instances), and report the
     /// merged outcome. Commits nothing. A blocking finding (a same-doc clash, an
-    /// unknown milestone) surfaces on stderr with its route and exits non-zero.
+    /// unknown milestone) surfaces on stderr with its route and exits non-zero. The
+    /// suffix is assigned by task-id order alone and does not look at what already
+    /// sits at the suffixed id's home: a doc suffixed onto an occupied id is listed
+    /// here like any other, and `jigc milestone finalize` — where the write would
+    /// happen — refuses to promote it (`finalize.promote-clobber`).
     Join {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
@@ -253,7 +257,13 @@ pub enum MilestoneCommand {
     /// join's suffix-resolved doc bodies, materialized into the parent staging area,
     /// and the code staged in each sub-task worktree, folded in by task id. A blocking
     /// join finding (a same-doc clash, an unknown milestone) routes to stderr and
-    /// commits nothing.
+    /// commits nothing. A doc a sub-task newly created is never promoted over a file
+    /// already at its destination, whether the join suffixed it onto an occupied id or
+    /// a file turned up at its own: the boundary blocks with
+    /// `finalize.promote-clobber`, commits nothing and leaves that file as it is, and
+    /// routes at giving the doc another title inside its sub-task (`jigc doc rename
+    /// <address> --to "<title>" --task <task-id>`), after which this command lands the
+    /// milestone.
     Finalize {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
@@ -5430,16 +5440,27 @@ fn run_milestone_finalize(
 
     // Step 3 — the thin sibling planner over the materialized staging area (`staging_dir`,
     // the parent of `merged/docs/`, hoisted with the gate above): shared preflight +
-    // empty-commit guard + promote/hash sweep.
+    // empty-commit guard + promote/hash sweep + promote clobber guard.
+    //
+    // **The promote clobber guard rides this planner too** (the rc.24 fix pass, `(R6, D-1)`):
+    // a sub-task's `created` doc never promotes over a file already at its destination in
+    // the main checkout — `jigc_home`, the store this boundary writes into — whether the
+    // join suffixed it onto an occupied id or a file turned up at its own. It is decided
+    // HERE, at the boundary, from the join's own per-body provenance
+    // (`materialized.origins`); `jigc milestone join` is a preview and commits nothing, and
+    // an occupant can appear after it. A block drops the `RecordFlipGuard`, restoring the
+    // record to `active`, so the milestone stays finalizable once the route is followed.
     let plan = match plan_milestone_finalize(
         milestone_id,
         &staging_dir,
+        &jigc_home,
         &base,
         &head,
         record_only_advance,
         message,
         has_diff,
         &schemas,
+        &materialized.origins,
     ) {
         Ok(plan) => plan,
         Err(findings) => return blocked(&jigc_home, format, findings),

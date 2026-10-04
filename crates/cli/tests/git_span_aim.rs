@@ -592,8 +592,10 @@ const MIGRATE_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
         "crates/engine/src/finalize.rs",
         "clobber_finding",
         Aim::Aimed,
-        "`finalize.promote-clobber`'s two arms — the recorded migration source, and the \
-         occupied promote destination a foreign file is invited to be adopted at",
+        "`finalize.promote-clobber`'s two task arms — the recorded migration source, and the \
+         occupied promote destination a foreign file is invited to be adopted at. Its third, \
+         the milestone boundary's sub-task arm, prints no `jigc migrate` span on purpose: \
+         adopting the occupant before that boundary moves `HEAD` off the milestone's base",
     ),
     (
         "crates/cli/src/ingest.rs",

@@ -475,32 +475,155 @@ fn plan_clobber_guard(
     let in_place = source
         .as_ref()
         .map(crate::state::MigrationSource::normalized);
+    let by = match source.as_ref() {
+        Some(source) => ClobberedBy::Migration {
+            source: source.recorded(),
+        },
+        None => ClobberedBy::Task,
+    };
 
-    let mut clobbers = Vec::new();
-    for promotion in promotions {
-        let Some(address) = promotion.source.file_stem().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if provenance.get(address) != Some(crate::state::Provenance::Created) {
-            continue; // edited-from-base / unrecorded → never a clobber.
-        }
-        let dest_norm = crate::store::lexical_normalize(Path::new(&promotion.destination));
-        if in_place.as_ref() == Some(&dest_norm) {
-            continue; // in-place rewrite — replacing the very foreign original (M43, fork 5).
-        }
-        if repo_root.join(&promotion.destination).is_file() {
-            clobbers.push(clobber_finding(
-                repo_root,
-                &promotion.destination,
-                source.as_ref().map(crate::state::MigrationSource::recorded),
-            ));
-        }
-    }
+    let clobbers: Vec<Finding> =
+        created_over_occupied(repo_root, promotions, in_place.as_deref(), |address| {
+            // edited-from-base / unrecorded → never a clobber.
+            provenance.get(address) == Some(crate::state::Provenance::Created)
+        })
+        .into_iter()
+        .map(|(_, promotion)| clobber_finding(repo_root, &promotion.destination, by))
+        .collect();
     if clobbers.is_empty() {
         Ok(())
     } else {
         Err(clobbers)
     }
+}
+
+/// **The clobber guard at the milestone commit boundary** — [`plan_clobber_guard`]'s
+/// sibling for [`plan_milestone_finalize`], over the same predicate
+/// ([`created_over_occupied`]) and the same finding ([`clobber_finding`]) (the rc.24 fix
+/// pass, `(R6, D-1)`; `design/finalize.md` → 4. Promote).
+///
+/// The milestone planner ran the shared promote sweep and never the guard after it: the
+/// guard arrived at M25 on the per-task planner alone, a week after the milestone planner
+/// shipped, and nothing carried it across. So a sub-task's `created` doc landed on whatever
+/// sat at its home at exit 0 with `findings` empty — a committed doc replaced under its own
+/// id, an untracked file overwritten and left in no git object
+/// (`completions/artifacts/M55/per-axis-review-rc24/tier1-verification/R6-D-1.md`).
+///
+/// **What differs from the task arm is where the discriminator comes from, and nothing
+/// else.** The merged staging area holds bodies only — no `provenance.json` — and a suffixed
+/// body's final address is one no sub-area manifest names, so the join hands each
+/// promotion's provenance on directly ([`crate::milestone::MergedOrigin`], keyed by final
+/// address). A promotion with no origin is not a body the join wrote, and is not this
+/// guard's subject — the task arm's *unrecorded → never a clobber*.
+///
+/// **It decides at the boundary, not at the join preview**, and that is the point: the
+/// join's suffix is a pure function of the sub-area set (`design/storage.md` → The
+/// by-task-id join, rule 4) and consults neither the committed store nor the worktree, and
+/// an occupant can appear at a home between `jigc milestone join` and this call. Whatever
+/// way a `created` doc came to face an occupied home — a suffix minted onto an id the store
+/// already holds, or a file that turned up at its own id — the refusal is taken here, where
+/// the write would happen.
+///
+/// There is **no in-place carve-out**: that is the migration rewrite's, a per-task verb, and
+/// a milestone boundary retires nothing.
+fn plan_milestone_clobber_guard(
+    milestone_id: &str,
+    repo_root: &Path,
+    promotions: &[Promotion],
+    origins: &BTreeMap<String, crate::milestone::MergedOrigin>,
+) -> Result<(), Vec<Finding>> {
+    let clobbers: Vec<Finding> = created_over_occupied(repo_root, promotions, None, |address| {
+        origins
+            .get(address)
+            .is_some_and(|origin| origin.provenance == crate::state::Provenance::Created)
+    })
+    .into_iter()
+    .filter_map(|(address, promotion)| {
+        let origin = origins.get(address)?;
+        Some(clobber_finding(
+            repo_root,
+            &promotion.destination,
+            ClobberedBy::SubTask {
+                milestone: milestone_id,
+                landing: address,
+                origin,
+            },
+        ))
+    })
+    .collect();
+    if clobbers.is_empty() {
+        Ok(())
+    } else {
+        Err(clobbers)
+    }
+}
+
+/// **Is the promote destination already taken?** — the one occupancy predicate both
+/// committing doors' clobber guards ask, over the checkout the promote writes into.
+///
+/// It reads the **worktree**, which is where jigc's own notion of the committed store lives
+/// (the create probe, [`crate::state::create_occupied`], and the in-task rename's
+/// destination guard read the same place): a committed doc is a file at its home, and so is
+/// an untracked or a merely-staged one, which no reading of the index or of `HEAD` would
+/// see. A file there is an occupant whoever put it there.
+fn home_occupied(repo_root: &Path, destination: &str) -> bool {
+    repo_root.join(destination).is_file()
+}
+
+/// **The promotions a `created` doc would land over an occupied home** — the predicate
+/// [`plan_clobber_guard`] and [`plan_milestone_clobber_guard`] share, each paired with the
+/// staged `<type>:<slug>` address it promotes from (the [`plan_promotions`] naming
+/// convention: the source file's stem).
+///
+/// `is_created` is each door's own answer to *"did this unit mint the doc?"* — the task
+/// area's provenance manifest, or the join's per-body origin. `in_place` is the per-task
+/// migration carve-out's normalized source path (`None` at the milestone boundary).
+fn created_over_occupied<'p>(
+    repo_root: &Path,
+    promotions: &'p [Promotion],
+    in_place: Option<&Path>,
+    is_created: impl Fn(&str) -> bool,
+) -> Vec<(&'p str, &'p Promotion)> {
+    promotions
+        .iter()
+        .filter_map(|promotion| {
+            let address = promotion.source.file_stem().and_then(|s| s.to_str())?;
+            if !is_created(address) {
+                return None;
+            }
+            let dest_norm = crate::store::lexical_normalize(Path::new(&promotion.destination));
+            if in_place == Some(dest_norm.as_path()) {
+                return None; // in-place rewrite — replacing the very foreign original (M43, fork 5).
+            }
+            home_occupied(repo_root, &promotion.destination).then_some((address, promotion))
+        })
+        .collect()
+}
+
+/// **Whose doc the refused promote was** — what [`clobber_finding`] words its message and
+/// its route from. One finding identity (`finalize.promote-clobber`, keyed at the
+/// destination), three units whose exits differ.
+#[derive(Clone, Copy)]
+enum ClobberedBy<'a> {
+    /// An ordinary task's `created` doc.
+    Task,
+    /// A migration task's doc, whose recorded foreign source is a *different* file than the
+    /// occupied destination.
+    Migration {
+        /// The recorded repo-relative migration source.
+        source: &'a str,
+    },
+    /// A sub-task's `created` doc, at the milestone commit boundary.
+    SubTask {
+        /// The milestone whose boundary refused.
+        milestone: &'a str,
+        /// The doc's **final** address — the one the join resolved it to, whose home is
+        /// the occupied destination.
+        landing: &'a str,
+        /// Where the body came from: its sub-task, the address it is staged under there,
+        /// and the rest of its collision group.
+        origin: &'a crate::milestone::MergedOrigin,
+    },
 }
 
 /// A blocking finding (review S1, `design/auto-migration.md` → Honest bounds → the
@@ -515,17 +638,22 @@ fn plan_clobber_guard(
 /// teaches raw removal** — the pre-M43 "remove or adopt it" was verbatim the A4/A7 trap
 /// that had a user pre-stage a silent `git rm`:
 ///
-/// - **`migration_source` is `Some`** — a migration whose recorded foreign source is a
+/// - **[`ClobberedBy::Migration`]** — a migration whose recorded foreign source is a
 ///   *different* file than the occupied destination (the title-slug collision; the
 ///   source == destination case is the in-place rewrite [`plan_clobber_guard`] carves
 ///   out, so it never reaches here). The finding names **both** paths and the route ends
 ///   at the migration's own continuation: plain finalize → review the fidelity diff →
 ///   `--approve` (the sole destructive gate, which also retires the recorded source).
-/// - **`None`** — an ordinary create collision; the route repairs through jigc verbs
-///   only (retitle / an explicit `--slug` / adopt the occupant via `jigc migrate`).
-fn clobber_finding(repo_root: &Path, destination: &str, migration_source: Option<&str>) -> Finding {
-    let (message, route) = match migration_source {
-        Some(source) => (
+/// - **[`ClobberedBy::Task`]** — an ordinary create collision; the route repairs through
+///   jigc verbs only (retitle / an explicit `--slug` / adopt the occupant via `jigc
+///   migrate`).
+/// - **[`ClobberedBy::SubTask`]** — the milestone commit boundary's arm
+///   ([`sub_task_clobber_text`]), whose unit has neither of the exits above: a sub-task has
+///   no boundary of its own, and adopting the occupant first moves `HEAD` off the
+///   milestone's base.
+fn clobber_finding(repo_root: &Path, destination: &str, by: ClobberedBy) -> Finding {
+    let (message, route) = match by {
+        ClobberedBy::Migration { source } => (
             format!(
                 "promoting this migration's doc to `{destination}` would overwrite a file \
                  already there — and that file is not the migration's recorded source \
@@ -547,7 +675,7 @@ fn clobber_finding(repo_root: &Path, destination: &str, migration_source: Option
                 source_migrate = crate::finding::migrate_at(repo_root, source),
             ),
         ),
-        None => (
+        ClobberedBy::Task => (
             format!(
                 "promoting this task's doc to `{destination}` would overwrite a file already \
                  there — refusing to clobber it"
@@ -562,6 +690,11 @@ fn clobber_finding(repo_root: &Path, destination: &str, migration_source: Option
                 destination_migrate = crate::finding::migrate_at(repo_root, destination),
             ),
         ),
+        ClobberedBy::SubTask {
+            milestone,
+            landing,
+            origin,
+        } => sub_task_clobber_text(destination, milestone, landing, origin),
     };
     Finding::graded(
         Severity::Blocking,
@@ -570,6 +703,91 @@ fn clobber_finding(repo_root: &Path, destination: &str, migration_source: Option
         Some(file_location(destination)),
         Some(route.into()),
     )
+}
+
+/// The message and the route of [`clobber_finding`]'s **sub-task arm** — the milestone
+/// commit boundary refusing to promote a sub-task's `created` doc over an occupied home
+/// (the rc.24 fix pass, `(R6, D-1)`).
+///
+/// **The route has to land the milestone with every sub-task's work in it**, because a
+/// blocked boundary leaves N sub-tasks pending and none of them has a boundary of its own.
+/// Three things shape it, each driven on the built binary:
+///
+/// - **The exit is the in-task rename, addressed at the sub-area.** `jigc doc rename
+///   <minted> --to "<title>" --task <sub-task>` re-slugs the staged doc inside that
+///   sub-task's own area — body, provenance entry, role binding and staged referrers — so
+///   the next join produces a different final address. The address it takes is the one the
+///   doc is **staged under** ([`crate::milestone::MergedOrigin::minted`]), not the suffixed
+///   one this finding is about: `<type>:<slug>-2` names nothing in any sub-area.
+/// - **A suffixed landing names every later member of its group.** The join numbers the
+///   sub-tasks that minted one slug by position in task-id order, so a doc renamed out of
+///   the group moves each later one up a suffix — renaming only the blocked doc hands its
+///   occupied suffix to the next sub-task, and the re-run refuses again. The route therefore
+///   carries one rename per sub-task from this doc's position on
+///   ([`crate::milestone::MergedOrigin::group_from_here`]): with those docs out of the
+///   group, nothing lands on this suffix or a later one, and the earlier members keep the
+///   ids they had.
+/// - **It never routes at adopting the occupant first.** The task arm's *"bring it under
+///   management … in its own task"* is a commit, and a commit made before this boundary
+///   moves `HEAD` off the milestone's pinned base — the milestone then blocks on
+///   `finalize.base-mismatch`, whose own exits are out-of-band git. So the occupant is named
+///   as untouched and the order is stated: the milestone lands first.
+///
+/// A `Human` route, like the in-task rename's own occupancy refusal it sends the reader to:
+/// the new title is the author's to write, and a mechanical argv is one command.
+fn sub_task_clobber_text(
+    destination: &str,
+    milestone: &str,
+    landing: &str,
+    origin: &crate::milestone::MergedOrigin,
+) -> (String, String) {
+    use crate::finding::shell_operand;
+    let sub_task = origin.source_task();
+    let minted = origin.minted.as_str();
+    let suffixed = landing != minted;
+    let message = if suffixed {
+        format!(
+            "promoting sub-task `{sub_task}`'s doc `{minted}` — which the join suffixed to \
+             `{landing}` — to `{destination}` would overwrite a file already there; refusing \
+             to clobber it"
+        )
+    } else {
+        format!(
+            "promoting sub-task `{sub_task}`'s doc `{minted}` to `{destination}` would \
+             overwrite a file already there — refusing to clobber it"
+        )
+    };
+    let renames: Vec<String> = origin
+        .group_from_here
+        .iter()
+        .map(|sub| {
+            format!(
+                "`jigc doc rename {} --to \"<title>\" --task {}`",
+                shell_operand(minted),
+                shell_operand(sub),
+            )
+        })
+        .collect();
+    let rename = match renames.as_slice() {
+        [one] => format!("give the doc a title that slugs to an id nothing holds ({one})"),
+        many => format!(
+            "the join numbers the sub-tasks that minted `{minted}` in task-id order, so \
+             renaming only this doc would move the next one onto the same id — give the doc \
+             of each of the {} sub-tasks from this one on its own title, slugging to an id \
+             nothing holds ({})",
+            many.len(),
+            many.join(", "),
+        ),
+    };
+    let route = format!(
+        "nothing was committed and every sub-task's staged work is intact: {rename}, then \
+         re-run `jigc milestone finalize {milestone}`. The file at `{destination}` is left \
+         exactly as it is — deal with it after the milestone has landed, not before: a \
+         commit made first moves `HEAD` off this milestone's base and blocks it on \
+         `finalize.base-mismatch`",
+        milestone = shell_operand(milestone),
+    );
+    (message, route)
 }
 
 /// A blocking finding for an I/O failure loading the task's provenance manifest while
@@ -1077,8 +1295,8 @@ pub enum SetupHead<'a> {
 ///
 /// It shares [`plan_finalize`]'s phases — the preflight (`staging_dir` exists, `base`
 /// reconciled with `head_sha` — see `record_only_advance` below), the empty-commit guard,
-/// and the phase-4 promote / phase-7 hash sweep
-/// ([`plan_promotions`]) — with **two** structural differences a milestone forces:
+/// the phase-4 promote / phase-7 hash sweep ([`plan_promotions`]) and the promote clobber
+/// guard — with **two** structural differences a milestone forces:
 ///
 /// - **No commit-doc render.** A milestone has no `commit:<slug>` doc to render (the
 ///   commit doc is per-task); its message is the **CLI-synthesized** structural
@@ -1093,20 +1311,29 @@ pub enum SetupHead<'a> {
 /// `staging_dir` is the materialized parent staging area
 /// ([`crate::milestone::MaterializeOutcome::docs_dir`]'s parent — the `merged/` dir),
 /// whose `docs/` holds the suffix-resolved bodies in the same staging form a single
-/// task's working area uses, so the shared promote sweep reads it unchanged. Performs
-/// no git and no commit; reads only `staging_dir`.
+/// task's working area uses, so the shared promote sweep reads it unchanged.
+///
+/// **The promote clobber guard is shared too** (the rc.24 fix pass, `(R6, D-1)`): after the
+/// sweep, a `created` doc whose destination under `repo_root` already holds a file blocks
+/// with `finalize.promote-clobber`, exactly as [`plan_finalize`] does
+/// ([`plan_milestone_clobber_guard`]). `origins` is the join's per-body provenance
+/// ([`crate::milestone::MaterializeOutcome::origins`]) — the merged area carries no
+/// manifest of its own. Performs no git and no commit; reads `staging_dir`, and stats the
+/// promote destinations under `repo_root`.
 // The determinism contract feeds every layer in explicitly (the [`plan_finalize`] precedent);
 // bundling the inputs into a params struct would be churn without clarifying the contract.
 #[allow(clippy::too_many_arguments)]
 pub fn plan_milestone_finalize(
     milestone_id: &str,
     staging_dir: &Path,
+    repo_root: &Path,
     base: &BasePin,
     head_sha: &str,
     record_only_advance: bool,
     message: String,
     has_diff: bool,
     schemas: &BTreeMap<String, Schema>,
+    origins: &BTreeMap<String, crate::milestone::MergedOrigin>,
 ) -> Result<FinalizePlan, Vec<Finding>> {
     // The work unit every shared block keys at — `milestone:<id>`, never a guess derived from
     // `staging_dir` (M42 inc-9 T4; `design/command-output-contract.md` → the finalize
@@ -1142,6 +1369,10 @@ pub fn plan_milestone_finalize(
     // No commit-doc render — the synthesized message is substituted for phase 3. Phase 4
     // promote + phase 7 hashes are the SHARED sweep over the materialized `docs/`.
     let promote = plan_promotions(staging_dir, schemas)?;
+    // The clobber guard, at this boundary exactly as at the task one — a sub-task's
+    // `created` doc never promotes over an entry already at its destination, however it
+    // came to face one ([`plan_milestone_clobber_guard`]).
+    plan_milestone_clobber_guard(milestone_id, repo_root, &promote.promotions, origins)?;
     // A milestone boundary retires nothing — retire is migration-only (a per-task verb) —
     // and carries no owner-artifact set: the owner-artifact exemption/stage is a per-task
     // concern, the milestone-boundary case a separate, deferred one (M45 Inc 8).
@@ -3111,12 +3342,14 @@ sections:
         let plan = plan_milestone_finalize(
             "page-rework",
             &staging,
+            root.path(),
             &base(),
             &base().sha,
             false,
             "Finalize milestone page-rework (1 sub-task)\n".to_string(),
             true,
             &with_placement,
+            &no_origins(),
         )
         .expect("a placement doctype rides the milestone join (placement != root-render)");
 
@@ -3363,12 +3596,14 @@ sections:
         let err = plan_milestone_finalize(
             "cache-rework",
             &staging,
+            root.path(),
             &base(),
             "ffffffffffffffffffffffffffffffffffffffff",
             false,
             message.to_string(),
             true,
             &schemas(),
+            &no_origins(),
         )
         .expect_err("a base mismatch aborts preflight");
         assert_eq!(err.len(), 1);
@@ -3381,12 +3616,14 @@ sections:
         let plan = plan_milestone_finalize(
             "cache-rework",
             &staging,
+            root.path(),
             &base(),
             "ffffffffffffffffffffffffffffffffffffffff",
             true,
             message.to_string(),
             true,
             &schemas(),
+            &no_origins(),
         )
         .expect("a record-only-range advance clears the base-guard and yields a plan");
         assert_eq!(
@@ -3398,12 +3635,14 @@ sections:
         let err = plan_milestone_finalize(
             "none",
             &root.path().join("milestones").join("none").join("merged"),
+            root.path(),
             &base(),
             &base().sha,
             false,
             message.to_string(),
             true,
             &schemas(),
+            &no_origins(),
         )
         .expect_err("a missing staging area aborts preflight");
         assert_eq!(err[0].code, "finalize.no-task");
@@ -3417,12 +3656,14 @@ sections:
         let err = plan_milestone_finalize(
             "cache-rework",
             &staging,
+            root.path(),
             &base(),
             &base().sha,
             false,
             message.to_string(),
             false,
             &schemas(),
+            &no_origins(),
         )
         .expect_err("an empty diff aborts");
         assert_eq!(err[0].code, "finalize.empty-commit");
@@ -3437,12 +3678,14 @@ sections:
         let plan = plan_milestone_finalize(
             "cache-rework",
             &staging,
+            root.path(),
             &base(),
             &base().sha,
             false,
             message.to_string(),
             true,
             &schemas(),
+            &no_origins(),
         )
         .expect("a clean milestone staging area yields a plan");
         assert_eq!(
@@ -3464,6 +3707,287 @@ sections:
             Some(&hash_bytes(&adr_bytes)),
             "the hash is over the materialized body bytes (the shared phase-7 set)",
         );
+    }
+
+    /// No join origins — the milestone planner's promote set is unrecorded, which is the
+    /// guard's *not a body the join wrote* arm. The preflight/empty-commit/promote tests
+    /// above and below pass it: none of them stages a doc over an occupied home.
+    fn no_origins() -> BTreeMap<String, crate::milestone::MergedOrigin> {
+        BTreeMap::new()
+    }
+
+    /// One join origin: `final_address` came from `group[0]`, staged there as `minted`.
+    fn origin_of(
+        final_address: &str,
+        provenance: state::Provenance,
+        minted: &str,
+        group: &[&str],
+    ) -> (String, crate::milestone::MergedOrigin) {
+        (
+            final_address.to_string(),
+            crate::milestone::MergedOrigin {
+                provenance,
+                minted: minted.to_string(),
+                group_from_here: group.iter().map(|s| (*s).to_string()).collect(),
+            },
+        )
+    }
+
+    /// Run the milestone planner over `staging` with `origins`, every other input clean.
+    fn plan_milestone_with(
+        root: &Path,
+        staging: &Path,
+        origins: &BTreeMap<String, crate::milestone::MergedOrigin>,
+    ) -> Result<FinalizePlan, Vec<Finding>> {
+        plan_milestone_finalize(
+            "cache-rework",
+            staging,
+            root,
+            &base(),
+            &base().sha,
+            false,
+            "Finalize milestone cache-rework (2 sub-tasks)\n".to_string(),
+            true,
+            &schemas(),
+            origins,
+        )
+    }
+
+    /// **The milestone planner runs the clobber guard** (the rc.24 fix pass, `(R6, D-1)`;
+    /// `design/finalize.md` → 4. Promote): a sub-task's `created` doc whose destination
+    /// already holds a file blocks with `finalize.promote-clobber`, keyed at the destination,
+    /// exactly as [`plan_finalize`] does. Until then the milestone planner ran the promote
+    /// sweep and returned — the guard had only ever been wired to the task planner.
+    ///
+    /// The axis is the class, not the reported instance: the doc reaches the occupied home
+    /// **suffixed by the join** (the record's repro) or **under its own id** (the
+    /// verification's V2 — no collision at all), and the occupant is a managed-looking doc or
+    /// a foreign file. Every cell refuses, names the sub-task and the address the doc is
+    /// staged under in its sub-area, and routes at the in-task rename and this milestone's
+    /// own boundary — never at a per-task finalize (a sub-task has none) and never at
+    /// adopting the occupant first (that commit moves `HEAD` off the milestone's base).
+    #[test]
+    fn milestone_plan_blocks_a_created_doc_over_an_occupied_home() {
+        // (final slug, the slug it is staged under in the sub-area)
+        let landings = [
+            ("cache-strategy-2", "cache-strategy"),
+            ("cache-strategy", "cache-strategy"),
+        ];
+        let occupants: [&[u8]; 2] = [
+            b"---\nstatus: accepted\n---\n\n# An earlier decision\n\n## Decision\n\nKept.\n",
+            b"a hand-written note\n",
+        ];
+        for (final_slug, minted_slug) in landings {
+            for occupant in occupants {
+                let root = TempRoot::new("milestone-clobber");
+                let staging = root
+                    .path()
+                    .join("milestones")
+                    .join("cache-rework")
+                    .join("merged");
+                stage_filled_adr(&staging, final_slug);
+                let destination = format!("decisions/{final_slug}.md");
+                state::persist(&root.path().join(&destination), occupant)
+                    .expect("an occupant at the destination");
+                let final_address = format!("adr:{final_slug}");
+                let minted = format!("adr:{minted_slug}");
+                let origins = BTreeMap::from([origin_of(
+                    &final_address,
+                    state::Provenance::Created,
+                    &minted,
+                    &["area-zed"],
+                )]);
+
+                let findings = plan_milestone_with(root.path(), &staging, &origins)
+                    .expect_err("a created doc over an occupied home must block");
+                let cell = format!("{final_address} staged as {minted}");
+                assert_eq!(findings.len(), 1, "{cell}: exactly one clobber finding");
+                let finding = &findings[0];
+                assert_eq!(finding.code, "finalize.promote-clobber", "{cell}");
+                assert_eq!(finding.severity, Severity::Blocking, "{cell}");
+                assert_eq!(
+                    target(finding),
+                    Some(destination.as_str()),
+                    "{cell}: keyed at the destination FILE, the task arm's key exactly",
+                );
+                assert!(
+                    finding.message.contains("`area-zed`") && finding.message.contains(&minted),
+                    "{cell}: the message names the sub-task and the address its doc is staged \
+                     under; got: {}",
+                    finding.message,
+                );
+                assert_eq!(
+                    finding.message.contains("suffixed"),
+                    final_slug != minted_slug,
+                    "{cell}: the suffix is named exactly when the join applied one; got: {}",
+                    finding.message,
+                );
+                let route = finding.route.as_deref().expect("a blocking finding routes");
+                assert!(
+                    route.contains(&format!(
+                        "`jigc doc rename {minted} --to \"<title>\" --task area-zed`"
+                    )),
+                    "{cell}: the route hands back the in-task rename, addressed at the \
+                     sub-area's own address; got: {route}",
+                );
+                assert!(
+                    route.contains("`jigc milestone finalize cache-rework`"),
+                    "{cell}: the route ends at this milestone's boundary; got: {route}",
+                );
+                assert!(
+                    !route.contains("jigc task finalize") && !route.contains("jigc migrate"),
+                    "{cell}: no per-task boundary, and no adoption before the boundary (it \
+                     moves HEAD off the milestone's base); got: {route}",
+                );
+                assert!(
+                    route.contains("finalize.base-mismatch"),
+                    "{cell}: the route says why the occupant waits; got: {route}",
+                );
+                assert_eq!(
+                    std::fs::read(root.path().join(&destination)).expect("the occupant"),
+                    occupant,
+                    "{cell}: the planner writes nothing",
+                );
+            }
+        }
+    }
+
+    /// **A blocked suffix routes every later member of its group** — the join numbers a
+    /// collision group by position in task-id order, so renaming only the blocked doc hands
+    /// its occupied suffix to the next sub-task. The finding for `-2` of a group of three
+    /// names the renames of the second **and** the third sub-task, and not the first, which
+    /// keeps the bare id either way; two occupied suffixes are two findings, each keyed at
+    /// its own destination.
+    #[test]
+    fn milestone_clobber_route_names_every_sub_task_from_the_blocked_suffix_on() {
+        let root = TempRoot::new("milestone-clobber-group");
+        let staging = root
+            .path()
+            .join("milestones")
+            .join("cache-rework")
+            .join("merged");
+        for slug in ["cache-strategy", "cache-strategy-2", "cache-strategy-3"] {
+            stage_filled_adr(&staging, slug);
+        }
+        let created = state::Provenance::Created;
+        let minted = "adr:cache-strategy";
+        let origins = BTreeMap::from([
+            origin_of(
+                "adr:cache-strategy",
+                created,
+                minted,
+                &["low", "mid", "zed"],
+            ),
+            origin_of("adr:cache-strategy-2", created, minted, &["mid", "zed"]),
+            origin_of("adr:cache-strategy-3", created, minted, &["zed"]),
+        ]);
+        let rename =
+            |sub: &str| format!("`jigc doc rename {minted} --to \"<title>\" --task {sub}`");
+
+        // Only `-2` is occupied.
+        state::persist(
+            &root.path().join("decisions").join("cache-strategy-2.md"),
+            b"# an earlier decision\n",
+        )
+        .expect("occupy -2");
+        let findings = plan_milestone_with(root.path(), &staging, &origins)
+            .expect_err("the occupied suffix blocks");
+        assert_eq!(findings.len(), 1, "`-3` is free: {findings:#?}");
+        let route = findings[0].route.as_deref().expect("a route");
+        assert!(
+            route.contains(&rename("mid")) && route.contains(&rename("zed")),
+            "both sub-tasks from the blocked suffix on are named; got: {route}",
+        );
+        assert!(
+            !route.contains(&rename("low")),
+            "the first sub-task keeps the bare id and is not asked to move; got: {route}",
+        );
+
+        // `-3` occupied as well: one finding per occupied home, distinct keys.
+        state::persist(
+            &root.path().join("decisions").join("cache-strategy-3.md"),
+            b"a hand-written note\n",
+        )
+        .expect("occupy -3");
+        let findings = plan_milestone_with(root.path(), &staging, &origins)
+            .expect_err("both occupied suffixes block");
+        let targets: Vec<Option<&str>> = findings.iter().map(target).collect();
+        assert_eq!(
+            targets,
+            vec![
+                Some("decisions/cache-strategy-2.md"),
+                Some("decisions/cache-strategy-3.md"),
+            ],
+            "one finding per occupied destination, in destination order",
+        );
+        let last = findings[1].route.as_deref().expect("a route");
+        assert!(
+            last.contains(&rename("zed")) && !last.contains(&rename("mid")),
+            "the last member's finding names its own rename only; got: {last}",
+        );
+    }
+
+    /// **The regression hinge, at the milestone boundary too.** A sub-task that copied a
+    /// committed doc in holds it `edited-from-base`; re-promoting it over its own home is the
+    /// update path (`design/storage.md` → copy-on-first-touch), never a clobber. And a body
+    /// with no origin at all is not one the join wrote — the task arm's *unrecorded → never a
+    /// clobber*.
+    #[test]
+    fn milestone_plan_lets_an_edited_from_base_doc_re_promote() {
+        for origins in [
+            BTreeMap::from([origin_of(
+                "adr:cache-strategy",
+                state::Provenance::EditedFromBase,
+                "adr:cache-strategy",
+                &["area-low"],
+            )]),
+            no_origins(),
+        ] {
+            let root = TempRoot::new("milestone-update");
+            let staging = root
+                .path()
+                .join("milestones")
+                .join("cache-rework")
+                .join("merged");
+            stage_filled_adr(&staging, "cache-strategy");
+            state::persist(
+                &root.path().join("decisions").join("cache-strategy.md"),
+                b"# the committed version this sub-task edited\n",
+            )
+            .expect("the committed doc at its home");
+            let plan = plan_milestone_with(root.path(), &staging, &origins)
+                .expect("an update of a committed doc re-promotes over its own home");
+            assert_eq!(plan.promotions.len(), 1);
+        }
+    }
+
+    /// **Control — a free home passes.** A `created` doc, suffixed or not, whose destination
+    /// holds nothing is the join working; an occupant at a *different* home is not its
+    /// concern.
+    #[test]
+    fn milestone_plan_passes_a_created_doc_at_a_free_home() {
+        let root = TempRoot::new("milestone-free");
+        let staging = root
+            .path()
+            .join("milestones")
+            .join("cache-rework")
+            .join("merged");
+        stage_filled_adr(&staging, "cache-strategy");
+        stage_filled_adr(&staging, "cache-strategy-2");
+        state::persist(
+            &root.path().join("decisions").join("cache-strategy-3.md"),
+            b"# a neighbour, at a home nobody promotes to\n",
+        )
+        .expect("an unrelated doc");
+        let created = state::Provenance::Created;
+        let minted = "adr:cache-strategy";
+        let origins = BTreeMap::from([
+            origin_of("adr:cache-strategy", created, minted, &["low", "zed"]),
+            origin_of("adr:cache-strategy-2", created, minted, &["zed"]),
+        ]);
+        let plan =
+            plan_milestone_with(root.path(), &staging, &origins).expect("free homes yield a plan");
+        assert_eq!(plan.promotions.len(), 2, "both created docs are promoted");
     }
 
     /// The `finalize.base-mismatch` route is **unit-aware** (M42 T3 — `design/write-commands.md`
@@ -3538,12 +4062,14 @@ sections:
         let err = plan_milestone_finalize(
             "cache-rework",
             &staging,
+            root.path(),
             &base(),
             head,
             false,
             "Finalize milestone cache-rework (1 sub-task)\n".to_string(),
             true,
             &schemas(),
+            &no_origins(),
         )
         .expect_err("a base mismatch aborts the milestone preflight");
         assert_eq!(err.len(), 1, "one preflight finding");
@@ -3639,12 +4165,14 @@ sections:
         let pin_milestone = plan_milestone_finalize(
             "cache-rework",
             &staging,
+            root.path(),
             &base(),
             head,
             false,
             "Finalize milestone cache-rework (1 sub-task)\n".to_string(),
             true,
             &schemas(),
+            &no_origins(),
         )
         .expect_err("a base mismatch aborts the milestone preflight");
 
@@ -3736,12 +4264,14 @@ sections:
         let err = plan_milestone_finalize(
             "cache-rework",
             &staging,
+            root.path(),
             &base(),
             &base().sha,
             false,
             "Finalize milestone cache-rework (1 sub-task)\n".to_string(),
             false,
             &schemas(),
+            &no_origins(),
         )
         .expect_err("an empty diff aborts");
         assert_eq!(err[0].code, "finalize.empty-commit");
