@@ -5316,6 +5316,20 @@ pub struct SubTaskContribution {
     /// sub-task contributed nothing **by construction**, which is exactly what cannot be
     /// said here (M46 Inc 2 T1).
     pub worktree_unreadable: bool,
+    /// **Nothing stood at this sub-task's worktree path, and git still had it registered** —
+    /// a worktree was provisioned there and its directory is gone (the rc.24 fix pass). It
+    /// is the fourth fact, and neither of the two a `provisioned: false` entry would
+    /// otherwise be read as: *never provisioned* is false, and *staged nothing* was never
+    /// measured — the registration's own index may hold what the sub-agent staged, and none
+    /// of it landed, because the boundary reads live checkouts.
+    ///
+    /// **Text-only, declared** (`#[serde(skip)]`): the landed envelope is pinned at its
+    /// keys (`design/command-output-contract.md`), where this entry keeps reading
+    /// `provisioned: false` — true, since no live worktree stood there. What the dropped
+    /// registration held is named on stderr in both formats
+    /// (`crate::milestone::PendingAnchor`).
+    #[serde(skip)]
+    pub stale: Option<StaleRegistration>,
     /// The work in this sub-task's fan-out worktree the landed teardown **destroys** —
     /// path-sorted, empty when everything the worktree held was staged (M47 Inc 3, call
     /// (c)). The boundary commits only the staged set and then removes the whole
@@ -5332,6 +5346,16 @@ pub struct SubTaskContribution {
     /// channel alone — which is exactly what a fix-round orchestrator asks the envelope
     /// for ("which commit landed this fix?").
     pub hash: Option<String>,
+}
+
+/// What git's registration of a sub-task's worktree path held when **no directory stood
+/// there** — [`SubTaskContribution::stale`]'s payload, read pre-commit. Both empty is the
+/// registration that held nothing: the directory is gone and no work went with it.
+pub struct StaleRegistration {
+    /// The abbreviated sha of the newest commit only that registration's `HEAD` reached.
+    pub commit: Option<String>,
+    /// The paths staged in its index and in no commit.
+    pub staged: Vec<String>,
 }
 
 /// One path a landed fan-out teardown destroys, with the reason it was not committed —
@@ -5577,7 +5601,9 @@ pub fn milestone_finalized(format: Format, landed: &MilestoneLanded) -> String {
 /// A sub-task with **no provisioned worktree** carries the `no worktree provisioned`
 /// clause (M47 Inc 3, call (b)(ii)) — on every such sub-task, contributing or not,
 /// because the fact it states is about the *code* channel being absent, not about
-/// what was staged.
+/// what was staged. A sub-task whose worktree **was** provisioned and whose directory is
+/// gone says that instead, with what git's registration of it held
+/// ([`SubTaskContribution::stale`]).
 fn contribution_label(contribution: &SubTaskContribution) -> String {
     let mut parts = Vec::new();
     if contribution.docs > 0 {
@@ -5598,11 +5624,31 @@ fn contribution_label(contribution: &SubTaskContribution) -> String {
     }
     // `nothing staged` is a measurement, so it is withheld where nothing could be
     // measured — an unreadable worktree path leaves the code channel unread, and
-    // claiming the sub-agent staged nothing would be the law-1 lie.
-    if parts.is_empty() && !contribution.worktree_unreadable {
+    // claiming the sub-agent staged nothing would be the law-1 lie. A worktree whose
+    // directory is gone is the same case: there was no checkout to measure.
+    if parts.is_empty() && !contribution.worktree_unreadable && contribution.stale.is_none() {
         parts.push("nothing staged".to_owned());
     }
-    if contribution.worktree_unreadable {
+    if let Some(stale) = &contribution.stale {
+        // A worktree WAS provisioned here, so `no worktree provisioned` would be false.
+        // What is true: its directory is gone, nothing was counted out of it — and what
+        // git's registration of it held did not land.
+        let mut clause = "its worktree directory is gone, no code counted".to_owned();
+        let mut held: Vec<String> = Vec::new();
+        if let Some(commit) = &stale.commit {
+            held.push(format!("commit {commit}"));
+        }
+        if !stale.staged.is_empty() {
+            held.push(format!("staged {}", stale.staged.join(", ")));
+        }
+        if !held.is_empty() {
+            clause.push_str(&format!(
+                " — git's registration of it held {}, which did not land",
+                held.join(" and "),
+            ));
+        }
+        parts.push(clause);
+    } else if contribution.worktree_unreadable {
         // Name the path, so the reader can go look at what the boundary walked past —
         // the worktree home is `.jigc/worktrees/<sub-task-id>` by construction
         // (`engine::milestone::worktree_path`).
@@ -8857,6 +8903,7 @@ mod tests {
                     code_files: 1,
                     provisioned: true,
                     worktree_unreadable: false,
+                    stale: None,
                     // M47 Inc 3 (c) — the two reportable cells of the index-column
                     // partition. The wholly-staged path (`lru.py`, in the manifest above)
                     // is deliberately absent: it landed.
@@ -8884,6 +8931,7 @@ mod tests {
                     code_files: 0,
                     provisioned: false,
                     worktree_unreadable: false,
+                    stale: None,
                     discarded: Vec::new(),
                     // No worktree, no code, no commit of its own to name.
                     hash: None,

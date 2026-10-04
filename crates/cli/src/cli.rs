@@ -300,7 +300,10 @@ pub enum Command {
     /// fan-out sub-task path under `.jigc/worktrees/` that holds content blocks
     /// with `uninstall.dirty-worktree` (get the work out — or, for a path this
     /// repository has registered as a worktree, abandon the milestone with
-    /// `jigc milestone discard <milestone-id> --force`), an open task
+    /// `jigc milestone discard <milestone-id> --force`), and so does one whose
+    /// registration with git holds a commit no ref reaches or, with its directory
+    /// gone, paths still staged in its index (the refusal prints the command that
+    /// keeps the commit and the one that brings the checkout back), an open task
     /// under `.jigc/tasks/` holding a staged doc no commit has a copy of blocks
     /// with `uninstall.staged-prose` (throw the task away with `jigc task discard
     /// <task-id> --force`, or land it with `jigc task finalize <task-id>` once its doc

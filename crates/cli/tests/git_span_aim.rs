@@ -184,6 +184,12 @@ const AIM_HOME: &str = "git_at";
 /// <path>` first), every one with a path operand and every one aimed. The producer count is
 /// unchanged; the span count is 17 or 18 by arm.**]**
 ///
+/// **[Extended 2026-10-04 (the rc.24 fix pass, the registration's own content).** Two more
+/// producers, both in `milestone.rs` and both off the `Route` (they ride a refusal's
+/// per-path line and a loss narration): `keep_commit_command` and `restore_recipe`. The
+/// table is the count — `every_production_caller_of_the_one_home_is_a_row` holds it to the
+/// source.**]**
+///
 /// The remaining 120 lines are `bail!`/`with_context` diagnostics **quoting the invocation
 /// that failed** — law 1's second declared-absolute reason, and outside a route by
 /// construction (the span fence sits on `Route`, which they never build) — plus bare
@@ -273,6 +279,31 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
          otherwise); the `git worktree prune` that stood beside it was the fragile one, and \
          since the rc.24 fix pass it is not printed at all — the remedy names the one \
          registration, with `git worktree unlock <path>` ahead of it for a locked worktree",
+    ),
+    (
+        "crates/cli/src/milestone.rs",
+        "keep_commit_command",
+        Aim::Aimed,
+        "the command that keeps a commit only a fan-out registration's `HEAD` reaches — \
+         `git branch kept/<sub-task-id> <sha>` (the rc.24 fix pass). Its operands are a ref \
+         name and a sha, not paths, but the *repository* is the subject: a reader standing in \
+         another checkout would branch the wrong one, so it is aimed — at the live worktree \
+         where there is one, at the main checkout where the worktree's directory is gone. \
+         Printed on the refusal's per-path line (via `anchored_words`) and again by \
+         `PendingAnchor::narrate_taken` after a drop, where it still works",
+    ),
+    (
+        "crates/cli/src/milestone.rs",
+        "restore_recipe",
+        Aim::Aimed,
+        "the recipe that brings a missing fan-out checkout back from git's registration of \
+         it — a COMPOSITE, `mkdir -p <abs> && printf 'gitdir: %s\\n' <abs admin> > <abs>/.git \
+         && git -C <abs> restore .`. Only the last part is a `git` command and it is aimed; \
+         the two before it have no `-C` and render absolute, shell-quoted operands instead, \
+         so the whole line runs from any directory (`repair_prefix`'s rule, three parts \
+         long). Not a `Route` — it rides the refusal's per-path line — so the fence cannot \
+         see it; `worktree_registration_anchor.rs` runs it as printed from outside the \
+         repository",
     ),
     (
         "crates/cli/src/ingest.rs",

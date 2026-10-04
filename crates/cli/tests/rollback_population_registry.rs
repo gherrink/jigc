@@ -335,6 +335,16 @@ const NOT_A_POPULATION: &[(&str, &str, usize, &str)] = &[
          `git update-index` only",
     ),
     (
+        "crates/cli/src/milestone.rs",
+        "restore_recipe",
+        0,
+        "the three commands a refusal PRINTS for bringing a missing fan-out checkout back \
+         from git's registration of it (the rc.24 fix pass). jigc runs none of them and puts \
+         no byte anywhere: the function composes a line of text, and the reader — or \
+         `worktree_registration_anchor.rs`, which runs it as printed — is the one who \
+         restores",
+    ),
+    (
         "crates/cli/src/rollback.rs",
         "rollback_conflict_finding",
         0,

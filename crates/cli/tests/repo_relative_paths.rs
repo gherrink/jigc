@@ -1364,7 +1364,9 @@ const DEBUG_REMAINDER: &[(&str, &str, usize)] = &[
         "worktree_staged_file_count",
         1,
     ),
-    ("crates/cli/src/milestone.rs", "discarded_work", 1),
+    // The `git status` probe moved here from `discarded_work`, which is now its landed
+    // projection (the rc.24 fix pass) — the same one quoted-invocation line, one home over.
+    ("crates/cli/src/milestone.rs", "worktree_work", 1),
     ("crates/cli/src/milestone.rs", "shared_checkout_staged", 1),
 ];
 

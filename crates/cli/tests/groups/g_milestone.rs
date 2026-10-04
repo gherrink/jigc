@@ -121,5 +121,7 @@ mod uninstall_workbench_subject;
 mod uninstall_worktree_guard;
 #[path = "../work_unit_id_axis.rs"]
 mod work_unit_id_axis;
+#[path = "../worktree_registration_anchor.rs"]
+mod worktree_registration_anchor;
 #[path = "../worktree_registration_reach.rs"]
 mod worktree_registration_reach;

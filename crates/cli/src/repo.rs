@@ -1317,7 +1317,12 @@ fn operation_in_progress(git_dir: &Path, repo_root: &Path) -> Option<InProgress>
 /// walk-up property, kept: an empty fake `.git` directory resolves to itself, and
 /// [`posture`] then finds no `HEAD` there and asks nothing, where a shell-out would walk
 /// up and answer about a real ancestor repository.
-fn worktree_git_dir(repo_root: &Path) -> Option<PathBuf> {
+///
+/// `pub(crate)` for the leftover probe's registration leg
+/// (`crate::milestone::admin_records`): asked of the **main** checkout this is git's common
+/// dir, under which `worktrees/<name>/` holds every linked worktree's registration — the one
+/// place a sub-task worktree's `HEAD` and index can still be read once its directory is gone.
+pub(crate) fn worktree_git_dir(repo_root: &Path) -> Option<PathBuf> {
     let dot_git = repo_root.join(".git");
     if dot_git.is_dir() {
         return Some(dot_git);

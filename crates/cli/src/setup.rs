@@ -3294,6 +3294,7 @@ fn uninstall(
         // Best-effort: git's admin is bookkeeping, and a record that will not go is not a
         // reason to fail a completed teardown.
         pruned_worktrees = drop_workbench_registrations(jigc_home);
+        pending.narrate_dropped(jigc_home);
     }
 
     // 2. Unwire the `CLAUDE.md` bootstrap reference — strip jigc's appended
@@ -3562,9 +3563,18 @@ fn dirty_fanout_worktrees(jigc_home: &Path) -> Result<Vec<HeldWorktreePath>, Fin
 /// work over, enumerated once so the two cannot drift into disagreeing about which paths the
 /// teardown takes.
 ///
-/// **Sorted**, so neither surface varies with readdir order. An absent root is the empty set,
-/// so the no-fan-out teardown (and the idempotent second run over an already-removed
-/// `.jigc/`) short-circuits before any `git` call.
+/// **Sorted**, so neither surface varies with readdir order. An absent root with nothing
+/// registered under it is the empty set, so the no-fan-out teardown (and the idempotent
+/// second run over an already-removed `.jigc/`) short-circuits before any `git` call.
+///
+/// **And every path git still has registered under that root, directory or no directory**
+/// (the rc.24 fix pass). The subject was *the children on disk*, and a sub-task worktree
+/// whose directory is gone is not one of them — while git's registration of it, which this
+/// teardown drops ([`drop_workbench_registrations`]), still carries that checkout's `HEAD`
+/// and index. Driven on `1.0.0-rc.24` with a sub-agent's staged file in such an index:
+/// `jigc uninstall` took it at exit 0 and said nothing. So the registry is read too
+/// (`crate::milestone::admin_records` — files only, no process), and a registered path with
+/// nothing standing at it joins the set, where the probe's registration leg answers for it.
 ///
 /// **Every child, not only the directories** (M49). The subject was `path.is_dir()`, which is
 /// a claim about *shape* where the door's question is about *bytes*: `remove_dir_all(.jigc/)`
@@ -3575,12 +3585,32 @@ fn dirty_fanout_worktrees(jigc_home: &Path) -> Result<Vec<HeldWorktreePath>, Fin
 /// path it cannot read refuses), never a reason to drop it from the set.
 fn fanout_worktree_paths(jigc_home: &Path) -> std::io::Result<Vec<PathBuf>> {
     let worktrees_root = jigc_home.join(".jigc").join("worktrees");
-    if !worktrees_root.is_dir() {
-        return Ok(Vec::new());
-    }
     let mut paths: Vec<PathBuf> = Vec::new();
-    for entry in std::fs::read_dir(&worktrees_root)? {
-        paths.push(entry?.path());
+    if worktrees_root.is_dir() {
+        for entry in std::fs::read_dir(&worktrees_root)? {
+            paths.push(entry?.path());
+        }
+    }
+    // The registrations with no directory left: a child on disk is already in the set, so
+    // only a path nothing stands at is added — as git recorded it.
+    //
+    // **Only while `.jigc/` is there to remove.** This door drops registrations as part of
+    // taking that tree ([`uninstall`], step 1) and touches none when the tree is already
+    // gone, so over an absent `.jigc/` there is no removal for the guard to answer for —
+    // and refusing over a registration the run would leave exactly as it found it would be
+    // a refusal with nothing behind it.
+    if !jigc_home.join(".jigc").is_dir() {
+        return Ok(paths);
+    }
+    for record in crate::milestone::admin_records(jigc_home) {
+        if crate::milestone::is_owned_worktree_path(jigc_home, &record.path)
+            && matches!(
+                std::fs::symlink_metadata(&record.path),
+                Err(ref err) if err.kind() == std::io::ErrorKind::NotFound
+            )
+        {
+            paths.push(record.path);
+        }
     }
     paths.sort();
     Ok(paths)
@@ -4256,11 +4286,22 @@ fn unverified_workbench_finding(err: anyhow::Error) -> Finding {
 /// Best-effort throughout: an unreadable workbench yields no warning rather than failing a
 /// teardown that has already been cleared to run.
 fn pending_teardown(jigc_home: &Path) -> PendingTeardown {
+    let worktree_paths = fanout_worktree_paths(jigc_home).unwrap_or_default();
     PendingTeardown {
-        worktrees: fanout_worktree_paths(jigc_home)
-            .unwrap_or_default()
+        worktrees: worktree_paths
             .iter()
-            .map(|path| crate::milestone::pending_loss(jigc_home, path))
+            // Nothing lands at this door: a wholly staged path dies with its checkout.
+            .map(|path| {
+                crate::milestone::pending_loss(jigc_home, path, crate::milestone::StagedSet::Doomed)
+            })
+            .collect(),
+        // What git's registration of each of those paths holds that no ref carries — a
+        // commit made inside a worktree, the index of one whose directory is gone. The
+        // guard above refuses over it; this is what names it when `--force` consented
+        // (`crate::milestone::PendingAnchor`).
+        registrations: worktree_paths
+            .iter()
+            .map(|path| crate::milestone::pending_anchor(jigc_home, path))
             .collect(),
         // The foreign population of every working area and of `.jigc/displaced/` — the
         // subject the guard above refuses on, named here when `--force` consented past it
@@ -4297,6 +4338,10 @@ fn pending_teardown(jigc_home: &Path) -> PendingTeardown {
 struct PendingTeardown {
     /// The fan-out worktree paths, each carrying its own pre-read listing.
     worktrees: Vec<crate::milestone::PendingLoss>,
+    /// git's registration of each of those paths, with what only it held — narrated on its
+    /// own, after the registrations are dropped ([`PendingTeardown::narrate_dropped`]),
+    /// because that is a second removal with its own outcome.
+    registrations: Vec<crate::milestone::PendingAnchor>,
     /// The working areas' and the parking home's foreign population.
     foreign: crate::task::PendingForeign,
     /// The open tasks' staged docs.
@@ -4320,6 +4365,15 @@ impl PendingTeardown {
         self.prose.narrate_taken(jigc_home);
         narrate_workbench_files(jigc_home, &self.workbench);
         narrate_own_state(jigc_home, &self.own_state);
+    }
+
+    /// Name what went with each registration [`drop_workbench_registrations`] actually
+    /// dropped. Called after it, and keyed on the registration being gone — a locked one
+    /// stays, and nothing it holds was taken.
+    fn narrate_dropped(&self, jigc_home: &Path) {
+        for registration in &self.registrations {
+            registration.narrate_taken(jigc_home);
+        }
     }
 }
 
@@ -4551,6 +4605,15 @@ fn dirty_worktree_finding(jigc_home: &Path, dirty: &[HeldWorktreePath]) -> Findi
         .iter()
         .map(|held| {
             let fate = match held.registered {
+                // Nothing stands at the path, so there is no checkout for the two clauses
+                // below to be about: what the teardown takes there is the registration.
+                _ if matches!(
+                    held.hold.shape,
+                    crate::milestone::LeftoverShape::Registration
+                ) =>
+                {
+                    "; the teardown drops that registration"
+                }
                 Some(true) => "; registered as a worktree of this repository",
                 Some(false) => "; registered as a worktree nowhere in this repository",
                 None => "",
@@ -4567,9 +4630,12 @@ fn dirty_worktree_finding(jigc_home: &Path, dirty: &[HeldWorktreePath]) -> Findi
     // A path that is not a readable directory is not a worktree either, so every worktree
     // remedy named below is inert over it — the route says so rather than leaving the reader
     // to discover it (RC-m50 W-2: this door routed at `git` being on PATH over a plain file).
-    let any_non_worktree = dirty
-        .iter()
-        .any(|held| !matches!(held.hold.shape, crate::milestone::LeftoverShape::Directory));
+    let any_non_worktree = dirty.iter().any(|held| {
+        matches!(
+            held.hold.shape,
+            crate::milestone::LeftoverShape::File | crate::milestone::LeftoverShape::Unreadable(_)
+        )
+    });
     let mut route = String::from(
         "get the work out of those paths first (commit, stash, or copy it), then re-run \
          `jigc uninstall`",
@@ -4605,11 +4671,15 @@ fn dirty_worktree_finding(jigc_home: &Path, dirty: &[HeldWorktreePath]) -> Findi
     if dirty.iter().any(|held| held.hold.operation.is_some()) {
         route.push_str(crate::milestone::OPERATION_CLAUSE);
     }
+    // …and neither reaches what git's registration of a path holds (the rc.24 fix pass).
+    if dirty.iter().any(|held| held.hold.anchored.is_some()) {
+        route.push_str(crate::milestone::ANCHOR_CLAUSE);
+    }
     Finding::block(
         "uninstall.dirty-worktree",
         format!(
-            "`.jigc/` holds {} fan-out sub-task worktree path(s) that removing it would \
-             destroy and nothing can say are disposable:\n{}",
+            "removing `.jigc/` would take {} fan-out sub-task worktree path(s) — the checkout, \
+             git's registration of it, or both — that nothing can say are disposable:\n{}",
             dirty.len(),
             listing.join("\n"),
         ),
