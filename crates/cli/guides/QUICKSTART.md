@@ -164,11 +164,12 @@ next action and changes nothing in your repository. That holds for every *writes
 nothing* claim in these guides, under one jigc-wide exception: with the opt-in
 `invocation-log` knob on, **every** jigc run — these reads included — appends one
 record to the gitignored `.jigc/logs/invocations.jsonl`. A run that claims to
-write nothing writes that record and nothing more. One run appends nothing: a
-`jigc uninstall` that succeeds has just removed `.jigc/`, and it does not bring
-the directory back to log itself. That log is yours and nothing else has a copy
-of it, so `jigc uninstall` refuses while it is there — move it out of `.jigc/`
-or delete it, then re-run, or pass `--force`.
+write nothing writes that record and nothing more. One verb never starts that
+log: `jigc uninstall` adds its record only to a log that is already there, so a
+teardown that succeeds does not bring `.jigc/` back to log itself, and one that
+refuses does not put back a log you moved out. That log is yours and nothing
+else has a copy of it, so `jigc uninstall` refuses while it is there — move it
+out of `.jigc/` or delete it, then re-run, or pass `--force`.
 
 ### Reading while the task is open
 

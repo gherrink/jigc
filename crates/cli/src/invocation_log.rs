@@ -11,7 +11,8 @@
 //! - [`log_invocation`] — the opt-in JSONL append. A `bool` cascade knob `invocation-log`
 //!   (default **OFF**) gates it; when ON, one record `{timestamp, argv, exit_code,
 //!   duration_ms, finding_codes, output_bytes, binary_version, error_code}` is appended to
-//!   `.jigc/logs/invocations.jsonl` per run.
+//!   `.jigc/logs/invocations.jsonl` per run — by every verb but the teardown, which never
+//!   **starts** the log and appends only to one that is already there ([`LogWrite`]).
 //!   The knob is resolved from the project cascade **independent of argv** (the wrapper must
 //!   log clap-rejected usage errors too), and the whole path **no-ops outside a jigc project
 //!   layer**. Best-effort throughout — a logging failure never perturbs the invocation.
@@ -435,11 +436,61 @@ pub fn operational_failure(format: crate::cli::Format, err: &anyhow::Error) -> O
     }
 }
 
+/// What one invocation may do to the log file: **start** it, or only add to it.
+///
+/// The log is sole-copy data inside the workbench, so the door that removes the workbench —
+/// `jigc uninstall` — **refuses** while the log is there (`design/measurement.md` → The
+/// in-repo invocation log, item 7). A door that refuses over a file must not be the one
+/// that puts it there: an operator who moved the log out as the refusal's route says, and
+/// was then refused for another reason, used to find the log back — one record long, the
+/// refusal's own — and blocking the next run (the rc.24 fix pass, left open by `(R9, F5)`).
+/// So that one verb's record is [`AppendOnly`](LogWrite::AppendOnly), however the run ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogWrite {
+    /// Create `logs/` and the log on demand — every verb but the teardown.
+    Mint,
+    /// Append to a log that is **already there**, and create nothing — neither the file nor
+    /// its directory. No log, no record.
+    AppendOnly,
+}
+
+impl LogWrite {
+    /// The write an invocation that reached the leaf verb `leaf` owes — `["uninstall"]`,
+    /// `["doc", "show"]`; `[]` for an argv that reached no verb.
+    ///
+    /// [`AppendOnly`](LogWrite::AppendOnly) for exactly one leaf: the door that removes the
+    /// workbench the log lives in, read off the destroying-door axis's own row
+    /// ([`crate::milestone::UNINSTALL_DOOR`]) rather than off a name retyped here — the
+    /// same row that carries the code the log blocks under.
+    ///
+    /// **Per leaf, never per outcome.** The rule holds for a teardown that lands, one that
+    /// refuses under any of its codes, and one clap answers before the door runs at all
+    /// (`--help`, a usage error): whichever way it ends, reading or running the teardown
+    /// between two attempts must not put back the file the next attempt refuses over.
+    pub fn for_leaf<S: AsRef<str>>(leaf: &[S]) -> Self {
+        let mut door = crate::milestone::UNINSTALL_DOOR.verb.split(' ');
+        let is_teardown =
+            door.next() == Some("jigc") && door.eq(leaf.iter().map(|word| word.as_ref()));
+        if is_teardown {
+            LogWrite::AppendOnly
+        } else {
+            LogWrite::Mint
+        }
+    }
+}
+
 /// Append one JSONL record for this invocation to `logs_dir` (the caller resolved it via
 /// [`enabled_logs_dir`], so the knob is already ON). `output_bytes` is the true stdout+stderr
-/// total the run emitted, measured by `main()`'s fd-level tee. Best-effort — any filesystem
-/// failure is swallowed so instrumentation never breaks a run.
-pub fn log_invocation(logs_dir: &Path, duration: Duration, outcome: &Outcome, output_bytes: u128) {
+/// total the run emitted, measured by `main()`'s fd-level tee; `write` says whether this
+/// invocation may start the log or only add to it ([`LogWrite::for_leaf`]). Best-effort —
+/// any filesystem failure is swallowed so instrumentation never breaks a run.
+pub fn log_invocation(
+    logs_dir: &Path,
+    duration: Duration,
+    outcome: &Outcome,
+    output_bytes: u128,
+    write: LogWrite,
+) {
     // argv without the (machine-specific, absolute) program path — the record captures the
     // verb + flags + intent text (`design/measurement.md` → Honesty note on `argv` content).
     //
@@ -458,6 +509,7 @@ pub fn log_invocation(logs_dir: &Path, duration: Duration, outcome: &Outcome, ou
         .collect();
     let _ = append_record(
         logs_dir,
+        write,
         &now_timestamp(),
         &argv,
         outcome.code,
@@ -549,9 +601,17 @@ struct Record<'a> {
 /// refuse over a file the first one wrote. A workbench that is gone therefore gets no
 /// record: `create_dir` fails `NotFound`, and the caller swallows it like every other
 /// logging failure.
+///
+/// **And under [`LogWrite::AppendOnly`], nothing at all is created** — not `logs/`, not the
+/// file: the open carries no `create`, so the *is it there?* question and the append are one
+/// system call rather than a check followed by a write, and a dangling link at the log's
+/// path is not written through either. An absent log fails `NotFound` and is swallowed the
+/// same way. That subsumes the case above for the teardown itself — the log went with the
+/// tree — while `create_dir` keeps answering it for every other verb.
 #[allow(clippy::too_many_arguments)]
 fn append_record(
     logs_dir: &std::path::Path,
+    write: LogWrite,
     timestamp: &str,
     argv: &[String],
     exit_code: u8,
@@ -561,10 +621,16 @@ fn append_record(
     error_code: Option<&'static str>,
 ) -> std::io::Result<()> {
     use std::io::Write;
-    match std::fs::create_dir(logs_dir) {
-        Ok(()) => {}
-        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(err) => return Err(err),
+    let mint = match write {
+        LogWrite::Mint => true,
+        LogWrite::AppendOnly => false,
+    };
+    if mint {
+        match std::fs::create_dir(logs_dir) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(err) => return Err(err),
+        }
     }
     let record = Record {
         timestamp,
@@ -579,7 +645,7 @@ fn append_record(
     let mut line = serde_json::to_string(&record).map_err(std::io::Error::other)?;
     line.push('\n');
     let mut file = std::fs::OpenOptions::new()
-        .create(true)
+        .create(mint)
         .append(true)
         .open(logs_dir.join(LOG_FILE))?;
     file.write_all(line.as_bytes())
@@ -664,6 +730,7 @@ mod tests {
 
         let gone = append_record(
             &jigc_root.join(LOGS_DIR),
+            LogWrite::Mint,
             "2026-10-04T09:00:00Z",
             &argv,
             0,
@@ -682,6 +749,7 @@ mod tests {
         std::fs::create_dir(&jigc_root).expect("create the workbench");
         append_record(
             &jigc_root.join(LOGS_DIR),
+            LogWrite::Mint,
             "2026-10-04T09:00:01Z",
             &argv,
             0,
@@ -696,6 +764,113 @@ mod tests {
             "and it lands at the log's own path"
         );
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// **An append-only write creates nothing, at any shape of *the log is not there*** —
+    /// the writer's own half of the teardown's rule ([`LogWrite::AppendOnly`]); the driven
+    /// cells are `tests/uninstall_workbench_subject.rs`. Three shapes, because *absent* is
+    /// more than a missing file: the directory gone, the directory standing empty, and a
+    /// dangling link at the log's own path (which a creating open would write through).
+    /// The control is the fourth: a log that is there takes the record.
+    #[test]
+    fn an_append_only_write_creates_nothing_and_still_appends_to_a_log_that_is_there() {
+        let base = std::env::temp_dir().join(format!(
+            "jigc-log-append-only-{}-{:?}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
+        let jigc_root = base.join(".jigc");
+        std::fs::create_dir_all(&jigc_root).expect("create the stand-in workbench");
+        let logs_dir = jigc_root.join(LOGS_DIR);
+        let argv = vec!["uninstall".to_string()];
+        let none: Vec<String> = Vec::new();
+        let append = |write: LogWrite| {
+            append_record(
+                &logs_dir,
+                write,
+                "2026-10-04T09:00:00Z",
+                &argv,
+                1,
+                7,
+                &none,
+                42,
+                None,
+            )
+        };
+
+        // The directory is gone.
+        assert!(append(LogWrite::AppendOnly).is_err(), "no log, no record");
+        assert!(
+            !logs_dir.exists(),
+            "an append-only write must not create `logs/`",
+        );
+
+        // The directory stands empty.
+        std::fs::create_dir(&logs_dir).expect("create `logs/`");
+        assert!(append(LogWrite::AppendOnly).is_err(), "no log, no record");
+        assert!(
+            std::fs::symlink_metadata(log_path(&jigc_root)).is_err(),
+            "an append-only write must not create the log",
+        );
+
+        // A dangling link sits at the log's path.
+        #[cfg(unix)]
+        {
+            let target = base.join("elsewhere.jsonl");
+            std::os::unix::fs::symlink(&target, log_path(&jigc_root))
+                .expect("plant a dangling link at the log's path");
+            assert!(append(LogWrite::AppendOnly).is_err(), "no log, no record");
+            assert!(
+                !target.exists(),
+                "an append-only write must not create a file through a dangling link",
+            );
+            std::fs::remove_file(log_path(&jigc_root)).expect("clear the link");
+        }
+
+        // The control: a minted log takes the append-only record after it.
+        append(LogWrite::Mint).expect("a minting write starts the log");
+        append(LogWrite::AppendOnly).expect("a log that is there takes the record");
+        let body = std::fs::read_to_string(log_path(&jigc_root)).expect("read the log");
+        assert_eq!(
+            body.lines().count(),
+            2,
+            "both records are in the one log; got:\n{body}",
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// **Exactly one leaf never starts the log, and it is the teardown** — asked of every
+    /// leaf verb in the tree (`BEHALF_DOORS` is total over it, fenced ⇔ against the clap
+    /// tree by `cli_parse::every_leaf_verb_says_what_it_acts_on`), and of the leaf clap
+    /// actually parses `jigc uninstall` into. A renamed verb, a second door that removes
+    /// the workbench, or a [`crate::milestone::UNINSTALL_DOOR`] row respelled away from its
+    /// leaf all redden here rather than silently turning the rule off.
+    #[test]
+    fn the_teardown_is_the_one_leaf_that_never_starts_the_log() {
+        use clap::Parser;
+
+        let parsed = crate::cli::Cli::try_parse_from(["jigc", "uninstall", "--force"])
+            .expect("`jigc uninstall --force` parses");
+        assert_eq!(
+            LogWrite::for_leaf(parsed.command.leaf()),
+            LogWrite::AppendOnly,
+            "the leaf clap parses the teardown into must be the append-only one",
+        );
+
+        let append_only: Vec<&[&str]> = crate::cli::BEHALF_DOORS
+            .iter()
+            .map(|row| row.door)
+            .filter(|door| LogWrite::for_leaf(door) == LogWrite::AppendOnly)
+            .collect();
+        assert_eq!(
+            append_only,
+            vec![parsed.command.leaf()],
+            "every other verb mints the log as before",
+        );
+
+        // An argv that reached no verb (`jigc`, `jigc --help`, an unknown subcommand).
+        let none: [&str; 0] = [];
+        assert_eq!(LogWrite::for_leaf(&none), LogWrite::Mint);
     }
 
     /// The registry closes at exactly the **declared** members, and the declaration is
@@ -828,10 +1003,21 @@ mod tests {
         let none: Vec<String> = Vec::new();
         let raised = vec!["schema-conformance.schema-version-current".to_string()];
 
-        append_record(&dir, "2026-09-15T09:00:00Z", &argv, 0, 7, &none, 42, None)
-            .expect("the success record is appended");
         append_record(
             &dir,
+            LogWrite::Mint,
+            "2026-09-15T09:00:00Z",
+            &argv,
+            0,
+            7,
+            &none,
+            42,
+            None,
+        )
+        .expect("the success record is appended");
+        append_record(
+            &dir,
+            LogWrite::Mint,
             "2026-09-15T09:00:01Z",
             &argv,
             1,

@@ -562,6 +562,20 @@ fn uninstall_help_names_every_guard_the_door_runs() {
              got:\n{help}"
         );
     }
+    // The log rule the door's own record runs on (left open by `(R9, F5)`, ruled inside
+    // it): the teardown blocks over the log, so its help says the teardown never starts
+    // one — and says which runs still do, because that is where the rule ends.
+    for claim in [
+        "A log you moved out stays out",
+        "never creates one",
+        "Every other jigc verb still starts the log while the knob is on",
+    ] {
+        assert!(
+            help.contains(claim),
+            "`uninstall --help` must state the teardown's own log rule (`{claim}`); \
+             got:\n{help}"
+        );
+    }
 }
 
 /// M46 Increment 8, T2 (B2-3) — `jigc milestone finalize --help` stops contradicting

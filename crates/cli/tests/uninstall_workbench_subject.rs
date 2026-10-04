@@ -1096,3 +1096,311 @@ fn the_third_subjects_route_is_true_of_an_ignored_path() {
         String::from_utf8_lossy(&rerun.stderr),
     );
 }
+
+// --- The teardown never starts the log (the rc.24 fix pass, left open by `(R9, F5)`) ----
+//
+// `(R9, F5)` made the invocation log block the teardown, and kept a **refused** teardown
+// recorded like any other run. Together those two re-armed the refusal: an operator who
+// moved the log out of `.jigc/` as the route says, and was then refused for **another**
+// reason, found `.jigc/logs/invocations.jsonl` back — holding one record, the refusal's own
+// — and blocking the next run. The human's ruling for `(R9, F5)` covers it (`DECISIONS.md`
+// → 2026-10-04: *"the teardown's own invocation record must not re-create `.jigc/logs/`, so
+// a second `uninstall` … never trips over a log the first one wrote"*): an `uninstall`
+// invocation, landing or refusing, never **creates** the log — it appends only to one that
+// is already there.
+//
+// The subject of the arms below is therefore **every way an `uninstall` invocation ends**,
+// never the one refusal the finding happened to report: each code the door refuses with
+// (read off `UNINSTALL_DOOR.codes`), each answer clap gives before the door runs at all
+// (help, a usage error), and the landing.
+
+/// The two shapes *the log is gone* has on disk after an operator follows the log
+/// refusal's route (*"move what you need out of `.jigc/`, or delete what you do not"*).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LogGone {
+    /// The file moved out; `.jigc/logs/` stands empty. A deleted file is this same shape.
+    FileMovedOut,
+    /// The whole `.jigc/logs/` removed (`rm -r`), so re-creating the log means re-creating
+    /// its directory too.
+    DirectoryDeleted,
+}
+
+/// A site with the knob **on**, a log the knob has really minted, and that log then cleared
+/// the way `how` says — where an operator stands after clearing the log's own refusal.
+///
+/// `before_clearing` runs while the log is still there, because one of the door's refusals
+/// (`uninstall.staged-prose`) is only reachable through a jigc verb, and every verb but the
+/// teardown mints the log.
+fn logging_site_with_the_log_cleared(
+    tag: &str,
+    how: LogGone,
+    before_clearing: impl FnOnce(&Installed),
+) -> Installed {
+    let site = Installed::new(tag);
+    turn_the_log_on(&site);
+    before_clearing(&site);
+    assert!(
+        site.run(&["doc", "list"]).status.success(),
+        "[{tag}] `jigc doc list` must exit 0",
+    );
+    let log = site.repo().join(LOG);
+    assert!(
+        log.is_file(),
+        "[{tag}] the before-control: the knob is on and a verb has minted the log, so an \
+         absent log below is the teardown's doing and not a knob that was never on",
+    );
+    match how {
+        LogGone::FileMovedOut => {
+            fs::rename(&log, site.home.path().join("invocations.jsonl"))
+                .expect("move the log out, as the route says");
+        }
+        LogGone::DirectoryDeleted => {
+            fs::remove_dir_all(log.parent().expect("the log has a parent"))
+                .expect("delete `.jigc/logs/`, as the route allows");
+        }
+    }
+    assert_no_log(&site, &format!("{tag}: cleared"));
+    site
+}
+
+/// Nothing is at the log's path — asked with `symlink_metadata`, so a dangling link there
+/// counts as something.
+fn assert_no_log(site: &Installed, when: &str) {
+    assert!(
+        fs::symlink_metadata(site.repo().join(LOG)).is_err(),
+        "[{when}] an `uninstall` invocation must never create `{LOG}`; it holds:\n{}",
+        fs::read_to_string(site.repo().join(LOG)).unwrap_or_default(),
+    );
+}
+
+/// Put the site in the one state that draws `code` — a cell per member of
+/// `UNINSTALL_DOOR.codes`, so a fifth refusal cannot join the door without saying here how
+/// it is reached.
+fn plant_the_refusal(site: &Installed, code: &str) {
+    match code {
+        "uninstall.dirty-worktree" => {
+            plant(site, ".jigc/worktrees/leftover/notes.txt", "PRECIOUS\n");
+        }
+        "uninstall.staged-prose" => {
+            let start = site.run(&["start", "--workflow", "single-task", "probe the guard"]);
+            assert!(
+                start.status.success(),
+                "`jigc start` must exit 0; stderr:\n{}",
+                String::from_utf8_lossy(&start.stderr),
+            );
+        }
+        FOREIGN => plant(site, ".jigc/state/notes.txt", "PRECIOUS\n"),
+        CODE => plant(site, ".jigc/notes.md", "scratch\n"),
+        other => panic!(
+            "`UNINSTALL_DOOR` now refuses with `{other}` — give it a cell here, so the \
+             teardown's log rule is driven under it too"
+        ),
+    }
+}
+
+/// **(s)** The class axis: under **every** code the door refuses with, and at both shapes
+/// of a cleared log, a refused `uninstall` leaves the log gone — so the next run is refused
+/// for the same reason again and never for a log the first refusal wrote.
+#[test]
+fn a_refused_teardown_never_starts_the_log_under_any_code_the_door_refuses_with() {
+    for code in cli::milestone::UNINSTALL_DOOR.codes {
+        for how in [LogGone::FileMovedOut, LogGone::DirectoryDeleted] {
+            let cell = format!("{code} · {how:?}");
+            let site = logging_site_with_the_log_cleared(
+                &format!("no-mint-{}-{how:?}", code.replace('.', "-")),
+                how,
+                |site| plant_the_refusal(site, code),
+            );
+            let logs_dir = site.repo().join(".jigc/logs");
+            let directory_stood = logs_dir.exists();
+            assert_eq!(
+                directory_stood,
+                how == LogGone::FileMovedOut,
+                "[{cell}] the fixture's own shape",
+            );
+
+            for run in ["first", "second"] {
+                let out = site.run(&["uninstall"]);
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                assert!(
+                    !out.status.success(),
+                    "[{cell} · {run}] the teardown must refuse; stdout:\n{}\nstderr:\n{stderr}",
+                    String::from_utf8_lossy(&out.stdout),
+                );
+                assert!(
+                    stderr.contains(code),
+                    "[{cell} · {run}] the refusal carries `{code}`; got:\n{stderr}",
+                );
+                assert!(
+                    !stderr.contains(LOG),
+                    "[{cell} · {run}] the log was cleared — the refusal must not be over a \
+                     log an earlier `uninstall` wrote; got:\n{stderr}",
+                );
+                assert_no_log(&site, &format!("{cell} · {run}"));
+                assert_eq!(
+                    logs_dir.exists(),
+                    directory_stood,
+                    "[{cell} · {run}] and it neither creates nor removes `.jigc/logs/`",
+                );
+            }
+            site.assert_install_intact(&cell);
+        }
+    }
+}
+
+/// **(t)** The invocations clap answers before the door runs — its help and its usage
+/// errors — are `uninstall` invocations too: an operator who reads `jigc uninstall --help`
+/// between two runs must not find the log back either. The last step is the control: on the
+/// very same site any **other** verb still mints the log, so the knob was on throughout.
+#[test]
+fn an_uninstall_invocation_clap_answers_never_starts_the_log_either() {
+    let site = logging_site_with_the_log_cleared("no-mint-clap", LogGone::FileMovedOut, |_| {});
+    for (argv, exit) in [
+        (&["uninstall", "--help"][..], 0),
+        (&["uninstall", "-h"], 0),
+        (&["help", "uninstall"], 0),
+        (&["--format", "json", "uninstall", "--help"], 0),
+        (&["uninstall", "extra"], 2),
+        (&["uninstall", "--bogus"], 2),
+        (&["uninstall", "--format", "nope"], 2),
+    ] {
+        let out = site.run(argv);
+        assert_eq!(
+            out.status.code(),
+            Some(exit),
+            "`jigc {argv:?}` exits {exit}; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert_no_log(&site, &format!("jigc {argv:?}"));
+    }
+
+    // An argument that is not valid UTF-8: the argv the log wrapper reads lossily.
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+            .arg("uninstall")
+            .arg(std::ffi::OsStr::from_bytes(b"\xff"))
+            .current_dir(site.repo())
+            .env("HOME", site.home.path())
+            .output()
+            .expect("run the jigc binary");
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "a non-UTF-8 argument is a usage error; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert_no_log(&site, "jigc uninstall <non-UTF-8>");
+    }
+    site.assert_install_intact("no-mint-clap");
+
+    // The control — every other verb logs as before, a clap-answered one included.
+    let help = site.run(&["validate", "--help"]);
+    assert!(help.status.success(), "`jigc validate --help` must exit 0");
+    let log = fs::read_to_string(site.repo().join(LOG))
+        .expect("any verb but the teardown mints the log while the knob is on");
+    assert_eq!(
+        log.lines().count(),
+        1,
+        "and the minted log holds that one run, none of the teardown's; got:\n{log}",
+    );
+    assert!(
+        log.contains(r#"["validate","--help"]"#),
+        "the record is the other verb's own; got:\n{log}",
+    );
+}
+
+/// **(u)** The drive the finding names, end to end: the log moved out → the teardown
+/// refused for **another** reason (a foreign file) → that cleared → the teardown lands,
+/// with no log re-created in between and nothing left behind.
+#[test]
+fn a_log_moved_out_stays_out_across_a_refusal_for_another_reason() {
+    let site = logging_site_with_the_log_cleared("log-stays-out", LogGone::FileMovedOut, |_| {});
+    plant(&site, ".jigc/state/notes.txt", "PRECIOUS\n");
+
+    let refused = site.run(&["uninstall"]);
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        !refused.status.success() && stderr.contains(FOREIGN),
+        "the foreign file blocks the teardown under `{FOREIGN}`; got:\n{stderr}",
+    );
+    assert_no_log(&site, "refused over a foreign file");
+
+    // The foreign refusal's route, as printed: move the file out, then re-run.
+    fs::rename(
+        site.repo().join(".jigc/state/notes.txt"),
+        site.home.path().join("notes.txt"),
+    )
+    .expect("move the foreign file out, as the route says");
+    let landed = site.run(&["uninstall"]);
+    assert!(
+        landed.status.success(),
+        "nothing blocks any more — the re-run must exit 0, not refuse over a log the \
+         refused run wrote; stderr:\n{}",
+        String::from_utf8_lossy(&landed.stderr),
+    );
+    assert!(
+        !site.repo().join(".jigc").exists(),
+        "the teardown that landed leaves no `.jigc/` behind",
+    );
+    assert!(
+        fs::read_to_string(site.home.path().join("invocations.jsonl"))
+            .expect("the moved log")
+            .contains(r#"["doc","list"]"#),
+        "the records the operator moved out are still theirs",
+    );
+
+    let second = site.run(&["uninstall"]);
+    let stdout = String::from_utf8_lossy(&second.stdout);
+    assert!(
+        second.status.success() && stdout.contains("nothing to remove"),
+        "a second run is a clean no-op; stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&second.stderr),
+    );
+}
+
+/// **(v)** The other half of the rule: *append only* still appends. A refused teardown is
+/// recorded in a log that is **already there** — the record names the refusal — so the log
+/// loses nothing it used to carry; it is only never started by this verb.
+#[test]
+fn a_refused_teardown_is_recorded_in_a_log_that_is_already_there() {
+    let site = Installed::new("log-appends");
+    turn_the_log_on(&site);
+    assert!(
+        site.run(&["doc", "list"]).status.success(),
+        "`jigc doc list` must exit 0"
+    );
+    plant(&site, ".jigc/state/notes.txt", "PRECIOUS\n");
+    let log = site.repo().join(LOG);
+    let before = fs::read_to_string(&log).expect("the knob is on, so the log exists");
+
+    let refused = site.run(&["uninstall"]);
+    assert!(
+        !refused.status.success(),
+        "the foreign file and the log both block; stderr:\n{}",
+        String::from_utf8_lossy(&refused.stderr),
+    );
+
+    let after = fs::read_to_string(&log).expect("the refused teardown leaves the log");
+    assert!(
+        after.starts_with(&before),
+        "every earlier record stays in place",
+    );
+    let appended: Vec<&str> = after[before.len()..].lines().collect();
+    assert_eq!(
+        appended.len(),
+        1,
+        "the refused run appends exactly its own record; got:\n{after}",
+    );
+    let record: serde_json::Value =
+        serde_json::from_str(appended[0]).expect("the appended line is one JSON record");
+    assert_eq!(record["argv"], serde_json::json!(["uninstall"]));
+    assert_eq!(record["exit_code"], serde_json::json!(1));
+    assert!(
+        record["finding_codes"]
+            .as_array()
+            .is_some_and(|codes| !codes.is_empty()),
+        "the record names what the teardown refused over; got: {record}",
+    );
+}

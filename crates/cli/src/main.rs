@@ -8,7 +8,7 @@
 mod doc_code_probe;
 
 use clap::Parser;
-use cli::invocation_log::{self, Outcome};
+use cli::invocation_log::{self, LogWrite, Outcome};
 use cli::invoke::{self, ProbeArgv};
 use cli::{cli as cli_tree, route_fence};
 use std::os::unix::io::RawFd;
@@ -45,8 +45,16 @@ fn main() -> ExitCode {
     let logs_dir = invocation_log::enabled_logs_dir();
     let tee = logs_dir.as_ref().and_then(|_| OutputTee::install());
 
-    let outcome = match cli_tree::Cli::try_parse() {
-        Ok(cli) => cli.dispatch(),
+    // Beside the outcome, what this invocation may do to the log file: every verb starts
+    // it on demand but the teardown, which only ever adds to one that is already there
+    // (`invocation_log::LogWrite`). Read off the parsed command where there is one, and off
+    // the node the argv reached where clap answered instead — the rule is per verb, however
+    // the run ends.
+    let (outcome, log_write) = match cli_tree::Cli::try_parse() {
+        Ok(cli) => {
+            let log_write = LogWrite::for_leaf(cli.command.leaf());
+            (cli.dispatch(), log_write)
+        }
         Err(err) => {
             // Reproduce clap's own exit convention: `--help`/`--version` print to stdout, exit 0
             // (`use_stderr()` is false); a genuine usage error prints to stderr and exits 2.
@@ -94,7 +102,10 @@ fn main() -> ExitCode {
                     let _ = err.print();
                 }
             }
-            Outcome::code(code)
+            (
+                Outcome::code(code),
+                LogWrite::for_leaf(&cli_tree::rejected_argv_node(&argv)),
+            )
         }
     };
 
@@ -103,7 +114,13 @@ fn main() -> ExitCode {
     let output_bytes = tee.map(OutputTee::finish).unwrap_or(0);
 
     if let Some(logs_dir) = logs_dir {
-        invocation_log::log_invocation(&logs_dir, started.elapsed(), &outcome, output_bytes);
+        invocation_log::log_invocation(
+            &logs_dir,
+            started.elapsed(),
+            &outcome,
+            output_bytes,
+            log_write,
+        );
     }
     outcome.exit_code()
 }

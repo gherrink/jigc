@@ -337,7 +337,11 @@ pub enum Command {
     /// Any of them removes nothing until you re-run — or pass `--force`, which deletes
     /// all four with the install. jigc's own caches and locks under `.jigc/index/`
     /// and `.jigc/state/` are rebuildable, so they go with `.jigc/` — and the
-    /// teardown names each file it takes.
+    /// teardown names each file it takes. A log you moved out stays out: with the
+    /// `invocation-log` knob on, `jigc uninstall` — landing, refusing, or printing
+    /// this help — adds its record only to a log that is already there and never
+    /// creates one, so a refusal never puts the log back in the next run's way.
+    /// Every other jigc verb still starts the log while the knob is on.
     Uninstall {
         /// Remove `.jigc/` even when it holds a fan-out worktree with content, an
         /// open task's staged docs, a file jigc did not write, or a workbench file
@@ -4242,12 +4246,37 @@ pub fn unexpected_argument_block(err: &clap::Error, argv: &[String]) -> Option<S
 /// parent. Stops at the guess itself; an unresolvable argv yields the deepest node it
 /// did resolve.
 fn parent_path(argv: &[String], guess: &str) -> Vec<String> {
+    walk_node(argv, Some(guess))
+}
+
+/// The **node a clap-rejected argv reached** — `["uninstall"]` for `jigc uninstall --help`
+/// and for `jigc uninstall extra`, `["doc"]` for `jigc doc cat`, `[]` for a bare `jigc`.
+///
+/// **For the argv clap did not parse, and for no other.** A parsed command answers through
+/// [`Command::leaf`], which reads the door reached rather than the bytes typed; this is the
+/// answer for the runs that never produce a [`Command`] at all — `--help`, a usage error —
+/// and `main` asks it there because the invocation log's write rule is per verb, however
+/// the run ends ([`crate::invocation_log::LogWrite::for_leaf`]).
+///
+/// It is the walk [`parent_path`] makes, to its end, with that walk's stated bound: a token
+/// is a step only where the real clap tree has a subcommand of that name at the node
+/// reached so far, so a positional or a flag value is never a step *unless it spells a
+/// subcommand of that node* (`jigc --format uninstall`, itself a usage error). clap's own
+/// `help` subcommand is not a node of the unbuilt tree, so `jigc help uninstall` answers
+/// `["uninstall"]` — the verb whose help it prints.
+pub fn rejected_argv_node(argv: &[String]) -> Vec<String> {
+    walk_node(argv, None)
+}
+
+/// Walk `argv` (program name first) down the real clap tree, collecting each token that
+/// names a subcommand of the node reached so far, and stopping early at `stop`.
+fn walk_node(argv: &[String], stop: Option<&str>) -> Vec<String> {
     use clap::CommandFactory;
 
     let mut cmd = Cli::command();
     let mut path = Vec::new();
     for token in argv.iter().skip(1) {
-        if token == guess {
+        if stop == Some(token.as_str()) {
             break;
         }
         if let Some(sub) = cmd.find_subcommand(token).cloned() {
@@ -5582,6 +5611,61 @@ mod cli_parse {
         let err = Cli::try_parse_from(["jigc", "uninstall", "extra"])
             .expect_err("`jigc uninstall` takes no positional argument");
         assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+    }
+
+    /// [`rejected_argv_node`] answers the leaf for **every** leaf verb's own `--help` — the
+    /// argv clap answers instead of parsing, at each of the doors `BEHALF_DOORS` totals —
+    /// so the node `main` reads for a clap-answered run is the leaf [`Command::leaf`] would
+    /// have named had the run been dispatched.
+    #[test]
+    fn a_rejected_argv_reaches_the_leaf_whose_help_it_asks_for() {
+        for row in BEHALF_DOORS {
+            let mut argv = vec!["jigc".to_owned()];
+            argv.extend(row.door.iter().map(|word| (*word).to_owned()));
+            argv.push("--help".to_owned());
+            let err = Cli::try_parse_from(&argv).expect_err("`--help` is clap's to answer");
+            assert_eq!(
+                err.kind(),
+                clap::error::ErrorKind::DisplayHelp,
+                "`{argv:?}` is the leaf's own help",
+            );
+            assert_eq!(
+                rejected_argv_node(&argv),
+                row.door,
+                "`{argv:?}` reaches the leaf it asks about",
+            );
+        }
+    }
+
+    /// The shapes of a clap-rejected argv around one leaf, and the ones that only look
+    /// like it: a token is a step only where the tree has a subcommand of that name at the
+    /// node reached so far.
+    #[test]
+    fn a_rejected_argv_node_is_walked_down_the_tree_not_scanned_for_a_name() {
+        let node = |argv: &[&str]| {
+            rejected_argv_node(&argv.iter().map(|t| (*t).to_owned()).collect::<Vec<_>>())
+        };
+        for argv in [
+            &["jigc", "uninstall", "--help"][..],
+            &["jigc", "uninstall", "-h"],
+            &["jigc", "help", "uninstall"],
+            &["jigc", "--format", "json", "uninstall", "--help"],
+            &["jigc", "uninstall", "extra"],
+            &["jigc", "uninstall", "--bogus"],
+            &["jigc", "uninstall", "--format", "nope"],
+        ] {
+            assert_eq!(node(argv), ["uninstall"], "`{argv:?}` reached the teardown");
+        }
+        // A positional or a flag value that spells the verb under another node is not it.
+        assert_eq!(node(&["jigc", "start", "--bogus", "uninstall"]), ["start"]);
+        assert_eq!(node(&["jigc", "doc", "uninstall"]), ["doc"]);
+        assert_eq!(
+            node(&["jigc", "doc", "show", "--task", "uninstall", "--bogus"]),
+            ["doc", "show"],
+        );
+        let none: [&str; 0] = [];
+        assert_eq!(node(&["jigc"]), none);
+        assert_eq!(node(&["jigc", "--help"]), none);
     }
 
     #[test]
