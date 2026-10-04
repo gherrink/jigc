@@ -6,10 +6,17 @@
 //! schema.
 //!
 //! Two proofs, driving the REAL binary against throwaway git repos. Both set the committed
-//! record's `base` to a **non-existent** SHA (the done-criterion's first option), then
-//! simulate a fresh clone (`rm -rf .jigc`, restore the tracked bits) so the demoted cache is
-//! re-derived from the drifted record — the file-state baseline is gone too, so the T6
-//! reconcile preflight adopts (no drift block) and the *stale-base* guard is what fires:
+//! record's `base` to a **non-existent** SHA (the done-criterion's first option) **and commit
+//! it** — a history rewrite leaves the record as ordinary tracked content whose pin names an
+//! orphaned commit, so the stale base is what `HEAD` holds — then simulate a fresh clone
+//! (`rm -rf .jigc`, restore the tracked bits) so the demoted cache is re-derived from that
+//! record. The file-state baseline is gone too, and the record on disk is `HEAD`'s, so the T6
+//! reconcile preflight adopts (no drift block) and the *stale-base* guard is what fires.
+//!
+//! (Restaged at the rc.24 fix pass. The base used to be rewritten on disk and left
+//! **uncommitted**, which leaned on the preflight adopting a hand-edited record wherever the
+//! cache was gone — the hole `record_door_baseline.rs` closes: with no recorded hash the
+//! record is compared against its blob at `HEAD`, and an uncommitted rewrite is a conflict.)
 //!
 //!   (a) **provision** — reads the base to detach one worktree per sub-task → blocks with a
 //!       routed finding **before** any `git worktree add`, so no worktree is provisioned
@@ -135,10 +142,11 @@ fn set_record_base_missing(repo: &Path) -> String {
     out
 }
 
-/// create → add-task → rewrite the record base to a non-existent SHA → simulate a fresh
-/// clone (drop ALL of `.jigc/`, restore only the tracked bits). The demoted cache is then
-/// re-derived from the drifted record on the next op; the file-state baseline is gone, so
-/// the T6 reconcile preflight adopts (no drift block) — the stale-base guard is what fires.
+/// create → add-task → rewrite the record base to a non-existent SHA **and commit it** →
+/// simulate a fresh clone (drop ALL of `.jigc/`, restore only the tracked bits). The demoted
+/// cache is then re-derived from the drifted record on the next op; the file-state baseline
+/// is gone and the record on disk is what `HEAD` holds, so the T6 reconcile preflight adopts
+/// (no drift block) — the stale-base guard is what fires.
 /// Returns the drifted record bytes for the not-corrupted assertion.
 fn seed_stale_base(repo: &Path, home: &Path) -> String {
     init_repo(repo);
@@ -168,6 +176,13 @@ fn seed_stale_base(repo: &Path, home: &Path) -> String {
     );
 
     let drifted = set_record_base_missing(repo);
+    // The stale pin is committed: after a history rewrite it is what the tracked record
+    // holds, and a clone's first record op compares the record on disk against `HEAD`.
+    git(repo, &["add", "docs/milestone-records/cache-rework.md"]);
+    git(
+        repo,
+        &["commit", "-q", "-m", "the record after a history rewrite"],
+    );
 
     // Fresh-clone simulation: drop `.jigc/`, restore only the tracked bits. The gitignored
     // WIP (`.jigc/milestones/…`, `.jigc/state/…`) is gone — the next op re-derives from the

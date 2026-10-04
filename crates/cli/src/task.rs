@@ -8271,29 +8271,54 @@ pub(crate) fn git_path_on_a_branch(repo_root: &Path, path: &str) -> Result<bool>
         .any(|line| line.trim() == "blob"))
 }
 
-/// The committed bytes of `path` (repo-relative) **at `pin`, as a checkout writes them** —
-/// `git cat-file --filters <pin>:<path>` — or `None` when the pin carries no blob there or
-/// git fails in any way. The L1 pull-absorption seam ([`engine::validate::PinnedBlob`]; M55
-/// Increment 4, P2): the engine hashes the bytes against the doc on disk, so a failure
-/// answering `None` keeps the conflict-block it would have raised anyway — never an absorb
-/// on a guess.
+/// The committed bytes of `path` (repo-relative) **at `pin`, in the form its working-tree
+/// file is in** — or `None` when the pin carries no blob there or git fails in any way. The
+/// L1 pull-absorption seam ([`engine::validate::PinnedBlob`]; M55 Increment 4, P2): the
+/// engine hashes the bytes against the doc on disk, so a failure answering `None` keeps the
+/// conflict-block it would have raised anyway — never an absorb on a guess.
 ///
-/// **The checked-out form, never the raw blob** (the rc.24 fix pass, `(R3, F7)`). Every
+/// **The checked-out form, never the raw blob alone** (the rc.24 fix pass, `(R3, F7)`). Every
 /// consumer compares the answer with the bytes of a working-tree file, and a working-tree
-/// file is the blob *after* git's checkout conversion — `core.autocrlf`, an `eol` or `text`
-/// attribute, a smudge filter. Read raw, a doc nobody touched differs from "its own" blob in
-/// every line ending in such a checkout: the L1 arm would refuse every pulled edit there,
-/// the store sweep would never grade a lagging baseline advisory, and the base-pin backstop
-/// — which *blocks* on a difference — would block every staged doc with no record.
-/// `--filters` applies the conversions configured for `path` in this working tree, which is
-/// exactly what put the file's bytes there.
+/// file a *checkout* wrote is the blob after git's conversion — `core.autocrlf`, an `eol` or
+/// `text` attribute, a smudge filter. Read raw, a doc nobody touched differs from "its own"
+/// blob in every line ending in such a checkout: the L1 arm would refuse every pulled edit
+/// there, the store sweep would never grade a lagging baseline advisory, and the base-pin
+/// backstop — which *blocks* on a difference — would block every staged doc with no record.
+/// `git cat-file --filters <pin>:<path>` applies the conversions configured for `path` in
+/// this working tree, which is exactly what a checkout put there.
+///
+/// **…and the blob's own bytes where that is what the file holds** (the rc.24 fix pass, the
+/// record door). A checkout is not the only writer of a working-tree file: **jigc is the
+/// other one**, and a promote or a record write lands the bytes it commits — `\n` endings
+/// whatever the checkout converts to. Git calls such a file unmodified (it normalizes on the
+/// way in), and it is: it holds exactly the blob. Compared against the checked-out form
+/// alone it read as *edited* the moment its key was gone — driven under `eol=crlf`, a
+/// record `jigc milestone add-task` had itself written conflict-blocked the next `add-task`
+/// after a `jigc unmanage`, and the route's `git checkout` rewrote nothing, because git had
+/// no modification to undo. So when the file on disk differs from the checked-out form and
+/// equals the raw blob, the raw blob is the answer: an untouched file has two faithful forms
+/// and the pin is read in whichever one the file is in. A file that matches neither gets the
+/// checked-out form, as before, and reads as the edit it is.
 pub(crate) fn git_blob_at(repo_root: &Path, pin: &str, path: &str) -> Option<Vec<u8>> {
-    let out = Command::new("git")
-        .args(["cat-file", "--filters", &format!("{pin}:{path}")])
-        .current_dir(repo_root)
-        .output()
-        .ok()?;
-    out.status.success().then_some(out.stdout)
+    let object = format!("{pin}:{path}");
+    let cat_file = |form: &str| {
+        let out = Command::new("git")
+            .args(["cat-file", form, &object])
+            .current_dir(repo_root)
+            .output()
+            .ok()?;
+        out.status.success().then_some(out.stdout)
+    };
+    let checked_out = cat_file("--filters")?;
+    // The second read is asked only on a difference — an in-sync checkout shells out once.
+    let on_disk = std::fs::read(repo_root.join(path)).ok();
+    if on_disk.as_ref().is_none_or(|bytes| *bytes == checked_out) {
+        return Some(checked_out);
+    }
+    match cat_file("blob") {
+        Some(raw) if on_disk.as_ref() == Some(&raw) => Some(raw),
+        _ => Some(checked_out),
+    }
 }
 
 /// The bytes of the **last committed version** of `path`, or `None` when HEAD carries no

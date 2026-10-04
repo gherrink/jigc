@@ -1465,6 +1465,20 @@ fn baseline_record(jigc_root: &Path, schema: &Schema, milestone_id: &str, bytes:
     let _ = record.save(jigc_root);
 }
 
+/// What the record door compares the record on disk against — the **witness** of what jigc
+/// last wrote, and so which conflict the door is reporting ([`record_conflict_block`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RecordWitness {
+    /// The `file-state` cache holds the record's key: the hash jigc recorded at its last
+    /// landed record write.
+    LastWrite,
+    /// The cache holds **no** key — a fresh clone, a deleted cache, a `jigc unmanage` of the
+    /// record — so the record's blob at `HEAD` is the only witness left. Every record write
+    /// lands in a commit (the five record-only doors and the finalize flip), so what `HEAD`
+    /// holds *is* what jigc — here or on a teammate's machine — last wrote.
+    Head,
+}
+
 /// The record door's own **conflict-block presentation** (M47 inc-2 / T4) — the caller half
 /// of [`ConflictBlock`](engine::file_state::ConflictBlock).
 ///
@@ -1480,20 +1494,50 @@ fn baseline_record(jigc_root: &Path, schema: &Schema, milestone_id: &str, bytes:
 /// human judgment over git, not a `jigc` verb (the record is machine-maintained, so the
 /// edit is never merged and never clobbered; `design/team-ready-state.md` → the
 /// No-silent-overwrite discipline).
-fn record_conflict_block(jigc_home: &Path, key: &str) -> engine::file_state::ConflictBlock {
-    engine::file_state::ConflictBlock::new(
-        "the milestone record is machine-maintained and was edited out of band since jigc \
-         last wrote it",
-        engine::finding::Route::human(format!(
-            "restore `{key}` to what jigc last wrote (`{restore}` for an uncommitted edit, \
-             else revert the commit that changed it) and re-run this command — an external \
-             edit to a machine-maintained record is never merged and never clobbered",
-            restore = engine::finding::git_at(
-                jigc_home,
-                &format!("checkout -- {}", crate::task::shell_token(key)),
-            ),
-        )),
-    )
+///
+/// **One presentation per witness** (the rc.24 fix pass). The message and the restore are
+/// only true of the comparison that raised them. Against the cache's hash
+/// ([`RecordWitness::LastWrite`]) the edit may be uncommitted *or* committed, so the route
+/// names both reverts. Against `HEAD` ([`RecordWitness::Head`]) the edit is by construction
+/// not in `HEAD`, and the restore is `git checkout HEAD -- <record>` — from `HEAD`, never
+/// the bare `git checkout -- <record>`, which restores from the **index** and so puts a
+/// `git add`ed edit straight back; after it the bytes on disk equal the witness, so the
+/// re-run is the first encounter of an untouched record and cannot block again.
+fn record_conflict_block(
+    jigc_home: &Path,
+    key: &str,
+    witness: RecordWitness,
+) -> engine::file_state::ConflictBlock {
+    let restore = |source: &str| {
+        engine::finding::git_at(
+            jigc_home,
+            &format!("checkout {source}-- {}", crate::task::shell_token(key)),
+        )
+    };
+    match witness {
+        RecordWitness::LastWrite => engine::file_state::ConflictBlock::new(
+            "the milestone record is machine-maintained and was edited out of band since jigc \
+             last wrote it",
+            engine::finding::Route::human(format!(
+                "restore `{key}` to what jigc last wrote (`{restore}` for an uncommitted edit, \
+                 else revert the commit that changed it) and re-run this command — an external \
+                 edit to a machine-maintained record is never merged and never clobbered",
+                restore = restore(""),
+            )),
+        ),
+        RecordWitness::Head => engine::file_state::ConflictBlock::new(
+            "the milestone record is machine-maintained and differs from what `HEAD` holds — \
+             this checkout has no record of what jigc last wrote, so the committed record is \
+             what it is compared against",
+            engine::finding::Route::human(format!(
+                "restore `{key}` to what `HEAD` holds (`{restore}`) and re-run this command — \
+                 the record is jigc's to write, so keep a note you want somewhere other than \
+                 the record before restoring; an external edit to a machine-maintained record \
+                 is never merged and never clobbered",
+                restore = restore("HEAD "),
+            )),
+        ),
+    }
 }
 
 /// The **reconcile preflight** before a `set: on-transition` record overwrite — the
@@ -1512,9 +1556,29 @@ fn record_conflict_block(jigc_home: &Path, key: &str) -> engine::file_state::Con
 /// — the silent clobber F3 forbids — and would sweep sibling records / unrelated committed
 /// docs the milestone op has no business gating on. The per-doc primitive is scoped exactly to
 /// this record (`DECISIONS.md` 2026-07-07 M39 T6). No edge-index mutation reaches disk — the
-/// only mutator (absorb) is unreachable under `task_touched: true` with no pin (M55 Increment
-/// 4, P3: this door passes an always-`None` lookup) — so a throwaway index
-/// suffices; a first-encounter baseline-adopt is persisted so detection binds on the next op.
+/// only mutator (absorb) is unreachable under `task_touched: true` with no pin for a
+/// **recorded** key (M55 Increment 4, P3: the lookup this door passes answers `None` whenever
+/// the cache holds the record's key) — so a throwaway index suffices; a first-encounter
+/// baseline-adopt is persisted so detection binds on the next op.
+///
+/// **With no recorded hash the witness is `HEAD`** (the rc.24 fix pass;
+/// `design/reconciliation.md` → Baseline adoption, the record door's witness). Until then
+/// this door passed no pin at all, so the classifier's `UNKNOWN` arm adopted whatever was on
+/// disk: in a fresh clone, a hand line appended to the record was re-rendered away by
+/// `jigc milestone add-task` at exit 0 — worktree 0, `HEAD` 0 — and the splicing doors
+/// committed a hand edit as jigc's own. The `(R3, F7)` base-pin backstop is the arm that
+/// decides `UNKNOWN + TOUCHED`, and it needs a pin: here that is the record's blob at
+/// `HEAD`, read in the form the file on disk is in ([`crate::task::git_blob_at`]) — every
+/// record write lands in a commit, so `HEAD` holds what jigc last wrote. Bytes that differ
+/// from it are an edit and raise this door's conflict-block with nothing adopted and nothing
+/// written; bytes equal to it (an untouched clone, an edit that arrived by `git pull`) are
+/// adopted exactly as before. A record `HEAD` does not carry, an unborn `HEAD` and any git
+/// failure answer `None` and keep the adoption — there is nothing to compare against.
+///
+/// **The lookup answers only where there is no key**, which is what keeps the classifier's
+/// *other* consumer of the pin off this door: `DRIFTED + TOUCHED` absorbs an edit whose bytes
+/// equal the pin's (the L1 pull-absorb), and at the record door every drift from the recorded
+/// hash conflict-blocks, a pulled one included.
 ///
 /// Inert where there is nothing to guard: dev-only (no `milestone-record` schema) never calls
 /// this, and a record file absent on disk (nothing to overwrite) is a no-op.
@@ -1537,8 +1601,16 @@ fn reconcile_record_preflight(
 
     let mut fs_record = FileStateRecord::load(jigc_root)
         .with_context(|| format!("could not load the file-state record under {jigc_root:?}"))?;
+    // Decided before the classifier borrows the record: which witness this run compares the
+    // bytes on disk against, and therefore which presentation a conflict carries.
+    let witness = if fs_record.get(&key).is_some() {
+        RecordWitness::LastWrite
+    } else {
+        RecordWitness::Head
+    };
     // No edge is ever written: absorb (the sole index mutator) is unreachable with
-    // `task_touched: true` and no pin, so a throwaway index is never persisted.
+    // `task_touched: true` and no pin for a recorded key, so a throwaway index is never
+    // persisted.
     let mut index = EdgeIndex {
         stamp: String::new(),
         edges: Vec::new(),
@@ -1559,11 +1631,16 @@ fn reconcile_record_preflight(
         &from,
         &bytes,
         /* task_touched = */ true,
-        // No pin at the record door (M55 Increment 4, P3): every drift of the machine-owned
-        // record conflict-blocks here, a pulled one included — F3's "detected +
-        // conflict-blocked, **not** absorbed" holds byte-identically.
-        &|_| None,
-        &record_conflict_block(jigc_home, &key),
+        // The witness (see the doc-comment). A recorded key gets no pin (M55 Increment 4,
+        // P3): every drift of the machine-owned record from what jigc last wrote
+        // conflict-blocks here, a pulled one included — F3's "detected + conflict-blocked,
+        // **not** absorbed" holds byte-identically. With no key the `UNKNOWN` arm's base-pin
+        // backstop is handed the record's blob at `HEAD`.
+        &|path| match witness {
+            RecordWitness::LastWrite => None,
+            RecordWitness::Head => crate::task::git_blob_at(jigc_home, "HEAD", path),
+        },
+        &record_conflict_block(jigc_home, &key, witness),
         &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable, jigc_home),
     );
     if let Some(blocking) = findings.iter().find(|f| f.severity == Severity::Blocking) {

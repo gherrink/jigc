@@ -1512,6 +1512,47 @@ fn the_backstop_does_not_false_fire_in_a_crlf_checkout() {
     );
 }
 
+/// **…and in the form jigc itself wrote.** A finalize promotes a doc with `\n` endings
+/// whatever the checkout converts to, and git calls that file unmodified. So the working
+/// file of an untouched doc is in one of two forms — the checked-out one above, or the
+/// blob's own bytes — and the pin is read in whichever the file is in. Compared against the
+/// checked-out form alone, a doc jigc's own finalize landed would block here, and the
+/// route's *revert the edit on disk* would have nothing to revert.
+#[test]
+fn the_backstop_does_not_false_fire_on_jigcs_own_write_in_a_crlf_checkout() {
+    let base = baselined_corpus();
+    let kind = Kind::Placement;
+    let corpus = base.copy_state();
+    fs::write(corpus.repo().join(".gitattributes"), "*.md text eol=crlf\n")
+        .expect("write .gitattributes");
+    corpus.git(&["add", "--", ".gitattributes"]);
+    corpus.git(&["commit", "-q", "-m", "chore: check markdown out as CRLF"]);
+    // NOT re-checked out: the doc stays as the finalize that landed it wrote it.
+    let disk = fs::read(corpus.repo().join(kind.home())).expect("read the doc");
+    assert!(
+        !disk.windows(2).any(|pair| pair == b"\r\n"),
+        "the premise: the doc is on disk as jigc wrote it, with `\\n` line endings",
+    );
+    assert_eq!(
+        corpus.git(&["status", "--porcelain", "--", kind.home()]),
+        "",
+        "the premise: git calls the doc unmodified",
+    );
+    corpus.fresh_clone_shape();
+
+    let task = Door::Task.mint(&corpus);
+    kind.first_write(&corpus, &task);
+    // The key is dropped, so the door reaches the backstop.
+    forget(&corpus, kind.home());
+    let out = Door::Task.finalize(&corpus, &task);
+    let envelope: serde_json::Value = stdout_json(&out, &[0], "the finalize");
+    assert!(
+        keyed(&findings(&envelope), CONFLICT, kind.home()).is_empty(),
+        "an untouched doc jigc wrote is at its pin — no conflict; {}",
+        text(&out),
+    );
+}
+
 /// **The statement, where the rule is described.** The design sentences this fix makes true,
 /// and the one it narrows, name what the code now does.
 #[test]

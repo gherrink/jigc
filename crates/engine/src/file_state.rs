@@ -488,8 +488,11 @@ impl LiveRecord {
 ///   what the task can have started from, and bytes that differ from it are an edit the
 ///   staged copy may not carry — adopting them is how a hand edit made after a task's first
 ///   write was overwritten at exit 0. A `None` lookup (an untracked doc, no pin, a git
-///   failure, the record door) and the caller's path-keyed migration source
-///   ([`ConflictBlock::keys`]) keep the adoption above.
+///   failure) and the caller's path-keyed migration source ([`ConflictBlock::keys`]) keep
+///   the adoption above. **The milestone-record door reaches this arm too**: it has no task
+///   and so no base pin, and hands in the record's blob at `HEAD` — every record write
+///   lands in a commit, so that blob is what jigc last wrote (`reconciliation.md` →
+///   Baseline adoption, the record door's witness).
 /// - **`IN_SYNC`** (recorded hash matches) → no finding (clean / task-only change —
 ///   the working-area writes are reconciled elsewhere, not here).
 /// - **`DRIFTED + TOUCHED`** (`task_touched`) → **conflict-block**: both sides moved.
@@ -501,7 +504,8 @@ impl LiveRecord {
 ///   the `DRIFTED + UNTOUCHED` absorb below runs whole; a pinned edit that fails the
 ///   conformance gate keeps the caller's conflict-block unchanged, never a
 ///   conformance-block. A `None` lookup — no pin, absent blob, git failure, the record
-///   door — keeps the conflict-block.
+///   door (whose `HEAD` witness answers only where the record has no recorded hash, so it
+///   never reaches this arm) — keeps the conflict-block.
 /// - **`DRIFTED + UNTOUCHED`** → the **parse classifier**: re-parse + schema-validate
 ///   the on-disk bytes against `schema`.
 ///   - clean → **absorb**: re-hash the recorded baseline forward, incrementally
