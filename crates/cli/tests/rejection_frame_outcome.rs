@@ -222,8 +222,13 @@ fn stale_config_layer(repo: &Path) {
         "tasks/\nindex/\nstate/\nmilestones/\nworktrees/\nlogs/\n",
     )
     .expect("write the one-entry-short ignore file");
-    fs::write(jigc_dir.join("version"), "0.0.0-fixture-stale-stamp\n")
-        .expect("write the stale version stamp");
+    // In jigc's own stamp shape: the refresh rewrites only a stamp that is jigc's (the
+    // rc.24 fix pass), so bare bytes here would be left alone and nothing would be stale.
+    fs::write(
+        jigc_dir.join("version"),
+        "jigc-version: 0.0.0-fixture-stale-stamp\n",
+    )
+    .expect("write the stale version stamp");
 }
 
 /// **The derivation**: the committing doors that can reach a rollback outcome the frame's

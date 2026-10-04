@@ -115,6 +115,8 @@ mod record_unbuilt_cells_retired;
 mod record_vacated_home;
 #[path = "../registry_seam.rs"]
 mod registry_seam;
+#[path = "../replacing_writers_never_follow.rs"]
+mod replacing_writers_never_follow;
 #[path = "../retire_sink_validation.rs"]
 mod retire_sink_validation;
 #[path = "../run_then_parse_helper.rs"]

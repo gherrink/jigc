@@ -285,12 +285,18 @@ pub enum Command {
     /// that footprint carries work no commit has a copy of, rather than sweeping it in
     /// or writing over it. In a repository with no commit yet, an untracked file it
     /// merges into (`CLAUDE.md`, `.gitignore`, the settings file) rides the first commit
-    /// instead; one it would replace still refuses.
+    /// instead; one it would replace still refuses. A file it replaces whole
+    /// (`.jigc/AGENT.md`, `.jigc/version`, `.jigc/config/.gitkeep`,
+    /// `.jigc/config/packs.yaml`) is written as a regular file at exactly its path: a
+    /// symlink there, or on the way to it, refuses before anything is written — with or
+    /// without `--force` — instead of writing through it.
     Setup {
         /// Commit the install footprint even where it carries bytes `jigc setup` did
         /// not write — the explicit consent to sweep uncommitted work into
         /// `chore(jigc): install jigc workspace config`. Inert when the footprint is
-        /// clean, which is every ordinary install.
+        /// clean, which is every ordinary install. It consents to replacing a file,
+        /// never to following a link: a symlink at a path the install replaces refuses
+        /// under `--force` too.
         #[arg(long)]
         force: bool,
     },

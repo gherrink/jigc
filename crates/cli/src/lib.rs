@@ -44,6 +44,9 @@ pub mod orient;
 pub mod orphan;
 pub mod pack;
 pub mod pack_builtin;
+// The one writer for a file jigc replaces whole: a regular file at exactly its path, never
+// through a link (`setup`'s replacing install members, `finalize`'s stamp, the promote sink).
+pub mod regular_file;
 pub mod relocate;
 pub mod rename;
 pub mod render;

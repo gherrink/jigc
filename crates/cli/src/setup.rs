@@ -244,6 +244,21 @@ pub fn guide_ownership(jigc_home: &Path, guide: &adapter::GuideTarget) -> GuideO
     // file whose bytes are not UTF-8 (a hand-written skill saved Latin-1) would be read as
     // absent and silently clobbered at exit 0. The check is the inverse of the generator's
     // assembly and fails **closed**: anything it cannot prove is jigc's own is the user's.
+    //
+    // **And the entry itself is asked first, without following a link** (the rc.24 fix
+    // pass). jigc writes the artifact as a regular file, so a symlink at its path is an
+    // entry jigc did not put there — whatever it points at. Read through, a link to a copy
+    // of jigc's own bytes answered `Owned` and a dangling one answered `Absent`, and both
+    // are verdicts the write gate treats as *overwrite it*: the artifact was then written
+    // to the link's target, a file outside the install, and the link committed in its
+    // place. A link is the user's entry, so it is left alone and reported like an edited
+    // copy.
+    if matches!(
+        engine::store::home_entry(&jigc_home.join(&guide.file)),
+        engine::store::HomeEntry::Foreign(engine::store::ForeignEntry::Symlink)
+    ) {
+        return GuideOwnership::UserModified;
+    }
     let bytes = match std::fs::read(jigc_home.join(&guide.file)) {
         Ok(bytes) => bytes,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return GuideOwnership::Absent,
@@ -356,24 +371,33 @@ pub fn guide_kept_finding(path: &str) -> Finding {
 /// what "regenerated on upgrade" means for an artifact only `setup` writes
 /// (`design/assistant-adapter.md` → Generated, minimal, regenerated). The caller gates this
 /// on [`guide_ownership`]: only [`GuideOwnership::Owned`] and `Absent` reach here.
+///
+/// Written as a regular file at exactly that path, never through a link
+/// ([`crate::regular_file::replace`]) — the rule every replacing install member keeps.
 fn write_guide_artifact(jigc_home: &Path, guide: &adapter::GuideTarget) -> std::io::Result<()> {
-    let target = jigc_home.join(&guide.file);
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&target, guide_artifact(guide))
+    crate::regular_file::replace(jigc_home, &guide.file, guide_artifact(guide).as_bytes())
 }
 
 /// Write the binary-provenance stamp under `<root>/.jigc/version` (creating `.jigc/` if
 /// absent). `jigc setup` writes it and store-writing ops (`finalize`) refresh it — a
 /// same-build refresh writes identical bytes, so it is a no-op in the commit.
 ///
+/// **Private to this module, and that is the fence** (the rc.24 fix pass). This is the
+/// *unconditional* replace: it asks only that the path is a regular file's
+/// ([`crate::regular_file::replace`]), never whose bytes are there. `setup` may call it
+/// because `setup` has already asked — its dirty-install guard refuses a stamp that is not
+/// jigc's own unless `--force` consents. Every other door goes through
+/// [`refresh_version_stamp`], which asks the ownership question itself; until it existed
+/// `jigc task finalize` called this function directly and regenerated a hand-edited
+/// `.jigc/version` at exit 0 with no finding. A door outside this module cannot reach the
+/// unconditional write at all.
+///
 /// **The one function in this module whose root is not always jigc_home**, and the caller
 /// decides: `setup` hands it jigc_home like everything else here, while
-/// [`crate::task::refresh_version_stamp`] hands it the **standing checkout**, because the
-/// stamp is a tracked file that rides that door's own commit and `jigc task finalize`
-/// commits where you stand (`DECISIONS.md` 2026-09-23 → the verb class, C2-09). The
-/// parameter is therefore named for what it is — a root — rather than for either answer.
+/// `crate::task`'s stamp refresh hands [`refresh_version_stamp`] the **standing checkout**,
+/// because the stamp is a tracked file that rides that door's own commit and `jigc task
+/// finalize` commits where you stand (`DECISIONS.md` 2026-09-23 → the verb class, C2-09).
+/// The parameter is therefore named for what it is — a root — rather than for either answer.
 ///
 /// **What the split produces, stated rather than left to be rediscovered** (the confirmation
 /// pass, LOW 6): the *reader* is home-bound. [`binary_mismatch_finding`] is asked at
@@ -389,12 +413,109 @@ fn write_guide_artifact(jigc_home: &Path, guide: &adapter::GuideTarget) -> std::
 /// copies converge the moment the worktree's branch merges — and the alternative, writing the
 /// home's copy from a door that commits somewhere else, would stage a file into a commit the
 /// door is not making. The consequence belongs in the record, which is why it is here.
-pub fn write_version_stamp(root: &Path) -> std::io::Result<()> {
-    let path = root.join(VERSION_STAMP_PATH);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+fn write_version_stamp(root: &Path) -> std::io::Result<()> {
+    crate::regular_file::replace(root, VERSION_STAMP_PATH, version_stamp_body().as_bytes())
+}
+
+/// **Why a door that refreshes the stamp left it alone** — what stands at
+/// `<root>/.jigc/version` that is not jigc's to rewrite ([`stamp_standing`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum StampLeft {
+    /// The path, or a directory on the way to it, is not a regular file's: a link, a
+    /// directory, a special file. Writing there would go through or over it.
+    Entry(crate::regular_file::Blocker),
+    /// A regular file that is not jigc's one-line stamp — somebody's own bytes.
+    NotAStamp,
+}
+
+/// Ask what stands at `<root>/.jigc/version` — `None` when it is **jigc's to write**: the
+/// file is absent, or it is a regular file holding jigc's own one-line stamp
+/// ([`version_stamp_is_jigcs`], the oracle `setup`'s dirty-install guard already asks of
+/// this path). Anything else is not jigc's stamp, with the reason.
+///
+/// The entry is asked **without following a link** before a byte is read
+/// ([`crate::regular_file::blocker`]), so a link whose target happens to hold a
+/// stamp-shaped line is still a link: the file behind it is not `.jigc/version`.
+pub(crate) fn stamp_standing(root: &Path) -> Option<StampLeft> {
+    if let Some(blocked) = crate::regular_file::blocker(root, VERSION_STAMP_PATH) {
+        return Some(StampLeft::Entry(blocked));
     }
-    std::fs::write(path, version_stamp_body())
+    match engine::store::home_entry(&root.join(VERSION_STAMP_PATH)) {
+        engine::store::HomeEntry::Free => None,
+        _ if version_stamp_is_jigcs(root) => None,
+        _ => Some(StampLeft::NotAStamp),
+    }
+}
+
+/// **Refresh the stamp at `<root>/.jigc/version` — only where it is jigc's to write**, and
+/// say why not where it is not (the rc.24 fix pass; `design/storage.md` → Store
+/// provenance). The entry point for every door but `setup` itself.
+///
+/// `Ok(None)` — jigc wrote its stamp (identical bytes on a same-build refresh).
+/// `Ok(Some(_))` — what is there is not jigc's stamp and **not a byte was written**: the
+/// caller neither stages the path nor claims a write there, and owes the reader the
+/// advisory ([`stamp_left_finding`]). `Err` is a genuine write fault.
+///
+/// The question is asked here, one statement above the write, rather than taken on a
+/// caller's earlier answer: the write is the only moment at which it is the file being
+/// replaced that answers.
+pub(crate) fn refresh_version_stamp(root: &Path) -> std::io::Result<Option<StampLeft>> {
+    if let Some(left) = stamp_standing(root) {
+        return Ok(Some(left));
+    }
+    write_version_stamp(root).map(|()| None)
+}
+
+/// The stamp writer's finding code — a write failure at `jigc setup`, and the advisory a
+/// refreshing door raises when it leaves the stamp alone ([`stamp_left_finding`]). One
+/// code, because it is one subject: *jigc did not write `.jigc/version`*.
+pub(crate) const VERSION_STAMP_CODE: &str = "setup.version-stamp";
+
+/// The **advisory** a door that refreshes the stamp raises when it left it alone
+/// ([`refresh_version_stamp`]) — `jigc task finalize` today.
+///
+/// **Advisory, and the commit lands.** The alternative the fix pass weighed was to refuse
+/// the finalize. The stamp is provenance: the one check that reads it
+/// (`store-version.binary-mismatch`) is itself advisory and never gates, so a refusal here
+/// would hold the task's whole commit hostage to a file the task did not write, for a
+/// record whose staleness blocks nothing — and would put the agent that happens to be
+/// finalizing in front of a human's file with a route telling it to move it. Leaving the
+/// file, not staging it, and saying so loses nothing and keeps the door usable; the
+/// [`guide_modified_finding`] mold, for the same reason.
+///
+/// It rides [`VERSION_STAMP_CODE`] rather than a new code, and keys at `null` like every
+/// `setup.*` finding: its subject is the store's one stamp, so at most one instance can
+/// reach an output (`engine::finding::is_declared_singleton`).
+pub(crate) fn stamp_left_finding(left: &StampLeft) -> Finding {
+    let (state, act) = match left {
+        StampLeft::Entry(blocked) => (blocked.describe(), blocked.clearing_act()),
+        StampLeft::NotAStamp => (
+            format!(
+                "`{VERSION_STAMP_PATH}` does not hold jigc's stamp — a single \
+                 `{VERSION_STAMP_KEY} <version>` line — so what is there is not jigc's to \
+                 replace"
+            ),
+            format!("move the file at `{VERSION_STAMP_PATH}` out of the way"),
+        ),
+    };
+    Finding::graded(
+        Severity::Advisory,
+        VERSION_STAMP_CODE,
+        format!(
+            "{state}; jigc left it untouched and out of this commit rather than write its \
+             binary-provenance stamp there, so the stamp does not record jigc {running} \
+             for this store",
+            running = env!("CARGO_PKG_VERSION"),
+        ),
+        None,
+        Some(
+            format!(
+                "{act}, then run `jigc setup` — it writes jigc's stamp there again; or leave \
+                 it, and jigc keeps leaving it alone and saying so"
+            )
+            .into(),
+        ),
+    )
 }
 
 /// Read the recorded stamp version from `<jigc_home>/.jigc/version`, or `None` when the
@@ -1317,6 +1438,28 @@ fn install(
         None => None,
     };
 
+    // 0d′. **No replacing write goes through a link — asked before the first write, and
+    //      before the dirty gate** (the rc.24 fix pass; `DECISIONS.md` → 2026-10-04, the
+    //      symlink fork). Ahead of 0e for two reasons. A *committed* link is clean against
+    //      `HEAD`, so the dirty gate has nothing to ask about it and `--force` nothing to
+    //      consent to — that was the loss cell, exit 0 with the link's target regenerated.
+    //      And an *uncommitted* link must not draw the dirty gate's route, two of whose
+    //      three arms do not work for one: *commit it* commits the link and lands in the
+    //      first cell, and `--force` is a consent to replace a file, not to follow one. So
+    //      it is not consulted: `force` is deliberately not read here.
+    if let Some(refusal) = replaced_path_refusal(
+        jigc_home,
+        &install_tracked_paths(
+            &line_file,
+            &allowlist_file,
+            is_fresh_repo(jigc_home),
+            None,
+            guide_file.as_deref(),
+        ),
+    ) {
+        return Err(refusal);
+    }
+
     // 0e. **The gate, before the first write** (M51 Increment 3, corrected by its completion
     //     audit). The predicate is [`InstallSubject`]'s pre-write worktree-vs-`HEAD` answer
     //     alone; the conjunction that also required the path to be *still* dirty afterwards
@@ -1768,12 +1911,15 @@ fn install_tracked_paths(
     guide: Option<&str>,
 ) -> Vec<InstallMember> {
     use InstallPathDisposition::{ExemptWhenJigcOwned, Refuses};
-    use InstallWriter::{Preserves, Replaces};
+    use InstallWriter::Preserves;
     let member = |path: &str, disposition, writer| InstallMember {
         path: path.to_string(),
         disposition,
         writer,
     };
+    // A replacing writer names the code its refusal rides — the member's own existing
+    // write-failure code, the one [`write_install_span`] maps that writer's errors to.
+    let replaces = |refusal| InstallWriter::Replaces { refusal };
     let mut members = vec![
         // `CLAUDE.md` (the bootstrap reference host) — `adapter::inject_reference` appends
         // one section and leaves every existing byte in place.
@@ -1782,20 +1928,28 @@ fn install_tracked_paths(
         // hook, deny floor); a file they cannot parse is refused before the first write
         // (`adapter::check_settings_merge`).
         member(allowlist_file, Refuses, Preserves),
-        // `adapter::write_bootstrap_file` — an unconditional `fs::write` of the canonical
+        // `adapter::write_bootstrap_file` — an unconditional rewrite of the canonical
         // body, with no oracle that could call a human's prose jigc's own.
-        member(".jigc/AGENT.md", Refuses, Replaces),
+        member(".jigc/AGENT.md", Refuses, replaces("setup.write-bootstrap")),
         // `crate::gitignore::ensure` — amended to the union, the user's lines kept.
         member(".jigc/.gitignore", Refuses, Preserves),
         // The binary-provenance stamp, rewritten whole; exempt only while its one line is
         // jigc's own shape ([`version_stamp_is_jigcs`]).
-        member(VERSION_STAMP_PATH, ExemptWhenJigcOwned, Replaces),
+        member(
+            VERSION_STAMP_PATH,
+            ExemptWhenJigcOwned,
+            replaces(VERSION_STAMP_CODE),
+        ),
         // `adapter::init_project_layer` — written empty, over whatever is there.
-        member(".jigc/config/.gitkeep", Refuses, Replaces),
+        member(
+            ".jigc/config/.gitkeep",
+            Refuses,
+            replaces("setup.init-project-layer"),
+        ),
         // [`write_compose_marker`] — parse-mutate-serialize through the YAML value model:
         // the keys and the `packs:` list survive, a **comment does not**, so for the bytes
         // an adopter authored this writer replaces the file ([`InstallWriter::Replaces`]).
-        member(".jigc/config/packs.yaml", Refuses, Replaces),
+        member(PACKS_FILE_REL, Refuses, replaces("setup.compose-marker")),
     ];
     // The root `.gitignore` is committed **only** when setup itself seeded it on the
     // fresh-repo path — never an established repo's pre-existing `.gitignore` (which setup
@@ -1810,7 +1964,11 @@ fn install_tracked_paths(
     // [`write_guide_artifact`] rewrites it whole; a copy that is not jigc's own never
     // reaches this list ([`guide_ownership`], decided before any write).
     if let Some(guide) = guide {
-        members.push(member(guide, ExemptWhenJigcOwned, Replaces));
+        members.push(member(
+            guide,
+            ExemptWhenJigcOwned,
+            replaces("setup.write-guide"),
+        ));
     }
     // The `pre-commit` hook, iff git can track it from this working tree.
     // [`install_precommit_hook`] keeps a foreign hook verbatim and splices jigc's block in.
@@ -1864,7 +2022,21 @@ pub enum InstallWriter {
     /// The writer puts its own content at the path, and what was there is gone — an
     /// unconditional rewrite, or a round-trip that cannot carry everything a human can
     /// write into the file (a YAML comment).
-    Replaces,
+    ///
+    /// **So the entry it opens has to be the entry it means, and the variant carries what
+    /// it answers with when it is not** (the rc.24 fix pass; `DECISIONS.md` → 2026-10-04,
+    /// the symlink fork). A replacing writer that opens *through* a link replaces the
+    /// link's target — a file outside the install, in no commit — so every member declared
+    /// here is refused, before the install's first write, when its path or a directory on
+    /// the way to it is anything but a regular file's ([`replaced_path_refusal`]). `refusal`
+    /// is the finding code that refusal rides: the member's **existing** write-failure
+    /// code, the one [`write_install_span`] maps the same writer's errors to. It is a field
+    /// and not a lookup beside the table for the reason the struct has no default — a
+    /// replacing member cannot be declared without it.
+    Replaces {
+        /// The `setup.*` write-failure code this member's refusal is raised under.
+        refusal: &'static str,
+    },
 }
 
 /// How one install path behaves under the dirty-install guard — the disposition every
@@ -1914,8 +2086,16 @@ pub fn install_path_dispositions(
 /// exactly one non-blank line, and that line a non-empty `jigc-version:` record — the
 /// shape [`version_stamp_body`] writes and nothing else. Fails **closed** (unreadable,
 /// non-UTF-8, extra lines ⇒ `false`), so anything that could be a human's prose refuses.
+///
+/// **Asked of a regular file only** (the rc.24 fix pass): the entry is read without
+/// following a link first, so a symlink whose target happens to hold a stamp-shaped line
+/// is not jigc's stamp — the file behind it is not `.jigc/version`.
 fn version_stamp_is_jigcs(jigc_home: &Path) -> bool {
-    let Ok(text) = std::fs::read_to_string(jigc_home.join(VERSION_STAMP_PATH)) else {
+    let path = jigc_home.join(VERSION_STAMP_PATH);
+    if engine::store::home_entry(&path) != engine::store::HomeEntry::RegularFile {
+        return false;
+    }
+    let Ok(text) = std::fs::read_to_string(path) else {
         return false;
     };
     let mut lines = text.lines().filter(|line| !line.trim().is_empty());
@@ -1927,6 +2107,80 @@ fn version_stamp_is_jigcs(jigc_home: &Path) -> bool {
             .trim()
             .strip_prefix(VERSION_STAMP_KEY)
             .is_some_and(|version| !version.trim().is_empty())
+}
+
+/// **The refusal a replacing install member draws when its path is not a regular file's**
+/// — or `None` when every replacing member among `members` will be written as a regular
+/// file at exactly its path (the rc.24 fix pass; `DECISIONS.md` → 2026-10-04, the symlink
+/// fork).
+///
+/// It reads the **table** ([`InstallWriter::Replaces`]), not a list of paths: a member
+/// declared replacing is asked the day it is declared, under the code its declaration
+/// carries. The members whose writer *preserves* are not asked, and that is the rule rather
+/// than an omission — a merge that goes through a link changes what the link points at by
+/// exactly what it would have changed in a regular file, and a `CLAUDE.md` that is a link
+/// to a shared file is an ordinary thing for a repository to have. Nor is a path git
+/// ignores excused: an ignored link's target is written through all the same, so this asks
+/// the members themselves and never the dirty gate's candidates, which drop an ignored
+/// path.
+///
+/// **One finding, naming every blocked path.** The door answers with a single finding
+/// (`setup.*` is a declared singleton), so it is raised under the *first* blocked member's
+/// code, in install order, and its message and route carry all of them — the route is
+/// followed once. A directory on the way that several members share (`.jigc`,
+/// `.jigc/config`) is named once.
+///
+/// **The route is to remove the entry, and it says nothing of `--force`'s consent arm
+/// because there is none.** Putting a regular file of the reader's own there instead is not
+/// offered as an arm: at three of these paths it draws the dirty-install refusal on the
+/// re-run, and a route whose own act leads into a second refusal is the trap this check
+/// was written to close.
+///
+/// **And it says to commit the removal where git tracks the entry**, which driving the
+/// route found it owed: a *committed* link removed and left uncommitted is a deleted
+/// tracked path — dirty against `HEAD` — so the re-run wrote the install and its
+/// commit-time backstop then refused over that very path, with the dirty-install route
+/// pointing at jigc's own freshly written file. With the removal committed the path is
+/// clean and absent, and one re-run installs.
+fn replaced_path_refusal(jigc_home: &Path, members: &[InstallMember]) -> Option<Finding> {
+    let mut code = None;
+    let mut blocked: Vec<crate::regular_file::Blocker> = Vec::new();
+    for member in members {
+        let InstallWriter::Replaces { refusal } = member.writer else {
+            continue;
+        };
+        let Some(blocker) = crate::regular_file::blocker(jigc_home, &member.path) else {
+            continue;
+        };
+        code.get_or_insert(refusal);
+        if !blocked.iter().any(|seen| seen.at == blocker.at) {
+            blocked.push(blocker);
+        }
+    }
+    let code = code?;
+    let states: Vec<String> = blocked.iter().map(|b| b.describe()).collect();
+    let acts: Vec<String> = blocked.iter().map(|b| b.clearing_act()).collect();
+    Some(Finding::block(
+        code,
+        format!(
+            "{} — `jigc setup` replaces the file at {} whole, and writing there would go \
+             through or over an entry jigc did not put there, replacing whatever it leads \
+             to. Nothing was installed and no install commit was made",
+            states.join("; "),
+            if blocked.len() == 1 {
+                "that path"
+            } else {
+                "each of those paths"
+            },
+        ),
+        format!(
+            "{} — committing the removal where git tracks the entry — then re-run `jigc \
+             setup`: it writes its own regular file there and never touches what a link \
+             pointed at. `--force` does not change this: it consents to replacing a file, \
+             not to following one",
+            acts.join(", "),
+        ),
+    ))
 }
 
 /// Whether the bytes currently at `member`'s path are jigc's own — the **one** thing that
@@ -2088,7 +2342,7 @@ fn committable_hook_path(jigc_home: &Path, hook_file: &Path) -> Option<String> {
 /// regenerates several of its own artifacts whole, so a pre-existing difference there is
 /// overwritten by the install and the commit carries `setup`'s canonical bytes anyway.
 /// **That conjunction is struck with its falsifying datum** (the M51 completion audit):
-/// [`crate::adapter::write_bootstrap_file`] is an unconditional `fs::write`, so an
+/// [`crate::adapter::write_bootstrap_file`] is an unconditional rewrite, so an
 /// adopter's uncommitted `.jigc/AGENT.md` prose made the file match `HEAD` again by the
 /// time the second leg was asked — the set came back **empty**, `setup` exited 0, `git
 /// status` was empty, and `git log --all -S` found the bytes in no object. *"The commit
@@ -4797,6 +5051,10 @@ fn staged_prose_finding(staged: &[(String, Vec<String>)], owners: &[Option<Strin
 /// The compose-marker key `pack::read_compose_marker` reads from `packs.yaml`.
 const COMPOSE_MARKER_KEY: &str = "compose-embedded-methodology";
 
+/// The project layer's pack list, repo-relative — the file [`write_compose_marker`]
+/// round-trips, and the install member of the same path ([`install_tracked_paths`]).
+const PACKS_FILE_REL: &str = ".jigc/config/packs.yaml";
+
 /// Write the `compose-embedded-methodology: true` marker into the project layer's
 /// `<jigc_home>/.jigc/config/packs.yaml` (step 2b of [`install`]).
 ///
@@ -4823,9 +5081,22 @@ const COMPOSE_MARKER_KEY: &str = "compose-embedded-methodology";
 fn write_compose_marker(jigc_home: &Path) -> std::io::Result<()> {
     use serde_yaml_ng::{Mapping, Value};
 
-    let config_dir = jigc_home.join(".jigc").join("config");
-    std::fs::create_dir_all(&config_dir)?;
-    let path = config_dir.join("packs.yaml");
+    // **Asked before the read, without following a link** (the rc.24 fix pass). The
+    // round-trip below reads the file and writes it back, so a link at `packs.yaml` — or a
+    // linked `config/` — had it parse and re-emit a file jigc does not own, comments
+    // dropped. The write refuses the same entry; asking here keeps the read from going
+    // through it too, and keeps a refused run from creating the directory.
+    if let Some(blocked) = crate::regular_file::blocker(jigc_home, PACKS_FILE_REL) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "{} — jigc rewrites this file whole and does not read or write it through \
+                 anything but a regular file",
+                blocked.describe()
+            ),
+        ));
+    }
+    let path = jigc_home.join(PACKS_FILE_REL);
 
     // Parse the existing file (preserving its content) or start from an empty
     // mapping. A malformed existing `packs.yaml` is a real authoring fault — surface
@@ -4856,7 +5127,7 @@ fn write_compose_marker(jigc_home: &Path) -> std::io::Result<()> {
 
     // Idempotent: write only when the bytes change, so a second setup touches nothing.
     if std::fs::read_to_string(&path).ok().as_deref() != Some(rendered.as_str()) {
-        std::fs::write(&path, rendered)?;
+        crate::regular_file::replace(jigc_home, PACKS_FILE_REL, rendered.as_bytes())?;
     }
     Ok(())
 }

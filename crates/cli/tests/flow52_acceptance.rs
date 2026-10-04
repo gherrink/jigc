@@ -1262,9 +1262,10 @@ fn the_install_commit_refuses_over_bytes_it_did_not_write_and_stays_inert_otherw
 /// The blocking code a restore that meets bytes jigc did not write mints.
 const ROLLBACK_CONFLICT: &str = "finalize.rollback-conflict";
 
-/// Bytes no real `jigc` build stamps, so the stamp refresh is guaranteed to write something
-/// different and the pre-image entry is live rather than a byte no-op.
-const STALE_STAMP: &str = "0.0.0-flow52-stale-stamp\n";
+/// A version no real `jigc` build stamps, so the stamp refresh is guaranteed to write
+/// something different and the pre-image entry is live rather than a byte no-op. In jigc's
+/// own stamp shape: the refresh rewrites only a stamp that is jigc's (the rc.24 fix pass).
+const STALE_STAMP: &str = "jigc-version: 0.0.0-flow52-stale-stamp\n";
 
 /// The user's own uncommitted lines in `.jigc/.gitignore` — appended **after** the commit,
 /// so they exist in no git object. That is what makes them unrecoverable if a rollback

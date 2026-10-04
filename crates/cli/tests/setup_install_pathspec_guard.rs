@@ -1100,6 +1100,11 @@ fn force_over_a_whole_rewrite_path_says_what_it_replaced() {
 /// **Five preserve and five replace** (the rc.24 fix pass, `(R1, F1)`). The writer column
 /// is what the unborn-`HEAD` exemption reads, and cell (23) holds each row of it to what
 /// the real writer does — this cell pins the declaration, that one pins that it is true.
+///
+/// **A replacing row also names the code its refusal rides** when its path is not a
+/// regular file's (the rc.24 fix pass, the symlink fork): each is the member's *existing*
+/// write-failure code, pinned here so the rule could not mint one, and driven member by
+/// member in `replacing_writers_never_follow.rs`.
 #[test]
 fn the_install_path_class_is_dispositioned_member_by_member() {
     use cli::setup::InstallPathDisposition as D;
@@ -1118,24 +1123,54 @@ fn the_install_path_class_is_dispositioned_member_by_member() {
             (".claude/settings.json", D::Refuses, W::Preserves),
             // **Rewritten whole** (`adapter::write_bootstrap_file`, an unconditional
             // `fs::write`) and authorable — the M51 completion audit's first loss cell.
-            (".jigc/AGENT.md", D::Refuses, W::Replaces),
+            (
+                ".jigc/AGENT.md",
+                D::Refuses,
+                W::Replaces {
+                    refusal: "setup.write-bootstrap",
+                },
+            ),
             // Amended to the union (M51 Increment 4) — the user's extra lines survive.
             (".jigc/.gitignore", D::Refuses, W::Preserves),
             // Machine-owned provenance stamp; re-stamping IS the documented
             // `store-version.binary-mismatch` recovery, so the oracle is its shape.
-            (".jigc/version", D::ExemptWhenJigcOwned, W::Replaces),
+            (
+                ".jigc/version",
+                D::ExemptWhenJigcOwned,
+                W::Replaces {
+                    refusal: "setup.version-stamp",
+                },
+            ),
             // An empty marker file, rewritten over whatever is there.
-            (".jigc/config/.gitkeep", D::Refuses, W::Replaces),
+            (
+                ".jigc/config/.gitkeep",
+                D::Refuses,
+                W::Replaces {
+                    refusal: "setup.init-project-layer",
+                },
+            ),
             // **Parse-mutate-serialize**, so a comment is dropped by the round-trip — the
             // audit's second loss cell, and the reason it cannot be found by looking at
             // whether the file is clean afterwards. The keys survive; the bytes do not, so
             // for the guard this writer replaces.
-            (".jigc/config/packs.yaml", D::Refuses, W::Replaces),
+            (
+                ".jigc/config/packs.yaml",
+                D::Refuses,
+                W::Replaces {
+                    refusal: "setup.compose-marker",
+                },
+            ),
             // Merge-never-clobber, fresh-repo seed only.
             (".gitignore", D::Refuses, W::Preserves),
             // M48's refuse-to-clobber already dropped a user-modified copy from the
             // pathspec, so a guide that reaches the guard is jigc's by construction.
-            (GUIDE, D::ExemptWhenJigcOwned, W::Replaces),
+            (
+                GUIDE,
+                D::ExemptWhenJigcOwned,
+                W::Replaces {
+                    refusal: "setup.write-guide",
+                },
+            ),
             // A foreign `pre-commit` is preserved verbatim and jigc's block spliced in.
             (HOOK, D::Refuses, W::Preserves),
         ],
@@ -1320,7 +1355,7 @@ fn every_install_member_keeps_its_declared_promise_on_an_unborn_head() {
                      belongs under `Replaces`"
                 );
             }
-            W::Replaces => {
+            W::Replaces { .. } => {
                 assert_refused_unborn(repo, &out, path);
                 assert_eq!(
                     read(repo, path),
@@ -1405,10 +1440,35 @@ fn an_orphan_branch_with_an_emptied_index_is_the_same_cell() {
 /// Both shapes, because the pre-write filter asked `exists()`, which follows the link: a
 /// **dangling** one read as *nothing here*, dropped out of the gate, and the writer then
 /// created its target before the commit-time backstop refused over the link.
+///
+/// **The refusal is the link's own, and it answers ahead of this guard** (the rc.24 fix
+/// pass, the symlink fork). This cell first pinned `setup.dirty-install-path` here, whose
+/// route names *commit them* and `--force`: committing a link commits the link, after
+/// which the re-run read a clean path and wrote through it, and `--force` wrote through it
+/// outright. A link at a replacing member is refused before the dirty question is asked,
+/// under the member's write-failure code, with a route that fits a link
+/// (`replacing_writers_never_follow.rs` drives the class and the committed-link cell).
 #[cfg(unix)]
 #[test]
 fn an_untracked_symlink_at_a_replacing_member_refuses_and_its_target_is_untouched() {
     use std::os::unix::fs::symlink;
+
+    /// The link refusal on an unborn `HEAD`: exit 1 under the bootstrap writer's code, no
+    /// commit, nothing staged — and not the dirty-install refusal.
+    fn assert_link_refused(repo: &Path, out: &std::process::Output) {
+        let said = said(out);
+        assert_eq!(out.status.code(), Some(1), "a link refuses: {said}");
+        assert!(
+            said.contains("setup.write-bootstrap") && !said.contains(DIRTY_CODE),
+            "under the member's write-failure code, ahead of the dirty-install guard: {said}"
+        );
+        assert!(!head_is_born(repo), "the refusal minted no commit");
+        let status = git(repo, &["status", "--porcelain"]);
+        assert!(
+            status.lines().all(|line| line.starts_with("??")),
+            "and staged nothing: {status}"
+        );
+    }
 
     // (a) A live link: the target holds the adopter's notes.
     let (repo, home) = unborn_repo("unborn-link");
@@ -1418,7 +1478,7 @@ fn an_untracked_symlink_at_a_replacing_member_refuses_and_its_target_is_untouche
     symlink("../notes/agent.md", repo.join(".jigc/AGENT.md")).expect("plant the link");
 
     let out = jigc(repo, home, &["setup"]);
-    assert_refused_unborn(repo, &out, ".jigc/AGENT.md");
+    assert_link_refused(repo, &out);
     assert_eq!(
         read(repo, "notes/agent.md"),
         "USERMARK the notes we keep\n",
@@ -1440,7 +1500,7 @@ fn an_untracked_symlink_at_a_replacing_member_refuses_and_its_target_is_untouche
     symlink("../notes/absent.md", repo.join(".jigc/AGENT.md")).expect("plant the link");
 
     let out = jigc(repo, home, &["setup"]);
-    assert_refused_unborn(repo, &out, ".jigc/AGENT.md");
+    assert_link_refused(repo, &out);
     assert!(
         !repo.join("notes/absent.md").exists(),
         "the gate refused before the writer could create the link's target"

@@ -214,7 +214,11 @@ pub struct FindingKey {
 /// - `store-version.binary-mismatch` — its subject is **the store**, of which a repo has one.
 /// - every `setup.*` / `uninstall.*` — `setup::run` / `run_uninstall` are `Result<_, Finding>`
 ///   (fail-fast, **exactly one finding per invocation**; no `Vec<Finding>` anywhere), so two
-///   instances of one code can never coexist in one output.
+///   instances of one code can never coexist in one output. One of them has a second
+///   producer outside those functions: `setup.version-stamp` is also the advisory
+///   `jigc task finalize` raises when it leaves a `.jigc/version` that is not jigc's own
+///   stamp unwritten. Its subject there is the store's one stamp, asked once per finalize —
+///   `store-version.binary-mismatch`'s reason — so it is still at most one instance.
 /// - every `structural-target.*` / `slot-fill-target.*` — `StructuralTarget::parse` /
 ///   `SlotFillTarget::parse` are `Result<_, Finding>` (fail-fast, exactly one finding per
 ///   invocation) and every caller bails the verb on the first error, so two instances of

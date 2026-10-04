@@ -187,8 +187,11 @@ const ROW_READ_JOINS: &[(&str, usize, &str)] = &[(
 const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
     (
         "crates/cli/src/adapter.rs",
-        1,
-        "the adapter profile's config dir gets a `.gitkeep`, not a working-area file",
+        0,
+        "**[Corrected 2026-10-04 (the rc.24 fix pass, the symlink fork).** This row read `1` \
+         and counted `init_project_layer`'s `.gitkeep` off the config dir. That write goes \
+         through `crate::regular_file::replace` now, which takes the repo-relative path \
+         whole and refuses a link on the way to it, so the site joins nothing.**]",
     ),
     (
         "crates/cli/src/config.rs",
@@ -226,13 +229,16 @@ const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/cli/src/setup.rs",
-        5,
-        "two `pre-commit` hook paths off the hooks dir, `packs.yaml` off the config dir \
-         (the `doc-code` probe binary off the bin dir retired at M54 Increment 2 / T5, when \
-         the probe moved inside `jigc`), and — since M52 Increment 4 / T5 — \
-         the two receivers `workbench_foreign_areas` builds its subject FROM: \
-         `.jigc/<tasks|milestones>` and `.jigc/displaced`, which are the directories that \
-         *hold* working areas (and the parking home) rather than working areas themselves",
+        4,
+        "two `pre-commit` hook paths off the hooks dir (the `doc-code` probe binary off the \
+         bin dir retired at M54 Increment 2 / T5, when the probe moved inside `jigc`), and — \
+         since M52 Increment 4 / T5 — the two receivers `workbench_foreign_areas` builds its \
+         subject FROM: `.jigc/<tasks|milestones>` and `.jigc/displaced`, which are the \
+         directories that *hold* working areas (and the parking home) rather than working \
+         areas themselves. **[Corrected 2026-10-04 (the rc.24 fix pass, the symlink fork).** \
+         This row read `5` and counted `write_compose_marker`'s `packs.yaml` off the config \
+         dir; that writer names the repo-relative path whole for \
+         `crate::regular_file::replace` now, and joins nothing.**]",
     ),
     (
         "crates/cli/src/rollback.rs",

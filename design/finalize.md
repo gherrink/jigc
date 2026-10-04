@@ -129,6 +129,7 @@ The agent has already `git add`ed its own code edits as it worked (the **agent-s
 
 - every promoted doc (canonical paths from phase 4),
 - on a first commit, the project config layer (`.jigc/config`, `.jigc/.gitignore`),
+- the `.jigc/version` stamp, refreshed to the running build first — **where it is jigc's to write**. What stands at that path is otherwise left unwritten and **unstaged**, and the landed envelope says so in one advisory ([storage.md](storage.md) → Store provenance; the rc.24 fix pass): this phase never sweeps bytes it does not own, and a hand-edited stamp or a link there is not jigc's,
 - since M45, every **recorded owner-artifact path** — the `owned-location` field values on the task's working-area docs (below).
 
 The commit set is therefore **the git index** — the agent's staged code plus jigc's just-staged docs/config — committed whole (no curated pathspec, so an agent-staged owner-artifact like `completions/artifacts/**` rides along). finalize **never** runs `git add --all`: untracked and unstaged working-tree changes stay out of the commit and are surfaced (see [Dirty-tree policy](#dirty-tree-policy)). A task whose composed workflow includes `step:finalize-doc-only` is the one exception: its commit is path-scoped to its own docs and owner-artifacts, never the index ([The doc-only arm](#the-doc-only-arm)).

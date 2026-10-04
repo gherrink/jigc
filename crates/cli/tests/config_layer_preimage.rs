@@ -153,9 +153,12 @@ const CELLS: &[Cell] = &[
 // Fixture
 // ---------------------------------------------------------------------------
 
-/// Bytes no real `jigc` build stamps, so the refresh is guaranteed to write a different
-/// `.jigc/version` and the entry is live rather than a byte no-op.
-const STALE_STAMP: &str = "0.0.0-fixture-stale-stamp\n";
+/// A version no real `jigc` build stamps, so the refresh is guaranteed to write a different
+/// `.jigc/version` and the entry is live rather than a byte no-op. **In jigc's own stamp
+/// shape**, because since the rc.24 fix pass the refresh rewrites only a stamp that is
+/// jigc's — a file holding anything else is left untouched and unstaged, which would make
+/// this fixture a no-op of a different kind (`replacing_writers_never_follow.rs`).
+const STALE_STAMP: &str = "jigc-version: 0.0.0-fixture-stale-stamp\n";
 
 /// The user's own two lines in `.jigc/.gitignore` — **uncommitted**, which is what makes the
 /// residue observable in `git status` and the loss unrecoverable from any git object.

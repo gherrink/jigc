@@ -173,9 +173,11 @@ fn adr_destination(slug: &str) -> String {
 fn a_hook_rejected_finalize_restores_the_staged_config_layer() {
     let repo = TempDir::new("cfg");
     let home = TempDir::new("home");
-    // Bytes no real `jigc` build stamps — so `refresh_version_stamp` is guaranteed to stage a
-    // different `.jigc/version` blob, making the leak observable.
-    let stale_stamp = "0.0.0-fixture-stale-stamp\n";
+    // A version no real `jigc` build stamps — so `refresh_version_stamp` is guaranteed to
+    // stage a different `.jigc/version` blob, making the leak observable. In jigc's own stamp
+    // shape: the refresh rewrites only a stamp that is jigc's (the rc.24 fix pass), and a
+    // file holding anything else is left untouched and unstaged.
+    let stale_stamp = "jigc-version: 0.0.0-fixture-stale-stamp\n";
     init_repo(repo.path(), stale_stamp);
 
     // Precondition: the committed stamp is the stale bytes, and `.jigc/.gitignore` is untracked
@@ -301,7 +303,7 @@ fn a_hook_rejected_finalize_restores_the_staged_config_layer() {
 fn a_hook_rejected_finalize_restores_a_staged_blob_at_a_promotion_destination() {
     let repo = TempDir::new("promo");
     let home = TempDir::new("home");
-    let stale_stamp = "0.0.0-fixture-stale-stamp\n";
+    let stale_stamp = "jigc-version: 0.0.0-fixture-stale-stamp\n";
     init_repo(repo.path(), stale_stamp);
 
     let intent = "record the cache decision";

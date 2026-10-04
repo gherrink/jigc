@@ -766,12 +766,13 @@ pub fn bootstrap_file() -> String {
 /// bootstrap). Fully CLI-owned: rewritten **whole** on every run, so a re-run is
 /// byte-identical and the content stays rot-proof (the *structure-is-generated*
 /// discipline applied to the floor). Regenerated on upgrade.
+///
+/// **As a regular file at exactly that path** ([`crate::regular_file::replace`]; the rc.24
+/// fix pass). It was an unconditional `fs::write`, which opens its destination through
+/// whatever is there: a symlink at `.jigc/AGENT.md` had the link's *target* regenerated — a
+/// file outside the install footprint, and outside the repository when the link led there.
 pub fn write_bootstrap_file(repo_root: &Path) -> std::io::Result<()> {
-    let target = repo_root.join(BOOTSTRAP_FILE_REL);
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&target, bootstrap_file())
+    crate::regular_file::replace(repo_root, BOOTSTRAP_FILE_REL, bootstrap_file().as_bytes())
 }
 
 /// Idempotently inject the bare `@.jigc/AGENT.md` import line into the host
@@ -1333,10 +1334,14 @@ fn write_settings(target: &Path, settings: &serde_json::Value) -> std::io::Resul
 /// lands in the install commit, and the install summary has to say so (M51 Increment 4 /
 /// T2). The `.gitkeep` needs no such report — it is jigc's own empty marker at a path
 /// nothing else owns.
+///
+/// **Which is why it is written as a regular file and never through a link**
+/// ([`crate::regular_file::replace`]; the rc.24 fix pass). The marker is written *empty*
+/// over whatever is there, so a symlink at `.jigc/config/.gitkeep` — or a linked
+/// `.jigc/config` — had this truncate a file jigc does not own, two lines above the
+/// `ensure` call that has refused a symlinked `.gitignore` since M51.
 pub fn init_project_layer(repo_root: &Path) -> std::io::Result<crate::gitignore::Ensured> {
-    let config_dir = repo_root.join(".jigc").join("config");
-    std::fs::create_dir_all(&config_dir)?;
-    std::fs::write(config_dir.join(".gitkeep"), b"")?;
+    crate::regular_file::replace(repo_root, PROJECT_LAYER_KEEP_REL, b"")?;
 
     crate::gitignore::ensure(&repo_root.join(".jigc"))
 }
@@ -1356,6 +1361,10 @@ fn contains_import_line(content: &str) -> bool {
 /// dir `.jigc/config/` so the cascade loader never trips on a markdown file
 /// (`DECISIONS.md` 2026-05-31 → adapter install reworked).
 const BOOTSTRAP_FILE_REL: &str = ".jigc/AGENT.md";
+
+/// The project layer's tracked marker (`.jigc/config/.gitkeep`), repo-relative — the empty
+/// file [`init_project_layer`] writes so git keeps the otherwise empty `config/` directory.
+const PROJECT_LAYER_KEEP_REL: &str = ".jigc/config/.gitkeep";
 
 /// The bare `@`-import line injected into the always-loaded file — a Claude Code
 /// import pointing at the managed bootstrap file. The whole floor in `CLAUDE.md`.

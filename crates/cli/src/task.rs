@@ -3641,6 +3641,28 @@ impl TaskArea {
             })
             .collect();
 
+        // **What stands at `.jigc/version`, asked once for the two arms whose stage refreshes
+        // it** (the rc.24 fix pass; `design/storage.md` → Store provenance). The stage
+        // rewrote the stamp unconditionally: a hand-edited `.jigc/version` was regenerated
+        // at exit 0 with the bytes in no commit, and a link there was written through. The
+        // stage now leaves anything that is not jigc's own stamp alone, unwritten and
+        // unstaged ([`refresh_version_stamp`]) — and a door that skips a write it used to
+        // make says so: one advisory, in the report both the forecast and the landed
+        // envelope render, so `--dry-run` forecasts what the commit will leave out.
+        //
+        // The amend and doc-only arms stage no config layer and refresh no stamp, so they
+        // have nothing to say about it. The answer here is the *report's*; the write asks
+        // the same oracle again where it writes, so no byte moves on this answer.
+        let stamp_left = if amend.is_none() && !doc_only {
+            crate::setup::stamp_standing(&self.repo_root)
+        } else {
+            None
+        };
+        if let Some(left) = &stamp_left {
+            report.findings.push(crate::setup::stamp_left_finding(left));
+        }
+        let stamp_staged = stamp_left.is_none();
+
         // B1 dirty-tree sweep — `--dry-run` surfaces the commit file-set and stops, with no
         // commit and no destructive side effect. It is placed BEFORE the migration review
         // gate: a dry-run commits nothing, so `--approve` must never be required. The plan
@@ -3661,7 +3683,7 @@ impl TaskArea {
                 return self.blocked(carried_findings, format);
             }
             let (mut included, left_out) =
-                self.predict_manifest(&plan, staged_migration, doc_only)?;
+                self.predict_manifest(&plan, staged_migration, doc_only, stamp_staged)?;
             // Reached only under a declared `--carry-staged` or an empty carried set, so
             // the label can no longer claim a consent this run never carried.
             relabel_carried(&mut included, &carried_paths);
@@ -3822,7 +3844,8 @@ impl TaskArea {
         // which stream carries this run's document is not known until the commit has been
         // attempted, and on a reject the document is stderr's ([`emit_or_defer`]).
         let mut deferred_advisories = String::new();
-        let (_, pending_left_out) = self.predict_manifest(&plan, staged_migration, doc_only)?;
+        let (_, pending_left_out) =
+            self.predict_manifest(&plan, staged_migration, doc_only, stamp_staged)?;
         // The model this run is on, so the print describes the commit it is about to make
         // rather than the ordinary one (the F-10 review's MEDIUM-3). Read off the same `amend`
         // marker and `doc_only` answer `stage` is chosen from three statements below, so the
@@ -4176,6 +4199,7 @@ impl TaskArea {
         plan: &engine::finalize::FinalizePlan,
         staged_migration: bool,
         doc_only: bool,
+        stamp_staged: bool,
     ) -> Result<(Vec<render::ManifestEntry>, Vec<render::ManifestEntry>)> {
         use render::{ManifestEntry, ManifestKind};
 
@@ -4260,10 +4284,15 @@ impl TaskArea {
             promoted.iter().map(String::as_str).collect();
         // The stage's own pathspecs, guarded exactly as it guards them — except the version
         // stamp, which `stage_index_honoring` REFRESHES before the existence guard, so it is
-        // present at stage time whatever this prediction sees now.
+        // present at stage time whatever this prediction sees now. **Where the stamp is
+        // jigc's to refresh** (`stamp_staged`): what stands at that path otherwise is left
+        // unwritten and unstaged, so it is predicted by its own porcelain column like any
+        // other path the stage does not own.
         let mut jigc_staged =
             existing_pathspecs(&self.repo_root, &[".jigc/config", ".jigc/.gitignore"]);
-        jigc_staged.push(crate::setup::VERSION_STAMP_PATH.to_owned());
+        if stamp_staged {
+            jigc_staged.push(crate::setup::VERSION_STAMP_PATH.to_owned());
+        }
         let mut included: Vec<ManifestEntry> = Vec::new();
         let mut left_out: Vec<ManifestEntry> = Vec::new();
         for (code, path) in git_status_entries(&self.repo_root)? {
@@ -5527,19 +5556,10 @@ fn promote(
 /// destination is rewritten **in place** (same inode, so a hard link or an open reader sees
 /// the new bytes), and it takes the **source's permission bits**.
 fn copy_regular(source: &Path, dest: &Path) -> std::io::Result<()> {
-    use std::os::unix::fs::OpenOptionsExt as _;
     let mut from = std::fs::File::open(source)?;
-    let mut to = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(dest)?;
-    if !to.metadata()?.is_file() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "the destination is not a regular file",
-        ));
-    }
+    // The open is [`crate::regular_file::open_no_follow`] — one home for it since the
+    // install's replacing writers and the stamp refresh took the same rule.
+    let mut to = crate::regular_file::open_no_follow(dest)?;
     to.set_len(0)?;
     std::io::copy(&mut from, &mut to)?;
     to.set_permissions(from.metadata()?.permissions())
@@ -5835,11 +5855,8 @@ fn stage_migration(
             pathspecs.push(spec.to_owned());
         }
     }
-    refresh_version_stamp(repo_root, config_worktree)?;
-    pathspecs.extend(existing_pathspecs(
-        repo_root,
-        &jigc_config_layer_pathspecs(),
-    ));
+    let config_layer = refresh_version_stamp(repo_root, config_worktree)?;
+    pathspecs.extend(existing_pathspecs(repo_root, &config_layer));
     // M45 Inc 8 T2 — stage each recorded owner-artifact too (existence + non-ignore guarded;
     // see [`stage_index_honoring`]). These join the returned set — which
     // [`rollback_promotions`] consults only for *retirement* paths, so an owner-artifact in it
@@ -6119,7 +6136,7 @@ pub(crate) fn rollback_owner_artifact_index(
 pub enum ConfigLayerHome {
     /// `<jigc_root>/<file name>` — the path `crate::gitignore::ensure` writes.
     JigcRoot,
-    /// `<repo_root>/<spec>` — the path `crate::setup::write_version_stamp` writes.
+    /// `<repo_root>/<spec>` — the path `crate::setup::refresh_version_stamp` writes.
     RepoRoot,
 }
 
@@ -6221,6 +6238,16 @@ fn jigc_config_layer_pathspecs() -> Vec<&'static str> {
 /// wrote) and the name its pre-image is parked under on a conflict. Its absolute path is
 /// resolved through the row's [`ConfigLayerHome`], because the two writers hang off different
 /// roots and a pre-image taken from the wrong one would restore a file nobody wrote.
+///
+/// **A stamp that is not jigc's to write is not captured** (the rc.24 fix pass). The capture
+/// is of a file the transaction may *rewrite*, and since the refresh asks the ownership
+/// question ([`refresh_version_stamp`]) it rewrites `.jigc/version` only where that is
+/// absent or jigc's own stamp. Capturing regardless is not merely idle: the read **fails**
+/// on a directory there and never returns on a FIFO, so the door refused — *"the transaction
+/// will not rewrite a file it cannot put back"* — over a file it was not going to rewrite,
+/// one statement after its own `--dry-run` had forecast a landed commit with the stamp left
+/// alone. An entry never captured is one [`crate::rollback::PreImageFamily::wrote`] ignores,
+/// so the fan-out arms, which write no stamp at all, are unchanged by its absence.
 fn capture_config_layer_worktree(
     repo_root: &Path,
     jigc_root: &Path,
@@ -6230,6 +6257,11 @@ fn capture_config_layer_worktree(
         let ConfigLayerWrite::Rewritten { home } = row.write else {
             continue;
         };
+        if row.spec == crate::setup::VERSION_STAMP_PATH
+            && crate::setup::stamp_standing(repo_root).is_some()
+        {
+            continue;
+        }
         let path = match home {
             // `gitignore::ensure` is handed `jigc_root` and joins the file name onto it.
             ConfigLayerHome::JigcRoot => {
@@ -6411,14 +6443,32 @@ fn rollback_config_layer_index(repo_root: &Path, captured: Option<&[ConfigLayerI
 /// write site is the only place the bytes jigc produced can be read back as jigc's own. The
 /// two fan-out arms never reach this function, which is exactly why the family distinguishes
 /// *"jigc wrote nothing here"* from *"jigc wrote identical bytes"*.
+///
+/// **And it writes only a stamp that is jigc's to write** (the rc.24 fix pass;
+/// `design/storage.md` → Store provenance). This called the unconditional writer, so a
+/// `.jigc/version` somebody had hand-edited was regenerated at exit 0 — the bytes in no
+/// commit, the rewrite staged as jigc's own — and a symlink there was written through. The
+/// ownership question is [`crate::setup::refresh_version_stamp`]'s, asked one statement
+/// above its write. Returns the pathspecs the stage may `git add` for the config layer:
+/// all of [`CONFIG_LAYER_SPECS`] when jigc's stamp is there, and all **but the stamp**
+/// when it is not — what stands at that path is then the user's, and a stage that never
+/// sweeps ambient work does not sweep it either. Nothing was written, so nothing is
+/// recorded as written and the rollback has nothing of jigc's to put back.
+///
+/// It does not raise the finding: the door does ([`TaskArea::finalize`]), from the same
+/// oracle, where the report it belongs in is in hand.
 fn refresh_version_stamp(
     repo_root: &Path,
     config_worktree: &mut crate::rollback::PreImageFamily,
-) -> Result<()> {
-    crate::setup::write_version_stamp(repo_root)
+) -> Result<Vec<&'static str>> {
+    let left = crate::setup::refresh_version_stamp(repo_root)
         .with_context(|| "refreshing the binary-provenance stamp `.jigc/version`")?;
-    config_worktree.wrote(crate::setup::VERSION_STAMP_PATH);
-    Ok(())
+    let mut specs = jigc_config_layer_pathspecs();
+    match left {
+        None => config_worktree.wrote(crate::setup::VERSION_STAMP_PATH),
+        Some(_) => specs.retain(|spec| *spec != crate::setup::VERSION_STAMP_PATH),
+    }
+    Ok(specs)
 }
 
 /// The per-task non-migration stage (M30 G6, `DECISIONS.md` 2026-06-20). Honor the
@@ -6441,11 +6491,8 @@ fn stage_index_honoring(
     for promotion in &plan.promotions {
         pathspecs.push(promotion.destination.clone());
     }
-    refresh_version_stamp(repo_root, config_worktree)?;
-    pathspecs.extend(existing_pathspecs(
-        repo_root,
-        &jigc_config_layer_pathspecs(),
-    ));
+    let config_layer = refresh_version_stamp(repo_root, config_worktree)?;
+    pathspecs.extend(existing_pathspecs(repo_root, &config_layer));
     // M45 Inc 8 T2 — stage each recorded owner-artifact so the artifact lands in the SAME
     // commit as the completion-record naming it (`design/finalize.md` → 5. Stage: finalize
     // stages the recorded paths, and the gate moves after the stage). Existence + non-ignore
