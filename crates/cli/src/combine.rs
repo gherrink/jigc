@@ -113,15 +113,7 @@ pub fn combine_worktree_trees(
 /// finding message is byte-stable across input orders (hardening #7); reads only each
 /// worktree's staged name-status (no commit, no tree build).
 pub fn detect_code_collision(worktrees: &[PathBuf]) -> Result<Option<Finding>> {
-    // `touched`: path -> the task ids that touch it, both sorted (so the finding message is
-    // byte-stable across input orders, hardening #7).
-    let mut touched: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for wt in worktrees {
-        let id = task_id(wt);
-        for path in block_set(wt)? {
-            touched.entry(path).or_default().insert(id.clone());
-        }
-    }
+    let touched = staged_by_sub_task(worktrees)?;
     let colliding: Vec<(&String, &BTreeSet<String>)> =
         touched.iter().filter(|(_, ids)| ids.len() > 1).collect();
     if colliding.is_empty() {
@@ -129,6 +121,26 @@ pub fn detect_code_collision(worktrees: &[PathBuf]) -> Result<Option<Finding>> {
     } else {
         Ok(Some(collision_finding(&colliding)))
     }
+}
+
+/// **Every path the `worktrees` have staged, and who staged it** — path → the task ids
+/// touching it, both sorted, so anything worded from it is byte-stable across input orders
+/// (hardening #7). One reading of each worktree's [`block_set`], for the two questions asked
+/// of it: [`detect_code_collision`]'s *is a path staged twice?*, and the milestone
+/// boundary's *does a doc promote onto a path a worktree staged?*
+/// (`engine::finalize::HomeClaims::staged`; the rc.24 fix pass, the completion audit's
+/// CPL-2) — two channels of one commit that nothing compared until then.
+pub(crate) fn staged_by_sub_task(
+    worktrees: &[PathBuf],
+) -> Result<BTreeMap<String, BTreeSet<String>>> {
+    let mut touched: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for wt in worktrees {
+        let id = task_id(wt);
+        for path in block_set(wt)? {
+            touched.entry(path).or_default().insert(id.clone());
+        }
+    }
+    Ok(touched)
 }
 
 /// A worktree's task id — its path's final component (the `.jigc/worktrees/<id>`
@@ -146,30 +158,34 @@ fn task_id(worktree: &Path) -> String {
 /// path must enter the set or a collision against another worktree's edit of that path
 /// slips the guard ([DECISIONS.md](../../../DECISIONS.md) 2026-06-20 → WF2 collision
 /// granularity).
+///
+/// Read with `-z`: every path is git's own bytes, NUL-terminated, never the C-quoted
+/// spelling `core.quotepath` gives a path with a non-ASCII byte, a quote or a tab. The set
+/// is compared with paths from other sources — a promote destination among them
+/// ([`staged_by_sub_task`]) — and a quoted spelling matches none of those.
 fn block_set(worktree: &Path) -> Result<BTreeSet<String>> {
     let out = git_stdout(
         worktree,
-        &["diff", "--cached", "--name-status", "--find-renames"],
+        &["diff", "--cached", "--name-status", "-z", "--find-renames"],
     )
     .context("read a worktree's staged name-status")?;
     let text = String::from_utf8(out).context("`git diff --name-status` produced non-UTF-8")?;
     let mut set = BTreeSet::new();
-    for line in text.lines() {
-        let mut fields = line.split('\t');
-        let Some(status) = fields.next() else {
-            continue;
-        };
+    // `-z` records: `<status> NUL <path> NUL`, and for a rename or a copy
+    // `<status><score> NUL <old> NUL <new> NUL`.
+    let mut fields = text.split('\0').filter(|field| !field.is_empty());
+    while let Some(status) = fields.next() {
         // R<score> / C<score> carry an old (source) and a new (dest) path — both block;
         // A / M / D carry a single path.
-        if status.starts_with('R') || status.starts_with('C') {
-            if let Some(old) = fields.next() {
-                set.insert(old.to_string());
+        let paths = if status.starts_with('R') || status.starts_with('C') {
+            2
+        } else {
+            1
+        };
+        for _ in 0..paths {
+            if let Some(path) = fields.next() {
+                set.insert(path.to_string());
             }
-            if let Some(new) = fields.next() {
-                set.insert(new.to_string());
-            }
-        } else if let Some(path) = fields.next() {
-            set.insert(path.to_string());
         }
     }
     Ok(set)
@@ -510,6 +526,39 @@ mod tests {
                 panic!("a same-path collision (incl. a rename old-path) must block, got tree {t}")
             }
         }
+    }
+
+    /// **The staged set is git's own path bytes** (the rc.24 fix pass, the completion audit's
+    /// CPL-2). The set is compared with paths that come from elsewhere — a promote
+    /// destination — so a path git would print C-quoted under `core.quotepath` (a non-ASCII
+    /// byte, a space is fine, a quote is not) has to be read verbatim: both halves of a
+    /// rename, and who staged each, by task id.
+    #[test]
+    fn the_staged_set_names_every_path_verbatim_and_who_staged_it() {
+        let td = TempDir::new();
+        let (main, _) = init_main(&td, &[("shared.txt", "shared\n")]);
+
+        let wt_a = add_worktree(&main, &td, "task-aaa");
+        write(&wt_a, "docs/décisions/a \"quoted\" one.md", "a\n");
+        git(&wt_a, &["add", "docs"]);
+        let wt_b = add_worktree(&main, &td, "task-bbb");
+        git(&wt_b, &["mv", "shared.txt", "moved.txt"]);
+
+        let staged = staged_by_sub_task(&[wt_b, wt_a]).expect("the staged sets read cleanly");
+        let who = |path: &str| -> Vec<&str> {
+            staged
+                .get(path)
+                .map(|ids| ids.iter().map(String::as_str).collect())
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            who("docs/décisions/a \"quoted\" one.md"),
+            ["task-aaa"],
+            "a path git would quote is keyed by its own bytes; got: {staged:?}",
+        );
+        assert_eq!(who("shared.txt"), ["task-bbb"], "a rename's old path");
+        assert_eq!(who("moved.txt"), ["task-bbb"], "a rename's new path");
+        assert_eq!(staged.len(), 3, "nothing else is staged; got: {staged:?}");
     }
 
     /// (c) The combined tree is byte-identical regardless of the worktree-list input

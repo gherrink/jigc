@@ -5799,8 +5799,11 @@ pub struct MilestoneLanded {
     ///
     /// **Membership is boundary-wide and de-duplicated** — one entry per path, from the
     /// single whole-range `git diff --name-status <pre-boundary-HEAD> HEAD`. Under
-    /// `squash: false` a path can be landed by more than one chain commit (a sub-agent
-    /// that staged a file at a promoted doc's destination, say); it is still **one**
+    /// `squash: false` a path can be landed by more than one chain commit — whatever the
+    /// aggregate adds over a path a per-sub-task commit carried. (A doc promoted over a
+    /// file a sub-agent staged at its destination was the example until the rc.24 fix
+    /// pass; the boundary refuses that overlap now, `finalize.promote-clobber`.) Such a
+    /// path is still **one**
     /// entry here, and its **owning sha is the LAST [`commits`](Self::commits) member
     /// that lists it** — the commit whose bytes are the ones at HEAD. Reading the first
     /// claimant instead would name a sha whose version of the path was overwritten before

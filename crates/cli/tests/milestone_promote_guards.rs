@@ -1740,3 +1740,212 @@ fn one_creator_per_singleton_home_lands() {
         );
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────
+// A promote destination a sub-task worktree has staged (the completion audit's CPL-2)
+// ─────────────────────────────────────────────────────────────────────────────────────────
+//
+// The boundary lands two channels in one commit — the code each sub-task staged in its
+// worktree, and the merged docs, added over the combined code tree — and nothing compared
+// them: a file a sub-agent staged at a doc's home was replaced by the doc at exit 0, in no
+// commit, while the manifest counted `1 code file`. The axis is
+//
+// - **the doc** — minted by another sub-task · minted by the same sub-task · another
+//   sub-task's edit of a committed doc (`edited-from-base`, which the file arm lets through);
+// - **`finalize.fan-out.squash`** — both commit models;
+// - **exit** — the doc renamed, so both land · the staged file taken into git's stash;
+//
+// with the staged file's bytes accounted for at the end of every cell. Every cell also stages
+// a file at a path no doc promotes to, which must land (MUST NOT REFUSE), and the cells walk
+// the line-ending settings on the diagonal: the question is which paths a worktree staged,
+// asked of git, and reads no byte.
+
+/// The bytes only the worktree's staged file carries.
+const WORKTREE_MARKER: &str = "WORKTREE-MARKER a sub-agent's own file, staged in its worktree.";
+
+/// `sub`'s provisioned fan-out worktree.
+fn worktree(corpus: &TrialCorpus, sub: &str) -> PathBuf {
+    corpus.repo().join(".jigc/worktrees").join(sub)
+}
+
+/// Run `git <args>` in `sub`'s worktree, assert success, return trimmed stdout.
+fn worktree_git(corpus: &TrialCorpus, sub: &str, args: &[&str]) -> String {
+    let out = std::process::Command::new("git")
+        .args(args)
+        .current_dir(worktree(corpus, sub))
+        .env("HOME", corpus.home())
+        .output()
+        .expect("spawn git");
+    assert!(
+        out.status.success(),
+        "git {args:?} in `{sub}`'s worktree: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// Write `bytes` at `rel` in `sub`'s worktree and stage it there.
+fn stage_in_worktree(corpus: &TrialCorpus, sub: &str, rel: &str, bytes: &str) {
+    let path = worktree(corpus, sub).join(rel);
+    fs::create_dir_all(path.parent().expect("a parent dir")).expect("mk the dir");
+    fs::write(&path, bytes).expect("write the worktree file");
+    worktree_git(corpus, sub, &["add", "--", rel]);
+}
+
+/// Who stages the file, and how the doc that promotes onto it is held.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Staged {
+    /// Another sub-task's worktree stages a new file at the home of a doc `bravo` minted.
+    ByAnother,
+    /// The sub-task that minted the doc staged the file in its own worktree.
+    ByItself,
+    /// Another sub-task's worktree stages a hand edit of a committed doc `bravo` updates.
+    EditOfCommitted,
+}
+
+/// How the cell is driven out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Exit {
+    Rename,
+    Stash,
+}
+
+fn drive_staged_cell(staged: Staged, squash: bool, exit: Exit, conversion: Conversion) {
+    let what = format!("{staged:?} · squash={squash} · {exit:?} · {conversion:?}");
+    let kind = Kind::Adr;
+    let destination = format!("{}/{SHARED_SLUG}.md", kind.home());
+    let corpus = TrialCorpus::build(State::Fresh);
+    conversion.apply(&corpus);
+    if !squash {
+        squash_false(&corpus);
+    }
+    if staged == Staged::EditOfCommitted {
+        land_standalone(&corpus, kind, SHARED_TITLE, "The first version.");
+    }
+    let subs = fan_out(&corpus, kind, 2);
+    corpus.jigc_ok(&["milestone", "provision", MILESTONE]);
+    let (alpha, bravo) = (&subs[0], &subs[1]);
+    // The sub-task whose worktree stages the file, and the one whose doc promotes onto it.
+    let (stager, author_of_doc) = match staged {
+        Staged::ByItself => (bravo, bravo),
+        _ => (alpha, bravo),
+    };
+    let staged_bytes_of_file = match staged {
+        Staged::EditOfCommitted => {
+            format!("{}\n{WORKTREE_MARKER}\n", at_head(&corpus, &destination))
+        }
+        _ => format!("{WORKTREE_MARKER}\n"),
+    };
+    stage_in_worktree(&corpus, stager, &destination, &staged_bytes_of_file);
+    // …and a file nobody's doc promotes to: the MUST NOT REFUSE half of every cell.
+    stage_in_worktree(
+        &corpus,
+        stager,
+        &format!("{}/a-neighbour.md", kind.home()),
+        "a staged file at a path no doc promotes to\n",
+    );
+    if !squash {
+        // The per-sub-task commit model renders the commit doc of every sub-task that
+        // carries code, which its re-entry provisions.
+        let entered = corpus.jigc_stdin_from(
+            &worktree(&corpus, stager),
+            &["workflow", "sub-task", "--task", stager],
+            "",
+        );
+        assert!(entered.status.success(), "{what}: {}", text(&entered));
+        fill_commit(&corpus, stager, "adr");
+    }
+    let ack = create(&corpus, kind, SHARED_TITLE, author_of_doc);
+    assert_eq!(
+        ack.contains("copied in for update"),
+        staged == Staged::EditOfCommitted,
+        "{what}: the premise — how the doc is held; got: {ack}",
+    );
+    kind.fill(
+        &corpus,
+        &format!("adr:{SHARED_SLUG}"),
+        author_of_doc,
+        &body_of(author_of_doc),
+    );
+    let head = corpus.git(&["rev-parse", "HEAD"]);
+
+    // ── the boundary refuses ──
+    let findings = blocked(&corpus, &what);
+    assert_eq!(findings.len(), 1, "{what}: one finding; {findings:#?}");
+    let finding = clobber_at(&findings, &destination, &what);
+    let message = finding["message"].as_str().expect("a message");
+    assert!(
+        message.contains(&format!("`{stager}`")) && message.contains("worktree"),
+        "{what}: the refusal names the worktree that staged the file; got: {message}",
+    );
+    assert_eq!(corpus.git(&["rev-parse", "HEAD"]), head, "{what}");
+    assert!(
+        worktree_git(&corpus, stager, &["diff", "--cached", "--name-only"])
+            .lines()
+            .any(|path| path == destination),
+        "{what}: the staged file is still staged in its worktree",
+    );
+
+    // ── the route, as printed ──
+    let route = finding["route"].as_str().expect("a route");
+    assert_eq!(
+        spans(route, "jigc doc rename").is_empty(),
+        staged == Staged::EditOfCommitted,
+        "{what}: a rename is offered exactly where the doc was minted; got: {route}",
+    );
+    match exit {
+        Exit::Rename => {
+            follow_the_routes(&corpus, &findings, &what);
+            assert!(
+                at_head(&corpus, &destination).contains(WORKTREE_MARKER),
+                "{what}: the staged file landed at its path, as the code it is",
+            );
+        }
+        Exit::Stash => {
+            run_the_span(&corpus, route, "git -C", &what);
+            run_the_span(&corpus, route, "jigc milestone finalize", &what);
+            assert!(
+                at_head(&corpus, &destination).contains(&body_of(author_of_doc)),
+                "{what}: the doc landed at its home",
+            );
+            assert!(
+                corpus
+                    .git(&["stash", "show", "-p", "stash@{0}"])
+                    .contains(WORKTREE_MARKER),
+                "{what}: the staged file's bytes are in the stash the route named",
+            );
+        }
+    }
+    assert_landed(&corpus, kind, author_of_doc, &what);
+    corpus.git(&[
+        "cat-file",
+        "-e",
+        &format!("HEAD:{}/a-neighbour.md", kind.home()),
+    ]);
+}
+
+/// **A minted doc over another sub-task's staged file**, under both commit models and out
+/// through both exits.
+#[test]
+fn a_promote_never_replaces_a_file_another_sub_task_staged() {
+    drive_staged_cell(Staged::ByAnother, true, Exit::Rename, Conversion::None);
+    drive_staged_cell(
+        Staged::ByAnother,
+        false,
+        Exit::Stash,
+        Conversion::AutocrlfInput,
+    );
+}
+
+/// **The two cells the file arm's discriminators would have let through**: the sub-task's
+/// own staged file, and another sub-task's staged edit of a committed doc this one updates.
+#[test]
+fn a_promote_never_replaces_a_staged_file_whoever_holds_the_doc() {
+    drive_staged_cell(
+        Staged::ByItself,
+        true,
+        Exit::Rename,
+        Conversion::AutocrlfTrue,
+    );
+    drive_staged_cell(Staged::EditOfCommitted, true, Exit::Stash, Conversion::None);
+}

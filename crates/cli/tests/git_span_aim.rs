@@ -224,6 +224,16 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
          run from wherever the reader stands",
     ),
     (
+        "crates/engine/src/finalize.rs",
+        "staged_clobber_text",
+        Aim::Aimed,
+        "`finalize.promote-clobber`'s staged arm at the milestone boundary (the completion \
+         audit's CPL-2) — `git stash push -- <home>`, aimed at the SUB-TASK WORKTREE that \
+         staged the file, never at the main checkout the boundary runs in: the stash has to \
+         take the path out of that worktree's index, and it keeps the bytes under the \
+         repository's `refs/stash`, where the worktree's teardown does not reach",
+    ),
+    (
         "crates/engine/src/milestone.rs",
         "record_home_held_finding",
         Aim::Aimed,

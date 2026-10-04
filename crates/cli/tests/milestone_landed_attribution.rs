@@ -31,9 +31,11 @@
 //!   (d) **the agent-text arm prints the same shas** — the machine and prose channels
 //!       name one commit set, not two.
 //!
-//! Plus the multi-commit-path arm: a path landed by **more than one** chain commit still
-//! yields exactly ONE `manifest` entry, and its owning sha is the **last** commit that
-//! landed it — the sha whose bytes are at HEAD.
+//! Plus the arm that used to land one path in **two** chain commits — a sub-agent's file
+//! staged at a promoted doc's destination. Since the rc.24 fix pass the boundary refuses
+//! that overlap (`finalize.promote-clobber`), so the arm asserts the refusal and that the
+//! path lands zero times; the *one entry, owned by the last commit* rule stands as a
+//! property of the whole-range diff the manifest is read from.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -437,13 +439,24 @@ fn the_landing_ack_names_every_boundary_commit_and_attributes_every_landed_file(
     }
 }
 
+/// **The arm that used to land one path twice now refuses** (the rc.24 fix pass, the
+/// completion audit's CPL-2). This fixture — a sub-agent hand-writes a file at a managed
+/// doc's destination and `git add`s it in its worktree — was this suite's way to make one
+/// path land in two chain commits: the per-sub-task commit carried the staged file, and the
+/// aggregate landed the path again with the promoted doc, replacing the sub-agent's bytes
+/// at `HEAD`, unnamed. The manifest rule read off that state (*one entry, owned by the last
+/// commit*) was correct, and the state itself was the defect: under `squash: true` the same
+/// fixture left the staged file in no commit at all. The boundary now refuses a promotion
+/// onto a path a sub-task worktree staged (`finalize.promote-clobber`, keyed at the path;
+/// `milestone_promote_guards` drives the routes), so nothing lands and both contributions
+/// are where they were.
+///
+/// The rule the ack documents stands — a path the aggregate re-lands over a per-sub-task
+/// commit is one manifest entry owned by the last commit listing it — as a property of the
+/// whole-range diff the manifest is read from; no shipped flow reaches it through a doc any
+/// more.
 #[test]
-fn a_path_landed_by_two_chain_commits_is_one_manifest_entry_owned_by_the_last() {
-    // A sub-agent hand-wrote a file at a managed doc's destination and `git add`ed it in
-    // its worktree: the per-sub-task commit lands that path, and the aggregate lands it
-    // again with the promoted canonical bytes. The boundary-wide manifest must still
-    // carry ONE entry for it, and the owning sha must be the LAST commit that landed it
-    // — the sha whose bytes are at HEAD.
+fn a_file_staged_at_a_promoted_docs_destination_is_refused_not_landed_twice() {
     let repo = TempDir::new("twice");
     let home = TempDir::new("home");
     init_repo(repo.path(), false);
@@ -451,63 +464,31 @@ fn a_path_landed_by_two_chain_commits_is_one_manifest_entry_owned_by_the_last() 
     let shared = "docs/decisions/low-policy.md";
     stage_worktree_code(repo.path(), "area-low", shared, "# placeholder\n");
 
-    let landed = run_jigc(
+    let refused = run_jigc(
         repo.path(),
         home.path(),
         &["--format", "json", "milestone", "finalize", "cache-rework"],
     );
-    assert_ok(&landed, "the overlapping-path `jigc milestone finalize`");
+    assert_eq!(
+        refused.status.code(),
+        Some(3),
+        "the overlapping-path boundary is blocked; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&refused.stdout),
+        String::from_utf8_lossy(&refused.stderr),
+    );
     let value: serde_json::Value =
-        serde_json::from_slice(&landed.stdout).expect("the landed envelope is valid JSON");
-    let committed = &value["committed"];
-
-    let commits = committed["commits"]
+        serde_json::from_slice(&refused.stdout).expect("the findings envelope is valid JSON");
+    let keyed = value["findings"]
         .as_array()
-        .expect("the landed envelope carries `commits`");
-    let claiming: Vec<&str> = commits
+        .expect("a `findings` array")
         .iter()
-        .filter(|c| {
-            c["paths"]
-                .as_array()
-                .is_some_and(|ps| ps.iter().any(|p| p == shared))
-        })
-        .map(|c| c["hash"].as_str().expect("a `hash`"))
-        .collect();
-    assert_eq!(
-        claiming.len(),
-        2,
-        "the fixture must land `{shared}` in TWO chain commits (else the rule is untested); \
-         got:\n{commits:#?}",
-    );
-
-    let entries: Vec<&serde_json::Value> = committed["manifest"]
-        .as_array()
-        .expect("the envelope carries `manifest`")
-        .iter()
-        .filter(|e| e["path"] == shared)
-        .collect();
-    assert_eq!(
-        entries.len(),
-        1,
-        "a path landed by two chain commits is ONE manifest entry; got:\n{entries:#?}",
-    );
-
-    // The owning sha — the last claimant — is the boundary's HEAD, and git agrees it
-    // contains the path.
-    let owner = claiming[claiming.len() - 1];
-    assert_eq!(
-        committed["hash"], owner,
-        "the last commit to land `{shared}` is the aggregate at HEAD",
+        .any(|f| f["key"]["code"] == "finalize.promote-clobber" && f["key"]["target"] == shared);
+    assert!(
+        keyed,
+        "the refusal is keyed at the path both contributions claim; got:\n{value:#}",
     );
     assert!(
-        commit_changed_files(repo.path(), owner)
-            .iter()
-            .any(|p| p == shared),
-        "the owning sha must genuinely contain `{shared}`",
-    );
-    // And the boundary really did make more than one commit (the cell is not degenerate).
-    assert!(
-        boundary_shas(repo.path(), &pre).len() > 1,
-        "the overlapping-path arm must run over a multi-commit boundary",
+        boundary_shas(repo.path(), &pre).is_empty(),
+        "a refused boundary makes no commit — the path is landed zero times, not twice",
     );
 }

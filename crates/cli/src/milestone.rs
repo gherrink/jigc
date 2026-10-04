@@ -284,6 +284,10 @@ pub enum MilestoneCommand {
     /// A home with nothing on disk is occupied all the same when git still holds a file
     /// there — a committed doc deleted from the worktree, a file staged and taken out of
     /// it: a newly created doc is not promoted over it either, under the same code.
+    /// And no doc is promoted onto a path a sub-task worktree has staged a file at: the
+    /// boundary commits the staged code and the docs together, one file per path, so it
+    /// blocks with the same code and routes at renaming the doc or at taking the staged
+    /// file into git's stash (`git -C <worktree> stash push -- <path>`).
     /// The code half lands what a sub-task has **staged in a live worktree** and nothing
     /// else, and a landed boundary then removes the worktrees — so it refuses first,
     /// with `milestone.unlanded-work`, committing nothing and leaving the milestone
@@ -6633,10 +6637,21 @@ fn run_milestone_finalize(
     // its own path, and the live-index `git add` ahead of the fast-forward replaces the
     // second ([`crate::task::git_home_claims`]). A git that cannot answer fails the door
     // here, with the record flip restored and nothing written.
-    let claims = crate::task::git_home_claims(
+    let mut claims = crate::task::git_home_claims(
         &jigc_home,
         &engine::finalize::promote_destinations(&staging_dir, &schemas).unwrap_or_default(),
     )?;
+    // …and what the sub-task worktrees have staged (the completion audit's CPL-2). The
+    // boundary lands their staged code and the promoted docs in one commit, the docs added
+    // over the combined code tree — so a file a sub-agent staged at a doc's home is replaced
+    // by the doc, and it is in neither the main checkout this door stats nor its index. One
+    // reading of each live worktree's staged name-status, the set the combine itself folds
+    // ([`crate::combine::staged_by_sub_task`]); the planner refuses a promotion onto any
+    // path in it.
+    claims.staged = crate::combine::staged_by_sub_task(&worktrees)?
+        .into_iter()
+        .map(|(path, sub_tasks)| (path, sub_tasks.into_iter().collect()))
+        .collect();
     let plan = match plan_milestone_finalize(
         milestone_id,
         &staging_dir,

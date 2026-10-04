@@ -179,9 +179,9 @@ impl FinalizePlan {
     }
 }
 
-/// **What git holds at the homes a plan promotes to** — the facts about a promote
+/// **Who else has a claim on the homes a plan promotes to** — the facts about a promote
 /// destination that are not on the disk the planner stats, supplied by the CLI because the
-/// engine does no git (the rc.24 fix pass, the completion audit's CPL-5;
+/// engine does no git (the rc.24 fix pass, the completion audit's CPL-5 and CPL-2;
 /// `design/finalize.md` → 4. Promote, *what an occupied home is*).
 ///
 /// The clobber guard asked one question of a home — *what is this directory entry?* — and
@@ -196,19 +196,28 @@ impl FinalizePlan {
 /// - a file staged and then taken out of the worktree ([`index`](Self::index)). The
 ///   promote's own `git add` replaced its index entry — bytes no commit holds.
 ///
+/// And at the **milestone boundary** a path **a sub-task worktree has staged**
+/// ([`staged`](Self::staged)) is one the main checkout's disk does not show at all. The
+/// boundary commits the worktrees' staged code *and* the promoted docs, and the docs are
+/// added over the combined code tree: a file a sub-agent staged at a doc's home was
+/// replaced at exit 0, in no commit, while the manifest counted it as landed.
+///
 /// Every member is a **repo-relative path as git prints it**, compared with a promotion's
 /// [`lexical_normalize`](crate::store::lexical_normalize)d destination. The CLI asks git
-/// itself — `git ls-tree`, `git ls-files` — over exactly the destinations
-/// [`promote_destinations`] names, so the answer is git's under whatever conversion and
-/// attribute settings the repository has: the questions are about which paths exist, never
-/// about bytes. [`Default`] is *git holds none of them*, which is true of every plan whose
-/// homes are new — and is what the engine's own tests, which have no repository, feed in.
+/// itself — `git ls-tree`, `git ls-files`, each worktree's staged name-status — so the
+/// answer is git's under whatever conversion and attribute settings the repository has:
+/// the questions are about which paths exist, never about bytes. [`Default`] is *nobody
+/// else claims any of them*, which is true of every plan whose homes are new — and is what
+/// the engine's own tests, which have no repository, feed in.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HomeClaims {
     /// Promote destinations the commit the door builds on (`HEAD`) holds an entry at.
     pub head: BTreeSet<String>,
     /// Promote destinations the index of the checkout the promote writes into holds.
     pub index: BTreeSet<String>,
+    /// Every path a live sub-task worktree has staged → the sub-tasks staging it, in
+    /// task-id order. Empty at the per-task door, whose commit folds in no worktree.
+    pub staged: BTreeMap<String, Vec<String>>,
 }
 
 /// **The destinations the docs staged under `area_dir` promote to** — the promote plan's
@@ -616,6 +625,13 @@ fn plan_clobber_guard(
                     exit,
                     unit: shape_unit,
                 },
+                // The per-task door folds in no worktree, so its claims name none; the arm
+                // is total because the predicate is shared.
+                Occupant::Staged(by) => ClobberedBy::Staged {
+                    by,
+                    exit,
+                    unit: shape_unit,
+                },
             };
             clobber_finding(repo_root, &refused.promotion.destination, by)
         }),
@@ -735,6 +751,9 @@ fn plan_milestone_clobber_guard(
                 Occupant::Foreign(shape) => ClobberedBy::Shape { shape, exit, unit },
                 // Asked of a `created` doc only, and `created` is read off an origin.
                 Occupant::Held(holder) => ClobberedBy::Held { holder, exit, unit },
+                // Asked of every promotion: the staged file is replaced whoever wrote the
+                // body that lands on it.
+                Occupant::Staged(by) => ClobberedBy::Staged { by, exit, unit },
             };
             Some(clobber_finding(
                 repo_root,
@@ -768,7 +787,7 @@ fn plan_milestone_clobber_guard(
 /// file staged and then taken out of the worktree is still in the index — a merely-staged
 /// file is seen above only while it is also on disk.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Occupant {
+enum Occupant<'c> {
     /// A regular file — refused only for a doc the unit **minted**. `committed` is whether
     /// `HEAD` holds a file at the path too ([`HomeClaims::head`]): a committed file cannot
     /// be moved out of a home without a commit, which decides the exits a doc under a
@@ -781,6 +800,11 @@ enum Occupant {
     /// `HEAD` holds there under its own path, or the promote's `git add` would replace an
     /// index entry no commit has.
     Held(Holder),
+    /// **A path a sub-task worktree has staged** ([`HomeClaims::staged`]) — refused for
+    /// **every** promotion, minted or copied in. The boundary lands the staged code and the
+    /// docs in one commit, with the docs added last: whichever doc promotes there replaces
+    /// the staged file. Named by the sub-tasks staging it.
+    Staged(&'c [String]),
 }
 
 /// **Where git holds a file the worktree does not** — what [`Occupant::Held`] names.
@@ -800,7 +824,7 @@ enum Holder {
 struct RefusedPromotion<'p> {
     address: &'p str,
     promotion: &'p Promotion,
-    over: Occupant,
+    over: Occupant<'p>,
 }
 
 /// **One plan, two promotions, one destination** — the promotions of a plan split into the
@@ -864,12 +888,16 @@ struct Contender<'a> {
 ///   the completion audit's CPL-5). Same discriminators as the first arm, because it is the
 ///   first arm's question asked of the place the occupant actually is: an `edited-from-base`
 ///   doc is the committed doc's own update and re-promotes over its home whether or not the
-///   file is in the worktree.
+///   file is in the worktree;
+/// - **any** promotion over a path **a sub-task worktree has staged** (`claims.staged`; the
+///   completion audit's CPL-2). No provenance is asked, for the reason the shape arm asks
+///   none: the commit carries one file per path, and an edit of a committed doc replaces a
+///   sub-agent's staged edit of the same file exactly as a mint replaces a staged new one.
 fn refused_promotions<'p>(
     repo_root: &Path,
     promotions: impl IntoIterator<Item = &'p Promotion>,
     in_place: Option<&Path>,
-    claims: &HomeClaims,
+    claims: &'p HomeClaims,
     is_created: impl Fn(&str) -> bool,
 ) -> Vec<RefusedPromotion<'p>> {
     promotions
@@ -882,19 +910,21 @@ fn refused_promotions<'p>(
             // foreign original it was migrated from (M43, fork 5) is not a clobber of it.
             let is_fresh_mint = || is_created(address) && in_place != Some(dest_norm.as_path());
             let git_path = dest_norm.to_string_lossy();
-            let over = match crate::store::home_entry(&repo_root.join(&promotion.destination)) {
-                crate::store::HomeEntry::Foreign(shape) => Occupant::Foreign(shape),
-                crate::store::HomeEntry::RegularFile => {
-                    if !is_fresh_mint() {
-                        return None;
-                    }
-                    Occupant::File {
-                        committed: claims.head.contains(git_path.as_ref()),
-                    }
-                }
+            // What a sub-task worktree staged at the path, asked after the disk has had its
+            // say: a file on disk a minted doc would overwrite is the nearer refusal, and
+            // an `edited-from-base` doc's own home on disk is not one at all.
+            let staged = claims.staged.get(git_path.as_ref());
+            let entry = crate::store::home_entry(&repo_root.join(&promotion.destination));
+            let over = match (entry, staged) {
+                (crate::store::HomeEntry::Foreign(shape), _) => Occupant::Foreign(shape),
+                (crate::store::HomeEntry::RegularFile, _) if is_fresh_mint() => Occupant::File {
+                    committed: claims.head.contains(git_path.as_ref()),
+                },
+                (_, Some(by)) => Occupant::Staged(by),
+                (crate::store::HomeEntry::RegularFile, None) => return None,
                 // Nothing on disk is not *nothing there*: what git holds at the path is an
                 // occupant too ([`HomeClaims`]).
-                crate::store::HomeEntry::Free => {
+                (crate::store::HomeEntry::Free, None) => {
                     let holder = if claims.head.contains(git_path.as_ref()) {
                         Holder::Head
                     } else if claims.index.contains(git_path.as_ref()) {
@@ -1143,6 +1173,17 @@ enum ClobberedBy<'a> {
         /// Who is told.
         unit: ShapeUnit<'a>,
     },
+    /// **Any** promotion at the milestone boundary, over a path **a sub-task worktree has
+    /// staged** (CPL-2) — the doc and the staged file are two contributions to one commit
+    /// at one path.
+    Staged {
+        /// The sub-tasks whose worktree stages the path, in task-id order.
+        by: &'a [String],
+        /// The exit the doc's unit has: another id, or none.
+        exit: ShapeExit,
+        /// Who is told.
+        unit: ShapeUnit<'a>,
+    },
     /// **Two or more promotions of one plan to one destination** (CPL-1) — each the other's
     /// occupant, so none is promoted.
     Contested {
@@ -1203,6 +1244,10 @@ enum ClobberedBy<'a> {
 ///   same refusal: something a third party put at the doc's home, which a promote would
 ///   write over or, here, *through*. It routes at no `jigc migrate`: a link is not a file
 ///   to adopt (driven: `migrate.source-untrackable`).
+/// - **[`ClobberedBy::Staged`]** — the destination is a path **a sub-task worktree has
+///   staged** ([`staged_clobber_text`]; the completion audit's CPL-2). The occupant is not
+///   in the main checkout at all: it is in the tree the boundary commits, where the doc
+///   would be added over it.
 /// - **[`ClobberedBy::Contested`]** — two promotions of the **same plan** to one destination
 ///   ([`contested_clobber_text`]; the completion audit's CPL-1). Nothing is at the home yet;
 ///   the second copy would land on the first inside the promote. One finding per contested
@@ -1270,6 +1315,9 @@ fn clobber_finding(repo_root: &Path, destination: &str, by: ClobberedBy) -> Find
             fixed_clobber_text(repo_root, destination, committed, unit)
         }
         ClobberedBy::Contested { docs } => contested_clobber_text(destination, docs),
+        ClobberedBy::Staged { by, exit, unit } => {
+            staged_clobber_text(repo_root, destination, by, exit, unit)
+        }
     };
     Finding::graded(
         Severity::Blocking,
@@ -1500,6 +1548,81 @@ fn shape_clobber_text(
              {rerun}"
         ),
     };
+    (message, route)
+}
+
+/// The message and the route of [`clobber_finding`]'s **staged arm** — a promotion refused at
+/// the milestone boundary because a sub-task worktree has staged a file at its destination
+/// (the rc.24 fix pass, the completion audit's CPL-2; `design/finalize.md` → 4. Promote).
+///
+/// **The state.** The boundary lands two channels in one commit: the code each sub-task
+/// staged in its worktree, folded into one tree, and the merged docs, `git add`ed over that
+/// tree. The clobber guard read the main checkout, where a worktree's staged file is not;
+/// the code-collision check compares worktrees with each other and never with a promote
+/// destination. So a file staged at a doc's home was replaced by the doc at exit 0 — in no
+/// commit, on no disk once the worktree was torn down — and the landing manifest counted
+/// the sub-task as having contributed *1 code file*. Under `finalize.fan-out.squash: false`
+/// the file reached its sub-task's own commit and was then replaced by the aggregate.
+///
+/// **Two exits, each of which lands with every byte kept:**
+///
+/// - the doc takes **another id** ([`ShapeUnit::rename`]) where its identity is its
+///   author's to choose and its unit minted it — the staged file and the doc then both
+///   land;
+/// - the staged file is **taken out of this milestone**, into git's stash: `git -C
+///   <worktree> stash push -- <path>`, aimed at the worktree that staged it
+///   ([`crate::finding::git_at`]). The stash is the repository's, not the worktree's, so
+///   the bytes survive the teardown behind a landed boundary — which is why the route
+///   names the stash and not an unstage: a file merely unstaged in a worktree is removed
+///   with it. It is the one exit an `edited-from-base` doc has, and a doc under a fixed
+///   identity.
+///
+/// The route ends by saying where a hand edit of a managed doc belongs, because that is
+/// what a staged change at a doc's home usually is.
+fn staged_clobber_text(
+    repo_root: &Path,
+    destination: &str,
+    by: &[String],
+    exit: ShapeExit,
+    unit: ShapeUnit,
+) -> (String, String) {
+    use crate::finding::{git_at, shell_operand};
+    let whose = unit.whose();
+    let sub_tasks: Vec<String> = by.iter().map(|sub| format!("`{sub}`")).collect();
+    let message = format!(
+        "promoting {whose} to `{destination}` would replace the file staged at that path in \
+         the worktree of sub-task{} {} — the boundary lands the staged code and the docs in \
+         one commit, and one path carries one of them, so it is not promoted there",
+        if by.len() > 1 { "s" } else { "" },
+        sub_tasks.join(", "),
+    );
+    let stashes: Vec<String> = by
+        .iter()
+        .map(|sub| {
+            format!(
+                "`{}`",
+                git_at(
+                    &repo_root.join(crate::milestone::worktree_path(sub)),
+                    &format!("stash push -- {}", shell_operand(destination)),
+                )
+            )
+        })
+        .collect();
+    let lead = match (exit, unit.rename()) {
+        (ShapeExit::RenameOrMoveOut, Some(rename)) => {
+            format!("Either {rename} — the staged file and the doc then both land — or take")
+        }
+        _ => "Take".to_owned(),
+    };
+    let route = format!(
+        "{}. {lead} the staged file out of this milestone: {} keeps its bytes in git's stash \
+         (`git stash list` shows it) and leaves the path to the doc; then {}. A hand edit of \
+         a managed doc belongs in the doc — it is brought in through `jigc doc set-slot` in \
+         a sub-task, not staged over the doc's home",
+        unit.intact(),
+        stashes.join(" and "),
+        unit.rerun(),
+    );
     (message, route)
 }
 
@@ -5995,6 +6118,114 @@ sections:
         )
         .expect("distinct homes plan as before");
         assert_eq!(plan.promotions.len(), 2);
+    }
+
+    /// **A promotion never lands on a path a sub-task worktree has staged** (the rc.24 fix
+    /// pass, the completion audit's CPL-2). The occupant is in neither the checkout the
+    /// planner stats nor its index — it is in the tree the boundary commits — so the claim is
+    /// handed in, and **any** promotion onto it blocks: a minted doc (offered the rename and
+    /// the stash), a sub-task's edit of a committed doc and a body with no origin (the stash
+    /// alone — neither has another id). The stash is aimed at the worktree that staged the
+    /// file. Beside them: a staged path no doc promotes to refuses nothing.
+    #[test]
+    fn a_promotion_onto_a_path_a_worktree_staged_is_refused_whoever_holds_the_doc() {
+        let destination = "decisions/cache-strategy.md";
+        let staged_at = |path: &str| {
+            let mut claims = HomeClaims::default();
+            claims
+                .staged
+                .insert(path.to_string(), vec!["area-low".to_string()]);
+            claims
+        };
+        for (cell, provenance, on_disk) in [
+            ("minted", Some(state::Provenance::Created), false),
+            (
+                "edited-from-base",
+                Some(state::Provenance::EditedFromBase),
+                true,
+            ),
+            ("no origin", None, false),
+        ] {
+            let root = TempRoot::new("staged-home");
+            let staging = root
+                .path()
+                .join("milestones")
+                .join("cache-rework")
+                .join("merged");
+            stage_filled_adr(&staging, "cache-strategy");
+            if on_disk {
+                // An update's own home is on disk — the file arm lets it through.
+                state::persist(&root.path().join(destination), b"# the committed doc\n")
+                    .expect("the committed doc at its home");
+            }
+            let origins: BTreeMap<_, _> = provenance
+                .map(|provenance| {
+                    origin_of(
+                        "adr:cache-strategy",
+                        provenance,
+                        "adr:cache-strategy",
+                        &["area-zed"],
+                    )
+                })
+                .into_iter()
+                .collect();
+            let plan = |claims: &HomeClaims| {
+                plan_milestone_finalize(
+                    "cache-rework",
+                    &staging,
+                    root.path(),
+                    &base(),
+                    &base().sha,
+                    false,
+                    "Finalize milestone cache-rework (2 sub-tasks)\n".to_string(),
+                    true,
+                    &schemas(),
+                    &origins,
+                    claims,
+                )
+            };
+            let findings = plan(&staged_at(destination))
+                .expect_err("a promotion onto a staged path must block");
+            assert_eq!(findings.len(), 1, "{cell}: {findings:#?}");
+            let finding = &findings[0];
+            assert_eq!(finding.code, "finalize.promote-clobber", "{cell}");
+            assert_eq!(
+                target(finding),
+                Some(destination),
+                "{cell}: keyed at the path"
+            );
+            assert!(
+                finding.message.contains("`area-low`") && finding.message.contains("worktree"),
+                "{cell}: the message names the worktree that staged the file: {}",
+                finding.message,
+            );
+            let route = finding.route.as_deref().expect("a route");
+            let worktree = root.path().join(".jigc/worktrees/area-low");
+            assert!(
+                route.contains(&format!(
+                    "`git -C {} stash push -- {destination}`",
+                    worktree.display()
+                )) && route.contains("`jigc milestone finalize cache-rework`"),
+                "{cell}: the stash is aimed at the worktree, and the boundary re-run: {route}",
+            );
+            assert_eq!(
+                route.contains("jigc doc rename"),
+                cell == "minted",
+                "{cell}: a rename is offered exactly where the sub-task minted the doc: {route}",
+            );
+            for surface in [finding.message.as_str(), route] {
+                let lower = surface.to_lowercase();
+                assert!(
+                    !lower.contains("remove")
+                        && !lower.contains("delete")
+                        && !lower.contains("git rm"),
+                    "{cell}: the refusal never teaches a removal: {surface}",
+                );
+            }
+            // MUST NOT REFUSE: a path staged elsewhere is nobody's doc's home.
+            plan(&staged_at("src/cache.rs"))
+                .unwrap_or_else(|f| panic!("{cell}: a staged path no doc promotes to; {f:#?}"));
+        }
     }
 
     /// **A fixed identity over a file at its home is routed at exits it has** (the rc.24 fix
