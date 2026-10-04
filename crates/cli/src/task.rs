@@ -356,9 +356,13 @@ pub(crate) enum LinkedDocDoor<'a> {
     ///
     /// `workflow` is the task's recorded workflow, which that exit's mint is named with
     /// ([`crate::render::CodeOnlyCheckout::relocate_change_steps`]).
+    ///
+    /// `here` is what the task can still do from this checkout ([`TaskHere`]) — the route
+    /// closes on it, and says *"stays usable here for code"* only where that is so.
     Write {
         task: &'a str,
         staged_code: Option<&'a str>,
+        here: TaskHere,
     },
     /// The **backstop**, over a doc the task has already staged — `jigc task finalize`, its
     /// `--dry-run`, and the preview `jigc task validate` and bare `jigc start` read. It is
@@ -369,6 +373,27 @@ pub(crate) enum LinkedDocDoor<'a> {
     /// task ([`HomeLanding`], asked of jigc_home's facts): the route sends the task there
     /// only when that door would take it **and commit nothing but what the task staged**.
     Staged { task: &'a str, landing: HomeLanding },
+}
+
+/// **What the task of a refused write can still do from the checkout it was typed in** —
+/// the fact the write door's route closes on ([`LinkedDocDoor::Write`]).
+///
+/// The route closed on one sentence in every state — *"Task `<id>` stays usable here for
+/// code — `jigc task finalize <id>` commits what you `git add` on this branch"* — and it is
+/// true in one of three (the completion audit's F5). Driven: a task minted in the main
+/// checkout with a doc staged from there took a second write from the linked worktree, was
+/// told it *stays usable here*, and its finalize from there answered the backstop; and from
+/// a detached linked worktree the same sentence printed over a command that answers
+/// `repo.head-detached`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TaskHere {
+    /// On a branch, with no doc that promotes staged: its finalize commits code from here.
+    CommitsCode,
+    /// The task already stages a doc that promotes, so its finalize from here is the
+    /// backstop's refusal — whose own route says where it lands.
+    StagesDoc,
+    /// This checkout's HEAD is detached: nothing commits from here until it is on a branch.
+    Detached,
 }
 
 /// **What `jigc task finalize` typed in the main checkout would do with a task the backstop
@@ -426,13 +451,32 @@ pub(crate) fn linked_worktree_doc_finding(
 ) -> Finding {
     let cd = checkout.cd_home();
     let route = match door {
-        LinkedDocDoor::Write { task, staged_code } => {
+        LinkedDocDoor::Write {
+            task,
+            staged_code,
+            here,
+        } => {
+            // What this task can still do from here — said only as far as it is true.
+            let this_task = match here {
+                TaskHere::CommitsCode => format!(
+                    "Task `{task}` stays usable here for code — `jigc task finalize {task}` \
+                     commits what you `git add` on this branch — so a change to both lands \
+                     as two commits"
+                ),
+                TaskHere::StagesDoc => format!(
+                    "Task `{task}` already stages a managed doc, so it does not finalize \
+                     from here — `jigc task validate {task}` names where it lands"
+                ),
+                TaskHere::Detached => format!(
+                    "This worktree's HEAD is detached, so task `{task}` commits nothing \
+                     from here until it is on a branch — `jigc task finalize {task}` names \
+                     that route"
+                ),
+            };
             let here = format!(
-                "write it from the main checkout: `{cd}`, then `jigc start \"<intent>\"` \
-                 starts a task there, whose finalize commits the doc on that checkout's \
-                 branch. Task `{task}` stays usable here for code — `jigc task finalize \
-                 {task}` commits what you `git add` on this branch — so a change to both \
-                 lands as two commits"
+                "write it in a task started from the main checkout, whose finalize commits \
+                 the doc on that checkout's branch: {}. {this_task}",
+                checkout.front_door_there(),
             );
             match staged_code {
                 Some(workflow) => format!(
@@ -476,10 +520,10 @@ pub(crate) fn linked_worktree_doc_finding(
             };
             format!(
                 "{why}. Read the staged doc back (`jigc doc show {address} --task {task}`), \
-                 author it again in a task started from the main checkout (`{cd}`, then \
-                 `jigc start \"<intent>\"`), and drop this one with `jigc task discard \
-                 {task} --force`; code staged in this worktree stays staged, for a task of \
-                 its own to commit from here"
+                 author it again in a task started from the main checkout ({front}), and \
+                 drop this one with `jigc task discard {task} --force`; code staged in this \
+                 worktree stays staged, for a task of its own to commit from here",
+                front = checkout.front_door_there(),
             )
         }
     };

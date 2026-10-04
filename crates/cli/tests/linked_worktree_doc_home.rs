@@ -1203,20 +1203,34 @@ fn the_write_door_route_lands_the_doc_from_the_main_checkout_and_the_code_from_h
         "with nothing staged in this checkout the route is the short one; got:\n{route}",
     );
 
-    // Half one, as printed: stand in the main checkout and start the doc's task there.
+    // Half one, as printed: stand in the main checkout and open the front door there.
     let cd = span(&route, "`cd`", |s| s.starts_with("cd "));
     let start = span(&route, "start", |s| s.starts_with("jigc start "));
-    assert_ok(
-        &rig.sh(
-            &rig.wt,
-            &format!(
-                "{cd} && {}",
-                start.replace("<intent>", "sharpen the thesis")
-            ),
+    let front = rig.sh(
+        &rig.wt,
+        &format!(
+            "{cd} && {}",
+            start.replace("<intent>", "sharpen the thesis")
         ),
-        &format!("`{cd}` then `{start}`"),
     );
-    // The front door presents the workflows; a doc task minted there writes and lands.
+    assert_ok(&front, &format!("`{cd}` then `{start}`"));
+    // On this store the front door is the router: it presents the workflows and mints
+    // nothing — so the route may not say the span *starts* a task (audit F5).
+    assert!(
+        !text(&front.stdout).contains("task minted:"),
+        "the fixture's front door is the router; got:\n{}",
+        text(&front.stdout),
+    );
+    assert!(
+        !route.contains("starts a task") && route.contains("presents the workflows"),
+        "the route names the front door for what it does; got:\n{route}",
+    );
+    assert!(
+        route.contains("stays usable here for code"),
+        "a task on a branch with no doc staged does commit code from here, and the route \
+         says so; got:\n{route}",
+    );
+    // A doc task minted there writes and lands.
     let doc_task = rig.mint(&main, "single-task", "sharpen the thesis");
     assert_ok(
         &rig.run_stdin(
@@ -1253,6 +1267,88 @@ fn the_write_door_route_lands_the_doc_from_the_main_checkout_and_the_code_from_h
     assert_eq!(
         rig.git(&rig.wt, &["show", "--format=", "--name-only", "HEAD"]),
         "code.txt",
+    );
+}
+
+/// **The write door closes on what its task can still do from here — only where that is
+/// so** (the completion audit's F5). *"Task `<id>` stays usable here for code — `jigc task
+/// finalize <id>` commits what you `git add` on this branch"* printed in every state and is
+/// false in two of them, each driven: a task that already stages a doc that promotes (its
+/// finalize from here is the backstop's refusal), and a detached linked worktree (its
+/// finalize answers `repo.head-detached`). Each state now names the command that says where
+/// the task goes, and each is run as printed.
+#[test]
+fn the_write_door_closes_on_what_its_task_can_still_do_from_here() {
+    let rig = Rig::new();
+    let main = rig.main();
+    let write = |cwd: &Path, task: &str, format: &[&str]| {
+        let mut argv = vec![
+            "doc",
+            "set-slot",
+            "vision:vision#thesis",
+            "--from-file",
+            "-",
+            "--task",
+            task,
+        ];
+        argv.extend(format);
+        rig.run_stdin(cwd, &argv, "ALREADY-STAGED-5120 a thesis.\n")
+    };
+    let route_of = |out: &Output| {
+        guard(out)
+            .pop()
+            .unwrap_or_else(|| panic!("the guard answers; got:\n{}", both(out)))
+            .1
+    };
+
+    // The task already stages a doc that promotes: minted and staged from the main checkout.
+    let mixed = rig.mint(&main, "single-task", "a mixed change");
+    assert_ok(&write(&main, &mixed, &[]), "staging from the main checkout");
+    rig.fill_commit(&main, &mixed, "a mixed change");
+    let route = route_of(&write(&rig.wt, &mixed, &["--format", "json"]));
+    assert!(
+        !route.contains("stays usable here"),
+        "a task that stages a doc does not finalize from here; got:\n{route}",
+    );
+    let validate = span(&route, "validate", |s| s.starts_with("jigc task validate "));
+    let named = rig.sh(&rig.wt, &format!("{validate} --format json"));
+    assert_eq!(named.status.code(), Some(3), "got:\n{}", both(&named));
+    let lands = route_of(&named);
+    let cd = span(&lands, "`cd`", |s| s.starts_with("cd "));
+    let finalize = span(&lands, "finalize", |s| s.starts_with("jigc task finalize "));
+    assert_ok(
+        &rig.sh(&rig.wt, &format!("{cd} && {finalize}")),
+        &format!("where `{validate}` says the task lands: `{cd}` then `{finalize}`"),
+    );
+    assert!(
+        rig.git(&main, &["show", "HEAD:VISION.md"])
+            .contains("ALREADY-STAGED-5120")
+    );
+
+    // A detached linked worktree: nothing commits from here until it is on a branch.
+    let detached = main.parent().expect("the corpus root").join("detached");
+    rig.git(
+        &main,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "--detach",
+            detached.to_str().expect("a UTF-8 worktree path"),
+        ],
+    );
+    let task = rig.mint(&detached, "single-task", "from a detached worktree");
+    let route = route_of(&write(&detached, &task, &["--format", "json"]));
+    assert!(
+        !route.contains("stays usable here") && route.contains("detached"),
+        "a detached worktree commits nothing, and the route says so; got:\n{route}",
+    );
+    let finalize = span(&route, "finalize", |s| s.starts_with("jigc task finalize "));
+    let answered = rig.sh(&detached, &finalize);
+    assert!(
+        !answered.status.success() && both(&answered).contains("repo.head-detached"),
+        "`{finalize}` names the route out of a detached HEAD; got:\n{}",
+        both(&answered),
     );
 }
 

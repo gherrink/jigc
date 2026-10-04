@@ -6795,8 +6795,40 @@ impl ActiveTask {
             crate::task::LinkedDocDoor::Write {
                 task: &self.id,
                 staged_code: workflow.as_deref(),
+                here: self.task_here(&checkout),
             },
         )))
+    }
+
+    /// What this task can still do from the checkout the refused write was typed in
+    /// ([`crate::task::TaskHere`]) — two facts, each read where it lives: whether the task's
+    /// area already stages a doc that promotes (the promote plan's own membership, over the
+    /// staged set), and whether that checkout's `HEAD` is detached (asked of git —
+    /// [`crate::repo::head_ref`], where *detached* and *could not answer* are different
+    /// answers and only the first changes the sentence).
+    fn task_here(&self, checkout: &render::CodeOnlyCheckout) -> crate::task::TaskHere {
+        let stages_promoting_doc = || -> Option<bool> {
+            let schemas = self.schemas().ok()?;
+            let staged = std::fs::read_dir(self.dir.join("docs")).ok()?;
+            Some(staged.flatten().any(|entry| {
+                let name = entry.file_name();
+                name.to_str()
+                    .and_then(state::staged_doc_id)
+                    .and_then(|address| address.split_once(':'))
+                    .is_some_and(|(ty, slug)| {
+                        schemas.get(ty).is_some_and(|schema| {
+                            engine::finalize::promote_destination(schema, slug).is_some()
+                        })
+                    })
+            }))
+        };
+        if stages_promoting_doc().unwrap_or(false) {
+            crate::task::TaskHere::StagesDoc
+        } else if crate::repo::head_ref(&checkout.standing) == Some(None) {
+            crate::task::TaskHere::Detached
+        } else {
+            crate::task::TaskHere::CommitsCode
+        }
     }
 
     /// Read the staged instance bytes the edit verb splices into, applying

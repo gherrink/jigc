@@ -2279,6 +2279,23 @@ impl CodeOnlyCheckout {
         format!("cd {}", engine::finding::shell_operand(&self.home))
     }
 
+    /// **The front door in the main checkout, as a route names it** — one producer for the
+    /// three sentences that send a reader there to start a task (the `checkout:` block, the
+    /// write door, the backstop's re-author exit).
+    ///
+    /// All three said `jigc start "<intent>"` *"starts a task there"*, and it does not (the
+    /// completion audit's F5): the bare front door composes the project's
+    /// `default-workflow`, which on a store with more than one work-workflow is the
+    /// **router** — it presents them and mints nothing, as the CLI's own help says. So the
+    /// span is named for what it is, in words true under either `default-workflow`.
+    pub(crate) fn front_door_there(&self) -> String {
+        format!(
+            "`{}`, then `jigc start \"<intent>\"` — the front door there, which mints a task \
+             or presents the workflows to pick one from",
+            self.cd_home(),
+        )
+    }
+
     /// **How a change staged here is taken to the main checkout to land there** — the one
     /// exit for a change that must share a commit with a managed doc (the code that breaks a
     /// committed doc's anchor, plus the repair; a change whose changelog entry the project
@@ -2353,11 +2370,11 @@ pub(crate) fn code_only_statement(checkout: &CodeOnlyCheckout) -> String {
          jigc's doc store has one home, the main checkout at `{}`: a `jigc doc` write of a \
          managed doc from this checkout is refused, whatever a workflow's steps invite (the \
          task's own commit doc is the exception — it is the commit message, not a file).\n  \
-         To write a doc, start its task from the main checkout — `{}`, then `jigc start \
-         \"<intent>\"` — so a change to both code and docs is two tasks and two commits.\n\n",
+         To write a doc, start its task from the main checkout: {}. A change to both code \
+         and docs is two tasks and two commits.\n\n",
         checkout.standing(),
         checkout.home,
-        checkout.cd_home(),
+        checkout.front_door_there(),
     )
 }
 
