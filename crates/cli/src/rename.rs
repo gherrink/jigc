@@ -351,6 +351,17 @@ fn rerun_command(old_id: &str, title: &str, slug_override: Option<&str>) -> Stri
 /// to be addressed at), and a second mint here would be a second spelling of an identity
 /// that already has a home. `withheld` says what the door did not do; `rerun` is this
 /// door's own command ([`rerun_command`]), which the route ends at.
+///
+/// **It projects its key** (the rc.24 fix pass, the completion audit's CPL-7). The contract
+/// lists `finalize.promote-clobber` under a declared target form — the file path — and
+/// says of this arm that it is *keyed at that home*
+/// (`design/command-output-contract.md` → The `finalize.*` family). Raised through the
+/// flattening carrier, as every other member of this door's axis is, it reached a
+/// `--format json` driver as `{"error": "blocking · finalize.promote-clobber — …"}`: the
+/// code inside a message, and no key to read — while the committing doors answer the same
+/// code in the findings envelope. One fault owes one identity *on the wire* too, so this
+/// refusal takes [`crate::render::envelope_finding_error`]. The printed surface, the exit
+/// code and the invocation-log record are the same either way.
 fn foreign_home(
     repo_root: &Path,
     home: &str,
@@ -358,7 +369,7 @@ fn foreign_home(
     withheld: &str,
     rerun: &str,
 ) -> anyhow::Error {
-    crate::render::finding_error(&engine::finalize::store_home_refusal(
+    crate::render::envelope_finding_error(&engine::finalize::store_home_refusal(
         repo_root,
         home,
         shape,

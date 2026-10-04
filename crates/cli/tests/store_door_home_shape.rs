@@ -231,6 +231,90 @@ fn commit_all(corpus: &TrialCorpus, message: &str) {
 /// Refused before `git mv` and before any write, under the code every committing door
 /// raises for the same state of the same doc. The route's exit — the regular file put where
 /// the link was, committed — then lands the command the refusal printed, as printed.
+/// **The refusal reaches a `--format json` driver with its key** (the rc.24 fix pass, the
+/// completion audit's CPL-7). `design/command-output-contract.md` lists
+/// `finalize.promote-clobber` under the file-path target form and says of this door's arm
+/// that it is *keyed at that home* — and until this cell the door answered
+/// `{"error": "blocking · finalize.promote-clobber — …"}`: the code inside a message, no
+/// `findings`, no `key`. Re-run with `--format json`, the same refusal must be the reject
+/// arm every committing door gives the code: stdout empty, exit 1, and on stderr the
+/// findings envelope holding one blocking finding keyed `(finalize.promote-clobber, home)`,
+/// with its route beside it and nothing written.
+fn assert_keyed_on_the_wire(corpus: &TrialCorpus, argv: &[&str], home: &str, what: &str) {
+    let mut json: Vec<&str> = argv.to_vec();
+    json.extend(["--format", "json"]);
+    let before = corpus.git(&["status", "--porcelain"]);
+    let out = corpus.jigc(&json);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "{what}: the same refusal, the same exit; {}",
+        text(&out),
+    );
+    assert!(
+        out.stdout.is_empty(),
+        "{what}: a reject leaves stdout empty; {}",
+        text(&out),
+    );
+    let envelope: serde_json::Value = serde_json::from_slice(&out.stderr)
+        .unwrap_or_else(|e| panic!("{what}: stderr is one JSON document ({e}); {}", text(&out)));
+    assert!(
+        envelope.get("error").is_none(),
+        "{what}: not the flattened `{{\"error\": …}}` — a code inside a message is no key; \
+         got: {envelope:#}",
+    );
+    // The pinned reject arm, read off the registry rather than restated: no key moves.
+    let declared = cli::render::ENVELOPE_ARMS
+        .iter()
+        .find(|arm| arm.path.is_empty() && arm.arm == "Reject::Findings")
+        .map(|arm| match arm.shape {
+            cli::render::ArmShape::Object(keys) => {
+                let mut keys: Vec<&str> = keys.to_vec();
+                keys.sort_unstable();
+                keys
+            }
+            _ => panic!("`Reject::Findings` declares an object key set"),
+        })
+        .expect("the cross-cutting `Reject::Findings` row is declared");
+    let mut got: Vec<&str> = envelope
+        .as_object()
+        .unwrap_or_else(|| panic!("{what}: an object; got: {envelope:#}"))
+        .keys()
+        .map(String::as_str)
+        .collect();
+    got.sort_unstable();
+    assert_eq!(
+        got, declared,
+        "{what}: exactly the top-level keys `ENVELOPE_ARMS` pins for the reject-with-findings \
+         arm; got: {envelope:#}",
+    );
+    let findings = envelope["findings"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{what}: the findings envelope; got: {envelope:#}"));
+    assert_eq!(findings.len(), 1, "{what}: one refusal, one finding");
+    let finding = &findings[0];
+    assert_eq!(finding["severity"], "blocking", "{what}");
+    assert_eq!(
+        (
+            finding["key"]["code"].as_str(),
+            finding["key"]["target"].as_str()
+        ),
+        (Some(SHAPE), Some(home)),
+        "{what}: keyed at the home, as the contract row says; got: {finding:#}",
+    );
+    assert!(
+        finding["route"]
+            .as_str()
+            .is_some_and(|route| !spans(route, "jigc rename").is_empty()),
+        "{what}: the route rides the finding; got: {finding:#}",
+    );
+    assert_eq!(
+        corpus.git(&["status", "--porcelain"]),
+        before,
+        "{what}: the JSON run wrote nothing either",
+    );
+}
+
 #[test]
 fn a_rename_refuses_a_home_of_the_doc_that_is_not_a_regular_file() {
     for (arm, title, landed) in [
@@ -296,6 +380,7 @@ fn a_rename_refuses_a_home_of_the_doc_that_is_not_a_regular_file() {
                 1,
                 "{what}: the route names the one command to re-run; got: {route}",
             );
+            assert_keyed_on_the_wire(&corpus, &["rename", ADR, "--to", title], ADR_HOME, &what);
             if dangling {
                 continue;
             }
@@ -555,6 +640,12 @@ fn a_rename_refuses_a_referrer_whose_home_is_a_link() {
         fingerprint(&corpus.repo().join(ADR_HOME)),
         "regular file",
         "{what}: the doc is still at its home",
+    );
+    assert_keyed_on_the_wire(
+        &corpus,
+        &["rename", ADR, "--to", "Cache Plan"],
+        referrer_home,
+        what,
     );
 
     let route = route_of(&said, what);

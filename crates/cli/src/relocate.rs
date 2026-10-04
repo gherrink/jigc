@@ -207,11 +207,19 @@ fn refuse(
 ///
 /// Called by [`move_doc`], which every mover funnels through, and by [`relocate_one`] ahead
 /// of its squatter displacement, so a move that will be refused parks nobody's file first.
+///
+/// **Raised as a refusal that projects its key** ([`render::envelope_finding_error`]; the
+/// completion audit's CPL-7), for `jigc rename`'s reason: the contract keys this code at
+/// the home's path, so wherever the error reaches a `--format json` driver *as itself* it
+/// is the findings envelope and not a message. The doors that fold it into a report of
+/// their own are unchanged — `jigc relocate`'s triage row and `jigc config set`'s
+/// `config.repoint-failed` both read the finding off the carrier, whichever arm it
+/// declares.
 pub(crate) fn refuse_foreign_source(repo_root: &Path, old_rel: &str, new_rel: &str) -> Result<()> {
     if let engine::store::HomeEntry::Foreign(shape) =
         engine::store::home_entry(&repo_root.join(old_rel))
     {
-        return Err(render::finding_error(
+        return Err(render::envelope_finding_error(
             &engine::finalize::store_home_refusal(
                 repo_root,
                 old_rel,
