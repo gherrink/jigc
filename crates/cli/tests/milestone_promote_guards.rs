@@ -803,3 +803,499 @@ fn the_helps_and_the_design_state_the_boundary_refusal() {
         );
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────
+// A home git holds and the disk does not (the completion audit's CPL-5)
+// ─────────────────────────────────────────────────────────────────────────────────────────
+//
+// The guard above asked the disk, and a home with nothing on disk is not thereby free: `HEAD`
+// may hold a committed doc whose file was deleted from the worktree, and the index a file
+// staged and then taken out of it. In a checkout that holds no `file-state` key for the doc —
+// every fresh clone — a doc *minted* at that id landed under it at exit 0, at `jigc task
+// finalize` and `jigc milestone finalize`, and `jigc milestone create` minted a record over a
+// committed one. The axis is
+//
+// - **holder** — `HEAD` (a committed doc, deleted uncommitted) · the index alone (staged,
+//   never committed, then taken out of the worktree);
+// - **door** — `jigc task finalize` · `jigc milestone finalize` · `jigc milestone create`;
+// - **identity** — one its author chooses (`adr`) · a fixed one (`vision`), whose only exit
+//   is dropping the mint;
+//
+// each refused cell driven out through the route it printed, as emitted. The MUST NOT REFUSE
+// cells are the states the question must not touch: a home nobody holds, and the update of a
+// committed doc, under every line-ending setting the question could have met — it reads no
+// byte, and `linked_worktree_doc_home`'s layout matrix (a bare repository's worktree, a
+// `--separate-git-dir` checkout, a submodule) lands a created doc through this same door.
+
+const VISION: &str = "vision:vision";
+const VISION_HOME: &str = "VISION.md";
+
+/// Where git holds the occupant the worktree does not show.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Holder {
+    Head,
+    Index,
+}
+
+/// Author every commit-doc leaf `task` needs, without finalizing.
+fn fill_commit(corpus: &TrialCorpus, task: &str, scope: &str) {
+    corpus.set_field(&format!("commit:{task}#type"), task, "docs");
+    corpus.set_field(&format!("commit:{task}#scope"), task, scope);
+    corpus.set_slot(&format!("commit:{task}#summary"), task, "file a finding");
+    corpus.set_slot(&format!("commit:{task}#body"), task, "Driven by the suite.");
+}
+
+/// Create and author the `vision` singleton in `task`; returns the create's ack.
+fn author_vision(corpus: &TrialCorpus, task: &str, prose: &str) -> String {
+    let ack = corpus.jigc_ok(&[
+        "doc", "create", "vision", "--title", "Vision", "--task", task,
+    ]);
+    for slot in ["thesis", "invariants", "open-questions"] {
+        corpus.set_slot(&format!("{VISION}#{slot}"), task, prose);
+    }
+    ack.trim().to_owned()
+}
+
+/// Land the `vision` singleton through its own task, carrying `prose`.
+fn land_vision(corpus: &TrialCorpus, prose: &str) {
+    let task = corpus.start_workflow("form-vision", "form the vision");
+    author_vision(corpus, &task, prose);
+    corpus.finalize(&task, "vision", "form the vision", false);
+}
+
+/// `jigc task finalize <task> --format json`, asserted **blocked at exit 3**; returns the
+/// blocking findings.
+fn task_blocked(corpus: &TrialCorpus, task: &str, what: &str) -> Vec<serde_json::Value> {
+    let out = corpus.jigc(&["task", "finalize", task, "--format", "json"]);
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "{what}: the task door is blocked at exit 3; {}",
+        text(&out),
+    );
+    let envelope: serde_json::Value = serde_json::from_slice(&out.stdout)
+        .unwrap_or_else(|e| panic!("{what}: the findings envelope ({e}); {}", text(&out)));
+    envelope["findings"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{what}: a `findings` array; {}", text(&out)))
+        .iter()
+        .filter(|f| f["severity"] == "blocking")
+        .cloned()
+        .collect()
+}
+
+/// Run an emitted span — `jigc …` against the corpus binary, `git …` as git — through a real
+/// `sh` split, and return its output.
+fn run_span(corpus: &TrialCorpus, command: &str) -> Output {
+    let argv = support::shell_words(command, &corpus.repo(), &corpus.home());
+    let args: Vec<&str> = argv.iter().skip(1).map(String::as_str).collect();
+    match argv.first().map(String::as_str) {
+        Some("jigc") => corpus.jigc(&args),
+        Some("git") => std::process::Command::new("git")
+            .args(&args)
+            .current_dir(corpus.repo())
+            .env("HOME", corpus.home())
+            .output()
+            .expect("spawn git"),
+        other => panic!("an emitted span runs `jigc` or `git`; got {other:?} in `{command}`"),
+    }
+}
+
+/// The one span of `route` opening with `lead`, run as printed and asserted to succeed.
+fn run_the_span(corpus: &TrialCorpus, route: &str, lead: &str, what: &str) -> Output {
+    let found = spans(route, lead);
+    assert_eq!(
+        found.len(),
+        1,
+        "{what}: exactly one `{lead} …` span; got: {route}"
+    );
+    let out = run_span(corpus, found[0]);
+    assert!(
+        out.status.success(),
+        "{what}: `{}` runs as printed; {}",
+        found[0],
+        text(&out),
+    );
+    out
+}
+
+/// Take a committed doc's file out of the worktree in a checkout that holds no `file-state`
+/// key for it — the fresh-clone shape, where no baseline blocks on `reconciliation.rename`.
+fn delete_uncommitted(corpus: &TrialCorpus, rel: &str) {
+    corpus.fresh_clone_shape();
+    fs::remove_file(corpus.repo().join(rel)).expect("take the committed file out");
+    assert_eq!(
+        corpus.git(&["status", "--porcelain", "--", rel]),
+        format!("D {rel}"),
+        "the premise: `{rel}` is deleted in the worktree and nowhere else",
+    );
+}
+
+/// `git show HEAD:<rel>`.
+fn at_head(corpus: &TrialCorpus, rel: &str) -> String {
+    corpus.git(&["show", &format!("HEAD:{rel}")])
+}
+
+/// **The task door.** A doc minted over a home git holds is refused, keyed at the home, with
+/// nothing committed; the rename the route prints lands the task's doc beside what git holds,
+/// and the restore it prints brings that file back, byte for byte.
+#[test]
+fn a_home_git_holds_and_the_disk_does_not_is_occupied_at_the_task_door() {
+    let kind = Kind::Adr;
+    let destination = format!("{}/{SHARED_SLUG}.md", kind.home());
+    for holder in [Holder::Head, Holder::Index] {
+        let what = format!("task door · {holder:?}");
+        let corpus = TrialCorpus::build(State::Fresh);
+        if holder == Holder::Head {
+            land_standalone(&corpus, kind, SHARED_TITLE, OCCUPANT_MARKER);
+            delete_uncommitted(&corpus, &destination);
+        }
+        let task = corpus.start_workflow("record-decision", "file it again");
+        let minted = create(&corpus, kind, SHARED_TITLE, &task);
+        assert_eq!(
+            minted,
+            format!("adr:{SHARED_SLUG}"),
+            "{what}: the premise — the create saw a free home and minted, copying nothing in",
+        );
+        kind.fill(&corpus, &minted, &task, &body_of(&task));
+        fill_commit(&corpus, &task, "adr");
+        if holder == Holder::Index {
+            let conformant = staged_bytes(&corpus, &task, &minted);
+            plant(
+                &corpus,
+                Occupant::Staged,
+                &destination,
+                &conformant,
+                &body_of(&task),
+            );
+            fs::remove_file(corpus.repo().join(&destination)).expect("take the staged file out");
+        }
+        let status = corpus.git(&["status", "--porcelain", "--", &destination]);
+        let head = corpus.git(&["rev-parse", "HEAD"]);
+
+        let findings = task_blocked(&corpus, &task, &what);
+        assert_eq!(findings.len(), 1, "{what}: one finding; {findings:#?}");
+        let finding = clobber_at(&findings, &destination, &what);
+        let message = finding["message"].as_str().expect("a message");
+        let names = match holder {
+            Holder::Head => "`HEAD`",
+            Holder::Index => "index",
+        };
+        assert!(
+            message.contains("missing from the worktree") && message.contains(names),
+            "{what}: the refusal says where the occupant is; got: {message}",
+        );
+        assert_eq!(
+            corpus.git(&["rev-parse", "HEAD"]),
+            head,
+            "{what}: nothing committed"
+        );
+        assert_eq!(
+            corpus.git(&["status", "--porcelain", "--", &destination]),
+            status,
+            "{what}: what git holds at the home is untouched",
+        );
+
+        // ── the route, as printed ──
+        let route = finding["route"].as_str().expect("a route");
+        let rename = spans(route, "jigc doc rename");
+        assert_eq!(rename.len(), 1, "{what}: one rename; got: {route}");
+        let renamed = run_span(&corpus, &rename[0].replace("\"<title>\"", "'Moved Aside'"));
+        assert!(renamed.status.success(), "{what}: {}", text(&renamed));
+        run_the_span(&corpus, route, "jigc task finalize", &what);
+        assert_landed(&corpus, kind, &task, &what);
+        if holder == Holder::Head {
+            assert!(
+                at_head(&corpus, &destination).contains(OCCUPANT_MARKER),
+                "{what}: the committed doc is still the committed doc — not replaced under \
+                 its id",
+            );
+        }
+        run_the_span(&corpus, route, "git -C", &what);
+        assert!(
+            support::trial_corpus::read(&corpus.repo(), &destination).contains(OCCUPANT_MARKER),
+            "{what}: the restore the route prints brings the file git held back",
+        );
+    }
+}
+
+/// **A fixed identity has no other id**, so the route prints no rename — it would refuse —
+/// and hands back the drop of the mint: the task is read, discarded by consent, the committed
+/// doc restored, and the next create copies it in for update.
+#[test]
+fn a_fixed_identity_doc_minted_over_a_home_git_holds_routes_at_dropping_the_mint() {
+    let what = "task door · fixed identity";
+    let corpus = TrialCorpus::build(State::Fresh);
+    land_vision(&corpus, OCCUPANT_MARKER);
+    delete_uncommitted(&corpus, VISION_HOME);
+    let task = corpus.start_workflow("form-vision", "form it again");
+    assert_eq!(
+        author_vision(&corpus, &task, "A second vision."),
+        VISION,
+        "{what}: the premise — the create minted, copying nothing in",
+    );
+    fill_commit(&corpus, &task, "vision");
+    let head = corpus.git(&["rev-parse", "HEAD"]);
+
+    let findings = task_blocked(&corpus, &task, what);
+    let route = clobber_at(&findings, VISION_HOME, what)["route"]
+        .as_str()
+        .expect("a route")
+        .to_owned();
+    assert!(
+        spans(&route, "jigc doc rename").is_empty(),
+        "{what}: a singleton cannot be renamed, and a route never hands back a command that \
+         refuses; got: {route}",
+    );
+    assert_eq!(corpus.git(&["rev-parse", "HEAD"]), head, "{what}");
+
+    let shown = run_the_span(&corpus, &route, "jigc doc show", what);
+    assert!(
+        String::from_utf8_lossy(&shown.stdout).contains("A second vision."),
+        "{what}: the read the route prints shows what the drop would take",
+    );
+    run_the_span(&corpus, &route, "jigc task discard", what);
+    run_the_span(&corpus, &route, "git -C", what);
+    assert!(
+        support::trial_corpus::read(&corpus.repo(), VISION_HOME).contains(OCCUPANT_MARKER),
+        "{what}: the committed vision is back, as committed",
+    );
+    assert!(
+        corpus.git(&["status", "--porcelain"]).is_empty(),
+        "{what}: the tree is clean — nothing was committed and nothing is left over",
+    );
+    let again = corpus.start_workflow("form-vision", "form it once more");
+    assert!(
+        author_vision(&corpus, &again, "An update.").contains("copied in for update"),
+        "{what}: started again, the create copies the committed doc in instead of minting",
+    );
+}
+
+/// **The milestone boundary asks the same question**, over the same predicate: a sub-task's
+/// minted doc over a home git holds is refused, and each identity's route lands the
+/// milestone with the committed doc still the committed doc.
+#[test]
+fn the_milestone_boundary_asks_git_about_a_home_the_disk_shows_free() {
+    // An id the author chooses: the in-task rename, then this milestone's boundary.
+    {
+        let (kind, what) = (Kind::Adr, "milestone door · adr");
+        let destination = format!("{}/{SHARED_SLUG}.md", kind.home());
+        let corpus = TrialCorpus::build(State::Fresh);
+        land_standalone(&corpus, kind, SHARED_TITLE, OCCUPANT_MARKER);
+        delete_uncommitted(&corpus, &destination);
+        let subs = fan_out(&corpus, kind, 1);
+        assert_eq!(
+            author(&corpus, kind, SHARED_TITLE, &subs[0]),
+            format!("adr:{SHARED_SLUG}"),
+            "{what}: the premise — minted, not copied in",
+        );
+        let head = corpus.git(&["rev-parse", "HEAD"]);
+        let findings = blocked(&corpus, what);
+        assert_eq!(findings.len(), 1, "{what}: {findings:#?}");
+        let route = clobber_at(&findings, &destination, what)["route"]
+            .as_str()
+            .expect("a route")
+            .to_owned();
+        assert_eq!(corpus.git(&["rev-parse", "HEAD"]), head, "{what}");
+        follow_the_routes(&corpus, &findings, what);
+        assert_landed(&corpus, kind, &subs[0], what);
+        assert!(
+            at_head(&corpus, &destination).contains(OCCUPANT_MARKER),
+            "{what}: the committed doc was not replaced under its id",
+        );
+        run_the_span(&corpus, &route, "git -C", what);
+        assert!(
+            support::trial_corpus::read(&corpus.repo(), &destination).contains(OCCUPANT_MARKER),
+            "{what}: the restore brings the committed doc back",
+        );
+    }
+    // A fixed identity: the sub-task that minted it is dropped, and the rest lands.
+    {
+        let what = "milestone door · vision";
+        let corpus = TrialCorpus::build(State::Fresh);
+        land_vision(&corpus, OCCUPANT_MARKER);
+        delete_uncommitted(&corpus, VISION_HOME);
+        corpus.jigc_ok(&["milestone", "create", MILESTONE_TITLE]);
+        corpus.jigc_ok(&[
+            "milestone",
+            "add-task",
+            MILESTONE,
+            "alpha forms the vision",
+            "--workflow",
+            "form-vision",
+        ]);
+        corpus.jigc_ok(&["milestone", "add-task", MILESTONE, "bravo decides"]);
+        let (alpha, bravo) = ("alpha-forms-the-vision", "bravo-decides");
+        assert_eq!(author_vision(&corpus, alpha, "A second vision."), VISION);
+        author(&corpus, Kind::Adr, "Bravo Decision", bravo);
+
+        let findings = blocked(&corpus, what);
+        assert_eq!(findings.len(), 1, "{what}: {findings:#?}");
+        let finding = clobber_at(&findings, VISION_HOME, what);
+        let route = finding["route"].as_str().expect("a route");
+        assert!(
+            spans(route, "jigc doc rename").is_empty(),
+            "{what}: no rename for a singleton; got: {route}",
+        );
+        run_the_span(&corpus, route, "jigc doc show", what);
+        let discard = run_the_span(&corpus, route, "jigc task discard", what);
+        assert!(
+            text(&discard).contains(alpha),
+            "{what}: the drop names the sub-task that minted the doc",
+        );
+        run_the_span(&corpus, route, "jigc milestone finalize", what);
+        assert_landed(&corpus, Kind::Adr, bravo, what);
+        assert!(
+            at_head(&corpus, VISION_HOME).contains(OCCUPANT_MARKER),
+            "{what}: the committed vision was not replaced under its id",
+        );
+        run_the_span(&corpus, route, "git -C", what);
+        assert!(
+            support::trial_corpus::read(&corpus.repo(), VISION_HOME).contains(OCCUPANT_MARKER),
+            "{what}: the restore brings the committed vision back",
+        );
+    }
+}
+
+/// **The third door of the class: `jigc milestone create`.** A committed record deleted from
+/// the worktree, in a checkout with no workbench for the milestone, read as a free id and was
+/// minted over. It refuses under the id-is-taken code, and the restore it prints lets the
+/// milestone be continued.
+#[test]
+fn milestone_create_refuses_an_id_whose_record_git_still_holds() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let subs = fan_out(&corpus, Kind::Adr, 1);
+    let record = format!("docs/milestone-records/{MILESTONE}.md");
+    let committed = at_head(&corpus, &record);
+    // A clone's shape: the committed record, and none of the gitignored workbench.
+    fs::remove_dir_all(corpus.repo().join(".jigc/milestones").join(MILESTONE))
+        .expect("drop the milestone area");
+    fs::remove_dir_all(corpus.repo().join(".jigc/tasks").join(&subs[0]))
+        .expect("drop the sub-task area");
+    delete_uncommitted(&corpus, &record);
+    let head = corpus.git(&["rev-parse", "HEAD"]);
+
+    let out = corpus.jigc(&["milestone", "create", MILESTONE_TITLE]);
+    let said = text(&out);
+    assert_eq!(out.status.code(), Some(1), "the create is refused; {said}");
+    assert!(
+        said.contains("milestone.record-exists") && said.contains("missing from the worktree"),
+        "the id belongs to the record git holds; {said}",
+    );
+    assert_eq!(
+        corpus.git(&["rev-parse", "HEAD"]),
+        head,
+        "nothing committed"
+    );
+    assert!(
+        !corpus.repo().join(&record).exists(),
+        "nothing written at the record's home",
+    );
+
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    run_the_span(&corpus, &stderr, "git -C", "milestone create");
+    assert_eq!(
+        support::trial_corpus::read(&corpus.repo(), &record).trim(),
+        committed,
+        "the restore brings the committed record back",
+    );
+    corpus.jigc_ok(&["milestone", "add-task", MILESTONE, "bravo files a finding"]);
+    // MUST NOT REFUSE: an id no record holds mints as before.
+    corpus.jigc_ok(&["milestone", "create", "another milestone"]);
+}
+
+/// The line-ending settings the question could have met. It reads no byte, so none of them
+/// may change its answer.
+#[derive(Clone, Copy, Debug)]
+enum Conversion {
+    None,
+    AutocrlfTrue,
+    AutocrlfInput,
+    /// An uncommitted `.gitattributes` carrying `* text=auto`.
+    TextAuto,
+    /// A clean/smudge filter over every Markdown file.
+    Filter,
+}
+
+impl Conversion {
+    const ALL: [Conversion; 5] = [
+        Conversion::None,
+        Conversion::AutocrlfTrue,
+        Conversion::AutocrlfInput,
+        Conversion::TextAuto,
+        Conversion::Filter,
+    ];
+
+    fn apply(self, corpus: &TrialCorpus) {
+        match self {
+            Conversion::None => {}
+            Conversion::AutocrlfTrue => {
+                corpus.git(&["config", "core.autocrlf", "true"]);
+            }
+            Conversion::AutocrlfInput => {
+                corpus.git(&["config", "core.autocrlf", "input"]);
+            }
+            Conversion::TextAuto => {
+                fs::write(corpus.repo().join(".gitattributes"), "* text=auto\n")
+                    .expect("write .gitattributes");
+            }
+            Conversion::Filter => {
+                corpus.git(&["config", "filter.keep.clean", "cat"]);
+                corpus.git(&["config", "filter.keep.smudge", "cat"]);
+                fs::write(corpus.repo().join(".gitattributes"), "*.md filter=keep\n")
+                    .expect("write .gitattributes");
+            }
+        }
+    }
+}
+
+/// **MUST NOT REFUSE.** Under every conversion setting, in a plain checkout and in the
+/// fresh-clone shape: a doc minted at a home nobody holds lands at the task door; the update
+/// of a committed doc — a home `HEAD` and the index *do* hold, with the file on disk — lands;
+/// and two sub-tasks' minted docs land at the milestone boundary, suffix and all.
+#[test]
+fn a_home_nobody_holds_and_an_update_land_under_every_conversion_setting() {
+    let kind = Kind::Adr;
+    for conversion in Conversion::ALL {
+        let what = format!("{conversion:?}");
+        let corpus = TrialCorpus::build(State::Fresh);
+        conversion.apply(&corpus);
+
+        // A minted doc at a free home — the task door.
+        let address = land_standalone(&corpus, kind, "First Finding", "The first version.");
+        // The update of that committed doc, in the fresh-clone shape.
+        corpus.fresh_clone_shape();
+        let task = corpus.start_workflow(kind.standalone_workflow(), "update it");
+        let ack = create(&corpus, kind, "First Finding", &task);
+        assert!(
+            ack.starts_with(&address) && ack.contains("copied in for update"),
+            "{what}: the premise — an update, not a mint; got: {ack}",
+        );
+        kind.fill(&corpus, &address, &task, &body_of(&task));
+        let out = {
+            fill_commit(&corpus, &task, "adr");
+            corpus.jigc(&["task", "finalize", &task])
+        };
+        assert!(
+            out.status.success(),
+            "{what}: the update of a committed doc lands; {}",
+            text(&out),
+        );
+        assert_landed(&corpus, kind, &task, &what);
+
+        // Two minted docs at the milestone boundary, one suffixed onto a free id.
+        let subs = fan_out(&corpus, kind, 2);
+        for sub in &subs {
+            author(&corpus, kind, SHARED_TITLE, sub);
+        }
+        let out = corpus.jigc(&["milestone", "finalize", MILESTONE]);
+        assert!(
+            out.status.success(),
+            "{what}: the boundary lands minted docs at free homes; {}",
+            text(&out),
+        );
+        for sub in &subs {
+            assert_landed(&corpus, kind, sub, &what);
+        }
+    }
+}

@@ -202,7 +202,25 @@ const AIM_HOME: &str = "git_at";
 /// operand-less mentions in help and pack prose (`git add` your code edits), which need no
 /// aiming because they name no file.
 const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
-    // --- the engine's four producers (handed the absolute home, never discovering one) ---
+    // --- the engine's producers (handed the absolute home, never discovering one) ---
+    (
+        "crates/engine/src/finalize.rs",
+        "held_clobber_text",
+        Aim::Aimed,
+        "`finalize.promote-clobber`'s held arm (the rc.24 fix pass, the completion audit's \
+         CPL-5) — `git checkout HEAD -- <home>` / `git checkout -- <home>`, the restore of a \
+         file git still holds at a doc's home and the worktree does not. Printed by both \
+         committing doors, which run from any directory of the checkout, and aimed at the \
+         checkout whose index and `HEAD` were asked",
+    ),
+    (
+        "crates/engine/src/milestone.rs",
+        "record_home_held_finding",
+        Aim::Aimed,
+        "the same restore at `jigc milestone create`, for a committed record deleted from \
+         the worktree — `milestone.record-exists`'s held sibling. A record door runs from \
+         any directory of the checkout, as its conflict-block siblings below do",
+    ),
     (
         "crates/engine/src/finalize.rs",
         "carried_staged_finding",

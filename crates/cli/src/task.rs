@@ -738,7 +738,9 @@ pub enum TaskCommand {
         /// (`finalize.promote-clobber` over a file already sitting at a promote
         /// destination, or over any entry there that is not a regular file — a symbolic
         /// link, a directory: a doc lands as a regular file at exactly its home and is
-        /// never written through a link; `finalize.migration-no-replacement` over a
+        /// never written through a link — or, for a doc this task newly created, over a
+        /// path git still holds though its file is missing from the worktree;
+        /// `finalize.migration-no-replacement` over a
         /// recorded migration
         /// source with nothing staged to replace it), and the carryover gate, where an
         /// undeclared carry-over is
@@ -3678,6 +3680,15 @@ impl TaskArea {
             .get(COMMIT_TYPE)
             .with_context(|| format!("the embedded pack ships no `{COMMIT_TYPE}` schema"))?;
 
+        // What git holds at the homes this task's docs promote to, asked before the planner
+        // runs: a home with nothing on disk is occupied all the same when `HEAD` or the
+        // index holds a file there ([`git_home_claims`]). A staging area the promote sweep
+        // cannot read names no destination here — the planner raises that fault itself.
+        let claims = git_home_claims(
+            &self.jigc_home,
+            &engine::finalize::promote_destinations(&self.dir, &schemas).unwrap_or_default(),
+        )?;
+
         // The engine plans; the CLI executes. A blocking branch returns the findings.
         let plan = match plan_finalize(
             &self.dir,
@@ -3691,6 +3702,7 @@ impl TaskArea {
             commit_schema,
             id,
             &schemas,
+            &claims,
         ) {
             Ok(plan) => plan,
             // M30 G2 — recolor the engine's clean-empty block as the staged-nothing block
@@ -9715,6 +9727,91 @@ pub(crate) fn path_in_index(repo_root: &Path, path: &str) -> bool {
         .output()
         .map(|out| out.status.success() && !out.stdout.is_empty())
         .unwrap_or(false)
+}
+
+/// **What git holds at the homes a plan promotes to** — the CLI half of
+/// [`engine::finalize::HomeClaims`], asked at both committing doors before the planner runs
+/// (the rc.24 fix pass, the completion audit's CPL-5; `design/finalize.md` → 4. Promote).
+///
+/// The planner's clobber guard stats the disk, and a home with nothing on disk is not
+/// thereby free: `HEAD` may hold a committed doc whose file was deleted from the worktree,
+/// and the index a file that was staged and then taken out of it. Both are asked of **git
+/// itself**, as existence questions over exactly the plan's own destinations
+/// ([`engine::finalize::promote_destinations`]):
+///
+/// - `git ls-tree -z HEAD -- <paths>` — the entries `HEAD` holds at them;
+/// - `git ls-files -z --stage -- <paths>` — the entries the index holds at them, each path
+///   handed over as `:(literal)` ([`literal_pathspec`]), so it names a file and never a
+///   pattern.
+///
+/// Neither reads a byte of content, so neither depends on line-ending conversion, an
+/// attribute or a filter: a repository answers the same under `core.autocrlf`, `text=auto`
+/// or a clean/smudge pair as without. `-z` keeps a path git would otherwise quote verbatim.
+///
+/// **Only a regular file counts** — an entry whose mode is `100644` or `100755`. A managed
+/// doc is a regular file at its home; a committed *link* or directory there is the shape
+/// arm's subject (`design/finalize.md` → 4. Promote), whose route is the entry moved out of
+/// the doc's home — after which the path is in `HEAD` and not on disk, by the route's own
+/// instruction, and the doc has to land.
+///
+/// `checkout` is the directory the planner stats — `jigc_home`. **Where that is not itself
+/// a checkout, nothing is asked** ([`crate::repo::home_is_a_checkout`]): in a worktree of a
+/// bare repository, a `--separate-git-dir` checkout and a submodule the doc home resolves
+/// to a directory that is no work tree, the planner's disk question is already asked of
+/// the wrong place there (`ideas/linked-worktree-doc-work.md`, item 7), and an answer about
+/// another directory's index would refuse a doc those layouts land today. In a checkout,
+/// **a git that cannot answer is an error, raised before anything is written**: a guard
+/// that read *"could not ask"* as *"nothing held"* would be the open cell again. With no
+/// destination to ask about — a task that promotes nothing — git is not run at all.
+pub(crate) fn git_home_claims(
+    checkout: &Path,
+    destinations: &[String],
+) -> Result<engine::finalize::HomeClaims> {
+    let mut claims = engine::finalize::HomeClaims::default();
+    if destinations.is_empty() || !crate::repo::home_is_a_checkout(checkout, checkout) {
+        return Ok(claims);
+    }
+    // The spelling git prints a path in, which is the one the engine compares against.
+    let paths: Vec<String> = destinations
+        .iter()
+        .map(|destination| {
+            engine::store::lexical_normalize(Path::new(destination))
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    let listed = |args: &[&str]| -> Result<BTreeSet<String>> {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(checkout)
+            .output()
+            .context("could not run `git` (is it on PATH?)")?;
+        if !out.status.success() {
+            bail!(
+                "could not ask git what it holds at the paths this command would write — \
+                 nothing was written: `git {}` failed: {}",
+                args[..args.len().min(4)].join(" "),
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+        }
+        // Both listings print `<mode> <…>\t<path>` per NUL-terminated record; a regular
+        // file's mode opens with `100`.
+        Ok(String::from_utf8(out.stdout)
+            .context("git listed a path that is not UTF-8")?
+            .split('\0')
+            .filter_map(|record| record.split_once('\t'))
+            .filter(|(entry, _)| entry.starts_with("100"))
+            .map(|(_, path)| path.to_owned())
+            .collect())
+    };
+    let mut head_args: Vec<&str> = vec!["ls-tree", "-z", "HEAD", "--"];
+    head_args.extend(paths.iter().map(String::as_str));
+    claims.head = listed(&head_args)?;
+    let literals: Vec<String> = paths.iter().map(|path| literal_pathspec(path)).collect();
+    let mut index_args: Vec<&str> = vec!["ls-files", "-z", "--stage", "--"];
+    index_args.extend(literals.iter().map(String::as_str));
+    claims.index = listed(&index_args)?;
+    Ok(claims)
 }
 
 /// Whether `path` (repo-relative) exists at `HEAD` (`git cat-file -e HEAD:<path>`).

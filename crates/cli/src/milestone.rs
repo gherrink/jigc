@@ -273,6 +273,9 @@ pub enum MilestoneCommand {
     /// entry is not a regular file (a symbolic link, a directory): a doc lands as a
     /// regular file at exactly its home and is never written through a link, so the
     /// boundary blocks with the same code and names the exit that sub-task's doc has.
+    /// A home with nothing on disk is occupied all the same when git still holds a file
+    /// there — a committed doc deleted from the worktree, a file staged and taken out of
+    /// it: a newly created doc is not promoted over it either, under the same code.
     /// The code half lands what a sub-task has **staged in a live worktree** and nothing
     /// else, and a landed boundary then removes the worktrees — so it refuses first,
     /// with `milestone.unlanded-work`, committing nothing and leaving the milestone
@@ -2540,7 +2543,25 @@ fn guard_record_free(jigc_home: &Path, schema: &Schema, title: &str) -> Result<(
     // and the record was then written through it — the record commit took the link. A link,
     // a directory or a special file there is somebody else's entry and the id is not free.
     match engine::store::home_entry(&record_path) {
-        engine::store::HomeEntry::Free => return Ok(()),
+        // Nothing on disk is a free id only when git holds nothing there either (the
+        // completion audit's CPL-5): a committed record deleted from the worktree, in a
+        // checkout with no workbench for the milestone, read as free and was minted over —
+        // a record-only commit replacing the committed record under its own id. Asked of
+        // git itself, by the question both finalize doors ask of a promote destination.
+        engine::store::HomeEntry::Free => {
+            let home = render::repo_relative(jigc_home, &record_path);
+            let claims = crate::task::git_home_claims(jigc_home, std::slice::from_ref(&home))?;
+            let in_head = !claims.head.is_empty();
+            if !in_head && claims.index.is_empty() {
+                return Ok(());
+            }
+            return Err(finding_to_err(engine::milestone::record_home_held_finding(
+                &milestone_id,
+                &home,
+                in_head,
+                jigc_home,
+            )));
+        }
         engine::store::HomeEntry::RegularFile => {}
         engine::store::HomeEntry::Foreign(shape) => {
             return Err(finding_to_err(
@@ -6597,6 +6618,17 @@ fn run_milestone_finalize(
     // (`materialized.origins`); `jigc milestone join` is a preview and commits nothing, and
     // an occupant can appear after it. A block drops the `RecordFlipGuard`, restoring the
     // record to `active`, so the milestone stays finalizable once the route is followed.
+    //
+    // **What git holds at those destinations is asked first** (the completion audit's
+    // CPL-5): a home with nothing on disk is occupied all the same when `HEAD` or the main
+    // checkout's index holds a file there — the aggregate commit replaces the first under
+    // its own path, and the live-index `git add` ahead of the fast-forward replaces the
+    // second ([`crate::task::git_home_claims`]). A git that cannot answer fails the door
+    // here, with the record flip restored and nothing written.
+    let claims = crate::task::git_home_claims(
+        &jigc_home,
+        &engine::finalize::promote_destinations(&staging_dir, &schemas).unwrap_or_default(),
+    )?;
     let plan = match plan_milestone_finalize(
         milestone_id,
         &staging_dir,
@@ -6608,6 +6640,7 @@ fn run_milestone_finalize(
         has_diff,
         &schemas,
         &materialized.origins,
+        &claims,
     ) {
         Ok(plan) => plan,
         Err(findings) => return blocked(&jigc_home, format, findings),

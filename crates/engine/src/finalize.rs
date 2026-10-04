@@ -179,6 +179,54 @@ impl FinalizePlan {
     }
 }
 
+/// **What git holds at the homes a plan promotes to** — the facts about a promote
+/// destination that are not on the disk the planner stats, supplied by the CLI because the
+/// engine does no git (the rc.24 fix pass, the completion audit's CPL-5;
+/// `design/finalize.md` → 4. Promote, *what an occupied home is*).
+///
+/// The clobber guard asked one question of a home — *what is this directory entry?* — and
+/// a committing door replaces more than directory entries. A path **git holds and the
+/// worktree does not** read as a free home:
+///
+/// - a committed doc whose file was deleted from the worktree, uncommitted
+///   ([`head`](Self::head)). A doc *minted* at that id then landed under it at exit 0, the
+///   commit replacing the committed doc under its own identity — where a checkout holding a
+///   `file-state` key for the doc blocked on `reconciliation.rename`, a checkout without one
+///   (every fresh clone) confirmed nothing;
+/// - a file staged and then taken out of the worktree ([`index`](Self::index)). The
+///   promote's own `git add` replaced its index entry — bytes no commit holds.
+///
+/// Every member is a **repo-relative path as git prints it**, compared with a promotion's
+/// [`lexical_normalize`](crate::store::lexical_normalize)d destination. The CLI asks git
+/// itself — `git ls-tree`, `git ls-files` — over exactly the destinations
+/// [`promote_destinations`] names, so the answer is git's under whatever conversion and
+/// attribute settings the repository has: the questions are about which paths exist, never
+/// about bytes. [`Default`] is *git holds none of them*, which is true of every plan whose
+/// homes are new — and is what the engine's own tests, which have no repository, feed in.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HomeClaims {
+    /// Promote destinations the commit the door builds on (`HEAD`) holds an entry at.
+    pub head: BTreeSet<String>,
+    /// Promote destinations the index of the checkout the promote writes into holds.
+    pub index: BTreeSet<String>,
+}
+
+/// **The destinations the docs staged under `area_dir` promote to** — the promote plan's
+/// own set, for the door that has to ask git about those paths *before* the planner runs
+/// ([`HomeClaims`]). It is [`plan_promotions`] and nothing else, so the paths asked about
+/// and the paths planned cannot differ. A staging area the sweep cannot read answers the
+/// sweep's own blocking finding, which the planner then raises itself.
+pub fn promote_destinations(
+    area_dir: &Path,
+    schemas: &BTreeMap<String, Schema>,
+) -> Result<Vec<String>, Vec<Finding>> {
+    Ok(plan_promotions(area_dir, schemas)?
+        .promotions
+        .into_iter()
+        .map(|promotion| promotion.destination)
+        .collect())
+}
+
 /// Plan the `finalize` transaction for a task — the pure engine-side decision over
 /// the working area + base + supplied HEAD + validate report + diff signal.
 ///
@@ -200,6 +248,8 @@ impl FinalizePlan {
 /// doc's `location:`. `repo_root` is the repo root the planner probes for the promote
 /// **clobber guard** (review S1) — a create-provenance doc whose canonical destination
 /// already holds a committed managed doc blocks rather than silently overwriting it.
+/// `claims` is what git holds at those destinations ([`HomeClaims`]): a home is occupied by
+/// what the index or `HEAD` holds there as well as by what is on disk.
 /// Returns the [`FinalizePlan`] on a clean run, or the blocking findings that aborted it.
 ///
 /// Performs no git and no commit. Reads the task working area + stats `repo_root`
@@ -219,6 +269,7 @@ pub fn plan_finalize(
     commit_schema: &Schema,
     commit_slug: &str,
     schemas: &BTreeMap<String, Schema>,
+    claims: &HomeClaims,
 ) -> Result<FinalizePlan, Vec<Finding>> {
     // The work unit every block whose subject is the *task* keys at (M42 inc-9 T4). The
     // commit slug IS the task id — a task's commit doc is provisioned as `commit:<task-id>`
@@ -274,7 +325,14 @@ pub fn plan_finalize(
     // promote — irreversible data loss. Block before retire. The in-place migration
     // rewrite (the doc replacing the very foreign original at its own canonical path) is
     // excluded via the retire guard's source-path == destination discriminator.
-    plan_clobber_guard(unit, task_dir, repo_root, &promote.promotions, schemas)?;
+    plan_clobber_guard(
+        unit,
+        task_dir,
+        repo_root,
+        &promote.promotions,
+        schemas,
+        claims,
+    )?;
 
     // The retire set (`design/auto-migration.md` → Retire-the-foreign-original): a
     // migration task records its repo-relative foreign source path at mint; the planner
@@ -473,6 +531,7 @@ fn plan_clobber_guard(
     repo_root: &Path,
     promotions: &[Promotion],
     schemas: &BTreeMap<String, Schema>,
+    claims: &HomeClaims,
 ) -> Result<(), Vec<Finding>> {
     let provenance = crate::state::ProvenanceRecord::load(task_dir)
         .map_err(|err| vec![provenance_io_finding(unit, task_dir, &err)])?;
@@ -491,34 +550,45 @@ fn plan_clobber_guard(
     };
     let task_id = unit.id();
 
-    let clobbers: Vec<Finding> =
-        refused_promotions(repo_root, promotions, in_place.as_deref(), |address| {
+    let clobbers: Vec<Finding> = refused_promotions(
+        repo_root,
+        promotions,
+        in_place.as_deref(),
+        claims,
+        |address| {
             // edited-from-base / unrecorded → never a clobber.
             provenance.get(address) == Some(crate::state::Provenance::Created)
-        })
-        .into_iter()
-        .map(|refused| match refused.over {
-            Occupant::File => clobber_finding(repo_root, &refused.promotion.destination, by),
-            Occupant::Foreign(shape) => clobber_finding(
-                repo_root,
-                &refused.promotion.destination,
-                ClobberedBy::Shape {
-                    shape,
-                    exit: ShapeExit::of(provenance.get(refused.address), refused.address, schemas),
-                    unit: match source.as_ref() {
-                        Some(_) => ShapeUnit::Migration {
-                            id: task_id,
-                            address: refused.address,
-                        },
-                        None => ShapeUnit::Task {
-                            id: task_id,
-                            address: refused.address,
-                        },
-                    },
-                },
-            ),
-        })
-        .collect();
+        },
+    )
+    .into_iter()
+    .map(|refused| {
+        let exit = ShapeExit::of(provenance.get(refused.address), refused.address, schemas);
+        let shape_unit = match source.as_ref() {
+            Some(_) => ShapeUnit::Migration {
+                id: task_id,
+                address: refused.address,
+            },
+            None => ShapeUnit::Task {
+                id: task_id,
+                address: refused.address,
+            },
+        };
+        let by = match refused.over {
+            Occupant::File => by,
+            Occupant::Foreign(shape) => ClobberedBy::Shape {
+                shape,
+                exit,
+                unit: shape_unit,
+            },
+            Occupant::Held(holder) => ClobberedBy::Held {
+                holder,
+                exit,
+                unit: shape_unit,
+            },
+        };
+        clobber_finding(repo_root, &refused.promotion.destination, by)
+    })
+    .collect();
     if clobbers.is_empty() {
         Ok(())
     } else {
@@ -561,45 +631,49 @@ fn plan_milestone_clobber_guard(
     promotions: &[Promotion],
     origins: &BTreeMap<String, crate::milestone::MergedOrigin>,
     schemas: &BTreeMap<String, Schema>,
+    claims: &HomeClaims,
 ) -> Result<(), Vec<Finding>> {
-    let clobbers: Vec<Finding> = refused_promotions(repo_root, promotions, None, |address| {
-        origins
-            .get(address)
-            .is_some_and(|origin| origin.provenance == crate::state::Provenance::Created)
-    })
-    .into_iter()
-    .filter_map(|refused| {
-        let origin = origins.get(refused.address);
-        let by = match refused.over {
-            // The file arm's subject is a body the join wrote — no origin, no clobber.
-            Occupant::File => ClobberedBy::SubTask {
+    let clobbers: Vec<Finding> =
+        refused_promotions(repo_root, promotions, None, claims, |address| {
+            origins
+                .get(address)
+                .is_some_and(|origin| origin.provenance == crate::state::Provenance::Created)
+        })
+        .into_iter()
+        .filter_map(|refused| {
+            let origin = origins.get(refused.address);
+            // The exit the sub-task has, read off the address its doc is staged under.
+            let exit = ShapeExit::of(
+                origin.map(|origin| origin.provenance),
+                origin.map_or(refused.address, |origin| origin.minted.as_str()),
+                schemas,
+            );
+            let unit = ShapeUnit::Milestone {
                 milestone: milestone_id,
                 landing: refused.address,
-                origin: origin?,
-            },
-            // The shape arm refuses whoever staged the body: with no origin there is no
-            // sub-task to name, and the entry at the home is still not one to write through.
-            Occupant::Foreign(shape) => ClobberedBy::Shape {
-                shape,
-                exit: ShapeExit::of(
-                    origin.map(|origin| origin.provenance),
-                    origin.map_or(refused.address, |origin| origin.minted.as_str()),
-                    schemas,
-                ),
-                unit: ShapeUnit::Milestone {
+                origin,
+            };
+            let by = match refused.over {
+                // The file arm's subject is a body the join wrote — no origin, no clobber.
+                Occupant::File => ClobberedBy::SubTask {
                     milestone: milestone_id,
                     landing: refused.address,
-                    origin,
+                    origin: origin?,
                 },
-            },
-        };
-        Some(clobber_finding(
-            repo_root,
-            &refused.promotion.destination,
-            by,
-        ))
-    })
-    .collect();
+                // The shape arm refuses whoever staged the body: with no origin there is no
+                // sub-task to name, and the entry at the home is still not one to write
+                // through.
+                Occupant::Foreign(shape) => ClobberedBy::Shape { shape, exit, unit },
+                // Asked of a `created` doc only, and `created` is read off an origin.
+                Occupant::Held(holder) => ClobberedBy::Held { holder, exit, unit },
+            };
+            Some(clobber_finding(
+                repo_root,
+                &refused.promotion.destination,
+                by,
+            ))
+        })
+        .collect();
     if clobbers.is_empty() {
         Ok(())
     } else {
@@ -614,16 +688,38 @@ fn plan_milestone_clobber_guard(
 /// It reads the **worktree**, which is where jigc's own notion of the committed store lives
 /// (the create probe, [`crate::state::create_occupied`], and the in-task rename's
 /// destination guard read the same place): a committed doc is a file at its home, and so is
-/// an untracked or a merely-staged one, which no reading of the index or of `HEAD` would
-/// see. An entry there is an occupant whoever put it there — and it is read **without
-/// following a link** ([`crate::store::home_entry`]), so what is asked is *what this
-/// directory entry is*, never what it points at.
+/// an untracked one, which no reading of the index or of `HEAD` would see. An entry there
+/// is an occupant whoever put it there — and it is read **without following a link**
+/// ([`crate::store::home_entry`]), so what is asked is *what this directory entry is*,
+/// never what it points at.
+///
+/// **And where the worktree shows nothing, it asks what git holds** ([`HomeClaims`]; the
+/// completion audit's CPL-5). The worktree is where an occupant usually is, not the only
+/// place one can be: a committed doc deleted from the worktree is still in `HEAD`, and a
+/// file staged and then taken out of the worktree is still in the index — a merely-staged
+/// file is seen above only while it is also on disk.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Occupant {
     /// A regular file — refused only for a doc the unit **minted**.
     File,
     /// An entry that is not a regular file — refused for **every** promotion.
     Foreign(crate::store::ForeignEntry),
+    /// **Nothing on disk, and a path git holds** ([`HomeClaims`]) — refused only for a doc
+    /// the unit **minted**. The home reads free and is not: the commit would replace what
+    /// `HEAD` holds there under its own path, or the promote's `git add` would replace an
+    /// index entry no commit has.
+    Held(Holder),
+}
+
+/// **Where git holds a file the worktree does not** — what [`Occupant::Held`] names.
+/// `HEAD` wins when both do: a committed doc is the stronger claim, and the route that
+/// brings it back (`git checkout HEAD -- <path>`) restores the index entry with it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Holder {
+    /// The commit the door builds on holds an entry at the path.
+    Head,
+    /// Only the index does — a file staged and never committed.
+    Index,
 }
 
 /// One promotion the planner refuses: the staged `<type>:<slug>` address it promotes from
@@ -647,31 +743,51 @@ struct RefusedPromotion<'p> {
 ///   `(R6, D-7)`). Neither discriminator applies: an `edited-from-base` doc was read
 ///   *through* a live link at copy-in and would be written through it, and the in-place
 ///   carve-out is a licence to rewrite a foreign *file*, not to write through whatever
-///   stands at its path now.
+///   stands at its path now;
+/// - a `created` doc over a home with **nothing on disk that git still holds** (`claims`;
+///   the completion audit's CPL-5). Same discriminators as the first arm, because it is the
+///   first arm's question asked of the place the occupant actually is: an `edited-from-base`
+///   doc is the committed doc's own update and re-promotes over its home whether or not the
+///   file is in the worktree.
 fn refused_promotions<'p>(
     repo_root: &Path,
     promotions: &'p [Promotion],
     in_place: Option<&Path>,
+    claims: &HomeClaims,
     is_created: impl Fn(&str) -> bool,
 ) -> Vec<RefusedPromotion<'p>> {
     promotions
         .iter()
         .filter_map(|promotion| {
             let address = promotion.source.file_stem().and_then(|s| s.to_str())?;
+            let dest_norm = crate::store::lexical_normalize(Path::new(&promotion.destination));
+            // The two arms that ask *"did this unit mint the doc?"* share its answer, and
+            // the in-place migration carve-out with it: a doc that replaces the very
+            // foreign original it was migrated from (M43, fork 5) is not a clobber of it.
+            let is_fresh_mint = || is_created(address) && in_place != Some(dest_norm.as_path());
             let over = match crate::store::home_entry(&repo_root.join(&promotion.destination)) {
-                crate::store::HomeEntry::Free => return None,
                 crate::store::HomeEntry::Foreign(shape) => Occupant::Foreign(shape),
                 crate::store::HomeEntry::RegularFile => {
-                    if !is_created(address) {
-                        return None;
-                    }
-                    let dest_norm =
-                        crate::store::lexical_normalize(Path::new(&promotion.destination));
-                    if in_place == Some(dest_norm.as_path()) {
-                        // in-place rewrite — replacing the very foreign original (M43, fork 5).
+                    if !is_fresh_mint() {
                         return None;
                     }
                     Occupant::File
+                }
+                // Nothing on disk is not *nothing there*: what git holds at the path is an
+                // occupant too ([`HomeClaims`]).
+                crate::store::HomeEntry::Free => {
+                    let git_path = dest_norm.to_string_lossy();
+                    let holder = if claims.head.contains(git_path.as_ref()) {
+                        Holder::Head
+                    } else if claims.index.contains(git_path.as_ref()) {
+                        Holder::Index
+                    } else {
+                        return None;
+                    };
+                    if !is_fresh_mint() {
+                        return None;
+                    }
+                    Occupant::Held(holder)
                 }
             };
             Some(RefusedPromotion {
@@ -754,6 +870,124 @@ enum ShapeUnit<'a> {
     Store { withheld: &'a str, rerun: &'a str },
 }
 
+impl ShapeUnit<'_> {
+    /// The doc the refusal is about, as a message names it — the unit, and the address the
+    /// doc is **staged under** there (with the join's suffix beside it when it took one).
+    fn whose(&self) -> String {
+        match self {
+            ShapeUnit::Task { address, .. } => format!("this task's doc `{address}`"),
+            ShapeUnit::Migration { address, .. } => format!("this migration's doc `{address}`"),
+            ShapeUnit::Milestone {
+                landing,
+                origin: Some(origin),
+                ..
+            } => {
+                let minted = origin.minted.as_str();
+                let sub_task = origin.source_task();
+                if *landing == minted {
+                    format!("sub-task `{sub_task}`'s doc `{minted}`")
+                } else {
+                    format!(
+                        "sub-task `{sub_task}`'s doc `{minted}` — which the join suffixed to \
+                         `{landing}` —"
+                    )
+                }
+            }
+            ShapeUnit::Milestone {
+                landing,
+                origin: None,
+                ..
+            } => format!("this milestone's doc `{landing}`"),
+            ShapeUnit::Sink | ShapeUnit::Store { .. } => "the doc".to_owned(),
+        }
+    }
+
+    /// The route's opening clause: what the refusal left untouched.
+    fn intact(&self) -> &'static str {
+        match self {
+            ShapeUnit::Milestone { .. } => {
+                "nothing was committed and every sub-task's staged work is intact"
+            }
+            _ => "nothing was committed and this task's staged docs are intact",
+        }
+    }
+
+    /// The route's closing clause: the unit's own boundary, re-run.
+    fn rerun(&self) -> String {
+        use crate::finding::shell_operand;
+        match self {
+            ShapeUnit::Migration { id, .. } => {
+                let id = shell_operand(id);
+                format!(
+                    "re-run `jigc task finalize {id}` to review the fidelity diff and `jigc \
+                     task finalize {id} --approve` to land it"
+                )
+            }
+            ShapeUnit::Task { id, .. } => {
+                format!("re-run `jigc task finalize {}`", shell_operand(id))
+            }
+            ShapeUnit::Milestone { milestone, .. } => format!(
+                "re-run `jigc milestone finalize {}`",
+                shell_operand(milestone)
+            ),
+            ShapeUnit::Sink | ShapeUnit::Store { .. } => "re-run the command".to_owned(),
+        }
+    }
+
+    /// **The exit that gives the unit's doc another id** — the in-task rename, addressed at
+    /// the id the doc is staged under; at the milestone boundary, one per sub-task of the
+    /// collision group from the doc's position on ([`sub_task_renames`]). `None` where the
+    /// unit names no doc to rename.
+    fn rename(&self) -> Option<String> {
+        use crate::finding::shell_operand;
+        match self {
+            ShapeUnit::Task { id, address } | ShapeUnit::Migration { id, address } => {
+                Some(format!(
+                    "give this task's doc an id whose home is free (`jigc doc rename {} --to \
+                     \"<title>\" --task {}`)",
+                    shell_operand(address),
+                    shell_operand(id),
+                ))
+            }
+            ShapeUnit::Milestone {
+                origin: Some(origin),
+                ..
+            } => Some(sub_task_renames(origin)),
+            _ => None,
+        }
+    }
+
+    /// **The exit that drops the mint** — the one a doc under a fixed identity has, since
+    /// no rename can move it: the work unit that staged it is discarded, by consent
+    /// (`--force`), and the clause says what goes with it and how to read it first. The
+    /// unit is the task itself, or the sub-task the body came from. `None` where the unit
+    /// names no work unit that staged the doc.
+    fn drop_the_mint(&self) -> Option<String> {
+        use crate::finding::shell_operand;
+        let (task, address, what, with_it) = match self {
+            ShapeUnit::Task { id, address } | ShapeUnit::Migration { id, address } => {
+                (*id, *address, "this task", "its staged docs go with it")
+            }
+            ShapeUnit::Milestone {
+                origin: Some(origin),
+                ..
+            } => (
+                origin.source_task(),
+                origin.minted.as_str(),
+                "the sub-task that minted it",
+                "that sub-task's whole staged work goes with it",
+            ),
+            _ => return None,
+        };
+        let task = shell_operand(task);
+        Some(format!(
+            "drop {what} (`jigc task discard {task} --force` — {with_it}, so read what you \
+             want kept first: `jigc doc show {} --task {task}`)",
+            shell_operand(address),
+        ))
+    }
+}
+
 /// **Whose doc the refused promote was** — what [`clobber_finding`] words its message and
 /// its route from. One finding identity (`finalize.promote-clobber`, keyed at the
 /// destination), three units whose exits differ.
@@ -784,6 +1018,18 @@ enum ClobberedBy<'a> {
         /// What is at the destination.
         shape: crate::store::ForeignEntry,
         /// The exit this unit has from it.
+        exit: ShapeExit,
+        /// Who is told.
+        unit: ShapeUnit<'a>,
+    },
+    /// A unit's `created` doc, over a destination with nothing on disk that **git still
+    /// holds** (CPL-5) — a committed doc missing from the worktree, or a file staged and
+    /// taken out of it.
+    Held {
+        /// Where git holds it.
+        holder: Holder,
+        /// The exit this unit has: another id for its doc, or — under a fixed identity —
+        /// none but dropping the mint.
         exit: ShapeExit,
         /// Who is told.
         unit: ShapeUnit<'a>,
@@ -821,6 +1067,10 @@ enum ClobberedBy<'a> {
 ///   same refusal: something a third party put at the doc's home, which a promote would
 ///   write over or, here, *through*. It routes at no `jigc migrate`: a link is not a file
 ///   to adopt (driven: `migrate.source-untrackable`).
+/// - **[`ClobberedBy::Held`]** — nothing is on disk at the destination and **git still
+///   holds a file there** ([`held_clobber_text`]; the completion audit's CPL-5). The same
+///   refusal once more, asked of the place the occupant is: the commit would replace it
+///   under its own path.
 fn clobber_finding(repo_root: &Path, destination: &str, by: ClobberedBy) -> Finding {
     let (message, route) = match by {
         ClobberedBy::Migration { source } => (
@@ -867,6 +1117,9 @@ fn clobber_finding(repo_root: &Path, destination: &str, by: ClobberedBy) -> Find
         } => sub_task_clobber_text(destination, milestone, landing, origin),
         ClobberedBy::Shape { shape, exit, unit } => {
             shape_clobber_text(destination, shape, exit, unit)
+        }
+        ClobberedBy::Held { holder, exit, unit } => {
+            held_clobber_text(repo_root, destination, holder, exit, unit)
         }
     };
     Finding::graded(
@@ -1011,32 +1264,7 @@ fn shape_clobber_text(
     use crate::finding::shell_operand;
     let noun = shape.noun();
     let bare = shape.bare();
-    let whose = match unit {
-        ShapeUnit::Task { address, .. } => format!("this task's doc `{address}`"),
-        ShapeUnit::Migration { address, .. } => format!("this migration's doc `{address}`"),
-        ShapeUnit::Milestone {
-            landing,
-            origin: Some(origin),
-            ..
-        } => {
-            let minted = origin.minted.as_str();
-            let sub_task = origin.source_task();
-            if landing == minted {
-                format!("sub-task `{sub_task}`'s doc `{minted}`")
-            } else {
-                format!(
-                    "sub-task `{sub_task}`'s doc `{minted}` — which the join suffixed to \
-                     `{landing}` —"
-                )
-            }
-        }
-        ShapeUnit::Milestone {
-            landing,
-            origin: None,
-            ..
-        } => format!("this milestone's doc `{landing}`"),
-        ShapeUnit::Sink | ShapeUnit::Store { .. } => "the doc".to_owned(),
-    };
+    let whose = unit.whose();
     let message = match unit {
         // No unit and no promote: the doc is committed at this home, and the door would
         // have rewritten it there or carried the entry somewhere else.
@@ -1122,6 +1350,93 @@ fn shape_clobber_text(
              a copy of the file it points at, in the link's place — and commit that; then \
              {rerun}"
         ),
+    };
+    (message, route)
+}
+
+/// The message and the route of [`clobber_finding`]'s **held arm** — a `created` doc refused
+/// because its destination, with nothing on disk, is a path **git still holds** (the rc.24
+/// fix pass, the completion audit's CPL-5; `design/finalize.md` → 4. Promote).
+///
+/// **The state.** A committed doc deleted from the worktree and not committed as deleted, or
+/// a file staged and then taken out of the worktree. Both read as a free home to every probe
+/// that asks the disk — the create that minted the doc included — so the doc is `created`,
+/// and landing it replaces what git holds under its own path: the committed doc under its
+/// own id, at exit 0, or the staged blob, which no commit then has.
+///
+/// **Each exit is one that lands, and none of them is a commit made first** — a commit
+/// before a unit's boundary moves `HEAD` off its base pin, at either door:
+///
+/// - a doc minted under an id its author chooses takes **another id** in the unit
+///   ([`ShapeUnit::rename`]), and lands beside what git holds;
+/// - a doc under a **fixed identity** has no other id, so the mint itself is dropped
+///   ([`ShapeUnit::drop_the_mint`]) — the work is then done again over the file that is
+///   there, which the create copies in for update instead of minting over.
+///
+/// The file git holds is never jigc's to decide about: the route names the one command that
+/// brings it back into the worktree ([`crate::finding::git_at`], so it runs from any
+/// directory) and says it is left as it is. It teaches no removal and no commit.
+fn held_clobber_text(
+    repo_root: &Path,
+    destination: &str,
+    holder: Holder,
+    exit: ShapeExit,
+    unit: ShapeUnit,
+) -> (String, String) {
+    use crate::finding::{git_at, shell_operand};
+    let whose = unit.whose();
+    let (holds, restore) = match holder {
+        Holder::Head => (
+            "the committed file is still in `HEAD`",
+            git_at(
+                repo_root,
+                &format!("checkout HEAD -- {}", shell_operand(destination)),
+            ),
+        ),
+        Holder::Index => (
+            "a file is staged there in git's index, in no commit",
+            git_at(
+                repo_root,
+                &format!("checkout -- {}", shell_operand(destination)),
+            ),
+        ),
+    };
+    let message = format!(
+        "`{destination}` is missing from the worktree but not from git — {holds} — and \
+         {whose} was minted as a new doc, not as an edit of that file: promoting it would \
+         replace the file git holds under its own path, so it is not promoted there"
+    );
+    let intact = unit.intact();
+    let rerun = unit.rerun();
+    let left = format!(
+        "The file git holds at `{destination}` is left exactly as it is: `{restore}` brings \
+         it back into the worktree, and that is no commit"
+    );
+    let route = match (exit, unit.rename(), unit.drop_the_mint()) {
+        (ShapeExit::RenameOrMoveOut, Some(rename), _) => {
+            format!("{intact}: {rename}, then {rerun}. {left}")
+        }
+        (_, _, Some(drop)) => {
+            let again = match unit {
+                ShapeUnit::Milestone { .. } => format!(
+                    "{drop}, then {rerun}; a task started once the milestone has landed \
+                     meets the file that is there, and its create copies a managed doc in \
+                     for update instead of minting over it"
+                ),
+                _ => format!(
+                    "{drop}, bring the file back, and start the work again — the create \
+                     then meets the file that is there, and copies a managed doc in for \
+                     update instead of minting over it"
+                ),
+            };
+            format!(
+                "{intact}. A doc of this doctype has one fixed home, so it cannot be given \
+                 another id: {again}. {left}"
+            )
+        }
+        // No work unit to name (a body the join did not write): the home has to hold the
+        // file git holds before anything lands over it.
+        _ => format!("{intact}: bring the file back, then {rerun}. {left}"),
     };
     (message, route)
 }
@@ -1893,8 +2208,9 @@ pub enum SetupHead<'a> {
 /// with `finalize.promote-clobber`, exactly as [`plan_finalize`] does
 /// ([`plan_milestone_clobber_guard`]). `origins` is the join's per-body provenance
 /// ([`crate::milestone::MaterializeOutcome::origins`]) — the merged area carries no
-/// manifest of its own. Performs no git and no commit; reads `staging_dir`, and stats the
-/// promote destinations under `repo_root`.
+/// manifest of its own — and `claims` what git holds at the promote destinations
+/// ([`HomeClaims`]), which the CLI asks of the main checkout. Performs no git and no commit;
+/// reads `staging_dir`, and stats the promote destinations under `repo_root`.
 // The determinism contract feeds every layer in explicitly (the [`plan_finalize`] precedent);
 // bundling the inputs into a params struct would be churn without clarifying the contract.
 #[allow(clippy::too_many_arguments)]
@@ -1909,6 +2225,7 @@ pub fn plan_milestone_finalize(
     has_diff: bool,
     schemas: &BTreeMap<String, Schema>,
     origins: &BTreeMap<String, crate::milestone::MergedOrigin>,
+    claims: &HomeClaims,
 ) -> Result<FinalizePlan, Vec<Finding>> {
     // The work unit every shared block keys at — `milestone:<id>`, never a guess derived from
     // `staging_dir` (M42 inc-9 T4; `design/command-output-contract.md` → the finalize
@@ -1953,6 +2270,7 @@ pub fn plan_milestone_finalize(
         &promote.promotions,
         origins,
         schemas,
+        claims,
     )?;
     // A milestone boundary retires nothing — retire is migration-only (a per-task verb) —
     // and carries no owner-artifact set: the owner-artifact exemption/stage is a per-task
@@ -2994,6 +3312,7 @@ sections:
             &schema,
             "add-rate-limiter",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect_err("a base mismatch aborts preflight");
         assert_eq!(err.len(), 1, "one preflight finding");
@@ -3039,6 +3358,7 @@ sections:
             &schema,
             "add-rate-limiter",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect_err("blocking validate findings abort at phase 2");
         assert_eq!(
@@ -3058,6 +3378,7 @@ sections:
             &schema,
             "add-rate-limiter",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect_err("an empty diff aborts");
         assert_eq!(err.len(), 1);
@@ -3085,6 +3406,7 @@ sections:
             &schema,
             "add-rate-limiter",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect("a clean task yields a plan");
         assert_eq!(
@@ -3125,6 +3447,7 @@ sections:
             &schema,
             "changelog",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect("a clean non-migration task yields a plan");
         assert!(
@@ -3145,6 +3468,7 @@ sections:
             &schema,
             "changelog",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect("a clean migration task yields a plan");
         assert_eq!(
@@ -3183,6 +3507,7 @@ sections:
             &schema,
             "changelog",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect_err("a migration that promoted no replacement must block");
         assert_eq!(findings.len(), 1);
@@ -3235,6 +3560,7 @@ sections:
             &schema,
             "changelog",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect("a clean in-place migration yields a plan");
         assert!(
@@ -3271,6 +3597,7 @@ sections:
                 &schema,
                 "changelog",
                 &schemas(),
+                &HomeClaims::default(),
             )
             .expect("a clean in-place migration yields a plan");
             assert!(
@@ -3293,6 +3620,7 @@ sections:
             &schema,
             "changelog",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect("a clean distinct-path migration yields a plan");
         assert_eq!(
@@ -3319,6 +3647,7 @@ sections:
             &commit_schema(),
             "nonexistent",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect_err("a missing task aborts preflight");
         assert_eq!(err.len(), 1);
@@ -3368,6 +3697,7 @@ sections:
             &schema,
             "migrate-adr-second",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect_err("a created doc clobbering a committed managed doc must block");
         assert_eq!(findings.len(), 1, "exactly one clobber finding");
@@ -3422,6 +3752,7 @@ sections:
             &schema,
             "update-adr",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect("an edited-from-base re-promote does not clobber");
         assert_eq!(plan.promotions.len(), 1, "the edited doc still promotes");
@@ -3458,6 +3789,7 @@ sections:
             &schema,
             "migrate-adr-first",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect("a first-time created promote does not clobber");
         assert_eq!(plan.promotions.len(), 1);
@@ -3512,6 +3844,7 @@ sections:
                 &schema,
                 "migrate-in-place",
                 &schemas(),
+                &HomeClaims::default(),
             )
             .unwrap_or_else(|_| panic!("the in-place rewrite `{source_path}` must not clobber"));
             assert_eq!(
@@ -3565,6 +3898,7 @@ sections:
                 &schema,
                 "migrate-adr-inplace",
                 &schemas(),
+                &HomeClaims::default(),
             )
             .unwrap_or_else(|findings| {
                 panic!("the same-path rewrite `{source_path}` must not clobber: {findings:?}")
@@ -3628,6 +3962,7 @@ sections:
             &schema,
             "migrate-adr-collide",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect_err("a colliding migration (source != destination) must still block");
         assert_eq!(findings.len(), 1, "exactly one clobber finding");
@@ -3702,6 +4037,7 @@ sections:
             &schema,
             "record-decision",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect_err("a created doc clobbering a committed managed doc must block");
         assert_eq!(findings.len(), 1, "exactly one clobber finding");
@@ -3854,6 +4190,7 @@ sections:
                     &schema,
                     "record-decision",
                     &schemas(),
+                    &HomeClaims::default(),
                 )
                 .expect_err("an entry that is not a regular file refuses the promotion");
                 assert_eq!(findings.len(), 1, "{cell}: exactly one finding");
@@ -3928,6 +4265,7 @@ sections:
             &schema,
             "record-change",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect_err("a link at a placement home refuses");
         assert_eq!(findings.len(), 1);
@@ -3977,6 +4315,7 @@ sections:
                 &schema,
                 "migrate-adr",
                 &schemas(),
+                &HomeClaims::default(),
             )
             .expect_err("a migration never lands through a link");
             assert_eq!(findings.len(), 1, "{what}");
@@ -4112,6 +4451,7 @@ sections:
             &schema,
             "cache-sessions",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect("a clean task with a staged ADR yields a plan");
 
@@ -4260,6 +4600,7 @@ sections:
             &commit_schema(),
             "record-completion",
             &schemas,
+            &HomeClaims::default(),
         )
         .expect("a clean report + diff drive the planner past phase 2");
 
@@ -4299,6 +4640,7 @@ sections:
             true,
             &with_placement,
             &no_origins(),
+            &HomeClaims::default(),
         )
         .expect("a placement doctype rides the milestone join (placement != root-render)");
 
@@ -4553,6 +4895,7 @@ sections:
             true,
             &schemas(),
             &no_origins(),
+            &HomeClaims::default(),
         )
         .expect_err("a base mismatch aborts preflight");
         assert_eq!(err.len(), 1);
@@ -4573,6 +4916,7 @@ sections:
             true,
             &schemas(),
             &no_origins(),
+            &HomeClaims::default(),
         )
         .expect("a record-only-range advance clears the base-guard and yields a plan");
         assert_eq!(
@@ -4592,6 +4936,7 @@ sections:
             true,
             &schemas(),
             &no_origins(),
+            &HomeClaims::default(),
         )
         .expect_err("a missing staging area aborts preflight");
         assert_eq!(err[0].code, "finalize.no-task");
@@ -4613,6 +4958,7 @@ sections:
             false,
             &schemas(),
             &no_origins(),
+            &HomeClaims::default(),
         )
         .expect_err("an empty diff aborts");
         assert_eq!(err[0].code, "finalize.empty-commit");
@@ -4635,6 +4981,7 @@ sections:
             true,
             &schemas(),
             &no_origins(),
+            &HomeClaims::default(),
         )
         .expect("a clean milestone staging area yields a plan");
         assert_eq!(
@@ -4699,6 +5046,7 @@ sections:
             true,
             &schemas(),
             origins,
+            &HomeClaims::default(),
         )
     }
 
@@ -4939,6 +5287,221 @@ sections:
         assert_eq!(plan.promotions.len(), 2, "both created docs are promoted");
     }
 
+    /// The claims of a repository that holds `path` — in `HEAD`, or in the index alone.
+    fn held(path: &str, in_head: bool) -> HomeClaims {
+        let mut claims = HomeClaims::default();
+        if in_head {
+            claims.head.insert(path.to_string());
+        } else {
+            claims.index.insert(path.to_string());
+        }
+        claims
+    }
+
+    /// Run the task planner over a staged `adr:single-node-cache` recorded as `provenance`,
+    /// with `claims` — every other input clean.
+    fn plan_task_holding(
+        root: &Path,
+        provenance: Option<state::Provenance>,
+        claims: &HomeClaims,
+    ) -> Result<FinalizePlan, Vec<Finding>> {
+        let task_dir = root.join("tasks").join("record-decision");
+        let schema = stage_filled_commit(&task_dir, "record-decision");
+        stage_filled_adr(&task_dir, "single-node-cache");
+        if let Some(provenance) = provenance {
+            state::record_doc_provenance(&task_dir, "adr:single-node-cache", provenance)
+                .expect("record provenance");
+        }
+        plan_finalize(
+            &task_dir,
+            root,
+            &base(),
+            &base().sha,
+            &ValidationReport::new(Vec::new(), &no_delta_resolved()),
+            true,
+            &schema,
+            "record-decision",
+            &schemas(),
+            claims,
+        )
+    }
+
+    /// **A home with nothing on disk that git still holds is occupied** (the rc.24 fix pass,
+    /// the completion audit's CPL-5; `design/finalize.md` → 4. Promote). A `created` doc is
+    /// refused under `finalize.promote-clobber`, keyed at the destination, whichever of
+    /// `HEAD` and the index holds the path; the route gives the doc another id, ends at the
+    /// task's own boundary, and names the aimed restore of what git holds — never a removal.
+    ///
+    /// The cells that must **not** refuse sit beside it: the same claims over a doc the task
+    /// copied in (`edited-from-base` — the committed doc's own update), over a doc with no
+    /// recorded provenance, over an in-place migration of that very path, and a claim on a
+    /// path the plan does not promote to.
+    #[test]
+    fn a_created_doc_is_refused_over_a_home_git_holds_and_the_disk_does_not() {
+        let destination = "decisions/single-node-cache.md";
+        for in_head in [true, false] {
+            let root = TempRoot::new("held-home");
+            let findings = plan_task_holding(
+                root.path(),
+                Some(state::Provenance::Created),
+                &held(destination, in_head),
+            )
+            .expect_err("a created doc over a home git holds must block");
+            assert_eq!(findings.len(), 1, "one finding; {findings:#?}");
+            let finding = &findings[0];
+            assert_eq!(finding.code, "finalize.promote-clobber");
+            assert_eq!(finding.severity, Severity::Blocking);
+            assert_eq!(target(finding), Some(destination), "keyed at the home");
+            assert!(
+                finding.message.contains("missing from the worktree")
+                    && finding.message.contains("`adr:single-node-cache`"),
+                "the message says the home is not free and whose doc it is: {}",
+                finding.message,
+            );
+            let route = finding.route.as_deref().expect("blocking ⇒ routed");
+            assert!(
+                route.contains(
+                    "`jigc doc rename adr:single-node-cache --to \"<title>\" --task \
+                     record-decision`"
+                ) && route.contains("`jigc task finalize record-decision`"),
+                "the route renames in the task and ends at its boundary: {route}",
+            );
+            let restore = if in_head {
+                "checkout HEAD -- decisions/single-node-cache.md`"
+            } else {
+                "checkout -- decisions/single-node-cache.md`"
+            };
+            assert!(
+                route.contains(&format!("`git -C {}", root.path().display()))
+                    && route.contains(restore),
+                "the restore is aimed at the checkout and names what holds the file: {route}",
+            );
+            for surface in [finding.message.as_str(), route] {
+                let lower = surface.to_lowercase();
+                assert!(
+                    !lower.contains("remove")
+                        && !lower.contains("delete")
+                        && !lower.contains("git rm"),
+                    "the refusal never teaches a removal: {surface}",
+                );
+            }
+            assert!(
+                !root.path().join(destination).exists(),
+                "the planner writes nothing",
+            );
+        }
+
+        // ── MUST NOT REFUSE ──
+        let claims = held(destination, true);
+        for (cell, provenance) in [
+            ("edited-from-base", Some(state::Provenance::EditedFromBase)),
+            ("no recorded provenance", None),
+        ] {
+            let root = TempRoot::new("held-home-control");
+            plan_task_holding(root.path(), provenance, &claims)
+                .unwrap_or_else(|f| panic!("{cell}: not a mint, so not a clobber; {f:#?}"));
+        }
+        let root = TempRoot::new("held-home-elsewhere");
+        plan_task_holding(
+            root.path(),
+            Some(state::Provenance::Created),
+            &held("decisions/another-doc.md", true),
+        )
+        .expect("a claim on a path the plan does not promote to refuses nothing");
+        let root = TempRoot::new("held-home-in-place");
+        state::persist(
+            &root
+                .path()
+                .join("tasks")
+                .join("record-decision")
+                .join("source-path"),
+            destination.as_bytes(),
+        )
+        .expect("record the migration source");
+        plan_task_holding(root.path(), Some(state::Provenance::Created), &claims)
+            .expect("the in-place migration of that very path is its own carve-out");
+    }
+
+    /// **A fixed identity has no other id** — the held arm's route for a placement singleton
+    /// prints no rename (it would refuse) and hands back the drop of the mint, at both doors.
+    #[test]
+    fn the_held_arm_routes_a_fixed_identity_at_dropping_the_mint() {
+        let schema = placement_schema("foo", "FOO.md");
+        let mut with_placement = schemas();
+        with_placement.insert(schema.ty.clone(), schema.clone());
+        let claims = held("FOO.md", true);
+
+        // The task door.
+        let root = TempRoot::new("held-fixed-task");
+        let task_dir = root.path().join("tasks").join("form-foo");
+        let commit = stage_filled_commit(&task_dir, "form-foo");
+        stage_filled_placement(&task_dir, &schema, &schema.ty);
+        state::record_doc_provenance(&task_dir, "foo:foo", state::Provenance::Created)
+            .expect("record created provenance");
+        let findings = plan_finalize(
+            &task_dir,
+            root.path(),
+            &base(),
+            &base().sha,
+            &ValidationReport::new(Vec::new(), &no_delta_resolved()),
+            true,
+            &commit,
+            "form-foo",
+            &with_placement,
+            &claims,
+        )
+        .expect_err("a minted singleton over a home git holds must block");
+        let route = findings[0].route.as_deref().expect("a route");
+        assert!(
+            !route.contains("jigc doc rename")
+                && route.contains("`jigc task discard form-foo --force`")
+                && route.contains("`jigc doc show foo:foo --task form-foo`"),
+            "the task door drops the mint, and says how to read it first: {route}",
+        );
+
+        // The milestone door.
+        let root = TempRoot::new("held-fixed-milestone");
+        let staging = root
+            .path()
+            .join("milestones")
+            .join("page-rework")
+            .join("merged");
+        stage_filled_placement(&staging, &schema, &schema.ty);
+        let origins = BTreeMap::from([origin_of(
+            "foo:foo",
+            state::Provenance::Created,
+            "foo:foo",
+            &["area-zed"],
+        )]);
+        let plan = |origins: &BTreeMap<String, crate::milestone::MergedOrigin>| {
+            plan_milestone_finalize(
+                "page-rework",
+                &staging,
+                root.path(),
+                &base(),
+                &base().sha,
+                false,
+                "Finalize milestone page-rework (1 sub-task)\n".to_string(),
+                true,
+                &with_placement,
+                origins,
+                &claims,
+            )
+        };
+        let findings = plan(&origins).expect_err("the boundary refuses it too");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(target(&findings[0]), Some("FOO.md"));
+        let route = findings[0].route.as_deref().expect("a route");
+        assert!(
+            !route.contains("jigc doc rename")
+                && route.contains("`jigc task discard area-zed --force`")
+                && route.contains("`jigc milestone finalize page-rework`"),
+            "the boundary drops the sub-task that minted it and lands the rest: {route}",
+        );
+        // MUST NOT REFUSE: a body the join did not write is not a mint.
+        plan(&no_origins()).expect("no origin, no clobber — the file arm's rule");
+    }
+
     /// **The milestone boundary refuses the same entries** (the rc.24 fix pass, `(R6, D-7)`)
     /// — the promote is shared, so the contract is. Over every shape × every way the join
     /// can hand a body on — a sub-task's fresh doc (kept its id · suffixed), a sub-task's
@@ -5075,6 +5638,7 @@ sections:
             &schema,
             "add-rate-limiter",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect_err("a base mismatch aborts the task preflight");
         assert_eq!(err[0].code, "finalize.base-mismatch");
@@ -5117,6 +5681,7 @@ sections:
             true,
             &schemas(),
             &no_origins(),
+            &HomeClaims::default(),
         )
         .expect_err("a base mismatch aborts the milestone preflight");
         assert_eq!(err.len(), 1, "one preflight finding");
@@ -5199,6 +5764,7 @@ sections:
             &schema,
             "add-rate-limiter",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect_err("a base mismatch aborts the task preflight");
 
@@ -5220,6 +5786,7 @@ sections:
             true,
             &schemas(),
             &no_origins(),
+            &HomeClaims::default(),
         )
         .expect_err("a base mismatch aborts the milestone preflight");
 
@@ -5289,6 +5856,7 @@ sections:
             &schema,
             "add-rate-limiter",
             &schemas(),
+            &HomeClaims::default(),
         )
         .expect_err("an empty diff aborts");
         assert_eq!(err[0].code, "finalize.empty-commit");
@@ -5319,6 +5887,7 @@ sections:
             false,
             &schemas(),
             &no_origins(),
+            &HomeClaims::default(),
         )
         .expect_err("an empty diff aborts");
         assert_eq!(err[0].code, "finalize.empty-commit");

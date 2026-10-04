@@ -1361,8 +1361,9 @@ pub fn terminal_milestone_finding(milestone_id: &str, status: &str) -> Finding {
 /// **settled** one is over and its id is spent.
 ///
 /// **The message says "a record", never "a committed record"** (M47 Inc 2 T2; law 1 —
-/// `design/surface-contract.md`). The caller probes the record path's **existence on disk** and
-/// runs no git read, so it cannot know the file ever landed: a hand-drafted record, or (before
+/// `design/surface-contract.md`). On this arm the caller probes the record path's **existence
+/// on disk** and runs no git read (git is asked only where the disk shows nothing —
+/// [`record_home_held_finding`]), so it cannot know the file ever landed: a hand-drafted record, or (before
 /// the record-commit transaction shipped) the residue of a rejected `create`, is present and
 /// uncommitted, and claiming a commit that never happened is exactly the class of lie the
 /// caller's own wave exists to remove. The refusal and its route are unchanged — only the
@@ -1419,6 +1420,56 @@ pub fn record_home_taken_finding(
              milestone under a different title, or move the {bare} out of the record's home, \
              so that `{home}` is free, and re-run this create",
             bare = shape.bare()
+        ),
+    )
+}
+
+/// [`record_exists_finding`]'s sibling for a record home with **nothing on disk that git
+/// still holds** — a committed record deleted from the worktree and not committed as
+/// deleted, or one staged and taken out of it (the rc.24 fix pass, the completion audit's
+/// CPL-5; `design/team-ready-state.md` → The lifecycle, *the id belongs to the record*).
+///
+/// The id-is-taken guard asks the disk, so that home read as a free id — in a checkout
+/// holding no workbench for the milestone, which is every fresh clone — and `milestone
+/// create` minted a new record over it: a record-only commit replacing the committed record,
+/// task list and all, under its own id at exit 0. It is the record-side twin of the promote's
+/// held arm (`crate::finalize`), at the one other door that mints a managed doc at its home,
+/// and the same refusal as an occupied id — same code, same key — because it is the same
+/// fact: the id belongs to a record.
+///
+/// `home` is the record's repo-relative path, `in_head` whether the commit holds it (else
+/// only the index does), and `repo_root` the checkout the route's restore runs in
+/// ([`crate::finding::git_at`]).
+pub fn record_home_held_finding(
+    milestone_id: &str,
+    home: &str,
+    in_head: bool,
+    repo_root: &Path,
+) -> Finding {
+    use crate::finding::{git_at, shell_operand};
+    let (holds, restore) = if in_head {
+        (
+            "the committed record is still in `HEAD`",
+            format!("checkout HEAD -- {}", shell_operand(home)),
+        )
+    } else {
+        (
+            "a record is staged there in git's index, in no commit",
+            format!("checkout -- {}", shell_operand(home)),
+        )
+    };
+    record_home_refusal(
+        milestone_id,
+        format!(
+            "the home of milestone `{milestone_id}`'s record, `{home}`, is missing from the \
+             worktree but not from git — {holds} — and minting the id again would replace \
+             that record under its own path"
+        ),
+        format!(
+            "nothing was written. `{}` brings the record back into the worktree, and that is \
+             no commit; the milestone is then continued with `jigc milestone add-task \
+             {milestone_id} \"<intent>\"` — or create this one under a different title",
+            git_at(repo_root, &restore),
         ),
     )
 }
