@@ -214,6 +214,16 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
          checkout whose index and `HEAD` were asked",
     ),
     (
+        "crates/engine/src/finalize.rs",
+        "fixed_clobber_text",
+        Aim::Aimed,
+        "`finalize.promote-clobber`'s fixed-identity arm (the completion audit's CPL-3) — \
+         `git add -- <home>`, the first of the two commands that bring the file at a \
+         singleton's home under management once the mint is dropped: `jigc migrate` refuses \
+         a source git has never recorded, so the stage is printed ahead of it, and both are \
+         run from wherever the reader stands",
+    ),
+    (
         "crates/engine/src/milestone.rs",
         "record_home_held_finding",
         Aim::Aimed,
@@ -717,6 +727,16 @@ const MIGRATE_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
          occupied promote destination a foreign file is invited to be adopted at. Its third, \
          the milestone boundary's sub-task arm, prints no `jigc migrate` span on purpose: \
          adopting the occupant before that boundary moves `HEAD` off the milestone's base",
+    ),
+    (
+        "crates/engine/src/finalize.rs",
+        "fixed_clobber_text",
+        Aim::Aimed,
+        "`finalize.promote-clobber`'s fixed-identity arm (the completion audit's CPL-3): the \
+         adoption of the file at a singleton's home, offered for after the mint is dropped \
+         — at the milestone boundary, after the milestone has landed. The same destination \
+         path `clobber_finding`'s task arm prints, for a doc that arm's other exits cannot \
+         move",
     ),
     (
         "crates/cli/src/ingest.rs",

@@ -269,7 +269,10 @@ pub enum MilestoneCommand {
     /// `finalize.promote-clobber`, commits nothing and leaves that file as it is, and
     /// routes at giving the doc another title inside its sub-task (`jigc doc rename
     /// <address> --to "<title>" --task <task-id>`), after which this command lands the
-    /// milestone. And no doc — created or edited — is promoted onto a destination whose
+    /// milestone. A doc of a doctype with one fixed home (`vision`, `changelog`) cannot
+    /// be renamed, so there the route is the file moved out of the doc's home, or the
+    /// sub-task that minted the doc dropped (`jigc task discard <task-id> --force`).
+    /// And no doc — created or edited — is promoted onto a destination whose
     /// entry is not a regular file (a symbolic link, a directory): a doc lands as a
     /// regular file at exactly its home and is never written through a link, so the
     /// boundary blocks with the same code and names the exit that sub-task's doc has.

@@ -574,7 +574,17 @@ fn plan_clobber_guard(
             },
         };
         let by = match refused.over {
-            Occupant::File => by,
+            // A doc under a fixed identity has none of the task arm's exits — it cannot be
+            // retitled or re-slugged — so it takes the arm that routes it at exits it has.
+            // A migration keeps its own arm: its exit is the migration's continuation,
+            // whatever the doctype.
+            Occupant::File { committed } if source.is_none() && exit == ShapeExit::MoveOut => {
+                ClobberedBy::Fixed {
+                    committed,
+                    unit: shape_unit,
+                }
+            }
+            Occupant::File { .. } => by,
             Occupant::Foreign(shape) => ClobberedBy::Shape {
                 shape,
                 exit,
@@ -655,10 +665,15 @@ fn plan_milestone_clobber_guard(
             };
             let by = match refused.over {
                 // The file arm's subject is a body the join wrote — no origin, no clobber.
-                Occupant::File => ClobberedBy::SubTask {
-                    milestone: milestone_id,
-                    landing: refused.address,
-                    origin: origin?,
+                // Under a fixed identity the sub-task's doc cannot be renamed out of the
+                // way, so it takes the arm whose exits it has (the audit's CPL-3).
+                Occupant::File { committed } => match (origin?, exit) {
+                    (_, ShapeExit::MoveOut) => ClobberedBy::Fixed { committed, unit },
+                    (origin, _) => ClobberedBy::SubTask {
+                        milestone: milestone_id,
+                        landing: refused.address,
+                        origin,
+                    },
                 },
                 // The shape arm refuses whoever staged the body: with no origin there is no
                 // sub-task to name, and the entry at the home is still not one to write
@@ -700,8 +715,11 @@ fn plan_milestone_clobber_guard(
 /// file is seen above only while it is also on disk.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Occupant {
-    /// A regular file — refused only for a doc the unit **minted**.
-    File,
+    /// A regular file — refused only for a doc the unit **minted**. `committed` is whether
+    /// `HEAD` holds a file at the path too ([`HomeClaims::head`]): a committed file cannot
+    /// be moved out of a home without a commit, which decides the exits a doc under a
+    /// fixed identity is offered ([`fixed_clobber_text`]).
+    File { committed: bool },
     /// An entry that is not a regular file — refused for **every** promotion.
     Foreign(crate::store::ForeignEntry),
     /// **Nothing on disk, and a path git holds** ([`HomeClaims`]) — refused only for a doc
@@ -765,18 +783,20 @@ fn refused_promotions<'p>(
             // the in-place migration carve-out with it: a doc that replaces the very
             // foreign original it was migrated from (M43, fork 5) is not a clobber of it.
             let is_fresh_mint = || is_created(address) && in_place != Some(dest_norm.as_path());
+            let git_path = dest_norm.to_string_lossy();
             let over = match crate::store::home_entry(&repo_root.join(&promotion.destination)) {
                 crate::store::HomeEntry::Foreign(shape) => Occupant::Foreign(shape),
                 crate::store::HomeEntry::RegularFile => {
                     if !is_fresh_mint() {
                         return None;
                     }
-                    Occupant::File
+                    Occupant::File {
+                        committed: claims.head.contains(git_path.as_ref()),
+                    }
                 }
                 // Nothing on disk is not *nothing there*: what git holds at the path is an
                 // occupant too ([`HomeClaims`]).
                 crate::store::HomeEntry::Free => {
-                    let git_path = dest_norm.to_string_lossy();
                     let holder = if claims.head.contains(git_path.as_ref()) {
                         Holder::Head
                     } else if claims.index.contains(git_path.as_ref()) {
@@ -1022,6 +1042,15 @@ enum ClobberedBy<'a> {
         /// Who is told.
         unit: ShapeUnit<'a>,
     },
+    /// A unit's `created` doc under a **fixed identity** (a placement singleton), over a
+    /// regular file at its one home (CPL-3) — the file arm for a doc no rename can move.
+    Fixed {
+        /// Whether `HEAD` holds a file at the home too: a committed file is not moved out
+        /// of a home without a commit, so only the drop of the mint is offered.
+        committed: bool,
+        /// Who is told.
+        unit: ShapeUnit<'a>,
+    },
     /// A unit's `created` doc, over a destination with nothing on disk that **git still
     /// holds** (CPL-5) — a committed doc missing from the worktree, or a file staged and
     /// taken out of it.
@@ -1067,6 +1096,11 @@ enum ClobberedBy<'a> {
 ///   same refusal: something a third party put at the doc's home, which a promote would
 ///   write over or, here, *through*. It routes at no `jigc migrate`: a link is not a file
 ///   to adopt (driven: `migrate.source-untrackable`).
+/// - **[`ClobberedBy::Fixed`]** — the task and sub-task arms' refusal, for a doc under a
+///   **fixed identity** ([`fixed_clobber_text`]; the completion audit's CPL-3). Those two
+///   arms route at giving the doc another id, and a placement singleton has none: the
+///   in-task rename refuses it (`write.identity-change`), so the route was a dead end at
+///   both doors.
 /// - **[`ClobberedBy::Held`]** — nothing is on disk at the destination and **git still
 ///   holds a file there** ([`held_clobber_text`]; the completion audit's CPL-5). The same
 ///   refusal once more, asked of the place the occupant is: the commit would replace it
@@ -1120,6 +1154,9 @@ fn clobber_finding(repo_root: &Path, destination: &str, by: ClobberedBy) -> Find
         }
         ClobberedBy::Held { holder, exit, unit } => {
             held_clobber_text(repo_root, destination, holder, exit, unit)
+        }
+        ClobberedBy::Fixed { committed, unit } => {
+            fixed_clobber_text(repo_root, destination, committed, unit)
         }
     };
     Finding::graded(
@@ -1351,6 +1388,125 @@ fn shape_clobber_text(
              {rerun}"
         ),
     };
+    (message, route)
+}
+
+/// The message and the route of [`clobber_finding`]'s **fixed-identity arm** — a `created`
+/// doc of a doctype with one fixed home, refused over a regular file at that home (the
+/// rc.24 fix pass, the completion audit's CPL-3; `design/finalize.md` → 4. Promote).
+///
+/// **Why it is its own arm.** The task arm routes at a retitle or an explicit `--slug`, the
+/// sub-task arm at `jigc doc rename … --task <sub-task>` — and a placement singleton's slug
+/// *is* its type id, so each of those refuses (`write.identity-change`, *"nothing to
+/// rename"*). Driven at the milestone boundary, the refusal's only printed exit could not be
+/// run, and its last sentence told the reader to leave alone the one thing that would have
+/// unblocked it. A route must not hand back a command that refuses.
+///
+/// **The exits a fixed identity has, each driven as printed at both doors:**
+///
+/// - **free the home** — the file is moved out of it, by the person whose file it is, and
+///   the unit's boundary then lands the doc there. No commit, so `HEAD` stays on the unit's
+///   base. Offered only where `HEAD` does not hold the file (`committed`): a committed file
+///   cannot leave its path without a commit, and with the file gone from disk the held arm
+///   refuses the same doc ([`held_clobber_text`]).
+/// - **drop the mint** ([`ShapeUnit::drop_the_mint`]) — the file stays, and the task (at the
+///   milestone boundary, the sub-task that minted the doc) is discarded by consent. The
+///   file is then brought under management in a task of its own — at the milestone
+///   boundary *after* the milestone has landed, since a commit made first moves `HEAD` off
+///   its base — or, where it is the committed doc, the work is simply started again: the
+///   create copies it in for update.
+///
+/// It names no removal: the file is moved, by its owner, or it stays.
+fn fixed_clobber_text(
+    repo_root: &Path,
+    destination: &str,
+    committed: bool,
+    unit: ShapeUnit,
+) -> (String, String) {
+    let message = format!(
+        "promoting {} to `{destination}` would overwrite a file already there — refusing to \
+         clobber it",
+        unit.whose(),
+    );
+    let intact = unit.intact();
+    let rerun = unit.rerun();
+    let milestone = matches!(unit, ShapeUnit::Milestone { .. });
+    let (doctype, the_doc) = match unit {
+        ShapeUnit::Milestone {
+            origin: Some(origin),
+            ..
+        } => (origin.minted.split_once(':'), "the sub-task's doc"),
+        ShapeUnit::Task { address, .. } | ShapeUnit::Migration { address, .. } => {
+            (address.split_once(':'), "this task's doc")
+        }
+        _ => (None, "the doc"),
+    };
+    // The adoption the dropped mint leaves room for — both commands rooted where the door
+    // is, never at the reader's cwd ([`crate::finding::git_at`],
+    // [`crate::finding::migrate_at`]). The `git add` comes first because `jigc migrate`
+    // refuses a source git has never recorded (`migrate.source-untracked`), which is what
+    // a hand-written file at a doc's home usually is; over one already staged it changes
+    // nothing.
+    let adopt = doctype.map(|(ty, _)| {
+        format!(
+            "`{}`, then `{} --as {}`",
+            crate::finding::git_at(
+                repo_root,
+                &format!("add -- {}", crate::finding::shell_operand(destination)),
+            ),
+            crate::finding::migrate_at(repo_root, destination),
+            crate::finding::shell_operand(ty),
+        )
+    });
+    let Some(drop) = unit.drop_the_mint() else {
+        // No work unit to name: the home has to be free before anything lands there.
+        return (
+            message,
+            format!(
+                "{intact}: move the file out of the doc's home, so that `{destination}` is \
+                 free, then {rerun}"
+            ),
+        );
+    };
+    let free = if committed {
+        format!("`{destination}` is a committed file, so it stays where it is: {drop}")
+    } else {
+        let no_commit = if milestone {
+            "; that is no commit, so `HEAD` stays on this milestone's base"
+        } else {
+            ""
+        };
+        format!(
+            "Either move the file out of the doc's home, so that `{destination}` is free — \
+             with `git mv` if git has it staged, since the index entry has to move with \
+             it{no_commit} — and {rerun}, which lands {the_doc} there; or keep the file and \
+             {drop}"
+        )
+    };
+    let after = match (milestone, committed, adopt) {
+        (true, true, _) => format!(
+            ", then {rerun}, which lands the rest of the milestone; a task started once it \
+             has landed copies the committed doc in for update instead of minting over it"
+        ),
+        (true, false, Some(adopt)) => format!(
+            ", then {rerun}, which lands the rest of the milestone; the file can be brought \
+             under management once the milestone has landed — {adopt} — and not before: a \
+             commit made first moves `HEAD` off this milestone's base and blocks it on \
+             `finalize.base-mismatch`"
+        ),
+        (true, false, None) => format!(", then {rerun}, which lands the rest of the milestone"),
+        (false, true, _) => ", and start the work again — the create then copies the \
+                             committed doc in for update instead of minting over it"
+            .to_owned(),
+        (false, false, Some(adopt)) => {
+            format!("; the file can then be brought under management in a task of its own: {adopt}")
+        }
+        (false, false, None) => String::new(),
+    };
+    let route = format!(
+        "{intact}. A doc of this doctype has one fixed home, so it cannot be given another \
+         id. {free}{after}"
+    );
     (message, route)
 }
 
@@ -5500,6 +5656,124 @@ sections:
         );
         // MUST NOT REFUSE: a body the join did not write is not a mint.
         plan(&no_origins()).expect("no origin, no clobber — the file arm's rule");
+    }
+
+    /// **A fixed identity over a file at its home is routed at exits it has** (the rc.24 fix
+    /// pass, the completion audit's CPL-3). The task arm's retitle / `--slug` and the
+    /// sub-task arm's `jigc doc rename` all refuse a placement singleton, so neither door
+    /// prints one: the home is freed, or the mint dropped — and where `HEAD` holds the file
+    /// too, it cannot leave its path without a commit, so only the drop is offered and
+    /// nothing is said about adopting a doc that is already managed.
+    #[test]
+    fn a_fixed_identity_over_an_occupied_home_is_never_routed_at_a_rename() {
+        let schema = placement_schema("foo", "FOO.md");
+        let mut with_placement = schemas();
+        with_placement.insert(schema.ty.clone(), schema.clone());
+
+        for committed in [false, true] {
+            let claims = if committed {
+                held("FOO.md", true)
+            } else {
+                HomeClaims::default()
+            };
+            // The task door.
+            let root = TempRoot::new("fixed-task");
+            let task_dir = root.path().join("tasks").join("form-foo");
+            let commit = stage_filled_commit(&task_dir, "form-foo");
+            stage_filled_placement(&task_dir, &schema, &schema.ty);
+            state::record_doc_provenance(&task_dir, "foo:foo", state::Provenance::Created)
+                .expect("record created provenance");
+            state::persist(&root.path().join("FOO.md"), b"a hand-written note\n")
+                .expect("an occupant at the singleton's home");
+            let task = plan_finalize(
+                &task_dir,
+                root.path(),
+                &base(),
+                &base().sha,
+                &ValidationReport::new(Vec::new(), &no_delta_resolved()),
+                true,
+                &commit,
+                "form-foo",
+                &with_placement,
+                &claims,
+            )
+            .expect_err("a minted singleton over a file at its home must block");
+
+            // The milestone door.
+            let root = TempRoot::new("fixed-milestone");
+            let staging = root
+                .path()
+                .join("milestones")
+                .join("page-rework")
+                .join("merged");
+            stage_filled_placement(&staging, &schema, &schema.ty);
+            state::persist(&root.path().join("FOO.md"), b"a hand-written note\n")
+                .expect("an occupant at the singleton's home");
+            let origins = BTreeMap::from([origin_of(
+                "foo:foo",
+                state::Provenance::Created,
+                "foo:foo",
+                &["area-zed"],
+            )]);
+            let milestone = plan_milestone_finalize(
+                "page-rework",
+                &staging,
+                root.path(),
+                &base(),
+                &base().sha,
+                false,
+                "Finalize milestone page-rework (1 sub-task)\n".to_string(),
+                true,
+                &with_placement,
+                &origins,
+                &claims,
+            )
+            .expect_err("the boundary refuses it too");
+
+            for (door, findings, drop) in [
+                ("task", &task, "`jigc task discard form-foo --force`"),
+                (
+                    "milestone",
+                    &milestone,
+                    "`jigc task discard area-zed --force`",
+                ),
+            ] {
+                let cell = format!("{door} door · committed={committed}");
+                assert_eq!(findings.len(), 1, "{cell}: {findings:#?}");
+                assert_eq!(findings[0].code, "finalize.promote-clobber", "{cell}");
+                assert_eq!(target(&findings[0]), Some("FOO.md"), "{cell}");
+                let route = findings[0].route.as_deref().expect("a route");
+                assert!(
+                    !route.contains("jigc doc rename")
+                        && !route.contains("--slug")
+                        && !route.contains("retitle"),
+                    "{cell}: no exit that refuses a singleton: {route}",
+                );
+                assert!(
+                    route.contains(drop),
+                    "{cell}: the drop of the mint: {route}"
+                );
+                assert_eq!(
+                    route.contains("move the file out of the doc's home"),
+                    !committed,
+                    "{cell}: the home is freed only where no commit holds the file: {route}",
+                );
+                assert_eq!(
+                    route.contains("jigc migrate"),
+                    !committed,
+                    "{cell}: a committed doc is already managed — nothing to adopt: {route}",
+                );
+                for surface in [findings[0].message.as_str(), route] {
+                    let lower = surface.to_lowercase();
+                    assert!(
+                        !lower.contains("remove")
+                            && !lower.contains("delete")
+                            && !lower.contains("git rm"),
+                        "{cell}: the refusal never teaches a removal: {surface}",
+                    );
+                }
+            }
+        }
     }
 
     /// **The milestone boundary refuses the same entries** (the rc.24 fix pass, `(R6, D-7)`)

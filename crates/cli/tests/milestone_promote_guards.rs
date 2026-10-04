@@ -1299,3 +1299,260 @@ fn a_home_nobody_holds_and_an_update_land_under_every_conversion_setting() {
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────
+// A fixed identity over an occupied home (the completion audit's CPL-3)
+// ─────────────────────────────────────────────────────────────────────────────────────────
+//
+// The matrix at the top of this file has no placement singleton in it, and that missing axis
+// member hid a dead end: the file arm routes at giving the doc another id, and a singleton
+// has none — `jigc doc rename vision:vision …` answers `write.identity-change`. So the
+// doctype axis gains its fixed-identity member, at both committing doors, over
+//
+// - **occupant** — an untracked hand-written file · a file staged and never committed · the
+//   committed doc itself (reachable only through the absent-home state above);
+// - **exit** — the home freed, with no commit · the mint dropped;
+//
+// and each exit is driven as printed to a landed end state with every byte accounted for.
+
+/// The first span of `route` opening with `lead`, run as printed and asserted to succeed —
+/// for a route that names one command under two exits.
+fn run_first_span(corpus: &TrialCorpus, route: &str, lead: &str, what: &str) -> Output {
+    let found = spans(route, lead);
+    let span = found
+        .first()
+        .unwrap_or_else(|| panic!("{what}: a `{lead} …` span; got: {route}"));
+    let out = run_span(corpus, span);
+    assert!(
+        out.status.success(),
+        "{what}: `{span}` runs as printed; {}",
+        text(&out),
+    );
+    out
+}
+
+/// A hand-written file at the vision's home — nothing jigc ever saw.
+fn plant_hand_written_vision(corpus: &TrialCorpus, staged: bool) {
+    fs::write(
+        corpus.repo().join(VISION_HOME),
+        format!("# Our direction\n\n{OCCUPANT_MARKER}\n"),
+    )
+    .expect("plant the occupant");
+    if staged {
+        corpus.git(&["add", "--", VISION_HOME]);
+    }
+}
+
+/// A milestone whose `alpha` sub-task mints the vision and whose `bravo` sub-task mints an
+/// ADR; returns `(alpha, bravo)`.
+fn vision_fan_out(corpus: &TrialCorpus) -> (&'static str, &'static str) {
+    corpus.jigc_ok(&["milestone", "create", MILESTONE_TITLE]);
+    corpus.jigc_ok(&[
+        "milestone",
+        "add-task",
+        MILESTONE,
+        "alpha forms the vision",
+        "--workflow",
+        "form-vision",
+    ]);
+    corpus.jigc_ok(&["milestone", "add-task", MILESTONE, "bravo decides"]);
+    let (alpha, bravo) = ("alpha-forms-the-vision", "bravo-decides");
+    assert_eq!(author_vision(corpus, alpha, &body_of(alpha)), VISION);
+    author(corpus, Kind::Adr, "Bravo Decision", bravo);
+    (alpha, bravo)
+}
+
+/// Assert a refusal's route hands a fixed-identity doc no command that refuses.
+fn assert_no_rename(route: &str, what: &str) {
+    assert!(
+        spans(route, "jigc doc rename").is_empty() && !route.contains("--slug"),
+        "{what}: a singleton cannot be renamed or re-slugged, and a route never hands back a \
+         command that refuses; got: {route}",
+    );
+}
+
+/// **The milestone boundary, the home freed.** The file is moved out of the doc's home — no
+/// commit — and the boundary's own command lands every sub-task's work, the vision at its
+/// home, with the moved file's bytes intact.
+#[test]
+fn the_boundary_routes_a_fixed_identity_at_freeing_the_home() {
+    for staged in [false, true] {
+        let what = format!("milestone door · vision · free the home · staged={staged}");
+        let corpus = TrialCorpus::build(State::Fresh);
+        let (alpha, bravo) = vision_fan_out(&corpus);
+        plant_hand_written_vision(&corpus, staged);
+        let head = corpus.git(&["rev-parse", "HEAD"]);
+
+        let findings = blocked(&corpus, &what);
+        assert_eq!(findings.len(), 1, "{what}: {findings:#?}");
+        let route = clobber_at(&findings, VISION_HOME, &what)["route"]
+            .as_str()
+            .expect("a route")
+            .to_owned();
+        assert_no_rename(&route, &what);
+        assert!(
+            route.contains("move the file out of the doc's home"),
+            "{what}: the route names the exit that needs no commit; got: {route}",
+        );
+        assert_eq!(corpus.git(&["rev-parse", "HEAD"]), head, "{what}");
+
+        // The move is the file's owner's act: by hand, or with `git mv` for a staged one.
+        if staged {
+            corpus.git(&["mv", VISION_HOME, "VISION.hand.md"]);
+        } else {
+            fs::rename(
+                corpus.repo().join(VISION_HOME),
+                corpus.repo().join("VISION.hand.md"),
+            )
+            .expect("move the file out of the doc's home");
+        }
+        run_first_span(&corpus, &route, "jigc milestone finalize", &what);
+        assert!(
+            at_head(&corpus, VISION_HOME).contains(&body_of(alpha)),
+            "{what}: the sub-task's vision landed at its home",
+        );
+        assert_landed(&corpus, Kind::Adr, bravo, &what);
+        assert!(
+            support::trial_corpus::read(&corpus.repo(), "VISION.hand.md").contains(OCCUPANT_MARKER),
+            "{what}: the moved file's bytes are the bytes that were there",
+        );
+    }
+}
+
+/// **The milestone boundary, the mint dropped.** The file stays; the sub-task that minted
+/// the doc is read, then discarded by consent; the boundary lands the rest; and the file is
+/// brought under management by the two commands the route prints for after the landing.
+#[test]
+fn the_boundary_routes_a_fixed_identity_at_dropping_the_mint() {
+    let what = "milestone door · vision · drop the mint";
+    let corpus = TrialCorpus::build(State::Fresh);
+    let (alpha, bravo) = vision_fan_out(&corpus);
+    plant_hand_written_vision(&corpus, false);
+    let before = fs::read(corpus.repo().join(VISION_HOME)).expect("the occupant");
+
+    let findings = blocked(&corpus, what);
+    let route = clobber_at(&findings, VISION_HOME, what)["route"]
+        .as_str()
+        .expect("a route")
+        .to_owned();
+    let shown = run_the_span(&corpus, &route, "jigc doc show", what);
+    assert!(
+        String::from_utf8_lossy(&shown.stdout).contains(&body_of(alpha)),
+        "{what}: the read the route prints shows what the drop would take",
+    );
+    run_the_span(&corpus, &route, "jigc task discard", what);
+    // The second `jigc milestone finalize` span is this exit's — the same bytes as the first.
+    run_first_span(&corpus, &route, "jigc milestone finalize", what);
+    assert_landed(&corpus, Kind::Adr, bravo, what);
+    assert_eq!(
+        fs::read(corpus.repo().join(VISION_HOME)).expect("the occupant survives"),
+        before,
+        "{what}: the file at the home is byte-identical after the landing",
+    );
+    // …and after the landing, the adoption the route names, as printed.
+    run_the_span(&corpus, &route, "git -C", what);
+    let minted = run_the_span(&corpus, &route, "jigc migrate", what);
+    assert!(
+        String::from_utf8_lossy(&minted.stdout).contains("task minted:"),
+        "{what}: `jigc migrate` mints the task that adopts the file; {}",
+        text(&minted),
+    );
+}
+
+/// **A committed occupant cannot leave its home without a commit**, so the route offers the
+/// drop alone — never a move that the next run would refuse.
+#[test]
+fn a_committed_occupant_is_never_routed_at_moving_out() {
+    let what = "milestone door · vision · committed occupant";
+    let corpus = TrialCorpus::build(State::Fresh);
+    land_vision(&corpus, OCCUPANT_MARKER);
+    // The one way a minted singleton faces its own committed doc: created while the file
+    // was out of the worktree, which is then restored.
+    delete_uncommitted(&corpus, VISION_HOME);
+    let (_, bravo) = vision_fan_out(&corpus);
+    corpus.git(&["checkout", "HEAD", "--", VISION_HOME]);
+
+    let findings = blocked(&corpus, what);
+    let route = clobber_at(&findings, VISION_HOME, what)["route"]
+        .as_str()
+        .expect("a route")
+        .to_owned();
+    assert_no_rename(&route, what);
+    assert!(
+        !route.contains("move the file out") && spans(&route, "jigc migrate").is_empty(),
+        "{what}: a committed file stays where it is, and is already managed; got: {route}",
+    );
+    run_the_span(&corpus, &route, "jigc task discard", what);
+    run_the_span(&corpus, &route, "jigc milestone finalize", what);
+    assert_landed(&corpus, Kind::Adr, bravo, what);
+    assert!(
+        at_head(&corpus, VISION_HOME).contains(OCCUPANT_MARKER),
+        "{what}: the committed vision is still the committed vision",
+    );
+}
+
+/// **The task door has the same dead end and the same exits.** Its file arm routed a
+/// singleton at a retitle and an explicit `--slug`; both refuse.
+#[test]
+fn the_task_door_routes_a_fixed_identity_at_exits_it_has() {
+    // The home freed.
+    {
+        let what = "task door · vision · free the home";
+        let corpus = TrialCorpus::build(State::Fresh);
+        let task = corpus.start_workflow("form-vision", "form the vision");
+        assert_eq!(author_vision(&corpus, &task, &body_of(&task)), VISION);
+        fill_commit(&corpus, &task, "vision");
+        plant_hand_written_vision(&corpus, false);
+
+        let findings = task_blocked(&corpus, &task, what);
+        let route = clobber_at(&findings, VISION_HOME, what)["route"]
+            .as_str()
+            .expect("a route")
+            .to_owned();
+        assert_no_rename(&route, what);
+        fs::rename(
+            corpus.repo().join(VISION_HOME),
+            corpus.repo().join("VISION.hand.md"),
+        )
+        .expect("move the file out of the doc's home");
+        run_the_span(&corpus, &route, "jigc task finalize", what);
+        assert!(
+            at_head(&corpus, VISION_HOME).contains(&body_of(&task)),
+            "{what}: the task's vision landed at its home",
+        );
+        assert!(
+            support::trial_corpus::read(&corpus.repo(), "VISION.hand.md").contains(OCCUPANT_MARKER),
+            "{what}: the moved file's bytes are the bytes that were there",
+        );
+    }
+    // The mint dropped, and the file adopted.
+    {
+        let what = "task door · vision · drop the mint";
+        let corpus = TrialCorpus::build(State::Fresh);
+        let task = corpus.start_workflow("form-vision", "form the vision");
+        author_vision(&corpus, &task, &body_of(&task));
+        fill_commit(&corpus, &task, "vision");
+        plant_hand_written_vision(&corpus, false);
+        let before = fs::read(corpus.repo().join(VISION_HOME)).expect("the occupant");
+
+        let findings = task_blocked(&corpus, &task, what);
+        let route = clobber_at(&findings, VISION_HOME, what)["route"]
+            .as_str()
+            .expect("a route")
+            .to_owned();
+        run_the_span(&corpus, &route, "jigc doc show", what);
+        run_the_span(&corpus, &route, "jigc task discard", what);
+        assert_eq!(
+            fs::read(corpus.repo().join(VISION_HOME)).expect("the occupant survives"),
+            before,
+            "{what}: the file at the home is untouched",
+        );
+        run_the_span(&corpus, &route, "git -C", what);
+        let minted = run_the_span(&corpus, &route, "jigc migrate", what);
+        assert!(
+            String::from_utf8_lossy(&minted.stdout).contains("task minted:"),
+            "{what}: `jigc migrate` mints the task that adopts the file; {}",
+            text(&minted),
+        );
+    }
+}
