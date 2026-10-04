@@ -100,6 +100,21 @@ pub struct TargetAnchor {
 /// - **bound** — the `<task_dir>/roles.json` addresses, each resolved to its
 ///   committed bytes via [`crate::store::canonical_path`].
 ///
+/// **A doc on both surfaces has one effective state, and it is the staged one** (the rc.24
+/// fix pass). A role is bound on copy-in (`cli::doc` → `bind_role_on_copy_in`), so a
+/// committed doc a task edits is *both* staged and bound — and enumerated twice, the
+/// committed bytes put a second anchor on the task surface at the very address the staged
+/// copy had just repaired. Driven on `1.0.0-rc.24` from the main checkout, under
+/// `single-task`: staged code renamed a symbol an ADR cites, `doc-code.symbol-exists`
+/// blocked and routed at *"update the citation"*, the citation was updated in-task, and the
+/// floor went on blocking on the **old** value — its own route could not clear it, because a
+/// task-surface finding is never filtered and nothing the task can write changes the
+/// committed bytes before its own finalize does. Under a workflow that binds no role for the
+/// doctype the same repair landed. So a bound role whose doc this task has staged
+/// contributes nothing from its committed bytes: the staged copy is what the finalize
+/// promotes, which is what *effective state* means
+/// (`design/validation.md` → The `doc-code` probe, Target surface).
+///
 /// A staged instance whose type prefix has no schema, an unparseable instance, a
 /// bound role whose address is unparseable / type-less / has no committed file is
 /// skipped (best-effort, mirroring [`crate::index::overlay_working`]): conformance
@@ -161,6 +176,11 @@ pub fn enumerate_target_surface(
         let Some(schema) = schemas.get(ty) else {
             continue;
         };
+        // Staged in this task: surface a has already enumerated its effective state, and
+        // the committed bytes are the ones this task's finalize replaces (see above).
+        if crate::state::instance_path(task_dir, ty, slug).is_file() {
+            continue;
+        }
         let Some(committed) = crate::store::canonical_path(repo_root, schema, slug) else {
             continue; // a transient (location-less) type has no committed file.
         };
@@ -979,6 +999,56 @@ Effects.
             "an unrelated committed doc (neither edited nor bound) must contribute \
              zero pairs, got {anchors:?}",
         );
+    }
+
+    /// **A doc both staged and bound is enumerated once, at its staged bytes** (the rc.24
+    /// fix pass). The cell is the in-task anchor repair: the committed ADR cites a symbol
+    /// the task's code renames, the task copies the ADR in — which binds its role — and
+    /// updates the citation. The committed bytes still carry the old value at the same
+    /// address, and enumerating them as a *bound* doc put that dangling anchor back on the
+    /// task surface, where nothing the task can write removes it.
+    ///
+    /// The control is the same binding with nothing staged: a bound read-role doc the task
+    /// has not touched still contributes its committed anchors, which is the surface's
+    /// whole reason for existing (the bound `spec` an implementing task builds against).
+    #[test]
+    fn a_bound_doc_the_task_has_staged_is_enumerated_at_its_staged_bytes_only() {
+        const REPAIRED: &str = "crates/engine/src/validate.rs#validate_store";
+        let committed_value = "crates/engine/src/validate.rs#validate_task";
+        let staged_body = ADR_WITH_ANCHOR.replace(committed_value, REPAIRED);
+        assert_ne!(
+            staged_body, ADR_WITH_ANCHOR,
+            "the fixture must actually move the citation, or both arms read one value",
+        );
+
+        for (arm, staged) in [("staged and bound", true), ("bound only", false)] {
+            let repo = TempRoot::new("staged-and-bound");
+            let task_dir = repo.path().join(".jigc").join("tasks").join("rename-it");
+            std::fs::create_dir_all(&task_dir).expect("mk the task dir");
+            commit(
+                repo.path(),
+                "decisions",
+                "single-node-cache",
+                ADR_WITH_ANCHOR,
+            );
+            let mut roles = RolesRecord::new();
+            roles.bind("decision", "adr:single-node-cache");
+            roles.save(&task_dir).expect("save roles");
+            if staged {
+                stage(&task_dir, "adr:single-node-cache", &staged_body);
+            }
+
+            let (anchors, _) =
+                enumerate_target_surface(&task_dir, repo.path(), &schemas()).expect("enumerates");
+            let values: Vec<&str> = anchors.iter().map(|a| a.anchor_value.as_str()).collect();
+            let want = if staged { REPAIRED } else { committed_value };
+            assert_eq!(
+                values,
+                [want],
+                "{arm}: the surface carries exactly this task's effective state for the \
+                 doc — one anchor, at {want}; got {anchors:?}",
+            );
+        }
     }
 
     /// (M13, the position-independence proof) A doctype whose **repeatable**

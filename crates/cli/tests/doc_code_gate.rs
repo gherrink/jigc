@@ -677,3 +677,129 @@ fn finalize_passes_when_staged_symbol_has_unrelated_unstaged_hunk() {
         "the staged symbol resolves against the index — no false doc-code block; got:\n{rendered}",
     );
 }
+
+/// **The floor's own route clears the floor** — a rename and the citation repair it forces
+/// land as one commit, under a workflow that binds a role for the cited doc (the rc.24 fix
+/// pass; `engine::target_surface::enumerate_target_surface`).
+///
+/// Staged code renames a symbol a committed ADR cites, so the blast radius blocks
+/// `doc-code.symbol-exists` and routes at *"update the citation to match the renamed/moved
+/// code"*. Driven on `1.0.0-rc.24` under `single-task`, following that route changed
+/// nothing: the write copied the ADR in — which binds the workflow's `decision` role — and
+/// the task surface then enumerated the doc **twice**, the staged copy at the repaired
+/// value and the bound role at its committed bytes, so the old anchor stayed on the surface
+/// where no write of this task can reach it. The same repair landed under `quick-fix`,
+/// which binds no role. A doc on both surfaces has one effective state: the staged copy.
+///
+/// The block before the repair is asserted too — a pass with no block first would prove
+/// the floor is gone rather than that the route clears it.
+#[test]
+fn an_in_task_citation_repair_clears_the_floor_under_a_role_binding_workflow() {
+    let repo = TempDir::new("repair-clears-repo");
+    let home = TempDir::new("repair-clears-home");
+    init_repo(repo.path());
+
+    // A committed ADR citing a symbol HEAD carries.
+    let cite = "cite-the-present-symbol";
+    stage_citing_task(
+        repo.path(),
+        home.path(),
+        cite,
+        "cited-symbol",
+        "present_symbol",
+    );
+    assert_ok(
+        &jigc(repo.path(), home.path(), &["task", "finalize", cite]),
+        "the citing task's finalize",
+    );
+
+    // The second task renames that symbol and stages the rename.
+    let rename = "rename-the-symbol";
+    start_task(repo.path(), home.path(), "rename the symbol");
+    fill_commit(repo.path(), home.path(), rename);
+    fs::write(
+        repo.path().join("src").join("lib.rs"),
+        "pub fn renamed_symbol() -> u32 {\n    42\n}\n",
+    )
+    .expect("rename the cited symbol");
+    git(repo.path(), &["add", "src/lib.rs"]);
+
+    let blocked = jigc(repo.path(), home.path(), &["task", "finalize", rename]);
+    let seen = format!(
+        "{}{}",
+        String::from_utf8_lossy(&blocked.stdout),
+        String::from_utf8_lossy(&blocked.stderr),
+    );
+    assert!(
+        !blocked.status.success() && seen.contains("doc-code.symbol-exists"),
+        "the rename must dangle the committed citation and block; got:\n{seen}",
+    );
+
+    // The floor's route, followed in this task: update the citation.
+    assert_ok(
+        &jigc_doc(
+            repo.path(),
+            home.path(),
+            &[
+                "set-field",
+                "adr:cited-symbol#cites-code",
+                "--value",
+                "src/lib.rs#renamed_symbol",
+            ],
+            None,
+        ),
+        "the citation repair",
+    );
+    // The cell's precondition, read back rather than assumed: the copy-in bound the role.
+    let roles = fs::read_to_string(
+        repo.path()
+            .join(".jigc")
+            .join("tasks")
+            .join(rename)
+            .join("roles.json"),
+    )
+    .expect("the task's roles record");
+    assert!(
+        roles.contains("adr:cited-symbol"),
+        "the copy-in must have bound the workflow's role for the ADR — without the binding \
+         this arm does not reach the bound surface at all; roles.json:\n{roles}",
+    );
+
+    let landed = jigc(repo.path(), home.path(), &["task", "finalize", rename]);
+    let seen = format!(
+        "{}{}",
+        String::from_utf8_lossy(&landed.stdout),
+        String::from_utf8_lossy(&landed.stderr),
+    );
+    assert_ok(
+        &landed,
+        &format!("the repaired task must land the rename and the citation together; got:\n{seen}"),
+    );
+    assert!(
+        !seen.contains("doc-code.symbol-exists"),
+        "the repaired citation must leave no doc-code block; got:\n{seen}",
+    );
+    // One commit carries both halves: the path set of HEAD names the code file and the
+    // ADR, wherever the cascade homes it, and that ADR's committed bytes carry the repair.
+    let show = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(repo.path())
+            .output()
+            .expect("run git show");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let paths = show(&["show", "--format=", "--name-only", "HEAD"]);
+    let adr = paths
+        .lines()
+        .find(|path| path.ends_with("cited-symbol.md"))
+        .unwrap_or_else(|| panic!("HEAD must carry the repaired ADR; its paths:\n{paths}"));
+    assert!(
+        paths.lines().any(|path| path == "src/lib.rs"),
+        "HEAD must carry the rename in the same commit; its paths:\n{paths}",
+    );
+    assert!(
+        show(&["show", &format!("HEAD:{adr}")]).contains("src/lib.rs#renamed_symbol"),
+        "HEAD's ADR carries the repaired citation",
+    );
+}
