@@ -632,6 +632,106 @@ fn a_fan_out_sub_task_writes_its_docs_and_an_ordinary_task_there_does_not() {
         "jigc's own fan-out is the declared design; its reads carry no note. stderr:\n{}",
         text(&read.stderr),
     );
+
+    // **Nothing the guard prints here harms the reader's own milestone** (the completion
+    // audit's XC-4). Every other route of the guard ends in a commit on the main checkout's
+    // branch, which from a fan-out worktree is the milestone's base — a commit there before
+    // the boundary lands blocks it on `finalize.base-mismatch` — and the dangling-anchor
+    // exit would `git stash` the sub-task's own staged code. So every door here prints the
+    // one route that puts the milestone first.
+    let route_of = |what: &str, out: &Output| {
+        guard(out)
+            .pop()
+            .unwrap_or_else(|| panic!("{what}: the guard answers; got:\n{}", both(out)))
+            .1
+    };
+    let write_json = |task: &str| {
+        rig.run_stdin(
+            &fan,
+            &[
+                "doc",
+                "set-slot",
+                "vision:vision#thesis",
+                "--from-file",
+                "-",
+                "--task",
+                task,
+                "--format",
+                "json",
+            ],
+            "An ordinary task's thesis.\n",
+        )
+    };
+    let mut routes = vec![(
+        "an ordinary task's write",
+        route_of("an ordinary task's write", &write_json(&ordinary)),
+    )];
+    // The sub-task's own code, staged in its worktree — the state the stash exit keys on.
+    fs::write(fan.join("area.txt"), "the sub-task's code\n").expect("write the sub-task's code");
+    rig.git(&fan, &["add", "area.txt"]);
+    routes.push((
+        "the same write over the sub-task's staged code",
+        route_of("the write over staged code", &write_json(&ordinary)),
+    ));
+    let mint = rig.run(
+        &fan,
+        &[
+            "start",
+            "--workflow",
+            "report-jigc-feedback",
+            "a finding",
+            "--format",
+            "json",
+        ],
+    );
+    assert_eq!(mint.status.code(), Some(1), "got:\n{}", both(&mint));
+    routes.push(("a doc-only mint", route_of("a doc-only mint", &mint)));
+    for (what, route) in &routes {
+        let boundary = route.find("jigc milestone finalize cache-rework");
+        let cd = route.find("`cd ");
+        assert!(
+            boundary.is_some() && boundary < cd && route.contains("finalize.base-mismatch"),
+            "{what}: the route names the milestone's boundary before any `cd` into the main \
+             checkout; got:\n{route}",
+        );
+        assert!(
+            !spans(route).iter().any(|s| s.contains(" stash")),
+            "{what}: no route here stashes the sub-task's staged code; got:\n{route}",
+        );
+    }
+    let resumed = rig.ok(&fan, &["start", "--task", &ordinary]);
+    assert!(
+        resumed.contains("checkout:") && resumed.contains("jigc milestone finalize cache-rework"),
+        "the `checkout:` block of a task resumed here names the milestone too; got:\n{resumed}",
+    );
+
+    // The route, in the order it is printed: the milestone lands, then the mint runs from
+    // the main checkout — and the boundary was never blocked.
+    rig.ok(&main, &["milestone", "finalize", "cache-rework"]);
+    assert!(
+        rig.git(&main, &["show", "--format=", "--name-only", "HEAD"])
+            .lines()
+            .any(|path| path == "area.txt"),
+        "the milestone landed with the sub-task's staged code",
+    );
+    let mint_route = &routes[2].1;
+    let cd = span(mint_route, "`cd`", |s| s.starts_with("cd "));
+    let rerun = span(mint_route, "rerun", |s| {
+        s.starts_with("jigc start --workflow ")
+    });
+    let there = rig.sh(
+        &main,
+        &format!("{cd} && {}", rerun.replace("<intent>", "a finding")),
+    );
+    assert_ok(
+        &there,
+        &format!("`{cd}` then `{rerun}`, once the milestone has landed"),
+    );
+    assert!(
+        text(&there.stdout).contains("task minted:") && !text(&there.stdout).contains("checkout:"),
+        "the mint the fan-out worktree refused runs from the main checkout; got:\n{}",
+        text(&there.stdout),
+    );
 }
 
 // ---------------------------------------------------------------------------------------

@@ -450,6 +450,22 @@ pub(crate) fn linked_worktree_doc_finding(
     door: LinkedDocDoor<'_>,
 ) -> Finding {
     let cd = checkout.cd_home();
+    // From jigc's own fan-out worktree there is one route, whatever the door: nothing here
+    // may send a commit to the main checkout's branch before the reader's own milestone has
+    // landed, and nothing may stash the sub-task's staged code out of the worktree that
+    // boundary commits from ([`crate::render::CodeOnlyCheckout::after_the_milestone`]).
+    let from_a_fan_out = checkout
+        .after_the_milestone(&format!(
+            "write it in a task started from the main checkout: {}",
+            checkout.front_door_there(),
+        ))
+        .map(|route| match &door {
+            LinkedDocDoor::Write { .. } => route,
+            LinkedDocDoor::Staged { task, .. } => format!(
+                "{route} (`jigc doc show {address} --task {task}` reads back what this \
+                 task has staged)"
+            ),
+        });
     let route = match door {
         LinkedDocDoor::Write {
             task,
@@ -527,6 +543,7 @@ pub(crate) fn linked_worktree_doc_finding(
             )
         }
     };
+    let route = from_a_fan_out.unwrap_or(route);
     Finding::graded(
         Severity::Blocking,
         "finalize.linked-worktree-doc",
@@ -577,10 +594,17 @@ pub(crate) fn linked_worktree_mint_finding(
             main = checkout.home,
         ),
         Some(Location::addressed(checkout.site.checkout.clone(), 1, 1)),
-        Some(engine::finding::Route::human(format!(
-            "run it from the main checkout: `{cd}`, then {rerun}",
-            cd = checkout.cd_home(),
-        ))),
+        Some(engine::finding::Route::human({
+            let from_home = format!(
+                "run it from the main checkout: `{cd}`, then {rerun}",
+                cd = checkout.cd_home(),
+            );
+            // From jigc's own fan-out worktree the milestone comes first: the task this
+            // mints commits on the branch that milestone is pinned to.
+            checkout
+                .after_the_milestone(&from_home)
+                .unwrap_or(from_home)
+        })),
     )
 }
 
@@ -5015,6 +5039,25 @@ fn changelog_gate_route(
 ) -> String {
     if let Some(checkout) = code_only {
         let cd = checkout.cd_home();
+        // From jigc's own fan-out worktree the entry waits for the milestone, on either
+        // severity: a commit on the main checkout's branch before then blocks its boundary,
+        // and the relocation below would stash the sub-task's own staged code.
+        if let Some(route) = checkout.after_the_milestone(&format!(
+            "record it from the main checkout, as a commit of its own — `{cd}`, then `jigc \
+             start --workflow record-change \"<what changed>\"`"
+        )) {
+            let otherwise = if refuses {
+                format!(
+                    "lower the gate back with `jigc config set \
+                     validation.{CHANGELOG_GATE_CODE}.severity advisory`"
+                )
+            } else {
+                "no action is needed".to_owned()
+            };
+            return format!(
+                "if the change is user-facing, {route}; if it is not user-facing, {otherwise}"
+            );
+        }
         if refuses {
             return format!(
                 "this project has promoted the gate to `blocking`, and this checkout commits \

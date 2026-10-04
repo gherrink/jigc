@@ -2206,6 +2206,19 @@ pub struct CodeOnlyCheckout {
     /// ([`engine::finding::git_at`]). [`CommitSite::checkout`] is the spelling a sentence
     /// names it by; this is the one a command runs against.
     pub standing: std::path::PathBuf,
+    /// The milestone sub-task this checkout is **jigc's own fan-out worktree** for, when it
+    /// is one ([`crate::repo::posture_subject`]'s three legs, read back) — the fact every
+    /// route here turns on ([`Self::after_the_milestone`]).
+    pub fan_out: Option<FanOutSite>,
+}
+
+/// A fan-out worktree jigc provisioned, named by the two ids a route out of it needs.
+#[derive(Debug)]
+pub struct FanOutSite {
+    /// The sub-task the worktree was cut for — its directory name.
+    pub sub_task: String,
+    /// The milestone that sub-task belongs to, whose boundary lands the worktree's work.
+    pub milestone: String,
 }
 
 impl CodeOnlyCheckout {
@@ -2228,10 +2241,23 @@ impl CodeOnlyCheckout {
         }
         let real =
             |path: &std::path::Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let fan_out = crate::repo::posture_subject(standing)
+            .is_dedicated()
+            .then(|| {
+                let sub_task = standing.file_name()?.to_str()?.to_owned();
+                let milestone =
+                    engine::milestone::owning_milestone(&jigc_home.join(".jigc"), &sub_task)?;
+                Some(FanOutSite {
+                    sub_task,
+                    milestone,
+                })
+            })
+            .flatten();
         Some(CodeOnlyCheckout {
             site,
             home: real(jigc_home).display().to_string(),
             standing: real(standing),
+            fan_out,
         })
     }
 
@@ -2277,6 +2303,35 @@ impl CodeOnlyCheckout {
     /// refusal's route name one directory one way.
     pub(crate) fn cd_home(&self) -> String {
         format!("cd {}", engine::finding::shell_operand(&self.home))
+    }
+
+    /// **The route out of jigc's own fan-out worktree** — `Some` only there, and then it
+    /// replaces every other route this guard prints (the completion audit's XC-4).
+    ///
+    /// Every route of the guard opens with a `cd` into the main checkout and ends in a
+    /// commit on that checkout's branch. From a fan-out worktree that branch is the
+    /// reader's **own milestone's base**: driven, the doc-only mint refused here was re-run
+    /// from the main checkout as printed, landed at exit 0, and `jigc milestone finalize`
+    /// then answered `finalize.base-mismatch` — whose only exits are out-of-band git. And
+    /// the dangling-anchor exit is worse there: its `git stash` takes the sub-task's own
+    /// staged code out of the worktree the boundary commits from.
+    ///
+    /// So from such a checkout there is one route, and it puts the milestone first: a doc
+    /// the sub-task itself writes rides the milestone's own join, and anything else waits
+    /// until the boundary has landed. `then` is what the reader does from the main checkout
+    /// once it has.
+    pub(crate) fn after_the_milestone(&self, then: &str) -> Option<String> {
+        let fan = self.fan_out.as_ref()?;
+        Some(format!(
+            "hold it until milestone `{milestone}` has landed — this checkout is the fan-out \
+             worktree jigc provisioned for its sub-task `{sub_task}`, and a commit on the \
+             main checkout's branch before `jigc milestone finalize {milestone}` blocks \
+             that boundary (`finalize.base-mismatch`). A doc the sub-task itself writes \
+             (`--task {sub_task}`) lands with the milestone; anything else waits for it, \
+             and then: {then}",
+            milestone = fan.milestone,
+            sub_task = fan.sub_task,
+        ))
     }
 
     /// **The front door in the main checkout, as a route names it** — one producer for the
@@ -2365,16 +2420,27 @@ impl CodeOnlyCheckout {
 /// no compose from the main checkout moves a byte — which is what keeps every compose
 /// golden where it is.
 pub(crate) fn code_only_statement(checkout: &CodeOnlyCheckout) -> String {
+    let from_home = format!(
+        "start its task from the main checkout: {}",
+        checkout.front_door_there(),
+    );
+    // From jigc's own fan-out worktree the paragraph names the milestone first, for the
+    // reason every route there does ([`CodeOnlyCheckout::after_the_milestone`]).
+    let how = match checkout.after_the_milestone(&from_home) {
+        Some(route) => format!("To write a doc: {route}."),
+        None => format!(
+            "To write a doc, {from_home}. A change to both code and docs is two tasks and \
+             two commits."
+        ),
+    };
     format!(
         "checkout: {} — a task here commits here, and code only\n  \
          jigc's doc store has one home, the main checkout at `{}`: a `jigc doc` write of a \
          managed doc from this checkout is refused, whatever a workflow's steps invite (the \
          task's own commit doc is the exception — it is the commit message, not a file).\n  \
-         To write a doc, start its task from the main checkout: {}. A change to both code \
-         and docs is two tasks and two commits.\n\n",
+         {how}\n\n",
         checkout.standing(),
         checkout.home,
-        checkout.front_door_there(),
     )
 }
 
