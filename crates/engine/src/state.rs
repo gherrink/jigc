@@ -1054,6 +1054,75 @@ pub fn copy_in(
     Ok(path)
 }
 
+/// A doc read for a copy-in into a task: the body to hand [`copy_in`], and the file-state
+/// key whose baseline that read adopted, if it adopted one.
+pub struct CopyInRead {
+    /// The doc's bytes at its home, exactly as read.
+    pub body: String,
+    /// `Some(key)` when the read recorded the doc's first baseline — the caller's ack owes
+    /// the adoption a line ([`crate::file_state::CopyInBaseline::finding`]).
+    pub adopted: Option<String>,
+}
+
+/// **The one read both copy-in sites stage from** — this module's [`create`] step 4 and the
+/// CLI's copy-on-first-touch for the edit verbs. It reads `<type>:<slug>`'s doc at
+/// `committed` (its canonical home, absolute) through the **copy-in door**
+/// ([`crate::file_state::read_for_copy_in`]), so the doc's baseline is recorded when it has
+/// none, under the key the store sweep reads ([`crate::finalize::promote_destination`]), and
+/// before the caller stages anything.
+///
+/// Its own contribution is the answer to *"does another open task already hold this doc?"*
+/// ([`staged_in_another_task`]) — the one fact about the working areas the record's module
+/// has no business reading.
+///
+/// An error is the caller's refusal: nothing has been staged yet, and nothing must be.
+pub fn read_for_copy_in(
+    task_dir: &Path,
+    jigc_root: &Path,
+    schema: &Schema,
+    type_name: &str,
+    slug: &str,
+    committed: &Path,
+) -> std::io::Result<CopyInRead> {
+    // A doctype with no home is never copied in (its canonical path is `None` before any
+    // caller gets here), so a missing key is a caller bug, not a state to tolerate quietly.
+    let key = crate::finalize::promote_destination(schema, slug).ok_or_else(|| {
+        std::io::Error::other(format!(
+            "`{type_name}:{slug}` has no committed home to copy in from"
+        ))
+    })?;
+    let source = crate::file_state::read_for_copy_in(jigc_root, committed, &key, schema, || {
+        staged_in_another_task(task_dir, jigc_root, type_name, slug)
+    })?;
+    let adopted = (source.baseline == crate::file_state::CopyInBaseline::Adopted).then_some(key);
+    Ok(CopyInRead {
+        body: source.body,
+        adopted,
+    })
+}
+
+/// Whether an **open task other than `task_dir`'s** has `<type>:<slug>` staged in its
+/// working area — the copy-in door's reason to leave a doc with no baseline unrecorded
+/// ([`crate::file_state::Unrecorded::StagedElsewhere`]).
+///
+/// *Open* is [`list_active_task_ids`]' sense — an area carrying its base pin — so a residual
+/// directory, which is a work unit at no door and can never reach a promote, holds nothing.
+/// A fan-out's sub-tasks are tasks under the same `tasks/`, so they are counted like any
+/// other.
+pub fn staged_in_another_task(
+    task_dir: &Path,
+    jigc_root: &Path,
+    type_name: &str,
+    slug: &str,
+) -> bool {
+    let tasks = jigc_root.join("tasks");
+    list_active_task_ids(jigc_root)
+        .into_iter()
+        .map(|id| tasks.join(id))
+        .filter(|area| area != task_dir)
+        .any(|area| instance_path(&area, type_name, slug).is_file())
+}
+
 /// **Atomic persist** of an edited buffer to a working-area doc path
 /// (`implementation/parsing.md` → The write pipeline → "Atomic on disk — write temp +
 /// rename"). Writes `bytes` to a sibling temp file, then `rename`s it over `path`, so a
@@ -2136,6 +2205,13 @@ pub struct CreatedDoc {
     /// [`mint_instance`]'s slug precedence, and "did this call create the file?" is
     /// exactly the question a caller has no other way to answer.
     pub staged_pre_image: Option<Vec<u8>>,
+    /// The file-state key whose **baseline this create adopted** — `Some` exactly when the
+    /// create copied a committed instance in and that copy-in was the doc's first encounter
+    /// ([`crate::file_state::read_for_copy_in`] answered
+    /// [`Adopted`](crate::file_state::CopyInBaseline::Adopted)). The caller's ack states it
+    /// (`file-state.baseline-adopt`): the adoption happened at this door and no later sweep
+    /// will see it as one.
+    pub adopted_baseline: Option<String>,
 }
 
 impl CreatedDoc {
@@ -2269,19 +2345,30 @@ fn mint_instance(
 ///    `singleton`-gated, so a non-singleton create-over-committed seeded blank and
 ///    ambushed at the finalize clobber gate). Copy-in does **not** reconcile
 ///    (review I-1) — OOB drift over the committed doc is caught at
-///    finalize-preflight, not here. **Exception:** the in-location squatter
+///    finalize-preflight, not here — but it **does record the doc's baseline when it has
+///    none** ([`crate::file_state::read_for_copy_in`]; the rc.24 fix pass, `(R3, F7)`):
+///    the preflight can only catch a drift it has something to compare against, and the
+///    bytes copied in here are that something. The record is written **before** the
+///    staging and its failure fails the create, so no doc is ever staged without the
+///    attempt. **Exception:** the in-location squatter
 ///    ([`migration_targets_canonical_destination`], `auto-migration.md` →
 ///    Hardening #8) — a migration task whose recorded `source-path` is this slug's
 ///    canonical destination seeds **blank** (skips the copy-in) so the author
 ///    sequence builds onto a clean skeleton, not the non-conformant foreign body.
 /// 5. **Provision** the empty instance at `docs/<type>:<slug>.md` via
 ///    [`provision_doc`] and return its [`CreatedDoc`] address + path.
+///
+/// `jigc_root` is the `.jigc/` home whose `state/file-state.json` step 4 records into and
+/// whose `tasks/` it reads for a sibling's staging — handed in, never derived from
+/// `task_dir` or `repo_root`: the engine does not assume where a caller keeps either.
+#[allow(clippy::too_many_arguments)]
 pub fn create(
     task_dir: &Path,
     schemas: &std::collections::BTreeMap<String, Schema>,
     type_name: &str,
     id_source: &str,
     repo_root: &Path,
+    jigc_root: &Path,
     on_create: &[crate::field_block::Field],
     slug_override: Option<&str>,
 ) -> Result<CreatedDoc, Finding> {
@@ -2297,7 +2384,9 @@ pub fn create(
     // The one probe of the minted identity's home ([`occupied_home`]); steps 3–5 act on
     // its answer and never ask again.
     let home = occupied_home(repo_root, schema, &minted.slug).and_then(OccupiedHome::body);
-    stage_minted(task_dir, schema, type_name, minted, home, on_create)
+    stage_minted(
+        task_dir, jigc_root, schema, type_name, minted, home, on_create,
+    )
 }
 
 /// **The minted identity's canonical home, when something is already there on disk** — the
@@ -2372,6 +2461,7 @@ impl OccupiedHome {
 /// one observation down, so that decision and this copy-in cannot disagree.
 fn stage_minted(
     task_dir: &Path,
+    jigc_root: &Path,
     schema: &Schema,
     type_name: &str,
     minted: MintedInstance,
@@ -2396,7 +2486,9 @@ fn stage_minted(
     // 4. Idempotent create-or-update: a committed instance at the slug's canonical
     //    path under `repo_root` is copied in for editing rather than minted blank
     //    (the B-5 clobber fix; doctype-blind since M43 inc-7 T1). Copy-in records
-    //    `edited-from-base`; drift is finalize-preflight's concern, not copy-in's.
+    //    `edited-from-base`; drift is finalize-preflight's concern, not copy-in's — and
+    //    the read that feeds it records the doc's baseline when it has none, which is what
+    //    gives that preflight something to detect a drift against (`(R3, F7)`).
     //    **Exception — the in-location squatter** (`design/auto-migration.md` →
     //    Path-collision guard / Hardening #8): when a migration task's recorded
     //    `source-path` IS this slug's canonical destination, the committed body is the
@@ -2407,9 +2499,9 @@ fn stage_minted(
     let migration_squatter = migration_targets_canonical_destination(task_dir, schema, &slug)
         .map_err(|err| io_finding(&address, "read the migration source path", &err))?;
     if !migration_squatter && let Some(committed) = home {
-        let body = std::fs::read_to_string(&committed)
+        let source = read_for_copy_in(task_dir, jigc_root, schema, type_name, &slug, &committed)
             .map_err(|err| io_finding(&address, "read the committed instance", &err))?;
-        let path = copy_in(task_dir, type_name, &slug, &body)
+        let path = copy_in(task_dir, type_name, &slug, &source.body)
             .map_err(|err| io_finding(&address, "copy in the committed instance", &err))?;
         return Ok(CreatedDoc {
             address,
@@ -2420,6 +2512,7 @@ fn stage_minted(
             // undo is the removal of what this call wrote (the committed source is
             // never touched by `copy_in`).
             staged_pre_image: None,
+            adopted_baseline: source.adopted,
         });
     }
 
@@ -2435,6 +2528,7 @@ fn stage_minted(
         // A fresh mint: step 3 rejected a pre-existing path, so this call wrote the file
         // and its pre-image is absent — an undo removes it.
         staged_pre_image: None,
+        adopted_baseline: None,
     })
 }
 
@@ -2520,6 +2614,7 @@ pub fn create_gated(
     type_name: &str,
     id_source: &str,
     repo_root: &Path,
+    jigc_root: &Path,
     on_create: &[crate::field_block::Field],
     slug_override: Option<&str>,
 ) -> Result<CreatedDoc, CreateRefusal> {
@@ -2560,9 +2655,12 @@ pub fn create_gated(
             path: minted.path,
             existed: true,
             staged_pre_image: Some(bytes),
+            adopted_baseline: None,
         }
     } else {
-        stage_minted(task_dir, schema, type_name, minted, home, on_create)?
+        stage_minted(
+            task_dir, jigc_root, schema, type_name, minted, home, on_create,
+        )?
     };
     // … then bind it to the entry's `as:` role if the entry declares one. The create-gate
     // keeps **last-write-wins** (`RolesRecord::bind` overwrites): an explicit `doc create
@@ -3872,6 +3970,7 @@ sections:
             "commit",
             "Add rate limiter",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -3906,6 +4005,7 @@ sections:
             "spec",
             "whatever",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -3931,6 +4031,7 @@ sections:
             "commit",
             "Add rate limiter",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -3963,8 +4064,17 @@ sections:
             let docs_before = std::fs::read_dir(task_dir.join("docs"))
                 .map(|it| it.count())
                 .unwrap_or(0);
-            let err = create(&task_dir, &schemas, "commit", bad, root.path(), &[], None)
-                .expect_err("a title that slugs to nothing rejects");
+            let err = create(
+                &task_dir,
+                &schemas,
+                "commit",
+                bad,
+                root.path(),
+                &root.path().join(".jigc"),
+                &[],
+                None,
+            )
+            .expect_err("a title that slugs to nothing rejects");
             assert_eq!(err.severity, Severity::Blocking);
             assert_eq!(err.code, "create.empty-title", "for title {bad:?}");
             assert!(
@@ -3987,6 +4097,7 @@ sections:
             "commit",
             "Add cache",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -4010,6 +4121,7 @@ sections: []
             "changelog",
             "",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -4047,6 +4159,7 @@ sections: []
             "roadmap",
             "Some Milestone Plan Title",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -4068,6 +4181,7 @@ sections: []
             "commit",
             "Add rate limiter",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -4114,6 +4228,7 @@ sections: []
             "vision",
             "some ignored id-source",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -4142,6 +4257,7 @@ sections: []
             "changelog",
             "some ignored id-source",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -4212,6 +4328,7 @@ sections:
             "roadmap",
             "M16",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -4275,6 +4392,7 @@ sections:
             "roadmap",
             "M16",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -4351,6 +4469,7 @@ sections:
             "adr",
             "Rate limit",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -4387,6 +4506,7 @@ sections:
             "adr",
             "Burst limit",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -4409,6 +4529,7 @@ sections:
             "adr",
             "Rate limit",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -4478,6 +4599,7 @@ sections:
             "adr",
             "Rate limit",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -4495,6 +4617,7 @@ sections:
             "adr",
             "Burst limit",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -4638,6 +4761,7 @@ sections:
                     "adr",
                     "Anything",
                     root.path(),
+                    &root.path().join(".jigc"),
                     &[],
                     Some(slug),
                 );
@@ -4905,6 +5029,7 @@ sections:
                     arm.ty,
                     arm.id_source,
                     root.path(),
+                    &root.path().join(".jigc"),
                     &[],
                     arm.slug,
                 );
@@ -4979,6 +5104,7 @@ sections:
             "adr",
             "Burst limit",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -4996,6 +5122,7 @@ sections:
             "adr",
             "Burst limit",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5011,6 +5138,7 @@ sections:
             "adr",
             "Rate limit",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5058,6 +5186,7 @@ sections:
             "adr",
             "Use MySQL: the choice",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5149,6 +5278,7 @@ sections:
             "adr",
             "Rate limit",
             root.path(),
+            &root.path().join(".jigc"),
             &seed,
             None,
         )
@@ -5218,6 +5348,7 @@ sections:
             "adr",
             "Some Decision",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5232,6 +5363,7 @@ sections:
             "commit",
             "x",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5267,6 +5399,7 @@ sections:
             "wormhole",
             "x",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5324,6 +5457,7 @@ sections:
                 "adr",
                 id_source,
                 root.path(),
+                &root.path().join(".jigc"),
                 &[],
                 None,
             )
@@ -5425,6 +5559,7 @@ sections:
             "adr",
             "Cache strategy",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5437,6 +5572,7 @@ sections:
             "spec",
             "Auth flow",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5468,6 +5604,7 @@ sections:
             "wormhole",
             "x",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5494,6 +5631,7 @@ sections:
             "commit",
             "!!!",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5514,6 +5652,7 @@ sections:
             "commit",
             "Add rate limiter",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5524,6 +5663,7 @@ sections:
             "commit",
             "Add rate limiter",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5571,6 +5711,7 @@ sections:
             "adr",
             "Shared Redis session cache",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5604,6 +5745,7 @@ sections:
             "commit",
             "Add rate limiter",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5667,6 +5809,7 @@ sections:
             "roadmap",
             "M24",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5737,6 +5880,7 @@ sections:
             "changelog",
             "M38",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5798,6 +5942,7 @@ sections:
             "roadmap",
             "M24",
             root.path(),
+            &root.path().join(".jigc"),
             &[],
             None,
         )
@@ -5847,6 +5992,7 @@ sections:
                 "roadmap",
                 "M24",
                 root.path(),
+                &root.path().join(".jigc"),
                 &[],
                 None,
             )
@@ -5858,5 +6004,122 @@ sections:
                 "the `{spelling}` spelling is recognized as the squatter → seeds blank",
             );
         }
+    }
+
+    /// **`create` step 4 is a copy-in door** (the rc.24 fix pass, `(R3, F7)`): a create that
+    /// copies a committed instance in records that doc's `file-state` baseline when it has
+    /// none — under the key a finalize records it at, at the hash of the bytes it copied —
+    /// and names the key on its [`CreatedDoc`] so the caller's ack can state the adoption.
+    ///
+    /// The three ways it records nothing, each driven: the key is already held; **another
+    /// open task holds the doc staged with no record** (the record is per path, so recording
+    /// now would vouch for bytes that task never saw); and — the converse, so the rule is not
+    /// simply "anything under `tasks/`" — a pin-less residual directory holding the same
+    /// file is no task and blocks nothing.
+    #[test]
+    fn a_create_that_copies_in_records_the_baseline_unless_another_open_task_holds_the_doc() {
+        use crate::file_state::{FileStateRecord, hash_bytes};
+
+        let adr = crate::schema::load_schema(
+            b"type: adr\nlocation: decisions/\nid-from: title\nsections:\n  - id: decision\n    slot: {}\n",
+        )
+        .expect("adr fixture loads");
+        let mut schemas = std::collections::BTreeMap::new();
+        schemas.insert("adr".to_string(), adr.clone());
+        let body = "---\n---\n\n# Rate limit\n\n## Decision\n\nOCCUPANT.\n";
+        let key = "decisions/rate-limit.md";
+
+        let fixture = |tag: &str| {
+            let root = TempRoot::new(tag);
+            let home = crate::store::canonical_path(root.path(), &adr, "rate-limit").expect("home");
+            std::fs::create_dir_all(home.parent().unwrap()).expect("mk decisions/");
+            std::fs::write(&home, body).expect("write the committed adr");
+            root
+        };
+        // An area under `<jigc_root>/tasks/`, open (carrying its base pin) or residual.
+        let area = |jigc_root: &Path, id: &str, open: bool| {
+            let dir = jigc_root.join("tasks").join(id);
+            std::fs::create_dir_all(&dir).expect("mk the task area");
+            if open {
+                std::fs::write(dir.join(BASE_PIN_FILE), "{}").expect("write the base pin");
+            }
+            dir
+        };
+        let copy_in = |root: &Path, task_dir: &Path| {
+            create(
+                task_dir,
+                &schemas,
+                "adr",
+                "Rate limit",
+                root,
+                &root.join(".jigc"),
+                &[],
+                None,
+            )
+            .expect("the create copies the committed adr in")
+        };
+        let recorded = |root: &Path| {
+            FileStateRecord::load(&root.join(".jigc"))
+                .expect("load the record")
+                .get(key)
+                .map(str::to_owned)
+        };
+
+        let root = fixture("copy-in-baseline");
+        let jigc_root = root.path().join(".jigc");
+
+        // The first copy-in: no key → recorded, and said.
+        let first = copy_in(root.path(), &area(&jigc_root, "first", true));
+        assert!(first.existed);
+        assert_eq!(first.adopted_baseline.as_deref(), Some(key));
+        assert_eq!(recorded(root.path()), Some(hash_bytes(body.as_bytes())));
+
+        // A second task's copy-in: the key is held → nothing adopted, nothing moved.
+        let second = copy_in(root.path(), &area(&jigc_root, "second", true));
+        assert!(second.existed);
+        assert_eq!(second.adopted_baseline, None);
+        assert_eq!(recorded(root.path()), Some(hash_bytes(body.as_bytes())));
+
+        // The key is lost while two open tasks hold the doc; a third copies it in →
+        // unrecorded, because the others' staging has no record to be measured against.
+        let mut record = FileStateRecord::load(&jigc_root).expect("load the record");
+        assert!(record.forget(key));
+        record.save(&jigc_root).expect("save the record");
+        let third_dir = area(&jigc_root, "third", true);
+        assert!(staged_in_another_task(
+            &third_dir,
+            &jigc_root,
+            "adr",
+            "rate-limit"
+        ));
+        let third = copy_in(root.path(), &third_dir);
+        assert!(third.existed);
+        assert_eq!(third.adopted_baseline, None);
+        assert_eq!(recorded(root.path()), None, "the path stays `UNKNOWN`");
+
+        // A residual directory holding the same staged file is no open task.
+        let root = fixture("copy-in-baseline-residual");
+        let jigc_root = root.path().join(".jigc");
+        let leftover = area(&jigc_root, "leftover", false);
+        std::fs::create_dir_all(leftover.join(DOCS_DIR)).expect("mk the leftover docs/");
+        std::fs::write(instance_path(&leftover, "adr", "rate-limit"), body)
+            .expect("a leftover staged file");
+        let live_dir = area(&jigc_root, "live", true);
+        assert!(!staged_in_another_task(
+            &live_dir,
+            &jigc_root,
+            "adr",
+            "rate-limit"
+        ));
+        let live = copy_in(root.path(), &live_dir);
+        assert_eq!(live.adopted_baseline.as_deref(), Some(key));
+
+        // A task's own area never counts as "another".
+        assert!(!staged_in_another_task(
+            &live_dir,
+            &jigc_root,
+            "adr",
+            "rate-limit"
+        ));
     }
 }

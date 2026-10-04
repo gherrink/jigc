@@ -722,7 +722,11 @@ fn run_set_field(
     let target = field_target(&schema, &address).map_err(DocFailure::block)?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
-    let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
+    let EditBase {
+        source,
+        copied_in,
+        adopted_baseline,
+    } = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     // The decomposed ack target (before `target` is consumed by the apply) + the written
     // value shaped through the same scalar/list grammar the read path re-parses it with,
@@ -745,6 +749,7 @@ fn run_set_field(
         &edited,
         address.r#type.as_str(),
         address.slug.as_str(),
+        adopted_baseline.as_deref(),
     );
     // Confirm the landed value — the positive ack the silent verb was missing.
     println!(
@@ -855,7 +860,11 @@ fn run_unset_field(
     let target = field_target(&schema, &address).map_err(DocFailure::block)?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
-    let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
+    let EditBase {
+        source,
+        copied_in,
+        adopted_baseline,
+    } = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     let ack_target = field_ack_target(&address, &target);
     let outcome = apply_unset_target(&schema, &source, target, &uri)
@@ -875,6 +884,7 @@ fn run_unset_field(
         &edited,
         address.r#type.as_str(),
         address.slug.as_str(),
+        adopted_baseline.as_deref(),
     );
     println!(
         "{}",
@@ -1344,7 +1354,11 @@ fn run_set_slot(
     let prose = read_handoff(from_file)?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
-    let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
+    let EditBase {
+        source,
+        copied_in,
+        adopted_baseline,
+    } = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     // The decomposed ack target, before `target` is consumed by the apply.
     let ack_target = slot_ack_target(&address, &target);
@@ -1358,6 +1372,7 @@ fn run_set_slot(
         &edited,
         address.r#type.as_str(),
         address.slug.as_str(),
+        adopted_baseline.as_deref(),
     );
     // Confirm the spliced prose by length — the slot bytes are too large to echo.
     println!(
@@ -1448,7 +1463,11 @@ fn run_add_item(
     let target = add_item_target(&schema, &address).map_err(DocFailure::block)?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
-    let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
+    let EditBase {
+        source,
+        copied_in,
+        adopted_baseline,
+    } = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     // The decomposed ack target, before `target` is consumed by the apply: `section` +
     // the **minted** leaf-most item id (the new item — contract §2).
@@ -1476,6 +1495,7 @@ fn run_add_item(
         &edited,
         address.r#type.as_str(),
         address.slug.as_str(),
+        adopted_baseline.as_deref(),
     );
     // The minted item address — the next address an agent fills the item's slot/field
     // at (the same slugify the engine mints the `{#id}` from, never re-spelled).
@@ -2236,7 +2256,11 @@ fn run_remove_item(
     let target = remove_item_target(&schema, &address, "remove-item").map_err(DocFailure::block)?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
-    let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
+    let EditBase {
+        source,
+        copied_in,
+        adopted_baseline,
+    } = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     // The decomposed ack target, before `target` is consumed by the removal match.
     let ack_target = item_ack_target(&address, &target);
@@ -2270,6 +2294,7 @@ fn run_remove_item(
         &edited,
         address.r#type.as_str(),
         address.slug.as_str(),
+        adopted_baseline.as_deref(),
     );
     // Confirm the removed item address — the positive ack the silent verb was missing.
     println!(
@@ -2420,7 +2445,11 @@ fn run_retitle_item(
     }
 
     let path = staged_path(&task.dir, &address, &task.id)?;
-    let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
+    let EditBase {
+        source,
+        copied_in,
+        adopted_baseline,
+    } = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     // **Item presence outranks the id-from refusals** (M47 — the write-verb ×
     // item-id-miss axis), which is why they run after the read rather than before it: an
@@ -2462,6 +2491,7 @@ fn run_retitle_item(
         &edited,
         address.r#type.as_str(),
         address.slug.as_str(),
+        adopted_baseline.as_deref(),
     );
     // Confirm the retitled item address — the anchor (hence the address) is frozen,
     // so the echoed address remains the one every follow-up write lands at.
@@ -2901,7 +2931,11 @@ fn run_doc_rename(
     }
 
     let path = staged_path(&task.dir, &address, &task.id)?;
-    let EditBase { source, copied_in } = task.read_or_copy_in(&path, &schema, &address, addr)?;
+    let EditBase {
+        source,
+        copied_in,
+        adopted_baseline,
+    } = task.read_or_copy_in(&path, &schema, &address, addr)?;
     let committed_identity = matches!(
         state::ProvenanceRecord::load(&task.dir)
             .context("could not read the task's staged-doc provenance")?
@@ -2958,7 +2992,13 @@ fn run_doc_rename(
     }
 
     let target = whole_doc_ack_target(&new_uri)?;
-    let mut findings = write_ack_findings(&schema, &retitled, &target.doctype, &target.slug);
+    let mut findings = write_ack_findings(
+        &schema,
+        &retitled,
+        &target.doctype,
+        &target.slug,
+        adopted_baseline.as_deref(),
+    );
     // **Noticed where it happens** (M51 Inc 11 / T2 — the rc.14 trial's F-9). The same
     // predicate the task-scope sweep re-raises, asked once here so a driver reading this
     // ack learns of the stale commit subject at the invocation that made it stale. It
@@ -4014,6 +4054,7 @@ fn run_create(
         type_name,
         title,
         &task.jigc_home,
+        &task.jigc_root(),
         &on_create,
         slug_override,
     )
@@ -4034,7 +4075,13 @@ fn run_create(
                 address: created.address,
                 target,
                 existed: created.existed,
-                findings: Findings::default(),
+                // … except the one thing this door itself did to the store's caches: a
+                // copy-in that was the doc's first encounter adopted its baseline, and
+                // says so here (`(R3, F7)`).
+                findings: adoption_finding(created.adopted_baseline.as_deref())
+                    .into_iter()
+                    .collect::<Vec<_>>()
+                    .into(),
             },
         )
     );
@@ -4126,6 +4173,7 @@ fn run_author(
         doctype,
         &plan.title,
         &task.jigc_home,
+        &task.jigc_root(),
         &on_create,
         slug_override.as_deref(),
     )
@@ -4195,7 +4243,13 @@ fn run_author(
     persist(&created.path, &buffer)?;
     // A whole-doc author carries only the target head (`doctype`+`slug`) — like create.
     let target = whole_doc_ack_target(&created.address)?;
-    let findings = write_ack_findings(schema, &buffer, &target.doctype, &target.slug);
+    let findings = write_ack_findings(
+        schema,
+        &buffer,
+        &target.doctype,
+        &target.slug,
+        created.adopted_baseline.as_deref(),
+    );
     println!(
         "{}",
         render::doc_ack(
@@ -6347,9 +6401,24 @@ fn field_json(value: &Value) -> serde_json::Value {
 /// `required-slot`) + the cross-doc / subprocess families are deliberately excluded — they
 /// answer "is the *corpus* complete," which one mid-authoring write cannot adjudicate — so
 /// `findings: []` means "no intrinsic single-doc advisory," not "validated."
-fn write_ack_findings(schema: &Schema, edited: &str, doctype: &str, slug: &str) -> Findings {
+///
+/// **And the one thing the write itself did to the store's caches** (the rc.24 fix pass,
+/// `(R3, F7)`): when this write's copy-in was the doc's first encounter it recorded the
+/// doc's `file-state` baseline, and `adopted_baseline` is the key it recorded. The ack then
+/// carries the sweep's own `file-state.baseline-adopt` at that path — the adoption happened
+/// at this door, the doc is `IN_SYNC` by the time any sweep reads it, and *every absorb
+/// surfaces* has no door exemption (`design/reconciliation.md`). It keeps its **path**
+/// target: its subject is the file at the home, not a node of the staged doc.
+fn write_ack_findings(
+    schema: &Schema,
+    edited: &str,
+    doctype: &str,
+    slug: &str,
+    adopted_baseline: Option<&str>,
+) -> Findings {
     let mut findings = engine::validate::surplus_sections_absent(schema, edited);
     engine::finding::readdress_to_uri(&mut findings, &format!("{doctype}:{slug}"));
+    findings.extend(adoption_finding(adopted_baseline));
     findings.into()
 }
 
@@ -6474,11 +6543,18 @@ fn item_ack_target(address: &Address, target: &RemoveItemTarget) -> render::AckT
 /// The staged bytes an edit verb splices into, plus whether reading them **copied a
 /// base-committed doc into the task** — the copy-on-first-touch fact each of the five
 /// edit verbs states on its ack (M47 Inc 10 T3; `design/command-output-contract.md` §2 →
-/// the first-touch copy-in note). Returned by [`ActiveTask::read_or_copy_in`], the only
-/// production caller of `state::copy_in`, so no verb can reach the seam and lose the bit.
+/// the first-touch copy-in note). Returned by [`ActiveTask::read_or_copy_in`], the edit
+/// verbs' one caller of `state::copy_in`, so no verb can reach the seam and lose the bit.
+/// (The other copy-in site is the engine's own `create` step 4, behind `doc create` and
+/// `doc author`; both read through `state::read_for_copy_in`.)
 struct EditBase {
     source: String,
     copied_in: bool,
+    /// The file-state key whose **baseline this read adopted** — `Some` exactly when the
+    /// copy-in was the doc's first encounter and recorded it
+    /// (`engine::file_state::read_for_copy_in`; the rc.24 fix pass, `(R3, F7)`). The verb's
+    /// ack states it through [`EditBase::adoption`].
+    adopted_baseline: Option<String>,
 }
 
 impl EditBase {
@@ -6488,16 +6564,30 @@ impl EditBase {
         EditBase {
             source,
             copied_in: false,
+            adopted_baseline: None,
         }
     }
 
-    /// The first touch: the committed body was copied into the working area.
-    fn copied_in(source: String) -> Self {
+    /// The first touch: the committed body was copied into the working area, and
+    /// `adopted_baseline` names the key that copy-in recorded, if it recorded one.
+    fn copied_in(source: String, adopted_baseline: Option<String>) -> Self {
         EditBase {
             source,
             copied_in: true,
+            adopted_baseline,
         }
     }
+}
+
+/// The advisory a write ack owes when its copy-in **adopted the doc's baseline** — the
+/// sweep's own `file-state.baseline-adopt`, keyed at the doc's home, or nothing when no
+/// baseline was adopted (`design/reconciliation.md` → Baseline adoption; →  What
+/// reconciliation does NOT do, *every absorb surfaces*).
+///
+/// One constructor for both copy-in sites — the edit verbs' [`EditBase`] and the create
+/// gate's `CreatedDoc` — so neither can adopt a baseline and stay silent about it.
+fn adoption_finding(adopted_baseline: Option<&str>) -> Option<engine::finding::Finding> {
+    adopted_baseline.and_then(|key| engine::file_state::CopyInBaseline::Adopted.finding(key))
 }
 
 /// The active task: its working-area directory + the embedded pack to resolve
@@ -6592,7 +6682,10 @@ impl ActiveTask {
     ///    `<location>/<slug>.md` exists under `repo_root`: copy that committed body
     ///    in via [`state::copy_in`] (which records `edited-from-base` write-once),
     ///    then read the copied-in body. This is the *only* new wiring T4 adds — the
-    ///    first production caller of `copy_in`.
+    ///    first production caller of `copy_in`. The body it copies is read through the
+    ///    **copy-in door** ([`state::read_for_copy_in`]), which records the doc's
+    ///    `file-state` baseline when it has none — before the staging, failing this write
+    ///    when it cannot.
     /// 3. **Neither staged nor committed** — reject with the unchanged
     ///    "no staged instance" error (`read_staged`).
     ///
@@ -6623,7 +6716,7 @@ impl ActiveTask {
             // Refusing before [`state::copy_in`] means nothing is staged, no role is
             // bound, and the task is still a good amend task.
             //
-            // **One site, six verbs.** This is the only production caller of `copy_in`
+            // **One site, six verbs.** This is the edit verbs' only caller of `copy_in`
             // (see this method's doc-comment), and all six `VerbKind::Write` `doc` leaves
             // that can stage a *committed* doc come through it — `set-field` (both its
             // set and `--unset` arms), `set-slot`, `add-item`, `remove-item`,
@@ -6649,16 +6742,27 @@ impl ActiveTask {
                     crate::task::AmendDocDoor::Write,
                 )));
             }
-            let body = std::fs::read_to_string(&committed)
-                .with_context(|| format!("could not read committed `{addr}`"))?;
-            state::copy_in(&self.dir, address.r#type.as_str(), slug, &body)
+            // The read that feeds the staging is the copy-in door: it records the doc's
+            // baseline when it has none, **before** anything is staged, and its failure —
+            // a save lock not taken, an unreadable record — fails this write with nothing
+            // staged (`(R3, F7)`; `design/reconciliation.md` → Detection timing).
+            let read = state::read_for_copy_in(
+                &self.dir,
+                &self.jigc_root(),
+                schema,
+                address.r#type.as_str(),
+                slug,
+                &committed,
+            )
+            .with_context(|| format!("could not read committed `{addr}`"))?;
+            state::copy_in(&self.dir, address.r#type.as_str(), slug, &read.body)
                 .with_context(|| format!("could not copy in `{addr}` for editing"))?;
             // The copy-on-write staged the committed doc; bind the workflow's object-form
             // `allows-create` role for this doctype so the set-field-first / edit-first
             // revise path resolves `task.<role>` (the `@`-slice and the `<<author:>>`
             // address) without a prior explicit `doc create` (M45 Inc 5 T2).
             self.bind_role_on_copy_in(address)?;
-            return Ok(EditBase::copied_in(read_staged(path, addr)?));
+            return Ok(EditBase::copied_in(read_staged(path, addr)?, read.adopted));
         }
         // Neither staged nor committed → the absent-instance reject, naming the
         // provisioning act this task actually has for the doctype (B2-1).
@@ -6761,6 +6865,12 @@ impl ActiveTask {
         Ok(state::read_migration_source(&self.dir)
             .context("could not read the task's migration source path")?
             .is_some())
+    }
+
+    /// The `.jigc/` home this task's working area and the shared caches live under — the
+    /// root the copy-in door records a baseline into.
+    fn jigc_root(&self) -> PathBuf {
+        self.jigc_home.join(".jigc")
     }
 
     /// The project layer's committed config dir — the layer every schema read on this

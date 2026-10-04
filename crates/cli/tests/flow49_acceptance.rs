@@ -691,7 +691,7 @@ fn drive_contrast(baseline_present: bool) -> ContrastOutcome {
     // base (a base-mismatch cannot pre-empt the reconcile gate) and the edit is not the
     // base pin's blob, a change made during the task that M55 Increment 4's pulled-edit
     // absorb leaves to arm A's conflict-block. It lands **before** the task's first touch,
-    // so the copy-in below carries it into arm B's commit.
+    // so the copy-in below carries it into the staged copy.
     let path = repo.join(CONTRAST_ADR);
     let body = fs::read_to_string(&path).expect("read the committed ADR");
     let edited = body.replacen("A cold node loses its sessions.", HUMAN_PROSE, 1);
@@ -753,19 +753,26 @@ fn drive_contrast(baseline_present: bool) -> ContrastOutcome {
     }
 }
 
-/// **Arm 1, the contrast** — what a recorded baseline is *worth*, driven as one pair
-/// rather than described.
+/// **Arm 1, the contrast** — what a recorded baseline is *worth*, and what losing one
+/// costs, driven as one pair rather than described.
 ///
 /// `CLAUDE.md`'s invariant says out-of-band edits are *"detected and routed … never
-/// silently merged"*. That is not a property of the reconciliation state machine alone:
-/// it is a property of the state machine **plus a recorded baseline**. Identical repo,
-/// identical committed ADR, identical human edit, identical in-task write — the only
-/// difference is whether the ADR's key is in `.jigc/state/file-state.json` when finalize
-/// runs. With it: `reconciliation.conflict-block`, exit 3, no commit. Without it: exit 0
-/// and a commit carrying **both** sides' prose. So a write that reported success for a
-/// delta it discarded did not degrade the guarantee — it switched it off.
+/// silently merged"*. Identical repo, identical committed ADR, identical human edit,
+/// identical in-task write — the only difference is whether the ADR's key is in
+/// `.jigc/state/file-state.json` when finalize runs. With it: `reconciliation.conflict-block`,
+/// exit 3, no commit.
+///
+/// Without it this arm used to land at exit 0 with **both** sides' prose in one commit —
+/// a write that reported success for a delta it discarded did not degrade the guarantee,
+/// it switched it off. Since the rc.24 fix pass `(R3, F7)` a staged doc with no record is
+/// decided by its **base pin** (`design/reconciliation.md` → Baseline adoption, the
+/// base-pin backstop): the on-disk bytes differ from the pin's blob, so the same finding
+/// blocks the same door. A key lost after the task's first touch no longer switches the
+/// guarantee off. (The arm in which it still merges — no key *at* the first touch, where
+/// the copy-in carries the edit and records it — is
+/// `reconciliation_baseline_contrast`'s arm B.)
 #[test]
-fn a_lost_baseline_switches_off_the_never_silently_merged_guarantee() {
+fn a_lost_baseline_no_longer_switches_off_the_never_silently_merged_guarantee() {
     let arm_a = drive_contrast(true);
     let arm_b = drive_contrast(false);
 
@@ -774,53 +781,40 @@ fn a_lost_baseline_switches_off_the_never_silently_merged_guarantee() {
         "the fixture's own witness: the arms must diverge exactly where they claim to",
     );
 
-    assert_eq!(
-        arm_a.exit,
-        i32::from(cli::task::EXIT_VALIDATION_BLOCKED),
-        "arm A blocks at the validation exit code; findings were {:?}",
-        arm_a.codes,
-    );
+    for (name, arm) in [
+        ("A (baseline recorded)", &arm_a),
+        ("B (baseline lost)", &arm_b),
+    ] {
+        assert_eq!(
+            arm.exit,
+            i32::from(cli::task::EXIT_VALIDATION_BLOCKED),
+            "arm {name} blocks at the validation exit code; findings were {:?}",
+            arm.codes,
+        );
+        assert!(
+            arm.codes
+                .iter()
+                .any(|code| code == "reconciliation.conflict-block"),
+            "arm {name}'s block is the conflict; got {:?}",
+            arm.codes,
+        );
+        assert_eq!(
+            arm.commits_before, arm.commits_after,
+            "arm {name}: a conflict-block creates no commit",
+        );
+        assert!(
+            arm.committed_adr.contains(HUMAN_PROSE) && !arm.committed_adr.contains(TASK_PROSE),
+            "arm {name} promotes nothing and leaves the human's bytes alone; got:\n{}",
+            arm.committed_adr,
+        );
+    }
     assert!(
-        arm_a
-            .codes
-            .iter()
-            .any(|code| code == "reconciliation.conflict-block"),
-        "arm A's block is the conflict; got {:?}",
-        arm_a.codes,
-    );
-    assert_eq!(
-        arm_a.commits_before, arm_a.commits_after,
-        "a conflict-block creates no commit",
-    );
-    assert!(
-        arm_a.committed_adr.contains(HUMAN_PROSE) && !arm_a.committed_adr.contains(TASK_PROSE),
-        "arm A promotes nothing and leaves the human's bytes alone; got:\n{}",
-        arm_a.committed_adr,
-    );
-
-    assert_eq!(
-        arm_b.exit,
-        i32::from(cli::task::EXIT_SUCCESS),
-        "arm B succeeds — nothing blocks; findings were {:?}",
-        arm_b.codes,
-    );
-    assert!(
-        arm_b
+        !arm_b
             .codes
             .iter()
             .any(|code| code == "file-state.baseline-adopt"),
-        "arm B takes the UNKNOWN baseline-adopt arm instead; got {:?}",
+        "arm B does not adopt the edited bytes it was about to overwrite; got {:?}",
         arm_b.codes,
-    );
-    assert_eq!(
-        arm_b.commits_after,
-        arm_b.commits_before + 1,
-        "arm B lands a commit",
-    );
-    assert!(
-        arm_b.committed_adr.contains(HUMAN_PROSE) && arm_b.committed_adr.contains(TASK_PROSE),
-        "arm B silently merges both sides at exit 0 — the invariant, switched off; got:\n{}",
-        arm_b.committed_adr,
     );
 }
 

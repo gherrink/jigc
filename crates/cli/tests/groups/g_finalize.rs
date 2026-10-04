@@ -15,6 +15,8 @@ mod branch_name_fence;
 mod ci_matrix_fence;
 #[path = "../commit_seam_posture.rs"]
 mod commit_seam_posture;
+#[path = "../copy_in_baseline.rs"]
+mod copy_in_baseline;
 #[path = "../doc_only_finalize.rs"]
 mod doc_only_finalize;
 #[path = "../docs_root.rs"]

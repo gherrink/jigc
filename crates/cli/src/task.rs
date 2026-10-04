@@ -7892,14 +7892,25 @@ pub(crate) fn git_path_on_a_branch(repo_root: &Path, path: &str) -> Result<bool>
         .any(|line| line.trim() == "blob"))
 }
 
-/// The committed bytes of `path` (repo-relative) **at `pin`** — `git cat-file blob
-/// <pin>:<path>` — or `None` when the pin carries no blob there or git fails in any way.
-/// The L1 pull-absorption seam ([`engine::validate::PinnedBlob`]; M55 Increment 4, P2): the
-/// engine hashes the bytes against the drifted doc on disk, so a failure answering `None`
-/// keeps the conflict-block it would have raised anyway — never an absorb on a guess.
+/// The committed bytes of `path` (repo-relative) **at `pin`, as a checkout writes them** —
+/// `git cat-file --filters <pin>:<path>` — or `None` when the pin carries no blob there or
+/// git fails in any way. The L1 pull-absorption seam ([`engine::validate::PinnedBlob`]; M55
+/// Increment 4, P2): the engine hashes the bytes against the doc on disk, so a failure
+/// answering `None` keeps the conflict-block it would have raised anyway — never an absorb
+/// on a guess.
+///
+/// **The checked-out form, never the raw blob** (the rc.24 fix pass, `(R3, F7)`). Every
+/// consumer compares the answer with the bytes of a working-tree file, and a working-tree
+/// file is the blob *after* git's checkout conversion — `core.autocrlf`, an `eol` or `text`
+/// attribute, a smudge filter. Read raw, a doc nobody touched differs from "its own" blob in
+/// every line ending in such a checkout: the L1 arm would refuse every pulled edit there,
+/// the store sweep would never grade a lagging baseline advisory, and the base-pin backstop
+/// — which *blocks* on a difference — would block every staged doc with no record.
+/// `--filters` applies the conversions configured for `path` in this working tree, which is
+/// exactly what put the file's bytes there.
 pub(crate) fn git_blob_at(repo_root: &Path, pin: &str, path: &str) -> Option<Vec<u8>> {
     let out = Command::new("git")
-        .args(["cat-file", "blob", &format!("{pin}:{path}")])
+        .args(["cat-file", "--filters", &format!("{pin}:{path}")])
         .current_dir(repo_root)
         .output()
         .ok()?;

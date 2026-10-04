@@ -21,10 +21,11 @@
 //!   Cross-cutting build crates → Hashing = blake3; inc-4 planning pin).
 //! - **The record** (`storage.md` → `.jigc/state/` hash records): one JSON map
 //!   `path → hex-hash` at `<jigc_root>/state/file-state.json`, gitignored and
-//!   rebuildable. Keyed to "last-known-good committed state"; the recorded hash
-//!   updates at exactly three sites (baseline-adopt / absorb / commit —
-//!   `reconciliation.md` → Hash re-baselining), all of which are *callers* of
-//!   [`FileStateRecord::save`], not this module's concern.
+//!   rebuildable. Keyed to "last-known-good committed state"; the sites the recorded
+//!   hash updates at are `reconciliation.md` → Hash re-baselining's list, not a count
+//!   here. All but one are *callers* of [`FileStateRecord::save`]; the one this module
+//!   owns is the **copy-in door** ([`read_for_copy_in`]), which records a doc's first
+//!   baseline as a task copies it in.
 
 use crate::finding::{Finding, Location, Severity};
 use serde::{Deserialize, Serialize};
@@ -159,14 +160,24 @@ impl FileStateRecord {
     /// exactly the lost concurrent delta the lock exists to prevent.
     pub fn save(&self, jigc_root: &Path) -> std::io::Result<()> {
         let path = Self::path_in(jigc_root);
-        crate::state::with_save_lock(&path, || {
-            let theirs = Self::load(jigc_root).unwrap_or_else(|_| {
-                crate::state::tally_save_degrade(crate::state::SaveDegrade::UnreadableTheirs);
-                self.clone()
-            });
-            let merged = self.merge_onto(&theirs);
-            crate::state::persist(&path, merged.to_bytes().as_bytes())
-        })
+        crate::state::with_save_lock(&path, || self.save_locked(jigc_root))
+    }
+
+    /// [`save`](Self::save)'s critical section — the re-read of *theirs*, the merge and
+    /// the persist — for a caller that **already holds** the save lock.
+    ///
+    /// The lock is per open file description and is not re-entrant, so a critical section
+    /// that has to do more than save (the copy-in door reads the doc it is about to stage
+    /// and decides whether to record it, all under one lock — [`read_for_copy_in`]) cannot
+    /// call `save` from inside it. It calls this instead, so there is still one merge and
+    /// one persist, in one place.
+    fn save_locked(&self, jigc_root: &Path) -> std::io::Result<()> {
+        let theirs = Self::load(jigc_root).unwrap_or_else(|_| {
+            crate::state::tally_save_degrade(crate::state::SaveDegrade::UnreadableTheirs);
+            self.clone()
+        });
+        let merged = self.merge_onto(&theirs);
+        crate::state::persist(&Self::path_in(jigc_root), merged.to_bytes().as_bytes())
     }
 
     /// The base-relative three-way merge: over `base ∪ ours ∪ theirs`, per key —
@@ -332,6 +343,18 @@ impl ConflictBlock {
         }
     }
 
+    /// Whether `path` is the caller's **path-keyed** subject — a migration task's own
+    /// recorded source ([`ConflictBlock::task`]).
+    ///
+    /// The base-pin backstop asks it ([`reconcile_committed`], the `UNKNOWN` arm): the keyed
+    /// route's exit is `jigc unmanage <source>`, which drops that path's baseline *so that*
+    /// the next finalize takes the `UNKNOWN` arm and lands the migration's rewrite over the
+    /// source. A backstop that blocked that path too would turn the one sanctioned exit into
+    /// a loop — unmanage, finalize, blocked on the same path, routed at unmanage again.
+    fn keys(&self, path: &str) -> bool {
+        matches!(&self.keyed, Some((keyed_path, _, _)) if keyed_path == path)
+    }
+
     /// The **task-scope** preset — the sweep runs inside a named task, so the route names
     /// that task's id outright. The honest resolution pair is unchanged from M43's
     /// ghost-verb repair: discard the **whole task** (no per-doc discard exists) or revert
@@ -458,7 +481,15 @@ impl LiveRecord {
 ///   `reconciliation.conformance-block` — routed on **its schema-version stamp** (T2): the
 ///   hand-repair sanction when it is at the current version, the corpus-migration route when
 ///   it is stale, unstamped or ahead. Neither is recorded, so either re-fires until the human
-///   resolves it.
+///   resolves it. **Except a touched doc off its base pin** (the rc.24 fix pass, `(R3, F7)`):
+///   `UNKNOWN` + `task_touched` + `pinned` carries a blob for the path + the on-disk bytes
+///   differ from it → the caller's **conflict-block**, nothing recorded. That is the
+///   **base-pin backstop**: with no recorded hash, the pin is the only remaining witness of
+///   what the task can have started from, and bytes that differ from it are an edit the
+///   staged copy may not carry — adopting them is how a hand edit made after a task's first
+///   write was overwritten at exit 0. A `None` lookup (an untracked doc, no pin, a git
+///   failure, the record door) and the caller's path-keyed migration source
+///   ([`ConflictBlock::keys`]) keep the adoption above.
 /// - **`IN_SYNC`** (recorded hash matches) → no finding (clean / task-only change —
 ///   the working-area writes are reconciled elsewhere, not here).
 /// - **`DRIFTED + TOUCHED`** (`task_touched`) → **conflict-block**: both sides moved.
@@ -516,6 +547,24 @@ pub fn reconcile_committed(
         // whose route, since T2, is decided by the doc's own schema-version stamp rather
         // than by adoption prose that is now wrong for its whole population. Neither
         // branch records.
+        //
+        // **The base-pin backstop comes first** (the rc.24 fix pass, `(R3, F7)`). A doc the
+        // task has staged normally has a recorded hash by now — the copy-in door records
+        // one ([`read_for_copy_in`]) — so reaching this arm *touched* means the key was lost
+        // after the copy-in, was never written (a binary older than that door, a doc that
+        // did not conform when it was copied in, a second task's copy-in over a first one's
+        // unrecorded staging), or was dropped on purpose. Adopting the on-disk bytes here
+        // is the defect: the promote that follows replaces them with a staged copy that was
+        // never compared against them. The pin is the one witness left — bytes equal to its
+        // blob are what the task started from; bytes that differ are an edit, and the
+        // caller's conflict-block is the answer both orders of that edit get, because the
+        // staged copy cannot say which side of the copy-in it fell on.
+        None if task_touched
+            && !conflict.keys(path)
+            && pinned(path).is_some_and(|blob| hash_bytes(&blob) != current) =>
+        {
+            vec![conflict_block_finding(path, conflict)]
+        }
         None => match conformance_gate(schema, bytes) {
             Ok(_) => {
                 record.record(path, current);
@@ -545,7 +594,8 @@ pub fn reconcile_committed(
         // L1): then the drift predates the task (a pull), only the task moved since, and the
         // UNTOUCHED arm's whole absorb body runs. A pinned edit that does not conform is
         // never baselined: it keeps the caller's conflict-block unchanged (P1), so a
-        // migration's path-keyed exit survives. The seam is asked only here.
+        // migration's path-keyed exit survives. The seam is asked here and in the `UNKNOWN`
+        // arm's backstop above — of a touched path, both times.
         Some(_) if task_touched => {
             let at_pin = pinned(path).is_some_and(|blob| hash_bytes(&blob) == current);
             match at_pin
@@ -608,6 +658,122 @@ fn conformance_gate(
         }
         Err(parse_findings) => Err(parse_findings.into_iter().next()),
     }
+}
+
+/// What the **copy-in door** did about a doc's baseline ([`read_for_copy_in`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CopyInBaseline {
+    /// The record already carried the doc's key. Nothing was written; the doc reads
+    /// `IN_SYNC` or `DRIFTED` against the hash it had.
+    Held,
+    /// The key was absent and the bytes just read were recorded as the doc's baseline —
+    /// its first encounter, at the door that stages it.
+    Adopted,
+    /// The key was absent and **stays** absent: the doc remains `UNKNOWN`, and the
+    /// committing door's base-pin backstop decides ([`reconcile_committed`]).
+    Unrecorded(Unrecorded),
+}
+
+/// Why a copy-in recorded no baseline for a doc that had none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unrecorded {
+    /// The bytes do not pass the conformance gate. A non-conformant doc is never baselined
+    /// — the rule the `UNKNOWN` arm and the post-commit re-hash already keep
+    /// ([`committed_path_recordable`]).
+    NonConformant,
+    /// **Another open task already has this doc staged, and there is no record of what it
+    /// started from.** The record is per path, not per task: recording *these* bytes would
+    /// make that other task read `IN_SYNC` against a file it never saw — and if a hand edit
+    /// fell between the two copy-ins, promote over it at exit 0. Left `UNKNOWN`, both tasks
+    /// are decided by the pin.
+    StagedElsewhere,
+}
+
+impl CopyInBaseline {
+    /// The advisory the write door owes when it **adopted** the baseline — the same
+    /// `file-state.baseline-adopt` the sweep emits on a first encounter, keyed at the same
+    /// path, because it is the same event: *"every absorb surfaces"* has no door exemption
+    /// (`reconciliation.md` → What reconciliation does NOT do), and a doc baselined at its
+    /// copy-in is `IN_SYNC` by the time any sweep sees it, so the write is the only surface
+    /// left to say so. `None` for every other outcome: nothing was adopted.
+    pub fn finding(self, key: &str) -> Option<Finding> {
+        (self == CopyInBaseline::Adopted).then(|| baseline_adopt_finding(key))
+    }
+}
+
+/// A doc read for a copy-in: the bytes to stage, and what was done about its baseline.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CopyInSource {
+    /// The doc's bytes at its home, exactly as read — the caller stages these.
+    pub body: String,
+    /// What the read did about the doc's `file-state` baseline.
+    pub baseline: CopyInBaseline,
+}
+
+/// **The copy-in door** — read the doc at `home` for staging into a task, and record its
+/// baseline if it has none (`reconciliation.md` → Detection timing, the *write through the
+/// CLI* row; → Baseline adoption; the rc.24 fix pass, `(R3, F7)`).
+///
+/// A task that copies a committed doc in will, at its finalize, **replace** the file at the
+/// doc's home with its staged copy. Whether that is safe is a comparison between what is on
+/// disk then and what was on disk *now* — and until this door existed nothing remembered
+/// *now*: the baseline was written only by a landed finalize, so through the whole of a
+/// clone's first task the doc was `UNKNOWN`, the sweep adopted whatever it found, and a hand
+/// edit made after the copy-in was overwritten at exit 0. So the read that feeds the staging
+/// is also the doc's first encounter, and it records what it read.
+///
+/// - **`key`** is the doc's file-state key — its repo-relative home, the string the store
+///   sweep reads it under ([`crate::finalize::promote_destination`], the same key a landed
+///   finalize records). A different spelling would be a silent no-op.
+/// - **The hash is of the raw bytes read**, never of the staged copy: the copy-in applies
+///   the first-touch canonicalization (BOM strip, single final newline), and a hash of
+///   *that* would make every doc it changed read `DRIFTED` from the moment it was staged.
+/// - **Record-if-absent, never overwrite.** A key the record already holds is left alone
+///   ([`CopyInBaseline::Held`]) — the bytes read are then either what it names or a drift
+///   the sweep will classify. Task writes still never *update* a committed-state hash.
+/// - **A non-conformant doc is not baselined**, and **neither is a doc another open task
+///   holds staged with no record** (`staged_elsewhere`; [`Unrecorded`]).
+///
+/// **One lock, the read inside it.** The read, the re-read of the record, the decision and
+/// the save run under the record's save lock ([`crate::state::with_save_lock`]), so two
+/// tasks' first writes cannot both find the key absent and both record: the second one in
+/// reads the first one's key and records nothing. It spawns no subprocess, which is the
+/// lock's standing rule. A record that already holds the key takes no lock at all — there is
+/// nothing to write, and whatever the read returns is classified against the held hash.
+///
+/// **It fails closed.** A lock not taken within [`crate::state::SAVE_LOCK_BUDGET`], an
+/// unreadable record, an unreadable doc: each is the caller's error, returned **before**
+/// anything is staged. A copy-in that staged the doc and skipped the record would be exactly
+/// the unrecorded staging this door exists to end.
+pub fn read_for_copy_in(
+    jigc_root: &Path,
+    home: &Path,
+    key: &str,
+    schema: &crate::schema::Schema,
+    staged_elsewhere: impl FnOnce() -> bool,
+) -> std::io::Result<CopyInSource> {
+    if FileStateRecord::load(jigc_root)?.get(key).is_some() {
+        return Ok(CopyInSource {
+            body: std::fs::read_to_string(home)?,
+            baseline: CopyInBaseline::Held,
+        });
+    }
+    crate::state::with_save_lock(&FileStateRecord::path_in(jigc_root), || {
+        let body = std::fs::read_to_string(home)?;
+        let mut record = FileStateRecord::load(jigc_root)?;
+        let baseline = if record.get(key).is_some() {
+            CopyInBaseline::Held
+        } else if conformance_gate(schema, body.as_bytes()).is_err() {
+            CopyInBaseline::Unrecorded(Unrecorded::NonConformant)
+        } else if staged_elsewhere() {
+            CopyInBaseline::Unrecorded(Unrecorded::StagedElsewhere)
+        } else {
+            record.record(key, hash_bytes(body.as_bytes()));
+            record.save_locked(jigc_root)?;
+            CopyInBaseline::Adopted
+        };
+        Ok(CopyInSource { body, baseline })
+    })
 }
 
 /// Whether a **just-committed** `path` (its committed `bytes`) may be recorded into the
@@ -2410,10 +2576,10 @@ Referrers must point at the new decision.
 
     /// **L1 pull absorption, (iv)** (M55 Increment 4, P2/P3): a `None` lookup — no pin, an
     /// absent blob, a git failure, the record door — leaves **every** arm's verdict as it was,
-    /// and only the drifted + touched arm ever consults the seam, so a clean sweep shells out
-    /// zero times.
+    /// and only a **touched** path ever consults the seam — drifted (the L1 arm) or with no
+    /// record (the base-pin backstop, `(R3, F7)`) — so a clean sweep shells out zero times.
     #[test]
-    fn a_none_lookup_keeps_every_arm_and_only_the_touched_drift_asks() {
+    fn a_none_lookup_keeps_every_arm_and_only_a_touched_path_asks() {
         let schema = adr_schema();
         let base = ADR_B_BASE.as_bytes();
         let edited = ADR_B_EDITED_SUPERSEDES.as_bytes();
@@ -2426,8 +2592,9 @@ Referrers must point at the new decision.
         // (recorded baseline, on-disk bytes, touched) → the codes today's classifier emits,
         // and how many times the seam is asked.
         type Cell<'a> = (Option<&'a [u8]>, &'a [u8], bool, &'a [&'a str], usize);
-        let cells: [Cell<'_>; 6] = [
-            (None, base, true, &["file-state.baseline-adopt"], 0),
+        let cells: [Cell<'_>; 7] = [
+            (None, base, false, &["file-state.baseline-adopt"], 0),
+            (None, base, true, &["file-state.baseline-adopt"], 1),
             (Some(base), base, true, &[], 0),
             (Some(base), edited, false, &["reconciliation.absorb"], 0),
             (
@@ -4642,6 +4809,335 @@ sections: []
         assert!(
             !again.iter().any(|f| f.code == "file-state.baseline-adopt"),
             "the adopted baseline matches on the next sweep — no forever-re-adopt: {again:?}"
+        );
+    }
+
+    /// **The base-pin backstop** (the rc.24 fix pass, `(R3, F7)`), over the whole `UNKNOWN`
+    /// arm: `(on-disk bytes, touched, what the pin answers, whose conflict presentation)` →
+    /// the codes emitted, and whether the bytes were recorded.
+    ///
+    /// Only one cell blocks — *touched, a blob at the pin, bytes that differ from it* — and
+    /// it blocks a non-conformant edit too, ahead of the advisory that used to say *fix the
+    /// file* one statement before the promote overwrote it. Every other cell is the arm as
+    /// it was: untouched never asks the pin; bytes at the pin adopt; a pin with no blob
+    /// adopts; and the migration task's own source keeps the arm whole, so its
+    /// `jigc unmanage <source>` exit stays an exit.
+    #[test]
+    fn unknown_and_touched_is_decided_by_the_base_pin() {
+        let schema = adr_schema();
+        let base = ADR_B_BASE.as_bytes();
+        let edited = ADR_B_EDITED_SUPERSEDES.as_bytes();
+        let broken = ADR_B_EDITED_BAD_DATE.as_bytes();
+        let at_base = |_: &str| Some(ADR_B_BASE.as_bytes().to_vec());
+        let no_blob = |_: &str| None;
+        let general = test_conflict();
+        let migrating_this = ConflictBlock::task("migrate-it", Some(ADR_B_PATH));
+        let migrating_other = ConflictBlock::task("migrate-it", Some("docs/elsewhere.md"));
+
+        struct Cell<'a> {
+            name: &'a str,
+            bytes: &'a [u8],
+            touched: bool,
+            pinned: &'a crate::validate::PinnedBlob<'a>,
+            conflict: &'a ConflictBlock,
+            codes: &'a [(&'a str, Severity)],
+            recorded: bool,
+        }
+        const ADOPT: (&str, Severity) = ("file-state.baseline-adopt", Severity::Advisory);
+        const CONFLICT: (&str, Severity) = ("reconciliation.conflict-block", Severity::Blocking);
+        const UNVETTED: (&str, Severity) = ("reconciliation.conformance-block", Severity::Advisory);
+        let cells = [
+            Cell {
+                name: "touched, off the pin → the backstop blocks",
+                bytes: edited,
+                touched: true,
+                pinned: &at_base,
+                conflict: &general,
+                codes: &[CONFLICT],
+                recorded: false,
+            },
+            Cell {
+                name: "touched, off the pin, non-conformant → blocks, never the advisory",
+                bytes: broken,
+                touched: true,
+                pinned: &at_base,
+                conflict: &general,
+                codes: &[CONFLICT],
+                recorded: false,
+            },
+            Cell {
+                name: "touched, at the pin → adopts",
+                bytes: base,
+                touched: true,
+                pinned: &at_base,
+                conflict: &general,
+                codes: &[ADOPT],
+                recorded: true,
+            },
+            Cell {
+                name: "touched, no blob at the pin → adopts",
+                bytes: edited,
+                touched: true,
+                pinned: &no_blob,
+                conflict: &general,
+                codes: &[ADOPT],
+                recorded: true,
+            },
+            Cell {
+                name: "touched, no blob at the pin, non-conformant → the advisory, unrecorded",
+                bytes: broken,
+                touched: true,
+                pinned: &no_blob,
+                conflict: &general,
+                codes: &[UNVETTED],
+                recorded: false,
+            },
+            Cell {
+                name: "untouched, off the pin → adopts (a first encounter)",
+                bytes: edited,
+                touched: false,
+                pinned: &at_base,
+                conflict: &general,
+                codes: &[ADOPT],
+                recorded: true,
+            },
+            Cell {
+                name: "the migration source, off the pin → keeps the arm (the unmanage exit)",
+                bytes: edited,
+                touched: true,
+                pinned: &at_base,
+                conflict: &migrating_this,
+                codes: &[ADOPT],
+                recorded: true,
+            },
+            Cell {
+                name: "a migration task's OTHER doc, off the pin → blocks",
+                bytes: edited,
+                touched: true,
+                pinned: &at_base,
+                conflict: &migrating_other,
+                codes: &[CONFLICT],
+                recorded: false,
+            },
+        ];
+        for cell in cells {
+            let mut record = FileStateRecord::new();
+            let mut index = EdgeIndex::default();
+            let findings = reconcile_committed(
+                &mut record,
+                &mut index,
+                &schema,
+                ADR_B_PATH,
+                ADR_B_FROM,
+                cell.bytes,
+                cell.touched,
+                cell.pinned,
+                cell.conflict,
+                &crate::validate::AdoptionInputs::inert(),
+            );
+            let got: Vec<(&str, Severity)> = findings
+                .iter()
+                .map(|f| (f.code.as_str(), f.severity))
+                .collect();
+            assert_eq!(got, cell.codes, "{}: {findings:?}", cell.name);
+            assert_eq!(
+                record.get(ADR_B_PATH).is_some(),
+                cell.recorded,
+                "{}: the record",
+                cell.name,
+            );
+            assert!(
+                index.edges.is_empty(),
+                "{}: the `UNKNOWN` arm never touches the index",
+                cell.name,
+            );
+        }
+
+        // The block is the caller's own presentation, byte for byte — the same finding the
+        // `DRIFTED + TOUCHED` arm raises, so one route serves both.
+        let mut record = FileStateRecord::new();
+        let findings = reconcile_committed(
+            &mut record,
+            &mut EdgeIndex::default(),
+            &schema,
+            ADR_B_PATH,
+            ADR_B_FROM,
+            edited,
+            true,
+            &at_base,
+            &general,
+            &crate::validate::AdoptionInputs::inert(),
+        );
+        assert_eq!(findings, vec![conflict_block_finding(ADR_B_PATH, &general)]);
+    }
+
+    /// The ADR home under a temp repo root, and the bytes written there.
+    fn adr_at_home(root: &Path, body: &str) -> PathBuf {
+        let home = root.join(ADR_B_PATH);
+        std::fs::create_dir_all(home.parent().expect("the location dir")).expect("mk decisions/");
+        std::fs::write(&home, body).expect("write the committed ADR");
+        home
+    }
+
+    /// **The copy-in door** ([`read_for_copy_in`]; the rc.24 fix pass, `(R3, F7)`), over its
+    /// four outcomes. The hash it records is of the **raw bytes read** — the fixture has no
+    /// final newline, which the first-touch canonicalization would add, so a hash of the
+    /// staged form would be a different one — and the body it returns is those same bytes.
+    #[test]
+    fn the_copy_in_door_records_an_absent_baseline_and_only_that() {
+        let schema = adr_schema();
+        let raw = ADR_B_BASE.trim_end_matches('\n');
+        assert_ne!(
+            hash_bytes(raw.as_bytes()),
+            hash_bytes(crate::write::first_touch_canonicalize(raw).as_bytes()),
+            "the premise: the copy-in canonicalizes this body",
+        );
+
+        // Absent key, conformant, nobody else holds it → adopted, durably, at the raw hash.
+        let root = TempRoot::new("copy-in-adopt");
+        let jigc_root = root.path().join(".jigc");
+        let home = adr_at_home(root.path(), raw);
+        let source = read_for_copy_in(&jigc_root, &home, ADR_B_PATH, &schema, || false)
+            .expect("the copy-in read");
+        assert_eq!(source.body, raw, "the bytes to stage are the bytes on disk");
+        assert_eq!(source.baseline, CopyInBaseline::Adopted);
+        assert_eq!(
+            FileStateRecord::load(&jigc_root)
+                .expect("load the record")
+                .get(ADR_B_PATH),
+            Some(hash_bytes(raw.as_bytes()).as_str()),
+            "the recorded hash is the raw file's",
+        );
+        let said = source
+            .baseline
+            .finding(ADR_B_PATH)
+            .expect("an adoption is stated");
+        assert_eq!(said, baseline_adopt_finding(ADR_B_PATH));
+        assert_eq!(said.severity, Severity::Advisory);
+
+        // The key is held → nothing is written, even over bytes it does not name.
+        std::fs::write(&home, ADR_B_EDITED_SUPERSEDES).expect("an out-of-band edit");
+        let before = std::fs::read(FileStateRecord::path_in(&jigc_root)).expect("the record");
+        let held = read_for_copy_in(&jigc_root, &home, ADR_B_PATH, &schema, || {
+            panic!("a held key asks nothing about other tasks")
+        })
+        .expect("the copy-in read");
+        assert_eq!(held.body, ADR_B_EDITED_SUPERSEDES);
+        assert_eq!(held.baseline, CopyInBaseline::Held);
+        assert_eq!(held.baseline.finding(ADR_B_PATH), None);
+        assert_eq!(
+            std::fs::read(FileStateRecord::path_in(&jigc_root)).expect("the record"),
+            before,
+            "a copy-in never moves a baseline that exists",
+        );
+
+        // Non-conformant → not baselined.
+        let root = TempRoot::new("copy-in-nonconformant");
+        let jigc_root = root.path().join(".jigc");
+        let home = adr_at_home(root.path(), ADR_B_EDITED_BAD_DATE);
+        let source = read_for_copy_in(&jigc_root, &home, ADR_B_PATH, &schema, || {
+            panic!("a non-conformant doc is refused before the question is asked")
+        })
+        .expect("the copy-in read");
+        assert_eq!(
+            source.baseline,
+            CopyInBaseline::Unrecorded(Unrecorded::NonConformant)
+        );
+        assert_eq!(
+            source.body, ADR_B_EDITED_BAD_DATE,
+            "the body is still handed over"
+        );
+        assert_eq!(source.baseline.finding(ADR_B_PATH), None);
+        assert!(
+            FileStateRecord::load(&jigc_root)
+                .expect("load the record")
+                .hashes
+                .is_empty(),
+            "a non-conformant doc is never baselined",
+        );
+
+        // Another open task holds it unrecorded → not baselined.
+        let root = TempRoot::new("copy-in-elsewhere");
+        let jigc_root = root.path().join(".jigc");
+        let home = adr_at_home(root.path(), ADR_B_BASE);
+        let source = read_for_copy_in(&jigc_root, &home, ADR_B_PATH, &schema, || true)
+            .expect("the copy-in read");
+        assert_eq!(
+            source.baseline,
+            CopyInBaseline::Unrecorded(Unrecorded::StagedElsewhere)
+        );
+        assert!(
+            FileStateRecord::load(&jigc_root)
+                .expect("load the record")
+                .hashes
+                .is_empty(),
+            "the path stays `UNKNOWN` for the backstop to decide",
+        );
+
+        // An unreadable doc is the caller's error, with nothing recorded.
+        let root = TempRoot::new("copy-in-missing");
+        let jigc_root = root.path().join(".jigc");
+        let missing = root.path().join(ADR_B_PATH);
+        assert!(
+            read_for_copy_in(&jigc_root, &missing, ADR_B_PATH, &schema, || false).is_err(),
+            "a doc that cannot be read fails the copy-in",
+        );
+        assert!(!FileStateRecord::path_in(&jigc_root).exists());
+    }
+
+    /// **The key the copy-in records is the key the sweep reads** — for a `location:` doc
+    /// and for a `placement:` one. Recorded under [`crate::finalize::promote_destination`],
+    /// each doc reads `IN_SYNC` at the next sweep (no finding at all); under any other
+    /// spelling it would read `UNKNOWN` and the record would be a silent no-op.
+    #[test]
+    fn the_copy_in_key_is_the_key_the_sweep_reads() {
+        let foo = crate::schema::load_schema(
+            b"\
+type: foo
+placement: { file: FOO.md }
+sections: []
+",
+        )
+        .expect("the placement schema loads");
+        let mut schemas = adr_schemas();
+        schemas.insert("foo".to_string(), foo);
+
+        let root = TempRoot::new("copy-in-key");
+        let jigc_root = root.path().join(".jigc");
+        let task = TempRoot::new("copy-in-key-task");
+        adr_at_home(root.path(), ADR_B_BASE);
+        std::fs::write(root.path().join("FOO.md"), "# Foo\n").expect("write the placement doc");
+
+        for (ty, slug) in [("adr", "distributed-cache"), ("foo", "foo")] {
+            let schema = &schemas[ty];
+            let key = crate::finalize::promote_destination(schema, slug).expect("a home");
+            let home = crate::store::canonical_path(root.path(), schema, slug).expect("a home");
+            let source = read_for_copy_in(&jigc_root, &home, &key, schema, || false)
+                .expect("the copy-in read");
+            assert_eq!(
+                source.baseline,
+                CopyInBaseline::Adopted,
+                "{ty}: adopted at `{key}`"
+            );
+        }
+
+        let mut record = FileStateRecord::load(&jigc_root).expect("load the record");
+        let findings = reconcile_committed_store(
+            &mut record,
+            &mut EdgeIndex::default(),
+            &schemas,
+            root.path(),
+            task.path(),
+            &|_| true,
+            &|_| true,
+            &|_| None,
+            &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
+            &LiveRecord::none(),
+        );
+        assert!(
+            findings.is_empty(),
+            "both docs read in-sync under the keys the copy-in recorded: {findings:?}",
         );
     }
 }

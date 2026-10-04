@@ -139,8 +139,10 @@ pub type HistoryPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 pub type OtherRefsPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 
 /// The CLI-supplied **committed bytes at a pin** — a `Fn(&str) -> Option<Vec<u8>>` taking a
-/// **repo-relative** path and answering its blob at the caller's base pin (`git cat-file blob
-/// <pin>:<path>`), threaded through [`validate_task`] into
+/// **repo-relative** path and answering its blob at the caller's base pin **as a checkout
+/// writes it** (`git cat-file --filters <pin>:<path>` — the bytes are compared with a
+/// working-tree file, so they are the blob after git's eol / filter conversion, never the
+/// raw object), threaded through [`validate_task`] into
 /// [`crate::file_state::reconcile_committed_store`] → [`crate::file_state::reconcile_committed`]
 /// (M55 Increment 4, P2). Built on the [`HistoryPredicate`] mold: the CLI owns the shell-out,
 /// the engine hashes the bytes with [`crate::file_state::hash_bytes`] — the drift hash is
@@ -149,10 +151,18 @@ pub type OtherRefsPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 /// It is the **L1 pull-absorption** input (`design/reconciliation.md` → the `DRIFTED + TOUCHED`
 /// row): a committed doc drifted from its recorded baseline whose on-disk bytes equal its blob
 /// at the task's pin was moved by a pull *before* the task began, not during it, so a task that
-/// touches it absorbs the pulled edit instead of conflict-blocking. Consulted **only** on a
-/// drifted, touched path, so a clean sweep shells out zero times. `None` — an absent blob, an
+/// touches it absorbs the pulled edit instead of conflict-blocking. `None` — an absent blob, an
 /// unborn pin, any git failure, or a caller that holds no pin (the milestone-record door, P3) —
-/// keeps today's conflict-block, the conservative default.
+/// keeps that arm's conflict-block, the conservative default.
+///
+/// It is also the **base-pin backstop**'s input (the rc.24 fix pass, `(R3, F7)`;
+/// `design/reconciliation.md` → Baseline adoption): a *touched* doc with **no** recorded
+/// baseline whose on-disk bytes differ from its blob at the pin conflict-blocks instead of
+/// being adopted. There `None` keeps the adoption — with neither a record nor a blob there is
+/// nothing to compare against.
+///
+/// Consulted **only** on a touched path that is drifted or has no record, so a clean sweep
+/// shells out zero times.
 pub type PinnedBlob<'a> = dyn Fn(&str) -> Option<Vec<u8>> + 'a;
 
 /// Validate one task working area — the single engine both `task validate` and

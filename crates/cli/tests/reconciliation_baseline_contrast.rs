@@ -1,40 +1,45 @@
-//! M46 Increment 1 / T4 — **the arm-A/arm-B contrast**: what the `file-state`
-//! baseline is *worth*, pinned as one pair rather than described.
+//! M46 Increment 1 / T4, restaged by the rc.24 fix pass `(R3, F7)` — **the baseline
+//! contrast**: what the `file-state` baseline is *worth*, and what its absence costs,
+//! pinned as arms of one fixture rather than described.
 //!
 //! `CLAUDE.md` → Architectural invariants states that out-of-band edits are
 //! *"detected and routed — conformant non-conflicts absorbed, conflicts blocked and
-//! routed to a human, **never silently merged**"*. That guarantee is not a property
-//! of the reconciliation state machine on its own: it is a property of the state
-//! machine **plus a recorded baseline**. `engine::file_state::reconcile_committed`
-//! reaches its `DRIFTED + TOUCHED → conflict-block` arm only from
-//! `record.get(path) == Some(_)`; with no recorded hash the very same bytes take the
-//! `UNKNOWN → baseline-adopt` arm, which is an *advisory*. So a lost baseline does
-//! not degrade the guarantee — it **switches it off**, silently, at exit 0.
+//! routed to a human, **never silently merged**"*. That guarantee is a property of the
+//! reconciliation state machine **plus a recorded baseline**:
+//! `engine::file_state::reconcile_committed` reaches its `DRIFTED + TOUCHED →
+//! conflict-block` arm only from `record.get(path) == Some(_)`.
 //!
-//! The two arms are one function with **one branch**: identical repo, identical
-//! committed ADR, identical out-of-band human edit, identical in-task write over the
-//! same doc. The only difference is whether the ADR's key is present in
-//! `.jigc/state/file-state.json` when `jigc task finalize` runs.
+//! The arms are one function with **one branch**: identical repo, identical committed
+//! ADR, identical out-of-band human edit (made before the task's first touch),
+//! identical in-task write over the same doc. The only difference is whether — and
+//! *when* — the ADR's key is missing from `.jigc/state/file-state.json`.
 //!
-//! | arm | baseline | outcome |
+//! | arm | the ADR's key | outcome |
 //! |---|---|---|
-//! | **A** | present | `reconciliation.conflict-block`, exit 3 ([`cli::task::EXIT_VALIDATION_BLOCKED`]), **no commit** |
-//! | **B** | absent | `file-state.baseline-adopt`, exit 0, a commit lands carrying **both** sides' bytes |
+//! | **A** | present throughout | `reconciliation.conflict-block`, exit 3 ([`cli::task::EXIT_VALIDATION_BLOCKED`]), **no commit** |
+//! | **B** | absent **when the task first touches the doc** | exit 0, a commit lands carrying **both** sides' bytes — the declared merge order |
+//! | **C** | lost **after** the task's first touch | `reconciliation.conflict-block`, exit 3, **no commit** — the base-pin backstop |
 //!
-//! **Arm B's fixture is not defect-only, which is what makes this a standing
-//! regression rather than a curiosity.** `.jigc/` is gitignored, so a teammate's
-//! fresh clone has no record at all; `jigc unmanage` forgets a key by design; a
-//! deleted cache directory is sanctioned ("delete `.jigc/`'s gitignored caches,
-//! rebuild from `.md`s, nothing lost" — `design/storage.md` → Derived caches). And
-//! before M46 Increment 1 a *concurrent* `FileStateRecord::save` discarded a sibling
-//! writer's per-key delta outright, which is the same observable state arrived at by
-//! a write that reported success. The arm therefore drops the key through the engine
-//! API itself (`load` → `forget` → `save`), never by hand-editing bytes.
+//! **Arm B is the cost `design/storage.md` → Concurrent writers declares, and it is a
+//! merge, never a loss.** The task's copy-in carries the human's edit and records it as
+//! the doc's baseline (`engine::file_state::read_for_copy_in`), so the finalize lands
+//! both sides. Its fixture is not defect-only: `.jigc/` is gitignored, so a teammate's
+//! fresh clone has no record at all; `jigc unmanage` forgets a key by design; a deleted
+//! cache directory is sanctioned.
 //!
-//! Both arms characterise **shipped** behaviour, so non-vacuity is not carried by a
-//! red run: it is carried by an applied mutant, recorded in this task's commit
-//! message (neuter `reconcile_committed`'s `DRIFTED + TOUCHED` arm → arm A's block,
-//! exit and no-commit assertions all fail; revert → green).
+//! **Arm C is the arm this suite used to pin as the silent merge.** Until the rc.24 fix
+//! pass a key lost at *any* point took the `UNKNOWN → baseline-adopt` arm — an advisory —
+//! and the finalize landed at exit 0. For this order of the edit that was a merge; for
+//! the other order (the hand edit *after* the task's first write) it was an exit-0
+//! **overwrite** of the human's bytes
+//! (`completions/artifacts/M55/per-axis-review-rc24/tier1-verification/R3-F7.md`), and
+//! with no record the staged copy cannot say which order it is in. So a touched doc with
+//! no record is decided by its base pin, and bytes that differ from the pin's blob block.
+//! The class is iterated in `copy_in_baseline.rs`; this suite keeps the three-arm
+//! contrast.
+//!
+//! The arms drop the key through the engine API itself (`load` → `forget` → `save`),
+//! never by hand-editing bytes.
 //!
 //! Real binary throughout (`CARGO_BIN_EXE_jigc`), a real `git init` repo, a
 //! self-cleaning `TempDir`. No external test crates.
@@ -190,14 +195,48 @@ fn set_slot(repo: &Path, home: &Path, addr: &str, prose: &str) {
     );
 }
 
-/// Which arm is being driven — the pair's **only** input difference.
+/// Which arm is being driven — the set's **only** input difference.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Arm {
-    /// The committed ADR's file-state baseline is present when finalize runs.
-    BaselinePresent,
-    /// The baseline key is absent — a fresh clone, an `unmanage`, a deleted cache,
-    /// or (pre-M46) a concurrent `save` that discarded this key and reported success.
-    BaselineLost,
+    /// The committed ADR's file-state baseline is present throughout.
+    Present,
+    /// The key is absent when the task first touches the doc — a fresh clone, an
+    /// `unmanage`, a deleted cache.
+    AbsentAtFirstTouch,
+    /// The key is lost after the task's first touch — the same causes, later; or a task
+    /// copied in by a binary that recorded nothing at the copy-in.
+    LostAfterFirstTouch,
+}
+
+impl Arm {
+    fn tag(self) -> &'static str {
+        match self {
+            Arm::Present => "armA",
+            Arm::AbsentAtFirstTouch => "armB",
+            Arm::LostAfterFirstTouch => "armC",
+        }
+    }
+}
+
+/// Drop the ADR's key through the engine API that owns the record, so the record's byte
+/// form stays canonical and the drop is the shape a real forgetting writer produces.
+fn drop_the_baseline(repo: &Path) {
+    let jigc_root = repo.join(".jigc");
+    let mut record =
+        engine::file_state::FileStateRecord::load(&jigc_root).expect("load the record");
+    assert!(
+        record.forget(ADR_PATH),
+        "the drop must remove a key that was really there",
+    );
+    record.save(&jigc_root).expect("persist the lost baseline");
+}
+
+/// Whether the ADR's key is in the persisted record.
+fn baseline_recorded(repo: &Path) -> bool {
+    engine::file_state::FileStateRecord::load(&repo.join(".jigc"))
+        .expect("load the record")
+        .get(ADR_PATH)
+        .is_some()
 }
 
 /// What one arm observed. Everything asserted about the contrast is here, so the
@@ -213,18 +252,17 @@ struct Outcome {
     commits_after: u32,
     /// The committed ADR's bytes after finalize.
     committed_adr: String,
-    /// Whether the ADR key was present in the persisted record at the divergence
-    /// point — the fixture's own witness that the arms differ where they claim to.
+    /// Whether the ADR key was in the persisted record when the task first touched the
+    /// doc, and when finalize ran — the fixture's own witness that the arms differ where
+    /// they claim to.
+    baseline_at_first_touch: bool,
     baseline_at_finalize: bool,
 }
 
 /// Drive one arm end to end. **One branch on `arm`** — the baseline drop — so the
 /// contrast the test asserts cannot come from anywhere else.
 fn drive(arm: Arm) -> Outcome {
-    let repo = TempDir::new(match arm {
-        Arm::BaselinePresent => "armA",
-        Arm::BaselineLost => "armB",
-    });
+    let repo = TempDir::new(arm.tag());
     let home = TempDir::new("home");
     let repo = repo.path();
     let home = home.path();
@@ -306,37 +344,30 @@ fn drive(arm: Arm) -> Outcome {
     //    reconciliation), and the edit is not the base pin's blob — a change made during
     //    the task, which M55 Increment 4's pulled-edit absorb leaves to this arm's
     //    conflict-block. It lands BEFORE the task's first touch, so the copy-in below
-    //    carries it: arm B's silent merge is a commit carrying both sides' prose.
+    //    carries it: arm B's merge is a commit carrying both sides' prose.
     let path = repo.join(ADR_PATH);
     let body = fs::read_to_string(&path).expect("read the committed ADR");
     let edited = body.replacen("A cold node loses its sessions.", HUMAN_PROSE, 1);
     assert_ne!(body, edited, "the OOB edit must change the committed ADR");
     fs::write(&path, edited).expect("apply the OOB edit");
 
+    // ── The one branch, first half: arm B has no key when the task first touches the
+    //    doc.
+    if arm == Arm::AbsentAtFirstTouch {
+        drop_the_baseline(repo);
+    }
+    let baseline_at_first_touch = baseline_recorded(repo);
+
     // ── The warm task touches the SAME doc through the CLI (copy-in for update), so
     //    both sides have moved: the committed file and this task's staged writes.
     set_slot(repo, home, "adr:single-node-cache#decision", TASK_PROSE);
     fill_commit(repo, home, warm, "revise the decision");
 
-    // ── The one branch. Arm B loses the ADR's baseline through the engine API that
-    //    owns the record, so the record's byte form stays canonical and the drop is
-    //    the same shape a real forgetting writer produces.
-    if arm == Arm::BaselineLost {
-        let jigc_root = repo.join(".jigc");
-        let mut record =
-            engine::file_state::FileStateRecord::load(&jigc_root).expect("load the record");
-        assert!(
-            record.forget(ADR_PATH),
-            "arm B's drop must remove a key that was really there",
-        );
-        record.save(&jigc_root).expect("persist the lost baseline");
+    // ── The one branch, second half: arm C loses the key after that touch.
+    if arm == Arm::LostAfterFirstTouch {
+        drop_the_baseline(repo);
     }
-
-    let jigc_root = repo.join(".jigc");
-    let baseline_at_finalize = engine::file_state::FileStateRecord::load(&jigc_root)
-        .expect("load the record")
-        .get(ADR_PATH)
-        .is_some();
+    let baseline_at_finalize = baseline_recorded(repo);
 
     let commits_before = commit_count(repo);
     let out = jigc(repo, home, &["task", "finalize", warm, "--format", "json"]);
@@ -360,63 +391,79 @@ fn drive(arm: Arm) -> Outcome {
         commits_before,
         commits_after: commit_count(repo),
         committed_adr: fs::read_to_string(repo.join(ADR_PATH)).expect("read the committed ADR"),
+        baseline_at_first_touch,
         baseline_at_finalize,
     }
 }
 
-/// **The pair.** The same out-of-band edit over the same committed managed doc,
-/// touched by the same task: with the baseline recorded the conflict is detected and
-/// blocked; with the baseline lost it is silently merged at exit 0. The cost of a
-/// lost baseline is the whole of `CLAUDE.md`'s *"never silently merged"* guarantee.
+/// Assert `arm` blocked: the conflict finding, the validation exit, no commit, the
+/// human's bytes on disk and the task's nowhere near the file.
+fn assert_conflict_blocked(name: &str, arm: &Outcome) {
+    assert_eq!(
+        arm.exit,
+        i32::from(cli::task::EXIT_VALIDATION_BLOCKED),
+        "{name} blocks at the validation exit code; findings were {:?}",
+        arm.codes,
+    );
+    assert!(
+        arm.codes
+            .iter()
+            .any(|c| c == "reconciliation.conflict-block"),
+        "{name}'s block is `reconciliation.conflict-block`; got {:?}",
+        arm.codes,
+    );
+    assert_eq!(
+        arm.commits_before, arm.commits_after,
+        "{name}: a conflict-block creates no commit",
+    );
+    assert!(
+        arm.committed_adr.contains(HUMAN_PROSE),
+        "{name} leaves the human's bytes on disk untouched; got:\n{}",
+        arm.committed_adr,
+    );
+    assert!(
+        !arm.committed_adr.contains(TASK_PROSE),
+        "{name} promotes nothing — the task's staged write must not reach the file; got:\n{}",
+        arm.committed_adr,
+    );
+}
+
+/// **The contrast.** The same out-of-band edit over the same committed managed doc,
+/// touched by the same task. With the baseline recorded the conflict is detected and
+/// blocked. With no key at the task's first touch the copy-in adopts the human's bytes
+/// and the two sides land merged — the declared cost of a missing baseline. With the key
+/// lost after that touch the base pin blocks, where it used to merge silently.
 #[test]
-fn a_lost_file_state_baseline_turns_a_conflict_block_into_a_silent_merge() {
-    let arm_a = drive(Arm::BaselinePresent);
-    let arm_b = drive(Arm::BaselineLost);
+fn the_baseline_decides_between_a_block_and_the_declared_merge() {
+    let arm_a = drive(Arm::Present);
+    let arm_b = drive(Arm::AbsentAtFirstTouch);
+    let arm_c = drive(Arm::LostAfterFirstTouch);
 
     // The fixture's own witness: the arms diverge exactly where they claim to.
     assert!(
-        arm_a.baseline_at_finalize,
-        "arm A must reach finalize WITH the ADR's recorded baseline",
+        arm_a.baseline_at_first_touch && arm_a.baseline_at_finalize,
+        "arm A holds the ADR's recorded baseline throughout",
     );
     assert!(
-        !arm_b.baseline_at_finalize,
-        "arm B must reach finalize WITHOUT the ADR's recorded baseline",
+        !arm_b.baseline_at_first_touch,
+        "arm B reaches the task's first touch WITHOUT the ADR's recorded baseline",
+    );
+    assert!(
+        arm_b.baseline_at_finalize,
+        "arm B's copy-in recorded the baseline — the bytes it copied, the human's edit \
+         included",
+    );
+    assert!(
+        arm_c.baseline_at_first_touch && !arm_c.baseline_at_finalize,
+        "arm C loses the ADR's recorded baseline AFTER the task's first touch",
     );
 
     // ── Arm A — baseline present ⇒ detected, blocked, routed, nothing committed.
-    assert_eq!(
-        arm_a.exit,
-        i32::from(cli::task::EXIT_VALIDATION_BLOCKED),
-        "arm A blocks at the validation exit code; findings were {:?}",
-        arm_a.codes,
-    );
-    assert!(
-        arm_a
-            .codes
-            .iter()
-            .any(|c| c == "reconciliation.conflict-block"),
-        "arm A's block is `reconciliation.conflict-block`; got {:?}",
-        arm_a.codes,
-    );
-    assert_eq!(
-        arm_a.commits_before, arm_a.commits_after,
-        "a conflict-block creates no commit",
-    );
-    assert!(
-        arm_a.committed_adr.contains(HUMAN_PROSE),
-        "arm A leaves the human's bytes on disk untouched; got:\n{}",
-        arm_a.committed_adr,
-    );
-    assert!(
-        !arm_a.committed_adr.contains(TASK_PROSE),
-        "arm A promotes nothing — the task's staged write must not reach the file; got:\n{}",
-        arm_a.committed_adr,
-    );
+    assert_conflict_blocked("arm A", &arm_a);
 
-    // ── Arm B — baseline absent ⇒ the same drift is not drift at all. The
-    //    `UNKNOWN` arm adopts the human's bytes as a fresh baseline (an *advisory*),
-    //    the finalize lands, and the promoted doc carries BOTH sides' prose: the
-    //    silent merge the invariant forbids, at exit 0, with no human adjudication.
+    // ── Arm B — no key at the first touch ⇒ the copy-in carries the human's edit and
+    //    adopts it as the baseline; nothing has moved since, so the finalize lands and
+    //    the promoted doc carries BOTH sides' prose. A merge, by the declared order.
     assert_eq!(
         arm_b.exit,
         i32::from(cli::task::EXIT_SUCCESS),
@@ -431,11 +478,6 @@ fn a_lost_file_state_baseline_turns_a_conflict_block_into_a_silent_merge() {
         "arm B never reaches the conflict arm; got {:?}",
         arm_b.codes,
     );
-    assert!(
-        arm_b.codes.iter().any(|c| c == "file-state.baseline-adopt"),
-        "arm B takes the `UNKNOWN` baseline-adopt arm instead; got {:?}",
-        arm_b.codes,
-    );
     assert_eq!(
         arm_b.commits_after,
         arm_b.commits_before + 1,
@@ -443,7 +485,12 @@ fn a_lost_file_state_baseline_turns_a_conflict_block_into_a_silent_merge() {
     );
     assert!(
         arm_b.committed_adr.contains(HUMAN_PROSE) && arm_b.committed_adr.contains(TASK_PROSE),
-        "arm B silently merges both sides into the committed doc; got:\n{}",
+        "arm B merges both sides into the committed doc; got:\n{}",
         arm_b.committed_adr,
     );
+
+    // ── Arm C — the key lost after the first touch ⇒ no record says what the task
+    //    started from, so the base pin does: the on-disk bytes differ from its blob,
+    //    and the door blocks rather than adopt them.
+    assert_conflict_blocked("arm C", &arm_c);
 }

@@ -335,6 +335,99 @@ fn every_concurrent_forget_survives_the_shared_save() {
     );
 }
 
+/// **Cell (e) — the copy-in door under contention** (the rc.24 fix pass, `(R3, F7)`).
+/// [`engine::file_state::read_for_copy_in`] made every task's first write a writer of this
+/// record — under a fan-out, N sub-agents at once, a population the file never had. Six
+/// threads each copy in their **own** docs (a key per turn) while all of them also copy in
+/// **one shared** doc on every turn.
+///
+/// Two properties, both of which the lock carries: no thread's key is lost to another's
+/// save, and the shared doc is recorded **once** — record-if-absent is decided under the
+/// lock, so exactly one copy-in reports `Adopted` and every other reads the held key.
+#[test]
+fn concurrent_copy_ins_lose_no_key_and_adopt_a_shared_doc_once() {
+    use engine::file_state::{CopyInBaseline, hash_bytes, read_for_copy_in};
+
+    const SCHEMA: &[u8] =
+        b"type: note\nlocation: notes/\nid-from: title\nsections:\n  - id: body\n    slot: {}\n";
+    const ITERS: usize = 25;
+    let schema = Arc::new(engine::schema::load_schema(SCHEMA).expect("the fixture schema loads"));
+    let body = |title: &str| format!("---\n---\n\n# {title}\n\n## Body\n\nProse.\n");
+
+    let root = TempRoot::new();
+    let jigc_root = root.0.join(".jigc");
+    let notes = root.0.join("notes");
+    std::fs::create_dir_all(&notes).expect("mk notes/");
+    let shared_home = notes.join("shared.md");
+    std::fs::write(&shared_home, body("Shared")).expect("write the shared doc");
+    for w in 0..SURVIVAL_WRITERS {
+        for iter in 0..ITERS {
+            std::fs::write(
+                notes.join(format!("w{w}-{iter:04}.md")),
+                body(&format!("W{w} {iter}")),
+            )
+            .expect("write a writer's doc");
+        }
+    }
+
+    let handles: Vec<_> = (0..SURVIVAL_WRITERS)
+        .map(|w| {
+            let (jr, notes, shared_home, schema) = (
+                jigc_root.clone(),
+                notes.clone(),
+                shared_home.clone(),
+                Arc::clone(&schema),
+            );
+            thread::spawn(move || {
+                let mut shared_adoptions = 0usize;
+                for iter in 0..ITERS {
+                    let name = format!("w{w}-{iter:04}.md");
+                    let own = read_for_copy_in(
+                        &jr,
+                        &notes.join(&name),
+                        &format!("notes/{name}"),
+                        &schema,
+                        || false,
+                    )
+                    .expect("a writer's own copy-in succeeds");
+                    assert_eq!(own.baseline, CopyInBaseline::Adopted, "{name}");
+                    let shared =
+                        read_for_copy_in(&jr, &shared_home, "notes/shared.md", &schema, || false)
+                            .expect("the shared copy-in succeeds");
+                    if shared.baseline == CopyInBaseline::Adopted {
+                        shared_adoptions += 1;
+                    }
+                }
+                shared_adoptions
+            })
+        })
+        .collect();
+    let shared_adoptions: usize = handles
+        .into_iter()
+        .map(|h| h.join().expect("a copy-in thread panicked"))
+        .sum();
+
+    assert_eq!(
+        shared_adoptions, 1,
+        "the shared doc is adopted exactly once — record-if-absent is decided under the lock",
+    );
+    let settled = FileStateRecord::load(&jigc_root).expect("post-hoc load parses");
+    assert_eq!(
+        settled.get("notes/shared.md"),
+        Some(hash_bytes(body("Shared").as_bytes()).as_str()),
+    );
+    let lost: Vec<String> = (0..SURVIVAL_WRITERS)
+        .flat_map(|w| (0..ITERS).map(move |iter| format!("notes/w{w}-{iter:04}.md")))
+        .filter(|key| settled.get(key).is_none())
+        .collect();
+    assert!(
+        lost.is_empty(),
+        "{} copy-in baselines were recorded and then lost to a sibling's save (first: {:?})",
+        lost.len(),
+        lost.first(),
+    );
+}
+
 /// Hold the advisory lock on `target`'s [`engine::state::lock_sibling`] from a **second
 /// fd** (`File::lock` is per-open-file-description, so a second handle in this same
 /// process contends exactly like another process would). Released when dropped.
