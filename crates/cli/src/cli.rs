@@ -283,7 +283,11 @@ pub enum Command {
     /// allowlists `Bash(jigc:*)`, and installs the `SessionStart` and warn-only git
     /// `pre-commit` hooks. Idempotent. Refuses its own install commit when a path in
     /// that footprint carries work no commit has a copy of, rather than sweeping it in
-    /// or writing over it. In a repository with no commit yet, an untracked file it
+    /// or writing over it — asked of the files, so it holds where `git status` says
+    /// nothing: a file git ignores at a path the install replaces (unless the bytes are
+    /// jigc's own generated content, which keeps re-installing cleanly), and a change
+    /// hidden by an assume-unchanged or skip-worktree index flag. In a repository with no
+    /// commit yet, an untracked file it
     /// merges into (`CLAUDE.md`, `.gitignore`, the settings file) rides the first commit
     /// instead; one it would replace still refuses. A file it replaces whole
     /// (`.jigc/AGENT.md`, `.jigc/version`, `.jigc/config/.gitkeep`,

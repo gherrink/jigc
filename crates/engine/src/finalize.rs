@@ -1450,7 +1450,7 @@ fn carried_staged_finding(
         // hands this boundary to the per-path decision anyway; the wording stays the door's
         // own, over the one-path set, so no door can borrow another's words.
         CarryoverBoundary::Setup => {
-            return setup_dirty_install_finding(&[path.to_string()], true, SetupHead::Born);
+            return setup_dirty_install_finding(&[path.to_string()], true, SetupHead::Born, None);
         }
         CarryoverBoundary::Milestone => (
             format!(
@@ -1511,12 +1511,76 @@ fn carried_staged_finding(
 /// `-u`. So that arm states what is true there (the bytes exist only where the adopter left
 /// them) and routes at acts that run with no commit: move the file out of the install path,
 /// or commit it — naming the `riding` paths that commit must carry — then `--force`.
+///
+/// **And for the paths git's own status could not see** ([`SetupUnseen`]; the rc.24 fix
+/// pass, the ignored sibling of `(R1, F1)`). Every route arm above is an act git performs
+/// on a path it reports. An **ignored** file is taken by neither `git stash` nor
+/// `git commit`, and a tracked file whose index entry is flagged **assume-unchanged** or
+/// **skip-worktree** is one git believes is clean — so over such a path the born route's
+/// *commit or stash* is a no-op that leaves the refusal standing, and the unborn route's
+/// *commit them* exits 1. Each class is therefore routed at the act that works for it: an
+/// ignored file is moved out of the path, a flagged one has its flag cleared (both
+/// commands, since one invocation clears only the first flag it names) and is then
+/// committed or stashed like any other change. The message says which paths these are and
+/// why nothing else warned about them, and its state clause stops saying `HEAD` holds the
+/// pre-run bytes — for an ignored file nothing in git does.
 pub fn setup_dirty_install_finding(
     dirty: &[String],
     install_written: bool,
     head: SetupHead<'_>,
+    unseen: Option<SetupUnseen<'_>>,
 ) -> Finding {
     let paths: BTreeSet<&str> = dirty.iter().map(String::as_str).collect();
+    // The unseen classes, each cut to the paths this finding lists and sorted with them.
+    // They exist only at the pre-write ask: by the commit-time backstop the install has
+    // run, so a replaced file holds jigc's bytes and there is nothing left to say of it.
+    let unseen = unseen.filter(|_| !install_written);
+    let (named_ignored, named_flagged): (&[String], &[String]) =
+        unseen.map_or((&[], &[]), |unseen| (unseen.ignored, unseen.flagged));
+    let listed = |named: &[String]| -> Vec<&str> {
+        paths
+            .iter()
+            .copied()
+            .filter(|path| named.iter().any(|name| name == path))
+            .collect()
+    };
+    let ignored = listed(named_ignored);
+    let flagged: Vec<&str> = listed(named_flagged)
+        .into_iter()
+        .filter(|path| !ignored.contains(path))
+        .collect();
+    let seen = paths.len() - ignored.len() - flagged.len();
+    let ticked = |paths: &[&str]| -> String {
+        let named: Vec<String> = paths.iter().map(|path| format!("`{path}`")).collect();
+        named.join(", ")
+    };
+    // Why nothing else warned about them — appended to either `HEAD`'s message, and empty
+    // (so every pre-existing byte stands) when git's status named every listed path.
+    let unreported = if ignored.is_empty() && flagged.is_empty() {
+        String::new()
+    } else {
+        let mut lines = vec![format!(
+            "\n`git status` reports nothing at {} of those path(s), so nothing else would \
+             have warned you:",
+            ignored.len() + flagged.len(),
+        )];
+        for path in &paths {
+            if ignored.contains(path) {
+                lines.push(format!(
+                    "  `{path}`: ignored — the install replaces this file whole, and no \
+                     commit, stash or index entry holds what is in it (an unedited copy an \
+                     older jigc wrote reads the same once the generated text has changed, \
+                     and `--force` loses nothing over one)"
+                ));
+            } else if flagged.contains(path) {
+                lines.push(format!(
+                    "  `{path}`: tracked, with the change hidden by its index entry \
+                     (assume-unchanged or skip-worktree)"
+                ));
+            }
+        }
+        lines.join("\n")
+    };
     let listing: Vec<String> = paths.iter().map(|path| format!("  `{path}`")).collect();
     let listing = listing.join("\n");
     // What the door actually did, per shape — the same refusal is reachable before the
@@ -1531,8 +1595,18 @@ pub fn setup_dirty_install_finding(
     const FORCE: &str = "`jigc setup --force` is the single consent, and it lets the install \
                          run and commit those paths as it leaves them — which at a path jigc \
                          regenerates whole is jigc's own content, not yours";
+    // At an ignored path the consent buys a replacement and no commit — said where one is
+    // listed, so the sentence above does not promise a commit git will not make.
+    let force = if ignored.is_empty() {
+        FORCE.to_string()
+    } else {
+        format!(
+            "{FORCE} — and at {} it replaces the file while no commit carries either version",
+            ticked(&ignored),
+        )
+    };
     let (message, route) = match head {
-        SetupHead::Born => (
+        SetupHead::Born if unreported.is_empty() => (
             format!(
                 "{} path(s) in the install footprint carried changes that were in no commit \
                  before this run, so committing the install would sweep work `jigc setup` did \
@@ -1546,6 +1620,60 @@ pub fn setup_dirty_install_finding(
                  not track them yet — then re-run `jigc setup`; {FORCE}"
             ),
         ),
+        // A listed path git's status does not report. The sentence above would say `HEAD`
+        // holds its pre-run bytes, which is false of an ignored file, and its route would
+        // name two acts git does not perform on one — so this arm says where the bytes
+        // actually are (on disk, untouched: the ask is pre-write) and routes each class at
+        // the act that works for it.
+        SetupHead::Born => {
+            let mut acts: Vec<String> = Vec::new();
+            if seen > 0 {
+                acts.push(
+                    "commit or stash the work at the path(s) `git status` does report — \
+                     `git stash -u` where git does not track them yet"
+                        .to_string(),
+                );
+            }
+            // A flagged path is only ever named by `unseen`, so its home is in hand.
+            if let (false, Some(home)) = (flagged.is_empty(), unseen.map(|unseen| unseen.home)) {
+                let operands: Vec<String> = flagged
+                    .iter()
+                    .map(|path| crate::finding::shell_operand(path))
+                    .collect();
+                let operands = operands.join(" ");
+                acts.push(format!(
+                    "let git see the change at {} with `{}` and `{}` (one call clears only \
+                     one of the two flags), and commit or stash it",
+                    ticked(&flagged),
+                    crate::finding::git_at(
+                        home,
+                        &format!("update-index --no-assume-unchanged -- {operands}")
+                    ),
+                    crate::finding::git_at(
+                        home,
+                        &format!("update-index --no-skip-worktree -- {operands}")
+                    ),
+                ));
+            }
+            if !ignored.is_empty() {
+                acts.push(format!(
+                    "move the file out of {}, which git ignores and so neither commits \
+                     nor stashes",
+                    ticked(&ignored),
+                ));
+            }
+            (
+                format!(
+                    "{} path(s) in the install footprint hold bytes that are in no commit, \
+                     so installing would write over work `jigc setup` did not write, or \
+                     sweep it into `chore(jigc): install jigc workspace config`:\n{listing}\n\
+                     {state} — `HEAD` is untouched, and so is every path listed above: its \
+                     bytes are exactly where you left them{unreported}",
+                    paths.len(),
+                ),
+                format!("{} — then re-run `jigc setup`; {force}", acts.join("; ")),
+            )
+        }
         SetupHead::Unborn { home, riding } => {
             // What the door left alone, said of the place the bytes actually are: before
             // the first write that is the worktree and the index, untouched; at the
@@ -1576,20 +1704,42 @@ pub fn setup_dirty_install_finding(
             // The unstage names the index it acts on (M53 — the cwd census, the route
             // class): a route is read from wherever the reader stands.
             let unstage = crate::finding::git_at(home, "rm --cached -- <path>");
-            (
-                format!(
-                    "{} path(s) in the install footprint hold bytes that are in no commit, \
-                     so installing would write over work `jigc setup` did not write, or \
-                     sweep it into `chore(jigc): install jigc workspace config`:\n{listing}\n\
-                     {state} — this repository has no commit yet, so {left}",
-                    paths.len(),
-                ),
+            // The commit arm is an act git performs, and git does not add an ignored path
+            // unless forced to (`git add` exits 1 over one). So where every listed path is
+            // ignored there is no commit arm to offer, and where only some are it names
+            // the ones it does not cover. Only *ignored* can be unreported here: with no
+            // commit, a flagged index entry is still a staged addition `git status` names.
+            let route = if ignored.is_empty() {
                 format!(
                     "move the file(s) out of those path(s) — `{unstage}` first where you \
                      had staged one — then re-run `jigc setup`; or commit \
                      them{with} and re-run, so git holds your copy before the install runs \
                      over the path; {FORCE}"
+                )
+            } else if seen == 0 {
+                format!(
+                    "move the file(s) out of those path(s), then re-run `jigc setup` — git \
+                     ignores them, so no commit would take a copy first; {force}"
+                )
+            } else {
+                format!(
+                    "move the file(s) out of those path(s) — `{unstage}` first where you \
+                     had staged one — then re-run `jigc setup`; or commit the one(s) git does \
+                     not ignore{with} and move {} out, since git will not commit an ignored \
+                     file, then re-run, so git holds your copy before the install runs over \
+                     the path; {force}",
+                    ticked(&ignored),
+                )
+            };
+            (
+                format!(
+                    "{} path(s) in the install footprint hold bytes that are in no commit, \
+                     so installing would write over work `jigc setup` did not write, or \
+                     sweep it into `chore(jigc): install jigc workspace config`:\n{listing}\n\
+                     {state} — this repository has no commit yet, so {left}{unreported}",
+                    paths.len(),
                 ),
+                route,
             )
         }
     };
@@ -1598,6 +1748,31 @@ pub fn setup_dirty_install_finding(
         message,
         Route::human(route),
     )
+}
+
+/// **The listed paths git's own status did not report** — what the
+/// [`CarryoverBoundary::Setup`] door found by asking the bytes rather than `git status`
+/// (the rc.24 fix pass, the ignored sibling of `(R1, F1)`), and the input
+/// [`setup_dirty_install_finding`] words the unreported paths' own sentence and route arms
+/// from.
+///
+/// Two classes, because the act that resolves each is different and neither is the one
+/// the reported paths are routed at. The door supplies the facts, the engine words them
+/// (the [`decide_carryover`] mold). A path named here that the finding does not list is
+/// ignored, so the door may hand over the whole answer it took.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SetupUnseen<'a> {
+    /// The absolute root of the checkout — the flag-clearing commands name it
+    /// ([`crate::finding::git_at`]) on a born `HEAD`, where [`SetupHead`] carries none.
+    pub home: &'a Path,
+    /// Untracked **and** unreported: a file git ignores, at a path the install replaces
+    /// whole. No commit, stash or index entry holds its bytes, and neither `git commit` nor
+    /// `git stash` will take them.
+    pub ignored: &'a [String],
+    /// Tracked, unreported, and not the bytes the index holds: the entry is flagged
+    /// assume-unchanged or skip-worktree, so git reports the path clean while the file on
+    /// disk says otherwise.
+    pub flagged: &'a [String],
 }
 
 /// **Which `HEAD` the [`CarryoverBoundary::Setup`] door's refusal is read at** — the one
@@ -5610,7 +5785,7 @@ sections:
             .iter()
             .map(|p| (*p).to_string())
             .collect();
-        let finding = setup_dirty_install_finding(&dirty, true, SetupHead::Born);
+        let finding = setup_dirty_install_finding(&dirty, true, SetupHead::Born, None);
 
         assert_eq!(finding.severity, Severity::Blocking);
         assert_eq!(finding.code, "setup.dirty-install-path");
@@ -5648,7 +5823,7 @@ sections:
         // …and the pre-write arm — the door's ordinary refusal since the M51 completion
         // audit — says the opposite, because it installed nothing. One predicate, two
         // truthful state clauses; a single universal wording made one of them a law-1 lie.
-        let pre_write = setup_dirty_install_finding(&dirty, false, SetupHead::Born);
+        let pre_write = setup_dirty_install_finding(&dirty, false, SetupHead::Born, None);
         assert!(
             pre_write.message.contains("nothing was installed")
                 && !pre_write.message.contains("written and staged"),
@@ -5683,7 +5858,7 @@ sections:
         // Order-invariance: the same set, reversed, words the same bytes.
         let reversed: Vec<String> = dirty.iter().rev().cloned().collect();
         assert_eq!(
-            setup_dirty_install_finding(&reversed, true, SetupHead::Born),
+            setup_dirty_install_finding(&reversed, true, SetupHead::Born, None),
             finding,
             "the dirty set is order-invariant — the door's pathspec order never reaches the \
              printed surface",
@@ -5710,7 +5885,7 @@ sections:
         let riding = vec![".gitignore".to_string(), "CLAUDE.md".to_string()];
         let home = Path::new("/somewhere/repo");
         let unborn = |riding| SetupHead::Unborn { home, riding };
-        let finding = setup_dirty_install_finding(&dirty, false, unborn(&riding));
+        let finding = setup_dirty_install_finding(&dirty, false, unborn(&riding), None);
 
         assert_eq!(finding.severity, Severity::Blocking);
         assert_eq!(
@@ -5774,7 +5949,7 @@ sections:
         }
 
         // With nothing riding, the commit arm names no other path at all.
-        let alone = setup_dirty_install_finding(&dirty, false, unborn(&[]));
+        let alone = setup_dirty_install_finding(&dirty, false, unborn(&[]), None);
         let alone = alone.route.as_ref().expect("routed").as_str().to_string();
         assert!(
             alone.contains("or commit them and re-run"),
@@ -5783,7 +5958,7 @@ sections:
 
         // The backstop arm: the install *is* written, and the sentence says only what this
         // run certainly did not do to the paths it names.
-        let written = setup_dirty_install_finding(&dirty, true, unborn(&[]));
+        let written = setup_dirty_install_finding(&dirty, true, unborn(&[]), None);
         assert!(
             written.message.contains("written and staged")
                 && written.message.contains("staged or committed by this run")
@@ -5795,9 +5970,171 @@ sections:
         // Order-invariant over both sets, like the born arm.
         let reversed: Vec<String> = riding.iter().rev().cloned().collect();
         assert_eq!(
-            setup_dirty_install_finding(&dirty, false, unborn(&reversed)),
+            setup_dirty_install_finding(&dirty, false, unborn(&reversed), None),
             finding,
             "the riding set's order never reaches the printed surface",
+        );
+    }
+
+    /// **A path git's status does not report is routed at an act git performs on it** (the
+    /// rc.24 fix pass, the ignored sibling of `(R1, F1)`).
+    ///
+    /// Every arm of the reported routes is an act on a path git can see: *commit or stash*
+    /// on a born `HEAD`, *commit them* on an unborn one. Over an **ignored** file both are
+    /// no-ops or failures, and over a tracked file whose index entry is **flagged**
+    /// assume-unchanged or skip-worktree, *commit or stash* finds nothing to take — so a
+    /// refusal that listed such a path beside the old route could not be cleared by
+    /// following it. Each class gets its own arm, the message says why nothing else warned
+    /// about the path, and the born state clause stops claiming `HEAD` holds the bytes.
+    ///
+    /// **With no unseen path listed, not a byte moves** — the refusal an adopter has always
+    /// read is the one they still read.
+    #[test]
+    fn setup_boundary_finding_routes_an_unreported_path_at_an_act_that_reaches_it() {
+        let home = Path::new("/somewhere/repo");
+        let paths = |names: &[&str]| -> Vec<String> {
+            names.iter().map(|name| (*name).to_string()).collect()
+        };
+        let dirty = paths(&["CLAUDE.md", ".jigc/AGENT.md", ".jigc/version"]);
+        let ignored = paths(&[".jigc/AGENT.md"]);
+        let flagged = paths(&[".jigc/version", "not/listed.md"]);
+        fn unseen<'a>(
+            home: &'a Path,
+            ignored: &'a [String],
+            flagged: &'a [String],
+        ) -> Option<SetupUnseen<'a>> {
+            Some(SetupUnseen {
+                home,
+                ignored,
+                flagged,
+            })
+        }
+
+        // Nothing unseen among the listed paths ⇒ the pre-existing bytes, whichever way
+        // that is said.
+        let plain = setup_dirty_install_finding(&dirty, false, SetupHead::Born, None);
+        assert_eq!(
+            setup_dirty_install_finding(&dirty, false, SetupHead::Born, unseen(home, &[], &[])),
+            plain,
+            "an empty answer words nothing",
+        );
+        assert_eq!(
+            setup_dirty_install_finding(
+                &dirty,
+                false,
+                SetupHead::Born,
+                unseen(home, &[], &paths(&["not/listed.md"])),
+            ),
+            plain,
+            "nor does a class naming only paths the refusal does not list",
+        );
+
+        // Born, one path of each kind.
+        let finding = setup_dirty_install_finding(
+            &dirty,
+            false,
+            SetupHead::Born,
+            unseen(home, &ignored, &flagged),
+        );
+        assert_eq!(finding.code, CarryoverBoundary::Setup.code());
+        assert!(finding.location.is_none(), "the set is still the subject");
+        let message = finding.message.as_str();
+        assert!(
+            message.contains("3 path(s)")
+                && message.contains("reports nothing at 2 of those path(s)")
+                && message.contains("  `.jigc/AGENT.md`: ignored")
+                && message.contains("  `.jigc/version`: tracked")
+                && !message.contains("not/listed.md"),
+            "the message says which listed paths git does not report, and why: {message:?}"
+        );
+        assert!(
+            !message.contains("still has its pre-run bytes there")
+                && message.contains("exactly where you left them"),
+            "and does not say `HEAD` holds an ignored file's bytes: {message:?}"
+        );
+        let route = finding.route.as_ref().expect("blocking ⇒ routed").as_str();
+        let at = |needle: &str| {
+            route
+                .find(needle)
+                .unwrap_or_else(|| panic!("the route names `{needle}`: {route}"))
+        };
+        let (seen, clear, skip, moved, rerun, force) = (
+            at("commit or stash the work at the path(s) `git status` does report"),
+            at("git -C /somewhere/repo update-index --no-assume-unchanged -- .jigc/version"),
+            at("git -C /somewhere/repo update-index --no-skip-worktree -- .jigc/version"),
+            at("move the file out of `.jigc/AGENT.md`"),
+            at("re-run `jigc setup`"),
+            at("jigc setup --force"),
+        );
+        assert!(
+            seen < clear && clear < skip && skip < moved && moved < rerun && rerun < force,
+            "every resolving act, then the re-run, then the consent: {route}"
+        );
+        assert!(
+            route[force..].contains("at `.jigc/AGENT.md` it replaces the file"),
+            "the consent says what it buys at a path no commit will carry: {route}"
+        );
+
+        // Only unseen paths ⇒ no *commit or stash* arm at all: nothing listed is reported.
+        let only = setup_dirty_install_finding(
+            &ignored,
+            false,
+            SetupHead::Born,
+            unseen(home, &ignored, &[]),
+        );
+        let only = only.route.as_ref().expect("routed").as_str().to_string();
+        assert!(
+            only.starts_with("move the file out of `.jigc/AGENT.md`") && !only.contains("stash -u"),
+            "an ignored path alone is routed at the one act that works for it: {only}"
+        );
+
+        // Unborn: only *ignored* can be unreported, and git will not commit it.
+        let unborn = SetupHead::Unborn { home, riding: &[] };
+        let all = setup_dirty_install_finding(&ignored, false, unborn, unseen(home, &ignored, &[]));
+        let all_route = all.route.as_ref().expect("routed").as_str();
+        assert!(
+            all_route.starts_with("move the file(s) out of those path(s), then re-run")
+                && !all_route.contains("or commit"),
+            "with every listed path ignored there is no commit arm to offer: {all_route}"
+        );
+        assert!(
+            all.message.contains("exist only where you left them")
+                && all.message.contains("  `.jigc/AGENT.md`: ignored"),
+            "the unborn state clause stands, with the class named: {:?}",
+            all.message
+        );
+        let some = paths(&[".jigc/AGENT.md", ".jigc/config/packs.yaml"]);
+        let mixed = setup_dirty_install_finding(&some, false, unborn, unseen(home, &ignored, &[]));
+        let mixed = mixed.route.as_ref().expect("routed").as_str().to_string();
+        assert!(
+            mixed.contains("or commit the one(s) git does not ignore")
+                && mixed.contains("move `.jigc/AGENT.md` out"),
+            "the commit arm names the path it does not cover: {mixed}"
+        );
+
+        // The classes exist at the pre-write ask alone.
+        assert_eq!(
+            setup_dirty_install_finding(
+                &dirty,
+                true,
+                SetupHead::Born,
+                unseen(home, &ignored, &flagged)
+            ),
+            setup_dirty_install_finding(&dirty, true, SetupHead::Born, None),
+            "at the backstop the install has run, and nothing is said of a replaced file",
+        );
+
+        // Order-invariant over all three sets.
+        let reversed = |set: &[String]| -> Vec<String> { set.iter().rev().cloned().collect() };
+        assert_eq!(
+            setup_dirty_install_finding(
+                &reversed(&dirty),
+                false,
+                SetupHead::Born,
+                unseen(home, &reversed(&ignored), &reversed(&flagged)),
+            ),
+            finding,
+            "no set's order reaches the printed surface",
         );
     }
 }

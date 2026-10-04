@@ -115,6 +115,15 @@ yours. This is the same rule as the carryover gate at `jigc task
 finalize` below — a door committing paths it does not own says so instead of
 sweeping them in — at its other door.
 
+**The question is about the bytes, not about what `git status` prints.** A file git
+*ignores* at a path jigc replaces is refused the same way — nothing else would have
+warned you, and no commit or stash would have taken a copy, so the route there is to
+move the file out of the path. The exception is jigc's own generated content: if you
+ignore `.jigc/AGENT.md` (or all of `.jigc/`) and never edit it, `jigc setup` keeps
+re-running at exit 0, after an upgrade too. And a change hidden from `git status` by
+an index flag (`--assume-unchanged`, `--skip-worktree`) is still a change: the
+refusal prints the two commands that clear the flag.
+
 **One exception, in a repository with no commit yet.** Every file is untracked there,
 so an untracked `CLAUDE.md`, `.gitignore` or `.claude/settings.json` is not a refusal:
 `setup` merges into it, and it rides the repository's first commit with your lines

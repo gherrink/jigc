@@ -73,7 +73,22 @@
 //! recorded where the pathspec settles and re-verified — bytes **and** index — where the
 //! question is asked, so the exemption can only ever cover bytes `setup` still wrote.
 //!
-//! Twenty-nine cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
+//! **And the question is about bytes, so it is asked where `git status` cannot see** (cells
+//! 30–36; the rc.24 fix pass, the ignored sibling of `(R1, F1)`). Status under-reports the
+//! settled predicate in two ways. A file git **ignores** is never listed, and the guard
+//! dropped such a path from its candidates because it cannot be swept into the commit —
+//! true where the install merges into the file (cell 9), and a silent loss where it
+//! replaces it: an ignored `.jigc/AGENT.md` holding a team's notes was regenerated at exit
+//! 0 with `findings: []`, at either `HEAD`. And a tracked file whose index entry is flagged
+//! **assume-unchanged** or **skip-worktree** reads clean whatever it holds. Both are asked
+//! of the files themselves now. An ignored replaced path refuses unless its bytes are
+//! jigc's own generated content — each replacing member declares how that is recognised
+//! (`cli::setup::OwnContent`), and the install footprint record carries it across an
+//! upgrade that moves the generated content — so a repository that ignores jigc's install
+//! paths and never edited them re-runs `setup` at exit 0 forever (cells 31–32). A flagged
+//! path whose bytes differ is dirty like any other, at every member (cell 33).
+//!
+//! Thirty-six cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
 //! `git init` repos.
 
 use std::fs;
@@ -545,8 +560,9 @@ fn an_untracked_install_path_refuses_the_install_commit() {
     );
 }
 
-/// (9) A **gitignored** install path is not a subject: the pathspec already drops it, and
-/// the answer never reported it either.
+/// (9) A **gitignored** install path **the install merges into** is not a subject: the
+/// pathspec already drops it, the answer never reported it, and the writer keeps every byte
+/// it finds. (One it would *replace* is a subject — cell 30.)
 #[test]
 fn a_gitignored_install_path_is_not_a_subject() {
     let (repo, home) = born_repo("ignored");
@@ -1109,6 +1125,7 @@ fn force_over_a_whole_rewrite_path_says_what_it_replaced() {
 fn the_install_path_class_is_dispositioned_member_by_member() {
     use cli::setup::InstallPathDisposition as D;
     use cli::setup::InstallWriter as W;
+    use cli::setup::OwnContent as O;
     let class = install_class();
     let got: Vec<(&str, D, W)> = class
         .iter()
@@ -1128,6 +1145,7 @@ fn the_install_path_class_is_dispositioned_member_by_member() {
                 D::Refuses,
                 W::Replaces {
                     refusal: "setup.write-bootstrap",
+                    own: O::BootstrapBody,
                 },
             ),
             // Amended to the union (M51 Increment 4) — the user's extra lines survive.
@@ -1139,6 +1157,7 @@ fn the_install_path_class_is_dispositioned_member_by_member() {
                 D::ExemptWhenJigcOwned,
                 W::Replaces {
                     refusal: "setup.version-stamp",
+                    own: O::VersionStamp,
                 },
             ),
             // An empty marker file, rewritten over whatever is there.
@@ -1147,6 +1166,7 @@ fn the_install_path_class_is_dispositioned_member_by_member() {
                 D::Refuses,
                 W::Replaces {
                     refusal: "setup.init-project-layer",
+                    own: O::EmptyMarker,
                 },
             ),
             // **Parse-mutate-serialize**, so a comment is dropped by the round-trip — the
@@ -1158,6 +1178,7 @@ fn the_install_path_class_is_dispositioned_member_by_member() {
                 D::Refuses,
                 W::Replaces {
                     refusal: "setup.compose-marker",
+                    own: O::SettledComposeMarker,
                 },
             ),
             // Merge-never-clobber, fresh-repo seed only.
@@ -1169,6 +1190,7 @@ fn the_install_path_class_is_dispositioned_member_by_member() {
                 D::ExemptWhenJigcOwned,
                 W::Replaces {
                     refusal: "setup.write-guide",
+                    own: O::GuideDigest,
                 },
             ),
             // A foreign `pre-commit` is preserved verbatim and jigc's block spliced in.
@@ -1697,6 +1719,887 @@ fn the_unborn_refusals_route_followed_verbatim_lands_the_install_in_one_run() {
         out.status.code(),
         Some(0),
         "unstaged and moved out, the re-run lands: {}",
+        said(&out)
+    );
+}
+
+/// The install footprint record, repo-relative (`cli::setup` → `INSTALL_FOOTPRINT_PATH`).
+const FOOTPRINT: &str = ".jigc/state/setup-install-footprint";
+
+/// Both `HEAD`s a repository can be asked at, each built with the same identity.
+fn at_either_head(tag: &str) -> [(&'static str, (TempDir, TempDir)); 2] {
+    [
+        ("born", born_repo(&format!("{tag}-born"))),
+        ("unborn", unborn_repo(&format!("{tag}-unborn"))),
+    ]
+}
+
+/// Tell git to ignore `patterns` in `repo`, through `.git/info/exclude` — the ignore source
+/// that is not itself an install path, so the cell is about the ignored file and nothing
+/// else (cell (35) drives the reported `.gitignore` spelling).
+fn exclude(repo: &Path, patterns: &[&str]) {
+    let file = repo.join(".git/info/exclude");
+    fs::create_dir_all(file.parent().expect("info dir")).expect("create info dir");
+    let mut body = fs::read_to_string(&file).unwrap_or_default();
+    for pattern in patterns {
+        body.push_str(pattern);
+        body.push('\n');
+    }
+    fs::write(file, body).expect("write exclude");
+}
+
+/// Whether git ignores `path` — the premise every ignored cell asserts before it runs.
+fn is_ignored(repo: &Path, path: &str) -> bool {
+    git_try(repo, &["check-ignore", "-q", "--", path])
+        .status
+        .success()
+}
+
+/// `HEAD`'s commit, or the empty string where there is none.
+fn head_of(repo: &Path) -> String {
+    let out = git_try(repo, &["rev-parse", "--verify", "-q", "HEAD"]);
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// Every backticked `git -C … ` command a route prints, in order — the bytes an adopter
+/// pastes, taken off the surface rather than rebuilt.
+fn printed_git_commands(route: &str) -> Vec<String> {
+    route
+        .split('`')
+        .filter(|span| span.starts_with("git -C "))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Run `command` through a shell from **outside** the repository, asserting success — a
+/// printed route is pasted from wherever the reader stands.
+fn paste(command: &str) {
+    let out = Command::new("sh")
+        .args(["-c", command])
+        .current_dir(std::env::temp_dir())
+        .output()
+        .expect("run the printed command");
+    assert!(
+        out.status.success(),
+        "the printed command runs as printed: `{command}`: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// (30) **The class axis, driven: an ignored file at every install member, at either
+/// `HEAD`** (the rc.24 fix pass, the ignored sibling of `(R1, F1)`).
+///
+/// The defect, driven on the release binary at `104a7d4b`: with `.jigc/AGENT.md` listed in
+/// `.gitignore` and a team's notes in the file, `jigc setup --format json` exited 0 with
+/// `findings: []`, the notes gone from disk and in no git object — on a born `HEAD` and an
+/// unborn one alike. The guard dropped an ignored path from its candidates because an
+/// ignored path cannot be swept into the install commit; cell (9) pins that for a
+/// `CLAUDE.md`, which the install merges into. Nothing planted an ignored file at a path
+/// the install **replaces**.
+///
+/// So this cell iterates the production table, one fresh repository per member and `HEAD`:
+///
+/// - `Preserves` ⇒ exit 0 with no finding, and the adopter's bytes are still in the file.
+///   Unchanged, and the control that stops the refusal being widened to members whose
+///   writer loses nothing.
+/// - `Replaces` ⇒ exit 1 before the first write, the path named and said to be ignored,
+///   the bytes byte-identical, `HEAD` unmoved and nothing else installed. Then the route's
+///   one act for an ignored path, followed as printed — the file moved out — and a single
+///   re-run installs; and a second re-run, over what jigc itself just left at the ignored
+///   path, is clean too.
+/// - `--force`, in a second repository, installs and **names the path it replaced**.
+///
+/// The guide's row is decided earlier, as in cell (23): a copy that is not jigc's own is
+/// left byte-identical and reported.
+#[test]
+fn an_ignored_file_at_a_replaced_install_path_refuses_at_either_head() {
+    use cli::setup::InstallWriter as W;
+    let mut refused = Vec::new();
+    for member in install_class() {
+        let path = member.path.as_str();
+        let plant = plant_for(path);
+        for (head, (repo, home)) in at_either_head("ignored-axis") {
+            let (repo, home) = (repo.path(), home.path());
+            let what = format!("`{path}` ignored, {head} HEAD");
+            if path == HOOK {
+                git(repo, &["config", "core.hooksPath", ".githooks"]);
+            }
+            exclude(repo, &[path]);
+            write(repo, path, plant);
+            assert!(
+                is_ignored(repo, path),
+                "{what}: the premise — git ignores it"
+            );
+            assert!(
+                !git(repo, &["status", "--porcelain", "--untracked-files=all"]).contains(path),
+                "{what}: and `git status` says nothing about it"
+            );
+            let before = head_of(repo);
+
+            let out = jigc(repo, home, &["setup"]);
+            let said_out = said(&out);
+            if path == GUIDE {
+                assert_eq!(
+                    out.status.code(),
+                    Some(0),
+                    "{what}: a guide copy that is not jigc's is left alone: {said_out}"
+                );
+                assert!(
+                    said_out.contains("adapter-guide.user-modified"),
+                    "{what}: and named: {said_out}"
+                );
+                assert_eq!(read(repo, path), plant, "{what}: byte-identical on disk");
+                continue;
+            }
+            if member.writer == W::Preserves {
+                assert_eq!(
+                    out.status.code(),
+                    Some(0),
+                    "{what}: a file the install merges into is not a subject: {said_out}"
+                );
+                assert!(
+                    !said_out.contains(DIRTY_CODE),
+                    "{what}: no refusal: {said_out}"
+                );
+                assert!(
+                    read(repo, path).contains(MARK),
+                    "{what}: and the adopter's bytes are still in the file"
+                );
+                continue;
+            }
+
+            // A replaced member: the refusal, before the first write.
+            assert_eq!(
+                out.status.code(),
+                Some(1),
+                "{what}: an ignored file the install would replace refuses: {said_out}"
+            );
+            assert!(
+                said_out.contains(DIRTY_CODE),
+                "{what}: the door's existing code: {said_out}"
+            );
+            assert_eq!(
+                refused_paths(&out),
+                vec![path.to_string()],
+                "{what}: exactly that path is named: {said_out}"
+            );
+            assert!(
+                said_out.contains(&format!("`{path}`: ignored")),
+                "{what}: and the refusal says why nothing else warned about it: {said_out}"
+            );
+            assert_eq!(
+                read(repo, path),
+                plant,
+                "{what}: the bytes are byte-identical — asked before the write"
+            );
+            assert_eq!(head_of(repo), before, "{what}: `HEAD` is where it was");
+            for other in ["CLAUDE.md", ".claude/settings.json", ".jigc/AGENT.md"] {
+                assert!(
+                    other == path || !repo.join(other).exists(),
+                    "{what}: nothing else was installed either (`{other}`)"
+                );
+            }
+
+            // The route, as printed: no act git would not perform on an ignored file.
+            let said_route = route(&out);
+            assert!(
+                !said_route.contains("git stash")
+                    && !said_route.contains("commit or stash")
+                    && !said_route.contains("or commit"),
+                "{what}: git neither stashes nor commits an ignored file, so the route \
+                 offers neither: {said_route}"
+            );
+            let (moved, force) = (
+                said_route
+                    .find("move the file")
+                    .unwrap_or_else(|| panic!("{what}: the route names the move: {said_route}")),
+                said_route
+                    .find("jigc setup --force")
+                    .unwrap_or_else(|| panic!("{what}: and the consent: {said_route}")),
+            );
+            assert!(
+                moved < force,
+                "{what}: the act that keeps the work leads: {said_route}"
+            );
+            fs::rename(repo.join(path), repo.join("moved-out")).expect("move the file out");
+            let rerun = jigc(repo, home, &["setup"]);
+            assert_eq!(
+                rerun.status.code(),
+                Some(0),
+                "{what}: moved out, ONE re-run installs: {}",
+                said(&rerun)
+            );
+            assert_eq!(
+                read(repo, "moved-out"),
+                plant,
+                "{what}: the adopter's file is where they moved it"
+            );
+            assert!(
+                repo.join(path).is_file() && !read(repo, path).contains(MARK),
+                "{what}: and jigc's own file is at the path"
+            );
+            assert!(
+                git_try(repo, &["ls-files", "--error-unmatch", "--", path])
+                    .status
+                    .code()
+                    != Some(0),
+                "{what}: still ignored, so still in no commit"
+            );
+            let again = jigc(repo, home, &["setup"]);
+            assert_eq!(
+                again.status.code(),
+                Some(0),
+                "{what}: a re-run over what jigc itself left there is clean: {}",
+                said(&again)
+            );
+            assert!(
+                !said(&again).contains(DIRTY_CODE),
+                "{what}: with no refusal over jigc's own bytes: {}",
+                said(&again)
+            );
+            refused.push((path.to_string(), head));
+        }
+
+        // `--force`: the consent installs, and names what it replaced.
+        if matches!(member.writer, W::Replaces { .. }) && path != GUIDE {
+            let (repo, home) = born_repo("ignored-force");
+            let (repo, home) = (repo.path(), home.path());
+            exclude(repo, &[path]);
+            write(repo, path, plant);
+            let out = jigc(repo, home, &["setup", "--force"]);
+            let said_out = said(&out);
+            assert_eq!(
+                out.status.code(),
+                Some(0),
+                "`{path}`: `--force` installs: {said_out}"
+            );
+            assert!(
+                said_out.contains("setup.forced-install-path")
+                    && said_out.contains("over 1 install path(s)"),
+                "`{path}`: and says the consent was spent: {said_out}"
+            );
+            assert_eq!(
+                refused_paths(&out),
+                vec![path.to_string()],
+                "`{path}`: on exactly the path it replaced: {said_out}"
+            );
+            assert!(
+                !read(repo, path).contains(MARK),
+                "`{path}`: which is what the consent bought"
+            );
+        }
+    }
+    let replaced: Vec<&str> = [
+        ".jigc/AGENT.md",
+        ".jigc/version",
+        ".jigc/config/.gitkeep",
+        ".jigc/config/packs.yaml",
+    ]
+    .into_iter()
+    .collect();
+    let expected: Vec<(String, &str)> = replaced
+        .iter()
+        .flat_map(|path| [(path.to_string(), "born"), (path.to_string(), "unborn")])
+        .collect();
+    assert_eq!(
+        refused, expected,
+        "the four members whose writer replaces what it finds refuse at both HEADs, and no \
+         member whose writer preserves does"
+    );
+}
+
+/// (31) **A repository that ignores jigc's install paths and never edited them keeps
+/// installing at exit 0 — and an edit re-arms the refusal for exactly that path.**
+///
+/// The other half of the rule in cell (30), and the reason the refusal there is an
+/// *ownership* question rather than *ignored ⇒ refuse*: no commit can make an ignored path
+/// clean, so a door that refused whatever stood at one would refuse every re-run over its
+/// own output. Each replacing member states how its own bytes are recognised
+/// (`cli::setup::OwnContent`), and this cell drives all of them at once — `.jigc/` and
+/// the guide's directory ignored whole, at either `HEAD`.
+#[test]
+fn jigcs_own_files_at_ignored_install_paths_never_refuse_and_an_edit_rearms() {
+    for (head, (repo, home)) in at_either_head("ignored-own") {
+        let (repo, home) = (repo.path(), home.path());
+        exclude(repo, &[".jigc/", ".claude/skills/"]);
+        for run in 1..=3 {
+            let out = jigc(repo, home, &["setup"]);
+            let said_out = said(&out);
+            assert_eq!(
+                out.status.code(),
+                Some(0),
+                "{head}, run {run}: jigc's own ignored files are not a refusal: {said_out}"
+            );
+            assert!(
+                !said_out.contains(DIRTY_CODE) && !said_out.contains("adapter-guide"),
+                "{head}, run {run}: and raise no finding: {said_out}"
+            );
+        }
+        assert!(
+            git(repo, &["ls-files", "--", ".jigc", ".claude/skills"]).is_empty(),
+            "{head}: the ignored paths are in no commit, which is the premise"
+        );
+
+        // An edit at any one of them is the adopter's, and is named alone.
+        for member in install_class() {
+            let path = member.path.as_str();
+            if member.writer == cli::setup::InstallWriter::Preserves || path == GUIDE {
+                continue;
+            }
+            let own = read(repo, path);
+            write(repo, path, plant_for(path));
+            let out = jigc(repo, home, &["setup"]);
+            assert_eq!(
+                out.status.code(),
+                Some(1),
+                "{head}: an edited `{path}` refuses: {}",
+                said(&out)
+            );
+            assert_eq!(
+                refused_paths(&out),
+                vec![path.to_string()],
+                "{head}: and only it — the others are still jigc's own: {}",
+                said(&out)
+            );
+            assert_eq!(
+                read(repo, path),
+                plant_for(path),
+                "{head}: `{path}` byte-identical"
+            );
+            // Put jigc's own bytes back: the next member is asked alone.
+            write(repo, path, &own);
+            let out = jigc(repo, home, &["setup"]);
+            assert_eq!(
+                out.status.code(),
+                Some(0),
+                "{head}: with `{path}` jigc's own again the install is clean: {}",
+                said(&out)
+            );
+        }
+    }
+}
+
+/// (32) **Across an upgrade, an ignored install path jigc wrote is still jigc's — and one
+/// a human wrote is still theirs.**
+///
+/// The oracle for `.jigc/AGENT.md` is *the body this build writes*, because nothing in the
+/// file says which build wrote it. So an older build's copy, at an ignored path, reads as
+/// not-jigc's the moment the body moves between builds, and a refusal there on every
+/// upgrade would be wrong. Provenance that content cannot carry is what the install
+/// footprint record is for: a run records the hash of what it left at every ignored path
+/// it replaces, and the next run — whichever build it is — subtracts a path whose bytes
+/// still hash to the record.
+///
+/// One binary cannot be two builds, so the older build is **planted exactly as it leaves
+/// the repository**: a body this build does not write at the ignored path, and the record
+/// line holding that body's hash. Four arms:
+///
+/// - (a) the planted older build ⇒ exit 0, no finding, the file regenerated to this
+///   build's body and the record moved to it;
+/// - (b) the same file **edited after** the older build wrote it ⇒ refused by name: the
+///   record no longer describes the bytes;
+/// - (c) no record at all, bytes this build would write ⇒ exit 0 — an install made before
+///   the record reached ignored paths, with the body unmoved since;
+/// - (d) no record, a body this build does not write ⇒ refused. The stated bound: jigc's
+///   own older file and a human's are the same bytes to every oracle there is, so it fails
+///   closed, once, and `--force` — which then records what it wrote — clears it for good.
+///
+/// And (e): the members whose oracle reads something no build changes need no record at
+/// all — an older build's stamp and an older build's guide are recognised with the record
+/// gone.
+#[test]
+fn an_upgrade_over_an_ignored_install_path_is_clean_and_an_edit_is_not() {
+    const AGENT: &str = ".jigc/AGENT.md";
+    const OLDER: &str = "the bootstrap body an older jigc build generated\n";
+    let installed = |tag: &str| -> (TempDir, TempDir, String) {
+        let (repo, home) = born_repo(tag);
+        exclude(repo.path(), &[".jigc/", ".claude/skills/"]);
+        let out = jigc(repo.path(), home.path(), &["setup"]);
+        assert_eq!(out.status.code(), Some(0), "first install: {}", said(&out));
+        let body = read(repo.path(), AGENT);
+        (repo, home, body)
+    };
+    // Rewrite the record's line for the bootstrap file as a build that wrote `body` would
+    // have left it.
+    let record_as_written = |repo: &Path, body: &str| {
+        let kept: String = read(repo, FOOTPRINT)
+            .lines()
+            .filter(|line| !line.ends_with(&format!(" {AGENT}")))
+            .map(|line| format!("{line}\n"))
+            .collect();
+        let hash = engine::file_state::hash_bytes(body.as_bytes());
+        write(repo, FOOTPRINT, &format!("{kept}{hash} {AGENT}\n"));
+    };
+
+    // The record exists and names the ignored paths this build wrote.
+    let (repo, home, body) = installed("upgrade-clean");
+    let (repo, home) = (repo.path(), home.path());
+    assert!(
+        read(repo, FOOTPRINT).contains(&format!(
+            "{} {AGENT}",
+            engine::file_state::hash_bytes(body.as_bytes())
+        )),
+        "the run recorded what it left at the ignored path: {}",
+        read(repo, FOOTPRINT)
+    );
+
+    // (a) The older build's file, with the older build's record.
+    write(repo, AGENT, OLDER);
+    record_as_written(repo, OLDER);
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "(a) an upgrade over jigc's own older file is clean: {}",
+        said(&out)
+    );
+    assert!(
+        !said(&out).contains(DIRTY_CODE),
+        "(a) no refusal: {}",
+        said(&out)
+    );
+    assert_eq!(
+        read(repo, AGENT),
+        body,
+        "(a) regenerated to this build's body"
+    );
+    assert!(
+        read(repo, FOOTPRINT).contains(&format!(
+            "{} {AGENT}",
+            engine::file_state::hash_bytes(body.as_bytes())
+        )),
+        "(a) and the record describes the new bytes: {}",
+        read(repo, FOOTPRINT)
+    );
+
+    // (b) The older build's file, edited since.
+    let (repo, home, _) = installed("upgrade-edited");
+    let (repo, home) = (repo.path(), home.path());
+    record_as_written(repo, OLDER);
+    let edited = format!("{OLDER}{MARK} and a line the team added\n");
+    write(repo, AGENT, &edited);
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "(b) an edit refuses: {}",
+        said(&out)
+    );
+    assert_eq!(
+        refused_paths(&out),
+        vec![AGENT.to_string()],
+        "(b) by name: {}",
+        said(&out)
+    );
+    assert_eq!(read(repo, AGENT), edited, "(b) byte-identical");
+
+    // (c) No record, and the bytes this build writes.
+    let (repo, home, body) = installed("upgrade-no-record");
+    let (repo, home) = (repo.path(), home.path());
+    fs::remove_file(repo.join(FOOTPRINT)).expect("drop the record");
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "(c) an install with no record and an unmoved body is clean: {}",
+        said(&out)
+    );
+    assert_eq!(read(repo, AGENT), body, "(c) byte-identical");
+
+    // (d) No record, and a body this build does not write: the bound.
+    fs::remove_file(repo.join(FOOTPRINT)).expect("drop the record");
+    write(repo, AGENT, OLDER);
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "(d) nothing can say these bytes are jigc's, so the door fails closed: {}",
+        said(&out)
+    );
+    assert_eq!(read(repo, AGENT), OLDER, "(d) byte-identical");
+    let out = jigc(repo, home, &["setup", "--force"]);
+    assert_eq!(out.status.code(), Some(0), "(d) `--force`: {}", said(&out));
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "(d) and it is cleared for good — the consented run recorded what it wrote: {}",
+        said(&out)
+    );
+
+    // (e) The build-independent oracles, with the record gone: an older stamp, and a guide
+    //     stamped by an older build whose body digest still holds.
+    fs::remove_file(repo.join(FOOTPRINT)).expect("drop the record");
+    write(repo, ".jigc/version", "jigc-version: 0.0.1-earlier\n");
+    let guide = read(repo, GUIDE);
+    let stamp_line = guide
+        .lines()
+        .find(|line| line.starts_with("jigc-version:"))
+        .expect("the guide's front matter carries jigc's version stamp")
+        .to_string();
+    let older_guide = guide.replacen(&stamp_line, "jigc-version: 0.0.1-earlier", 1);
+    assert_ne!(
+        older_guide, guide,
+        "the premise: the guide's stamp line moved"
+    );
+    write(repo, GUIDE, &older_guide);
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "(e) an older build's stamp and guide are jigc's own without any record: {}",
+        said(&out)
+    );
+    assert!(
+        !said(&out).contains(DIRTY_CODE) && !said(&out).contains("adapter-guide"),
+        "(e) no finding: {}",
+        said(&out)
+    );
+    assert_eq!(read(repo, GUIDE), guide, "(e) the guide is re-stamped");
+    assert!(
+        !read(repo, ".jigc/version").contains("0.0.1-earlier"),
+        "(e) and so is the stamp"
+    );
+}
+
+/// (33) **A tracked install path whose index entry hides its change is dirty all the same
+/// — every member, both flags** (the rc.24 fix pass; the second way `git status` cannot
+/// see what the settled predicate is about).
+///
+/// The predicate is *index or worktree bytes differ from `HEAD`*, and `git status` is how
+/// it was asked. An index entry flagged **assume-unchanged** or **skip-worktree** makes
+/// status report the path clean whatever the file holds. Driven on the release binary at
+/// `104a7d4b` with a team's notes in a tracked `.jigc/AGENT.md`: under assume-unchanged,
+/// exit 0, no finding, the notes in no git object; under skip-worktree the notes were
+/// destroyed and the run then failed at its own `git add`. And at a file the install merges
+/// into, a hidden edit in an assume-unchanged `CLAUDE.md` rode a first install's commit at
+/// exit 0 with no finding — a pathspec commit takes the worktree's bytes at every path it
+/// names — which is the sweep this guard was first written against.
+///
+/// So this cell iterates every member a first install leaves tracked, under each flag: the
+/// refusal names the path and says git tracks it with the change hidden, the bytes are
+/// byte-identical, and the route's two printed commands — run as printed, from outside the
+/// repository — make git report the change, after which a commit and one re-run install.
+#[test]
+fn a_change_hidden_by_an_index_flag_refuses_at_every_tracked_member() {
+    let mut driven = Vec::new();
+    for flag in ["--assume-unchanged", "--skip-worktree"] {
+        for member in install_class() {
+            let path = member.path.as_str();
+            let (repo, home) = born_repo("flagged");
+            let (repo, home) = (repo.path(), home.path());
+            let out = jigc(repo, home, &["setup"]);
+            assert_eq!(out.status.code(), Some(0), "first install: {}", said(&out));
+            let tracked = git_try(repo, &["ls-files", "--error-unmatch", "--", path])
+                .status
+                .success();
+            if !tracked {
+                // Not a member of this repository's install (the seeded `.gitignore` is a
+                // fresh-repository member, the hook a `core.hooksPath` one).
+                continue;
+            }
+            let what = format!("`{path}` under `{flag}`");
+            git(repo, &["update-index", flag, "--", path]);
+            let plant = plant_for(path);
+            write(repo, path, plant);
+            assert_eq!(
+                git(repo, &["status", "--porcelain"]),
+                "",
+                "{what}: the premise — git reports the repository clean"
+            );
+            let before = head_of(repo);
+
+            let out = jigc(repo, home, &["setup"]);
+            let said_out = said(&out);
+            if path == GUIDE {
+                assert_eq!(
+                    out.status.code(),
+                    Some(0),
+                    "{what}: a guide copy that is not jigc's is left alone: {said_out}"
+                );
+                assert_eq!(read(repo, path), plant, "{what}: byte-identical");
+                continue;
+            }
+            assert_eq!(
+                out.status.code(),
+                Some(1),
+                "{what}: a change git hides is a change: {said_out}"
+            );
+            assert_eq!(
+                refused_paths(&out),
+                vec![path.to_string()],
+                "{what}: named, alone: {said_out}"
+            );
+            assert!(
+                said_out.contains(DIRTY_CODE)
+                    && said_out.contains(&format!("`{path}`: tracked, with the change hidden")),
+                "{what}: and the refusal says why nothing else warned about it: {said_out}"
+            );
+            assert_eq!(read(repo, path), plant, "{what}: byte-identical");
+            assert_eq!(head_of(repo), before, "{what}: `HEAD` is where it was");
+
+            // The route, as printed.
+            let commands = printed_git_commands(&route(&out));
+            assert_eq!(
+                commands.len(),
+                2,
+                "{what}: the route prints the two flag-clearing commands: {commands:?}"
+            );
+            assert!(
+                commands[0].contains("update-index --no-assume-unchanged -- ")
+                    && commands[1].contains("update-index --no-skip-worktree -- ")
+                    && commands.iter().all(|command| command.ends_with(path)),
+                "{what}: one per flag, over the path: {commands:?}"
+            );
+            for command in &commands {
+                paste(command);
+            }
+            assert_eq!(
+                git(repo, &["status", "--porcelain"]),
+                format!("M {path}"),
+                "{what}: and git now reports the change"
+            );
+            git(repo, &["commit", "-q", "-a", "-m", "what we had there"]);
+            let rerun = jigc(repo, home, &["setup"]);
+            assert_eq!(
+                rerun.status.code(),
+                Some(0),
+                "{what}: committed, ONE re-run installs: {}",
+                said(&rerun)
+            );
+            assert!(
+                git(repo, &["log", "--all", "-p", "--", path]).contains(MARK),
+                "{what}: and git holds the adopter's copy"
+            );
+            assert_eq!(
+                git(repo, &["status", "--porcelain"]),
+                "",
+                "{what}: with nothing left over"
+            );
+            driven.push(path.to_string());
+        }
+    }
+    let members = [
+        "CLAUDE.md",
+        ".claude/settings.json",
+        ".jigc/AGENT.md",
+        ".jigc/.gitignore",
+        ".jigc/version",
+        ".jigc/config/.gitkeep",
+        ".jigc/config/packs.yaml",
+    ];
+    let expected: Vec<String> = members
+        .iter()
+        .chain(members.iter())
+        .map(|path| (*path).to_string())
+        .collect();
+    assert_eq!(
+        driven, expected,
+        "every tracked member but the guide refuses under each flag — the install merges \
+         into three of them, where a hidden edit can ride the install commit"
+    );
+}
+
+/// (34) **A flagged path nobody edited is not a subject, and neither is jigc's own stamp.**
+/// The controls for cell (33): the question is asked of the bytes, so a flag over a file
+/// that still holds what the index holds changes nothing — which is every sparse-checkout
+/// and every `--assume-unchanged` used as a performance hint.
+#[test]
+fn an_index_flag_over_unchanged_bytes_is_not_a_subject() {
+    let (repo, home) = born_repo("flagged-clean");
+    let (repo, home) = (repo.path(), home.path());
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(out.status.code(), Some(0), "first install: {}", said(&out));
+    for path in ["CLAUDE.md", ".jigc/AGENT.md", ".jigc/config/packs.yaml"] {
+        git(repo, &["update-index", "--assume-unchanged", "--", path]);
+    }
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "flags over unchanged files change nothing: {}",
+        said(&out)
+    );
+    assert!(
+        !said(&out).contains(DIRTY_CODE),
+        "no refusal: {}",
+        said(&out)
+    );
+
+    // jigc's own one-line stamp from another build, hidden by a flag: the stamp's oracle
+    // answers for it at any dirtiness, as it does for a visible one (cell 12).
+    git(
+        repo,
+        &["update-index", "--assume-unchanged", "--", ".jigc/version"],
+    );
+    write(repo, ".jigc/version", "jigc-version: 0.0.1-earlier\n");
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "a hidden stamp that is jigc's own is re-stamped, not refused over: {}",
+        said(&out)
+    );
+}
+
+/// (35) **The reported instance, and the mixed set: one route, every arm followed as
+/// printed.** `.jigc/AGENT.md` listed in a committed `.gitignore` — the spelling the
+/// finding was driven with — beside an untracked `CLAUDE.md` git does report. The refusal
+/// lists both; the route gives each the act that works for it, and following both lands the
+/// install in one re-run. Then the same on an unborn `HEAD`, where the commit arm has to
+/// say which path it does not cover.
+#[test]
+fn a_mixed_refusal_routes_each_path_at_the_act_that_reaches_it() {
+    const AGENT: &str = ".jigc/AGENT.md";
+
+    // Born.
+    let (repo, home) = born_repo("ignored-mixed");
+    let (repo, home) = (repo.path(), home.path());
+    write(repo, ".gitignore", ".jigc/AGENT.md\n");
+    git(repo, &["add", ".gitignore"]);
+    git(repo, &["commit", "-q", "-m", "ignore the bootstrap file"]);
+    write(repo, AGENT, plant_for(AGENT));
+    write(repo, "CLAUDE.md", plant_for("CLAUDE.md"));
+    let out = jigc(repo, home, &["setup", "--format", "json"]);
+    assert_eq!(out.status.code(), Some(1), "refuses: {}", said(&out));
+    // A blocked door prints its envelope on stderr.
+    let json: serde_json::Value =
+        serde_json::from_slice(&out.stderr).expect("the envelope is JSON");
+    let findings = json["findings"].as_array().expect("findings array");
+    assert_eq!(findings.len(), 1, "one finding over the whole set: {json}");
+    assert_eq!(findings[0]["code"], DIRTY_CODE);
+    assert_eq!(
+        findings[0]["key"]["target"],
+        serde_json::Value::Null,
+        "the pinned key shape is unmoved: {json}"
+    );
+    assert!(
+        findings[0]["location"].is_null(),
+        "and so is the absent location: {json}"
+    );
+    let message = findings[0]["message"].as_str().expect("message");
+    assert!(
+        message.contains("2 path(s)")
+            && message.contains("  `.jigc/AGENT.md`\n")
+            && message.contains("  `CLAUDE.md`\n")
+            && message.contains("reports nothing at 1 of those path(s)")
+            && message.contains("  `.jigc/AGENT.md`: ignored"),
+        "both paths listed, the ignored one explained: {message}"
+    );
+    let said_route = findings[0]["route"].as_str().expect("route");
+    assert!(
+        said_route.starts_with("commit or stash the work at the path(s) `git status` does report")
+            && said_route.contains("move the file out of `.jigc/AGENT.md`"),
+        "each class gets its own arm: {said_route}"
+    );
+    git(repo, &["stash", "-q", "-u"]);
+    assert!(
+        read(repo, AGENT).contains(MARK),
+        "the stash did not take the ignored file — which is why the route does not say it would"
+    );
+    fs::rename(repo.join(AGENT), repo.join("agent-notes.md")).expect("move out");
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "both arms followed, ONE re-run installs: {}",
+        said(&out)
+    );
+    assert!(
+        git(repo, &["show", "stash@{0}^3:CLAUDE.md"]).contains(MARK)
+            && read(repo, "agent-notes.md").contains(MARK),
+        "and both of the adopter's files are where the route put them"
+    );
+
+    // Unborn: an ignored replaced path, an untracked replaced path, and a merged-into file.
+    let (repo, home) = unborn_repo("ignored-mixed-unborn");
+    let (repo, home) = (repo.path(), home.path());
+    const PACKS: &str = ".jigc/config/packs.yaml";
+    write(repo, ".gitignore", ".jigc/AGENT.md\n");
+    write(repo, AGENT, plant_for(AGENT));
+    write(repo, PACKS, plant_for(PACKS));
+    write(repo, "CLAUDE.md", plant_for("CLAUDE.md"));
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(out.status.code(), Some(1), "refuses: {}", said(&out));
+    assert_eq!(
+        refused_paths(&out),
+        vec![AGENT.to_string(), PACKS.to_string()],
+        "both replaced paths, and not the files the install merges into: {}",
+        said(&out)
+    );
+    assert!(!head_is_born(repo), "no commit was minted");
+    let said_route = route(&out);
+    assert!(
+        said_route.contains("or commit the one(s) git does not ignore in one commit with")
+            && said_route.contains("`.gitignore`")
+            && said_route.contains("`CLAUDE.md`")
+            && said_route.contains("move `.jigc/AGENT.md` out"),
+        "the commit arm names what it must carry and the path it does not cover: {said_route}"
+    );
+    assert!(
+        !git_try(repo, &["add", "--", AGENT]).status.success(),
+        "the premise the route is worded for: git will not add the ignored file"
+    );
+    git(repo, &["add", "--", PACKS, "CLAUDE.md", ".gitignore"]);
+    git(repo, &["commit", "-q", "-m", "ours"]);
+    fs::rename(repo.join(AGENT), repo.join("agent-notes.md")).expect("move out");
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "the commit arm followed as printed, ONE re-run installs: {}",
+        said(&out)
+    );
+    assert!(
+        git(repo, &["log", "--all", "-p"]).contains("why we pin dev only"),
+        "git holds the adopter's commented `packs.yaml`"
+    );
+}
+
+/// (36) **A run that fails after its first write still records what it left at an ignored
+/// path** — the S22 rule (`setup_failed_first_run.rs`) at the paths no `git add` can stage.
+/// The failed-run record is built from what `git status` reports, and an ignored path is
+/// never in that answer, so it is kept separately; a plain re-run completes either way on
+/// one build, which is why the record itself is what this cell reads.
+#[cfg(unix)]
+#[test]
+fn a_failed_run_records_what_it_left_at_an_ignored_path() {
+    use std::os::unix::fs::PermissionsExt;
+    let (repo, home) = born_repo("ignored-failed");
+    let (repo, home) = (repo.path(), home.path());
+    exclude(repo, &[".jigc/AGENT.md"]);
+    let hooks = repo.join("ro-hooks");
+    fs::create_dir_all(&hooks).expect("hooks dir");
+    git(repo, &["config", "core.hooksPath", "ro-hooks"]);
+    fs::set_permissions(&hooks, fs::Permissions::from_mode(0o555)).expect("read-only hooks dir");
+
+    let out = jigc(repo, home, &["setup"]);
+    fs::set_permissions(&hooks, fs::Permissions::from_mode(0o755)).expect("restore");
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "the hook cannot be written, so the run fails after its first write: {}",
+        said(&out)
+    );
+    assert!(
+        said(&out).contains("setup.install-hook"),
+        "at the step the fixture breaks: {}",
+        said(&out)
+    );
+    let body = read(repo, ".jigc/AGENT.md");
+    assert!(
+        read(repo, FOOTPRINT).contains(&format!(
+            "{} .jigc/AGENT.md",
+            engine::file_state::hash_bytes(body.as_bytes())
+        )),
+        "the failed run recorded the ignored file it wrote: {}",
+        read(repo, FOOTPRINT)
+    );
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "and a plain re-run completes: {}",
         said(&out)
     );
 }

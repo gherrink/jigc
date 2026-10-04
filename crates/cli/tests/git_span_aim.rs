@@ -212,7 +212,10 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
         "`setup.dirty-install-path` read on an unborn `HEAD` — `git rm --cached -- <path>`, \
          the unstage that makes *move the file out* true of a path the adopter had staged. \
          The born arm's `git stash -u` carries no operand; this one does, and the refusal is \
-         printed by the first command an adopter runs, from wherever they ran it",
+         printed by the first command an adopter runs, from wherever they ran it. And, on a \
+         born `HEAD`, the two `git update-index --no-assume-unchanged|--no-skip-worktree -- \
+         <path>` spans that let git report a change an index flag was hiding (the rc.24 fix \
+         pass), each over the listed paths themselves",
     ),
     (
         "crates/engine/src/validate.rs",

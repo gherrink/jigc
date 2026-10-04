@@ -1404,8 +1404,10 @@ fn install(
     //     subtraction that makes the across-invocations half true is recorded where the
     //     bytes are left ([`record_install_footprint`]) and re-verified where the question
     //     is asked ([`own_uncommitted_footprint`]).
-    let subject = InstallSubject::probe(jigc_home, force);
-
+    //
+    //     The ask itself is [`InstallSubject::probe`], made at 0d″ below — still before the
+    //     first write, and after the two read-only steps that settle which paths this run
+    //     would write, since the bytes git's status cannot see are asked per member.
     let reference = profile.reference().ok_or_else(|| {
         Finding::block(
             "setup.profile-incomplete",
@@ -1447,18 +1449,20 @@ fn install(
     //      three arms do not work for one: *commit it* commits the link and lands in the
     //      first cell, and `--force` is a consent to replace a file, not to follow one. So
     //      it is not consulted: `force` is deliberately not read here.
-    if let Some(refusal) = replaced_path_refusal(
-        jigc_home,
-        &install_tracked_paths(
-            &line_file,
-            &allowlist_file,
-            is_fresh_repo(jigc_home),
-            None,
-            guide_file.as_deref(),
-        ),
-    ) {
+    let members = install_tracked_paths(
+        &line_file,
+        &allowlist_file,
+        is_fresh_repo(jigc_home),
+        None,
+        guide_file.as_deref(),
+    );
+    if let Some(refusal) = replaced_path_refusal(jigc_home, &members) {
         return Err(refusal);
     }
+
+    // 0d″. **The ask** (step 0c's): what differs from `HEAD` before this run writes, plus
+    //      what `git status` cannot see at the paths this run would write.
+    let subject = InstallSubject::probe(jigc_home, force, &members);
 
     // 0e. **The gate, before the first write** (M51 Increment 3, corrected by its completion
     //     audit). The predicate is [`InstallSubject`]'s pre-write worktree-vs-`HEAD` answer
@@ -1487,10 +1491,20 @@ fn install(
                     .filter(|member| before.rides_the_first_commit(member))
                     .map(|member| member.path.clone())
                     .collect();
+                // The paths git's status did not report are routed at different acts, so
+                // the engine is told which they are; it words nothing extra when the
+                // refusal lists none of them.
+                let ignored: Vec<String> = before.ignored.iter().cloned().collect();
+                let flagged: Vec<String> = before.flagged.iter().cloned().collect();
                 return Err(engine::finalize::setup_dirty_install_finding(
                     &refusals,
                     false,
                     before.head(jigc_home, &riding),
+                    Some(engine::finalize::SetupUnseen {
+                        home: jigc_home,
+                        ignored: &ignored,
+                        flagged: &flagged,
+                    }),
                 ));
             }
         }
@@ -1555,6 +1569,11 @@ fn install(
             &allowlist_file,
             guide_file.as_deref(),
         );
+        // Under the same rule as the record above: only a run that asked. Whatever stands
+        // at an ignored replaced path now either passed that ask or was written since.
+        if matches!(subject, InstallSubject::Dirty(_)) {
+            record_ignored_footprint(jigc_home, &members);
+        }
     })?;
     let hook_file = display_hook_path(jigc_home, &hook_path);
 
@@ -1566,10 +1585,7 @@ fn install(
     //    routed on git's own cause ([`InstallCommitRejection::finding`]) rather than
     //    masquerading as a clean success (mirrors `finalize`'s identical git-identity
     //    failure).
-    let InstallCommitOutcome {
-        commit: install_commit,
-        hook_committed,
-    } = commit_install(
+    let committed = commit_install(
         jigc_home,
         &line_file,
         &allowlist_file,
@@ -1577,8 +1593,17 @@ fn install(
         &hook_path,
         guide_file.as_deref(),
         &subject,
-    )
-    .map_err(|rejection| rejection.finding(jigc_home))?;
+    );
+    // 6b. **Keep the provenance of what this run wrote where no commit will hold it** (the
+    //     rc.24 fix pass, the ignored sibling of `(R1, F1)`). Asked after the commit step
+    //     whatever it answered, and under any subject: the write span completed, so every
+    //     replaced path holds what jigc put there — `--force` included, which is exactly
+    //     the run that replaced somebody's bytes with jigc's.
+    record_ignored_footprint(jigc_home, &members);
+    let InstallCommitOutcome {
+        commit: install_commit,
+        hook_committed,
+    } = committed.map_err(|rejection| rejection.finding(jigc_home))?;
 
     // 7. The forecast (M50 Increment 12 / T3, D5): the install is done — now say what the
     //    **next** door will refuse. `setup` is the one door that meets a repo whose project
@@ -1918,8 +1943,9 @@ fn install_tracked_paths(
         writer,
     };
     // A replacing writer names the code its refusal rides — the member's own existing
-    // write-failure code, the one [`write_install_span`] maps that writer's errors to.
-    let replaces = |refusal| InstallWriter::Replaces { refusal };
+    // write-failure code, the one [`write_install_span`] maps that writer's errors to — and
+    // the oracle that says the bytes at its path are jigc's own ([`OwnContent`]).
+    let replaces = |refusal, own| InstallWriter::Replaces { refusal, own };
     let mut members = vec![
         // `CLAUDE.md` (the bootstrap reference host) — `adapter::inject_reference` appends
         // one section and leaves every existing byte in place.
@@ -1929,8 +1955,13 @@ fn install_tracked_paths(
         // (`adapter::check_settings_merge`).
         member(allowlist_file, Refuses, Preserves),
         // `adapter::write_bootstrap_file` — an unconditional rewrite of the canonical
-        // body, with no oracle that could call a human's prose jigc's own.
-        member(".jigc/AGENT.md", Refuses, replaces("setup.write-bootstrap")),
+        // body. Nothing in the file says which build wrote it, so the one thing that can
+        // be read off the bytes is whether they are the body *this* build writes.
+        member(
+            ".jigc/AGENT.md",
+            Refuses,
+            replaces("setup.write-bootstrap", OwnContent::BootstrapBody),
+        ),
         // `crate::gitignore::ensure` — amended to the union, the user's lines kept.
         member(".jigc/.gitignore", Refuses, Preserves),
         // The binary-provenance stamp, rewritten whole; exempt only while its one line is
@@ -1938,18 +1969,22 @@ fn install_tracked_paths(
         member(
             VERSION_STAMP_PATH,
             ExemptWhenJigcOwned,
-            replaces(VERSION_STAMP_CODE),
+            replaces(VERSION_STAMP_CODE, OwnContent::VersionStamp),
         ),
         // `adapter::init_project_layer` — written empty, over whatever is there.
         member(
             ".jigc/config/.gitkeep",
             Refuses,
-            replaces("setup.init-project-layer"),
+            replaces("setup.init-project-layer", OwnContent::EmptyMarker),
         ),
         // [`write_compose_marker`] — parse-mutate-serialize through the YAML value model:
         // the keys and the `packs:` list survive, a **comment does not**, so for the bytes
         // an adopter authored this writer replaces the file ([`InstallWriter::Replaces`]).
-        member(PACKS_FILE_REL, Refuses, replaces("setup.compose-marker")),
+        member(
+            PACKS_FILE_REL,
+            Refuses,
+            replaces("setup.compose-marker", OwnContent::SettledComposeMarker),
+        ),
     ];
     // The root `.gitignore` is committed **only** when setup itself seeded it on the
     // fresh-repo path — never an established repo's pre-existing `.gitignore` (which setup
@@ -1967,7 +2002,7 @@ fn install_tracked_paths(
         members.push(member(
             guide,
             ExemptWhenJigcOwned,
-            replaces("setup.write-guide"),
+            replaces("setup.write-guide", OwnContent::GuideDigest),
         ));
     }
     // The `pre-commit` hook, iff git can track it from this working tree.
@@ -2033,10 +2068,97 @@ pub enum InstallWriter {
     /// code, the one [`write_install_span`] maps the same writer's errors to. It is a field
     /// and not a lookup beside the table for the reason the struct has no default — a
     /// replacing member cannot be declared without it.
+    ///
+    /// **And it carries how to tell that the bytes at the path are jigc's own**
+    /// ([`OwnContent`]; the rc.24 fix pass, the ignored sibling of `(R1, F1)`). A replacing
+    /// writer destroys what it finds, so the only bytes it may be run over unasked are ones
+    /// git holds a copy of or ones jigc generated. Where git's status can see the path, a
+    /// commit settles that. Where it cannot — the path is ignored — there is no commit to
+    /// make, and a repository that ignores an install path has to be able to re-run `setup`
+    /// forever, so the answer has to come from the file. A field with no default for the
+    /// same reason `refusal` is one.
     Replaces {
         /// The `setup.*` write-failure code this member's refusal is raised under.
         refusal: &'static str,
+        /// How the member's own bytes are recognised at its path.
+        own: OwnContent,
     },
+}
+
+/// **How a replacing install member's own bytes are recognised at its path** — the oracle
+/// each [`InstallWriter::Replaces`] member declares, decided per member from what its
+/// writer puts there (the rc.24 fix pass, the ignored sibling of `(R1, F1)`).
+///
+/// The loss it closes, driven on the release binary at `104a7d4b`: with `.jigc/AGENT.md`
+/// listed in `.gitignore` and a team's notes in the file, `jigc setup --format json` exited
+/// 0 with `findings: []`, the notes gone from disk and in no git object — on a born `HEAD`
+/// and an unborn one alike. The guard dropped an ignored path from its candidates on the
+/// reasoning that an ignored path cannot be swept into the install commit, which is true of
+/// a file the install merges into and beside the point for one it replaces.
+///
+/// **Two kinds of answer, and the difference is what an upgrade does to each.** Three
+/// oracles read a property that no build of jigc changes — the stamp's one-line shape, the
+/// marker's emptiness, the guide's digest of its own body — so a copy an older build wrote
+/// is recognised by a newer one. Two ask whether this run's write would leave the file
+/// byte-identical, which is true of an older build's copy only while the generated content
+/// has not moved between the builds. Where it has, the bytes are still jigc's and nothing
+/// in them says so; that provenance is the install footprint record's
+/// ([`INSTALL_FOOTPRINT_PATH`]), which keeps the hash of every ignored file a run replaced
+/// and is subtracted before this question is reached. So an upgrade over an ignored,
+/// unedited install path is clean; the one refusal an oracle here can raise over jigc's own
+/// bytes is a changed body with the record lost, or written by a build older than the
+/// record's reach — once, and `--force` or deleting the file clears it.
+///
+/// Every oracle is asked of a **regular file** read without following a link, and fails
+/// **closed**: unreadable, not UTF-8 where text is expected, or any shape it cannot prove
+/// is jigc's, and the answer is that it is not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OwnContent {
+    /// `.jigc/AGENT.md` — exactly the body this build's [`adapter::write_bootstrap_file`]
+    /// writes ([`adapter::bootstrap_file`]). Build-dependent.
+    BootstrapBody,
+    /// `.jigc/version` — one non-blank `jigc-version:` line ([`version_stamp_is_jigcs`]),
+    /// whichever build stamped it.
+    VersionStamp,
+    /// `.jigc/config/.gitkeep` — an empty file, which is all
+    /// [`adapter::init_project_layer`] ever writes there.
+    EmptyMarker,
+    /// `.jigc/config/packs.yaml` — the file [`write_compose_marker`] would leave
+    /// byte-identical: it parses, carries the marker, and is already in the form the
+    /// round-trip emits, so there is no comment or layout for it to drop
+    /// ([`compose_marker_rendering`], the function the writer itself renders with).
+    /// Build-dependent only through the YAML emitter.
+    SettledComposeMarker,
+    /// The guide artifact — its recorded `jigc-body-blake3:` is its own body's digest
+    /// ([`recorded_body_digest`], the test [`guide_ownership`] decides by), whichever
+    /// build wrote it.
+    GuideDigest,
+}
+
+impl OwnContent {
+    /// Whether the file at `<jigc_home>/<path>` holds jigc's own bytes under this oracle.
+    fn recognises(self, jigc_home: &Path, path: &str) -> bool {
+        let file = jigc_home.join(path);
+        if engine::store::home_entry(&file) != engine::store::HomeEntry::RegularFile {
+            return false;
+        }
+        let Ok(bytes) = std::fs::read(&file) else {
+            return false;
+        };
+        match self {
+            Self::BootstrapBody => bytes == adapter::bootstrap_file().as_bytes(),
+            Self::VersionStamp => version_stamp_is_jigcs(jigc_home),
+            Self::EmptyMarker => bytes.is_empty(),
+            Self::SettledComposeMarker => String::from_utf8(bytes).is_ok_and(|text| {
+                compose_marker_rendering(Some(&text), &file).is_ok_and(|after| after == text)
+            }),
+            Self::GuideDigest => String::from_utf8(bytes).is_ok_and(|text| {
+                recorded_body_digest(&text).is_some_and(|(recorded, body)| {
+                    recorded == engine::file_state::hash_bytes(body.as_bytes())
+                })
+            }),
+        }
+    }
 }
 
 /// How one install path behaves under the dirty-install guard — the disposition every
@@ -2055,13 +2177,17 @@ pub enum InstallPathDisposition {
     /// **and** every path it replaces with no ownership oracle (`.jigc/AGENT.md`,
     /// `.jigc/config/packs.yaml`, `.jigc/config/.gitkeep`) — the second group being the
     /// class the conjunction could not see. Which group a member is in is its
-    /// [`InstallWriter`], and it matters in exactly one cell: the unborn-`HEAD` exemption.
+    /// [`InstallWriter`], and it matters in two cells: the unborn-`HEAD` exemption, and a
+    /// path git **ignores**, where a replaced member is asked its [`OwnContent`] oracle
+    /// instead — there is no commit that could make an ignored path clean, so *refuse while
+    /// dirty* would refuse every re-run over jigc's own file.
     Refuses,
-    /// Exempt **iff the bytes there are jigc's own**, asked of the file before any write.
-    /// Two members, each with an oracle the writing side owns: the guide artifact
-    /// ([`guide_ownership`]'s recorded body digest — M48's refuse-to-clobber already
-    /// dropped a user-modified copy from the pathspec entirely, so a path that reaches
-    /// here as the guide is jigc's by construction) and the machine-owned provenance stamp
+    /// Exempt **iff the bytes there are jigc's own**, asked of the file before any write —
+    /// at any dirtiness, where [`Self::Refuses`] asks it of an ignored path only. Two
+    /// members, the two whose oracle ([`OwnContent`]) reads something no build changes: the
+    /// guide artifact (its recorded body digest — M48's refuse-to-clobber already dropped a
+    /// user-modified copy from the pathspec entirely, so a path that reaches here as the
+    /// guide is jigc's by construction) and the machine-owned provenance stamp
     /// ([`version_stamp_is_jigcs`] — a one-line `jigc-version:` file nobody authors prose
     /// into, whose re-stamp *is* the documented `store-version.binary-mismatch` recovery).
     ExemptWhenJigcOwned,
@@ -2122,7 +2248,7 @@ fn version_stamp_is_jigcs(jigc_home: &Path) -> bool {
 /// to a shared file is an ordinary thing for a repository to have. Nor is a path git
 /// ignores excused: an ignored link's target is written through all the same, so this asks
 /// the members themselves and never the dirty gate's candidates, which drop an ignored
-/// path.
+/// path the install merges into.
 ///
 /// **One finding, naming every blocked path.** The door answers with a single finding
 /// (`setup.*` is a declared singleton), so it is raised under the *first* blocked member's
@@ -2146,7 +2272,7 @@ fn replaced_path_refusal(jigc_home: &Path, members: &[InstallMember]) -> Option<
     let mut code = None;
     let mut blocked: Vec<crate::regular_file::Blocker> = Vec::new();
     for member in members {
-        let InstallWriter::Replaces { refusal } = member.writer else {
+        let InstallWriter::Replaces { refusal, .. } = member.writer else {
             continue;
         };
         let Some(blocker) = crate::regular_file::blocker(jigc_home, &member.path) else {
@@ -2186,13 +2312,22 @@ fn replaced_path_refusal(jigc_home: &Path, members: &[InstallMember]) -> Option<
 /// Whether the bytes currently at `member`'s path are jigc's own — the **one** thing that
 /// exempts a dirty install path from the refusal at either `HEAD`
 /// ([`InstallPathDisposition`]).
-fn jigc_owned_at(jigc_home: &Path, member: &InstallMember) -> bool {
-    match member.disposition {
-        InstallPathDisposition::Refuses => false,
-        InstallPathDisposition::ExemptWhenJigcOwned => {
-            member.path != VERSION_STAMP_PATH || version_stamp_is_jigcs(jigc_home)
-        }
-    }
+///
+/// The oracle is the member's own ([`OwnContent`]), and *whether it is asked* is the
+/// disposition: always for [`InstallPathDisposition::ExemptWhenJigcOwned`], and for
+/// [`InstallPathDisposition::Refuses`] only at a path git **ignores**
+/// ([`DirtyPaths::ignored`]) — the one dirtiness no commit can clear, so the one where
+/// refusing over jigc's own bytes would refuse every run. A member whose writer preserves
+/// has no oracle and is never exempt this way.
+fn jigc_owned_at(jigc_home: &Path, member: &InstallMember, before: &DirtyPaths) -> bool {
+    let InstallWriter::Replaces { own, .. } = member.writer else {
+        return false;
+    };
+    let asked = match member.disposition {
+        InstallPathDisposition::ExemptWhenJigcOwned => true,
+        InstallPathDisposition::Refuses => before.ignored.contains(&member.path),
+    };
+    asked && own.recognises(jigc_home, &member.path)
 }
 
 /// The install paths that **refuse**: among `members`, dirty before this run began
@@ -2208,14 +2343,25 @@ fn dirty_install_refusals(
     members
         .iter()
         .filter(|member| before.contains(&member.path))
-        .filter(|member| !jigc_owned_at(jigc_home, member))
+        .filter(|member| !jigc_owned_at(jigc_home, member, before))
         .filter(|member| !before.rides_the_first_commit(member))
         .map(|member| member.path.clone())
         .collect()
 }
 
-/// The install members the **pre-write** gate can name, filtered exactly as
-/// [`commit_install`] filters its settled pathspec (present on disk, not gitignored).
+/// The install members the **pre-write** gate can name: present on disk, and either not
+/// gitignored — [`commit_install`]'s own filter over its settled pathspec — or at a path the
+/// install **replaces**.
+///
+/// **An ignored path is dropped only where the install merges into it** (the rc.24 fix
+/// pass, the ignored sibling of `(R1, F1)`). The filter dropped every ignored member, on
+/// the reasoning that an ignored path cannot be swept into the install commit. That is why
+/// an ignored `CLAUDE.md` is not a subject — its bytes are merged into and stay where they
+/// are, in no commit before the run and none after. It says nothing about a member whose
+/// writer replaces what it finds: driven at `104a7d4b`, an ignored `.jigc/AGENT.md`
+/// holding a team's notes was regenerated at exit 0 with no finding. Such a member stays a
+/// candidate, and whether it refuses is [`InstallSubject::probe`]'s answer and its
+/// [`OwnContent`] oracle's.
 ///
 /// Two conditionals are answered by the same predicates the writers gate on, so the
 /// prediction cannot drift from them: the root `.gitignore` rides only the fresh-repo seed
@@ -2245,7 +2391,10 @@ fn install_candidates(
     )
     .into_iter()
     .filter(|member| std::fs::symlink_metadata(jigc_home.join(&member.path)).is_ok())
-    .filter(|member| !git_path_ignored(jigc_home, &member.path))
+    .filter(|member| {
+        matches!(member.writer, InstallWriter::Replaces { .. })
+            || !git_path_ignored(jigc_home, &member.path)
+    })
     .collect()
 }
 
@@ -2404,8 +2553,24 @@ impl InstallSubject {
     /// naming them as *work `jigc setup` did not write*, and every route the first run
     /// printed — stash, commit, set your git identity — leads back to the same refusal
     /// with the set one path larger.
-    fn probe(jigc_home: &Path, force: bool) -> Self {
-        let Some(mut dirty) = dirty_against_head(jigc_home, &[]) else {
+    ///
+    /// **Plus what `git status` cannot see at an install path** ([`unseen_by_status`]; the
+    /// rc.24 fix pass, the ignored sibling of `(R1, F1)`). `members` is the install's
+    /// pre-write enumeration, and the question is added to the status answer **before** the
+    /// subtraction above, so a file an earlier run of this door left at an ignored path is
+    /// recognised by the same record as one it left staged. Where git answers the status
+    /// question and not this one, the door is as blind as when it answers neither, so the
+    /// answer is the same [`Self::Unknown`].
+    fn probe(jigc_home: &Path, force: bool, members: &[InstallMember]) -> Self {
+        let answered = dirty_against_head(jigc_home, &[]).and_then(|mut dirty| {
+            let unseen = unseen_by_status(jigc_home, members, &dirty)?;
+            dirty.all.extend(unseen.ignored.iter().cloned());
+            dirty.all.extend(unseen.flagged.iter().cloned());
+            dirty.ignored = unseen.ignored;
+            dirty.flagged = unseen.flagged;
+            Some(dirty)
+        });
+        let Some(mut dirty) = answered else {
             // `--force` still installs when git cannot answer — the consent short-circuits
             // the verdict, and the empty set is what keeps the ack from claiming a subject
             // it never measured.
@@ -2593,6 +2758,15 @@ struct DirtyPaths {
     /// Whether `HEAD` was **unborn** when the question was asked ([`is_fresh_repo`]) — a
     /// fresh `git init`, or an orphan branch whose index was emptied.
     unborn: bool,
+    /// The subset `git status` did **not** name because git ignores the path: a file at a
+    /// path the install replaces, which git neither tracks nor reports
+    /// ([`unseen_by_status`]). Empty in [`dirty_against_head`]'s own answer;
+    /// [`InstallSubject::probe`] fills it.
+    ignored: BTreeSet<String>,
+    /// The subset `git status` did not name although git tracks the path and the file on
+    /// disk is not the bytes its index entry holds — an entry flagged assume-unchanged or
+    /// skip-worktree ([`unseen_by_status`]). Filled like [`Self::ignored`].
+    flagged: BTreeSet<String>,
 }
 
 impl DirtyPaths {
@@ -2603,6 +2777,8 @@ impl DirtyPaths {
     fn remove(&mut self, path: &str) {
         self.all.remove(path);
         self.untracked.remove(path);
+        self.ignored.remove(path);
+        self.flagged.remove(path);
     }
 
     /// **The unborn-`HEAD` exemption, as a property of the member rather than of the
@@ -2684,7 +2860,11 @@ impl DirtyPaths {
 /// between them can mint a commit.
 ///
 /// Ignored files are absent structurally (no `--ignored`), which agrees with
-/// [`git_path_ignored`] dropping them from the pathspec.
+/// [`git_path_ignored`] dropping them from the pathspec — and is why this answer is not the
+/// whole subject: a file git ignores, and a tracked one whose index entry is flagged
+/// assume-unchanged or skip-worktree, have bytes this query cannot see.
+/// [`unseen_by_status`] asks those of the files themselves, and [`InstallSubject::probe`]
+/// joins the two answers.
 ///
 /// `--no-renames` keeps the `-z` record shape to one field per entry; a rename then reports
 /// as its delete + add halves, both of which are differences from `HEAD` and both of which
@@ -2720,6 +2900,191 @@ fn dirty_against_head(jigc_home: &Path, pathspec: &[String]) -> Option<DirtyPath
         dirty.all.insert(path);
     }
     Some(dirty)
+}
+
+/// **What `git status` could not see at the install's own paths** — the two classes
+/// [`unseen_by_status`] finds by asking the bytes.
+#[derive(Debug, Default)]
+struct Unseen {
+    /// Untracked and unreported, at a path the install replaces: git ignores it.
+    ignored: BTreeSet<String>,
+    /// Tracked and unreported, with a file on disk that is not the index entry's bytes.
+    flagged: BTreeSet<String>,
+}
+
+/// **The install members whose bytes are in no commit although `git status` says nothing
+/// about them** — the half of *dirty relative to `HEAD`* that [`dirty_against_head`] cannot
+/// answer, asked of the files themselves (the rc.24 fix pass, the ignored sibling of
+/// `(R1, F1)`). `None` when git could not answer.
+///
+/// The predicate this door settled on is about **bytes** — *a path whose index or worktree
+/// bytes differ from `HEAD`* — and `git status` is how it was asked. Status under-reports
+/// it in two ways, each driven on the release binary at `104a7d4b` as a loss:
+///
+/// - **An ignored file.** Status does not list it (`--ignored` is not passed, and the
+///   pathspec filter dropped it besides). With `.jigc/AGENT.md` ignored and holding a
+///   team's notes, `setup` exited 0 with no finding and the notes were in no git object —
+///   at either `HEAD`.
+/// - **A tracked file whose index entry is flagged** assume-unchanged or skip-worktree.
+///   Status reports it clean whatever the file holds. The same notes went the same way at
+///   exit 0 under assume-unchanged; under skip-worktree they were destroyed and the run
+///   then failed at its own `git add`.
+///
+/// **So every present member `status` did not name is asked directly**, in two git calls
+/// over the whole set: `ls-files -s` says which of them git tracks and the blob it holds
+/// for each, and `hash-object` says what blob the file on disk would be — through the
+/// path's own clean filters, so a line-ending conversion is not a difference. A path
+/// `status` did not name is clean against `HEAD` in the index, so the index's blob is
+/// `HEAD`'s.
+///
+/// - Tracked, and the hashes agree ⇒ git holds these bytes. Not a subject.
+/// - Tracked, and they differ ⇒ **flagged**, for **every** member: the path is dirty under
+///   the settled predicate, whatever its writer does. A file the install replaces loses the
+///   bytes; one it merges into has them swept into the install commit, which is a pathspec
+///   commit and takes the worktree's bytes at every path it names, whatever the index
+///   entry's flag says (driven: a hidden edit in an assume-unchanged `CLAUDE.md` rode a
+///   first install's commit at exit 0 with no finding).
+/// - Untracked ⇒ **ignored** (status lists every other untracked file), and a subject
+///   **only where the install replaces the file**. One it merges into keeps its bytes and
+///   joins no commit, which is why an ignored `CLAUDE.md` is still not a subject.
+///
+/// A link or a directory at the path is not asked: a replaced member there was refused
+/// before this question ([`replaced_path_refusal`]), and a merge through a link changes
+/// its target by what it would have changed in a file.
+///
+/// **Fails closed on the file, open on git.** A file `hash-object` cannot read is one
+/// nobody can vouch for, so the whole tracked set is reported flagged. A git that cannot
+/// answer `ls-files` could not have answered `status` either, and that is `None` — the
+/// door's existing answer for a git it cannot use.
+fn unseen_by_status(
+    jigc_home: &Path,
+    members: &[InstallMember],
+    status: &DirtyPaths,
+) -> Option<Unseen> {
+    let asked: Vec<&InstallMember> = members
+        .iter()
+        .filter(|member| !status.contains(&member.path))
+        .filter(|member| {
+            std::fs::symlink_metadata(jigc_home.join(&member.path)).is_ok_and(|meta| meta.is_file())
+        })
+        .collect();
+    let mut unseen = Unseen::default();
+    if asked.is_empty() {
+        return Some(unseen);
+    }
+    // `<mode> <blob> <stage>\t<path>` per NUL-terminated record; only stage 0 is a held
+    // copy (an unmerged path is in `status`, so it is not asked at all).
+    let mut ls: Vec<&str> = vec!["ls-files", "-s", "-z", "--"];
+    ls.extend(asked.iter().map(|member| member.path.as_str()));
+    let out = git_output(jigc_home, ls)?;
+    if !out.status.success() {
+        return None;
+    }
+    let listing = String::from_utf8_lossy(&out.stdout).into_owned();
+    let held: std::collections::BTreeMap<&str, &str> = listing
+        .split('\0')
+        .filter_map(|record| record.split_once('\t'))
+        .filter_map(|(entry, path)| {
+            let mut fields = entry.split(' ');
+            let (_mode, blob, stage) = (fields.next()?, fields.next()?, fields.next()?);
+            (stage == "0").then_some((path, blob))
+        })
+        .collect();
+
+    let (tracked, untracked): (Vec<&InstallMember>, Vec<&InstallMember>) = asked
+        .into_iter()
+        .partition(|member| held.contains_key(member.path.as_str()));
+    unseen.ignored = untracked
+        .into_iter()
+        .filter(|member| matches!(member.writer, InstallWriter::Replaces { .. }))
+        .map(|member| member.path.clone())
+        .collect();
+    if tracked.is_empty() {
+        return Some(unseen);
+    }
+    let mut hash: Vec<&str> = vec!["hash-object", "--"];
+    hash.extend(tracked.iter().map(|member| member.path.as_str()));
+    let on_disk: Option<Vec<String>> = git_output(jigc_home, hash)
+        .filter(|out| out.status.success())
+        .map(|out| {
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .map(str::to_string)
+                .collect()
+        })
+        .filter(|blobs: &Vec<String>| blobs.len() == tracked.len());
+    unseen.flagged = match on_disk {
+        Some(blobs) => tracked
+            .iter()
+            .zip(blobs)
+            .filter(|(member, blob)| held.get(member.path.as_str()) != Some(&blob.as_str()))
+            .map(|(member, _)| member.path.clone())
+            .collect(),
+        None => tracked.iter().map(|member| member.path.clone()).collect(),
+    };
+    Some(unseen)
+}
+
+/// **Keep the hash of what this run left at every ignored path it replaces**, in the
+/// install footprint record ([`INSTALL_FOOTPRINT_PATH`]) — the provenance an upgrade needs
+/// (the rc.24 fix pass, the ignored sibling of `(R1, F1)`).
+///
+/// A repository that ignores a jigc install path re-runs `setup` over its own earlier
+/// output forever, and no commit ever holds that output. Two of the five ownership oracles
+/// ([`OwnContent`]) recognise it only while the generated content is what *this* build
+/// writes, so across an upgrade that changes the bootstrap body the older build's file is
+/// jigc's own and nothing in it says so — the provenance-is-not-recoverable-from-content
+/// case the record exists for. It is the same fact the record already keeps for a path a
+/// run staged and did not commit: *jigc wrote these bytes, and no commit holds them*. So
+/// these paths join it, [`InstallSubject::probe`] subtracts them like any other member of
+/// it, and the same re-verification applies — an edit after the run changes the hash and
+/// re-arms the refusal.
+///
+/// **An upsert, not a rewrite.** [`commit_install`] rewrites the record whole at each of
+/// its exits from what *its* pathspec left uncommitted, and an ignored path is never in
+/// that pathspec. This runs after it and replaces only the lines for the paths it names.
+///
+/// Best-effort, like every write of this record: losing it costs one refusal over jigc's
+/// own file where the content moved between builds, never a loss. Nothing is recorded
+/// when git cannot answer.
+fn record_ignored_footprint(jigc_home: &Path, members: &[InstallMember]) {
+    let Some(status) = dirty_against_head(jigc_home, &[]) else {
+        return;
+    };
+    let Some(unseen) = unseen_by_status(jigc_home, members, &status) else {
+        return;
+    };
+    let file = jigc_home.join(INSTALL_FOOTPRINT_PATH);
+    let kept = std::fs::read_to_string(&file).unwrap_or_default();
+    let mut body: String = kept
+        .lines()
+        .filter(|line| {
+            line.split_once(' ')
+                .is_some_and(|(_, path)| !unseen.ignored.contains(path))
+        })
+        .map(|line| format!("{line}\n"))
+        .collect();
+    for path in unseen.ignored.iter().filter(|path| !path.contains('\n')) {
+        if let Ok(bytes) = std::fs::read(jigc_home.join(path)) {
+            body.push_str(&engine::file_state::hash_bytes(&bytes));
+            body.push(' ');
+            body.push_str(path);
+            body.push('\n');
+        }
+    }
+    if body == kept {
+        return;
+    }
+    if body.is_empty() {
+        clear_install_footprint(jigc_home);
+        return;
+    }
+    if let Some(parent) = file.parent()
+        && std::fs::create_dir_all(parent).is_err()
+    {
+        return;
+    }
+    let _ = std::fs::write(&file, body);
 }
 
 /// A git step of the install commit that **ran and refused** — the loud half of
@@ -2785,7 +3150,9 @@ impl InstallCommitRejection {
                 } else {
                     engine::finalize::SetupHead::Born
                 };
-                return engine::finalize::setup_dirty_install_finding(dirty, true, head);
+                // Nor is any listed path unseen here: the classes exist at the pre-write
+                // ask alone, and the gate refused there over every one that was not jigc's.
+                return engine::finalize::setup_dirty_install_finding(dirty, true, head, None);
             }
         };
         let message = if staged {
@@ -5079,8 +5446,6 @@ const PACKS_FILE_REL: &str = ".jigc/config/packs.yaml";
 /// is on disk, so a second `setup` over an already-marked file is a byte-identical
 /// no-op (`serde_yaml_ng` serialization of a stable mapping is deterministic).
 fn write_compose_marker(jigc_home: &Path) -> std::io::Result<()> {
-    use serde_yaml_ng::{Mapping, Value};
-
     // **Asked before the read, without following a link** (the rc.24 fix pass). The
     // round-trip below reads the file and writes it back, so a link at `packs.yaml` — or a
     // linked `config/` — had it parse and re-emit a file jigc does not own, comments
@@ -5098,12 +5463,40 @@ fn write_compose_marker(jigc_home: &Path) -> std::io::Result<()> {
     }
     let path = jigc_home.join(PACKS_FILE_REL);
 
-    // Parse the existing file (preserving its content) or start from an empty
-    // mapping. A malformed existing `packs.yaml` is a real authoring fault — surface
-    // it rather than clobbering the human's bytes.
-    let mut mapping = match std::fs::read_to_string(&path) {
-        Ok(text) if text.trim().is_empty() => Mapping::new(),
-        Ok(text) => serde_yaml_ng::from_str::<Value>(&text)
+    let existing = match std::fs::read_to_string(&path) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e),
+    };
+    let rendered = compose_marker_rendering(existing.as_deref(), &path)?;
+
+    // Idempotent: write only when the bytes change, so a second setup touches nothing.
+    if existing.as_deref() != Some(rendered.as_str()) {
+        crate::regular_file::replace(jigc_home, PACKS_FILE_REL, rendered.as_bytes())?;
+    }
+    Ok(())
+}
+
+/// **The bytes [`write_compose_marker`] leaves at `packs.yaml`**, given what is there now
+/// (`None` for an absent file) — the writer's whole decision, with no I/O in it.
+///
+/// Its own function because two callers need the same answer and must not be able to
+/// disagree (the rc.24 fix pass, the ignored sibling of `(R1, F1)`): the writer, and the
+/// ownership oracle that asks whether the write would leave the file byte-identical
+/// ([`OwnContent::SettledComposeMarker`]). An oracle that re-derived the rendering would be
+/// a second copy of the round-trip, and the day they differed it would exempt a file the
+/// writer is about to change.
+///
+/// Parse the existing text (preserving its content) or start from an empty mapping, set
+/// the marker, serialize. A malformed existing `packs.yaml` is a real authoring fault —
+/// surfaced rather than clobbered. `path` only names the file in that error.
+fn compose_marker_rendering(existing: Option<&str>, path: &Path) -> std::io::Result<String> {
+    use serde_yaml_ng::{Mapping, Value};
+
+    let mut mapping = match existing {
+        None => Mapping::new(),
+        Some(text) if text.trim().is_empty() => Mapping::new(),
+        Some(text) => serde_yaml_ng::from_str::<Value>(text)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
             .as_mapping()
             .cloned()
@@ -5113,8 +5506,6 @@ fn write_compose_marker(jigc_home: &Path) -> std::io::Result<()> {
                     format!("{} is not a YAML mapping", path.display()),
                 )
             })?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Mapping::new(),
-        Err(e) => return Err(e),
     };
 
     mapping.insert(Value::from(COMPOSE_MARKER_KEY), Value::Bool(true));
@@ -5124,12 +5515,7 @@ fn write_compose_marker(jigc_home: &Path) -> std::io::Result<()> {
     if !rendered.ends_with('\n') {
         rendered.push('\n');
     }
-
-    // Idempotent: write only when the bytes change, so a second setup touches nothing.
-    if std::fs::read_to_string(&path).ok().as_deref() != Some(rendered.as_str()) {
-        crate::regular_file::replace(jigc_home, PACKS_FILE_REL, rendered.as_bytes())?;
-    }
-    Ok(())
+    Ok(rendered)
 }
 
 #[cfg(test)]

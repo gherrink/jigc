@@ -278,13 +278,14 @@ fn every_replacing_member_refuses_a_committed_link_and_its_target_is_untouched()
     for member in replacing_members() {
         let path = member.path.as_str();
         let plant = target_plant(path);
-        assert_eq!(
-            member.writer,
-            cli::setup::InstallWriter::Replaces {
-                refusal: refusal_code(path)
-            },
+        assert!(
+            matches!(
+                member.writer,
+                cli::setup::InstallWriter::Replaces { refusal, .. } if refusal == refusal_code(path)
+            ),
             "`{path}`: the production table declares the existing write-failure code this \
-             suite pins for it"
+             suite pins for it: {:?}",
+            member.writer
         );
         let (repo, home) = born_repo("class");
         let (repo, home) = (repo.path(), home.path());
