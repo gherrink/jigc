@@ -214,7 +214,10 @@ fn finalize_long_about() -> String {
          (`git commit --amend` rewrites `HEAD` from the index, so anything staged would be \
          folded into a commit that never carried it); there is no flag that declares that \
          carry-over deliberate, so on that arm the index gate above is this refusal and not \
-         the carryover gate.",
+         the carryover gate.\n\n\
+         It commits in the checkout it is run in. From a linked worktree you made (`git \
+         worktree add`) that checkout commits code only: a task carrying a managed doc is \
+         refused there and routed at the main checkout, the one home jigc's doc store has.",
         // One help text serves both arms, so the coverage sentence renders the **ordinary**
         // model's spelling and the paragraph below names the amend arm's own index gate in
         // its own words (the F-10 review's MEDIUM-3). Rendering the amend spelling here
@@ -336,6 +339,165 @@ pub(crate) fn amend_staged_doc_finding(
         ),
         Some(Location::addressed(home.to_string(), 1, 1)),
         Some(route),
+    )
+}
+
+/// Which position raised [`linked_worktree_doc_finding`]. The finding, its code and its
+/// message are one identity for one condition; the **route** differs because the state
+/// differs — the [`AmendDocDoor`] mold, one family member over.
+pub(crate) enum LinkedDocDoor<'a> {
+    /// A **`jigc doc` write verb**, refused before anything is read from the committed
+    /// store or staged. The task is untouched and still good for code.
+    ///
+    /// `staged_code` is `Some` when this checkout's index holds anything: with code staged, a
+    /// doc write is either the second half of a mixed change (two commits) or the repair of
+    /// an anchor that code broke — and that second case has exactly one exit, so the route
+    /// names it rather than leaving the reader at a floor it cannot clear from here.
+    ///
+    /// `workflow` is the task's recorded workflow, which that exit's mint is named with
+    /// ([`crate::render::CodeOnlyCheckout::relocate_change_steps`]).
+    Write {
+        task: &'a str,
+        staged_code: Option<&'a str>,
+    },
+    /// The **backstop**, over a doc the task has already staged — `jigc task finalize`, its
+    /// `--dry-run`, and the preview `jigc task validate` and bare `jigc start` read. It is
+    /// reached by a doc staged from the main checkout and finalized from here, by a task an
+    /// older binary staged, and by a file hand-placed in the area.
+    ///
+    /// `lands_from_home` is the answer the main checkout's own finalize would give this
+    /// task's base pin ([`engine::finalize::decide_base_repin`], asked of jigc_home's
+    /// facts): the route sends the task there only when that door would take it, because
+    /// *"finalize it from the main checkout"* printed over a pin that door refuses is a
+    /// dead end whose natural way out reverts a branch's committed wording.
+    Staged {
+        task: &'a str,
+        lands_from_home: bool,
+    },
+}
+
+/// **The linked-worktree doc guard** (the rc.24 fix pass — the linked-worktree sibling of
+/// `(R3, F7)`; `design/storage.md` → CLI and git) — a managed doc that **promotes** is
+/// neither written nor finalized from a checkout that commits code only
+/// ([`crate::render::CodeOnlyCheckout`], which carries the driven cells and the rule).
+///
+/// **The axis is the promote predicate**, exactly as for [`amend_staged_doc_finding`]:
+/// membership is [`engine::finalize::promote_destination`] answering `Some`, the function
+/// the promote plan is built from, so the gate and the promote cannot disagree about which
+/// docs would be written into the wrong checkout. The transient `commit` doc answers `None`
+/// and stays writable, which is what keeps a code-only task working here.
+///
+/// **A new code, because the only existing one with this meaning cannot say it truthfully.**
+/// `finalize.amend-staged-doc` is this refusal's sibling — a promoting doc in a task whose
+/// commit cannot carry it — but its message, its routes and its stated-at tokens are all the
+/// amend arm's, and its write-door route (*an ordinary task commits the promoted doc*) is
+/// false here: an ordinary task is exactly what cannot.
+///
+/// One finding per doc, keyed at the **destination** — the file a finalize from here would
+/// have written into the wrong checkout — on the `promote-clobber` / `amend-staged-doc`
+/// precedent, so the write door and the backstop key one doc identically.
+pub(crate) fn linked_worktree_doc_finding(
+    address: &str,
+    home: &str,
+    checkout: &crate::render::CodeOnlyCheckout,
+    door: LinkedDocDoor<'_>,
+) -> Finding {
+    let cd = checkout.cd_home();
+    let route = match door {
+        LinkedDocDoor::Write { task, staged_code } => {
+            let here = format!(
+                "write it from the main checkout: `{cd}`, then `jigc start \"<intent>\"` \
+                 starts a task there, whose finalize commits the doc on that checkout's \
+                 branch. Task `{task}` stays usable here for code — `jigc task finalize \
+                 {task}` commits what you `git add` on this branch — so a change to both \
+                 lands as two commits"
+            );
+            match staged_code {
+                Some(workflow) => format!(
+                    "{here}. If this write repairs a code anchor the code staged here broke \
+                     (`doc-code.symbol-exists`), the two must land in ONE commit, and only \
+                     the main checkout can make it: {}, make this write and finalize there, \
+                     then drop this task with `jigc task discard {task} --force`",
+                    checkout.relocate_change_steps(workflow),
+                ),
+                None => here,
+            }
+        }
+        LinkedDocDoor::Staged {
+            task,
+            lands_from_home: true,
+        } => format!(
+            "finalize this task from the main checkout: `{cd}`, then `jigc task finalize \
+             {task}` commits its docs on that checkout's branch. Code staged in this \
+             worktree is not part of that commit and stays staged here — a task of its own \
+             commits it from here"
+        ),
+        LinkedDocDoor::Staged {
+            task,
+            lands_from_home: false,
+        } => format!(
+            "this task cannot land from the main checkout either — its base and that \
+             checkout's history have moved apart over what it staged. Read the staged doc \
+             back (`jigc doc show {address} --task {task}`), author it again in a task \
+             started from the main checkout (`{cd}`, then `jigc start \"<intent>\"`), and \
+             drop this one with `jigc task discard {task} --force`; code staged in this \
+             worktree stays staged, for a task of its own to commit from here"
+        ),
+    };
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.linked-worktree-doc",
+        // One message for one condition, worded to be true at **both** positions — before
+        // the doc is staged and after — so it says what a finalize from here *would* do.
+        format!(
+            "`{address}` is a managed doc, and it promotes to `{home}` — but this task \
+             commits in {standing}, and jigc's doc store has one home, the main checkout at \
+             `{main}`: a finalize from here would read `{home}` there and write it here, \
+             over whatever this checkout holds at that path",
+            standing = checkout.standing(),
+            main = checkout.home,
+        ),
+        Some(Location::addressed(home.to_string(), 1, 1)),
+        Some(engine::finding::Route::human(route)),
+    )
+}
+
+/// **The same guard at a mint that cannot land** (the rc.24 fix pass) — a door about to
+/// mint a task whose *only* product is a doc that promotes, from a checkout that commits
+/// code only. Refused before the mint, because a task that can never finalize is one the
+/// agent must then find and discard: the doc-only commit model's workflows (their finalize
+/// commits their docs and nothing else — `design/finalize.md` → The doc-only arm) and
+/// `jigc migrate`, whose product is always the migrated doc.
+///
+/// `single-task` and every other ordinary workflow are **never** refused here: their
+/// product may be code alone, so the mint states the rule
+/// ([`crate::render::code_only_statement`]) and the first promoting write is what refuses.
+///
+/// **Keyed at the checkout**, the file-path form's *a directory with no managed identity*
+/// member (`repo.operation-in-progress` at a fan-out worktree is the precedent): no doc is
+/// named yet — its slug is minted from a title nobody has typed — so the one honest subject
+/// is the worktree the mint would have committed in. `what` names the act and `rerun` the
+/// same act as the reader types it from the main checkout.
+pub(crate) fn linked_worktree_mint_finding(
+    what: &str,
+    rerun: &str,
+    checkout: &crate::render::CodeOnlyCheckout,
+) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.linked-worktree-doc",
+        format!(
+            "{what} mints a task whose only product is a managed doc, and this checkout — \
+             {standing} — commits code only: jigc's doc store has one home, the main \
+             checkout at `{main}`, so nothing that task wrote could land from here",
+            standing = checkout.standing(),
+            main = checkout.home,
+        ),
+        Some(Location::addressed(checkout.site.checkout.clone(), 1, 1)),
+        Some(engine::finding::Route::human(format!(
+            "run it from the main checkout: `{cd}`, then {rerun}",
+            cd = checkout.cd_home(),
+        ))),
     )
 }
 
@@ -2312,6 +2474,14 @@ impl TaskArea {
         crate::render::CommitSite::differing(&self.jigc_home, &self.repo_root)
     }
 
+    /// **The checkout this task's finalize would commit in, when that checkout commits code
+    /// only** — the linked-worktree doc guard's predicate, asked of this task
+    /// ([`crate::render::CodeOnlyCheckout::of_task`]; the rc.24 fix pass). `None` from the
+    /// main checkout and for a milestone sub-task, whose boundary is the milestone's.
+    fn code_only_checkout(&self) -> Option<crate::render::CodeOnlyCheckout> {
+        crate::render::CodeOnlyCheckout::of_task(&self.jigc_home, &self.repo_root, &self.id)
+    }
+
     /// The project cascade layer's config dir (`<repo>/.jigc/config`) — the override
     /// surface `task validate` / `finalize` resolve to feed the engine's severity
     /// post-pass (`design/validation.md` → Every finding-emitting entry point must
@@ -2713,6 +2883,95 @@ impl TaskArea {
         Ok(findings)
     }
 
+    /// **The linked-worktree doc guard's backstop**, as one producer both positions ask (the
+    /// rc.24 fix pass) — [`Self::amend_staged_doc_findings`]'s sibling and a method for its
+    /// reason: it is asked at the committing door ahead of everything else that door
+    /// decides **and** inside [`Self::preview_gates`], and one spelling is what keeps the
+    /// preview and the refusal the same finding under the same key.
+    ///
+    /// Empty unless this task's finalize would commit in a checkout that commits code only
+    /// ([`Self::code_only_checkout`]). The subject is [`Self::staged_docs`] filtered by
+    /// [`engine::finalize::promote_destination`] — the promote plan's own membership — so a
+    /// code-only task, whose one staged doc is the transient `commit`, yields nothing and
+    /// lands exactly as before.
+    ///
+    /// The write doors refuse a promoting doc before it is staged, so this is reached only
+    /// by a doc staged some other way: from the main checkout and finalized from here, by a
+    /// task an older binary staged, by a file hand-placed in the area. It sits at the
+    /// destroying site for the same reason the amend arm's gate does — the door that would
+    /// write the file is the one that must not.
+    fn linked_worktree_doc_findings(
+        &self,
+        schemas: &BTreeMap<String, Schema>,
+    ) -> Result<Vec<Finding>> {
+        let Some(checkout) = self.code_only_checkout() else {
+            return Ok(Vec::new());
+        };
+        let mut staged = Vec::new();
+        for (name, _) in self.staged_docs()? {
+            let Some(address) = engine::state::staged_doc_id(&name) else {
+                continue;
+            };
+            let Some((ty, slug)) = address.split_once(':') else {
+                continue;
+            };
+            let Some(schema) = schemas.get(ty) else {
+                continue;
+            };
+            let Some(home) = engine::finalize::promote_destination(schema, slug) else {
+                continue;
+            };
+            staged.push((address.to_string(), home));
+        }
+        if staged.is_empty() {
+            return Ok(Vec::new());
+        }
+        // Asked once for the whole set: the answer is about the task's base pin, not about
+        // any one doc.
+        let lands_from_home = self.lands_from_home(schemas);
+        Ok(staged
+            .into_iter()
+            .map(|(address, home)| {
+                linked_worktree_doc_finding(
+                    &address,
+                    &home,
+                    &checkout,
+                    LinkedDocDoor::Staged {
+                        task: &self.id,
+                        lands_from_home,
+                    },
+                )
+            })
+            .collect())
+    }
+
+    /// Whether `jigc task finalize` **typed in the main checkout** would take this task's
+    /// base pin — the phase-1 decision that door makes ([`decide_base_repin`]), over that
+    /// checkout's own facts: its `HEAD`, the paths its history changed since the pin, and
+    /// its dirty tree. It is what picks the backstop's route
+    /// ([`LinkedDocDoor::Staged::lands_from_home`]).
+    ///
+    /// **A probe that cannot answer reads as `false`**, which errs toward the route that
+    /// always runs (read the doc back, re-author it there, discard this task) and away
+    /// from the one that can dead-end on `finalize.base-mismatch`.
+    fn lands_from_home(&self, schemas: &BTreeMap<String, Schema>) -> bool {
+        let decide = || -> Result<bool> {
+            let base = self.base()?;
+            let head = git_head(&self.jigc_home)?;
+            Ok(decide_base_repin(
+                &self.id,
+                &self.dir,
+                &base,
+                &head,
+                &git_changed_paths(&self.jigc_home, &base.sha, &head)?,
+                &git_dirty_paths(&self.jigc_home)?,
+                schemas,
+            )
+            .is_ok())
+        };
+        decide().unwrap_or(false)
+    }
+
     fn preview_gates(
         &self,
         report: engine::result::ValidationReport,
@@ -2741,6 +3000,16 @@ impl TaskArea {
         let amending = state::read_amend_pin(&self.dir)
             .with_context(|| format!("could not read the amend marker for task `{}`", self.id))?
             .is_some();
+        // **The linked-worktree doc guard previews first** (the rc.24 fix pass), and for the
+        // amend staged-doc gate's stated reason: it is a finding about this task's staged
+        // content, reported at the exit the committing door takes — the `content-findings`
+        // member, not a new [`crate::gate_coverage::GATE_COVERAGE`] row, which would put a
+        // clause into every task's composed `what's-left:` line for a check that is inert
+        // from the main checkout. It is asked on every arm: a doc that promotes cannot land
+        // from a code-only checkout under any commit model.
+        let linked = self.linked_worktree_doc_findings(schemas)?;
+        let linked_docs = !linked.is_empty();
+        previewed.extend(linked);
         if amending {
             previewed.extend(self.amend_index_findings()?);
             // **The arm's second gate previews beside its first** (the F-10 review's
@@ -2752,7 +3021,14 @@ impl TaskArea {
             // comment records for the index gate. A separate member would put an
             // amend-only clause into the composed `what's-left:` line of every ordinary
             // task, for a check that is inert on every one of them.
-            previewed.extend(self.amend_staged_doc_findings(schemas)?);
+            //
+            // …unless the linked-worktree guard has already answered for the same staged
+            // docs, at the same destinations: the committing door returns on that guard
+            // before it reaches this one, and this gate's route (*an ordinary task commits
+            // the doc*) is false of a checkout no ordinary task can commit one from.
+            if !linked_docs {
+                previewed.extend(self.amend_staged_doc_findings(schemas)?);
+            }
         }
         // The doc-only arm is the carryover gate's second exemption (M55), and the preview
         // asks the same precedence the committing door does ([`Self::commits_doc_only`]): a
@@ -3021,6 +3297,19 @@ impl TaskArea {
         let base = self.base()?;
         let head = git_head(&self.repo_root)?;
         let schemas = self.schemas()?;
+
+        // **The linked-worktree doc guard's backstop** (the rc.24 fix pass;
+        // `design/finalize.md` → 1. Preflight): a staged doc that promotes cannot land from
+        // a checkout that commits code only, on any commit model — the promote phase below
+        // would read it against the main checkout and write it into this one. Ahead of the
+        // base-pin decision and of the amend arm's gates, deliberately: both of those answer
+        // with a route that keeps the reader in this checkout (*switch back*, *start an
+        // ordinary task*), and no act taken here can make this task's docs land here. The
+        // `--dry-run` forecast is this same function, so it refuses identically.
+        let linked = self.linked_worktree_doc_findings(&schemas)?;
+        if !linked.is_empty() {
+            return self.blocked(linked, format);
+        }
 
         // **The commit model this task takes** (F-10) — the `amend` marker `jigc task amend`
         // wrote, holding the sha of the commit it pins. `None` on every other task, which is
@@ -4407,7 +4696,16 @@ impl TaskArea {
                  task recorded no changelog entry",
             ),
             Some(work_unit_location(id)),
-            Some(changelog_gate_route(id, door, self.changelog_gate_refuses()?).into()),
+            Some(
+                changelog_gate_route(
+                    id,
+                    &workflow_id,
+                    door,
+                    self.changelog_gate_refuses()?,
+                    self.code_only_checkout().as_ref(),
+                )
+                .into(),
+            ),
         )))
     }
 
@@ -4560,7 +4858,41 @@ impl TaskArea {
 ///   task survives and the in-task verbs run; the not-user-facing case gets the one
 ///   exit that actually clears a blocking finding, since *"no action is needed"* does
 ///   not clear one.
-fn changelog_gate_route(id: &str, door: AdvisoryDoor, refuses: bool) -> String {
+///
+/// **And a fourth, on a different axis: a checkout that commits code only** (the rc.24 fix
+/// pass; [`crate::render::CodeOnlyCheckout`]). The changelog promotes, so none of the three
+/// shapes above names a verb that runs from a linked worktree the user made — the in-task
+/// write is refused there, and so is the first write of a `record-change` task minted there.
+/// The entry is recorded from the main checkout instead, as a commit of its own; and where
+/// the project has promoted the gate to `blocking`, the change itself has to land from
+/// there, because only that checkout can commit a change together with its entry.
+fn changelog_gate_route(
+    id: &str,
+    workflow: &str,
+    door: AdvisoryDoor,
+    refuses: bool,
+    code_only: Option<&crate::render::CodeOnlyCheckout>,
+) -> String {
+    if let Some(checkout) = code_only {
+        let cd = checkout.cd_home();
+        if refuses {
+            return format!(
+                "this project has promoted the gate to `blocking`, and this checkout commits \
+                 code only, so the entry cannot be recorded in this task: land the change \
+                 from the main checkout, where one task commits both — {}, record the entry \
+                 and finalize there, then drop this task with `jigc task discard {id} \
+                 --force`; if the change is not user-facing, lower the gate back with `jigc \
+                 config set validation.{CHANGELOG_GATE_CODE}.severity advisory`",
+                checkout.relocate_change_steps(workflow),
+            );
+        }
+        return format!(
+            "if the change is user-facing, record it from the main checkout — this checkout \
+             commits code only, so the entry is a commit of its own: `{cd}`, then `jigc \
+             start --workflow record-change \"<what changed>\"`; if it is not user-facing, \
+             no action is needed"
+        );
+    }
     let in_task = format!(
         "`jigc doc create changelog --title Changelog --task {id}`, then \
          `jigc doc add-item changelog:changelog#unreleased-changes --title <category> \

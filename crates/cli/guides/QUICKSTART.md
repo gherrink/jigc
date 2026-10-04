@@ -201,6 +201,13 @@ If validation blocks (a dangling forward reference, a missing required slot, a
 malformed value), finalize makes no commit and surfaces the findings with a
 route for the next action. Fix and re-run.
 
+Finalize commits in the checkout you run it in. In a linked worktree you made
+yourself (`git worktree add`) that is the worktree's own branch — and such a
+worktree **commits code only**: jigc's managed docs have one home, the main
+checkout, so a `jigc doc` write of one from the worktree is refused and routed
+there. `jigc start` tells you so when you run it from such a worktree; the rule
+and its routes are in [MIGRATING.md](MIGRATING.md) → Reconciling and backing out.
+
 Your own `pre-commit` / `commit-msg` hooks still run: no jigc commit of *your*
 work passes `--no-verify`, so they are your policy, and a hook that rejects the
 commit stops the finalize. Nothing is committed, the task survives — its staged

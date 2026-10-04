@@ -77,6 +77,8 @@ mod ledger_entry_seven_discharged;
 mod ledger_record_truth;
 #[path = "../leg_two_refusal_homed.rs"]
 mod leg_two_refusal_homed;
+#[path = "../linked_worktree_doc_home.rs"]
+mod linked_worktree_doc_home;
 #[path = "../manifest_freeze_fence.rs"]
 mod manifest_freeze_fence;
 #[path = "../mention_resolves.rs"]

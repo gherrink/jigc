@@ -245,6 +245,11 @@ pub enum Command {
     /// The write verbs (`create`/`add-item`/`set-field`/`set-slot`/`author`/…)
     /// work the active task's working area; the read verbs
     /// (`show`/`schema`/`list`) serve the committed store.
+    ///
+    /// That store has one home, the main checkout. From a linked worktree you made
+    /// (`git worktree add`) a task commits code only: a write verb refuses a managed
+    /// doc there and routes at the main checkout — the task's own commit doc stays
+    /// writable — and the read verbs serve the main checkout's store and say so.
     Doc {
         #[command(subcommand)]
         verb: DocCommand,
@@ -1315,6 +1320,13 @@ fn run_validate_store(format: Format) -> Outcome {
                 "{}",
                 render::validation_store(format, &report, &unbaselined)
             );
+            // The sweep's subject is the main checkout's store from every cwd; from a
+            // linked worktree the reader made, one stderr line says so (the rc.24 fix pass).
+            if let Some(standing) = crate::repo::discover_repo_root(&cwd)
+                && let Some(home) = crate::repo::jigc_home(&standing)
+            {
+                render::served_from_home_note(&home, &standing);
+            }
             // The exit rule honors the exit-flipping exceptions (`validation.md` → Exit
             // semantics), and asks [`render::STORE_EXIT_FLIPS`] which they are rather than
             // re-enumerating them here: each member declares its own matcher, closing line
@@ -1919,7 +1931,14 @@ fn run_orient(format: Format) -> Outcome {
     };
     match orient::orient(&cwd) {
         Ok(view) => {
-            println!("{}", render::orientation(format, &view));
+            // The checkout the reader stands in, when it commits code only (the rc.24 fix
+            // pass) — a text-only paragraph under the header, `None` from the main checkout
+            // and from outside any repository, where the view's own arm answers.
+            let checkout = crate::repo::discover_repo_root(&cwd).and_then(|standing| {
+                let home = crate::repo::jigc_home(&standing)?;
+                render::CodeOnlyCheckout::of_reader(&home, &standing)
+            });
+            println!("{}", render::orientation(format, &view, checkout.as_ref()));
             Outcome::success()
         }
         Err(err) => crate::invocation_log::operational_failure(format, &err),

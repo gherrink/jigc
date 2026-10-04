@@ -40,7 +40,18 @@ pub const ROUTING_FOOTER: &str =
 /// `Format → renderer` mapping for orientation (`implementation/module-layout.md`
 /// → Renderers / Format selection). MVP human-pretty is agent-text + light
 /// styling, so it currently renders identically to agent (the TUI is post-MVP).
-pub fn orientation(format: Format, view: &OrientationView) -> String {
+///
+/// `checkout` is the **code-only checkout** the reader stands in, when it stands in one
+/// ([`CodeOnlyCheckout::of_reader`]; the rc.24 fix pass): the two set-up arms print
+/// [`code_only_statement`] directly under the provenance header, so the door every session
+/// opens through says which checkout commits what before any task is started. Text-only —
+/// `OrientationView` is a pinned envelope and gains no key — and `None` from the main
+/// checkout, where the bytes do not move.
+pub fn orientation(
+    format: Format,
+    view: &OrientationView,
+    checkout: Option<&CodeOnlyCheckout>,
+) -> String {
     match format {
         Format::Json => json(view),
         Format::Agent | Format::Human => match view {
@@ -50,7 +61,11 @@ pub fn orientation(format: Format, view: &OrientationView) -> String {
                 workflows,
                 next_steps,
                 ..
-            } => orientation_clean(header, &Orientation::new(workflows.clone()), next_steps),
+            } => orientation_clean(
+                &header_with_checkout(header, checkout),
+                &Orientation::new(workflows.clone()),
+                next_steps,
+            ),
             OrientationView::ActiveTask {
                 header,
                 tasks,
@@ -58,12 +73,26 @@ pub fn orientation(format: Format, view: &OrientationView) -> String {
                 next_steps,
                 ..
             } => orientation_active(
-                header,
+                &header_with_checkout(header, checkout),
                 tasks,
                 &Orientation::new(workflows.clone()),
                 next_steps,
             ),
         },
+    }
+}
+
+/// The orientation's provenance header with the [`code_only_statement`] under it, when the
+/// reader stands in a code-only checkout — and the header alone, byte-identical, when not.
+/// Both set-up arms print the header on a line of its own, so the statement rides it rather
+/// than each arm learning a second position for one paragraph.
+fn header_with_checkout(header: &str, checkout: Option<&CodeOnlyCheckout>) -> String {
+    match checkout {
+        None => header.to_owned(),
+        Some(checkout) => format!(
+            "{header}\n\n{}",
+            code_only_statement(checkout).trim_end_matches('\n'),
+        ),
     }
 }
 
@@ -351,9 +380,17 @@ pub fn composed(format: Format, view: &Composition) -> String {
             let gates = create_gates_line(&view.gates);
             let also_open = also_open_block(&view.also_open);
             let amending = amending_block(view);
+            // Above the step text, beside the amend block and for its reason: the body
+            // below invites writes this checkout refuses (law 3 — stated before it binds).
+            let checkout = view
+                .code_only
+                .as_ref()
+                .map(code_only_statement)
+                .unwrap_or_default();
             let mut out = String::with_capacity(
                 header.len()
                     + amending.len()
+                    + checkout.len()
                     + text.len()
                     + state.len()
                     + gates.len()
@@ -363,6 +400,7 @@ pub fn composed(format: Format, view: &Composition) -> String {
             );
             out.push_str(&header);
             out.push_str(&amending);
+            out.push_str(&checkout);
             out.push_str(text);
             // An empty composition — a sub-task whose every step is omitted (M55) — leaves
             // no line to terminate, so the trailer opens the view with no blank line.
@@ -1597,6 +1635,16 @@ pub const FINALIZE_FAMILY: &[FinalizeCode] = &[
                        own area and N sub-task areas keys them apart",
     },
     FinalizeCode {
+        code: "finalize.linked-worktree-doc",
+        producer: "cli::task",
+        subject: FinalizeSubject::FilePath,
+        subject_note: "the canonical home a managed doc would be promoted to from a checkout \
+                       that commits code only — an ordinary task in a linked worktree the user \
+                       made, whose finalize reads the doc at the main checkout and writes it \
+                       into the worktree; one finding per doc, asked at every `jigc doc` write leaf too, \
+                       and at a mint that cannot land keyed at the checkout itself",
+    },
+    FinalizeCode {
         code: "finalize.migration-no-replacement",
         producer: "engine::finalize",
         subject: FinalizeSubject::FilePath,
@@ -2095,6 +2143,201 @@ impl CommitSite {
                 .flatten()
                 .map(|head| head.trim_start_matches("refs/heads/").to_string()),
         })
+    }
+}
+
+/// **A checkout that commits code only** — the standing checkout of an ordinary task whose
+/// commit boundary lands somewhere other than the checkout the doc store binds to (the
+/// rc.24 fix pass — the linked-worktree sibling of `(R3, F7)`; `design/storage.md` → CLI and
+/// git: *"only code (never a managed doc) ever rides a worktree"*, *"the committed doc-store
+/// has one canonical home (the main checkout)"*).
+///
+/// `jigc task finalize` reads the doc store, the reconciler's baseline and the clobber guard
+/// at **jigc_home** and promotes into the checkout the command was typed in
+/// ([`CommitSite`]). From a `git worktree add` the user made those are two directories, so
+/// every guard the task door has is aimed at a checkout it does not write into. Driven on
+/// `1.0.0-rc.24`, all at exit 0: a hand edit in the linked worktree gone from every blob; an
+/// untracked file at a created doc's home there overwritten; the first doc task on a branch
+/// whose doc differs from the main checkout's silently reverting the branch's committed
+/// wording; and the next task there blocked on an "external edit" nobody made. The rule the
+/// design already states is what closes all four, so it is enforced rather than restated: a
+/// doc that **promotes** is neither written nor finalized from such a checkout.
+///
+/// **It is a predicate about a commit boundary, not a path shape**, which is why it has
+/// three constructors and no fourth spelling anywhere else:
+///
+/// * [`Self::of_task`] — an existing task: *ordinary* (owned by no milestone) and
+///   [`CommitSite::differing`]. A fan-out **sub-task** is exempt because its boundary is
+///   `jigc milestone finalize`, whose whole subject is jigc_home — its docs ride the
+///   by-task-id directory join, never its worktree. An *ordinary* task minted inside a
+///   fan-out worktree is not exempt: its `jigc task finalize` commits there.
+/// * [`Self::of_mint`] — a mint about to happen. Every minting door mints an ordinary task
+///   (a task joins a milestone only through `jigc milestone add-task`), so the answer is
+///   [`CommitSite::differing`] alone.
+/// * [`Self::of_reader`] — no task in hand: the checkout-level statement bare `jigc start`
+///   makes and the note the committed-store reads print. jigc's own fan-out worktrees are
+///   left out, so a sub-agent's surfaces do not move by a byte — the fan-out is the declared
+///   design there, and its own composed text already says where its docs go.
+///
+/// **Text-only**, the bound [`CommitSite`] carries and for the same reason: every envelope
+/// it could ride is pinned and the additive-key window closed at M48.
+#[derive(Debug)]
+pub struct CodeOnlyCheckout {
+    /// The standing checkout and the branch a commit here advances — the same pair, spelled
+    /// the same way, the forecast and the landed ack name.
+    pub site: CommitSite,
+    /// **jigc_home**, the main checkout — absolute and canonicalized, because it is the
+    /// operand of the `cd` every route here opens with, and a reader standing in a linked
+    /// worktree can paste nothing shorter (`design/surface-contract.md` → The printed-path
+    /// fence, the *pasteable shell bytes* disposition).
+    pub home: String,
+    /// The standing checkout, absolute and canonicalized — the `-C` operand of a `git` span
+    /// that must run against *this* checkout's index from wherever the reader is standing
+    /// ([`engine::finding::git_at`]). [`CommitSite::checkout`] is the spelling a sentence
+    /// names it by; this is the one a command runs against.
+    pub standing: std::path::PathBuf,
+}
+
+impl CodeOnlyCheckout {
+    fn differing(jigc_home: &std::path::Path, standing: &std::path::Path) -> Option<Self> {
+        let site = CommitSite::differing(jigc_home, standing)?;
+        let real =
+            |path: &std::path::Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        Some(CodeOnlyCheckout {
+            site,
+            home: real(jigc_home).display().to_string(),
+            standing: real(standing),
+        })
+    }
+
+    /// The predicate over an **existing task** — see the type.
+    pub(crate) fn of_task(
+        jigc_home: &std::path::Path,
+        standing: &std::path::Path,
+        task_id: &str,
+    ) -> Option<Self> {
+        if engine::milestone::owning_milestone(&jigc_home.join(".jigc"), task_id).is_some() {
+            return None;
+        }
+        Self::differing(jigc_home, standing)
+    }
+
+    /// The predicate over a **mint about to happen** — see the type.
+    pub(crate) fn of_mint(jigc_home: &std::path::Path, standing: &std::path::Path) -> Option<Self> {
+        Self::differing(jigc_home, standing)
+    }
+
+    /// The predicate with **no task in hand** — see the type.
+    pub(crate) fn of_reader(
+        jigc_home: &std::path::Path,
+        standing: &std::path::Path,
+    ) -> Option<Self> {
+        if crate::repo::posture_subject(standing).is_dedicated() {
+            return None;
+        }
+        Self::differing(jigc_home, standing)
+    }
+
+    /// `the linked worktree at `<path>`[ on branch `<b>`]` — the one spelling of the
+    /// standing checkout every sentence below shares with [`commit_site_line`].
+    pub(crate) fn standing(&self) -> String {
+        let branch = match &self.site.branch {
+            Some(branch) => format!(" on branch `{branch}`"),
+            None => String::new(),
+        };
+        format!("the linked worktree at `{}`{branch}", self.site.checkout)
+    }
+
+    /// The pasteable `cd` into the main checkout — one producer, so the statement and every
+    /// refusal's route name one directory one way.
+    pub(crate) fn cd_home(&self) -> String {
+        format!("cd {}", engine::finding::shell_operand(&self.home))
+    }
+
+    /// **How a change staged here is taken to the main checkout to land there** — the one
+    /// exit for a change that must share a commit with a managed doc (the code that breaks a
+    /// committed doc's anchor, plus the repair; a change whose changelog entry the project
+    /// gates on). This checkout cannot make that commit and the main one cannot see this
+    /// index, so the staged change travels: git's stash is shared by every worktree of a
+    /// repository, which is what lets one `git stash` here be popped there. A stash takes
+    /// the tracked changes whole — staged and unstaged — and the route says so, because a
+    /// reader told only *the staged change* would find their unstaged edits gone from the
+    /// worktree unannounced; `--index` puts each back on the side of the index it was on.
+    ///
+    /// The order is load-bearing and is what the route spells: the branch's commits first
+    /// (the change was made on top of them), then the **mint**, then the pop — a change
+    /// staged *before* the task exists is `finalize.carried-staged` at that task's own
+    /// finalize. Every `git` span is aimed with `-C`, so each runs from wherever the reader
+    /// is standing; the `jigc` spans are the main checkout's, reached by the `cd`.
+    ///
+    /// `workflow` is the workflow of the task being relocated: the mint is named with it
+    /// (`jigc start --workflow <W> …`) because the bare front door composes the router, which
+    /// mints nothing — and a route whose *"mint the task"* step mints none would send the pop
+    /// ahead of the task after all.
+    pub(crate) fn relocate_change_steps(&self, workflow: &str) -> String {
+        let home = std::path::Path::new(&self.home);
+        let merge = match &self.site.branch {
+            Some(branch) => format!(
+                " bring this branch's commits over if that checkout lacks any (`{}`),",
+                engine::finding::git_at(
+                    home,
+                    &format!("merge {}", engine::finding::shell_operand(branch)),
+                ),
+            ),
+            // A detached standing checkout has no branch to merge by name; the reader's
+            // commits there are theirs to carry, and inventing a ref would be a guess.
+            None => String::new(),
+        };
+        format!(
+            "`{stash}` takes this worktree's uncommitted changes out of it, staged and \
+             unstaged; then `{cd}`,{merge} \
+             mint the task there (`jigc start --workflow {workflow} \"<intent>\"`) and \
+             restore them (`{pop}`)",
+            stash = engine::finding::git_at(&self.standing, "stash"),
+            cd = self.cd_home(),
+            workflow = engine::finding::shell_operand(workflow),
+            pop = engine::finding::git_at(home, "stash pop --index"),
+        )
+    }
+}
+
+/// **The stated-at half of the code-only rule** — the block a compose that stands in a
+/// [`CodeOnlyCheckout`] leads with, and the paragraph bare `jigc start` prints under its
+/// header (`design/surface-contract.md` → law 3, the seam-generated tier: a contract that
+/// binds only in a checkout state no step can know is stated by the seam that knows it).
+///
+/// It is above the step text for [`amending_block`]'s reason: the composed body below it
+/// invites `jigc doc` writes this checkout refuses, and a reader who met the refusal before
+/// the rule would have been ambushed by it. It prints **only** when the predicate holds, so
+/// no compose from the main checkout moves a byte — which is what keeps every compose
+/// golden where it is.
+pub(crate) fn code_only_statement(checkout: &CodeOnlyCheckout) -> String {
+    format!(
+        "checkout: {} — a task here commits here, and code only\n  \
+         jigc's doc store has one home, the main checkout at `{}`: a `jigc doc` write of a \
+         managed doc from this checkout is refused, whatever a workflow's steps invite (the \
+         task's own commit doc is the exception — it is the commit message, not a file).\n  \
+         To write a doc, start its task from the main checkout — `{}`, then `jigc start \
+         \"<intent>\"` — so a change to both code and docs is two tasks and two commits.\n\n",
+        checkout.standing(),
+        checkout.home,
+        checkout.cd_home(),
+    )
+}
+
+/// **The read-side half** — the one stderr line a committed-store read prints from a
+/// [`CodeOnlyCheckout`] (`jigc doc show`, `jigc doc list`, `jigc validate`), on
+/// `stale_read_hint`'s mold: stdout stays the pinned read, byte-identical, and the note
+/// says which checkout it answered for. The files beside the reader are the branch's own
+/// copies, and nothing on the read said they were not what was served.
+pub(crate) fn served_from_home_note(jigc_home: &std::path::Path, standing: &std::path::Path) {
+    if let Some(checkout) = CodeOnlyCheckout::of_reader(jigc_home, standing) {
+        eprintln!(
+            "note: served from the main checkout at `{}` — jigc's doc store has one home, not \
+             {} you are standing in",
+            checkout.home,
+            checkout.standing(),
+        );
     }
 }
 
@@ -7890,6 +8133,7 @@ mod tests {
             sub_task_of: None,
             also_open: Vec::new(),
             amend: None,
+            code_only: None,
         };
 
         let agent = composed(Format::Agent, &granting);
@@ -7915,6 +8159,7 @@ mod tests {
             sub_task_of: None,
             also_open: Vec::new(),
             amend: None,
+            code_only: None,
         };
         let bare = composed(Format::Agent, &gateless);
         assert!(!bare.contains("create-gates"), "got:\n{bare}");
@@ -7985,6 +8230,7 @@ mod tests {
             sub_task_of: None,
             also_open: Vec::new(),
             amend: None,
+            code_only: None,
         };
 
         let agent = composed(Format::Agent, &minted);
@@ -8007,6 +8253,7 @@ mod tests {
             sub_task_of: None,
             also_open: Vec::new(),
             amend: None,
+            code_only: None,
         };
         let re = composed(Format::Agent, &resumed);
         assert!(!re.contains("task minted"), "got:\n{re}");
@@ -8021,6 +8268,7 @@ mod tests {
             sub_task_of: None,
             also_open: Vec::new(),
             amend: None,
+            code_only: None,
         };
         let routed = composed(Format::Agent, &router);
         assert!(!routed.contains("task minted"), "got:\n{routed}");
@@ -8053,6 +8301,7 @@ mod tests {
             sub_task_of: None,
             also_open: Vec::new(),
             amend: None,
+            code_only: None,
         };
 
         let agent = composed(Format::Agent, &minted);
@@ -8120,6 +8369,7 @@ mod tests {
             sub_task_of: None,
             also_open: Vec::new(),
             amend: None,
+            code_only: None,
         };
         let re = composed(Format::Agent, &resumed);
         assert!(!re.contains("task minted"), "got:\n{re}");
@@ -8148,6 +8398,7 @@ mod tests {
             }),
             also_open: Vec::new(),
             amend: None,
+            code_only: None,
         };
         let sub_agent = composed(Format::Agent, &sub);
         let sub_scope = sub_agent
@@ -8244,6 +8495,7 @@ mod tests {
             sub_task_of: None,
             also_open: Vec::new(),
             amend: None,
+            code_only: None,
         };
         let routed = composed(Format::Agent, &router);
         for needle in ["resume:", "what's-left:", "task scope:"] {
@@ -8285,6 +8537,7 @@ mod tests {
             sub_task_of: None,
             also_open: Vec::new(),
             amend: None,
+            code_only: None,
         };
         let agent = composed(Format::Agent, &minted);
         let line = agent
@@ -8331,6 +8584,7 @@ mod tests {
             sub_task_of: None,
             also_open: Vec::new(),
             amend: None,
+            code_only: None,
         };
         let routed = composed(Format::Agent, &router);
         assert!(!routed.contains("what's-left:"), "got:\n{routed}");

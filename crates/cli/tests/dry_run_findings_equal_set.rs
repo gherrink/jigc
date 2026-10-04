@@ -1102,6 +1102,16 @@ const DRY_RUN_REFUSALS: &[Refusal] = &[
             cell: Cell::Driven(corpus_sub_task),
         },
     },
+    // **Previewed, as the amend arm's staged-doc gate is** (the rc.24 fix pass): the
+    // linked-worktree doc guard's backstop is a finding about this task's staged content,
+    // and `TaskArea::preview_gates` extends its set with the same producer on every arm — so
+    // `jigc task validate` reports it at the finalize exit, under the same `(code, target)`
+    // (`linked_worktree_doc_home.rs` drives all four doors and compares the keys).
+    Refusal {
+        span: Span::Finalize,
+        producer: "`TaskArea::linked_worktree_doc_findings`",
+        disposition: Disposition::Previewed("content-findings"),
+    },
     Refusal {
         span: Span::Finalize,
         producer: "`engine::finalize::decide_base_repin`'s overlap block",

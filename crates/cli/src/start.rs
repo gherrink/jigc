@@ -204,8 +204,11 @@ pub(crate) fn mint_migration_in_repo(
     source_path: &str,
 ) -> Result<MintedTask> {
     // The migrate path (mint → stage → compose) stays uniformly on the caller's
-    // worktree `repo_root`; threading it to jigc_home is the deferred worktree-migrate
-    // concern (M31 Inc 2 binds the start/resume/reenter + task/finalize read paths).
+    // `repo_root` — and since the rc.24 fix pass that is always jigc_home: `jigc migrate`
+    // refuses from any other checkout before it reaches this mint
+    // (`crate::migrate::migrate_in_repo`), because a task minted under a linked worktree's
+    // own `.jigc/tasks/` is one no other door can see. Teaching this path the two roots is
+    // the parked linked-worktree doc work, not a fix here.
     let jigc_root = repo_root.join(".jigc");
     let base = read_head(repo_root)?;
     // The carryover gate's door half (M43 T1): snapshot the pre-task staged state —
@@ -964,6 +967,15 @@ pub struct Composition {
     /// (`design/command-output-contract.md` §1), so the mint ack's facts are presentation and
     /// add no key to the contract.
     pub amend: Option<AmendTarget>,
+    /// The **code-only checkout** this compose stands in, when it stands in one — the
+    /// `checkout:` presentation block ([`crate::render::code_only_statement`]; the rc.24 fix
+    /// pass). `None` from the main checkout, which renders no bytes at all: the omitting
+    /// context stays inert, the [`amend`](Composition::amend) mold, and that is what keeps
+    /// every compose golden where it is.
+    ///
+    /// It rides here rather than on the engine's composed view for that field's reason — the
+    /// composed-output JSON is pinned at exactly `{task, text}`.
+    pub code_only: Option<crate::render::CodeOnlyCheckout>,
 }
 
 /// The commit a `jigc task amend` mint pinned — what the `amending:` block names.
@@ -1665,6 +1677,10 @@ pub(crate) fn compose_minted_in_repo(
         also_open: Vec::new(),
         // Likewise the amend target: the door that knows the commit attaches it.
         amend: None,
+        // The verb minted in the checkout it was typed in, and every mint is an ordinary
+        // task — so the mint's own form of the code-only predicate, asked of that checkout.
+        code_only: crate::repo::jigc_home(repo_root)
+            .and_then(|home| crate::render::CodeOnlyCheckout::of_mint(&home, repo_root)),
     })
 }
 
@@ -1879,6 +1895,16 @@ fn compose_core(
             schemas,
         )
     } else if should_provision_commit_doc(&def) {
+        // A mint that cannot land is refused before it mints (the rc.24 fix pass): a
+        // workflow on the doc-only commit model, from a checkout that commits code only.
+        refuse_doc_only_mint_from_a_code_only_checkout(
+            &store_root,
+            repo_root,
+            workflow_id,
+            &def,
+            source,
+            overrides,
+        )?;
         // Mint the task (reads HEAD). Minting after the definition loads so a
         // malformed pack never leaves a task dir behind. The `--slug` override, when
         // present, drives the minted id verbatim (validated inside `mint_in_repo`).
@@ -1975,10 +2001,11 @@ fn compose_core(
         ctx: &ctx,
     };
     let composed = compose::compose(&def, &filled, &commands, &ctx).map_err(finding_to_err)?;
+    let minted = task_id.is_some();
     Ok(Composition {
         // The fresh front door mints iff the workflow is `creates-task: true` (the arm
         // above that sets `task_id`), so on this path the mint *is* the presence of an id.
-        minted: task_id.is_some(),
+        minted,
         view: ComposedWorkflow {
             task: task_id,
             text: resolve_research_advisory(composed.text, advise_research),
@@ -2000,7 +2027,62 @@ fn compose_core(
         // `--preview`, a no-intent compose and the milestone feed all stay inert.
         also_open: Vec::new(),
         amend: None,
+        // **Where this compose stands, when that is a checkout that commits code only**
+        // (the rc.24 fix pass). A mint always yields an ordinary task, so the minting arm
+        // asks the mint's form of the predicate; a compose that minted nothing — the
+        // router, a no-intent compose, a `--preview` — has no task to ask about and takes
+        // the reader's form, which leaves jigc's own fan-out worktrees out.
+        code_only: if minted {
+            crate::render::CodeOnlyCheckout::of_mint(&store_root, repo_root)
+        } else {
+            crate::render::CodeOnlyCheckout::of_reader(&store_root, repo_root)
+        },
     })
+}
+
+/// **Refuse a doc-only workflow's mint from a checkout that commits code only** (the rc.24
+/// fix pass; [`crate::task::linked_worktree_mint_finding`] carries the rule and its bound).
+///
+/// The doc-only commit model's finalize commits the task's docs and nothing else
+/// (`design/finalize.md` → The doc-only arm), so from a linked worktree the user made there
+/// is no arm of that task that can land: every write it exists to make is refused, and its
+/// finalize would have nothing to commit. The mint is where that is knowable, so it is
+/// where it is said — before a task area exists to be found and discarded.
+///
+/// **Asked through the one predicate** ([`crate::task::doc_only_commit`]) over the same
+/// definition, with the project's phase-4 deltas already applied, and the same filled step
+/// source shape the finalize-time arm reads ([`with_composing_step_source`]) — so the mint
+/// refuses exactly the workflows whose finalize would take the doc-only arm, and
+/// `single-task`, whose product may be code alone, is never among them. No task context is
+/// bound: the walk is over include ids, which the inline data-value pass never adds to.
+fn refuse_doc_only_mint_from_a_code_only_checkout(
+    jigc_home: &Path,
+    standing: &Path,
+    workflow_id: &str,
+    def: &WorkflowDef,
+    source: &dyn StepSource,
+    overrides: &ComposeOverrides,
+) -> Result<()> {
+    let Some(checkout) = crate::render::CodeOnlyCheckout::of_mint(jigc_home, standing) else {
+        return Ok(());
+    };
+    let ctx = ComposeContext::default();
+    let filled = FillStepSource {
+        inner: source,
+        fills: &overrides.fills,
+        ctx: &ctx,
+    };
+    if !crate::task::doc_only_commit(def, &filled, false) {
+        return Ok(());
+    }
+    let door = engine::finding::shell_operand(workflow_id);
+    Err(crate::render::envelope_finding_error(
+        &crate::task::linked_worktree_mint_finding(
+            &format!("workflow `{workflow_id}`"),
+            &format!("`jigc start --workflow {door} \"<intent>\"`"),
+            &checkout,
+        ),
+    ))
 }
 
 /// **Phase 4 over a workflow definition** — `def` as the project's cascade resolves it:
@@ -3179,6 +3261,11 @@ fn compose_task_workflow(
         // a task (`jigc start --task`, `jigc workflow <W> --task`) name the commit being
         // repaired, exactly as the mint does, and neither can drift from the other.
         amend: amend_target_of(repo_root, task_dir, None)?,
+        // …and the checkout it is re-composed in, when that one commits code only — asked of
+        // *this* task (a sub-task's boundary is the milestone's, so it answers `None`) and of
+        // where *this* invocation stands, which is the checkout a `jigc task finalize` typed
+        // next would commit in.
+        code_only: crate::render::CodeOnlyCheckout::of_task(repo_root, composed_in, id),
     })
 }
 

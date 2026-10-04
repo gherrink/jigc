@@ -2410,7 +2410,7 @@ fn the_owe_set_is_derived_and_a_withdrawn_declarer_reddens_every_door() {
     // The derivation, read off the code rather than restated: every `Owed` row's code is in
     // the set, and the `Exempt(reason)` row is not.
     let owed = ambush_class_codes();
-    let mut exempt_rows = 0usize;
+    let mut exempt_rows: Vec<&str> = Vec::new();
     for row in AMBUSH_CONTRACTS {
         match row.disposition {
             AmbushDisposition::Owed => assert!(
@@ -2419,7 +2419,7 @@ fn the_owe_set_is_derived_and_a_withdrawn_declarer_reddens_every_door() {
                 row.code,
             ),
             AmbushDisposition::Exempt(reason) => {
-                exempt_rows += 1;
+                exempt_rows.push(row.code);
                 assert!(
                     !owed.contains(row.code),
                     "`{}` states an exemption — {reason} — so the owe-set must NOT carry it: \
@@ -2455,11 +2455,18 @@ fn the_owe_set_is_derived_and_a_withdrawn_declarer_reddens_every_door() {
             }
         }
     }
+    // **Named, not counted** (the rc.24 fix pass). This read *"exactly one stated
+    // exemption"* while there was one; a second arrived — the linked-worktree doc guard, a
+    // contract that binds only in a checkout state no step can know, and is therefore stated
+    // by the seam rather than by a pack — and a count would have been bumped to 2 without
+    // saying which two. Each is the cell a hand-list could not express, because on a
+    // hand-list an exempt code is indistinguishable from one somebody forgot.
+    exempt_rows.sort_unstable();
     assert_eq!(
-        exempt_rows, 1,
-        "the source set carries exactly one stated exemption — the cell a hand-list could \
-         not express, because on a hand-list it is indistinguishable from a code somebody \
-         forgot",
+        exempt_rows,
+        ["finalize.linked-worktree-doc", "setup.dirty-install-path"],
+        "the source set's stated exemptions, by code — a new one is a decision with its \
+         reason on the row, and it is named here when it is made",
     );
 
     // The consequence, driven: one owed code's declarers withdrawn from a pack copy.

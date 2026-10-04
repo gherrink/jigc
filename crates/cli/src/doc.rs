@@ -3433,6 +3433,39 @@ fn ref_relations(schema: &Schema) -> Vec<String> {
         .collect()
 }
 
+/// **The linked-worktree doc guard, at the two minting write leaves** (`jigc doc create`,
+/// `jigc doc author`) — [`ActiveTask::refuse_promoting_doc_from_a_code_only_checkout`], asked
+/// of the identity the call is about to mint.
+///
+/// Ranked between [`state::create_admission`] and [`title_pre_check`]: a doctype this
+/// workflow cannot create is refused as that first, and every arm of the pre-check below
+/// reads the committed store — whose answer, from a checkout this task cannot commit a doc
+/// in, is about a file the create would never have written to. The identity comes from
+/// [`state::create_incumbent`], the probe the pre-check itself mints through, so the home
+/// this refusal keys at is the one the create would have promoted to; its own refusal (a
+/// title that slugs to nothing) is an argument-shape fault and keeps its rank.
+fn refuse_create_from_a_code_only_checkout(
+    task: &ActiveTask,
+    schema: &Schema,
+    verb: &str,
+    title: &str,
+    slug_override: Option<&str>,
+) -> Result<(), DocFailure> {
+    let ty = schema.ty.as_str();
+    // Nothing to ask from the main checkout or of a transient doctype — and asking nothing
+    // is what keeps every ordinary create's bytes and probes exactly where they were.
+    if engine::finalize::promote_destination(schema, "").is_none()
+        || render::CodeOnlyCheckout::of_task(&task.jigc_home, &task.standing, &task.id).is_none()
+    {
+        return Ok(());
+    }
+    let minted =
+        state::create_incumbent(&task.dir, schema, ty, title, slug_override, &task.jigc_home)
+            .map_err(|f| block(&f, verb, ty))?;
+    let address = parse_addr(&minted.address)?;
+    task.refuse_promoting_doc_from_a_code_only_checkout(schema, ty, address.slug.as_str())
+}
+
 /// **The title pre-check** — the one seam `jigc doc create` and `jigc doc author` share,
 /// closing the write path's *"success over a title that never landed"* class
 /// (`design/write-commands.md` → The four-way write over a committed doc, the **fourth**
@@ -4037,6 +4070,7 @@ fn run_create(
     // has nothing to roll back.
     let (schema, entry) = state::create_admission(&schemas, &gate.allows_create, type_name)
         .map_err(|f| block(&f, "create", type_name))?;
+    refuse_create_from_a_code_only_checkout(&task, schema, "create", title, slug_override)?;
     title_pre_check(&task, schema, entry, "create", title, slug_override)?;
     // Materialize the doctype's doc-level `default:` / `set: on-create` header fields
     // (clock-side CLI work) so the created instance carries them before render. In
@@ -4157,6 +4191,13 @@ fn run_author(
     // payload parse above: an unparseable payload is an argument-shape defect.
     let (schema, entry) = state::create_admission(&schemas, &gate.allows_create, doctype)
         .map_err(|f| block(&f, "author", doctype))?;
+    refuse_create_from_a_code_only_checkout(
+        &task,
+        schema,
+        "author",
+        &plan.title,
+        slug_override.as_deref(),
+    )?;
     title_pre_check(
         &task,
         schema,
@@ -4359,6 +4400,7 @@ fn run_show(
         Ok(out) => {
             println!("{out}");
             stale_read_hint(&jigc_home, &address);
+            served_from_home_note(cwd, &jigc_home);
             Ok(())
         }
         Err(failure) => Err(reroute_unadopted(
@@ -4396,6 +4438,17 @@ fn run_show(
 /// (**"any edits"** — the check is existence-only, so a just-copied-in, still
 /// identical staged copy is not asserted to differ), and it hands the reader the
 /// staged read under an explicit *if that task is yours* clause.
+/// The committed-store reads' **which checkout answered** note
+/// ([`render::served_from_home_note`]; the rc.24 fix pass) — asked of the checkout the
+/// read was typed in. The store binds to the main checkout from every cwd, so from a linked
+/// worktree the reader made, the file beside them is the branch's own copy and the read
+/// served a different one. One stderr line; stdout is the pinned read, untouched.
+fn served_from_home_note(cwd: &Path, jigc_home: &Path) {
+    if let Some(standing) = crate::repo::discover_repo_root(cwd) {
+        render::served_from_home_note(jigc_home, &standing);
+    }
+}
+
 fn stale_read_hint(jigc_home: &Path, address: &Address) {
     let jigc_root = jigc_home.join(".jigc");
     let tasks = jigc_root.join("tasks");
@@ -4898,6 +4951,7 @@ fn run_list(
     };
     render_listing(format, &docs, &empty_line);
     staged_listing_hint(&jigc_home, doctype);
+    served_from_home_note(cwd, &jigc_home);
     Ok(())
 }
 
@@ -6599,9 +6653,16 @@ struct ActiveTask {
     dir: PathBuf,
     /// **jigc_home** — the main checkout the `.jigc/` working area + committed doc-store
     /// bind to (M31 Inc 2 / WF3). Copy-on-first-touch resolves a base-committed
-    /// `<location>/<slug>.md` against it (`canonical_path`); `doc` verbs do no git I/O, so
-    /// jigc_home is the single base this surface needs.
+    /// `<location>/<slug>.md` against it (`canonical_path`). It is the base of every read
+    /// and every staged write this surface makes; the one question asked of anywhere else
+    /// is [`standing`](Self::standing)'s.
     jigc_home: PathBuf,
+    /// **The checkout this invocation stands in** — the worktree root walked up from the
+    /// caller's cwd, which is where a `jigc task finalize` typed next would commit. It
+    /// decides one thing here: whether this task's docs can land at all
+    /// ([`Self::refuse_promoting_doc_from_a_code_only_checkout`]). Every read and every
+    /// staged write still binds to [`jigc_home`](Self::jigc_home).
+    standing: PathBuf,
     pack: Box<dyn PackSource>,
 }
 
@@ -6625,6 +6686,10 @@ impl ActiveTask {
             crate::task::reject_malformed_work_unit_id(id)?;
         }
         let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
+        // Resolved by the same walk-up `jigc_home` layers over, so it cannot miss where
+        // that one answered; the fallback keeps the two equal, which is the main-checkout
+        // answer and leaves every guard keyed on their difference inert.
+        let standing = crate::repo::discover_repo_root(cwd).unwrap_or_else(|| jigc_home.clone());
         let jigc_root = jigc_home.join(".jigc");
         let tasks = jigc_root.join("tasks");
 
@@ -6639,6 +6704,7 @@ impl ActiveTask {
                 id: id.to_string(),
                 dir,
                 jigc_home,
+                standing,
                 pack: make_pack()?,
             });
         }
@@ -6658,6 +6724,7 @@ impl ActiveTask {
                     id,
                     dir,
                     jigc_home,
+                    standing,
                     pack: make_pack()?,
                 })
             }
@@ -6668,6 +6735,68 @@ impl ActiveTask {
                 ids.join(", ")
             ),
         }
+    }
+
+    /// **The linked-worktree doc guard, at the write door** (the rc.24 fix pass — the
+    /// linked-worktree sibling of `(R3, F7)`; `design/storage.md` → CLI and git): a doc that
+    /// **promotes** is not written from a checkout that commits code only
+    /// ([`render::CodeOnlyCheckout::of_task`]) — an ordinary task standing in a linked
+    /// worktree the user made, whose finalize would read the doc against the main checkout
+    /// and write it into this one.
+    ///
+    /// **Two seams, every write leaf.** The seven address-bearing arms (`set-field` and its
+    /// `--unset`, `set-slot`, `add-item`, `remove-item`, `retitle-item`, `rename`) all pass
+    /// through [`Self::read_or_copy_in`], which asks this first; `create` and `author` ask
+    /// it between admission and the title pre-check. That is the leaf set
+    /// [`doc_write_verbs`] derives from the clap tree, and
+    /// `tests/linked_worktree_doc_home.rs` iterates it so a tenth arm cannot join unasked.
+    ///
+    /// **Its rank** is after argument shape, the doctype-wide refusals and create admission
+    /// — none of which says anything about an instance — and before any read of the
+    /// committed store, because the refusal's whole claim is that this task must not take a
+    /// copy of it. It fires whether or not the doc is already staged: a staged copy that
+    /// cannot land is not improved by more writes, and the finalize backstop names its exit.
+    ///
+    /// The transient `commit` doc promotes nowhere ([`engine::finalize::promote_destination`]
+    /// answers `None`), so a code-only task authors its commit message here exactly as
+    /// before; and a milestone sub-task's docs ride the directory join, so its own writes
+    /// from its fan-out worktree are untouched.
+    fn refuse_promoting_doc_from_a_code_only_checkout(
+        &self,
+        schema: &Schema,
+        doctype: &str,
+        slug: &str,
+    ) -> Result<(), DocFailure> {
+        let Some(home) = engine::finalize::promote_destination(schema, slug) else {
+            return Ok(());
+        };
+        let Some(checkout) =
+            render::CodeOnlyCheckout::of_task(&self.jigc_home, &self.standing, &self.id)
+        else {
+            return Ok(());
+        };
+        // Whether this checkout's index holds anything — the one fact the route turns on
+        // (see [`crate::task::LinkedDocDoor::Write`]). A probe that cannot answer reads as
+        // *nothing staged*, which prints the shorter route and withholds no exit: the
+        // finalize floor that would need the longer one names the same anchor again.
+        //
+        // The task's recorded workflow rides with it, because the longer route's mint is
+        // named with it. A task that recorded none — which this door's own gate read
+        // already refuses with its own route — takes the shorter one for the same reason.
+        let workflow = crate::task::git_staged_paths(&self.standing)
+            .is_ok_and(|staged| !staged.is_empty())
+            .then(|| self.workflow_gate().ok())
+            .flatten()
+            .map(|(workflow, _)| workflow);
+        Err(DocFailure::block(crate::task::linked_worktree_doc_finding(
+            &format!("{doctype}:{slug}"),
+            &home,
+            &checkout,
+            crate::task::LinkedDocDoor::Write {
+                task: &self.id,
+                staged_code: workflow.as_deref(),
+            },
+        )))
     }
 
     /// Read the staged instance bytes the edit verb splices into, applying
@@ -6698,6 +6827,12 @@ impl ActiveTask {
         address: &Address,
         addr: &str,
     ) -> Result<EditBase, DocFailure> {
+        // Before the staged read and before the copy-in alike — see the guard's own rank.
+        self.refuse_promoting_doc_from_a_code_only_checkout(
+            schema,
+            address.r#type.as_str(),
+            address.slug.as_str(),
+        )?;
         if path.is_file() {
             return Ok(EditBase::staged(read_staged(path, addr)?));
         }

@@ -339,6 +339,7 @@ fn migrate_in_repo(
     if ctx.project_config.is_none() {
         return Err(crate::locate::not_set_up(&ctx.project_config_path()));
     }
+    let code_only = render::CodeOnlyCheckout::of_mint(&ctx.jigc_home, &ctx.repo_root);
     let repo_root = ctx.repo_root;
     let project_config = repo_root.join(".jigc").join("config");
 
@@ -376,6 +377,38 @@ fn migrate_in_repo(
     // door has not adjudicated must never reach the working area at all, and a refusal must
     // strand no task dir to resume from.
     let recorded = adjudicate_source_path(&repo_root, cwd, path, doctype)?;
+
+    // **From a checkout that commits code only, this door refuses before it reads, mints or
+    // stages anything** (the rc.24 fix pass; `design/storage.md` → CLI and git). A migration's
+    // product is always the migrated doc, and from a linked worktree the user made no task
+    // can commit one — and driven on `1.0.0-rc.24` the door did worse than mint a task that
+    // could not land: it minted under the *worktree's* own `.jigc/tasks/`, where no other
+    // door looks, so `jigc task list` answered without it and `jigc doc author --task <id>`
+    // answered `no task`. The whole spine below stays on the standing checkout, which is
+    // right once that checkout is the main one; this is the door that makes it so.
+    //
+    // Ranked below the three argument refusals above — an unknown doctype, a malformed
+    // `--slug` and an untrackable `<path>` are wrong from every checkout — and above the
+    // read, so the route can name the adjudicated source at the checkout it has to be
+    // migrated from, spelled absolute through the verb's own producer
+    // ([`engine::finding::migrate_at`]).
+    if let Some(checkout) = code_only {
+        let slug = slug_override
+            .map(|slug| format!(" --slug {slug}"))
+            .unwrap_or_default();
+        return Err(render::envelope_finding_error(
+            &crate::task::linked_worktree_mint_finding(
+                &format!("`jigc migrate --as {doctype}`"),
+                &format!(
+                    "`{} --as {doctype}{slug}` — that is the main checkout's copy of the \
+                     source, so a file only this branch carries has to reach it first (merge \
+                     the branch there)",
+                    engine::finding::migrate_at(Path::new(&checkout.home), &recorded),
+                ),
+                &checkout,
+            ),
+        ));
+    }
 
     // Read the foreign file's bytes (the source the seam carries). Resolve the path
     // against the repo root so a repo-relative `CHANGELOG.md` reaches the root file.

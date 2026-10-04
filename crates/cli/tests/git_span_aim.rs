@@ -334,6 +334,17 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
          the `Route` fence cannot see it; it is in the class because it is a remedy an \
          operator pastes, and it reaches the same home",
     ),
+    (
+        "crates/cli/src/render.rs",
+        "relocate_change_steps",
+        Aim::Aimed,
+        "the linked-worktree doc guard's one exit for a change that must share a commit with \
+         a managed doc (the rc.24 fix pass) — `git stash` aimed at the linked worktree, then \
+         `git merge <branch>` and `git stash pop --index` aimed at the main checkout. Three \
+         spans over TWO checkouts in one route, which is exactly the shape an unaimed span \
+         cannot express: the reader is standing in one of them and each command must run \
+         against the one it names",
+    ),
     // --- the one span in the class that is deliberately NOT a route ---
     (
         "crates/cli/src/ingest.rs",
@@ -651,6 +662,16 @@ const MIGRATE_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
         "the distinct-identity route under a migration's recorded `--slug` (M55): the id is \
          the override, so the correction is a re-migrate of the task's recorded source under \
          a distinct slug — a path jigc recorded, run from wherever the agent stands",
+    ),
+    (
+        "crates/cli/src/migrate.rs",
+        "migrate_in_repo",
+        Aim::Aimed,
+        "the door's refusal from a checkout that commits code only (the rc.24 fix pass): the \
+         route re-aims the migration at the MAIN checkout's copy of the adjudicated source, \
+         a path jigc computed against a checkout the reader is not standing in — so it is \
+         spelled absolute, and never the token the operator typed, which names this \
+         worktree's file",
     ),
     (
         "crates/cli/src/migrate.rs",
