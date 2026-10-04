@@ -1,0 +1,9 @@
+image        jigc-gate:registry-1.0.0-rc.24
+image-id     sha256:cead273d9c68f8e706dbccc71da04ad076e0c310747d8f95253ca4b8aa5f50bd
+jigc-version jigc 1.0.0-rc.24
+jigc-sha     unknown
+model        claude-sonnet-5
+permissions  bypassPermissions
+corpus-src   ~/ideas/halloway-adopted
+session-start 2026-10-03T22:21:47Z
+exit-code    0

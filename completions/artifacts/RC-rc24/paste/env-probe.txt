@@ -1,0 +1,1 @@
+Run this exact shell command and reply with only its one line of output: `if [ -n "${CLAUDECODE:-}" ]; then echo MAIN-SET; else echo MAIN-UNSET; fi`. Then start one sub-agent, have it run the same command with SUB in place of MAIN, and put its one line of output on a second line. Reply with those two lines and nothing else.

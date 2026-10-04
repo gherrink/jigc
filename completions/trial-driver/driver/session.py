@@ -277,7 +277,10 @@ def seed(corpus: pathlib.Path, turns: Sequence[str], frozen: pathlib.Path, *,
         if rc != 0:
             raise SystemExit(f"seed turn {i} failed (rc={rc}); the seed is void, not weak")
 
-        found = _find_transcript(out, session_id)
+        # A list — the main transcript, then the subagents'. Only the main one is
+        # the conversation, and a list holding subagents alone is not empty.
+        found = next((p for p in _find_transcript(out, session_id)
+                      if "subagents" not in p.parts), None)
         if found is None:
             # Loudly, and at the turn that lost it. The next turn would resume
             # nothing — which does not fail — so the seed would silently become a

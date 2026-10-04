@@ -1,0 +1,2 @@
+Reply with the single word ALPHA and do nothing else.
+Reply with the single word you gave me in your last message, followed by the word BETA, and do nothing else.

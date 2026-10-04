@@ -1,0 +1,9 @@
+session since 2026-10-03T22:24:01Z · 6 committing-door record(s) at exit 0 · 6 commit(s) created since
+commit    row        at      door  ·  subject  ·  Co-Authored-By lines
+a9f1851a  exact      HEAD    task finalize bound-what-the-service-will --format json  ·  docs(planning): record the "bound what the servi  ·  Co-Authored-By: Claude <noreply@anthropic.com>
+07a451ff  exact      HEAD    milestone create Bound what the service will accept --format json  ·  chore(milestone): open record for milestone:boun  ·  Co-Authored-By: Claude <noreply@anthropic.com>
+29ea968e  exact      HEAD    milestone add-task bound-what-the-service-will Reject a wire line long  ·  chore(milestone): record task:reject-a-wire-line  ·  Co-Authored-By: Claude <noreply@anthropic.com>
+bc3ab92f  exact      HEAD    milestone add-task bound-what-the-service-will Cap the store at 1000 d  ·  chore(milestone): record task:cap-the-store-at-1  ·  Co-Authored-By: Claude <noreply@anthropic.com>
+dafdc527  exact      HEAD    milestone add-task bound-what-the-service-will Reject a sample whose s  ·  chore(milestone): record task:reject-a-sample-wh  ·  Co-Authored-By: Claude <noreply@anthropic.com>
+cb4a90f3  exact      HEAD    milestone finalize bound-what-the-service-will --format json  ·  Finalize milestone bound-what-the-service-will (  ·  Co-Authored-By: Claude <noreply@anthropic.com>
+tally: exact 6

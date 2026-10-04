@@ -1,0 +1,19 @@
+{
+  "identity": {
+    "tag": "jigc-gate:registry-1.0.0-rc.24",
+    "image_id": "sha256:cead273d9c68f8e706dbccc71da04ad076e0c310747d8f95253ca4b8aa5f50bd",
+    "jigc_sha": "unknown",
+    "jigc_version": "jigc 1.0.0-rc.24",
+    "cli_version": "2.1.233 (Claude Code)"
+  },
+  "checks": {
+    "isolation": true,
+    "workspace_trusted": true,
+    "version_stamp": true,
+    "doc_code_probe": true,
+    "history_roundtrip": true,
+    "transcript_recoverable": true,
+    "no_host_instructions": true
+  },
+  "note": "verify-image.sh jigc-gate:registry-1.0.0-rc.24 1.0.0-rc.24 => 7 passed / 0 failed, 2026-10-03 (started 21:25:04Z, exit 0), check 4 (the host-YES/container-NO differential) among them, check 2 on the single-binary arm; this is a REGISTRY image of the PUBLISHED jigc 1.0.0-rc.24 (build-image.sh --registry 1.0.0-rc.24: cargo install jigc --version 1.0.0-rc.24 --locked from crates.io, with jigc-engine 0.1.0-rc.2; the image records layout single-binary and source 'registry jigc 1.0.0-rc.24'), so jigc_sha is 'unknown' by construction (no tree of ours enters the build) and image_id is what discriminates; verify-pair.sh not run: it has no probe set for this version and requires a sha-built old image, and crates.io never serves two builds under one version"
+}
