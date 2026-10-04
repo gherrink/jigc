@@ -304,19 +304,25 @@ pub enum Command {
     /// is complete — a milestone sub-task lands only through its milestone's own
     /// boundary, and the refusal's listing names each sub-task's two exits), and any
     /// other file under `.jigc/` that no index has a copy of —
-    /// a recorded config delta among them — blocks with
+    /// a recorded config delta among them, and the opt-in invocation log
+    /// (`.jigc/logs/invocations.jsonl`) once you have turned it on — blocks with
     /// `uninstall.untracked-workbench-file` (`git add <path>` is enough to make it
-    /// recoverable), and a file jigc did not write inside a working area under
-    /// `.jigc/tasks/` or `.jigc/milestones/`, or anything parked under
+    /// recoverable, except for a path git ignores, which the log always is: move
+    /// that out of `.jigc/` instead), and a file jigc did not write anywhere under
+    /// `.jigc/tasks/`, `.jigc/milestones/`, `.jigc/index/`, `.jigc/state/` or
+    /// `.jigc/logs/`, or anything parked under
     /// `.jigc/displaced/`, blocks with `uninstall.foreign-bytes` (move it out, or
     /// `rm -r` what you do not need — jigc has no verb that clears the parking home).
     /// Any of them removes nothing until you re-run — or pass `--force`, which deletes
-    /// all four with the install.
+    /// all four with the install. jigc's own caches and locks under `.jigc/index/`
+    /// and `.jigc/state/` are rebuildable, so they go with `.jigc/` — and the
+    /// teardown names each file it takes.
     Uninstall {
         /// Remove `.jigc/` even when it holds a fan-out worktree with content, an
-        /// open task's staged docs, or a workbench file no index has a copy of —
-        /// the explicit consent to destroy work no commit has a copy of. Inert when
-        /// all three guards are already clean.
+        /// open task's staged docs, a file jigc did not write, or a workbench file
+        /// no index has a copy of (the invocation log among them) — the explicit
+        /// consent to destroy work no commit has a copy of. Inert when all four
+        /// guards are already clean.
         #[arg(long)]
         force: bool,
     },

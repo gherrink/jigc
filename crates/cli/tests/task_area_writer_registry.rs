@@ -102,7 +102,7 @@ const DOCS_TREE_JOINS: &[(&str, usize, &str)] = &[
 /// the impossible in the other direction: these are the names the registry excludes.
 const COMPLEMENT_JOINS: &[(&str, usize, &str)] = &[(
     "crates/cli/src/task.rs",
-    3,
+    4,
     "`displace_foreign_area`'s `<area>.join(<complement entry>)` — the source of the move \
      that keeps a foreign byte out of the teardown — `foreign_areas`' own \
      `<area>.join(<complement entry>)`, which absolutizes the same entries so the three \
@@ -111,7 +111,12 @@ const COMPLEMENT_JOINS: &[(&str, usize, &str)] = &[(
      landed advisory prints them repo-relative through `render::repo_relative` rather than \
      as bare basenames an operator cannot act on (M53 Increment 2 / T3); all three names \
      come from `engine::state::foreign_area_paths`, so they are registry members' \
-     complement by construction",
+     complement by construction. **The fourth (the rc.24 fix pass, `(R9, F5)`)** is \
+     `foreign_areas`' `AreaKind::Transient` arm, which absolutizes each leaf of a transient \
+     directory no working area lives in (`.jigc/index/`, `.jigc/state/`, `.jigc/logs/`) to \
+     ask `crate::setup::own_transient_file` whether jigc wrote it: the name is a walked \
+     leaf of a directory that is no working area, and the leaves that survive the filter \
+     are that directory's complement",
 )];
 
 /// **The registry row itself**: production sites that join a name taken from

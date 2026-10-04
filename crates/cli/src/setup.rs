@@ -2099,7 +2099,9 @@ impl InstallSubject {
 /// bytes it left behind: `<hash> <path>` per line, in the **gitignored** workbench beside
 /// the other rebuildable state (`crate::gitignore::ENTRIES` carries `state/`, so it is
 /// never a subject of the install commit, of `jigc validate`, or of `uninstall`'s
-/// untracked-workbench guard).
+/// untracked-workbench guard). It is a member of the teardown's own-file row
+/// ([`own_transient_paths`]), so `uninstall` neither refuses over it as a byte jigc did not
+/// write nor takes it unnamed.
 ///
 /// It exists because provenance is not recoverable from content: a `.jigc/AGENT.md` an
 /// earlier refused run staged and a `.jigc/AGENT.md` the adopter hand-wrote to the same
@@ -2936,10 +2938,17 @@ impl RemovedArtifacts {
 ///   (`engine::state::foreign_area_paths`) plus the parking home no other guard owns —
 ///   blocks with `uninstall.foreign-bytes`. `.jigc/` is gitignored whole, so those bytes
 ///   are in no index either, which is the same ground the two above refuse on, said over
-///   the two subtrees the `ENTRIES` complement excludes. Clearing the parking home is the
-///   operator's own `rm`: jigc mints no verb for it (`settle-record.md` → §8);
+///   the subtrees the `ENTRIES` complement excludes. Clearing the parking home is the
+///   operator's own `rm`: jigc mints no verb for it (`settle-record.md` → §8). **Since the
+///   rc.24 fix pass the subject is every transient prefix no other guard owns**
+///   ([`PrefixOwner`]): a non-directory child of `.jigc/tasks/` or `.jigc/milestones/`,
+///   and every leaf under `.jigc/index/`, `.jigc/state/` or `.jigc/logs/` that is not one
+///   of jigc's own files there ([`own_transient_file`]) — five positions the teardown took
+///   at exit 0, named by nothing, while this comment counted *two* excluded subtrees;
 /// - **any other file under `.jigc/` that no index has a copy of** — the `ENTRIES`
-///   complement ([`workbench_paths`]) — blocks with
+///   complement ([`workbench_paths`]), **plus the opt-in invocation log** inside
+///   `.jigc/logs/`, the one file in a transient directory that jigc wrote and cannot
+///   rebuild — blocks with
 ///   `uninstall.untracked-workbench-file`. The same ground as the two above, stated over
 ///   the rest of the tree: it is an **added** third subject, and the two directories those
 ///   guards own are excluded from it by construction so their codes and routes keep
@@ -2948,6 +2957,13 @@ impl RemovedArtifacts {
 ///   drawn on the **bytes**, not on the path: a tracked file the operator has edited
 ///   without staging is listed in the index carrying the *old* content, so it refuses
 ///   here alongside the never-tracked ones ([`classify_workbench_paths`]).
+///
+/// **What no guard refuses over is jigc's own rebuildable state** — the file-state record,
+/// the edge index, their save locks and the install-footprint record
+/// ([`OwnTransientFile::Disposable`]). It goes with the tree, and it is **named** as it
+/// goes ([`narrate_own_state`]): the four guards and that one narration partition every
+/// byte under `.jigc/`, so the teardown takes nothing it has not either refused over or
+/// named.
 ///
 /// `force` is the operator's consent to delete. It skips the four guards, and — the one
 /// other thing this teardown refuses on its own — takes the adapter's owned guide artifact
@@ -2999,8 +3015,9 @@ pub fn run_uninstall(start: &Path, force: bool) -> Result<UninstallSummary, Find
 /// all while `.jigc/` holds the sole copy of anything: a worktree-shaped path with content
 /// ([`dirty_fanout_worktrees`]), an open task's staged docs
 /// ([`crate::task::staged_task_prose`]), or any other workbench file no index has a copy of
-/// ([`untracked_workbench_files`]), or a byte jigc did not write inside a working area or
-/// under `.jigc/displaced/` ([`workbench_foreign_subject`]) — all four probed in step 0.
+/// ([`untracked_workbench_files`], the opt-in invocation log among them), or a byte jigc
+/// did not write inside any transient prefix ([`workbench_foreign_subject`]) — all four
+/// probed in step 0.
 fn uninstall(
     jigc_home: &Path,
     profile: &AdapterProfile,
@@ -3371,7 +3388,17 @@ fn fanout_worktree_paths(jigc_home: &Path) -> std::io::Result<Vec<PathBuf>> {
 /// **It is a derivation, not a registry.** Membership is a path computation over the
 /// seven `ENTRIES` prefixes plus (in the caller) one `git` query; nothing enumerates the
 /// files themselves. A prefix added to `ENTRIES` narrows this set automatically, which is
-/// the point of asking that constant rather than re-listing it here.
+/// the point of asking that constant rather than re-listing it here — **and which is safe
+/// only because every excluded prefix has an owner** ([`PrefixOwner`], the rc.24 fix pass).
+/// Read alone, *narrows automatically* is the guard failing open: the excluded bytes went
+/// to whichever door owned them, and for `index/`, `state/` and `logs/` that was nobody.
+/// The foreign-byte guard now iterates the same constant and its default row refuses over
+/// every leaf of a prefix nobody stated an owner for.
+///
+/// **One member lies inside a transient prefix: the opt-in invocation log**
+/// ([`OwnTransientFile::SoleCopy`]). jigc wrote it, so it is no foreign byte; it is not a
+/// cache either, so it does not go with the tree — it is asked this subject's question,
+/// *does any index have a copy of these bytes?*, like every other path here.
 ///
 /// **The `ENTRIES` complement, not "everything untracked under `.jigc/`."** `tasks/` and
 /// `worktrees/` are *inside* `ENTRIES`, and both hold bytes no index has a copy of by
@@ -3410,10 +3437,7 @@ fn workbench_paths(jigc_home: &Path) -> std::io::Result<Vec<String>> {
     if !jigc_dir.is_dir() {
         return Ok(Vec::new());
     }
-    let transient: Vec<&str> = crate::gitignore::ENTRIES
-        .lines()
-        .map(|entry| entry.trim_end_matches('/'))
-        .collect();
+    let transient: Vec<&str> = transient_prefixes().collect();
 
     let mut stack: Vec<PathBuf> = Vec::new();
     for entry in std::fs::read_dir(&jigc_dir)? {
@@ -3447,8 +3471,210 @@ fn workbench_paths(jigc_home: &Path) -> std::io::Result<Vec<String>> {
         }
         paths.push(crate::render::repo_relative(jigc_home, &path));
     }
+    // The one file inside a transient directory that is nobody's cache: the opt-in
+    // invocation log ([`OwnTransientFile::SoleCopy`]). It joins this subject rather than
+    // the foreign-byte one because jigc wrote it, and it is asked the same question as the
+    // rest of the set — does any index have a copy of these bytes?
+    paths.extend(own_transient_leaves(jigc_home)?.sole_copy);
     paths.sort();
     Ok(paths)
+}
+
+/// The transient prefixes `.jigc/.gitignore` keeps out of git, bare (`tasks`, `index`, …) —
+/// read off [`crate::gitignore::ENTRIES`], the one home that set has.
+fn transient_prefixes() -> impl Iterator<Item = &'static str> {
+    crate::gitignore::ENTRIES
+        .lines()
+        .map(|entry| entry.trim_end_matches('/'))
+}
+
+/// **Who answers for the bytes inside one transient prefix** when the teardown removes
+/// `.jigc/` whole — the row every [`crate::gitignore::ENTRIES`] member resolves to, so the
+/// union of the guards' subjects is the tree and not the tree minus whatever nobody listed
+/// (the rc.24 fix pass, `(R9, F5)`).
+///
+/// [`workbench_paths`] excludes all seven prefixes from the third subject on the stated
+/// ground that *the doors that own them answer for them*. Four of the seven had such a
+/// door. `index/`, `state/` and `logs/` had none, and neither did a non-directory child of
+/// `tasks/` or `milestones/` — so a file there was destroyed at exit 0, named by nothing,
+/// and the same derivation promised that *a prefix added to `ENTRIES` narrows this set
+/// automatically*: it failed **open** for the eighth prefix too.
+///
+/// **The default arm is the fail-closed one.** A prefix with no row of its own is
+/// [`PrefixOwner::OwnFiles`], whose foreign set is every leaf jigc has not declared as its
+/// own ([`own_transient_file`]) — so a prefix nobody stated an owner for refuses over
+/// everything inside it, loudly, instead of handing it to `remove_dir_all` in silence.
+enum PrefixOwner {
+    /// `.jigc/worktrees/` — **every** child of it, whatever its shape, is the leftover
+    /// classifier's subject ([`fanout_worktree_paths`], `uninstall.dirty-worktree`).
+    Worktrees,
+    /// `.jigc/tasks/`, `.jigc/milestones/` — a directory child is a working area, read
+    /// through its registry row; any other child is a stray beside the areas
+    /// ([`crate::task::AreaKind::UnitRoot`]).
+    WorkUnits(crate::task::AreaKind),
+    /// `.jigc/displaced/` — the parking home: every leaf under it.
+    Parking,
+    /// A directory no working area lives in — `index/`, `state/`, `logs/` — whose foreign
+    /// set is everything but jigc's own files there ([`crate::task::AreaKind::Transient`]).
+    OwnFiles,
+}
+
+/// The [`PrefixOwner`] row of one transient prefix.
+fn prefix_owner(prefix: &str) -> PrefixOwner {
+    match prefix {
+        "worktrees" => PrefixOwner::Worktrees,
+        "tasks" => PrefixOwner::WorkUnits(crate::task::AreaKind::Task),
+        "milestones" => PrefixOwner::WorkUnits(crate::task::AreaKind::Milestone),
+        crate::relocate::WORKBENCH_SUBDIR => PrefixOwner::Parking,
+        _ => PrefixOwner::OwnFiles,
+    }
+}
+
+/// How the teardown answers for one of **jigc's own** files inside a transient directory
+/// no working area lives in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OwnTransientFile {
+    /// A cache, a lock or jigc's own bookkeeping: nothing of the operator's is in it and
+    /// jigc rebuilds what it needs (`design/storage.md` → the source-of-truth model). It
+    /// goes with the tree — **named** as it goes ([`narrate_own_state`]), because a door
+    /// that takes a file in silence is the law-1 half-truth whoever wrote the file.
+    Disposable,
+    /// The opt-in invocation log: jigc wrote it, and it is **not** rebuildable — the
+    /// operator asked for those records and `.jigc/logs/` is their only copy. It is a
+    /// member of the third subject ([`workbench_paths`]), refused unless an index has a
+    /// copy or `--force` consents (`design/project-setup.md` → Teardown / cleanup (G5)).
+    SoleCopy,
+}
+
+/// One file jigc itself writes into a transient directory, as its own writer names it.
+struct OwnTransientPath {
+    /// The file's absolute path — the writer's own derivation, never a spelling retyped
+    /// here.
+    path: PathBuf,
+    /// How the teardown answers for it.
+    answer: OwnTransientFile,
+    /// Whether the writer persists it by temp + `rename` (`engine::state::persist`), so a
+    /// write killed part-way leaves a `<name>.<pid>.<nanos>.tmp` beside it that is jigc's
+    /// too ([`engine::state::is_temp_sibling`]).
+    atomic: bool,
+}
+
+/// **Everything jigc itself writes into `.jigc/index/`, `.jigc/state/` and `.jigc/logs/`**
+/// — the writer set whose complement the teardown refuses over as foreign bytes, on the
+/// `engine::state::TASK_AREA_FILES` mold: **the members are the writers' own path
+/// derivations, never copies of their values**, so the set cannot drift from the writer.
+///
+/// A guard cut from a hand-listed subset is worse than no guard — it calls jigc's own file
+/// foreign and refuses every teardown that file is present at (the M52 `renames.json`
+/// lesson). So the row carries the two save locks beside the caches they guard, the
+/// install-footprint record a failed first `jigc setup` leaves, and — through `atomic` —
+/// the temp a killed save leaves; and `crates/cli/tests/uninstall_workbench_subject.rs`
+/// drives the completeness claim over every corpus state the trial substrate builds,
+/// reading what is on disk rather than this list.
+fn own_transient_paths(jigc_home: &Path) -> Vec<OwnTransientPath> {
+    let jigc_root = jigc_home.join(".jigc");
+    let record = engine::file_state::FileStateRecord::path_in(&jigc_root);
+    let edges = engine::index::EdgeIndex::path_in(&jigc_root);
+    let own = |path: PathBuf, answer: OwnTransientFile, atomic: bool| OwnTransientPath {
+        path,
+        answer,
+        atomic,
+    };
+    vec![
+        own(
+            engine::state::lock_sibling(&edges),
+            OwnTransientFile::Disposable,
+            false,
+        ),
+        own(edges, OwnTransientFile::Disposable, true),
+        own(
+            engine::state::lock_sibling(&record),
+            OwnTransientFile::Disposable,
+            false,
+        ),
+        own(record, OwnTransientFile::Disposable, true),
+        own(
+            jigc_home.join(INSTALL_FOOTPRINT_PATH),
+            OwnTransientFile::Disposable,
+            false,
+        ),
+        own(
+            crate::invocation_log::log_path(&jigc_root),
+            OwnTransientFile::SoleCopy,
+            false,
+        ),
+    ]
+}
+
+/// Whether jigc itself wrote the leaf at `path`, and if so how the teardown answers for it
+/// — `None` for a byte jigc did not write, which is `uninstall.foreign-bytes`' subject.
+///
+/// **Shape is part of membership**, exactly as in `engine::state::foreign_area_paths`:
+/// jigc writes regular files, so a directory or a symlink wearing one of these names is not
+/// something it wrote, and a path whose shape cannot be read is not vouched for either —
+/// the fail-closed direction, since the caller is about to delete.
+pub(crate) fn own_transient_file(jigc_home: &Path, path: &Path) -> Option<OwnTransientFile> {
+    if !std::fs::symlink_metadata(path).is_ok_and(|shape| shape.is_file()) {
+        return None;
+    }
+    own_transient_paths(jigc_home).into_iter().find_map(|own| {
+        if own.path == path {
+            return Some(own.answer);
+        }
+        let temp = own.atomic
+            && path.parent() == own.path.parent()
+            && match (path.file_name(), own.path.file_name()) {
+                (Some(name), Some(target)) => engine::state::is_temp_sibling(
+                    &name.to_string_lossy(),
+                    &target.to_string_lossy(),
+                ),
+                _ => false,
+            };
+        temp.then_some(OwnTransientFile::Disposable)
+    })
+}
+
+/// jigc's own leaves on disk inside the [`PrefixOwner::OwnFiles`] directories, repo-relative
+/// and sorted, split by how the teardown answers for them.
+#[derive(Default)]
+struct OwnTransientLeaves {
+    /// [`OwnTransientFile::Disposable`] — taken with the tree and named.
+    disposable: Vec<String>,
+    /// [`OwnTransientFile::SoleCopy`] — the third subject's members.
+    sole_copy: Vec<String>,
+}
+
+/// Read [`OwnTransientLeaves`] off the disk — the same walk and the same membership rule
+/// the foreign-byte guard uses over these directories ([`crate::task::AreaKind::Transient`]),
+/// so every leaf inside them is in exactly one of three sets: foreign, disposable, or the
+/// third subject's.
+fn own_transient_leaves(jigc_home: &Path) -> std::io::Result<OwnTransientLeaves> {
+    let jigc_dir = jigc_home.join(".jigc");
+    let mut leaves = OwnTransientLeaves::default();
+    for prefix in transient_prefixes() {
+        if !matches!(prefix_owner(prefix), PrefixOwner::OwnFiles) {
+            continue;
+        }
+        let root = jigc_dir.join(prefix);
+        match std::fs::symlink_metadata(&root) {
+            Ok(shape) if shape.is_dir() => {}
+            Ok(_) => continue,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => return Err(err),
+        }
+        for leaf in crate::task::leaves_under(&root)? {
+            let path = root.join(leaf);
+            let line = crate::render::repo_relative(jigc_home, &path);
+            match own_transient_file(jigc_home, &path) {
+                Some(OwnTransientFile::Disposable) => leaves.disposable.push(line),
+                Some(OwnTransientFile::SoleCopy) => leaves.sole_copy.push(line),
+                None => {}
+            }
+        }
+    }
+    leaves.disposable.sort();
+    leaves.sole_copy.sort();
+    Ok(leaves)
 }
 
 /// The workbench paths split on the one question both shipped guards already rest on:
@@ -3578,6 +3804,11 @@ fn untracked_workbench_files(jigc_home: &Path) -> Result<Vec<String>, Finding> {
 /// `tasks/` and `worktrees/` are — but unlike them nothing else refused or narrated over it,
 /// and [`workbench_paths`]' own doc-comment said so as a declared gap. It is closed here.
 ///
+/// **It was not the only one** (the rc.24 fix pass, `(R9, F5)`): `index/`, `state/` and
+/// `logs/` were excluded the same way and owned by nothing, and so was a non-directory
+/// child of `tasks/` or `milestones/`. The subject is therefore every transient prefix,
+/// each through its [`PrefixOwner`] row ([`workbench_foreign_areas`]).
+///
 /// The fan-out worktrees stay out: they are `crate::milestone::probe_leftover`'s subject,
 /// answered through git, and two classifiers over one path is two doors answering one
 /// question differently.
@@ -3589,16 +3820,20 @@ fn workbench_foreign_subject(
 
 /// [`workbench_foreign_subject`]'s IO half — separated so the fail-closed finding is minted
 /// in exactly one place.
+///
+/// **It iterates the transient prefixes, never a list of the ones somebody remembered**
+/// (the rc.24 fix pass, `(R9, F5)`): each [`crate::gitignore::ENTRIES`] member resolves to
+/// its [`PrefixOwner`] row, and the row without a subject of its own here is the one whose
+/// every child another guard classifies (`worktrees/`). It listed `tasks/`, `milestones/`
+/// and `displaced/` by name, which is how `index/`, `state/` and `logs/` — and the
+/// non-directory children of the first two — came to be in no door's subject.
 fn workbench_foreign_areas(
     jigc_home: &Path,
 ) -> std::io::Result<Vec<(PathBuf, crate::task::AreaKind)>> {
     let jigc_dir = jigc_home.join(".jigc");
     let mut areas: Vec<(PathBuf, crate::task::AreaKind)> = Vec::new();
-    for (sub, kind) in [
-        ("tasks", crate::task::AreaKind::Task),
-        ("milestones", crate::task::AreaKind::Milestone),
-    ] {
-        let root = jigc_dir.join(sub);
+    for prefix in transient_prefixes() {
+        let root = jigc_dir.join(prefix);
         // A *prefix is a directory*: a plain file (or symlink) at `.jigc/tasks` holds no
         // areas — it is [`workbench_paths`]' own subject, which is where L-2 put it.
         match std::fs::symlink_metadata(&root) {
@@ -3607,18 +3842,27 @@ fn workbench_foreign_areas(
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
             Err(err) => return Err(err),
         }
-        let mut children: Vec<PathBuf> = Vec::new();
-        for entry in std::fs::read_dir(&root)? {
-            children.push(entry?.path());
+        match prefix_owner(prefix) {
+            PrefixOwner::Worktrees => {}
+            PrefixOwner::WorkUnits(kind) => {
+                // The strays beside the areas first, then every area. Each child is handed
+                // over as an area whatever its shape: `crate::task::foreign_areas` drops
+                // the ones that are not directories, and those are exactly the strays the
+                // root's own row names — one partition, read once on each side.
+                areas.push((root.clone(), crate::task::AreaKind::UnitRoot));
+                let mut children: Vec<PathBuf> = Vec::new();
+                for entry in std::fs::read_dir(&root)? {
+                    children.push(entry?.path());
+                }
+                // Sorted, so neither the refusal nor the narration varies with readdir
+                // order.
+                children.sort();
+                areas.extend(children.into_iter().map(|path| (path, kind)));
+            }
+            PrefixOwner::Parking => areas.push((root, crate::task::AreaKind::Displaced)),
+            PrefixOwner::OwnFiles => areas.push((root, crate::task::AreaKind::Transient)),
         }
-        // Sorted, so neither the refusal nor the narration varies with readdir order.
-        children.sort();
-        areas.extend(children.into_iter().map(|path| (path, kind)));
     }
-    areas.push((
-        jigc_dir.join(crate::relocate::WORKBENCH_SUBDIR),
-        crate::task::AreaKind::Displaced,
-    ));
     Ok(areas)
 }
 
@@ -3668,8 +3912,50 @@ fn unverified_foreign_finding(err: std::io::Error) -> Finding {
 /// may not want in history; deleting what they do not need is the other exit, and
 /// `--force` is the consent that proceeds anyway, the single consent every destroying
 /// door takes.
+///
+/// **And it names that exit only for a path it works on** (the rc.24 fix pass, `(R9, F5)`).
+/// `git add` exits 1 on a path git ignores, so the cheap exit is a dead end for exactly the
+/// member this subject gained there — the opt-in invocation log, under the gitignored
+/// `.jigc/logs/` — and was already one for any path an operator's own ignore rule covers.
+/// The route is therefore keyed on what git says of **each listed path** ([`ignored_among`]),
+/// never on which file it happens to be: a path git ignores is routed out of `.jigc/`
+/// instead, and a listing that is all ignored names no `git add` at all.
 fn untracked_workbench_finding(jigc_home: &Path, untracked: &[String]) -> Finding {
     let listing: Vec<String> = untracked.iter().map(|path| format!("  {path}")).collect();
+    let add = engine::finding::git_at(jigc_home, "add -- <path>");
+    let restore = engine::finding::git_at(jigc_home, "checkout -- <path>");
+    let ignored = ignored_among(jigc_home, untracked);
+    let route = match ignored.as_deref() {
+        // Every listed path is one `git add` takes — the route this subject has always
+        // carried, byte for byte.
+        Some([]) => format!(
+            "put them where they can be recovered (`{add}` is enough — the index keeps a copy \
+             `{restore}` restores) or delete the ones you do not need, then re-run `jigc \
+             uninstall`; `jigc uninstall --force` deletes them with the install"
+        ),
+        // Some are ignored and some are not: both exits, and which paths take which.
+        Some(ignored) if ignored.len() < untracked.len() => format!(
+            "put them where they can be recovered or delete the ones you do not need, then \
+             re-run `jigc uninstall` — `{add}` is enough for a path git does not ignore (the \
+             index keeps a copy `{restore}` restores), but git ignores {}, so `git add` \
+             refuses there: move what you need of those out of `.jigc/` instead; `jigc \
+             uninstall --force` deletes them all with the install",
+            ignored
+                .iter()
+                .map(|path| format!("`{path}`"))
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
+        // All of them are ignored — or git could not say, and the one exit that is true of
+        // every path whatever git thinks of it is the move.
+        Some(_) => "git ignores every path above, so `git add` cannot keep a copy of them: \
+                    move what you need out of `.jigc/`, or delete what you do not, then re-run \
+                    `jigc uninstall`; `jigc uninstall --force` deletes them with the install"
+            .to_string(),
+        None => "move what you need out of `.jigc/`, or delete what you do not, then re-run \
+                 `jigc uninstall`; `jigc uninstall --force` deletes them with the install"
+            .to_string(),
+    };
     Finding::block(
         "uninstall.untracked-workbench-file",
         format!(
@@ -3678,14 +3964,51 @@ fn untracked_workbench_finding(jigc_home: &Path, untracked: &[String]) -> Findin
             untracked.len(),
             listing.join("\n"),
         ),
-        format!(
-            "put them where they can be recovered (`{add}` is enough — the index keeps a copy \
-             `{restore}` restores) or delete the ones you do not need, then re-run `jigc \
-             uninstall`; `jigc uninstall --force` deletes them with the install",
-            add = engine::finding::git_at(jigc_home, "add -- <path>"),
-            restore = engine::finding::git_at(jigc_home, "checkout -- <path>"),
-        ),
+        route,
     )
+}
+
+/// Which of `paths` git **ignores** — the paths `git add -- <path>` exits 1 on — or `None`
+/// when git could not answer.
+///
+/// `git check-ignore` exits 0 naming the ignored ones, 1 when none is, and anything else on
+/// a fault. A **tracked** path is never reported, which is the right answer here: an ignore
+/// rule does not stop `git add` on a path the index already carries, so the tracked-then-
+/// edited member keeps the cheap exit.
+///
+/// **Over stdin, NUL-separated.** `-z` is only accepted with `--stdin`, and without it git
+/// C-quotes any path carrying a byte it considers unusual, so an argv form would hand back
+/// spellings that match no listed path. The paths are written from a thread of their own:
+/// git answers as it reads, and a listing longer than a pipe buffer would otherwise have
+/// each side waiting on the other.
+fn ignored_among(jigc_home: &Path, paths: &[String]) -> Option<Vec<String>> {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = std::process::Command::new("git")
+        .arg("-C")
+        .arg(jigc_home)
+        .args(["check-ignore", "-z", "--stdin"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let mut stdin = child.stdin.take()?;
+    let input = paths.join("\0");
+    let writer = std::thread::spawn(move || stdin.write_all(input.as_bytes()));
+    let out = child.wait_with_output().ok()?;
+    writer.join().ok()?.ok()?;
+    match out.status.code() {
+        Some(0) => Some(
+            String::from_utf8_lossy(&out.stdout)
+                .split('\0')
+                .filter(|path| !path.is_empty())
+                .map(str::to_owned)
+                .collect(),
+        ),
+        Some(1) => Some(Vec::new()),
+        _ => None,
+    }
 }
 
 /// The fail-closed half of [`untracked_workbench_files`]: the probe could not run, so the
@@ -3749,6 +4072,13 @@ fn pending_teardown(jigc_home: &Path) -> PendingTeardown {
         // a file in silence is a half-truth whether or not the file is recoverable. Each line
         // says which of the two it is, so the reader is not left to guess.
         workbench: classify_workbench_paths(jigc_home).unwrap_or_default(),
+        // jigc's own caches, locks and bookkeeping inside the transient directories — what
+        // no guard refuses over, because none of it is the operator's, and what the
+        // teardown therefore owes a name most plainly: nothing else on any surface says
+        // these files went (the rc.24 fix pass, `(R9, F5)`).
+        own_state: own_transient_leaves(jigc_home)
+            .map(|leaves| leaves.disposable)
+            .unwrap_or_default(),
     }
 }
 
@@ -3765,10 +4095,14 @@ struct PendingTeardown {
     /// The rest of the workbench, split `(untracked, tracked)` by
     /// [`classify_workbench_paths`] — two claims, so two lines.
     workbench: (Vec<String>, Vec<String>),
+    /// jigc's own rebuildable state inside the transient directories
+    /// ([`OwnTransientFile::Disposable`]).
+    own_state: Vec<String>,
 }
 
 impl PendingTeardown {
-    /// Name what the teardown actually took, in the order the four subjects were read.
+    /// Name what the teardown actually took, in the order the four subjects were read —
+    /// and then what no subject refuses over, jigc's own state.
     fn narrate_taken(&self, jigc_home: &Path) {
         for worktree in &self.worktrees {
             worktree.narrate_taken(jigc_home);
@@ -3776,7 +4110,41 @@ impl PendingTeardown {
         self.foreign.narrate_taken(jigc_home);
         self.prose.narrate_taken(jigc_home);
         narrate_workbench_files(jigc_home, &self.workbench);
+        narrate_own_state(jigc_home, &self.own_state);
     }
+}
+
+/// Name the files of **jigc's own** rebuildable state `remove_dir_all(<repo>/.jigc)` took —
+/// the caches, their save locks and the install-footprint record
+/// ([`OwnTransientFile::Disposable`]), read before the removal ran.
+///
+/// They are the one part of the tree no guard refuses over, and that is right: nothing of
+/// the operator's is in them. It is not a reason to take them unnamed. Before the rc.24 fix
+/// pass the teardown's surfaces accounted for the tracked install files and for nothing
+/// else under `index/`, `state/` or `logs/`, so *"whatever this door takes, it names"* was
+/// true of every directory but three.
+///
+/// **Each path is filtered on its own survival**, like every sibling narration: a removal
+/// that failed names what is gone and stays silent about what is still there.
+fn narrate_own_state(jigc_home: &Path, own_state: &[String]) {
+    let gone: Vec<&String> = own_state
+        .iter()
+        .filter(|path| std::fs::symlink_metadata(jigc_home.join(path.as_str())).is_err())
+        .collect();
+    if gone.is_empty() {
+        return;
+    }
+    eprintln!(
+        "warning: removing `.jigc/` also removes {} file(s) of jigc's own rebuildable state \
+         under it:\n{}\n  note: jigc wrote each one — a cache, a save lock or its own \
+         bookkeeping — and rebuilds what it needs from the committed docs; nothing of yours \
+         is in them.",
+        gone.len(),
+        gone.iter()
+            .map(|path| format!("    {path}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
 }
 
 /// Name the workbench files `remove_dir_all(<repo>/.jigc)` **took** that are neither a
@@ -4217,6 +4585,67 @@ fn write_compose_marker(jigc_home: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **Every transient prefix has an owner, and the rows are keyed on names that
+    /// exist** (the rc.24 fix pass, `(R9, F5)`). [`prefix_owner`] names four prefixes and
+    /// hands every other one to the fail-closed default — so a prefix *renamed* in
+    /// [`crate::gitignore::ENTRIES`] would silently fall off its row and onto that default,
+    /// refusing every teardown over jigc's own working areas. Each named row must
+    /// therefore still be a member, and each of jigc's own files must sit in a directory
+    /// whose row consults the own-file set at all: a writer that put its file under
+    /// `tasks/` would be on a row that never asks [`own_transient_file`].
+    #[test]
+    fn every_transient_prefix_resolves_to_a_row_that_exists() {
+        let prefixes: Vec<&str> = transient_prefixes().collect();
+        for named in [
+            "worktrees",
+            "tasks",
+            "milestones",
+            crate::relocate::WORKBENCH_SUBDIR,
+        ] {
+            assert!(
+                prefixes.contains(&named),
+                "`prefix_owner` names `{named}`, which is not a transient prefix: {prefixes:?}",
+            );
+            assert!(
+                !matches!(prefix_owner(named), PrefixOwner::OwnFiles),
+                "`{named}` has a row of its own and must not fall on the default",
+            );
+        }
+
+        let home = Path::new("/somewhere/repo");
+        let jigc_dir = home.join(".jigc");
+        let own = own_transient_paths(home);
+        assert!(!own.is_empty(), "the own-file row must not be empty");
+        for file in &own {
+            let parent = file.path.parent().expect("an own file has a parent");
+            assert_eq!(
+                parent.parent(),
+                Some(jigc_dir.as_path()),
+                "`{}` must sit directly inside a transient directory",
+                file.path.display(),
+            );
+            let prefix = parent
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("a transient directory has a name");
+            assert!(
+                prefixes.contains(&prefix) && matches!(prefix_owner(prefix), PrefixOwner::OwnFiles),
+                "`{}` is jigc's own file, so `{prefix}/` must be a transient prefix on the \
+                 own-file row — otherwise the guard over it never consults this set",
+                file.path.display(),
+            );
+        }
+        assert_eq!(
+            own.iter()
+                .filter(|file| file.answer == OwnTransientFile::SoleCopy)
+                .map(|file| file.path.clone())
+                .collect::<Vec<_>>(),
+            vec![crate::invocation_log::log_path(&jigc_dir)],
+            "the invocation log is the one own file the teardown does not treat as \
+             rebuildable",
+        );
+    }
 
     /// A throwaway directory that removes itself on drop (the project's
     /// no-tempfile pattern).

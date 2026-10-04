@@ -498,6 +498,72 @@ fn both_minting_verbs_state_the_create_only_entry() {
     }
 }
 
+/// The rc.24 fix pass, `(R9, F5)` — `jigc uninstall --help` states the guards the door
+/// **runs**, counted off the door's own registry rather than typed twice. Driven on
+/// `1.0.0-rc.24` the about said *"any other file under `.jigc/` that no index has a copy
+/// of … blocks"* while three directories under `.jigc/` were in no guard's subject, and the
+/// `--force` option counted *"all three guards"* beside an about that named four.
+///
+/// The fence is `cli::milestone::UNINSTALL_DOOR.codes`: every code the door refuses with
+/// is named in the help, the two counts agree with the registry's length, and the two
+/// subjects the fix pass added — the directories a foreign byte now blocks in, and the
+/// invocation log — are stated where the operator reads them.
+#[test]
+fn uninstall_help_names_every_guard_the_door_runs() {
+    let raw = help_stdout_raw(&["uninstall", "--help"]);
+    let help = collapse(&raw);
+    let codes = cli::milestone::UNINSTALL_DOOR.codes;
+    for code in codes {
+        assert!(
+            help.contains(code),
+            "`uninstall --help` must name `{code}`, a code the door refuses with; got:\n{help}"
+        );
+    }
+    let count = match codes.len() {
+        4 => "four",
+        other => panic!(
+            "`UNINSTALL_DOOR` now refuses with {other} codes — restate the help's two counts \
+             and this arm together"
+        ),
+    };
+    // clap renders a one-paragraph option on its flag's own line, so the option's help is
+    // that line — and the about, which also names `--force`, never starts a line with it.
+    let force = raw
+        .lines()
+        .find(|line| line.split_whitespace().next() == Some("--force"))
+        .map(collapse)
+        .unwrap_or_else(|| panic!("the help must carry a `--force` option line; got:\n{raw}"));
+    for (what, text, phrase) in [
+        (
+            "the about",
+            help.as_str(),
+            format!("deletes all {count} with the install"),
+        ),
+        (
+            "the `--force` option",
+            force.as_str(),
+            format!("all {count} guards"),
+        ),
+    ] {
+        assert!(
+            text.contains(&phrase),
+            "{what} must count the door's guards as `{phrase}`; got:\n{text}"
+        );
+    }
+    for subject in [
+        "`.jigc/index/`",
+        "`.jigc/state/`",
+        "`.jigc/logs/`",
+        "`.jigc/logs/invocations.jsonl`",
+    ] {
+        assert!(
+            help.contains(subject),
+            "`uninstall --help` must state {subject} among what the door answers for; \
+             got:\n{help}"
+        );
+    }
+}
+
 /// M46 Increment 8, T2 (B2-3) — `jigc milestone finalize --help` stops contradicting
 /// itself. Its `about` enumerated only what the join produces (*"materialize its
 /// suffix-resolved **doc bodies** … and commit **them**"*), while `--carry-staged`,

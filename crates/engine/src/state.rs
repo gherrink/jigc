@@ -1113,6 +1113,26 @@ fn temp_sibling(path: &Path) -> PathBuf {
     }
 }
 
+/// Whether `name` is a temp sibling [`write_atomic`] could have minted for a target named
+/// `target` — `<target>.<pid>.<nanos>.tmp`, both components all digits. The inverse of
+/// [`temp_sibling`], and the one home that rule has.
+///
+/// A successful persist consumes its temp and a failed one removes it, so on every path
+/// the writer finishes there is none. The path it does **not** finish — a process killed
+/// between the write and the `rename` — leaves one beside the shared caches, and a door
+/// that asks *"did jigc write this?"* over those directories has to be able to say yes
+/// (`cli::setup`'s teardown, whose foreign-byte guard would otherwise refuse over jigc's
+/// own residue and call it a path jigc did not write).
+#[must_use]
+pub fn is_temp_sibling(name: &str, target: &str) -> bool {
+    let digits = |part: &str| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit());
+    name.strip_prefix(target)
+        .and_then(|rest| rest.strip_prefix('.'))
+        .and_then(|rest| rest.strip_suffix(".tmp"))
+        .and_then(|middle| middle.split_once('.'))
+        .is_some_and(|(pid, nanos)| digits(pid) && digits(nanos))
+}
+
 /// How long a save waits for the save-scoped lock before it **fails** — wall-clock, not
 /// a count of sleeps, so the ceiling is the time it states however late the scheduler
 /// wakes the waiter (2026-10-01; `DECISIONS.md` → that date).
@@ -2801,6 +2821,36 @@ mod tests {
             WorkArea::Milestone.base_pin(),
             "one predicate over two rows, or it is two predicates",
         );
+    }
+
+    /// [`is_temp_sibling`] is the inverse of [`temp_sibling`]: it recognises what the writer
+    /// mints — asked of the writer's own output, never of a spelling retyped here — and
+    /// nothing a hand could plausibly have put beside the target instead.
+    #[test]
+    fn a_minted_temp_sibling_is_recognised_and_a_neighbour_is_not() {
+        let target = Path::new("/somewhere/.jigc/state/file-state.json");
+        let minted = temp_sibling(target);
+        let name = minted.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(
+            is_temp_sibling(&name, "file-state.json"),
+            "the writer's own temp `{name}` must be recognised",
+        );
+        for neighbour in [
+            "file-state.json",
+            "file-state.json.lock",
+            "file-state.json.tmp",
+            "file-state.json.12.tmp",
+            "file-state.json.12.x.tmp",
+            "file-state.json.12.34.tmp.bak",
+            "file-state.json..34.tmp",
+            "notes.12.34.tmp",
+            "edges.json.12.34.tmp",
+        ] {
+            assert!(
+                !is_temp_sibling(neighbour, "file-state.json"),
+                "`{neighbour}` is not a temp sibling of `file-state.json`",
+            );
+        }
     }
 
     /// The atomic-write temp sibling takes its disambiguator from the **shared**

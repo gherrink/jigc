@@ -6755,6 +6755,19 @@ pub(crate) enum AreaKind {
     Milestone,
     /// `.jigc/displaced/` — every leaf under it.
     Displaced,
+    /// `.jigc/tasks/` or `.jigc/milestones/` **itself** — every child of it that is not a
+    /// directory. A directory there is a working area (or a residual) and has its own row
+    /// above; a plain file or a symlink *beside* the areas is in no area at all, so until
+    /// the rc.24 fix pass it was in no door's subject either, and `jigc uninstall` took it
+    /// at exit 0 named by nothing (`(R9, F5)`). jigc writes nothing at that level, so the
+    /// row has no registry: every such child is foreign.
+    UnitRoot,
+    /// A transient directory **no working area lives in** — `.jigc/index/`, `.jigc/state/`,
+    /// `.jigc/logs/`, and any transient prefix nobody has stated an owner for — every leaf
+    /// under it that is not one of jigc's own files there (`crate::setup::own_transient_file`,
+    /// the writers' own declarations). The same finding's other half: these directories were
+    /// excluded from the teardown's third subject as *transient* and owned by nothing else.
+    Transient,
 }
 
 impl AreaKind {
@@ -6763,6 +6776,8 @@ impl AreaKind {
         match self {
             AreaKind::Task | AreaKind::Milestone => "working area",
             AreaKind::Displaced => "relocation workbench",
+            AreaKind::UnitRoot => "work-unit directory",
+            AreaKind::Transient => "workbench directory",
         }
     }
 }
@@ -6815,7 +6830,14 @@ pub(crate) fn foreign_areas(
         let relative = match kind {
             AreaKind::Task => state::foreign_area_paths(dir, state::WorkArea::Task)?,
             AreaKind::Milestone => state::foreign_area_paths(dir, state::WorkArea::Milestone)?,
-            AreaKind::Displaced => displaced_leaves(dir)?,
+            AreaKind::Displaced => leaves_under(dir)?,
+            AreaKind::UnitRoot => stray_children(dir)?,
+            AreaKind::Transient => leaves_under(dir)?
+                .into_iter()
+                .filter(|leaf| {
+                    crate::setup::own_transient_file(jigc_home, &dir.join(leaf)).is_none()
+                })
+                .collect(),
         };
         if relative.is_empty() {
             continue;
@@ -6836,14 +6858,15 @@ pub(crate) fn foreign_areas(
     Ok(found)
 }
 
-/// Every leaf under `.jigc/displaced/`, relative to it and sorted — the [`AreaKind::Displaced`]
-/// row's walk.
+/// Every leaf under `root`, relative to it and sorted — the walk of the two rows whose
+/// subject is a whole tree rather than a registry's complement ([`AreaKind::Displaced`],
+/// [`AreaKind::Transient`]).
 ///
 /// Leaves rather than top-level entries, because the parking home is keyed by the *unit* whose
 /// bytes were moved (`displaced/<task-id>/<relative>`), so a top-level listing would name task
 /// ids where the operator needs file paths. Shape is read with `symlink_metadata`, so a symlink
 /// is a leaf rather than a door out of the tree — the `crate::setup::workbench_paths` rule.
-fn displaced_leaves(root: &Path) -> std::io::Result<Vec<PathBuf>> {
+pub(crate) fn leaves_under(root: &Path) -> std::io::Result<Vec<PathBuf>> {
     let mut stack = vec![root.to_path_buf()];
     let mut leaves = Vec::new();
     while let Some(path) = stack.pop() {
@@ -6857,6 +6880,22 @@ fn displaced_leaves(root: &Path) -> std::io::Result<Vec<PathBuf>> {
     }
     leaves.sort();
     Ok(leaves)
+}
+
+/// Every child of `root` that is **not a directory**, relative to it and sorted — the
+/// [`AreaKind::UnitRoot`] row's walk. Shape is read without following a symlink
+/// ([`std::fs::DirEntry::file_type`]), so a link beside the areas is a stray leaf here, never
+/// an area somewhere else.
+fn stray_children(root: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let mut stray = Vec::new();
+    for entry in std::fs::read_dir(root)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            stray.push(PathBuf::from(entry.file_name()));
+        }
+    }
+    stray.sort();
+    Ok(stray)
 }
 
 /// The repo-relative lines of every area's complement, in area order — the listing a refusal

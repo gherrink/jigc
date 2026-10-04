@@ -28,6 +28,13 @@ use std::time::Duration;
 /// The invocation-log knob key (a `bool` on the closed `knobs.yaml` surface, default OFF).
 const KNOB_KEY: &str = "invocation-log";
 
+/// The log's directory under a `.jigc/` root — a member of `crate::gitignore::ENTRIES`, so
+/// the log is gitignored and no index ever has a copy of it.
+const LOGS_DIR: &str = "logs";
+
+/// The log's file name inside [`LOGS_DIR`].
+const LOG_FILE: &str = "invocations.jsonl";
+
 /// The readable result of a dispatch handler: the numeric process exit code plus the finding
 /// codes the run surfaced. Threaded up to `main()` in place of [`ExitCode`] (which is
 /// write-only — it cannot be read back at the log wrapper).
@@ -461,6 +468,14 @@ pub fn log_invocation(logs_dir: &Path, duration: Duration, outcome: &Outcome, ou
     );
 }
 
+/// The log's path under a `.jigc/` root (`<jigc_home>/.jigc`) — the **one** spelling the
+/// writer ([`log_invocation`]) and the teardown's subject (`crate::setup`'s workbench guard)
+/// both read, so the door that removes `.jigc/` asks about the file this module writes
+/// rather than about a name retyped beside it.
+pub(crate) fn log_path(jigc_root: &Path) -> PathBuf {
+    jigc_root.join(LOGS_DIR).join(LOG_FILE)
+}
+
 /// Resolve the log directory `<jigc_home>/.jigc/logs` **iff** the knob is ON — else `None`.
 /// Returns `None` (no log) outside a git repo, outside a jigc project layer, or on any
 /// resolution error: instrumentation is opt-in and best-effort, never a failure surface.
@@ -488,7 +503,7 @@ pub fn enabled_logs_dir() -> Option<PathBuf> {
     if resolved.scalar(KNOB_KEY) != Some("true") {
         return None;
     }
-    Some(ctx.jigc_home.join(".jigc").join("logs"))
+    Some(ctx.jigc_home.join(".jigc").join(LOGS_DIR))
 }
 
 /// The one JSONL record shape (`design/measurement.md` → record shape). `duration_ms` and
@@ -523,6 +538,17 @@ struct Record<'a> {
 }
 
 /// Append one JSONL line to `<logs_dir>/invocations.jsonl`, creating `logs_dir` on demand.
+///
+/// **`logs_dir` only — never the `.jigc/` above it** (the rc.24 fix pass, `(R9, F3)`). The
+/// log lives *inside* the workbench and does not mint it: this used `create_dir_all`, so
+/// the one run that removes `.jigc/` — a `jigc uninstall` that succeeded — then re-created
+/// `.jigc/logs/` to record itself. The door printed *removed .jigc/* over a tree that was
+/// back before the process exited, un-ignored (the `.gitignore` that covered it went with
+/// the install), and its second run was not the no-op its help promises; since that fix
+/// pass the log also **blocks** the teardown, so the residue would have had the second run
+/// refuse over a file the first one wrote. A workbench that is gone therefore gets no
+/// record: `create_dir` fails `NotFound`, and the caller swallows it like every other
+/// logging failure.
 #[allow(clippy::too_many_arguments)]
 fn append_record(
     logs_dir: &std::path::Path,
@@ -535,7 +561,11 @@ fn append_record(
     error_code: Option<&'static str>,
 ) -> std::io::Result<()> {
     use std::io::Write;
-    std::fs::create_dir_all(logs_dir)?;
+    match std::fs::create_dir(logs_dir) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(err) => return Err(err),
+    }
     let record = Record {
         timestamp,
         argv,
@@ -551,7 +581,7 @@ fn append_record(
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(logs_dir.join("invocations.jsonl"))?;
+        .open(logs_dir.join(LOG_FILE))?;
     file.write_all(line.as_bytes())
 }
 
@@ -614,6 +644,58 @@ mod tests {
                  inventory — pick an identity no probe owns",
             );
         }
+    }
+
+    /// **The log never mints the workbench** (`(R9, F3)`): appending under a `.jigc/` that
+    /// is not there writes nothing and creates nothing, so the run that removed the tree —
+    /// a successful `jigc uninstall` — cannot bring it back by recording itself. The driven
+    /// cell is `tests/uninstall_workbench_subject.rs`; this is the writer's own half.
+    #[test]
+    fn a_record_is_never_appended_into_a_workbench_that_is_gone() {
+        let base = std::env::temp_dir().join(format!(
+            "jigc-log-no-mint-{}-{:?}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
+        std::fs::create_dir_all(&base).expect("create the stand-in repository root");
+        let jigc_root = base.join(".jigc");
+        let argv = vec!["uninstall".to_string()];
+        let none: Vec<String> = Vec::new();
+
+        let gone = append_record(
+            &jigc_root.join(LOGS_DIR),
+            "2026-10-04T09:00:00Z",
+            &argv,
+            0,
+            7,
+            &none,
+            42,
+            None,
+        );
+        assert!(gone.is_err(), "no workbench, so no record");
+        assert!(
+            !jigc_root.exists(),
+            "appending must not re-create `.jigc/` to hold the log",
+        );
+
+        // The control: with the workbench there, `logs/` is created on demand as before.
+        std::fs::create_dir(&jigc_root).expect("create the workbench");
+        append_record(
+            &jigc_root.join(LOGS_DIR),
+            "2026-10-04T09:00:01Z",
+            &argv,
+            0,
+            7,
+            &none,
+            42,
+            None,
+        )
+        .expect("a standing workbench takes the record");
+        assert!(
+            log_path(&jigc_root).is_file(),
+            "and it lands at the log's own path"
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     /// The registry closes at exactly the **declared** members, and the declaration is
