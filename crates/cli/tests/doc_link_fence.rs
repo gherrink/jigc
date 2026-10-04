@@ -144,6 +144,7 @@ const LIVE_DOCS: &[&str] = &[
     "ideas/form-vision-research-routing.md",
     "ideas/glossary-term-injection.md",
     "ideas/issue-tracker-integration.md",
+    "ideas/linked-worktree-doc-work.md",
     "ideas/managed-doc-enforcement-hook.md",
     "ideas/methodology-kb-pack.md",
     "ideas/migration-content-coverage.md",
