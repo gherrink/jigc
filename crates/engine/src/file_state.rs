@@ -343,6 +343,20 @@ impl ConflictBlock {
         }
     }
 
+    /// The blocking conflict-block finding at `path`, for a caller that established the
+    /// conflict **itself** rather than through the classifier's hash comparison.
+    ///
+    /// The classifier compares bytes, and bytes are read through whatever stands at the
+    /// path — so it cannot see that the *entry* changed. The milestone-record doors ask
+    /// that question first ([`crate::store::home_entry`]): a record whose home has become a
+    /// link is a machine-maintained file changed out of band whatever the link's target
+    /// holds, and it is refused under this same identity (the rc.24 fix pass;
+    /// `design/team-ready-state.md` → The lifecycle). One mint of the code either way.
+    #[must_use]
+    pub fn finding_at(&self, path: &str) -> Finding {
+        conflict_block_finding(path, self)
+    }
+
     /// Whether `path` is the caller's **path-keyed** subject — a migration task's own
     /// recorded source ([`ConflictBlock::task`]).
     ///

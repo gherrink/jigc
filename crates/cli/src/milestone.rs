@@ -1552,6 +1552,47 @@ fn record_conflict_block(
     }
 }
 
+/// The conflict presentation for a record whose **home is not a regular file** — the shape
+/// sibling of [`record_conflict_block`], raised by [`reconcile_record_preflight`] before it
+/// reads a byte (the rc.24 fix pass, the record doors' half of `(R6, D-7)`).
+///
+/// It is the same refusal as an out-of-band edit, so it is the same identity: a
+/// machine-maintained record that is not as jigc left it is never merged, never clobbered —
+/// and never written *through*. What the route can say depends on where the entry came from,
+/// and it names both: where `HEAD` still holds the record as a file, the restore is the
+/// `HEAD`-sourced checkout [`record_conflict_block`]'s `Head` arm emits (git replaces the
+/// entry with the file; it does not write through it); where the entry itself was committed,
+/// nothing in `HEAD` can restore it, so the exit is the regular file put back by hand and
+/// committed. It teaches no removal: the entry is the reader's, and so is whatever a link
+/// points at.
+fn record_shape_block(
+    jigc_home: &Path,
+    key: &str,
+    shape: engine::store::ForeignEntry,
+) -> engine::file_state::ConflictBlock {
+    let restore = engine::finding::git_at(
+        jigc_home,
+        &format!("checkout HEAD -- {}", crate::task::shell_token(key)),
+    );
+    let bare = shape.bare();
+    engine::file_state::ConflictBlock::new(
+        format!(
+            "the milestone record is machine-maintained and its home is now {}, not the \
+             regular file jigc wrote — jigc writes the record as a regular file at exactly \
+             that path and never through a link",
+            shape.noun()
+        ),
+        engine::finding::Route::human(format!(
+            "nothing was written. Put the record back at `{key}` as a regular file and re-run \
+             this command: `{restore}` restores it where `HEAD` still holds the record as a \
+             file; where the {bare} itself was committed, put the record itself there — for \
+             a link, a copy of the file it points at, in the link's place — and commit that. \
+             jigc writes regular files only, so the {bare} is not one it put there, and what \
+             becomes of it is yours to decide"
+        )),
+    )
+}
+
 /// The **reconcile preflight** before a `set: on-transition` record overwrite — the
 /// No-silent-overwrite discipline (`design/team-ready-state.md` → F3;
 /// `design/reconciliation.md`). Because the `milestone-record` is machine-owned, an OOB human
@@ -1603,11 +1644,25 @@ fn reconcile_record_preflight(
     let Some(record_path) = engine::store::canonical_path(jigc_home, schema, milestone_id) else {
         return Ok(());
     };
-    let Ok(bytes) = std::fs::read(&record_path) else {
-        return Ok(()); // no committed record yet → nothing to overwrite, nothing to guard.
-    };
     let Some(key) = record_key(schema, milestone_id) else {
         return Ok(());
+    };
+    // **The entry before the bytes** (the rc.24 fix pass; `design/team-ready-state.md` → The
+    // lifecycle, *the record is written as a regular file*). Everything below compares bytes,
+    // and bytes are read through whatever stands at the path — so a record replaced by a link
+    // to a byte-identical copy read as in sync, and the door then wrote the record *through*
+    // the link: `jigc milestone add-task` exited 0 over a record commit that held the link,
+    // with the record's new body in the link's untracked target. The home's own entry is
+    // asked first, without following a link, and one that is not a regular file is this
+    // door's conflict-block whatever it points at: the record is jigc's to write, and it is
+    // not as jigc left it.
+    if let engine::store::HomeEntry::Foreign(shape) = engine::store::home_entry(&record_path) {
+        return Err(finding_to_err(
+            record_shape_block(jigc_home, &key, shape).finding_at(&key),
+        ));
+    }
+    let Ok(bytes) = std::fs::read(&record_path) else {
+        return Ok(()); // no committed record yet → nothing to overwrite, nothing to guard.
     };
     let from = format!("{MILESTONE_RECORD_TYPE}:{milestone_id}");
 
@@ -2013,7 +2068,11 @@ fn append_and_commit_record(
     // exactly the k-th append.
     let mut pre =
         capture_record_pre_image(jigc_home, &record_path, crate::rollback::MILESTONE_DOOR)?;
-    std::fs::write(&record_path, &appended)
+    // In place, and never through a link ([`engine::store::rewrite_home`]) — the plain
+    // `fs::write` this replaces opened whatever stood at the record's home, so over a link
+    // there the appended record went into the link's target and the record commit took the
+    // link (driven at exit 0; `reconcile_record_preflight` is the routed refusal in front).
+    engine::store::rewrite_home(&record_path, appended.as_bytes())
         .with_context(|| format!("could not write the milestone record {record_path:?}"))?;
     pre.wrote();
 

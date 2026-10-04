@@ -115,6 +115,8 @@ mod repo_posture;
 mod rollback_population_registry;
 #[path = "../severity_tuning.rs"]
 mod severity_tuning;
+#[path = "../store_door_home_shape.rs"]
+mod store_door_home_shape;
 #[path = "../store_version_stamp.rs"]
 mod store_version_stamp;
 #[path = "../task_amend.rs"]

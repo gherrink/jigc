@@ -1636,7 +1636,9 @@ pub fn join_record(
         .map_err(|err| io_finding(milestone_id, "read the milestone record", &err))?;
     let flipped = flip_record_status_to_joined(schema, &source)
         .map_err(|err| record_flip_finding(milestone_id, RECORD_STATUS_JOINED, "join", err))?;
-    std::fs::write(record_path, &flipped)
+    // In place, and never through a link ([`crate::store::rewrite_home`]): the record door's
+    // preflight refuses a home that is not a regular file, and this is the write behind it.
+    crate::store::rewrite_home(record_path, flipped.as_bytes())
         .map_err(|err| io_finding(milestone_id, "write the joined milestone record", &err))?;
     Ok(flipped)
 }
@@ -1733,7 +1735,7 @@ pub fn discard_record(
     let flipped = flip_record_status_to_discarded(schema, &source).map_err(|err| {
         record_flip_finding(milestone_id, RECORD_STATUS_DISCARDED, "discard", err)
     })?;
-    std::fs::write(record_path, &flipped)
+    crate::store::rewrite_home(record_path, flipped.as_bytes())
         .map_err(|err| io_finding(milestone_id, "write the discarded milestone record", &err))?;
     Ok(flipped)
 }
@@ -1807,7 +1809,7 @@ pub fn discard_sub_task_item(
     .map_err(|err| {
         record_flip_finding(milestone_id, RECORD_STATUS_DISCARDED, "task discard", err)
     })?;
-    std::fs::write(record_path, &settled).map_err(|err| {
+    crate::store::rewrite_home(record_path, settled.as_bytes()).map_err(|err| {
         io_finding(
             milestone_id,
             "write the settled sub-task's milestone record",

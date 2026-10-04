@@ -35,6 +35,11 @@
 //! embedded repo or git's own directory — is refused *here* rather than from inside the
 //! transaction, so the arm carries an identity, a route and a log entry instead of the
 //! shared move primitive's bare bail printing the host's filesystem (M50 Inc 2 / T3).
+//! And **every home the transaction touches is a regular file, or the door refuses** (the
+//! rc.24 fix pass): the doc's own home, each referrer's and the destination are asked for
+//! their own directory entry, without following a link, before `git mv` and before any
+//! write — a link at any of them was moved or written *through* at exit 0 — and the writes
+//! behind the gate are in place and never through a link ([`engine::store::rewrite_home`]).
 //! The advisory prose/unmanaged-mention report is T5.
 //!
 //! Every one of those refusals is declared and disposed in one place — [`RefusalKind`], which
@@ -126,6 +131,15 @@ pub enum RefusalKind {
     /// this repository — inside another repository (a submodule or an embedded repo),
     /// inside git's own directory, or outside the repository root altogether.
     UntrackableDestination,
+    /// A home this transaction would **rewrite** holds an entry that is not a regular file
+    /// — the renamed doc's own home, or the home of a referrer it would repoint: a symbolic
+    /// link (dangling or live), a directory, a special file. jigc keeps a managed doc as a
+    /// regular file at exactly its home and never writes through a link, so the door
+    /// refuses before `git mv` and before any write (the rc.24 fix pass, the store doors'
+    /// half of `(R6, D-7)`). The same entry at the **destination** is
+    /// [`RefusalKind::OccupiedDestination`]: there it is in the way of a landing, here it
+    /// stands where the doc should be.
+    ForeignHome,
 }
 
 /// How a refusal's route repairs the state — the disposition every member owes, and the
@@ -160,12 +174,13 @@ impl RefusalKind {
         RefusalKind::OccupiedDestination,
         RefusalKind::MalformedSlug,
         RefusalKind::UntrackableDestination,
+        RefusalKind::ForeignHome,
     ];
 
     /// The finding code this refusal carries — its identity on the printed surface **and**
     /// in the invocation log's `finding_codes`.
     ///
-    /// Seven of the eleven reuse a **shipped** code rather than minting a door-private one:
+    /// Eight of the twelve reuse a **shipped** code rather than minting a door-private one:
     /// the fault is the same fault the read and in-task write paths already name, and one
     /// fault owes one code (the M49 Increment 11 / T1 rule, applied to refusals). In
     /// particular [`RefusalKind::FixedIdentity`] and [`RefusalKind::WorkUnitIdentity`]
@@ -205,6 +220,15 @@ impl RefusalKind {
             RefusalKind::OccupiedDestination => "write.already-present",
             RefusalKind::MalformedSlug => "write.malformed-slug",
             RefusalKind::UntrackableDestination => "write.untrackable-destination",
+            // **The committing doors' code, not a door-private one** — one fault owes one
+            // code. A managed doc's home that is not a regular file is `finalize.promote-
+            // clobber` at `jigc task finalize` and at the milestone boundary, keyed at that
+            // home's path (`(R6, D-7)`); it is the same state of the same doc here, so a
+            // driver reads the same identity at whichever door meets it. Minted by
+            // `engine::finalize` ([`foreign_home`] → `store_home_refusal`), named here so the
+            // axis is total; `the_foreign_home_row_reads_the_shipped_code` holds the two
+            // together.
+            RefusalKind::ForeignHome => "finalize.promote-clobber",
         }
     }
 
@@ -239,6 +263,9 @@ impl RefusalKind {
             ),
             RefusalKind::UntrackableDestination => Repair::Judgment(
                 "the destination is the doctype's home plus the new slug, and jigc cannot tell which of the two the operator meant to change — nor whether the home itself (a submodule, an embedded repo, git's own directory) is the thing to move",
+            ),
+            RefusalKind::ForeignHome => Repair::Judgment(
+                "jigc writes regular files only, so a link or a directory at a doc's home is not one it put there: what becomes of that entry, and of the file a link points at, is its owner's to decide — the route names the state the home has to be in, and the re-run is a command once it is",
             ),
         }
     }
@@ -295,6 +322,49 @@ fn retitle_route(id: &str, title: &str, fixed_slug: &str) -> Route {
         ],
         " keeps the identity that cannot move and rewrites only the title",
     )
+}
+
+/// This door's own invocation, as a refusal hands it back to be **re-run** once its cause
+/// is cleared — the caller's title and, when they passed one, their `--slug`.
+///
+/// Both operands go through [`crate::task::shell_token`]: the title is prose, and the
+/// override is echoed from before the slug guard has seen it at the earliest refusal that
+/// uses this, so it is a caller token like any other.
+fn rerun_command(old_id: &str, title: &str, slug_override: Option<&str>) -> String {
+    let mut command = format!(
+        "jigc rename {old_id} --to {}",
+        crate::task::shell_token(title)
+    );
+    if let Some(slug) = slug_override {
+        command.push_str(" --slug ");
+        command.push_str(&crate::task::shell_token(slug));
+    }
+    command
+}
+
+/// **Refuse over a home this transaction would rewrite that is not a regular file** —
+/// [`RefusalKind::ForeignHome`], for the renamed doc's own home and for a referrer's.
+///
+/// The finding is the committing doors' own, minted by its one constructor
+/// ([`engine::finalize::store_home_refusal`]) rather than through [`refuse`]: its key is the
+/// **path** (the entry is the subject, and an entry that is not a doc has no `<type>:<slug>`
+/// to be addressed at), and a second mint here would be a second spelling of an identity
+/// that already has a home. `withheld` says what the door did not do; `rerun` is this
+/// door's own command ([`rerun_command`]), which the route ends at.
+fn foreign_home(
+    repo_root: &Path,
+    home: &str,
+    shape: engine::store::ForeignEntry,
+    withheld: &str,
+    rerun: &str,
+) -> anyhow::Error {
+    crate::render::finding_error(&engine::finalize::store_home_refusal(
+        repo_root,
+        home,
+        shape,
+        withheld,
+        &format!("re-run `{rerun}`"),
+    ))
 }
 
 /// The outcome of a rename: the old/new `<type>:<slug>` identities, the repo-relative
@@ -398,16 +468,38 @@ pub(crate) fn run(
     }
     let old_rel = doc_path(&schema_map, &ty, &old_slug)?;
     let old_abs = repo_root.join(&old_rel);
-    if !old_abs.is_file() {
-        return Err(refuse(
-            RefusalKind::NoSuchDoc,
-            &old_id,
-            format!("no managed doc `{old_id}` to rename (expected at {old_rel})"),
-            Route::mechanical(
-                ["jigc", "describe"],
-                " lists the doctype surface — check the id you typed against it",
-            ),
-        ));
+    let rerun = rerun_command(&old_id, title, slug_override);
+    // **The home's own entry, read without following a link** (the rc.24 fix pass, the
+    // store doors' half of `(R6, D-7)`). This asked `is_file()`, which follows one, so a
+    // doc whose home is a **live link** passed — and everything after it wrote through the
+    // link: `git mv` moved the link, the retitle went into its target, and the rename
+    // commit held the link move alone, at exit 0 with the target left modified and
+    // uncommitted. The retitle-only arm wrote through it and then acked *"no-op … nothing
+    // committed"* over the file it had just rewritten. An entry that is not a regular file
+    // is not this door's to write through or to move, so it refuses here — before `git mv`
+    // and before any write — under the code the committing doors raise for the same home.
+    match engine::store::home_entry(&old_abs) {
+        engine::store::HomeEntry::RegularFile => {}
+        engine::store::HomeEntry::Free => {
+            return Err(refuse(
+                RefusalKind::NoSuchDoc,
+                &old_id,
+                format!("no managed doc `{old_id}` to rename (expected at {old_rel})"),
+                Route::mechanical(
+                    ["jigc", "describe"],
+                    " lists the doctype surface — check the id you typed against it",
+                ),
+            ));
+        }
+        engine::store::HomeEntry::Foreign(shape) => {
+            return Err(foreign_home(
+                &repo_root,
+                &old_rel,
+                shape,
+                &format!("`{old_id}` is not renamed"),
+                &rerun,
+            ));
+        }
     }
     let old_source = std::fs::read_to_string(&old_abs)
         .with_context(|| format!("could not read the doc to rename at {old_rel}"))?;
@@ -586,19 +678,61 @@ pub(crate) fn run(
     }
     // (f) **collision** — a non-degenerate new slug must be free; a collision with a
     //     *different* committed doc blocks (an identity refactor, never the join's suffix).
-    if !is_retitle && new_abs.is_file() {
-        return Err(refuse(
-            RefusalKind::OccupiedDestination,
-            &new_id,
-            format!("cannot rename to `{new_id}` — a different doc already exists at {new_rel}"),
-            Route::human(format!(
-                "give this doc an id nothing else answers to — re-run `jigc rename \
-                 {old_id} --to {} --slug <other-slug>`; or, if `{new_id}` is the doc you \
-                 meant to work on, read it with `jigc doc show {new_id}` and rename that \
-                 one instead",
-                crate::task::shell_token(title),
-            )),
-        ));
+    //
+    //     **The destination's own entry, without following a link** (the rc.24 fix pass).
+    //     This asked `is_file()`, so an entry there that is not a regular file fell through
+    //     the gate and was refused, if at all, by whatever met it next: a dangling link by
+    //     git's own `fatal: destination exists` from inside the transaction, a directory by
+    //     the pre-image capture's bare `Is a directory (os error 21)` — both code-less and
+    //     route-less — and a live link was called *a different doc*. Any entry at the new
+    //     home is an occupant, so every shape refuses here under this arm's one code, and
+    //     the message says what is there.
+    if !is_retitle {
+        match engine::store::home_entry(&new_abs) {
+            engine::store::HomeEntry::Free => {}
+            engine::store::HomeEntry::RegularFile => {
+                return Err(refuse(
+                    RefusalKind::OccupiedDestination,
+                    &new_id,
+                    format!(
+                        "cannot rename to `{new_id}` — a different doc already exists at {new_rel}"
+                    ),
+                    Route::human(format!(
+                        "give this doc an id nothing else answers to — re-run `jigc rename \
+                         {old_id} --to {} --slug <other-slug>`; or, if `{new_id}` is the doc \
+                         you meant to work on, read it with `jigc doc show {new_id}` and \
+                         rename that one instead",
+                        crate::task::shell_token(title),
+                    )),
+                ));
+            }
+            engine::store::HomeEntry::Foreign(shape) => {
+                let bare = shape.bare();
+                return Err(refuse(
+                    RefusalKind::OccupiedDestination,
+                    &new_id,
+                    format!(
+                        "cannot rename to `{new_id}` — its home, `{new_rel}`, is {}, not a \
+                         regular file: jigc lands a doc as a regular file at exactly its home \
+                         and never writes through a link",
+                        shape.noun(),
+                    ),
+                    // Both exits land, and neither is a removal: the entry is the reader's.
+                    // The first leaves it exactly where it is. The second is the reader's
+                    // own act on it — and a commit where git tracks the entry, because this
+                    // door refuses over any tracked change in the tree.
+                    Route::human(format!(
+                        "give this doc an id whose home is free — re-run `jigc rename \
+                         {old_id} --to {} --slug <other-slug>`; or move the {bare} out of the \
+                         doc's home, so that `{new_rel}` is free (commit that where git tracks \
+                         the {bare}), and re-run `{rerun}`. jigc writes regular files only, \
+                         so the {bare} is not one it put there, and what becomes of it is \
+                         yours to decide",
+                        crate::task::shell_token(title),
+                    )),
+                ));
+            }
+        }
     }
 
     // (g) **unmovable destination** — the destination must be a path git can *record*.
@@ -669,6 +803,26 @@ pub(crate) fn run(
                 .ok_or_else(|| anyhow!("referrer `{from_id}` has an unknown doctype `{fty}`"))?;
             let frel = doc_path(&schema_map, &fty, &fslug)?;
             let fabs = repo_root.join(&frel);
+            // **A referrer's home is a home this transaction rewrites**, so it is asked the
+            // question the renamed doc's own home is (the rc.24 fix pass). The committed
+            // index reads a doc through a link, so a referrer whose home is a live link is
+            // a referrer — and its repoint was written *through* that link: driven, the
+            // rename exited 0 saying `repointed 1 referrer(s)`, the new id went into the
+            // link's target, uncommitted, and the commit moved the doc while the committed
+            // referrer still named the id that no longer existed. Refused here, before
+            // anything moves: a rename that cannot repoint every referrer does not run.
+            if let engine::store::HomeEntry::Foreign(shape) = engine::store::home_entry(&fabs) {
+                return Err(foreign_home(
+                    &repo_root,
+                    &frel,
+                    shape,
+                    &format!(
+                        "the referrer `{from_id}` cannot be repointed and `{old_id}` is not \
+                         renamed"
+                    ),
+                    &rerun,
+                ));
+            }
             let mut source = std::fs::read_to_string(&fabs)
                 .with_context(|| format!("could not read the referrer at {frel}"))?;
             // The bytes **as found**, before the repoint rewrites them — the absorb question
@@ -889,7 +1043,9 @@ fn apply_and_commit(
 
     // 1. Write each referrer's repointed bytes.
     for write in referrer_writes {
-        std::fs::write(&write.abs, &write.source)
+        // In place and never through a link ([`engine::store::rewrite_home`]) — the write
+        // behind the gate that already refused a referrer whose home is not a regular file.
+        engine::store::rewrite_home(&write.abs, write.source.as_bytes())
             .with_context(|| format!("could not write the repointed referrer at {}", write.rel))?;
         worktree.wrote(&write.rel);
     }
@@ -921,7 +1077,11 @@ fn apply_and_commit(
             old_source.as_bytes().to_vec(),
         ));
     }
-    std::fs::write(repo_root.join(new_rel), new_source)
+    // The retitle, written **in place and never through a link**
+    // ([`engine::store::rewrite_home`]). It was `fs::write`, which opens whatever stands at
+    // the path — the write-through this door's own gate now refuses ahead of, and this is
+    // the backstop behind that gate for an entry that changes after it asked.
+    engine::store::rewrite_home(&repo_root.join(new_rel), new_source.as_bytes())
         .with_context(|| format!("could not write the retitled doc at {new_rel}"))?;
     worktree.wrote(new_rel);
     // 3. Stage the content changes (the move is staged; the H1 + referrer edits are not).

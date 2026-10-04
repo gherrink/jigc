@@ -1523,6 +1523,11 @@ impl FinalizeSubject {
 /// One member of the **`finalize.*` family** — a finding code the finalize doors mint, its
 /// producing module, and the target form it keys at.
 ///
+/// **A member's producer is where it is minted, not the only door that raises it.**
+/// `finalize.promote-clobber`'s shape arm is raised by the store doors too (`jigc rename`, the
+/// relocation primitive; the rc.24 fix pass) — through `engine::finalize`'s own constructor
+/// (`store_home_refusal`), so the mint stays one and this table's producer column stays true.
+///
 /// **It read *"a blocked-finalize finding code"* until M53**, and the family gained a member
 /// that is neither blocked nor a refusal: `finalize.foreign-bytes` is an **advisory raised on
 /// the landed arm**, after the commit is truth, over a working area the teardown could not
@@ -1680,7 +1685,9 @@ pub const FINALIZE_FAMILY: &[FinalizeCode] = &[
         subject: FinalizeSubject::FilePath,
         subject_note: "the destination path it refused to write at — a file it would have \
                        overwritten, which may be foreign and carry no URI identity, or an \
-                       entry that is not a regular file",
+                       entry that is not a regular file; that second arm is also raised by \
+                       the doors that rewrite or move a committed doc where it stands (`jigc \
+                       rename`, the relocation primitive), keyed at the home in question",
     },
     FinalizeCode {
         code: "finalize.promote-io",

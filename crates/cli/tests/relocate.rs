@@ -927,6 +927,16 @@ fn every_relocate_refusal_carries_an_identity_and_a_route() {
             Surface::Row,
             &["relocate", "note", "--from", "unaddressable"],
         ),
+        // The eleventh (the rc.24 fix pass): a stranded entry that is a **link**. `git mv`
+        // would carry it to the doctype's home as the link it is, so the move primitive
+        // refuses it under the code every door raises for a doc's home in that state. The
+        // nothing-moved and route-follow halves are `store_door_home_shape.rs`'s and
+        // `cli::relocate`'s own unit test; this is the member's seat on the axis.
+        (
+            R::ForeignSource,
+            Surface::Row,
+            &["relocate", "note", "--from", "linked"],
+        ),
     ];
 
     // The unaddressable cell's own subject — a stranded doc whose name is not a doc id.
@@ -936,6 +946,17 @@ fn every_relocate_refusal_carries_an_identity_and_a_route() {
         "# My Note\n\n## Body\n\nprose\n",
     )
     .expect("write the unaddressable-named note");
+    // The foreign-source cell's own subject — a committed link under a prior home, to a
+    // file that is no doc's home.
+    fs::create_dir_all(repo.path().join("linked")).expect("mk the linked prior home");
+    fs::create_dir_all(repo.path().join("targets")).expect("mk the link's target dir");
+    fs::write(
+        repo.path().join("targets/real.txt"),
+        "# Pointer\n\n## Body\n\nprose\n",
+    )
+    .expect("write the link's target");
+    std::os::unix::fs::symlink("../targets/real.txt", repo.path().join("linked/pointer.md"))
+        .expect("strand a link");
     git(repo.path(), &["add", "-A"]);
     git(
         repo.path(),

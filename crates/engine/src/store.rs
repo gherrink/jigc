@@ -151,6 +151,90 @@ pub fn home_entry(path: &Path) -> HomeEntry {
     }
 }
 
+/// **Rewrite the managed doc at `home` in place — a regular file at exactly that path,
+/// never through a link** (the rc.24 fix pass, the store doors' half of `(R6, D-7)`).
+///
+/// The write behind every door that changes a committed doc **where it stands**, outside a
+/// promote: `jigc rename`'s retitle and its referrer repoints, and the milestone record's
+/// append, join and discard. Each of them was a `std::fs::write`, which opens its
+/// destination through whatever is there — so with a link at the home the new bytes went
+/// into the link's target, and the door then committed the unchanged link (or, where git
+/// saw no change at all, failed its own commit and blamed a hook).
+///
+/// It rewrites and never creates: the doc is already committed at `home`, so an absent
+/// entry is a fault, not a home to mint (the promote sink and `milestone create` are the
+/// doors that put a doc at a free home). The file is rewritten **in place** — same inode,
+/// same mode — the property the `fs::write` it replaces had; a temp-file-and-rename would
+/// be link-safe too, but it *replaces* whatever entry is there, and an entry that is not
+/// jigc's is refused and named, never taken.
+///
+/// The doors ask [`home_entry`] first, where a refusal can still be routed; this is the
+/// backstop behind them, for an entry that changes between the door's question and the
+/// write. It asks the **open handle**, not the path: the home is opened without
+/// truncating, the entry at the path is read again without following a link, and the write
+/// goes ahead only when that entry is a regular file *and is the file the handle holds*. A
+/// link swapped in before the open is seen by that second read and nothing is written; one
+/// swapped in after it finds the handle already bound to the regular file that was there.
+///
+/// # Errors
+///
+/// `NotFound` when nothing is at `home`; `InvalidInput`, naming the entry's shape, when it
+/// is not a regular file; any I/O error of the open or the write.
+pub fn rewrite_home(home: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let refuse = |shape: ForeignEntry| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "the doc's home is {}, not a regular file — jigc rewrites a managed doc at \
+                 exactly its home and never through a link",
+                shape.noun()
+            ),
+        )
+    };
+    // Asked before the open, so a FIFO with no reader is refused instead of parked on.
+    match home_entry(home) {
+        HomeEntry::RegularFile => {}
+        HomeEntry::Free => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "there is no doc at this home to rewrite",
+            ));
+        }
+        HomeEntry::Foreign(shape) => return Err(refuse(shape)),
+    }
+    let mut file = std::fs::OpenOptions::new().write(true).open(home)?;
+    // The entry again, now that the handle exists: the handle is written only when it is
+    // the regular file standing at the path.
+    let entry = std::fs::symlink_metadata(home)?;
+    if !entry.is_file() || !same_file(&entry, &file.metadata()?) {
+        return Err(match home_entry(home) {
+            HomeEntry::Foreign(shape) => refuse(shape),
+            _ => std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "the doc's home changed while it was being rewritten",
+            ),
+        });
+    }
+    file.set_len(0)?;
+    file.write_all(bytes)
+}
+
+/// Whether two metadata reads describe **one file** — the identity half of
+/// [`rewrite_home`]'s question to its open handle.
+#[cfg(unix)]
+fn same_file(entry: &std::fs::Metadata, handle: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt as _;
+    entry.dev() == handle.dev() && entry.ino() == handle.ino()
+}
+
+/// Off unix there is no portable file identity in `std`; the shape re-read
+/// [`rewrite_home`] makes after the open is the whole of the check.
+#[cfg(not(unix))]
+fn same_file(_entry: &std::fs::Metadata, handle: &std::fs::Metadata) -> bool {
+    handle.is_file()
+}
+
 /// Lexically normalize a path — drop `.` components and resolve `..` against the
 /// accumulated prefix — **without touching the filesystem**.
 ///
@@ -1017,6 +1101,81 @@ mod tests {
         assert_eq!(
             lexical_normalize(Path::new("changelog/../changelog/changelog.md")),
             PathBuf::from("changelog/changelog.md"),
+        );
+    }
+
+    /// **A doc is rewritten in place, as the regular file it is** — the inode survives the
+    /// rewrite (it is not a temp-file swap) and nothing of a longer old body is left behind.
+    #[cfg(unix)]
+    #[test]
+    fn rewrite_home_rewrites_a_regular_file_in_place() {
+        use std::os::unix::fs::MetadataExt as _;
+        let root = TempRoot::new("rewrite-in-place");
+        let home = root.path().join("doc.md");
+        std::fs::write(&home, "the first body, which is the longer one\n").expect("write");
+        let inode = std::fs::metadata(&home).expect("stat").ino();
+
+        rewrite_home(&home, b"second\n").expect("a regular file is rewritten");
+
+        assert_eq!(std::fs::read_to_string(&home).expect("read"), "second\n");
+        assert_eq!(
+            std::fs::metadata(&home).expect("stat").ino(),
+            inode,
+            "rewritten in place — the entry at the home is the entry that was there",
+        );
+    }
+
+    /// **The axis the store doors share: every entry that is not a regular file refuses,
+    /// and nothing is written through it or at it.** A live link's target keeps its bytes;
+    /// a dangling link's target is not created; a directory and an absent home are refused
+    /// rather than written into or minted.
+    #[cfg(unix)]
+    #[test]
+    fn rewrite_home_never_writes_through_or_over_anything_but_a_regular_file() {
+        use std::os::unix::fs::symlink;
+        let root = TempRoot::new("rewrite-shapes");
+        let dir = root.path();
+        std::fs::write(dir.join("target.md"), "theirs\n").expect("plant the live target");
+        symlink("target.md", dir.join("live.md")).expect("link");
+        symlink("absent.md", dir.join("dangling.md")).expect("link");
+        std::fs::create_dir(dir.join("directory.md")).expect("mkdir");
+
+        for (home, names) in [
+            ("live.md", "a symbolic link"),
+            ("dangling.md", "a symbolic link"),
+            ("directory.md", "a directory"),
+        ] {
+            let err = rewrite_home(&dir.join(home), b"ours\n")
+                .expect_err("an entry that is not a regular file refuses");
+            assert_eq!(
+                err.kind(),
+                std::io::ErrorKind::InvalidInput,
+                "{home}: {err}"
+            );
+            assert!(
+                err.to_string().contains(names),
+                "{home}: the error names the entry's shape: {err}"
+            );
+        }
+        let err = rewrite_home(&dir.join("free.md"), b"ours\n")
+            .expect_err("a rewrite never mints a home");
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join("target.md")).expect("read"),
+            "theirs\n",
+            "the live link's target holds what it held"
+        );
+        assert!(
+            !dir.join("absent.md").exists() && !dir.join("free.md").exists(),
+            "and nothing was created — through the dangling link or at the free home"
+        );
+        assert!(
+            std::fs::read_dir(dir.join("directory.md"))
+                .expect("still a directory")
+                .next()
+                .is_none(),
+            "nor inside the directory"
         );
     }
 

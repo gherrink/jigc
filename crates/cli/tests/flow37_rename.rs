@@ -1742,10 +1742,11 @@ impl Scene {
 }
 
 /// Drive one [`RefusalKind`] through the **real binary**, in a fixture built to reach that
-/// arm and no other. The match is **exhaustive**, so an eleventh refusal cannot compile
+/// arm and no other. The match is **exhaustive**, so a further refusal cannot compile
 /// without a scene that provokes it; [`RefusalKind::InFlight`] yields **two** scenes,
 /// because the guard keys on two markers (a task working area and a milestone) and one
-/// green marker would leave the other unswept.
+/// green marker would leave the other unswept — and [`RefusalKind::ForeignHome`] two, for
+/// the two kinds of home the door rewrites.
 fn drive_refusal(kind: RefusalKind) -> Vec<Scene> {
     let plain = |tag: &str, argv: Vec<&'static str>, prepare: &dyn Fn(&Path)| {
         let repo = TempDir::new(tag);
@@ -1898,7 +1899,42 @@ fn drive_refusal(kind: RefusalKind) -> Vec<Scene> {
                 out,
             }]
         }
+        // Two scenes, because the door rewrites two kinds of home and one green would
+        // leave the other unswept: the renamed doc's own, and a referrer's
+        // (`revisit-caching` supersedes `single-node-cache`). Each is a **committed** link
+        // to the doc's own bytes — a clean tree, so the dirty-tree arm cannot answer first.
+        // The route-follow and the nothing-written halves are
+        // `store_door_home_shape.rs`'s; this is the member's seat in the identity sweep.
+        RefusalKind::ForeignHome => vec![
+            plain(
+                "axis-foreign-home-own",
+                vec!["rename", "adr:single-node-cache", "--to", "Distributed"],
+                &|repo: &Path| link_out_committed(repo, "docs/decisions/single-node-cache.md"),
+            ),
+            plain(
+                "axis-foreign-home-referrer",
+                vec!["rename", "adr:single-node-cache", "--to", "Distributed"],
+                &|repo: &Path| link_out_committed(repo, "docs/decisions/revisit-caching.md"),
+            ),
+        ],
     }
+}
+
+/// Turn the committed doc at `rel` into a **committed symbolic link** to its own bytes,
+/// moved to `elsewhere/` — the state a third party leaves a doc's home in. Staged by path:
+/// the axis's project layer is untracked on purpose and must stay out of the commit.
+fn link_out_committed(repo: &Path, rel: &str) {
+    let name = Path::new(rel).file_name().expect("a file name");
+    fs::create_dir_all(repo.join("elsewhere")).expect("mk elsewhere/");
+    fs::rename(repo.join(rel), repo.join("elsewhere").join(name)).expect("move the doc out");
+    let up = "../".repeat(Path::new(rel).components().count() - 1);
+    std::os::unix::fs::symlink(
+        format!("{up}elsewhere/{}", name.to_string_lossy()),
+        repo.join(rel),
+    )
+    .expect("link the home at the moved doc");
+    git(repo, &["add", "--", rel, "elsewhere"]);
+    git(repo, &["commit", "-q", "-m", "a doc's home becomes a link"]);
 }
 
 /// The `route:` lines of a rendered surface (the `unknown_doctype_axis` reader).
@@ -1926,7 +1962,7 @@ fn route_command(route: &str) -> String {
 /// fence panic's 101, never a silent 0), the declared finding code on the printed surface,
 /// exactly one route — run **verbatim at exit 0** where the declaration says a command is
 /// the repair — and the same code in the invocation log's `finding_codes`, so a refused
-/// rename is distinguishable there from the other ten ways this door says no.
+/// rename is distinguishable there from every other way this door says no.
 ///
 /// The occupancy arm is PT-A's own report and was the reddest: `` cannot rename to `X` —
 /// a different doc already exists at … `` shipped code-less and route-less while the same
@@ -2028,7 +2064,7 @@ fn every_rename_refusal_carries_an_identity_and_an_exit() {
 }
 
 /// The declaration is closed over the enum: every variant is in [`RefusalKind::ALL`], so
-/// the axis above cannot silently skip one. The match is exhaustive, so an eleventh variant
+/// the axis above cannot silently skip one. The match is exhaustive, so a further variant
 /// does not compile without an author coming here; the count is what catches a variant
 /// that compiles but never joined `ALL`.
 #[test]
@@ -2045,12 +2081,13 @@ fn every_refusal_kind_is_declared() {
             | RefusalKind::WorkUnitIdentity
             | RefusalKind::OccupiedDestination
             | RefusalKind::MalformedSlug
-            | RefusalKind::UntrackableDestination => {}
+            | RefusalKind::UntrackableDestination
+            | RefusalKind::ForeignHome => {}
         }
     }
     assert_eq!(
         RefusalKind::ALL.len(),
-        11,
+        12,
         "a new `RefusalKind` joins `ALL` (and the axis suite gains the scene that drives it)",
     );
 }
@@ -2065,6 +2102,26 @@ fn the_unknown_doctype_row_reads_the_shipped_code() {
     assert_eq!(
         RefusalKind::UnknownDoctype.code(),
         engine::store::unknown_doctype("nosuch").code,
+        "the declared code must be the shipped constructor's",
+    );
+}
+
+/// The foreign-home row's code is not a second spelling either: it is the committing doors'
+/// own, minted by `engine::finalize`'s one constructor for a store door, and this row only
+/// names it so the axis is total. A door-private copy that drifted would fork one fault —
+/// *this doc's home is not a regular file* — across the doors that meet it.
+#[test]
+fn the_foreign_home_row_reads_the_shipped_code() {
+    assert_eq!(
+        RefusalKind::ForeignHome.code(),
+        engine::finalize::store_home_refusal(
+            Path::new("/repo"),
+            "docs/decisions/a.md",
+            engine::store::ForeignEntry::Symlink,
+            "it is not renamed",
+            "re-run the rename",
+        )
+        .code,
         "the declared code must be the shipped constructor's",
     );
 }

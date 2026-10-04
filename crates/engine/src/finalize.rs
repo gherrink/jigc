@@ -747,6 +747,11 @@ enum ShapeUnit<'a> {
     /// It knows no unit: it is reached only when the entry appeared after the planner
     /// looked, and the next run's planner is the one that routes by unit.
     Sink,
+    /// A **store door** — one that rewrites or moves a committed doc where it stands, with
+    /// no work unit and no promote (`jigc rename`, the relocation primitive;
+    /// [`store_home_refusal`]). `withheld` is the clause that says what the door did not
+    /// do, `rerun` the clause that says what to run once the home holds the doc itself.
+    Store { withheld: &'a str, rerun: &'a str },
 }
 
 /// **Whose doc the refused promote was** — what [`clobber_finding`] words its message and
@@ -1030,13 +1035,22 @@ fn shape_clobber_text(
             origin: None,
             ..
         } => format!("this milestone's doc `{landing}`"),
-        ShapeUnit::Sink => "the doc".to_owned(),
+        ShapeUnit::Sink | ShapeUnit::Store { .. } => "the doc".to_owned(),
     };
-    let message = format!(
-        "`{destination}` is {noun}, not a regular file — jigc lands a managed doc as a \
-         regular file at exactly its home and never writes through a link, so {whose} is \
-         not promoted there"
-    );
+    let message = match unit {
+        // No unit and no promote: the doc is committed at this home, and the door would
+        // have rewritten it there or carried the entry somewhere else.
+        ShapeUnit::Store { withheld, .. } => format!(
+            "`{destination}` is {noun}, not a regular file — jigc keeps a managed doc as a \
+             regular file at exactly its home, and neither writes through a link nor moves \
+             one, so {withheld}"
+        ),
+        _ => format!(
+            "`{destination}` is {noun}, not a regular file — jigc lands a managed doc as a \
+             regular file at exactly its home and never writes through a link, so {whose} \
+             is not promoted there"
+        ),
+    };
 
     let yours = format!(
         "jigc writes regular files only, so the {bare} at `{destination}` is not one it put \
@@ -1100,6 +1114,14 @@ fn shape_clobber_text(
              `{destination}` after this finalize had planned its promote. {yours}: re-run \
              the finalize, which names the exit this unit has from it"
         ),
+        // The copied-in arm's exit, at a door that acts on the committed store: the regular
+        // file itself at the home is a **commit** here, and the door's own command follows.
+        ShapeUnit::Store { rerun, .. } => format!(
+            "nothing was written through `{destination}` and it stands exactly as it was. \
+             {yours}: put the doc itself at `{destination}` as a regular file — for a link, \
+             a copy of the file it points at, in the link's place — and commit that; then \
+             {rerun}"
+        ),
     };
     (message, route)
 }
@@ -1126,6 +1148,44 @@ pub fn promote_sink_refusal(
             shape,
             exit: ShapeExit::MoveOut,
             unit: ShapeUnit::Sink,
+        },
+    )
+}
+
+/// **A store door's refusal over a home that is not a regular file** — [`clobber_finding`]'s
+/// shape arm, raised by a door that writes or moves a committed doc **where it stands**
+/// rather than promoting one (the rc.24 fix pass; `design/finalize.md` → 4. Promote,
+/// *the doors that write a committed home in place*).
+///
+/// `(R6, D-7)` made the shape arm true of every door that promotes. The doors that do not
+/// promote shared the mechanism and were left declared: `jigc rename` moved a link with
+/// `git mv` and wrote the retitle — and every referrer's repoint — *through* it, and the
+/// relocation primitive carried a link to a new home. They refuse the same state of the
+/// same doc under the **same code, keyed at the same path**: one fault owes one identity
+/// (`cli::rename::RefusalKind::code`'s rule), and a driver that has learnt what
+/// `finalize.promote-clobber` at a doc's home means has nothing new to learn at these
+/// doors. What differs is the unit — there is none — so the message says what the door
+/// withheld (`withheld`) and the route ends at the door's own command (`rerun`) once the
+/// regular file is committed at the home.
+///
+/// `home` is the repo-relative path of the entry.
+#[must_use]
+pub fn store_home_refusal(
+    repo_root: &Path,
+    home: &str,
+    shape: crate::store::ForeignEntry,
+    withheld: &str,
+    rerun: &str,
+) -> Finding {
+    clobber_finding(
+        repo_root,
+        home,
+        ClobberedBy::Shape {
+            shape,
+            // The home has to hold the regular file itself — the one exit a committed doc
+            // has from it. The store arm words it; the variant records which exit it is.
+            exit: ShapeExit::RegularFile,
+            unit: ShapeUnit::Store { withheld, rerun },
         },
     )
 }
@@ -3959,6 +4019,73 @@ sections:
                 !surface.contains("/repo"),
                 "repo-relative paths only: {surface:?}",
             );
+        }
+    }
+
+    /// **A store door's refusal is the planner's identity too** ([`store_home_refusal`]):
+    /// the same code keyed at the same home, over every shape — so a doc whose home is not
+    /// a regular file reads as one fault at `jigc task finalize`, at `jigc rename` and at a
+    /// relocation. What differs is what the door says it withheld and where its route ends:
+    /// there is no unit, the exit is the regular file **committed** at the home, and the
+    /// door's own command follows it. It teaches no removal and prints no host path.
+    #[test]
+    fn the_store_door_refusal_carries_the_planners_code_and_key() {
+        use crate::store::ForeignEntry;
+        for (shape, noun, bare) in [
+            (ForeignEntry::Symlink, "a symbolic link", "link"),
+            (ForeignEntry::Directory, "a directory", "directory"),
+            (ForeignEntry::Other, "a special file", "special file"),
+        ] {
+            let finding = store_home_refusal(
+                Path::new("/repo"),
+                "decisions/single-node-cache.md",
+                shape,
+                "`adr:single-node-cache` is not renamed",
+                "re-run `jigc rename adr:single-node-cache --to Cache`",
+            );
+            assert_eq!(finding.code, "finalize.promote-clobber", "{shape:?}");
+            assert_eq!(finding.severity, Severity::Blocking, "{shape:?}");
+            assert_eq!(
+                target(&finding),
+                Some("decisions/single-node-cache.md"),
+                "{shape:?}: keyed at the home, like the planner's and the sink's",
+            );
+            assert!(
+                finding.message.contains(noun)
+                    && finding.message.contains("decisions/single-node-cache.md")
+                    && finding
+                        .message
+                        .ends_with("so `adr:single-node-cache` is not renamed"),
+                "{shape:?}: the message names the entry, the home and what the door \
+                 withheld; got: {}",
+                finding.message,
+            );
+            assert!(
+                !finding.message.contains("promoted"),
+                "{shape:?}: nothing is promoted at a store door; got: {}",
+                finding.message,
+            );
+            let route = finding.route.as_deref().expect("a route");
+            assert!(
+                route.contains(&format!("the {bare} at `decisions/single-node-cache.md`"))
+                    && route.contains("as a regular file")
+                    && route.contains("commit that")
+                    && route
+                        .ends_with("then re-run `jigc rename adr:single-node-cache --to Cache`"),
+                "{shape:?}: the route names the state the home has to be in — committed — \
+                 and ends at the door's own command; got: {route}",
+            );
+            for surface in [finding.message.as_str(), route] {
+                let lower = surface.to_lowercase();
+                assert!(
+                    !lower.contains("remove") && !lower.contains("delete"),
+                    "{shape:?}: never teaches raw removal: {surface:?}",
+                );
+                assert!(
+                    !surface.contains("/repo"),
+                    "{shape:?}: repo-relative paths only: {surface:?}",
+                );
+            }
         }
     }
 

@@ -34,10 +34,11 @@ use crate::task::git_run;
 /// finding code it carries on the printed surface *and* in the invocation log's
 /// `finding_codes` (M52 completion audit, fix 5).
 ///
-/// **Why it is an axis and not six repairs.** The door declines **ten** states carrying
-/// **nine** distinct codes (the two malformed `--from` cells share one — the consequence is
-/// one). Driven at `26d021de`, **four** of the ten already carried a code and a route — the
-/// unknown doctype and the two installed-root `--from` values (M52 Increment 8 / T7), and
+/// **Why it is an axis and not six repairs.** At that audit the door declined **ten** states
+/// carrying **nine** distinct codes (the two malformed `--from` cells share one — the
+/// consequence is one); the rc.24 fix pass added the eleventh state and the tenth code,
+/// [`RelocateRefusal::ForeignSource`]. Driven at `26d021de`, **four** of the ten already
+/// carried a code and a route — the unknown doctype and the two installed-root `--from` values (M52 Increment 8 / T7), and
 /// the destination-identity gate (Increment 8 / T6) — while the other **six** reached the
 /// wire as bare `anyhow` strings: no `blocking · <code>` prefix, no `route:` line, and on
 /// `--format json` an `{"error": "<sentence>"}` a driver cannot key on. A bail carries no
@@ -50,13 +51,15 @@ use crate::task::git_run;
 /// already right are members too, so the registry is a statement about the door's refusal
 /// surface and not a list of what one fix touched.
 ///
-/// **Reuse over mint, one fault one code.** Of the nine codes, **five** name a fault some
+/// **Reuse over mint, one fault one code.** Of the ten codes, **five** name a fault some
 /// other door already raises — a transient doctype, an occupied destination, a destination
 /// git cannot record, and the two installed-root prior homes whose sibling is `jigc config
 /// set <root-knob>`. **Two** mint (`relocate.` — the states no other door can be in: only
 /// this verb takes a `--from` prior home, and only this verb is the freeze-exempt path a
-/// frozen doctype must be turned away from). **Two** are raised by the crates that own the
-/// condition (`engine::store`, `crate::ingest`) and are named here so the axis is total.
+/// frozen doctype must be turned away from). **Three** are raised by the crates that own the
+/// condition (`engine::store`, `crate::ingest`, and — for a source that is not a regular
+/// file, the same fault the committing doors name — `engine::finalize`) and are named here
+/// so the axis is total.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RelocateRefusal {
     /// `<ty>` resolves to no doctype in the composed cascade — minted by `engine::store`.
@@ -83,6 +86,11 @@ pub enum RelocateRefusal {
     /// The destination would sit at a managed home under no `<type>:<slug>` identity —
     /// minted by [`crate::ingest`] (M52 Increment 8 / T6).
     UnaddressableDestination,
+    /// The **source** — the doc's own entry at the home it would be moved from — is not a
+    /// regular file: a symbolic link, which `git mv` carries to the new home as the entry it
+    /// is. Raised by the shared move primitive ([`move_doc`], [`refuse_foreign_source`]), so
+    /// it is one guard for every door that moves a doc (the rc.24 fix pass).
+    ForeignSource,
 }
 
 impl RelocateRefusal {
@@ -99,6 +107,7 @@ impl RelocateRefusal {
         RelocateRefusal::OccupiedDestination,
         RelocateRefusal::UntrackableDestination,
         RelocateRefusal::UnaddressableDestination,
+        RelocateRefusal::ForeignSource,
     ];
 
     /// The finding code this refusal carries.
@@ -115,6 +124,11 @@ impl RelocateRefusal {
             RelocateRefusal::OccupiedDestination => "write.already-present",
             RelocateRefusal::UntrackableDestination => "write.untrackable-destination",
             RelocateRefusal::UnaddressableDestination => crate::ingest::UNADDRESSABLE_IDENTITY,
+            // The code every door raises over a managed doc's home that is not a regular
+            // file — minted by `engine::finalize` ([`engine::finalize::store_home_refusal`]),
+            // named here so the axis is total; `the_foreign_source_row_reads_the_shipped_code`
+            // holds the two together.
+            RelocateRefusal::ForeignSource => "finalize.promote-clobber",
         }
     }
 }
@@ -172,6 +186,42 @@ fn refuse(
         at.map(|at| engine::finding::Location::addressed(at, 1, 1)),
         Some(route.into()),
     ))
+}
+
+/// **Refuse to move a doc whose own entry at its home is not a regular file** — the source
+/// half of the move primitive's contract (the rc.24 fix pass; `design/finalize.md` → 4.
+/// Promote, *the doors that write a committed home in place*).
+///
+/// `git mv` moves a directory entry, and a symbolic link is one: it is carried to the new
+/// home **as a link**, relative target and all. Driven before this guard, `jigc config set
+/// docs-root handbook/sub` over a doc whose home was `→ ../../elsewhere/<doc>.md` exited 0
+/// saying `relocating 2 committed doc(s)`; the link dangled one directory deeper, `jigc doc
+/// list` then answered a code-less exit 1 for the whole store, and `jigc validate` routed at
+/// `jigc unmanage`. And at `jigc rename`, which moves through this primitive too, the moved
+/// link was then written *through*.
+///
+/// jigc keeps a managed doc as a regular file at exactly its home, so a relocation lands one
+/// or refuses: the entry is asked without following a link ([`engine::store::home_entry`])
+/// and one that is not a regular file is refused under the code every other door raises for
+/// that state of that doc. An **absent** source is not this guard's — `git mv` names it.
+///
+/// Called by [`move_doc`], which every mover funnels through, and by [`relocate_one`] ahead
+/// of its squatter displacement, so a move that will be refused parks nobody's file first.
+pub(crate) fn refuse_foreign_source(repo_root: &Path, old_rel: &str, new_rel: &str) -> Result<()> {
+    if let engine::store::HomeEntry::Foreign(shape) =
+        engine::store::home_entry(&repo_root.join(old_rel))
+    {
+        return Err(render::finding_error(
+            &engine::finalize::store_home_refusal(
+                repo_root,
+                old_rel,
+                shape,
+                &format!("it is not moved to `{new_rel}`"),
+                "re-run this command",
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// Move a committed managed doc `old_rel` → `new_rel` and re-key its file-state entry.
@@ -235,6 +285,9 @@ pub fn move_doc(
                 ),
             ));
         }
+        // The source's own entry, asked on the primitive for the reason the destination's
+        // trackability is: one guard for every door that moves a doc, not one per door.
+        refuse_foreign_source(repo_root, old_rel, new_rel)?;
         crate::repo::SeamSubject::live(repo_root).verify(crate::repo::SeamAct::Move)?;
         git_run(repo_root, &["mv", old_rel, new_rel])?;
     }
@@ -700,6 +753,9 @@ fn relocate_one(
     new_rel: &str,
     undo: Option<&mut MoveRollback>,
 ) -> Result<Option<(String, String)>> {
+    // Before anything is displaced: a source this sweep will not move must not cost the
+    // destination's squatter its place first.
+    refuse_foreign_source(repo_root, old_rel, new_rel)?;
     let displaced = displace_foreign_squatter(repo_root, jigc_root, new_rel)?;
     let bytes = std::fs::read(repo_root.join(old_rel))
         .with_context(|| format!("reading the stranded doc {old_rel}"))?;
@@ -759,7 +815,12 @@ fn displace_foreign_squatter(
     dest_rel: &str,
 ) -> Result<Option<(String, String)>> {
     let dest_abs = repo_root.join(dest_rel);
-    if !dest_abs.exists() {
+    // The destination's own entry, read without following a link (the rc.24 fix pass). This
+    // asked `exists()`, which follows one — so a **dangling** link squatting the destination
+    // read as free, was not displaced, and the move then met git's own `fatal: destination
+    // exists` as a code-less `blocked` row. A link is a squatter like any other entry: it is
+    // parked below as the entry it is (`fs::rename` moves a link, it does not follow it).
+    if engine::store::home_entry(&dest_abs) == engine::store::HomeEntry::Free {
         return Ok(None);
     }
     let record = FileStateRecord::load(jigc_root)
@@ -1000,6 +1061,159 @@ mod tests {
             record.get("decisions/new.md"),
             Some(old_hash.as_str()),
             "the new file-state key is recorded at the supplied hash",
+        );
+    }
+
+    /// **The primitive never carries a link to a new home** (the rc.24 fix pass): a source
+    /// whose own entry is not a regular file is refused before `git mv`, under the code
+    /// every door raises for a managed doc's home in that state, and nothing moves — not the
+    /// link, not the index, not the record. Driven before the guard, `git mv` moved the link
+    /// as the entry it is and a relative one dangled at its new depth.
+    #[test]
+    fn move_doc_refuses_a_source_that_is_a_link_and_moves_nothing() {
+        let repo = TempRepo::new();
+        let body = "# A decision\n\nProse.\n";
+        repo.commit_file("elsewhere/real.md", body);
+        std::fs::create_dir_all(repo.path().join("decisions")).expect("mk decisions/");
+        for (name, target) in [
+            ("live.md", "../elsewhere/real.md"),
+            ("dangling.md", "../elsewhere/gone.md"),
+        ] {
+            let rel = format!("decisions/{name}");
+            std::os::unix::fs::symlink(target, repo.path().join(&rel)).expect("link");
+            repo.git(&["add", "--", &rel]);
+            repo.git(&["commit", "-q", "-m", "a doc's home is a link"]);
+
+            let jigc_root = repo.path().join(".jigc");
+            let dest = format!("moved/{name}");
+            std::fs::create_dir_all(repo.path().join("moved")).expect("mk the destination dir");
+            let err = move_doc(
+                repo.path(),
+                &jigc_root,
+                &rel,
+                &dest,
+                &hash_bytes(body.as_bytes()),
+            )
+            .expect_err("a link is not moved");
+            let finding = crate::render::blocked_finding(&err)
+                .unwrap_or_else(|| panic!("{name}: the refusal carries a finding: {err:#}"));
+            assert_eq!(
+                finding.code,
+                RelocateRefusal::ForeignSource.code(),
+                "{name}: the registry row reads the shipped constructor's code",
+            );
+            assert!(
+                finding.message.contains("a symbolic link")
+                    && finding.message.contains(&rel)
+                    && finding.message.contains(&dest),
+                "{name}: names the entry, its home and the move it withheld: {}",
+                finding.message,
+            );
+            assert!(
+                finding.route.is_some(),
+                "{name}: a blocking finding carries a route",
+            );
+            assert!(
+                std::fs::symlink_metadata(repo.path().join(&rel))
+                    .is_ok_and(|entry| entry.file_type().is_symlink()),
+                "{name}: the link stands where it stood",
+            );
+            assert!(
+                std::fs::symlink_metadata(repo.path().join(&dest)).is_err(),
+                "{name}: nothing landed at the destination",
+            );
+            let status = std::process::Command::new("git")
+                .args(["status", "--porcelain"])
+                .current_dir(repo.path())
+                .output()
+                .expect("run git status");
+            assert!(
+                String::from_utf8_lossy(&status.stdout).trim().is_empty(),
+                "{name}: the index is untouched: {}",
+                String::from_utf8_lossy(&status.stdout),
+            );
+            assert!(
+                FileStateRecord::load(&jigc_root)
+                    .expect("load the record")
+                    .get(&dest)
+                    .is_none(),
+                "{name}: and no file-state key was minted for a move that did not happen",
+            );
+        }
+    }
+
+    /// The foreign-source row's code is the shipped constructor's — the registry names it so
+    /// the axis is total, and may not become a second spelling of it.
+    #[test]
+    fn the_foreign_source_row_reads_the_shipped_code() {
+        assert_eq!(
+            RelocateRefusal::ForeignSource.code(),
+            engine::finalize::store_home_refusal(
+                Path::new("/repo"),
+                "legacy/a.md",
+                engine::store::ForeignEntry::Symlink,
+                "it is not moved",
+                "re-run this command",
+            )
+            .code,
+        );
+    }
+
+    /// **A dangling link squatting the destination is a squatter** (the rc.24 fix pass). The
+    /// occupancy probe asked `exists()`, which follows links, so a dangling one read as a
+    /// free destination, was not displaced, and the move met git's own `fatal: destination
+    /// exists`. Read without following it, the link takes the arm every other foreign entry
+    /// takes: parked in the gitignored workbench as the entry it is, and the doc lands.
+    #[test]
+    fn a_dangling_link_squatting_the_destination_is_displaced_like_any_squatter() {
+        let repo = TempRepo::new();
+        let managed = "---\nx: y\n---\n\n# Vision\n\nThesis.\n";
+        repo.commit_file("docs/vision/vision.md", managed);
+        std::os::unix::fs::symlink("nowhere.md", repo.path().join("VISION.md"))
+            .expect("plant the dangling squatter");
+
+        let jigc_root = repo.path().join(".jigc");
+        crate::gitignore::ensure(&jigc_root).expect("write the canonical .jigc/.gitignore");
+        let mut seed = FileStateRecord::new();
+        seed.record(
+            "docs/vision/vision.md".to_string(),
+            hash_bytes(managed.as_bytes()),
+        );
+        seed.save(&jigc_root).expect("seed the file-state record");
+
+        let schema = placement_schema("vision", "VISION.md");
+        let pack = crate::pack::EmbeddedPack::new();
+        let prior = Home::location("docs/vision/").expect("prior home");
+        let report = relocate_freeze_exempt(&pack, repo.path(), &jigc_root, &schema, prior)
+            .expect("the relocation runs");
+
+        assert!(
+            report.blocked.is_empty(),
+            "no blockers — and no `fatal: destination exists`: {:?}",
+            report.blocked
+        );
+        assert_eq!(
+            report.displaced,
+            vec![(
+                "VISION.md".to_string(),
+                ".jigc/displaced/VISION.md".to_string()
+            )],
+            "the link is parked, and reported: {report:?}",
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("VISION.md")).expect("destination"),
+            managed,
+            "the managed doc lands at its home as the regular file it is",
+        );
+        assert_eq!(
+            std::fs::read_link(repo.path().join(".jigc/displaced/VISION.md"))
+                .expect("the parked entry is still a link"),
+            Path::new("nowhere.md"),
+            "the squatter is preserved as the entry it was — moved, never followed",
+        );
+        assert!(
+            !repo.path().join("nowhere.md").exists(),
+            "and nothing was written through it",
         );
     }
 

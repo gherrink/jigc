@@ -425,7 +425,9 @@ pub enum Command {
     /// retitle a doc **your task has staged**, use `jigc doc rename <address> --to
     /// "<New Title>" --task <task-id>`, which re-slugs it too while its identity is still
     /// uncommitted. `--to` is required; `--slug` (only valid alongside `--to`) overrides
-    /// the derived slug.
+    /// the derived slug. Every home the rename touches is a regular file or it refuses
+    /// before anything moves: a symbolic link or a directory at the doc's own home, at a
+    /// referrer's, or at the new one is never written through and never moved.
     Rename {
         /// The `<type>:<slug>` address of the doc to rename (e.g.
         /// `adr:single-node-cache`).

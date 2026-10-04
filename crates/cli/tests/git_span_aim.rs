@@ -190,7 +190,9 @@ const AIM_HOME: &str = "git_at";
 /// table is the count — `every_production_caller_of_the_one_home_is_a_row` holds it to the
 /// source.**]** **[And a third the same day**, `unlanded_work_finding`: the milestone
 /// boundary's pre-landing refusal prints two aimed spans of its own (`reset --soft`,
-/// `stash`) beside the two above.**]**
+/// `stash`) beside the two above.**]** **[And a fourth**, `record_shape_block`: the record
+/// doors' refusal over a record whose home is not a regular file prints the `HEAD`-sourced
+/// restore its sibling `record_conflict_block` does (the store doors' half of `(R6, D-7)`).**]**
 ///
 /// The remaining 120 lines are `bail!`/`with_context` diagnostics **quoting the invocation
 /// that failed** — law 1's second declared-absolute reason, and outside a route by
@@ -274,6 +276,16 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
         "record_conflict_block",
         Aim::Aimed,
         "the milestone-record conflict block's `git checkout --` restore",
+    ),
+    (
+        "crates/cli/src/milestone.rs",
+        "record_shape_block",
+        Aim::Aimed,
+        "the same conflict block's shape sibling — a record whose home has become a link — \
+         and the same `git checkout HEAD --` restore, which puts the regular file back where \
+         `HEAD` still holds the record as one (git replaces the entry, it does not write \
+         through it). Aimed for the reason its sibling is: a record door runs from any \
+         directory of the checkout",
     ),
     (
         "crates/cli/src/milestone.rs",
