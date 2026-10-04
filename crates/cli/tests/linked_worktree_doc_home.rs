@@ -23,7 +23,10 @@
 //! from the clap tree, so a new leaf with no cell here fails the suite); the **doc kinds**
 //! are *location*, *placement* and *transient*, the three answers
 //! `engine::finalize::promote_destination` can give; and the **checkouts** are the main
-//! one, a linked worktree the user made, and one of jigc's own fan-out worktrees. The
+//! one, a linked worktree the user made, and one of jigc's own fan-out worktrees — plus the
+//! **must-not-refuse** layouts where `.git` is a file and no second checkout exists (a
+//! worktree of a bare repository, `--separate-git-dir`, a submodule), each walked to a
+//! landed doc under one line-ending conversion setting. The
 //! doc-only mint axis is the set of shipped workflows that compose `step:finalize-doc-only`,
 //! read off the pack directories.
 //!
@@ -95,6 +98,16 @@ impl Rig {
             wt.to_str().expect("a UTF-8 worktree path"),
         ]);
         Rig { corpus, wt }
+    }
+
+    /// A repository with one commit and **no jigc install** — the source the layout cells
+    /// clone from, each of which runs `jigc setup` itself. It has no linked worktree, so
+    /// [`Self::wt`] names nothing.
+    fn never_adopted() -> Self {
+        Rig {
+            corpus: TrialCorpus::build_never_adopted(),
+            wt: PathBuf::new(),
+        }
     }
 
     fn main(&self) -> PathBuf {
@@ -1593,54 +1606,248 @@ fn the_changelog_advisory_routes_at_the_main_checkout_from_a_code_only_checkout(
     );
 }
 
-/// **The bare-repository layout**, pinned as driven: a worktree of a bare repository has no
-/// main *checkout* at all, so the directory jigc resolves as its home carries no project
-/// layer and every door answers *not set up* first. The guard never speaks there — it has
-/// no main checkout to route at.
-#[test]
-fn a_worktree_of_a_bare_repository_answers_not_set_up_before_the_guard() {
-    let rig = Rig::new();
-    let root = rig.main().parent().expect("the corpus root").to_path_buf();
-    let bare = root.join("bare.git");
-    let bwt = root.join("bwt");
+/// One repository layout in which `.git` is a **file** and yet no second checkout exists —
+/// the directory jigc resolves as its home (`dirname(git-common-dir)`) is not a work tree.
+struct HomelessLayout {
+    name: &'static str,
+    /// The one checkout the layout has — where every command below is typed.
+    checkout: PathBuf,
+    /// The line-ending conversion this cell runs under — the audit's other axis, walked on
+    /// the diagonal: the predicate reads no file byte, so one setting per layout is what
+    /// shows it stays out of the way of each.
+    conversion: Conversion,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Conversion {
+    None,
+    AutocrlfTrue,
+    AutocrlfInput,
+    /// An uncommitted `.gitattributes` carrying `* text=auto`.
+    TextAuto,
+}
+
+/// Build every layout of the class under `root`, each from `source` (a repository with one
+/// commit and no jigc install), and give each the committer identity the source carries
+/// locally — a clone copies no local config.
+fn homeless_layouts(rig: &Rig, root: &Path, source: &Path) -> Vec<HomelessLayout> {
+    let branch = rig.git(source, &["branch", "--show-current"]);
+    let utf8 = |path: &Path| path.to_str().expect("a UTF-8 path").to_string();
+    let source = utf8(source);
+    let mut layouts = Vec::new();
+
+    // A bare repository behind a `gitdir:` pointer, its one worktree beside it.
+    let pointer = root.join("pointer-to-bare");
+    fs::create_dir_all(&pointer).expect("mk the pointer layout");
     rig.git(
-        &root,
+        root,
         &[
             "clone",
             "-q",
             "--bare",
-            rig.main().to_str().expect("UTF-8"),
-            bare.to_str().expect("UTF-8"),
+            &source,
+            &utf8(&pointer.join(".bare")),
         ],
     );
+    fs::write(pointer.join(".git"), "gitdir: ./.bare\n").expect("write the pointer");
+    rig.git(
+        &pointer,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            &utf8(&pointer.join("main")),
+            &branch,
+        ],
+    );
+    layouts.push(HomelessLayout {
+        name: "a bare repository behind a `gitdir:` pointer",
+        checkout: pointer.join("main"),
+        conversion: Conversion::None,
+    });
+
+    // A sibling bare repository and a worktree of it.
+    let sibling = root.join("sibling-bare");
+    fs::create_dir_all(&sibling).expect("mk the sibling layout");
+    let bare = sibling.join("proj.git");
+    rig.git(root, &["clone", "-q", "--bare", &source, &utf8(&bare)]);
     rig.git(
         &bare,
         &[
             "worktree",
             "add",
             "-q",
-            "-b",
-            "bfeat",
-            bwt.to_str().expect("UTF-8"),
+            &utf8(&sibling.join("main")),
+            &branch,
         ],
     );
-    for argv in [
-        vec!["start", "--workflow", "single-task", "do a thing"],
-        vec!["migrate", "README.md", "--as", "adr"],
-        vec!["doc", "list"],
-    ] {
-        let out = rig.run(&bwt, &argv);
-        let seen = both(&out);
+    layouts.push(HomelessLayout {
+        name: "a worktree of a sibling bare repository",
+        checkout: sibling.join("main"),
+        conversion: Conversion::AutocrlfTrue,
+    });
+
+    // `--separate-git-dir`: one checkout whose git dir lives elsewhere.
+    let separate = root.join("separate-git-dir");
+    fs::create_dir_all(&separate).expect("mk the separate-git-dir layout");
+    rig.git(
+        root,
+        &[
+            "clone",
+            "-q",
+            "--separate-git-dir",
+            &utf8(&separate.join("gitdir")),
+            &source,
+            &utf8(&separate.join("work")),
+        ],
+    );
+    layouts.push(HomelessLayout {
+        name: "`--separate-git-dir`",
+        checkout: separate.join("work"),
+        conversion: Conversion::AutocrlfInput,
+    });
+
+    // A submodule: its git dir is under the superproject's `.git/modules/`.
+    let superproject = root.join("super");
+    fs::create_dir_all(&superproject).expect("mk the superproject");
+    rig.git(&superproject, &["init", "-q"]);
+    rig.git(
+        &superproject,
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "--quiet",
+            "add",
+            &source,
+            "sub",
+        ],
+    );
+    layouts.push(HomelessLayout {
+        name: "a submodule",
+        checkout: superproject.join("sub"),
+        conversion: Conversion::TextAuto,
+    });
+
+    for layout in &layouts {
         assert!(
-            !out.status.success() && seen.contains("isn't set up") && !seen.contains(CODE),
-            "`jigc {}` from a bare repository's worktree answers *not set up*, never the \
-             guard; got:\n{seen}",
-            argv.join(" "),
+            layout.checkout.join(".git").is_file(),
+            "{}: the fixture must be a checkout whose `.git` is a file",
+            layout.name,
+        );
+        rig.git(
+            &layout.checkout,
+            &["config", "user.email", "trial@example.com"],
+        );
+        rig.git(&layout.checkout, &["config", "user.name", "Trial Corpus"]);
+        match layout.conversion {
+            Conversion::None => {}
+            Conversion::AutocrlfTrue => {
+                rig.git(&layout.checkout, &["config", "core.autocrlf", "true"]);
+            }
+            Conversion::AutocrlfInput => {
+                rig.git(&layout.checkout, &["config", "core.autocrlf", "input"]);
+            }
+            Conversion::TextAuto => {
+                fs::write(layout.checkout.join(".gitattributes"), "* text=auto\n")
+                    .expect("write .gitattributes");
+            }
+        }
+    }
+    layouts
+}
+
+/// **MUST NOT REFUSE — every layout where `.git` is a file and no second checkout exists**
+/// (the rc.24 fix pass, completion audit F1). The guard's predicate is *the doc store's home
+/// is itself a checkout, distinct from the standing one*, and it is asked of git. A worktree
+/// of a bare repository, a `--separate-git-dir` checkout and a submodule all keep `.git` as
+/// a file while the directory jigc resolves as its home is no work tree at all — so there is
+/// no main checkout to commit a doc from, nothing to route at, and `1.0.0-rc.24` landed a
+/// created doc in each. Driven on the build that shipped the guard, every one refused the
+/// create and printed a `cd` into a directory where no jigc door runs.
+///
+/// The must-refuse cell beside these is every other arm of this suite: a linked worktree the
+/// user made beside a real main checkout.
+///
+/// Each cell walks the whole of what rc.24 did there — setup, a doc-only mint, the create,
+/// the finalize — to the doc in `HEAD`, and asserts the guard said nothing on the way: no
+/// `checkout:` block, no finding, no served-from note. `jigc setup` exits 1 in two of the
+/// layouts on rc.24 too (`setup.install-hook`, the hooks dir asked of a directory that is
+/// no repository) and leaves the project layer behind, so its exit is not the cell's claim.
+#[test]
+fn a_layout_whose_doc_home_is_no_checkout_lands_a_doc_as_it_did_before_the_guard() {
+    let rig = Rig::never_adopted();
+    let source = rig.main();
+    let root = source.parent().expect("the corpus root").to_path_buf();
+    for layout in homeless_layouts(&rig, &root, &source) {
+        let name = format!("{} ({:?})", layout.name, layout.conversion);
+        let (name, here) = (name.as_str(), layout.checkout.as_path());
+        let setup = rig.run(here, &["setup"]);
+        assert!(
+            !both(&setup).contains(CODE),
+            "{name}: `jigc setup` never raises the guard; got:\n{}",
+            both(&setup),
+        );
+
+        let mint = rig.run(
+            here,
+            &["start", "--workflow", "record-decision", "record the cache"],
+        );
+        assert_ok(&mint, &format!("{name}: the doc-only mint"));
+        assert!(
+            !both(&mint).contains("checkout:") && !both(&mint).contains(CODE),
+            "{name}: the mint states no code-only checkout — there is no other one; got:\n{}",
+            both(&mint),
+        );
+        let task = minted(&text(&mint.stdout));
+
+        assert_ok(
+            &rig.run(
+                here,
+                &["doc", "create", "adr", "--title", "Cache", "--task", &task],
+            ),
+            &format!("{name}: `jigc doc create adr`"),
+        );
+        for slot in ["context", "decision", "consequences"] {
+            assert_ok(
+                &rig.run_stdin(
+                    here,
+                    &[
+                        "doc",
+                        "set-slot",
+                        &format!("adr:cache#{slot}"),
+                        "--from-file",
+                        "-",
+                        "--task",
+                        &task,
+                    ],
+                    "Prose.\n",
+                ),
+                &format!("{name}: authoring adr:cache#{slot}"),
+            );
+        }
+        rig.fill_commit(here, &task, "record the cache");
+
+        let orientation = rig.run(here, &["start"]);
+        assert!(
+            !both(&orientation).contains("checkout:") && !both(&orientation).contains(CODE),
+            "{name}: bare `jigc start` states no code-only checkout; got:\n{}",
+            both(&orientation),
+        );
+        let listed = rig.run(here, &["doc", "list"]);
+        assert!(
+            !text(&listed.stderr).contains("served from"),
+            "{name}: a store read prints no served-from note; got:\n{}",
+            both(&listed),
+        );
+
+        let landed = rig.run(here, &["task", "finalize", &task]);
+        assert_ok(&landed, &format!("{name}: `jigc task finalize`"));
+        assert!(
+            rig.git(here, &["show", "--format=", "--name-only", "HEAD"])
+                .lines()
+                .any(|path| path == "docs/decisions/cache.md"),
+            "{name}: the created doc is in HEAD, as on rc.24",
         );
     }
-    let orientation = rig.ok(&bwt, &["start"]);
-    assert!(
-        orientation.contains("isn't set up") && !orientation.contains("checkout:"),
-        "bare `jigc start` there is the unset-project view; got:\n{orientation}",
-    );
 }

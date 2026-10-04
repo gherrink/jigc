@@ -141,6 +141,61 @@ fn git_common_dir_parent(repo_root: &Path) -> Option<PathBuf> {
     Path::new(&common).parent().map(PathBuf::from)
 }
 
+/// **Is `home` itself a checkout of the repository `standing` belongs to?** — the question
+/// the linked-worktree doc guard turns on (`crate::render::CodeOnlyCheckout`), **asked of
+/// git** rather than read off the shape of `.git` (the rc.24 fix pass, completion audit F1).
+///
+/// [`jigc_home`] answers `dirname(git-common-dir)` wherever `.git` is a file, and a `.git`
+/// file is not evidence of a second checkout. Three layouts keep one while the directory
+/// that function names is no work tree at all: a worktree of a **bare** repository (the
+/// parent of the bare git dir), a **`--separate-git-dir`** checkout (the parent of the
+/// relocated git dir) and a **submodule** (`<super>/.git/modules/…`). The guard as first
+/// shipped fired in all three — refusing a doc create that `1.0.0-rc.24` landed, and
+/// routing at a `cd` into a directory where no jigc door runs — because *the two paths
+/// differ* was standing in for *there is a main checkout*.
+///
+/// So git is asked the two facts that phrase means, about `home` itself: it is the **top of
+/// a work tree** (`rev-parse --show-toplevel` succeeds and names `home` — it fails in a bare
+/// repository, inside a git dir and outside any repository, and names an ancestor when
+/// `home` merely sits inside some other checkout), and that work tree belongs to **the same
+/// repository** as `standing` (one `--git-common-dir`). Both hold for the main checkout
+/// behind a `git worktree add`, the user's or jigc's own.
+///
+/// **A probe that cannot answer reads as `false`** — no main checkout — which leaves the
+/// guard silent and the door doing what rc.24 did there. The other direction would refuse a
+/// write over a claim about a checkout nobody could confirm exists.
+pub fn home_is_a_checkout(home: &Path, standing: &Path) -> bool {
+    let real = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let ask = |dir: &Path, what: &[&str]| -> Option<Vec<PathBuf>> {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["rev-parse", "--path-format=absolute"])
+            .args(what)
+            .output()
+            .ok()
+            .filter(|out| out.status.success())?;
+        Some(
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .map(|line| real(Path::new(line)))
+                .collect(),
+        )
+    };
+    let Some(at_home) = ask(home, &["--show-toplevel", "--git-common-dir"]) else {
+        return false;
+    };
+    let Some(at_standing) = ask(standing, &["--git-common-dir"]) else {
+        return false;
+    };
+    match (at_home.as_slice(), at_standing.as_slice()) {
+        ([toplevel, common], [standing_common]) => {
+            *toplevel == real(home) && common == standing_common
+        }
+        _ => false,
+    }
+}
+
 /// One member of the **repository-posture family** — the three states a door that commits
 /// or moves on the user's behalf must adjudicate before it acts
 /// ([finalize.md](../../../design/finalize.md) → 1. Preflight; `DECISIONS.md` 2026-09-14

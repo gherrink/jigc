@@ -2171,7 +2171,10 @@ impl CommitSite {
 /// doc that **promotes** is neither written nor finalized from such a checkout.
 ///
 /// **It is a predicate about a commit boundary, not a path shape**, which is why it has
-/// three constructors and no fourth spelling anywhere else:
+/// three constructors and no fourth spelling anywhere else. All three share one layout
+/// half — the doc store's home is *itself a checkout*, distinct from the standing one
+/// ([`Self::differing`]) — so a layout with a `.git` file and no second checkout is never
+/// one of these:
 ///
 /// * [`Self::of_task`] — an existing task: *ordinary* (owned by no milestone) and
 ///   [`CommitSite::differing`]. A fan-out **sub-task** is exempt because its boundary is
@@ -2206,8 +2209,23 @@ pub struct CodeOnlyCheckout {
 }
 
 impl CodeOnlyCheckout {
+    /// The layout half of the predicate, shared by all three constructors: the doc store's
+    /// home is **itself a checkout, distinct from the standing one**.
+    ///
+    /// *Distinct* is [`CommitSite::differing`]'s path comparison, asked first because it is
+    /// free and answers `None` for every main checkout and every fake-`.git` fixture. *Itself
+    /// a checkout* is asked of git ([`crate::repo::home_is_a_checkout`]) and is what keeps
+    /// the guard out of the layouts where `.git` is a file and no second checkout exists —
+    /// a worktree of a bare repository, a `--separate-git-dir` checkout, a submodule. There
+    /// the directory jigc resolves as its home is no work tree: nothing could commit a doc
+    /// from it, every route here opens with a `cd` into it, and `1.0.0-rc.24` landed docs
+    /// from the standing checkout — so the guard says nothing and the doors do what they did
+    /// (the completion audit's F1).
     fn differing(jigc_home: &std::path::Path, standing: &std::path::Path) -> Option<Self> {
         let site = CommitSite::differing(jigc_home, standing)?;
+        if !crate::repo::home_is_a_checkout(jigc_home, standing) {
+            return None;
+        }
         let real =
             |path: &std::path::Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         Some(CodeOnlyCheckout {
