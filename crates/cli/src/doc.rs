@@ -3407,7 +3407,9 @@ fn ref_relations(schema: &Schema) -> Vec<String> {
 /// a misdirection — and the payload-shape parse outranks that, unchanged. Inside the
 /// pre-check the **create-only gate** comes first (M55): an entry carrying `new: true`
 /// refuses a minted identity already on disk at its home ([`state::create_occupied`]) with
-/// `create.already-exists`, ahead of the fixed-title arm and of both instance arms.
+/// `create.already-exists`, ahead of the fixed-title arm and of both instance arms — and
+/// gives that same answer when the incumbent probe, a second look at the home, is the one
+/// that finds it occupied.
 fn title_pre_check(
     task: &ActiveTask,
     schema: &Schema,
@@ -3422,22 +3424,26 @@ fn title_pre_check(
     // is copied in. It outranks every arm below (pin P4): under it neither the overwrite
     // nor a title complaint can arise, and when this task's role is also bound elsewhere,
     // `write.identity-change`'s route would move the task's doc onto an id that is taken.
+    //
+    // This ask is what **ranks** the refusal; it is not what guarantees it. Both later
+    // looks at the home give the same answer under such an entry — the incumbent probe
+    // below, and the create itself ([`state::create_gated`] →
+    // [`state::CreateRefusal::AlreadyExists`], answered by [`create_refused`]) — so a home
+    // that becomes occupied after this line is still `create.already-exists`, and never
+    // copied in by this create.
     if entry.new
         && let Some(address) =
             state::create_occupied(&task.dir, schema, ty, title, slug_override, &task.jigc_home)
                 .map_err(|f| block(&f, verb, ty))?
     {
-        // Which correction is open depends on whether this task already holds its doc. A
-        // bound role means every distinct identity the agent could choose is a *second*
-        // document, which rank 2 refuses (`write.identity-change`) — so routing at one
-        // would hand over a command that refuses again (M55 audit O23).
-        let route = match held_instance(task, schema, entry)? {
-            Some(held) => one_doc_per_task_route(task, verb, &held, &entry.as_role),
-            None => distinct_identity_route(task, verb, schema, slug_override)?,
-        };
-        return Err(DocFailure::block(state::already_exists_finding(
-            &address, route,
-        )));
+        return Err(already_exists_refusal(
+            task,
+            schema,
+            entry,
+            verb,
+            slug_override,
+            &address,
+        ));
     }
 
     // Rank 1 — the doctype-wide refusal: a singleton's `# H1` is the schema's own.
@@ -3453,6 +3459,29 @@ fn title_pre_check(
     let incumbent =
         state::create_incumbent(&task.dir, schema, ty, title, slug_override, &task.jigc_home)
             .map_err(|f| block(&f, verb, ty))?;
+
+    // Rank 0, again — under a create-only entry **every** look at an occupied home is the
+    // gate's answer, not only the first. The incumbent probe above is a second look at
+    // the home rank 0 looked at a moment ago; a doc that landed there in between is on
+    // disk, and under `new: true` that is `create.already-exists` — never the copy-in
+    // rank 3 would describe (*"would be copied in for update"*) in a `write.title-ignored`
+    // that `design/findings-channel.md` §4 says cannot arise in such a task. So rank 3's
+    // committed arm is unreachable under `new: true` by construction, and the refusal
+    // keeps its rank above rank 2 (pin P4). A **staged** incumbent is the task's own copy
+    // and keeps its arms: the home is what the entry guards.
+    if entry.new
+        && let Some(path) = &incumbent.incumbent
+        && !path.starts_with(&task.dir)
+    {
+        return Err(already_exists_refusal(
+            task,
+            schema,
+            entry,
+            verb,
+            slug_override,
+            &incumbent.address,
+        ));
+    }
 
     // Rank 2 — identity divergence. The bound role is the identity this task **holds**;
     // a call that would mint another one is a second document, not a correction. A
@@ -3508,6 +3537,60 @@ fn title_pre_check(
         }
     }
     Ok(())
+}
+
+/// **The create-only refusal, finished** — `create.already-exists` at `address`, carrying
+/// the route this verb and this task can actually follow. One builder for the refusal's
+/// producers, so they cannot answer differently: the title pre-check's rank 0 (the
+/// ranked early ask), the pre-check's incumbent probe, and the create itself
+/// ([`create_refused`]) — the latter two when the home became occupied after that ask.
+///
+/// Which correction is open depends on whether this task already holds its doc. A bound
+/// role means every distinct identity the agent could choose is a *second* document, which
+/// the pre-check's rank 2 refuses (`write.identity-change`) — so routing at one would hand
+/// over a command that refuses again (M55 audit O23).
+fn already_exists_refusal(
+    task: &ActiveTask,
+    schema: &Schema,
+    entry: &engine::compose::AllowsCreate,
+    verb: &str,
+    slug_override: Option<&str>,
+    address: &str,
+) -> DocFailure {
+    let route = held_instance(task, schema, entry).and_then(|held| match held {
+        Some(held) => Ok(one_doc_per_task_route(task, verb, &held, &entry.as_role)),
+        None => distinct_identity_route(task, verb, schema, slug_override),
+    });
+    match route {
+        Ok(route) => DocFailure::block(state::already_exists_finding(address, route)),
+        Err(err) => DocFailure::Orchestration(err),
+    }
+}
+
+/// Answer a refused [`state::create_gated`] — the one mapper both minting doors
+/// (`doc create`, `doc author`) hand the create's error to.
+///
+/// A complete finding takes the shared [`block`] seam, unchanged. The **create-only**
+/// arm ([`state::CreateRefusal::AlreadyExists`]) is the engine refusing a home that is a
+/// file on disk under an entry carrying `new: true` — reached when the title pre-check's
+/// rank 0 saw that home free and it was occupied by the time the create probed it (the
+/// rc.24 review's `(R6, K-1)`). It is the same refusal rank 0 gives, so it is built by the
+/// same [`already_exists_refusal`]: same code, same key, same route. Nothing was staged
+/// and no role was bound, so there is nothing to roll back.
+fn create_refused(
+    task: &ActiveTask,
+    schema: &Schema,
+    entry: &engine::compose::AllowsCreate,
+    verb: &str,
+    slug_override: Option<&str>,
+    refusal: state::CreateRefusal,
+) -> DocFailure {
+    match refusal {
+        state::CreateRefusal::Blocked(finding) => block(&finding, verb, schema.ty.as_str()),
+        state::CreateRefusal::AlreadyExists { address } => {
+            already_exists_refusal(task, schema, entry, verb, slug_override, &address)
+        }
+    }
 }
 
 /// The doc this task's create-gate role **holds** — the bound `<type>:<slug>` of this
@@ -3889,7 +3972,7 @@ fn run_create(
         &on_create,
         slug_override,
     )
-    .map_err(|f| block(&f, "create", type_name))?;
+    .map_err(|refusal| create_refused(&task, schema, entry, "create", slug_override, refusal))?;
     // A whole-doc create carries only the target head (`doctype`+`slug`) — contract §2.
     let target = whole_doc_ack_target(&created.address)?;
     // A fresh `create` mints the schema-generated skeleton (only the declared sections,
@@ -4001,7 +4084,16 @@ fn run_author(
         &on_create,
         slug_override.as_deref(),
     )
-    .map_err(|f| block(&f, "author", doctype))?;
+    .map_err(|refusal| {
+        create_refused(
+            &task,
+            schema,
+            entry,
+            "author",
+            slug_override.as_deref(),
+            refusal,
+        )
+    })?;
 
     // Chain every leaf over the single in-memory buffer, no persist between leaves.
     // Atomicity (`design/auto-migration.md` → Hardening #1): `create_gated` already

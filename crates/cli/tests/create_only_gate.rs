@@ -33,6 +33,16 @@
 //! names a distinct title or `--slug` (P5's builder) instead of `jigc doc rename` of someone
 //! else's doc — followed, it lands a second idea. The staged arm, whose subject is the
 //! task's own doc, keeps its in-task rename route, and that route runs.
+//!
+//! **T4 — the window (the rc.24 review's `(R6, K-1)`).** T2 drives the doors sequentially,
+//! so the home is always occupied before the pre-check asks. T4 occupies it *after* that
+//! ask — at a state of the door, never a moment on a clock — before each of the two later
+//! looks a minting door takes at the home (the pre-check's incumbent probe; the create's
+//! own probe), and each answers `create.already-exists`: under `new: true` no create
+//! reaches the copy-in. Both doors × every source of the minted id; the route followed;
+//! `task finalize` landing beside an occupant whose bytes are still there. Two controls
+//! prove the harness acts where it says, the second being the **omitting context**: the
+//! same plants under the shipped entry get create-or-update's answers.
 
 use crate::support;
 
@@ -1201,4 +1211,449 @@ fn the_staged_arm_under_a_slug_keeps_the_id_and_the_rerun_lands() {
         staged_ideas(&corpus, &task),
         vec!["idea:keep-me.md".to_owned()]
     );
+}
+
+// ---------------------------------------------------------------------------------------
+// T4 — the window: a home that becomes occupied AFTER the pre-check's create-only ask
+// (the rc.24 review's `(R6, K-1)`).
+// ---------------------------------------------------------------------------------------
+
+/// The marker a planted occupant carries in a field no minting door writes.
+const OCCUPANT: &str = "OCCUPANT-MARKER";
+
+/// The conformant `idea` another hand lands at `docs/ideas/<slug>.md`: the first landed
+/// idea's own bytes, retitled, its `trigger` carrying [`OCCUPANT`].
+fn occupant_body(landed_body: &str, title: &str) -> String {
+    let body = landed_body
+        .replace(&format!("# {FIRST_TITLE}"), &format!("# {title}"))
+        .replace("a report comes back", OCCUPANT);
+    assert!(
+        body.contains(&format!("# {title}")) && body.contains(OCCUPANT),
+        "the premise: the occupant carries its title and its marker:\n{body}",
+    );
+    body
+}
+
+/// **A state of a minting door** at which the harness acts — never a moment on a clock.
+///
+/// Both doors run the shared title pre-check and then the create, and between them they
+/// look at the minted identity's home three times: the pre-check's create-only ask
+/// (rank 0), the pre-check's incumbent probe (rank 3's input), and the create's own probe.
+/// Each variant names a file the door reads *between* two of those looks; the harness
+/// stops the door at that read ([`at_the_door`]).
+///
+/// That each read sits where its variant says is **proved by this suite, not assumed**:
+/// [`the_window_harness_acts_after_the_pre_checks_ask`] (an occupant *removed* at either
+/// state is still refused, so the ask had already seen it) and
+/// [`without_new_the_same_plants_get_create_or_updates_answers`] (under a plain entry a
+/// plant at the first state is seen by the incumbent probe, and one at the second is not
+/// but is still copied in — so each lands before the look it claims to precede).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum DoorState {
+    /// After the create-only ask, before the incumbent probe: the pre-check reads the
+    /// task's `source-path` (*is this a migration onto its own home?*) on its way to that
+    /// probe. `doc author` has already read the file once, to learn whether it is a
+    /// migration at all, so there it is the second read.
+    BetweenThePreChecksLooks,
+    /// After every look the pre-check takes, before the create's: the pre-check reads the
+    /// task's bound roles last (rank 2's premise), and the create probes the home next.
+    BetweenThePreCheckAndTheCreate,
+}
+
+const DOOR_STATES: [DoorState; 2] = [
+    DoorState::BetweenThePreChecksLooks,
+    DoorState::BetweenThePreCheckAndTheCreate,
+];
+
+impl DoorState {
+    /// The file whose read is the state, which of the door's reads of it, and the bytes
+    /// that read is answered with — each the file's own *nothing recorded* form, so the
+    /// door goes on exactly as it would have with the file absent.
+    fn read(self, verb: &str) -> (&'static str, usize, &'static [u8]) {
+        match self {
+            DoorState::BetweenThePreChecksLooks => {
+                ("source-path", if verb == "author" { 2 } else { 1 }, b"\n")
+            }
+            DoorState::BetweenThePreCheckAndTheCreate => ("roles.json", 1, b"{\"roles\":{}}\n"),
+        }
+    }
+}
+
+fn mkfifo(path: &std::path::Path) {
+    let made = std::process::Command::new("mkfifo")
+        .arg(path)
+        .status()
+        .expect("spawn mkfifo");
+    assert!(made.success(), "mkfifo {}", path.display());
+}
+
+/// Run `door` (one minting `jigc doc …` call on `task`) and run `act` with the door
+/// stopped at `state`.
+///
+/// **How.** The state's file is absent on a task that has recorded nothing; the harness
+/// puts a FIFO there. The door's read blocks in `open` until a writer arrives, and the
+/// helper's write-`open` returns exactly then — so `act` runs with the door stopped at
+/// that line and the door cannot go on until `act` has finished. The helper then unlinks
+/// the FIFO, restoring *absent* for every later read, and answers the blocked read. When
+/// the state is the door's *second* read of the file, the first is answered the same way
+/// after a fresh FIFO has been renamed over the path — while the door is still blocked in
+/// that first read, so its next one stops too. No sleep, no retry, no race.
+///
+/// Returns the door's output and whether the door ever reached the state.
+fn at_the_door(
+    corpus: &TrialCorpus,
+    task: &str,
+    verb: &str,
+    state: DoorState,
+    act: impl FnOnce() + Send,
+    door: impl FnOnce() -> Output,
+) -> (Output, bool) {
+    use std::io::Write as _;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let (file, nth, answer) = state.read(verb);
+    let path = corpus.repo().join(".jigc/tasks").join(task).join(file);
+    assert!(
+        !path.exists(),
+        "the premise: a fresh task has no `{file}`; found {}",
+        path.display(),
+    );
+    // One FIFO per read to stop at: the first at the path, the rest parked outside the
+    // task (same filesystem — they are renamed into place) until their turn.
+    let spares: Vec<std::path::PathBuf> = (2..=nth)
+        .map(|k| corpus.home().join(format!("door-{task}-{file}-{k}.fifo")))
+        .collect();
+    mkfifo(&path);
+    for spare in &spares {
+        mkfifo(spare);
+    }
+
+    let fired = AtomicBool::new(false);
+    let released = AtomicBool::new(false);
+    let mut act = Some(act);
+    let out = std::thread::scope(|scope| {
+        let helper = scope.spawn(|| {
+            for k in 1..=nth {
+                // Returns when a reader has the FIFO open: the door, stopped at its read.
+                let mut pipe = fs::OpenOptions::new()
+                    .write(true)
+                    .open(&path)
+                    .expect("open the FIFO for writing");
+                if released.load(Ordering::SeqCst) {
+                    return;
+                }
+                if k < nth {
+                    fs::rename(&spares[k - 1], &path).expect("arm the door's next read");
+                } else {
+                    fired.store(true, Ordering::SeqCst);
+                    (act.take().expect("the state is reached once"))();
+                    fs::remove_file(&path).expect("unlink the FIFO — the file is absent again");
+                }
+                pipe.write_all(answer).expect("answer the blocked read");
+            }
+        });
+        let out = door();
+        if !fired.load(Ordering::SeqCst) {
+            // The door exited before the state: rendezvous with the helper's blocked
+            // `open` so it returns, and tell it to do nothing.
+            released.store(true, Ordering::SeqCst);
+            let reader = fs::File::open(&path).expect("release the helper");
+            helper.join().expect("the helper exits");
+            drop(reader);
+            fs::remove_file(&path).expect("unlink the unused FIFO");
+        }
+        out
+    });
+    for spare in &spares {
+        let _ = fs::remove_file(spare);
+    }
+    (out, fired.load(Ordering::SeqCst))
+}
+
+/// One way a minting door comes to mint the occupant's identity.
+struct WindowArm {
+    what: &'static str,
+    verb: &'static str,
+    /// The title the door is handed.
+    title: &'static str,
+    /// The occupant's `# H1`.
+    occupant_title: &'static str,
+    /// Whether the id comes from a `--slug` (`doc create` only) rather than the title.
+    by_slug: bool,
+    /// The identity both resolve to.
+    slug_minted: &'static str,
+}
+
+/// The axis: both doors × where the minted id comes from (the title, a different title
+/// slugging onto the same id, a `--slug`).
+const WINDOW_ARMS: &[WindowArm] = &[
+    WindowArm {
+        what: "`doc create`, the occupant's title",
+        verb: "create",
+        title: "Window One",
+        occupant_title: "Window One",
+        by_slug: false,
+        slug_minted: "window-one",
+    },
+    WindowArm {
+        what: "`doc create`, a different title onto the occupant's id",
+        verb: "create",
+        title: "Window  Two!",
+        occupant_title: "Window Two",
+        by_slug: false,
+        slug_minted: "window-two",
+    },
+    WindowArm {
+        what: "`doc create`, a `--slug` naming the occupant",
+        verb: "create",
+        title: "Something Else Entirely",
+        occupant_title: "Window Three",
+        by_slug: true,
+        slug_minted: "window-three",
+    },
+    WindowArm {
+        what: "`doc author`, the occupant's title",
+        verb: "author",
+        title: "Window Four",
+        occupant_title: "Window Four",
+        by_slug: false,
+        slug_minted: "window-four",
+    },
+    WindowArm {
+        what: "`doc author`, a different title onto the occupant's id",
+        verb: "author",
+        title: "Window  Five!",
+        occupant_title: "Window Five",
+        by_slug: false,
+        slug_minted: "window-five",
+    },
+];
+
+/// Run one minting door on `task`, `--format json` — with `--slug` when the id comes
+/// from one.
+fn mint_door(
+    corpus: &TrialCorpus,
+    verb: &str,
+    title: &str,
+    slug: Option<&str>,
+    task: &str,
+) -> Output {
+    match slug {
+        None => mint(corpus, verb, title, task),
+        Some(slug) => corpus.jigc(&[
+            "doc", "create", "idea", "--title", title, "--slug", slug, "--task", task, "--format",
+            "json",
+        ]),
+    }
+}
+
+/// **The contract, by construction: under a `new: true` entry an occupied home is
+/// `create.already-exists` at every look a minting door takes at it, and no create
+/// reaches the copy-in.** The home is free when the pre-check asks its create-only
+/// question and occupied by a later look — the pre-check's incumbent probe, or the
+/// create's own. Over both later looks × both doors × every source of the minted id:
+/// exit 1, `create.already-exists` keyed at the occupant, the verb's own route, nothing
+/// staged, no role bound, the occupant's bytes untouched. Then the door's own next step
+/// is driven: the task files its finding under a distinct identity, as the route names,
+/// and **`task finalize` lands it beside the occupant, whose bytes are still there** — the
+/// loss the window used to end in.
+///
+/// Before the fix the gate was the pre-check's first look alone. An occupant found by
+/// the create was copied in at exit 0 (the engine's create took the gate entry and never
+/// read its key), and one found by the incumbent probe was answered `write.title-ignored`
+/// — *"would be copied in for update"* — when its title differed, and copied in when it
+/// did not. [`without_new_the_same_plants_get_create_or_updates_answers`] is that
+/// behaviour, which is a plain entry's to keep.
+#[test]
+fn a_home_occupied_after_the_create_only_ask_is_still_refused_and_never_copied_in() {
+    let (corpus, landed) = arrange(Some(NEW_ENTRY));
+    let landed_body = fs::read_to_string(corpus.repo().join(&landed.path)).expect("read");
+
+    for (round, state) in DOOR_STATES.into_iter().enumerate() {
+        for arm in WINDOW_ARMS {
+            let what = format!("{} ({state:?})", arm.what);
+            let what = what.as_str();
+            let slug = format!("{}-{round}", arm.slug_minted);
+            let title = format!("{} {round}", arm.title);
+            let occupant_title = format!("{} {round}", arm.occupant_title);
+            let home = corpus.repo().join(format!("docs/ideas/{slug}.md"));
+            let address = format!("idea:{slug}");
+            let occupant = occupant_body(&landed_body, &occupant_title);
+            let task = corpus.start_workflow("park-idea", &format!("file {slug}"));
+            assert!(!home.exists(), "{what}: the premise — the home starts free");
+
+            let by_slug = arm.by_slug.then_some(slug.as_str());
+            let (out, fired) = at_the_door(
+                &corpus,
+                &task,
+                arm.verb,
+                state,
+                || fs::write(&home, &occupant).expect("another hand lands the occupant"),
+                || mint_door(&corpus, arm.verb, &title, by_slug, &task),
+            );
+            assert!(fired, "{what}: the door reached the state; {}", text(&out));
+
+            assert_already_exists(&out, arm.verb, &address, what);
+            assert_eq!(
+                staged_ideas(&corpus, &task),
+                Vec::<String>::new(),
+                "{what}: nothing staged",
+            );
+            assert_eq!(bound_idea(&corpus, &task), None, "{what}: no role bound");
+            assert_eq!(
+                fs::read_to_string(&home).expect("re-read the occupant"),
+                occupant,
+                "{what}: the occupant's bytes are untouched",
+            );
+
+            // The door's next step, as its route names it: a distinct identity.
+            let finding = refusal(&out, what);
+            let route = finding["route"].as_str().unwrap_or_default();
+            let beside = format!("{slug}-beside");
+            let followed = match arm.verb {
+                "create" => {
+                    let command = backticked_command(route, "jigc doc create", what)
+                        .replace("<title>", "'A Distinct Thought'")
+                        .replace("<slug>", &beside);
+                    run_emitted(&corpus, &command, None)
+                }
+                _ => {
+                    let command = backticked_command(route, "jigc doc author", what)
+                        .replace("<payload>", "-");
+                    run_emitted(&corpus, &command, Some(&payload(&beside.replace('-', " "))))
+                }
+            };
+            assert_eq!(
+                followed.status.code(),
+                Some(0),
+                "{what}: the followed route lands; route: {route}\n{}",
+                text(&followed),
+            );
+            let second = fill_and_finalize(&corpus, &task, format!("idea:{beside}"));
+            assert!(
+                corpus.repo().join(&second.path).is_file(),
+                "{what}: the task's own finding landed at {}",
+                second.path,
+            );
+            assert_eq!(
+                fs::read_to_string(&home).expect("re-read the occupant after finalize"),
+                occupant,
+                "{what}: after `task finalize` the occupant's bytes are still at its home",
+            );
+        }
+    }
+}
+
+/// **The harness's first premise: both states are after the pre-check's create-only
+/// ask.** The inverse plant — the home is occupied from the start and the occupant is
+/// **removed** at the state. Were a state ahead of the ask, the ask would find the home
+/// free and the create would mint at exit 0; it is refused, so the ask had already seen
+/// the home. Without this arm the test above could go vacuous unnoticed: a reordered door
+/// would plant before the ask and be refused by it, proving nothing about the later looks.
+#[test]
+fn the_window_harness_acts_after_the_pre_checks_ask() {
+    let (corpus, landed) = arrange(Some(NEW_ENTRY));
+    let landed_body = fs::read_to_string(corpus.repo().join(&landed.path)).expect("read");
+    for (round, state) in DOOR_STATES.into_iter().enumerate() {
+        for verb in ["create", "author"] {
+            let what = format!("`doc {verb}` over an occupant removed at {state:?}");
+            let title = format!("Removed {verb} {round}");
+            let slug = format!("removed-{verb}-{round}");
+            let home = corpus.repo().join(format!("docs/ideas/{slug}.md"));
+            fs::write(&home, occupant_body(&landed_body, &title)).expect("occupy the home");
+            let task = corpus.start_workflow("park-idea", &format!("file {slug}"));
+
+            let (out, _fired) = at_the_door(
+                &corpus,
+                &task,
+                verb,
+                state,
+                || fs::remove_file(&home).expect("the occupant is removed"),
+                || mint(&corpus, verb, &title, &task),
+            );
+            assert_already_exists(&out, verb, &format!("idea:{slug}"), &what);
+            assert_eq!(
+                staged_ideas(&corpus, &task),
+                Vec::<String>::new(),
+                "{what}: nothing staged",
+            );
+        }
+    }
+}
+
+/// **The harness's second premise, and the omitting context: each state is before the
+/// look it claims to precede.** Under the shipped `park-idea`, whose entry carries no
+/// `new`, the same plants get create-or-update's answers, by both doors:
+///
+/// - planted **between the pre-check's looks**, a *different*-titled occupant is seen by
+///   the incumbent probe — `write.title-ignored`, exit 1, nothing staged — so that state
+///   is before that probe;
+/// - planted **between the pre-check and the create**, a same-titled occupant is
+///   **copied in** at exit 0 — the staged copy carries its marker — so that state is
+///   before the create's probe, and what the `new: true` arm refuses is exactly this
+///   copy-in.
+///
+/// Both are a plain entry's declared behaviour over an on-disk doc and are unchanged.
+#[test]
+fn without_new_the_same_plants_get_create_or_updates_answers() {
+    let (corpus, landed) = arrange(None);
+    let landed_body = fs::read_to_string(corpus.repo().join(&landed.path)).expect("read");
+    for verb in ["create", "author"] {
+        // Between the pre-check's looks: the incumbent probe sees the occupant.
+        let what = format!("`doc {verb}` under a plain entry, a different-titled occupant");
+        let slug = format!("plain-seen-{verb}");
+        let home = corpus.repo().join(format!("docs/ideas/{slug}.md"));
+        let occupant = occupant_body(&landed_body, &format!("Plain Seen {verb}"));
+        let task = corpus.start_workflow("park-idea", &format!("update {slug}"));
+        let (out, fired) = at_the_door(
+            &corpus,
+            &task,
+            verb,
+            DoorState::BetweenThePreChecksLooks,
+            || fs::write(&home, &occupant).expect("another hand lands the occupant"),
+            || mint(&corpus, verb, &format!("Plain  Seen {verb}!"), &task),
+        );
+        assert!(fired, "{what}: the door reached the state; {}", text(&out));
+        assert_title_ignored(&out, &format!("idea:{slug}"), &what);
+        assert_eq!(
+            staged_ideas(&corpus, &task),
+            Vec::<String>::new(),
+            "{what}: nothing staged",
+        );
+
+        // Between the pre-check and the create: the create copies the occupant in.
+        let what = format!("`doc {verb}` under a plain entry, an occupant the create finds");
+        let slug = format!("plain-copied-{verb}");
+        let title = format!("Plain Copied {verb}");
+        let home = corpus.repo().join(format!("docs/ideas/{slug}.md"));
+        let occupant = occupant_body(&landed_body, &title);
+        let task = corpus.start_workflow("park-idea", &format!("update {slug}"));
+        let (out, fired) = at_the_door(
+            &corpus,
+            &task,
+            verb,
+            DoorState::BetweenThePreCheckAndTheCreate,
+            || fs::write(&home, &occupant).expect("another hand lands the occupant"),
+            || mint(&corpus, verb, &title, &task),
+        );
+        assert!(fired, "{what}: the door reached the state; {}", text(&out));
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{what}: create-or-update, exit 0; {}",
+            text(&out),
+        );
+        let staged = corpus
+            .repo()
+            .join(".jigc/tasks")
+            .join(&task)
+            .join(format!("docs/idea:{slug}.md"));
+        let staged = fs::read_to_string(&staged)
+            .unwrap_or_else(|err| panic!("{what}: a staged copy; {err}; {}", text(&out)));
+        assert!(
+            staged.contains(OCCUPANT),
+            "{what}: the staged copy is the occupant, copied in:\n{staged}",
+        );
+        corpus.jigc_ok(&["task", "discard", &task, "--force"]);
+    }
 }

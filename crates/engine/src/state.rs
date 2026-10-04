@@ -2243,7 +2243,8 @@ fn mint_instance(
 /// provisioning: "mint the id … and place it at the schema-defined location";
 /// `design/structural-grammar.md` → IDs: provenance and minting). This is the
 /// **workflow-provisioned** path (the gate is bypassed; see [`create_gated`] for
-/// the agent-initiated path that consults `allows-create`):
+/// the agent-initiated path that consults `allows-create` — and which, under an entry
+/// carrying `new: true`, refuses an occupied home instead of reaching step 4 here):
 ///
 /// 1. **Unknown doctype** — `type_name` not in the cascade-resolved `schemas` set
 ///    → reject with a blocking `create.unknown-doctype` [`Finding`]
@@ -2290,12 +2291,50 @@ pub fn create(
 
     // 2. Mint the identity (slug/title/address/path) through the shared derivation,
     //    which applies the empty-title guard (a title that slugs to nothing rejects).
+    let minted = mint_instance(task_dir, schema, type_name, id_source, slug_override)?;
+
+    // The one probe of the minted identity's home ([`occupied_home`]); steps 3–5 act on
+    // its answer and never ask again.
+    let home = occupied_home(repo_root, schema, &minted.slug);
+    stage_minted(task_dir, schema, type_name, minted, home, on_create)
+}
+
+/// **The minted identity's canonical home, when it is already a file on disk** — the one
+/// predicate every create-side question about *"is there a doc there already?"* is
+/// answered by: [`create`]'s copy-in, [`create_gated`]'s create-only refusal,
+/// [`create_occupied`] (the CLI pre-check's ranked early ask of the same refusal) and
+/// [`create_incumbent`]'s committed arm. `None` when the home is free, or the doctype has
+/// none (a transient sink type). *On disk* is wider than *committed* — an untracked file
+/// at the home is occupied too (`design/write-commands.md` → The create-gate).
+///
+/// **A create asks it once and acts on the answer it got** (the rc.24 review's
+/// `(R6, K-1)`): [`create`] and [`create_gated`] call this a single time and hand the
+/// *result* down to [`stage_minted`], so the refusal a create-only entry owes and the
+/// copy-in a plain entry performs are two readings of **one** observation, never two
+/// observations a writer can land between.
+fn occupied_home(repo_root: &Path, schema: &Schema, slug: &str) -> Option<PathBuf> {
+    crate::store::canonical_path(repo_root, schema, slug).filter(|home| home.is_file())
+}
+
+/// [`create`]'s steps 3–5 over an identity already minted and a home **already probed**
+/// (`home` is [`occupied_home`]'s answer — `Some` when the canonical home is a file on
+/// disk). It never probes the home itself: the caller that decided what an occupied home
+/// means (copy in, or — under a create-only entry — refuse and never call this) hands its
+/// one observation down, so that decision and this copy-in cannot disagree.
+fn stage_minted(
+    task_dir: &Path,
+    schema: &Schema,
+    type_name: &str,
+    minted: MintedInstance,
+    home: Option<PathBuf>,
+    on_create: &[crate::field_block::Field],
+) -> Result<CreatedDoc, Finding> {
     let MintedInstance {
         slug,
         title,
         address,
         path,
-    } = mint_instance(task_dir, schema, type_name, id_source, slug_override)?;
+    } = minted;
 
     // 3. Serial collision in the working area → reject, never suffixed, nothing
     //    created. This is the **ungated** serial-mint reject (fan-out): the agent path
@@ -2318,10 +2357,7 @@ pub fn create(
     //    off-canonical migration, both still copy in.
     let migration_squatter = migration_targets_canonical_destination(task_dir, schema, &slug)
         .map_err(|err| io_finding(&address, "read the migration source path", &err))?;
-    if !migration_squatter
-        && let Some(committed) = crate::store::canonical_path(repo_root, schema, &slug)
-        && committed.is_file()
-    {
+    if !migration_squatter && let Some(committed) = home {
         let body = std::fs::read_to_string(&committed)
             .map_err(|err| io_finding(&address, "read the committed instance", &err))?;
         let path = copy_in(task_dir, type_name, &slug, &body)
@@ -2353,6 +2389,37 @@ pub fn create(
     })
 }
 
+/// **Why a gated create did not happen** — [`create_gated`]'s error.
+///
+/// Two arms because the two kinds of refusal are completed in different places. Every
+/// admission, minting and IO refusal is a finished [`Finding`], route included. The
+/// **create-only** refusal is not: its route is the caller's, because the correction
+/// differs by verb and by what the task already holds (`doc create` takes a `--slug`,
+/// `doc author` does not; a task that already holds its doc has no distinct identity to
+/// be routed at) — so the engine hands back the occupied address and the caller finishes
+/// it through [`already_exists_finding`]. A separate arm rather than a route-less
+/// `Finding`: a caller cannot map this error without saying what the occupied-home
+/// refusal's route is, so a new minting door cannot acquire the gate and forget it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CreateRefusal {
+    /// A complete blocking finding — unknown doctype, gate-blocked, empty title, a
+    /// working-area IO failure.
+    Blocked(Box<Finding>),
+    /// The gate entry carries `new: true` and the minted identity's home is already a
+    /// file on disk ([`occupied_home`]): nothing was copied in, staged or bound. `address`
+    /// is that identity's `<type>:<slug>` — [`already_exists_finding`]'s first argument.
+    AlreadyExists {
+        /// The occupied identity, `<type>:<slug>`.
+        address: String,
+    },
+}
+
+impl From<Finding> for CreateRefusal {
+    fn from(finding: Finding) -> Self {
+        CreateRefusal::Blocked(Box::new(finding))
+    }
+}
+
 /// **The agent-initiated `create`** — [`create`] gated by the workflow's resolved
 /// `allows-create` set (`design/write-commands.md` → The create-gate, enforcement
 /// steps 3 then 5). Ordering matches the design: an **unknown** doctype rejects
@@ -2377,6 +2444,21 @@ pub fn create(
 /// routing away with `create.serial-collision` from the **only** repairing action.
 /// The **ungated** [`create`] keeps the serial-mint reject untouched (the fan-out
 /// case): only the agent-initiated gate acks-existed.
+///
+/// **Create-only → refuse an occupied home, here** (M55's `new: true`; the rc.24 review's
+/// `(R6, K-1)`). The minted identity's home is probed **once** ([`occupied_home`]), ahead
+/// of both branches below, and that one answer decides both outcomes: under an entry
+/// carrying `new: true` an occupied home is [`CreateRefusal::AlreadyExists`] — returned
+/// before the staged-copy ack, the copy-in and the role bind, so nothing is staged and no
+/// role is bound — and under any other entry the same answer is what [`stage_minted`]
+/// copies in. So **under a `new: true` entry no create reaches the copy-in**, by
+/// construction and not by a caller's earlier check: the CLI's title pre-check asks the
+/// same predicate first ([`create_occupied`]) to *rank* the refusal ahead of its other
+/// arms, but a home that becomes occupied after that ask is refused here. The home is
+/// probed whatever the task has staged (M55 pin P3 — a committed doc another verb already
+/// copied in is still on disk), and whatever a migration recorded as its source (the
+/// blank-seed over an in-location squatter is create-or-update's exception, not a way to
+/// write over a doc under an entry that only creates).
 #[allow(clippy::too_many_arguments)]
 pub fn create_gated(
     task_dir: &Path,
@@ -2387,10 +2469,19 @@ pub fn create_gated(
     repo_root: &Path,
     on_create: &[crate::field_block::Field],
     slug_override: Option<&str>,
-) -> Result<CreatedDoc, Finding> {
+) -> Result<CreatedDoc, CreateRefusal> {
     // Steps 3 + 5: unknown doctype, then the gate — asked through the shared probe, so a
     // caller that must not out-rank them asks the identical question.
     let (schema, entry) = create_admission(schemas, gate, type_name)?;
+    let minted = mint_instance(task_dir, schema, type_name, id_source, slug_override)?;
+    // The one probe of the home. Create-only reads it first: an occupied home is refused
+    // before anything below can hand back, copy in or bind.
+    let home = occupied_home(repo_root, schema, &minted.slug);
+    if entry.new && home.is_some() {
+        return Err(CreateRefusal::AlreadyExists {
+            address: minted.address,
+        });
+    }
     // Step 4: admitted → mint + provision (or copy-in a committed instance) — the
     // `slug_override` (the front door's `--slug`) drives the minted id verbatim. But
     // first probe for a same-identity **staged** copy: if the minted slug's working-area
@@ -2398,7 +2489,6 @@ pub fn create_gated(
     // routes the agent away from the only repairing action. Ack `existed` and fall
     // through to the role-bind instead (the shared `mint_instance` keeps the slug
     // derivation identical to `create`'s, so the probe can never diverge from the reject).
-    let minted = mint_instance(task_dir, schema, type_name, id_source, slug_override)?;
     let created = if minted.path.exists() {
         // The staged copy is handed back **as found** — this call writes nothing — so its
         // bytes are captured as the pre-image: a caller undoing a failed multi-step write
@@ -2415,15 +2505,7 @@ pub fn create_gated(
             staged_pre_image: Some(bytes),
         }
     } else {
-        create(
-            task_dir,
-            schemas,
-            type_name,
-            id_source,
-            repo_root,
-            on_create,
-            slug_override,
-        )?
+        stage_minted(task_dir, schema, type_name, minted, home, on_create)?
     };
     // … then bind it to the entry's `as:` role if the entry declares one. The create-gate
     // keeps **last-write-wins** (`RolesRecord::bind` overwrites): an explicit `doc create
@@ -2512,7 +2594,7 @@ pub fn create_incumbent(
     let committed = if squatter {
         None
     } else {
-        crate::store::canonical_path(repo_root, schema, &slug).filter(|path| path.is_file())
+        occupied_home(repo_root, schema, &slug)
     };
     Ok(CreateIncumbent {
         address,
@@ -2524,6 +2606,12 @@ pub fn create_incumbent(
 /// `<type>:<slug>` a create is about to mint when that identity's canonical home is
 /// already a **file on disk** — `None` when the home is free, or the doctype has none.
 /// Writes nothing.
+///
+/// This is the CLI pre-check's **ranked early ask** of the refusal — what puts
+/// `create.already-exists` ahead of the title arms — and it is the same predicate
+/// ([`occupied_home`]) [`create_gated`] refuses on. It is *not* what keeps an occupied
+/// home from being copied in: `create_gated` asks again, once, at the point it would
+/// copy in, so an answer here that has gone stale cannot become a copy-in.
 ///
 /// The home is probed **independently of any staged copy** (M55 pin P3), which is what
 /// separates it from [`create_incumbent`]: that probe answers the staged copy first and
@@ -2543,9 +2631,7 @@ pub fn create_occupied(
 ) -> Result<Option<String>, Finding> {
     let MintedInstance { slug, address, .. } =
         mint_instance(task_dir, schema, type_name, id_source, slug_override)?;
-    let occupied =
-        crate::store::canonical_path(repo_root, schema, &slug).is_some_and(|path| path.is_file());
-    Ok(occupied.then_some(address))
+    Ok(occupied_home(repo_root, schema, &slug).map(|_| address))
 }
 
 /// Does a **bound context role**'s recorded address still name a document this task can
@@ -2680,7 +2766,8 @@ fn instance_collision_finding(address: &str) -> Finding {
 }
 
 /// The **create-only refusal** (M55): the create-gate entry carries `new: true` and the
-/// identity this create mints already exists on disk at its home ([`create_occupied`]), so
+/// identity this create mints already exists on disk at its home ([`create_occupied`]
+/// when the pre-check asks, [`CreateRefusal::AlreadyExists`] when the create does), so
 /// the create is refused before anything is copied in — nothing staged, no role bound.
 /// Instance-scoped like its sibling [`instance_collision_finding`]: an identity exists,
 /// so the key is that doc's `<type>:<slug>` address
@@ -4332,6 +4419,311 @@ sections:
         );
     }
 
+    /// The complete finding a [`create_gated`] refusal carries — every refusal but the
+    /// create-only one, whose route is the caller's (so it is no finished finding yet).
+    fn blocked_finding(refusal: CreateRefusal) -> Finding {
+        match refusal {
+            CreateRefusal::Blocked(finding) => *finding,
+            CreateRefusal::AlreadyExists { address } => {
+                panic!("expected a complete finding, got the create-only refusal at `{address}`")
+            }
+        }
+    }
+
+    /// Every file under `dir`, by relative path, with its bytes — the whole-area
+    /// before/after a refusal is compared over, so *nothing staged, no role bound, no
+    /// provenance written* is one assertion and cannot miss a file nobody listed.
+    fn area_snapshot(dir: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+        fn walk(root: &Path, dir: &Path, out: &mut std::collections::BTreeMap<PathBuf, Vec<u8>>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(root, &path, out);
+                } else {
+                    let rel = path
+                        .strip_prefix(root)
+                        .expect("under the root")
+                        .to_path_buf();
+                    out.insert(rel, std::fs::read(&path).expect("read an area file"));
+                }
+            }
+        }
+        let mut out = std::collections::BTreeMap::new();
+        walk(dir, dir, &mut out);
+        out
+    }
+
+    /// **Under a `new: true` entry no create reaches the copy-in** (the rc.24 review's
+    /// `(R6, K-1)`; `design/findings-channel.md` §4 — *"the create-gate refuses it before
+    /// copy-in, so nothing is staged"*). The refusal is the **engine's own**: the probe
+    /// [`create_gated`] performs is the one that decides the copy-in, so an occupied home is
+    /// refused there whatever a caller's pre-check concluded a moment earlier — which is the
+    /// race-free statement of the gap. Before the fix `create_gated` took the entry and never
+    /// read its key, so every arm below copied the occupant in (or handed back its staged
+    /// copy and bound the role) at `Ok`.
+    ///
+    /// The axis is **how a create comes to mint an occupied identity** × **the entry form**:
+    /// the title, a different title onto the same slug, a `--slug` override, a fixed-identity
+    /// (`placement`) singleton, a home the task already **staged** through another verb (the
+    /// staged copy must not hide the home — M55 pin P3), and a migration whose recorded
+    /// source *is* the home (the blank-seed exception is a create-or-update rule, not a
+    /// create-only one). Each is refused with the occupied address and leaves the working
+    /// area byte-identical: nothing staged, no role bound, no provenance written.
+    #[test]
+    fn create_gated_under_a_new_entry_refuses_an_occupied_home_and_copies_nothing_in() {
+        use crate::compose::AllowsCreate;
+
+        let root = TempRoot::new("create-only-engine");
+        let adr = crate::schema::load_schema(
+            b"type: adr\nlocation: decisions/\nid-from: title\nsections:\n  - id: decision\n    slot: {}\n",
+        )
+        .expect("adr fixture loads");
+        let changelog = placement_singleton_schema();
+        let mut schemas = std::collections::BTreeMap::new();
+        schemas.insert("adr".to_string(), adr.clone());
+        schemas.insert("changelog".to_string(), changelog.clone());
+
+        // The occupants: one `adr` and the placement singleton, both files on disk at
+        // their homes (the engine reads the filesystem — committed and untracked are one
+        // state here, which is the documented reading of *on disk*).
+        let adr_body = "---\n---\n\n# Rate limit\n\n## Decision\n\nOCCUPANT.\n";
+        let adr_home = crate::store::canonical_path(root.path(), &adr, "rate-limit").expect("home");
+        std::fs::create_dir_all(adr_home.parent().unwrap()).expect("mk decisions/");
+        std::fs::write(&adr_home, adr_body).expect("occupy the adr home");
+        let changelog_body = "# Changelog\n\n## Overview\n\nOCCUPANT.\n";
+        let changelog_home =
+            crate::store::canonical_path(root.path(), &changelog, "changelog").expect("home");
+        std::fs::write(&changelog_home, changelog_body).expect("occupy the placement home");
+
+        /// How the working area is arranged before the create runs.
+        #[derive(Clone, Copy, Debug)]
+        enum Area {
+            Empty,
+            /// The occupant already copied in by another verb (the edit verbs' seam).
+            StagedByAnotherVerb,
+            /// A migration task whose recorded source IS the home (the squatter case).
+            MigrationOntoTheHome,
+        }
+        /// One way a create comes to mint an occupied identity.
+        struct Arm {
+            what: &'static str,
+            ty: &'static str,
+            id_source: &'static str,
+            slug: Option<&'static str>,
+            /// The occupied address the refusal must name.
+            address: &'static str,
+            area: Area,
+        }
+        let arms = [
+            Arm {
+                what: "the occupant's title",
+                ty: "adr",
+                id_source: "Rate limit",
+                slug: None,
+                address: "adr:rate-limit",
+                area: Area::Empty,
+            },
+            Arm {
+                what: "a different title onto the same slug",
+                ty: "adr",
+                id_source: "Rate  Limit!",
+                slug: None,
+                address: "adr:rate-limit",
+                area: Area::Empty,
+            },
+            Arm {
+                what: "a `--slug` naming the occupant",
+                ty: "adr",
+                id_source: "Something Else",
+                slug: Some("rate-limit"),
+                address: "adr:rate-limit",
+                area: Area::Empty,
+            },
+            Arm {
+                what: "a fixed-identity singleton",
+                ty: "changelog",
+                id_source: "M56",
+                slug: None,
+                address: "changelog:changelog",
+                area: Area::Empty,
+            },
+            Arm {
+                what: "a home this task already staged through another verb",
+                ty: "adr",
+                id_source: "Rate limit",
+                slug: None,
+                address: "adr:rate-limit",
+                area: Area::StagedByAnotherVerb,
+            },
+            Arm {
+                what: "a migration whose source is the home",
+                ty: "changelog",
+                id_source: "M56",
+                slug: None,
+                address: "changelog:changelog",
+                area: Area::MigrationOntoTheHome,
+            },
+        ];
+        // Both entry forms: the role-binding object form, and the bare form.
+        for role in ["filed", ""] {
+            for (index, arm) in arms.iter().enumerate() {
+                let what = format!("{} (entry role `{role}`)", arm.what);
+                let task_dir = root
+                    .path()
+                    .join("tasks")
+                    .join(format!("refused-{index}-{}", role.len()));
+                std::fs::create_dir_all(&task_dir).expect("mk the task dir");
+                match arm.area {
+                    Area::Empty => {}
+                    Area::StagedByAnotherVerb => {
+                        copy_in(&task_dir, arm.ty, "rate-limit", adr_body).expect("the edit seam");
+                    }
+                    Area::MigrationOntoTheHome => {
+                        persist(&task_dir.join(SOURCE_PATH_FILE), b"CHANGELOG.md")
+                            .expect("record the in-location source path");
+                    }
+                }
+                let gate = [AllowsCreate {
+                    doc_type: arm.ty.to_string(),
+                    as_role: role.to_string(),
+                    new: true,
+                }];
+                let before = area_snapshot(&task_dir);
+
+                let outcome = create_gated(
+                    &task_dir,
+                    &schemas,
+                    &gate,
+                    arm.ty,
+                    arm.id_source,
+                    root.path(),
+                    &[],
+                    arm.slug,
+                );
+
+                match outcome {
+                    Err(CreateRefusal::AlreadyExists { address }) => {
+                        assert_eq!(
+                            address, arm.address,
+                            "{what}: refused at the occupied address"
+                        );
+                    }
+                    other => panic!(
+                        "{what}: a `new: true` entry refuses an occupied home; got {other:?}"
+                    ),
+                }
+                assert_eq!(
+                    area_snapshot(&task_dir),
+                    before,
+                    "{what}: the working area is byte-identical — nothing staged, no role \
+                     bound, no provenance written",
+                );
+            }
+        }
+        assert_eq!(
+            std::fs::read_to_string(&adr_home).expect("re-read"),
+            adr_body,
+            "the occupant's bytes are untouched",
+        );
+        assert_eq!(
+            std::fs::read_to_string(&changelog_home).expect("re-read"),
+            changelog_body,
+            "the placement occupant's bytes are untouched",
+        );
+    }
+
+    /// The controls that keep the create-only refusal exactly as wide as its sentence
+    /// (`design/findings-channel.md` §4 → Scope): under `new: true` a **free** home mints
+    /// fresh and binds, and the task's **own** fresh mint is not *existing* — its re-run
+    /// hands the staged copy back; and an entry **without** the key keeps create-or-update,
+    /// copying the occupant in.
+    #[test]
+    fn create_gated_under_a_plain_entry_still_copies_in_and_a_free_home_still_mints() {
+        use crate::compose::AllowsCreate;
+
+        let root = TempRoot::new("create-only-controls");
+        let adr = crate::schema::load_schema(
+            b"type: adr\nlocation: decisions/\nid-from: title\nsections:\n  - id: decision\n    slot: {}\n",
+        )
+        .expect("adr fixture loads");
+        let mut schemas = std::collections::BTreeMap::new();
+        schemas.insert("adr".to_string(), adr.clone());
+        let adr_body = "---\n---\n\n# Rate limit\n\n## Decision\n\nOCCUPANT.\n";
+        let adr_home = crate::store::canonical_path(root.path(), &adr, "rate-limit").expect("home");
+        std::fs::create_dir_all(adr_home.parent().unwrap()).expect("mk decisions/");
+        std::fs::write(&adr_home, adr_body).expect("occupy the adr home");
+        let entry = |new: bool| {
+            [AllowsCreate {
+                doc_type: "adr".to_string(),
+                as_role: "decision".to_string(),
+                new,
+            }]
+        };
+
+        // `new: true`, a free home → a fresh mint, bound.
+        let task_dir = root.path().join("tasks").join("fresh");
+        let gate = entry(true);
+        let fresh = create_gated(
+            &task_dir,
+            &schemas,
+            &gate,
+            "adr",
+            "Burst limit",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect("a free home mints under `new: true`");
+        assert!(!fresh.existed, "a fresh mint, not a copy-in");
+        assert_eq!(
+            RolesRecord::load(&task_dir).expect("roles").get("decision"),
+            Some("adr:burst-limit"),
+        );
+        // … and its re-run is idempotent: the task's own mint is not at its home.
+        let again = create_gated(
+            &task_dir,
+            &schemas,
+            &gate,
+            "adr",
+            "Burst limit",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect("re-running the task's own fresh create stays idempotent");
+        assert!(again.existed && again.staged_pre_image.is_some());
+
+        // No `new` key, the occupied home → create-or-update: the occupant is copied in.
+        let task_dir = root.path().join("tasks").join("update");
+        let copied = create_gated(
+            &task_dir,
+            &schemas,
+            &entry(false),
+            "adr",
+            "Rate limit",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect("an entry without `new` keeps create-or-update");
+        assert!(copied.existed, "the occupant is copied in for update");
+        assert!(
+            std::fs::read_to_string(&copied.path)
+                .expect("read the staged copy")
+                .contains("OCCUPANT."),
+            "the staged copy carries the occupant's body",
+        );
+        assert_eq!(
+            ProvenanceRecord::load(&task_dir)
+                .expect("provenance loads")
+                .get("adr:rate-limit"),
+            Some(Provenance::EditedFromBase),
+        );
+    }
+
     /// (M26 shakedown fix) An `id-from: title` create renders the **human title**
     /// in the `# H1`, while the id/address/filename stay the **slug** — the
     /// stable-id invariant is untouched, only the H1 display text gains its proper
@@ -4537,6 +4929,7 @@ sections:
             &[],
             None,
         )
+        .map_err(blocked_finding)
         .expect_err("a disallowed type is gate-blocked");
         assert_eq!(blocked.severity, Severity::Blocking);
         assert_eq!(blocked.code, "create.gate-blocked");
@@ -4571,6 +4964,7 @@ sections:
             &[],
             None,
         )
+        .map_err(blocked_finding)
         .expect_err("an unknown type rejects before the gate");
         assert_eq!(unknown.code, "create.unknown-doctype");
     }
@@ -4728,6 +5122,7 @@ sections:
             &[],
             None,
         )
+        .map_err(blocked_finding)
         .expect_err("a gate-less workflow blocks every create");
         let spec_blocked = create_gated(
             &task_dir,
@@ -4739,6 +5134,7 @@ sections:
             &[],
             None,
         )
+        .map_err(blocked_finding)
         .expect_err("a gate-less workflow blocks every create");
         assert_eq!(adr_blocked.code, "create.gate-blocked");
         assert_eq!(spec_blocked.code, "create.gate-blocked");
@@ -4769,6 +5165,7 @@ sections:
             &[],
             None,
         )
+        .map_err(blocked_finding)
         .expect_err("an unknown type rejects before the gate");
         assert_eq!(unknown.code, "create.unknown-doctype");
         assert_eq!(
@@ -4794,6 +5191,7 @@ sections:
             &[],
             None,
         )
+        .map_err(blocked_finding)
         .expect_err("a title that slugs to nothing rejects");
         assert_eq!(empty.code, "create.empty-title");
         assert_eq!(
