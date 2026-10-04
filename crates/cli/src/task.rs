@@ -365,15 +365,37 @@ pub(crate) enum LinkedDocDoor<'a> {
     /// reached by a doc staged from the main checkout and finalized from here, by a task an
     /// older binary staged, and by a file hand-placed in the area.
     ///
-    /// `lands_from_home` is the answer the main checkout's own finalize would give this
-    /// task's base pin ([`engine::finalize::decide_base_repin`], asked of jigc_home's
-    /// facts): the route sends the task there only when that door would take it, because
-    /// *"finalize it from the main checkout"* printed over a pin that door refuses is a
-    /// dead end whose natural way out reverts a branch's committed wording.
-    Staged {
-        task: &'a str,
-        lands_from_home: bool,
-    },
+    /// `landing` is what `jigc task finalize` typed in the main checkout would do with this
+    /// task ([`HomeLanding`], asked of jigc_home's facts): the route sends the task there
+    /// only when that door would take it **and commit nothing but what the task staged**.
+    Staged { task: &'a str, landing: HomeLanding },
+}
+
+/// **What `jigc task finalize` typed in the main checkout would do with a task the backstop
+/// refused from a linked worktree** — the answer that picks the backstop's route
+/// ([`LinkedDocDoor::Staged`]). Two questions, both over that checkout's own facts, because
+/// *"finalize it from the main checkout"* is only a route where that door does the right
+/// thing with the task:
+///
+/// * its **base pin** — where that door would answer `finalize.base-mismatch` the route is a
+///   dead end whose natural way out reverts a branch's committed wording;
+/// * its **index** (the completion audit's F4). The carryover gate compares a finalize's
+///   index against the snapshot taken where the task was **minted**. A task minted in the
+///   linked worktree carries *that* index's snapshot, so in the main checkout the gate is
+///   blind: driven, with the user's own `wip.txt` staged there before any task existed, the
+///   printed route exited 0 — `promoted VISION.md`, `added wip.txt` — committing work nobody
+///   asked the task to commit, under a route that said *"commits its docs"*.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HomeLanding {
+    /// That door takes the pin, and every entry staged in that checkout's index is one the
+    /// task's pre-task snapshot covers — which the carryover gate there refuses with its own
+    /// route — or there is none, or the task's commit takes no index entry at all.
+    Lands,
+    /// That door would refuse the task's base pin.
+    PinRefused,
+    /// That checkout's index holds staged entries the task's pre-task snapshot does not
+    /// cover: a finalize there would commit them with the task's docs.
+    IndexUncovered,
 }
 
 /// **The linked-worktree doc guard** (the rc.24 fix pass — the linked-worktree sibling of
@@ -425,24 +447,42 @@ pub(crate) fn linked_worktree_doc_finding(
         }
         LinkedDocDoor::Staged {
             task,
-            lands_from_home: true,
+            landing: HomeLanding::Lands,
         } => format!(
             "finalize this task from the main checkout: `{cd}`, then `jigc task finalize \
              {task}` commits its docs on that checkout's branch. Code staged in this \
              worktree is not part of that commit and stays staged here — a task of its own \
              commits it from here"
         ),
-        LinkedDocDoor::Staged {
-            task,
-            lands_from_home: false,
-        } => format!(
-            "this task cannot land from the main checkout either — its base and that \
-             checkout's history have moved apart over what it staged. Read the staged doc \
-             back (`jigc doc show {address} --task {task}`), author it again in a task \
-             started from the main checkout (`{cd}`, then `jigc start \"<intent>\"`), and \
-             drop this one with `jigc task discard {task} --force`; code staged in this \
-             worktree stays staged, for a task of its own to commit from here"
-        ),
+        LinkedDocDoor::Staged { task, landing } => {
+            // The two declined cases share one exit and differ only in why the direct one
+            // is closed — so each says its own reason and neither borrows the other's.
+            let why = match landing {
+                HomeLanding::IndexUncovered => format!(
+                    "this task is not finalized from the main checkout either — that \
+                     checkout's index holds staged changes (`{}` lists them) this task's \
+                     pre-task snapshot does not cover, so a finalize of it there would \
+                     commit them along with its docs; a task started there has a snapshot \
+                     that does cover them, and its own finalize answers for them",
+                    engine::finding::git_at(
+                        std::path::Path::new(&checkout.home),
+                        "diff --cached --name-only",
+                    ),
+                ),
+                HomeLanding::PinRefused | HomeLanding::Lands => {
+                    "this task cannot land from the main checkout either — its base and \
+                     that checkout's history have moved apart over what it staged"
+                        .to_owned()
+                }
+            };
+            format!(
+                "{why}. Read the staged doc back (`jigc doc show {address} --task {task}`), \
+                 author it again in a task started from the main checkout (`{cd}`, then \
+                 `jigc start \"<intent>\"`), and drop this one with `jigc task discard \
+                 {task} --force`; code staged in this worktree stays staged, for a task of \
+                 its own to commit from here"
+            )
+        }
     };
     Finding::graded(
         Severity::Blocking,
@@ -2926,9 +2966,9 @@ impl TaskArea {
         if staged.is_empty() {
             return Ok(Vec::new());
         }
-        // Asked once for the whole set: the answer is about the task's base pin, not about
-        // any one doc.
-        let lands_from_home = self.lands_from_home(schemas);
+        // Asked once for the whole set: the answer is about the task and the main
+        // checkout, not about any one doc.
+        let landing = self.home_landing(schemas);
         Ok(staged
             .into_iter()
             .map(|(address, home)| {
@@ -2938,23 +2978,45 @@ impl TaskArea {
                     &checkout,
                     LinkedDocDoor::Staged {
                         task: &self.id,
-                        lands_from_home,
+                        landing,
                     },
                 )
             })
             .collect())
     }
 
-    /// Whether `jigc task finalize` **typed in the main checkout** would take this task's
-    /// base pin — the phase-1 decision that door makes ([`decide_base_repin`]), over that
-    /// checkout's own facts: its `HEAD`, the paths its history changed since the pin, and
-    /// its dirty tree. It is what picks the backstop's route
-    /// ([`LinkedDocDoor::Staged::lands_from_home`]).
+    /// What `jigc task finalize` **typed in the main checkout** would do with this task
+    /// ([`HomeLanding`]) — the answer that picks the backstop's route.
     ///
-    /// **A probe that cannot answer reads as `false`**, which errs toward the route that
-    /// always runs (read the doc back, re-author it there, discard this task) and away
-    /// from the one that can dead-end on `finalize.base-mismatch`.
-    fn lands_from_home(&self, schemas: &BTreeMap<String, Schema>) -> bool {
+    /// The pin first: the phase-1 decision that door makes ([`decide_base_repin`]), over
+    /// that checkout's own facts — its `HEAD`, the paths its history changed since the pin,
+    /// and its dirty tree. Then the index, **asked of git** (`git diff --cached` there, the
+    /// carryover gate's own probe): any staged entry this task's pre-task snapshot does not
+    /// cover identically is one that door's gate cannot see and its commit would take. An
+    /// entry the snapshot *does* cover is left to that door — its carryover gate refuses it
+    /// there, with its own route. Two commit models are asked nothing about the index, for
+    /// the reason [`Self::preview_gates`] gives: the doc-only arm's path-scoped commit takes
+    /// no path outside its set, and the amend arm refuses any staged index itself.
+    ///
+    /// **A probe that cannot answer reads as the declined case**, which errs toward the
+    /// route that always runs (read the doc back, re-author it there, discard this task) and
+    /// away from the two that can dead-end or commit what nobody asked for.
+    fn home_landing(&self, schemas: &BTreeMap<String, Schema>) -> HomeLanding {
+        let uncovered = || -> Result<bool> {
+            if self.commits_doc_only(&self.id)? || state::read_amend_pin(&self.dir)?.is_some() {
+                return Ok(false);
+            }
+            let snapshot = state::read_staged_snapshot(&self.dir)?.unwrap_or_default();
+            let staged = git_staged_snapshot(&self.jigc_home)?;
+            Ok(staged
+                .entries
+                .iter()
+                .any(|(path, blob)| snapshot.entries.get(path) != Some(blob))
+                || staged
+                    .deletions
+                    .iter()
+                    .any(|path| !snapshot.deletions.contains(path)))
+        };
         let decide = || -> Result<bool> {
             let base = self.base()?;
             let head = git_head(&self.jigc_home)?;
@@ -2969,7 +3031,13 @@ impl TaskArea {
             )
             .is_ok())
         };
-        decide().unwrap_or(false)
+        if !decide().unwrap_or(false) {
+            HomeLanding::PinRefused
+        } else if uncovered().unwrap_or(true) {
+            HomeLanding::IndexUncovered
+        } else {
+            HomeLanding::Lands
+        }
     }
 
     fn preview_gates(

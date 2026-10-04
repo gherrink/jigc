@@ -387,6 +387,16 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
          cannot express: the reader is standing in one of them and each command must run \
          against the one it names",
     ),
+    (
+        "crates/cli/src/task.rs",
+        "linked_worktree_doc_finding",
+        Aim::Aimed,
+        "the linked-worktree doc guard's backstop, where the main checkout's index holds \
+         staged entries the task's pre-task snapshot does not cover (the rc.24 fix pass, the \
+         completion audit's F4) — `git diff --cached --name-only` aimed at the main checkout. \
+         The reader is standing in the linked worktree, and the listing that says what a \
+         finalize there would have committed has to be of the other checkout's index",
+    ),
     // --- the one span in the class that is deliberately NOT a route ---
     (
         "crates/cli/src/ingest.rs",

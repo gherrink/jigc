@@ -992,6 +992,181 @@ fn the_backstop_never_routes_a_task_at_a_main_checkout_that_would_refuse_its_pin
     );
 }
 
+/// **The backstop never routes a task at a main checkout whose own staged work its finalize
+/// would commit** (the completion audit's F4). The carryover gate compares against the
+/// snapshot taken where the task was minted, so a task minted in the linked worktree is one
+/// the main checkout's gate is blind for: with the user's own `wip.txt` staged there before
+/// any task existed, the route as first printed — *"finalize this task from the main
+/// checkout … commits its docs"* — exited 0 with `added wip.txt`.
+///
+/// So the route does not name that finalize. It names what is in the way and the exit that
+/// always runs, and every step is run as printed: the re-authored task's own finalize
+/// answers `finalize.carried-staged` for the file, its route unstages it, and the commit
+/// that lands carries the doc alone — the file still on disk, in no commit.
+///
+/// **And the cell it must not over-refuse:** a task whose snapshot *covers* the staged file
+/// (minted in the main checkout, after the file was staged) is still routed at that
+/// checkout's finalize, because that door's own carryover gate answers there.
+#[test]
+fn the_backstop_never_routes_a_task_at_a_main_checkout_whose_staged_work_it_would_commit() {
+    let rig = Rig::new();
+    let main = rig.main();
+    const WIP: &str = "the user's own work in progress\n";
+    fs::write(main.join("wip.txt"), WIP).expect("write the user's own file");
+    rig.git(&main, &["add", "wip.txt"]);
+    let head = rig.git(&main, &["rev-parse", "HEAD"]);
+    let stage = |task: &str| {
+        assert_ok(
+            &rig.run_stdin(
+                &main,
+                &[
+                    "doc",
+                    "set-slot",
+                    "vision:vision#thesis",
+                    "--from-file",
+                    "-",
+                    "--task",
+                    task,
+                ],
+                "NOT-SWEPT-7731 a sharper thesis.\n",
+            ),
+            "staging the doc from the main checkout",
+        );
+    };
+    let carried = |out: &Output| -> Vec<(String, String)> {
+        findings(out)
+            .into_iter()
+            .filter(|(code, _, _)| code == "finalize.carried-staged")
+            .map(|(_, target, route)| (target, route))
+            .collect()
+    };
+
+    // Minted in the linked worktree: its pre-task snapshot is that index's — empty.
+    let task = rig.mint(&rig.wt, "single-task", "sharpen the thesis");
+    stage(&task);
+    let out = rig.run(&rig.wt, &["task", "finalize", &task, "--format", "json"]);
+    assert_eq!(out.status.code(), Some(3), "got:\n{}", both(&out));
+    let raised = guard(&out);
+    assert_eq!(raised.len(), 1, "got:\n{}", both(&out));
+    let route = raised[0].1.clone();
+    assert!(
+        !spans(&route)
+            .iter()
+            .any(|s| s.starts_with("jigc task finalize")),
+        "the route must not send this task to a finalize that would commit the main \
+         checkout's own staged work; got:\n{route}",
+    );
+    let listing = span(&route, "staged listing", |s| {
+        s.starts_with("git ") && s.ends_with(" diff --cached --name-only")
+    });
+    let listed = rig.sh(&rig.wt, &listing);
+    assert_ok(&listed, &format!("`{listing}`"));
+    assert_eq!(
+        text(&listed.stdout).trim(),
+        "wip.txt",
+        "the route names what is in the way",
+    );
+
+    // Must not over-refuse: a task minted HERE, after the file was staged, has it in its
+    // snapshot — so the route is that checkout's finalize, and that door's own gate answers.
+    let covered = rig.mint(&main, "single-task", "a task that saw the file staged");
+    stage(&covered);
+    rig.fill_commit(&main, &covered, "a task that saw the file staged");
+    let out = rig.run(&rig.wt, &["task", "finalize", &covered, "--format", "json"]);
+    let direct = guard(&out)
+        .pop()
+        .unwrap_or_else(|| panic!("the backstop still refuses from here; got:\n{}", both(&out)))
+        .1;
+    let cd = span(&direct, "`cd`", |s| s.starts_with("cd "));
+    let finalize = span(&direct, "finalize", |s| {
+        s.starts_with("jigc task finalize ")
+    });
+    let answered = rig.sh(&rig.wt, &format!("{cd} && {finalize} --format json"));
+    assert_eq!(answered.status.code(), Some(3), "got:\n{}", both(&answered));
+    assert_eq!(
+        carried(&answered)
+            .iter()
+            .map(|(target, _)| target.as_str())
+            .collect::<Vec<_>>(),
+        ["wip.txt"],
+        "the main checkout's own carryover gate answers for a file the snapshot covers; \
+         got:\n{}",
+        both(&answered),
+    );
+    assert_ok(
+        &rig.run(&main, &["task", "discard", &covered, "--force"]),
+        "discarding the covered task",
+    );
+
+    // The printed route, as printed: read back, re-author in a task started there, discard.
+    let show = span(&route, "staged read", |s| s.starts_with("jigc doc show "));
+    let cd = span(&route, "`cd`", |s| s.starts_with("cd "));
+    let start = span(&route, "start", |s| s.starts_with("jigc start "));
+    let discard = span(&route, "discard", |s| s.starts_with("jigc task discard "));
+    let read_back = rig.sh(&rig.wt, &show);
+    assert_ok(&read_back, &format!("`{show}`"));
+    assert!(text(&read_back.stdout).contains("NOT-SWEPT-7731"));
+    assert_ok(
+        &rig.sh(
+            &rig.wt,
+            &format!(
+                "{cd} && {}",
+                start.replace("<intent>", "sharpen the thesis again")
+            ),
+        ),
+        &format!("`{cd}` then `{start}`"),
+    );
+    assert_ok(&rig.sh(&rig.wt, &discard), &format!("`{discard}`"));
+    let again = rig.mint(&main, "single-task", "sharpen the thesis again");
+    stage(&again);
+    rig.fill_commit(&main, &again, "sharpen the thesis");
+
+    // That task's own finalize answers for the file — the carryover gate, with its route.
+    let gated = rig.run(&main, &["task", "finalize", &again, "--format", "json"]);
+    assert_eq!(gated.status.code(), Some(3), "got:\n{}", both(&gated));
+    let answer = carried(&gated);
+    assert_eq!(
+        answer
+            .iter()
+            .map(|(target, _)| target.as_str())
+            .collect::<Vec<_>>(),
+        ["wip.txt"],
+        "got:\n{}",
+        both(&gated),
+    );
+    assert_eq!(
+        rig.git(&main, &["rev-parse", "HEAD"]),
+        head,
+        "nothing landed"
+    );
+    let unstage = span(&answer[0].1, "unstage", |s| {
+        s.starts_with("git ") && s.contains(" restore --staged ")
+    });
+    assert_ok(&rig.sh(&rig.wt, &unstage), &format!("`{unstage}`"));
+    assert_ok(
+        &rig.run(&main, &["task", "finalize", &again]),
+        "the re-authored task's finalize, once the file is unstaged",
+    );
+    assert_eq!(
+        rig.git(&main, &["show", "--format=", "--name-only", "HEAD"]),
+        "VISION.md",
+        "the commit carries the doc and nothing the task did not stage",
+    );
+    assert!(
+        rig.git(&main, &["show", "HEAD:VISION.md"])
+            .contains("NOT-SWEPT-7731")
+    );
+    assert_eq!(
+        fs::read_to_string(main.join("wip.txt")).expect("the user's file is still on disk"),
+        WIP,
+    );
+    assert_eq!(
+        rig.git(&main, &["log", "--all", "--format=%H", "--", "wip.txt"]),
+        "",
+        "the user's file is in no commit",
+    );
+}
+
 // ---------------------------------------------------------------------------------------
 // The write door's route, run as printed.
 // ---------------------------------------------------------------------------------------
