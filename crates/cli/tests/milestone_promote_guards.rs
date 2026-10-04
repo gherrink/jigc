@@ -1556,3 +1556,187 @@ fn the_task_door_routes_a_fixed_identity_at_exits_it_has() {
         );
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────
+// Two creators of one home in one fan-out (the completion audit's CPL-1)
+// ─────────────────────────────────────────────────────────────────────────────────────────
+//
+// The guard asks what a promotion would land on *before the promote*; two promotions to one
+// path are each other's occupant only *during* it. A placement doctype's home does not carry
+// the slug, so two sub-tasks that each mint the `vision` (or the `changelog`) are joined as
+// `<type>:<type>` and `<type>:<type>-2`, both promote to one file, and one sub-task's doc
+// was in no commit and on no disk at exit 0. The axis is the shipped doctype × the commit
+// model; the refused cell is driven out through its route, which reads the doc it drops
+// before dropping it.
+
+/// A shipped doctype with one fixed home, and how a sub-task mints and authors it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Singleton {
+    Vision,
+    Changelog,
+}
+
+impl Singleton {
+    fn workflow(self) -> &'static str {
+        match self {
+            Singleton::Vision => "form-vision",
+            Singleton::Changelog => "record-change",
+        }
+    }
+
+    fn home(self) -> &'static str {
+        match self {
+            Singleton::Vision => VISION_HOME,
+            Singleton::Changelog => "CHANGELOG.md",
+        }
+    }
+
+    fn address(self) -> &'static str {
+        match self {
+            Singleton::Vision => VISION,
+            Singleton::Changelog => "changelog:changelog",
+        }
+    }
+
+    /// Mint and author the singleton in `sub`, carrying [`body_of`]`(sub)`.
+    fn author(self, corpus: &TrialCorpus, sub: &str) {
+        match self {
+            Singleton::Vision => {
+                assert_eq!(author_vision(corpus, sub, &body_of(sub)), VISION);
+            }
+            Singleton::Changelog => {
+                let ack = corpus.jigc_ok(&[
+                    "doc",
+                    "create",
+                    "changelog",
+                    "--title",
+                    "Changelog",
+                    "--task",
+                    sub,
+                ]);
+                assert_eq!(ack.trim(), self.address(), "minted, not copied in");
+                let group = corpus.add_item("changelog:changelog#unreleased-changes", "added", sub);
+                corpus.set_slot(
+                    &format!("{group}/notes"),
+                    sub,
+                    &format!("- {}", body_of(sub)),
+                );
+            }
+        }
+    }
+}
+
+/// `jigc milestone add-task <milestone> <intent> [--workflow <w>]`; returns the minted id.
+fn add_sub_task(corpus: &TrialCorpus, intent: &str, workflow: Option<&str>) -> String {
+    let mut args = vec!["milestone", "add-task", MILESTONE, intent];
+    if let Some(workflow) = workflow {
+        args.extend(["--workflow", workflow]);
+    }
+    let ack = corpus.jigc_ok(&args);
+    let (_, rest) = ack
+        .split_once("added task:")
+        .unwrap_or_else(|| panic!("`milestone add-task` names its task; got:\n{ack}"));
+    rest.split_whitespace()
+        .next()
+        .expect("the sub-task id")
+        .to_owned()
+}
+
+/// **Two sub-tasks, one singleton.** The boundary refuses the pair, keyed at the one home,
+/// with nothing committed and both staged docs intact; the route reads the doc it is about
+/// to drop, drops that sub-task by consent, and the boundary lands the other.
+#[test]
+fn two_sub_tasks_minting_one_singleton_never_overwrite_each_other() {
+    for (singleton, squash) in [
+        (Singleton::Vision, true),
+        (Singleton::Vision, false),
+        (Singleton::Changelog, true),
+    ] {
+        let what = format!("{singleton:?} · squash={squash}");
+        let corpus = TrialCorpus::build(State::Fresh);
+        if !squash {
+            squash_false(&corpus);
+        }
+        corpus.jigc_ok(&["milestone", "create", MILESTONE_TITLE]);
+        let alpha = add_sub_task(&corpus, "alpha writes it", Some(singleton.workflow()));
+        let bravo = add_sub_task(&corpus, "bravo writes it", Some(singleton.workflow()));
+        for sub in [&alpha, &bravo] {
+            singleton.author(&corpus, sub);
+            assert!(
+                staged_bytes(&corpus, sub, singleton.address()).contains(&body_of(sub)),
+                "{what}: the before-control — `{sub}` staged its own doc",
+            );
+        }
+        let head = corpus.git(&["rev-parse", "HEAD"]);
+
+        let findings = blocked(&corpus, &what);
+        assert_eq!(
+            findings.len(),
+            1,
+            "{what}: one finding for the one contested home; {findings:#?}"
+        );
+        let finding = clobber_at(&findings, singleton.home(), &what);
+        let message = finding["message"].as_str().expect("a message");
+        assert!(
+            message.contains(alpha.as_str()) && message.contains(bravo.as_str()),
+            "{what}: the refusal names both sub-tasks; got: {message}",
+        );
+        assert_eq!(corpus.git(&["rev-parse", "HEAD"]), head, "{what}");
+        assert!(
+            !corpus.repo().join(singleton.home()).exists(),
+            "{what}: nothing was written at the home",
+        );
+        for sub in [&alpha, &bravo] {
+            assert!(
+                staged_bytes(&corpus, sub, singleton.address()).contains(&body_of(sub)),
+                "{what}: `{sub}`'s staged doc is intact",
+            );
+        }
+
+        // ── the route, as printed: read, drop, land ──
+        let route = finding["route"].as_str().expect("a route");
+        assert_no_rename(route, &what);
+        let shown = run_the_span(&corpus, route, "jigc doc show", &what);
+        assert!(
+            String::from_utf8_lossy(&shown.stdout).contains(&body_of(&bravo)),
+            "{what}: the route reads the doc it is about to drop — nothing is lost unseen",
+        );
+        let discard = run_the_span(&corpus, route, "jigc task discard", &what);
+        assert!(text(&discard).contains(bravo.as_str()), "{what}");
+        run_the_span(&corpus, route, "jigc milestone finalize", &what);
+        let landed = at_head(&corpus, singleton.home());
+        assert!(
+            landed.contains(&body_of(&alpha)) && !landed.contains(&body_of(&bravo)),
+            "{what}: the doc the route said keeps the home is the one that landed; got:\n\
+             {landed}",
+        );
+    }
+}
+
+/// **MUST NOT REFUSE — one creator per home.** Two singletons of different doctypes in one
+/// fan-out have two homes; the boundary lands both.
+#[test]
+fn one_creator_per_singleton_home_lands() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    corpus.jigc_ok(&["milestone", "create", MILESTONE_TITLE]);
+    let mut subs = Vec::new();
+    for (name, singleton) in [
+        ("alpha", Singleton::Vision),
+        ("bravo", Singleton::Changelog),
+    ] {
+        let sub = add_sub_task(
+            &corpus,
+            &format!("{name} writes it"),
+            Some(singleton.workflow()),
+        );
+        singleton.author(&corpus, &sub);
+        subs.push((sub, singleton));
+    }
+    corpus.jigc_ok(&["milestone", "finalize", MILESTONE]);
+    for (sub, singleton) in &subs {
+        assert!(
+            at_head(&corpus, singleton.home()).contains(&body_of(sub)),
+            "{singleton:?}: `{sub}`'s doc landed at its own home",
+        );
+    }
+}

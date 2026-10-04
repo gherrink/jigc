@@ -550,55 +550,76 @@ fn plan_clobber_guard(
     };
     let task_id = unit.id();
 
-    let clobbers: Vec<Finding> = refused_promotions(
-        repo_root,
-        promotions,
-        in_place.as_deref(),
-        claims,
-        |address| {
+    // Two of this task's docs promoting to one path are refused before either is asked
+    // what it would land on — each is the other's occupant ([`split_contested`]).
+    let (contested, rest) = split_contested(promotions);
+    let mut clobbers: Vec<Finding> = contested
+        .iter()
+        .map(|group| {
+            let docs: Vec<Contender> = group
+                .iter()
+                .filter_map(|promotion| {
+                    let address = promotion.source.file_stem().and_then(|s| s.to_str())?;
+                    Some(Contender {
+                        unit: ShapeUnit::Task {
+                            id: task_id,
+                            address,
+                        },
+                        exit: ShapeExit::of(provenance.get(address), address, schemas),
+                    })
+                })
+                .collect();
+            clobber_finding(
+                repo_root,
+                &group[0].destination,
+                ClobberedBy::Contested { docs: &docs },
+            )
+        })
+        .collect();
+    clobbers.extend(
+        refused_promotions(repo_root, rest, in_place.as_deref(), claims, |address| {
             // edited-from-base / unrecorded → never a clobber.
             provenance.get(address) == Some(crate::state::Provenance::Created)
-        },
-    )
-    .into_iter()
-    .map(|refused| {
-        let exit = ShapeExit::of(provenance.get(refused.address), refused.address, schemas);
-        let shape_unit = match source.as_ref() {
-            Some(_) => ShapeUnit::Migration {
-                id: task_id,
-                address: refused.address,
-            },
-            None => ShapeUnit::Task {
-                id: task_id,
-                address: refused.address,
-            },
-        };
-        let by = match refused.over {
-            // A doc under a fixed identity has none of the task arm's exits — it cannot be
-            // retitled or re-slugged — so it takes the arm that routes it at exits it has.
-            // A migration keeps its own arm: its exit is the migration's continuation,
-            // whatever the doctype.
-            Occupant::File { committed } if source.is_none() && exit == ShapeExit::MoveOut => {
-                ClobberedBy::Fixed {
-                    committed,
-                    unit: shape_unit,
+        })
+        .into_iter()
+        .map(|refused| {
+            let exit = ShapeExit::of(provenance.get(refused.address), refused.address, schemas);
+            let shape_unit = match source.as_ref() {
+                Some(_) => ShapeUnit::Migration {
+                    id: task_id,
+                    address: refused.address,
+                },
+                None => ShapeUnit::Task {
+                    id: task_id,
+                    address: refused.address,
+                },
+            };
+            let by = match refused.over {
+                // A doc under a fixed identity has none of the task arm's exits — it cannot be
+                // retitled or re-slugged — so it takes the arm that routes it at exits it has.
+                // A migration keeps its own arm: its exit is the migration's continuation,
+                // whatever the doctype.
+                Occupant::File { committed } if source.is_none() && exit == ShapeExit::MoveOut => {
+                    ClobberedBy::Fixed {
+                        committed,
+                        unit: shape_unit,
+                    }
                 }
-            }
-            Occupant::File { .. } => by,
-            Occupant::Foreign(shape) => ClobberedBy::Shape {
-                shape,
-                exit,
-                unit: shape_unit,
-            },
-            Occupant::Held(holder) => ClobberedBy::Held {
-                holder,
-                exit,
-                unit: shape_unit,
-            },
-        };
-        clobber_finding(repo_root, &refused.promotion.destination, by)
-    })
-    .collect();
+                Occupant::File { .. } => by,
+                Occupant::Foreign(shape) => ClobberedBy::Shape {
+                    shape,
+                    exit,
+                    unit: shape_unit,
+                },
+                Occupant::Held(holder) => ClobberedBy::Held {
+                    holder,
+                    exit,
+                    unit: shape_unit,
+                },
+            };
+            clobber_finding(repo_root, &refused.promotion.destination, by)
+        }),
+    );
     if clobbers.is_empty() {
         Ok(())
     } else {
@@ -643,8 +664,41 @@ fn plan_milestone_clobber_guard(
     schemas: &BTreeMap<String, Schema>,
     claims: &HomeClaims,
 ) -> Result<(), Vec<Finding>> {
-    let clobbers: Vec<Finding> =
-        refused_promotions(repo_root, promotions, None, claims, |address| {
+    // Two sub-tasks' docs promoting to one path are refused before either is asked what it
+    // would land on — each is the other's occupant ([`split_contested`]). The join's suffix
+    // tells two docs of a placement doctype apart by id and never by home.
+    let (contested, rest) = split_contested(promotions);
+    let mut clobbers: Vec<Finding> = contested
+        .iter()
+        .map(|group| {
+            let docs: Vec<Contender> = group
+                .iter()
+                .filter_map(|promotion| {
+                    let landing = promotion.source.file_stem().and_then(|s| s.to_str())?;
+                    let origin = origins.get(landing);
+                    Some(Contender {
+                        unit: ShapeUnit::Milestone {
+                            milestone: milestone_id,
+                            landing,
+                            origin,
+                        },
+                        exit: ShapeExit::of(
+                            origin.map(|origin| origin.provenance),
+                            origin.map_or(landing, |origin| origin.minted.as_str()),
+                            schemas,
+                        ),
+                    })
+                })
+                .collect();
+            clobber_finding(
+                repo_root,
+                &group[0].destination,
+                ClobberedBy::Contested { docs: &docs },
+            )
+        })
+        .collect();
+    clobbers.extend(
+        refused_promotions(repo_root, rest, None, claims, |address| {
             origins
                 .get(address)
                 .is_some_and(|origin| origin.provenance == crate::state::Provenance::Created)
@@ -687,8 +741,8 @@ fn plan_milestone_clobber_guard(
                 &refused.promotion.destination,
                 by,
             ))
-        })
-        .collect();
+        }),
+    );
     if clobbers.is_empty() {
         Ok(())
     } else {
@@ -749,6 +803,50 @@ struct RefusedPromotion<'p> {
     over: Occupant,
 }
 
+/// **One plan, two promotions, one destination** — the promotions of a plan split into the
+/// groups that **contest** a destination and the rest (the rc.24 fix pass, the completion
+/// audit's CPL-1; `design/finalize.md` → 4. Promote).
+///
+/// The clobber guard asks what a promotion would land on *before the promote*, and two
+/// promotions to one path are each other's occupant only *during* it: both destinations are
+/// free when the planner looks, and the second copy lands on the first inside the same
+/// sweep. That is reachable wherever a destination does not carry the slug — a **placement**
+/// doctype promotes to its one literal file whatever its staged address
+/// ([`promote_destination`]) — so two sub-tasks that each mint the `vision` or the
+/// `changelog` are joined as `<type>:<type>` and `<type>:<type>-2` and promoted to one
+/// path: one sub-task's doc landed, the other's was in no commit and on no disk, at exit 0.
+/// A pack with two doctypes sharing one `location:` reaches it from a single task.
+///
+/// Destinations are compared [`lexical_normalize`](crate::store::lexical_normalize)d, the
+/// spelling every other comparison in this guard uses. Each contested group keeps the
+/// plan's own order; the rest is what [`refused_promotions`] is then asked about, so one
+/// destination raises one finding.
+fn split_contested(promotions: &[Promotion]) -> (Vec<Vec<&Promotion>>, Vec<&Promotion>) {
+    let mut by_destination: BTreeMap<PathBuf, Vec<&Promotion>> = BTreeMap::new();
+    for promotion in promotions {
+        by_destination
+            .entry(crate::store::lexical_normalize(Path::new(
+                &promotion.destination,
+            )))
+            .or_default()
+            .push(promotion);
+    }
+    let (contested, single): (Vec<_>, Vec<_>) = by_destination
+        .into_values()
+        .partition(|group| group.len() > 1);
+    (contested, single.into_iter().flatten().collect())
+}
+
+/// One doc of a contested destination ([`split_contested`]): who staged it, and the exit
+/// that unit has for it.
+#[derive(Clone, Copy)]
+struct Contender<'a> {
+    /// The unit that staged the doc, and the address it is staged under there.
+    unit: ShapeUnit<'a>,
+    /// Another id for the doc, or — under a fixed identity — none.
+    exit: ShapeExit,
+}
+
 /// **The promotions that may not be written** — the predicate [`plan_clobber_guard`] and
 /// [`plan_milestone_clobber_guard`] share. Two arms over one observation of each home:
 ///
@@ -769,13 +867,13 @@ struct RefusedPromotion<'p> {
 ///   file is in the worktree.
 fn refused_promotions<'p>(
     repo_root: &Path,
-    promotions: &'p [Promotion],
+    promotions: impl IntoIterator<Item = &'p Promotion>,
     in_place: Option<&Path>,
     claims: &HomeClaims,
     is_created: impl Fn(&str) -> bool,
 ) -> Vec<RefusedPromotion<'p>> {
     promotions
-        .iter()
+        .into_iter()
         .filter_map(|promotion| {
             let address = promotion.source.file_stem().and_then(|s| s.to_str())?;
             let dest_norm = crate::store::lexical_normalize(Path::new(&promotion.destination));
@@ -985,16 +1083,19 @@ impl ShapeUnit<'_> {
     fn drop_the_mint(&self) -> Option<String> {
         use crate::finding::shell_operand;
         let (task, address, what, with_it) = match self {
-            ShapeUnit::Task { id, address } | ShapeUnit::Migration { id, address } => {
-                (*id, *address, "this task", "its staged docs go with it")
-            }
+            ShapeUnit::Task { id, address } | ShapeUnit::Migration { id, address } => (
+                *id,
+                *address,
+                "this task".to_owned(),
+                "its staged docs go with it",
+            ),
             ShapeUnit::Milestone {
                 origin: Some(origin),
                 ..
             } => (
                 origin.source_task(),
                 origin.minted.as_str(),
-                "the sub-task that minted it",
+                format!("sub-task `{}`", origin.source_task()),
                 "that sub-task's whole staged work goes with it",
             ),
             _ => return None,
@@ -1041,6 +1142,12 @@ enum ClobberedBy<'a> {
         exit: ShapeExit,
         /// Who is told.
         unit: ShapeUnit<'a>,
+    },
+    /// **Two or more promotions of one plan to one destination** (CPL-1) — each the other's
+    /// occupant, so none is promoted.
+    Contested {
+        /// The docs contesting the destination, in the plan's order.
+        docs: &'a [Contender<'a>],
     },
     /// A unit's `created` doc under a **fixed identity** (a placement singleton), over a
     /// regular file at its one home (CPL-3) — the file arm for a doc no rename can move.
@@ -1096,6 +1203,10 @@ enum ClobberedBy<'a> {
 ///   same refusal: something a third party put at the doc's home, which a promote would
 ///   write over or, here, *through*. It routes at no `jigc migrate`: a link is not a file
 ///   to adopt (driven: `migrate.source-untrackable`).
+/// - **[`ClobberedBy::Contested`]** — two promotions of the **same plan** to one destination
+///   ([`contested_clobber_text`]; the completion audit's CPL-1). Nothing is at the home yet;
+///   the second copy would land on the first inside the promote. One finding per contested
+///   destination, naming every doc that contests it.
 /// - **[`ClobberedBy::Fixed`]** — the task and sub-task arms' refusal, for a doc under a
 ///   **fixed identity** ([`fixed_clobber_text`]; the completion audit's CPL-3). Those two
 ///   arms route at giving the doc another id, and a placement singleton has none: the
@@ -1158,6 +1269,7 @@ fn clobber_finding(repo_root: &Path, destination: &str, by: ClobberedBy) -> Find
         ClobberedBy::Fixed { committed, unit } => {
             fixed_clobber_text(repo_root, destination, committed, unit)
         }
+        ClobberedBy::Contested { docs } => contested_clobber_text(destination, docs),
     };
     Finding::graded(
         Severity::Blocking,
@@ -1387,6 +1499,92 @@ fn shape_clobber_text(
              a copy of the file it points at, in the link's place — and commit that; then \
              {rerun}"
         ),
+    };
+    (message, route)
+}
+
+/// The message and the route of [`clobber_finding`]'s **contested arm** — two or more docs
+/// of one plan promoting to one destination (the rc.24 fix pass, the completion audit's
+/// CPL-1; `design/finalize.md` → 4. Promote).
+///
+/// **One doc keeps the home and every other one leaves the contest**, by the exit its unit
+/// has ([`ShapeExit`]): a doc under an id its author chooses takes another id in its unit
+/// ([`ShapeUnit::rename`]); a doc under a **fixed identity** has no other id, so the unit
+/// that minted it is dropped ([`ShapeUnit::drop_the_mint`]) — at the milestone boundary the
+/// sub-task, whose doc is read first and whose prose worth keeping is carried into the doc
+/// that stays. Which doc keeps the home is the reader's choice; the route prints one
+/// concrete resolution and says so: the docs that cannot move come first, and among equals
+/// the plan's order — at the milestone boundary the lowest task id, the join's own rule for
+/// who keeps a bare slug (`design/storage.md` → The by-task-id join, rule 4).
+///
+/// At the **task door** a doc that has to be dropped takes the whole task with it, so there
+/// is no boundary left to re-run: that route ends at the work started again with one doc.
+/// It is reachable there only through a pack whose doctypes share a fixed home.
+fn contested_clobber_text(destination: &str, docs: &[Contender]) -> (String, String) {
+    // The docs that cannot take another id first; a stable sort keeps the plan's order
+    // among equals, and at the milestone boundary orders by sub-task.
+    let mut order: Vec<&Contender> = docs.iter().collect();
+    order.sort_by(|a, b| {
+        let movable = |c: &Contender| c.exit == ShapeExit::RenameOrMoveOut;
+        let sub_task = |c: &Contender| match c.unit {
+            ShapeUnit::Milestone {
+                origin: Some(origin),
+                ..
+            } => origin.source_task().to_owned(),
+            _ => String::new(),
+        };
+        (movable(a), sub_task(a)).cmp(&(movable(b), sub_task(b)))
+    });
+    let named: Vec<String> = order.iter().map(|c| c.unit.whose()).collect();
+    let (last, firsts) = named.split_last().expect("a contest has two docs or more");
+    let message = format!(
+        "{} and {last} {} promote to `{destination}`: one path holds one doc, and landing \
+         them would overwrite one with another, so none of them is promoted there",
+        firsts.join(", "),
+        if firsts.len() > 1 { "all" } else { "both" },
+    );
+
+    let (keeper, others) = order.split_first().expect("a contest has two docs or more");
+    let intact = keeper.unit.intact();
+    let rerun = keeper.unit.rerun();
+    let at_task_door = !matches!(keeper.unit, ShapeUnit::Milestone { .. });
+    let mut dropped = false;
+    let moves: Vec<String> = others
+        .iter()
+        .map(
+            |c| match (c.exit, c.unit.rename(), c.unit.drop_the_mint()) {
+                (ShapeExit::RenameOrMoveOut, Some(rename), _) => rename,
+                (_, _, Some(drop)) => {
+                    dropped = true;
+                    drop
+                }
+                // A body no unit of this plan staged: nothing to rename and nobody to drop.
+                _ => format!("take {} out of what this boundary lands", c.unit.whose()),
+            },
+        )
+        .collect();
+    let route = if dropped && at_task_door {
+        format!(
+            "{intact}. Only one of these docs can land at `{destination}`, and a doc of a \
+             doctype with one fixed home cannot be given another id: {}, and start the work \
+             again with one of them",
+            moves.join("; "),
+        )
+    } else {
+        let fixed = if dropped {
+            " A doc of a doctype with one fixed home cannot be given another id — the join's \
+             suffix gives it a second id, never a second home — so every sub-task but one \
+             lets its doc go; carry what you want kept into the doc that stays before you \
+             drop one."
+        } else {
+            ""
+        };
+        format!(
+            "{intact}. Only one of these docs can land at `{destination}`.{fixed} As \
+             printed, {} keeps the home: {}; then {rerun}",
+            keeper.unit.whose(),
+            moves.join("; "),
+        )
     };
     (message, route)
 }
@@ -5656,6 +5854,147 @@ sections:
         );
         // MUST NOT REFUSE: a body the join did not write is not a mint.
         plan(&no_origins()).expect("no origin, no clobber — the file arm's rule");
+    }
+
+    /// **Two promotions of one plan to one destination are refused together** (the rc.24 fix
+    /// pass, the completion audit's CPL-1). Both homes read free to a guard that asks before
+    /// the promote, and the second copy would land on the first inside it. A placement
+    /// doctype's home ignores the slug, so the join's `foo:foo` and `foo:foo-2` are two ids
+    /// and one path: one finding, keyed at that path, naming both sub-tasks; the route keeps
+    /// the lowest task id's doc, drops the other sub-task, and prints no rename.
+    ///
+    /// At the task door the same split refuses two doctypes that share one `location:` —
+    /// reachable through a pack only — and routes the doc that can move at the in-task
+    /// rename. Beside both: one promotion per destination plans as before.
+    #[test]
+    fn two_promotions_to_one_destination_are_refused_together() {
+        // ── the milestone boundary: two sub-tasks, one singleton ──
+        let schema = placement_schema("foo", "FOO.md");
+        let mut with_placement = schemas();
+        with_placement.insert(schema.ty.clone(), schema.clone());
+        let root = TempRoot::new("contested-milestone");
+        let staging = root
+            .path()
+            .join("milestones")
+            .join("page-rework")
+            .join("merged");
+        stage_filled_placement(&staging, &schema, "foo");
+        stage_filled_placement(&staging, &schema, "foo-2");
+        let created = state::Provenance::Created;
+        let origins = BTreeMap::from([
+            origin_of("foo:foo", created, "foo:foo", &["low", "zed"]),
+            origin_of("foo:foo-2", created, "foo:foo", &["zed"]),
+        ]);
+        let plan = |origins: &BTreeMap<String, crate::milestone::MergedOrigin>| {
+            plan_milestone_finalize(
+                "page-rework",
+                &staging,
+                root.path(),
+                &base(),
+                &base().sha,
+                false,
+                "Finalize milestone page-rework (2 sub-tasks)\n".to_string(),
+                true,
+                &with_placement,
+                origins,
+                &HomeClaims::default(),
+            )
+        };
+        let findings = plan(&origins).expect_err("two docs for one home must block");
+        assert_eq!(
+            findings.len(),
+            1,
+            "one finding per contested home; {findings:#?}"
+        );
+        let finding = &findings[0];
+        assert_eq!(finding.code, "finalize.promote-clobber");
+        assert_eq!(target(finding), Some("FOO.md"), "keyed at the one home");
+        assert!(
+            finding.message.contains("`low`") && finding.message.contains("`zed`"),
+            "the message names every sub-task that contests the home: {}",
+            finding.message,
+        );
+        let route = finding.route.as_deref().expect("a route");
+        assert!(
+            !route.contains("jigc doc rename")
+                && route.contains("`jigc task discard zed --force`")
+                && route.contains("`jigc doc show foo:foo --task zed`")
+                && !route.contains("jigc task discard low")
+                && route.contains("`jigc milestone finalize page-rework`"),
+            "the lowest task id keeps the home; the other is read, then dropped: {route}",
+        );
+        assert!(
+            !root.path().join("FOO.md").exists(),
+            "the planner writes nothing"
+        );
+
+        // ── the task door: two doctypes of a pack sharing one location ──
+        let twin = crate::schema::load_schema(
+            b"type: memo\nlocation: decisions\nsections:\n  - id: body\n    slot: { hint: a memo }\n",
+        )
+        .expect("a second doctype at the adr's location");
+        let mut with_twin = schemas();
+        with_twin.insert(twin.ty.clone(), twin.clone());
+        let root = TempRoot::new("contested-task");
+        let task_dir = root.path().join("tasks").join("record-decision");
+        let commit = stage_filled_commit(&task_dir, "record-decision");
+        stage_filled_adr(&task_dir, "single-node-cache");
+        state::persist(
+            &state::instance_path(&task_dir, "memo", "single-node-cache"),
+            b"# single-node-cache\n\n## Body\n\nA memo.\n",
+        )
+        .expect("stage the twin");
+        for address in ["adr:single-node-cache", "memo:single-node-cache"] {
+            state::record_doc_provenance(&task_dir, address, created).expect("provenance");
+        }
+        let findings = plan_finalize(
+            &task_dir,
+            root.path(),
+            &base(),
+            &base().sha,
+            &ValidationReport::new(Vec::new(), &no_delta_resolved()),
+            true,
+            &commit,
+            "record-decision",
+            &with_twin,
+            &HomeClaims::default(),
+        )
+        .expect_err("two of a task's docs for one home must block");
+        assert_eq!(findings.len(), 1, "{findings:#?}");
+        assert_eq!(target(&findings[0]), Some("decisions/single-node-cache.md"));
+        let route = findings[0].route.as_deref().expect("a route");
+        assert!(
+            route.contains(
+                "`jigc doc rename memo:single-node-cache --to \"<title>\" --task record-decision`"
+            ) && route.contains("`jigc task finalize record-decision`"),
+            "a doc whose id is its author's to choose is renamed in the task: {route}",
+        );
+
+        // ── MUST NOT REFUSE: one promotion per destination ──
+        let root = TempRoot::new("contested-control");
+        let staging = root
+            .path()
+            .join("milestones")
+            .join("page-rework")
+            .join("merged");
+        stage_filled_placement(&staging, &schema, "foo");
+        stage_filled_adr(&staging, "single-node-cache");
+        let lone = BTreeMap::from([origin_of("foo:foo", created, "foo:foo", &["low"])]);
+        let plan = plan_milestone_finalize(
+            "page-rework",
+            &staging,
+            root.path(),
+            &base(),
+            &base().sha,
+            false,
+            "Finalize milestone page-rework (1 sub-task)\n".to_string(),
+            true,
+            &with_placement,
+            &lone,
+            &HomeClaims::default(),
+        )
+        .expect("distinct homes plan as before");
+        assert_eq!(plan.promotions.len(), 2);
     }
 
     /// **A fixed identity over a file at its home is routed at exits it has** (the rc.24 fix

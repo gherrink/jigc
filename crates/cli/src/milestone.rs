@@ -253,7 +253,10 @@ pub enum MilestoneCommand {
     /// suffix is assigned by task-id order alone and does not look at what already
     /// sits at the suffixed id's home: a doc suffixed onto an occupied id is listed
     /// here like any other, and `jigc milestone finalize` — where the write would
-    /// happen — refuses to promote it (`finalize.promote-clobber`).
+    /// happen — refuses to promote it (`finalize.promote-clobber`). Nor does it look
+    /// at where a doc lands: two sub-tasks' docs of a doctype with one fixed home
+    /// (`vision`, `changelog`) are listed as `<id>` and `<id>-2` and promote to one
+    /// path, which the boundary refuses under the same code.
     Join {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
@@ -272,6 +275,8 @@ pub enum MilestoneCommand {
     /// milestone. A doc of a doctype with one fixed home (`vision`, `changelog`) cannot
     /// be renamed, so there the route is the file moved out of the doc's home, or the
     /// sub-task that minted the doc dropped (`jigc task discard <task-id> --force`).
+    /// Two sub-tasks' docs that promote to one path — two mints of one such doctype —
+    /// are refused together, under the same code, and the route keeps one.
     /// And no doc — created or edited — is promoted onto a destination whose
     /// entry is not a regular file (a symbolic link, a directory): a doc lands as a
     /// regular file at exactly its home and is never written through a link, so the
