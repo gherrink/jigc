@@ -2353,6 +2353,15 @@ and are **not committed**, so the files' condensed blocks are what this record h
 table and its one line per finding are a reading of those six files; where they disagree with a file,
 **the file governs**.
 
+**What the run's preparation saw is recorded in the trial's README, not here** (added 2026-10-04).
+The observations made while this gate's two instruments were being prepared — before any session or
+row ran — are in [RC-rc24/README.md](../../RC-rc24/README.md): §9 → *Seen while preparing the trial —
+recorded, not graded* (the trial's apparatus) and §11 → *Doc drift seen during the run — owed to the
+closing fold-back or to the port, not fixed here*. One entry of the second list concerns this review's
+own predecessors: the committed M51 – M53 per-axis records and their instruments carry absolute
+home-directory paths, counted there and quoted nowhere. Neither list holds a finding of this review, and
+neither changes a row.
+
 ---
 
 # Files

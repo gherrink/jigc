@@ -92,7 +92,13 @@ same published binary).
   work survives whole, permanence needs a second event (gc) and age, git itself calls the state
   `prunable`, and it did not occur in the trial. **§7's L-22 entry and §11's bounds were written
   before this re-drive and are left as written** — where they say O-1 was not driven, this bullet
-  and the file are the later word. **The ruling on the row, and the scope of any fix pass, are the
+  and the file are the later word.
+  **[Corrected 2026-10-04 by the adversarial re-drive:** they are no longer left as written. Each
+  place that said *not driven* of something the re-drive then drove now carries a dated bracket
+  beside the original words, which stay visible: §7's L-22 entry (its `door:` field and the
+  verifier's quoted sentence), §7's O-1 and O-2 rows, §11's first bound and §11's *what is owed*.
+  The file remains the later word wherever a bracket and it differ.**]**
+  **The ruling on the row, and the scope of any fix pass, are the
   human's and have not been taken.**
 
 **The arms** — both scorers, independently, the same class on every arm:
@@ -1234,8 +1240,8 @@ all. None is a finding; each is a lead for whoever triages.
 
 | # | what | state | reason it is open |
 |---|---|---|---|
-| O-1 | **L-22's everyday trigger**: a repository bind-mounted into a container whose host-side linked worktrees sit at paths the container cannot see is `prunable` in every one of them from where jigc runs | **not driven** | an inference from git's `prunable` rule; a container run was outside a rig verification. It is the datum that decides how far L-22's tier argues down |
-| O-2 | L-22: `jigc uninstall` and the squash combine's dedicated worktree (`crates/cli/src/task.rs`, a third bare prune); the variant under `--format json` | read, **not driven** | outside the three doors the lead named |
+| O-1 | **L-22's everyday trigger**: a repository bind-mounted into a container whose host-side linked worktrees sit at paths the container cannot see is `prunable` in every one of them from where jigc runs | **not driven** **[Corrected 2026-10-04 by the adversarial re-drive:** **driven**, and it holds**]** | an inference from git's `prunable` rule; a container run was outside a rig verification. It is the datum that decides how far L-22's tier argues down **[Corrected 2026-10-04 by the adversarial re-drive:** the container run was made. A live host worktree, never moved and never deleted, answered `git status` at exit 0 before; in a container that saw the repository and not the worktree's path, `git worktree list` called it `prunable`, ordinary git left the record in place, and `jigc milestone provision` exited 0 with its one `provisioned 2 worktree(s)…` line; on the host afterwards the record under `.git/worktrees/` was gone, `git status` in the worktree answered `fatal: not a git repository` at exit 128, `git worktree repair` exited 1 and the commit only that `HEAD` reached was unreachable. The datum argues **against** the step down, not for it. Still not driven: the same repository at a different mount path with a worktree *inside* the repository directory ([tier1-verification-L-22.md](tier1-verification-L-22.md) → 6)**]** |
+| O-2 | L-22: `jigc uninstall` and the squash combine's dedicated worktree (`crates/cli/src/task.rs`, a third bare prune); the variant under `--format json` | read, **not driven** **[Corrected 2026-10-04 by the adversarial re-drive:** `jigc uninstall` **driven**; the dedicated worktree reached through a driven cell and attributed to it by reading; `--format json` still not driven**]** | outside the three doors the lead named **[Corrected 2026-10-04 by the adversarial re-drive:** the doors are **four**, and `uninstall` is the fourth. Driven on a fresh rig with no milestone and one `prunable` foreign worktree: exit 0, the foreign record gone, and the ack says it *pruned git's worktree registrations for the fan-out worktrees `.jigc/` held* — `.jigc/` held none, so the one door that narrates the prune misattributes it. The dedicated worktree is not *a third* bare prune but two more sites (`DedicatedWorktree::add` and its `Drop`, `crates/cli/src/task.rs`), reached by `milestone finalize` on landing **and refusing** runs: `jigc milestone finalize` on a never-provisioned milestone exits 3, `milestone.zero-contribution`, and both foreign records are gone — that cell was driven, and its attribution to this site was read, not instrumented. Left open by the re-drive: `--format json` on any cell, and which of finalize's two commit arms the default cell took ([tier1-verification-L-22.md](tier1-verification-L-22.md) → 1, 7, *Not covered*)**]** |
 | O-3 | **L-23's sibling edge**: a body whose last paragraph is a prose line followed by `Signed-off-by: …`. Signed, jigc opens a new block and git then reads the new block alone — the body's `Signed-off-by` is demoted from a trailer git reads to prose. Not *"the place `git interpret-trailers` gives"* | **driven once** (two cells), outside the lead's claim, **not adjudicated** | its verifier's reading: tier 3 at most — no bytes are lost; reachable only by writing a sign-off into the prose body slot. UNPINNED |
 | O-4 | **L-18's adjacent**: one code, `write.wrong-shape`, leaves `doc author` with two different routes, and the design sentences define that code as *"a genuine declared-shape defect, and only that"* — the payload-parse producer is a second meaning they do not carry | **driven** (three cells), **not scored** | offered by the verifier as a separate lead |
 | O-5 | **L-9's narrower cell**: the step says the bare `git log -1` shows *"the commit this task pinned"*; it reads `HEAD` of whichever checkout the reader stands in. Mint in a linked worktree, run from the main checkout, and it prints another commit's subject | **driven** (one cell), **not tiered** | outside the lead as worded; exposure is small (the mint ack names the worktree; finalize refuses if `HEAD` moved) |
@@ -1332,6 +1338,41 @@ above, both verified:
   tests to;
 - **T-7** — the edge the repair fenced on `seed` and did not fence on `fork` (or on `observe`):
   nothing guarantees position 0 of the transcript list is the main session.
+
+### Seen while preparing the trial — recorded, not graded
+
+**Added 2026-10-04, after assembly.** The fifteen rows above came out of running and scoring. The
+rows below were seen earlier — by the agents that prepared the corpora, the image, the turn files
+and the runbook, before any session ran — and until this section they lived only in the
+orchestrator's conversation. They carry no tier and no `T-` id: they are apparatus, not the jigc
+product; none moved an arm's class or a trailer row; and they are **not** among the fifteen the
+headline counts. Nothing here was fixed.
+
+**An agent's report is a lead, not a measurement**, so each row was re-read at the file and line
+it names — or re-run, where it says *driven* — on tree `24926ac4`, by an agent that did not make
+the observation. *confirmed* means the file says what the row says. Where a report did not hold as
+worded, the row says what was found instead. Paths are under `completions/` unless they begin
+elsewhere.
+
+| item | file:line | what is there | status |
+|---|---|---|---|
+| **P-1** · stale default image tags | `trial-harness/run-session.sh:84` · `trial-harness/verify-image.sh:52–53` · `trial-driver/run.py:390, 395, 411, 421` · `trial-driver/walk.py:143` · `trial-driver/driver/session.py:241, 339` · `trial-harness/verify-pair.sh:54–56` | every door defaults to `jigc-gate:rc11` (and `verify-image.sh` to version `1.0.0-rc.11`), so every command of this trial named its tag (`TAG=jigc-gate:registry-1.0.0-rc.24` in the runbook). `verify-pair.sh` defaults to `jigc-gate:rc13` / `jigc-gate:rc14` and the probe set `m50` — while `trial-harness/README.md:53` still calls `m49` *the default* | confirmed |
+| **P-2** · the harness README's check list | `trial-harness/README.md:52, 70–94` · `trial-harness/verify-image.sh:4, 75–196` | reported as *the README says five where the script runs seven*. Found: the README's table row says **Seven** assertions and itself adds *"The list below enumerates five; the script is the authority"*; the list below it is numbered 1–5 and has no entry for the script's section 6 (workspace trust · a recoverable transcript — two assertions) | confirmed — a gap the README declares, not a contradiction |
+| **P-3** · a dead source path | `trial-corpus-template/README.md:52` | cites `crates/cli/probes/doc-code/src/resolve.rs` for `grammar_for`. That path does not exist; since M54 the function is in `crates/cli/src/doc_code_probe/resolve.rs` | confirmed |
+| **P-4** · the walk README's arm table | `trial-driver/arms/walk/README.md:30–51, 55` | the table lists arms `00`–`21`; the directory also holds `22-m50-orientation-and-carried.sh` and `23-m50-audit-findings.sh`, which the README names nowhere | confirmed |
+| **P-5** · `verify-pair.sh` and a later pair | `trial-harness/verify-pair.sh:19–22, 59–64, 104–108` · `trial-harness/Dockerfile:100–101` | four probe sets — `m48` (rc.10→rc.11), `m46` (rc.11→rc.12), `m49` (rc.12→rc.13), `m50` (rc.13→rc.14) — and none for any later pair. A registry image carries `JIGC_SHA=unknown` (read off the rc.24 image). Found, by reading: as the *old* side it fails the sha check against a 40-hex expectation unless `EXPECT_OLD_SHA` is overridden to `unknown`, which then asserts nothing; as the *new* side it passes, because that check is non-emptiness | confirmed for the sets; the registry half **read, not driven** — no pair was run |
+| **P-6** · the sha comparison on a registry image | `trial-driver/driver/gate.py:107, 112–113` · `trial-driver/run.py:112–113, 118–119` · [gate-rc24.json](gate-rc24.json) | both sha comparisons are `unknown` against `unknown` (the gate record and every committed `PROVENANCE` file carry `unknown`); the image-id comparison is the only one that discriminates. The gate record's own note says the sha is `unknown` by construction | confirmed |
+| **P-7** · check 4 spans two CLI versions | `trial-harness/verify-image.sh:114, 116` · `trial-harness/Dockerfile:97` | the discriminating probe is asked of the **host's** `claude` and of the container's. The container's is pinned at `2.1.233`; the host's is whatever is installed — `2.1.289` when this row was verified (2026-10-04; the host version at the trial's run was not recorded). The YES/NO differential therefore crosses two CLI versions as well as two instruction sets | confirmed |
+| **P-8** · M54's registry image | `artifacts/M54/publish-proof.md:265` | the proof records `jigc-gate:registry-1.0.0-rc.22` as `sha256:04ae7455f965…`; `docker image inspect --format '{{.Id}}'` on the trial machine answers `sha256:db768e32dc31…` for that tag. The same tag now names another image; when and why it was rebuilt was not established | confirmed (driven) |
+| **P-9** · the driver's own suite is run by nothing | `.github/workflows/ci.yml` · `.github/workflows/release.yml` · `dev/gate` | none of the three names `trial-driver`, `run.py` or `python`, and no suite under `crates/cli/tests/` names the driver: `python3 completions/trial-driver/run.py test` runs only when someone types it | confirmed |
+| **P-10** · three things about `seed` | `trial-driver/driver/session.py:96, 250–251, 256–258, 262, 330–334` · `trial-driver/run.py:296–303, 407–414, 422` · `trial-harness/run-session.sh:91` | (i) `<frozen>-work` is removed with `shutil.rmtree` when it exists, unasked — `--force` guards `<frozen>` only. (ii) The `seed` sub-command takes `--tag`, `--force` and `--gate`: no `--strict`, which `fork` has, and no model flag — the model comes from the `JIGC_GATE_MODEL` environment variable. (iii) The fixture is verified by finding turn 1's stripped text as a raw substring of the JSONL transcript, after every turn has run; JSON escapes `"` and `\`, so a turn 1 holding either fails only then. (iii) was driven on a constructed fixture: a plain marker verifies, one with `"` and one with `\` each answer *"the frozen transcript does not contain its own seed marker"*. No real seed was run for it | confirmed |
+| **P-11** · the template commits with the ambient identity | `trial-corpus-template/instantiate.sh:93` | `git commit -q -m "$msg"`, with no identity set anywhere in the script, so the seven commits carry whatever the shell has. This trial exported a neutral one around the call ([corpora.md](corpora.md) §1) | confirmed |
+| **P-12** · `corpus-src` is a host path | `trial-harness/run-session.sh:259` · `trial-driver/run.py:300, 322` | `PROVENANCE.txt` records `corpus-src` as the argument given, and `run.py seed` / `fork` resolve it to an absolute path first — an absolute home-directory path in every out-dir. This trial rewrote the home prefix to `~` at copy time ([evidence/README.md](evidence/README.md)) | confirmed |
+| **P-13** · a prompt file left beside the out-dir | `trial-driver/driver/session.py:203–205` | `_drive` writes the turn's prompt to `<out-dir>.prompt.txt` beside the out-dir, and nothing removes it. On the trial machine `~/out` holds one beside each debrief out-dir (`RC24-A-debrief.prompt.txt`, `RC24-B-debrief.prompt.txt`); `seed` leaves one per turn inside `<frozen>-work/` | confirmed |
+| **P-14** · two slips in this trial's own corpus record | [corpora.md](corpora.md) lines 63, 132 · `trial-driver/arms/adopt.sh:36, 46` · `evidence/A`, `B`, `C` → `invocations.jsonl`, records 1–2 · `trial-corpus-template/check-corpus.sh:32, 198` | corpora.md says an adopted corpus's log holds *one record* at freeze. Each committed log opens with **two** records older than its session: `validate --format json` (the pre-commit hook, on the adoption commit) and `config get invocation-log` (the adoption arm's closing read-back). And its step-2 comment gives `calderby` as `11 passed, 0 failed, 1 SKIP`, where the script prints `11 passed, 0 failed` and the skip as a separate `SKIP` line. No figure moves: `observe` leaves out every record older than the session's start | confirmed |
+| **P-15** · RC-rc14's archived evidence cannot be re-scored | `artifacts/RC-rc14/evidence/` · `trial-driver/run.py:58–59` | eight arm directories, each a flat `invocations.jsonl` and `PROVENANCE.txt`; one transcript in all (`B1/transcript.jsonl`). `observe` reads `<out>/.jigc/logs/invocations.jsonl` and `<out>/.session-transcript/` and finds neither: `run.py observe` on the archived `B2` directory exits 1 with `VOID apparatus — no invocation log` (driven) | confirmed |
+| **P-16** · the two helpers are this trial's | [tools/trailer-rows.py](tools/trailer-rows.py) · [tools/raw-git-acts.py](tools/raw-git-acts.py) | both are new files written for this trial — first committed in `82c12b18`, with no earlier path in the history — and they live in this directory, not in `completions/trial-driver/` (§12; forks.md → F10). Neither has a test (T-4, T-9) | confirmed |
+| **P-17** · a home path in a live script | `trial-harness/build-image.sh:40` | **not in the preparers' reports — seen while verifying this list.** Source mode's default for the repository location, overridable through `JIGC_REPO`, is an absolute home-directory path, in a committed and live script | confirmed |
 
 ---
 
@@ -1508,10 +1549,48 @@ CLI.
 8. **Nothing is filed.** This repository has no store; the rows live here until the port (M56)
    files them beside M55's seed.
 
+**Doc drift seen during the run — owed to the closing fold-back or to the port, not fixed here.**
+Added 2026-10-04, after assembly, from the same preparation reports as §9's last table; each was
+re-read at its line on tree `24926ac4`, and **no file named below was edited**.
+
+- **`CLAUDE.md` → *Project state* (line 7) names rc.23 where the truth is rc.24.** It says *"the
+  current release is M55's: `jigc 1.0.0-rc.23`"* and that the blind trial and the partial re-review
+  come next *"on `1.0.0-rc.23`"*. The current release is `jigc 1.0.0-rc.24`
+  (`crates/cli/Cargo.toml:3`; release PR #12), and both instruments ran on rc.24.
+  `design/findings-channel.md` §12 (line 335; line 284 beside it) names rc.23 as *the release* —
+  **that is true of M55's own release, which is what the section records**, and it is listed only
+  so a reader who meets it does not take it for the current one. Owed to the closing fold-back.
+- **`completions/artifacts/M55/settle-log.md` line 53 (S16) still carries three parentheticals
+  the same file withdrew** — *create --new*, *foreign-staged* and *contract-version bump*. Line 60
+  struck the bump, R1 (line 73) replaced the refusal with a path-scoped commit, and R2 (line 75)
+  moved create-only onto the gate entry. It is a dated record and stays as written; the review's
+  instrument already says so
+  ([instrument/README.md](../M55/per-axis-review-rc24/instrument/README.md) → *Not pinned down*,
+  item 3).
+- **The committed M51–M53 records carry absolute host paths.** 78 files under
+  `completions/artifacts/M51`, `M52` and `M53` hold an absolute home-directory path (20 · 22 · 36),
+  and the same 78 carry a login name. Two shapes among them:
+  `completions/artifacts/M53/per-axis-review-rc20/instrument/per-axis-review.workflow.js` lines
+  11–12 hard-code a session scratch path and a binary path under a home directory; and four row
+  files — `axis-2.md` and `axis-3.md` in each of `M53/per-axis-review-rc19/` and
+  `M53/per-axis-review-rc20/` — hold links that climb out of the repository to an absolute
+  home-directory path. (The report placed those links under `instrument/`; they are in the row
+  files beside it.) **No such path is quoted here.** The
+  same search over this run's own two directories — `completions/artifacts/RC-rc24` and
+  `completions/artifacts/M55` — finds none. The rule is
+  [implementation/public-hygiene.md](../../../implementation/public-hygiene.md); what to do about
+  records already published is a decision, owed to the port or to a hygiene pass of its own.
+
 **What is owed:**
 
 - **The human's ruling on L-22** — tier 1 by the predicate, or weighed down to 3 — and, if it
   stands, the fix pass the exit rule attaches. O-1 is the cheapest datum that would inform it.
+  **[Corrected 2026-10-04 by the adversarial re-drive:** that datum now exists. O-1 **was driven**
+  and holds — a live host worktree, never moved or deleted, is orphaned when a milestone door runs
+  in a container that sees the repository and not the worktree's path — and it argues against the
+  step down, not for it ([tier1-verification-L-22.md](tier1-verification-L-22.md) → 6). What
+  informs the ruling now is that file's own *for* and *against* lists (→ 5) and, for the fix pass,
+  its *cheap vs robust* fork (→ 7). The ruling is still the human's and is still owed.**]**
 - **The 1.0.0 call**, which is the human's and which this record does not take.
 - **The partial re-review** over M54's S18 axes and M55's S16 axes — the defect instrument, a
   separate one, also owed before the call.
