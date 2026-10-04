@@ -1326,17 +1326,29 @@ fn the_dangling_anchor_exit_lands_the_code_and_its_repair_from_the_main_checkout
             s.starts_with("git ") && s.ends_with(" stash pop --index")
         });
         let discard = span(&route, "discard", |s| s.starts_with("jigc task discard "));
-        let start = start.replace("<intent>", "rename the getter from main");
+        // The natural fill of `<intent>` is the relocated task's own — which slugs to its
+        // id, so the route has to have dropped that task before it mints (audit F3).
+        let start = start.replace("<intent>", "rename the getter");
+        assert!(
+            route.find(&discard) < route.find(&stash)
+                && route.find(&stash) < route.find("jigc start --workflow"),
+            "{arm}: the route drops this task first, then stashes, and only then mints; \
+             got:\n{route}",
+        );
 
         let moved = rig.sh(
             &rig.wt,
-            &format!("set -e; {stash}; {cd}; {merge}; {start}; {pop}"),
+            &format!("set -e; {discard}; {stash}; {cd}; {merge}; {start}; {pop}"),
         );
         assert_ok(
             &moved,
             &format!("{arm}: the route up to the restored change"),
         );
         let there = minted(&text(&moved.stdout));
+        assert_eq!(
+            there, task,
+            "{arm}: the reused intent mints the same id — free, because the route dropped it",
+        );
 
         // "make this write and finalize there" — the refused argv, from the main checkout.
         let mut argv = repair.to_vec();
@@ -1351,7 +1363,6 @@ fn the_dangling_anchor_exit_lands_the_code_and_its_repair_from_the_main_checkout
             &landed,
             &format!("{arm}: the finalize from the main checkout"),
         );
-        assert_ok(&rig.sh(&main, &discard), &format!("{arm}: `{discard}`"));
 
         let paths = rig.git(&main, &["show", "--format=", "--name-only", "HEAD"]);
         assert_eq!(

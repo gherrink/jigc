@@ -438,9 +438,8 @@ pub(crate) fn linked_worktree_doc_finding(
                 Some(workflow) => format!(
                     "{here}. If this write repairs a code anchor the code staged here broke \
                      (`doc-code.symbol-exists`), the two must land in ONE commit, and only \
-                     the main checkout can make it: {}, make this write and finalize there, \
-                     then drop this task with `jigc task discard {task} --force`",
-                    checkout.relocate_change_steps(workflow),
+                     the main checkout can make it: {}, make this write and finalize there",
+                    checkout.relocate_change_steps(workflow, task),
                 ),
                 None => here,
             }
@@ -4977,10 +4976,9 @@ fn changelog_gate_route(
                 "this project has promoted the gate to `blocking`, and this checkout commits \
                  code only, so the entry cannot be recorded in this task: land the change \
                  from the main checkout, where one task commits both — {}, record the entry \
-                 and finalize there, then drop this task with `jigc task discard {id} \
-                 --force`; if the change is not user-facing, lower the gate back with `jigc \
-                 config set validation.{CHANGELOG_GATE_CODE}.severity advisory`",
-                checkout.relocate_change_steps(workflow),
+                 and finalize there; if the change is not user-facing, lower the gate back \
+                 with `jigc config set validation.{CHANGELOG_GATE_CODE}.severity advisory`",
+                checkout.relocate_change_steps(workflow, id),
             );
         }
         return format!(

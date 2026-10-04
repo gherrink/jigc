@@ -2289,17 +2289,26 @@ impl CodeOnlyCheckout {
     /// reader told only *the staged change* would find their unstaged edits gone from the
     /// worktree unannounced; `--index` puts each back on the side of the index it was on.
     ///
-    /// The order is load-bearing and is what the route spells: the branch's commits first
-    /// (the change was made on top of them), then the **mint**, then the pop — a change
-    /// staged *before* the task exists is `finalize.carried-staged` at that task's own
-    /// finalize. Every `git` span is aimed with `-C`, so each runs from wherever the reader
-    /// is standing; the `jigc` spans are the main checkout's, reached by the `cd`.
+    /// The order is load-bearing and is what the route spells: **the task being relocated is
+    /// dropped first**, then the branch's commits (the change was made on top of them), then
+    /// the **mint**, then the pop — a change staged *before* the task exists is
+    /// `finalize.carried-staged` at that task's own finalize. Every `git` span is aimed with
+    /// `-C`, so each runs from wherever the reader is standing; the `jigc` spans after the
+    /// `cd` are the main checkout's.
+    ///
+    /// **Why the discard leads** (the completion audit's F3). The task roster is one per
+    /// repository, so the task minted there shares its id space with the one refused here —
+    /// and the natural fill of `<intent>` is that task's own, which slugs to its id. With the
+    /// discard as the route's last step, driven, the mint answered `task.serial-collision`
+    /// and the pop that followed restored the change before any task existed. A discard
+    /// removes the task's working area and nothing else: the change staged in this checkout
+    /// is untouched by it, and the stash that follows is what moves it.
     ///
     /// `workflow` is the workflow of the task being relocated: the mint is named with it
     /// (`jigc start --workflow <W> …`) because the bare front door composes the router, which
     /// mints nothing — and a route whose *"mint the task"* step mints none would send the pop
-    /// ahead of the task after all.
-    pub(crate) fn relocate_change_steps(&self, workflow: &str) -> String {
+    /// ahead of the task after all. `task` is that task's id.
+    pub(crate) fn relocate_change_steps(&self, workflow: &str, task: &str) -> String {
         let home = std::path::Path::new(&self.home);
         let merge = match &self.site.branch {
             Some(branch) => format!(
@@ -2314,7 +2323,9 @@ impl CodeOnlyCheckout {
             None => String::new(),
         };
         format!(
-            "`{stash}` takes this worktree's uncommitted changes out of it, staged and \
+            "`jigc task discard {task} --force` drops this task first — that frees its id \
+             for the one minted there and leaves what is staged here alone; `{stash}` takes \
+             this worktree's uncommitted changes out of it, staged and \
              unstaged; then `{cd}`,{merge} \
              mint the task there (`jigc start --workflow {workflow} \"<intent>\"`) and \
              restore them (`{pop}`)",
