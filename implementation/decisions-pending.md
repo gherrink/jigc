@@ -75,6 +75,7 @@ This is a *decision/discussion* backlog, not a *task* backlog — tasks are stil
 **M57 — the 1.x fix pass.**
 
 - **(I) `jigc uninstall` takes the same footprint subtraction `setup` gains at M54.** *Recorded 2026-09-28 (M54 Settle, S22).* M54 fixes the setup wedge by recording the install footprint on every failure path, so a plain `setup` re-run exempts jigc's own uncommitted writes from `setup.dirty-install-path` while a later user edit still re-arms the guard. `uninstall`'s dirty-path refusals ask the same *whose bytes are these* question and do not subtract that footprint, so after a failed first setup the teardown may refuse jigc's own writes as the user's. **READ, not driven** — the design review named the subtraction; nobody has driven the uninstall cell. *What is owed:* the same subtraction at `uninstall`, with a rig-driven test and control, no new code. *Trigger:* **M57.**
+- **(D) The external-writer race class — no door is atomic against a non-jigc writer.** *Recorded 2026-10-04 (the rc.24 gate, the human's ruling).* The class behind `(R6, K-1)`, which that row's adversarial re-drive said should be ruled on once, as a class ([the partial re-review](../completions/artifacts/M55/per-axis-review-rc24/README.md) → *After assembly*): the create gate's check-then-use window; `jigc task finalize`'s own plan-to-promote window — about 26 ms, 13 losses in 80 against a synthetic external writer ([R6-K-1.md](../completions/artifacts/M55/per-axis-review-rc24/tier1-verification/R6-K-1.md)); and `setup`'s and `uninstall`'s probe-to-write windows. **Ruled tier 2 for 1.x by the human on 2026-10-04 and not fixed in the rc.24 fix pass** ([DECISIONS.md](../DECISIONS.md) → *2026-10-04 — The rc.24 gate*); that pass folds in `(R6, K-1)`'s own one-probe fix. *What is owed:* a design for the class, with its own cell matrix. *Trigger:* **M57.**
 
 **CI — the row D4 was expected to make live and did not, the flake with its second datum, a second gate flake (the save-lock survival cells), and two rows the green run surfaced.**
 
@@ -590,6 +591,8 @@ awk '
     - **Audit F4 (LOW).** `jigc milestone discard` destroyed a sub-task's staged prose at exit 0; it now blocks with `milestone.staged-prose`. Exactly one cell of the driven 2×2 moved. **Brief it together with the deny floor** (`Bash(jigc milestone discard:*)`), or an arm mis-scores twice over: a harness permission denial read as friction, and the new refusal never observed because only an out-of-agent run reaches it.
 
   *Trigger:* drafting the next trial's protocol — before the first blind session is briefed.
+
+  **[Noted 2026-10-04: the declared-changes list for M51–M55 is not in this ledger, which had none — its home is [the rc.24 trial's protocol](../completions/artifacts/RC-rc24/protocol.md) §0, where that trial drafted it ([forks.md](../completions/artifacts/RC-rc24/forks.md) → F9).]**
 
 ### The trial that follows M46 — protocol inputs
 
