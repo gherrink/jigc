@@ -352,7 +352,7 @@ The presence half **alone** passes a degenerate key, and that is not a hypotheti
 | `milestone-sub-task` (M49) | `engine::milestone` | the **sub-task** whose own finalize would land a commit outside the milestone's one commit boundary | **the work-unit ref** |
 | `no-task` | `engine::finalize` | the work unit whose task directory is absent | **the work-unit ref** |
 | `nothing-staged` | `cli::task` | the work unit — the tree is dirty and the narrowed index is empty | **the work-unit ref** |
-| `promote-clobber` | `engine::finalize` | **the destination file** it refused to overwrite — which may be a *foreign* file with no URI identity, the `file-state` reason exactly | **the file path** |
+| `promote-clobber` | `engine::finalize` | **the destination path** it refused to write at — a file it would have overwritten, which may be a *foreign* file with no URI identity (the `file-state` reason exactly), or an entry there that is not a regular file (a symbolic link, a directory), which it would have written *through* or into | **the file path** |
 | `promote-io` | `engine::finalize` | **the staged doc** it could not read | **the file path** |
 | `provenance-io` | `engine::finalize` | the work unit whose provenance manifest could not be read | **the work-unit ref** |
 | `render-io` | `engine::finalize` | **the staged commit doc** | **the file path** |

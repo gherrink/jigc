@@ -705,6 +705,135 @@ fn an_untracked_file_at_the_home_is_refused() {
     );
 }
 
+/// **(g′) An entry at the home that is not a regular file is an occupied home** (the rc.24
+/// fix pass, `(R6, D-7)`). *On disk at the doctype's home* was asked with a predicate that
+/// follows links, so a **dangling** symlink at the minted home read as free: the gate passed
+/// it, and the task's finalize then wrote the doc through the link. The home's own directory
+/// entry is what is asked now — a dangling link (target inside the repository, or outside
+/// it), a link to a device, a live link, a directory — and every one is refused by both
+/// minting doors: exit 1, `create.already-exists` keyed at the minted id, the verb's own
+/// route, nothing staged, no role bound, the entry untouched and nothing written through it.
+/// The message says what is there rather than that a doc *already exists*.
+///
+/// Then the door's next step is driven: the route's distinct identity lands a regular file
+/// beside the entry, which stands exactly as it was.
+#[cfg(unix)]
+#[test]
+fn an_entry_that_is_not_a_regular_file_is_an_occupied_home() {
+    let lstat = |path: &std::path::Path| match fs::symlink_metadata(path) {
+        Err(_) => "absent".to_owned(),
+        Ok(shape) if shape.file_type().is_symlink() => {
+            format!(
+                "symlink -> {}",
+                fs::read_link(path).expect("the link").display()
+            )
+        }
+        Ok(shape) if shape.is_dir() => "directory".to_owned(),
+        Ok(_) => "file".to_owned(),
+    };
+    for shape in [
+        "dangling",
+        "dangling-outside",
+        "device",
+        "live",
+        "directory",
+    ] {
+        for verb in ["create", "author"] {
+            let what = format!("`doc {verb}` over a home that is {shape}");
+            let (corpus, landed) = arrange(Some(NEW_ENTRY));
+            let home = corpus.repo().join("docs/ideas/taken-home.md");
+            let outside = corpus.home().join(format!("outside-{shape}-{verb}.md"));
+            // The path a write through the entry would create or change, if it has one.
+            let through = match shape {
+                "dangling" => {
+                    std::os::unix::fs::symlink("nowhere.md", &home).expect("link");
+                    Some(corpus.repo().join("docs/ideas/nowhere.md"))
+                }
+                "dangling-outside" => {
+                    std::os::unix::fs::symlink(&outside, &home).expect("link");
+                    Some(outside.clone())
+                }
+                "device" => {
+                    std::os::unix::fs::symlink("/dev/null", &home).expect("link");
+                    None
+                }
+                "live" => {
+                    let target = corpus.repo().join(&landed.path);
+                    std::os::unix::fs::symlink(&target, &home).expect("link");
+                    Some(target)
+                }
+                _ => {
+                    fs::create_dir(&home).expect("mk a directory at the home");
+                    None
+                }
+            };
+            let entry_before = lstat(&home);
+            let through_before = through.as_ref().and_then(|path| fs::read(path).ok());
+            let task = corpus.start_workflow("park-idea", "file over a taken home");
+
+            let out = mint(&corpus, verb, "Taken Home", &task);
+            assert_already_exists(&out, verb, "idea:taken-home", &what);
+            let finding = refusal(&out, &what);
+            let message = finding["message"].as_str().unwrap_or_default();
+            let noun = if shape == "directory" {
+                "a directory"
+            } else {
+                "a symbolic link"
+            };
+            assert!(
+                message.contains(noun) && !message.contains("copied in"),
+                "{what}: the refusal says what is at the home, never that a doc exists there; \
+                 got: {message}",
+            );
+            assert_eq!(
+                staged_ideas(&corpus, &task),
+                Vec::<String>::new(),
+                "{what}: nothing staged"
+            );
+            assert_eq!(bound_idea(&corpus, &task), None, "{what}: no role bound");
+            assert_eq!(lstat(&home), entry_before, "{what}: the entry is untouched");
+            if let Some(through) = &through {
+                assert_eq!(
+                    fs::read(through).ok(),
+                    through_before,
+                    "{what}: nothing was written through the entry",
+                );
+            }
+
+            // The route's own next step: a distinct identity, filed and landed.
+            let landed_beside = match verb {
+                "create" => corpus.jigc(&[
+                    "doc",
+                    "create",
+                    "idea",
+                    "--title",
+                    "Taken Home",
+                    "--slug",
+                    "free-home",
+                    "--task",
+                    &task,
+                    "--format",
+                    "json",
+                ]),
+                _ => mint(&corpus, "author", "Free Home", &task),
+            };
+            assert_eq!(
+                landed_beside.status.code(),
+                Some(0),
+                "{what}: a distinct identity mints; {}",
+                text(&landed_beside),
+            );
+            let second = fill_and_finalize(&corpus, &task, "idea:free-home".to_string());
+            let mode = corpus.git(&["ls-tree", "HEAD", "--", &second.path]);
+            assert!(
+                mode.starts_with("100644 "),
+                "{what}: the finding landed as a regular file beside the entry; got: {mode}",
+            );
+            assert_eq!(lstat(&home), entry_before, "{what}: the entry still stands");
+        }
+    }
+}
+
 /// **(h) The omitting context.** Under the shipped `park-idea`, whose entry carries no
 /// `new`, the same title over the committed idea is a create-or-update: copied in, exit 0.
 #[test]

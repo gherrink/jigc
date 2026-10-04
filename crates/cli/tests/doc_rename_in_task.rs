@@ -1480,6 +1480,102 @@ fn the_reslug_destination_guard_answers_over_both_homes() {
     }
 }
 
+/// **The committed home is asked what its entry is, not what it points at** (the rc.24 fix
+/// pass, `(R6, D-7)`). The guard's parity is with the committing door, and that door now
+/// refuses to promote onto any entry that is not a regular file
+/// (`finalize.promote-clobber`). A destination whose home is a **dangling link** or a
+/// **directory** has no doc body for the committed-arm probe to report, so the re-slug onto
+/// it acked at exit 0 — the write ack over a state the task cannot complete that this guard
+/// exists to make unreachable. It blocks at the write now: `write.already-present` keyed at
+/// the destination identity, the source byte-untouched, nothing staged there, the entry
+/// standing — and the emitted rename, run with a free slug, lands.
+#[cfg(unix)]
+#[test]
+fn the_reslug_destination_guard_refuses_a_home_that_is_not_a_regular_file() {
+    for shape in ["dangling-link", "directory"] {
+        let corpus = TrialCorpus::build(State::Fresh);
+        let home = corpus.repo().join("docs/decisions/taken-home.md");
+        fs::create_dir_all(home.parent().expect("a parent")).expect("mk docs/decisions");
+        match shape {
+            "dangling-link" => std::os::unix::fs::symlink("nowhere.md", &home).expect("link"),
+            _ => fs::create_dir(&home).expect("mk a directory at the home"),
+        }
+        let task = corpus.start_workflow("single-task", "pick the broker");
+        author_adr_at(&corpus, &task, "Pick a broker", "pick-a-broker");
+        let task_dir = corpus.repo().join(".jigc/tasks").join(&task);
+        let source = task_dir.join("docs/adr:pick-a-broker.md");
+        let before = fs::read_to_string(&source).expect("read the staged source doc");
+
+        let (ok, stdout, stderr) = json(
+            &corpus,
+            &[
+                "doc",
+                "rename",
+                "adr:pick-a-broker",
+                "--to",
+                "Taken Home",
+                "--task",
+                &task,
+            ],
+        );
+        assert!(
+            !ok,
+            "{shape}: a home that is not a regular file blocks at the write, not at finalize; \
+             stdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        let finding = blocking_finding(&stderr, "a home that is not a regular file");
+        assert_eq!(
+            finding["code"], "write.already-present",
+            "{shape}:\n{stderr}"
+        );
+        assert_eq!(
+            finding["key"]["target"], "adr:taken-home",
+            "{shape}:\n{stderr}"
+        );
+        let message = finding["message"].as_str().unwrap_or_default();
+        assert!(
+            message.contains("docs/decisions/taken-home.md"),
+            "{shape}: the refusal names the home, repo-relative; got: {message}"
+        );
+        assert_eq!(
+            fs::read_to_string(&source).expect("the source doc survives the refusal"),
+            before,
+            "{shape}: the refused rename leaves the source doc byte-untouched"
+        );
+        assert!(
+            !task_dir.join("docs/adr:taken-home.md").exists(),
+            "{shape}: nothing is staged at the refused destination"
+        );
+        assert!(
+            !corpus.repo().join("docs/decisions/nowhere.md").exists(),
+            "{shape}: nothing was written through the entry"
+        );
+
+        let route = finding["route"].as_str().expect("a route").to_string();
+        let emitted = backticked_all(&route);
+        assert_eq!(
+            emitted.len(),
+            1,
+            "{shape}: one command to run; got: {route}"
+        );
+        let cmd = emitted[0].replace("<other-slug>", FREE_SLUG);
+        let argv = shell_split(&corpus, &cmd);
+        let mut args: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
+        args.extend_from_slice(&["--task", &task]);
+        let out = corpus.jigc(&args);
+        assert!(
+            out.status.success(),
+            "{shape}: the emitted route `{cmd}` must run; stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert!(
+            task_dir.join(format!("docs/adr:{FREE_SLUG}.md")).is_file() && !source.exists(),
+            "{shape}: the emitted recovery moved the doc to the free id"
+        );
+    }
+}
+
 /// **The committed cell's carve-out, and the parity that earns it.** A migration whose
 /// recorded `source-path` IS the destination's own canonical path is the **in-place
 /// rewrite**: the committed file there is the very foreign original being replaced,

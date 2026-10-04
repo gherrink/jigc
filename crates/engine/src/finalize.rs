@@ -274,7 +274,7 @@ pub fn plan_finalize(
     // promote — irreversible data loss. Block before retire. The in-place migration
     // rewrite (the doc replacing the very foreign original at its own canonical path) is
     // excluded via the retire guard's source-path == destination discriminator.
-    plan_clobber_guard(unit, task_dir, repo_root, &promote.promotions)?;
+    plan_clobber_guard(unit, task_dir, repo_root, &promote.promotions, schemas)?;
 
     // The retire set (`design/auto-migration.md` → Retire-the-foreign-original): a
     // migration task records its repo-relative foreign source path at mint; the planner
@@ -459,12 +459,20 @@ fn plan_retirements(
 /// (the [`plan_promotions`] naming convention) and looked up in the task's provenance
 /// manifest ([`crate::state::ProvenanceRecord`]). A staged doc with no recorded
 /// provenance (none was minted/copied-in here) is not create-provenance, so it never
-/// trips the guard.
+/// trips the *occupied by a file* arm.
+///
+/// **The other arm asks no provenance at all** (the rc.24 fix pass, `(R6, D-7)`): a
+/// destination that holds an entry which is **not a regular file** — a link, dangling or
+/// live, a directory, a special file — refuses **every** promotion, minted or copied in,
+/// carve-out or not ([`refused_promotions`]). A promote lands a regular file at exactly its
+/// canonical path or the transaction refuses before anything is written; the provenance
+/// only picks the exit the route hands back ([`ShapeExit`]).
 fn plan_clobber_guard(
     unit: Unit,
     task_dir: &Path,
     repo_root: &Path,
     promotions: &[Promotion],
+    schemas: &BTreeMap<String, Schema>,
 ) -> Result<(), Vec<Finding>> {
     let provenance = crate::state::ProvenanceRecord::load(task_dir)
         .map_err(|err| vec![provenance_io_finding(unit, task_dir, &err)])?;
@@ -481,14 +489,35 @@ fn plan_clobber_guard(
         },
         None => ClobberedBy::Task,
     };
+    let task_id = unit.id();
 
     let clobbers: Vec<Finding> =
-        created_over_occupied(repo_root, promotions, in_place.as_deref(), |address| {
+        refused_promotions(repo_root, promotions, in_place.as_deref(), |address| {
             // edited-from-base / unrecorded → never a clobber.
             provenance.get(address) == Some(crate::state::Provenance::Created)
         })
         .into_iter()
-        .map(|(_, promotion)| clobber_finding(repo_root, &promotion.destination, by))
+        .map(|refused| match refused.over {
+            Occupant::File => clobber_finding(repo_root, &refused.promotion.destination, by),
+            Occupant::Foreign(shape) => clobber_finding(
+                repo_root,
+                &refused.promotion.destination,
+                ClobberedBy::Shape {
+                    shape,
+                    exit: ShapeExit::of(provenance.get(refused.address), refused.address, schemas),
+                    unit: match source.as_ref() {
+                        Some(_) => ShapeUnit::Migration {
+                            id: task_id,
+                            address: refused.address,
+                        },
+                        None => ShapeUnit::Task {
+                            id: task_id,
+                            address: refused.address,
+                        },
+                    },
+                },
+            ),
+        })
         .collect();
     if clobbers.is_empty() {
         Ok(())
@@ -531,23 +560,43 @@ fn plan_milestone_clobber_guard(
     repo_root: &Path,
     promotions: &[Promotion],
     origins: &BTreeMap<String, crate::milestone::MergedOrigin>,
+    schemas: &BTreeMap<String, Schema>,
 ) -> Result<(), Vec<Finding>> {
-    let clobbers: Vec<Finding> = created_over_occupied(repo_root, promotions, None, |address| {
+    let clobbers: Vec<Finding> = refused_promotions(repo_root, promotions, None, |address| {
         origins
             .get(address)
             .is_some_and(|origin| origin.provenance == crate::state::Provenance::Created)
     })
     .into_iter()
-    .filter_map(|(address, promotion)| {
-        let origin = origins.get(address)?;
+    .filter_map(|refused| {
+        let origin = origins.get(refused.address);
+        let by = match refused.over {
+            // The file arm's subject is a body the join wrote — no origin, no clobber.
+            Occupant::File => ClobberedBy::SubTask {
+                milestone: milestone_id,
+                landing: refused.address,
+                origin: origin?,
+            },
+            // The shape arm refuses whoever staged the body: with no origin there is no
+            // sub-task to name, and the entry at the home is still not one to write through.
+            Occupant::Foreign(shape) => ClobberedBy::Shape {
+                shape,
+                exit: ShapeExit::of(
+                    origin.map(|origin| origin.provenance),
+                    origin.map_or(refused.address, |origin| origin.minted.as_str()),
+                    schemas,
+                ),
+                unit: ShapeUnit::Milestone {
+                    milestone: milestone_id,
+                    landing: refused.address,
+                    origin,
+                },
+            },
+        };
         Some(clobber_finding(
             repo_root,
-            &promotion.destination,
-            ClobberedBy::SubTask {
-                milestone: milestone_id,
-                landing: address,
-                origin,
-            },
+            &refused.promotion.destination,
+            by,
         ))
     })
     .collect();
@@ -558,46 +607,146 @@ fn plan_milestone_clobber_guard(
     }
 }
 
-/// **Is the promote destination already taken?** — the one occupancy predicate both
-/// committing doors' clobber guards ask, over the checkout the promote writes into.
+/// **What a promotion would land on, when the planner refuses it** — the answer to the one
+/// occupancy question both committing doors' clobber guards ask, over the checkout the
+/// promote writes into.
 ///
 /// It reads the **worktree**, which is where jigc's own notion of the committed store lives
 /// (the create probe, [`crate::state::create_occupied`], and the in-task rename's
 /// destination guard read the same place): a committed doc is a file at its home, and so is
 /// an untracked or a merely-staged one, which no reading of the index or of `HEAD` would
-/// see. A file there is an occupant whoever put it there.
-fn home_occupied(repo_root: &Path, destination: &str) -> bool {
-    repo_root.join(destination).is_file()
+/// see. An entry there is an occupant whoever put it there — and it is read **without
+/// following a link** ([`crate::store::home_entry`]), so what is asked is *what this
+/// directory entry is*, never what it points at.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Occupant {
+    /// A regular file — refused only for a doc the unit **minted**.
+    File,
+    /// An entry that is not a regular file — refused for **every** promotion.
+    Foreign(crate::store::ForeignEntry),
 }
 
-/// **The promotions a `created` doc would land over an occupied home** — the predicate
-/// [`plan_clobber_guard`] and [`plan_milestone_clobber_guard`] share, each paired with the
-/// staged `<type>:<slug>` address it promotes from (the [`plan_promotions`] naming
-/// convention: the source file's stem).
+/// One promotion the planner refuses: the staged `<type>:<slug>` address it promotes from
+/// (the [`plan_promotions`] naming convention: the source file's stem), the promotion, and
+/// what is at its destination.
+struct RefusedPromotion<'p> {
+    address: &'p str,
+    promotion: &'p Promotion,
+    over: Occupant,
+}
+
+/// **The promotions that may not be written** — the predicate [`plan_clobber_guard`] and
+/// [`plan_milestone_clobber_guard`] share. Two arms over one observation of each home:
 ///
-/// `is_created` is each door's own answer to *"did this unit mint the doc?"* — the task
-/// area's provenance manifest, or the join's per-body origin. `in_place` is the per-task
-/// migration carve-out's normalized source path (`None` at the milestone boundary).
-fn created_over_occupied<'p>(
+/// - a `created` doc over a **regular file** — the clobber the guard was built for.
+///   `is_created` is each door's own answer to *"did this unit mint the doc?"* (the task
+///   area's provenance manifest, or the join's per-body origin), and `in_place` is the
+///   per-task migration carve-out's normalized source path (`None` at the milestone
+///   boundary);
+/// - **any** promotion over an entry that is **not a regular file** (the rc.24 fix pass,
+///   `(R6, D-7)`). Neither discriminator applies: an `edited-from-base` doc was read
+///   *through* a live link at copy-in and would be written through it, and the in-place
+///   carve-out is a licence to rewrite a foreign *file*, not to write through whatever
+///   stands at its path now.
+fn refused_promotions<'p>(
     repo_root: &Path,
     promotions: &'p [Promotion],
     in_place: Option<&Path>,
     is_created: impl Fn(&str) -> bool,
-) -> Vec<(&'p str, &'p Promotion)> {
+) -> Vec<RefusedPromotion<'p>> {
     promotions
         .iter()
         .filter_map(|promotion| {
             let address = promotion.source.file_stem().and_then(|s| s.to_str())?;
-            if !is_created(address) {
-                return None;
-            }
-            let dest_norm = crate::store::lexical_normalize(Path::new(&promotion.destination));
-            if in_place == Some(dest_norm.as_path()) {
-                return None; // in-place rewrite — replacing the very foreign original (M43, fork 5).
-            }
-            home_occupied(repo_root, &promotion.destination).then_some((address, promotion))
+            let over = match crate::store::home_entry(&repo_root.join(&promotion.destination)) {
+                crate::store::HomeEntry::Free => return None,
+                crate::store::HomeEntry::Foreign(shape) => Occupant::Foreign(shape),
+                crate::store::HomeEntry::RegularFile => {
+                    if !is_created(address) {
+                        return None;
+                    }
+                    let dest_norm =
+                        crate::store::lexical_normalize(Path::new(&promotion.destination));
+                    if in_place == Some(dest_norm.as_path()) {
+                        // in-place rewrite — replacing the very foreign original (M43, fork 5).
+                        return None;
+                    }
+                    Occupant::File
+                }
+            };
+            Some(RefusedPromotion {
+                address,
+                promotion,
+                over,
+            })
         })
         .collect()
+}
+
+/// **The exit a unit has from an entry at its doc's home that is not a regular file** —
+/// what [`clobber_finding`]'s shape arm routes at. The entry is never jigc's to change, so
+/// every exit is either a different home for the doc or the user's own act on the entry;
+/// which of those *lands* depends on how the unit came to hold the doc.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShapeExit {
+    /// The unit **minted** the doc and its id is the author's to choose: re-slug it in the
+    /// task onto a free home, or move the entry out of this one.
+    RenameOrMoveOut,
+    /// The unit minted the doc under a **fixed identity** (a `placement` / `display-title`
+    /// singleton, whose in-task rename refuses outright), or nothing records how the doc
+    /// was staged: the home has to be free.
+    MoveOut,
+    /// The unit **copied the doc in** — through a live link, the only entry of this class
+    /// with a body — and edited it: the home has to hold the regular file itself, which the
+    /// staged edit then lands over. A freed home would not do: the doc is `edited-from-base`.
+    RegularFile,
+}
+
+impl ShapeExit {
+    /// `provenance` is how the unit holds the doc staged at `address` (its `<type>:<slug>`
+    /// in the area that staged it), `schemas` the resolved set its doctype is read from.
+    fn of(
+        provenance: Option<crate::state::Provenance>,
+        address: &str,
+        schemas: &BTreeMap<String, Schema>,
+    ) -> Self {
+        match provenance {
+            Some(crate::state::Provenance::EditedFromBase) => ShapeExit::RegularFile,
+            Some(crate::state::Provenance::Created) => {
+                let fixed = address
+                    .split_once(':')
+                    .and_then(|(ty, _)| schemas.get(ty))
+                    .is_none_or(|schema| schema.fixed_title().is_some());
+                if fixed {
+                    ShapeExit::MoveOut
+                } else {
+                    ShapeExit::RenameOrMoveOut
+                }
+            }
+            None => ShapeExit::MoveOut,
+        }
+    }
+}
+
+/// **Which unit the shape refusal speaks to** — the work unit, and the address its doc is
+/// staged under there (the one an in-task rename takes).
+#[derive(Clone, Copy)]
+enum ShapeUnit<'a> {
+    /// An ordinary task.
+    Task { id: &'a str, address: &'a str },
+    /// A migration task — same exits, and the continuation ends at `--approve`.
+    Migration { id: &'a str, address: &'a str },
+    /// The milestone commit boundary. `origin` is the join's record of the body — `None`
+    /// for a promotion the join did not write.
+    Milestone {
+        milestone: &'a str,
+        landing: &'a str,
+        origin: Option<&'a crate::milestone::MergedOrigin>,
+    },
+    /// The promote **sink** — the write itself, re-asking one statement before it copies.
+    /// It knows no unit: it is reached only when the entry appeared after the planner
+    /// looked, and the next run's planner is the one that routes by unit.
+    Sink,
 }
 
 /// **Whose doc the refused promote was** — what [`clobber_finding`] words its message and
@@ -623,6 +772,16 @@ enum ClobberedBy<'a> {
         /// Where the body came from: its sub-task, the address it is staged under there,
         /// and the rest of its collision group.
         origin: &'a crate::milestone::MergedOrigin,
+    },
+    /// **Any** unit's doc, over a destination that holds an entry which is not a regular
+    /// file (`(R6, D-7)`) — the arm that is about the entry and not about the doc.
+    Shape {
+        /// What is at the destination.
+        shape: crate::store::ForeignEntry,
+        /// The exit this unit has from it.
+        exit: ShapeExit,
+        /// Who is told.
+        unit: ShapeUnit<'a>,
     },
 }
 
@@ -651,6 +810,12 @@ enum ClobberedBy<'a> {
 ///   ([`sub_task_clobber_text`]), whose unit has neither of the exits above: a sub-task has
 ///   no boundary of its own, and adopting the occupant first moves `HEAD` off the
 ///   milestone's base.
+/// - **[`ClobberedBy::Shape`]** — the destination holds an entry that is **not a regular
+///   file** ([`shape_clobber_text`]; the rc.24 fix pass, `(R6, D-7)`). One identity with the
+///   arms above — the same code, keyed at the same destination path — because it is the
+///   same refusal: something a third party put at the doc's home, which a promote would
+///   write over or, here, *through*. It routes at no `jigc migrate`: a link is not a file
+///   to adopt (driven: `migrate.source-untrackable`).
 fn clobber_finding(repo_root: &Path, destination: &str, by: ClobberedBy) -> Finding {
     let (message, route) = match by {
         ClobberedBy::Migration { source } => (
@@ -695,6 +860,9 @@ fn clobber_finding(repo_root: &Path, destination: &str, by: ClobberedBy) -> Find
             landing,
             origin,
         } => sub_task_clobber_text(destination, milestone, landing, origin),
+        ClobberedBy::Shape { shape, exit, unit } => {
+            shape_clobber_text(destination, shape, exit, unit)
+        }
     };
     Finding::graded(
         Severity::Blocking,
@@ -757,6 +925,28 @@ fn sub_task_clobber_text(
              overwrite a file already there — refusing to clobber it"
         )
     };
+    let rename = sub_task_renames(origin);
+    let route = format!(
+        "nothing was committed and every sub-task's staged work is intact: {rename}, then \
+         re-run `jigc milestone finalize {milestone}`. The file at `{destination}` is left \
+         exactly as it is — deal with it after the milestone has landed, not before: a \
+         commit made first moves `HEAD` off this milestone's base and blocks it on \
+         `finalize.base-mismatch`",
+        milestone = shell_operand(milestone),
+    );
+    (message, route)
+}
+
+/// **The in-task renames that move a sub-task's doc off a home** — the clause both
+/// milestone-boundary arms of [`clobber_finding`] hand back ([`sub_task_clobber_text`]'s
+/// route, and the shape arm's rename exit): one `jigc doc rename … --task <sub-task>` per
+/// sub-task of the collision group from this doc's position on
+/// ([`crate::milestone::MergedOrigin::group_from_here`]), addressed at the id the doc is
+/// **staged under** in its sub-area. Why a suffixed landing names every later member is
+/// [`sub_task_clobber_text`]'s to say.
+fn sub_task_renames(origin: &crate::milestone::MergedOrigin) -> String {
+    use crate::finding::shell_operand;
+    let minted = origin.minted.as_str();
     let renames: Vec<String> = origin
         .group_from_here
         .iter()
@@ -768,7 +958,7 @@ fn sub_task_clobber_text(
             )
         })
         .collect();
-    let rename = match renames.as_slice() {
+    match renames.as_slice() {
         [one] => format!("give the doc a title that slugs to an id nothing holds ({one})"),
         many => format!(
             "the join numbers the sub-tasks that minted `{minted}` in task-id order, so \
@@ -778,16 +968,166 @@ fn sub_task_clobber_text(
             many.len(),
             many.join(", "),
         ),
+    }
+}
+
+/// The message and the route of [`clobber_finding`]'s **shape arm** — a promote refused
+/// because its destination holds an entry that is not a regular file (the rc.24 fix pass,
+/// `(R6, D-7)`; `design/finalize.md` → 4. Promote).
+///
+/// **The contract it states**: a promote lands a regular file at exactly its canonical
+/// path, or the transaction refuses before anything is written. jigc writes regular files
+/// and real directories and never a link, so the entry is a third party's — and the route
+/// therefore never says what to do *to* it beyond the one thing every exit needs: that it
+/// is not at the doc's home when the unit is re-run. It teaches no removal (the A4/A7 trap,
+/// `design/surface-contract.md` → law 2): the entry is moved, or replaced by the file it
+/// stands for, by the person whose entry it is.
+///
+/// **Each exit is one that lands, per unit and per provenance** ([`ShapeExit`]), driven on
+/// the built binary at both committing doors:
+///
+/// - a doc the unit **minted** under an id the author chooses is re-slugged in the task
+///   (`jigc doc rename … --task <unit>` — addressed at the id the doc is *staged under*, as
+///   at the milestone boundary's file arm) or lands once the home is free;
+/// - a doc under a **fixed identity** has no other id, so only the freed home is named — a
+///   rename there refuses, and a route must not hand back a command that refuses;
+/// - a doc the unit **copied in through a live link** and edited is `edited-from-base`: it
+///   lands over the regular file itself, put where the link was.
+///
+/// At the milestone boundary every exit is stated as **no commit**, because the file arm's
+/// rule holds here too: a commit made before the boundary moves `HEAD` off the milestone's
+/// pinned base and blocks it on `finalize.base-mismatch`.
+fn shape_clobber_text(
+    destination: &str,
+    shape: crate::store::ForeignEntry,
+    exit: ShapeExit,
+    unit: ShapeUnit,
+) -> (String, String) {
+    use crate::finding::shell_operand;
+    let noun = shape.noun();
+    let bare = shape.bare();
+    let whose = match unit {
+        ShapeUnit::Task { address, .. } => format!("this task's doc `{address}`"),
+        ShapeUnit::Migration { address, .. } => format!("this migration's doc `{address}`"),
+        ShapeUnit::Milestone {
+            landing,
+            origin: Some(origin),
+            ..
+        } => {
+            let minted = origin.minted.as_str();
+            let sub_task = origin.source_task();
+            if landing == minted {
+                format!("sub-task `{sub_task}`'s doc `{minted}`")
+            } else {
+                format!(
+                    "sub-task `{sub_task}`'s doc `{minted}` — which the join suffixed to \
+                     `{landing}` —"
+                )
+            }
+        }
+        ShapeUnit::Milestone {
+            landing,
+            origin: None,
+            ..
+        } => format!("this milestone's doc `{landing}`"),
+        ShapeUnit::Sink => "the doc".to_owned(),
     };
-    let route = format!(
-        "nothing was committed and every sub-task's staged work is intact: {rename}, then \
-         re-run `jigc milestone finalize {milestone}`. The file at `{destination}` is left \
-         exactly as it is — deal with it after the milestone has landed, not before: a \
-         commit made first moves `HEAD` off this milestone's base and blocks it on \
-         `finalize.base-mismatch`",
-        milestone = shell_operand(milestone),
+    let message = format!(
+        "`{destination}` is {noun}, not a regular file — jigc lands a managed doc as a \
+         regular file at exactly its home and never writes through a link, so {whose} is \
+         not promoted there"
     );
+
+    let yours = format!(
+        "jigc writes regular files only, so the {bare} at `{destination}` is not one it put \
+         there, and what becomes of it is yours to decide"
+    );
+    let move_out =
+        format!("move the {bare} out of the doc's home, so that `{destination}` is free");
+    let regular = format!(
+        "put the regular file itself at `{destination}` — for a link, a copy of the file it \
+         points at, in the link's place"
+    );
+    let route = match unit {
+        ShapeUnit::Task { id, address } | ShapeUnit::Migration { id, address } => {
+            let id = shell_operand(id);
+            let finalize = match unit {
+                ShapeUnit::Migration { .. } => format!(
+                    "re-run `jigc task finalize {id}` to review the fidelity diff and `jigc \
+                     task finalize {id} --approve` to land it"
+                ),
+                _ => format!("re-run `jigc task finalize {id}`"),
+            };
+            let act = match exit {
+                ShapeExit::RenameOrMoveOut => format!(
+                    "give this task's doc an id whose home is free (`jigc doc rename {} --to \
+                     \"<title>\" --task {id}`), or {move_out}; then {finalize}",
+                    shell_operand(address),
+                ),
+                ShapeExit::MoveOut => format!("{move_out}; then {finalize}"),
+                ShapeExit::RegularFile => {
+                    format!("{regular}; then {finalize} — this task's staged edit lands over it")
+                }
+            };
+            format!("nothing was committed and this task's staged docs are intact. {yours}: {act}")
+        }
+        ShapeUnit::Milestone {
+            milestone, origin, ..
+        } => {
+            let finalize = format!(
+                "re-run `jigc milestone finalize {}`",
+                shell_operand(milestone)
+            );
+            let no_commit = "that is no commit, so `HEAD` stays on this milestone's base";
+            let act = match (exit, origin) {
+                (ShapeExit::RenameOrMoveOut, Some(origin)) => format!(
+                    "{}, or {move_out} — {no_commit}; then {finalize}",
+                    sub_task_renames(origin),
+                ),
+                (ShapeExit::RegularFile, _) => format!(
+                    "{regular} — {no_commit}; then {finalize}, which lands the sub-task's \
+                     staged edit over it"
+                ),
+                _ => format!("{move_out} — {no_commit}; then {finalize}"),
+            };
+            format!(
+                "nothing was committed and every sub-task's staged work is intact. {yours}: \
+                 {act}"
+            )
+        }
+        ShapeUnit::Sink => format!(
+            "nothing was committed and the promote was rolled back — the {bare} appeared at \
+             `{destination}` after this finalize had planned its promote. {yours}: re-run \
+             the finalize, which names the exit this unit has from it"
+        ),
+    };
     (message, route)
+}
+
+/// **The promote sink's refusal** — [`clobber_finding`]'s shape arm, raised by the write
+/// itself (`cli::task::promote`) when the entry at a destination is not a regular file at
+/// the moment it would be written.
+///
+/// The planner's guard is the routed refusal; this is the backstop behind it, for an entry
+/// that appeared between the plan and the write — the pattern the retire sink set at M51
+/// (`cli::task::ValidatedRetirement`): a guard that only ran at the door guards the plan,
+/// not the write. Same code and key as the planner's, so a driver reads one identity
+/// whichever of the two caught it.
+#[must_use]
+pub fn promote_sink_refusal(
+    repo_root: &Path,
+    destination: &str,
+    shape: crate::store::ForeignEntry,
+) -> Finding {
+    clobber_finding(
+        repo_root,
+        destination,
+        ClobberedBy::Shape {
+            shape,
+            exit: ShapeExit::MoveOut,
+            unit: ShapeUnit::Sink,
+        },
+    )
 }
 
 /// A blocking finding for an I/O failure loading the task's provenance manifest while
@@ -1372,7 +1712,13 @@ pub fn plan_milestone_finalize(
     // The clobber guard, at this boundary exactly as at the task one — a sub-task's
     // `created` doc never promotes over an entry already at its destination, however it
     // came to face one ([`plan_milestone_clobber_guard`]).
-    plan_milestone_clobber_guard(milestone_id, repo_root, &promote.promotions, origins)?;
+    plan_milestone_clobber_guard(
+        milestone_id,
+        repo_root,
+        &promote.promotions,
+        origins,
+        schemas,
+    )?;
     // A milestone boundary retires nothing — retire is migration-only (a per-task verb) —
     // and carries no owner-artifact set: the owner-artifact exemption/stage is a per-task
     // concern, the milestone-boundary case a separate, deferred one (M45 Inc 8).
@@ -1769,7 +2115,14 @@ enum Unit<'a> {
     Milestone(&'a str),
 }
 
-impl Unit<'_> {
+impl<'a> Unit<'a> {
+    /// The unit's bare id — what a route's re-run names.
+    fn id(&self) -> &'a str {
+        match self {
+            Self::Task(id) | Self::Milestone(id) => id,
+        }
+    }
+
     /// The unit's [`Location`] — the **work-unit ref** target form `task:<id>` /
     /// `milestone:<id>` a `finalize.*` block whose subject is the work unit keys at
     /// ([command-output-contract.md](../../../design/command-output-contract.md) → the form
@@ -3140,6 +3493,300 @@ sections:
         }
     }
 
+    /// Plant an entry that is **not a regular file** at `path` — the shape axis of
+    /// `(R6, D-7)`. Returns the path a write *through* the entry would create or change,
+    /// when it has one.
+    #[cfg(unix)]
+    fn plant_foreign(path: &Path, shape: &str) -> Option<PathBuf> {
+        std::fs::create_dir_all(path.parent().expect("a home directory")).expect("mk home dir");
+        let beside = |name: &str| path.parent().unwrap().join(name);
+        match shape {
+            "dangling-link" => {
+                std::os::unix::fs::symlink("nowhere.md", path).expect("link");
+                Some(beside("nowhere.md"))
+            }
+            "live-link" => {
+                let target = beside("the-real-file.md");
+                std::fs::write(&target, b"somebody else's bytes\n").expect("the link's target");
+                std::os::unix::fs::symlink("the-real-file.md", path).expect("link");
+                Some(target)
+            }
+            "device-link" => {
+                std::os::unix::fs::symlink("/dev/null", path).expect("link");
+                None
+            }
+            "directory" => {
+                std::fs::create_dir(path).expect("mk a directory at the home");
+                None
+            }
+            "fifo" => {
+                let made = std::process::Command::new("mkfifo")
+                    .arg(path)
+                    .status()
+                    .expect("spawn mkfifo");
+                assert!(made.success(), "mkfifo");
+                None
+            }
+            other => panic!("not a shape: {other}"),
+        }
+    }
+
+    /// The shapes, each with the noun the refusal names it by.
+    #[cfg(unix)]
+    const FOREIGN_SHAPES: [(&str, &str); 5] = [
+        ("dangling-link", "a symbolic link"),
+        ("live-link", "a symbolic link"),
+        ("device-link", "a symbolic link"),
+        ("directory", "a directory"),
+        ("fifo", "a special file"),
+    ];
+
+    /// Assert a shape refusal's surfaces teach no raw removal and name the entry.
+    #[cfg(unix)]
+    fn assert_shape_surfaces(finding: &Finding, destination: &str, noun: &str, cell: &str) {
+        assert_eq!(finding.code, "finalize.promote-clobber", "{cell}");
+        assert_eq!(finding.severity, Severity::Blocking, "{cell}");
+        assert_eq!(
+            target(finding),
+            Some(destination),
+            "{cell}: keyed at the destination path — the key of every other occupant",
+        );
+        assert!(
+            finding.message.contains(noun) && finding.message.contains(destination),
+            "{cell}: the message names the entry and the home; got: {}",
+            finding.message,
+        );
+        let route = finding.route.as_deref().expect("blocking ⇒ routed");
+        for surface in [finding.message.as_str(), route] {
+            let lower = surface.to_lowercase();
+            assert!(
+                !lower.contains("remove")
+                    && !lower.contains("delete")
+                    && !surface.contains("git rm"),
+                "{cell}: never teaches raw removal (RC-lacon A4/A7): {surface:?}",
+            );
+            assert!(
+                !surface.contains("jigc migrate"),
+                "{cell}: a link is not a file to adopt — no `jigc migrate` span: {surface:?}",
+            );
+        }
+    }
+
+    /// **A promote lands a regular file at exactly its home, or the plan refuses** (the
+    /// rc.24 fix pass, `(R6, D-7)`; `design/finalize.md` → 4. Promote). Over every entry
+    /// that is not a regular file × every way a task can hold the doc — minted, copied in,
+    /// unrecorded — the planner blocks with `finalize.promote-clobber` keyed at the
+    /// destination and writes nothing, at the home or through it.
+    ///
+    /// Until then the guard asked `is_file()`, which follows links: a dangling link read as
+    /// a free home (the promote then wrote through it), and an `edited-from-base` doc was
+    /// never asked at all (the promote wrote its edit through a live link into the target).
+    ///
+    /// The route is the exit **this** provenance has: a minted doc is re-slugged in the
+    /// task or lands once the home is free; a copied-in one lands over the regular file
+    /// itself; an unrecorded one is offered only the freed home.
+    #[cfg(unix)]
+    #[test]
+    fn finalize_plan_refuses_every_promotion_over_an_entry_that_is_not_a_regular_file() {
+        let provenances = [
+            Some(state::Provenance::Created),
+            Some(state::Provenance::EditedFromBase),
+            None,
+        ];
+        for (shape, noun) in FOREIGN_SHAPES {
+            for provenance in provenances {
+                let cell = format!("{shape} · {provenance:?}");
+                let root = TempRoot::new("shape-task");
+                let task_dir = root.path().join("tasks").join("record-decision");
+                let schema = stage_filled_commit(&task_dir, "record-decision");
+                stage_filled_adr(&task_dir, "single-node-cache");
+                if let Some(provenance) = provenance {
+                    state::record_doc_provenance(&task_dir, "adr:single-node-cache", provenance)
+                        .expect("record provenance");
+                }
+                let destination = "decisions/single-node-cache.md";
+                let through = plant_foreign(&root.path().join(destination), shape);
+                let through_before = through.as_ref().and_then(|p| std::fs::read(p).ok());
+                let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+
+                let findings = plan_finalize(
+                    &task_dir,
+                    root.path(),
+                    &base(),
+                    &base().sha,
+                    &clean,
+                    true,
+                    &schema,
+                    "record-decision",
+                    &schemas(),
+                )
+                .expect_err("an entry that is not a regular file refuses the promotion");
+                assert_eq!(findings.len(), 1, "{cell}: exactly one finding");
+                let finding = &findings[0];
+                assert_shape_surfaces(finding, destination, noun, &cell);
+                assert!(
+                    finding.message.contains("adr:single-node-cache"),
+                    "{cell}: the message names the doc; got: {}",
+                    finding.message,
+                );
+                let route = finding.route.as_deref().expect("a route");
+                let rename = "`jigc doc rename adr:single-node-cache --to \"<title>\" --task record-decision`";
+                assert_eq!(
+                    route.contains(rename),
+                    provenance == Some(state::Provenance::Created),
+                    "{cell}: the in-task rename is handed back exactly for a doc this task \
+                     minted — a committed identity is not re-slugged in a task; got: {route}",
+                );
+                assert_eq!(
+                    route.contains("regular file itself"),
+                    provenance == Some(state::Provenance::EditedFromBase),
+                    "{cell}: a copied-in doc lands over the regular file itself; got: {route}",
+                );
+                assert_eq!(
+                    route.contains("out of the doc's home"),
+                    provenance != Some(state::Provenance::EditedFromBase),
+                    "{cell}: a freed home is an exit for every doc but a copied-in one; got: \
+                     {route}",
+                );
+                assert!(
+                    route.contains("`jigc task finalize record-decision`"),
+                    "{cell}: the route ends at this task's own boundary, by id; got: {route}",
+                );
+                if let Some(through) = &through {
+                    assert_eq!(
+                        std::fs::read(through).ok(),
+                        through_before,
+                        "{cell}: the planner writes nothing through the entry",
+                    );
+                }
+            }
+        }
+    }
+
+    /// **A fixed identity has no other id to take**: a `placement` singleton minted over a
+    /// link at its literal home is refused with the freed home as its only exit — the
+    /// in-task rename refuses a singleton outright, and a route never hands back a command
+    /// that refuses.
+    #[cfg(unix)]
+    #[test]
+    fn a_fixed_identity_over_a_link_is_routed_at_the_freed_home_only() {
+        let root = TempRoot::new("shape-singleton");
+        let task_dir = root.path().join("tasks").join("record-change");
+        let schema = stage_filled_commit(&task_dir, "record-change");
+        state::persist(
+            &state::instance_path(&task_dir, "changelog", "changelog"),
+            b"# Changelog\n\nauthored\n",
+        )
+        .expect("stage the singleton instance");
+        state::record_doc_provenance(&task_dir, "changelog:changelog", state::Provenance::Created)
+            .expect("record created provenance");
+        plant_foreign(&root.path().join("CHANGELOG.md"), "dangling-link");
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+
+        let findings = plan_finalize(
+            &task_dir,
+            root.path(),
+            &base(),
+            &base().sha,
+            &clean,
+            true,
+            &schema,
+            "record-change",
+            &schemas(),
+        )
+        .expect_err("a link at a placement home refuses");
+        assert_eq!(findings.len(), 1);
+        assert_shape_surfaces(&findings[0], "CHANGELOG.md", "a symbolic link", "singleton");
+        let route = findings[0].route.as_deref().expect("a route");
+        assert!(
+            !route.contains("jigc doc rename") && route.contains("out of the doc's home"),
+            "the freed home is the only exit; got: {route}",
+        );
+    }
+
+    /// **A migration is refused the same way, carve-out or not.** A migration whose doc
+    /// would land on a link refuses with its own continuation (`--approve`) named — and the
+    /// in-place carve-out, which licenses rewriting the foreign *file* at the doc's own
+    /// home, is no licence to write through a link standing at that path: source ==
+    /// destination over a link refuses too.
+    #[cfg(unix)]
+    #[test]
+    fn a_migration_over_a_link_is_refused_even_in_place() {
+        for (what, source_path) in [
+            ("a different source", "notes/old-decision.md"),
+            ("the in-place source", "decisions/single-node-cache.md"),
+        ] {
+            let root = TempRoot::new("shape-migration");
+            let task_dir = root.path().join("tasks").join("migrate-adr");
+            let schema = stage_filled_commit(&task_dir, "migrate-adr");
+            stage_filled_adr(&task_dir, "single-node-cache");
+            state::record_doc_provenance(
+                &task_dir,
+                "adr:single-node-cache",
+                state::Provenance::Created,
+            )
+            .expect("record created provenance");
+            state::persist(&task_dir.join("source-path"), source_path.as_bytes())
+                .expect("record the migration source path");
+            let destination = "decisions/single-node-cache.md";
+            let through = plant_foreign(&root.path().join(destination), "dangling-link");
+            let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+
+            let findings = plan_finalize(
+                &task_dir,
+                root.path(),
+                &base(),
+                &base().sha,
+                &clean,
+                true,
+                &schema,
+                "migrate-adr",
+                &schemas(),
+            )
+            .expect_err("a migration never lands through a link");
+            assert_eq!(findings.len(), 1, "{what}");
+            assert_shape_surfaces(&findings[0], destination, "a symbolic link", what);
+            let route = findings[0].route.as_deref().expect("a route");
+            assert!(
+                route.contains("`jigc task finalize migrate-adr --approve`")
+                    && route.contains("fidelity diff"),
+                "{what}: the route ends at the migration's own continuation; got: {route}",
+            );
+            assert!(
+                !through.expect("the link's target path").exists(),
+                "{what}: nothing was written through the link",
+            );
+        }
+    }
+
+    /// **The sink's refusal is the planner's identity** ([`promote_sink_refusal`]): the same
+    /// code keyed at the same destination path, so a driver reads one key whichever of the
+    /// two caught the entry — and its route says what the sink can truthfully say, that the
+    /// entry appeared after the plan and the re-run names the unit's exit.
+    #[test]
+    fn the_sink_refusal_carries_the_planners_code_and_key() {
+        let finding = promote_sink_refusal(
+            Path::new("/repo"),
+            "decisions/single-node-cache.md",
+            crate::store::ForeignEntry::Symlink,
+        );
+        assert_eq!(finding.code, "finalize.promote-clobber");
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(target(&finding), Some("decisions/single-node-cache.md"));
+        let route = finding.route.as_deref().expect("a route");
+        assert!(
+            route.contains("nothing was committed and the promote was rolled back")
+                && route.contains("re-run the finalize"),
+            "the sink speaks for its own state; got: {route}",
+        );
+        for surface in [finding.message.as_str(), route] {
+            assert!(
+                !surface.contains("/repo"),
+                "repo-relative paths only: {surface:?}",
+            );
+        }
+    }
+
     /// GOLDEN: a task that staged both a commit doc and an `adr:single-node-cache`
     /// yields a plan whose promote set names exactly the ADR — copied to its canonical
     /// `decisions/single-node-cache.md` — with the same path keying a `hash_updates`
@@ -3988,6 +4635,104 @@ sections:
         let plan =
             plan_milestone_with(root.path(), &staging, &origins).expect("free homes yield a plan");
         assert_eq!(plan.promotions.len(), 2, "both created docs are promoted");
+    }
+
+    /// **The milestone boundary refuses the same entries** (the rc.24 fix pass, `(R6, D-7)`)
+    /// — the promote is shared, so the contract is. Over every shape × every way the join
+    /// can hand a body on — a sub-task's fresh doc (kept its id · suffixed), a sub-task's
+    /// edit of a committed doc, and a body with no origin at all — the planner blocks with
+    /// `finalize.promote-clobber` keyed at the destination. The file arm lets the last two
+    /// through by design (*edited-from-base re-promotes*, *unrecorded is not a clobber*);
+    /// the shape arm asks neither, because it is about the entry.
+    ///
+    /// Every route ends at this milestone's own boundary and states its exit as **no
+    /// commit** — a commit made first moves `HEAD` off the milestone's base.
+    #[cfg(unix)]
+    #[test]
+    fn milestone_plan_refuses_every_promotion_over_an_entry_that_is_not_a_regular_file() {
+        let created = state::Provenance::Created;
+        let edited = state::Provenance::EditedFromBase;
+        // (final slug, origin: provenance + the slug it is staged under)
+        let landings: [(&str, Option<(state::Provenance, &str)>); 4] = [
+            ("cache-strategy", Some((created, "cache-strategy"))),
+            ("cache-strategy-2", Some((created, "cache-strategy"))),
+            ("cache-strategy", Some((edited, "cache-strategy"))),
+            ("cache-strategy", None),
+        ];
+        for (shape, noun) in FOREIGN_SHAPES {
+            for (final_slug, origin) in landings {
+                let cell = format!("{shape} · adr:{final_slug} · {origin:?}");
+                let root = TempRoot::new("shape-milestone");
+                let staging = root
+                    .path()
+                    .join("milestones")
+                    .join("cache-rework")
+                    .join("merged");
+                stage_filled_adr(&staging, final_slug);
+                let destination = format!("decisions/{final_slug}.md");
+                let through = plant_foreign(&root.path().join(&destination), shape);
+                let through_before = through.as_ref().and_then(|p| std::fs::read(p).ok());
+                let final_address = format!("adr:{final_slug}");
+                let origins = match origin {
+                    Some((provenance, minted_slug)) => BTreeMap::from([origin_of(
+                        &final_address,
+                        provenance,
+                        &format!("adr:{minted_slug}"),
+                        &["area-zed"],
+                    )]),
+                    None => no_origins(),
+                };
+
+                let findings = plan_milestone_with(root.path(), &staging, &origins)
+                    .expect_err("an entry that is not a regular file refuses the promotion");
+                assert_eq!(findings.len(), 1, "{cell}: exactly one finding");
+                let finding = &findings[0];
+                assert_shape_surfaces(finding, &destination, noun, &cell);
+                let route = finding.route.as_deref().expect("a route");
+                assert!(
+                    route.contains("`jigc milestone finalize cache-rework`")
+                        && !route.contains("jigc task finalize"),
+                    "{cell}: the route ends at this milestone's boundary and names no \
+                     per-task one; got: {route}",
+                );
+                assert!(
+                    route.contains("no commit"),
+                    "{cell}: every exit is stated as no commit; got: {route}",
+                );
+                let rename =
+                    "`jigc doc rename adr:cache-strategy --to \"<title>\" --task area-zed`";
+                assert_eq!(
+                    route.contains(rename),
+                    matches!(origin, Some((state::Provenance::Created, _))),
+                    "{cell}: the in-task rename — at the id the doc is staged under — exactly \
+                     for a doc a sub-task minted; got: {route}",
+                );
+                assert_eq!(
+                    route.contains("regular file itself"),
+                    matches!(origin, Some((state::Provenance::EditedFromBase, _))),
+                    "{cell}: a copied-in doc lands over the regular file itself; got: {route}",
+                );
+                assert_eq!(
+                    finding.message.contains("`area-zed`"),
+                    origin.is_some(),
+                    "{cell}: the sub-task is named exactly when the join recorded one; got: {}",
+                    finding.message,
+                );
+                assert_eq!(
+                    finding.message.contains("suffixed"),
+                    final_slug == "cache-strategy-2",
+                    "{cell}: the suffix is named exactly when the join applied one; got: {}",
+                    finding.message,
+                );
+                if let Some(through) = &through {
+                    assert_eq!(
+                        std::fs::read(through).ok(),
+                        through_before,
+                        "{cell}: the planner writes nothing through the entry",
+                    );
+                }
+            }
+        }
     }
 
     /// The `finalize.base-mismatch` route is **unit-aware** (M42 T3 — `design/write-commands.md`

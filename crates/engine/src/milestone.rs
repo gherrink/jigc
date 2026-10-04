@@ -1379,10 +1379,57 @@ pub fn record_exists_finding(milestone_id: &str, status: Option<&str>) -> Findin
             "continue it with `jigc milestone add-task {milestone_id} \"<intent>\"`, or create this one under a different title"
         ),
     };
+    record_home_refusal(
+        milestone_id,
+        format!("milestone `{milestone_id}` already has a record{reads}"),
+        route,
+    )
+}
+
+/// [`record_exists_finding`]'s sibling for a record home that is taken by an entry which is
+/// **not a regular file** — a symbolic link (dangling or live), a directory, a special file
+/// (the rc.24 fix pass, `(R6, D-7)`; `design/team-ready-state.md` → The lifecycle).
+///
+/// `milestone create`'s id-is-taken guard asked `exists()`, which follows links, so a
+/// **dangling** link at the record's home read as a free id: the record was then written
+/// *through* the link and the record-only commit took the **link** — exit 0, a record commit
+/// holding no record, the body in an untracked file nobody named. It is the record-side twin
+/// of the promote's write-through, at the one other door that mints a managed doc at its
+/// home. The same refusal as an occupied id — same code, same key — because it is the same
+/// fact: that home is not free. The message says what is there instead of claiming a record
+/// exists, and the route names no `add-task`: there is no milestone to continue.
+///
+/// `home` is the record's repo-relative path.
+pub fn record_home_taken_finding(
+    milestone_id: &str,
+    home: &str,
+    shape: crate::store::ForeignEntry,
+) -> Finding {
+    record_home_refusal(
+        milestone_id,
+        format!(
+            "the home of milestone `{milestone_id}`'s record, `{home}`, is {}, not a regular \
+             file — jigc writes the record as a regular file at exactly that path and never \
+             through a link",
+            shape.noun()
+        ),
+        format!(
+            "nothing was written. jigc writes regular files only, so the {bare} at `{home}` \
+             is not one it put there, and what becomes of it is yours to decide: create this \
+             milestone under a different title, or move the {bare} out of the record's home, \
+             so that `{home}` is free, and re-run this create",
+            bare = shape.bare()
+        ),
+    )
+}
+
+/// The one mint of `milestone.record-exists` — keyed at the milestone, whatever holds its
+/// record's home.
+fn record_home_refusal(milestone_id: &str, message: String, route: String) -> Finding {
     Finding::graded(
         Severity::Blocking,
         "milestone.record-exists",
-        format!("milestone `{milestone_id}` already has a record{reads}"),
+        message,
         Some(Location::addressed(
             format!("milestone:{milestone_id}"),
             1,

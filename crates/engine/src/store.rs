@@ -70,6 +70,87 @@ pub fn canonical_path(repo_root: &Path, schema: &Schema, slug: &str) -> Option<P
     Some(repo_root.join(location).join(format!("{slug}.md")))
 }
 
+/// **What sits at a managed doc's home** — the directory entry at the canonical path,
+/// read **without following a link** ([`home_entry`]).
+///
+/// The contract every writer of a home keeps (`design/finalize.md` → 4. Promote): *a
+/// promote lands a regular file at exactly its canonical path, or the transaction refuses
+/// before anything is written.* So the question a home is asked is never *"is there a
+/// regular file reachable through this path?"* — which a dangling link answers *no* to
+/// while standing in the way, and a live link answers *yes* to while pointing somewhere
+/// else — but *"what is this directory entry?"*.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HomeEntry {
+    /// No entry: the home is free.
+    Free,
+    /// A regular file — the only shape jigc itself puts at a home.
+    RegularFile,
+    /// An entry that is not a regular file. jigc writes regular files and real
+    /// directories and never a link (`design/team-ready-state.md` → Shape is part of
+    /// membership), so whatever this is, a third party put it there.
+    Foreign(ForeignEntry),
+}
+
+/// The shape of a [`HomeEntry::Foreign`] entry — what the refusal names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ForeignEntry {
+    /// A symbolic link, dangling or live, wherever it points.
+    Symlink,
+    /// A directory.
+    Directory,
+    /// Anything else: a FIFO, a socket, a device node.
+    Other,
+}
+
+impl ForeignEntry {
+    /// The entry, as a refusal names it — an indefinite noun phrase.
+    #[must_use]
+    pub fn noun(self) -> &'static str {
+        match self {
+            ForeignEntry::Symlink => "a symbolic link",
+            ForeignEntry::Directory => "a directory",
+            ForeignEntry::Other => "a special file (not a regular file, a directory or a link)",
+        }
+    }
+
+    /// The entry, as a route refers back to it — a bare noun.
+    #[must_use]
+    pub fn bare(self) -> &'static str {
+        match self {
+            ForeignEntry::Symlink => "link",
+            ForeignEntry::Directory => "directory",
+            ForeignEntry::Other => "special file",
+        }
+    }
+}
+
+/// Read the entry at a managed doc's home **without following a link** — the one
+/// occupancy observation the create gate, both committing doors' planners and the promote
+/// sink share (the rc.24 fix pass, `(R6, D-7)`).
+///
+/// Until then the three asked `is_file()`, which follows links: a **dangling** link read
+/// as a free home and the promote's copy then wrote *through* it — the link was committed
+/// in the doc's place while the prose landed in a file nobody named, inside the repository
+/// or outside it — and a link to a device swallowed the prose outright
+/// (`completions/artifacts/M55/per-axis-review-rc24/tier1-verification/R6-D-7.md`).
+///
+/// **A path whose entry cannot be read is [`HomeEntry::Free`]**, and that is the safe
+/// direction here rather than a swallowed fault: the only failures `lstat` has for a final
+/// component are a missing entry and a fault on the *parent* chain (not a directory, no
+/// search permission), and a write to the home walks that same chain — so it fails loudly
+/// on its own I/O error instead of landing anywhere. Nothing is written past an unreadable
+/// parent.
+#[must_use]
+pub fn home_entry(path: &Path) -> HomeEntry {
+    match std::fs::symlink_metadata(path) {
+        Ok(shape) if shape.is_file() => HomeEntry::RegularFile,
+        Ok(shape) if shape.file_type().is_symlink() => HomeEntry::Foreign(ForeignEntry::Symlink),
+        Ok(shape) if shape.is_dir() => HomeEntry::Foreign(ForeignEntry::Directory),
+        Ok(_) => HomeEntry::Foreign(ForeignEntry::Other),
+        Err(_) => HomeEntry::Free,
+    }
+}
+
 /// Lexically normalize a path — drop `.` components and resolve `..` against the
 /// accumulated prefix — **without touching the filesystem**.
 ///

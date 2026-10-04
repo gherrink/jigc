@@ -198,7 +198,8 @@ the one this task's create-gate role already binds is refused as well \
 own task. A dropped title over a COMMITTED doc is someone else's doc, so it routes at a \
 distinct `--title` instead, or `--slug <slug>` to mint beside it. Under a create-gate \
 entry carrying `new: true` there is no create-or-update: an id already on disk at the \
-doctype's home is refused before anything is copied in (`create.already-exists`) — \
+doctype's home — a file, or any other entry there, a symbolic link included (it is not \
+followed) — is refused before anything is copied in (`create.already-exists`) — \
 choose a distinct `--title`, or pass `--slug <slug>`; once this task already holds its \
 doc, the next one is its own task.";
 
@@ -3186,6 +3187,31 @@ fn free_destination(
             ),
         )));
     }
+    // The second home again, asked the committing door's other question (the rc.24 fix
+    // pass, `(R6, D-7)`): an entry there that is **not a regular file** — a dangling link,
+    // a directory — has no body for `create_incumbent` to report, and is still a home this
+    // task's doc can never be promoted to (`finalize.promote-clobber`'s shape arm). The
+    // parity this guard exists for is with that door, so it refuses here too.
+    if let Some(shape) = state::foreign_home_entry(&task.jigc_home, schema, new_slug)
+        && let Some(home) = engine::finalize::promote_destination(schema, new_slug)
+    {
+        return Err(DocFailure::block(occupied_destination_refusal(
+            new_uri,
+            old_uri,
+            to,
+            format!(
+                "the home of `{new_uri}`, `{home}`, is {} — jigc lands a doc as a regular \
+                 file at exactly its home and never writes through a link, so this task's \
+                 doc could not be promoted under that identity",
+                shape.noun()
+            ),
+            format!(
+                "move the {} out of the doc's home, so that `{home}` is free, and re-run \
+                 this rename",
+                shape.bare()
+            ),
+        )));
+    }
     Ok(new_path)
 }
 
@@ -3432,7 +3458,7 @@ fn title_pre_check(
     // that becomes occupied after this line is still `create.already-exists`, and never
     // copied in by this create.
     if entry.new
-        && let Some(address) =
+        && let Some(occupied) =
             state::create_occupied(&task.dir, schema, ty, title, slug_override, &task.jigc_home)
                 .map_err(|f| block(&f, verb, ty))?
     {
@@ -3442,7 +3468,8 @@ fn title_pre_check(
             entry,
             verb,
             slug_override,
-            &address,
+            &occupied.address,
+            occupied.foreign,
         ));
     }
 
@@ -3473,6 +3500,11 @@ fn title_pre_check(
         && let Some(path) = &incumbent.incumbent
         && !path.starts_with(&task.dir)
     {
+        // A committed incumbent is a doc body — a regular file, or one read through a live
+        // link — and the refusal says which ([`state::foreign_home_entry`]).
+        let foreign = Address::parse(&incumbent.address).ok().and_then(|address| {
+            state::foreign_home_entry(&task.jigc_home, schema, address.slug.as_str())
+        });
         return Err(already_exists_refusal(
             task,
             schema,
@@ -3480,6 +3512,7 @@ fn title_pre_check(
             verb,
             slug_override,
             &incumbent.address,
+            foreign,
         ));
     }
 
@@ -3556,13 +3589,14 @@ fn already_exists_refusal(
     verb: &str,
     slug_override: Option<&str>,
     address: &str,
+    foreign: Option<engine::store::ForeignEntry>,
 ) -> DocFailure {
     let route = held_instance(task, schema, entry).and_then(|held| match held {
         Some(held) => Ok(one_doc_per_task_route(task, verb, &held, &entry.as_role)),
-        None => distinct_identity_route(task, verb, schema, slug_override),
+        None => distinct_identity_route(task, verb, schema, slug_override, foreign),
     });
     match route {
-        Ok(route) => DocFailure::block(state::already_exists_finding(address, route)),
+        Ok(route) => DocFailure::block(state::already_exists_finding(address, foreign, route)),
         Err(err) => DocFailure::Orchestration(err),
     }
 }
@@ -3571,8 +3605,8 @@ fn already_exists_refusal(
 /// (`doc create`, `doc author`) hand the create's error to.
 ///
 /// A complete finding takes the shared [`block`] seam, unchanged. The **create-only**
-/// arm ([`state::CreateRefusal::AlreadyExists`]) is the engine refusing a home that is a
-/// file on disk under an entry carrying `new: true` — reached when the title pre-check's
+/// arm ([`state::CreateRefusal::AlreadyExists`]) is the engine refusing a home that is
+/// taken on disk under an entry carrying `new: true` — reached when the title pre-check's
 /// rank 0 saw that home free and it was occupied by the time the create probed it (the
 /// rc.24 review's `(R6, K-1)`). It is the same refusal rank 0 gives, so it is built by the
 /// same [`already_exists_refusal`]: same code, same key, same route. Nothing was staged
@@ -3587,8 +3621,8 @@ fn create_refused(
 ) -> DocFailure {
     match refusal {
         state::CreateRefusal::Blocked(finding) => block(&finding, verb, schema.ty.as_str()),
-        state::CreateRefusal::AlreadyExists { address } => {
-            already_exists_refusal(task, schema, entry, verb, slug_override, &address)
+        state::CreateRefusal::AlreadyExists { address, foreign } => {
+            already_exists_refusal(task, schema, entry, verb, slug_override, &address, foreign)
         }
     }
 }
@@ -3679,11 +3713,16 @@ fn one_doc_per_task_route(
 /// - otherwise the id is the title's slug: `create` takes a distinct `--title`, or a
 ///   `--slug` that mints beside the existing doc; `author` mints from its payload's
 ///   `title:` and has no `--slug`, so naming one would be a route that cannot run.
+///
+/// `foreign` is what holds the home when it is **not a doc** — a symbolic link, a directory
+/// (`(R6, D-7)`): the corrections are the same, and the one clause that names the occupant
+/// names it for what it is rather than as *the existing doc*.
 fn distinct_identity_route(
     task: &ActiveTask,
     verb: &str,
     schema: &Schema,
     slug_override: Option<&str>,
+    foreign: Option<engine::store::ForeignEntry>,
 ) -> Result<engine::finding::Route> {
     let ty = schema.ty.as_str();
     if schema.has_fixed_identity() {
@@ -3720,9 +3759,13 @@ fn distinct_identity_route(
         )));
     }
     Ok(if verb == "create" {
+        let occupant = match foreign {
+            None => "the existing doc".to_owned(),
+            Some(shape) => format!("the {} that is there", shape.bare()),
+        };
         engine::finding::Route::human(format!(
             "choose a distinct `--title`, or keep this one and pass `--slug <slug>` to mint \
-             beside the existing doc: `jigc doc create {ty} --title <title> --slug <slug> \
+             beside {occupant}: `jigc doc create {ty} --title <title> --slug <slug> \
              --task {}`",
             task.id,
         ))
@@ -3883,7 +3926,9 @@ fn title_ignored_refusal(
             " retitles the doc in place; then re-run this write unchanged",
         )
     } else {
-        distinct_identity_route(task, verb, schema, slug_override)?
+        // The incumbent here is a doc body — never a bare link or a directory — so the
+        // route names it as the existing doc.
+        distinct_identity_route(task, verb, schema, slug_override, None)?
     };
     Ok(Finding::graded(
         Severity::Blocking,

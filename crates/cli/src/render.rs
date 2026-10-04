@@ -1630,8 +1630,9 @@ pub const FINALIZE_FAMILY: &[FinalizeCode] = &[
         code: "finalize.promote-clobber",
         producer: "engine::finalize",
         subject: FinalizeSubject::FilePath,
-        subject_note: "the destination file it refused to overwrite, which may be foreign \
-                       and carry no URI identity",
+        subject_note: "the destination path it refused to write at — a file it would have \
+                       overwritten, which may be foreign and carry no URI identity, or an \
+                       entry that is not a regular file",
     },
     FinalizeCode {
         code: "finalize.promote-io",

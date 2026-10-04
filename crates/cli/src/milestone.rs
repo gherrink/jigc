@@ -263,7 +263,10 @@ pub enum MilestoneCommand {
     /// `finalize.promote-clobber`, commits nothing and leaves that file as it is, and
     /// routes at giving the doc another title inside its sub-task (`jigc doc rename
     /// <address> --to "<title>" --task <task-id>`), after which this command lands the
-    /// milestone.
+    /// milestone. And no doc — created or edited — is promoted onto a destination whose
+    /// entry is not a regular file (a symbolic link, a directory): a doc lands as a
+    /// regular file at exactly its home and is never written through a link, so the
+    /// boundary blocks with the same code and names the exit that sub-task's doc has.
     Finalize {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
@@ -890,8 +893,20 @@ fn materialize_and_commit_record(
     let mut pre =
         capture_record_pre_image(jigc_home, &record_path, crate::rollback::MILESTONE_DOOR)?;
     let body = render_fresh_record(schema, &minted.id, &minted.base, schema_version);
-    std::fs::write(&record_path, &body)
-        .with_context(|| format!("could not write the milestone record {record_path:?}"))?;
+    // **Created, never opened** (`(R6, D-7)`): `create` mints a record at a home
+    // [`guard_record_free`] found free, so the write is `O_CREAT|O_EXCL` — which fails on
+    // any entry that turned up there since, and does not follow a link, dangling or live.
+    // The plain `fs::write` this replaces opened whatever stood at the path, so a link at
+    // the record's home had the record written to the link's target and the link committed.
+    {
+        use std::io::Write as _;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&record_path)
+            .and_then(|mut record| record.write_all(body.as_bytes()))
+    }
+    .with_context(|| format!("could not write the milestone record {record_path:?}"))?;
     // Read back what jigc just left here — the other half of the swap. Taken one statement
     // after the write, so a racer that edits the record during the commit below is a
     // mismatch rather than being mistaken for jigc's own bytes.
@@ -2358,8 +2373,22 @@ fn guard_record_free(jigc_home: &Path, schema: &Schema, title: &str) -> Result<(
     let Some(record_path) = engine::store::canonical_path(jigc_home, schema, &milestone_id) else {
         return Ok(());
     };
-    if !record_path.exists() {
-        return Ok(());
+    // The home's own entry, read without following a link (the rc.24 fix pass, `(R6, D-7)`).
+    // This asked `exists()`, so a **dangling** link at the record's home read as a free id,
+    // and the record was then written through it — the record commit took the link. A link,
+    // a directory or a special file there is somebody else's entry and the id is not free.
+    match engine::store::home_entry(&record_path) {
+        engine::store::HomeEntry::Free => return Ok(()),
+        engine::store::HomeEntry::RegularFile => {}
+        engine::store::HomeEntry::Foreign(shape) => {
+            return Err(finding_to_err(
+                engine::milestone::record_home_taken_finding(
+                    &milestone_id,
+                    &render::repo_relative(jigc_home, &record_path),
+                    shape,
+                ),
+            ));
+        }
     }
     // The status is decoration on the block (the *existence* is the refusal), so an unreadable
     // record degrades to a status-less message rather than masking the collision.

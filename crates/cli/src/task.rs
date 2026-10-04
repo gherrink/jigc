@@ -467,7 +467,10 @@ pub enum TaskCommand {
         /// (`finalize.milestone-sub-task` — a milestone's sub-task has no per-task commit
         /// door at all), the planner's two collision gates
         /// (`finalize.promote-clobber` over a file already sitting at a promote
-        /// destination, `finalize.migration-no-replacement` over a recorded migration
+        /// destination, or over any entry there that is not a regular file — a symbolic
+        /// link, a directory: a doc lands as a regular file at exactly its home and is
+        /// never written through a link; `finalize.migration-no-replacement` over a
+        /// recorded migration
         /// source with nothing staged to replace it), and the carryover gate, where an
         /// undeclared carry-over is
         /// reported (exit 3) instead of the manifest (add `--carry-staged` to forecast the
@@ -5112,13 +5115,41 @@ pub(crate) fn fold_hook_streams<'a, I: IntoIterator<Item = &'a str>>(streams: I)
 /// (disk full, permissions, a directory squatting the destination) must not discard the
 /// captures already taken for promotions 1..k — a returned-only-on-`Ok` collection did,
 /// and the shared `Err` arm's rollback then deleted a same-path untracked foreign it had
-/// no bytes to restore. Each capture is pushed **before** its `fs::copy`, so even the
+/// no bytes to restore. Each capture is pushed **before** its copy, so even the
 /// failing promotion's own pre-image reaches the rollback.
+///
+/// **It lands a regular file at exactly the destination, or refuses before anything is
+/// written** (the rc.24 fix pass, `(R6, D-7)`; `design/finalize.md` → 4. Promote). Two
+/// things make that true of the *write*, and not only of the plan that precedes it:
+///
+/// - **every destination's entry is re-read here, without following a link, ahead of the
+///   first copy** ([`engine::store::home_entry`]). The planner's clobber guard is the routed
+///   refusal; it ran before the hooks' world and this closure's captures, so an entry that
+///   is not a regular file *now* refuses the whole transaction
+///   ([`engine::finalize::promote_sink_refusal`], the same code and key) with no promotion
+///   written — not promotions 1..k-1 landed and the k-th refused. It is the retire sink's
+///   rule ([`ValidatedRetirement`]) on the write side: a guard that only ran at the door
+///   guards the plan;
+/// - **the copy itself does not follow a link** ([`copy_regular`]). The promote was a
+///   `std::fs::copy`, which opens its destination through whatever is there: a dangling
+///   link at a home had the doc written to the link's target — an untracked file, or one
+///   outside the repository — while the stage step then `git add`ed the *link*, and a link
+///   to a device swallowed the prose outright. A link that appears between the re-read
+///   above and the open now fails that open, and nothing is written through it.
 fn promote(
     repo_root: &Path,
     promotions: &[Promotion],
     worktree: &mut crate::rollback::PreImageFamily,
 ) -> Result<()> {
+    for promotion in promotions {
+        if let engine::store::HomeEntry::Foreign(shape) =
+            engine::store::home_entry(&repo_root.join(&promotion.destination))
+        {
+            return Err(crate::render::finding_error(
+                &engine::finalize::promote_sink_refusal(repo_root, &promotion.destination, shape),
+            ));
+        }
+    }
     for promotion in promotions {
         let dest = repo_root.join(&promotion.destination);
         if let Some(parent) = dest.parent() {
@@ -5129,10 +5160,10 @@ fn promote(
             crate::rollback::PreImage::capture(promotion.destination.clone(), dest.clone())
                 .with_context(|| format!("could not read {dest:?} before promoting over it"))?,
         );
-        let copied = std::fs::copy(&promotion.source, &dest);
+        let copied = copy_regular(&promotion.source, &dest);
         // The post-image, read back one statement after the write — the swap's other half,
         // and the only moment at which the bytes on disk are provably jigc's. Read on the
-        // FAILING arm too, before the `?`: a `fs::copy` that errs part-way through leaves a
+        // FAILING arm too, before the `?`: a copy that errs part-way through leaves a
         // truncated file at the destination, and those bytes are as much jigc's doing as a
         // whole one's. Read only after an `Ok` they would be `Untouched` — *jigc cannot prove
         // what it put there* — and the swap would leave the truncation standing. A copy that
@@ -5147,6 +5178,39 @@ fn promote(
         })?;
     }
     Ok(())
+}
+
+/// Copy `source` over `dest` as a **regular file, never through a link** — the promote's
+/// write ([`promote`]; the rc.24 fix pass, `(R6, D-7)`).
+///
+/// `std::fs::copy` follows a link at its destination, and opens anything else that will
+/// take a write. This opens the destination with `O_NOFOLLOW`, so a link there fails the
+/// open (`ELOOP`) instead of naming another file, and then asks the **open handle** what it
+/// is before a byte moves: only a regular file is truncated and written. Asking the handle
+/// rather than the path is what closes the gap a path check leaves — the entry that answers
+/// is the entry that is written. `O_NONBLOCK` keeps the open from parking on a FIFO with no
+/// reader; it means nothing for a regular file.
+///
+/// It keeps the two properties of the `fs::copy` it replaces that callers lean on: the
+/// destination is rewritten **in place** (same inode, so a hard link or an open reader sees
+/// the new bytes), and it takes the **source's permission bits**.
+fn copy_regular(source: &Path, dest: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt as _;
+    let mut from = std::fs::File::open(source)?;
+    let mut to = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(dest)?;
+    if !to.metadata()?.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "the destination is not a regular file",
+        ));
+    }
+    to.set_len(0)?;
+    std::io::copy(&mut from, &mut to)?;
+    to.set_permissions(from.metadata()?.permissions())
 }
 
 /// A retirement whose recorded path has been **adjudicated against the repository it is about
@@ -5169,12 +5233,13 @@ fn promote(
 /// [`Self::target`] joins against the root that adjudicated it rather than whichever root
 /// happens to be in scope at the call. `engine::state::MigrationSource` is the other half of
 /// the pair: it carries provenance (*these bytes were recorded as a migration source*) and
-/// deliberately not admissibility, because admissibility needs `git` and a symlink syscall and
-/// the engine hosts neither.
+/// deliberately not admissibility, because admissibility needs `git` and the engine hosts
+/// none.
 ///
 /// **Why the predicate lives CLI-side**, stated rather than assumed: `crates/engine` contains
-/// no `Command::new` and no `symlink_metadata`/`read_link` — it is the deterministic core, and
-/// asking git who owns a path is not a deterministic-core act. The engine's own precedent for
+/// no `Command::new` — it is the deterministic core, and asking git who owns a path is not a
+/// deterministic-core act. (It does read an entry's *shape* without following a link: a
+/// working area's members, and a managed doc's home — `engine::store::home_entry`.) The engine's own precedent for
 /// a CLI-supplied predicate is `engine::validate`'s injected `tracked`.
 #[derive(Debug)]
 struct ValidatedRetirement {
@@ -6705,8 +6770,12 @@ fn rollback_promotions(
         }
         let dest = repo_root.join(&promotion.destination);
         // Still there: the swap declined to remove it because the bytes are somebody else's,
-        // and a conflict already names both copies. Neither arm below may touch it.
-        if dest.exists() {
+        // and a conflict already names both copies. Neither arm below may touch it. Asked
+        // of the **entry**, never through it (`(R6, D-7)`): a link that turned up at the
+        // destination inside the transaction is a racer's entry whether or not it points
+        // at anything, and `exists()` reads a dangling one as *gone* — the HEAD-sourced
+        // restore below would then have replaced it.
+        if std::fs::symlink_metadata(&dest).is_ok() {
             continue;
         }
         if path_at_head(repo_root, &promotion.destination) {
@@ -9470,7 +9539,7 @@ mod tests {
 
     /// Failure-POINT axis, the **mid-promote** member (confidence-audit code-review
     /// MEDIUM — the residual of the class minor item 10 fixed): [`promote`] fails at
-    /// promotion *k* (here: the destination is a directory, so `fs::copy` errors) after
+    /// promotion *k* (here: its staged source is gone, so the copy errors) after
     /// promotion 1 already displaced a same-path **untracked** foreign. Pre-fix the
     /// displaced capture was returned **only on `Ok`**, so the `?` discarded it; the
     /// shared `Err` arm's rollback saw an untracked destination with no capture and
@@ -9489,10 +9558,11 @@ mod tests {
             "# Changelog\n\npromoted\n",
         )
         .expect("write source 1");
-        std::fs::write(repo.join("staged").join("two.md"), "# Blocked\n").expect("write source 2");
-        // Promotion 2's destination is a DIRECTORY — `fs::copy` into it fails
-        // deterministically (portable: no permission bits, no disk-full simulation).
-        std::fs::create_dir_all(repo.join("blocked.md")).expect("mk blocking dir");
+        // Promotion 2's staged SOURCE does not exist — its copy fails deterministically
+        // (portable: no permission bits, no disk-full simulation), and it fails AFTER
+        // promotion 1 was written. A directory at the destination was this test's seed
+        // until `(R6, D-7)`: the sink now refuses that shape before the first copy, so it
+        // no longer reaches the mid-promote point this test is about.
         let plan = axis_plan(
             vec![
                 Promotion {
@@ -9584,8 +9654,8 @@ mod tests {
         std::fs::write(repo.join("CHANGELOG.md"), "modified\n").expect("write modified");
         std::fs::create_dir_all(repo.join("staged")).expect("mk staged");
         std::fs::write(repo.join("staged").join("one.md"), "promoted\n").expect("write source 1");
-        std::fs::write(repo.join("staged").join("two.md"), "blocked\n").expect("write source 2");
-        std::fs::create_dir_all(repo.join("blocked.md")).expect("mk blocking dir");
+        // Promotion 2's staged source is absent, so its copy fails after promotion 1 landed
+        // (the mid-promote seed — see the sibling test above).
         let plan = axis_plan(
             vec![
                 Promotion {
@@ -9607,6 +9677,262 @@ mod tests {
             "modified\n",
             "the rollback must restore the captured pre-promote worktree bytes — \
              `--source=HEAD` would destroy the user's uncommitted modification"
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// The `(code, target)` a refused [`promote`] carries.
+    fn refusal_key(err: &anyhow::Error) -> (String, Option<String>) {
+        let blocked = err
+            .downcast_ref::<crate::render::BlockedFinding>()
+            .unwrap_or_else(|| panic!("a routed refusal, not a bare I/O error; got: {err:#}"));
+        let key = blocked.finding.key();
+        (
+            key.code.to_string(),
+            key.target.as_deref().map(str::to_owned),
+        )
+    }
+
+    /// **The promote sink refuses an entry that is not a regular file — before anything is
+    /// written** (the rc.24 fix pass, `(R6, D-7)`). The planner's guard is the routed
+    /// refusal; this is the write's own, for an entry that is there when the write would
+    /// happen whatever the plan saw. Over every shape — a dangling link, a live link, a
+    /// link to a device, a directory, a FIFO — a two-promotion plan whose *second*
+    /// destination holds the entry returns `finalize.promote-clobber` keyed at it, and the
+    /// *first*, free, destination is still absent: the whole set is asked ahead of the
+    /// first copy, so the transaction refuses with no promotion landed rather than k-1 of
+    /// them. The entry stands, nothing is written through it, and the rollback family is
+    /// empty — there is nothing for a rollback to remove.
+    #[cfg(unix)]
+    #[test]
+    fn the_promote_sink_refuses_a_non_regular_destination_before_anything_is_written() {
+        for shape in ["dangling", "live", "device", "directory", "fifo"] {
+            let repo = finalize_axis_repo(&format!("sink-shape-{shape}"));
+            std::fs::create_dir_all(repo.join("staged")).expect("mk staged");
+            for name in ["one.md", "two.md"] {
+                std::fs::write(repo.join("staged").join(name), "PROMOTED-BYTES\n")
+                    .expect("write a staged source");
+            }
+            let home = repo.join("docs").join("blocked.md");
+            std::fs::create_dir_all(home.parent().unwrap()).expect("mk docs/");
+            let target = repo.join("docs").join("target.md");
+            match shape {
+                "dangling" => std::os::unix::fs::symlink("target.md", &home).expect("link"),
+                "live" => {
+                    std::fs::write(&target, "SOMEBODY-ELSES\n").expect("the link's target");
+                    std::os::unix::fs::symlink("target.md", &home).expect("link");
+                }
+                "device" => std::os::unix::fs::symlink("/dev/null", &home).expect("link"),
+                "directory" => std::fs::create_dir(&home).expect("mk a directory"),
+                _ => {
+                    let made = Command::new("mkfifo").arg(&home).status().expect("mkfifo");
+                    assert!(made.success(), "mkfifo");
+                }
+            }
+            let target_before = std::fs::read(&target).ok();
+            let entry_before = std::fs::symlink_metadata(&home).expect("lstat").file_type();
+            let promotions = vec![
+                Promotion {
+                    source: repo.join("staged").join("one.md"),
+                    destination: "docs/a-free-home.md".into(),
+                },
+                Promotion {
+                    source: repo.join("staged").join("two.md"),
+                    destination: "docs/blocked.md".into(),
+                },
+            ];
+            let mut family = crate::rollback::PreImageFamily::empty(crate::rollback::FINALIZE_DOOR);
+
+            let err = promote(&repo, &promotions, &mut family)
+                .expect_err("a destination that is not a regular file refuses the promote");
+
+            assert_eq!(
+                refusal_key(&err),
+                (
+                    "finalize.promote-clobber".to_string(),
+                    Some("docs/blocked.md".to_string())
+                ),
+                "{shape}: the planner's code and key, from the sink",
+            );
+            assert!(
+                std::fs::symlink_metadata(repo.join("docs/a-free-home.md")).is_err(),
+                "{shape}: nothing was written — not even the promotion ahead of the refused one",
+            );
+            assert_eq!(
+                std::fs::symlink_metadata(&home).expect("lstat").file_type(),
+                entry_before,
+                "{shape}: the entry stands",
+            );
+            assert_eq!(
+                std::fs::read(&target).ok(),
+                target_before,
+                "{shape}: nothing was written through the entry",
+            );
+            assert!(
+                family.entry("docs/a-free-home.md").is_none()
+                    && family.entry("docs/blocked.md").is_none(),
+                "{shape}: no capture was taken, so a rollback has nothing to remove",
+            );
+            assert!(
+                family.restore(&repo, &repo.join(".jigc")).is_empty(),
+                "{shape}: and raises no conflict",
+            );
+            let _ = std::fs::remove_dir_all(&repo);
+        }
+    }
+
+    /// **The copy itself never follows a link** ([`copy_regular`]) — the half of the sink
+    /// that holds when the entry appears *after* the sink's own re-read. A link at the
+    /// destination fails the open and its target is untouched (absent stays absent); a FIFO
+    /// fails promptly instead of parking the door on a reader that never comes. The two
+    /// states the promote does write keep `fs::copy`'s behaviour: an absent destination is
+    /// created as a regular file, and an existing regular file is rewritten **in place**
+    /// (same inode) with the source's permission bits.
+    #[cfg(unix)]
+    #[test]
+    fn the_promote_copy_never_writes_through_a_link() {
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+        let repo = finalize_axis_repo("copy-regular");
+        let source = repo.join("source.md");
+        std::fs::write(&source, "PROMOTED-BYTES\n").expect("write the source");
+        std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o640)).expect("chmod");
+
+        // A dangling link: refused, and the target is not created.
+        let dangling = repo.join("dangling.md");
+        std::os::unix::fs::symlink("nowhere.md", &dangling).expect("link");
+        copy_regular(&source, &dangling).expect_err("a dangling link is not written through");
+        assert!(
+            !repo.join("nowhere.md").exists(),
+            "the link's target was not created"
+        );
+        assert!(
+            std::fs::symlink_metadata(&dangling)
+                .expect("lstat")
+                .file_type()
+                .is_symlink(),
+            "the link stands",
+        );
+
+        // A live link: refused, and the target keeps its bytes.
+        let target = repo.join("target.md");
+        std::fs::write(&target, "SOMEBODY-ELSES\n").expect("write the target");
+        let live = repo.join("live.md");
+        std::os::unix::fs::symlink("target.md", &live).expect("link");
+        copy_regular(&source, &live).expect_err("a live link is not written through");
+        assert_eq!(
+            std::fs::read_to_string(&target).expect("read the target"),
+            "SOMEBODY-ELSES\n",
+            "the link's target is untouched",
+        );
+
+        // A FIFO with no reader: an error, not a hang.
+        let fifo = repo.join("fifo.md");
+        let made = Command::new("mkfifo").arg(&fifo).status().expect("mkfifo");
+        assert!(made.success(), "mkfifo");
+        copy_regular(&source, &fifo).expect_err("a FIFO is not a regular file");
+
+        // A directory: an error.
+        std::fs::create_dir(repo.join("dir.md")).expect("mk a directory");
+        copy_regular(&source, &repo.join("dir.md")).expect_err("a directory is not written");
+
+        // Absent → a regular file with the source's bytes and mode.
+        let fresh = repo.join("fresh.md");
+        copy_regular(&source, &fresh).expect("an absent destination is created");
+        let shape = std::fs::symlink_metadata(&fresh).expect("lstat");
+        assert!(shape.is_file(), "a regular file");
+        assert_eq!(
+            std::fs::read_to_string(&fresh).expect("read"),
+            "PROMOTED-BYTES\n"
+        );
+        assert_eq!(
+            shape.permissions().mode() & 0o777,
+            0o640,
+            "the source's mode"
+        );
+
+        // A regular file → rewritten in place, a longer body fully replaced.
+        let existing = repo.join("existing.md");
+        std::fs::write(
+            &existing,
+            "A MUCH LONGER BODY THAN THE PROMOTED ONE, REPLACED WHOLE\n",
+        )
+        .expect("write the existing file");
+        let inode = std::fs::metadata(&existing).expect("stat").ino();
+        copy_regular(&source, &existing).expect("a regular file is rewritten");
+        assert_eq!(
+            std::fs::read_to_string(&existing).expect("read"),
+            "PROMOTED-BYTES\n"
+        );
+        assert_eq!(
+            std::fs::metadata(&existing).expect("stat").ino(),
+            inode,
+            "rewritten in place — the same file, not a replacement beside it",
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// **The rollback never takes an entry that turned up at a destination it created.**
+    /// The promote's rollback has an arm for a destination tracked at `HEAD` and absent
+    /// from the worktree before the promote: once the swap has removed jigc's copy, it puts
+    /// the committed bytes back from git. Its *"still there?"* guard asked `exists()`, which
+    /// reads a **dangling link** as gone — so a link a third party put at the destination
+    /// inside the transaction was replaced by the `HEAD` blob. Asked of the entry, the link
+    /// stands (`(R6, D-7)`, the rollback path).
+    #[cfg(unix)]
+    #[test]
+    fn the_rollback_leaves_a_link_that_appeared_at_a_destination_it_created() {
+        let repo = finalize_axis_repo("rollback-link");
+        let run = |args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .output()
+                .expect("git runs");
+            assert!(out.status.success(), "git {args:?} should succeed");
+        };
+        std::fs::write(repo.join("DOC.md"), "committed\n").expect("write committed");
+        run(&["add", "DOC.md"]);
+        run(&["commit", "-q", "-m", "track the doc"]);
+        // Deleted from the worktree before the promote: the capture finds it absent.
+        std::fs::remove_file(repo.join("DOC.md")).expect("delete from the worktree");
+        let mut family = crate::rollback::PreImageFamily::empty(crate::rollback::FINALIZE_DOOR);
+        family.push(
+            crate::rollback::PreImage::capture("DOC.md", repo.join("DOC.md")).expect("capture"),
+        );
+        // A third party's link lands there inside the transaction; the copy then fails on
+        // it, so jigc wrote nothing.
+        std::os::unix::fs::symlink("nowhere.md", repo.join("DOC.md")).expect("the racer's link");
+        let source = repo.join("staged.md");
+        std::fs::write(&source, "promoted\n").expect("write the source");
+        copy_regular(&source, &repo.join("DOC.md")).expect_err("the copy refuses the link");
+        family.wrote("DOC.md");
+
+        let promotions = vec![Promotion {
+            source,
+            destination: "DOC.md".into(),
+        }];
+        let conflicts = rollback_promotions(
+            &repo,
+            &repo.join(".jigc"),
+            &promotions,
+            &[],
+            &family,
+            &[],
+            &[],
+        );
+
+        assert!(
+            conflicts.is_empty(),
+            "jigc wrote nothing here: {conflicts:?}"
+        );
+        let shape = std::fs::symlink_metadata(repo.join("DOC.md")).expect("the entry is there");
+        assert!(
+            shape.file_type().is_symlink(),
+            "the racer's link stands — the HEAD-sourced restore did not replace it",
+        );
+        assert!(
+            !repo.join("nowhere.md").exists(),
+            "and nothing was written through it"
         );
         let _ = std::fs::remove_dir_all(&repo);
     }

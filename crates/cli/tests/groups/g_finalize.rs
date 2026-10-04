@@ -95,6 +95,8 @@ mod pre_guard_repair_route;
 mod probe_failure_doors;
 #[path = "../probe_self_image.rs"]
 mod probe_self_image;
+#[path = "../promote_destination_shape.rs"]
+mod promote_destination_shape;
 #[path = "../reconciliation_baseline_contrast.rs"]
 mod reconciliation_baseline_contrast;
 #[path = "../ref_edge_guidance.rs"]

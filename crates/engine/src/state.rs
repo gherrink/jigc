@@ -1525,8 +1525,9 @@ pub fn read_workflow_id(task_dir: &Path) -> std::io::Result<Option<String>> {
 /// as a migration source and are non-empty. The admissibility question — *may this
 /// repository unlink that path?* — is asked CLI-side, immediately before the unlink and in
 /// the same function as it, and its answer is `cli::task::ValidatedRetirement`. The engine
-/// cannot ask it: the predicate needs `git` and a symlink syscall, and the engine hosts
-/// neither (`crates/engine` contains no `Command::new` and no `symlink_metadata`).
+/// cannot ask it: the predicate needs `git`, and the engine hosts none (`crates/engine`
+/// contains no `Command::new`). What it does read without following a link is an entry's
+/// *shape* — a working area's members, and a managed doc's home ([`crate::store::home_entry`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MigrationSource {
     /// The recorded spelling, trimmed.
@@ -2295,30 +2296,78 @@ pub fn create(
 
     // The one probe of the minted identity's home ([`occupied_home`]); steps 3–5 act on
     // its answer and never ask again.
-    let home = occupied_home(repo_root, schema, &minted.slug);
+    let home = occupied_home(repo_root, schema, &minted.slug).and_then(OccupiedHome::body);
     stage_minted(task_dir, schema, type_name, minted, home, on_create)
 }
 
-/// **The minted identity's canonical home, when it is already a file on disk** — the one
-/// predicate every create-side question about *"is there a doc there already?"* is
-/// answered by: [`create`]'s copy-in, [`create_gated`]'s create-only refusal,
+/// **The minted identity's canonical home, when something is already there on disk** — the
+/// one observation every create-side question about *"is there a doc there already?"* is
+/// answered from: [`create`]'s copy-in, [`create_gated`]'s create-only refusal,
 /// [`create_occupied`] (the CLI pre-check's ranked early ask of the same refusal) and
 /// [`create_incumbent`]'s committed arm. `None` when the home is free, or the doctype has
 /// none (a transient sink type). *On disk* is wider than *committed* — an untracked file
 /// at the home is occupied too (`design/write-commands.md` → The create-gate).
+///
+/// **The entry is read without following a link** ([`crate::store::home_entry`]; the rc.24
+/// fix pass, `(R6, D-7)`). Until then the predicate was `is_file()`, which follows links,
+/// so a **dangling** link at the home read as *free*: a create-only entry passed it, and
+/// the task's finalize then wrote the doc through the link. A link, a directory or a
+/// special file at a home is an occupant like any other — somebody else's entry, since
+/// jigc puts regular files there and nothing else — and the two readings below say what
+/// each caller does with one.
 ///
 /// **A create asks it once and acts on the answer it got** (the rc.24 review's
 /// `(R6, K-1)`): [`create`] and [`create_gated`] call this a single time and hand the
 /// *result* down to [`stage_minted`], so the refusal a create-only entry owes and the
 /// copy-in a plain entry performs are two readings of **one** observation, never two
 /// observations a writer can land between.
-fn occupied_home(repo_root: &Path, schema: &Schema, slug: &str) -> Option<PathBuf> {
-    crate::store::canonical_path(repo_root, schema, slug).filter(|home| home.is_file())
+fn occupied_home(repo_root: &Path, schema: &Schema, slug: &str) -> Option<OccupiedHome> {
+    let path = crate::store::canonical_path(repo_root, schema, slug)?;
+    match crate::store::home_entry(&path) {
+        crate::store::HomeEntry::Free => None,
+        crate::store::HomeEntry::RegularFile => Some(OccupiedHome {
+            path,
+            foreign: None,
+        }),
+        crate::store::HomeEntry::Foreign(shape) => Some(OccupiedHome {
+            path,
+            foreign: Some(shape),
+        }),
+    }
+}
+
+/// What [`occupied_home`] found at a minted identity's home: the path, and — when the
+/// entry is not a regular file — its shape.
+struct OccupiedHome {
+    /// The canonical home, absolute.
+    path: PathBuf,
+    /// `None` for a regular file; the entry's shape otherwise.
+    foreign: Option<crate::store::ForeignEntry>,
+}
+
+impl OccupiedHome {
+    /// **The body a create-or-update copies in**, when the occupant has one this process
+    /// can read as a doc: a regular file, or a link whose target is one.
+    ///
+    /// Reading through a live link is deliberate and is not the harm `(R6, D-7)` closed:
+    /// the doc's bytes are what the author meant to edit, and refusing the read would turn
+    /// a create over them into a blank mint. What a link at a home can never be is
+    /// *written through* — that is refused where the write would happen, at the committing
+    /// door ([`crate::finalize`]'s clobber guard, `finalize.promote-clobber`), with the
+    /// copied-in edit still staged. A dangling link, a directory and a special file have
+    /// no body, so a plain create mints fresh over them and meets the same refusal there.
+    fn body(self) -> Option<PathBuf> {
+        match self.foreign {
+            None => Some(self.path),
+            Some(crate::store::ForeignEntry::Symlink) if self.path.is_file() => Some(self.path),
+            Some(_) => None,
+        }
+    }
 }
 
 /// [`create`]'s steps 3–5 over an identity already minted and a home **already probed**
-/// (`home` is [`occupied_home`]'s answer — `Some` when the canonical home is a file on
-/// disk). It never probes the home itself: the caller that decided what an occupied home
+/// (`home` is [`occupied_home`]'s answer, read as [`OccupiedHome::body`] — `Some` when the
+/// canonical home holds a doc body to copy in). It never probes the home itself: the caller that decided what an occupied home
 /// means (copy in, or — under a create-only entry — refuse and never call this) hands its
 /// one observation down, so that decision and this copy-in cannot disagree.
 fn stage_minted(
@@ -2405,12 +2454,16 @@ pub enum CreateRefusal {
     /// A complete blocking finding — unknown doctype, gate-blocked, empty title, a
     /// working-area IO failure.
     Blocked(Box<Finding>),
-    /// The gate entry carries `new: true` and the minted identity's home is already a
-    /// file on disk ([`occupied_home`]): nothing was copied in, staged or bound. `address`
+    /// The gate entry carries `new: true` and the minted identity's home is already taken
+    /// on disk ([`occupied_home`]): nothing was copied in, staged or bound. `address`
     /// is that identity's `<type>:<slug>` — [`already_exists_finding`]'s first argument.
     AlreadyExists {
         /// The occupied identity, `<type>:<slug>`.
         address: String,
+        /// The occupant's shape when it is **not a regular file** — a link (dangling or
+        /// live), a directory, a special file; `None` for a doc-shaped occupant.
+        /// [`already_exists_finding`]'s second argument: the refusal says what is there.
+        foreign: Option<crate::store::ForeignEntry>,
     },
 }
 
@@ -2477,11 +2530,15 @@ pub fn create_gated(
     // The one probe of the home. Create-only reads it first: an occupied home is refused
     // before anything below can hand back, copy in or bind.
     let home = occupied_home(repo_root, schema, &minted.slug);
-    if entry.new && home.is_some() {
+    if entry.new
+        && let Some(occupied) = &home
+    {
         return Err(CreateRefusal::AlreadyExists {
             address: minted.address,
+            foreign: occupied.foreign,
         });
     }
+    let home = home.and_then(OccupiedHome::body);
     // Step 4: admitted → mint + provision (or copy-in a committed instance) — the
     // `slug_override` (the front door's `--slug`) drives the minted id verbatim. But
     // first probe for a same-identity **staged** copy: if the minted slug's working-area
@@ -2594,7 +2651,7 @@ pub fn create_incumbent(
     let committed = if squatter {
         None
     } else {
-        occupied_home(repo_root, schema, &slug)
+        occupied_home(repo_root, schema, &slug).and_then(OccupiedHome::body)
     };
     Ok(CreateIncumbent {
         address,
@@ -2604,8 +2661,9 @@ pub fn create_incumbent(
 
 /// **The create-only probe** (M55, an `allows-create` entry carrying `new: true`): the
 /// `<type>:<slug>` a create is about to mint when that identity's canonical home is
-/// already a **file on disk** — `None` when the home is free, or the doctype has none.
-/// Writes nothing.
+/// already **taken on disk** — by a file, or by any other directory entry, read without
+/// following a link ([`occupied_home`]; `(R6, D-7)`) — and `None` when the home is free,
+/// or the doctype has none. Writes nothing.
 ///
 /// This is the CLI pre-check's **ranked early ask** of the refusal — what puts
 /// `create.already-exists` ahead of the title arms — and it is the same predicate
@@ -2628,10 +2686,42 @@ pub fn create_occupied(
     id_source: &str,
     slug_override: Option<&str>,
     repo_root: &Path,
-) -> Result<Option<String>, Finding> {
+) -> Result<Option<OccupiedIdentity>, Finding> {
     let MintedInstance { slug, address, .. } =
         mint_instance(task_dir, schema, type_name, id_source, slug_override)?;
-    Ok(occupied_home(repo_root, schema, &slug).map(|_| address))
+    Ok(
+        occupied_home(repo_root, schema, &slug).map(|occupied| OccupiedIdentity {
+            address,
+            foreign: occupied.foreign,
+        }),
+    )
+}
+
+/// [`create_occupied`]'s answer: the identity whose home is taken, and what took it — the
+/// two arguments [`already_exists_finding`] names the refusal from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OccupiedIdentity {
+    /// The occupied identity, `<type>:<slug>`.
+    pub address: String,
+    /// The occupant's shape when it is **not a regular file**; `None` for a doc-shaped one.
+    pub foreign: Option<crate::store::ForeignEntry>,
+}
+
+/// **What sits at an identity's home, when it is not a regular file** — the shape of a
+/// link, a directory or a special file there, read without following a link; `None` for a
+/// free home, a regular file, or a doctype with no home.
+///
+/// The in-task re-slug's destination guard asks it beside [`create_incumbent`]: that probe
+/// answers *"is there a doc body here to copy in?"*, and a dangling link has none — yet a
+/// doc renamed onto that id could never be promoted (`finalize.promote-clobber`), which is
+/// the write-ack-over-an-unfinalizable-state that guard exists to make unreachable.
+#[must_use]
+pub fn foreign_home_entry(
+    repo_root: &Path,
+    schema: &Schema,
+    slug: &str,
+) -> Option<crate::store::ForeignEntry> {
+    occupied_home(repo_root, schema, slug).and_then(|occupied| occupied.foreign)
 }
 
 /// Does a **bound context role**'s recorded address still name a document this task can
@@ -2671,7 +2761,12 @@ pub fn bound_instance_present(
     if instance_path(task_dir, type_name, slug).is_file() {
         return true;
     }
-    crate::store::canonical_path(repo_root, schema, slug).is_some_and(|path| path.is_file())
+    // The committed home, asked the create's own question — *is there a body a create
+    // would copy in?* ([`OccupiedHome::body`]) — so this probe and the copy-in it stands
+    // for cannot disagree about a home that holds something other than a regular file.
+    occupied_home(repo_root, schema, slug)
+        .and_then(OccupiedHome::body)
+        .is_some()
 }
 
 /// Does a **migration** task target this slug's own canonical destination? — the
@@ -2774,16 +2869,34 @@ fn instance_collision_finding(address: &str) -> Finding {
 /// (`design/command-output-contract.md` → The stable finding key, the URI form). The
 /// route is the caller's, because the correction differs by verb — `doc create` takes a
 /// `--slug`, `doc author` does not.
-pub fn already_exists_finding(address: &str, route: crate::finding::Route) -> Finding {
+///
+/// `foreign` is the occupant's shape when it is **not a regular file** (the rc.24 fix pass,
+/// `(R6, D-7)`): a link, a directory or a special file at the home is an occupant like any
+/// other — same code, same key, same route — but *"already exists … never copied in for
+/// update"* would be a sentence about a doc that is not there, so the message says what is.
+pub fn already_exists_finding(
+    address: &str,
+    foreign: Option<crate::store::ForeignEntry>,
+    route: crate::finding::Route,
+) -> Finding {
     let ty = address.split_once(':').map_or(address, |(ty, _)| ty);
-    Finding::graded(
-        Severity::Blocking,
-        "create.already-exists",
-        format!(
+    let message = match foreign {
+        None => format!(
             "`{address}` already exists on disk at its home, and this workflow's \
              `allows-create` entry for `{ty}` carries `new: true` — it creates a new doc \
              only, so the existing one is never copied in for update"
         ),
+        Some(shape) => format!(
+            "the home of `{address}` is already taken on disk — by {}, which jigc did not \
+             put there and does not follow — and this workflow's `allows-create` entry for \
+             `{ty}` carries `new: true`: it creates a new doc only, at a home nothing holds",
+            shape.noun()
+        ),
+    };
+    Finding::graded(
+        Severity::Blocking,
+        "create.already-exists",
+        message,
         Some(Location::addressed(address, 1, 1)),
         Some(route),
     )
@@ -4331,6 +4444,13 @@ sections:
         let occupied = |title: &str, slug: Option<&str>| {
             create_occupied(&task_dir, &adr, "adr", title, slug, root.path())
                 .expect("the probe answers")
+                .map(|occupied| {
+                    assert_eq!(
+                        occupied.foreign, None,
+                        "a regular file is a doc-shaped occupant"
+                    );
+                    occupied.address
+                })
         };
 
         // A committed home → occupied, at the address the create would mint.
@@ -4391,6 +4511,169 @@ sections:
         );
     }
 
+    /// **The home is read without following a link** (the rc.24 fix pass, `(R6, D-7)`):
+    /// an entry at a home that is not a regular file — a dangling link, a live link, a link
+    /// to a device, a directory — is an occupant, named by its shape. The predicate was
+    /// `is_file()`, which follows links, so the dangling link read as a free home and the
+    /// create-only gate passed it.
+    ///
+    /// The second reading of the same observation is pinned beside it: only an occupant
+    /// with a doc body is copied in by a create-or-update ([`create_incumbent`]) — a regular
+    /// file, or a live link to one. The rest mint fresh, and are refused where they would be
+    /// written (`finalize.promote-clobber`).
+    #[cfg(unix)]
+    #[test]
+    fn a_home_entry_that_is_not_a_regular_file_is_occupied_and_named_by_its_shape() {
+        use crate::store::ForeignEntry;
+        let root = TempRoot::new("create-occupied-shape");
+        let task_dir = root.path().join("tasks").join("probe");
+        let adr = crate::schema::load_schema(
+            b"type: adr\nlocation: decisions/\nid-from: title\nsections:\n  - id: decision\n    slot: {}\n",
+        )
+        .expect("adr fixture loads");
+        let decisions = root.path().join("decisions");
+        std::fs::create_dir_all(&decisions).expect("mk decisions/");
+        let real = root.path().join("elsewhere.md");
+        std::fs::write(&real, "---\n---\n\n# Live\n\n## Decision\n\nX.\n").expect("a real doc");
+
+        let link = |slug: &str, target: &Path| {
+            std::os::unix::fs::symlink(target, decisions.join(format!("{slug}.md")))
+                .expect("plant a link");
+        };
+        link("dangling", Path::new("nowhere.md"));
+        link("device", Path::new("/dev/null"));
+        link("live", &real);
+        std::fs::create_dir(decisions.join("a-directory.md")).expect("plant a directory");
+
+        // (slug, the shape the probe names, whether a create-or-update has a body to copy in)
+        let cells = [
+            ("dangling", ForeignEntry::Symlink, false),
+            ("device", ForeignEntry::Symlink, false),
+            ("live", ForeignEntry::Symlink, true),
+            ("a-directory", ForeignEntry::Directory, false),
+        ];
+        for (slug, shape, has_body) in cells {
+            let occupied =
+                create_occupied(&task_dir, &adr, "adr", "Anything", Some(slug), root.path())
+                    .expect("the probe answers");
+            assert_eq!(
+                occupied,
+                Some(OccupiedIdentity {
+                    address: format!("adr:{slug}"),
+                    foreign: Some(shape),
+                }),
+                "{slug}: an entry at the home is an occupant, whatever a link points at",
+            );
+            assert_eq!(
+                foreign_home_entry(root.path(), &adr, slug),
+                Some(shape),
+                "{slug}: the re-slug guard's probe names the same shape",
+            );
+            let incumbent =
+                create_incumbent(&task_dir, &adr, "adr", "Anything", Some(slug), root.path())
+                    .expect("the incumbent probe answers");
+            assert_eq!(
+                incumbent.incumbent.is_some(),
+                has_body,
+                "{slug}: a create-or-update copies in a doc body and nothing else",
+            );
+            assert_eq!(
+                bound_instance_present(&task_dir, &adr, &format!("adr:{slug}"), root.path()),
+                has_body,
+                "{slug}: a bound role holds a doc only where a create would copy one in",
+            );
+        }
+        // Controls: a free home and a regular file carry no foreign shape.
+        assert_eq!(foreign_home_entry(root.path(), &adr, "free"), None);
+        std::fs::write(decisions.join("regular.md"), "# Regular\n").expect("a regular file");
+        assert_eq!(foreign_home_entry(root.path(), &adr, "regular"), None);
+    }
+
+    /// **The gated create over the same entries** (`(R6, D-7)`): under `new: true` every
+    /// shape is [`CreateRefusal::AlreadyExists`] carrying that shape, with the working area
+    /// byte-identical; under a plain entry a live link's doc is copied in, and an entry with
+    /// no body mints fresh — the create writes only inside the working area either way, and
+    /// never at, through or beside the home.
+    #[cfg(unix)]
+    #[test]
+    fn a_gated_create_over_an_entry_that_is_not_a_regular_file() {
+        use crate::compose::AllowsCreate;
+        use crate::store::ForeignEntry;
+        let root = TempRoot::new("create-gated-shape");
+        let adr = crate::schema::load_schema(
+            b"type: adr\nlocation: decisions/\nid-from: title\nsections:\n  - id: decision\n    slot: {}\n",
+        )
+        .expect("adr fixture loads");
+        let mut schemas = std::collections::BTreeMap::new();
+        schemas.insert("adr".to_string(), adr);
+        let decisions = root.path().join("decisions");
+        std::fs::create_dir_all(&decisions).expect("mk decisions/");
+        let real = root.path().join("elsewhere.md");
+        let live_body = "---\n---\n\n# Live\n\n## Decision\n\nLIVE-BODY.\n";
+        std::fs::write(&real, live_body).expect("a real doc");
+        std::os::unix::fs::symlink("nowhere.md", decisions.join("dangling.md")).expect("link");
+        std::os::unix::fs::symlink(&real, decisions.join("live.md")).expect("link");
+        std::fs::create_dir(decisions.join("a-directory.md")).expect("a directory");
+
+        let cells = [
+            ("dangling", ForeignEntry::Symlink, false),
+            ("live", ForeignEntry::Symlink, true),
+            ("a-directory", ForeignEntry::Directory, false),
+        ];
+        for (slug, shape, has_body) in cells {
+            for new in [true, false] {
+                let what = format!("`{slug}` under new: {new}");
+                let task_dir = root.path().join("tasks").join(format!("{slug}-{new}"));
+                std::fs::create_dir_all(&task_dir).expect("mk the task dir");
+                let gate = [AllowsCreate {
+                    doc_type: "adr".to_string(),
+                    as_role: "decision".to_string(),
+                    new,
+                }];
+                let before = area_snapshot(&task_dir);
+                let outcome = create_gated(
+                    &task_dir,
+                    &schemas,
+                    &gate,
+                    "adr",
+                    "Anything",
+                    root.path(),
+                    &[],
+                    Some(slug),
+                );
+                if new {
+                    assert_eq!(
+                        outcome,
+                        Err(CreateRefusal::AlreadyExists {
+                            address: format!("adr:{slug}"),
+                            foreign: Some(shape),
+                        }),
+                        "{what}: create-only refuses any entry at the home",
+                    );
+                    assert_eq!(area_snapshot(&task_dir), before, "{what}: nothing staged");
+                } else {
+                    let created = outcome.unwrap_or_else(|e| panic!("{what}: {e:?}"));
+                    assert_eq!(created.existed, has_body, "{what}: copied in iff a body");
+                    let staged = std::fs::read_to_string(&created.path).expect("the staged doc");
+                    assert_eq!(
+                        staged.contains("LIVE-BODY"),
+                        has_body,
+                        "{what}: the staged body is the linked doc's, or a fresh mint",
+                    );
+                }
+                assert!(
+                    !decisions.join("nowhere.md").exists(),
+                    "{what}: a create writes nothing through a link",
+                );
+                assert_eq!(
+                    std::fs::read_to_string(&real).expect("the link's target"),
+                    live_body,
+                    "{what}: the link's target is untouched",
+                );
+            }
+        }
+    }
+
     /// The create-only refusal's constructor: its own code in the `create.*` family,
     /// **blocking**, keyed at the doc's `<type>:<slug>` URI (instance-scoped, beside
     /// `create.serial-collision`), carrying the caller's route verbatim.
@@ -4398,6 +4681,7 @@ sections:
     fn already_exists_finding_is_a_blocking_instance_scoped_create_member() {
         let finding = already_exists_finding(
             "idea:a-parked-thought",
+            None,
             Route::human("choose a distinct `--title`"),
         );
         assert_eq!(finding.code, "create.already-exists");
@@ -4417,6 +4701,27 @@ sections:
             Some(Route::human("choose a distinct `--title`")),
             "the route is the caller's, unchanged",
         );
+
+        // An occupant that is not a regular file is the same refusal — code, key, route —
+        // saying what is there instead of claiming a doc exists (`(R6, D-7)`).
+        let over_a_link = already_exists_finding(
+            "idea:a-parked-thought",
+            Some(crate::store::ForeignEntry::Symlink),
+            Route::human("choose a distinct `--title`"),
+        );
+        assert_eq!(
+            over_a_link.key(),
+            finding.key(),
+            "one key for every occupant"
+        );
+        assert_eq!(over_a_link.route, finding.route);
+        assert!(
+            over_a_link.message.contains("a symbolic link")
+                && over_a_link.message.contains("new: true")
+                && !over_a_link.message.contains("copied in"),
+            "the message names the entry and never a doc that is not there: {}",
+            over_a_link.message,
+        );
     }
 
     /// The complete finding a [`create_gated`] refusal carries — every refusal but the
@@ -4424,7 +4729,7 @@ sections:
     fn blocked_finding(refusal: CreateRefusal) -> Finding {
         match refusal {
             CreateRefusal::Blocked(finding) => *finding,
-            CreateRefusal::AlreadyExists { address } => {
+            CreateRefusal::AlreadyExists { address, .. } => {
                 panic!("expected a complete finding, got the create-only refusal at `{address}`")
             }
         }
@@ -4605,11 +4910,12 @@ sections:
                 );
 
                 match outcome {
-                    Err(CreateRefusal::AlreadyExists { address }) => {
+                    Err(CreateRefusal::AlreadyExists { address, foreign }) => {
                         assert_eq!(
                             address, arm.address,
                             "{what}: refused at the occupied address"
                         );
+                        assert_eq!(foreign, None, "{what}: the occupant is a regular file");
                     }
                     other => panic!(
                         "{what}: a `new: true` entry refuses an occupied home; got {other:?}"
