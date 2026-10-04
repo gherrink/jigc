@@ -2763,9 +2763,9 @@ struct DirtyPaths {
     /// ([`unseen_by_status`]). Empty in [`dirty_against_head`]'s own answer;
     /// [`InstallSubject::probe`] fills it.
     ignored: BTreeSet<String>,
-    /// The subset `git status` did not name although git tracks the path and the file on
-    /// disk is not the bytes its index entry holds — an entry flagged assume-unchanged or
-    /// skip-worktree ([`unseen_by_status`]). Filled like [`Self::ignored`].
+    /// The subset `git status` did not name although git tracks the path: its index entry
+    /// is flagged assume-unchanged or skip-worktree, and git calls the file modified once
+    /// asked without the flag ([`unseen_by_status`]). Filled like [`Self::ignored`].
     flagged: BTreeSet<String>,
 }
 
@@ -2863,8 +2863,8 @@ impl DirtyPaths {
 /// [`git_path_ignored`] dropping them from the pathspec — and is why this answer is not the
 /// whole subject: a file git ignores, and a tracked one whose index entry is flagged
 /// assume-unchanged or skip-worktree, have bytes this query cannot see.
-/// [`unseen_by_status`] asks those of the files themselves, and [`InstallSubject::probe`]
-/// joins the two answers.
+/// [`unseen_by_status`] asks about exactly those, and [`InstallSubject::probe`] joins the
+/// two answers.
 ///
 /// `--no-renames` keeps the `-z` record shape to one field per entry; a rename then reports
 /// as its delete + add halves, both of which are differences from `HEAD` and both of which
@@ -2903,19 +2903,20 @@ fn dirty_against_head(jigc_home: &Path, pathspec: &[String]) -> Option<DirtyPath
 }
 
 /// **What `git status` could not see at the install's own paths** — the two classes
-/// [`unseen_by_status`] finds by asking the bytes.
+/// [`unseen_by_status`] finds.
 #[derive(Debug, Default)]
 struct Unseen {
     /// Untracked and unreported, at a path the install replaces: git ignores it.
     ignored: BTreeSet<String>,
-    /// Tracked and unreported, with a file on disk that is not the index entry's bytes.
+    /// Tracked and unreported, under an index entry flagged assume-unchanged or
+    /// skip-worktree, with a file git calls modified once the flag is out of the way.
     flagged: BTreeSet<String>,
 }
 
 /// **The install members whose bytes are in no commit although `git status` says nothing
 /// about them** — the half of *dirty relative to `HEAD`* that [`dirty_against_head`] cannot
-/// answer, asked of the files themselves (the rc.24 fix pass, the ignored sibling of
-/// `(R1, F1)`). `None` when git could not answer.
+/// answer (the rc.24 fix pass, the ignored sibling of `(R1, F1)`). `None` when git could
+/// not answer.
 ///
 /// The predicate this door settled on is about **bytes** — *a path whose index or worktree
 /// bytes differ from `HEAD`* — and `git status` is how it was asked. Status under-reports
@@ -2930,32 +2931,47 @@ struct Unseen {
 ///   exit 0 under assume-unchanged; under skip-worktree they were destroyed and the run
 ///   then failed at its own `git add`.
 ///
-/// **So every present member `status` did not name is asked directly**, in two git calls
-/// over the whole set: `ls-files -s` says which of them git tracks and the blob it holds
-/// for each, and `hash-object` says what blob the file on disk would be — through the
-/// path's own clean filters, so a line-ending conversion is not a difference. A path
-/// `status` did not name is clean against `HEAD` in the index, so the index's blob is
-/// `HEAD`'s.
+/// **So every present member `status` did not name is asked about — of git, not of its
+/// bytes** (corrected by the rc.24 fix pass's completion audit). `git ls-files -v` says which
+/// of them git tracks and whether the index entry carries a flag
+/// ([`crate::task::git_index_flags`]):
 ///
-/// - Tracked, and the hashes agree ⇒ git holds these bytes. Not a subject.
-/// - Tracked, and they differ ⇒ **flagged**, for **every** member: the path is dirty under
-///   the settled predicate, whatever its writer does. A file the install replaces loses the
-///   bytes; one it merges into has them swept into the install commit, which is a pathspec
-///   commit and takes the worktree's bytes at every path it names, whatever the index
-///   entry's flag says (driven: a hidden edit in an assume-unchanged `CLAUDE.md` rode a
-///   first install's commit at exit 0 with no finding).
+/// - Tracked, **no flag** ⇒ `git status` already answered for it, and its answer stands: the
+///   path is clean. Not a subject, under any conversion setting.
+/// - Tracked, **flagged** ⇒ git was told not to look, so it is asked again with the flag out
+///   of the way ([`crate::task::git_modified_without_flags`]) — its own status machinery,
+///   over a scratch index holding `HEAD`. Modified there ⇒ **flagged**, for **every** member:
+///   the path is dirty under the settled predicate, whatever its writer does. A file the
+///   install replaces loses the bytes; one it merges into has them swept into the install
+///   commit, which is a pathspec commit and takes the worktree's bytes at every path it
+///   names, whatever the index entry's flag says (driven: a hidden edit in an
+///   assume-unchanged `CLAUDE.md` rode a first install's commit at exit 0 with no finding).
+///   Unmodified there ⇒ the flag hides nothing, and the path is not a subject.
 /// - Untracked ⇒ **ignored** (status lists every other untracked file), and a subject
 ///   **only where the install replaces the file**. One it merges into keeps its bytes and
 ///   joins no commit, which is why an ignored `CLAUDE.md` is still not a subject.
+///
+/// **This first compared blob ids by hand, and that is struck with its falsifying datum.**
+/// The tracked half was `git hash-object -- <paths>` against the index entry's blob, on the
+/// claim that the path's clean filters made a line-ending conversion *not a difference*, and
+/// any mismatch was read as a flag — the flag itself was never read. `hash-object` does not
+/// consult the index, so it does not apply git's own rule for a blob that already holds
+/// CRLF: with `core.autocrlf=input` (or `* text=auto`) and a committed `CLAUDE.md` holding
+/// CRLF, `git status` was empty, the two ids differed, and `jigc setup` refused the install
+/// as *hidden by its index entry* on every run — `1.0.0-rc.24` installed there at exit 0.
+/// The route cleared flags that were never set and changed nothing, and `--force` announced
+/// a change that did not exist. A clean, unflagged path is now git's to call clean, and the
+/// only comparison made is one git makes.
 ///
 /// A link or a directory at the path is not asked: a replaced member there was refused
 /// before this question ([`replaced_path_refusal`]), and a merge through a link changes
 /// its target by what it would have changed in a file.
 ///
-/// **Fails closed on the file, open on git.** A file `hash-object` cannot read is one
-/// nobody can vouch for, so the whole tracked set is reported flagged. A git that cannot
-/// answer `ls-files` could not have answered `status` either, and that is `None` — the
-/// door's existing answer for a git it cannot use.
+/// **Fails closed where a flag is set, open on git.** A flagged entry git cannot be asked
+/// about without its flag is one nobody can vouch for, so it is reported flagged — and the
+/// route's two commands clear the flag, after which `git status` answers for the path like
+/// any other. A git that cannot answer `ls-files` could not have answered `status` either,
+/// and that is `None` — the door's existing answer for a git it cannot use.
 fn unseen_by_status(
     jigc_home: &Path,
     members: &[InstallMember],
@@ -2972,55 +2988,33 @@ fn unseen_by_status(
     if asked.is_empty() {
         return Some(unseen);
     }
-    // `<mode> <blob> <stage>\t<path>` per NUL-terminated record; only stage 0 is a held
-    // copy (an unmerged path is in `status`, so it is not asked at all).
-    let mut ls: Vec<&str> = vec!["ls-files", "-s", "-z", "--"];
-    ls.extend(asked.iter().map(|member| member.path.as_str()));
-    let out = git_output(jigc_home, ls)?;
-    if !out.status.success() {
-        return None;
-    }
-    let listing = String::from_utf8_lossy(&out.stdout).into_owned();
-    let held: std::collections::BTreeMap<&str, &str> = listing
-        .split('\0')
-        .filter_map(|record| record.split_once('\t'))
-        .filter_map(|(entry, path)| {
-            let mut fields = entry.split(' ');
-            let (_mode, blob, stage) = (fields.next()?, fields.next()?, fields.next()?);
-            (stage == "0").then_some((path, blob))
-        })
-        .collect();
-
-    let (tracked, untracked): (Vec<&InstallMember>, Vec<&InstallMember>) = asked
-        .into_iter()
-        .partition(|member| held.contains_key(member.path.as_str()));
-    unseen.ignored = untracked
-        .into_iter()
+    let paths: Vec<&str> = asked.iter().map(|member| member.path.as_str()).collect();
+    // `path → flagged` for every member git holds a copy of; an unmerged path is in
+    // `status`, so it is not asked at all.
+    let held = crate::task::git_index_flags(jigc_home, &paths)?;
+    unseen.ignored = asked
+        .iter()
+        .filter(|member| !held.contains_key(&member.path))
         .filter(|member| matches!(member.writer, InstallWriter::Replaces { .. }))
         .map(|member| member.path.clone())
         .collect();
-    if tracked.is_empty() {
+    let flagged: Vec<&str> = paths
+        .iter()
+        .copied()
+        .filter(|path| held.get(*path) == Some(&true))
+        .collect();
+    if flagged.is_empty() {
         return Some(unseen);
     }
-    let mut hash: Vec<&str> = vec!["hash-object", "--"];
-    hash.extend(tracked.iter().map(|member| member.path.as_str()));
-    let on_disk: Option<Vec<String>> = git_output(jigc_home, hash)
-        .filter(|out| out.status.success())
-        .map(|out| {
-            String::from_utf8_lossy(&out.stdout)
-                .lines()
-                .map(str::to_string)
-                .collect()
-        })
-        .filter(|blobs: &Vec<String>| blobs.len() == tracked.len());
-    unseen.flagged = match on_disk {
-        Some(blobs) => tracked
+    // A path `status` did not name is clean against `HEAD` in the index, so `HEAD` is what
+    // its index entry holds.
+    unseen.flagged = match crate::task::git_modified_without_flags(jigc_home, "HEAD", &flagged) {
+        Some(modified) => flagged
             .iter()
-            .zip(blobs)
-            .filter(|(member, blob)| held.get(member.path.as_str()) != Some(&blob.as_str()))
-            .map(|(member, _)| member.path.clone())
+            .filter(|path| modified.contains(**path))
+            .map(|path| (*path).to_string())
             .collect(),
-        None => tracked.iter().map(|member| member.path.clone()).collect(),
+        None => flagged.iter().map(|path| (*path).to_string()).collect(),
     };
     Some(unseen)
 }

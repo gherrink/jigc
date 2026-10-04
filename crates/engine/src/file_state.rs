@@ -496,30 +496,38 @@ impl LiveRecord {
 ///   hand-repair sanction when it is at the current version, the corpus-migration route when
 ///   it is stale, unstamped or ahead. Neither is recorded, so either re-fires until the human
 ///   resolves it. **Except a touched doc off its base pin** (the rc.24 fix pass, `(R3, F7)`):
-///   `UNKNOWN` + `task_touched` + `pinned` carries a blob for the path + the on-disk bytes
-///   differ from it → the caller's **conflict-block**, nothing recorded. That is the
-///   **base-pin backstop**: with no recorded hash, the pin is the only remaining witness of
-///   what the task can have started from, and bytes that differ from it are an edit the
-///   staged copy may not carry — adopting them is how a hand edit made after a task's first
-///   write was overwritten at exit 0. A `None` lookup (an untracked doc, no pin, a git
-///   failure) and the caller's path-keyed migration source ([`ConflictBlock::keys`]) keep
-///   the adoption above. **The milestone-record door reaches this arm too**: it has no task
-///   and so no base pin, and hands in the record's blob at `HEAD` — every record write
-///   lands in a commit, so that blob is what jigc last wrote (`reconciliation.md` →
-///   Baseline adoption, the record door's witness).
+///   `UNKNOWN` + `task_touched` + the pin carries a blob for the path + **git calls the
+///   working-tree file modified against it** ([`PinVerdict::Modified`](crate::validate::PinVerdict))
+///   → the caller's **conflict-block**, nothing recorded. That is the **base-pin backstop**:
+///   with no recorded hash, the pin is the only remaining witness of what the task can have
+///   started from, and a file git calls modified against it is an edit the staged copy may
+///   not carry — adopting it is how a hand edit made after a task's first write was
+///   overwritten at exit 0. **The comparison is git's, never this function's**: a file git
+///   calls unmodified is at the pin whatever its bytes are, which is what keeps an
+///   eol-converting or filtering checkout — where an untouched working file is not the
+///   blob's bytes — from blocking a doc nobody edited. Where the pin carries a blob and git
+///   **could not answer** ([`PinVerdict::Unanswered`](crate::validate::PinVerdict)), the arm
+///   refuses under the same identity, saying that and quoting git, and records nothing: a
+///   door that cannot tell does not adopt on a guess. A `None` lookup (an untracked doc, no
+///   pin, an unborn `HEAD`) and the caller's path-keyed migration source
+///   ([`ConflictBlock::keys`]) keep the adoption above. **The milestone-record door reaches
+///   this arm too**: it has no task and so no base pin, and asks about the record's blob at
+///   `HEAD` — every record write lands in a commit, so that blob is what jigc last wrote
+///   (`reconciliation.md` → Baseline adoption, the record door's witness).
 /// - **`IN_SYNC`** (recorded hash matches) → no finding (clean / task-only change —
 ///   the working-area writes are reconciled elsewhere, not here).
 /// - **`DRIFTED + TOUCHED`** (`task_touched`) → **conflict-block**: both sides moved.
 ///   A blocking `reconciliation.conflict-block` finding carrying the **caller-supplied**
 ///   [`ConflictBlock`] presentation (the classifier has no task and no verb of its own);
 ///   no silent merge, the hash and edge index are left untouched. **Except a pulled edit**
-///   (M55 Increment 4, L1): when the on-disk bytes equal the doc's blob at the caller's
-///   base pin (`pinned`, [`crate::validate::PinnedBlob`]), the drift predates the task, so
-///   the `DRIFTED + UNTOUCHED` absorb below runs whole; a pinned edit that fails the
-///   conformance gate keeps the caller's conflict-block unchanged, never a
-///   conformance-block. A `None` lookup — no pin, absent blob, git failure, the record
-///   door (whose `HEAD` witness answers only where the record has no recorded hash, so it
-///   never reaches this arm) — keeps the conflict-block.
+///   (M55 Increment 4, L1): when git calls the working-tree file unmodified against the
+///   doc's blob at the caller's base pin (`pinned`, [`crate::validate::AgainstPin`]), the
+///   drift predates the task, so the `DRIFTED + UNTOUCHED` absorb below runs whole; a
+///   pinned edit that fails the conformance gate keeps the caller's conflict-block
+///   unchanged, never a conformance-block. Every other answer — `None` (no pin, absent
+///   blob, the record door, whose `HEAD` witness answers only where the record has no
+///   recorded hash, so it never reaches this arm), modified, or a git that could not say —
+///   keeps the conflict-block.
 /// - **`DRIFTED + UNTOUCHED`** → the **parse classifier**: re-parse + schema-validate
 ///   the on-disk bytes against `schema`.
 ///   - clean → **absorb**: re-hash the recorded baseline forward, incrementally
@@ -542,10 +550,11 @@ pub fn reconcile_committed(
     from: &str,
     bytes: &[u8],
     task_touched: bool,
-    pinned: &crate::validate::PinnedBlob<'_>,
+    pinned: &crate::validate::AgainstPin<'_>,
     conflict: &ConflictBlock,
     adoption: &crate::validate::AdoptionInputs<'_>,
 ) -> Vec<Finding> {
+    use crate::validate::PinVerdict;
     let current = hash_bytes(bytes);
     match record.get(path) {
         // UNKNOWN → the G4 conformance gate (M21; `project-setup.md` → Flow 2 hardening):
@@ -573,49 +582,58 @@ pub fn reconcile_committed(
         // did not conform when it was copied in, a second task's copy-in over a first one's
         // unrecorded staging), or was dropped on purpose. Adopting the on-disk bytes here
         // is the defect: the promote that follows replaces them with a staged copy that was
-        // never compared against them. The pin is the one witness left — bytes equal to its
-        // blob are what the task started from; bytes that differ are an edit, and the
-        // caller's conflict-block is the answer both orders of that edit get, because the
-        // staged copy cannot say which side of the copy-in it fell on.
-        None if task_touched
-            && !conflict.keys(path)
-            && pinned(path).is_some_and(|blob| hash_bytes(&blob) != current) =>
-        {
-            vec![conflict_block_finding(path, conflict)]
+        // never compared against them. The pin is the one witness left — a file git calls
+        // unmodified against its blob is what the task started from; one git calls modified
+        // is an edit, and the caller's conflict-block is the answer both orders of that
+        // edit get, because the staged copy cannot say which side of the copy-in it fell on.
+        //
+        // **git is asked; no bytes are compared here** (the completion audit's eol
+        // regression). The arm used to hash the pin's blob against the file, and an
+        // untouched working file in a converting checkout is not the blob's bytes — so it
+        // blocked docs nobody had edited, with a route that restored nothing. And a pin that
+        // holds a blob git cannot answer for is refused rather than adopted.
+        None => {
+            let against_pin = (task_touched && !conflict.keys(path))
+                .then(|| pinned(path))
+                .flatten();
+            match against_pin {
+                Some(PinVerdict::Modified) => vec![conflict_block_finding(path, conflict)],
+                Some(PinVerdict::Unanswered(said)) => vec![unanswered_pin_finding(path, &said)],
+                Some(PinVerdict::Unmodified) | None => match conformance_gate(schema, bytes) {
+                    Ok(_) => {
+                        record.record(path, current);
+                        vec![baseline_adopt_finding(path)]
+                    }
+                    Err(cause) => {
+                        let source = String::from_utf8_lossy(bytes);
+                        // The `<slug>` half of the identity this doc is reconciled under —
+                        // the caller hands the identity in `from`, so it is read off that
+                        // rather than re-derived from the path (M50 Inc 2 / T1).
+                        let slug = from.split_once(':').map_or("", |(_, slug)| slug);
+                        match adoption.unadopted(&schema.ty, slug, schema, &source, path) {
+                            Some(finding) => vec![finding],
+                            None => vec![conformance_advisory_finding(
+                                path,
+                                cause,
+                                &source,
+                                adoption.current(&schema.ty),
+                            )],
+                        }
+                    }
+                },
+            }
         }
-        None => match conformance_gate(schema, bytes) {
-            Ok(_) => {
-                record.record(path, current);
-                vec![baseline_adopt_finding(path)]
-            }
-            Err(cause) => {
-                let source = String::from_utf8_lossy(bytes);
-                // The `<slug>` half of the identity this doc is reconciled under — the
-                // caller hands the identity in `from`, so it is read off that rather than
-                // re-derived from the path (M50 Inc 2 / T1).
-                let slug = from.split_once(':').map_or("", |(_, slug)| slug);
-                match adoption.unadopted(&schema.ty, slug, schema, &source, path) {
-                    Some(finding) => vec![finding],
-                    None => vec![conformance_advisory_finding(
-                        path,
-                        cause,
-                        &source,
-                        adoption.current(&schema.ty),
-                    )],
-                }
-            }
-        },
         // IN_SYNC → clean / task-only change: nothing to reconcile here.
         Some(recorded) if recorded == current => Vec::new(),
         // DRIFTED + TOUCHED → conflict-block (both sides moved; no silent merge) — unless
-        // the on-disk bytes equal the doc's blob at the caller's base pin (M55 Increment 4,
-        // L1): then the drift predates the task (a pull), only the task moved since, and the
+        // git calls the file unmodified against the doc's blob at the caller's base pin (M55
+        // Increment 4, L1): then the drift predates the task (a pull), only the task moved since, and the
         // UNTOUCHED arm's whole absorb body runs. A pinned edit that does not conform is
         // never baselined: it keeps the caller's conflict-block unchanged (P1), so a
         // migration's path-keyed exit survives. The seam is asked here and in the `UNKNOWN`
         // arm's backstop above — of a touched path, both times.
         Some(_) if task_touched => {
-            let at_pin = pinned(path).is_some_and(|blob| hash_bytes(&blob) == current);
+            let at_pin = pinned(path) == Some(PinVerdict::Unmodified);
             match at_pin
                 .then(|| conformance_gate(schema, bytes).ok())
                 .flatten()
@@ -870,8 +888,9 @@ pub fn committed_path_recordable(
 /// `conflict` is the caller's [`ConflictBlock`] — the sweep knows the working area's
 /// *path*, never which task (or join) owns it, so the naming and the way out come from the
 /// caller that does (M47 inc-2 / T4). `pinned` is the caller's
-/// [`PinnedBlob`](crate::validate::PinnedBlob) — a doc's committed bytes at the caller's base
-/// pin, which turns a touched doc's pulled drift into an absorb (M55 Increment 4). `adoption`
+/// [`AgainstPin`](crate::validate::AgainstPin) — git's answer about a doc's working-tree file
+/// against the caller's base pin, which turns a touched doc's pulled drift into an absorb
+/// (M55 Increment 4). `adoption`
 /// is the caller's
 /// [`AdoptionInputs`](crate::validate::AdoptionInputs) — three pack facts the engine cannot
 /// produce, feeding [`reconcile_committed`]'s `UNKNOWN` + non-conformant arm so a foreign
@@ -894,7 +913,7 @@ pub fn reconcile_committed_store(
     task_dir: &Path,
     history: &crate::validate::HistoryPredicate<'_>,
     other_refs: &crate::validate::OtherRefsPredicate<'_>,
-    pinned: &crate::validate::PinnedBlob<'_>,
+    pinned: &crate::validate::AgainstPin<'_>,
     conflict: &ConflictBlock,
     adoption: &crate::validate::AdoptionInputs<'_>,
     live: &LiveRecord,
@@ -1064,9 +1083,9 @@ pub fn reconcile_committed_store(
 ///   `file-state.hash-matches` finding (the reused check id) carrying a
 ///   **store-scope route** (review / re-author through the owning workflow), never
 ///   the task-scope `reconcile <path>` route the mutating path emits — **unless the
-///   baseline merely lags `HEAD`** (M55 Increment 4, L1's store arm): when the on-disk
-///   bytes equal the doc's blob at `HEAD` (`head`, the CLI-supplied
-///   [`PinnedBlob`](crate::validate::PinnedBlob) bound to `HEAD`) **and** pass the
+///   baseline merely lags `HEAD`** (M55 Increment 4, L1's store arm): when git calls the
+///   working-tree file unmodified against the doc's blob at `HEAD` (`head`, the CLI-supplied
+///   [`AgainstPin`](crate::validate::AgainstPin) bound to `HEAD`) **and** the bytes pass the
 ///   conformance gate, the drift is committed — a pull, or a conformant edit committed with
 ///   plain git — so the same finding is **advisory**, routed informationally *"the baseline
 ///   lags `HEAD`; absorbed at the next finalize"*. A committed non-conformant edit keeps the
@@ -1110,7 +1129,7 @@ pub fn detect_committed_store(
     record: &FileStateRecord,
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
     repo_root: &Path,
-    head: &crate::validate::PinnedBlob<'_>,
+    head: &crate::validate::AgainstPin<'_>,
     versions: &std::collections::BTreeMap<String, u32>,
     priors: &std::collections::BTreeMap<String, Vec<crate::schema::Schema>>,
 ) -> Vec<Finding> {
@@ -1151,14 +1170,14 @@ pub fn detect_committed_store(
                 // outcomes stand unclassified: an OOB edit that mangles it past parsing is
                 // drift to route, never a file to "adopt".
                 Some(recorded) if recorded == current => {}
-                // Drifted. When the on-disk bytes equal the doc's blob at `HEAD` **and** conform,
+                // Drifted. When git calls the file unmodified against `HEAD` **and** it conforms,
                 // the baseline merely lags `HEAD` — a pull, or a conformant edit committed with
                 // plain git — and the next landed finalize absorbs it (M55 Increment 4, L1's
                 // store arm): advisory, the same `(code, target)` key. Every other drift keeps
                 // the blocking finding, a committed non-conformant edit included. The seam is
                 // asked only here, so a clean store shells out zero times.
                 Some(_) => {
-                    let lags_head = head(&key).is_some_and(|blob| hash_bytes(&blob) == current)
+                    let lags_head = head(&key) == Some(crate::validate::PinVerdict::Unmodified)
                         && conformance_gate(schema, &bytes).is_ok();
                     findings.push(if lags_head {
                         lagging_baseline_finding(&key)
@@ -2025,6 +2044,35 @@ fn conflict_block_finding(path: &str, conflict: &ConflictBlock) -> Finding {
     )
 }
 
+/// The blocking finding for a touched doc with **no recorded baseline** whose pin holds a
+/// blob **git could not answer for** ([`PinVerdict::Unanswered`](crate::validate::PinVerdict);
+/// the rc.24 fix pass, the completion audit).
+///
+/// The base-pin backstop decides `UNKNOWN + TOUCHED` on git's answer, and it has none here.
+/// Adopting would be the guess the backstop exists to stop — the promote that follows
+/// replaces whatever is on disk — so the door refuses, under the conflict-block's own
+/// identity (it is the same refusal: the doc's bytes are neither adopted nor written over
+/// until the comparison can be made) and with its own words, because the caller's conflict
+/// presentation asserts an external edit nobody has established. `said` is the caller's
+/// account of what was asked and what git answered; the route is the one act that can
+/// change the outcome — make git answer, then re-run.
+fn unanswered_pin_finding(path: &str, said: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "reconciliation.conflict-block",
+        format!(
+            "conflict on `{path}`: it has no recorded baseline, and git could not say whether \
+             the file differs from what this door's base holds — {said} — so its bytes are \
+             neither adopted nor written over"
+        ),
+        Some(Location::addressed(path, 1, 1)),
+        Some(crate::finding::Route::human(
+            "nothing was written and nothing was adopted. Resolve the git failure quoted \
+             above, then re-run this command — jigc asks git again and decides from its answer",
+        )),
+    )
+}
+
 /// The informational baseline-adopt finding (`reconciliation.md` → Baseline
 /// adoption: "baseline adopted: `<doc>`"). Advisory — first encounter is the normal
 /// case, not a problem to repair. Carries an **informational route** (the advisory-route
@@ -2476,7 +2524,7 @@ Referrers must point at the new decision.
             /* task_touched */ true,
             &|path: &str| {
                 asked.borrow_mut().push(path.to_string());
-                Some(pulled.to_vec())
+                Some(crate::validate::PinVerdict::Unmodified)
             },
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
@@ -2534,7 +2582,7 @@ Referrers must point at the new decision.
             ADR_B_FROM,
             broken,
             /* task_touched */ true,
-            &|_| Some(broken.to_vec()),
+            &|_| Some(crate::validate::PinVerdict::Unmodified),
             &conflict,
             &crate::validate::AdoptionInputs::inert(),
         );
@@ -2578,7 +2626,7 @@ Referrers must point at the new decision.
             ADR_B_FROM,
             ADR_B_EDITED_SUPERSEDES.as_bytes(),
             /* task_touched */ true,
-            &|_| Some(ADR_B_BASE.as_bytes().to_vec()),
+            &|_| Some(crate::validate::PinVerdict::Modified),
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
         );
@@ -2590,10 +2638,73 @@ Referrers must point at the new decision.
         );
         assert_eq!(record.get(ADR_B_PATH), Some(baseline.as_str()));
         assert!(index.edges.is_empty());
+
+        // A git that could not answer is not a pull either: the drift from the recorded
+        // hash is established, so the caller's conflict-block stands, unchanged.
+        let findings = reconcile_committed(
+            &mut record,
+            &mut index,
+            &schema,
+            ADR_B_PATH,
+            ADR_B_FROM,
+            ADR_B_EDITED_SUPERSEDES.as_bytes(),
+            /* task_touched */ true,
+            &|_| {
+                Some(crate::validate::PinVerdict::Unanswered(
+                    "`git diff` exited 128".to_string(),
+                ))
+            },
+            &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
+        );
+        assert_eq!(
+            findings,
+            vec![conflict_block_finding(ADR_B_PATH, &test_conflict())],
+            "an unanswered pin never absorbs"
+        );
+        assert_eq!(record.get(ADR_B_PATH), Some(baseline.as_str()));
+    }
+
+    /// **The verdict is git's, not a byte comparison** (the rc.24 fix pass, the completion
+    /// audit's eol regression). The L1 arm used to hash the pin's blob against the file on
+    /// disk; a working file in a converting checkout is not the blob's bytes, so a doc
+    /// nobody edited read as *edited during the task*. Here the on-disk bytes are **not**
+    /// the recorded baseline's and the seam says git calls the file unmodified — the mixed
+    /// file an in-place edit of a CRLF checkout leaves — and the arm absorbs.
+    #[test]
+    fn a_touched_drifted_doc_git_calls_unmodified_is_absorbed_whatever_its_bytes() {
+        let schema = adr_schema();
+        let mut record = FileStateRecord::new();
+        record.record(ADR_B_PATH, hash_bytes(ADR_B_BASE.as_bytes()));
+        let mut index = EdgeIndex::default();
+        let crlf = ADR_B_BASE.replace('\n', "\r\n");
+        assert_ne!(
+            crlf, ADR_B_BASE,
+            "the premise: another byte form of the doc"
+        );
+
+        let findings = reconcile_committed(
+            &mut record,
+            &mut index,
+            &schema,
+            ADR_B_PATH,
+            ADR_B_FROM,
+            crlf.as_bytes(),
+            /* task_touched */ true,
+            &|_| Some(crate::validate::PinVerdict::Unmodified),
+            &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
+        );
+        assert_eq!(findings, vec![absorb_finding(ADR_B_PATH)]);
+        assert_eq!(
+            record.get(ADR_B_PATH),
+            Some(hash_bytes(crlf.as_bytes()).as_str()),
+            "the baseline moves to the bytes on disk"
+        );
     }
 
     /// **L1 pull absorption, (iv)** (M55 Increment 4, P2/P3): a `None` lookup — no pin, an
-    /// absent blob, a git failure, the record door — leaves **every** arm's verdict as it was,
+    /// absent blob, the record door — leaves **every** arm's verdict as it was,
     /// and only a **touched** path ever consults the seam — drifted (the L1 arm) or with no
     /// record (the base-pin backstop, `(R3, F7)`) — so a clean sweep shells out zero times.
     #[test]
@@ -4001,7 +4112,9 @@ Referrers must point at the new decision.
     }
 
     /// **L1's store arm** (M55 Increment 4, P4): the twin asks one more fact of a recorded doc
-    /// that has drifted — its committed bytes at `HEAD` — and grades the drift by it.
+    /// that has drifted — whether git calls its working-tree file modified against `HEAD` —
+    /// and grades the drift by it. The seam is modelled here as git would answer over these
+    /// bytes with no conversion configured (unmodified iff they are the `HEAD` blob's).
     ///
     /// - **(i)** bytes equal the `HEAD` blob **and** conform → the one finding is
     ///   `file-state.hash-matches` at **advisory**, keyed and messaged as the blocking drift,
@@ -4042,9 +4155,19 @@ Referrers must point at the new decision.
         }
         let record_before = record.clone();
         let asked = std::cell::RefCell::new(Vec::new());
+        let on_disk: BTreeMap<String, Vec<u8>> = docs
+            .iter()
+            .map(|(slug, on_disk, _)| (format!("decisions/{slug}.md"), on_disk.as_bytes().to_vec()))
+            .collect();
         let head = |path: &str| {
             asked.borrow_mut().push(path.to_string());
-            at_head.get(path).cloned()
+            at_head.get(path).map(|committed| {
+                if on_disk.get(path) == Some(committed) {
+                    crate::validate::PinVerdict::Unmodified
+                } else {
+                    crate::validate::PinVerdict::Modified
+                }
+            })
         };
 
         let findings = detect_committed_store(
@@ -4834,11 +4957,13 @@ sections: []
     /// arm: `(on-disk bytes, touched, what the pin answers, whose conflict presentation)` →
     /// the codes emitted, and whether the bytes were recorded.
     ///
-    /// Only one cell blocks — *touched, a blob at the pin, bytes that differ from it* — and
-    /// it blocks a non-conformant edit too, ahead of the advisory that used to say *fix the
+    /// Two answers block — *touched, a blob at the pin, and git calls the file modified
+    /// against it*, and *touched, a blob at the pin, and git could not say* — and the first
+    /// blocks a non-conformant edit too, ahead of the advisory that used to say *fix the
     /// file* one statement before the promote overwrote it. Every other cell is the arm as
-    /// it was: untouched never asks the pin; bytes at the pin adopt; a pin with no blob
-    /// adopts; and the migration task's own source keeps the arm whole, so its
+    /// it was: untouched never asks the pin; a file git calls unmodified adopts **whatever
+    /// its bytes** (the eol cell — the answer is git's, not a hash comparison); a pin with no
+    /// blob adopts; and the migration task's own source keeps the arm whole, so its
     /// `jigc unmanage <source>` exit stays an exit.
     #[test]
     fn unknown_and_touched_is_decided_by_the_base_pin() {
@@ -4846,7 +4971,14 @@ sections: []
         let base = ADR_B_BASE.as_bytes();
         let edited = ADR_B_EDITED_SUPERSEDES.as_bytes();
         let broken = ADR_B_EDITED_BAD_DATE.as_bytes();
-        let at_base = |_: &str| Some(ADR_B_BASE.as_bytes().to_vec());
+        use crate::validate::PinVerdict;
+        let modified = |_: &str| Some(PinVerdict::Modified);
+        let unmodified = |_: &str| Some(PinVerdict::Unmodified);
+        let unanswered = |_: &str| {
+            Some(PinVerdict::Unanswered(
+                "`git diff` exited 128: boom".to_string(),
+            ))
+        };
         let no_blob = |_: &str| None;
         let general = test_conflict();
         let migrating_this = ConflictBlock::task("migrate-it", Some(ADR_B_PATH));
@@ -4856,7 +4988,7 @@ sections: []
             name: &'a str,
             bytes: &'a [u8],
             touched: bool,
-            pinned: &'a crate::validate::PinnedBlob<'a>,
+            pinned: &'a crate::validate::AgainstPin<'a>,
             conflict: &'a ConflictBlock,
             codes: &'a [(&'a str, Severity)],
             recorded: bool,
@@ -4866,29 +4998,65 @@ sections: []
         const UNVETTED: (&str, Severity) = ("reconciliation.conformance-block", Severity::Advisory);
         let cells = [
             Cell {
-                name: "touched, off the pin → the backstop blocks",
+                name: "touched, git says modified → the backstop blocks",
                 bytes: edited,
                 touched: true,
-                pinned: &at_base,
+                pinned: &modified,
                 conflict: &general,
                 codes: &[CONFLICT],
                 recorded: false,
             },
             Cell {
-                name: "touched, off the pin, non-conformant → blocks, never the advisory",
+                name: "touched, git says modified, non-conformant → blocks, never the advisory",
                 bytes: broken,
                 touched: true,
-                pinned: &at_base,
+                pinned: &modified,
                 conflict: &general,
                 codes: &[CONFLICT],
                 recorded: false,
             },
             Cell {
-                name: "touched, at the pin → adopts",
+                name: "touched, git says unmodified → adopts",
                 bytes: base,
                 touched: true,
-                pinned: &at_base,
+                pinned: &unmodified,
                 conflict: &general,
+                codes: &[ADOPT],
+                recorded: true,
+            },
+            Cell {
+                name: "touched, other bytes git calls unmodified (an eol form) → adopts",
+                bytes: edited,
+                touched: true,
+                pinned: &unmodified,
+                conflict: &general,
+                codes: &[ADOPT],
+                recorded: true,
+            },
+            Cell {
+                name: "touched, git could not answer → refuses, nothing adopted",
+                bytes: base,
+                touched: true,
+                pinned: &unanswered,
+                conflict: &general,
+                codes: &[CONFLICT],
+                recorded: false,
+            },
+            Cell {
+                name: "untouched, git could not answer → adopts (the seam is never asked)",
+                bytes: base,
+                touched: false,
+                pinned: &unanswered,
+                conflict: &general,
+                codes: &[ADOPT],
+                recorded: true,
+            },
+            Cell {
+                name: "the migration source, git could not answer → keeps the arm",
+                bytes: edited,
+                touched: true,
+                pinned: &unanswered,
+                conflict: &migrating_this,
                 codes: &[ADOPT],
                 recorded: true,
             },
@@ -4911,28 +5079,28 @@ sections: []
                 recorded: false,
             },
             Cell {
-                name: "untouched, off the pin → adopts (a first encounter)",
+                name: "untouched, git says modified → adopts (a first encounter)",
                 bytes: edited,
                 touched: false,
-                pinned: &at_base,
+                pinned: &modified,
                 conflict: &general,
                 codes: &[ADOPT],
                 recorded: true,
             },
             Cell {
-                name: "the migration source, off the pin → keeps the arm (the unmanage exit)",
+                name: "the migration source, git says modified → keeps the arm (the unmanage exit)",
                 bytes: edited,
                 touched: true,
-                pinned: &at_base,
+                pinned: &modified,
                 conflict: &migrating_this,
                 codes: &[ADOPT],
                 recorded: true,
             },
             Cell {
-                name: "a migration task's OTHER doc, off the pin → blocks",
+                name: "a migration task's OTHER doc, git says modified → blocks",
                 bytes: edited,
                 touched: true,
-                pinned: &at_base,
+                pinned: &modified,
                 conflict: &migrating_other,
                 codes: &[CONFLICT],
                 recorded: false,
@@ -4982,11 +5150,40 @@ sections: []
             ADR_B_FROM,
             edited,
             true,
-            &at_base,
+            &modified,
             &general,
             &crate::validate::AdoptionInputs::inert(),
         );
         assert_eq!(findings, vec![conflict_block_finding(ADR_B_PATH, &general)]);
+
+        // The unanswered refusal is the same identity with its own words: it quotes what
+        // git said, claims no external edit, and routes at the one act that can change it.
+        let findings = reconcile_committed(
+            &mut FileStateRecord::new(),
+            &mut EdgeIndex::default(),
+            &schema,
+            ADR_B_PATH,
+            ADR_B_FROM,
+            base,
+            true,
+            &unanswered,
+            &general,
+            &crate::validate::AdoptionInputs::inert(),
+        );
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        let refusal = &findings[0];
+        assert_eq!(refusal.code, "reconciliation.conflict-block");
+        assert!(
+            refusal.message.contains("git could not say")
+                && refusal.message.contains("`git diff` exited 128: boom")
+                && !refusal.message.contains("external edit"),
+            "it says what happened and nothing it has not established: {refusal:?}"
+        );
+        let route = refusal.route.as_ref().expect("a blocking finding routes");
+        assert!(
+            route.as_str().starts_with("nothing was written"),
+            "and routes at making git answer: {route:?}"
+        );
     }
 
     /// The ADR home under a temp repo root, and the bytes written there.

@@ -193,6 +193,8 @@ const AIM_HOME: &str = "git_at";
 /// `stash`) beside the two above.**]** **[And a fourth**, `record_shape_block`: the record
 /// doors' refusal over a record whose home is not a regular file prints the `HEAD`-sourced
 /// restore its sibling `record_conflict_block` does (the store doors' half of `(R6, D-7)`).**]**
+/// **[And a fifth**, `task::git_against_rev`: where the base-pin backstop cannot get git's
+/// answer, its refusal quotes the comparison it asked, aimed, so the reader can run it.**]**
 ///
 /// The remaining 120 lines are `bail!`/`with_context` diagnostics **quoting the invocation
 /// that failed** — law 1's second declared-absolute reason, and outside a route by
@@ -253,6 +255,16 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
          <path>`, one per staged path the amend would otherwise fold into the commit it is \
          rewriting. Aimed because the operand is a repo-relative pathspec git resolves \
          against the repository, not against the caller's cwd",
+    ),
+    (
+        "crates/cli/src/task.rs",
+        "git_against_rev",
+        Aim::Aimed,
+        "the base-pin backstop's *git could not answer* refusal (the rc.24 fix pass's \
+         completion audit) — it quotes the comparison jigc asked (`git ls-tree <pin> -- \
+         <path>`, `git diff --quiet <pin> -- <path>`, `git ls-files -v -- <path>`) so the \
+         reader can run it and see git's answer, and each carries a repo-relative path \
+         operand, so each is aimed at the checkout it was asked in",
     ),
     (
         "crates/cli/src/migrate.rs",

@@ -138,34 +138,59 @@ pub type HistoryPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 /// failing git read answers **carried**, so the index drop is never offered on a guess.
 pub type OtherRefsPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 
-/// The CLI-supplied **committed bytes at a pin** — a `Fn(&str) -> Option<Vec<u8>>` taking a
-/// **repo-relative** path and answering its blob at the caller's base pin **in the form the
-/// working-tree file is in** (`git cat-file --filters <pin>:<path>` — the bytes are compared
-/// with a working-tree file, so they are the blob after git's eol / filter conversion — or
-/// the raw object where the file holds exactly that, which is how jigc's own writes land),
-/// threaded through [`validate_task`] into
+/// **What git answered** when the CLI asked it whether a working-tree file differs from what
+/// a pin holds for its path — the value the [`AgainstPin`] seam hands the classifier.
+///
+/// It is a verdict and not bytes on purpose (the rc.24 fix pass, the completion audit's
+/// eol regression). The seam used to hand over the pin's blob and the engine hashed it
+/// against the file on disk, which is jigc re-deriving by its own arithmetic an answer git
+/// already owns: a working-tree file is the blob *after* this repository's conversion rules
+/// (`core.autocrlf`, `text`/`eol` attributes, a clean/smudge filter), and it has as many
+/// faithful byte forms as there are writers. Two were enumerated (the checked-out form, the
+/// raw blob) and a third was not — the **mixed** file an in-place edit of a checked-out doc
+/// leaves — so in an eol-converting checkout a doc nobody had edited conflict-blocked, and the
+/// route's `git checkout` rewrote nothing because git called the file unmodified. The
+/// question is git's, so git answers it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PinVerdict {
+    /// git calls the working-tree file **unmodified** against the pin's blob, under this
+    /// repository's conversion rules — whatever its bytes are.
+    Unmodified,
+    /// git calls it **modified**.
+    Modified,
+    /// The pin holds a blob for the path and **git could not say** whether the file differs
+    /// from it. Carries what was asked and what git said, in the caller's words, for the
+    /// refusal that results: a door that cannot tell does not guess.
+    Unanswered(String),
+}
+
+/// The CLI-supplied **question to git about a pin** — a `Fn(&str) -> Option<PinVerdict>`
+/// taking a **repo-relative** path and answering whether git calls its working-tree file
+/// modified against the path's blob at the caller's base pin (`git diff <pin> -- <path>`,
+/// asked again without the index entry's flag where it carries assume-unchanged or
+/// skip-worktree), threaded through [`validate_task`] into
 /// [`crate::file_state::reconcile_committed_store`] → [`crate::file_state::reconcile_committed`]
 /// (M55 Increment 4, P2). Built on the [`HistoryPredicate`] mold: the CLI owns the shell-out,
-/// the engine hashes the bytes with [`crate::file_state::hash_bytes`] — the drift hash is
-/// blake3, never git's blob id, so the seam hands over bytes.
+/// the engine acts on the answer and compares no bytes with a git object itself.
 ///
 /// It is the **L1 pull-absorption** input (`design/reconciliation.md` → the `DRIFTED + TOUCHED`
-/// row): a committed doc drifted from its recorded baseline whose on-disk bytes equal its blob
-/// at the task's pin was moved by a pull *before* the task began, not during it, so a task that
-/// touches it absorbs the pulled edit instead of conflict-blocking. `None` — an absent blob, an
-/// unborn pin, any git failure, or a caller that hands this arm no pin (the milestone-record
-/// door, P3: its lookup answers only where the record has no recorded hash) — keeps that
-/// arm's conflict-block, the conservative default.
+/// row): a committed doc drifted from its recorded baseline whose working-tree file git calls
+/// unmodified against the task's pin was moved by a pull *before* the task began, not during
+/// it, so a task that touches it absorbs the pulled edit instead of conflict-blocking. Every
+/// other answer — `None` (an absent blob, a caller that hands this arm no pin: the
+/// milestone-record door, P3, whose lookup answers only where the record has no recorded
+/// hash), [`PinVerdict::Modified`], [`PinVerdict::Unanswered`] — keeps that arm's
+/// conflict-block, the conservative default.
 ///
 /// It is also the **base-pin backstop**'s input (the rc.24 fix pass, `(R3, F7)`;
 /// `design/reconciliation.md` → Baseline adoption): a *touched* doc with **no** recorded
-/// baseline whose on-disk bytes differ from its blob at the pin conflict-blocks instead of
-/// being adopted. There `None` keeps the adoption — with neither a record nor a blob there is
-/// nothing to compare against.
+/// baseline that git calls modified against the pin conflict-blocks instead of being adopted,
+/// and one git cannot answer for is refused the same way, saying so. There `None` keeps the
+/// adoption — with neither a record nor a blob there is nothing to compare against.
 ///
 /// Consulted **only** on a touched path that is drifted or has no record, so a clean sweep
 /// shells out zero times.
-pub type PinnedBlob<'a> = dyn Fn(&str) -> Option<Vec<u8>> + 'a;
+pub type AgainstPin<'a> = dyn Fn(&str) -> Option<PinVerdict> + 'a;
 
 /// Validate one task working area — the single engine both `task validate` and
 /// `finalize` phase 2 call (`validation.md` → How it gates `finalize`: one engine,
@@ -234,9 +259,9 @@ pub type PinnedBlob<'a> = dyn Fn(&str) -> Option<Vec<u8>> + 'a;
 /// milestone join gate passes its own (no single task owns the merged area) — so the naming
 /// and the way out come from the caller that knows, never a placeholder minted here.
 ///
-/// `pinned` is the CLI-supplied [`PinnedBlob`] that same `DRIFTED + TOUCHED` classifier
-/// consults before conflict-blocking (M55 Increment 4): a drifted doc whose on-disk bytes
-/// equal its blob at the caller's base pin was moved before the task began — a pull — and is
+/// `pinned` is the CLI-supplied [`AgainstPin`] that same `DRIFTED + TOUCHED` classifier
+/// consults before conflict-blocking (M55 Increment 4): a drifted doc git calls unmodified
+/// against its blob at the caller's base pin was moved before the task began — a pull — and is
 /// absorbed instead. The per-task gate binds it to the task's base pin (a sub-task's is its
 /// milestone's), the milestone join to the milestone's `base.sha`; `&|_| None` leaves the arm
 /// byte-identical to its pre-M55 behaviour.
@@ -327,7 +352,7 @@ pub fn validate_task(
     other_refs: &OtherRefsPredicate<'_>,
     changed_code: &BTreeSet<String>,
     base_code_tree_root: &Path,
-    pinned: &PinnedBlob<'_>,
+    pinned: &AgainstPin<'_>,
     conflict: &crate::file_state::ConflictBlock,
     adoption: &AdoptionInputs<'_>,
     live_record: &crate::file_state::LiveRecord,
@@ -629,7 +654,7 @@ pub struct PriorHomeInstance {
 ///
 /// - **doc↔code** — every committed doc's `code-anchor` leaves resolved against the working tree via the CLI-supplied subprocess `invoke_doc_code` seam (the [`validate_store`] body, lifted to [`store_doc_code`]). The only family that can raise a `pack-probe-integrity.*` meta-finding (it is the one subprocess probe).
 /// - **workflow↔refs** — each cascade-resolved workflow definition (the CLI enumerates + reads them, address-sorted, feeding each as a [`StoreWorkflow`] bundling its id, raw bytes, and **origin-pack** command catalog) run through the **task-independent** store-scope checks ([`crate::compose::workflow_refs_store`]): `include-resolves`, `include-cycle-absent`, `body-include-only`, the three marker-shadow checks, `fan-out-join-paired`, the **catalog-membership-only** command-ref path, and the **doctype-membership-only** schema-ref path (`schema-ref-resolves`, M43 — resolved against the **composed cascade's** doctype set derived from `schemas`, deliberately NOT per-origin: a methodology step legitimately solicits a dev doctype, `surface-contract.md` → The schema projection). The task-data checks stay at `jigc start`. `workflow_source` is the CLI's layer-aware [`StepSource`](crate::compose::StepSource), **scoped per-workflow** to that definition's origin pack via [`StepSource::scope_to_workflow`](crate::compose::StepSource::scope_to_workflow) so a loser-pack workflow's includes + command-refs resolve against ITS OWN pack, never the precedence-winner's catalog (`multi-pack.md` → Pack-local body-reference resolution: `command-ref-resolves` and the include checks fire **per-definition against that definition's own pack**). For a single pack each origin *is* the one pack, so the resolution is byte-identical to a flat catalog (the no-composition floor).
-/// - **file↔CLI-state** — the read-only committed-store hash twin ([`crate::file_state::detect_committed_store`]): each committed managed doc's on-disk hash against its `record` entry, **detect without absorb** (`record` is borrowed `&`, no write, never via `reconcile_committed_store`). `head` is the CLI-supplied [`PinnedBlob`] bound to `HEAD` (M55 Increment 4, L1's store arm): a drift whose bytes equal the doc's `HEAD` blob and conform grades **advisory** — the baseline lags `HEAD` — and `&|_| None` keeps every drift blocking. Its rename twin ([`crate::file_state::detect_committed_store_renames`]) takes `history`, the CLI-supplied [`HistoryPredicate`] the task gate consults too (M55 Increment 5 / T2): a recorded doc missing with no history at `HEAD` is the **advisory** dangling baseline, at both scopes; `&|_| true` keeps every such row the blocking weak deletion. `other_refs` ([`OtherRefsPredicate`]) routes that advisory as the task gate does (M55 completion triage, CR2): at switching back when a branch still carries the doc, at `jigc unmanage <path>` when none does.
+/// - **file↔CLI-state** — the read-only committed-store hash twin ([`crate::file_state::detect_committed_store`]): each committed managed doc's on-disk hash against its `record` entry, **detect without absorb** (`record` is borrowed `&`, no write, never via `reconcile_committed_store`). `head` is the CLI-supplied [`AgainstPin`] bound to `HEAD` (M55 Increment 4, L1's store arm): a drift git calls unmodified against the doc's `HEAD` blob, and that conforms, grades **advisory** — the baseline lags `HEAD` — and `&|_| None` keeps every drift blocking. Its rename twin ([`crate::file_state::detect_committed_store_renames`]) takes `history`, the CLI-supplied [`HistoryPredicate`] the task gate consults too (M55 Increment 5 / T2): a recorded doc missing with no history at `HEAD` is the **advisory** dangling baseline, at both scopes; `&|_| true` keeps every such row the blocking weak deletion. `other_refs` ([`OtherRefsPredicate`]) routes that advisory as the task gate does (M55 completion triage, CR2): at switching back when a branch still carries the doc, at `jigc unmanage <path>` when none does.
 ///
 /// The engine stays **domain-empty**: the caller (CLI) resolves the cascade and feeds in
 /// the schemas, the per-workflow definition bundles (id + bytes + origin catalog), the step
@@ -656,7 +681,7 @@ pub fn validate_store_families(
     workflows: &[StoreWorkflow],
     workflow_source: &dyn crate::compose::StepSource,
     record: &FileStateRecord,
-    head: &PinnedBlob<'_>,
+    head: &AgainstPin<'_>,
     history: &HistoryPredicate<'_>,
     other_refs: &OtherRefsPredicate<'_>,
     versions: &BTreeMap<String, u32>,

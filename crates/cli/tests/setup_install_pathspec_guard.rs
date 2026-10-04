@@ -88,7 +88,18 @@
 //! paths and never edited them re-runs `setup` at exit 0 forever (cells 31–32). A flagged
 //! path whose bytes differ is dirty like any other, at every member (cell 33).
 //!
-//! Thirty-six cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
+//! **Where git already answers, git is asked** (cells 37–40; the rc.24 fix pass's completion
+//! audit). The tracked half of that ask first compared `git hash-object` with the index
+//! entry's blob id and read any mismatch as a flag. A committed `CLAUDE.md` holding CRLF
+//! under `core.autocrlf=input` hashes differently while `git status` is empty, so a clean,
+//! unflagged repository refused the install on every run. The flag is read from git now
+//! (`git ls-files -v`), an unflagged path is `git status`'s to call clean, and a flagged one
+//! is asked about with git's own status machinery, the flag out of the way. Cell 37
+//! iterates the conversion settings × the forms a committed file can hold, cell 39 keeps the
+//! refusal a hidden change earns under the same conversions, and cell 40 repeats the
+//! must-not-refuse cell in the layouts this door is reachable in.
+//!
+//! Forty cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
 //! `git init` repos.
 
 use std::fs;
@@ -2602,4 +2613,383 @@ fn a_failed_run_records_what_it_left_at_an_ignored_path() {
         "and a plain re-run completes: {}",
         said(&out)
     );
+}
+
+/// A way git is configured to convert between a blob and its working-tree file — the axis
+/// the rc.24 fix pass's completion audit exposed at this door.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Conversion {
+    /// No conversion at all — the control.
+    None,
+    /// `core.autocrlf=true` — the Git for Windows default.
+    AutocrlfTrue,
+    /// `core.autocrlf=input`.
+    AutocrlfInput,
+    /// A committed `.gitattributes` holding `* text=auto`.
+    TextAuto,
+    /// A committed `.gitattributes` holding `* text eol=crlf`.
+    EolCrlf,
+    /// A clean/smudge filter over `*.md` (keyword expansion: the working file is never the
+    /// blob's bytes).
+    Filter,
+}
+
+/// The line ending the adopter's files were **committed** with — what the blob holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Blob {
+    Lf,
+    Crlf,
+}
+
+impl Blob {
+    fn eol(self) -> &'static str {
+        match self {
+            Blob::Lf => "\n",
+            Blob::Crlf => "\r\n",
+        }
+    }
+}
+
+impl Conversion {
+    /// Every `(conversion, committed form)` cell **git itself calls clean**. The one cell
+    /// left out is `EolCrlf × Crlf`: a blob holding CRLF under a non-`auto` text attribute
+    /// is a file git reports modified as soon as it looks (`git add --renormalize` is its
+    /// own route), so there is no clean repository to refuse there.
+    const CLEAN_CELLS: [(Conversion, Blob); 10] = [
+        (Conversion::None, Blob::Lf),
+        (Conversion::None, Blob::Crlf),
+        (Conversion::AutocrlfTrue, Blob::Lf),
+        (Conversion::AutocrlfTrue, Blob::Crlf),
+        (Conversion::AutocrlfInput, Blob::Lf),
+        (Conversion::AutocrlfInput, Blob::Crlf),
+        (Conversion::TextAuto, Blob::Lf),
+        (Conversion::TextAuto, Blob::Crlf),
+        (Conversion::EolCrlf, Blob::Lf),
+        (Conversion::Filter, Blob::Lf),
+    ];
+
+    /// A born repository holding an adopter's committed `CLAUDE.md` and
+    /// `.claude/settings.json` in `blob` form, with this conversion then in force — and
+    /// `git status` empty, which is the premise of every cell that uses it.
+    fn clean_repo(self, blob: Blob, tag: &str) -> (TempDir, TempDir) {
+        let (repo_dir, home) = born_repo(tag);
+        let repo = repo_dir.path();
+        // Mask whatever this machine's ambient config converts.
+        git(repo, &["config", "core.autocrlf", "false"]);
+        if self == Conversion::Filter {
+            // In force before the files are committed, so the blob is the cleaned form.
+            git(
+                repo,
+                &[
+                    "config",
+                    "filter.rev.clean",
+                    "sed -e 's/[$]Rev: [0-9]* [$]/$Rev$/'",
+                ],
+            );
+            git(
+                repo,
+                &[
+                    "config",
+                    "filter.rev.smudge",
+                    "sed -e 's/[$]Rev[$]/$Rev: 42 $/'",
+                ],
+            );
+            write(repo, ".gitattributes", "*.md filter=rev\n");
+        }
+        let eol = blob.eol();
+        write(
+            repo,
+            "CLAUDE.md",
+            &format!("# House rules{eol}{eol}Revision $Rev$ — never deploy on a Friday.{eol}"),
+        );
+        write(
+            repo,
+            ".claude/settings.json",
+            &format!("{{{eol}  \"env\": {{ \"TEAM\": \"1\" }}{eol}}}{eol}"),
+        );
+        git(repo, &["add", "-A"]);
+        git(repo, &["commit", "-q", "-m", "the adopter's own files"]);
+        match self {
+            Conversion::None => {}
+            Conversion::AutocrlfTrue => {
+                git(repo, &["config", "core.autocrlf", "true"]);
+            }
+            Conversion::AutocrlfInput => {
+                git(repo, &["config", "core.autocrlf", "input"]);
+            }
+            Conversion::TextAuto | Conversion::EolCrlf => {
+                let attributes = if self == Conversion::TextAuto {
+                    "* text=auto\n"
+                } else {
+                    "* text eol=crlf\n"
+                };
+                write(repo, ".gitattributes", attributes);
+                git(repo, &["add", "--", ".gitattributes"]);
+                git(repo, &["commit", "-q", "-m", "attributes"]);
+            }
+            Conversion::Filter => {
+                // Check the file out again, so the working file is the smudged form.
+                fs::remove_file(repo.join("CLAUDE.md")).expect("remove");
+                git(repo, &["checkout", "--", "CLAUDE.md"]);
+                assert!(
+                    read(repo, "CLAUDE.md").contains("$Rev: 42 $"),
+                    "the premise: the working file is not the blob's bytes"
+                );
+            }
+        }
+        assert_eq!(
+            git(repo, &["status", "--porcelain"]),
+            "",
+            "{self:?}/{blob:?}: the premise — git calls the repository clean"
+        );
+        (repo_dir, home)
+    }
+}
+
+/// (37) **A clean, committed install path never refuses, under any conversion** — the
+/// must-not-refuse half of the status-blind ask (the rc.24 fix pass's completion audit).
+///
+/// The regression, driven on the release binary at `5f5b273a`: a committed `CLAUDE.md`
+/// whose blob holds CRLF, `core.autocrlf=input`, `git status` empty — `jigc setup` exited 1
+/// with `setup.dirty-install-path`, *"tracked, with the change hidden by its index entry
+/// (assume-unchanged or skip-worktree)"*. No flag was set and nothing was changed: the door
+/// compared `git hash-object` with the index entry's blob id, and `hash-object` does not
+/// apply git's rule for a blob that already holds CRLF. The route's two commands cleared
+/// flags that were not there, so every re-run refused; `--force` announced a change that did
+/// not exist; `1.0.0-rc.24` installed at exit 0.
+///
+/// So this cell iterates the axis the instance sat on, not the instance: every conversion
+/// setting × both forms the committed file can hold, restricted to the cells git itself
+/// calls clean ([`Conversion::CLEAN_CELLS`]). In each one a first install lands, leaves the
+/// repository clean, and a second run — over a `CLAUDE.md` the install has now merged into
+/// and files jigc wrote with `\n` endings — is clean again. A flag over a file nobody edited
+/// changes nothing there either.
+#[test]
+fn a_clean_install_path_never_refuses_under_any_conversion() {
+    std::thread::scope(|scope| {
+        for (conversion, blob) in Conversion::CLEAN_CELLS {
+            scope.spawn(move || {
+                let what = format!("{conversion:?}/{blob:?}");
+                let (repo, home) = conversion.clean_repo(blob, "converted");
+                let (repo, home) = (repo.path(), home.path());
+                for run in ["the first install", "the re-run"] {
+                    let out = jigc(repo, home, &["setup"]);
+                    assert_eq!(
+                        out.status.code(),
+                        Some(0),
+                        "{what}: {run} lands — nothing here was edited: {}",
+                        said(&out)
+                    );
+                    assert!(
+                        !said(&out).contains(DIRTY_CODE),
+                        "{what}: {run} raises no dirty-path finding: {}",
+                        said(&out)
+                    );
+                    assert_eq!(
+                        git(repo, &["status", "--porcelain"]),
+                        "",
+                        "{what}: {run} leaves the repository clean"
+                    );
+                }
+                assert!(
+                    read(repo, "CLAUDE.md").contains("never deploy on a Friday"),
+                    "{what}: the adopter's file was merged into, not replaced"
+                );
+
+                // A flag over unedited bytes hides nothing, whatever form they are in.
+                for path in ["CLAUDE.md", ".jigc/AGENT.md", ".claude/settings.json"] {
+                    git(repo, &["update-index", "--assume-unchanged", "--", path]);
+                }
+                let out = jigc(repo, home, &["setup"]);
+                assert_eq!(
+                    out.status.code(),
+                    Some(0),
+                    "{what}: a flagged, unedited path is not a subject: {}",
+                    said(&out)
+                );
+                assert!(
+                    !said(&out).contains(DIRTY_CODE),
+                    "{what}: no finding over a flag that hides nothing: {}",
+                    said(&out)
+                );
+            });
+        }
+    });
+}
+
+/// (38) **`--force` has nothing to say over a clean path either.** The consent's advisory
+/// names the install paths that *carried changes in no commit*; in the reported repository
+/// it named `CLAUDE.md`, which carried none.
+#[test]
+fn force_names_no_change_that_does_not_exist_under_conversion() {
+    for (conversion, blob) in [
+        (Conversion::AutocrlfInput, Blob::Crlf),
+        (Conversion::TextAuto, Blob::Crlf),
+    ] {
+        let what = format!("{conversion:?}/{blob:?}");
+        let (repo, home) = conversion.clean_repo(blob, "converted-force");
+        let (repo, home) = (repo.path(), home.path());
+        let out = jigc(repo, home, &["setup", "--force", "--format", "json"]);
+        assert_eq!(out.status.code(), Some(0), "{what}: {}", said(&out));
+        let json: serde_json::Value =
+            serde_json::from_slice(&out.stdout).expect("the envelope is JSON");
+        let codes: Vec<&str> = json["findings"]
+            .as_array()
+            .expect("findings array")
+            .iter()
+            .filter_map(|finding| finding["code"].as_str())
+            .collect();
+        assert!(
+            !codes.contains(&"setup.forced-install-path"),
+            "{what}: the consent was spent on nothing, and says nothing: {json}"
+        );
+    }
+}
+
+/// (39) **…and a change a flag does hide still refuses, under conversion, with a route that
+/// lands** — the must-refuse half beside cell (37), so reading the flag from git did not
+/// trade the guard away. Cell (33) drives every member with no conversion; this crosses the
+/// class with the conversions that make the working file something other than the blob's
+/// bytes: a CRLF blob under `core.autocrlf=input` (the reported repository), a checkout
+/// git converted to CRLF, and a smudged file.
+#[test]
+fn a_change_hidden_by_an_index_flag_still_refuses_under_conversion() {
+    std::thread::scope(|scope| {
+        for (conversion, blob) in [
+            (Conversion::AutocrlfInput, Blob::Crlf),
+            (Conversion::AutocrlfTrue, Blob::Lf),
+            (Conversion::Filter, Blob::Lf),
+        ] {
+            for flag in ["--assume-unchanged", "--skip-worktree"] {
+                scope.spawn(move || {
+                    let what = format!("{conversion:?}/{blob:?} under `{flag}`");
+                    let (repo, home) = conversion.clean_repo(blob, "converted-flagged");
+                    let (repo, home) = (repo.path(), home.path());
+                    if conversion == Conversion::AutocrlfTrue {
+                        // Check the adopter's file out again: the working file is now the
+                        // CRLF form git converts an LF blob to.
+                        fs::remove_file(repo.join("CLAUDE.md")).expect("remove");
+                        git(repo, &["checkout", "--", "CLAUDE.md"]);
+                        assert!(read(repo, "CLAUDE.md").contains("\r\n"), "{what}: premise");
+                    }
+                    let path = "CLAUDE.md";
+                    git(repo, &["update-index", flag, "--", path]);
+                    let eol = if read(repo, path).contains("\r\n") {
+                        "\r\n"
+                    } else {
+                        "\n"
+                    };
+                    let edited =
+                        format!("{}{MARK} a line nobody committed.{eol}", read(repo, path));
+                    write(repo, path, &edited);
+                    assert_eq!(
+                        git(repo, &["status", "--porcelain"]),
+                        "",
+                        "{what}: the premise — git reports the repository clean"
+                    );
+                    let before = head_of(repo);
+
+                    let out = jigc(repo, home, &["setup"]);
+                    let said_out = said(&out);
+                    assert_eq!(
+                        out.status.code(),
+                        Some(1),
+                        "{what}: a change git hides is a change: {said_out}"
+                    );
+                    assert_eq!(refused_paths(&out), vec![path.to_string()], "{said_out}");
+                    assert!(
+                        said_out.contains(&format!("`{path}`: tracked, with the change hidden")),
+                        "{what}: {said_out}"
+                    );
+                    assert_eq!(read(repo, path), edited, "{what}: byte-identical");
+                    assert_eq!(head_of(repo), before, "{what}: `HEAD` is where it was");
+
+                    // The route, as printed, to a landed install.
+                    for command in printed_git_commands(&route(&out)) {
+                        paste(&command);
+                    }
+                    assert_eq!(
+                        git(repo, &["status", "--porcelain"]),
+                        format!("M {path}"),
+                        "{what}: git now reports the change"
+                    );
+                    git(repo, &["commit", "-q", "-a", "-m", "what we had there"]);
+                    let rerun = jigc(repo, home, &["setup"]);
+                    assert_eq!(
+                        rerun.status.code(),
+                        Some(0),
+                        "{what}: committed, ONE re-run installs: {}",
+                        said(&rerun)
+                    );
+                    assert!(
+                        git(repo, &["log", "--all", "-p", "--", path]).contains(MARK),
+                        "{what}: and git holds the adopter's line"
+                    );
+                    assert_eq!(git(repo, &["status", "--porcelain"]), "", "{what}");
+                });
+            }
+        }
+    });
+}
+
+/// (40) **The same answer in the layouts this door can be met in** — a fresh clone whose
+/// checkout git converted, and a linked worktree the user made (where `setup` installs into
+/// the main checkout it is told about). A submodule, `--separate-git-dir` and a worktree of
+/// a bare repository are not cells of this guard: `jigc setup` does not resolve an install
+/// home there on `1.0.0-rc.24` either, so the ask is never reached.
+#[test]
+fn a_clean_install_path_never_refuses_in_a_clone_or_a_linked_worktree() {
+    // A fresh clone, `core.autocrlf=true`: every working file is CRLF over an LF blob.
+    let (origin, home) = Conversion::None.clean_repo(Blob::Lf, "converted-origin");
+    let clone = TempDir::new("converted-clone");
+    git(
+        origin.path(),
+        &[
+            "clone",
+            "-q",
+            "--config",
+            "core.autocrlf=true",
+            &origin.path().display().to_string(),
+            &clone.path().join("clone").display().to_string(),
+        ],
+    );
+    let repo = clone.path().join("clone");
+    git(&repo, &["config", "user.email", "test@example.com"]);
+    git(&repo, &["config", "user.name", "Test"]);
+    assert!(read(&repo, "CLAUDE.md").contains("\r\n"), "the premise");
+    for run in ["the first install", "the re-run"] {
+        let out = jigc(&repo, home.path(), &["setup"]);
+        assert_eq!(out.status.code(), Some(0), "clone, {run}: {}", said(&out));
+        assert_eq!(git(&repo, &["status", "--porcelain"]), "", "clone, {run}");
+    }
+
+    // A linked worktree of the reported repository, `setup` typed from inside it.
+    let (main, home) = Conversion::AutocrlfInput.clean_repo(Blob::Crlf, "converted-main");
+    let linked = TempDir::new("converted-linked");
+    let linked = linked.path().join("linked");
+    git(
+        main.path(),
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "side",
+            &linked.display().to_string(),
+        ],
+    );
+    for run in ["the first install", "the re-run"] {
+        let out = jigc(&linked, home.path(), &["setup"]);
+        assert_eq!(out.status.code(), Some(0), "linked, {run}: {}", said(&out));
+        assert!(
+            !said(&out).contains(DIRTY_CODE),
+            "linked, {run}: {}",
+            said(&out)
+        );
+        assert_eq!(
+            git(main.path(), &["status", "--porcelain"]),
+            "",
+            "linked, {run}"
+        );
+    }
 }

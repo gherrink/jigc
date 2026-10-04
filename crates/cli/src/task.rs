@@ -46,7 +46,7 @@ use engine::probe::{ProbeRequest, ProbeRun, ProbeRunStatus};
 use engine::schema::Schema;
 use engine::state::{self, BasePin, RolesRecord};
 use engine::store::canonical_path;
-use engine::validate::{owner_artifacts_gate, validate_task};
+use engine::validate::{PinVerdict, owner_artifacts_gate, validate_task};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -2623,7 +2623,7 @@ impl TaskArea {
         // which keeps the conflict-block the arm raised before.
         let pin = self.base().ok().map(|base| base.sha);
         let pin_home = self.jigc_home.clone();
-        let pinned = move |path: &str| git_blob_at(&pin_home, pin.as_deref()?, path);
+        let pinned = move |path: &str| git_against_rev(&pin_home, pin.as_deref()?, path);
         // Materialize the current git index into a self-cleaning temp tree and resolve
         // cited code anchors against it (M30 Inc 3, G4): the `doc-code` probe validates
         // what *commits*, not the ambient working tree, so a symbol present on disk but
@@ -8271,54 +8271,264 @@ pub(crate) fn git_path_on_a_branch(repo_root: &Path, path: &str) -> Result<bool>
         .any(|line| line.trim() == "blob"))
 }
 
-/// The committed bytes of `path` (repo-relative) **at `pin`, in the form its working-tree
-/// file is in** — or `None` when the pin carries no blob there or git fails in any way. The
-/// L1 pull-absorption seam ([`engine::validate::PinnedBlob`]; M55 Increment 4, P2): the
-/// engine hashes the bytes against the doc on disk, so a failure answering `None` keeps the
-/// conflict-block it would have raised anyway — never an absorb on a guess.
+/// **git's own answer to *does the working-tree file at `path` differ from what `rev`
+/// holds?*** — `None` when `rev` holds no blob there (or is an unborn `HEAD`), otherwise the
+/// verdict the engine's reconcile arms act on ([`engine::validate::AgainstPin`]; M55
+/// Increment 4, P2, and the rc.24 fix pass's `(R3, F7)` backstop).
 ///
-/// **The checked-out form, never the raw blob alone** (the rc.24 fix pass, `(R3, F7)`). Every
-/// consumer compares the answer with the bytes of a working-tree file, and a working-tree
-/// file a *checkout* wrote is the blob after git's conversion — `core.autocrlf`, an `eol` or
-/// `text` attribute, a smudge filter. Read raw, a doc nobody touched differs from "its own"
-/// blob in every line ending in such a checkout: the L1 arm would refuse every pulled edit
-/// there, the store sweep would never grade a lagging baseline advisory, and the base-pin
-/// backstop — which *blocks* on a difference — would block every staged doc with no record.
-/// `git cat-file --filters <pin>:<path>` applies the conversions configured for `path` in
-/// this working tree, which is exactly what a checkout put there.
+/// **Asked of git, never derived from bytes** (the rc.24 fix pass, the completion audit's
+/// eol regression). This seam used to hand the engine the pin's blob, read in the form a
+/// checkout writes (`git cat-file --filters`) or, failing a match, raw — and the engine
+/// hashed it against the file. That is jigc redoing by its own arithmetic a comparison git
+/// owns, and it enumerated two byte forms of an untouched working file where a converting
+/// checkout has more: `jigc doc set-slot` edits a checked-out CRLF doc in place and leaves a
+/// **mixed** file, `git add` normalizes it, and git calls the result unmodified while it
+/// equals neither form. Driven in a `core.autocrlf=true` clone and under `* text eol=crlf`:
+/// a doc and a milestone record nobody had edited conflict-blocked at `jigc task finalize`
+/// and `jigc milestone add-task` once the cache held no key, and the route's `git checkout`
+/// rewrote nothing — git had no modification to undo — so the block had no exit, where
+/// `1.0.0-rc.24` landed. `git diff` already answers the question under this repository's own
+/// conversion rules (`core.autocrlf`, `text`/`eol` attributes, clean/smudge filters), so it
+/// is asked:
 ///
-/// **…and the blob's own bytes where that is what the file holds** (the rc.24 fix pass, the
-/// record door). A checkout is not the only writer of a working-tree file: **jigc is the
-/// other one**, and a promote or a record write lands the bytes it commits — `\n` endings
-/// whatever the checkout converts to. Git calls such a file unmodified (it normalizes on the
-/// way in), and it is: it holds exactly the blob. Compared against the checked-out form
-/// alone it read as *edited* the moment its key was gone — driven under `eol=crlf`, a
-/// record `jigc milestone add-task` had itself written conflict-blocked the next `add-task`
-/// after a `jigc unmanage`, and the route's `git checkout` rewrote nothing, because git had
-/// no modification to undo. So when the file on disk differs from the checked-out form and
-/// equals the raw blob, the raw blob is the answer: an untouched file has two faithful forms
-/// and the pin is read in whichever one the file is in. A file that matches neither gets the
-/// checked-out form, as before, and reads as the edit it is.
-pub(crate) fn git_blob_at(repo_root: &Path, pin: &str, path: &str) -> Option<Vec<u8>> {
-    let object = format!("{pin}:{path}");
-    let cat_file = |form: &str| {
-        let out = Command::new("git")
-            .args(["cat-file", form, &object])
+/// 1. `git ls-tree <rev> -- <path>` — whether the pin holds a blob there at all. No blob is
+///    `None`: nothing to compare against, which every consumer already reads as *no pin*.
+/// 2. `git ls-files -v -- <path>` — what the index holds for the path
+///    ([`git_index_flags`]), because that decides which of git's comparisons is about the
+///    **file**.
+/// 3. An ordinary index entry ⇒ `git diff --quiet <rev> -- <path>` — exit 0 unmodified,
+///    exit 1 modified. It compares content, not stat data, so a file a writer other than
+///    git's checkout left in another faithful byte form is unmodified.
+/// 4. An entry **flagged** assume-unchanged or skip-worktree, or **no entry at all** ⇒ the
+///    same question put to git's status over a scratch index holding `rev`
+///    ([`git_modified_without_flags`]). Under a flag `git diff` answers *unchanged* by
+///    instruction, and a hand edit there is still an edit — the byte comparison this
+///    replaces caught it. With no entry (`git rm --cached` after the task's copy-in)
+///    `git diff` answers *deleted* whatever the file holds, which is a statement about the
+///    index: driven, it refused a finalize `1.0.0-rc.24` lands, over a file nobody had
+///    edited. The scratch index asks about the file in both.
+///
+/// **A git that cannot answer is said to be one** ([`PinVerdict::Unanswered`]), never folded
+/// into `None`: the backstop *adopts* on `None`, and adopting because git failed is the guess
+/// that lets the promote write over bytes nobody compared. An unborn `HEAD` is the one
+/// failure that is an answer — it holds nothing.
+///
+/// `path` is relative to `repo_root`, which is where the caller read the file from.
+pub(crate) fn git_against_rev(repo_root: &Path, rev: &str, path: &str) -> Option<PinVerdict> {
+    let git = |args: &[&str]| {
+        Command::new("git")
+            .args(args)
             .current_dir(repo_root)
             .output()
-            .ok()?;
-        out.status.success().then_some(out.stdout)
     };
-    let checked_out = cat_file("--filters")?;
-    // The second read is asked only on a difference — an in-sync checkout shells out once.
-    let on_disk = std::fs::read(repo_root.join(path)).ok();
-    if on_disk.as_ref().is_none_or(|bytes| *bytes == checked_out) {
-        return Some(checked_out);
+    // What a failed ask says in the refusal: the command, as the reader can run it, and
+    // git's own words.
+    let unanswered = |asked: &str, out: std::io::Result<std::process::Output>| {
+        let said = match out {
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                let code = out
+                    .status
+                    .code()
+                    .map_or_else(|| "a signal".to_string(), |code| format!("exit {code}"));
+                if stderr.is_empty() {
+                    code
+                } else {
+                    format!("{code}: {stderr}")
+                }
+            }
+            Err(err) => format!("could not run git: {err}"),
+        };
+        Some(PinVerdict::Unanswered(format!(
+            "`{}` answered {said}",
+            engine::finding::git_at(repo_root, asked),
+        )))
+    };
+
+    // 1. Does `rev` hold a blob at the path? `<mode> <type> <oid>\t<path>` per record.
+    let listed = git(&["ls-tree", "-z", rev, "--", path]);
+    match &listed {
+        Ok(out) if out.status.success() => {
+            let holds_blob = out.stdout.split(|byte| *byte == 0).any(|record| {
+                let record = String::from_utf8_lossy(record);
+                record.split_once('\t').is_some_and(|(entry, listed)| {
+                    listed == path && entry.split(' ').nth(1) == Some("blob")
+                })
+            });
+            if !holds_blob {
+                return None;
+            }
+        }
+        _ => {
+            // An unborn `HEAD` holds nothing; any other pin that does not answer is a
+            // failure, not an absence.
+            let unborn = rev == "HEAD"
+                && git(&["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+                    .is_ok_and(|out| !out.status.success());
+            if unborn {
+                return None;
+            }
+            return unanswered(&format!("ls-tree {rev} -- {}", shell_token(path)), listed);
+        }
     }
-    match cat_file("blob") {
-        Some(raw) if on_disk.as_ref() == Some(&raw) => Some(raw),
-        _ => Some(checked_out),
+
+    // 2. What the index holds for the path decides which comparison is about the file.
+    let entry = match git_index_flags(repo_root, &[path]) {
+        Some(flags) => flags.get(path).copied(),
+        None => {
+            return Some(PinVerdict::Unanswered(format!(
+                "`{}` did not answer",
+                engine::finding::git_at(
+                    repo_root,
+                    &format!("ls-files -v -- {}", shell_token(path))
+                ),
+            )));
+        }
+    };
+
+    // 3. An ordinary entry: git's own comparison. `diff.autoRefreshIndex` is pinned on so a
+    //    stat-dirty file whose content is unchanged is never reported on its stat data, and
+    //    `core.fileMode` off so a flipped executable bit is not: the question is the file's
+    //    content against the blob, which is all the byte comparison this replaces ever saw.
+    if entry == Some(false) {
+        let literal = literal_pathspec(path);
+        let diffed = git(&[
+            "-c",
+            "diff.autoRefreshIndex=true",
+            "-c",
+            "core.fileMode=false",
+            "diff",
+            "--quiet",
+            "--no-ext-diff",
+            "--no-textconv",
+            rev,
+            "--",
+            &literal,
+        ]);
+        return match diffed.as_ref().map(|out| out.status.code()) {
+            Ok(Some(0)) => Some(PinVerdict::Unmodified),
+            Ok(Some(1)) => Some(PinVerdict::Modified),
+            _ => unanswered(
+                &format!("diff --quiet {rev} -- {}", shell_token(path)),
+                diffed,
+            ),
+        };
     }
+
+    // 4. A flagged entry, or none: `git diff` would answer for the flag or for the index.
+    match git_modified_without_flags(repo_root, rev, &[path]) {
+        Some(modified) if modified.contains(path) => Some(PinVerdict::Modified),
+        Some(_) => Some(PinVerdict::Unmodified),
+        None => Some(PinVerdict::Unanswered(format!(
+            "git could not compare `{path}` with `{rev}` over a scratch index (its index entry \
+             is absent, or flagged assume-unchanged or skip-worktree, so `git diff` does not \
+             answer for the file)"
+        ))),
+    }
+}
+
+/// **Which of `paths` git tracks, and whether each one's index entry carries a flag that
+/// hides the file from git's own comparisons** — `path → flagged`, a path git does not
+/// track (or holds unmerged) absent from the map. `None` when git could not answer.
+///
+/// The flags are **assume-unchanged** and **skip-worktree**: with either set, `git status`
+/// and `git diff` report the path clean whatever the file holds, because the user told git
+/// not to look. git reports them itself — `git ls-files -v` prints a one-letter tag per
+/// entry, `H` for an ordinary one, `S` for skip-worktree, and the lowercase letter for
+/// assume-unchanged — so the flag is **read**, never inferred from a comparison that came
+/// out unequal. That inference is the defect this replaces at `jigc setup`: a clean tracked
+/// file whose blob held CRLF hashed differently under `core.autocrlf=input`, was reported as
+/// *flagged*, and refused the install on every run with a route that cleared flags that
+/// were never set.
+pub(crate) fn git_index_flags(repo_root: &Path, paths: &[&str]) -> Option<BTreeMap<String, bool>> {
+    if paths.is_empty() {
+        return Some(BTreeMap::new());
+    }
+    let literals: Vec<String> = paths.iter().map(|path| literal_pathspec(path)).collect();
+    let mut args: Vec<&str> = vec!["ls-files", "-v", "-z", "--"];
+    args.extend(literals.iter().map(String::as_str));
+    let out = Command::new("git")
+        .args(&args)
+        .current_dir(repo_root)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    // `<tag> <path>` per NUL-terminated record. Only a stage-0 entry is a held copy: an
+    // unmerged path prints `M`/`m` and is in `git status` besides.
+    let listing = String::from_utf8_lossy(&out.stdout).into_owned();
+    Some(
+        listing
+            .split('\0')
+            .filter_map(|record| record.split_once(' '))
+            .filter_map(|(tag, path)| match tag {
+                "H" => Some((path.to_string(), false)),
+                "S" | "h" | "s" => Some((path.to_string(), true)),
+                _ => None,
+            })
+            .collect(),
+    )
+}
+
+/// **Of `paths`, the ones git calls modified against `rev` when the index's flags are out
+/// of the way** — the question [`git_index_flags`]' flagged entries need asked, since git's
+/// ordinary answer for them is *unchanged* by instruction. `None` when git could not answer.
+///
+/// git has no switch that ignores both flags, so the question is put to a **scratch index**
+/// holding `rev`'s tree and nothing else (`GIT_INDEX_FILE` — the live index is never read
+/// for it and never written; the [`CombineIndex`] idiom): `git read-tree <rev>` fills it,
+/// with no flags and no stat data, and `git status` under it compares each named file's
+/// content with `rev`'s blob through this repository's conversion rules — the same
+/// machinery, and the same verdict, as an unflagged path gets. It is still git's answer;
+/// only the instruction not to look is gone.
+///
+/// Asked only of entries that carry a flag — and, at the doors, of a path the index does
+/// not carry at all — so a repository that sets none, nearly every one, never builds the
+/// scratch index.
+pub(crate) fn git_modified_without_flags(
+    repo_root: &Path,
+    rev: &str,
+    paths: &[&str],
+) -> Option<BTreeSet<String>> {
+    if paths.is_empty() {
+        return Some(BTreeSet::new());
+    }
+    let scratch = CombineIndex::new();
+    git_index(repo_root, scratch.path(), &["read-tree", rev]).ok()?;
+    let literals: Vec<String> = paths.iter().map(|path| literal_pathspec(path)).collect();
+    let mut args: Vec<&str> = vec![
+        "status",
+        "--porcelain",
+        "--untracked-files=no",
+        "--no-renames",
+        "-z",
+        "--",
+    ];
+    args.extend(literals.iter().map(String::as_str));
+    // `core.fileMode` off: content against the blob, never an executable bit (the comparison
+    // [`git_against_rev`] makes for an unflagged path, kept the same here).
+    let out = Command::new("git")
+        .args(["-c", "core.fileMode=false"])
+        .args(&args)
+        .current_dir(repo_root)
+        .env("GIT_INDEX_FILE", scratch.path())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    // `XY<space><path>` per NUL-terminated record. `X` compares `HEAD` with the scratch
+    // index and says nothing here; `Y` is the working tree against the scratch index —
+    // against `rev`.
+    let listing = String::from_utf8_lossy(&out.stdout).into_owned();
+    Some(
+        listing
+            .split('\0')
+            .filter(|record| record.len() > 3 && record.as_bytes()[1] != b' ')
+            .map(|record| record[3..].to_string())
+            .collect(),
+    )
 }
 
 /// The bytes of the **last committed version** of `path`, or `None` when HEAD carries no
@@ -10506,5 +10716,172 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// **`git_against_rev` answers in git's words, over its whole table** (the rc.24 fix
+    /// pass's completion audit). The committing doors' suites drive *unmodified* and
+    /// *modified* through the binary under every conversion; this pins the answers they do
+    /// not reach, each of which a consumer acts on differently:
+    ///
+    /// - no blob at the pin, a directory there, and an unborn `HEAD` ⇒ `None` — nothing to
+    ///   compare against, so the backstop keeps its adoption;
+    /// - a pin that names no commit ⇒ [`PinVerdict::Unanswered`], quoting the command — the
+    ///   backstop refuses rather than adopting on a failure;
+    /// - a file in another faithful byte form (CRLF over an LF blob under
+    ///   `core.autocrlf=true`, and the mixed file an in-place edit leaves) ⇒ unmodified;
+    /// - an edit under an assume-unchanged or skip-worktree flag, which `git diff` does not
+    ///   report ⇒ modified, and the same flag over an unedited file ⇒ unmodified;
+    /// - a file the index no longer carries, which `git diff` reports deleted whatever it
+    ///   holds ⇒ unmodified when untouched, modified when edited.
+    #[test]
+    fn git_against_rev_answers_as_git_does_over_its_whole_table() {
+        let repo = finalize_axis_repo("against-rev");
+        let run = |args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .output()
+                .expect("git runs");
+            assert!(out.status.success(), "git {args:?} should succeed");
+        };
+        run(&["config", "core.autocrlf", "false"]);
+        std::fs::create_dir_all(repo.join("docs")).expect("mk docs");
+        std::fs::write(repo.join("docs/a.md"), "one\ntwo\nthree\n").expect("write the doc");
+        run(&["add", "--all"]);
+        run(&["commit", "-q", "-m", "a doc"]);
+        let pin = git_capture(&repo, &["rev-parse", "HEAD"]).expect("the pin");
+
+        // Unmodified, at a sha pin and at `HEAD`.
+        for rev in [pin.as_str(), "HEAD"] {
+            assert_eq!(
+                git_against_rev(&repo, rev, "docs/a.md"),
+                Some(PinVerdict::Unmodified),
+                "an untouched file at `{rev}`"
+            );
+        }
+        // Nothing to compare against.
+        assert_eq!(git_against_rev(&repo, &pin, "docs/absent.md"), None);
+        assert_eq!(
+            git_against_rev(&repo, &pin, "docs"),
+            None,
+            "a tree, not a blob"
+        );
+        // A pin that names no commit is a failure, and says what was asked.
+        let bogus = "0123456789abcdef0123456789abcdef01234567";
+        match git_against_rev(&repo, bogus, "docs/a.md") {
+            Some(PinVerdict::Unanswered(said)) => assert!(
+                said.contains("ls-tree") && said.contains(bogus),
+                "the refusal quotes the command: {said}"
+            ),
+            other => panic!("an unresolvable pin is unanswered, never absent: {other:?}"),
+        }
+
+        // Other faithful byte forms of the same content.
+        run(&["config", "core.autocrlf", "true"]);
+        for (form, bytes) in [
+            ("checked-out", "one\r\ntwo\r\nthree\r\n"),
+            ("mixed", "one\r\ntwo\nthree\r\n"),
+        ] {
+            std::fs::write(repo.join("docs/a.md"), bytes).expect("write the form");
+            assert_eq!(
+                git_against_rev(&repo, &pin, "docs/a.md"),
+                Some(PinVerdict::Unmodified),
+                "the {form} form is the blob, converted"
+            );
+        }
+        std::fs::write(repo.join("docs/a.md"), "one\r\ntwo\nthree\r\nfour\n").expect("edit");
+        assert_eq!(
+            git_against_rev(&repo, &pin, "docs/a.md"),
+            Some(PinVerdict::Modified),
+            "a real edit, in any form"
+        );
+        run(&["config", "core.autocrlf", "false"]);
+        run(&["checkout", "--", "docs/a.md"]);
+
+        // A flipped executable bit is not a content change.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let set_mode = |mode: u32| {
+                std::fs::set_permissions(
+                    repo.join("docs/a.md"),
+                    std::fs::Permissions::from_mode(mode),
+                )
+                .expect("chmod the doc");
+            };
+            set_mode(0o755);
+            assert_eq!(
+                git_against_rev(&repo, &pin, "docs/a.md"),
+                Some(PinVerdict::Unmodified),
+                "a mode flip alone leaves the content at the pin"
+            );
+            set_mode(0o644);
+        }
+
+        // An index flag: git's ordinary answer is *unchanged* by instruction.
+        for flag in ["assume-unchanged", "skip-worktree"] {
+            run(&["update-index", &format!("--{flag}"), "--", "docs/a.md"]);
+            assert_eq!(
+                git_index_flags(&repo, &["docs/a.md", "seed.txt", "docs/absent.md"]),
+                Some(BTreeMap::from([
+                    ("docs/a.md".to_string(), true),
+                    ("seed.txt".to_string(), false),
+                ])),
+                "`{flag}` is read from git, per tracked path"
+            );
+            assert_eq!(
+                git_against_rev(&repo, &pin, "docs/a.md"),
+                Some(PinVerdict::Unmodified),
+                "`{flag}` over an unedited file hides nothing"
+            );
+            std::fs::write(repo.join("docs/a.md"), "one\ntwo\nthree\nhidden\n").expect("edit");
+            assert!(
+                git_capture(&repo, &["status", "--porcelain"])
+                    .expect("status")
+                    .is_empty(),
+                "the premise: under `{flag}` git reports the edit nowhere"
+            );
+            assert_eq!(
+                git_against_rev(&repo, &pin, "docs/a.md"),
+                Some(PinVerdict::Modified),
+                "an edit under `{flag}` is still an edit"
+            );
+            std::fs::write(repo.join("docs/a.md"), "one\ntwo\nthree\n").expect("restore");
+            run(&["update-index", &format!("--no-{flag}"), "--", "docs/a.md"]);
+        }
+
+        // No index entry at all (`git rm --cached`): `git diff` would say *deleted* whatever
+        // the file holds, and the question is about the file.
+        run(&["rm", "-q", "--cached", "--", "docs/a.md"]);
+        assert_eq!(
+            git_against_rev(&repo, &pin, "docs/a.md"),
+            Some(PinVerdict::Unmodified),
+            "an untouched file the index no longer carries is still at the pin"
+        );
+        std::fs::write(repo.join("docs/a.md"), "one\ntwo\nthree\nfour\n").expect("edit");
+        assert_eq!(
+            git_against_rev(&repo, &pin, "docs/a.md"),
+            Some(PinVerdict::Modified),
+            "and an edited one is not"
+        );
+
+        // An unborn `HEAD` holds nothing.
+        let unborn = std::env::temp_dir().join(format!(
+            "jigc-against-rev-unborn-{}-{}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
+        std::fs::create_dir_all(unborn.join("docs")).expect("mk unborn repo");
+        let out = Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&unborn)
+            .output()
+            .expect("git runs");
+        assert!(out.status.success());
+        std::fs::write(unborn.join("docs/a.md"), "one\n").expect("write");
+        assert_eq!(git_against_rev(&unborn, "HEAD", "docs/a.md"), None);
+
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&unborn);
     }
 }

@@ -13,10 +13,14 @@
 //!
 //! The rule (`design/reconciliation.md` → Baseline adoption, the record door's witness):
 //! with no recorded hash, the record's blob at `HEAD` is the witness of what jigc last
-//! wrote — every record write lands in a commit — so on-disk bytes that differ from it are
-//! an edit and the door raises its existing `reconciliation.conflict-block`, adopts nothing
-//! and writes nothing. Bytes **equal** to `HEAD`'s (an untouched clone, a pulled edit) are
-//! adopted exactly as before.
+//! wrote — every record write lands in a commit — so a record git calls modified against
+//! it is an edit and the door raises its existing `reconciliation.conflict-block`, adopts
+//! nothing and writes nothing. One git calls **unmodified** (an untouched clone, a pulled
+//! edit) is adopted exactly as before.
+//!
+//! **The comparison is git's own** (the completion audit's eol regression): the door first
+//! compared bytes, and in a converting checkout an untouched record is not its blob's
+//! bytes — the conversion cells below iterate the settings × the byte forms a record takes.
 //!
 //! The suite iterates the class, not the reported instance: every record-rewriting door ×
 //! every way the key is absent × three shapes of the hand edit, each refusal's emitted
@@ -523,61 +527,235 @@ fn a_held_baseline_still_blocks_a_committed_edit_at_the_record_door() {
     );
 }
 
-/// **The witness is read in the form the record is in.** jigc writes the record with `\n`
-/// line endings whatever the checkout converts to, and git calls that file unmodified; a
-/// clone's checkout writes the converted form. Both are what `HEAD` holds. Compared against
-/// the checked-out form alone, a record jigc itself wrote would read as hand-edited in an
-/// `eol=crlf` (or `core.autocrlf`) checkout the moment its key was gone — and the route's
-/// `git checkout HEAD --` would not rewrite a file git considers unmodified, so the block
-/// would have no exit.
-#[test]
-fn the_record_door_does_not_false_fire_in_a_crlf_checkout() {
-    /// Which form the record on disk is in.
-    #[derive(Clone, Copy, Debug)]
-    enum Form {
-        /// As jigc wrote it — `\n` endings, the blob's own bytes.
-        Written,
-        /// As a checkout writes it — `\r\n` endings.
-        CheckedOut,
-    }
-    for form in [Form::Written, Form::CheckedOut] {
-        for absent in Absent::ALL {
-            let what = format!("{form:?}/{absent:?}");
-            let corpus = TrialCorpus::build(State::CommittedSingletons);
-            let repo = corpus.repo();
-            fs::write(repo.join(".gitattributes"), "*.md text eol=crlf\n")
+/// A way git converts between the record's blob and its working-tree file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Conversion {
+    /// A committed `.gitattributes` holding `*.md text eol=crlf`.
+    EolCrlf,
+    /// `core.autocrlf=true` — the Git for Windows default.
+    AutocrlfTrue,
+    /// A committed `.gitattributes` holding `* text=auto`, with `core.eol=crlf`.
+    TextAuto,
+}
+
+impl Conversion {
+    const ALL: [Conversion; 3] = [
+        Conversion::EolCrlf,
+        Conversion::AutocrlfTrue,
+        Conversion::TextAuto,
+    ];
+
+    /// Put the conversion in force. Runs before the milestone is minted.
+    fn apply(self, corpus: &TrialCorpus) {
+        // Mask whatever this machine's ambient config converts.
+        corpus.git(&["config", "core.autocrlf", "false"]);
+        let commit_attributes = |attributes: &str| {
+            fs::write(corpus.repo().join(".gitattributes"), attributes)
                 .expect("write .gitattributes");
             corpus.git(&["add", "--", ".gitattributes"]);
-            corpus.git(&["commit", "-q", "-m", "chore: check markdown out as CRLF"]);
-            corpus.jigc_ok(&["milestone", "create", MILESTONE_TITLE]);
-            corpus.jigc_ok(&["milestone", "add-task", MILESTONE, "alpha sharpens a doc"]);
-            let crlf = |repo: &Path| {
-                fs::read(repo.join(RECORD))
-                    .expect("read the record")
-                    .windows(2)
-                    .any(|pair| pair == b"\r\n")
-            };
-            match form {
-                Form::Written => assert!(!crlf(&repo), "{what}: jigc wrote `\\n` endings"),
-                Form::CheckedOut => {
-                    fs::remove_file(repo.join(RECORD)).expect("remove the record");
-                    corpus.git(&["checkout", "--", RECORD]);
-                    assert!(crlf(&repo), "{what}: the checkout wrote `\\r\\n` endings");
-                }
+            corpus.git(&["commit", "-q", "-m", "chore: attributes"]);
+        };
+        match self {
+            Conversion::EolCrlf => commit_attributes("*.md text eol=crlf\n"),
+            Conversion::AutocrlfTrue => {
+                corpus.git(&["config", "core.autocrlf", "true"]);
             }
-            assert_eq!(
-                git(&repo, &["status", "--porcelain", "--", RECORD]),
-                "",
-                "{what}: the premise — git calls the record unmodified",
-            );
-            absent.apply(&corpus);
+            Conversion::TextAuto => {
+                corpus.git(&["config", "core.eol", "crlf"]);
+                commit_attributes("* text=auto\n");
+            }
+        }
+    }
+}
 
-            let out = Door::AddTask.run(&corpus, "");
-            assert!(
-                out.status.success(),
-                "{what}: an untouched record is at `HEAD` in either form — no conflict; {}",
-                text(&out),
+/// Which byte form the record on disk is in — every one of them a file git calls
+/// unmodified against `HEAD`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Form {
+    /// As jigc wrote it — `\n` endings, the blob's own bytes.
+    Written,
+    /// As a checkout writes it — `\r\n` endings.
+    CheckedOut,
+    /// As a record door leaves a checked-out record: it splices in place, so the lines git
+    /// wrote keep `\r\n` and the lines jigc wrote have `\n`. What a clone's first record op
+    /// produces, and the form the audit found unanswered for.
+    Mixed,
+}
+
+impl Form {
+    const ALL: [Form; 3] = [Form::Written, Form::CheckedOut, Form::Mixed];
+
+    /// Bring the record at `repo` into this form, from the `Written` one.
+    fn apply(self, corpus: &TrialCorpus, repo: &Path, what: &str) {
+        let bytes = |repo: &Path| fs::read(repo.join(RECORD)).expect("read the record");
+        let crlf = |bytes: &[u8]| bytes.windows(2).filter(|pair| pair == b"\r\n").count();
+        let lines = |bytes: &[u8]| bytes.iter().filter(|byte| **byte == b'\n').count();
+        if self == Form::Written {
+            assert_eq!(crlf(&bytes(repo)), 0, "{what}: jigc wrote `\\n` endings");
+            return;
+        }
+        fs::remove_file(repo.join(RECORD)).expect("remove the record");
+        git(repo, &["checkout", "--", RECORD]);
+        let record = bytes(repo);
+        assert_eq!(
+            crlf(&record),
+            lines(&record),
+            "{what}: the checkout wrote `\\r\\n` on every line",
+        );
+        if self == Form::Mixed {
+            // As in a clone: no key yet, so the door's first write meets the checked-out
+            // record as a first encounter and splices it in place.
+            corpus.fresh_clone_shape();
+            let out = corpus.jigc_stdin_from(
+                repo,
+                &[
+                    "milestone",
+                    "add-task",
+                    MILESTONE,
+                    "an earlier in-place write",
+                ],
+                "",
             );
+            assert!(out.status.success(), "{what}: {}", text(&out));
+            let record = bytes(repo);
+            assert!(
+                crlf(&record) > 0 && crlf(&record) < lines(&record),
+                "{what}: the premise — the door's in-place write left a MIXED record",
+            );
+        }
+    }
+}
+
+/// **The witness is git's answer, so every form of an untouched record is at `HEAD`** (the
+/// rc.24 fix pass's completion audit, the eol regression).
+///
+/// jigc writes a record with `\n` endings whatever the checkout converts to; a clone's
+/// checkout writes the converted form; and a record door then **splices the checked-out
+/// file in place**, leaving a mixed one. git calls all three unmodified. The door first
+/// compared bytes against the forms it knew — the checked-out one, then the raw blob —
+/// which answered for two of the three: driven at `5f5b273a` under `* text eol=crlf`, a
+/// clone's second `jigc milestone add-task` conflict-blocked a record nobody had edited
+/// once the cache held no key, the route's `git checkout HEAD --` rewrote nothing (git had
+/// no modification to undo), and the re-run blocked again. `1.0.0-rc.24` landed. The
+/// fixture that pinned this iterated the two known forms and ran one door once, so it never
+/// held the form a clone's first write produces.
+///
+/// So: every conversion × every form × every way the key is absent — the door lands. And
+/// beside it, under the same conversions, the refusal the guard is for: a hand note blocks,
+/// the route as printed restores the record, and the re-run lands.
+#[test]
+fn the_record_door_does_not_false_fire_in_a_crlf_checkout() {
+    std::thread::scope(|scope| {
+        for conversion in Conversion::ALL {
+            scope.spawn(move || {
+                let base = TrialCorpus::build(State::CommittedSingletons);
+                conversion.apply(&base);
+                base.jigc_ok(&["milestone", "create", MILESTONE_TITLE]);
+                base.jigc_ok(&["milestone", "add-task", MILESTONE, "alpha sharpens a doc"]);
+                for form in Form::ALL {
+                    for absent in Absent::ALL {
+                        let what = format!("{conversion:?}/{form:?}/{absent:?}");
+                        let corpus = base.copy_state();
+                        let repo = corpus.repo();
+                        form.apply(&corpus, &repo, &what);
+                        assert_eq!(
+                            git(&repo, &["status", "--porcelain", "--", RECORD]),
+                            "",
+                            "{what}: the premise — git calls the record unmodified",
+                        );
+                        absent.apply(&corpus);
+
+                        let out = Door::AddTask.run(&corpus, "");
+                        assert!(
+                            out.status.success(),
+                            "{what}: an untouched record is at `HEAD` in every form — no \
+                             conflict; {}",
+                            text(&out),
+                        );
+                        assert!(
+                            record_at_head(&repo).contains(Door::AddTask.mark()),
+                            "{what}: the door's write landed",
+                        );
+                    }
+                }
+
+                // The refusal, under the same conversion, over the mixed form: a hand note
+                // in the record's own line ending.
+                let what = format!("{conversion:?}: a hand note");
+                let corpus = base.copy_state();
+                let repo = corpus.repo();
+                Form::Mixed.apply(&corpus, &repo, &what);
+                Absent::CacheGone.apply(&corpus);
+                let before = read(&repo, RECORD);
+                let edited = format!("{before}\r\n{HAND}\r\n");
+                fs::write(repo.join(RECORD), &edited).expect("write the hand note");
+                let head_before = head(&repo);
+                let out = Door::AddTask.run(&corpus, "");
+                let route = assert_blocked(&repo, &out, &head_before, &edited, &what);
+                let span = git_span(&route, &what);
+                let restored = run_emitted(span, &corpus.home(), &corpus.home());
+                assert!(restored.status.success(), "{what}: {}", text(&restored));
+                assert!(
+                    !read(&repo, RECORD).contains(HAND)
+                        && git(&repo, &["status", "--porcelain", "--", RECORD]).is_empty(),
+                    "{what}: the route as printed puts the record back to what `HEAD` holds",
+                );
+                let rerun = Door::AddTask.run(&corpus, "");
+                assert!(
+                    rerun.status.success(),
+                    "{what}: the re-run lands; {}",
+                    text(&rerun)
+                );
+                let landed = record_at_head(&repo);
+                assert!(
+                    landed.contains(Door::AddTask.mark()) && !landed.contains(HAND),
+                    "{what}: the door's write landed and the note was never merged:\n{landed}",
+                );
+            });
+        }
+    });
+}
+
+/// **The reported instance, in a real `git clone`** made with `core.autocrlf=true`: the
+/// clone's first record op lands and leaves the mixed record; the cache is lost; the second
+/// op is the one that blocked with no exit.
+#[test]
+fn a_converting_clone_serves_the_record_door_twice() {
+    let (corpus, _sub) = live_milestone();
+    let origin = corpus.repo();
+    let clone = origin.parent().expect("the corpus root").join("clone");
+    git(
+        &origin,
+        &[
+            "clone",
+            "-q",
+            "--config",
+            "core.autocrlf=true",
+            &origin.display().to_string(),
+            &clone.display().to_string(),
+        ],
+    );
+    git(&clone, &["config", "user.email", "mate@example.com"]);
+    git(&clone, &["config", "user.name", "Mate"]);
+    assert!(
+        read(&clone, RECORD).contains("\r\n"),
+        "the premise: the clone's checkout converted the record",
+    );
+    for (title, mark) in [
+        ("bravo checks the links", "bravo-checks-the-links"),
+        ("charlie reads the proofs", "charlie-reads-the-proofs"),
+    ] {
+        let out = corpus.jigc_stdin_from(&clone, &["milestone", "add-task", MILESTONE, title], "");
+        assert!(out.status.success(), "`{title}` lands; {}", text(&out));
+        assert!(
+            record_at_head(&clone).contains(mark),
+            "`{title}` is in `HEAD`"
+        );
+        assert_eq!(git(&clone, &["status", "--porcelain", "--", RECORD]), "");
+        // The cache is gone before the next op, as in a container session.
+        let state = clone.join(".jigc").join("state").join("file-state.json");
+        if state.exists() {
+            fs::remove_file(&state).expect("drop the file-state cache");
         }
     }
 }

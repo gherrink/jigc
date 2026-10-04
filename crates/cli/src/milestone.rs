@@ -1621,12 +1621,15 @@ fn record_shape_block(
 /// `jigc milestone add-task` at exit 0 — worktree 0, `HEAD` 0 — and the splicing doors
 /// committed a hand edit as jigc's own. The `(R3, F7)` base-pin backstop is the arm that
 /// decides `UNKNOWN + TOUCHED`, and it needs a pin: here that is the record's blob at
-/// `HEAD`, read in the form the file on disk is in ([`crate::task::git_blob_at`]) — every
-/// record write lands in a commit, so `HEAD` holds what jigc last wrote. Bytes that differ
-/// from it are an edit and raise this door's conflict-block with nothing adopted and nothing
-/// written; bytes equal to it (an untouched clone, an edit that arrived by `git pull`) are
-/// adopted exactly as before. A record `HEAD` does not carry, an unborn `HEAD` and any git
-/// failure answer `None` and keep the adoption — there is nothing to compare against.
+/// `HEAD` — every record write lands in a commit, so `HEAD` holds what jigc last wrote —
+/// and the comparison is **git's own** ([`crate::task::git_against_rev`]): a record git
+/// calls modified against `HEAD` is an edit and raises this door's conflict-block with
+/// nothing adopted and nothing written; one git calls unmodified (an untouched clone, an
+/// edit that arrived by `git pull`, and the record in whatever byte form a converting
+/// checkout or jigc's own in-place write left it) is adopted exactly as before. A record
+/// `HEAD` does not carry and an unborn `HEAD` answer `None` and keep the adoption — there
+/// is nothing to compare against. A git that cannot answer is refused, saying so: the door
+/// does not write the record over bytes nobody compared.
 ///
 /// **The lookup answers only where there is no key**, which is what keeps the classifier's
 /// *other* consumer of the pin off this door: `DRIFTED + TOUCHED` absorbs an edit whose bytes
@@ -1705,7 +1708,7 @@ fn reconcile_record_preflight(
         // backstop is handed the record's blob at `HEAD`.
         &|path| match witness {
             RecordWitness::LastWrite => None,
-            RecordWitness::Head => crate::task::git_blob_at(jigc_home, "HEAD", path),
+            RecordWitness::Head => crate::task::git_against_rev(jigc_home, "HEAD", path),
         },
         &record_conflict_block(jigc_home, &key, witness),
         &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable, jigc_home),
@@ -8098,10 +8101,11 @@ fn milestone_boundary_gate(
     // The L1 pull-absorption seam (M55 Increment 4, P2), bound to the milestone's shared base
     // — the pin every sub-task inherited — so a pull before `milestone create` is absorbed at
     // the join and a pull after it (the bytes no longer equal the base's blob) still
-    // conflict-blocks. Any git failure answers `None`, keeping the conflict-block.
+    // conflict-blocks. git is asked, not the bytes ([`crate::task::git_against_rev`]); a git
+    // that cannot answer keeps the conflict-block, and refuses a doc with no baseline.
     let pin_home = jigc_home.to_path_buf();
     let pin = base.sha.clone();
-    let pinned = move |path: &str| crate::task::git_blob_at(&pin_home, &pin, path);
+    let pinned = move |path: &str| crate::task::git_against_rev(&pin_home, &pin, path);
     // The managed-vs-foreign discriminator's three pack facts (M48 Inc 4 / T1) — the merged
     // gate drives the same committed-store sweep the per-task door does, so a foreign
     // squatter must draw the store door's code and route here too.

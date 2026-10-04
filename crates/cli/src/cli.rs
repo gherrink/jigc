@@ -1505,10 +1505,11 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
         })
         .collect();
 
-    // The L1 store arm's seam (M55 Increment 4, P2/P4): a drifted doc's committed bytes at
-    // `HEAD`. The twin asks it only about a recorded doc that has drifted, so a clean store
-    // shells out zero times; any git failure answers `None`, which keeps the blocking drift.
-    let head = |path: &str| crate::task::git_blob_at(&jigc_home, "HEAD", path);
+    // The L1 store arm's seam (M55 Increment 4, P2/P4): whether git calls a drifted doc's
+    // working-tree file modified against `HEAD`. The twin asks it only about a recorded doc
+    // that has drifted, so a clean store shells out zero times; every answer but *unmodified*
+    // — a git that could not say included — keeps the blocking drift.
+    let head = |path: &str| crate::task::git_against_rev(&jigc_home, "HEAD", path);
 
     // The rename twin's history seam (M55 Increment 5 / T2, P2): the task scope's own
     // predicate and its conservative default — a `git log` failure reads history-present, so

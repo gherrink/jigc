@@ -1461,10 +1461,11 @@ fn a_staged_doc_with_no_record_is_decided_by_the_base_pin() {
     }
 }
 
-/// **The backstop reads the pin in its checked-out form.** In a checkout whose working files
-/// are not the blobs' bytes — `eol=crlf` here; `core.autocrlf` and a smudge filter are the
-/// same family — an untouched doc differs from its raw blob in every line ending. Compared
-/// raw, every staged doc with no record would block in such a checkout.
+/// **The backstop asks git, so a checked-out form is not an edit.** In a checkout whose
+/// working files are not the blobs' bytes — `eol=crlf` here; `core.autocrlf` and a smudge
+/// filter are the same family — an untouched doc differs from its raw blob in every line
+/// ending. Compared byte for byte, every staged doc with no record would block in such a
+/// checkout.
 #[test]
 fn the_backstop_does_not_false_fire_in_a_crlf_checkout() {
     let base = baselined_corpus();
@@ -1512,12 +1513,12 @@ fn the_backstop_does_not_false_fire_in_a_crlf_checkout() {
     );
 }
 
-/// **…and in the form jigc itself wrote.** A finalize promotes a doc with `\n` endings
-/// whatever the checkout converts to, and git calls that file unmodified. So the working
-/// file of an untouched doc is in one of two forms — the checked-out one above, or the
-/// blob's own bytes — and the pin is read in whichever the file is in. Compared against the
-/// checked-out form alone, a doc jigc's own finalize landed would block here, and the
-/// route's *revert the edit on disk* would have nothing to revert.
+/// **…and neither is the form jigc itself wrote.** A finalize promotes a created doc with
+/// `\n` endings whatever the checkout converts to, and git calls that file unmodified.
+/// Compared against the checked-out form alone, a doc jigc's own finalize landed would
+/// block here, and the route's *revert the edit on disk* would have nothing to revert. (The
+/// third form — the mixed file an in-place edit of a checked-out doc leaves — is the cell
+/// below; enumerating forms is what missed it, which is why git is asked instead.)
 #[test]
 fn the_backstop_does_not_false_fire_on_jigcs_own_write_in_a_crlf_checkout() {
     let base = baselined_corpus();
@@ -1551,6 +1552,338 @@ fn the_backstop_does_not_false_fire_on_jigcs_own_write_in_a_crlf_checkout() {
         "an untouched doc jigc wrote is at its pin — no conflict; {}",
         text(&out),
     );
+}
+
+/// A way git converts between a blob and its working-tree file — the axis the completion
+/// audit exposed at the committing doors. Each makes an untouched doc's working file
+/// something other than its blob's bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Conversion {
+    /// `core.autocrlf=true` — the Git for Windows default, and the reported instance.
+    AutocrlfTrue,
+    /// `core.autocrlf=input` — nothing is converted on the way out; the control that the
+    /// setting alone changes nothing.
+    AutocrlfInput,
+    /// A committed `.gitattributes` holding `*.md text eol=crlf`.
+    EolCrlf,
+    /// A committed `.gitattributes` holding `* text=auto`, with `core.eol=crlf`.
+    TextAuto,
+    /// A clean/smudge filter over `*.md`: keyword expansion in the doc's prose.
+    Filter,
+}
+
+impl Conversion {
+    const ALL: [Conversion; 5] = [
+        Conversion::AutocrlfTrue,
+        Conversion::AutocrlfInput,
+        Conversion::EolCrlf,
+        Conversion::TextAuto,
+        Conversion::Filter,
+    ];
+
+    /// The keyword the filter cell expands.
+    const KEYWORD: &'static str = "$Rev$";
+    const EXPANDED: &'static str = "$Rev: 42 $";
+
+    /// Put the corpus under this conversion **as a fresh clone would find it**: the setting
+    /// in force, every tracked file checked out again through it, and no file-state cache.
+    fn apply(self, corpus: &TrialCorpus) {
+        let repo = corpus.repo();
+        let commit_attributes = |attributes: &str| {
+            fs::write(repo.join(".gitattributes"), attributes).expect("write .gitattributes");
+            corpus.git(&["add", "--", ".gitattributes"]);
+            corpus.git(&["commit", "-q", "-m", "chore: attributes"]);
+        };
+        // Mask whatever this machine's ambient config converts.
+        corpus.git(&["config", "core.autocrlf", "false"]);
+        match self {
+            Conversion::AutocrlfTrue => {
+                corpus.git(&["config", "core.autocrlf", "true"]);
+            }
+            Conversion::AutocrlfInput => {
+                corpus.git(&["config", "core.autocrlf", "input"]);
+            }
+            Conversion::EolCrlf => commit_attributes("*.md text eol=crlf\n"),
+            Conversion::TextAuto => {
+                corpus.git(&["config", "core.eol", "crlf"]);
+                commit_attributes("* text=auto\n");
+            }
+            Conversion::Filter => {
+                corpus.git(&[
+                    "config",
+                    "filter.rev.clean",
+                    "sed -e 's/[$]Rev: [0-9]* [$]/$Rev$/'",
+                ]);
+                corpus.git(&[
+                    "config",
+                    "filter.rev.smudge",
+                    "sed -e 's/[$]Rev[$]/$Rev: 42 $/'",
+                ]);
+                // The keyword goes into the doc's committed prose, behind every base pin.
+                let home = repo.join(Kind::Placement.home());
+                let doc = fs::read_to_string(&home).expect("read the doc");
+                let anchor = Kind::Placement.anchor().trim_end();
+                let with_keyword =
+                    doc.replacen(anchor, &format!("{anchor} Revision {}.", Self::KEYWORD), 1);
+                assert_ne!(doc, with_keyword, "the keyword lands in the doc");
+                fs::write(&home, with_keyword).expect("write the keyword");
+                corpus.git(&["add", "--", Kind::Placement.home()]);
+                commit_attributes("VISION.md filter=rev\n");
+            }
+        }
+        // A clone's checkout: every tracked file written again, through the conversion.
+        corpus.git(&["rm", "-r", "-q", "--cached", "."]);
+        corpus.git(&["reset", "-q", "--hard"]);
+        corpus.fresh_clone_shape();
+        assert_eq!(
+            corpus.git(&["status", "--porcelain"]),
+            "",
+            "{self:?}: the premise — a clean checkout",
+        );
+        let doc = read(&repo, Kind::Placement.home());
+        match self {
+            Conversion::AutocrlfTrue | Conversion::EolCrlf | Conversion::TextAuto => assert!(
+                doc.contains("\r\n"),
+                "{self:?}: the premise — the doc is checked out with CRLF endings",
+            ),
+            Conversion::AutocrlfInput => assert!(!doc.contains('\r'), "{self:?}: premise"),
+            Conversion::Filter => assert!(
+                doc.contains(Self::EXPANDED),
+                "{self:?}: the premise — the working file is the smudged form",
+            ),
+        }
+    }
+}
+
+/// Mint a `single-task` task under `intent`, with its commit doc authored.
+fn mint_task(corpus: &TrialCorpus, intent: &str) -> String {
+    let task = corpus.start_workflow("single-task", intent);
+    corpus.set_field(&format!("commit:{task}#type"), &task, "docs");
+    corpus.set_field(&format!("commit:{task}#scope"), &task, "docs");
+    corpus.set_slot(&format!("commit:{task}#summary"), &task, intent);
+    task
+}
+
+/// Append [`HAND`] after the anchor line of the placement doc, in the line ending that line
+/// already has — an out-of-band edit as an editor on that checkout would save it.
+fn hand_edit_in_place(corpus: &TrialCorpus) {
+    let path = corpus.repo().join(Kind::Placement.home());
+    let before = fs::read_to_string(&path).expect("read the doc");
+    let anchor = Kind::Placement.anchor().trim_end();
+    let at = before.find(anchor).expect("the anchor line is in the doc");
+    let line_end = at + before[at..].find('\n').expect("the anchor line ends") + 1;
+    let eol = if before[..line_end].ends_with("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let after = format!("{}{HAND}{eol}{}", &before[..line_end], &before[line_end..]);
+    fs::write(&path, after).expect("write the hand edit");
+}
+
+/// **A doc nobody edited never blocks a committing door, under any conversion — and one
+/// somebody did edit still does** (the rc.24 fix pass's completion audit, the eol
+/// regression).
+///
+/// The regression, driven at `5f5b273a` in a `core.autocrlf=true` clone and under
+/// `* text eol=crlf`: `jigc doc set-slot` edits the checked-out CRLF doc in place, so the
+/// file a finalize lands is **mixed** — CRLF on the lines git wrote, `\n` on the lines jigc
+/// did. `git add` normalizes it and git calls it unmodified. The base-pin backstop compared
+/// bytes, against the two forms it knew (the checked-out one, the raw blob), matched
+/// neither, and conflict-blocked the next task once the key was gone; the route's
+/// `git checkout` rewrote nothing, because git had no modification to undo, and
+/// `jigc unmanage` — the exit `1.0.0-rc.24` had — led straight back to the block. The two
+/// cells above built *"jigc's own write"* from a doc landed before the conversion existed,
+/// which is all `\n` and never mixed.
+///
+/// So the sequence here is the one a clone lives through, over every conversion: a first
+/// task lands; a second lands with the key held (the doc reads drifted at once in such a
+/// checkout, since the recorded hash is the blob's — the block `1.0.0-rc.24` raised here is
+/// closed by the same answer); a third lands with the key lost after its copy-in; and where
+/// the instance was reported, a fourth lands through `jigc unmanage`. Beside them, the
+/// refusals the guard is for: a hand edit after the copy-in blocks with the key held and
+/// with it gone, the line stays on disk, and reverting it as the route says lands the task.
+#[test]
+fn an_unedited_doc_never_blocks_under_any_conversion_and_an_edited_one_still_does() {
+    let base = baselined_corpus();
+    let kind = Kind::Placement;
+    let home = kind.home();
+    std::thread::scope(|scope| {
+        for conversion in Conversion::ALL {
+            let corpus = base.copy_state();
+            scope.spawn(move || {
+                conversion.apply(&corpus);
+                let write = |task: &str, prose: &str| {
+                    let out = corpus.jigc_stdin(
+                        &[
+                            "doc",
+                            "set-slot",
+                            &kind.slot(),
+                            "--from-file",
+                            "-",
+                            "--task",
+                            task,
+                        ],
+                        &format!("{prose}\n"),
+                    );
+                    assert_eq!(out.status.code(), Some(0), "{conversion:?}: {}", text(&out));
+                };
+                let lands = |task: &str, what: &str| {
+                    let out = Door::Task.finalize(&corpus, task);
+                    let envelope: serde_json::Value =
+                        stdout_json(&out, &[0], &format!("{conversion:?}: {what}"));
+                    assert!(
+                        keyed(&findings(&envelope), CONFLICT, home).is_empty(),
+                        "{conversion:?}: {what} — no conflict on a doc nobody edited; {}",
+                        text(&out),
+                    );
+                    assert_eq!(
+                        corpus.git(&["status", "--porcelain"]),
+                        "",
+                        "{conversion:?}: {what} leaves the checkout clean",
+                    );
+                };
+
+                // 1. The clone's first task.
+                let task = mint_task(&corpus, "first pass over the vision");
+                write(&task, "FIRST-PASS which domains earn a pack.");
+                lands(&task, "the clone's first task");
+                let doc = read(&corpus.repo(), home);
+                if matches!(
+                    conversion,
+                    Conversion::AutocrlfTrue | Conversion::EolCrlf | Conversion::TextAuto
+                ) {
+                    assert!(
+                        doc.contains("\r\n") && doc.replace("\r\n", "").contains('\n'),
+                        "{conversion:?}: the premise — jigc's in-place write left a MIXED file",
+                    );
+                }
+
+                // 2. The next task, the key held.
+                let task = mint_task(&corpus, "second pass over the vision");
+                write(&task, "SECOND-PASS which domains earn a pack.");
+                lands(&task, "a second task, the key held");
+
+                // 3. The key lost after the copy-in — the backstop's own arm.
+                let task = mint_task(&corpus, "third pass over the vision");
+                write(&task, "THIRD-PASS which domains earn a pack.");
+                corpus.fresh_clone_shape();
+                assert_eq!(recorded(&corpus, home), None, "{conversion:?}: premise");
+                lands(&task, "a third task, the key lost after its copy-in");
+                let landed = corpus.git(&["show", &format!("HEAD:{home}")]);
+                assert!(
+                    landed.contains("THIRD-PASS") && !landed.contains('\r'),
+                    "{conversion:?}: what landed is the task's prose, normalized: {landed}",
+                );
+
+                // 4. `jigc unmanage` between the copy-in and the door.
+                if conversion == Conversion::AutocrlfTrue {
+                    let task = mint_task(&corpus, "fourth pass over the vision");
+                    write(&task, "FOURTH-PASS which domains earn a pack.");
+                    corpus.jigc_ok(&["unmanage", home]);
+                    lands(&task, "a fourth task, through `jigc unmanage`");
+                }
+
+                // 5. And a hand edit after the copy-in still blocks — key held, then gone.
+                let task = mint_task(&corpus, "fifth pass over the vision");
+                write(&task, "FIFTH-PASS which domains earn a pack.");
+                hand_edit_in_place(&corpus);
+                let edited = read(&corpus.repo(), home);
+                assert!(edited.contains(HAND), "{conversion:?}: premise");
+                let head_before = head(&corpus);
+                for key in ["held", "lost"] {
+                    if key == "lost" {
+                        corpus.fresh_clone_shape();
+                    }
+                    let out = Door::Task.finalize(&corpus, &task);
+                    assert_blocked(
+                        &corpus,
+                        &out,
+                        home,
+                        &head_before,
+                        &edited,
+                        &format!("{conversion:?}: a hand edit, the key {key}"),
+                    );
+                }
+                // The route's second exit — revert the external edit on disk — lands it.
+                corpus.git(&["checkout", "--", home]);
+                assert!(
+                    !read(&corpus.repo(), home).contains(HAND),
+                    "{conversion:?}: git reverted the edit it could see",
+                );
+                lands(&task, "the same task, the edit reverted as the route says");
+            });
+        }
+    });
+}
+
+/// **The milestone join reads the same answer.** `jigc milestone finalize` sweeps the
+/// committed store against the milestone's base through the same seam, so a doc a sub-task
+/// staged in a converting checkout, its key lost, lands there too.
+#[test]
+fn the_milestone_join_does_not_block_an_unedited_doc_under_conversion() {
+    let corpus = baselined_corpus().copy_state();
+    let kind = Kind::Placement;
+    Conversion::EolCrlf.apply(&corpus);
+    // A first task, so the doc on disk is the mixed file an in-place write leaves.
+    let task = mint_task(&corpus, "first pass over the vision");
+    corpus.set_slot(&kind.slot(), &task, "FIRST-PASS which domains earn a pack.");
+    let out = Door::Task.finalize(&corpus, &task);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out));
+
+    let sub = Door::Milestone.mint(&corpus);
+    kind.first_write(&corpus, &sub);
+    corpus.fresh_clone_shape();
+    let out = Door::Milestone.finalize(&corpus, &sub);
+    let envelope: serde_json::Value = stdout_json(&out, &[0], "the join");
+    assert!(
+        keyed(&findings(&envelope), CONFLICT, kind.home()).is_empty(),
+        "no conflict at the join on a doc nobody edited; {}",
+        text(&out),
+    );
+}
+
+/// **The question is about the file, so a doc the index no longer carries is still decided
+/// by its bytes.** `git diff <pin> -- <path>` reads a path with no index entry as *deleted*
+/// whatever the working file holds — a statement about the index. Driven while this fix was
+/// being built: a task's doc un-tracked with `git rm --cached` after the copy-in, its key
+/// lost, nobody editing the file, refused at `jigc task finalize` where `1.0.0-rc.24` lands.
+/// So with no index entry the file is compared with the pin over a scratch index: untouched
+/// it lands, and a hand edit there still blocks.
+#[test]
+fn a_doc_the_index_no_longer_carries_is_still_decided_by_the_file() {
+    let base = baselined_corpus();
+    let kind = Kind::Placement;
+    for edited in [false, true] {
+        let what = format!("un-tracked after the copy-in, edited: {edited}");
+        let corpus = base.copy_state();
+        let task = Door::Task.mint(&corpus);
+        kind.first_write(&corpus, &task);
+        forget(&corpus, kind.home());
+        corpus.git(&["rm", "-q", "--cached", "--", kind.home()]);
+        if edited {
+            kind.hand_edit(&corpus);
+        }
+        let disk = read(&corpus.repo(), kind.home());
+        let head_before = head(&corpus);
+        let out = Door::Task.finalize(&corpus, &task);
+        if edited {
+            assert_blocked(&corpus, &out, kind.home(), &head_before, &disk, &what);
+        } else {
+            let envelope: serde_json::Value = stdout_json(&out, &[0], &what);
+            assert!(
+                keyed(&findings(&envelope), CONFLICT, kind.home()).is_empty(),
+                "{what}: no conflict on a file nobody edited; {}",
+                text(&out),
+            );
+            assert!(
+                corpus
+                    .git(&["show", &format!("HEAD:{}", kind.home())])
+                    .contains(TASK_PROSE),
+                "{what}: the task's write landed",
+            );
+        }
+    }
 }
 
 /// **The statement, where the rule is described.** The design sentences this fix makes true,
