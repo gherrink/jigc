@@ -1696,8 +1696,8 @@ fn milestone_finalized_parity() {
             // Text-only, declared at the field (`#[serde(skip)]`): the landed envelope is
             // pinned at its keys, and a worktree whose directory is gone keeps reading
             // `provisioned: false` there. `worktree_registration_anchor.rs` drives the
-            // `Some` half on the real binary and asserts the key set does not move.
-            stale: None,
+            // `true` half on the real binary and asserts the key set does not move.
+            stale: false,
             discarded: vec![DiscardedWork {
                 path: "src/scratch.rs".to_owned(),
                 state: DiscardState::NeverStaged,

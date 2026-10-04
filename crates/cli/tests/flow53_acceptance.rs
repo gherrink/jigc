@@ -1594,15 +1594,27 @@ fn the_displacing_doors_keep_every_byte_they_cannot_commit() {
         if !matches!(door.disposition, Disposition::Displace) {
             continue;
         }
-        assert!(
-            door.codes.is_empty(),
-            "[{}] a displacing member refuses over nothing it destroys — its answer is the \
-             move, so its code set is empty. Since M53 Increment 2 / T3 both members DO mint \
-             a code, `finalize.foreign-bytes`, and it still does not belong here: `codes` is \
-             *door-scoped blocking codes the door refuses with*, and that one is a landed-arm \
-             advisory over bytes the door KEPT, raised after the commit at exit 0; got {:?}",
+        // What a displacing member refuses with is not this arm's subject, and it is no
+        // longer nothing: since the rc.24 fix pass `jigc milestone finalize` refuses, before
+        // it lands, over the one thing it can neither commit nor move — what git's
+        // registration of a sub-task worktree holds (`worktree_registration_anchor.rs` drives
+        // it). Over the bytes THIS arm plants — a working area's foreign population — both
+        // members still answer with the move and with no code at all.
+        let pre_landing: &[&str] = if door.verb == "jigc milestone finalize" {
+            &["milestone.unlanded-work"]
+        } else {
+            &[]
+        };
+        assert_eq!(
+            door.codes, pre_landing,
+            "[{}] a displacing member's answer for a working area's foreign bytes is the \
+             move, so it refuses with no code over them — the only code it may carry is the \
+             pre-landing refusal over a worktree registration, which the task door (it \
+             stands at no worktree) does not have. Since M53 Increment 2 / T3 both members \
+             DO mint `finalize.foreign-bytes`, and it still does not belong here: `codes` is \
+             *door-scoped blocking codes the door refuses with*, and that one is a \
+             landed-arm advisory over bytes the door KEPT, raised after the commit at exit 0",
             door.verb,
-            door.codes,
         );
         driven += 1;
         let plan = displace_plan_for(door);

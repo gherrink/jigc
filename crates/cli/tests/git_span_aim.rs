@@ -188,7 +188,9 @@ const AIM_HOME: &str = "git_at";
 /// producers, both in `milestone.rs` and both off the `Route` (they ride a refusal's
 /// per-path line and a loss narration): `keep_commit_command` and `restore_recipe`. The
 /// table is the count — `every_production_caller_of_the_one_home_is_a_row` holds it to the
-/// source.**]**
+/// source.**]** **[And a third the same day**, `unlanded_work_finding`: the milestone
+/// boundary's pre-landing refusal prints two aimed spans of its own (`reset --soft`,
+/// `stash`) beside the two above.**]**
 ///
 /// The remaining 120 lines are `bail!`/`with_context` diagnostics **quoting the invocation
 /// that failed** — law 1's second declared-absolute reason, and outside a route by
@@ -294,6 +296,19 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
          where there is one, at the main checkout where the worktree's directory is gone. \
          Printed on the refusal's per-path line (via `anchored_words`) and again by \
          `PendingAnchor::narrate_taken` after a drop, where it still works",
+    ),
+    (
+        "crates/cli/src/milestone.rs",
+        "unlanded_work_finding",
+        Aim::Aimed,
+        "the two exits only `jigc milestone finalize`'s pre-landing refusal offers (the rc.24 \
+         fix pass, `milestone.unlanded-work`), both aimed at the sub-task's live worktree: \
+         `git reset --soft <base pin>`, which turns a commit made inside it into staged paths \
+         the boundary lands, and `git stash`, which keeps a settled sub-task's staged paths \
+         under `refs/stash`. Neither takes a path operand, but the *checkout* is the subject \
+         — run from anywhere else they would move another HEAD or stash another index. Like \
+         the keep command they ride the refusal's per-path line rather than the `Route`; \
+         `worktree_registration_anchor.rs` runs each as printed from outside the repository",
     ),
     (
         "crates/cli/src/milestone.rs",

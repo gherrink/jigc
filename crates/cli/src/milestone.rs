@@ -273,6 +273,18 @@ pub enum MilestoneCommand {
     /// entry is not a regular file (a symbolic link, a directory): a doc lands as a
     /// regular file at exactly its home and is never written through a link, so the
     /// boundary blocks with the same code and names the exit that sub-task's doc has.
+    /// The code half lands what a sub-task has **staged in a live worktree** and nothing
+    /// else, and a landed boundary then removes the worktrees — so it refuses first,
+    /// with `milestone.unlanded-work`, committing nothing and leaving the milestone
+    /// active, while git's registration of a sub-task worktree holds work it would
+    /// land without: a commit made inside the worktree that no ref reaches, paths
+    /// still staged in the index of a worktree whose directory is gone (or whose
+    /// `.git` link is), or anything staged or committed in the worktree of a sub-task
+    /// settled by `jigc task discard`. The refusal prints, per path, the command that
+    /// keeps the commit under a branch, the one that turns it into staged paths so it
+    /// lands, the one that brings the checkout back or re-links it, or the stash that
+    /// keeps a settled sub-task's staged paths. There is no `--force` here: the other
+    /// exit is `jigc milestone discard`.
     Finalize {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
@@ -3606,7 +3618,10 @@ pub struct StagedPath {
 /// registration that holds either is a hold, at `provision`, `discard` and `uninstall`,
 /// under each door's existing code with `--force` the existing consent; an **empty** one —
 /// `HEAD` reachable from a ref or at the milestone's base pin, nothing staged — still clears,
-/// so the idempotent re-provision survives exactly where it is harmless.
+/// so the idempotent re-provision survives exactly where it is harmless. **And at `jigc
+/// milestone finalize`, before the boundary lands** ([`unlanded_work`]): the fourth worktree
+/// door narrated this subject *after* landing until the same day's second ruling, which
+/// left the work out of a milestone already settled as `joined`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Anchored {
     /// The commits only this registration's `HEAD` reaches, or `None` when a ref (or the
@@ -3614,9 +3629,12 @@ pub struct Anchored {
     pub commit: Option<AnchoredCommit>,
     /// The paths staged in the registration's index and in no commit, path-sorted.
     ///
-    /// **Populated only where no live checkout stands at the path.** A live worktree's
-    /// staged paths are entries of the bytes leg — `git status --porcelain` lists them — and
-    /// answering for them twice would name one file two ways on one line.
+    /// **Populated only where the calling door would not otherwise answer for them**
+    /// ([`anchored_reading`]). At the three refusing doors that is *no live checkout stands
+    /// at the path*: a live worktree's staged paths are entries of the bytes leg — `git
+    /// status --porcelain` lists them — and answering for them twice would name one file two
+    /// ways on one line. At the milestone boundary, which asks no bytes leg, it is *the
+    /// boundary does not carry them*: no live checkout, or a sub-task settled as discarded.
     pub staged: Vec<StagedPath>,
     /// The registration's admin directory. It is gone afterwards **iff** the removal took
     /// the registration, which is what keys [`PendingAnchor::narrate_taken`] on the outcome.
@@ -3658,6 +3676,28 @@ const DEDICATED_PREFIX: &str = ".combine-";
 /// from — is not held, because the sub-agent moved off it by its own act; the reflog still
 /// goes with the registration.
 fn anchored_at(jigc_home: &Path, path: &Path, live: bool) -> Result<Option<Anchored>> {
+    // The index is the registration leg's subject exactly where no live checkout stands to
+    // answer for it through the bytes leg ([`Anchored::staged`]).
+    anchored_reading(jigc_home, path, live, !live)
+}
+
+/// [`anchored_at`] with the index question asked **explicitly** — `staged_is_held` says
+/// whether the paths staged in the registration's index are work the calling door would
+/// not carry.
+///
+/// The three refusing doors derive it from `live` ([`anchored_at`]): a live worktree's
+/// staged paths are theirs through the bytes leg. `jigc milestone finalize` cannot — it
+/// asks no bytes leg at all, and whether a staged path is held there is a fact about the
+/// **sub-task**, not about the checkout: a landed sub-task's live index is the boundary's
+/// input and is carried, while a sub-task settled by `jigc task discard` contributes
+/// nothing, so the same index in the same live checkout is dropped with the teardown
+/// ([`unlanded_work`]).
+fn anchored_reading(
+    jigc_home: &Path,
+    path: &Path,
+    live: bool,
+    staged_is_held: bool,
+) -> Result<Option<Anchored>> {
     let Some(sub_id) = path.file_name().and_then(|name| name.to_str()) else {
         return Ok(None);
     };
@@ -3749,10 +3789,10 @@ fn anchored_at(jigc_home: &Path, path: &Path, live: bool) -> Result<Option<Ancho
         }
     };
 
-    let staged = if live {
-        Vec::new()
-    } else {
+    let staged = if staged_is_held {
         staged_in_registration(jigc_home, &admin)?
+    } else {
+        Vec::new()
     };
 
     if commit.is_none() && staged.is_empty() {
@@ -3825,20 +3865,78 @@ fn staged_in_registration(jigc_home: &Path, admin: &Path) -> Result<Vec<StagedPa
     Ok(staged)
 }
 
-/// The branch a keep command gives a held commit — `kept/<sub-task-id>`. A sub-task id is a
-/// slug, so the name is a valid ref and needs no quoting.
-fn kept_branch(path: &Path) -> String {
-    format!(
-        "kept/{}",
-        path.file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default(),
-    )
+/// The branch a keep command gives a held commit — `kept/<sub-task-id>`, **or the first
+/// name beside it that `git branch` can actually create** in the repository `aim` belongs
+/// to. A sub-task id is a slug, so every candidate is a valid ref and needs no quoting.
+///
+/// **The name is chosen against the refs that exist, because the command is printed to be
+/// run** (the rc.24 fix pass). A fixed `kept/<sub-task-id>` dead-ended in the two states a
+/// reader who has already followed this route once is in — driven, each exits 128 as
+/// printed:
+///
+/// * the branch is **already there** (an earlier keep of an earlier commit from the same
+///   sub-task: `a branch named 'kept/<id>' already exists`) — so the name takes a numeric
+///   suffix, `kept/<id>-2`, `-3`, …;
+/// * a branch named exactly **`kept`** exists, which makes the whole `kept/` namespace
+///   uncreatable (`cannot lock ref 'refs/heads/kept/<id>': 'refs/heads/kept' exists`) —
+///   so the stem falls back to `kept-<id>`.
+///
+/// The same directory/file rule runs the other way (a branch `kept/<id>/x` blocks
+/// `kept/<id>`), and [`branch_is_free`] answers all three with one predicate. An unreadable
+/// ref list degrades to the plain name: the command may then fail loudly, and it loses
+/// nothing when it does.
+fn kept_branch(aim: &Path, path: &Path) -> String {
+    let sub_id = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let plain = format!("kept/{sub_id}");
+    let Ok(listed) = git_worktree(
+        aim,
+        &[
+            "for-each-ref",
+            "--format=%(refname:lstrip=2)",
+            "refs/heads/",
+        ],
+    ) else {
+        return plain;
+    };
+    let taken: Vec<&str> = listed.lines().collect();
+    // A branch named `kept` blocks every `kept/…` name, whatever its suffix.
+    let stem = if taken.contains(&"kept") {
+        format!("kept-{sub_id}")
+    } else {
+        plain
+    };
+    if branch_is_free(&taken, &stem) {
+        return stem;
+    }
+    // Finitely many refs exist, so some suffix is free.
+    (2u32..)
+        .map(|n| format!("{stem}-{n}"))
+        .find(|name| branch_is_free(&taken, name))
+        .unwrap_or(stem)
+}
+
+/// Whether `git branch <name>` can create `name` beside the branches in `taken`: no branch
+/// has that name, none is a path-prefix of it, and it is a path-prefix of none (git stores
+/// a ref as a file, so `a` and `a/b` cannot both exist).
+fn branch_is_free(taken: &[&str], name: &str) -> bool {
+    !taken.iter().any(|existing| {
+        *existing == name
+            || existing
+                .strip_prefix(name)
+                .is_some_and(|rest| rest.starts_with('/'))
+            || name
+                .strip_prefix(existing)
+                .is_some_and(|rest| rest.starts_with('/'))
+    })
 }
 
 /// **The command that keeps a commit only a registration's `HEAD` reaches**: `git -C
-/// <checkout> branch kept/<sub-task-id> <sha>`. Once a ref reaches the commit the
-/// registration no longer holds it, the path clears, and the door proceeds without consent.
+/// <checkout> branch kept/<sub-task-id> <sha>` ([`kept_branch`] picks a name that is free).
+/// Once a ref reaches the commit the registration no longer holds it, the path clears, and
+/// the door proceeds without consent.
 ///
 /// Aimed at the live checkout where there is one — it shares its refs with the repository
 /// it belongs to, which for a copied repository's worktree is not this one — and at
@@ -3849,7 +3947,7 @@ fn keep_commit_command(jigc_home: &Path, path: &Path, live: bool, sha: &str) -> 
         .canonicalize()
         .unwrap_or_else(|_| jigc_home.to_path_buf());
     let aim = if live { path } else { home.as_path() };
-    engine::finding::git_at(aim, &format!("branch {} {sha}", kept_branch(path)))
+    engine::finding::git_at(aim, &format!("branch {} {sha}", kept_branch(aim, path)))
 }
 
 /// **The three commands that bring a missing checkout back from git's registration of it**:
@@ -3985,8 +4083,11 @@ pub struct DestroyingDoor {
     /// single `code` as *"the door's one refusal"* is what left the abandon destroying
     /// staged prose at exit 0 until the M50 completion audit.
     ///
-    /// Empty ⇔ the door refuses over nothing it destroys — a [`Disposition::Displace`]
-    /// member, whose answer is the move rather than a refusal.
+    /// Empty ⇔ the door refuses over nothing it destroys — [`TASK_FINALIZE_DOOR`], whose
+    /// answer is the move rather than a refusal. **A member's disposition does not settle
+    /// this**: [`FINALIZE_DOOR`] displaces what it finds in a working area and still
+    /// refuses, before it lands, over the one subject it can neither commit nor move
+    /// ([`FINALIZE_HELD_CODE`]).
     pub codes: &'static [&'static str],
 }
 
@@ -4008,6 +4109,16 @@ const PROVISION_CODE: &str = "milestone.leftover-holds-work";
 
 /// [`DISCARD_DOOR`]'s blocking identity — [`dirty_worktree_finding`]'s, same reason.
 const DISCARD_CODE: &str = "milestone.dirty-worktree";
+
+/// [`FINALIZE_DOOR`]'s blocking identity — [`unlanded_work_finding`]'s: the boundary would
+/// land **without** work a sub-task worktree's registration still holds.
+///
+/// **Its own code, not a sibling's** (D1's per-door-identity rule; `flow48_acceptance` and
+/// `flow49_acceptance` fence *no blocking identity is shared between two doors*). The state
+/// is the one [`DISCARD_CODE`] and [`PROVISION_CODE`] refuse over, and borrowing either
+/// would hand a driver keyed on it a route this door cannot honour: both of theirs end at
+/// `--force`, and this door has no consent to offer.
+const FINALIZE_HELD_CODE: &str = "milestone.unlanded-work";
 
 /// A provision that **moved bytes and then stopped** — its own blocking identity, distinct
 /// from [`PROVISION_CODE`]: the leftover refusal fires in phase 1 and changes nothing, this
@@ -4126,9 +4237,11 @@ pub const TASK_DISCARD_DOOR: DestroyingDoor = DestroyingDoor {
 /// **`codes` stays empty although this door now mints `finalize.foreign-bytes`** (M53
 /// Increment 2 / T3; `settle-record.md` → D2's check scope). This field is *door-scoped
 /// blocking codes the door refuses with*, and that advisory is not a refusal: it is raised
-/// **after** the commit landed, at exit 0, over bytes the door **kept**. A displacing member's
-/// answer is the move, so its code set is empty — the ⇔ `flow53_acceptance` asserts stays
-/// true, and it stays true for a reason rather than by accident.
+/// **after** the commit landed, at exit 0, over bytes the door **kept**. This door's answer
+/// for everything it removes is the move, so its code set is empty — which
+/// `flow53_acceptance` asserts, and which holds for a reason rather than by accident. (Its
+/// milestone sibling carries one code, for the one subject this door does not stand at: a
+/// worktree's registration — [`FINALIZE_DOOR`].)
 pub const TASK_FINALIZE_DOOR: DestroyingDoor = DestroyingDoor {
     verb: "jigc task finalize",
     disposition: Disposition::Displace,
@@ -4148,14 +4261,28 @@ pub const TASK_FINALIZE_DOOR: DestroyingDoor = DestroyingDoor {
 /// row is [`Disposition::Displace`] — the worktrees it still takes are narrated, the
 /// measured `--ignored` bound of M46 unchanged.
 ///
-/// **`codes` stays empty for the same reason its sibling's does** (M53 Increment 2 / T3):
-/// `finalize.foreign-bytes` is a landed-arm advisory over kept bytes, not a code this door
+/// **`codes` leaves `finalize.foreign-bytes` out for the same reason its sibling's does**
+/// (M53 Increment 2 / T3): it is a landed-arm advisory over kept bytes, not a code this door
 /// refuses with — and here it does not even reach a `findings` key, the landed arm being
 /// pinned at `Object(&["committed"])`, so it goes out on stderr.
+///
+/// **It carries one code since the rc.24 fix pass, and the disposition does not move.** The
+/// teardown behind a landed boundary drops git's registration of every sub-task worktree,
+/// and what a registration holds that the boundary does not carry — a commit no ref
+/// reaches, the staged paths of a worktree whose directory is gone — has neither of this
+/// door's other two answers available: no commit of the boundary's takes it (so the
+/// narrating warrant fails, as it did for the working areas), and there is nowhere to move
+/// it (it is a `HEAD` and an index, not a file). The human's ruling is the third arm,
+/// taken **before the boundary lands** ([`unlanded_work`], [`FINALIZE_HELD_CODE`]): refuse,
+/// commit nothing, leave the record `active`. It is a refusal with **no consent** — this
+/// door has no `--force`, and one would be a new capability rather than a guard — which is
+/// why the row stays [`Disposition::Displace`] (what it does with the bytes it *does*
+/// reach) and [`DestroyingDoor::consent`] stays `None`: the exits are the commands the
+/// refusal prints, or `jigc milestone discard`.
 pub const FINALIZE_DOOR: DestroyingDoor = DestroyingDoor {
     verb: "jigc milestone finalize",
     disposition: Disposition::Displace,
-    codes: &[],
+    codes: &[FINALIZE_HELD_CODE],
 };
 
 /// The destroying-door axis — the **six** verbs that remove a path they did not write,
@@ -4381,12 +4508,27 @@ fn anchored_words(jigc_home: &Path, abs: &Path, anchored: &Anchored) -> String {
             paths.join(", "),
         ));
     }
-    let holder = if anchored.live {
-        "its HEAD holds"
-    } else {
-        "git's registration of this path still holds"
-    };
-    format!("{holder} {}", parts.join(" and "))
+    if !anchored.live {
+        return format!(
+            "git's registration of this path still holds {}",
+            parts.join(" and "),
+        );
+    }
+    // A live checkout names the two holders apart: the commit is its `HEAD`'s, the staged
+    // paths its index's (the second only where a door reads it — [`anchored_reading`]).
+    let mut holders = Vec::new();
+    if anchored.commit.is_some() {
+        holders.push("its HEAD holds");
+    }
+    if !anchored.staged.is_empty() {
+        holders.push("its index holds");
+    }
+    holders
+        .into_iter()
+        .zip(parts)
+        .map(|(holder, part)| format!("{holder} {part}"))
+        .collect::<Vec<_>>()
+        .join(" and ")
 }
 
 /// What a directory-shaped hold actually holds — the entries, the un-concluded operation, or
@@ -4412,9 +4554,58 @@ fn held_here(jigc_home: &Path, abs: &Path, hold: &LeftoverHold) -> String {
         ));
     }
     if let Some(anchored) = &hold.anchored {
-        parts.push(anchored_words(jigc_home, abs, anchored));
+        let mut words = anchored_words(jigc_home, abs, anchored);
+        // A directory with no `.git` entry beside a registration that still names it: the
+        // checkout is there and unlinked. One line gives it back to that registration.
+        if let Some(relink) = relink_command(abs, anchored) {
+            words.push_str(&format!(
+                " — what stands there has no `.git` link: `{relink}` makes it that \
+                 registration's checkout again, its files untouched",
+            ));
+        }
+        parts.push(words);
     }
     parts.join("; and ")
+}
+
+/// **The one command that gives an unlinked checkout back to git's registration of it**:
+/// write the `.git` link the registration's own `gitdir` file names — `None` unless a
+/// directory stands at `path` with **no `.git` entry at all** and the registration was
+/// read out of this repository's registry (`!anchored.live`).
+///
+/// It is [`restore_recipe`]'s middle step alone, and the split is the point: the recipe
+/// recreates a directory and lets `git restore .` write the index out, which is right when
+/// nothing stands at the path and would overwrite files when something does. Here the
+/// working files are on disk, so the link is all that is missing — after it the path is a
+/// live worktree again, at the `HEAD` git recorded, its index as the sub-agent left it and
+/// every file where it was, and each door asks its ordinary question of it.
+///
+/// **Only where no `.git` entry exists.** A `.git` that is there and points somewhere git
+/// cannot read is another repository's linkage (the copy-then-move shape,
+/// [`LeftoverVerdict::Unverifiable`]), and overwriting it would cut that checkout off from
+/// the repository it belongs to. `NotFound` is the one answer that makes the write
+/// non-destructive.
+///
+/// **By hand, not `git worktree repair`** — for [`restore_recipe`]'s reason, now driven
+/// rather than reasoned (the rc.24 fix pass): that verb fixes this link too, and on the
+/// way re-points the `.git` link of every *other* worktree whose registration this
+/// repository carries. In a `cp -R` copy those registrations name the **source's**
+/// worktrees, and one `git worktree repair` in the copy left each of the source's live
+/// checkouts answering for the copy.
+fn relink_command(path: &Path, anchored: &Anchored) -> Option<String> {
+    if anchored.live || leftover_at(path) != LeftoverAt::Directory {
+        return None;
+    }
+    let link = path.join(".git");
+    match std::fs::symlink_metadata(&link) {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        _ => return None,
+    }
+    Some(format!(
+        "printf 'gitdir: %s\\n' {} > {}",
+        engine::finding::shell_operand(&anchored.admin.to_string_lossy()),
+        engine::finding::shell_operand(&link.to_string_lossy()),
+    ))
 }
 
 /// Why the door may not dispose of what it found — one sentence per (shape, verdict), shared
@@ -4569,7 +4760,10 @@ fn leftover_at(path: &Path) -> LeftoverAt {
 /// marker of it standing) — and it made the review of `3c71da87` read the *four*
 /// [`WORKTREE_DOORS`] as this probe's callers. They are not: [`FINALIZE_DOOR`] is the
 /// [`Disposition::Displace`] member, whose teardown runs **after** its commit and is guarded a
-/// phase earlier by [`fan_out_posture_findings`]. The callers are the **three refusing**
+/// phase earlier, leg by leg — the second by [`fan_out_posture_findings`], the third by
+/// [`unlanded_work`]; the first (bytes) it narrates, on M46's measured warrant, because this
+/// probe's bytes leg would refuse every worktree that staged the code the boundary exists
+/// to land. The callers are the **three refusing**
 /// worktree doors — [`PROVISION_DOOR`] (phase 1), [`DISCARD_DOOR`]
 /// ([`held_subtask_worktrees`]) and [`UNINSTALL_DOOR`] (`crate::setup::dirty_fanout_worktrees`)
 /// — and they ask one probe rather than growing three that drift, which is what made the
@@ -6202,7 +6396,21 @@ fn run_milestone_finalize(
     // been written yet: `materialize` rebuilds its dir every call and the `RecordFlipGuard`
     // is not armed until below, so a block here truly commits nothing and leaves the
     // milestone finalizable once the user has concluded or abandoned the operation.
-    let breaches = fan_out_posture_findings(&jigc_home, &worktrees);
+    let mut breaches = fan_out_posture_findings(&jigc_home, &worktrees);
+    // …and what git's registration of each sub-task worktree holds that this boundary
+    // would land **without** (the rc.24 fix pass; [`unlanded_work`]): a commit a sub-agent
+    // made instead of staging, the staged paths of a worktree whose directory is gone, the
+    // staged paths of a sub-task settled as discarded. The teardown behind a landed
+    // boundary drops those registrations, so until this guard the work was left out of the
+    // milestone *and* destroyed, and named only afterwards — over a record already flipped
+    // to the terminal `joined`. Asked over the **full** `list`, the teardown's own subject,
+    // and reported beside the posture breaches so one run names every worktree the
+    // boundary cannot land from. Same position rule: nothing durable is written yet.
+    breaches.extend(
+        unlanded_work(&jigc_home, &list, &live)
+            .iter()
+            .map(|held| unlanded_work_finding(milestone_id, &jigc_home, &base.sha, held)),
+    );
     if !breaches.is_empty() {
         return blocked(&jigc_home, format, breaches);
     }
@@ -6302,7 +6510,7 @@ fn run_milestone_finalize(
     // at all. The no-work sub-task reads `docs: 0, code_files: 0` and renders visibly as
     // `nothing staged`; a sub-task with no worktree is named too, since it could not have
     // contributed code even in principle (M47 Inc 3, call (b)(ii)).
-    let contributions = subtask_contributions(&jigc_home, &subtasks, &materialized.sources)?;
+    let contributions = subtask_contributions(&subtasks, &materialized.sources)?;
 
     // The finalize base-guard refinement (`design/team-ready-state.md` → The commit model: the
     // finalize base-guard refinement; `DECISIONS.md` 2026-07-07). Per-op record commits advance
@@ -7084,10 +7292,13 @@ enum SubtaskComplement<'a> {
 /// `git worktree remove` takes the checkout *and* git's registration of it, and the loss
 /// narration above reads a checkout: a commit a sub-agent made inside its worktree instead
 /// of staging, and the whole index of a worktree whose directory is already gone, were
-/// dropped here at exit 0 with nothing printed. The un-forced `discard` now refuses over
-/// either ([`probe_leftover`]'s third leg); this teardown is what runs past `--force` and
-/// behind a **landed** boundary — which cannot refuse after landing — so it names the path,
-/// the commit and the staged paths as they go ([`PendingAnchor`]).
+/// dropped here at exit 0 with nothing printed. **Both callers now refuse over either
+/// before this runs** — the un-forced `discard` through [`probe_leftover`]'s third leg, the
+/// boundary through [`unlanded_work`], before it lands — so what reaches this teardown
+/// holding such work is a `discard --force`, whose consent buys the removal and never the
+/// silence: it names the path, the commit and the staged paths as they go
+/// ([`PendingAnchor`]). Behind a landed boundary the same read is a backstop that finds
+/// nothing.
 ///
 /// `landed` is the set of sub-tasks whose staged code the boundary just committed — `None`
 /// from `discard`, which lands nothing. It decides, per worktree, whether a wholly staged
@@ -7153,9 +7364,9 @@ fn remove_worktrees(
         // The other thing the removal takes: git's registration of the path, and with it
         // whatever only that registration held — a commit a sub-agent made instead of
         // staging, or the index of a worktree whose directory is already gone
-        // ([`PendingAnchor`]). The landed boundary cannot refuse over it after landing, so
-        // it names it; under `discard` this speaks only past `--force`, which the un-forced
-        // door refused over.
+        // ([`PendingAnchor`]). Both callers refused over it un-forced — `discard` at its
+        // guard, the boundary before it landed ([`unlanded_work`]) — so this speaks past
+        // `discard --force`, naming what the consent took.
         let anchor = pending_anchor(jigc_home, &path);
         let removed = remove_owned_registration(jigc_home, &path);
         pending.narrate_taken(jigc_home);
@@ -7215,6 +7426,279 @@ fn leaked_worktree_remedy(
     } else {
         format!("deal with what git's message names at that path, then run `{remove}` ({ONE})")
     }
+}
+
+/// One sub-task worktree path whose registration with git **holds work the milestone
+/// boundary would not carry** — [`unlanded_work`]'s unit, and one
+/// [`FINALIZE_HELD_CODE`] finding.
+struct UnlandedWork {
+    /// The canonical `<jigc_home>/.jigc/worktrees/<sub-task-id>` path.
+    path: PathBuf,
+    /// What the registration holds, in the shape every worktree door's refusal lists a
+    /// path by ([`hold_line`]) — the third leg alone: this door asks no bytes leg, and its
+    /// second leg is [`fan_out_posture_findings`].
+    hold: LeftoverHold,
+    /// Whether the boundary lands this sub-task at all — `false` for one settled by `jigc
+    /// task discard`, from which it lands nothing.
+    landed: bool,
+    /// Whether this repository has the path registered, i.e. whether the teardown behind a
+    /// landed boundary would drop the registration ([`remove_worktrees`]' own subject).
+    registered: bool,
+}
+
+/// **Every sub-task worktree registration that holds work `jigc milestone finalize` would
+/// land without** — the boundary's pre-landing guard over the leftover probe's third leg
+/// (the rc.24 fix pass; the human's ruling of 2026-10-04 on this class: *refuse while it
+/// holds staged paths or an unreachable commit, stale or live*).
+///
+/// The boundary lands exactly one thing out of a sub-task's worktree — **the paths staged
+/// in a live checkout of a sub-task it lands** — and then its teardown drops git's
+/// registration of every sub-task worktree. Whatever else a registration holds therefore
+/// went two ways at once, at exit 0: it was left out of the milestone, whose record then
+/// flipped to the terminal `joined`, and it was dropped. Driven on the tree before this
+/// guard, each with a sibling staging code so the boundary landed:
+///
+/// * a **commit** made inside a live worktree — landed without it, registration dropped,
+///   the commit named on stderr *afterwards*;
+/// * the same with the worktree's **directory gone**, and a `git add`-ed path in that
+///   stale registration's index — `its worktree directory is gone, no code counted — git's
+///   registration of it held staged <path>, which did not land`, printed over a milestone
+///   that was already `joined`;
+/// * a sub-task settled by `jigc task discard` whose live worktree still had a path
+///   staged — `<path> (staged, in no commit)` … `they are not recoverable`.
+///
+/// Naming a loss after an irreversible settle is the arm the door rule keeps for a door
+/// whose refusal would fire on the ordinary success path
+/// (`design/team-ready-state.md` → *Abandon refuses on a dirty worktree*), and none of
+/// these is that path: the product's own route tells a sub-agent to `git add` its work in
+/// a worktree that is there. So the boundary refuses **before it lands** — nothing
+/// committed, the record never flipped — and the registration is byte-identical after.
+///
+/// **What is held, per path** ([`anchored_reading`]):
+///
+/// * a commit no ref reaches, **stale or live**, whatever the sub-task's state;
+/// * the paths staged in its index **where the boundary does not carry them** — no live
+///   checkout stands there, or the sub-task is settled. A landed sub-task's live index is
+///   the boundary's input and is not a hold: that is the ordinary fan-out.
+///
+/// **The subject is what the boundary would leave out or drop, and nothing wider.** A
+/// landed sub-task is asked at its path whether or not this repository registered it (a
+/// `cp -R` copy's live worktrees are registered at the *source's* path and still feed the
+/// boundary — [`subtask_worktrees`]). A settled one is asked only where the teardown
+/// reaches, i.e. where it is registered here: nothing lands from it either way, so an
+/// unregistered path the teardown leaves standing loses nothing.
+///
+/// **Fail-closed, like every other leg**: a registration that is there and cannot be read
+/// is a hold ([`LeftoverShape::Unreadable`]) — *it holds nothing* is the one thing the
+/// probe did not establish, and this door settles the milestone for good.
+///
+/// **Bounds, stated not glossed.** (1) The bytes leg is not asked here, by the M46 ruling
+/// this guard does not reopen: a live worktree's unstaged, untracked and ignored bytes are
+/// still narrated by the teardown rather than refused over, for a landed sub-task *and*
+/// for a settled one. (2) An operation git has left un-concluded in a **settled**
+/// sub-task's worktree is likewise narrated: [`fan_out_posture_findings`] asks the
+/// worktrees the boundary commits from. (3) `jigc task validate <sub-task-id>` does not
+/// preview this refusal — it is a milestone-boundary gate, like `milestone.zero-contribution`,
+/// and outside the set that preview claims (`crate::gate_coverage`).
+fn unlanded_work(
+    jigc_home: &Path,
+    list: &engine::milestone::TaskList,
+    live: &engine::milestone::TaskList,
+) -> Vec<UnlandedWork> {
+    let registered = registered_worktrees(jigc_home).unwrap_or_default();
+    // `provision_worktrees`' canonical-path convention (git stores realpaths at `add`
+    // time) — the same spelling [`remove_worktrees`] matches its registrations by.
+    let canonical_home = jigc_home
+        .canonicalize()
+        .unwrap_or_else(|_| jigc_home.to_path_buf());
+    let mut held = Vec::new();
+    for sub_id in list.enumerate() {
+        let path = canonical_home.join(worktree_path(&sub_id));
+        let landed = live.tasks.contains(&sub_id);
+        let is_registered = registered.iter().any(|w| w == &path);
+        if !landed && !is_registered {
+            continue;
+        }
+        let at = leftover_at(&path);
+        let verdict = match at {
+            LeftoverAt::Directory => classify_leftover(&path),
+            LeftoverAt::Absent | LeftoverAt::Leaf | LeftoverAt::Unreadable(_) => {
+                LeftoverVerdict::Unverifiable
+            }
+        };
+        let checkout = verdict == LeftoverVerdict::OwnWorktree;
+        // The boundary carries a staged path only out of a live checkout of a sub-task it
+        // lands; everywhere else the index is work it would leave behind.
+        let staged_is_held = !(checkout && landed);
+        let (shape, anchored) = match anchored_reading(jigc_home, &path, checkout, staged_is_held) {
+            Ok(None) => continue,
+            Ok(Some(anchored)) => (
+                match at {
+                    LeftoverAt::Absent => LeftoverShape::Registration,
+                    LeftoverAt::Leaf => LeftoverShape::File,
+                    LeftoverAt::Directory | LeftoverAt::Unreadable(_) => LeftoverShape::Directory,
+                },
+                Some(anchored),
+            ),
+            Err(err) => (LeftoverShape::Unreadable(format!("{err:#}")), None),
+        };
+        held.push(UnlandedWork {
+            path,
+            hold: LeftoverHold {
+                verdict,
+                shape,
+                entries: Vec::new(),
+                operation: None,
+                anchored,
+            },
+            landed,
+            registered: is_registered,
+        });
+    }
+    held
+}
+
+/// [`FINALIZE_DOOR`]'s refusal over one path of [`unlanded_work`]: a blocking finding that
+/// names the path, what git's registration of it holds, why the boundary would not carry
+/// it, and — on that same line — every command that gets the work kept or landed.
+///
+/// **One finding per path**, the [`fan_out_posture_findings`] mold this door already uses
+/// for a worktree it will not commit from: each path is its own located `(code, target)`
+/// key, so two held worktrees are two discriminating keys rather than one finding sited at
+/// whichever sorted first.
+///
+/// **The line is [`hold_line`]'s**, so one state reads one way at all four worktree doors —
+/// the keep command for a commit, [`restore_recipe`] where the directory is gone,
+/// [`relink_command`] where a checkout stands unlinked. Two commands are this door's own,
+/// because only here does *landing* the work make sense:
+///
+/// * a commit in a live worktree of a sub-task the boundary lands — `git reset --soft
+///   <base>` moves `HEAD` back to the milestone's base pin and leaves everything the
+///   commits changed **staged**, which is the one thing the boundary reads. The keep
+///   command stays beside it: kept, the commit clears the path and the boundary lands
+///   *without* it, which is a real choice and the reader's to make;
+/// * a path staged in a live worktree of a **settled** sub-task — `git stash` puts it
+///   under `refs/stash`, a ref of the repository rather than of the worktree, so it
+///   outlives the teardown. Nothing lands from a settled sub-task, so there is no landing
+///   exit to offer.
+///
+/// **No consent is offered, because this door has none**: `jigc milestone finalize` takes
+/// no `--force`. The two exits are the commands above followed by the same `finalize`, or
+/// `jigc milestone discard`, which answers for the same paths under its own code and
+/// consent.
+fn unlanded_work_finding(
+    milestone_id: &str,
+    jigc_home: &Path,
+    base: &str,
+    held: &UnlandedWork,
+) -> Finding {
+    let at = render::repo_relative(jigc_home, &held.path);
+    let anchored = held.hold.anchored.as_ref();
+    let live = anchored.is_some_and(|anchored| anchored.live);
+    let aimed = |rest: &str| engine::finding::git_at(&held.path, rest);
+
+    let why = match (&held.hold.shape, held.landed) {
+        (LeftoverShape::Unreadable(_), _) => {
+            "git's registration of the path could not be read, so nothing can say it holds \
+             no work"
+                .to_owned()
+        }
+        (_, true) => "nothing else holds that work, and the boundary lands only the paths \
+                      staged in a live worktree"
+            .to_owned(),
+        (_, false) => "nothing else holds that work, and the boundary lands nothing from a \
+                       sub-task settled as discarded"
+            .to_owned(),
+    };
+    let unreadable = matches!(held.hold.shape, LeftoverShape::Unreadable(_));
+    let fate = if unreadable {
+        "the teardown behind a landed boundary would then drop the registration, with \
+         whatever it holds"
+    } else if held.registered {
+        "the teardown behind a landed boundary would then drop the registration, and that \
+         work with it"
+    } else {
+        "this repository has not registered that worktree, so the teardown would leave it \
+         standing — and the milestone would be settled without it"
+    };
+
+    // This door's own exits, each on the line of the path it is true of.
+    let mut exits: Vec<String> = Vec::new();
+    if let Some(anchored) = anchored {
+        if let Some(commit) = &anchored.commit
+            && live
+            && held.landed
+        {
+            let (it, changed) = if commit.count == 1 {
+                ("it", "it changed")
+            } else {
+                ("them", "they changed")
+            };
+            exits.push(format!(
+                "to land {it} with the milestone instead of keeping {it} aside, `{}` turns \
+                 what {changed} into staged paths",
+                aimed(&format!("reset --soft {base}")),
+            ));
+        }
+        if !anchored.staged.is_empty() && live {
+            exits.push(format!(
+                "`{}` keeps the staged paths as a stash, which outlives the worktree",
+                aimed("stash"),
+            ));
+        }
+        if matches!(held.hold.shape, LeftoverShape::File) {
+            exits.push(
+                "the file in the way is not a worktree: move it aside and re-run for the \
+                 command that brings the checkout back"
+                    .to_owned(),
+            );
+        }
+    }
+    let exits = if exits.is_empty() {
+        String::new()
+    } else {
+        format!(" — {}", exits.join("; "))
+    };
+
+    let landing = if held.landed {
+        "a path brought back or re-linked is a live worktree again, whose staged paths the \
+         boundary lands"
+    } else {
+        "a path brought back or re-linked is a live worktree again, and this door asks it \
+         the same question"
+    };
+    // The first move differs by what the line carries: a command to run, or — where the
+    // registration could not even be read — git's own message and nothing to paste.
+    let first = if unreadable {
+        "mend what git's message on that line names — there is no command to run for a \
+         registration that cannot be read —"
+            .to_owned()
+    } else {
+        format!(
+            "run the command on that line that fits what you want kept or landed (a kept \
+             commit clears the path, and {landing}),"
+        )
+    };
+    Finding::graded(
+        Severity::Blocking,
+        FINALIZE_HELD_CODE,
+        format!(
+            "milestone:{milestone_id}: `{}` would land without work a sub-task worktree \
+             still holds, so nothing was committed and the milestone stays active:\n  {} — \
+             {why}; {fate}{exits}",
+            FINALIZE_DOOR.verb,
+            hold_line(jigc_home, &held.path, &held.hold),
+        ),
+        Some(Location::addressed(&at, 1, 1)),
+        Some(
+            format!(
+                "{first} then re-run `jigc milestone finalize {milestone_id}` — or abandon \
+                 the milestone with `jigc milestone discard {milestone_id}`, which answers \
+                 for the same path with its own route"
+            )
+            .into(),
+        ),
+    )
 }
 
 /// The `commit` doc type the per-sub-task render addresses — a sub-task's authored
@@ -7832,17 +8316,17 @@ fn worktree_staged_patch(worktree: &Path) -> Result<Vec<u8>> {
 /// `provisioned` rides the manifest (M47 Inc 3, call (b)(ii)).
 ///
 /// **"No worktree" is not "no directory"** (the rc.24 fix pass). A path nothing stands at
-/// while git still has it registered is a worktree that *was* provisioned, and its
-/// registration's index may hold the code the sub-agent staged — none of which the boundary
-/// reads. So that cell carries its own fact (`render::SubTaskContribution::stale`) and the
-/// manifest says what is true of it instead of borrowing the never-provisioned words.
+/// while git still has it registered is a worktree that *was* provisioned, so that cell
+/// carries its own fact (`render::SubTaskContribution::stale`) and the manifest says what
+/// is true of it instead of borrowing the never-provisioned words. What such a
+/// registration may *hold* — the code the sub-agent staged, a commit it made — is not this
+/// function's to report: the boundary refuses over it before it lands ([`unlanded_work`]).
 ///
 /// An [`WorktreeState::Unreadable`] path is the third cell, and it is neither of those two
 /// facts: something is there, and git cannot read it, so the boundary counted nothing out
 /// of it and committed nothing from it. The manifest says exactly that rather than
 /// borrowing the never-provisioned words (M46 Inc 2, T1).
 fn subtask_contributions(
-    jigc_home: &Path,
     subtasks: &[SubtaskWorktree],
     sources: &std::collections::BTreeMap<String, String>,
 ) -> Result<Vec<render::SubTaskContribution>> {
@@ -7873,26 +8357,11 @@ fn subtask_contributions(
         // The fourth cell: nothing stands at the path, and git still has it **registered**.
         // A worktree was provisioned there and its directory is gone — which is neither
         // *never provisioned* nor *staged nothing*, the two things the manifest would
-        // otherwise say about it, and the registration may hold what the sub-agent did
-        // (the rc.24 fix pass). Read here, pre-commit, beside the other three facts.
-        let stale = (sub.state == WorktreeState::Absent && sub.registered).then(|| {
-            let anchored = anchored_at(jigc_home, &sub.path, false).ok().flatten();
-            render::StaleRegistration {
-                commit: anchored
-                    .as_ref()
-                    .and_then(|anchored| anchored.commit.as_ref())
-                    .map(|commit| abbreviated(&commit.sha).to_owned()),
-                staged: anchored
-                    .map(|anchored| {
-                        anchored
-                            .staged
-                            .into_iter()
-                            .map(|staged| staged.path)
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-            }
-        });
+        // otherwise say about it (the rc.24 fix pass). **The registration holds no work
+        // here**: one that did was refused before the boundary landed ([`unlanded_work`]),
+        // so by the time a manifest is composed this is the empty registration, and the
+        // line says the one thing left to say about it.
+        let stale = sub.state == WorktreeState::Absent && sub.registered;
         out.push(render::SubTaskContribution {
             id: sub.id.clone(),
             docs,

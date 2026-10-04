@@ -852,7 +852,18 @@ fn the_leaked_worktree_remedy_names_one_registration_and_works_as_printed() {
                 "locked" => {
                     git_ok(&fx.repo, &["worktree", "lock", leaked.to_str().unwrap()]);
                 }
-                _ => fs::remove_file(leaked.join(".git")).expect("unlink the checkout"),
+                _ => {
+                    if door == "finalize" {
+                        // The boundary refuses, **before it lands**, over a registration
+                        // whose index holds a path it would not carry — and with the link
+                        // gone this checkout's staged file is exactly that
+                        // (`worktree_registration_anchor.rs`, the unlinked cell). So the
+                        // leak a landed teardown can still meet is over a registration
+                        // that holds nothing: the sub-agent's file is on disk, unstaged.
+                        git_ok(&leaked, &["reset", "-q"]);
+                    }
+                    fs::remove_file(leaked.join(".git")).expect("unlink the checkout");
+                }
             }
             let foreign = plant_foreign(&fx);
 

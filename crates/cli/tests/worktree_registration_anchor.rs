@@ -28,28 +28,41 @@
 //! *A jigc door drops one of its own registrations whose `HEAD` or index anchors work no ref
 //! reaches.* Three axes cross, and every arm below is derived from them rather than listed:
 //!
-//!   * **the door axis** — `cli::milestone::WORKTREE_DOORS`, read code-side, split by
-//!     `DestroyingDoor::consent`: a refusing member is driven without its consent and with
-//!     it, the landed boundary (no consent to offer) once per commit arm;
+//!   * **the door axis** — `cli::milestone::WORKTREE_DOORS`, read code-side. All four refuse.
+//!     The three that stand where nothing lands take `--force` as their consent
+//!     (`DestroyingDoor::consent`) and are driven without it and with it; the milestone
+//!     boundary has no consent to offer, so it is driven once per commit arm and format;
 //!   * **the holding axis** — [`HOLDINGS`]: a commit only the worktree's `HEAD` reaches, a
 //!     path staged in its index, both, and the **empty** control (HEAD at the base pin,
 //!     nothing staged), which must keep clearing at exit 0 — the idempotent re-provision;
 //!   * **the standing axis** — [`STANDINGS`]: the checkout **live**, or its directory
 //!     **gone** while the registration stands (git's `prunable`).
 //!
-//! One rule decides every cell ([`reaches`]): *does this door drop this registration?*
-//! `provision` reuses a live registered worktree untouched, so it drops nothing there and
-//! must neither refuse nor narrate; every other (door, standing) pair drops it. A refusing
-//! door **refuses** exactly where it reaches work; under consent, and at the landed boundary,
-//! the door **names what it took, and nothing it did not** — asserted against what git still
-//! holds afterwards, never against jigc's words alone.
+//! One rule decides every cell at the three consenting doors ([`reaches`]): *does this door
+//! drop this registration?* `provision` reuses a live registered worktree untouched, so it
+//! drops nothing there and must neither refuse nor narrate; every other (door, standing)
+//! pair drops it. A consenting door **refuses** exactly where it reaches work; under consent
+//! it **names what it took, and nothing it did not** — asserted against what git still holds
+//! afterwards, never against jigc's words alone.
+//!
+//! # The milestone boundary refuses before it lands
+//!
+//! `jigc milestone finalize` used to be this suite's narrating member: it landed, dropped
+//! the registration with its teardown, and named what went. That left the sub-agent's
+//! deliverable out of a milestone whose record had already flipped to the terminal
+//! `joined`, and destroyed it, at exit 0. Its rule is its own ([`boundary_refuses`]): *would
+//! the boundary land without work this registration holds?* — a commit, stale or live; a
+//! staged path wherever the boundary does not carry it (no live checkout, or a sub-task
+//! settled by `jigc task discard`). A live sub-task's staged path is the boundary's ordinary
+//! input and lands. A refusal commits nothing, leaves the record `active` and the
+//! registration byte-identical, and offers no `--force` — the door has none.
 //!
 //! Every command a refusal prints is run **as printed**, through a real shell, from outside
-//! the repository, and followed to where the sub-agent's work is: restored, kept under a
-//! ref, or landed by the boundary.
+//! the repository, and followed to where the sub-agent's work is: restored, re-linked, kept
+//! under a ref or a stash, or landed by the boundary.
 
 use cli::milestone::{
-    DestroyingDoor, FINALIZE_DOOR, PROVISION_DOOR, UNINSTALL_DOOR, WORKTREE_DOORS,
+    DISCARD_DOOR, DestroyingDoor, FINALIZE_DOOR, PROVISION_DOOR, UNINSTALL_DOOR, WORKTREE_DOORS,
 };
 
 use std::collections::BTreeMap;
@@ -59,6 +72,8 @@ use std::process::{Command, Output};
 
 /// The milestone every fixture mints.
 const MILESTONE: &str = "cache-rework";
+/// Its committed record, in the `[dev ▸ methodology]` fixture ([`Fixture::mint_recorded`]).
+const RECORD: &str = "docs/milestone-records/cache-rework.md";
 /// The sub-task whose worktree every cell plants in.
 const SUB: &str = "area-low";
 /// Its sibling — a live worktree with staged code, so a boundary has something to land.
@@ -180,7 +195,20 @@ struct Fixture {
 }
 
 impl Fixture {
+    /// The dev-only fixture: no methodology pack, so no committed milestone record.
     fn mint(tag: &str) -> Self {
+        Self::mint_with(tag, false)
+    }
+
+    /// The `[dev ▸ methodology]` fixture: the milestone has a **committed record**
+    /// ([`RECORD`]), which is what a boundary flips to the terminal `joined` and what `jigc
+    /// task discard <sub-task>` settles one item of. The cells that assert *the record stays
+    /// `active`* or drive a settled sub-task need it; dev-only resolves no such doctype.
+    fn mint_recorded(tag: &str) -> Self {
+        Self::mint_with(tag, true)
+    }
+
+    fn mint_with(tag: &str, recorded: bool) -> Self {
         let root = TempDir::new(tag);
         let repo = root.path().join("repo");
         fs::create_dir_all(&repo).expect("mk repo");
@@ -189,6 +217,16 @@ impl Fixture {
         git_ok(&repo, &["config", "user.name", "Test"]);
         git_ok(&repo, &["config", "commit.gpgsign", "false"]);
         fs::write(repo.join("README.md"), "hello\n").expect("write README");
+        if recorded {
+            // The compose marker, committed with the base — the project layer a real
+            // `jigc setup` leaves behind.
+            fs::create_dir_all(repo.join(".jigc").join("config")).expect("mk project config");
+            fs::write(
+                repo.join(".jigc").join("config").join("packs.yaml"),
+                "compose-embedded-methodology: true\n",
+            )
+            .expect("write compose marker");
+        }
         git_ok(&repo, &["add", "."]);
         git_ok(&repo, &["commit", "-q", "-m", "initial"]);
         // The project cascade layer — `jigc milestone`'s door-top precondition.
@@ -231,13 +269,37 @@ impl Fixture {
     }
 
     fn run(&self, args: &[&str]) -> Output {
+        self.run_in(&self.repo, args)
+    }
+
+    /// Run jigc from `cwd` — the repository itself, or a `cp -R` copy of it.
+    fn run_in(&self, cwd: &Path, args: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_jigc"))
             .args(args)
-            .current_dir(&self.repo)
+            .current_dir(cwd)
             .env("HOME", self.home.path())
             .env_remove("JIGC_PACK_DIR")
             .output()
             .expect("run the jigc binary")
+    }
+
+    /// The committed record's `status:` leaf — `None` in the dev-only fixture, which has
+    /// no record.
+    fn record_status(&self) -> Option<String> {
+        let source = fs::read_to_string(self.repo.join(RECORD)).ok()?;
+        source
+            .lines()
+            .find_map(|line| line.strip_prefix("status: "))
+            .map(str::to_owned)
+    }
+
+    /// Everything the main checkout would show a reader who asked what a door changed:
+    /// its `HEAD`, and `git status` over the whole tree.
+    fn main_checkout(&self) -> (String, String) {
+        (
+            git_ok(&self.repo, &["rev-parse", "HEAD"]),
+            git_ok(&self.repo, &["status", "--porcelain"]),
+        )
     }
 
     fn jigc_ok(&self, args: &[&str]) {
@@ -256,7 +318,12 @@ impl Fixture {
         let worktree = self.worktree(sub);
         fs::write(worktree.join(format!("{sub}.txt")), "code\n").expect("write code");
         git_ok(&worktree, &["add", &format!("{sub}.txt")]);
+        self.author_commit_doc(sub);
+    }
 
+    /// The authored `commit:<sub>` doc alone — what the chain arm needs for a sub-task whose
+    /// code this suite staged some other way.
+    fn author_commit_doc(&self, sub: &str) {
         let docs = self.repo.join(".jigc").join("tasks").join(sub).join("docs");
         fs::create_dir_all(&docs).expect("mk docs/");
         fs::write(
@@ -411,7 +478,11 @@ fn worktree_code(door: &DestroyingDoor) -> &'static str {
     door.codes
         .iter()
         .copied()
-        .find(|code| code.ends_with(".leftover-holds-work") || code.ends_with(".dirty-worktree"))
+        .find(|code| {
+            code.ends_with(".leftover-holds-work")
+                || code.ends_with(".dirty-worktree")
+                || code.ends_with(".unlanded-work")
+        })
         .unwrap_or_else(|| {
             panic!(
                 "`{}` removes a worktree-shaped path, so it owes a refusal code over that \
@@ -469,6 +540,63 @@ fn refusing_doors() -> Vec<&'static DestroyingDoor> {
         doors.len(),
     );
     doors
+}
+
+/// **The milestone boundary's rule**: would `jigc milestone finalize` land *without* work
+/// the registration holds? A commit is never what the boundary lands, stale or live; a
+/// staged path is, exactly when a live checkout of a sub-task the boundary lands holds it.
+fn boundary_refuses(holding: Holding, standing: Standing) -> bool {
+    holding.commit() || (holding.staged() && standing == Standing::Stale)
+}
+
+/// Whether `door` is the milestone boundary — the one member with no consent to offer.
+fn is_boundary(door: &DestroyingDoor) -> bool {
+    door.verb == FINALIZE_DOOR.verb
+}
+
+/// Set a fixture up for `door`: isolate the worktree subject, and — for the boundary, which
+/// refuses a milestone that would land no work at all — give the sibling staged code, so
+/// that once [`SUB`]'s path clears the boundary has something to land.
+fn prepare(fx: &Fixture, door: &DestroyingDoor) {
+    fx.isolate_the_worktree_subject(door);
+    if is_boundary(door) {
+        fx.stage_code(SIBLING);
+    }
+}
+
+/// Drive `door` un-forced and require a refusal; return its stderr.
+fn refusal_of(fx: &Fixture, door: &DestroyingDoor, cell: &str) -> String {
+    let (out, _, stderr) = run_door(fx, door, false, false);
+    assert!(
+        !out.status.success(),
+        "{cell}: fixture — the door refuses; got {:?}\nstderr:\n{stderr}",
+        out.status,
+    );
+    let code = worktree_code(door);
+    assert!(
+        stderr.contains(&format!("blocking · {code}")),
+        "{cell}: the refusal carries the door's own code `{code}`; stderr:\n{stderr}",
+    );
+    stderr
+}
+
+/// The one span on [`SUB`]'s refusal line that `is` picks — or a panic naming what was
+/// printed instead.
+fn span_where(
+    stderr: &str,
+    printed: &str,
+    what: &str,
+    cell: &str,
+    is: impl Fn(&str) -> bool,
+) -> String {
+    let spans = spans_on_the_held_line(stderr, printed);
+    spans
+        .iter()
+        .find(|span| is(span))
+        .cloned()
+        .unwrap_or_else(|| {
+            panic!("{cell}: the refusal must print {what}; spans: {spans:?}\n{stderr}")
+        })
 }
 
 fn run_door(
@@ -708,7 +836,7 @@ fn consent_takes_the_registration_and_names_exactly_what_it_took() {
 }
 
 // ---------------------------------------------------------------------------
-// The landed boundary: it cannot refuse after landing, so it names.
+// The milestone boundary: it refuses before it lands.
 // ---------------------------------------------------------------------------
 
 /// The keys of one `committed.sub_tasks[]` entry — the pinned `--format json` shape this fix
@@ -723,236 +851,311 @@ const SUB_TASK_KEYS: [&str; 7] = [
     "worktree_unreadable",
 ];
 
-/// **`jigc milestone finalize` × holding × standing × format**, on one commit arm: the
-/// boundary lands what the live worktrees staged, drops every registration with the
-/// teardown, and names what went with one — the path, the commit, the staged paths. Its
-/// contribution line says nothing false about a sub-task whose worktree directory is gone.
+/// **`jigc milestone finalize` × holding × standing × format**, on one commit arm.
+///
+/// Where the boundary would land without work the registration holds
+/// ([`boundary_refuses`]) it refuses **before it lands**: exit 3 under its own code, keyed
+/// at the path, naming what is held, with no `--force` anywhere — and nothing has moved:
+/// `HEAD`, the index, the committed record (`active`), git's registration of the path (byte
+/// for byte) and the sibling's worktree. Everywhere else it lands exactly as it did, and the
+/// pinned landed envelope keeps its keys.
 ///
 /// One arm per test, so the two halves of the commit-arm axis run side by side.
-fn landed_boundary_cells(squash: bool) {
+fn boundary_cells(squash: bool) {
     assert!(
         FINALIZE_DOOR.consent().is_none(),
-        "the landed boundary offers no consent — which is why it narrates rather than refuses",
+        "the boundary offers no consent — its refusal has no `--force` to name",
     );
-    let mut named_cells = 0;
-    {
-        for json in [false, true] {
-            for holding in HOLDINGS {
-                for standing in STANDINGS {
-                    let cell = format!(
-                        "{} × {holding:?} × {standing:?} × squash: {squash} × {}",
-                        FINALIZE_DOOR.verb,
-                        if json { "json" } else { "text" },
-                    );
-                    let fx = Fixture::mint("landed");
-                    if !squash {
-                        fx.set_squash_false();
-                    }
-                    fx.stage_code(SIBLING);
-                    let planted = fx.plant(holding, standing);
-                    if standing == Standing::Live && holding.staged() {
-                        // A live sub-task's staged code lands — give the chain arm the
-                        // commit doc it renders that sub-task's commit from.
-                        let docs = fx.repo.join(".jigc").join("tasks").join(SUB).join("docs");
-                        fs::create_dir_all(&docs).expect("mk docs/");
-                        fs::write(
-                            docs.join(format!("commit:{SUB}.md")),
-                            format!(
-                                "---\ntype: feat\n---\n\n# {SUB}\n\n## Summary\n\nadd the \
-                                 staged file\n\n## Body\n\n\n\n## Trailers\n"
-                            ),
-                        )
-                        .expect("write the staged commit doc");
-                        fs::write(
-                            docs.join("provenance.json"),
-                            format!(
-                                "{{\n  \"docs\": {{\n    \"commit:{SUB}\": \"created\"\n  }}\n}}\n"
-                            ),
-                        )
-                        .expect("write the provenance manifest");
-                    }
+    let code = worktree_code(&FINALIZE_DOOR);
+    let mut refused = 0;
+    let mut landed_cells = 0;
+    for json in [false, true] {
+        for holding in HOLDINGS {
+            for standing in STANDINGS {
+                let cell = format!(
+                    "{} × {holding:?} × {standing:?} × squash: {squash} × {}",
+                    FINALIZE_DOOR.verb,
+                    if json { "json" } else { "text" },
+                );
+                let fx = Fixture::mint_recorded("boundary");
+                if !squash {
+                    fx.set_squash_false();
+                }
+                fx.stage_code(SIBLING);
+                let planted = fx.plant(holding, standing);
+                if standing == Standing::Live && holding.staged() {
+                    // A live sub-task's staged code lands — give the chain arm the
+                    // commit doc it renders that sub-task's commit from.
+                    fx.author_commit_doc(SUB);
+                }
+                let before = fx.main_checkout();
+                assert_eq!(
+                    fx.record_status().as_deref(),
+                    Some("active"),
+                    "{cell}: fixture — the milestone is in flight",
+                );
 
-                    let (out, stdout, stderr) = run_door(&fx, &FINALIZE_DOOR, false, json);
-                    assert!(
-                        out.status.success(),
-                        "{cell}: the sibling staged code, so the boundary lands; got {:?}\n\
-                         stderr:\n{stderr}",
+                let (out, stdout, stderr) = run_door(&fx, &FINALIZE_DOOR, false, json);
+
+                if boundary_refuses(holding, standing) {
+                    refused += 1;
+                    assert_eq!(
+                        out.status.code(),
+                        Some(3),
+                        "{cell}: the boundary would land without work this registration \
+                         holds, so it must refuse before it lands (exit 3); got {:?}\n\
+                         stdout:\n{stdout}\nstderr:\n{stderr}",
                         out.status,
                     );
-                    assert!(
-                        !fx.admin(SUB).exists(),
-                        "{cell}: the landed teardown drops the sub-task's registration",
-                    );
-
-                    // What landed: the live worktree's staged path, and nothing a stale
-                    // registration held — the boundary reads live checkouts only.
-                    let tree = git_ok(&fx.repo, &["ls-tree", "-r", "--name-only", "HEAD"]);
-                    let landed = |file: &str| tree.lines().any(|path| path == file);
-                    assert!(
-                        landed(&format!("{SIBLING}.txt")),
-                        "{cell}: the sibling lands"
-                    );
-                    let staged_landed = landed(STAGED.0);
-                    assert_eq!(
-                        staged_landed,
-                        holding.staged() && standing == Standing::Live,
-                        "{cell}: a staged path lands iff its checkout was live",
-                    );
-                    assert!(
-                        !landed(COMMITTED.0),
-                        "{cell}: a commit made inside a worktree is not what the boundary \
-                         lands — it reads the staged set",
-                    );
-
-                    // Named ⇔ dropped without landing. On stderr, in both formats.
-                    if holding.commit() {
-                        named_cells += 1;
+                    // What the refusal said, on the channel the format puts it on.
+                    let said = if json {
+                        let doc: serde_json::Value =
+                            serde_json::from_str(&stdout).unwrap_or_else(|err| {
+                                panic!("{cell}: stdout is the findings envelope: {err}\n{stdout}")
+                            });
+                        let finding = doc["findings"]
+                            .as_array()
+                            .and_then(|findings| {
+                                findings
+                                    .iter()
+                                    .find(|finding| finding["key"]["code"] == code)
+                            })
+                            .unwrap_or_else(|| {
+                                panic!("{cell}: a `{code}` finding is on the envelope\n{stdout}")
+                            });
+                        assert_eq!(
+                            finding["key"]["target"],
+                            serde_json::json!(fx.printed()),
+                            "{cell}: the finding is keyed at the held path",
+                        );
+                        assert_eq!(
+                            finding["severity"],
+                            serde_json::json!("blocking"),
+                            "{cell}: …and it blocks",
+                        );
+                        format!(
+                            "{}\n{}",
+                            finding["message"].as_str().unwrap_or_default(),
+                            finding["route"].as_str().unwrap_or_default(),
+                        )
+                    } else {
                         assert!(
-                            stderr.contains(short(&planted.head)) && stderr.contains(&fx.printed()),
-                            "{cell}: the commit only that registration's HEAD reached went \
-                             with it, so the boundary must name it and its path; \
-                             stderr:\n{stderr}",
+                            stderr.contains(&format!("blocking · {code}")),
+                            "{cell}: the refusal carries `{code}`; stderr:\n{stderr}",
+                        );
+                        stderr.clone()
+                    };
+                    assert!(
+                        said.contains(&fx.printed()),
+                        "{cell}: the refusal names WHICH path; got:\n{said}",
+                    );
+                    // Named ⇔ held. A live sub-task's staged path is the boundary's input:
+                    // the re-run lands it, so beside a held commit it is not a hold and a
+                    // refusal that listed it would be claiming a loss that is not one.
+                    if holding.commit() {
+                        assert!(
+                            said.contains(short(&planted.head)),
+                            "{cell}: the refusal names the commit only this registration's \
+                             HEAD reaches; got:\n{said}",
                         );
                     }
                     if holding.staged() {
                         assert_eq!(
-                            stderr.contains(STAGED.0),
-                            !staged_landed,
-                            "{cell}: a staged path is named as lost iff it did not land; \
-                             stderr:\n{stderr}",
+                            said.contains(STAGED.0),
+                            standing == Standing::Stale,
+                            "{cell}: a staged path is named iff the boundary would not \
+                             carry it — its checkout is gone; got:\n{said}",
                         );
                     }
-                    if !holding.any() {
-                        assert!(
-                            !stderr.contains(&fx.printed()),
-                            "{cell}: an empty registration goes without a word — there is \
-                             nothing to name; stderr:\n{stderr}",
-                        );
-                    }
+                    assert!(
+                        !said.contains("--force"),
+                        "{cell}: this door has no consent flag, so its refusal names none; \
+                         got:\n{said}",
+                    );
+                    assert!(
+                        said.contains(&format!("jigc milestone discard {MILESTONE}")),
+                        "{cell}: the route names the abandon as the other honest exit; \
+                         got:\n{said}",
+                    );
 
-                    if json {
-                        // The pinned envelope does not move: same keys, and `provisioned`
-                        // keeps meaning *a live worktree stood there*.
-                        let doc: serde_json::Value =
-                            serde_json::from_str(&stdout).unwrap_or_else(|err| {
-                                panic!("{cell}: stdout is JSON: {err}\n{stdout}")
-                            });
-                        let entry = doc["committed"]["sub_tasks"]
-                            .as_array()
-                            .and_then(|subs| subs.iter().find(|sub| sub["id"] == SUB))
-                            .unwrap_or_else(|| panic!("{cell}: `{SUB}` is in sub_tasks\n{stdout}"));
-                        let mut keys: Vec<&str> = entry
-                            .as_object()
-                            .expect("an object")
-                            .keys()
-                            .map(String::as_str)
-                            .collect();
-                        keys.sort_unstable();
-                        assert_eq!(
-                            keys, SUB_TASK_KEYS,
-                            "{cell}: the pinned `committed.sub_tasks[]` key set must not move",
+                    // Nothing landed, nothing was flipped, nothing was dropped.
+                    assert_eq!(
+                        fx.main_checkout(),
+                        before,
+                        "{cell}: a refusal commits nothing and stages nothing — HEAD and \
+                         `git status` are as they were",
+                    );
+                    assert_eq!(
+                        fx.record_status().as_deref(),
+                        Some("active"),
+                        "{cell}: the committed record stays `active` — the milestone is \
+                         still finalizable",
+                    );
+                    assert_eq!(
+                        bytes_under(&fx.admin(SUB)),
+                        planted.admin,
+                        "{cell}: a refusal leaves git's registration byte-identical",
+                    );
+                    if standing == Standing::Live {
+                        assert!(
+                            fx.worktree(SUB).join(".git").exists(),
+                            "{cell}: a refusal leaves the live checkout standing",
                         );
-                        assert_eq!(
-                            entry["provisioned"],
-                            serde_json::json!(standing == Standing::Live),
-                            "{cell}: `provisioned` is *a live worktree stood at the path*",
+                    }
+                    assert!(
+                        fx.worktree(SIBLING)
+                            .join(format!("{SIBLING}.txt"))
+                            .is_file()
+                            && fx.admin(SIBLING).is_dir(),
+                        "{cell}: …and the sibling's worktree, with the code a re-run lands",
+                    );
+                    continue;
+                }
+
+                landed_cells += 1;
+                assert!(
+                    out.status.success(),
+                    "{cell}: nothing this registration holds would be left behind, so the \
+                     boundary lands; got {:?}\nstderr:\n{stderr}",
+                    out.status,
+                );
+                assert_eq!(
+                    fx.record_status().as_deref(),
+                    Some("joined"),
+                    "{cell}: a landed boundary settles the record",
+                );
+                assert!(
+                    !fx.admin(SUB).exists(),
+                    "{cell}: the landed teardown drops the sub-task's registration",
+                );
+                let tree = git_ok(&fx.repo, &["ls-tree", "-r", "--name-only", "HEAD"]);
+                let landed = |file: &str| tree.lines().any(|path| path == file);
+                assert!(
+                    landed(&format!("{SIBLING}.txt")),
+                    "{cell}: the sibling lands"
+                );
+                assert_eq!(
+                    landed(STAGED.0),
+                    holding.staged(),
+                    "{cell}: a live sub-task's staged path is the boundary's input, and lands",
+                );
+                // A boundary that landed dropped nothing that held work — so it has no
+                // loss to name.
+                assert!(
+                    !stderr.contains(&fx.printed()),
+                    "{cell}: a landed boundary names no loss at this path; stderr:\n{stderr}",
+                );
+
+                if json {
+                    // The pinned envelope does not move: same keys, and `provisioned`
+                    // keeps meaning *a live worktree stood there*.
+                    let doc: serde_json::Value = serde_json::from_str(&stdout)
+                        .unwrap_or_else(|err| panic!("{cell}: stdout is JSON: {err}\n{stdout}"));
+                    let entry = doc["committed"]["sub_tasks"]
+                        .as_array()
+                        .and_then(|subs| subs.iter().find(|sub| sub["id"] == SUB))
+                        .unwrap_or_else(|| panic!("{cell}: `{SUB}` is in sub_tasks\n{stdout}"));
+                    let mut keys: Vec<&str> = entry
+                        .as_object()
+                        .expect("an object")
+                        .keys()
+                        .map(String::as_str)
+                        .collect();
+                    keys.sort_unstable();
+                    assert_eq!(
+                        keys, SUB_TASK_KEYS,
+                        "{cell}: the pinned `committed.sub_tasks[]` key set must not move",
+                    );
+                    assert_eq!(
+                        entry["provisioned"],
+                        serde_json::json!(standing == Standing::Live),
+                        "{cell}: `provisioned` is *a live worktree stood at the path*",
+                    );
+                } else {
+                    // The contribution line: true of a sub-task whose directory is gone.
+                    let line = stdout
+                        .lines()
+                        .find(|line| line.trim_start().starts_with("sub-tasks:"))
+                        .unwrap_or_else(|| panic!("{cell}: no sub-tasks line\n{stdout}"));
+                    let entry = line
+                        .split(" · ")
+                        .find(|part| part.contains(&format!("{SUB}:")))
+                        .unwrap_or_else(|| panic!("{cell}: `{SUB}` is on the line\n{line}"));
+                    if standing == Standing::Stale {
+                        assert!(
+                            !entry.contains("no worktree provisioned"),
+                            "{cell}: a worktree WAS provisioned and its registration \
+                             stood — `no worktree provisioned` is false here; got: {entry}",
+                        );
+                        assert!(
+                            entry.contains("directory is gone"),
+                            "{cell}: the line must say what is true — the worktree's \
+                             directory is gone; got: {entry}",
+                        );
+                        assert!(
+                            !entry.contains("nothing staged"),
+                            "{cell}: `nothing staged` is a measurement of a checkout, \
+                             and there was none to measure; got: {entry}",
                         );
                     } else {
-                        // The contribution line: true of a sub-task whose directory is gone.
-                        let line = stdout
-                            .lines()
-                            .find(|line| line.trim_start().starts_with("sub-tasks:"))
-                            .unwrap_or_else(|| panic!("{cell}: no sub-tasks line\n{stdout}"));
-                        let entry = line
-                            .split(" · ")
-                            .find(|part| part.contains(&format!("{SUB}:")))
-                            .unwrap_or_else(|| panic!("{cell}: `{SUB}` is on the line\n{line}"));
-                        if standing == Standing::Stale {
-                            assert!(
-                                !entry.contains("no worktree provisioned"),
-                                "{cell}: a worktree WAS provisioned and its registration \
-                                 stood — `no worktree provisioned` is false here; got: {entry}",
-                            );
-                            assert!(
-                                entry.contains("directory is gone"),
-                                "{cell}: the line must say what is true — the worktree's \
-                                 directory is gone; got: {entry}",
-                            );
-                            assert!(
-                                !entry.contains("nothing staged"),
-                                "{cell}: `nothing staged` is a measurement of a checkout, \
-                                 and there was none to measure; got: {entry}",
-                            );
-                            assert_names(
-                                entry,
-                                &planted,
-                                true,
-                                &cell,
-                                "the contribution line says what the registration held",
-                            );
-                        } else {
-                            assert!(
-                                !entry.contains("directory is gone"),
-                                "{cell}: a live worktree's directory is not gone; got: {entry}",
-                            );
-                        }
+                        assert!(
+                            !entry.contains("directory is gone"),
+                            "{cell}: a live worktree's directory is not gone; got: {entry}",
+                        );
                     }
                 }
             }
         }
     }
+    // Neither half is empty: a guard that never fires proves nothing, and one that always
+    // fires is a wall across the ordinary fan-out.
     assert!(
-        named_cells > 0,
-        "no cell drove a named commit — this arm proved nothing"
+        refused > 0 && landed_cells > 0,
+        "{refused} refused, {landed_cells} landed"
     );
 }
 
 /// The single aggregate commit (`finalize.fan-out.squash: true`, the default).
 #[test]
-fn the_landed_boundary_names_what_goes_with_a_registration_it_drops_squash() {
-    landed_boundary_cells(true);
+fn the_boundary_refuses_before_landing_without_work_a_registration_holds_squash() {
+    boundary_cells(true);
 }
 
 /// One commit per sub-task, then the aggregate (`finalize.fan-out.squash: false`).
 #[test]
-fn the_landed_boundary_names_what_goes_with_a_registration_it_drops_chain() {
-    landed_boundary_cells(false);
+fn the_boundary_refuses_before_landing_without_work_a_registration_holds_chain() {
+    boundary_cells(false);
 }
 
 // ---------------------------------------------------------------------------
 // The other party's next step: every printed command, run as printed.
 // ---------------------------------------------------------------------------
 
-/// **The restore recipe works** — at every refusing door, over every holding a stale
+/// **The restore recipe works** — at every worktree door, over every holding a stale
 /// registration can have: run as printed it brings the checkout back exactly as git recorded
 /// it (the commit at `HEAD`, the staged path staged, its bytes intact), `jigc milestone
-/// provision` then reuses it, and the boundary lands the staged code.
+/// provision` then reuses it, and the boundary lands the sub-agent's work — the staged path
+/// directly, and a commit through the fold the boundary's own refusal prints for the
+/// checkout that is now live.
 #[test]
 fn the_restore_recipe_brings_a_missing_checkout_back_through_to_a_landed_boundary() {
-    for door in refusing_doors() {
+    for door in WORKTREE_DOORS {
         for holding in HOLDINGS.into_iter().filter(|holding| holding.any()) {
             let cell = format!("{} × {holding:?} × Stale × the restore recipe", door.verb);
             let fx = Fixture::mint("restore");
             fx.isolate_the_worktree_subject(door);
             fx.stage_code(SIBLING);
             let planted = fx.plant(holding, Standing::Stale);
-            let (out, _, stderr) = run_door(&fx, door, false, false);
-            assert!(
-                !out.status.success(),
-                "{cell}: fixture — the door refuses\n{stderr}"
-            );
+            let stderr = refusal_of(&fx, door, &cell);
 
-            let spans = spans_on_the_held_line(&stderr, &fx.printed());
-            let recipe = spans
-                .iter()
-                .find(|span| span.starts_with("mkdir -p "))
-                .unwrap_or_else(|| {
-                    panic!(
-                        "{cell}: a refusal over a registration with no directory must print \
-                         the recipe that brings the checkout back; spans: {spans:?}\n{stderr}"
-                    )
-                });
-            run_as_printed(&fx, recipe, &cell);
+            let recipe = span_where(
+                &stderr,
+                &fx.printed(),
+                "the recipe that brings the checkout back",
+                &cell,
+                |span| span.starts_with("mkdir -p "),
+            );
+            run_as_printed(&fx, &recipe, &cell);
 
             let worktree = fx.worktree(SUB);
             assert_eq!(
@@ -993,9 +1196,28 @@ fn the_restore_recipe_brings_a_missing_checkout_back_through_to_a_landed_boundar
                 fx.still_held(&planted),
                 "{cell}: provision reuses the restored worktree untouched",
             );
-            // …and the boundary lands what it staged.
+            // …and the boundary lands the work. A commit is not what it lands, so over the
+            // restored checkout it refuses once more — live now — and prints the fold.
+            if holding.commit() {
+                let stderr = refusal_of(&fx, &FINALIZE_DOOR, &cell);
+                let fold = span_where(
+                    &stderr,
+                    &fx.printed(),
+                    "the command that folds the commit into the staged set",
+                    &cell,
+                    |span| span.contains(" reset --soft "),
+                );
+                run_as_printed(&fx, &fold, &cell);
+            }
+            fx.jigc_ok(&["milestone", "finalize", MILESTONE]);
+            if holding.commit() {
+                assert_eq!(
+                    git_ok(&fx.repo, &["show", &format!("HEAD:{}", COMMITTED.0)]),
+                    COMMITTED.1.trim_end(),
+                    "{cell}: the sub-agent's committed code is recovered AND landed",
+                );
+            }
             if holding.staged() {
-                fx.jigc_ok(&["milestone", "finalize", MILESTONE]);
                 assert_eq!(
                     git_ok(&fx.repo, &["show", &format!("HEAD:{}", STAGED.0)]),
                     STAGED.1.trim_end(),
@@ -1008,36 +1230,30 @@ fn the_restore_recipe_brings_a_missing_checkout_back_through_to_a_landed_boundar
 
 /// **The keep-the-commit command works** — wherever a refusal names a commit no ref reaches,
 /// the command beside it, run as printed, gives that commit a ref; the path then clears and
-/// the door proceeds with the commit still reachable.
+/// the door proceeds with the commit still reachable. At the boundary *proceeds* is *lands
+/// without it*: the commit is kept aside, and the milestone's tree does not carry its file.
 #[test]
 fn the_keep_command_gives_the_commit_a_ref_and_the_door_then_proceeds() {
     let mut driven = 0;
-    for door in refusing_doors() {
+    for door in WORKTREE_DOORS {
         for standing in STANDINGS {
             if !reaches(door, standing) {
                 continue;
             }
             let cell = format!("{} × Commit × {standing:?} × the keep command", door.verb);
             let fx = Fixture::mint("keep");
-            fx.isolate_the_worktree_subject(door);
+            prepare(&fx, door);
             let planted = fx.plant(Holding::Commit, standing);
-            let (out, _, stderr) = run_door(&fx, door, false, false);
-            assert!(
-                !out.status.success(),
-                "{cell}: fixture — the door refuses\n{stderr}"
-            );
+            let stderr = refusal_of(&fx, door, &cell);
 
-            let spans = spans_on_the_held_line(&stderr, &fx.printed());
-            let keep = spans
-                .iter()
-                .find(|span| span.contains(" branch ") && span.contains(&planted.head))
-                .unwrap_or_else(|| {
-                    panic!(
-                        "{cell}: a refusal over a commit no ref reaches must print the \
-                         command that keeps it; spans: {spans:?}\n{stderr}"
-                    )
-                });
-            run_as_printed(&fx, keep, &cell);
+            let keep = span_where(
+                &stderr,
+                &fx.printed(),
+                "the command that keeps the commit",
+                &cell,
+                |span| span.contains(" branch ") && span.contains(&planted.head),
+            );
+            run_as_printed(&fx, &keep, &cell);
             assert_ne!(
                 git_ok(&fx.repo, &["for-each-ref", "--contains", &planted.head]),
                 "",
@@ -1071,32 +1287,169 @@ fn the_keep_command_gives_the_commit_a_ref_and_the_door_then_proceeds() {
                 planted.head, planted.base,
                 "{cell}: fixture — a real commit"
             );
+            if is_boundary(door) {
+                let tree = git_ok(&fx.repo, &["ls-tree", "-r", "--name-only", "HEAD"]);
+                assert!(
+                    tree.lines().any(|path| path == format!("{SIBLING}.txt"))
+                        && !tree.lines().any(|path| path == COMMITTED.0),
+                    "{cell}: the boundary landed the sibling and — the reader's stated \
+                     choice — not the kept commit; tree:\n{tree}",
+                );
+            }
             driven += 1;
         }
     }
     assert!(driven > 0, "no cell drove the keep command");
 }
 
-/// **The landed boundary's own keep command works after the fact**: the registration is gone
-/// and the commit is unreachable, but it is still in the object database — the command the
-/// narration prints gives it a ref.
+/// **The boundary's own exit lands a commit the sub-agent made instead of staging**: the
+/// `git reset --soft <base pin>` its refusal prints, run as printed, moves the worktree's
+/// `HEAD` back to where jigc detached it and leaves everything the commit changed *staged* —
+/// the one thing the boundary reads — so the same `finalize` then lands it, beside whatever
+/// was already staged, on both commit arms.
 #[test]
-fn the_landed_boundary_prints_a_keep_command_that_still_works_after_the_drop() {
-    for standing in STANDINGS {
+fn the_boundary_prints_the_fold_that_lands_a_commit_made_inside_a_live_worktree() {
+    for squash in [true, false] {
+        for holding in [Holding::Commit, Holding::Both] {
+            let cell = format!(
+                "{} × {holding:?} × Live × squash: {squash} × the fold",
+                FINALIZE_DOOR.verb
+            );
+            let fx = Fixture::mint_recorded("fold");
+            if !squash {
+                fx.set_squash_false();
+            }
+            fx.stage_code(SIBLING);
+            fx.author_commit_doc(SUB);
+            let planted = fx.plant(holding, Standing::Live);
+            let stderr = refusal_of(&fx, &FINALIZE_DOOR, &cell);
+
+            let fold = span_where(
+                &stderr,
+                &fx.printed(),
+                "the command that folds the commit into the staged set",
+                &cell,
+                |span| span.contains(" reset --soft "),
+            );
+            assert!(
+                fold.ends_with(&planted.base),
+                "{cell}: the fold goes back to the milestone's base pin; got `{fold}`",
+            );
+            run_as_printed(&fx, &fold, &cell);
+            assert_eq!(
+                git_ok(&fx.worktree(SUB), &["rev-parse", "HEAD"]),
+                planted.base,
+                "{cell}: the worktree is back where jigc detached it",
+            );
+
+            fx.jigc_ok(&["milestone", "finalize", MILESTONE]);
+            assert_eq!(
+                fx.record_status().as_deref(),
+                Some("joined"),
+                "{cell}: the boundary landed",
+            );
+            assert_eq!(
+                git_ok(&fx.repo, &["show", &format!("HEAD:{}", COMMITTED.0)]),
+                COMMITTED.1.trim_end(),
+                "{cell}: what the sub-agent committed is in the milestone",
+            );
+            if holding.staged() {
+                assert_eq!(
+                    git_ok(&fx.repo, &["show", &format!("HEAD:{}", STAGED.0)]),
+                    STAGED.1.trim_end(),
+                    "{cell}: …beside what it staged",
+                );
+            }
+        }
+    }
+}
+
+/// How a branch already in the repository gets in the keep command's way.
+#[derive(Clone, Copy, Debug)]
+enum Occupied {
+    /// `kept/<sub-task-id>` exists — an earlier keep from the same sub-task.
+    TheName,
+    /// A branch named exactly `kept` exists, which makes every `kept/…` name uncreatable.
+    TheNamespace,
+}
+
+/// **The keep command never dead-ends on a branch that is already there.** Driven on the
+/// tree before this fix, the printed `git branch kept/<sub-task-id> <sha>` exited 128 in
+/// both states — *a branch named … already exists*, and *cannot lock ref … 'refs/heads/kept'
+/// exists* — leaving the reader at a refusal whose own route had just failed. The name is
+/// chosen against the refs that exist, at every door that prints it and in the narration
+/// that prints it after a drop.
+#[test]
+fn the_keep_command_picks_a_branch_name_git_can_create() {
+    let occupy = |fx: &Fixture, occupied: Occupied| -> String {
+        let name = match occupied {
+            Occupied::TheName => format!("kept/{SUB}"),
+            Occupied::TheNamespace => "kept".to_owned(),
+        };
+        git_ok(&fx.repo, &["branch", &name, "main"]);
+        name
+    };
+    for occupied in [Occupied::TheName, Occupied::TheNamespace] {
+        for door in WORKTREE_DOORS {
+            for standing in STANDINGS {
+                if !reaches(door, standing) {
+                    continue;
+                }
+                let cell = format!(
+                    "{} × Commit × {standing:?} × {occupied:?} is taken",
+                    door.verb
+                );
+                let fx = Fixture::mint("keep-name");
+                prepare(&fx, door);
+                let planted = fx.plant(Holding::Commit, standing);
+                let taken = occupy(&fx, occupied);
+                let stderr = refusal_of(&fx, door, &cell);
+                let keep = span_where(
+                    &stderr,
+                    &fx.printed(),
+                    "the command that keeps the commit",
+                    &cell,
+                    |span| span.contains(" branch ") && span.contains(&planted.head),
+                );
+                assert!(
+                    !keep.contains(&format!(" branch kept/{SUB} ")),
+                    "{cell}: `kept/{SUB}` cannot be created beside `{taken}`, so the \
+                     command must name another branch; got `{keep}`",
+                );
+                run_as_printed(&fx, &keep, &cell);
+                assert_ne!(
+                    git_ok(
+                        &fx.repo,
+                        &["for-each-ref", "--contains", &planted.head, "refs/heads/"]
+                    ),
+                    "",
+                    "{cell}: the commit now has a branch",
+                );
+                assert_eq!(
+                    git_ok(&fx.repo, &["rev-parse", &taken]),
+                    git_ok(&fx.repo, &["rev-parse", "main"]),
+                    "{cell}: …and the branch that was in the way is where it was",
+                );
+                let (out, _, stderr) = run_door(&fx, door, false, false);
+                assert!(
+                    out.status.success(),
+                    "{cell}: with the commit kept, the door proceeds; got {:?}\n{stderr}",
+                    out.status,
+                );
+            }
+        }
+
+        // The narration after a consented drop prints the same command, aimed at the main
+        // checkout — and it must be as runnable.
         let cell = format!(
-            "{} × Commit × {standing:?} × the keep command",
-            FINALIZE_DOOR.verb
+            "{} --force × Commit × Live × {occupied:?} is taken",
+            DISCARD_DOOR.verb
         );
-        let fx = Fixture::mint("landed-keep");
-        fx.stage_code(SIBLING);
-        let planted = fx.plant(Holding::Commit, standing);
-        let (out, _, stderr) = run_door(&fx, &FINALIZE_DOOR, false, false);
-        assert!(out.status.success(), "{cell}: the boundary lands\n{stderr}");
-        assert_eq!(
-            git_ok(&fx.repo, &["for-each-ref", "--contains", &planted.head]),
-            "",
-            "{cell}: fixture — nothing reaches the commit once the registration is gone",
-        );
+        let fx = Fixture::mint("keep-name-narrated");
+        let planted = fx.plant(Holding::Commit, Standing::Live);
+        occupy(&fx, occupied);
+        let (out, _, stderr) = run_door(&fx, &DISCARD_DOOR, true, false);
+        assert!(out.status.success(), "{cell}: consent proceeds\n{stderr}");
         let keep = stderr
             .split('`')
             .enumerate()
@@ -1110,7 +1463,408 @@ fn the_landed_boundary_prints_a_keep_command_that_still_works_after_the_drop() {
         assert_ne!(
             git_ok(&fx.repo, &["for-each-ref", "--contains", &planted.head]),
             "",
-            "{cell}: the commit the boundary dropped is kept",
+            "{cell}: the commit the consent dropped is kept",
+        );
+    }
+}
+
+/// **An unlinked checkout is given back to its registration by one printed line.** The
+/// worktree's directory stands with every file in it and only its `.git` link is gone, so
+/// git reads the registration as `prunable` and the path as no worktree at all — while the
+/// registration's index still holds the sub-agent's staged path. Every worktree door refuses
+/// over it; until this fix none printed a command that mends it (the restore recipe is for a
+/// path with nothing standing at it: its `git restore .` would write over files). The
+/// re-link is the recipe's middle step alone, and it is driven through to a landed boundary.
+#[test]
+fn an_unlinked_checkout_is_re_linked_by_the_command_the_refusal_prints() {
+    for door in WORKTREE_DOORS {
+        let cell = format!("{} × Staged × the `.git` link gone", door.verb);
+        let fx = Fixture::mint("relink");
+        fx.isolate_the_worktree_subject(door);
+        fx.stage_code(SIBLING);
+        fx.plant(Holding::Staged, Standing::Live);
+        let worktree = fx.worktree(SUB);
+        fs::remove_file(worktree.join(".git")).expect("remove the `.git` link");
+        assert!(
+            git_ok(&fx.repo, &["worktree", "list", "--porcelain"]).contains("prunable"),
+            "{cell}: fixture — git reads the registration as stale",
+        );
+
+        let stderr = refusal_of(&fx, door, &cell);
+        assert!(
+            stderr.contains(STAGED.0),
+            "{cell}: the refusal names the path the registration's index holds; \
+             stderr:\n{stderr}",
+        );
+        assert!(
+            !spans_on_the_held_line(&stderr, &fx.printed())
+                .iter()
+                .any(|span| span.starts_with("mkdir -p ")),
+            "{cell}: the restore recipe is for a path nothing stands at — its `git restore .` \
+             would write over these files; stderr:\n{stderr}",
+        );
+        let relink = span_where(
+            &stderr,
+            &fx.printed(),
+            "the command that re-links the checkout",
+            &cell,
+            |span| span.starts_with("printf 'gitdir: "),
+        );
+        assert!(
+            !stderr.contains("worktree repair"),
+            "{cell}: never `git worktree repair` — it re-points every other worktree this \
+             repository has a registration for; stderr:\n{stderr}",
+        );
+        run_as_printed(&fx, &relink, &cell);
+
+        assert_eq!(
+            git_ok(&worktree, &["rev-parse", "--show-toplevel"]),
+            worktree.display().to_string(),
+            "{cell}: the path is a worktree of its own again",
+        );
+        assert!(
+            git_ok(&worktree, &["status", "--porcelain"]).contains(&format!("A  {}", STAGED.0)),
+            "{cell}: …with the sub-agent's path still staged",
+        );
+        assert_eq!(
+            fs::read_to_string(worktree.join(STAGED.0)).ok().as_deref(),
+            Some(STAGED.1),
+            "{cell}: …and its file untouched",
+        );
+        assert!(
+            !git_ok(&fx.repo, &["worktree", "list", "--porcelain"]).contains("prunable"),
+            "{cell}: git no longer reads the registration as stale",
+        );
+
+        // The fan-out goes on: `provision` reuses it, the boundary lands what it staged.
+        fx.jigc_ok(&["milestone", "provision", MILESTONE]);
+        fx.jigc_ok(&["milestone", "finalize", MILESTONE]);
+        assert_eq!(
+            git_ok(&fx.repo, &["show", &format!("HEAD:{}", STAGED.0)]),
+            STAGED.1.trim_end(),
+            "{cell}: the sub-agent's staged code is landed",
+        );
+    }
+
+    // The control: a `.git` entry that IS there and names something git cannot read is
+    // another repository's linkage, not a missing one. The door still refuses — the
+    // registration still holds the staged path — and prints no line that would overwrite it.
+    for door in [&DISCARD_DOOR, &FINALIZE_DOOR] {
+        let cell = format!("{} × Staged × a `.git` link naming nothing", door.verb);
+        let fx = Fixture::mint("relink-ctl");
+        prepare(&fx, door);
+        fx.plant(Holding::Staged, Standing::Live);
+        let link = fx.worktree(SUB).join(".git");
+        fs::write(&link, "gitdir: /nonexistent/elsewhere/.git/worktrees/x\n")
+            .expect("rewrite the link");
+        let stderr = refusal_of(&fx, door, &cell);
+        assert!(
+            !stderr.contains("printf 'gitdir: "),
+            "{cell}: a link that is there is never overwritten by a printed command; \
+             stderr:\n{stderr}",
+        );
+        assert_eq!(
+            fs::read_to_string(&link).ok().as_deref(),
+            Some("gitdir: /nonexistent/elsewhere/.git/worktrees/x\n"),
+            "{cell}: …and the refusal left it alone",
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The boundary over a sub-task settled by `jigc task discard`.
+// ---------------------------------------------------------------------------
+
+/// **A settled sub-task's worktree is still the teardown's subject**, and nothing lands from
+/// it — so everything its registration holds is work the boundary would drop: a commit, and
+/// a staged path **live or stale**. Driven on the tree before this fix, a `jigc task discard
+/// <sub-task>` followed by `jigc milestone finalize` landed at exit 0 and then printed
+/// `<path> (staged, in no commit)` … `they are not recoverable`.
+///
+/// The verdict is iterated over the whole holding × standing grid; the empty registration
+/// still lands, the settled sub-task named in no manifest.
+#[test]
+fn the_boundary_refuses_over_what_a_settled_sub_tasks_registration_holds() {
+    let mut refused = 0;
+    for holding in HOLDINGS {
+        for standing in STANDINGS {
+            let cell = format!(
+                "{} × a settled sub-task × {holding:?} × {standing:?}",
+                FINALIZE_DOOR.verb
+            );
+            let fx = Fixture::mint_recorded("settled");
+            fx.stage_code(SIBLING);
+            let planted = fx.plant(holding, standing);
+            fx.jigc_ok(&["task", "discard", SUB]);
+            let before = fx.main_checkout();
+
+            let (out, _, stderr) = run_door(&fx, &FINALIZE_DOOR, false, false);
+            if !holding.any() {
+                assert!(
+                    out.status.success(),
+                    "{cell}: an empty registration holds nothing, so the boundary lands; \
+                     got {:?}\n{stderr}",
+                    out.status,
+                );
+                assert!(
+                    !fx.admin(SUB).exists(),
+                    "{cell}: …and the teardown still drops the settled sub-task's worktree",
+                );
+                continue;
+            }
+            refused += 1;
+            assert_eq!(
+                out.status.code(),
+                Some(3),
+                "{cell}: nothing lands from a settled sub-task, so what its registration \
+                 holds would be dropped — the boundary must refuse; got {:?}\n{stderr}",
+                out.status,
+            );
+            assert!(
+                stderr.contains(&format!("blocking · {}", worktree_code(&FINALIZE_DOOR))),
+                "{cell}: under the boundary's own code; stderr:\n{stderr}",
+            );
+            assert_names(
+                &stderr,
+                &planted,
+                true,
+                &cell,
+                "the refusal says what is held",
+            );
+            assert!(
+                stderr.contains("settled"),
+                "{cell}: the refusal says WHY the boundary would not carry it — the \
+                 sub-task is settled; stderr:\n{stderr}",
+            );
+            assert!(
+                !stderr.contains(" reset --soft "),
+                "{cell}: nothing lands from a settled sub-task, so no landing exit is \
+                 offered; stderr:\n{stderr}",
+            );
+            assert_eq!(
+                fx.main_checkout(),
+                before,
+                "{cell}: a refusal commits nothing"
+            );
+            assert_eq!(
+                bytes_under(&fx.admin(SUB)),
+                planted.admin,
+                "{cell}: …and leaves git's registration byte-identical",
+            );
+        }
+    }
+    assert!(refused > 0, "no settled cell refused");
+}
+
+/// **The settled sub-task's exits work as printed.** A staged path in its live worktree is
+/// kept with the `git stash` the refusal prints — a stash is a ref of the repository, so it
+/// outlives the worktree — and where the directory is gone the restore recipe brings the
+/// checkout back first. Either way the boundary then lands the rest of the milestone.
+#[test]
+fn a_settled_sub_tasks_staged_path_is_kept_by_the_stash_the_refusal_prints() {
+    for standing in STANDINGS {
+        let cell = format!(
+            "{} × a settled sub-task × Staged × {standing:?} × the stash",
+            FINALIZE_DOOR.verb
+        );
+        let fx = Fixture::mint_recorded("settled-stash");
+        fx.stage_code(SIBLING);
+        fx.plant(Holding::Staged, standing);
+        fx.jigc_ok(&["task", "discard", SUB]);
+
+        let mut stderr = refusal_of(&fx, &FINALIZE_DOOR, &cell);
+        if standing == Standing::Stale {
+            let recipe = span_where(
+                &stderr,
+                &fx.printed(),
+                "the recipe that brings the checkout back",
+                &cell,
+                |span| span.starts_with("mkdir -p "),
+            );
+            run_as_printed(&fx, &recipe, &cell);
+            // Live again — and still a settled sub-task's, so still not carried.
+            stderr = refusal_of(&fx, &FINALIZE_DOOR, &cell);
+        }
+        let stash = span_where(
+            &stderr,
+            &fx.printed(),
+            "the command that keeps the staged path",
+            &cell,
+            |span| span.ends_with(" stash"),
+        );
+        run_as_printed(&fx, &stash, &cell);
+
+        fx.jigc_ok(&["milestone", "finalize", MILESTONE]);
+        assert!(
+            !fx.admin(SUB).exists(),
+            "{cell}: the boundary landed and tore the worktree down",
+        );
+        assert_eq!(
+            git_ok(&fx.repo, &["show", &format!("stash@{{0}}:{}", STAGED.0)]),
+            STAGED.1.trim_end(),
+            "{cell}: the staged bytes outlive the worktree, in the repository's stash",
+        );
+        let tree = git_ok(&fx.repo, &["ls-tree", "-r", "--name-only", "HEAD"]);
+        assert!(
+            tree.lines().any(|path| path == format!("{SIBLING}.txt"))
+                && !tree.lines().any(|path| path == STAGED.0),
+            "{cell}: the milestone landed the sibling and nothing from the settled \
+             sub-task; tree:\n{tree}",
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The boundary in a copied repository.
+// ---------------------------------------------------------------------------
+
+/// **A sub-task the boundary lands is asked at its path, registered here or not.** A `cp -R`
+/// of the repository leaves the copy's worktrees live and registered at the *source's*
+/// paths: the copy's boundary reads their staged code all the same, and its teardown leaves
+/// them standing. A commit in one is still work the milestone would be settled without — so
+/// the copy's boundary refuses, says the teardown would leave the worktree where it is, and
+/// its keep command (aimed at the checkout, whose refs are the source's) clears the path.
+#[test]
+fn a_copied_repositorys_boundary_refuses_over_a_commit_in_a_worktree_it_never_registered() {
+    let cell = format!("{} × Commit × Live × a `cp -R` copy", FINALIZE_DOOR.verb);
+    let fx = Fixture::mint("copy");
+    let copy = fx.repo.parent().expect("the fixture root").join("copy");
+    let copied = Command::new("cp")
+        .arg("-R")
+        .arg(&fx.repo)
+        .arg(&copy)
+        .status()
+        .expect("run cp -R");
+    assert!(copied.success(), "{cell}: fixture — the copy is made");
+    let worktree = copy.join(".jigc").join("worktrees").join(SUB);
+    let sibling = copy.join(".jigc").join("worktrees").join(SIBLING);
+    fs::write(sibling.join("copied.txt"), "code\n").expect("write");
+    git_ok(&sibling, &["add", "copied.txt"]);
+    fs::write(worktree.join(COMMITTED.0), COMMITTED.1).expect("write");
+    git_ok(&worktree, &["add", COMMITTED.0]);
+    git_ok(
+        &worktree,
+        &["commit", "-q", "-m", "the sub-agent committed"],
+    );
+    let head = git_ok(&worktree, &["rev-parse", "HEAD"]);
+    assert!(
+        !git_ok(&copy, &["worktree", "list", "--porcelain"])
+            .contains(&format!("worktree {}", worktree.display())),
+        "{cell}: fixture — the copy has no registration at its own worktree path",
+    );
+
+    let out = fx.run_in(&copy, &["milestone", "finalize", MILESTONE]);
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "{cell}: the milestone would be settled without the commit; got {:?}\n{stderr}",
+        out.status,
+    );
+    assert!(
+        stderr.contains(&head[..7]) && stderr.contains("has not registered"),
+        "{cell}: the refusal names the commit and says what its teardown would do — \
+         nothing; stderr:\n{stderr}",
+    );
+    let keep = span_where(
+        &stderr,
+        &fx.printed(),
+        "the command that keeps the commit",
+        &cell,
+        |span| span.contains(" branch ") && span.contains(&head),
+    );
+    run_as_printed(&fx, &keep, &cell);
+    let out = fx.run_in(&copy, &["milestone", "finalize", MILESTONE]);
+    assert!(
+        out.status.success(),
+        "{cell}: with the commit kept, the copy's boundary lands; got {:?}\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        git_ok(&copy, &["show", "HEAD:copied.txt"]),
+        "code",
+        "{cell}: …the sibling's staged code",
+    );
+    assert!(
+        worktree.join(".git").exists(),
+        "{cell}: …and its teardown left the worktree it never registered standing",
+    );
+}
+
+/// **The boundary fails closed, and never prints a command it cannot back.** Two states
+/// where the registration's work is real and the ordinary commands do not apply:
+///
+///   * the registration **cannot be read** (its `HEAD` is not one git accepts) — *it holds
+///     nothing* is the one thing the probe did not establish, and this door settles the
+///     milestone for good, so it refuses, quotes git's own message, and says there is no
+///     command to run rather than pointing at one;
+///   * a **file** stands at the path of a registration whose directory is gone — the restore
+///     recipe would `mkdir` over it, so the refusal says to move it aside, and once it is
+///     gone the same door prints the recipe, which then lands the staged path.
+#[test]
+fn the_boundary_fails_closed_where_it_cannot_read_or_reach_the_registration() {
+    // (1) Unreadable.
+    {
+        let cell = format!("{} × an unreadable registration", FINALIZE_DOOR.verb);
+        let fx = Fixture::mint_recorded("unreadable");
+        fx.stage_code(SIBLING);
+        fx.plant(Holding::Staged, Standing::Stale);
+        fs::write(fx.admin(SUB).join("HEAD"), "not a head\n").expect("corrupt the HEAD");
+        let before = fx.main_checkout();
+        let stderr = refusal_of(&fx, &FINALIZE_DOOR, &cell);
+        assert!(
+            stderr.contains(&fx.printed()) && stderr.contains("could not be read"),
+            "{cell}: the refusal names the path and says the registration could not be \
+             read; stderr:\n{stderr}",
+        );
+        assert!(
+            stderr.contains("there is no command to run"),
+            "{cell}: …and does not send the reader to a command that is not on the line; \
+             stderr:\n{stderr}",
+        );
+        assert_eq!(fx.main_checkout(), before, "{cell}: nothing was committed");
+        assert_eq!(
+            fx.record_status().as_deref(),
+            Some("active"),
+            "{cell}: the record stays `active`",
+        );
+    }
+
+    // (2) A file in the way.
+    {
+        let cell = format!("{} × Staged × a file at the path", FINALIZE_DOOR.verb);
+        let fx = Fixture::mint("file-in-the-way");
+        fx.stage_code(SIBLING);
+        fx.plant(Holding::Staged, Standing::Stale);
+        let path = fx.worktree(SUB);
+        fs::write(&path, "left behind\n").expect("write a file at the worktree path");
+        let stderr = refusal_of(&fx, &FINALIZE_DOOR, &cell);
+        assert!(
+            stderr.contains(STAGED.0) && stderr.contains("move it aside"),
+            "{cell}: the refusal names the staged path and the move that unblocks it; \
+             stderr:\n{stderr}",
+        );
+        assert!(
+            !stderr.contains("mkdir -p "),
+            "{cell}: the recipe cannot run over a file, so it is not printed; \
+             stderr:\n{stderr}",
+        );
+        fs::rename(&path, fx.home.path().join("moved-aside")).expect("move the file aside");
+        let stderr = refusal_of(&fx, &FINALIZE_DOOR, &cell);
+        let recipe = span_where(
+            &stderr,
+            &fx.printed(),
+            "the recipe that brings the checkout back",
+            &cell,
+            |span| span.starts_with("mkdir -p "),
+        );
+        run_as_printed(&fx, &recipe, &cell);
+        fx.jigc_ok(&["milestone", "finalize", MILESTONE]);
+        assert_eq!(
+            git_ok(&fx.repo, &["show", &format!("HEAD:{}", STAGED.0)]),
+            STAGED.1.trim_end(),
+            "{cell}: the sub-agent's staged code is recovered AND landed",
         );
     }
 }
