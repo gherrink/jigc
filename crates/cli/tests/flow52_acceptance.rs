@@ -1095,9 +1095,10 @@ fn plant_user_bytes(repo: &Path, path: &str) {
 /// before the commit was considered. The door now asks **before the first write**, so the
 /// same plant refuses with the bytes intact at every path but the stated exception.
 ///
-/// **What this adds over `setup_install_pathspec_guard.rs`.** That suite drives twenty-two
-/// hand-built cells and owns the route, the re-run, the footprint record, the unborn
-/// exemption and the per-path disposition fence. This arm derives the subject from the
+/// **What this adds over `setup_install_pathspec_guard.rs`.** That suite drives twenty-nine
+/// cells and owns the route, the re-run, the footprint record, the unborn exemption —
+/// held, since the rc.24 fix pass, to each member's declared writer — and the per-path
+/// disposition fence. This arm derives the subject from the
 /// binary instead of listing it, and asserts that the *same* rule decides **every** derived
 /// path — so the day a ninth path joins the install commit, this arm asks it the question
 /// rather than passing over it.

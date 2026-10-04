@@ -22,8 +22,17 @@
 //! with nothing written and a route to fix and commit it; after the committed fix a plain
 //! re-run completes (h), and a fix left uncommitted is refused by name (i).
 //!
+//! **And all of it holds with no commit yet** (arms k–m; the rc.24 fix pass, `(R1, F1)`).
+//! Every arm above builds on a seed commit. On an **unborn** `HEAD` the door's question
+//! used to exclude untracked paths, so the record's `before`/`now` pair saw nothing there:
+//! a failed first run recorded and staged nothing, and — once the adopter unstaged what a
+//! *later* arm had staged — an edit to a jigc-written file was not re-armed, and the re-run
+//! regenerated it away at exit 0. The question names untracked paths at either `HEAD` now,
+//! so the record is exact there too.
+//!
 //! Every arm drives the real binary (`CARGO_BIN_EXE_jigc`) over a throwaway repository with
-//! one commit and no setup — the shape `dev/jigc-rig bare` builds.
+//! no setup — one seed commit for arms a–j, the shape `dev/jigc-rig bare` builds, and none
+//! at all for k–m.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -518,4 +527,119 @@ fn a_settings_file_of_the_wrong_shape_is_refused_before_any_write() {
         said.contains("`permissions` is not a JSON object"),
         "the message carries the shape error: {said}"
     );
+}
+
+/// A real `git init` with **no commit and no git identity**, and `user.useConfigOnly` set
+/// so git refuses to invent one — the state a new machine or a fresh container leaves, in
+/// which the install is written and staged and `git commit` then declines.
+fn unborn_repo_without_identity(tag: &str) -> (TempDir, TempDir) {
+    let repo = TempDir::new(tag);
+    let home = TempDir::new(&format!("{tag}-home"));
+    git(repo.path(), &["init", "-q"]);
+    git(repo.path(), &["config", "user.useConfigOnly", "true"]);
+    (repo, home)
+}
+
+/// The adopter's fix after `setup.install-commit`: tell git who they are.
+fn set_identity(repo: &Path) {
+    git(repo, &["config", "user.email", "test@example.com"]);
+    git(repo, &["config", "user.name", "Test"]);
+}
+
+/// (k) **Re-arm control on an unborn `HEAD`, through an unstage** — the verification's
+/// repro B. The first run fails at the install commit with everything written and staged;
+/// the adopter sets their identity, runs a plain `git reset` (nothing routes there, and
+/// nothing forbids it), and edits two files jigc wrote. Driven on `1.0.0-rc.24`: exit 0, no
+/// finding, both edits in no git object. The record was right; the question it is checked
+/// against could not see an untracked path on an unborn `HEAD`.
+#[test]
+fn on_an_unborn_head_an_edit_after_an_unstaged_failed_run_re_arms_the_guard() {
+    let (repo, home) = unborn_repo_without_identity("unborn-re-arm");
+    let (repo, home) = (repo.path(), home.path());
+
+    let first = jigc(repo, home, &["setup"]);
+    assert_fails_with(&first, "setup.install-commit", "no git identity");
+    assert!(
+        repo.join(INSTALL_FOOTPRINT).exists(),
+        "the failed run recorded what it left behind"
+    );
+
+    set_identity(repo);
+    git(repo, &["reset", "-q"]);
+    let agent = repo.join(".jigc/AGENT.md");
+    let mut body = fs::read_to_string(&agent).expect("read AGENT.md");
+    body.push_str("\nADOPTER NOTE\n");
+    fs::write(&agent, &body).expect("append to AGENT.md");
+    let packs = repo.join(".jigc/config/packs.yaml");
+    let commented = format!(
+        "# ADOPTER COMMENT\n{}",
+        fs::read_to_string(&packs).expect("read packs.yaml")
+    );
+    fs::write(&packs, &commented).expect("comment packs.yaml");
+
+    let rerun = jigc(repo, home, &["setup"]);
+    assert_fails_with(&rerun, DIRTY_CODE, "edits after an unstaged failed run");
+    assert_eq!(
+        refused_paths(&rerun),
+        vec![
+            ".jigc/AGENT.md".to_string(),
+            ".jigc/config/packs.yaml".to_string()
+        ],
+        "the refusal names exactly the two edited paths, and none of jigc's own: {}",
+        said(&rerun)
+    );
+    assert_eq!(
+        fs::read_to_string(&agent).expect("read AGENT.md"),
+        body,
+        "the adopter's note is still there"
+    );
+    assert_eq!(
+        fs::read_to_string(&packs).expect("read packs.yaml"),
+        commented,
+        "and so is their comment"
+    );
+}
+
+/// (l) **Its control: unstaged and not edited, a plain re-run completes.** The record
+/// describes the bytes, not the index, so an unstage alone must not turn jigc's own install
+/// files into a refusal — which is what naming untracked paths on an unborn `HEAD` would
+/// do without the subtraction.
+#[test]
+fn on_an_unborn_head_an_unstaged_failed_run_with_no_edit_completes_on_a_plain_rerun() {
+    let (repo, home) = unborn_repo_without_identity("unborn-unstaged");
+    let (repo, home) = (repo.path(), home.path());
+
+    let first = jigc(repo, home, &["setup"]);
+    assert_fails_with(&first, "setup.install-commit", "no git identity");
+
+    set_identity(repo);
+    git(repo, &["reset", "-q"]);
+    let rerun = jigc(repo, home, &["setup"]);
+    assert_rerun_completes(repo, &rerun);
+}
+
+/// (m) **Arm (a) with no commit yet: a failure inside the write span leaves a repository a
+/// plain re-run completes.** A read-only in-repo `core.hooksPath` fails the last write
+/// step with every other install file on disk and untracked. Those are jigc's own bytes,
+/// and several sit at paths whose writer replaces what it finds — so unless the failed run
+/// records them, the re-run reads them as the adopter's and refuses.
+#[test]
+fn on_an_unborn_head_a_write_span_failure_leaves_a_repo_a_plain_rerun_completes() {
+    let (repo, home) = unborn_repo_without_identity("unborn-hooks");
+    let (repo, home) = (repo.path(), home.path());
+    set_identity(repo);
+    fs::create_dir_all(repo.join(".githooks")).expect("create the hooks dir");
+    git(repo, &["config", "core.hooksPath", ".githooks"]);
+    let hooks = ReadOnly::new(&repo.join(".githooks"));
+
+    let first = jigc(repo, home, &["setup"]);
+    assert_fails_with(&first, "setup.install-hook", "a read-only hooks dir");
+    assert!(
+        repo.join(".jigc/AGENT.md").exists(),
+        "the failure is after the first write — the fixture must exercise the wedge"
+    );
+
+    hooks.restore();
+    let rerun = jigc(repo, home, &["setup"]);
+    assert_rerun_completes(repo, &rerun);
 }

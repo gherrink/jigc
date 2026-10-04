@@ -182,7 +182,7 @@ const AIM_HOME: &str = "git_at";
 /// operand-less mentions in help and pack prose (`git add` your code edits), which need no
 /// aiming because they name no file.
 const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
-    // --- the engine's three producers (handed the absolute home, never discovering one) ---
+    // --- the engine's four producers (handed the absolute home, never discovering one) ---
     (
         "crates/engine/src/finalize.rs",
         "carried_staged_finding",
@@ -190,6 +190,15 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
         "`finalize.carried-staged` at all three boundaries — the trial-ranked #1 v1 gate, and \
          the row that ranks first in the census: it fires on the ordinary finalize path and \
          the route is the only thing the agent is given",
+    ),
+    (
+        "crates/engine/src/finalize.rs",
+        "setup_dirty_install_finding",
+        Aim::Aimed,
+        "`setup.dirty-install-path` read on an unborn `HEAD` — `git rm --cached -- <path>`, \
+         the unstage that makes *move the file out* true of a path the adopter had staged. \
+         The born arm's `git stash -u` carries no operand; this one does, and the refusal is \
+         printed by the first command an adopter runs, from wherever they ran it",
     ),
     (
         "crates/engine/src/validate.rs",

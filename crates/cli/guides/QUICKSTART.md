@@ -115,6 +115,15 @@ yours. This is the same rule as the carryover gate at `jigc task
 finalize` below — a door committing paths it does not own says so instead of
 sweeping them in — at its other door.
 
+**One exception, in a repository with no commit yet.** Every file is untracked there,
+so an untracked `CLAUDE.md`, `.gitignore` or `.claude/settings.json` is not a refusal:
+`setup` merges into it, and it rides the repository's first commit with your lines
+intact. A file at a path jigc *replaces* — `.jigc/AGENT.md`, `.jigc/config/.gitkeep`,
+`.jigc/config/packs.yaml` (the round-trip drops your comments), a `.jigc/version` that
+is not jigc's own one-line stamp — refuses there as anywhere else, and the refusal
+names what works without a commit, since `git stash` has nothing to stand on yet: move
+the file out of the way, or commit it first.
+
 ## 2. `jigc start "<intent>"` — route, then mint
 
 Hand the agent (or yourself) a task by stating the intent. `start` composes

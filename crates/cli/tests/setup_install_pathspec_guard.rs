@@ -26,10 +26,19 @@
 //! is still there when the commit is made. The `??` exclusion this suite first shipped
 //! read M30 audit finding 1 — *`setup` owns making its install footprint **tracked*** —
 //! past its subject: that is about `setup`'s own files. **On an unborn `HEAD` it stays a
-//! green cell** (cells 4, 18), where it is the M30 rationale rather than a status flag that
-//! carries it — there is no `HEAD` to be dirty against, and `setup` owns minting the first
-//! commit — so Increment 2's `SETUP_UNBORN_EXEMPTION` is not re-closed through the back
-//! door.
+//! green cell** (cells 4, 18, 28), where it is the M30 rationale rather than a status flag
+//! that carries it — there is no `HEAD` to be dirty against, and `setup` owns minting the
+//! first commit — so Increment 2's `SETUP_UNBORN_EXEMPTION` is not re-closed through the
+//! back door.
+//!
+//! **But only where the install's writer preserves what it finds** (cells 23–29; the rc.24
+//! fix pass, `(R1, F1)`). The exemption was implemented as a property of the *query* —
+//! untracked paths were not asked for on an unborn `HEAD` — so it also covered the members
+//! whose writer **replaces** the file, where *"the adopter's bytes ride the first commit"*
+//! is false: `.jigc/AGENT.md`, `.jigc/version`, `.jigc/config/.gitkeep` and the comments in
+//! `.jigc/config/packs.yaml` were destroyed at exit 0 with no finding. It is a property of
+//! the *member* now (`cli::setup::InstallWriter`), and the refusal there prints a route
+//! that runs with no commit yet.
 //!
 //! **The refusal is asked before the first write, so it installs nothing** (corrected by
 //! the M51 completion audit; the roadmap's *"the eight install paths stay written and
@@ -64,7 +73,7 @@
 //! recorded where the pathspec settles and re-verified — bytes **and** index — where the
 //! question is asked, so the exemption can only ever cover bytes `setup` still wrote.
 //!
-//! Twenty-two cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
+//! Twenty-nine cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
 //! `git init` repos.
 
 use std::fs;
@@ -619,7 +628,6 @@ fn a_rejecting_hook_no_longer_has_a_secret_swept_past_it() {
 /// owns is replaced. The guard composed into a context that omits its target: inert.
 #[test]
 fn an_owned_guide_artifact_is_not_a_subject_of_the_guard() {
-    const GUIDE: &str = ".claude/skills/jigc/SKILL.md";
     let (repo, home) = born_repo("guide");
     let (repo, home) = (repo.path(), home.path());
     assert_eq!(jigc(repo, home, &["setup"]).status.code(), Some(0));
@@ -1079,54 +1087,556 @@ fn force_over_a_whole_rewrite_path_says_what_it_replaced() {
 
 /// (22) **The class fence.** Every member of the install commit's pathspec, enumerated from
 /// `install_tracked_paths` itself (with every conditional on) rather than from a hand list,
-/// paired with the disposition the guard gives it. A **twelfth** install path joins this
-/// answer the moment it joins the pathspec, so it reddens here until somebody decides
-/// whether its writer can destroy authored bytes.
+/// paired with the disposition the guard gives it **and with what its writer does to bytes
+/// already there**. A **twelfth** install path joins this answer the moment it joins the
+/// pathspec, so it reddens here until somebody decides both — and it cannot join the
+/// pathspec without stating both either, because `InstallMember` has no default.
 ///
 /// The count is **ten paths**, not the eleven a reading of the writer *occurrences* gives:
 /// `.claude/settings.json` is one path with three writers (allowlist, SessionStart hook,
 /// deny floor). Two of the ten are exempt, and each exemption is a content oracle rather
 /// than a name: the guide's recorded body digest, the version stamp's one-line shape.
+///
+/// **Five preserve and five replace** (the rc.24 fix pass, `(R1, F1)`). The writer column
+/// is what the unborn-`HEAD` exemption reads, and cell (23) holds each row of it to what
+/// the real writer does — this cell pins the declaration, that one pins that it is true.
 #[test]
 fn the_install_path_class_is_dispositioned_member_by_member() {
     use cli::setup::InstallPathDisposition as D;
-    let class = cli::setup::install_path_dispositions(
-        "CLAUDE.md",
-        ".claude/settings.json",
-        Some(".claude/skills/jigc/SKILL.md"),
-        Some(".githooks/pre-commit"),
-    );
-    let got: Vec<(&str, D)> = class.iter().map(|(p, d)| (p.as_str(), *d)).collect();
+    use cli::setup::InstallWriter as W;
+    let class = install_class();
+    let got: Vec<(&str, D, W)> = class
+        .iter()
+        .map(|member| (member.path.as_str(), member.disposition, member.writer))
+        .collect();
     assert_eq!(
         got,
         vec![
             // Merged into — `inject_reference` appends idempotently.
-            ("CLAUDE.md", D::Refuses),
+            ("CLAUDE.md", D::Refuses, W::Preserves),
             // Merged into — allowlist + SessionStart hook + deny floor, structure-aware.
-            (".claude/settings.json", D::Refuses),
+            (".claude/settings.json", D::Refuses, W::Preserves),
             // **Rewritten whole** (`adapter::write_bootstrap_file`, an unconditional
             // `fs::write`) and authorable — the M51 completion audit's first loss cell.
-            (".jigc/AGENT.md", D::Refuses),
+            (".jigc/AGENT.md", D::Refuses, W::Replaces),
             // Amended to the union (M51 Increment 4) — the user's extra lines survive.
-            (".jigc/.gitignore", D::Refuses),
+            (".jigc/.gitignore", D::Refuses, W::Preserves),
             // Machine-owned provenance stamp; re-stamping IS the documented
             // `store-version.binary-mismatch` recovery, so the oracle is its shape.
-            (".jigc/version", D::ExemptWhenJigcOwned),
-            // An empty marker file, rewritten — nothing to lose, and nothing that says so.
-            (".jigc/config/.gitkeep", D::Refuses),
+            (".jigc/version", D::ExemptWhenJigcOwned, W::Replaces),
+            // An empty marker file, rewritten over whatever is there.
+            (".jigc/config/.gitkeep", D::Refuses, W::Replaces),
             // **Parse-mutate-serialize**, so a comment is dropped by the round-trip — the
             // audit's second loss cell, and the reason it cannot be found by looking at
-            // whether the file is clean afterwards.
-            (".jigc/config/packs.yaml", D::Refuses),
+            // whether the file is clean afterwards. The keys survive; the bytes do not, so
+            // for the guard this writer replaces.
+            (".jigc/config/packs.yaml", D::Refuses, W::Replaces),
             // Merge-never-clobber, fresh-repo seed only.
-            (".gitignore", D::Refuses),
+            (".gitignore", D::Refuses, W::Preserves),
             // M48's refuse-to-clobber already dropped a user-modified copy from the
             // pathspec, so a guide that reaches the guard is jigc's by construction.
-            (".claude/skills/jigc/SKILL.md", D::ExemptWhenJigcOwned),
+            (GUIDE, D::ExemptWhenJigcOwned, W::Replaces),
             // A foreign `pre-commit` is preserved verbatim and jigc's block spliced in.
-            (".githooks/pre-commit", D::Refuses),
+            (HOOK, D::Refuses, W::Preserves),
         ],
-        "every install path carries a decided disposition — a new one lands as `Refuses`, \
-         which is loud, and this fence is where it gets dispositioned on purpose"
+        "every install path carries a decided disposition and a declared writer — a new one \
+         is where both get decided on purpose"
+    );
+}
+
+/// The guide artifact's path under the Claude Code profile.
+const GUIDE: &str = ".claude/skills/jigc/SKILL.md";
+
+/// An in-worktree hooks dir's `pre-commit` — the one shape in which the hook is a member
+/// of the install commit (`core.hooksPath` set to `.githooks`).
+const HOOK: &str = ".githooks/pre-commit";
+
+/// The marker every planted file carries, so *"are the adopter's bytes still anywhere?"*
+/// is one search.
+const MARK: &str = "USERMARK";
+
+/// The install commit's whole path class, from the production enumeration.
+fn install_class() -> Vec<cli::setup::InstallMember> {
+    cli::setup::install_path_dispositions(
+        "CLAUDE.md",
+        ".claude/settings.json",
+        Some(GUIDE),
+        Some(HOOK),
+    )
+}
+
+/// What an adopter could plausibly have at `path` before jigc ever ran — bytes carrying
+/// [`MARK`], in a shape the member's writer can read. **A new install member has no plant
+/// and panics here**, which is the point: cell (23) cannot go green over a member nobody
+/// drove.
+fn plant_for(path: &str) -> &'static str {
+    match path {
+        "CLAUDE.md" => "# House rules\n\nUSERMARK never deploy on a Friday.\n",
+        ".claude/settings.json" => "{\n  \"env\": { \"USERMARK\": \"1\" }\n}\n",
+        ".jigc/AGENT.md" => "# Team notes for agents — USERMARK\n\nAlways run the linter.\n",
+        ".jigc/.gitignore" => "USERMARK-scratch/\n",
+        // Prose, not the one-line `jigc-version:` shape the stamp's oracle accepts.
+        ".jigc/version" => "USERMARK: we pin jigc here\nsee the team wiki\n",
+        ".jigc/config/.gitkeep" => "USERMARK\n",
+        ".jigc/config/packs.yaml" => "# USERMARK why we pin dev only\npacks:\n- dev\n",
+        ".gitignore" => "USERMARK.log\n",
+        GUIDE => "# my own skill notes\n\nUSERMARK\n",
+        HOOK => "#!/bin/sh\n# USERMARK our own policy hook\nexit 0\n",
+        other => panic!(
+            "`{other}` is an install member with no plant: give it bytes an adopter could have \
+             there, so the unborn-HEAD cell is driven for it too"
+        ),
+    }
+}
+
+/// Whether `HEAD` resolves to a commit.
+fn head_is_born(repo: &Path) -> bool {
+    git_try(repo, &["rev-parse", "--verify", "-q", "HEAD"])
+        .status
+        .success()
+}
+
+/// The paths a `setup.dirty-install-path` refusal lists — its `` `path` `` lines.
+fn refused_paths(out: &std::process::Output) -> Vec<String> {
+    said(out)
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.len() > 2 && line.starts_with('`') && line.ends_with('`'))
+        .map(|line| line.trim_matches('`').to_string())
+        .collect()
+}
+
+/// The refusal's `route:` line, as the text surface prints it.
+fn route(out: &std::process::Output) -> String {
+    said(out)
+        .lines()
+        .map(str::trim)
+        .find_map(|line| line.strip_prefix("route:"))
+        .unwrap_or_else(|| panic!("the refusal prints a route: {}", said(out)))
+        .trim()
+        .to_string()
+}
+
+/// Assert `out` is the pre-write refusal over exactly `path` on an unborn `HEAD`: exit 1,
+/// the door's code, the one path named, **no commit minted**, and nothing staged.
+fn assert_refused_unborn(repo: &Path, out: &std::process::Output, path: &str) {
+    let said = said(out);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "`{path}`: an untracked file the install would replace refuses: {said}"
+    );
+    assert!(
+        said.contains(DIRTY_CODE),
+        "`{path}`: the door's code: {said}"
+    );
+    assert_eq!(
+        refused_paths(out),
+        vec![path.to_string()],
+        "`{path}`: the refusal names exactly that path: {said}"
+    );
+    assert!(
+        !head_is_born(repo),
+        "`{path}`: the refusal minted no commit — the repository is still unborn"
+    );
+    let status = git(repo, &["status", "--porcelain"]);
+    assert!(
+        status.lines().all(|line| line.starts_with("??")),
+        "`{path}`: and staged nothing: {status}"
+    );
+}
+
+/// (23) **The class axis, driven: on an unborn `HEAD` every install member does what its
+/// declared writer says, and the guard answers accordingly** (the rc.24 fix pass,
+/// `(R1, F1)`).
+///
+/// The defect, driven on `1.0.0-rc.24`: an unborn `HEAD` was asked with
+/// `--untracked-files=no`, so no untracked path could reach the gate at all. That is the
+/// declared on-ramp where the writer merges into what it finds — and a silent loss where
+/// it does not. An untracked `.jigc/AGENT.md` holding a team's notes was rewritten at exit
+/// 0 with no finding, `git status` empty afterwards and the bytes in no git object;
+/// `.jigc/version`, `.jigc/config/.gitkeep` and a comment in `.jigc/config/packs.yaml`
+/// went the same way. Cell (18) pinned the exemption with a `CLAUDE.md` plant, and cells
+/// (19)–(20) pinned the refusal on a **born** repository; nothing planted a replacing
+/// member on an unborn one.
+///
+/// **So this cell iterates the production table, one fresh repository per member**, and
+/// holds each row to both halves of the contract:
+///
+/// - `Preserves` ⇒ exit 0 with no refusal, and the adopter's bytes are **in the first
+///   commit** — the on-ramp, and the proof the declaration is true: a member declared
+///   `Preserves` whose writer drops the mark fails here, which is what stops the next
+///   member being exempted by assertion.
+/// - `Replaces` ⇒ exit 1 before the first write, the path named, the bytes byte-identical,
+///   no commit, nothing staged and nothing else installed.
+///
+/// The guide is the one member whose row is decided earlier: a copy that is not jigc's own
+/// is dropped from the install before the gate (M48), left byte-identical and reported.
+#[test]
+fn every_install_member_keeps_its_declared_promise_on_an_unborn_head() {
+    use cli::setup::InstallWriter as W;
+    let mut replaced = Vec::new();
+    for member in install_class() {
+        let path = member.path.as_str();
+        let (repo, home) = unborn_repo("unborn-axis");
+        let (repo, home) = (repo.path(), home.path());
+        if path == HOOK {
+            git(repo, &["config", "core.hooksPath", ".githooks"]);
+        }
+        let plant = plant_for(path);
+        write(repo, path, plant);
+
+        let out = jigc(repo, home, &["setup"]);
+        let said = said(&out);
+        if path == GUIDE {
+            assert_eq!(
+                out.status.code(),
+                Some(0),
+                "a guide copy that is not jigc's is left alone, not refused over: {said}"
+            );
+            assert!(
+                said.contains("adapter-guide.user-modified"),
+                "and named: {said}"
+            );
+            assert_eq!(read(repo, path), plant, "byte-identical on disk");
+            continue;
+        }
+        match member.writer {
+            W::Preserves => {
+                assert_eq!(
+                    out.status.code(),
+                    Some(0),
+                    "`{path}`: a file the install merges into is the on-ramp, not a \
+                     refusal: {said}"
+                );
+                assert!(
+                    !said.contains(DIRTY_CODE) && !said.contains("setup.forced-install-path"),
+                    "`{path}`: and it raises no finding: {said}"
+                );
+                assert!(
+                    git(repo, &["show", &format!("HEAD:{path}")]).contains(MARK),
+                    "`{path}` is declared `Preserves`, so the adopter's bytes are in the \
+                     first commit — if they are not, the declaration is false and the member \
+                     belongs under `Replaces`"
+                );
+            }
+            W::Replaces => {
+                assert_refused_unborn(repo, &out, path);
+                assert_eq!(
+                    read(repo, path),
+                    plant,
+                    "`{path}`: the adopter's bytes are byte-identical — asked before the write"
+                );
+                for other in ["CLAUDE.md", ".claude/settings.json", ".jigc/AGENT.md"] {
+                    assert!(
+                        other == path || !repo.join(other).exists(),
+                        "`{path}`: nothing else was installed either (`{other}`)"
+                    );
+                }
+                replaced.push(path.to_string());
+            }
+        }
+    }
+    assert_eq!(
+        replaced,
+        vec![
+            ".jigc/AGENT.md",
+            ".jigc/version",
+            ".jigc/config/.gitkeep",
+            ".jigc/config/packs.yaml",
+        ],
+        "the four members the verification found destroyed on `1.0.0-rc.24` are exactly the \
+         ones that refuse now"
+    );
+}
+
+/// (24) **The stamp's oracle still exempts jigc's own bytes on an unborn `HEAD`.** The
+/// refusal in cell (23) is over a `.jigc/version` holding prose; a one-line `jigc-version:`
+/// stamp is jigc's own whichever build wrote it, and re-stamping it is the documented
+/// recovery — so a repository that carries one before its first commit (a template, an
+/// install whose commit was undone) still installs.
+#[test]
+fn a_jigc_shaped_stamp_on_an_unborn_head_is_still_jigcs_own() {
+    let (repo, home) = unborn_repo("unborn-stamp");
+    let (repo, home) = (repo.path(), home.path());
+    write(repo, ".jigc/version", "jigc-version: 0.0.1-earlier\n");
+
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "a stamp in jigc's own shape is exempt by its oracle: {}",
+        said(&out)
+    );
+    assert!(
+        !read(repo, ".jigc/version").contains("0.0.1-earlier"),
+        "and the install re-stamped it"
+    );
+}
+
+/// (25) **The trigger is an unborn `HEAD`, not a repository with zero commits.** An orphan
+/// branch whose index was emptied has commits on other refs and no `HEAD` — the same cell,
+/// reached in a born repository, and driven on `1.0.0-rc.24` with the same loss.
+#[test]
+fn an_orphan_branch_with_an_emptied_index_is_the_same_cell() {
+    let (repo, home) = born_repo("orphan");
+    let (repo, home) = (repo.path(), home.path());
+    git(repo, &["checkout", "-q", "--orphan", "scratch"]);
+    git(repo, &["rm", "-r", "-q", "--cached", "."]);
+    assert!(!head_is_born(repo), "the premise: `HEAD` is unborn");
+    let plant = plant_for(".jigc/AGENT.md");
+    write(repo, ".jigc/AGENT.md", plant);
+
+    let out = jigc(repo, home, &["setup"]);
+    assert_refused_unborn(repo, &out, ".jigc/AGENT.md");
+    assert_eq!(read(repo, ".jigc/AGENT.md"), plant, "the bytes are intact");
+    assert_eq!(
+        git(repo, &["rev-list", "--count", "--all"]),
+        "1",
+        "and no commit was added to any ref"
+    );
+}
+
+/// (26) **An untracked symlink at a replacing member is an occupant like any other** — and
+/// the bytes at risk are its *target's*, a file outside the install footprint. Driven on
+/// `1.0.0-rc.24`: the write went through the link, the target's bytes ended in no git
+/// object, and `HEAD` carried the link at mode `120000`.
+///
+/// Both shapes, because the pre-write filter asked `exists()`, which follows the link: a
+/// **dangling** one read as *nothing here*, dropped out of the gate, and the writer then
+/// created its target before the commit-time backstop refused over the link.
+#[cfg(unix)]
+#[test]
+fn an_untracked_symlink_at_a_replacing_member_refuses_and_its_target_is_untouched() {
+    use std::os::unix::fs::symlink;
+
+    // (a) A live link: the target holds the adopter's notes.
+    let (repo, home) = unborn_repo("unborn-link");
+    let (repo, home) = (repo.path(), home.path());
+    write(repo, "notes/agent.md", "USERMARK the notes we keep\n");
+    fs::create_dir_all(repo.join(".jigc")).expect("create .jigc");
+    symlink("../notes/agent.md", repo.join(".jigc/AGENT.md")).expect("plant the link");
+
+    let out = jigc(repo, home, &["setup"]);
+    assert_refused_unborn(repo, &out, ".jigc/AGENT.md");
+    assert_eq!(
+        read(repo, "notes/agent.md"),
+        "USERMARK the notes we keep\n",
+        "the write did not go through the link — its target is byte-identical"
+    );
+    assert!(
+        fs::symlink_metadata(repo.join(".jigc/AGENT.md"))
+            .expect("stat the link")
+            .file_type()
+            .is_symlink(),
+        "and the link is still a link"
+    );
+
+    // (b) A dangling link: nothing to lose, and still nothing written through it.
+    let (repo, home) = unborn_repo("unborn-dangling");
+    let (repo, home) = (repo.path(), home.path());
+    fs::create_dir_all(repo.join(".jigc")).expect("create .jigc");
+    fs::create_dir_all(repo.join("notes")).expect("create notes");
+    symlink("../notes/absent.md", repo.join(".jigc/AGENT.md")).expect("plant the link");
+
+    let out = jigc(repo, home, &["setup"]);
+    assert_refused_unborn(repo, &out, ".jigc/AGENT.md");
+    assert!(
+        !repo.join("notes/absent.md").exists(),
+        "the gate refused before the writer could create the link's target"
+    );
+}
+
+/// (27) **`--force` on an unborn `HEAD` names what it replaced — and only that.** The
+/// consent used to be spent over an empty set there (the same invisible untracked paths),
+/// so `setup.forced-install-path`, the advisory whose whole job is to say which paths a
+/// consent cost, said nothing while the bytes went. A file the install merges into is not
+/// a path the consent was spent on, and is not named.
+#[test]
+fn force_on_an_unborn_head_names_the_replaced_path_and_only_that() {
+    let (repo, home) = unborn_repo("unborn-force");
+    let (repo, home) = (repo.path(), home.path());
+    write(repo, ".jigc/AGENT.md", plant_for(".jigc/AGENT.md"));
+    write(repo, "CLAUDE.md", plant_for("CLAUDE.md"));
+
+    let out = jigc(repo, home, &["setup", "--force"]);
+    let said = said(&out);
+    assert_eq!(out.status.code(), Some(0), "`--force` installs: {said}");
+    assert!(
+        said.contains("setup.forced-install-path") && said.contains("over 1 install path(s)"),
+        "the advisory names the one path the consent was spent on: {said}"
+    );
+    assert_eq!(
+        refused_paths(&out),
+        vec![".jigc/AGENT.md".to_string()],
+        "that path, and not the `CLAUDE.md` the install merged into: {said}"
+    );
+    assert!(
+        !read(repo, ".jigc/AGENT.md").contains(MARK),
+        "which is what the consent bought: the file is jigc's now"
+    );
+    assert!(
+        git(repo, &["show", "HEAD:CLAUDE.md"]).contains(MARK),
+        "while the merged-into file rode the first commit intact"
+    );
+}
+
+/// (28) **The on-ramp, whole: every member the install merges into, untracked together on
+/// an unborn `HEAD`, still installs at exit 0 with no finding.** The control that stops the
+/// refusal above being widened — a new repository holding its own `CLAUDE.md`,
+/// `.gitignore` and `.claude/settings.json` is the QUICKSTART's first command, and routing
+/// it at `--force` is the reflex the guard is priced against.
+#[test]
+fn the_unborn_exemption_still_covers_every_merged_into_member_together() {
+    let (repo, home) = unborn_repo("unborn-on-ramp");
+    let (repo, home) = (repo.path(), home.path());
+    let ramp = [
+        "CLAUDE.md",
+        ".gitignore",
+        ".claude/settings.json",
+        ".jigc/.gitignore",
+    ];
+    for path in ramp {
+        write(repo, path, plant_for(path));
+    }
+    write(repo, "notes.md", "unrelated, and untracked\n");
+
+    let out = jigc(repo, home, &["setup"]);
+    let said = said(&out);
+    assert_eq!(out.status.code(), Some(0), "the on-ramp installs: {said}");
+    assert!(
+        !said.contains(DIRTY_CODE) && !said.contains("setup.forced-install-path"),
+        "with no finding about any of them: {said}"
+    );
+    for path in ramp {
+        assert!(
+            git(repo, &["show", &format!("HEAD:{path}")]).contains(MARK),
+            "`{path}` rode the first commit with the adopter's bytes in it"
+        );
+    }
+    assert_eq!(
+        git(repo, &["status", "--porcelain"]),
+        "?? notes.md",
+        "and a file outside the footprint is left exactly as it was"
+    );
+}
+
+/// (29) **Every act the unborn refusal's route names runs with no commit yet, and lands
+/// the install in one re-run** (the rc.24 fix pass, `(R1, F1)`).
+///
+/// The route this door printed was written for a born `HEAD`: *"commit or stash the work …
+/// `git stash -u`"*. On an unborn one `git stash` exits 1 — *"You do not have the initial
+/// commit yet"* — so the first act it named could not run, and it was already printed there
+/// for a **staged** install path. Three exits replace it, each driven here as printed, with
+/// an untracked `CLAUDE.md` beside the refused path: that is the cell in which committing
+/// only the named path used to trap the adopter, since a first commit ends the unborn
+/// exemption and the re-run then refused over `CLAUDE.md` instead.
+#[test]
+fn the_unborn_refusals_route_followed_verbatim_lands_the_install_in_one_run() {
+    /// An unborn repository holding the refused path and a merged-into file beside it.
+    fn refused(tag: &str) -> (TempDir, TempDir, String) {
+        let (repo, home) = unborn_repo(tag);
+        write(repo.path(), ".jigc/AGENT.md", plant_for(".jigc/AGENT.md"));
+        write(repo.path(), "CLAUDE.md", plant_for("CLAUDE.md"));
+        let out = jigc(repo.path(), home.path(), &["setup"]);
+        assert_refused_unborn(repo.path(), &out, ".jigc/AGENT.md");
+        let said = said(&out);
+        assert!(
+            said.contains("no commit yet") && !said.contains("`HEAD` is untouched"),
+            "the message is worded for a repository with no `HEAD`: {said}"
+        );
+        (repo, home, route(&out))
+    }
+    let landed = |repo: &Path, home: &Path, what: &str| {
+        let out = jigc(repo, home, &["setup"]);
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{what}: the re-run lands the install in ONE run: {}",
+            said(&out)
+        );
+        assert!(
+            git(repo, &["show", "HEAD:CLAUDE.md"]).contains(MARK),
+            "{what}: and the merged-into file's bytes are in a commit"
+        );
+        assert!(
+            git(repo, &["show", "HEAD:.jigc/AGENT.md"]).contains("jigc"),
+            "{what}: with jigc's own bootstrap file installed"
+        );
+    };
+
+    // The route itself: no stash, and the one-step exit leads.
+    let (repo, home, said_route) = refused("unborn-route-move");
+    let (repo, home) = (repo.path(), home.path());
+    assert!(
+        !said_route.contains("stash"),
+        "`git stash` cannot run without a commit, so the route does not offer it: {said_route}"
+    );
+    let at = |needle: &str| {
+        said_route
+            .find(needle)
+            .unwrap_or_else(|| panic!("the route names `{needle}`: {said_route}"))
+    };
+    assert!(
+        at("move the file(s) out") < at("or commit them")
+            && at("or commit them") < at("jigc setup --force"),
+        "move out, then commit, then the consent: {said_route}"
+    );
+
+    // (a) Move the file out of the install path.
+    fs::rename(repo.join(".jigc/AGENT.md"), repo.join("agent-notes.md")).expect("move out");
+    landed(repo, home, "moved out");
+    assert!(
+        read(repo, "agent-notes.md").contains(MARK),
+        "the adopter's notes are where they moved them"
+    );
+
+    // (b) Commit — in one commit with the path the route says that commit must carry.
+    let (repo, home, said_route) = refused("unborn-route-commit");
+    let (repo, home) = (repo.path(), home.path());
+    assert!(
+        said_route.contains("in one commit with `CLAUDE.md`"),
+        "the commit arm names the untracked install path that commit must carry: {said_route}"
+    );
+    git(repo, &["add", "--", ".jigc/AGENT.md", "CLAUDE.md"]);
+    git(repo, &["commit", "-q", "-m", "our notes"]);
+    landed(repo, home, "committed");
+    assert!(
+        git(repo, &["log", "--all", "-p"]).contains("Always run the linter."),
+        "git holds the adopter's copy of the file the install then replaced"
+    );
+
+    // (c) `--force`, the consent.
+    let (repo, home, _) = refused("unborn-route-force");
+    let (repo, home) = (repo.path(), home.path());
+    let out = jigc(repo, home, &["setup", "--force"]);
+    assert_eq!(out.status.code(), Some(0), "`--force`: {}", said(&out));
+    assert!(
+        said(&out).contains("setup.forced-install-path"),
+        "and it says what it was spent on: {}",
+        said(&out)
+    );
+
+    // (d) The **staged** cell — the one that refused before this fix, with the dead route.
+    //     Moving a staged file out leaves its index entry, so the route names the unstage.
+    let (repo, home) = unborn_repo("unborn-route-staged");
+    let (repo, home) = (repo.path(), home.path());
+    write(repo, ".jigc/AGENT.md", plant_for(".jigc/AGENT.md"));
+    git(repo, &["add", "--", ".jigc/AGENT.md"]);
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(out.status.code(), Some(1), "staged refuses: {}", said(&out));
+    let said_route = route(&out);
+    assert!(
+        said_route.contains("rm --cached -- <path>") && !said_route.contains("stash"),
+        "the route names the unstage and no stash: {said_route}"
+    );
+    git(repo, &["rm", "-q", "--cached", "--", ".jigc/AGENT.md"]);
+    fs::rename(repo.join(".jigc/AGENT.md"), repo.join("agent-notes.md")).expect("move out");
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "unstaged and moved out, the re-run lands: {}",
+        said(&out)
     );
 }

@@ -494,8 +494,8 @@ fn set_dir_readonly(dir: &Path, readonly: bool) {
 /// (M21). The write is repo-local, idempotent, and non-destructive:
 ///   (i) after setup, `packs.yaml` carries `compose-embedded-methodology: true`;
 ///   (ii) a second setup leaves the file byte-identical (idempotent no-op);
-///   (iii) a pre-seeded `packs:` list keeps its **entries, in order and content**, and
-///         gains the marker alongside them.
+///   (iii) a pre-seeded **committed** `packs:` list keeps its **entries, in order and
+///         content**, and gains the marker alongside them.
 ///
 /// **(iii) has now swung back** (M49 Inc 6 T2). M42 Inc 6 made setup decline the marker
 /// over a hand-written `packs:` list, because the combination was one the pack factory
@@ -507,6 +507,16 @@ fn set_dir_readonly(dir: &Path, readonly: bool) {
 /// keeps the list. **Bound:** the write is a YAML parse-mutate-serialize, so the
 /// entries survive verbatim while the file's layout is re-emitted canonically — which
 /// is why (iii) asserts on the entries rather than on the whole file's bytes.
+///
+/// **And that bound is why (iii) commits its seed first** (the rc.24 fix pass, `(R1, F1)`).
+/// The round-trip keeps the entries and drops every comment, so for the bytes an adopter
+/// wrote this writer *replaces* the file — and a file the install would replace refuses
+/// while no commit holds it, on an unborn `HEAD` as on a born one
+/// (`setup_install_pathspec_guard.rs` cell 23 drives that refusal). (iii) used to seed the
+/// list untracked in a repository with no commit, which rode the unborn exemption that is
+/// now held to the members whose writer preserves what it finds. The claim it pins is the
+/// composition, so it takes the refusal's own route: the seed is committed, then installed
+/// over.
 #[test]
 fn setup_writes_compose_embedded_methodology_marker() {
     // (i) A clean setup writes the marker.
@@ -556,11 +566,19 @@ fn setup_writes_compose_embedded_methodology_marker() {
     let seeded_bytes = "packs:\n  - packs/local-pack\n";
     fs::write(seeded_config.join("packs.yaml"), seeded_bytes)
         .expect("seed a hand-written packs.yaml carrying a packs: list");
+    git_inline_identity(
+        seeded_repo.path(),
+        &["add", "--", ".jigc/config/packs.yaml"],
+    );
+    git_inline_identity(
+        seeded_repo.path(),
+        &["commit", "-q", "-m", "declare the house pack"],
+    );
 
     let out3 = run_setup(seeded_repo.path(), home.path());
     assert!(
         out3.status.success(),
-        "`jigc setup` over a seeded packs.yaml must exit 0; stderr:\n{}",
+        "`jigc setup` over a committed seeded packs.yaml must exit 0; stderr:\n{}",
         String::from_utf8_lossy(&out3.stderr),
     );
     let seeded_after = fs::read_to_string(seeded_config.join("packs.yaml"))

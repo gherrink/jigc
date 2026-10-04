@@ -277,7 +277,10 @@ pub enum Command {
     /// a reference into `CLAUDE.md`, initializes the project layer (`.jigc/config/`),
     /// allowlists `Bash(jigc:*)`, and installs the `SessionStart` and warn-only git
     /// `pre-commit` hooks. Idempotent. Refuses its own install commit when a path in
-    /// that footprint carries work no commit has a copy of, rather than sweeping it in.
+    /// that footprint carries work no commit has a copy of, rather than sweeping it in
+    /// or writing over it. In a repository with no commit yet, an untracked file it
+    /// merges into (`CLAUDE.md`, `.gitignore`, the settings file) rides the first commit
+    /// instead; one it would replace still refuses.
     Setup {
         /// Commit the install footprint even where it carries bytes `jigc setup` did
         /// not write — the explicit consent to sweep uncommitted work into

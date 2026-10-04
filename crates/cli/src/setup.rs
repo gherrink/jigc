@@ -1329,30 +1329,37 @@ fn install(
     //     pre-run bytes. The re-run after the named act installs from a resolved state.
     match &subject {
         InstallSubject::Dirty(before) => {
-            let candidates = install_candidate_paths(
+            let candidates = install_candidates(
                 jigc_home,
                 &line_file,
                 &allowlist_file,
                 guide_file.as_deref(),
             );
-            let refusals =
-                dirty_install_refusals(jigc_home, &candidates, before, guide_file.as_deref());
+            let refusals = dirty_install_refusals(jigc_home, &candidates, before);
             if !refusals.is_empty() {
+                // What the unborn exemption is covering right now — the route's commit arm
+                // has to name it, since a first commit ends the exemption.
+                let riding: Vec<String> = candidates
+                    .iter()
+                    .filter(|member| before.rides_the_first_commit(member))
+                    .map(|member| member.path.clone())
+                    .collect();
                 return Err(engine::finalize::setup_dirty_install_finding(
-                    &refusals, false,
+                    &refusals,
+                    false,
+                    before.head(jigc_home, &riding),
                 ));
             }
         }
         // The consent is given, so nothing refuses — but what it was spent on is said.
         InstallSubject::Consented(before) => {
-            let candidates = install_candidate_paths(
+            let candidates = install_candidates(
                 jigc_home,
                 &line_file,
                 &allowlist_file,
                 guide_file.as_deref(),
             );
-            let forced =
-                dirty_install_refusals(jigc_home, &candidates, before, guide_file.as_deref());
+            let forced = dirty_install_refusals(jigc_home, &candidates, before);
             if !forced.is_empty() {
                 findings.push(forced_install_path_finding(jigc_home, &forced));
             }
@@ -1428,7 +1435,7 @@ fn install(
         guide_file.as_deref(),
         &subject,
     )
-    .map_err(|rejection| rejection.finding())?;
+    .map_err(|rejection| rejection.finding(jigc_home))?;
 
     // 7. The forecast (M50 Increment 12 / T3, D5): the install is done — now say what the
     //    **next** door will refuse. `setup` is the one door that meets a repo whose project
@@ -1746,39 +1753,118 @@ fn pack_load_finding(err: &anyhow::Error) -> Finding {
 /// `hook` is [`committable_hook_path`]'s already-resolved answer rather than the hook
 /// file, so [`commit_install`] holds the one entry it may have to **drop** (the
 /// soft-member retry) without asking git the same question twice.
+///
+/// **Each member is stated with what the dirty-install guard needs to know about it**
+/// ([`InstallMember`]; the rc.24 fix pass, `(R1, F1)`) — here, where the path is
+/// enumerated, and nowhere else. The two facts used to be derived from the path's *name*
+/// in a function beside this one, which is one more place to forget a new member in; a
+/// member that does not say whose bytes it carries and what its writer does to them no
+/// longer compiles.
 fn install_tracked_paths(
     line_file: &str,
     allowlist_file: &str,
     seeded_gitignore: bool,
     hook: Option<&str>,
     guide: Option<&str>,
-) -> Vec<String> {
-    let mut paths = vec![
-        line_file.to_string(),      // CLAUDE.md (the bootstrap reference host)
-        allowlist_file.to_string(), // .claude/settings.json (allowlist + SessionStart hook)
-        ".jigc/AGENT.md".to_string(),
-        ".jigc/.gitignore".to_string(),
-        VERSION_STAMP_PATH.to_string(), // .jigc/version (the binary-provenance stamp)
-        ".jigc/config/.gitkeep".to_string(),
-        ".jigc/config/packs.yaml".to_string(),
+) -> Vec<InstallMember> {
+    use InstallPathDisposition::{ExemptWhenJigcOwned, Refuses};
+    use InstallWriter::{Preserves, Replaces};
+    let member = |path: &str, disposition, writer| InstallMember {
+        path: path.to_string(),
+        disposition,
+        writer,
+    };
+    let mut members = vec![
+        // `CLAUDE.md` (the bootstrap reference host) — `adapter::inject_reference` appends
+        // one section and leaves every existing byte in place.
+        member(line_file, Refuses, Preserves),
+        // `.claude/settings.json` — three structure-aware merges (allowlist, SessionStart
+        // hook, deny floor); a file they cannot parse is refused before the first write
+        // (`adapter::check_settings_merge`).
+        member(allowlist_file, Refuses, Preserves),
+        // `adapter::write_bootstrap_file` — an unconditional `fs::write` of the canonical
+        // body, with no oracle that could call a human's prose jigc's own.
+        member(".jigc/AGENT.md", Refuses, Replaces),
+        // `crate::gitignore::ensure` — amended to the union, the user's lines kept.
+        member(".jigc/.gitignore", Refuses, Preserves),
+        // The binary-provenance stamp, rewritten whole; exempt only while its one line is
+        // jigc's own shape ([`version_stamp_is_jigcs`]).
+        member(VERSION_STAMP_PATH, ExemptWhenJigcOwned, Replaces),
+        // `adapter::init_project_layer` — written empty, over whatever is there.
+        member(".jigc/config/.gitkeep", Refuses, Replaces),
+        // [`write_compose_marker`] — parse-mutate-serialize through the YAML value model:
+        // the keys and the `packs:` list survive, a **comment does not**, so for the bytes
+        // an adopter authored this writer replaces the file ([`InstallWriter::Replaces`]).
+        member(".jigc/config/packs.yaml", Refuses, Replaces),
     ];
     // The root `.gitignore` is committed **only** when setup itself seeded it on the
     // fresh-repo path — never an established repo's pre-existing `.gitignore` (which setup
-    // did not touch and must not sweep into its install commit).
+    // did not touch and must not sweep into its install commit). [`seed_secrets_gitignore`]
+    // appends the floor under the adopter's own lines.
     if seeded_gitignore {
-        paths.push(".gitignore".to_string());
+        members.push(member(".gitignore", Refuses, Preserves));
     }
     // The adapter's owned **guide artifact**, when the profile declares one. It is
     // committed for the same reason the bootstrap file is: it must travel with the repo,
     // so a clone gets the guides that match the binary that wrote them (M48 Increment 10).
+    // [`write_guide_artifact`] rewrites it whole; a copy that is not jigc's own never
+    // reaches this list ([`guide_ownership`], decided before any write).
     if let Some(guide) = guide {
-        paths.push(guide.to_string());
+        members.push(member(guide, ExemptWhenJigcOwned, Replaces));
     }
     // The `pre-commit` hook, iff git can track it from this working tree.
+    // [`install_precommit_hook`] keeps a foreign hook verbatim and splices jigc's block in.
     if let Some(hook) = hook {
-        paths.push(hook.to_string());
+        members.push(member(hook, Refuses, Preserves));
     }
-    paths
+    members
+}
+
+/// **One member of the install commit's path class, with everything the dirty-install
+/// guard needs to know about it** — stated where the member is enumerated
+/// ([`install_tracked_paths`]), so a path cannot join the pathspec without both facts: the
+/// struct has no default, and the compiler refuses a member that leaves one out (the rc.24
+/// fix pass, `(R1, F1)`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InstallMember {
+    /// The repo-relative path the install commit names.
+    pub path: String,
+    /// What the guard does when the path was dirty before the run.
+    pub disposition: InstallPathDisposition,
+    /// What the member's writer does to bytes it finds already there.
+    pub writer: InstallWriter,
+}
+
+/// **What an install member's writer does to bytes that are already at its path** — the
+/// one fact the unborn-`HEAD` exemption turns on ([`DirtyPaths::rides_the_first_commit`];
+/// the rc.24 fix pass, `(R1, F1)`).
+///
+/// It is a second axis and not a third [`InstallPathDisposition`], because the two answer
+/// different questions and every combination is real. The disposition asks *whose bytes
+/// are these?* and is the whole rule on a born `HEAD`, where a dirty path refuses whichever
+/// writer it has — a file the install merges into still **rides the install commit** with
+/// the adopter's uncommitted work in it. This asks *what happens to them?*, and it decides
+/// the one cell the disposition cannot: an **untracked** file on an **unborn** `HEAD`,
+/// where riding the repository's first commit is the declared on-ramp
+/// (`design/validation.md` → the `setup.dirty-install-path` row) — true only if the bytes
+/// are still there to ride.
+///
+/// **There is no default, and the safe direction is [`Self::Replaces`].** A member declared
+/// `Replaces` that in fact preserves costs a refusal `--force` clears; one declared
+/// `Preserves` that in fact replaces is the loss this guard exists to prevent, at exit 0.
+/// `crates/cli/tests/setup_install_pathspec_guard.rs` drives every member through the real
+/// binary on an unborn `HEAD` and holds each declaration to what its writer did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InstallWriter {
+    /// Everything the adopter authored at the path is still in the file once the writer
+    /// has run: it appends, or merges structure-aware into a format that carries no
+    /// comments. Layout the format does not keep (a JSON file's whitespace) may be
+    /// re-emitted; nothing authored is dropped.
+    Preserves,
+    /// The writer puts its own content at the path, and what was there is gone — an
+    /// unconditional rewrite, or a round-trip that cannot carry everything a human can
+    /// write into the file (a YAML comment).
+    Replaces,
 }
 
 /// How one install path behaves under the dirty-install guard — the disposition every
@@ -1794,9 +1880,10 @@ fn install_tracked_paths(
 pub enum InstallPathDisposition {
     /// Dirty before the run ⇒ the door refuses. Every path whose writer *merges into* what
     /// it finds (`CLAUDE.md`, the settings file, both `.gitignore`s, a foreign `pre-commit`)
-    /// **and** every path it rewrites whole with no ownership oracle (`.jigc/AGENT.md`,
+    /// **and** every path it replaces with no ownership oracle (`.jigc/AGENT.md`,
     /// `.jigc/config/packs.yaml`, `.jigc/config/.gitkeep`) — the second group being the
-    /// class the conjunction could not see.
+    /// class the conjunction could not see. Which group a member is in is its
+    /// [`InstallWriter`], and it matters in exactly one cell: the unborn-`HEAD` exemption.
     Refuses,
     /// Exempt **iff the bytes there are jigc's own**, asked of the file before any write.
     /// Two members, each with an oracle the writing side owns: the guide artifact
@@ -1808,37 +1895,19 @@ pub enum InstallPathDisposition {
     ExemptWhenJigcOwned,
 }
 
-/// The disposition of one install path. `guide_file` is the guide artifact this run
-/// decided to write ([`install`]'s pre-write ownership call — `None` when the profile
-/// declares none *or* when a user-modified copy was found and left alone), which is what
-/// makes the guide arm's exemption safe to state without re-reading the file.
-fn install_path_disposition(path: &str, guide_file: Option<&str>) -> InstallPathDisposition {
-    if path == VERSION_STAMP_PATH || guide_file == Some(path) {
-        InstallPathDisposition::ExemptWhenJigcOwned
-    } else {
-        InstallPathDisposition::Refuses
-    }
-}
-
-/// **The install commit's whole path class, each member with its disposition** — derived
-/// from [`install_tracked_paths`] itself (the enumeration the commit is actually made
+/// **The install commit's whole path class, each member with its disposition and its
+/// writer** — [`install_tracked_paths`] itself (the enumeration the commit is actually made
 /// from) with every conditional **on**, so a twelfth install path joins this answer the
 /// moment it joins the pathspec and cannot be dispositioned by being forgotten. Public
-/// because the fence that reads it is an integration test driving the real binary
+/// because the fences that read it are integration tests driving the real binary
 /// (`crates/cli/tests/setup_install_pathspec_guard.rs`).
 pub fn install_path_dispositions(
     line_file: &str,
     allowlist_file: &str,
     guide: Option<&str>,
     hook: Option<&str>,
-) -> Vec<(String, InstallPathDisposition)> {
+) -> Vec<InstallMember> {
     install_tracked_paths(line_file, allowlist_file, true, hook, guide)
-        .into_iter()
-        .map(|path| {
-            let disposition = install_path_disposition(&path, guide);
-            (path, disposition)
-        })
-        .collect()
 }
 
 /// Whether `<jigc_home>/.jigc/version` currently holds **jigc's own** provenance stamp:
@@ -1860,36 +1929,38 @@ fn version_stamp_is_jigcs(jigc_home: &Path) -> bool {
             .is_some_and(|version| !version.trim().is_empty())
 }
 
-/// Whether the bytes currently at `path` are jigc's own — the **one** thing that exempts a
-/// dirty install path from the refusal ([`InstallPathDisposition`]).
-fn jigc_owned_at(jigc_home: &Path, path: &str, guide_file: Option<&str>) -> bool {
-    match install_path_disposition(path, guide_file) {
+/// Whether the bytes currently at `member`'s path are jigc's own — the **one** thing that
+/// exempts a dirty install path from the refusal at either `HEAD`
+/// ([`InstallPathDisposition`]).
+fn jigc_owned_at(jigc_home: &Path, member: &InstallMember) -> bool {
+    match member.disposition {
         InstallPathDisposition::Refuses => false,
         InstallPathDisposition::ExemptWhenJigcOwned => {
-            path != VERSION_STAMP_PATH || version_stamp_is_jigcs(jigc_home)
+            member.path != VERSION_STAMP_PATH || version_stamp_is_jigcs(jigc_home)
         }
     }
 }
 
-/// The install paths that **refuse**: in `paths`, dirty before this run began (`before`),
-/// and not carrying jigc's own bytes. The one predicate both asks share — [`install`]'s
-/// pre-write gate over the candidate set, and [`commit_install`]'s backstop over the
-/// settled pathspec.
+/// The install paths that **refuse**: among `members`, dirty before this run began
+/// (`before`), not carrying jigc's own bytes, and not riding an unborn repository's first
+/// commit ([`DirtyPaths::rides_the_first_commit`]). The one predicate both asks share —
+/// [`install`]'s pre-write gate over the candidate set, and [`commit_install`]'s backstop
+/// over the settled pathspec — and the one `--force` reports what it was spent on from.
 fn dirty_install_refusals(
     jigc_home: &Path,
-    paths: &[String],
-    before: &BTreeSet<String>,
-    guide_file: Option<&str>,
+    members: &[InstallMember],
+    before: &DirtyPaths,
 ) -> Vec<String> {
-    paths
+    members
         .iter()
-        .filter(|path| before.contains(*path))
-        .filter(|path| !jigc_owned_at(jigc_home, path, guide_file))
-        .cloned()
+        .filter(|member| before.contains(&member.path))
+        .filter(|member| !jigc_owned_at(jigc_home, member))
+        .filter(|member| !before.rides_the_first_commit(member))
+        .map(|member| member.path.clone())
         .collect()
 }
 
-/// The install paths the **pre-write** gate can name, filtered exactly as
+/// The install members the **pre-write** gate can name, filtered exactly as
 /// [`commit_install`] filters its settled pathspec (present on disk, not gitignored).
 ///
 /// Two conditionals are answered by the same predicates the writers gate on, so the
@@ -1899,12 +1970,18 @@ fn dirty_install_refusals(
 /// resolved by the install itself, and [`install_precommit_hook`] preserves a foreign hook
 /// **verbatim**, so its bytes are never the ones a pre-write refusal would be saving —
 /// [`commit_install`]'s backstop asks about it with the resolved path in hand.
-fn install_candidate_paths(
+///
+/// **Present is asked with `symlink_metadata`, not `exists()`** (the rc.24 fix pass,
+/// `(R1, F1)`). `exists()` follows a link, so a **dangling** symlink at an install path read
+/// as *nothing here* and dropped out of the gate — and the writer then created the link's
+/// target, a file outside the install footprint, before the commit-time backstop refused
+/// over the link. An occupant is an occupant whatever it points at.
+fn install_candidates(
     jigc_home: &Path,
     line_file: &str,
     allowlist_file: &str,
     guide_file: Option<&str>,
-) -> Vec<String> {
+) -> Vec<InstallMember> {
     install_tracked_paths(
         line_file,
         allowlist_file,
@@ -1913,8 +1990,8 @@ fn install_candidate_paths(
         guide_file,
     )
     .into_iter()
-    .filter(|path| jigc_home.join(path).exists())
-    .filter(|path| !git_path_ignored(jigc_home, path))
+    .filter(|member| std::fs::symlink_metadata(jigc_home.join(&member.path)).is_ok())
+    .filter(|member| !git_path_ignored(jigc_home, &member.path))
     .collect()
 }
 
@@ -2022,7 +2099,7 @@ fn committable_hook_path(jigc_home: &Path, hook_file: &Path) -> Option<String> {
 /// — the shape D3 settled (*"the predicate is worktree-vs-`HEAD`, asked per path, BEFORE
 /// `setup` writes anything … nothing `setup` subsequently writes can enter it"*).
 /// [`install`]'s pre-write gate refuses over the install's **candidate** paths
-/// ([`install_candidate_paths`]) before the first byte is written, so a refusal leaves the
+/// ([`install_candidates`]) before the first byte is written, so a refusal leaves the
 /// adopter's bytes exactly where they were; [`commit_install`] asks the same predicate
 /// again over the **settled** pathspec as the backstop for the one member the pre-write
 /// enumeration cannot name (the hook, whose home the install itself resolves, and whose
@@ -2042,15 +2119,15 @@ enum InstallSubject {
     /// `seeded_gitignore` signal, the gitignore filter, the hook's soft-member drop), and a
     /// candidate list re-derived here to ask git a narrower question is a second
     /// enumeration that can silently under-cover. The two consumers intersect it against
-    /// their own enumeration instead — [`install_candidate_paths`] before any write, and
+    /// their own enumeration instead — [`install_candidates`] before any write, and
     /// [`commit_install`]'s settled pathspec before the commit.
-    Dirty(BTreeSet<String>),
+    Dirty(DirtyPaths),
     /// `--force` — the single consent. The same set, carried rather than discarded: no path
     /// can refuse, and the door behaves exactly as it did before the guard, but the install
     /// **says** which install paths the consent was spent on
     /// ([`forced_install_path_finding`]). Empty when git could not answer, so a consent over
     /// an unreadable repo degrades to silence rather than to a claim.
-    Consented(BTreeSet<String>),
+    Consented(DirtyPaths),
     /// git could not answer. The install commit is **skipped** rather than made blind — the
     /// benign degradation this door already ships for a git it cannot use
     /// ([`InstallCommit::Skipped`]): nothing is staged-but-orphaned, and no commit means no
@@ -2079,7 +2156,7 @@ impl InstallSubject {
             // the verdict, and the empty set is what keeps the ack from claiming a subject
             // it never measured.
             return if force {
-                Self::Consented(BTreeSet::new())
+                Self::Consented(DirtyPaths::default())
             } else {
                 Self::Unknown
             };
@@ -2198,7 +2275,7 @@ fn clear_install_footprint(jigc_home: &Path) {
 /// through (M54 Increment 4 / T1; `DECISIONS.md` → 2026-09-28 M54 settled, S22).
 ///
 /// **The set is asked at the failure, from the bytes on disk:** the install candidates
-/// ([`install_candidate_paths`], re-asked here because it filters on existence and a fresh
+/// ([`install_candidates`], re-asked here because it filters on existence and a fresh
 /// install creates most of them), intersected with what differs from `HEAD` now, minus what
 /// differed **before** the run. Those are exactly the paths that were clean before the run
 /// and are not clean now, so jigc wrote them in this run, whichever step failed and however
@@ -2231,14 +2308,97 @@ fn record_failed_install(
     let Some(now) = dirty_against_head(jigc_home, &[]) else {
         return;
     };
-    let written: Vec<String> =
-        install_candidate_paths(jigc_home, line_file, allowlist_file, guide_file)
-            .into_iter()
-            .filter(|path| now.contains(path) && !before.contains(path))
-            .collect();
+    let written: Vec<String> = install_candidates(jigc_home, line_file, allowlist_file, guide_file)
+        .into_iter()
+        .map(|member| member.path)
+        .filter(|path| now.contains(path) && !before.contains(path))
+        .collect();
     record_install_footprint(jigc_home, &written);
     if !written.is_empty() {
         let _ = stage_paths(jigc_home, &written);
+    }
+}
+
+/// **What git answered, before the install's first write, to *which paths differ from
+/// `HEAD`?*** — [`dirty_against_head`]'s answer, and the subject both arms of
+/// [`InstallSubject`] carry.
+///
+/// Three facts and not one set, because the rule the door applies needs all three (the
+/// rc.24 fix pass, `(R1, F1)`): *which* paths are dirty, which of those git holds **no copy
+/// of at all**, and whether there was a `HEAD` to be dirty against. Until then the unborn
+/// case was folded into the query — untracked paths were simply not asked for — so by the
+/// time a member's writer could have been consulted, the set no longer said the file was
+/// there.
+#[derive(Clone, Debug, Default)]
+struct DirtyPaths {
+    /// Every repo-relative path whose index or worktree bytes differ from `HEAD`,
+    /// untracked included.
+    all: BTreeSet<String>,
+    /// The subset git holds no copy of in any object or index entry (`??`).
+    untracked: BTreeSet<String>,
+    /// Whether `HEAD` was **unborn** when the question was asked ([`is_fresh_repo`]) — a
+    /// fresh `git init`, or an orphan branch whose index was emptied.
+    unborn: bool,
+}
+
+impl DirtyPaths {
+    fn contains(&self, path: &str) -> bool {
+        self.all.contains(path)
+    }
+
+    fn remove(&mut self, path: &str) {
+        self.all.remove(path);
+        self.untracked.remove(path);
+    }
+
+    /// **The unborn-`HEAD` exemption, as a property of the member rather than of the
+    /// query** (the rc.24 fix pass, `(R1, F1)`): an **untracked** file, on an **unborn**
+    /// `HEAD`, at a path whose writer **preserves** what it finds
+    /// ([`InstallWriter::Preserves`]).
+    ///
+    /// That conjunction is the declared on-ramp and nothing wider. A new repository
+    /// usually already holds a `CLAUDE.md`, a `.gitignore` or a `.claude/settings.json`,
+    /// every one of them untracked because nothing is tracked yet; `setup` owns minting
+    /// the first commit (M30 audit finding 1), it merges into those files, and the
+    /// adopter's bytes ride that commit intact. Refusing there would route the first
+    /// command an adopter runs at `--force`, which is the reflex D3 prices as its honest
+    /// weakness.
+    ///
+    /// **It was a property of the query, and that is the defect.** `git status` was asked
+    /// with `--untracked-files=no` on an unborn `HEAD`, so *no* untracked path could reach
+    /// the gate — including one at a path whose writer replaces what it finds. Driven on
+    /// `1.0.0-rc.24`: an untracked `.jigc/AGENT.md` holding a team's notes was rewritten at
+    /// exit 0 with no finding, `git status` empty afterwards and the bytes in no git
+    /// object; `.jigc/version`, `.jigc/config/.gitkeep` and a comment in
+    /// `.jigc/config/packs.yaml` went the same way. The premise the exclusion was recorded
+    /// on — *nothing is lost in this cell* — holds exactly where the writer preserves, so
+    /// that is now the condition.
+    ///
+    /// A path that is **staged** on an unborn `HEAD` is not untracked and was never exempt:
+    /// the install commit would replace its index entry, which is the index-only loss on a
+    /// repository with no commit to fall back to.
+    fn rides_the_first_commit(&self, member: &InstallMember) -> bool {
+        self.unborn
+            && self.untracked.contains(&member.path)
+            && member.writer == InstallWriter::Preserves
+    }
+
+    /// The `HEAD` this answer was taken at, in the engine's vocabulary — what
+    /// [`engine::finalize::setup_dirty_install_finding`] words the refusal's state clause
+    /// and route from. `riding` is what the exemption above is covering right now.
+    fn head<'a>(
+        &self,
+        jigc_home: &'a Path,
+        riding: &'a [String],
+    ) -> engine::finalize::SetupHead<'a> {
+        if self.unborn {
+            engine::finalize::SetupHead::Unborn {
+                home: jigc_home,
+                riding,
+            }
+        } else {
+            engine::finalize::SetupHead::Born
+        }
     }
 }
 
@@ -2260,15 +2420,14 @@ fn record_failed_install(
 /// *directory* (`.claude/`) where the pathspec names a file (`.claude/settings.json`), and
 /// a set that cannot spell the subject cannot refuse over it.
 ///
-/// **On an unborn `HEAD` the exclusion stays, and now carries its own reason.** There is no
-/// `HEAD` for a pre-existing file to differ from, every file reports `??`, and `setup`
-/// owns minting the repo's first commit with its install footprint (M30 audit finding 1 —
-/// the rationale Increment 2's `SETUP_UNBORN_EXEMPTION` quotes). Asking here would turn the
-/// QUICKSTART on-ramp into a refusal routed at `jigc setup --force`, training the reflex D3
-/// prices as its honest weakness. Keyed on [`is_fresh_repo`], so the exemption is a stated
-/// door rule rather than a side effect of a status flag — and the same answer serves both
-/// legs of the conjunction ([`InstallSubject`]), since nothing between them can mint a
-/// commit.
+/// **On an unborn `HEAD` the question is the same one, and the answer says so**
+/// ([`DirtyPaths::unborn`]; the rc.24 fix pass, `(R1, F1)`). This query used to switch to
+/// `--untracked-files=no` there, which made the unborn exemption a side effect of a status
+/// flag: every untracked path was invisible, whatever the install was about to do to it.
+/// The exemption is real and stays — it is [`DirtyPaths::rides_the_first_commit`], decided
+/// per member from what its writer does — but it can only be decided over a set that still
+/// names the file. The same answer serves both asks ([`InstallSubject`]), since nothing
+/// between them can mint a commit.
 ///
 /// Ignored files are absent structurally (no `--ignored`), which agrees with
 /// [`git_path_ignored`] dropping them from the pathspec.
@@ -2276,13 +2435,14 @@ fn record_failed_install(
 /// `--no-renames` keeps the `-z` record shape to one field per entry; a rename then reports
 /// as its delete + add halves, both of which are differences from `HEAD` and both of which
 /// this door wants named.
-fn dirty_against_head(jigc_home: &Path, pathspec: &[String]) -> Option<BTreeSet<String>> {
-    let untracked = if is_fresh_repo(jigc_home) {
-        "--untracked-files=no"
-    } else {
-        "--untracked-files=all"
-    };
-    let mut args: Vec<&str> = vec!["status", "--porcelain", untracked, "--no-renames", "-z"];
+fn dirty_against_head(jigc_home: &Path, pathspec: &[String]) -> Option<DirtyPaths> {
+    let mut args: Vec<&str> = vec![
+        "status",
+        "--porcelain",
+        "--untracked-files=all",
+        "--no-renames",
+        "-z",
+    ];
     if !pathspec.is_empty() {
         args.push("--");
         args.extend(pathspec.iter().map(String::as_str));
@@ -2293,13 +2453,19 @@ fn dirty_against_head(jigc_home: &Path, pathspec: &[String]) -> Option<BTreeSet<
     }
     // `XY<space><path>` per NUL-terminated record; the three-byte prefix is ASCII, so the
     // byte slice is always on a char boundary.
-    Some(
-        String::from_utf8_lossy(&out.stdout)
-            .split('\0')
-            .filter(|record| record.len() > 3)
-            .map(|record| record[3..].to_string())
-            .collect(),
-    )
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut dirty = DirtyPaths {
+        unborn: is_fresh_repo(jigc_home),
+        ..DirtyPaths::default()
+    };
+    for record in stdout.split('\0').filter(|record| record.len() > 3) {
+        let path = record[3..].to_string();
+        if record.starts_with("??") {
+            dirty.untracked.insert(path.clone());
+        }
+        dirty.all.insert(path);
+    }
+    Some(dirty)
 }
 
 /// A git step of the install commit that **ran and refused** — the loud half of
@@ -2329,7 +2495,10 @@ enum InstallCommitRejection {
     /// words, and the engine words it ([`engine::finalize::setup_dirty_install_finding`]).
     /// The install files are written, and the ones the door is willing to commit are
     /// staged, so resolving the named paths and re-running lands the commit.
-    DirtyInstallPath(Vec<String>),
+    ///
+    /// `unborn` is the `HEAD` the question was asked at, because the finding's route is
+    /// worded for it ([`engine::finalize::SetupHead`]).
+    DirtyInstallPath { dirty: Vec<String>, unborn: bool },
 }
 
 impl InstallCommitRejection {
@@ -2338,7 +2507,10 @@ impl InstallCommitRejection {
     /// written for (surface-contract law 1: a route that names `user.email` when git
     /// refused a pathspec sends the reader to fix something that is not broken, and the
     /// re-run fails identically).
-    fn finding(&self) -> Finding {
+    ///
+    /// `jigc_home` is the checkout the install acted on — the root a route's `git` span has
+    /// to name to be runnable from anywhere.
+    fn finding(&self, jigc_home: &Path) -> Finding {
         let (step, git, staged) = match self {
             Self::Stage(git) => ("git add", git, false),
             Self::Commit(git) => ("git commit", git, true),
@@ -2346,8 +2518,20 @@ impl InstallCommitRejection {
             Self::Posture(finding) => return finding.clone(),
             // The engine owns this door's words, over the whole dirty set at once — the
             // `uninstall.dirty-worktree` mold at this same door, not one finding per path.
-            Self::DirtyInstallPath(dirty) => {
-                return engine::finalize::setup_dirty_install_finding(dirty, true);
+            //
+            // Nothing rides at this ask: the install has run, so every untracked file the
+            // unborn exemption covered has been merged into and staged with the rest, and a
+            // commit made now carries them.
+            Self::DirtyInstallPath { dirty, unborn } => {
+                let head = if *unborn {
+                    engine::finalize::SetupHead::Unborn {
+                        home: jigc_home,
+                        riding: &[],
+                    }
+                } else {
+                    engine::finalize::SetupHead::Born
+                };
+                return engine::finalize::setup_dirty_install_finding(dirty, true, head);
             }
         };
         let message = if staged {
@@ -2442,7 +2626,9 @@ fn is_git_identity_rejection(git_err: &str) -> bool {
 /// here rather than struck because it is what the query's `=all` now buys. **Its two
 /// stated exits, both consented or decided rather than silent:** `--force`, which consents
 /// to committing the paths as they stand, and an **unborn `HEAD`**, where `setup` owns
-/// minting the first commit ([`dirty_against_head`]). (Distinct from `finalize`'s
+/// minting the first commit and an untracked file the install *merges into* rides it
+/// ([`DirtyPaths::rides_the_first_commit`] — the exemption is that narrow since the rc.24
+/// fix pass: a file the install would *replace* refuses there too). (Distinct from `finalize`'s
 /// never-`--no-verify` commit of managed work, where the user's hooks *are* policy — which
 /// is the scope the two shipped guides' universal takes, in Increment 9's batch.)
 fn commit_install(
@@ -2470,7 +2656,7 @@ fn commit_install(
 
     // Only the files setup itself wrote, and only those present + not gitignored.
     let hook = committable_hook_path(jigc_home, hook_file);
-    let mut paths: Vec<String> = install_tracked_paths(
+    let members: Vec<InstallMember> = install_tracked_paths(
         line_file,
         allowlist_file,
         seeded_gitignore,
@@ -2478,9 +2664,10 @@ fn commit_install(
         guide_file,
     )
     .into_iter()
-    .filter(|p| jigc_home.join(p).exists())
-    .filter(|p| !git_path_ignored(jigc_home, p))
+    .filter(|member| jigc_home.join(&member.path).exists())
+    .filter(|member| !git_path_ignored(jigc_home, &member.path))
     .collect();
+    let mut paths: Vec<String> = members.iter().map(|member| member.path.clone()).collect();
     if paths.is_empty() {
         return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped));
     }
@@ -2512,16 +2699,17 @@ fn commit_install(
     // path whose candidacy the pre-write filters answered differently (a staged deletion the
     // install then recreates). The install *is* written and staged by the time this refuses,
     // which is what its finding says.
-    let dirty: Vec<String> = match subject {
-        InstallSubject::Consented(_) => Vec::new(),
+    let (dirty, unborn): (Vec<String>, bool) = match subject {
+        InstallSubject::Consented(_) => (Vec::new(), false),
         // git could not answer, so the commit is not made blind — the same benign skip
         // this door already takes for a git it cannot use.
         InstallSubject::Unknown => {
             return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped));
         }
-        InstallSubject::Dirty(before) => {
-            dirty_install_refusals(jigc_home, &paths, before, guide_file)
-        }
+        InstallSubject::Dirty(before) => (
+            dirty_install_refusals(jigc_home, &members, before),
+            before.unborn,
+        ),
     };
     // **The paths this run owns**: the settled pathspec minus what it refuses over. Every
     // one of them carries bytes the door has just established are `setup`'s own — either
@@ -2562,7 +2750,7 @@ fn commit_install(
             // stages again from a resolved state.
             let _ = stage_paths(jigc_home, &own);
         }
-        return Err(InstallCommitRejection::DirtyInstallPath(dirty));
+        return Err(InstallCommitRejection::DirtyInstallPath { dirty, unborn });
     }
 
     // Stage exactly those paths — never a blanket `git add -A`.
@@ -5139,11 +5327,11 @@ mod tests {
             None,
             // These arms exercise the GIT-step refusals; the pre-write dirty guard is a
             // different subject with its own suite, so the fixture consents past it.
-            &InstallSubject::Consented(BTreeSet::new()),
+            &InstallSubject::Consented(DirtyPaths::default()),
         )
         .expect_err("a git step that ran and refused must not degrade to a silent skip");
 
-        let finding = rejection.finding();
+        let finding = rejection.finding(dir.path());
         assert_eq!(finding.code, "setup.install-commit");
         assert!(
             finding.message.contains("git add"),
@@ -5171,7 +5359,7 @@ mod tests {
              fatal: unable to auto-detect email address (got 'u@h.(none)')"
                 .to_string(),
         )
-        .finding();
+        .finding(dir.path());
         let identity_route = identity.route.expect("a blocking finding carries a route");
         assert!(
             identity_route.to_string().contains("user.email"),
@@ -5752,7 +5940,7 @@ mod tests {
             false,
             &hook,
             None,
-            &InstallSubject::Consented(BTreeSet::new()),
+            &InstallSubject::Consented(DirtyPaths::default()),
         )
         .expect("a refusal the hook caused must not sink the install commit");
 
@@ -5790,7 +5978,7 @@ mod tests {
             false,
             &hook,
             None,
-            &InstallSubject::Consented(BTreeSet::new()),
+            &InstallSubject::Consented(DirtyPaths::default()),
         )
         .expect_err("a refusal the hook did NOT cause must stay loud");
         assert!(

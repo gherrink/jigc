@@ -892,7 +892,7 @@ fn carried_staged_finding(
         // hands this boundary to the per-path decision anyway; the wording stays the door's
         // own, over the one-path set, so no door can borrow another's words.
         CarryoverBoundary::Setup => {
-            return setup_dirty_install_finding(&[path.to_string()], true);
+            return setup_dirty_install_finding(&[path.to_string()], true, SetupHead::Born);
         }
         CarryoverBoundary::Milestone => (
             format!(
@@ -944,9 +944,23 @@ fn carried_staged_finding(
 /// completion audit — untracked is a subject of this door): a bare `git stash push -- <path>`
 /// there exits 1 with *"did not match any file(s) known to git"*, and a route that does not
 /// run is not a route.
-pub fn setup_dirty_install_finding(dirty: &[String], install_written: bool) -> Finding {
+///
+/// **And both the state clause and the route are worded for the `HEAD` they are read at**
+/// ([`SetupHead`]; the rc.24 fix pass, `(R1, F1)`). Every sentence above is about a
+/// repository that has a commit. On an **unborn** `HEAD` two of them are false: there is no
+/// `HEAD` for the pre-run bytes to *still be in*, and `git stash` — the route's first
+/// resolving act — exits 1 with *"You do not have the initial commit yet"*, with or without
+/// `-u`. So that arm states what is true there (the bytes exist only where the adopter left
+/// them) and routes at acts that run with no commit: move the file out of the install path,
+/// or commit it — naming the `riding` paths that commit must carry — then `--force`.
+pub fn setup_dirty_install_finding(
+    dirty: &[String],
+    install_written: bool,
+    head: SetupHead<'_>,
+) -> Finding {
     let paths: BTreeSet<&str> = dirty.iter().map(String::as_str).collect();
     let listing: Vec<String> = paths.iter().map(|path| format!("  `{path}`")).collect();
+    let listing = listing.join("\n");
     // What the door actually did, per shape — the same refusal is reachable before the
     // install's first write (the gate) and after it (the pre-commit backstop), and a
     // sentence true of one is false of the other.
@@ -955,25 +969,105 @@ pub fn setup_dirty_install_finding(dirty: &[String], install_written: bool) -> F
     } else {
         "nothing was installed and no install commit was made"
     };
+    // The one consent, and what it spends — the same sentence at either `HEAD`.
+    const FORCE: &str = "`jigc setup --force` is the single consent, and it lets the install \
+                         run and commit those paths as it leaves them — which at a path jigc \
+                         regenerates whole is jigc's own content, not yours";
+    let (message, route) = match head {
+        SetupHead::Born => (
+            format!(
+                "{} path(s) in the install footprint carried changes that were in no commit \
+                 before this run, so committing the install would sweep work `jigc setup` did \
+                 not write into `chore(jigc): install jigc workspace config`:\n{listing}\n\
+                 {state} — `HEAD` is untouched, so every path listed above still has its \
+                 pre-run bytes there",
+                paths.len(),
+            ),
+            format!(
+                "commit or stash the work at those path(s) — `git stash -u` where git does \
+                 not track them yet — then re-run `jigc setup`; {FORCE}"
+            ),
+        ),
+        SetupHead::Unborn { home, riding } => {
+            // What the door left alone, said of the place the bytes actually are: before
+            // the first write that is the worktree and the index, untouched; at the
+            // backstop the install has run, and what is certain is that this run neither
+            // staged nor committed the paths it names.
+            let left = if install_written {
+                "none of the paths listed above was staged or committed by this run"
+            } else {
+                "the bytes at every path listed above exist only where you left them, and \
+                 they are still there"
+            };
+            // The commit arm has to say what else that commit must carry. Committing only
+            // the named path gives the repository a `HEAD`, and from then on an untracked
+            // file at an install path is a subject — so a re-run would refuse again, over
+            // paths this refusal never named.
+            let riding: BTreeSet<&str> = riding.iter().map(String::as_str).collect();
+            let with = if riding.is_empty() {
+                String::new()
+            } else {
+                let named: Vec<String> = riding.iter().map(|path| format!("`{path}`")).collect();
+                format!(
+                    " in one commit with {} — untracked at an install path too: the install \
+                     merges into such a file today, and `jigc setup` asks about it as well \
+                     once the repository has a commit —",
+                    named.join(", "),
+                )
+            };
+            // The unstage names the index it acts on (M53 — the cwd census, the route
+            // class): a route is read from wherever the reader stands.
+            let unstage = crate::finding::git_at(home, "rm --cached -- <path>");
+            (
+                format!(
+                    "{} path(s) in the install footprint hold bytes that are in no commit, \
+                     so installing would write over work `jigc setup` did not write, or \
+                     sweep it into `chore(jigc): install jigc workspace config`:\n{listing}\n\
+                     {state} — this repository has no commit yet, so {left}",
+                    paths.len(),
+                ),
+                format!(
+                    "move the file(s) out of those path(s) — `{unstage}` first where you \
+                     had staged one — then re-run `jigc setup`; or commit \
+                     them{with} and re-run, so git holds your copy before the install runs \
+                     over the path; {FORCE}"
+                ),
+            )
+        }
+    };
     Finding::block(
         CarryoverBoundary::Setup.code(),
-        format!(
-            "{} path(s) in the install footprint carried changes that were in no commit \
-             before this run, so committing the install would sweep work `jigc setup` did \
-             not write into `chore(jigc): install jigc workspace config`:\n{}\n{state} — \
-             `HEAD` is untouched, so every path listed above still has its pre-run bytes \
-             there",
-            paths.len(),
-            listing.join("\n"),
-        ),
-        Route::human(
-            "commit or stash the work at those path(s) — `git stash -u` where git does \
-             not track them yet — then re-run `jigc setup`; `jigc setup --force` is the \
-             single consent, and it lets the install run and commit those paths as it \
-             leaves them — which at a path jigc regenerates whole is jigc's own content, \
-             not yours",
-        ),
+        message,
+        Route::human(route),
     )
+}
+
+/// **Which `HEAD` the [`CarryoverBoundary::Setup`] door's refusal is read at** — the one
+/// input [`setup_dirty_install_finding`] words its state clause and its route from (the
+/// rc.24 fix pass, `(R1, F1)`).
+///
+/// It is a parameter rather than a second function because the refusal is **one** finding
+/// identity with one predicate; what differs is which sentences about it are true. A
+/// repository with no commit has no `HEAD` to be untouched and nothing for `git stash` to
+/// stand on, so a route written for a born `HEAD` names an act that exits 1 there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SetupHead<'a> {
+    /// `HEAD` resolves to a commit — every ordinary repository.
+    Born,
+    /// **No commit yet**: a fresh `git init`, or an orphan branch whose index was emptied.
+    Unborn {
+        /// The absolute root of the checkout the refusal is about — the route's unstage
+        /// names it ([`crate::finding::git_at`]), so the command reaches that index from any
+        /// directory.
+        home: &'a Path,
+        /// The install paths that are **untracked and exempt today** — a file the install
+        /// merges into, which rides the repository's first commit with the adopter's bytes
+        /// intact (`design/validation.md` → the `setup.dirty-install-path` row). The exemption
+        /// ends with the first commit, so the route's *commit* arm has to name them: a commit
+        /// that leaves them out turns each into a refusal on the re-run. Empty at the
+        /// commit-time backstop, where the install has already merged into and staged them.
+        riding: &'a [String],
+    },
 }
 
 /// Plan the **milestone** `finalize` transaction — the thin sibling of
@@ -4241,7 +4335,7 @@ sections:
             .iter()
             .map(|p| (*p).to_string())
             .collect();
-        let finding = setup_dirty_install_finding(&dirty, true);
+        let finding = setup_dirty_install_finding(&dirty, true, SetupHead::Born);
 
         assert_eq!(finding.severity, Severity::Blocking);
         assert_eq!(finding.code, "setup.dirty-install-path");
@@ -4279,7 +4373,7 @@ sections:
         // …and the pre-write arm — the door's ordinary refusal since the M51 completion
         // audit — says the opposite, because it installed nothing. One predicate, two
         // truthful state clauses; a single universal wording made one of them a law-1 lie.
-        let pre_write = setup_dirty_install_finding(&dirty, false);
+        let pre_write = setup_dirty_install_finding(&dirty, false, SetupHead::Born);
         assert!(
             pre_write.message.contains("nothing was installed")
                 && !pre_write.message.contains("written and staged"),
@@ -4314,10 +4408,121 @@ sections:
         // Order-invariance: the same set, reversed, words the same bytes.
         let reversed: Vec<String> = dirty.iter().rev().cloned().collect();
         assert_eq!(
-            setup_dirty_install_finding(&reversed, true),
+            setup_dirty_install_finding(&reversed, true, SetupHead::Born),
             finding,
             "the dirty set is order-invariant — the door's pathspec order never reaches the \
              printed surface",
+        );
+    }
+
+    /// **The same refusal on an unborn `HEAD` claims nothing a repository with no commit
+    /// makes false, and routes at acts that run there** (the rc.24 fix pass, `(R1, F1)`).
+    ///
+    /// The born wording says *"`HEAD` is untouched, so every path listed above still has its
+    /// pre-run bytes there"* and routes at `git stash` first. With no commit there is no
+    /// `HEAD` for the bytes to be in, and `git stash` exits 1 (*"You do not have the initial
+    /// commit yet"*) — so the refusal the door printed on an unborn `HEAD` named an act that
+    /// could not run. This arm names the three that can, in the order that keeps the work:
+    /// move the file out, commit it, then the consent.
+    ///
+    /// **The commit arm names what else that commit must carry.** A first commit ends the
+    /// unborn exemption, so an untracked file the install would have merged into becomes a
+    /// subject on the re-run; a route that left it out would be followed into a second
+    /// refusal over a path the first never named.
+    #[test]
+    fn setup_boundary_finding_on_an_unborn_head_routes_at_acts_that_run_there() {
+        let dirty = vec![".jigc/AGENT.md".to_string()];
+        let riding = vec![".gitignore".to_string(), "CLAUDE.md".to_string()];
+        let home = Path::new("/somewhere/repo");
+        let unborn = |riding| SetupHead::Unborn { home, riding };
+        let finding = setup_dirty_install_finding(&dirty, false, unborn(&riding));
+
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(
+            finding.code,
+            CarryoverBoundary::Setup.code(),
+            "one refusal, one identity — the `HEAD` it is read at changes its words only",
+        );
+        assert!(finding.location.is_none(), "the set is still the subject");
+        assert!(
+            finding.message.contains("1 path(s)") && finding.message.contains("  `.jigc/AGENT.md`"),
+            "the count and the listing keep the born arm's shape: {:?}",
+            finding.message
+        );
+        assert!(
+            finding.message.contains("nothing was installed")
+                && finding.message.contains("no commit yet"),
+            "the state clause is the pre-write one, said of a repository with no commit: {:?}",
+            finding.message
+        );
+        assert!(
+            !finding.message.contains("`HEAD` is untouched"),
+            "there is no `HEAD` to be untouched: {:?}",
+            finding.message
+        );
+
+        let route = finding.route.as_ref().expect("blocking ⇒ routed");
+        assert!(
+            matches!(route.kind(), crate::finding::RouteKind::Human),
+            "which exit is right is still the adopter's judgment: {:?}",
+            route.kind()
+        );
+        let route = route.as_str();
+        assert!(
+            !route.contains("stash"),
+            "`git stash` has nothing to stand on without a commit, so it is not offered: {route}"
+        );
+        let at = |needle: &str| {
+            route
+                .find(needle)
+                .unwrap_or_else(|| panic!("the route names `{needle}`: {route}"))
+        };
+        let (moved, commit, force) = (
+            at("move the file(s) out"),
+            at("or commit them"),
+            at("jigc setup --force"),
+        );
+        assert!(
+            moved < commit && commit < force,
+            "the one-step exit leads, the commit follows, the consent is last: {route}"
+        );
+        assert!(
+            route.contains("git -C /somewhere/repo rm --cached -- <path>"),
+            "moving a staged file out leaves its index entry behind, so the unstage is named: \\
+             {route}"
+        );
+        for path in &riding {
+            assert!(
+                route[commit..force].contains(&format!("`{path}`")),
+                "the commit arm names `{path}`, which that commit must carry: {route}"
+            );
+        }
+
+        // With nothing riding, the commit arm names no other path at all.
+        let alone = setup_dirty_install_finding(&dirty, false, unborn(&[]));
+        let alone = alone.route.as_ref().expect("routed").as_str().to_string();
+        assert!(
+            alone.contains("or commit them and re-run"),
+            "the bare commit arm: {alone}"
+        );
+
+        // The backstop arm: the install *is* written, and the sentence says only what this
+        // run certainly did not do to the paths it names.
+        let written = setup_dirty_install_finding(&dirty, true, unborn(&[]));
+        assert!(
+            written.message.contains("written and staged")
+                && written.message.contains("staged or committed by this run")
+                && !written.message.contains("exist only where you left them"),
+            "the backstop arm claims nothing about the worktree: {:?}",
+            written.message
+        );
+
+        // Order-invariant over both sets, like the born arm.
+        let reversed: Vec<String> = riding.iter().rev().cloned().collect();
+        assert_eq!(
+            setup_dirty_install_finding(&dirty, false, unborn(&reversed)),
+            finding,
+            "the riding set's order never reaches the printed surface",
         );
     }
 }
