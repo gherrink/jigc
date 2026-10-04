@@ -6,8 +6,8 @@
 //! at exit 0, with no probe and no consent. The registered set is the wrong subject: the
 //! ordinary trigger is a `cp -R` or `mv` of the whole repo (how every RC trial corpus is
 //! made), and a copy's worktree admin record names the **source's** path, so **no** path
-//! under the copy's own `.jigc/worktrees/` is registered there, `git worktree prune` removes
-//! nothing, and the copy's live, uncommitted sub-agent work dies silently. This was M47's
+//! under the copy's own `.jigc/worktrees/` is registered there, and the copy's live,
+//! uncommitted sub-agent work dies silently. This was M47's
 //! declared undischarged bound on `provision_worktrees`; the pre-1.0.0 trial confirmed it as
 //! a live data-loss defect.
 //!

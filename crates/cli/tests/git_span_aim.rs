@@ -55,7 +55,7 @@ fn the_predicate_admits_aimed_operandless_and_declared_non_path_spans_only() {
         "`git -C <repo> mv <new> <old>`",
         // operand-less: the span names a command, not a file
         "`git add` your code edits before finalize",
-        "run `git worktree prune`, then look again",
+        "run `git worktree list`, then look again",
         "commit or stash the work — `git stash -u` where git does not",
         "`git worktree list`, then `git worktree remove`",
         // declared non-path commands
@@ -176,6 +176,14 @@ const AIM_HOME: &str = "git_at";
 /// (`canonical_home.join(…)`), so what was cwd-fragile there was its `git worktree prune`
 /// neighbour, not the `remove`.
 ///
+/// **[Corrected 2026-10-04 (the rc.24 fix pass, L-22).** That `git worktree prune` span is
+/// gone — a repository-wide prune is no remedy jigc prints any more
+/// (`worktree_registration_reach.rs`). The leaked-worktree warning's spans moved out of
+/// `remove_worktrees` into `milestone::leaked_worktree_remedy`, which emits one
+/// (`worktree remove --force <path>`) or, for a locked worktree, two (`worktree unlock
+/// <path>` first), every one with a path operand and every one aimed. The producer count is
+/// unchanged; the span count is 17 or 18 by arm.**]**
+///
 /// The remaining 120 lines are `bail!`/`with_context` diagnostics **quoting the invocation
 /// that failed** — law 1's second declared-absolute reason, and outside a route by
 /// construction (the span fence sits on `Route`, which they never build) — plus bare
@@ -258,12 +266,13 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
     ),
     (
         "crates/cli/src/milestone.rs",
-        "remove_worktrees",
+        "leaked_worktree_remedy",
         Aim::Aimed,
-        "the leaked-worktree warning's two-span remedy. Its `git worktree remove --force` \
-         operand was ALREADY absolute (the census predicted otherwise); what was fragile is \
-         the `git worktree prune` beside it, which is a repository operation and exits 128 \
-         pasted from outside the repository",
+        "the leaked-worktree warning's remedy, printed by `remove_worktrees`. Its \
+         `git worktree remove --force` operand was ALREADY absolute (the census predicted \
+         otherwise); the `git worktree prune` that stood beside it was the fragile one, and \
+         since the rc.24 fix pass it is not printed at all — the remedy names the one \
+         registration, with `git worktree unlock <path>` ahead of it for a locked worktree",
     ),
     (
         "crates/cli/src/ingest.rs",

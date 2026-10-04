@@ -8647,19 +8647,30 @@ pub(crate) fn checkout_tree_worktree(
 }
 
 /// A throwaway **detached** git worktree for the squash:true hook-running combine commit,
-/// removed on drop (`git worktree remove --force` + `prune`). A linked worktree shares the
+/// removed on drop — its own registration and checkout, by path
+/// (`crate::milestone::remove_owned_registration`). A linked worktree shares the
 /// main repo's `.git` (object DB + hooks), so a commit made here runs the user's shared
 /// `pre-commit`/`commit-msg` hooks; committing here instead of the main checkout keeps the
 /// combine WIP-safe (the main index/worktree are never the commit site). Lives under the
 /// gitignored `.jigc/worktrees/` parent so a leaked dir never pollutes `git status`.
+///
+/// **Its whole footprint in git's worktree registry is the one record it adds and takes
+/// back** (the rc.24 blind trial, L-22). From M31 both `add` and `Drop` also ran a bare
+/// `git worktree prune`, which drops the registration of every worktree in the repository
+/// whose directory is not where git recorded it. This handle is built by the milestone
+/// boundary gate *before* the boundary knows whether it will land, so a **refusing**
+/// `jigc milestone finalize` — exit 3, *nothing was changed* — had removed a human's
+/// worktree registrations twice on its way out. Neither prune did anything the handle
+/// needs: the path is unique per process and instant, so no earlier run's record can sit
+/// at it, and the drop already named its own path.
 pub(crate) struct DedicatedWorktree {
     repo_root: PathBuf,
     path: PathBuf,
 }
 
 impl DedicatedWorktree {
-    /// Add a detached worktree at `base` under `.jigc/worktrees/.combine-<pid>-<nanos>`,
-    /// clearing any stale leftover dir + pruning admin records first (a crashed prior run).
+    /// Add a detached worktree at `base` under `.jigc/worktrees/.combine-<pid>-<nanos>` —
+    /// a name no earlier run can have left a directory or a registration at.
     fn add(repo_root: &Path, base: &str) -> Result<Self> {
         let name = format!(
             ".combine-{}-{}",
@@ -8672,9 +8683,6 @@ impl DedicatedWorktree {
         let path = repo_root.join(".jigc").join("worktrees").join(name);
         std::fs::create_dir_all(path.parent().expect("worktree path has a parent"))
             .with_context(|| format!("could not create the worktrees parent for {path:?}"))?;
-        // A stale leftover dir / admin record from a crashed run would make `add` fail.
-        let _ = std::fs::remove_dir_all(&path);
-        git_run(repo_root, &["worktree", "prune"])?;
         let path_str = path
             .to_str()
             .with_context(|| format!("worktree path {path:?} is not valid UTF-8"))?;
@@ -8692,13 +8700,17 @@ impl DedicatedWorktree {
 
 impl Drop for DedicatedWorktree {
     fn drop(&mut self) {
-        if let Some(path_str) = self.path.to_str() {
-            let _ = git_run(
-                &self.repo_root,
-                &["worktree", "remove", "--force", path_str],
-            );
+        // Best-effort, like every teardown of a throwaway: the boundary's verdict is already
+        // decided by the time this runs.
+        if crate::milestone::remove_owned_registration(&self.repo_root, &self.path).is_ok() {
+            return;
         }
-        let _ = git_run(&self.repo_root, &["worktree", "prune"]);
+        // git refuses a checkout it can no longer read as a worktree — a hook that removed
+        // the `.git` link, say. The directory is this handle's own throwaway, so it goes;
+        // with it gone the same keyed removal drops the record, which is what the prune that
+        // used to follow was for, without reaching any other worktree's registration.
+        let _ = std::fs::remove_dir_all(&self.path);
+        let _ = crate::milestone::remove_owned_registration(&self.repo_root, &self.path);
     }
 }
 

@@ -3026,15 +3026,22 @@ pub struct UninstallSummary {
     /// one to compare it to. See [`crate::render::InstallSite`] for the rule and for why
     /// this is text-only rather than a fifth envelope key.
     pub site: Option<crate::render::InstallSite>,
-    /// **Whether this teardown pruned git's stale worktree admin** (the confirmation pass,
-    /// LOW 7) — `true` iff removing `.jigc/` took at least one *registered* fan-out worktree
-    /// with it and `git worktree prune` therefore dropped a record from `.git/worktrees/`.
+    /// **Whether this teardown dropped a git worktree registration of its own** (the
+    /// confirmation pass, LOW 7) — `true` iff removing `.jigc/` took at least one
+    /// *registered* worktree under `.jigc/worktrees/` with it and that record was then
+    /// removed from `.git/worktrees/` ([`drop_workbench_registrations`]).
     ///
-    /// `milestone provision` and the join's leaked-worktree recovery both prune after taking
-    /// a worktree directory; this door removes the whole tree those worktrees live under and
-    /// did not, so afterwards `git worktree list` named every one of them `prunable` and
-    /// `.git/worktrees/<id>` stood. Pre-existing, and the one member of that rule's class
-    /// that was not following it.
+    /// This door removes the whole tree the fan-out worktrees live under, so afterwards
+    /// `git worktree list` named every one of them `prunable` and `.git/worktrees/<id>`
+    /// stood, until the confirmation pass taught it to clear them.
+    ///
+    /// **`true` only for a record under `.jigc/worktrees/`** (the rc.24 blind trial, L-22).
+    /// The confirmation pass cleared them with a repository-wide `git worktree prune` and
+    /// measured *"did git drop anything"* — so over a workbench that held no fan-out
+    /// worktree at all, a human's linked worktree on an unmounted volume lost its
+    /// registration and the ack said jigc had pruned *"the fan-out worktrees `.jigc/` held"*.
+    /// The removal is keyed to this door's own paths now, which makes the sentence true in
+    /// every cell it is printed in.
     ///
     /// **Text-only**, the same declared bound [`Self::site`] carries and for the same reason:
     /// `ENVELOPE_ARMS` pins this door's four keys and `removed`'s seven flags, the additive
@@ -3282,12 +3289,11 @@ fn uninstall(
         removed.jigc_dir = true;
         // The fan-out worktrees lived *below* the tree just removed, so git's admin records
         // in `.git/worktrees/` now point at nothing — `git worktree list` calls each one
-        // `prunable` and a later `git worktree add` can collide with the stale name. Both
-        // sibling doors that take a worktree directory prune after it
-        // (`crate::milestone::provision_worktrees`, the join's leaked-worktree recovery);
-        // this one did not. Best-effort, exactly as they are: git's admin is bookkeeping,
-        // and a prune that cannot run is not a reason to fail a completed teardown.
-        pruned_worktrees = prune_worktree_admin(jigc_home);
+        // `prunable` and a later `git worktree add` can collide with the stale name. They
+        // go the way every door here takes a registration: by path, this door's own only.
+        // Best-effort: git's admin is bookkeeping, and a record that will not go is not a
+        // reason to fail a completed teardown.
+        pruned_worktrees = drop_workbench_registrations(jigc_home);
     }
 
     // 2. Unwire the `CLAUDE.md` bootstrap reference — strip jigc's appended
@@ -3407,20 +3413,35 @@ fn uninstall(
     })
 }
 
-/// Drop git's admin records for worktrees whose directories no longer exist, returning
+/// Drop git's registrations for the worktrees the removed `.jigc/` tree held, returning
 /// whether any record was actually dropped (the confirmation pass, LOW 7).
 ///
-/// `--verbose` is what makes the answer *measured* rather than assumed: git prints one line
-/// per record it removes and **nothing at all** when there is nothing to prune, so a
-/// repository with no fan-out worktrees does not gain an ack line claiming work jigc did not
-/// do. Driven on git 2.x to settle which stream carries it, because reading the wrong one
-/// reads every prune as a no-op: the report goes to **stderr**
-/// (`Removing worktrees/<id>: gitdir file points to non-existent location`), stdout stays
-/// empty in both cases, and a second prune over the same repository is silent on both.
-fn prune_worktree_admin(jigc_home: &Path) -> bool {
-    git_output(jigc_home, ["worktree", "prune", "--verbose"]).is_some_and(|out| {
-        out.status.success() && !(out.stdout.is_empty() && out.stderr.is_empty())
-    })
+/// **Keyed to this door's own paths** — every registration that is a direct child of
+/// `<jigc_home>/.jigc/worktrees/` (a sub-task's worktree, or a boundary's dedicated one a
+/// crashed run left behind), removed one at a time by path
+/// (`crate::milestone::remove_owned_registration`). It was a repository-wide
+/// `git worktree prune --verbose` until the rc.24 fix pass, which dropped — and then
+/// attributed to jigc's fan-out — the registration of any worktree in the repository whose
+/// directory was not where git recorded it.
+///
+/// The answer is *measured*: `true` iff a removal succeeded, so a repository with no
+/// worktree under `.jigc/worktrees/` does not gain an ack line claiming work jigc did not
+/// do. A locked registration refuses the removal and stays, as it did under the prune.
+fn drop_workbench_registrations(jigc_home: &Path) -> bool {
+    let Ok(registrations) = crate::milestone::worktree_registrations(jigc_home) else {
+        return false;
+    };
+    let mut dropped = false;
+    for registration in registrations {
+        // The path exactly as git recorded it: with `.jigc/` gone there is no directory left
+        // for git to resolve any other spelling of it through.
+        if crate::milestone::is_owned_worktree_path(jigc_home, &registration.path)
+            && crate::milestone::remove_owned_registration(jigc_home, &registration.path).is_ok()
+        {
+            dropped = true;
+        }
+    }
+    dropped
 }
 
 /// Remove the now-empty directories that held `artifact`, walking outward from its own

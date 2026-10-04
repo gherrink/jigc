@@ -1156,9 +1156,11 @@ fn uninstall_removes_the_workbench_home_install_from_every_cwd() {
             // **And git's admin goes with it** (the confirmation pass, LOW 7). The fan-out
             // worktrees lived below the removed tree, so their `.git/worktrees/` records
             // pointed at nothing: `git worktree list` named each one `prunable` and the
-            // stale name could collide with a later `git worktree add`. The sibling doors
-            // that take a worktree directory already prune; this one was the member of that
-            // rule not following it.
+            // stale name could collide with a later `git worktree add`. The door drops
+            // them — by path, its own only, since the rc.24 fix pass: this cell's one
+            // foreign worktree is LIVE, a state no prune can touch, so it passed identically
+            // under the repository-wide prune that took a foreign *absent* one. That cell is
+            // `worktree_registration_reach.rs`'s.
             let listed = git(&bare.repo, &["worktree", "list"]);
             assert!(
                 !listed.contains("prunable") && !listed.contains(".jigc/worktrees"),
@@ -1173,15 +1175,15 @@ fn uninstall_removes_the_workbench_home_install_from_every_cwd() {
                     .exists(),
                 "{cell}: …and the stale registration directory must be gone",
             );
-            // The still-live linked worktree is untouched — pruning drops records whose
-            // directory is gone, never a worktree that is still there.
+            // The still-live linked worktree is untouched — it is not under
+            // `.jigc/worktrees/`, so its registration is not this door's to take.
             assert!(
                 listed.contains("feat") && bare.linked.is_dir(),
-                "{cell}: the live linked worktree must survive the prune; got:\n{listed}",
+                "{cell}: the live linked worktree must survive the teardown; got:\n{listed}",
             );
             assert!(
                 seen.contains("pruned git's worktree registrations"),
-                "{cell}: …and the door must say it pruned them; got:\n{seen}",
+                "{cell}: …and the door must say it dropped them; got:\n{seen}",
             );
         }
     }

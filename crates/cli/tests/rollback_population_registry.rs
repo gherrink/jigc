@@ -393,6 +393,16 @@ const NOT_A_POPULATION: &[(&str, &str, usize, &str)] = &[
         "teardown of the scratch worktree the combine materializes — jigc's own tree, \
          wholesale, under a process-unique temp path",
     ),
+    (
+        "crates/cli/src/task.rs",
+        "DedicatedWorktree::drop",
+        1,
+        "teardown of the boundary's own throwaway checkout at \
+         `.jigc/worktrees/.combine-<pid>-<nanos>` — the fallback for a checkout git will no \
+         longer remove as a worktree, so its registration can still be dropped by path. It \
+         took the place of a repository-wide `git worktree prune` (the rc.24 fix pass, L-22) \
+         and restores nothing: the tree was created by this type seconds earlier",
+    ),
 ];
 
 /// Byte-restoring calls **inside a claimed unit** that belong to a different axis, so the

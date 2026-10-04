@@ -2358,7 +2358,7 @@ fn provision_for_finalize(repo: &Path, home: &Path) -> PathBuf {
 #[test]
 fn milestone_finalize_tears_down_the_provisioned_worktrees_on_a_landed_commit() {
     // (a) A landed milestone finalize must tear down the N provisioned fan-out worktrees
-    // (`git worktree remove --force` + `prune`), not just the milestone/sub-task areas —
+    // (`git worktree remove --force`, each by path), not just the milestone/sub-task areas —
     // a leaked worktree is a registered git object, heavier than gitignored scratch. RED
     // before the teardown wiring (the worktrees persist), GREEN after.
     let repo = TempDir::new("teardown-ok");
@@ -2634,8 +2634,8 @@ fn milestone_finalize_squash_true_code_only_fan_out_does_not_false_block_as_empt
 fn milestone_finalize_warns_on_a_leaked_worktree_but_still_succeeds() {
     // (c) A forced teardown failure (a `git worktree lock` makes single-`--force` removal
     // refuse the leaf) surfaces a NON-BLOCKING warning naming the leaked worktree path +
-    // the `git worktree prune` remedy (review A2 — pinned, not silent-log/block), and the
-    // landed commit's exit code is UNCHANGED. The unlocked sibling is still torn down.
+    // the remedy for that one registration (review A2 — pinned, not silent-log/block), and
+    // the landed commit's exit code is UNCHANGED. The unlocked sibling is still torn down.
     let repo = TempDir::new("teardown-leak");
     init_repo(repo.path());
     let home = TempDir::new("home");
@@ -2673,19 +2673,28 @@ fn milestone_finalize_warns_on_a_leaked_worktree_but_still_succeeds() {
         "the finalize must still land its one commit despite the teardown warning",
     );
 
-    // The non-blocking warning names the leaked worktree path + the `git worktree prune`
-    // remedy.
+    // The non-blocking warning names the leaked worktree path + its remedy.
     assert!(
         stderr.contains("area-low"),
         "the teardown warning must name the leaked worktree path; got:\n{stderr}",
     );
-    // Both spans of the remedy are aimed since M53 (the cwd census, C1-08): `prune` is a
-    // repository operation that exits 128 pasted from outside the repository, and `remove`
-    // resolves its operand against the caller's cwd.
+    // The remedy is keyed to the ONE registration, and to why git refused it (the rc.24
+    // blind trial, L-22): for a locked worktree, `unlock` then `remove --force`, both by
+    // path. It read *run `git worktree prune`, then …* until then — a repository-wide act
+    // that drops every other stale registration in the repository and, for this cause,
+    // repairs nothing (a prune skips a locked worktree). Both spans are aimed since M53
+    // (the cwd census, C1-08): `remove` resolves its operand against the caller's cwd.
+    // Run verbatim in `worktree_registration_reach.rs`.
     assert!(
-        stderr.contains(" worktree prune") && stderr.contains("git -C /"),
-        "the teardown warning must name the `git worktree prune` remedy, aimed at the \
-         checkout it runs in; got:\n{stderr}",
+        stderr.contains(" worktree unlock ")
+            && stderr.contains(" worktree remove --force ")
+            && stderr.contains("git -C /"),
+        "the teardown warning must name the locked worktree's remedy — unlock, then remove \
+         that one registration — aimed at the checkout it runs in; got:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("worktree prune"),
+        "no remedy may send the reader to a repository-wide prune; got:\n{stderr}",
     );
 
     // The unlocked sibling was still torn down (best-effort proceeds past the failure).

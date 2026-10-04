@@ -2882,7 +2882,7 @@ fn run_list_tasks(cwd: &Path, milestone_id: &str) -> Result<String> {
 /// **stored** pin), but the worktree shell-outs run on the main checkout `repo_root`
 /// while the `.jigc/worktrees/` parent binds to jigc_home (the M31 WF3 split — outside
 /// a worktree the two coincide). **Idempotent**: a re-run reuses a live worktree, and an
-/// **empty** leftover dir is pruned/cleared before the add; a leftover holding anything
+/// **empty** leftover dir is cleared before the add; a leftover holding anything
 /// refuses unless `force` ([`probe_leftover`]). An unknown milestone (no area) surfaces as
 /// a context-wrapped error.
 fn run_provision(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> {
@@ -2951,13 +2951,37 @@ fn run_provision(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> 
 
 /// Add one **detached** worktree per sub-task at `base_sha` under
 /// `<jigc_home>/.jigc/worktrees/<id>`, **idempotently**. The worktrees-parent is
-/// created first (git makes only the leaf), then `git worktree prune` drops admin
-/// records for any worktree whose dir was deleted by a crashed run. For each sub-task:
-/// a worktree already registered at the exact path is reused (the crashed run's
-/// worktree, or a prior provision — left untouched); otherwise the leftover directory at
-/// that path is **probed** ([`probe_leftover`]) and cleared only when nothing there needs
-/// keeping, before `git worktree add --detach` lands a fresh one. Returns the absolute
-/// worktree paths in the input (id-sorted) order.
+/// created first (git makes only the leaf). For each sub-task: a worktree registered at
+/// the exact path **and not stale** is reused (the crashed run's worktree, or a prior
+/// provision — left untouched); otherwise the leftover directory at that path is
+/// **probed** ([`probe_leftover`]) and cleared only when nothing there needs keeping, a
+/// stale registration **at that same path** is dropped by path
+/// ([`remove_owned_registration`]), and `git worktree add --detach` lands a fresh one.
+/// Returns the absolute worktree paths in the input (id-sorted) order.
+///
+/// **No repository-wide `git worktree prune`** (the rc.24 blind trial, L-22). From M31
+/// this door opened with one, *"to drop admin records for dirs a crash deleted"* — and a
+/// prune drops the registration of **every** worktree whose directory is not where git
+/// recorded it: a human's linked worktree on an unmounted volume, one moved with `mv`, a
+/// host worktree seen from a container that mounts the repository alone. Each was `not a
+/// git repository` after this door ran at exit 0, `git worktree repair` could not mend it,
+/// and a commit only its detached `HEAD` reached went to git's gc. It also ran ahead of
+/// phase 1, so a provision that then **refused** — *"nothing was removed"* — had already
+/// removed registrations, jigc's own among them (a moved repository's sub-task records
+/// name the old path, and they are exactly what `git worktree repair` needs). The stale
+/// record this door has to clear is the one at a path it is about to `add` at, so that is
+/// the one it clears: keyed, in phase 2, after every refusal has had its say.
+///
+/// **Which registration is stale is git's own verdict** — [`WorktreeRegistration::prunable`],
+/// the same test the prune applied — so the reuse decision is the one this door always
+/// made (*still registered after a prune*), read off the listing instead of produced by
+/// mutating the registry. A **locked** registration is never `prunable` to git and stays a
+/// reuse, as it did.
+///
+/// **What a stale registration of jigc's own still anchors is not probed here**: its
+/// `HEAD`, index and reflog go with the record, in silence, exactly as they did under the
+/// prune. That is a separate question (refuse or drop), deliberately not answered by the
+/// commit that stopped this door reaching *other* worktrees.
 ///
 /// **A leftover holding anything refuses the whole provision** (`DECISIONS.md` 2026-08-13 →
 /// the Settle, F3), naming the path and what would be deleted; `force` is the operator's
@@ -3010,30 +3034,29 @@ fn provision_worktrees(
         )
     })?;
 
-    // Drop admin records for any worktree dir deleted out from under git by a crashed
-    // run, so a later `add` at that path is not rejected as a stale registration.
-    //
-    // **From `jigc_home`, like every other worktree-set helper** (M53 post-review-fix
-    // review, LOW 11). This was the one member of the five left on the walk-up while
-    // `subtask_worktrees`, `held_subtask_worktrees`, `provisioned_worktrees`,
-    // `partial_worktree_advisories` and `remove_worktrees` all moved. **Behaviourally
-    // equivalent** — `git worktree list/prune/add` answer for the whole repository from any
-    // checkout, and the paths compared below are already built from `canonical_home` — so
-    // this closes a split in a set the commit message said was made uniform, and buys
-    // nothing else.
-    git_worktree(jigc_home, &["worktree", "prune"])?;
-    let registered = registered_worktrees(jigc_home)?;
+    // git's registry, read and not touched. **From `jigc_home`, like every other
+    // worktree-set helper** (M53 post-review-fix review, LOW 11): `git worktree list/add`
+    // answer for the whole repository from any checkout, and the paths compared below are
+    // built from `canonical_home`.
+    let registrations = worktree_registrations(jigc_home)?;
 
-    // Phase 1 — probe every path, mutate none. A path already registered as a worktree here
-    // is reused untouched (idempotent), so it is neither probed nor cleared; every other one
-    // is asked before the walk is allowed to move a byte anywhere.
+    // Phase 1 — probe every path, mutate none: not a byte under `.jigc/worktrees/`, and not
+    // a record under `.git/worktrees/`. A path registered as a live worktree here is reused
+    // untouched (idempotent), so it is neither probed nor cleared; every other one is asked
+    // before the walk is allowed to move anything anywhere.
     let mut plan = Vec::with_capacity(sub_ids.len());
     let mut held: Vec<(PathBuf, LeftoverHold)> = Vec::new();
     for id in sub_ids {
         // The absolute worktree path; `worktree_path(id)` is the shared relative
         // convention (`.jigc/worktrees/<id>`) the spawn line also renders.
         let path = canonical_home.join(worktree_path(id));
-        let reuse = registered.iter().any(|w| w == &path);
+        let registration = registrations.iter().find(|r| r.path == path);
+        // Registered here and not stale — exactly the set a prune would have left listed.
+        let reuse = registration.is_some_and(|r| !r.prunable);
+        // Registered here and stale: the record `git worktree add` would refuse over
+        // (*"a missing but already registered worktree"*), and the only one this door
+        // drops — in phase 2, by path.
+        let stale = registration.is_some_and(|r| r.prunable);
         // A non-registered leftover would make `git worktree add` fail ("already exists"),
         // so it has to go — but only once the probe can prove it holds nothing (or
         // `--force` says so): the binary cannot tell `junk.txt` from `precious.txt`.
@@ -3046,7 +3069,7 @@ fn provision_worktrees(
             // the law-1 half-truth every door here exists to avoid.
             held.push((path.clone(), hold));
         }
-        plan.push((id.clone(), path, reuse));
+        plan.push((id.clone(), path, reuse, stale));
     }
     if !held.is_empty() {
         return Err(finding_to_err(leftover_finding(
@@ -3062,7 +3085,7 @@ fn provision_worktrees(
     // `anyhow` that a driver cannot tell from a missing repo.
     let total = plan.len();
     let mut paths = Vec::with_capacity(total);
-    for (id, path, reuse) in plan {
+    for (id, path, reuse, stale) in plan {
         let stopped = |err: anyhow::Error, landed: usize| {
             finding_to_err(provision_failed_finding(
                 &ProvisionStop {
@@ -3091,6 +3114,19 @@ fn provision_worktrees(
                     .with_context(|| {
                         format!(
                             "could not clear the leftover at `{}`",
+                            render::repo_relative(jigc_home, &path),
+                        )
+                    })
+                    .map_err(|err| stopped(err, paths.len()))?;
+            }
+            if stale {
+                // After the clear, never before it: git removes a registration by path only
+                // once nothing it cannot read as a worktree stands there, and a refused
+                // provision must not have touched the registry at all.
+                remove_owned_registration(jigc_home, &path)
+                    .with_context(|| {
+                        format!(
+                            "could not drop the stale worktree registration at `{}`",
                             render::repo_relative(jigc_home, &path),
                         )
                     })
@@ -3208,22 +3244,131 @@ struct ProvisionStop<'a> {
     force: bool,
 }
 
-/// The canonical absolute paths of the repo's currently-registered worktrees, parsed
-/// from `git worktree list --porcelain` (each `worktree <path>` line carries the
-/// canonical path git stored at `add` time). The provision reuse check compares against
-/// these.
+/// One record of git's worktree registry, as `git worktree list --porcelain` states it.
+pub(crate) struct WorktreeRegistration {
+    /// The canonical absolute path git stored at `add` time.
+    pub(crate) path: PathBuf,
+    /// git's own verdict that the record is stale — its `prunable` line (*"gitdir file
+    /// points to non-existent location"*): the checkout's `.git` link is not where the
+    /// record says. It is exactly the set a `git worktree prune` would drop, **read**
+    /// rather than acted on. Never set for a locked worktree.
+    pub(crate) prunable: bool,
+    /// The record carries a `locked` line: git refuses to remove it without an unlock.
+    pub(crate) locked: bool,
+}
+
+/// git's worktree registry for the repository `repo_root` belongs to — **the one read of
+/// it**, and a read only.
+///
+/// Every record is returned, the stale ones included: a registration whose directory is not
+/// there is still a registration, and whether it is jigc's to drop is a question about its
+/// **path** ([`is_owned_worktree_path`]), never about its being stale. A linked worktree on
+/// an unmounted volume, one moved with `mv`, a host worktree seen from inside a container
+/// are all `prunable` to git and none of them is jigc's.
+///
+/// Bound: the `prunable` and `locked` lines are git ≥ 2.31's (2021-03). On an older git no
+/// record carries either, so a stale registration of jigc's own reads as live and
+/// `milestone provision` reuses it.
+pub(crate) fn worktree_registrations(repo_root: &Path) -> Result<Vec<WorktreeRegistration>> {
+    let out = git_worktree(repo_root, &["worktree", "list", "--porcelain"])?;
+    let mut records: Vec<WorktreeRegistration> = Vec::new();
+    for line in out.lines() {
+        if let Some(path) = line.strip_prefix("worktree ") {
+            records.push(WorktreeRegistration {
+                path: PathBuf::from(path),
+                prunable: false,
+                locked: false,
+            });
+            continue;
+        }
+        // An attribute line of the record above it: a bare label, or the label and a reason.
+        let Some(record) = records.last_mut() else {
+            continue;
+        };
+        match line.split(' ').next() {
+            Some("prunable") => record.prunable = true,
+            Some("locked") => record.locked = true,
+            _ => {}
+        }
+    }
+    Ok(records)
+}
+
+/// The canonical absolute paths of the repo's currently-registered worktrees
+/// ([`worktree_registrations`], paths only) — the membership question the teardown guards
+/// ask.
 ///
 /// `pub(crate)` for the sibling teardown: `jigc uninstall` removes `<repo>/.jigc/`
 /// wholesale, and the fan-out worktrees live inside it, so it runs the same
 /// registered-then-dirty probe this module's `discard` runs
 /// (`crate::setup::dirty_fanout_worktrees`).
 pub(crate) fn registered_worktrees(repo_root: &Path) -> Result<Vec<PathBuf>> {
-    let out = git_worktree(repo_root, &["worktree", "list", "--porcelain"])?;
-    Ok(out
-        .lines()
-        .filter_map(|line| line.strip_prefix("worktree "))
-        .map(PathBuf::from)
+    Ok(worktree_registrations(repo_root)?
+        .into_iter()
+        .map(|registration| registration.path)
         .collect())
+}
+
+/// Whether `path` is one **jigc created**: a direct child of `<root>/.jigc/worktrees/` — a
+/// sub-task's `<sub-task-id>` or a boundary's `.combine-*` (`design/storage.md` →
+/// Repository layout). The whole of jigc's reach over git's worktree registry.
+///
+/// Both sides are compared canonical, because git records realpaths at `add` time (on macOS
+/// `/tmp/…` lists as `/private/tmp/…`); a parent that is no longer on disk — `jigc
+/// uninstall` has just removed `.jigc/` — is compared as spelled, which is how git's own
+/// listing spells it.
+pub(crate) fn is_owned_worktree_path(root: &Path, path: &Path) -> bool {
+    let owned = root
+        .canonicalize()
+        .unwrap_or_else(|_| root.to_path_buf())
+        .join(".jigc")
+        .join("worktrees");
+    // `file_name()` is `None` for a path ending in `..`, which names no child at all.
+    let (Some(parent), Some(_)) = (path.parent(), path.file_name()) else {
+        return false;
+    };
+    parent == owned || parent.canonicalize().is_ok_and(|parent| parent == owned)
+}
+
+/// Remove **one** registration from git's worktree registry — the one at `path` — together
+/// with its checkout when that is still on disk. **The single production home of a
+/// registry removal**, and the only `git worktree` verb here that can take a record away
+/// (`crates/cli/tests/worktree_registration_reach.rs` fences both halves).
+///
+/// It is `git worktree remove --force <path>`, and the properties the doors rely on were
+/// driven, on git 2.54.0 and 2.43.0:
+///
+/// * a registration whose directory is **absent** is removed, exit 0, and a `prunable`
+///   sibling is left exactly as it was — this is what replaces `git worktree prune`, which
+///   takes every such sibling in the repository with it (the rc.24 blind trial, L-22);
+/// * the same holds when the directory's **parents** are gone too (`jigc uninstall` has just
+///   removed `.jigc/`), provided `path` is the canonical one git recorded;
+/// * a directory that is there but is no longer a worktree to git (its `.git` link is gone)
+///   **refuses** — `validation failed, cannot remove working tree` — so bytes nothing can
+///   vouch for are never deleted through this call;
+/// * a **locked** registration refuses.
+///
+/// **It refuses a path jigc did not create before git is asked** ([`is_owned_worktree_path`]).
+/// Every caller builds its path under `.jigc/worktrees/` already; the check is here so that
+/// the rule is a property of the one function that can break it, not of each caller's care.
+///
+/// `root` is the checkout whose `.jigc/worktrees/` the path was created under — `jigc_home`
+/// for a sub-task's worktree, the committing checkout for a boundary's dedicated one.
+pub(crate) fn remove_owned_registration(root: &Path, path: &Path) -> Result<()> {
+    if !is_owned_worktree_path(root, path) {
+        bail!(
+            "refusing to remove the git worktree registration at `{}`: it is not a path \
+             jigc created under `.jigc/worktrees/`",
+            render::repo_relative(root, path),
+        );
+    }
+    let path_str = path.to_str().with_context(|| {
+        format!(
+            "worktree path `{}` is not valid UTF-8",
+            render::repo_relative(root, path),
+        )
+    })?;
+    git_worktree(root, &["worktree", "remove", "--force", path_str]).map(|_| ())
 }
 
 /// What `git` can prove about a **worktree-shaped path under `.jigc/worktrees/`** that a
@@ -3241,8 +3386,7 @@ pub(crate) fn registered_worktrees(repo_root: &Path) -> Result<Vec<PathBuf>> {
 /// The registered set is deliberately **not** the subject. The ordinary trigger is a `cp -R`
 /// or `mv` of the whole repo (how every RC trial corpus is made): the copy's worktree admin
 /// record names the **source's** path, so no path under the copy's own `.jigc/worktrees/` is
-/// registered, `git worktree prune` removes nothing, and a registered-set guard is inert
-/// exactly where the live work is.
+/// registered, and a registered-set guard is inert exactly where the live work is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LeftoverVerdict {
     /// `rev-parse` exited non-zero — git can say **nothing** about the path (the
@@ -6203,15 +6347,25 @@ enum SubtaskComplement<'a> {
 /// *"working area intact"*). `discard` is the one un-landed caller, and it refuses on a dirty
 /// worktree unless the human declares `--force`. For each sub-task id whose
 /// `<jigc_home>/.jigc/worktrees/<id>` checkout is still a **registered** worktree,
-/// `git worktree remove --force` it, then `git worktree prune` the admin records (the
-/// [`provision_worktrees`] inverse). A never-provisioned (or already-removed) sub-task
-/// has nothing registered and is skipped, so a non-fan-out finalize tears down nothing.
+/// remove that one registration and its checkout by path ([`remove_owned_registration`],
+/// the [`provision_worktrees`] inverse). A never-provisioned (or already-removed) sub-task
+/// has nothing registered and is skipped, so a non-fan-out finalize tears down nothing —
+/// and a `discard` of a milestone that was never provisioned runs no git mutation at all.
+///
+/// **Nothing else in git's registry is touched** (the rc.24 blind trial, L-22). The loop
+/// was always keyed; what was not is the `git worktree prune` that used to follow it,
+/// unconditionally, recorded at M31 as a *"harmless no-op"*. It dropped the registration of
+/// every worktree in the repository whose directory was not where git recorded it — a
+/// human's, on an unmounted volume or moved with `mv` — in silence, at exit 0. A
+/// registration of a sub-task's whose directory is already gone needs no prune: the keyed
+/// removal takes it (driven — `git worktree remove --force` on an absent directory exits 0).
 ///
 /// Best-effort, but **heavier than** [`cleanup_subtask_areas`]' silent self-heal
 /// (review A2, `DECISIONS.md` 2026-06-20 → M31 planning): a removal that fails surfaces
-/// a **non-blocking warning** naming the leaked worktree path + the `git worktree prune`
-/// remedy — a leaked worktree is a registered git object, not gitignored scratch — yet
-/// it never blocks a commit that already landed (the F1 rollback/landed-commit stance).
+/// a **non-blocking warning** naming the leaked worktree path + the remedy for the one
+/// registration ([`leaked_worktree_remedy`]) — a leaked worktree is a registered git
+/// object, not gitignored scratch — yet it never blocks a commit that already landed (the
+/// F1 rollback/landed-commit stance).
 ///
 /// **The loss is narrated before it happens** (M47 Inc 3, call (c)): the removal destroys
 /// everything the boundary did not commit — the staged set landed, the rest did not — so
@@ -6236,26 +6390,23 @@ fn remove_worktrees(jigc_home: &Path, list: &engine::milestone::TaskList) -> boo
     // `crates/cli/tests/repo_relative_paths.rs`; the loss narration these warnings sit beside
     // goes through [`narrate_removal`], which is repo-relative like every other surface.
     //
-    // **Both spans in that remedy now also name the checkout** (M53 — the cwd census, C1-08).
-    // The census predicted this site shipped a repo-relative operand; driven, it did not —
-    // `path` is `canonical_home.join(…)` and the operand has always been absolute. What was
-    // cwd-fragile is its neighbour: `git worktree prune` is a repository operation, so pasted
-    // from outside the repository it exits 128 while the `remove` beside it would have
-    // worked. Both go through `engine::finding::git_at`, which is also what keeps this
+    // **Every span in that remedy also names the checkout** (M53 — the cwd census, C1-08):
+    // `path` is `canonical_home.join(…)`, so the operand has always been absolute, and the
+    // spans go through `engine::finding::git_at`, which is also what keeps this
     // non-`Finding` surface inside the one rule the route fence enforces everywhere else.
-    let registered = registered_worktrees(jigc_home).unwrap_or_default();
+    let registrations = worktree_registrations(jigc_home).unwrap_or_default();
     // Match `provision_worktrees`' canonical-path convention (git stores canonical paths at
     // `add` time); fall back to the raw path if canonicalization fails (then nothing matches
-    // and the worktree is left registered — surfaced by the prune-only no-op below).
+    // and the worktree is left registered, untouched).
     let canonical_home = jigc_home
         .canonicalize()
         .unwrap_or_else(|_| jigc_home.to_path_buf());
     for sub_id in list.enumerate() {
         let path = canonical_home.join(worktree_path(&sub_id));
-        if !registered.iter().any(|w| w == &path) {
+        let Some(registration) = registrations.iter().find(|r| r.path == path) else {
             // Never provisioned (or already torn down) — nothing to remove.
             continue;
-        }
+        };
         let Some(path_str) = path.to_str() else {
             eprintln!("warning: fan-out worktree path {path:?} is not valid UTF-8 (left in place)");
             all_gone = false;
@@ -6266,29 +6417,63 @@ fn remove_worktrees(jigc_home: &Path, list: &engine::milestone::TaskList) -> boo
         // and must not claim a destruction that did not happen either), through the
         // emitter every destroying door shares.
         let pending = pending_loss(jigc_home, &path);
-        let removed = git_worktree(jigc_home, &["worktree", "remove", "--force", path_str]);
+        let removed = remove_owned_registration(jigc_home, &path);
         pending.narrate_taken(jigc_home);
         if let Err(err) = removed {
             all_gone = false;
-            // A2 — pinned non-blocking warning, naming the leaked path + the prune remedy.
+            // A2 — pinned non-blocking warning, naming the leaked path + its remedy.
             eprintln!(
                 "warning: could not remove the fan-out worktree {path_str}: {err:#}\n  \
-                 remedy: run `{prune}`, then `{remove}`",
-                prune = engine::finding::git_at(jigc_home, "worktree prune"),
-                remove = engine::finding::git_at(
-                    jigc_home,
-                    &format!(
-                        "worktree remove --force {}",
-                        crate::task::shell_token(path_str)
-                    ),
-                )
+                 remedy: {}",
+                leaked_worktree_remedy(jigc_home, path_str, registration),
             );
         }
     }
-    // Drop admin records for any worktree dir removed out-of-band (the provision prune
-    // inverse) — best-effort; a prune failure is itself non-fatal to a landed commit.
-    let _ = git_worktree(jigc_home, &["worktree", "prune"]);
     all_gone
+}
+
+/// The remedy the leaked-worktree warning prints: **what to do about this one
+/// registration**, ending at the span that removes it by path.
+///
+/// It read *run `git worktree prune`, then `git worktree remove --force <path>`* until the
+/// rc.24 fix pass, and both halves were wrong. The prune is the repository-wide act this
+/// module no longer performs — printed as a remedy it walks the reader into dropping every
+/// other stale registration in the repository by their own hand — and it fixed neither cause
+/// a removal actually fails for: a **locked** worktree is skipped by a prune, and a checkout
+/// whose `.git` link is gone is *dropped* by it, after which the `remove` beside it failed
+/// with *"is not a working tree"* over a directory still on disk.
+///
+/// So the remedy is keyed on what git said about the record
+/// ([`WorktreeRegistration`], read before the removal was tried), and each arm ends at the
+/// keyed removal, which works as printed once the cause is dealt with:
+///
+/// * **locked** — the two spans are the whole repair, runnable as printed;
+/// * **`prunable`, yet the removal failed** — something stands at the path that git no
+///   longer reads as a worktree (a checkout whose `.git` link is gone), so git will not
+///   delete it and neither does this door: the reader moves what they need and removes it,
+///   then the span drops the record;
+/// * **anything else** (a permission wall, a busy path) — git's own message, quoted in the
+///   warning above, names it.
+fn leaked_worktree_remedy(
+    jigc_home: &Path,
+    path_str: &str,
+    registration: &WorktreeRegistration,
+) -> String {
+    let operand = crate::task::shell_token(path_str);
+    let remove = engine::finding::git_at(jigc_home, &format!("worktree remove --force {operand}"));
+    const ONE: &str = "it removes this one registration and no other";
+    if registration.locked {
+        let unlock = engine::finding::git_at(jigc_home, &format!("worktree unlock {operand}"));
+        format!("the worktree is locked — run `{unlock}`, then `{remove}` ({ONE})")
+    } else if registration.prunable {
+        format!(
+            "git no longer reads what stands at that path as a worktree, so it will not \
+             delete it — move what you need out of it and remove it yourself, then run \
+             `{remove}` ({ONE})"
+        )
+    } else {
+        format!("deal with what git's message names at that path, then run `{remove}` ({ONE})")
+    }
 }
 
 /// The `commit` doc type the per-sub-task render addresses — a sub-task's authored

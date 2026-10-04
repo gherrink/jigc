@@ -1035,7 +1035,7 @@ const GIT_NON_PATH_COMMANDS: &[(&str, &str)] = &[
 ];
 
 /// Git porcelain whose **second** word is part of the command name rather than an operand,
-/// so `git worktree prune` reads as operand-less and `git worktree remove --force <path>`
+/// so `git worktree list` reads as operand-less and `git worktree remove --force <path>`
 /// does not. Declared rather than derived: git's verb tree is not ours to infer, and the set
 /// this codebase's spans actually reach is small enough to name.
 const GIT_COMMAND_GROUPS: &[&str] = &["worktree", "stash", "submodule", "remote", "bisect"];
@@ -1049,7 +1049,7 @@ const GIT_COMMAND_GROUPS: &[&str] = &["worktree", "stash", "submodule", "remote"
 /// 1. the span leads with `-C <absolute>` ([`git_at`]'s render, or a producer aiming at a
 ///    different checkout through `crate::repo::aim_at`);
 /// 2. it carries **no operand** — every token after the command words is a flag, so the span
-///    names a command (`git add`, `git worktree prune`, `git stash -u`) without saying which
+///    names a command (`git add`, `git worktree list`, `git stash -u`) without saying which
 ///    file, and there is nothing for a cwd to resolve;
 /// 3. its command is declared in [`GIT_NON_PATH_COMMANDS`] and the span carries no `--`.
 ///

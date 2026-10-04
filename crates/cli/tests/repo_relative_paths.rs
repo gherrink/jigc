@@ -959,7 +959,10 @@ const PATH_TEXT_SITES: &[(&str, &str, Disposition, &str)] = &[
          `path` is `canonical_home.join(…)` and the operand has always been absolute. What \
          was cwd-fragile is the `git worktree prune` beside it, a repository operation that \
          exits 128 pasted from outside the repository. Both spans now go through \
-         `engine::finding::git_at`.**]",
+         `engine::finding::git_at`.**] **[Corrected 2026-10-04 (the rc.24 fix pass, L-22).** \
+         The `git worktree prune` span is gone: the remedy names the one registration \
+         (`milestone::leaked_worktree_remedy`), and the warning line in this function still \
+         names the same absolute path that remedy operates on.**]",
     ),
     (
         "crates/cli/src/pack.rs",
