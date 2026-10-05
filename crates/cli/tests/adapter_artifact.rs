@@ -33,6 +33,12 @@
 //! on the *same* ownership question: `jigc uninstall` removes its own copy and leaves a
 //! user-modified one. Its arms live under their own banner at the foot of the file.
 //!
+//! **And the ownership question is asked of the whole file** (the rc.24 fix pass's
+//! completion audit, install-teardown F3). It was asked of the body: a front-matter edit
+//! was replaced by `setup` and deleted by `uninstall` at exit 0. The arms under the last
+//! banner iterate where in the file an edit lands, at every door, beside the cell that
+//! holds an unedited copy to *jigc's own* under each conversion setting.
+//!
 //! No external test crates: the binary comes from `CARGO_BIN_EXE_jigc`, the temp repo is
 //! built with `std::fs`, and a self-cleaning `TempDir` keeps this off the real repo.
 
@@ -41,6 +47,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::support::install_line::quickstart_install_line;
+use crate::support::older_guide::as_an_older_build_wrote_it;
 
 /// The Claude Code profile's declared guide target — the path this suite asserts against,
 /// stated once here as the fixture's own premise (the profile is the authority; a change
@@ -236,16 +243,15 @@ fn a_pristine_stale_stamped_guide_is_replaced_and_restamped() {
     mark_repo(repo.path());
     let home = TempDir::new("stale-home");
 
-    // A pristine artifact from an older build: an old body, an old stamp, and a hash that
-    // is genuinely this body's — the state a `jigc setup` after a binary upgrade meets.
-    let stale_body = "the guides as jigc 0.0.1-old shipped them\n";
-    let stale = format!(
-        "---\nname: jigc\njigc-version: 0.0.1-old\njigc-body-blake3: {}\n---\n\n{stale_body}",
-        engine::file_state::hash_bytes(stale_body.as_bytes()),
-    );
+    // A pristine artifact from an older build: what this build installs, with the version
+    // an older build would have written — in the stamp and in the body's opening sentence
+    // — an older line of guide text, and a hash that is genuinely that body's. The state a
+    // `jigc setup` after a binary upgrade meets.
+    assert_clean(&run_setup(repo.path(), home.path(), None), "first setup");
     let target = repo.path().join(GUIDE_PATH);
-    fs::create_dir_all(target.parent().expect("the artifact has a parent dir"))
-        .expect("seed the skill dir");
+    let stale_line = "the guides as jigc 0.0.1-old shipped them\n";
+    let installed = fs::read_to_string(&target).expect("installed");
+    let stale = as_an_older_build_wrote_it(&format!("{installed}{stale_line}"), "0.0.1-old");
     fs::write(&target, &stale).expect("seed the stale artifact");
 
     assert_clean(&run_setup(repo.path(), home.path(), None), "setup");
@@ -263,7 +269,7 @@ fn a_pristine_stale_stamped_guide_is_replaced_and_restamped() {
         "the re-stamped hash must equal the replaced body's own; got:\n{front}",
     );
     assert!(
-        !installed.contains(stale_body),
+        !installed.contains(stale_line),
         "the stale body must be replaced, not kept; got:\n{installed}",
     );
 }
@@ -1106,4 +1112,230 @@ fn the_installed_guide_carries_quickstart_s_install_line() {
         "the installed guide must carry QUICKSTART's install line `{}` as a line of its own",
         owned.line,
     );
+}
+
+// ──────────── the oracle answers for the whole file (the rc.24 fix pass's audit) ────────────
+
+/// One hand edit to an installed artifact, by **where in the file** it lands — the axis the
+/// completion audit's install-teardown F3 sat on. The reported instance was the front
+/// matter's `description:` value and an added `allowed-tools:` key; the class is every
+/// region of the file the body digest does not cover, with a body edit as the control that
+/// was always caught.
+const EDITS: [&str; 8] = [
+    "front matter: a profile key's value rewritten",
+    "front matter: a key added",
+    "front matter: a profile key removed",
+    "front matter: the version stamp's value rewritten",
+    "front matter: two keys reordered",
+    "front matter: a blank line added",
+    "front matter: a comment added after the stamp",
+    "body: a line appended (the control)",
+];
+
+/// Apply `edit` to a pristine installed artifact, returning the edited text.
+fn edited_artifact(pristine: &str, edit: &str) -> String {
+    let mut lines: Vec<String> = pristine.split('\n').map(str::to_string).collect();
+    let at = |lines: &[String], key: &str| {
+        lines
+            .iter()
+            .position(|line| line.starts_with(key))
+            .unwrap_or_else(|| panic!("the front matter carries `{key}`:\n{pristine}"))
+    };
+    match edit {
+        "front matter: a profile key's value rewritten" => {
+            let i = at(&lines, "description:");
+            lines[i] = "description: \"USERMARK when our team reviews a pull request\"".into();
+        }
+        "front matter: a key added" => {
+            let i = at(&lines, "name:");
+            lines.insert(i + 1, "allowed-tools: USERMARK Bash(npm test:*)".into());
+        }
+        "front matter: a profile key removed" => {
+            let i = at(&lines, "description:");
+            lines.remove(i);
+        }
+        "front matter: the version stamp's value rewritten" => {
+            let i = at(&lines, "jigc-version:");
+            lines[i] = "jigc-version: USERMARK-our-fork".into();
+        }
+        "front matter: two keys reordered" => {
+            let (d, n) = (at(&lines, "description:"), at(&lines, "name:"));
+            lines.swap(d, n);
+        }
+        "front matter: a blank line added" => {
+            let i = at(&lines, "jigc-version:");
+            lines.insert(i, String::new());
+        }
+        "front matter: a comment added after the stamp" => {
+            let i = at(&lines, "jigc-body-blake3:");
+            lines.insert(i + 1, "# USERMARK ours now".into());
+        }
+        "body: a line appended (the control)" => {
+            lines.push("USERMARK always run the linter first.".into());
+            lines.push(String::new());
+        }
+        other => panic!("no such edit: {other}"),
+    }
+    let edited = lines.join("\n");
+    assert_ne!(edited, pristine, "{edit}: the fixture changes the file");
+    edited
+}
+
+/// **An edit anywhere in the installed artifact makes it the adopter's — at both doors
+/// that would otherwise destroy it** (the completion audit's install-teardown F3).
+///
+/// The loss, driven on `1.0.0-rc.24` and on the fix pass at `b54b58b2`: the ownership
+/// oracle compared the recorded digest with the **body** and never read the front matter.
+/// An adopter who rewrote `description:` and added `allowed-tools:` — the two lines the
+/// assistant acts on — had both replaced by `jigc setup` at exit 0 with `findings: []`,
+/// and the file deleted by `jigc uninstall`, the bytes in no git object. The file's own
+/// first sentence says *edit it and it becomes yours*.
+///
+/// So the axis is where the edit lands ([`EDITS`]), and each cell is walked through the
+/// read-only door and both destroying doors in one repository: `jigc upgrade` reports it,
+/// `jigc setup` leaves it byte-identical and says so with `guide_file: null`, and `jigc
+/// uninstall` leaves it byte-identical and says so. The edit is never committed, so
+/// nothing but the file holds it.
+#[test]
+fn an_edit_anywhere_in_the_guide_makes_it_the_adopters_at_every_door() {
+    std::thread::scope(|scope| {
+        for (n, edit) in EDITS.into_iter().enumerate() {
+            scope.spawn(move || {
+                let repo = TempDir::new(&format!("whole-file-{n}"));
+                mark_repo(repo.path());
+                let home = TempDir::new(&format!("whole-file-{n}-home"));
+                assert_clean(&run_setup(repo.path(), home.path(), None), "first setup");
+                let target = repo.path().join(GUIDE_PATH);
+                let pristine = fs::read_to_string(&target).expect("installed");
+                let edited = edited_artifact(&pristine, edit);
+                fs::write(&target, &edited).expect("hand-edit the installed guide");
+
+                let upgrade = run_upgrade(repo.path(), home.path(), &[]);
+                assert!(
+                    stdout_of(&upgrade).contains(MODIFIED_CODE),
+                    "{edit}: `jigc upgrade` reports the copy as the adopter's:\n{}",
+                    stdout_of(&upgrade),
+                );
+
+                let setup = run_jigc(
+                    repo.path(),
+                    home.path(),
+                    None,
+                    &["setup", "--format", "json"],
+                );
+                assert_clean(&setup, edit);
+                let doc = envelope(&setup);
+                assert_eq!(
+                    fs::read_to_string(&target).expect("still there"),
+                    edited,
+                    "{edit}: `jigc setup` leaves the edited copy byte-identical",
+                );
+                assert!(
+                    doc["findings"]
+                        .as_array()
+                        .is_some_and(|all| all.iter().any(|f| f["code"] == MODIFIED_CODE)),
+                    "{edit}: and says so:\n{doc:#}",
+                );
+                assert!(
+                    doc["guide_file"].is_null(),
+                    "{edit}: and lists no guide it did not write:\n{doc:#}",
+                );
+
+                let teardown = teardown_envelope(
+                    &run_uninstall(repo.path(), home.path(), None, &["--format", "json"]),
+                    edit,
+                );
+                assert!(
+                    !removed_guide(&teardown),
+                    "{edit}: `jigc uninstall` claims no removal:\n{teardown:#}",
+                );
+                assert_eq!(
+                    fs::read_to_string(&target).expect("left standing"),
+                    edited,
+                    "{edit}: `jigc uninstall` leaves the edited copy byte-identical",
+                );
+                assert!(
+                    teardown["findings"]
+                        .as_array()
+                        .is_some_and(|all| all.iter().any(|f| f["code"] == MODIFIED_CODE)),
+                    "{edit}: and says so:\n{teardown:#}",
+                );
+            });
+        }
+    });
+}
+
+/// **…and a copy nobody edited is never called edited** — the must-not-refuse half, over
+/// the git configurations a checkout can install under. jigc writes the artifact itself
+/// and reads it back off the disk, so no conversion setting stands between the two: after
+/// a first install the re-run names the guide as written and raises no advisory, the
+/// repository is clean, and the teardown takes its own copy out.
+///
+/// (A **fresh clone** whose checkout git converted to CRLF is the cell this does not
+/// cover: the working file is then not the bytes jigc wrote, the digest does not describe
+/// it, and both doors leave it alone and report it — on `1.0.0-rc.24` as here. Nothing is
+/// lost there; the copy stops tracking the binary until it is deleted and reinstalled.)
+#[test]
+fn an_unedited_guide_is_jigcs_under_every_conversion_setting() {
+    std::thread::scope(|scope| {
+        for conversion in [
+            "none",
+            "core.autocrlf=true",
+            "core.autocrlf=input",
+            "* text=auto",
+        ] {
+            scope.spawn(move || {
+                let repo = TempDir::new("unedited");
+                mark_repo(repo.path());
+                let home = TempDir::new("unedited-home");
+                match conversion {
+                    "none" => {}
+                    "* text=auto" => {
+                        fs::write(repo.path().join(".gitattributes"), "* text=auto\n")
+                            .expect("write attributes");
+                        git_capture(repo.path(), &["add", ".gitattributes"]);
+                        git_capture(repo.path(), &["commit", "-q", "-m", "attributes"]);
+                    }
+                    setting => {
+                        let (key, value) = setting.split_once('=').expect("key=value");
+                        git_capture(repo.path(), &["config", key, value]);
+                    }
+                }
+                assert_clean(&run_setup(repo.path(), home.path(), None), conversion);
+                for run in ["the re-run", "a second re-run"] {
+                    let out = run_jigc(
+                        repo.path(),
+                        home.path(),
+                        None,
+                        &["setup", "--format", "json"],
+                    );
+                    assert_clean(&out, conversion);
+                    let doc = envelope(&out);
+                    assert_eq!(
+                        doc["guide_file"], GUIDE_PATH,
+                        "{conversion}, {run}: jigc's own copy is rewritten and listed:\n{doc:#}",
+                    );
+                    assert!(
+                        doc["findings"]
+                            .as_array()
+                            .is_some_and(|all| all.iter().all(|f| f["code"] != MODIFIED_CODE)),
+                        "{conversion}, {run}: and is never called edited:\n{doc:#}",
+                    );
+                    assert_eq!(
+                        git_capture(repo.path(), &["status", "--porcelain"]),
+                        "",
+                        "{conversion}, {run}: the repository is clean",
+                    );
+                }
+                let teardown = teardown_envelope(
+                    &run_uninstall(repo.path(), home.path(), None, &["--format", "json"]),
+                    conversion,
+                );
+                assert!(
+                    removed_guide(&teardown),
+                    "{conversion}: the teardown takes jigc's own copy out:\n{teardown:#}",
+                );
+            });
+        }
+    });
 }

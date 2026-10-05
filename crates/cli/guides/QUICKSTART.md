@@ -65,10 +65,13 @@ It does these things:
 - writes jigc's own guides — this file and the migration field notes — to the path
   your assistant reads skills from (`.claude/skills/jigc/SKILL.md` for Claude Code),
   as **one file jigc owns**: it opens with a `jigc-version:` stamp naming the build
-  that wrote it plus the hash of its own body, and `jigc setup` rewrites it whenever
-  the body still hashes to that stamp, so the guidance in your repo matches the binary
+  that wrote it plus the hash of its own body, and `jigc setup` rewrites it while
+  every byte of it is still what jigc wrote — the front matter exactly, and a body that
+  still hashes to that stamp — so the guidance in your repo matches the binary
   in your `PATH`. Re-run `setup` after upgrading and the copy follows — **until you
-  edit it**. An edited copy is yours: `setup` leaves it byte-identical, raises the
+  edit it**, anywhere: a changed `description:` or an added key counts as much as a
+  changed paragraph. An edited copy is yours: `setup` leaves it byte-identical (and so
+  does `jigc uninstall`), raises the
   `adapter-guide.user-modified` advisory instead of overwriting it, and drops it from
   the rest of the install's commit — the other bullets here still run — so from then on it stops tracking the binary until you delete it and
   re-run (`jigc upgrade` reports the same state without replacing anything); and

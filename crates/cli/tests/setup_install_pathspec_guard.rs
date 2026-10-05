@@ -112,6 +112,7 @@
 //! Forty-two cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
 //! `git init` repos.
 
+use crate::support::older_guide::as_an_older_build_wrote_it;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -672,8 +673,8 @@ fn an_owned_guide_artifact_is_not_a_subject_of_the_guard() {
         git(repo, &["ls-files", GUIDE]).contains("SKILL.md"),
         "the premise: the first install committed the guide artifact"
     );
-    // jigc's own bytes, stamped by an earlier build — tracked and modified against HEAD.
-    let owned = read(repo, GUIDE).replacen("jigc-version:", "jigc-version: 0.0.1 #", 1);
+    // jigc's own bytes, as an earlier build wrote them — tracked and modified against HEAD.
+    let owned = as_an_older_build_wrote_it(&read(repo, GUIDE), "0.0.1");
     write(repo, GUIDE, &owned);
 
     let out = jigc(repo, home, &["setup"]);
@@ -684,7 +685,7 @@ fn an_owned_guide_artifact_is_not_a_subject_of_the_guard() {
         said(&out)
     );
     assert!(
-        !read(repo, GUIDE).contains("0.0.1 #"),
+        !read(repo, GUIDE).contains("jigc-version: 0.0.1\n"),
         "and the install replaced it with this build's artifact"
     );
 }
@@ -2253,16 +2254,8 @@ fn an_upgrade_over_an_ignored_install_path_is_clean_and_an_edit_is_not() {
     fs::remove_file(repo.join(FOOTPRINT)).expect("drop the record");
     write(repo, ".jigc/version", "jigc-version: 0.0.1-earlier\n");
     let guide = read(repo, GUIDE);
-    let stamp_line = guide
-        .lines()
-        .find(|line| line.starts_with("jigc-version:"))
-        .expect("the guide's front matter carries jigc's version stamp")
-        .to_string();
-    let older_guide = guide.replacen(&stamp_line, "jigc-version: 0.0.1-earlier", 1);
-    assert_ne!(
-        older_guide, guide,
-        "the premise: the guide's stamp line moved"
-    );
+    let older_guide = as_an_older_build_wrote_it(&guide, "0.0.1-earlier");
+    assert_ne!(older_guide, guide, "the premise: the guide's stamp moved");
     write(repo, GUIDE, &older_guide);
     let out = jigc(repo, home, &["setup"]);
     assert_eq!(

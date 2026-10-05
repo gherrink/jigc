@@ -91,6 +91,12 @@ fn version_stamp_body() -> String {
 /// Reserved against the profile ([`adapter::GUIDE_RESERVED_KEYS`]).
 const GUIDE_HASH_KEY: &str = "jigc-body-blake3:";
 
+/// The words every artifact's body opens with, up to the version that wrote it — one
+/// constant because two things read it: [`guide_preamble`] writes it, and the ownership
+/// oracle ([`guide_text_is_jigcs`]) reads the version back out of the body through it, which
+/// is what puts the front matter's `jigc-version:` line under the body's digest.
+const GUIDE_WROTE_PREFIX: &str = "`jigc setup` wrote this file from jigc ";
+
 /// The shipped guides, embedded at compile time from `crates/cli/guides/` — their one
 /// authored home, inside the crate because a published crate carries only its own
 /// directory (M54 S21). There is no root copy: a second copy of a guide is the drift the
@@ -113,10 +119,11 @@ const MIGRATING_GUIDE: &str = include_str!("../guides/MIGRATING.md");
 /// statement cannot name a stamp line or an advisory that no longer exists.
 fn guide_preamble() -> String {
     format!(
-        "`jigc setup` wrote this file from jigc {version} and replaces it **while it is \
-         still jigc's** — while the body below still hashes to the `{GUIDE_HASH_KEY}` line \
-         above. Re-run `jigc setup` after upgrading the binary and jigc rewrites this copy. \
-         Edit it and it becomes yours: every later `setup` leaves it byte-identical and says \
+        "{GUIDE_WROTE_PREFIX}{version} and replaces it **while it is \
+         still jigc's** — while the front matter above is exactly what jigc wrote there and \
+         the body below still hashes to its `{GUIDE_HASH_KEY}` line. \
+         Re-run `jigc setup` after upgrading the binary and jigc rewrites this copy. \
+         Edit it anywhere and it becomes yours: every later `setup` leaves it byte-identical and says \
          so — `{GUIDE_MODIFIED_CODE}`, which names the file and the two ways out — so this \
          copy then stops tracking the binary until you delete it and re-run.\n\nIt carries \
          the two guides that ship with that binary, one after the other — the quickstart \
@@ -199,15 +206,70 @@ fn unlink_in_repo_links(text: &str) -> String {
 pub fn guide_artifact(guide: &adapter::GuideTarget) -> String {
     let body = guide_body();
     let hash = engine::file_state::hash_bytes(body.as_bytes());
+    assemble_guide(guide, env!("CARGO_PKG_VERSION"), &hash, &body)
+}
+
+/// **The one assembly of a guide artifact** — every byte of the file from its four inputs:
+/// the profile's front-matter keys, the version that wrote it, the digest it records, and
+/// its body. [`guide_artifact`] writes through it and [`guide_text_is_jigcs`] reads through
+/// it, so the question *is this file what jigc wrote?* is answered by writing it again and
+/// comparing, never by a second description of the format.
+fn assemble_guide(guide: &adapter::GuideTarget, version: &str, hash: &str, body: &str) -> String {
     let mut front = String::new();
     for (key, value) in &guide.front_matter {
         let value = serde_json::to_string(value).unwrap_or_else(|_| format!("{value:?}"));
         front.push_str(&format!("{key}: {value}\n"));
     }
-    format!(
-        "---\n{front}{VERSION_STAMP_KEY} {}\n{GUIDE_HASH_KEY} {hash}\n---\n\n{body}",
-        env!("CARGO_PKG_VERSION"),
-    )
+    format!("---\n{front}{VERSION_STAMP_KEY} {version}\n{GUIDE_HASH_KEY} {hash}\n---\n\n{body}")
+}
+
+/// **Whether `text` is, byte for byte, a guide artifact jigc wrote for `guide`** — the
+/// ownership oracle, over the **whole file** (the rc.24 fix pass's completion audit,
+/// install-teardown F3).
+///
+/// It proved the body only: the recorded `jigc-body-blake3:` was compared with the body's
+/// digest and the front matter was never read. Driven on `1.0.0-rc.24` and at `b54b58b2`:
+/// an adopter who rewrote the `description:` line and added an `allowed-tools:` key —
+/// edits the assistant acts on — had both replaced by `jigc setup` at exit 0 with
+/// `findings: []`, and the whole file deleted by `jigc uninstall`, the bytes in no git
+/// object. The file itself says *edit it and it becomes yours*.
+///
+/// **So every byte is now accounted for, by three checks that together leave none out:**
+///
+/// - the **body** hashes to the digest the front matter records (as before);
+/// - the body **opens by naming the version** the front matter's `jigc-version:` line
+///   records ([`GUIDE_WROTE_PREFIX`]) — the one front-matter value jigc cannot predict,
+///   since any build may have written the copy, so it is bound to the digest through the
+///   sentence that repeats it;
+/// - the file **is** [`assemble_guide`] of this profile's front-matter keys, that version,
+///   that digest and that body — which covers the fences, the key order, the profile's own
+///   keys and values, and the absence of anything else.
+///
+/// **The stated bound is across builds, and it fails closed.** A copy written by a build
+/// whose profile front matter, or whose opening sentence, differs from this build's is
+/// jigc's own and reads here as the adopter's: it is left byte-identical and reported
+/// ([`GUIDE_MODIFIED_CODE`]), and deleting it and re-running `setup` reinstalls it. No
+/// published build differs in either — the profile's keys have not changed since the
+/// artifact shipped, and every published build opens the body with this sentence — so no
+/// existing install meets it; a later change to either is where it would first be met.
+/// What the oracle cannot see is unchanged from before: a copy whose body **and** digest
+/// were rewritten together is self-consistent by construction.
+fn guide_text_is_jigcs(text: &str, guide: &adapter::GuideTarget) -> bool {
+    let Some((recorded, body)) = recorded_body_digest(text) else {
+        return false;
+    };
+    if recorded != engine::file_state::hash_bytes(body.as_bytes()) {
+        return false;
+    }
+    // The version the body says wrote it: the token after the opening words.
+    let Some(version) = body
+        .strip_prefix(GUIDE_WROTE_PREFIX)
+        .and_then(|rest| rest.split(' ').next())
+        .filter(|version| !version.is_empty())
+    else {
+        return false;
+    };
+    text == assemble_guide(guide, version, recorded, body)
 }
 
 /// Whether the file sitting at the guide target is **still jigc's own** — the question that
@@ -215,15 +277,18 @@ pub fn guide_artifact(guide: &adapter::GuideTarget) -> String {
 /// (`design/assistant-adapter.md` → The adapter's owned artifacts).
 ///
 /// The artifact keeps no side record: it carries the digest of its own body, so a later run
-/// can recompute that digest and compare. Anything that does not match — a body edited under
-/// jigc's header, a file with no front matter at all, a front matter without jigc's stamp —
-/// is **not** jigc's, and the one safe action over it is to leave it alone and say so.
+/// can recompute that digest, re-assemble the file around it and compare
+/// ([`guide_text_is_jigcs`]). Anything that does not match — a body edited under jigc's
+/// header, an edit **anywhere in the front matter**, a file with no front matter at all, a
+/// front matter without jigc's stamp — is **not** jigc's, and the one safe action over it
+/// is to leave it alone and say so.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GuideOwnership {
     /// Nothing at the declared path — the ordinary first install.
     Absent,
-    /// jigc's own bytes: the recorded `jigc-body-blake3:` **is** this body's digest, so
-    /// rewriting the file destroys nothing a human authored.
+    /// jigc's own bytes, every one: the recorded `jigc-body-blake3:` **is** this body's
+    /// digest and the file is exactly what jigc assembles around it, so rewriting or
+    /// removing the file destroys nothing a human authored.
     Owned,
     /// Not jigc's (any more). Replacing it would clobber the user's own edits. This is the
     /// **fail-closed** verdict, so it also covers a file present at the path that cannot be
@@ -270,11 +335,10 @@ pub fn guide_ownership(jigc_home: &Path, guide: &adapter::GuideTarget) -> GuideO
         // jigc only ever writes UTF-8, so bytes that do not decode were not written by jigc.
         return GuideOwnership::UserModified;
     };
-    match recorded_body_digest(&text) {
-        Some((recorded, body)) if recorded == engine::file_state::hash_bytes(body.as_bytes()) => {
-            GuideOwnership::Owned
-        }
-        _ => GuideOwnership::UserModified,
+    if guide_text_is_jigcs(&text, guide) {
+        GuideOwnership::Owned
+    } else {
+        GuideOwnership::UserModified
     }
 }
 
@@ -2155,9 +2219,9 @@ pub enum OwnContent {
     /// ([`compose_marker_rendering`], the function the writer itself renders with).
     /// Build-dependent only through the YAML emitter.
     SettledComposeMarker,
-    /// The guide artifact — its recorded `jigc-body-blake3:` is its own body's digest
-    /// ([`recorded_body_digest`], the test [`guide_ownership`] decides by), whichever
-    /// build wrote it.
+    /// The guide artifact — the whole file is what jigc assembles around its recorded
+    /// `jigc-body-blake3:` ([`guide_text_is_jigcs`], the test [`guide_ownership`] decides
+    /// by), whichever build wrote it.
     GuideDigest,
 }
 
@@ -2178,9 +2242,13 @@ impl OwnContent {
             Self::SettledComposeMarker => String::from_utf8(bytes).is_ok_and(|text| {
                 compose_marker_rendering(Some(&text), &file).is_ok_and(|after| after == text)
             }),
+            // The profile is the one `setup` installs from, so the oracle and the write
+            // gate ([`guide_ownership`]) cannot answer differently for one file.
             Self::GuideDigest => String::from_utf8(bytes).is_ok_and(|text| {
-                recorded_body_digest(&text).is_some_and(|(recorded, body)| {
-                    recorded == engine::file_state::hash_bytes(body.as_bytes())
+                adapter::load_profile(SETUP_ASSISTANT).is_ok_and(|profile| {
+                    profile.guide().is_some_and(|guide| {
+                        guide.file == path && guide_text_is_jigcs(&text, guide)
+                    })
                 })
             }),
         }

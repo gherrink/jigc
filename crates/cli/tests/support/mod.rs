@@ -25,6 +25,7 @@ pub mod git_state;
 pub mod goldens;
 pub mod install_line;
 pub mod leaf_argv;
+pub mod older_guide;
 pub mod pack_locator;
 pub mod root_walk;
 pub mod route_spans;

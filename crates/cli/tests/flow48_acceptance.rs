@@ -2947,8 +2947,9 @@ fn the_guide_artifact_is_installed_replaced_and_never_clobbered() {
                 );
             }
             GuideOwnership::Owned => {
-                // Still jigc's bytes, stamped at an older version: replaced and re-stamped.
-                let downgraded = installed.replacen("jigc-version:", "jigc-version: 0.0.1 #", 1);
+                // Still jigc's bytes, as an older build wrote them: replaced and re-stamped.
+                let downgraded =
+                    support::older_guide::as_an_older_build_wrote_it(&installed, "0.0.1");
                 fs::write(repo.path().join(GUIDE_PATH), &downgraded).expect("downgrade the stamp");
                 run_jigc_ok(
                     repo.path(),
