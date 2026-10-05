@@ -4767,9 +4767,16 @@ pub fn uninstall_success(format: Format, summary: &UninstallSummary) -> String {
                 // destroying door narrates what it changed in the repository
                 // (`UninstallSummary::pruned_worktrees`, text-only by the same decision
                 // `site` carries).
+                //
+                // **The verb is *dropped*, not *pruned*** (the rc.24 fix pass's completion
+                // audit, XC-7). The line read *pruned git's worktree registrations*, and no
+                // prune runs any more: `git worktree prune` is repository-wide and took a
+                // human's registration with jigc's, so this door removes its own records
+                // one at a time, by path (`setup::drop_workbench_registrations`). The field
+                // keeps its name — it is a struct field, not a printed word.
                 if summary.pruned_worktrees {
                     out.push_str(
-                        "  - pruned git's worktree registrations for the fan-out worktrees `.jigc/` held\n",
+                        "  - dropped git's registrations of the fan-out worktrees `.jigc/` held\n",
                     );
                 }
                 if removed.reference {

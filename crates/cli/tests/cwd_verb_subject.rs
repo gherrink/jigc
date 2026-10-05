@@ -1182,7 +1182,8 @@ fn uninstall_removes_the_workbench_home_install_from_every_cwd() {
                 "{cell}: the live linked worktree must survive the teardown; got:\n{listed}",
             );
             assert!(
-                seen.contains("pruned git's worktree registrations"),
+                seen.contains("dropped git's registrations of the fan-out worktrees")
+                    && !seen.contains("pruned git's"),
                 "{cell}: …and the door must say it dropped them; got:\n{seen}",
             );
         }

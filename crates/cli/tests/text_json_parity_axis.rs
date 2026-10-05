@@ -882,7 +882,7 @@ fn uninstall_success_parity() {
     let text = uninstall_success(Format::Agent, &pruned);
     text_prints(
         &text,
-        "pruned git's worktree registrations",
+        "dropped git's registrations of the fan-out worktrees",
         "jigc uninstall",
         "pruned_worktrees",
     );

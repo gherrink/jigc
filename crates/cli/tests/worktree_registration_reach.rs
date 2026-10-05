@@ -530,7 +530,7 @@ fn door_cell(door: &DestroyingDoor, provisioned: bool, json: bool, squash: bool)
     // sentence was printed for a foreign record (rc.24), which is the misattribution.
     if door.verb == UNINSTALL_DOOR.verb && !json {
         assert_eq!(
-            stdout.contains("pruned git's worktree registrations"),
+            stdout.contains("dropped git's registrations of the fan-out worktrees"),
             provisioned,
             "{cell}: the ack names dropped registrations iff `.jigc/` held a registered \
              worktree; got:\n{stdout}",
