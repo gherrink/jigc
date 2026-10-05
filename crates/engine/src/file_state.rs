@@ -236,16 +236,69 @@ impl FileStateRecord {
     /// as a *deliberate* delta for keys the hook retired, silently voiding the merge
     /// exactly where it matters most. A refactor that replaces a carried record with
     /// a fresh `load` breaks the merge without breaking a type.
+    ///
+    /// **A record that is there and cannot be read says which file, and how to get past it**
+    /// (the rc.24 fix pass's completion audit). The error was the parser's own — *"key must
+    /// be a string at line 1 column 3"* — and every reader wrapped it in words about its own
+    /// subject, so the copy-in door reported that it *"could not read committed
+    /// `vision:vision#open-questions`"* over a doc that read perfectly well, with no route:
+    /// a refusal on every first write, where `1.0.0-rc.24` — which did not read the record
+    /// at that door — wrote. The record is a rebuildable cache by declaration
+    /// (`storage.md` → `.jigc/state/` hash records), so the way past a bad one is to remove
+    /// it, and the error now says so once, here, for every reader
+    /// ([`unreadable_record`]). It is still an error and never an empty record: reading a
+    /// corrupt cache as *no baselines* would adopt every hand edit it had been holding as
+    /// drift, silently — removing it is the operator's act, taken knowing that.
     pub fn load(jigc_root: &Path) -> std::io::Result<Self> {
         let path = Self::path_in(jigc_root);
         let mut record = match std::fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice::<Self>(&bytes)?,
+            Ok(bytes) => serde_json::from_slice::<Self>(&bytes).map_err(|err| {
+                let kind = err
+                    .io_error_kind()
+                    .unwrap_or(std::io::ErrorKind::InvalidData);
+                unreadable_record(jigc_root, &path, kind, &err)
+            })?,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => Self::new(),
-            Err(err) => return Err(err),
+            Err(err) => return Err(unreadable_record(jigc_root, &path, err.kind(), &err)),
         };
         record.base = record.hashes.clone();
         Ok(record)
     }
+}
+
+/// The error every reader of the record raises when the file **is there and cannot be read
+/// as the record** — unparseable bytes, or a read the filesystem refused
+/// ([`FileStateRecord::load`]).
+///
+/// It names the cache the way every other surface names a path in the repository
+/// (`.jigc/state/file-state.json`), states the cause, and carries the one route there is:
+/// the record holds nothing of the operator's and is rebuilt from the committed docs, so
+/// removing it clears the refusal — the `rm` span is the file's absolute path, so it runs
+/// from wherever the reader stands. The route says what removing it costs, because that is
+/// the reason this is a refusal and not a silent reset: with no record every managed doc is
+/// baselined again from the file on disk, so an uncommitted hand edit is adopted as the
+/// baseline rather than reported as drift (`storage.md` → What none of this buys).
+fn unreadable_record(
+    jigc_root: &Path,
+    path: &Path,
+    kind: std::io::ErrorKind,
+    cause: &dyn std::fmt::Display,
+) -> std::io::Error {
+    let home = jigc_root
+        .file_name()
+        .map_or_else(|| ".jigc".into(), |name| name.to_string_lossy());
+    std::io::Error::new(
+        kind,
+        format!(
+            "the file-state record `{home}/state/{FILE_STATE_FILE}` cannot be read as the \
+             record jigc writes ({cause})\n  route: `rm {}`, then re-run this command — the \
+             record is a rebuildable cache and holds nothing of yours; with it gone, each \
+             managed doc is baselined again from the file on disk the next time a command \
+             sweeps it, so a hand edit you have not committed is adopted as the baseline \
+             rather than reported as drift",
+            crate::finding::shell_token(&path.to_string_lossy()),
+        ),
+    )
 }
 
 /// The per-staged-instance `file-state` advisory (M43 A14 — `DECISIONS.md`

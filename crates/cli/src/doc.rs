@@ -6913,6 +6913,11 @@ impl ActiveTask {
             // baseline when it has none, **before** anything is staged, and its failure —
             // a save lock not taken, an unreadable record — fails this write with nothing
             // staged (`(R3, F7)`; `design/reconciliation.md` → Detection timing).
+            //
+            // The context says what this door did not do and nothing about why: the
+            // failure is one of three (the lock, the record, the doc), each of which names
+            // its own subject and route — it said *"could not read committed `<addr>`"*
+            // over an unreadable **record**, about a doc that read perfectly well.
             let read = state::read_for_copy_in(
                 &self.dir,
                 &self.jigc_root(),
@@ -6921,7 +6926,9 @@ impl ActiveTask {
                 slug,
                 &committed,
             )
-            .with_context(|| format!("could not read committed `{addr}`"))?;
+            .with_context(|| {
+                format!("could not copy `{addr}` in for editing — nothing was staged")
+            })?;
             state::copy_in(&self.dir, address.r#type.as_str(), slug, &read.body)
                 .with_context(|| format!("could not copy in `{addr}` for editing"))?;
             // The copy-on-write staged the committed doc; bind the workflow's object-form

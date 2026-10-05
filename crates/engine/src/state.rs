@@ -2500,7 +2500,7 @@ fn stage_minted(
         .map_err(|err| io_finding(&address, "read the migration source path", &err))?;
     if !migration_squatter && let Some(committed) = home {
         let source = read_for_copy_in(task_dir, jigc_root, schema, type_name, &slug, &committed)
-            .map_err(|err| io_finding(&address, "read the committed instance", &err))?;
+            .map_err(|err| io_finding(&address, "copy in the committed instance", &err))?;
         let path = copy_in(task_dir, type_name, &slug, &source.body)
             .map_err(|err| io_finding(&address, "copy in the committed instance", &err))?;
         return Ok(CreatedDoc {

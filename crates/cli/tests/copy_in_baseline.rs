@@ -1001,6 +1001,123 @@ fn a_save_lock_timeout_fails_the_write_door_closed_at_both_copy_in_sites() {
     }
 }
 
+/// **Cell 3b — an unreadable record refuses naming the cache, and its route runs** (the
+/// rc.24 fix pass's completion audit). The copy-in door reads the record before it stages,
+/// so a record whose bytes do not parse refuses every first write — where `1.0.0-rc.24`,
+/// which did not read it there, wrote. The refusal said *"could not read committed
+/// `vision:vision#open-questions`: key must be a string at line 1 column 3"*: the wrong
+/// file, and no route.
+///
+/// The error is the record's own, so the class is every reader of it, not the one door the
+/// audit drove: both copy-in sites, the two task doors, the store sweep, `ingest` and
+/// `unmanage`. Each exits non-zero naming `.jigc/state/file-state.json` and the same route;
+/// the write doors stage nothing; no reader "heals" the file on the way past. Then the
+/// route is lifted out of the emitted bytes and run through a real shell, from outside the
+/// repository — it is an absolute path — and the refused write lands and records.
+#[test]
+fn an_unreadable_record_refuses_naming_the_cache_and_its_route_runs() {
+    const CACHE: &str = ".jigc/state/file-state.json";
+    const GARBAGE: &str = "{ not json";
+    let corpus = baselined_corpus();
+    let task = mint_task(&corpus, "sharpen the questions");
+    let record = FileStateRecord::path_in(&corpus.repo().join(".jigc"));
+    fs::write(&record, GARBAGE).expect("corrupt the record");
+
+    let set_slot = [
+        "doc",
+        "set-slot",
+        "vision:vision#open-questions",
+        "--from-file",
+        "-",
+        "--task",
+        task.as_str(),
+    ];
+    let doors: [(&str, &[&str]); 7] = [
+        ("the edit verbs' copy-in", &set_slot),
+        (
+            "`doc create`'s copy-in",
+            &[
+                "doc",
+                "create",
+                "adr",
+                "--title",
+                "Single-node cache",
+                "--task",
+                task.as_str(),
+            ],
+        ),
+        ("task validate", &["task", "validate", task.as_str()]),
+        ("task finalize", &["task", "finalize", task.as_str()]),
+        ("the store sweep", &["validate"]),
+        ("ingest", &["ingest"]),
+        ("unmanage", &["unmanage", "VISION.md"]),
+    ];
+    let mut route = None;
+    for (what, argv) in doors {
+        let out = corpus.jigc_stdin(argv, "A sharper question.\n");
+        assert_ne!(
+            out.status.code(),
+            Some(0),
+            "{what} must refuse; {}",
+            text(&out)
+        );
+        let said = text(&out);
+        assert!(
+            said.contains(&format!("the file-state record `{CACHE}`")),
+            "{what}: the refusal names the cache; {said}",
+        );
+        let emitted = said
+            .split_once("route: `")
+            .and_then(|(_, rest)| rest.split_once('`'))
+            .map(|(command, _)| command.to_owned())
+            .unwrap_or_else(|| panic!("{what}: the refusal carries a route; {said}"));
+        assert!(emitted.starts_with("rm "), "{what}: {emitted}");
+        if let Some(first) = &route {
+            assert_eq!(&emitted, first, "{what}: every reader prints one route");
+        }
+        route = Some(emitted);
+        assert_eq!(
+            fs::read_to_string(&record).expect("the record is still there"),
+            GARBAGE,
+            "{what}: a reader does not rewrite the record on its way past",
+        );
+    }
+    let docs = corpus.repo().join(".jigc/tasks").join(&task).join("docs");
+    for staged in ["vision:vision.md", &format!("{ADR}.md")] {
+        assert!(
+            !docs.join(staged).exists(),
+            "a refused write stages nothing ({staged})",
+        );
+    }
+
+    // The route, as printed, through a real shell — from outside the repository.
+    let command = route.expect("a route was printed");
+    let ran = std::process::Command::new("sh")
+        .args(["-c", &command])
+        .current_dir(std::env::temp_dir())
+        .output()
+        .expect("spawn sh");
+    assert!(
+        ran.status.success(),
+        "`{command}` runs as printed; {}",
+        text(&ran)
+    );
+    assert!(!record.exists(), "and it removed the record it names");
+
+    let out = corpus.jigc_stdin(&set_slot, "A sharper question.\n");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "the refused write lands; {}",
+        text(&out)
+    );
+    assert_eq!(
+        recorded(&corpus, "VISION.md"),
+        Some(disk_hash(&corpus, "VISION.md")),
+        "and records the doc's baseline, in a record that reads again",
+    );
+}
+
 /// **Cell 4 — concurrent first writes lose no key.** A fan-out's sub-agents now write one
 /// `state/file-state.json` at their first touch, a population that file never had. Seven
 /// processes released together — four on distinct docs, three more on one of them — all
