@@ -309,8 +309,10 @@ pub enum Command {
     /// `CLAUDE.md` reference, and drops the `Bash(jigc:*)` permit from
     /// `.claude/settings.json`. Touches nothing outside the repository — the `doc-code`
     /// probe runs inside `jigc`. Idempotent: a second run is a clean no-op, and the
-    /// host files it edits (`CLAUDE.md`, `.claude/settings.json`, a wrapped
-    /// `pre-commit` hook) keep your own content byte-for-byte. Four states it
+    /// host files it edits (`CLAUDE.md`, `.claude/settings.json`, a `pre-commit`
+    /// hook that holds lines of your own) keep your own content byte-for-byte: only
+    /// the block jigc wrote leaves the hook, and a hook jigc cannot find its own
+    /// block in is left as it is and named (`--force` removes it). Four states it
     /// refuses instead of destroying, because `.jigc/` is their only copy — a
     /// fan-out sub-task path under `.jigc/worktrees/` that holds content blocks
     /// with `uninstall.dirty-worktree` (get the work out — or, for a path this

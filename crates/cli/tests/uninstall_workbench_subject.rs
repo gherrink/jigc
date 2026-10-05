@@ -1404,3 +1404,78 @@ fn a_refused_teardown_is_recorded_in_a_log_that_is_already_there() {
         "the record names what the teardown refused over; got: {record}",
     );
 }
+
+/// **(q)** The teardown takes only **jigc's own lines** out of the `pre-commit` hook it
+/// installed (the rc.24 fix pass's completion audit, install-teardown F4).
+///
+/// The loss, driven on `1.0.0-rc.24`: an adopter adds `npm run lint || exit 1` above the
+/// final `exit 0` of the hook `jigc setup` wrote; `jigc uninstall` exits 0 printing
+/// *removed pre-commit hook* and the file is gone. `.git/hooks/` is in no git object, so
+/// neither was the line.
+///
+/// Two cells through the binary (the unit suite in `setup.rs` iterates where the line
+/// sits): the reported one, where jigc's block comes out and the adopter's line stays in a
+/// hook that still runs; and the one that cannot be separated — an edit *inside* jigc's
+/// block — where nothing is removed, the teardown says so, and the printed `--force`
+/// re-run takes the file.
+#[test]
+fn the_teardown_takes_only_jigcs_lines_out_of_an_extended_hook() {
+    const LINT: &str = "npm run lint || exit 1   # USERMARK\n";
+    let site = Installed::new("hook-extended");
+    let hook = site.repo().join(".git/hooks/pre-commit");
+    let installed = fs::read_to_string(&hook).expect("`setup` installed the hook");
+    let extended = installed.replacen("\nexit 0\n", &format!("\n{LINT}exit 0\n"), 1);
+    assert_ne!(
+        extended, installed,
+        "the premise: the hook ends in `exit 0`"
+    );
+    fs::write(&hook, &extended).expect("extend the hook");
+
+    let out = site.run(&["uninstall"]);
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(out.status.success(), "the teardown lands: {stderr}");
+    let left = fs::read_to_string(&hook)
+        .unwrap_or_else(|err| panic!("the adopter's hook must still be there: {err}\n{stderr}"));
+    assert!(left.contains(LINT), "with the adopter's line: {left}");
+    assert!(
+        left.starts_with("#!/bin/sh\n") && !left.contains("jigc"),
+        "and nothing of jigc's: {left}"
+    );
+    assert!(!site.repo().join(".jigc").exists(), "`.jigc/` is gone");
+
+    // An edit inside jigc's own block: no line can be called jigc's, so none is taken.
+    let site = Installed::new("hook-edited");
+    let hook = site.repo().join(".git/hooks/pre-commit");
+    let installed = fs::read_to_string(&hook).expect("`setup` installed the hook");
+    let edited = installed.replacen(
+        "# Warn-only doc<->code drift backstop",
+        "# USERMARK our own note on the backstop",
+        1,
+    );
+    assert_ne!(
+        edited, installed,
+        "the premise: the edit landed inside jigc's block"
+    );
+    fs::write(&hook, &edited).expect("edit the hook");
+    let out = site.run(&["uninstall"]);
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(out.status.success(), "the teardown still lands: {stderr}");
+    assert_eq!(
+        fs::read_to_string(&hook).expect("left in place"),
+        edited,
+        "byte-identical"
+    );
+    assert!(
+        stderr.contains("left the `pre-commit` hook") && stderr.contains("jigc uninstall --force"),
+        "and the teardown says it left it, and how to take it: {stderr}"
+    );
+    assert!(
+        !stdout.contains("removed pre-commit hook"),
+        "it claims no removal it did not make: {stdout}"
+    );
+    // The printed exit, as printed.
+    let forced = site.run(&["uninstall", "--force"]);
+    assert!(forced.status.success(), "the forced re-run lands");
+    assert!(!hook.exists(), "and takes the file");
+}

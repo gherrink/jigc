@@ -229,8 +229,11 @@ const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/cli/src/setup.rs",
-        4,
-        "two `pre-commit` hook paths off the hooks dir (the `doc-code` probe binary off the \
+        3,
+        "the `pre-commit` hook path off the hooks dir — one site, `precommit_hook_in`, since \
+         the rc.24 fix pass's completion audit gave the install, the teardown and the \
+         teardown's *left in place* line one spelling of it; this row read `4` and counted \
+         two — (the `doc-code` probe binary off the \
          bin dir retired at M54 Increment 2 / T5, when the probe moved inside `jigc`), and — \
          since M52 Increment 4 / T5 — the two receivers `workbench_foreign_areas` builds its \
          subject FROM: `.jigc/<tasks|milestones>` and `.jigc/displaced`, which are the \
