@@ -770,7 +770,13 @@ pub fn reconcile_committed(
                 .then(|| conformance_gate(schema, bytes).ok())
                 .flatten()
             {
-                Some(doc) => absorb(record, index, schema, path, from, current, &doc),
+                // The absorb body, whole — and this arm's own words for it: the file is at
+                // the pin and a staged copy is about to replace it, which is not what the
+                // untouched arm's *external edit absorbed* says.
+                Some(doc) => {
+                    absorb(record, index, schema, path, from, current, &doc);
+                    vec![absorb_under_a_staged_copy_finding(path)]
+                }
                 None => vec![conflict_block_finding(path, conflict)],
             }
         }
@@ -2032,6 +2038,45 @@ fn absorb_finding(path: &str) -> Finding {
     )
 }
 
+/// The `reconciliation.absorb` advisory of the **`DRIFTED + TOUCHED`, at the pin** arm — the
+/// same code and key as [`absorb_finding`], in words that are true of a doc the caller has
+/// staged (the rc.24 fix pass's completion audit).
+///
+/// The arm runs the untouched arm's absorb whole, and it used to borrow its sentence too:
+/// *"external edit absorbed … no action needed — the external edit was absorbed into the
+/// baseline"*. Three populations reach it, and that sentence is true of one. A **pull** —
+/// the case the arm was cut for — is an external edit, absorbed. A **converting checkout**
+/// is no edit at all: the recorded hash is the committed blob's and the working file never
+/// holds those bytes. And since the copy-in records what it copies, a **hand edit undone
+/// after the copy-in** reads here as well — the record holds the edited bytes, the file is
+/// back at the pin — where the sentence said the opposite of what the promote then did:
+/// the staged copy still carries the edit, and it is the staged copy that lands. Driven: a
+/// paragraph added, copied in, reverted with `git checkout`, was committed and written back
+/// to the worktree under *"external edit absorbed"*.
+///
+/// What is true in all three is what this says: the baseline moved to the file on disk,
+/// that file is what the caller's base holds, and **the staged copy replaces it**. The
+/// route names the one consequence a reader can act on — a change undone on disk after the
+/// copy-in is still in the staged copy — without asserting that there was one: the
+/// classifier holds a path, a hash and a pin verdict, not what the task copied in.
+fn absorb_under_a_staged_copy_finding(path: &str) -> Finding {
+    Finding::graded(
+        Severity::Advisory,
+        "reconciliation.absorb",
+        format!(
+            "baseline moved to the file on disk: `{path}` — it is unchanged from the commit \
+             this work started from, and the staged copy replaces it when this lands"
+        ),
+        Some(Location::addressed(path, 1, 1)),
+        Some(
+            "no action needed where the staged copy is what you mean to land — it is the doc \
+             as it was copied in plus this work's own writes, so a change undone on disk \
+             after the copy-in is still in it and lands with it"
+                .into(),
+        ),
+    )
+}
+
 /// The **hand-repair sanction** — the route over a **managed** doc that is at the schema-version
 /// this binary knows and still does not conform (round-2 D7): the adapter rule bans hand-editing
 /// managed files, but out-of-band damage is repaired where it happened, so this is the one case
@@ -2664,8 +2709,24 @@ Referrers must point at the new decision.
 
         assert_eq!(
             findings,
-            vec![absorb_finding(ADR_B_PATH)],
+            vec![absorb_under_a_staged_copy_finding(ADR_B_PATH)],
             "a pulled edit at the pin is absorbed, advisory, with no conflict-block"
+        );
+        assert_eq!(
+            findings[0].key(),
+            absorb_finding(ADR_B_PATH).key(),
+            "under the untouched arm's own `(code, target)` key"
+        );
+        assert!(
+            !findings[0].message.contains("external edit")
+                && findings[0].message.contains("the staged copy replaces it")
+                && findings[0]
+                    .route
+                    .as_ref()
+                    .is_some_and(|route| route.contains("undone on disk after the copy-in")),
+            "in words true of a staged doc — it claims no external edit, and says what \
+             lands: {:?}",
+            findings[0]
         );
         assert_eq!(findings[0].severity, Severity::Advisory);
         assert_eq!(
@@ -2827,7 +2888,10 @@ Referrers must point at the new decision.
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
         );
-        assert_eq!(findings, vec![absorb_finding(ADR_B_PATH)]);
+        assert_eq!(
+            findings,
+            vec![absorb_under_a_staged_copy_finding(ADR_B_PATH)]
+        );
         assert_eq!(
             record.get(ADR_B_PATH),
             Some(hash_bytes(crlf.as_bytes()).as_str()),

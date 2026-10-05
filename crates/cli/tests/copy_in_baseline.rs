@@ -612,6 +612,51 @@ fn a_hand_edit_before_the_first_write_still_lands_merged() {
     }
 }
 
+/// **A hand edit undone after the copy-in still lands — and the door says what lands** (the
+/// rc.24 fix pass's completion audit).
+///
+/// The copy-in records the bytes it copies, the edited ones; the hand then puts the file
+/// back (`git checkout -- <doc>`). The file is at the task's base pin and off its recorded
+/// baseline, which is the pulled-edit arm — and that arm printed *"external edit absorbed
+/// … no action needed"* while the promote committed the undone paragraph and wrote it back
+/// into the worktree. Nothing is lost and the outcome is `1.0.0-rc.24`'s; what was false is
+/// the sentence. The advisory at that arm now says what happens — the staged copy replaces
+/// the file — and its route names the consequence: a change undone on disk after the
+/// copy-in is still in the staged copy.
+#[test]
+fn an_edit_undone_after_the_copy_in_lands_with_the_staged_copy_and_the_door_says_so() {
+    let corpus = baselined_corpus();
+    corpus.fresh_clone_shape();
+    let kind = Kind::Placement;
+    let task = mint_task(&corpus, "sharpen the questions");
+    kind.hand_edit(&corpus);
+    kind.first_write(&corpus, &task);
+    corpus.git(&["checkout", "--", kind.home()]);
+    assert!(
+        !read(&corpus.repo(), kind.home()).contains(HAND),
+        "the premise: the hand edit is undone on disk",
+    );
+
+    let out = corpus.jigc(&["task", "finalize", &task]);
+    let said = text(&out);
+    assert_eq!(out.status.code(), Some(0), "the task lands; {said}");
+    assert!(
+        said.contains("reconciliation.absorb")
+            && said.contains("the staged copy replaces it when this lands")
+            && said.contains("a change undone on disk after the copy-in is still in it"),
+        "the door says what lands; {said}",
+    );
+    assert!(
+        !said.contains("external edit absorbed"),
+        "and no longer says an external edit was absorbed; {said}",
+    );
+    let at_head = corpus.git(&["show", &format!("HEAD:{}", kind.home())]);
+    assert!(
+        at_head.contains(HAND) && at_head.contains(TASK_PROSE),
+        "which is the staged copy — the undone line and the task's prose; got:\n{at_head}",
+    );
+}
+
 /// **Zero false fire.** A first task with no hand edit lands, at both doors, however the key
 /// was absent — and an *untouched* doc's first encounter is still a plain advisory adoption.
 #[test]
