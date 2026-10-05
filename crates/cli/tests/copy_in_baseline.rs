@@ -1302,6 +1302,14 @@ fn concurrent_first_writes_all_record_their_baselines() {
 /// door blocks on the base-pin backstop instead of advising *fix the file* and then
 /// overwriting it. The same break made *after* the first write blocks on the recorded
 /// baseline.
+///
+/// **The bound of this cell is the doc being tracked.** The backstop it leans on needs a
+/// blob at the pin. The crossing cell — a doc git has never committed that does not conform
+/// when it is copied in — has neither a record nor a blob, and there the finalize still
+/// adopts and promotes over a later hand edit at exit 0; it is open, and stated where the
+/// rule is (`design/reconciliation.md` → What the per-path record cannot answer). So is a
+/// second jigc writer moving the key between the hand edit and the holding task's finalize,
+/// which no cell of this suite lands: cell 8 covers the copy-in writer only.
 #[test]
 fn a_non_conformant_doc_is_never_baselined_and_never_overwritten() {
     let base = baselined_corpus();
@@ -2077,5 +2085,36 @@ fn the_design_states_the_copy_in_baseline_and_its_backstop() {
     assert!(
         validation.contains("after a copy-in"),
         "design/validation.md states what the store sweep reports in a clone after a copy-in",
+    );
+
+    // What the two rules do **not** close is stated where each rule is — the completion
+    // audit found the bound claimed away in four sentences, one of them in the guide the
+    // install embeds. These are the open cells, so the statement is the only fence they
+    // have until the witness a task holds for itself is decided.
+    for (doc, body) in [
+        ("design/reconciliation.md", reconciliation.as_str()),
+        ("design/storage.md", storage.as_str()),
+    ] {
+        assert!(
+            body.contains("What the per-path record cannot answer"),
+            "{doc} names the open bound of the per-path record",
+        );
+    }
+    assert!(
+        reconciliation.contains("Another jigc writer moves the record")
+            && reconciliation.contains("The no-record, no-blob cell is reachable from one task"),
+        "design/reconciliation.md states both open cells",
+    );
+    let guide = fs::read_to_string(format!(
+        "{}/guides/MIGRATING.md",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .expect("read the migrating guide");
+    assert!(
+        guide.contains("That guard has two bounds")
+            && !guide.contains("is never overwritten by that task")
+            && !guide.contains("is carried into the task and lands with it"),
+        "the guide states the guard's bounds and no longer claims either sentence the audit \
+         found false",
     );
 }
