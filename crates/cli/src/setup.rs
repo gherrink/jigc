@@ -1462,7 +1462,33 @@ fn install(
 
     // 0d″. **The ask** (step 0c's): what differs from `HEAD` before this run writes, plus
     //      what `git status` cannot see at the paths this run would write.
-    let subject = InstallSubject::probe(jigc_home, force, &members);
+    //
+    //      **And where git cannot answer, the door stops here — before its first write,
+    //      whatever `force` says** (the rc.24 fix pass's completion audit, install-teardown
+    //      F2). It used to install anyway and skip the commit, on the reasoning that no
+    //      commit means no sweep. That is true of the members the install merges into and
+    //      says nothing of the ones it replaces: driven on `1.0.0-rc.24` and at `b54b58b2`
+    //      alike, with a corrupt index or a submodule whose gitdir was gone, an uncommitted
+    //      line in `.jigc/AGENT.md` was regenerated away at exit 0, in no git object. The
+    //      consent does not reach this either — it is spent on paths git **named**
+    //      ([`forced_install_path_finding`]), and here git named none.
+    let subject = InstallSubject::probe(jigc_home, force, &members).map_err(|unanswered| {
+        let present: Vec<String> = install_candidates(
+            jigc_home,
+            &line_file,
+            &allowlist_file,
+            guide_file.as_deref(),
+        )
+        .into_iter()
+        .map(|member| member.path)
+        .collect();
+        engine::finalize::setup_unasked_install_finding(
+            jigc_home,
+            unanswered.asked,
+            &unanswered.said,
+            &present,
+        )
+    })?;
 
     // 0e. **The gate, before the first write** (M51 Increment 3, corrected by its completion
     //     audit). The predicate is [`InstallSubject`]'s pre-write worktree-vs-`HEAD` answer
@@ -1521,7 +1547,7 @@ fn install(
                 findings.push(forced_install_path_finding(jigc_home, &forced));
             }
         }
-        InstallSubject::Unknown => {}
+        InstallSubject::NoWorkTree => {}
     }
 
     // 0f. **The settings file, asked before the first write** (M54 Increment 4 / T2; S22).
@@ -2528,14 +2554,46 @@ enum InstallSubject {
     /// `--force` — the single consent. The same set, carried rather than discarded: no path
     /// can refuse, and the door behaves exactly as it did before the guard, but the install
     /// **says** which install paths the consent was spent on
-    /// ([`forced_install_path_finding`]). Empty when git could not answer, so a consent over
-    /// an unreadable repo degrades to silence rather than to a claim.
+    /// ([`forced_install_path_finding`]). A set git answered with — or the empty one where
+    /// git said the install home is no work tree ([`Self::NoWorkTree`], where a consent has
+    /// nothing to be spent on). Where git could not answer at all there is nothing to
+    /// consent over and the door refuses ([`Unanswered`]).
     Consented(DirtyPaths),
-    /// git could not answer. The install commit is **skipped** rather than made blind — the
-    /// benign degradation this door already ships for a git it cannot use
-    /// ([`InstallCommit::Skipped`]): nothing is staged-but-orphaned, and no commit means no
-    /// sweep.
-    Unknown,
+    /// **git answered, and the answer is that the install home is not a work tree** — so
+    /// there is no `HEAD` here for a path to differ from, and no commit this door could
+    /// make. The install runs and its commit is skipped ([`InstallCommit::Skipped`]), which
+    /// is what the door has always done there.
+    ///
+    /// The homes this is true of are the ones [`crate::repo::jigc_home`] resolves to
+    /// `dirname(git-common-dir)` where no checkout stands at that directory: a worktree of a
+    /// **bare** repository, a **`--separate-git-dir`** checkout and a **submodule**
+    /// ([`crate::repo::home_is_a_checkout`] has the same three). `1.0.0-rc.24` writes its
+    /// working area there and the doors work from the standing checkout, so the pre-write
+    /// refusal must not reach them (the rc.24 fix pass's completion audit: a guard that fired
+    /// in exactly these layouts was its first HIGH). It was the one meaning of the `Unknown`
+    /// this replaces that was a *known* — the others are [`Unanswered`].
+    NoWorkTree,
+}
+
+/// **git could not answer the question [`InstallSubject::probe`] puts to it** — so there is
+/// no subject, and [`install`] refuses before its first write
+/// ([`engine::finalize::setup_unasked_install_finding`]; the rc.24 fix pass's completion
+/// audit, install-teardown F2).
+///
+/// This was folded into a third subject, `Unknown`, under which the install ran and only
+/// the commit was skipped — *no commit means no sweep*. The premise covers what the install
+/// merges into and not what it replaces, and that half was the loss: with `git status`
+/// exiting 128 the door regenerated `.jigc/AGENT.md` over an uncommitted edit at exit 0. A
+/// door that cannot learn whether bytes are in a commit does not get to replace them. What
+/// `Unknown` also covered, and still installs, is the case git **does** answer
+/// ([`InstallSubject::NoWorkTree`]).
+#[derive(Debug)]
+struct Unanswered {
+    /// The git subcommand that was asked, as [`engine::finding::git_at`] takes it — the
+    /// one the route prints, so the reader runs the question that failed.
+    asked: &'static str,
+    /// git's own words, or why it could not be run at all.
+    said: String,
 }
 
 impl InstallSubject {
@@ -2560,34 +2618,38 @@ impl InstallSubject {
     /// subtraction above, so a file an earlier run of this door left at an ignored path is
     /// recognised by the same record as one it left staged. Where git answers the status
     /// question and not this one, the door is as blind as when it answers neither, so the
-    /// answer is the same [`Self::Unknown`].
-    fn probe(jigc_home: &Path, force: bool, members: &[InstallMember]) -> Self {
-        let answered = dirty_against_head(jigc_home, &[]).and_then(|mut dirty| {
-            let unseen = unseen_by_status(jigc_home, members, &dirty)?;
-            dirty.all.extend(unseen.ignored.iter().cloned());
-            dirty.all.extend(unseen.flagged.iter().cloned());
-            dirty.ignored = unseen.ignored;
-            dirty.flagged = unseen.flagged;
-            Some(dirty)
-        });
-        let Some(mut dirty) = answered else {
-            // `--force` still installs when git cannot answer — the consent short-circuits
-            // the verdict, and the empty set is what keeps the ack from claiming a subject
-            // it never measured.
-            return if force {
+    /// answer is the same [`Unanswered`].
+    ///
+    /// **`Err` under `force` too.** The consent is asked for *after* the question, never
+    /// instead of it: it is spent on the paths git named, and a consent over a set nobody
+    /// measured named nothing it replaced (driven: `--force` with a corrupt index, exit 1
+    /// from a later `git add` with the adopter's bytes already gone).
+    fn probe(jigc_home: &Path, force: bool, members: &[InstallMember]) -> Result<Self, Unanswered> {
+        if !home_is_a_work_tree(jigc_home)? {
+            // The consent has nothing to be spent on, and says so by naming nothing.
+            return Ok(if force {
                 Self::Consented(DirtyPaths::default())
             } else {
-                Self::Unknown
-            };
-        };
+                Self::NoWorkTree
+            });
+        }
+        let mut dirty = ask_dirty_against_head(jigc_home, &[])?;
+        let unseen = unseen_by_status(jigc_home, members, &dirty).ok_or_else(|| Unanswered {
+            asked: "ls-files -v",
+            said: "git did not say which of the install paths it tracks".to_string(),
+        })?;
+        dirty.all.extend(unseen.ignored.iter().cloned());
+        dirty.all.extend(unseen.flagged.iter().cloned());
+        dirty.ignored = unseen.ignored;
+        dirty.flagged = unseen.flagged;
         for own in own_uncommitted_footprint(jigc_home) {
             dirty.remove(&own);
         }
-        if force {
+        Ok(if force {
             Self::Consented(dirty)
         } else {
             Self::Dirty(dirty)
-        }
+        })
     }
 }
 
@@ -2709,10 +2771,9 @@ fn clear_install_footprint(jigc_home: &Path) {
 /// failed with its own finding, and the re-run meets a false refusal at worst.
 ///
 /// **Only under [`InstallSubject::Dirty`]**, the rule the sibling calls in
-/// [`commit_install`] keep. A `--force` run never established the bytes as jigc's own, and
-/// its `Consented(∅)` is also what [`InstallSubject::probe`] returns when git could not
-/// answer, so subtracting it could record a consented user file jigc merged into; the cost
-/// of recording nothing is a false refusal the operator's own `--force` clears. When git
+/// [`commit_install`] keep. A `--force` run never established the bytes as jigc's own, so
+/// subtracting its set could record a consented user file jigc merged into; the cost of
+/// recording nothing is a false refusal the operator's own `--force` clears. When git
 /// cannot answer at the failure, no record is written or cleared.
 fn record_failed_install(
     jigc_home: &Path,
@@ -2870,6 +2931,60 @@ impl DirtyPaths {
 /// as its delete + add halves, both of which are differences from `HEAD` and both of which
 /// this door wants named.
 fn dirty_against_head(jigc_home: &Path, pathspec: &[String]) -> Option<DirtyPaths> {
+    ask_dirty_against_head(jigc_home, pathspec).ok()
+}
+
+/// **Whether the install home is a git work tree — asked of git, before the dirty
+/// question, because the two failures mean opposite things** (the rc.24 fix pass's
+/// completion audit, install-teardown F2).
+///
+/// `git status` exits non-zero both where the repository is broken (a corrupt index, a
+/// submodule whose gitdir is gone) and where there is simply no work tree at the home (a
+/// bare repository's parent, a relocated git dir's parent, `<super>/.git/modules/…`). The
+/// first is a door that cannot learn what it is about to replace, and refuses; the second
+/// is a definite answer — nothing here is in a commit or can be — under which `1.0.0-rc.24`
+/// installs and its doors work. So the layout is not read off the shape of `.git`: git is
+/// asked `rev-parse --is-inside-work-tree`, which prints `true` in a work tree whatever
+/// state its index is in (driven: `true` at exit 0 over a garbage index and over the
+/// missing submodule gitdir), and `false` in a bare repository or inside a git dir.
+///
+/// **Three ways it cannot say, and what each is read as:**
+///
+/// - git **could not be run** ⇒ [`Unanswered`]. Nothing about the home is known.
+/// - git ran and **refused**, at a directory that holds a `.git` entry ⇒ [`Unanswered`]. A
+///   repository is here and git will not speak for it — an ownership refusal
+///   (`safe.directory`), a `HEAD` or config it cannot read.
+/// - git ran and refused where **no `.git` entry stands** ⇒ `Ok(false)`: not a repository
+///   at all, which is the relocated git dir's parent.
+fn home_is_a_work_tree(jigc_home: &Path) -> Result<bool, Unanswered> {
+    const ASKED: &str = "rev-parse --is-inside-work-tree";
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(jigc_home)
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .output()
+        .map_err(|err| Unanswered {
+            asked: ASKED,
+            said: format!("`git` could not be run ({err})"),
+        })?;
+    if out.status.success() {
+        return Ok(String::from_utf8_lossy(&out.stdout).trim() == "true");
+    }
+    if std::fs::symlink_metadata(jigc_home.join(".git")).is_ok() {
+        return Err(Unanswered {
+            asked: ASKED,
+            said: git_said(&out),
+        });
+    }
+    Ok(false)
+}
+
+/// [`dirty_against_head`], keeping **why** git did not answer ([`Unanswered`]) — the form
+/// the pre-write ask uses, since its refusal has to say what it could not ask. The two
+/// later asks ([`record_failed_install`], [`record_ignored_footprint`]) are best-effort
+/// records and only need to know that there was no answer.
+fn ask_dirty_against_head(jigc_home: &Path, pathspec: &[String]) -> Result<DirtyPaths, Unanswered> {
+    const ASKED: &str = "status";
     let mut args: Vec<&str> = vec![
         "status",
         "--porcelain",
@@ -2881,9 +2996,25 @@ fn dirty_against_head(jigc_home: &Path, pathspec: &[String]) -> Option<DirtyPath
         args.push("--");
         args.extend(pathspec.iter().map(String::as_str));
     }
-    let out = git_output(jigc_home, args)?;
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(jigc_home)
+        .args(args)
+        .output()
+        .map_err(|err| Unanswered {
+            asked: ASKED,
+            said: format!("`git` could not be run ({err})"),
+        })?;
     if !out.status.success() {
-        return None;
+        let said = git_said(&out);
+        return Err(Unanswered {
+            asked: ASKED,
+            said: if said.is_empty() {
+                format!("`git status` exited with {}", out.status)
+            } else {
+                said
+            },
+        });
     }
     // `XY<space><path>` per NUL-terminated record; the three-byte prefix is ASCII, so the
     // byte slice is always on a char boundary.
@@ -2899,7 +3030,7 @@ fn dirty_against_head(jigc_home: &Path, pathspec: &[String]) -> Option<DirtyPath
         }
         dirty.all.insert(path);
     }
-    Some(dirty)
+    Ok(dirty)
 }
 
 /// **What `git status` could not see at the install's own paths** — the two classes
@@ -3316,9 +3447,9 @@ fn commit_install(
     // which is what its finding says.
     let (dirty, unborn): (Vec<String>, bool) = match subject {
         InstallSubject::Consented(_) => (Vec::new(), false),
-        // git could not answer, so the commit is not made blind — the same benign skip
-        // this door already takes for a git it cannot use.
-        InstallSubject::Unknown => {
+        // No work tree at the home, so no commit — the benign skip this door has always
+        // taken there ([`InstallSubject::NoWorkTree`]).
+        InstallSubject::NoWorkTree => {
             return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped));
         }
         InstallSubject::Dirty(before) => (
@@ -3346,7 +3477,7 @@ fn commit_install(
     //
     // Only under [`InstallSubject::Dirty`]. `--force` consents to committing whatever is
     // there, so the door never established these bytes as its own and must not record them
-    // as such; `Unknown` never reaches here. A missing record refuses, which is the safe
+    // as such; `NoWorkTree` never reaches here. A missing record refuses, which is the safe
     // direction.
     if matches!(subject, InstallSubject::Dirty(_)) {
         record_install_footprint(jigc_home, &own);

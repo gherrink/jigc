@@ -99,7 +99,17 @@
 //! refusal a hidden change earns under the same conversions, and cell 40 repeats the
 //! must-not-refuse cell in the layouts this door is reachable in.
 //!
-//! Forty cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
+//! **And where git cannot answer, nothing is installed** (cells 41–42; the completion
+//! audit's install-teardown F2). The pre-write ask had a third outcome — git did not answer
+//! — under which the install ran and only its commit was skipped. Cell 41 iterates how git
+//! stops answering (a corrupt index, a submodule whose gitdir is gone, no `git` on `PATH`,
+//! an ownership refusal, an unreadable `HEAD`) crossed with `--force`: exit 1 before the
+//! first write, the printed command run as printed, then the repair and a landed install.
+//! Cell 42 is its must-not-refuse half over the layouts where `git status` fails for the
+//! other reason — the install home is no work tree — plus the ones where it walks a
+//! submodule.
+//!
+//! Forty-two cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
 //! `git init` repos.
 
 use std::fs;
@@ -2991,5 +3001,408 @@ fn a_clean_install_path_never_refuses_in_a_clone_or_a_linked_worktree() {
             "",
             "linked, {run}"
         );
+    }
+}
+
+/// One way git stops answering the guard's question, with the act that undoes it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum GitMute {
+    /// `.git/index` is not an index — `git status` exits 128, `git rev-parse` answers.
+    CorruptIndex,
+    /// A registered submodule whose gitdir is gone — `git status` exits 128 in the
+    /// superproject.
+    SubmoduleGitdirGone,
+    /// No `git` on `PATH` at all.
+    NoGitOnPath,
+    /// git refuses the repository over its ownership (`safe.directory`) — every git
+    /// command exits 128, `rev-parse` included. Simulated with git's own test switch.
+    OwnershipRefused,
+    /// `.git/HEAD` is not a ref — git no longer recognises the repository at all.
+    GarbageHead,
+}
+
+/// What a muted cell runs `jigc` — and the route's printed command — under.
+#[derive(Default)]
+struct Muted {
+    path: Option<PathBuf>,
+    env: Option<(&'static str, &'static str)>,
+}
+
+impl GitMute {
+    const ALL: [GitMute; 5] = [
+        GitMute::CorruptIndex,
+        GitMute::SubmoduleGitdirGone,
+        GitMute::NoGitOnPath,
+        GitMute::OwnershipRefused,
+        GitMute::GarbageHead,
+    ];
+
+    /// Build the repository git **can** answer in — installed, committed, clean — with the
+    /// submodule the one cell needs.
+    fn installed(self, tag: &str) -> (TempDir, TempDir, TempDir) {
+        let (repo, home) = born_repo(tag);
+        let aside = TempDir::new(&format!("{tag}-aside"));
+        if self == GitMute::SubmoduleGitdirGone {
+            let source = aside.path().join("source");
+            fs::create_dir_all(&source).expect("create the submodule's source");
+            git(&source, &["init", "-q"]);
+            git(&source, &["config", "user.email", "test@example.com"]);
+            git(&source, &["config", "user.name", "Test"]);
+            git(&source, &["commit", "-q", "--allow-empty", "-m", "sub"]);
+            git(
+                repo.path(),
+                &[
+                    "-c",
+                    "protocol.file.allow=always",
+                    "submodule",
+                    "add",
+                    "-q",
+                    &source.display().to_string(),
+                    "vendor/sub",
+                ],
+            );
+            git(repo.path(), &["commit", "-q", "-m", "a submodule"]);
+        }
+        let out = jigc(repo.path(), home.path(), &["setup"]);
+        assert_eq!(out.status.code(), Some(0), "{self:?}: {}", said(&out));
+        assert_eq!(git(repo.path(), &["status", "--porcelain"]), "", "{self:?}");
+        (repo, home, aside)
+    }
+
+    /// Stop git answering.
+    fn mute(self, repo: &Path, aside: &Path) -> Muted {
+        match self {
+            GitMute::CorruptIndex => {
+                fs::copy(repo.join(".git/index"), aside.join("index.kept")).expect("keep index");
+                fs::write(repo.join(".git/index"), "garbage").expect("corrupt the index");
+                Muted::default()
+            }
+            GitMute::SubmoduleGitdirGone => {
+                fs::rename(
+                    repo.join(".git/modules/vendor/sub"),
+                    aside.join("gitdir.kept"),
+                )
+                .expect("move the submodule's gitdir out");
+                Muted::default()
+            }
+            GitMute::NoGitOnPath => {
+                let empty = aside.join("no-git-here");
+                fs::create_dir_all(&empty).expect("create an empty PATH dir");
+                Muted {
+                    path: Some(empty),
+                    env: None,
+                }
+            }
+            GitMute::OwnershipRefused => Muted {
+                path: None,
+                env: Some(("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")),
+            },
+            GitMute::GarbageHead => {
+                fs::copy(repo.join(".git/HEAD"), aside.join("HEAD.kept")).expect("keep HEAD");
+                fs::write(repo.join(".git/HEAD"), "garbage\n").expect("corrupt HEAD");
+                Muted::default()
+            }
+        }
+    }
+
+    /// Undo [`Self::mute`] — the repair the route sends the reader to make.
+    fn repair(self, repo: &Path, aside: &Path) {
+        match self {
+            GitMute::CorruptIndex => {
+                fs::copy(aside.join("index.kept"), repo.join(".git/index")).expect("restore");
+            }
+            GitMute::SubmoduleGitdirGone => {
+                fs::rename(
+                    aside.join("gitdir.kept"),
+                    repo.join(".git/modules/vendor/sub"),
+                )
+                .expect("move the gitdir back");
+            }
+            GitMute::GarbageHead => {
+                fs::copy(aside.join("HEAD.kept"), repo.join(".git/HEAD")).expect("restore");
+            }
+            GitMute::NoGitOnPath | GitMute::OwnershipRefused => {}
+        }
+    }
+}
+
+impl Muted {
+    fn apply(&self, command: &mut Command) {
+        if let Some(path) = &self.path {
+            command.env("PATH", path);
+        }
+        if let Some((key, value)) = self.env {
+            command.env(key, value);
+        }
+    }
+
+    /// `jigc <args>` under the mute.
+    fn jigc(&self, repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+        command
+            .args(args)
+            .current_dir(repo)
+            .env("HOME", home)
+            .env_remove("JIGC_PACK_DIR");
+        self.apply(&mut command);
+        command.output().expect("run jigc")
+    }
+
+    /// A printed command, pasted from outside the repository, under the mute.
+    fn paste(&self, command: &str) -> std::process::Output {
+        let mut shell = Command::new("/bin/sh");
+        shell
+            .args(["-c", command])
+            .current_dir(std::env::temp_dir());
+        self.apply(&mut shell);
+        shell.output().expect("run the printed command")
+    }
+}
+
+/// (41) **Where git cannot answer the guard's question, `setup` refuses before its first
+/// write** — with and without `--force` (the rc.24 fix pass's completion audit,
+/// install-teardown F2 and cross-cutting XC-2).
+///
+/// The loss, driven on the release binary at `b54b58b2` and on published `1.0.0-rc.24`
+/// alike: a committed install, one uncommitted line of a team's notes in `.jigc/AGENT.md`,
+/// and a `git status` that exits 128 — a corrupt index, or a submodule whose gitdir is gone.
+/// `jigc setup` printed *adapter installed* at exit 0, the line was gone from disk and in no
+/// git object. With no `git` on `PATH`, under an ownership refusal, or over an unreadable
+/// `HEAD`, the same bytes went before the run failed at its hook step. The door's pre-write
+/// ask had no answer, and it installed without one.
+///
+/// So the axis is *how git stops answering* ([`GitMute`]), crossed with the consent. In
+/// every cell: exit 1 under the guard's own code, the file at the replaced path
+/// byte-identical, the file at a merged-into path byte-identical, `HEAD` unmoved. The
+/// route's printed `git` command is then run as printed and fails the way the refusal said
+/// git failed. Then the repair, and the door behaves as it does in any healthy repository:
+/// it names the edited path as an ordinary dirty one, and once that is committed a single
+/// re-run installs with the adopter's line in a commit.
+#[test]
+fn where_git_cannot_answer_setup_refuses_before_its_first_write() {
+    std::thread::scope(|scope| {
+        for mute in GitMute::ALL {
+            scope.spawn(move || {
+                let what = format!("{mute:?}");
+                let (repo, home, aside) = mute.installed("mute");
+                let (repo, home, aside) = (repo.path(), home.path(), aside.path());
+                let notes = format!(
+                    "{}\n{MARK} never deploy on a Friday.\n",
+                    read(repo, ".jigc/AGENT.md")
+                );
+                write(repo, ".jigc/AGENT.md", &notes);
+                let claude = read(repo, "CLAUDE.md");
+                let before = head_of(repo);
+                let muted = mute.mute(repo, aside);
+
+                for args in [&["setup"][..], &["setup", "--force"][..]] {
+                    let out = muted.jigc(repo, home, args);
+                    let said_out = said(&out);
+                    assert_eq!(
+                        out.status.code(),
+                        Some(1),
+                        "{what} {args:?}: git cannot answer, so nothing is installed: {said_out}"
+                    );
+                    assert!(said_out.contains(DIRTY_CODE), "{what} {args:?}: {said_out}");
+                    assert!(
+                        said_out.contains("git could not tell"),
+                        "{what} {args:?}: the refusal says what it could not ask: {said_out}"
+                    );
+                    assert!(
+                        refused_paths(&out).contains(&".jigc/AGENT.md".to_string()),
+                        "{what} {args:?}: and names the install paths it left alone: {said_out}"
+                    );
+                    assert_eq!(
+                        read(repo, ".jigc/AGENT.md"),
+                        notes,
+                        "{what} {args:?}: the replaced path is byte-identical"
+                    );
+                    assert_eq!(
+                        read(repo, "CLAUDE.md"),
+                        claude,
+                        "{what} {args:?}: the merged-into path is byte-identical"
+                    );
+
+                    // The route's one command, as printed: it fails the way the refusal
+                    // said git failed, which is what the reader is sent to look at.
+                    let commands = printed_git_commands(&route(&out));
+                    assert_eq!(commands.len(), 1, "{what}: one command: {said_out}");
+                    assert!(
+                        !muted.paste(&commands[0]).status.success(),
+                        "{what}: the printed `{}` shows the failure",
+                        commands[0]
+                    );
+                }
+
+                // The repair, then the door as it is in a healthy repository.
+                mute.repair(repo, aside);
+                assert_eq!(head_of(repo), before, "{what}: `HEAD` never moved");
+                let out = jigc(repo, home, &["setup"]);
+                assert_eq!(out.status.code(), Some(1), "{what}: {}", said(&out));
+                assert_eq!(
+                    refused_paths(&out),
+                    vec![".jigc/AGENT.md".to_string()],
+                    "{what}: git answers again, and the edit is an ordinary dirty path: {}",
+                    said(&out)
+                );
+                assert!(
+                    !said(&out).contains("git could not tell"),
+                    "{what}: {}",
+                    said(&out)
+                );
+                assert_eq!(read(repo, ".jigc/AGENT.md"), notes, "{what}: still theirs");
+                git(repo, &["commit", "-q", "-a", "-m", "what we had there"]);
+                let out = jigc(repo, home, &["setup"]);
+                assert_eq!(
+                    out.status.code(),
+                    Some(0),
+                    "{what}: committed, ONE re-run installs: {}",
+                    said(&out)
+                );
+                assert!(
+                    git(repo, &["log", "--all", "-p", "--", ".jigc/AGENT.md"]).contains(MARK),
+                    "{what}: and git holds the adopter's line"
+                );
+                assert_eq!(git(repo, &["status", "--porcelain"]), "", "{what}");
+            });
+        }
+    });
+}
+
+/// (42) **…and git that does answer is never refused as git that does not** — the
+/// must-not-refuse half of cell (41), over the repository layouts in which the door's
+/// questions have something unusual to meet.
+///
+/// - **`git status` walks a submodule**: a superproject with a healthy one, and a clone of
+///   it whose submodule was never initialised. A first install lands and a re-run is clean.
+/// - **The install home is no work tree at all**: the submodule's own checkout, a
+///   `--separate-git-dir` checkout, and a worktree of a bare repository (beside a sibling
+///   `proj.git`, and behind a bare `.git`). `git status` exits 128 at that home too — and
+///   means something else: git **has** answered, there is no work tree there. The door does
+///   there what `1.0.0-rc.24` does — exit 0 inside a submodule and behind a bare `.git`,
+///   and in the other two the working area is written and the run stops at its hook step
+///   — and the guard says nothing. Refusing these as *git could not answer* would be the
+///   regression the completion audit's first HIGH was: a guard firing where `.git` is a
+///   file and no second checkout exists.
+///
+/// (A plain checkout, a fresh clone and a linked worktree are cells (37) and (40), under
+/// every conversion.)
+#[test]
+fn git_that_answers_is_never_refused_as_git_that_does_not() {
+    let (superproject, home, aside) = GitMute::SubmoduleGitdirGone.installed("submodules");
+    let home = home.path();
+    let rerun = jigc(superproject.path(), home, &["setup"]);
+    assert_eq!(
+        rerun.status.code(),
+        Some(0),
+        "superproject: {}",
+        said(&rerun)
+    );
+    assert!(!said(&rerun).contains(DIRTY_CODE), "{}", said(&rerun));
+    assert_eq!(git(superproject.path(), &["status", "--porcelain"]), "");
+
+    let identify = |repo: &Path| {
+        git(repo, &["config", "user.email", "test@example.com"]);
+        git(repo, &["config", "user.name", "Test"]);
+    };
+    // A clone that never ran `git submodule update --init`: `vendor/sub` is an empty
+    // directory git still reports cleanly.
+    let clone = aside.path().join("clone");
+    git(
+        aside.path(),
+        &[
+            "clone",
+            "-q",
+            &superproject.path().display().to_string(),
+            &clone.display().to_string(),
+        ],
+    );
+    identify(&clone);
+    // …and the submodule's own checkout, whose install home is `<super>/.git/modules/…`.
+    let inside = superproject.path().join("vendor/sub");
+    identify(&inside);
+    for (what, repo) in [
+        ("uninitialised clone", &clone),
+        ("inside the submodule", &inside),
+    ] {
+        for run in ["the first run", "the re-run"] {
+            let out = jigc(repo, home, &["setup"]);
+            assert_eq!(out.status.code(), Some(0), "{what}, {run}: {}", said(&out));
+            assert!(
+                !said(&out).contains(DIRTY_CODE),
+                "{what}, {run}: {}",
+                said(&out)
+            );
+            assert_eq!(git(repo, &["status", "--porcelain"]), "", "{what}, {run}");
+        }
+    }
+
+    // The three other homes that are no work tree, each with what `1.0.0-rc.24` does there
+    // (driven on the published binary): the hook step's refusal, or a landed install.
+    let seed = |repo: &Path| {
+        identify(repo);
+        write(repo, "README.md", "hello\n");
+        git(repo, &["add", "README.md"]);
+        git(repo, &["commit", "-q", "-m", "initial"]);
+    };
+    let separate = aside.path().join("separate/checkout");
+    fs::create_dir_all(&separate).expect("create");
+    git(
+        &separate,
+        &[
+            "init",
+            "-q",
+            "--separate-git-dir",
+            &aside
+                .path()
+                .join("separate/elsewhere.git")
+                .display()
+                .to_string(),
+        ],
+    );
+    seed(&separate);
+    let beside = aside.path().join("beside");
+    fs::create_dir_all(&beside).expect("create");
+    git(&beside, &["init", "-q", "--bare", "proj.git"]);
+    git(
+        &beside.join("proj.git"),
+        &["worktree", "add", "-q", "--orphan", "-b", "main", "../wt"],
+    );
+    seed(&beside.join("wt"));
+    let behind = aside.path().join("behind");
+    fs::create_dir_all(&behind).expect("create");
+    git(&behind, &["init", "-q", "--bare", ".git"]);
+    git(
+        &behind.join(".git"),
+        &["worktree", "add", "-q", "--orphan", "-b", "main", "../wt"],
+    );
+    seed(&behind.join("wt"));
+    for (what, repo, lands) in [
+        ("--separate-git-dir", separate, false),
+        (
+            "a worktree beside a bare repository",
+            beside.join("wt"),
+            false,
+        ),
+        ("a worktree behind a bare `.git`", behind.join("wt"), true),
+    ] {
+        for run in ["the first run", "the re-run"] {
+            let out = jigc(&repo, home, &["setup"]);
+            let said_out = said(&out);
+            assert!(
+                !said_out.contains(DIRTY_CODE),
+                "{what}, {run}: the guard has nothing to say where there is no work tree: \
+                 {said_out}"
+            );
+            assert_eq!(
+                (out.status.code(), said_out.contains("setup.install-hook")),
+                if lands {
+                    (Some(0), false)
+                } else {
+                    (Some(1), true)
+                },
+                "{what}, {run}: the door does what `1.0.0-rc.24` does here: {said_out}"
+            );
+        }
     }
 }

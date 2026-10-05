@@ -2602,6 +2602,67 @@ pub fn setup_dirty_install_finding(
     )
 }
 
+/// **The [`CarryoverBoundary::Setup`] door's refusal when git cannot be asked its
+/// pre-write question** — one blocking finding under the guard's own code, raised before
+/// the install's first write (the rc.24 fix pass's completion audit, install-teardown F2).
+///
+/// **The guard's code, because it is the guard refusing.** `setup.dirty-install-path` is
+/// *a path in the install's pathspec holds bytes no commit holds*; this is the same door
+/// unable to rule that out, over the same paths, and the reader's next act is the same
+/// kind — make git able to vouch for them. A driver keyed on the code stops the same way.
+/// [`setup_dirty_install_finding`] is not reused because every sentence it writes is about
+/// a set git named, and here git named none.
+///
+/// **What it says, and may not say.** `said` is git's own output, quoted rather than
+/// interpreted, because the causes are unbounded — a corrupt index, a submodule whose
+/// gitdir is gone, no `git` on `PATH`, an ownership refusal in a mounted checkout — and
+/// the door has seen only the failure. `present` is the install paths that **exist** in
+/// the checkout: the ones a blind install would have replaced or committed. They are
+/// listed sorted and are not called dirty, because nobody knows whether they are.
+///
+/// **One route arm, and `--force` is not one.** The printed command is the question that
+/// failed (`asked`, a git subcommand with no path operand), aimed at the checkout it was
+/// asked in ([`crate::finding::git_at`]) — `jigc setup` typed from a linked worktree asks
+/// the main checkout — so running it shows the reader what the door saw. `--force` is
+/// named only to say it changes nothing: it consents to the paths git names, and offering
+/// it here would route the reader at an install that runs unseen and, in two of the three
+/// driven cells, then fails at its own `git add` or hook step with the bytes already
+/// replaced.
+pub fn setup_unasked_install_finding(
+    home: &Path,
+    asked: &str,
+    said: &str,
+    present: &[String],
+) -> Finding {
+    let paths: BTreeSet<&str> = present.iter().map(String::as_str).collect();
+    let listing: Vec<String> = paths.iter().map(|path| format!("  `{path}`")).collect();
+    let standing = if paths.is_empty() {
+        "no install path exists here yet, and none was created".to_string()
+    } else {
+        format!(
+            "{} install path(s) already exist here, and each still holds exactly what it \
+             held — installing would have replaced some and committed the rest, unseen:\n{}",
+            paths.len(),
+            listing.join("\n"),
+        )
+    };
+    let asked = crate::finding::git_at(home, asked);
+    Finding::block(
+        CarryoverBoundary::Setup.code(),
+        format!(
+            "git could not tell `jigc setup` which of its install paths hold work that is in \
+             no commit — the question it asks before its first write — so nothing was \
+             installed and no install commit was made. `{asked}` answered:\n{}\n{standing}",
+            said.trim(),
+        ),
+        Route::human(format!(
+            "run `{asked}` to see what git reports, resolve that (or put `git` on `PATH`), \
+             then re-run `jigc setup`. `--force` does not change this: it consents to the \
+             paths git names, and git named none"
+        )),
+    )
+}
+
 /// **The listed paths git's own status did not report** — what the
 /// [`CarryoverBoundary::Setup`] door found by asking the bytes rather than `git status`
 /// (the rc.24 fix pass, the ignored sibling of `(R1, F1)`), and the input

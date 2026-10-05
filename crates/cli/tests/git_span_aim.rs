@@ -195,6 +195,9 @@ const AIM_HOME: &str = "git_at";
 /// restore its sibling `record_conflict_block` does (the store doors' half of `(R6, D-7)`).**]**
 /// **[And a fifth**, `task::git_against_rev`: where the base-pin backstop cannot get git's
 /// answer, its refusal quotes the comparison it asked, aimed, so the reader can run it.**]**
+/// **[And a sixth**, `finalize::setup_unasked_install_finding`: where `jigc setup` cannot get
+/// git's answer to its pre-write question, the refusal prints the question that failed,
+/// aimed at the checkout it was asked in (the completion audit's install-teardown F2).**]**
 ///
 /// The remaining 120 lines are `bail!`/`with_context` diagnostics **quoting the invocation
 /// that failed** — law 1's second declared-absolute reason, and outside a route by
@@ -248,6 +251,16 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
         "`finalize.carried-staged` at all three boundaries — the trial-ranked #1 v1 gate, and \
          the row that ranks first in the census: it fires on the ordinary finalize path and \
          the route is the only thing the agent is given",
+    ),
+    (
+        "crates/engine/src/finalize.rs",
+        "setup_unasked_install_finding",
+        Aim::Aimed,
+        "`setup.dirty-install-path` where git could not answer the door's pre-write question \
+         (the rc.24 fix pass's completion audit) — `git status`, the question that failed, \
+         for the reader to run. It carries no path operand, and is aimed all the same: \
+         `jigc setup` typed from a linked worktree asks the main checkout, where `git status` \
+         can fail while it answers in the worktree the reader is standing in",
     ),
     (
         "crates/engine/src/finalize.rs",
