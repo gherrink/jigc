@@ -3836,6 +3836,75 @@ pub struct Anchored {
     /// Whether a live checkout stands at the path — the commit is then reachable *from it*,
     /// and that is the checkout the keep command is aimed at.
     pub live: bool,
+    /// Whether the registration records **another path than the one asked about**: the
+    /// one this repository had before it was moved ([`moved_registrations`]). git lists it
+    /// there, so no teardown of this door's reaches it — and only the milestone boundary
+    /// looks for it at all ([`Lookup::OrMadeBeforeAMove`]).
+    pub moved: bool,
+}
+
+/// How far [`anchored_reading`] looks for a registration when no live checkout stands at
+/// the path to answer for itself.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Lookup {
+    /// The registration git records **at this path**, and no other — what the three
+    /// consenting doors ask, because it is exactly the record their removal reaches. A
+    /// registration recorded anywhere else they leave as they found it, and refusing over
+    /// a record a door would not drop is a refusal with nothing behind it.
+    AtThisPath,
+    /// That one — or, where there is none, the registration this repository made for the
+    /// sub-task **before the repository was moved** ([`moved_registrations`]). What the
+    /// milestone boundary asks: its harm is not a dropped record but a milestone settled
+    /// for good *without* the work one holds, and that happens wherever the record points.
+    OrMadeBeforeAMove,
+}
+
+/// The registrations this repository made for the sub-task worktree at `path` **before the
+/// repository was moved** — every record whose `gitdir` file names the same
+/// `.jigc/worktrees/<sub-task-id>` under a location that is **not on disk any more**.
+///
+/// **Why it exists** (the rc.24 fix pass's completion audit, F4). git records a worktree
+/// by the absolute path it had at `add` time, in the registration's own `gitdir` file. Move
+/// the repository (`mv`, another mount, a host path seen from a container) and every record
+/// still names the old root, so a lookup keyed on *this* path finds none of them. Driven:
+/// in a moved repository with one sub-task worktree repaired and the other still holding a
+/// `git add`-ed file, `jigc milestone finalize` landed at exit 0 — `unreadable worktree …
+/// no code counted` — and the record flipped to `joined` without that file.
+///
+/// **It needs no stored state**: the sub-task id is the path's own last component, the
+/// records are this repository's registry and nobody else's, and *moved* is read off the
+/// disk — the directory the record names its worktree under is gone. That last test is
+/// what keeps a **copied** repository out: a `cp -R` copy's records name the *source's*
+/// worktrees, which are still there and still answer for the source
+/// ([`LeftoverVerdict`]'s doc), so nothing here claims them for the copy.
+///
+/// More than one can match — a repository moved twice and provisioned in between — and the
+/// caller asks each, since any of them may be the one holding the work.
+fn moved_registrations<'a>(
+    records: &'a [AdminRecord],
+    path: &Path,
+) -> impl Iterator<Item = &'a AdminRecord> {
+    let tail = worktree_tail(path);
+    records.iter().filter(move |record| {
+        tail.is_some()
+            && worktree_tail(&record.path) == tail
+            && record.path.parent().is_some_and(|recorded_under| {
+                matches!(
+                    std::fs::symlink_metadata(recorded_under),
+                    Err(ref err) if err.kind() == std::io::ErrorKind::NotFound
+                )
+            })
+    })
+}
+
+/// The `.jigc/worktrees/<name>` tail of a worktree path, or `None` when `path` does not end
+/// in one — the part of a sub-task worktree's path that survives a move of the repository.
+fn worktree_tail(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?;
+    let worktrees = path.parent()?;
+    let jigc = worktrees.parent()?;
+    (worktrees.file_name()? == "worktrees" && jigc.file_name()? == ".jigc")
+        .then(|| Path::new(".jigc").join("worktrees").join(name))
 }
 
 /// The file-name prefix of a boundary's **dedicated** worktree
@@ -3872,7 +3941,7 @@ const DEDICATED_PREFIX: &str = ".combine-";
 fn anchored_at(jigc_home: &Path, path: &Path, live: bool) -> Result<Option<Anchored>> {
     // The index is the registration leg's subject exactly where no live checkout stands to
     // answer for it through the bytes leg ([`Anchored::staged`]).
-    anchored_reading(jigc_home, path, live, !live)
+    anchored_reading(jigc_home, path, live, !live, Lookup::AtThisPath)
 }
 
 /// [`anchored_at`] with the index question asked **explicitly** — `staged_is_held` says
@@ -3891,6 +3960,7 @@ fn anchored_reading(
     path: &Path,
     live: bool,
     staged_is_held: bool,
+    lookup: Lookup,
 ) -> Result<Option<Anchored>> {
     let Some(sub_id) = path.file_name().and_then(|name| name.to_str()) else {
         return Ok(None);
@@ -3898,7 +3968,7 @@ fn anchored_reading(
     if sub_id.starts_with(DEDICATED_PREFIX) {
         return Ok(None);
     }
-    let (admin, common) = if live {
+    if live {
         // `--absolute-git-dir` rather than `--path-format=absolute`: the latter is git ≥
         // 2.31, and a probe that fails on an older git would turn every live worktree into
         // an unreadable hold. The common dir may come back relative to the checkout.
@@ -3907,97 +3977,155 @@ fn anchored_reading(
             &["rev-parse", "--absolute-git-dir", "--git-common-dir"],
         )?;
         let mut lines = out.lines();
-        match (lines.next(), lines.next()) {
+        let (admin, common) = match (lines.next(), lines.next()) {
             (Some(admin), Some(common)) => (PathBuf::from(admin), path.join(common)),
             _ => bail!("`git rev-parse --absolute-git-dir --git-common-dir` printed no git dir"),
-        }
-    } else {
-        let Some(record) = admin_records(jigc_home)
-            .into_iter()
-            .find(|record| same_worktree_path(&record.path, path))
-        else {
-            // Never provisioned, or already torn down: nothing is registered at the path.
-            return Ok(None);
         };
-        let Some(common) = crate::repo::worktree_git_dir(jigc_home) else {
-            return Ok(None);
+        let registration = Registration {
+            admin,
+            common,
+            live: true,
+            moved: false,
         };
-        (record.admin, common)
-    };
-
-    // The registration's own HEAD. An unborn one (a `git switch --orphan` inside the
-    // worktree) resolves to nothing, which is an answer: no commit is held. `--verify
-    // --quiet` says so with exit 1 and no output; any other failure is the probe not
-    // knowing, and that is a hold, never a clearance.
-    let head = {
-        let out = Command::new("git")
-            .arg("--git-dir")
-            .arg(&admin)
-            .args(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
-            .current_dir(jigc_home)
-            .output()
-            .context("could not run `git` (is it on PATH?)")?;
-        match out.status.code() {
-            Some(0) => Some(String::from_utf8_lossy(&out.stdout).trim().to_owned()),
-            Some(1) => None,
-            _ => bail!(
-                "`git rev-parse --verify HEAD` over the worktree registration failed: {}",
-                String::from_utf8_lossy(&out.stderr).trim(),
-            ),
-        }
-    };
-
-    let base = engine::milestone::owning_milestone(&jigc_home.join(".jigc"), sub_id)
-        .and_then(|milestone| {
-            read_base_pin(&milestone_dir(&jigc_home.join(".jigc"), &milestone)).ok()
-        })
-        .map(|pin| pin.sha);
-
-    let commit = match &head {
-        None => None,
-        // The ordinary fan-out worktree: exactly where jigc detached it. No walk needed.
-        Some(head) if base.as_deref() == Some(head.as_str()) => None,
-        Some(head) => {
-            let mut args = vec![
-                "rev-list",
-                "--single-worktree",
-                // The base pin may name a commit a history rewrite has since collected;
-                // `HEAD` was resolved a moment ago and cannot be the missing one.
-                "--ignore-missing",
-                "--count",
-                head.as_str(),
-                "--not",
-                "--all",
-            ];
-            if let Some(base) = &base {
-                args.push(base.as_str());
-            }
-            let count: usize = git_in(jigc_home, &common, &args)?
-                .trim()
-                .parse()
-                .context("`git rev-list --count` printed no number")?;
-            (count > 0).then(|| AnchoredCommit {
-                sha: head.clone(),
-                count,
-            })
-        }
-    };
-
-    let staged = if staged_is_held {
-        staged_in_registration(jigc_home, &admin)?
-    } else {
-        Vec::new()
-    };
-
-    if commit.is_none() && staged.is_empty() {
-        return Ok(None);
+        return registration.read(jigc_home, sub_id, staged_is_held);
     }
-    Ok(Some(Anchored {
-        commit,
-        staged,
-        admin,
-        live,
-    }))
+
+    let records = admin_records(jigc_home);
+    let Some(common) = crate::repo::worktree_git_dir(jigc_home) else {
+        return Ok(None);
+    };
+    // The registration git records at this path — and, for the door that asks for it,
+    // the ones this repository made for the same sub-task before it was moved, which no
+    // lookup by path can find ([`moved_registrations`]). Never both: a record at this
+    // path is the worktree's own, and what an older one holds was superseded with it.
+    let found: Vec<(&AdminRecord, bool)> = match records
+        .iter()
+        .find(|record| same_worktree_path(&record.path, path))
+    {
+        Some(record) => vec![(record, false)],
+        None if lookup == Lookup::OrMadeBeforeAMove => moved_registrations(&records, path)
+            .map(|record| (record, true))
+            .collect(),
+        // Never provisioned, or already torn down: nothing is registered at the path.
+        None => Vec::new(),
+    };
+    for (record, moved) in found {
+        let registration = Registration {
+            admin: record.admin.clone(),
+            common: common.clone(),
+            live: false,
+            moved,
+        };
+        if let Some(anchored) = registration.read(jigc_home, sub_id, staged_is_held)? {
+            return Ok(Some(anchored));
+        }
+    }
+    Ok(None)
+}
+
+/// One registration [`anchored_reading`] located, before it is asked what it holds.
+struct Registration {
+    /// Its admin directory.
+    admin: PathBuf,
+    /// The repository's common git dir — where reachability is asked.
+    common: PathBuf,
+    /// Whether it was located through a live checkout at the path.
+    live: bool,
+    /// Whether it records the path this repository had before it was moved.
+    moved: bool,
+}
+
+impl Registration {
+    /// What this registration holds that no ref carries — [`anchored_reading`]'s answer for
+    /// the one record, `Ok(None)` when it holds nothing.
+    fn read(
+        self,
+        jigc_home: &Path,
+        sub_id: &str,
+        staged_is_held: bool,
+    ) -> Result<Option<Anchored>> {
+        let Registration {
+            admin,
+            common,
+            live,
+            moved,
+        } = self;
+
+        // The registration's own HEAD. An unborn one (a `git switch --orphan` inside the
+        // worktree) resolves to nothing, which is an answer: no commit is held. `--verify
+        // --quiet` says so with exit 1 and no output; any other failure is the probe not
+        // knowing, and that is a hold, never a clearance.
+        let head = {
+            let out = Command::new("git")
+                .arg("--git-dir")
+                .arg(&admin)
+                .args(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+                .current_dir(jigc_home)
+                .output()
+                .context("could not run `git` (is it on PATH?)")?;
+            match out.status.code() {
+                Some(0) => Some(String::from_utf8_lossy(&out.stdout).trim().to_owned()),
+                Some(1) => None,
+                _ => bail!(
+                    "`git rev-parse --verify HEAD` over the worktree registration failed: {}",
+                    String::from_utf8_lossy(&out.stderr).trim(),
+                ),
+            }
+        };
+
+        let base = engine::milestone::owning_milestone(&jigc_home.join(".jigc"), sub_id)
+            .and_then(|milestone| {
+                read_base_pin(&milestone_dir(&jigc_home.join(".jigc"), &milestone)).ok()
+            })
+            .map(|pin| pin.sha);
+
+        let commit = match &head {
+            None => None,
+            // The ordinary fan-out worktree: exactly where jigc detached it. No walk needed.
+            Some(head) if base.as_deref() == Some(head.as_str()) => None,
+            Some(head) => {
+                let mut args = vec![
+                    "rev-list",
+                    "--single-worktree",
+                    // The base pin may name a commit a history rewrite has since collected;
+                    // `HEAD` was resolved a moment ago and cannot be the missing one.
+                    "--ignore-missing",
+                    "--count",
+                    head.as_str(),
+                    "--not",
+                    "--all",
+                ];
+                if let Some(base) = &base {
+                    args.push(base.as_str());
+                }
+                let count: usize = git_in(jigc_home, &common, &args)?
+                    .trim()
+                    .parse()
+                    .context("`git rev-list --count` printed no number")?;
+                (count > 0).then(|| AnchoredCommit {
+                    sha: head.clone(),
+                    count,
+                })
+            }
+        };
+
+        let staged = if staged_is_held {
+            staged_in_registration(jigc_home, &admin)?
+        } else {
+            Vec::new()
+        };
+
+        if commit.is_none() && staged.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(Anchored {
+            commit,
+            staged,
+            admin,
+            live,
+            moved,
+        }))
+    }
 }
 
 /// Run `git --git-dir=<git_dir> <args>` from `cwd`, returning stdout — the read every
@@ -4717,8 +4845,16 @@ fn anchored_words(jigc_home: &Path, abs: &Path, anchored: &Anchored) -> String {
         ));
     }
     if !anchored.live {
+        // A registration found at the repository's former path says so: `git worktree
+        // list` shows it there, and a reader who looks would otherwise find no record of
+        // this path at all.
+        let made = if anchored.moved {
+            " (git lists it at the path this repository had before it was moved)"
+        } else {
+            ""
+        };
         return format!(
-            "git's registration of this path still holds {}",
+            "git's registration of this path{made} still holds {}",
             parts.join(" and "),
         );
     }
@@ -7751,11 +7887,25 @@ struct UnlandedWork {
 /// reaches, i.e. where it is registered here: nothing lands from it either way, so an
 /// unregistered path the teardown leaves standing loses nothing.
 ///
+/// **And a registration made before the repository was moved is found** (the same pass's
+/// completion audit, F4; [`Lookup::OrMadeBeforeAMove`], [`moved_registrations`]). Every
+/// read here was keyed on the path, and a moved repository's records name its old one — so
+/// with a sub-agent's `git add`-ed file in such a registration the boundary landed at exit
+/// 0 and settled the milestone without it. Where no live checkout stands at a sub-task's
+/// path and git records nothing there, the registry is asked for the record made for that
+/// sub-task under a root that is gone. Only this door asks: the three consenting doors
+/// drop a registration by the path git lists it at, never reach one listed elsewhere, and
+/// so have nothing to refuse over ([`Lookup::AtThisPath`]).
+///
 /// **Fail-closed, like every other leg**: a registration that is there and cannot be read
 /// is a hold ([`LeftoverShape::Unreadable`]) — *it holds nothing* is the one thing the
 /// probe did not establish, and this door settles the milestone for good.
 ///
-/// **Bounds, stated not glossed.** (1) The bytes leg is not asked here, by the M46 ruling
+/// **Bounds, stated not glossed.** (0) A moved repository's old registration is asked only
+/// where **no live checkout** stands at the sub-task's path: once `jigc milestone provision`
+/// has put a fresh worktree there (git registers it under a new name beside the old
+/// record), that checkout answers for the sub-task and the older record — still intact,
+/// never dropped — is superseded with whatever it held. (1) The bytes leg is not asked here, by the M46 ruling
 /// this guard does not reopen: a live worktree's unstaged, untracked and ignored bytes are
 /// still narrated by the teardown rather than refused over, for a landed sub-task *and*
 /// for a settled one. (2) An operation git has left un-concluded in a **settled**
@@ -7793,7 +7943,15 @@ fn unlanded_work(
         // The boundary carries a staged path only out of a live checkout of a sub-task it
         // lands; everywhere else the index is work it would leave behind.
         let staged_is_held = !(checkout && landed);
-        let (shape, anchored) = match anchored_reading(jigc_home, &path, checkout, staged_is_held) {
+        let (shape, anchored) = match anchored_reading(
+            jigc_home,
+            &path,
+            checkout,
+            staged_is_held,
+            // A moved repository's records name its old path: looked for here, because
+            // settling the milestone without what one holds needs no record to be dropped.
+            Lookup::OrMadeBeforeAMove,
+        ) {
             Ok(None) => continue,
             Ok(Some(anchored)) => (
                 match at {
@@ -7880,6 +8038,9 @@ fn unlanded_work_finding(
     } else if held.registered {
         "the teardown behind a landed boundary would then drop the registration, and that \
          work with it"
+    } else if anchored.is_some_and(|anchored| anchored.moved) {
+        "the teardown behind a landed boundary would not reach a registration git lists \
+         at another path — and the milestone would be settled without that work"
     } else {
         "this repository has not registered that worktree, so the teardown would leave it \
          standing — and the milestone would be settled without it"

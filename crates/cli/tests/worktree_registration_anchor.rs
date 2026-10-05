@@ -1710,6 +1710,221 @@ fn an_unlinked_checkout_is_re_linked_by_the_command_the_refusal_prints() {
 }
 
 // ---------------------------------------------------------------------------
+// A repository moved after its worktrees were provisioned.
+// ---------------------------------------------------------------------------
+
+/// How a sub-task worktree stands in a repository that was **moved** after provisioning —
+/// git still lists its registration at the old path in every one of them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AfterTheMove {
+    /// The checkout came along, its `.git` link still naming the admin directory at the
+    /// repository's old location. git reads nothing through it.
+    LinkNamesTheOldPlace,
+    /// The checkout came along and has no `.git` entry at all.
+    NoLink,
+    /// The directory is gone.
+    DirectoryGone,
+}
+
+const AFTER_THE_MOVE: [AfterTheMove; 3] = [
+    AfterTheMove::LinkNamesTheOldPlace,
+    AfterTheMove::NoLink,
+    AfterTheMove::DirectoryGone,
+];
+
+/// Move `fx`'s repository to a sibling path, and mend the **sibling** sub-task's worktree
+/// the way git offers (`git worktree repair <path>`), so the boundary has something to land
+/// and [`SUB`]'s is the one registration still naming the old place.
+fn move_the_repository(fx: &mut Fixture) {
+    let moved = fx._root.path().join("repo-moved");
+    fs::rename(&fx.repo, &moved).expect("mv the repository");
+    fx.repo = moved;
+    git_ok(
+        &fx.repo,
+        &["worktree", "repair", fx.worktree(SIBLING).to_str().unwrap()],
+    );
+    let listed = git_ok(&fx.repo, &["worktree", "list", "--porcelain"]);
+    assert!(
+        !listed.contains(&format!("worktree {}", fx.worktree(SUB).display())),
+        "fixture: git must not list `{SUB}` at the repository's new path; got:\n{listed}",
+    );
+}
+
+/// **In a moved repository the boundary still refuses over what one of its own sub-task
+/// registrations holds** (the rc.24 fix pass's completion audit, F4).
+///
+/// The guard matched registrations by path, and after an `mv` of the repository git's
+/// records name the old one. Driven before this: one sub-task worktree mended with `git
+/// worktree repair`, the other still holding a `git add`-ed file — `jigc milestone finalize`
+/// exited 0, reported `unreadable worktree …, no code counted`, and the milestone was
+/// settled without the file.
+///
+/// Every way the unmended worktree can stand is refused **before** anything lands, and
+/// each is then walked out through what its refusal prints, as printed, to a boundary
+/// that lands the file. The must-not-refuse cells follow: a moved registration that holds
+/// nothing, and the consenting door, which reaches no registration git lists elsewhere.
+#[test]
+fn a_moved_repositorys_boundary_refuses_over_what_its_own_registration_holds() {
+    for standing in AFTER_THE_MOVE {
+        let cell = format!("moved repository × Staged × {standing:?}");
+        let mut fx = Fixture::mint("moved");
+        fx.stage_code(SIBLING);
+        let planted = fx.plant(Holding::Staged, Standing::Live);
+        move_the_repository(&mut fx);
+        let worktree = fx.worktree(SUB);
+        match standing {
+            AfterTheMove::LinkNamesTheOldPlace => {}
+            AfterTheMove::NoLink => {
+                fs::remove_file(worktree.join(".git")).expect("remove the link");
+            }
+            AfterTheMove::DirectoryGone => {
+                fs::remove_dir_all(&worktree).expect("delete the worktree directory");
+            }
+        }
+        let head = git_ok(&fx.repo, &["rev-parse", "HEAD"]);
+        let admin = bytes_under(&fx.admin(SUB));
+
+        let stderr = refusal_of(&fx, &FINALIZE_DOOR, &cell);
+        assert!(
+            stderr.contains(STAGED.0),
+            "{cell}: the refusal names the path the registration's index holds; \
+             stderr:\n{stderr}",
+        );
+        assert!(
+            stderr.contains("before it was moved"),
+            "{cell}: …and says where git lists that registration; stderr:\n{stderr}",
+        );
+        assert!(
+            !stderr.contains("worktree repair"),
+            "{cell}: never `git worktree repair` — it re-points every other worktree this \
+             repository has a registration for; stderr:\n{stderr}",
+        );
+        assert!(
+            fx.still_held(&planted),
+            "{cell}: the registration still holds the staged path after the refusal",
+        );
+        assert_eq!(
+            git_ok(&fx.repo, &["rev-parse", "HEAD"]),
+            head,
+            "{cell}: nothing was committed",
+        );
+        assert_eq!(
+            bytes_under(&fx.admin(SUB)),
+            admin,
+            "{cell}: the registration is byte-identical after the refusal",
+        );
+
+        // Out through what the refusal prints.
+        let stderr = if standing == AfterTheMove::LinkNamesTheOldPlace {
+            assert!(
+                stderr.contains("move that entry aside")
+                    && !stderr.contains("run the command on that line"),
+                "{cell}: a link that is there is never overwritten by a printed command, \
+                 so the line names the reader's step; stderr:\n{stderr}",
+            );
+            fs::rename(
+                worktree.join(".git"),
+                fx.home.path().join("the-old-link-moved-aside"),
+            )
+            .expect("move the old link aside");
+            refusal_of(&fx, &FINALIZE_DOOR, &cell)
+        } else {
+            stderr
+        };
+        let span = span_where(
+            &stderr,
+            &fx.printed(),
+            "the command that brings the checkout back to its registration",
+            &cell,
+            |span| match standing {
+                AfterTheMove::DirectoryGone => span.starts_with("mkdir -p "),
+                _ => span.starts_with("printf 'gitdir: "),
+            },
+        );
+        run_as_printed(&fx, &span, &cell);
+        assert!(
+            git_ok(&worktree, &["status", "--porcelain"]).contains(&format!("A  {}", STAGED.0)),
+            "{cell}: the path is a worktree again, the sub-agent's path still staged",
+        );
+        fx.jigc_ok(&["milestone", "finalize", MILESTONE]);
+        assert_eq!(
+            git_ok(&fx.repo, &["show", &format!("HEAD:{}", STAGED.0)]),
+            STAGED.1.trim_end(),
+            "{cell}: the sub-agent's staged code is landed",
+        );
+    }
+
+    // MUST NOT REFUSE (1): the moved registration holds nothing — its `HEAD` at the base
+    // pin, nothing staged, its directory gone. The boundary lands the sibling's work.
+    let cell = "moved repository × an empty registration";
+    let mut fx = Fixture::mint("moved-empty");
+    fx.stage_code(SIBLING);
+    move_the_repository(&mut fx);
+    fs::remove_dir_all(fx.worktree(SUB)).expect("delete the worktree directory");
+    let (out, _, stderr) = run_door(&fx, &FINALIZE_DOOR, false, false);
+    assert!(
+        out.status.success(),
+        "{cell}: nothing is held, so the boundary lands; got {:?}\n{stderr}",
+        out.status,
+    );
+
+    // MUST NOT REFUSE (2): the consenting door. It drops a registration at the path git
+    // lists it at and reaches none listed elsewhere, so it has nothing to refuse over —
+    // exactly as on `1.0.0-rc.24` — and the record it did not reach is byte-identical.
+    let cell = "moved repository × `milestone discard`, un-forced";
+    let mut fx = Fixture::mint("moved-discard");
+    let planted = fx.plant(Holding::Staged, Standing::Live);
+    move_the_repository(&mut fx);
+    fs::remove_dir_all(fx.worktree(SUB)).expect("delete the worktree directory");
+    let admin = bytes_under(&fx.admin(SUB));
+    let (out, _, stderr) = run_door(&fx, &DISCARD_DOOR, false, false);
+    assert!(
+        out.status.success(),
+        "{cell}: the door drops nothing git lists elsewhere, so it does not refuse over \
+         it; got {:?}\n{stderr}",
+        out.status,
+    );
+    assert_eq!(
+        bytes_under(&fx.admin(SUB)),
+        admin,
+        "{cell}: …and the registration it did not reach is byte-identical",
+    );
+    assert!(
+        fx.still_held(&planted),
+        "{cell}: …still holding the staged path"
+    );
+
+    // MUST NOT REFUSE (3): a copied repository whose source still stands. Its records name
+    // the SOURCE's worktrees — checkouts that are there and answer for the source — so a
+    // sub-task worktree deleted in the copy is not a registration of the copy's own that
+    // moved, and the copy's boundary lands as it always did.
+    let cell = "a `cp -R` copy whose source still stands";
+    let fx = Fixture::mint("moved-copy");
+    fx.plant(Holding::Staged, Standing::Live);
+    let copy = fx.repo.parent().expect("the fixture root").join("copy");
+    let copied = Command::new("cp")
+        .arg("-R")
+        .arg(&fx.repo)
+        .arg(&copy)
+        .status()
+        .expect("run cp -R");
+    assert!(copied.success(), "{cell}: fixture — the copy is made");
+    let sibling = copy.join(".jigc").join("worktrees").join(SIBLING);
+    fs::write(sibling.join("copied.txt"), "code\n").expect("write");
+    git_ok(&sibling, &["add", "copied.txt"]);
+    fs::remove_dir_all(copy.join(".jigc").join("worktrees").join(SUB))
+        .expect("delete the copy's worktree directory");
+    let out = fx.run_in(&copy, &["milestone", "finalize", MILESTONE]);
+    assert!(
+        out.status.success(),
+        "{cell}: the source's registrations are not the copy's moved ones, so nothing is \
+         held; got {:?}\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+// ---------------------------------------------------------------------------
 // The boundary over a sub-task settled by `jigc task discard`.
 // ---------------------------------------------------------------------------
 
