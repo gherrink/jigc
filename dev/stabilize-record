@@ -1,0 +1,938 @@
+#!/usr/bin/env python3
+#
+# dev/stabilize-record — the one script through which a stabilization run's records
+# reach the repository (DECISIONS.md -> 2026-10-05, "The stabilization workflow, as
+# ruled": rulings 12, 13 and 16; the builder's choices are the entry of the same date,
+# "The record script, as built").
+#
+# A stage's reporters have a shell and no write tool, and what they write is public on
+# the next push and read by fences on the next gate. So neither an agent nor the harness
+# writes a report, a ledger row or a clause row by hand: this script decides the path,
+# replaces host paths, stops on the public-hygiene scan and writes atomically — or
+# refuses in one line and writes nothing.
+#
+# One run's files, all under completions/artifacts/<run>/:
+#
+#   opening.md                              the opening record — the human-led step's, never
+#                                           this script's
+#   ledger.md                               one row per finding          (ledger-add, ledger-set)
+#   clauses.md                              one row per clause           (clause-set)
+#   r<N>/reports/test/<reporter>.a<A>.md    a test-stage report          (report)
+#   r<N>/reports/fix/c<K>/<reporter>.a<A>.md  a fix-stage report, cycle K  (report)
+#
+# A RUN IS OPENED when completions/artifacts/<run>/ is a directory holding a regular
+# file opening.md. This script creates neither, so a mistyped run name is refused
+# (not-opened) and never mints a second run directory.
+#
+# Identifiers. <run>, <reporter>, a ledger key, a cited bound and a clause are slugs
+# — a-z0-9 words joined by single `-`, at most 100 characters, the key grammar of
+# completions/artifacts/M55/seed-ledger.md. A round, a cycle and an attempt are
+# positive integers without a leading zero. Anything else is refused (bad-id) before a
+# path is built, and a link at any step below the run directory is refused (outside).
+#
+# Usage:
+#
+#   dev/stabilize-record report --run R --round N --stage test|fix [--cycle K]
+#                        --reporter S --attempt A [--scratch DIR]... <report
+#       The report on stdin, written to the path above; prints that path. --cycle is
+#       the fix stage's and only its. A path already taken is refused (exists): a
+#       re-run passes the next attempt and the stale report stays where it is.
+#
+#   dev/stabilize-record ledger-add --run R [--scratch DIR]... <rows.json
+#       One JSON object per finding, or an array of them:
+#         key, doctype (jigc-feedback | inconsistency), round (0 is the opening),
+#         source, door, clause, repro            — required; the last four are text
+#         grade, graded_by, bound, disposition, detail — optional, as for ledger-set
+#       A key the ledger already holds is not appended again and keeps its row: a
+#       finding found again inherits it. Prints {"ledger", "appended", "existing"}.
+#
+#   dev/stabilize-record ledger-set --run R [--scratch DIR]... <patches.json
+#       One JSON object per row, or an array: key, and a grade or a disposition.
+#         grade        ungraded | breaks | unclear | no-break | out-of-scope
+#                      | confirmed | regression | refuted
+#         graded_by    triage      gives breaks, unclear, no-break, out-of-scope
+#                      verify-real gives confirmed, regression (confirmed, and green on
+#                                  the previous release), refuted
+#                      human       gives any of them; ungraded has no grader
+#         bound        with out-of-scope and only with it: the declared bound it cites
+#         disposition  open | fixed | admitted | bound | later | no-action
+#         detail       fixed: the fix's sha · bound: its reach · admitted, later,
+#                      no-action: a note, optional · open: none
+#       A key the ledger lacks is refused (no-such-row). Prints {"ledger", "updated"}.
+#
+#   dev/stabilize-record clause-set --run R --clause C [--instrument TEXT]
+#                        [--commit SHA|-] [--scope TEXT] [--status green|red|void]
+#                        [--scratch DIR]...
+#       Writes the clause's row, or updates the cells named. A new row needs an
+#       instrument, a scope and a status. green and red need the commit the instrument
+#       ran on; void is "not reached, or could not run", with or without a commit.
+#       Prints {"clauses", "clause", "status"}.
+#
+#   dev/stabilize-record check-reports --run R --round N --stage test|fix [--cycle K]
+#                        --attempt A [--] [REPORTER...]
+#       Exactly one report of that attempt per launched reporter. Prints
+#       {"check": "reports", "ok", "dir", "attempt", "missing", "extra",
+#       "other_attempts"}: a launched reporter with no report is missing; anything else
+#       in the stage's directory is extra, by file name — a report nobody launched, a
+#       stray file, the temporary of a killed write. Both fail. Reports of other
+#       attempts are listed and decide nothing.
+#
+#   dev/stabilize-record check-ledger --run R [--] [KEY...]
+#       Exactly one ledger row per finding id. Prints {"check": "ledger", "ok",
+#       "missing", "duplicated"}.
+#
+# All of a batch is written, or none of it, and a table has one writer at a time: the
+# three table writers queue on the run directory's lock, so rows written at once are
+# all written — a lock taken once a writer has its input, never while it waits for it.
+# Every JSON result is one line on stdout.
+#
+# What a writer does to its text, in order — report, ledger-add, ledger-set and
+# clause-set alike, because every write goes through one function:
+#
+#   1. Host paths become the public placeholders. A path into this repository becomes
+#      its repository-relative form (`.` for the root); a path under a --scratch root
+#      becomes <scratch>/…; under the system temp directory ($TMPDIR, /tmp, /var/tmp,
+#      macOS's /var/folders/*/*/T), <tmp>/…; under a home directory (this machine's,
+#      and any /Users/<name> or /home/<name>), ~/…. The longest root wins. A session's
+#      scratch area nobody declared still names the home directory, flattened into a
+#      path segment, after that: it is refused (host-path) with what to pass.
+#   2. In a table, a cell cannot break its row: `|` is escaped, a line break becomes
+#      <br>, an empty cell is `-`.
+#   3. No file that would redden a standing fence. One fence reads every markdown file,
+#      untracked ones included — install_line (crates/cli/tests/install_line.rs): a
+#      file with a line that starts `cargo install jigc` is refused (fence), naming it.
+#      Reports stay markdown; write the command inside a line, or behind a `$ `.
+#   4. The public-hygiene scan, hard (implementation/public-hygiene.md). The file is
+#      committed at its own path into a throwaway repository, and the two scanners CI
+#      runs over a push run over that commit: dev/hygiene-scan, unmodified, with the
+#      private denylist ($JIGC_DENYLIST_FILE, else ~/.config/jigc/denylist), and
+#      gitleaks with this repository's .gitleaks.toml. A hit is refused (hygiene), by
+#      where it is and never by what matched. A scanner that could not run — no
+#      denylist, no gitleaks, a pattern no matcher accepts, a scanner error — DID NOT
+#      RUN (did-not-run): that is never a pass, and nothing is written.
+#   5. The write is atomic: a temporary beside the target, then a link (a report, which
+#      never replaces a file) or a rename (a table). A run killed at any point leaves
+#      no partial file at the target.
+#
+# Exit status, and the word a refusal opens with — `stabilize-record: refused <word>:
+# …`, one line on stderr, nothing on stdout:
+#
+#    0  written, or the check holds
+#    2  usage         an unknown subcommand or flag, a missing argument
+#    3  not-opened    the run has no opening record
+#    4  bad-id        an identifier outside its grammar
+#    5  outside       a link below the run directory: the write would land outside it
+#    6  exists        the report's path is taken — pass the next attempt
+#    7  bad-value     a value outside its vocabulary, a malformed row, a report that is
+#                     not text
+#    8  no-such-row   ledger-set names a key the ledger lacks
+#    9  fence         the file would redden a standing fence, which is named
+#   10  host-path     a host path the placeholders could not replace
+#   11  hygiene       the public-hygiene scan found a hit
+#   12  did-not-run   a scanner could not run
+#   13  corrupt       ledger.md or clauses.md is not the table this script writes
+#   20  check-reports failed: a report is missing or extra (the result is on stdout)
+#   21  check-ledger  failed: a row is missing or duplicated (the result is on stdout)
+#
+# Needs python3, git and bash (dev/hygiene-scan), which the gate needs already, and
+# gitleaks and a denylist to write anything at all.
+# crates/cli/tests/dev_stabilize_record.rs drives it.
+
+import argparse
+import fcntl
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+
+PROG = "stabilize-record"
+
+STATUS = {
+    "usage": 2,
+    "not-opened": 3,
+    "bad-id": 4,
+    "outside": 5,
+    "exists": 6,
+    "bad-value": 7,
+    "no-such-row": 8,
+    "fence": 9,
+    "host-path": 10,
+    "hygiene": 11,
+    "did-not-run": 12,
+    "corrupt": 13,
+}
+REPORTS_MISMATCH = 20
+LEDGER_MISMATCH = 21
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+ROOT = os.path.dirname(SCRIPT_DIR)
+ARTIFACTS = ("completions", "artifacts")
+
+SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+SLUG_MAX = 100
+NUMBER = re.compile(r"[1-9][0-9]{0,5}")
+SHA = re.compile(r"[0-9a-f]{7,40}")
+REPORT_NAME = re.compile(r"(%s)\.a([1-9][0-9]{0,5})\.md" % SLUG.pattern)
+STAGES = ("test", "fix")
+
+DOCTYPES = ("jigc-feedback", "inconsistency")
+TRIAGE_GRADES = ("breaks", "unclear", "no-break", "out-of-scope")
+VERIFIED_GRADES = ("confirmed", "regression", "refuted")
+GRADERS = {
+    "triage": TRIAGE_GRADES,
+    "verify-real": VERIFIED_GRADES,
+    "human": TRIAGE_GRADES + VERIFIED_GRADES,
+}
+# disposition -> its detail: "sha", "required", "optional" or None.
+DISPOSITIONS = {
+    "open": None,
+    "fixed": "sha",
+    "admitted": "optional",
+    "bound": "required",
+    "later": "optional",
+    "no-action": "optional",
+}
+CLAUSE_STATUSES = ("green", "red", "void")
+
+LEDGER_COLUMNS = (
+    "key",
+    "doctype",
+    "round",
+    "source",
+    "door",
+    "clause broken",
+    "grade",
+    "graded by",
+    "disposition",
+    "repro pointer",
+)
+CLAUSE_COLUMNS = ("clause", "instrument", "last commit", "scope", "status")
+
+# A fence that reads every markdown file of the tree, untracked ones included, and what
+# makes a line of a file redden it. One member today; a second such fence owes a row.
+FENCES = (
+    (
+        "install_line::the_install_line_has_one_owner_one_copy_and_one_derived_file",
+        "starts `cargo install jigc`",
+        lambda line: line.strip().startswith("cargo install jigc"),
+    ),
+)
+
+# The exit status gitleaks is told to use for a finding, so that its own errors (1) can
+# never read as one, nor as a clean scan.
+GITLEAKS_FOUND = 97
+
+
+class Refusal(Exception):
+    def __init__(self, kind, detail):
+        super().__init__(detail)
+        self.kind = kind
+        self.detail = detail
+
+
+def refuse(kind, detail):
+    raise Refusal(kind, detail)
+
+
+def shown(value):
+    """A caller's value as one printable token, whatever it holds."""
+    return json.dumps(value, ensure_ascii=True)
+
+
+def usage_help():
+    for line in open(__file__, encoding="utf-8").read().split("\n")[1:]:
+        if not line.startswith("#"):
+            break
+        print(re.sub(r"^# ?", "", line))
+
+
+# --- identifiers and paths ----------------------------------------------------
+
+
+def slug(value, what):
+    if not isinstance(value, str) or len(value) > SLUG_MAX or not SLUG.fullmatch(value):
+        refuse("bad-id", "%s %s is not a slug (a-z0-9 words joined by single `-`, at most %d characters)" % (what, shown(value), SLUG_MAX))
+    return value
+
+
+def number(value, what):
+    if not isinstance(value, str) or not NUMBER.fullmatch(value):
+        refuse("bad-id", "%s %s is not a positive integer" % (what, shown(value)))
+    return value
+
+
+def stage_of(value):
+    if value not in STAGES:
+        refuse("bad-id", "stage %s is not one of %s" % (shown(value), ", ".join(STAGES)))
+    return value
+
+
+def open_run(run):
+    """The run's directory, refusing a run that was never opened."""
+    slug(run, "run")
+    run_dir = os.path.join(ROOT, *ARTIFACTS, run)
+    if not os.path.lexists(run_dir):
+        refuse("not-opened", "no run %s: %s/ does not exist" % (run, "/".join(ARTIFACTS + (run,))))
+    if os.path.realpath(run_dir) != run_dir:
+        refuse("outside", "the run directory of %s is a link, or lies behind one" % run)
+    opening = os.path.join(run_dir, "opening.md")
+    if os.path.islink(opening) or not os.path.isfile(opening):
+        refuse("not-opened", "run %s has no opening record: %s is not a regular file" % (run, "/".join(ARTIFACTS + (run, "opening.md"))))
+    return run_dir
+
+
+def below(run_dir, parts):
+    """The path `parts` name below the run directory, refusing a link on the way to it."""
+    path = run_dir
+    for n, part in enumerate(parts, 1):
+        path = os.path.join(path, part)
+        if os.path.islink(path):
+            refuse("outside", "%s is a link: a write there would land outside the run directory" % "/".join(parts[:n]))
+    return path
+
+
+def one_writer(run_dir):
+    """Hold the run directory's lock until this process ends. A table is read, changed
+    and replaced, so two writers at once would each drop the other's rows. Taken once a
+    writer has its input in hand, never while it waits for it."""
+    fcntl.flock(os.open(run_dir, os.O_RDONLY), fcntl.LOCK_EX)
+
+
+def stage_parts(args):
+    """The directory of a stage's reports, as path segments below the run directory."""
+    number(args.round, "round")
+    stage_of(args.stage)
+    if args.stage == "fix":
+        if args.cycle is None:
+            refuse("usage", "a fix-stage report belongs to a cycle: pass --cycle")
+        number(args.cycle, "cycle")
+        return ["r" + args.round, "reports", "fix", "c" + args.cycle]
+    if args.cycle is not None:
+        refuse("usage", "--cycle is the fix stage's: a test-stage report has none")
+    return ["r" + args.round, "reports", "test"]
+
+
+# --- host paths -> public placeholders -----------------------------------------
+
+NAME = r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*"
+# A root ends where a name does: /tmpfile is not the temp directory.
+ROOT_ENDS = r"(?![A-Za-z0-9_-])(?!\.[A-Za-z0-9_-])"
+# A root any host has — /tmp, a home under /Users — is a host path only where no path is
+# already running: crates/tmp/x and docs/home/z are not. A root of this machine's own is
+# one wherever it stands, so `-I<home>/include` is replaced too.
+PATH_OPENS = r"(?<![A-Za-z0-9_.~>-])"
+ANY_HOSTS_TMP = ("/tmp", "/var/tmp")
+REPOSITORY = ""
+
+
+def spellings(path):
+    """A directory's path as a host may print it: as given, resolved, and on macOS with
+    and without the /private its temp trees resolve to."""
+    path = os.path.normpath(path)
+    forms = {path, os.path.realpath(path)}
+    for form in list(forms):
+        if form.startswith("/private/"):
+            forms.add(form[len("/private"):])
+        elif form.startswith(("/tmp", "/var/")):
+            forms.add("/private" + form)
+    return [form for form in forms if os.path.isabs(form) and len(form) > 1]
+
+
+def host_roots(scratch):
+    """Every root spelling a host path can open with, and the placeholder it becomes."""
+    roots = {}
+
+    def add(path, token):
+        for form in spellings(path):
+            roots.setdefault(form, token)
+
+    add(ROOT, REPOSITORY)
+    for path in scratch:
+        add(path, "<scratch>")
+    for path in (os.environ.get("TMPDIR"), tempfile.gettempdir()) + ANY_HOSTS_TMP:
+        if path:
+            add(path, "<tmp>")
+    add(os.path.expanduser("~"), "~")
+    return roots
+
+
+def public(text, scratch):
+    """`text` with every host path replaced by its public placeholder."""
+    roots = host_roots(scratch)
+    shared = {form for path in ANY_HOSTS_TMP for form in spellings(path)}
+
+    def longest_first(names):
+        return "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
+
+    pattern = re.compile(
+        "(?:(?P<own>" + longest_first(set(roots) - shared) + ")"
+        + "|" + PATH_OPENS
+        + "(?:(?P<shared>" + longest_first(shared) + ")"
+        + "|(?P<tmp>(?:/private)?/var/folders/" + NAME + "/" + NAME + "/T)"
+        + "|(?P<home>/(?:Users|home)/" + NAME + ")))"
+        + ROOT_ENDS
+        + r"(?P<into>/(?=[^\s/]))?"
+    )
+
+    def placeholder(match):
+        root = match.group("own") or match.group("shared")
+        if root is not None:
+            token = roots[root]
+        else:
+            token = "<tmp>" if match.group("tmp") else "~"
+        into = match.group("into") or ""
+        if token == REPOSITORY:
+            return "" if into else "."
+        return token + into
+
+    text = pattern.sub(placeholder, text)
+
+    # A session's scratch area lies under the temp directory with the home directory's
+    # path flattened into one segment. Replaced as a temp path it still names the home.
+    for home in spellings(os.path.expanduser("~")):
+        flat = re.sub(r"[^A-Za-z0-9]", "-", home)
+        lines = [str(n) for n, line in enumerate(text.split("\n"), 1) if flat in line]
+        if len(flat) > 3 and lines:
+            refuse("host-path", "line %s still names this machine's home directory inside a path (a session's scratch area?) — pass that area's root as --scratch" % ", ".join(lines))
+    return text
+
+
+def scratch_roots(args):
+    for path in args.scratch:
+        if not os.path.isabs(path):
+            refuse("bad-value", "--scratch %s is not an absolute path" % shown(path))
+    return args.scratch
+
+
+# --- the one write --------------------------------------------------------------
+
+
+def fence_check(text):
+    for name, what, reddens in FENCES:
+        lines = [str(n) for n, line in enumerate(text.splitlines(), 1) if reddens(line)]
+        if lines:
+            refuse("fence", "line %s %s, which would redden %s — write the command inside a line" % (", ".join(lines), what, name))
+
+
+def did_not_run(why):
+    refuse("did-not-run", "the public-hygiene scan did not run, so nothing was written: %s" % why)
+
+
+def hygiene_scan(rel, text):
+    """The two scanners CI runs over a push, over `text` committed at `rel` into a
+    throwaway repository. Returns only when both ran and found nothing."""
+    denylist = os.environ.get("JIGC_DENYLIST_FILE") or os.path.join(os.path.expanduser("~"), ".config", "jigc", "denylist")
+    if not os.path.isfile(denylist):
+        did_not_run("no denylist at %s (implementation/public-hygiene.md)" % denylist)
+    scanner = os.path.join(SCRIPT_DIR, "hygiene-scan")
+    if not os.path.isfile(scanner):
+        did_not_run("dev/hygiene-scan is missing")
+    tools = {}
+    for tool in ("git", "gitleaks"):
+        tools[tool] = shutil.which(tool)
+        if tools[tool] is None:
+            did_not_run("%s is not on PATH" % tool)
+
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env.update(
+        GIT_CONFIG_NOSYSTEM="1",
+        GIT_CONFIG_GLOBAL=os.devnull,
+        GIT_AUTHOR_NAME=PROG,
+        GIT_AUTHOR_EMAIL=PROG + "@example.invalid",
+        GIT_COMMITTER_NAME=PROG,
+        GIT_COMMITTER_EMAIL=PROG + "@example.invalid",
+    )
+
+    def ran(argv, what):
+        try:
+            return subprocess.run(argv, cwd=repo, env=env, stdin=subprocess.DEVNULL, capture_output=True)
+        except OSError as err:
+            did_not_run("%s could not be started (%s)" % (what, err.strerror))
+
+    def last_line(out):
+        return out.stderr.decode("utf-8", "replace").strip().split("\n")[-1] or "no message"
+
+    with tempfile.TemporaryDirectory(prefix="jigc-stabilize-scan-") as work:
+        # dev/hygiene-scan scans the repository it lies in, so it is linked into this
+        # one — untracked, so it is not itself scanned.
+        repo = os.path.join(work, "repo")
+        os.makedirs(os.path.join(repo, "dev"))
+        os.symlink(scanner, os.path.join(repo, "dev", "hygiene-scan"))
+        os.makedirs(os.path.dirname(os.path.join(repo, rel)))
+        with open(os.path.join(repo, rel), "w", encoding="utf-8", newline="") as copy:
+            copy.write(text)
+        for step, argv in (
+            ("init", ["init", "-q", "--template="]),
+            ("add", ["add", "--", rel]),
+            # No background maintenance: it would outlive the commit, in a repository
+            # that is removed as soon as the scan is done.
+            ("commit", ["-c", "commit.gpgsign=false", "-c", "maintenance.auto=false", "-c", "gc.auto=0", "commit", "-q", "--no-verify", "-m", "."]),
+        ):
+            out = ran([tools["git"]] + argv, "git")
+            if out.returncode != 0:
+                did_not_run("git %s failed in the scan's repository: %s" % (step, last_line(out)))
+
+        out = ran([os.path.join(repo, "dev", "hygiene-scan"), "--tree", denylist, "HEAD"], "dev/hygiene-scan")
+        if out.returncode == 1:
+            places = []
+            for line in out.stdout.decode("utf-8", "replace").split("\n"):
+                found = re.fullmatch(r"  (?:tree|path|added +[0-9a-f]+) +(\S.*)", line)
+                if found and found.group(1) not in places:
+                    places.append(found.group(1))
+            refuse("hygiene", "the denylist matches at %s — by where, never by what; reword it (implementation/public-hygiene.md)" % (", ".join(places) or rel))
+        if out.returncode != 0:
+            did_not_run("dev/hygiene-scan exited %d: %s" % (out.returncode, last_line(out)))
+
+        report = os.path.join(work, "gitleaks.json")
+        argv = [tools["gitleaks"], "git", "--redact", "--no-banner", "--no-color", "--exit-code", str(GITLEAKS_FOUND), "--report-format", "json", "--report-path", report]
+        config = os.path.join(ROOT, ".gitleaks.toml")
+        if os.path.isfile(config):
+            argv += ["--config", config]
+        out = ran(argv + [repo], "gitleaks")
+        if out.returncode == GITLEAKS_FOUND:
+            try:
+                found = ["rule %s at line %s" % (leak["RuleID"], leak["StartLine"]) for leak in json.load(open(report, encoding="utf-8"))]
+            except (OSError, ValueError, KeyError, TypeError):
+                found = []
+            refuse("hygiene", "gitleaks found a secret-shaped string in %s: %s — a credential is never committed, even a revoked one" % (rel, "; ".join(found) or "no location reported"))
+        if out.returncode != 0:
+            did_not_run("gitleaks exited %d: %s" % (out.returncode, last_line(out)))
+
+
+def publish(run_dir, parts, text, replace):
+    """Write `text` at `parts` below the run directory — fenced, scanned, atomically —
+    and return the path written, repository-relative. Every writer ends here."""
+    target = below(run_dir, parts)
+    rel = "/".join(ARTIFACTS + (os.path.basename(run_dir),) + tuple(parts))
+    if os.path.lexists(target) and not (replace and os.path.isfile(target)):
+        refuse("exists", "%s exists — a re-run passes the next attempt" % rel)
+    fence_check(text)
+    hygiene_scan(rel, text)
+
+    parent = os.path.dirname(target)
+    os.makedirs(parent, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(dir=parent, prefix=".%s." % PROG, suffix=".tmp")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8", newline="") as out:
+            out.write(text)
+            out.flush()
+            os.fsync(out.fileno())
+        os.chmod(temporary, 0o644)
+        if replace:
+            os.replace(temporary, target)
+            temporary = None
+        else:
+            try:
+                os.link(temporary, target)
+            except FileExistsError:
+                refuse("exists", "%s exists — a re-run passes the next attempt" % rel)
+    finally:
+        if temporary is not None:
+            os.unlink(temporary)
+    return rel
+
+
+# --- tables ---------------------------------------------------------------------
+
+
+def cell(text):
+    """Free text as one table cell: no line break, no bare pipe, never empty."""
+    text = re.sub(r"\s*[\r\n\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]+\s*", "<br>", text.strip())
+    text = re.sub(r"[\x00-\x1f\x7f]", " ", text)
+    text = re.sub(r"\\+(?=\|)", lambda run: "&#92;" * len(run.group()), text)
+    return text.replace("|", "\\|") or "-"
+
+
+def header(columns):
+    return ["| %s |" % " | ".join(columns), "|" + "---|" * len(columns)]
+
+
+def read_table(path, rel, columns):
+    """The lines above the table at `path` and its rows, each a list of raw cells — or
+    None when there is no file yet. A file that is not this script's table is refused."""
+    if os.path.islink(path):
+        refuse("outside", "%s is a link: a write to it would land outside the run directory" % rel)
+    if not os.path.lexists(path):
+        return None
+    try:
+        lines = open(path, encoding="utf-8", newline="").read().split("\n")
+    except (OSError, ValueError) as err:
+        refuse("corrupt", "%s cannot be read as text (%s)" % (rel, err))
+    head = header(columns)
+    if head[0] not in lines:
+        refuse("corrupt", "%s holds no table with this script's header; it is not rewritten on a guess" % rel)
+    at = lines.index(head[0])
+    if lines[at + 1 : at + 2] != head[1:]:
+        refuse("corrupt", "%s line %d is not the header's rule" % (rel, at + 2))
+    body = lines[at + 2 :]
+    while body and body[-1] == "":
+        body.pop()
+    rows = []
+    for n, line in enumerate(body, at + 3):
+        cells = re.split(r"(?<!\\)\|", line)
+        if len(cells) != len(columns) + 2 or cells[0] != "" or cells[-1] != "":
+            refuse("corrupt", "%s line %d is not a row of %d cells; it is not rewritten on a guess" % (rel, n, len(columns)))
+        rows.append([text.strip() for text in cells[1:-1]])
+    return lines[:at], rows
+
+
+def render_table(above, columns, rows):
+    return "\n".join(above + header(columns) + ["| %s |" % " | ".join(row) for row in rows]) + "\n"
+
+
+def tick(text):
+    return "`%s`" % text
+
+
+def untick(text):
+    return text.strip("`")
+
+
+def json_rows(what):
+    """Stdin as a non-empty list of JSON objects."""
+    try:
+        rows = json.loads(sys.stdin.buffer.read().decode("utf-8"))
+    except ValueError as err:
+        refuse("bad-value", "stdin is not JSON (%s)" % str(err).split("\n")[0])
+    if isinstance(rows, dict):
+        rows = [rows]
+    if not isinstance(rows, list) or not rows or not all(isinstance(row, dict) for row in rows):
+        refuse("bad-value", "stdin must be one %s as a JSON object, or a non-empty array of them" % what)
+    return rows
+
+
+def fields(row, required, optional, what):
+    unknown = sorted(set(row) - set(required) - set(optional))
+    if unknown:
+        refuse("bad-value", "%s has no field %s; it has %s" % (what, ", ".join(shown(name) for name in unknown), ", ".join(required + optional)))
+    missing = [name for name in required if name not in row]
+    if missing:
+        refuse("bad-value", "%s lacks %s" % (what, ", ".join(missing)))
+
+
+def text_of(row, name, what, scratch):
+    if not isinstance(row[name], str):
+        refuse("bad-value", "%s: %s must be text, not %s" % (what, name, shown(row[name])))
+    return cell(public(row[name], scratch))
+
+
+def one_of(value, allowed, what):
+    if not isinstance(value, str) or value not in allowed:
+        refuse("bad-value", "%s %s is not one of %s" % (what, shown(value), ", ".join(allowed)))
+    return value
+
+
+def grade_cells(row, what):
+    """The `grade` and `graded by` cells a row or a patch names."""
+    grade = one_of(row["grade"], ("ungraded",) + GRADERS["human"], what + ": grade")
+    grader, bound = row.get("graded_by"), row.get("bound")
+    if (bound is not None) != (grade == "out-of-scope"):
+        refuse("bad-value", "%s: out-of-scope cites a declared bound of the opening record as `bound`, and no other grade does" % what)
+    if grade == "ungraded":
+        if "graded_by" in row:
+            refuse("bad-value", "%s: ungraded has no grader" % what)
+        return "ungraded", "-"
+    one_of(grader, tuple(GRADERS), what + ": graded_by")
+    one_of(grade, GRADERS[grader], "%s: a grade given by %s," % (what, grader))
+    if bound is not None:
+        return "out-of-scope: " + slug(bound, what + ": bound"), grader
+    return grade, grader
+
+
+def disposition_cell(row, what, scratch):
+    disposition = one_of(row["disposition"], tuple(DISPOSITIONS), what + ": disposition")
+    needs, detail = DISPOSITIONS[disposition], row.get("detail")
+    if detail is None:
+        if needs in ("sha", "required"):
+            refuse("bad-value", "%s: %s needs a detail — %s" % (what, disposition, "the fix's sha" if needs == "sha" else "the bound's reach"))
+        return disposition
+    if needs is None:
+        refuse("bad-value", "%s: %s takes no detail" % (what, disposition))
+    if not isinstance(detail, str) or not detail.strip():
+        refuse("bad-value", "%s: detail must be text, not %s" % (what, shown(detail)))
+    if needs == "sha":
+        if not SHA.fullmatch(detail):
+            refuse("bad-value", "%s: fixed names the fix's commit, 7 to 40 hex digits, not %s" % (what, shown(detail)))
+        return "fixed: " + detail
+    return "%s: %s" % (disposition, cell(public(detail, scratch)))
+
+
+def set_cells(row, what, scratch):
+    """The (column index, cell) pairs for the grade and disposition `row` names."""
+    cells = []
+    if "grade" in row:
+        cells += zip((6, 7), grade_cells(row, what))
+    elif "graded_by" in row or "bound" in row:
+        refuse("bad-value", "%s: graded_by and bound belong to a grade" % what)
+    if "disposition" in row:
+        cells.append((8, disposition_cell(row, what, scratch)))
+    elif "detail" in row:
+        refuse("bad-value", "%s: a detail belongs to a disposition" % what)
+    return cells
+
+
+LEDGER_REQUIRED = ("key", "doctype", "round", "source", "door", "clause", "repro")
+LEDGER_SET = ("grade", "graded_by", "bound", "disposition", "detail")
+
+
+def ledger_row(row, scratch):
+    fields(row, LEDGER_REQUIRED, LEDGER_SET, "a ledger row")
+    what = "row %s" % shown(row["key"])
+    key = slug(row["key"], "key")
+    one_of(row["doctype"], DOCTYPES, what + ": doctype")
+    if isinstance(row["round"], bool) or not isinstance(row["round"], int) or row["round"] < 0:
+        refuse("bad-value", "%s: round must be a whole number, 0 for the opening, not %s" % (what, shown(row["round"])))
+    cells = [tick(key), tick(row["doctype"]), str(row["round"])]
+    cells += [text_of(row, name, what, scratch) for name in ("source", "door", "clause")]
+    cells += ["ungraded", "-", "open", text_of(row, "repro", what, scratch)]
+    for at, text in set_cells(row, what, scratch):
+        cells[at] = text
+    return key, cells
+
+
+def table_file(run_dir, name, columns, title, says):
+    """(the table file's repository-relative path, the lines above its table, its rows).
+    A file that does not exist yet opens with `title` and what the table `says`."""
+    run = os.path.basename(run_dir)
+    rel = "/".join(ARTIFACTS + (run, name))
+    table = read_table(below(run_dir, [name]), rel, columns)
+    if table is None:
+        table = (["# %s — %s" % (run, title), "", says, ""], [])
+    return (rel,) + table
+
+
+def read_ledger(run_dir):
+    return table_file(
+        run_dir,
+        "ledger.md",
+        LEDGER_COLUMNS,
+        "the findings ledger",
+        "One row per finding of this stabilization run. Written by `dev/stabilize-record` and never by hand; its header states the columns and the vocabularies of `grade`, `graded by` and `disposition`.",
+    )
+
+
+def unique_rows(rel, rows):
+    keys = [untick(row[0]) for row in rows]
+    twice = sorted({key for key in keys if keys.count(key) > 1})
+    if twice:
+        refuse("corrupt", "%s holds more than one row for %s; it is not rewritten on a guess" % (rel, ", ".join(twice)))
+    return keys
+
+
+# --- the subcommands --------------------------------------------------------------
+
+
+def report(args):
+    run_dir = open_run(args.run)
+    parts = stage_parts(args)
+    name = "%s.a%s.md" % (slug(args.reporter, "reporter"), number(args.attempt, "attempt"))
+    scratch = scratch_roots(args)
+    # Asked before the report is read, and again by the write itself.
+    if os.path.lexists(below(run_dir, parts + [name])):
+        refuse("exists", "%s exists — a re-run passes the next attempt" % "/".join(ARTIFACTS + (args.run,) + tuple(parts) + (name,)))
+    try:
+        text = sys.stdin.buffer.read().decode("utf-8")
+    except ValueError:
+        refuse("bad-value", "the report on stdin is not UTF-8 text")
+    if "\0" in text or not text.strip():
+        refuse("bad-value", "the report on stdin is empty, or is not text")
+    text = public(text, scratch)
+    if not text.endswith("\n"):
+        text += "\n"
+    print(publish(run_dir, parts + [name], text, replace=False))
+
+
+def ledger_add(args):
+    run_dir = open_run(args.run)
+    scratch = scratch_roots(args)
+    given = [ledger_row(row, scratch) for row in json_rows("ledger row")]
+    one_writer(run_dir)
+    rel, above, rows = read_ledger(run_dir)
+    keys = unique_rows(rel, rows)
+    appended, existing = [], []
+    for key, cells in given:
+        if key in keys:
+            existing.append(key)
+        else:
+            keys.append(key)
+            rows.append(cells)
+            appended.append(key)
+    if appended:
+        publish(run_dir, ["ledger.md"], render_table(above, LEDGER_COLUMNS, rows), replace=True)
+    print(json.dumps({"ledger": rel, "appended": appended, "existing": existing}))
+
+
+def ledger_set(args):
+    run_dir = open_run(args.run)
+    scratch = scratch_roots(args)
+    patches = []
+    for patch in json_rows("ledger patch"):
+        fields(patch, ("key",), LEDGER_SET, "a ledger patch")
+        key = slug(patch["key"], "key")
+        cells = set_cells(patch, "patch %s" % key, scratch)
+        if not cells:
+            refuse("bad-value", "patch %s sets neither a grade nor a disposition" % key)
+        patches.append((key, cells))
+    one_writer(run_dir)
+    rel, above, rows = read_ledger(run_dir)
+    keys = unique_rows(rel, rows)
+    for key, cells in patches:
+        if key not in keys:
+            refuse("no-such-row", "the ledger has no row %s; nothing was written" % key)
+        for at, text in cells:
+            rows[keys.index(key)][at] = text
+    publish(run_dir, ["ledger.md"], render_table(above, LEDGER_COLUMNS, rows), replace=True)
+    print(json.dumps({"ledger": rel, "updated": [key for key, _ in patches]}))
+
+
+def clause_set(args):
+    run_dir = open_run(args.run)
+    clause = slug(args.clause, "clause")
+    scratch = scratch_roots(args)
+    named = {name: getattr(args, name) for name in ("instrument", "commit", "scope", "status") if getattr(args, name) is not None}
+    if not named:
+        refuse("usage", "clause-set sets nothing: pass --instrument, --commit, --scope or --status")
+    if "status" in named:
+        one_of(named["status"], CLAUSE_STATUSES, "status")
+    if "commit" in named and named["commit"] != "-" and not SHA.fullmatch(named["commit"]):
+        refuse("bad-value", "commit %s is neither a sha of 7 to 40 hex digits nor `-`" % shown(named["commit"]))
+    one_writer(run_dir)
+
+    rel, above, rows = table_file(
+        run_dir,
+        "clauses.md",
+        CLAUSE_COLUMNS,
+        "the closing condition, clause by clause",
+        "One row per clause of the closing condition: the instrument that judges it, the last commit that instrument ran on, the scope of that run, and `green`, `red` or `void` — not reached, or could not run. Written by `dev/stabilize-record` and never by hand. A void row, or a missing one, forbids closing.",
+    )
+    keys = [untick(row[0]) for row in rows]
+    if len(set(keys)) != len(keys):
+        refuse("corrupt", "%s holds more than one row for a clause; it is not rewritten on a guess" % rel)
+    if clause in keys:
+        row = rows[keys.index(clause)]
+    else:
+        missing = [name for name in ("instrument", "scope", "status") if name not in named]
+        if missing:
+            refuse("bad-value", "clause %s has no row yet: its first needs --%s" % (clause, ", --".join(missing)))
+        row = [tick(clause), "", "-", "", ""]
+        rows.append(row)
+    for at, name in ((1, "instrument"), (3, "scope")):
+        if name in named:
+            row[at] = cell(public(named[name], scratch))
+    if "commit" in named:
+        row[2] = "-" if named["commit"] == "-" else tick(named["commit"])
+    if "status" in named:
+        row[4] = named["status"]
+    if row[4] != "void" and row[2] == "-":
+        refuse("bad-value", "clause %s: %s is a verdict, and a verdict names the commit the instrument ran on — pass --commit" % (clause, row[4]))
+    publish(run_dir, ["clauses.md"], render_table(above, CLAUSE_COLUMNS, rows), replace=True)
+    print(json.dumps({"clauses": rel, "clause": clause, "status": row[4]}))
+
+
+def distinct(names, what):
+    twice = sorted({name for name in names if names.count(name) > 1})
+    if twice:
+        refuse("bad-value", "%s %s is given more than once" % (what, ", ".join(twice)))
+    return names
+
+
+def check_reports(args):
+    run_dir = open_run(args.run)
+    parts = stage_parts(args)
+    attempt = int(number(args.attempt, "attempt"))
+    launched = distinct([slug(name, "reporter") for name in args.names], "reporter")
+    directory = below(run_dir, parts)
+    seen, extra, other = set(), [], []
+    for name in sorted(os.listdir(directory)) if os.path.isdir(directory) else []:
+        path = os.path.join(directory, name)
+        parsed = REPORT_NAME.fullmatch(name)
+        if parsed is None or os.path.islink(path) or not os.path.isfile(path):
+            extra.append(name)
+        elif int(parsed.group(2)) != attempt:
+            other.append(name)
+        elif parsed.group(1) in launched:
+            seen.add(parsed.group(1))
+        else:
+            extra.append(name)
+    missing = [name for name in launched if name not in seen]
+    ok = not missing and not extra
+    print(json.dumps({
+        "check": "reports",
+        "ok": ok,
+        "dir": "/".join(ARTIFACTS + (args.run,) + tuple(parts)),
+        "attempt": attempt,
+        "missing": missing,
+        "extra": extra,
+        "other_attempts": other,
+    }))
+    return 0 if ok else REPORTS_MISMATCH
+
+
+def check_ledger(args):
+    run_dir = open_run(args.run)
+    wanted = distinct([slug(name, "key") for name in args.names], "key")
+    keys = [untick(row[0]) for row in read_ledger(run_dir)[2]]
+    missing = [key for key in wanted if key not in keys]
+    duplicated = [key for key in wanted if keys.count(key) > 1]
+    ok = not missing and not duplicated
+    print(json.dumps({"check": "ledger", "ok": ok, "missing": missing, "duplicated": duplicated}))
+    return 0 if ok else LEDGER_MISMATCH
+
+
+class Arguments(argparse.ArgumentParser):
+    def error(self, message):
+        refuse("usage", "%s — see dev/stabilize-record --help" % message)
+
+
+def arguments(argv):
+    parser = Arguments(prog="dev/" + PROG, add_help=False, allow_abbrev=False)
+    commands = parser.add_subparsers(dest="command", required=True, parser_class=Arguments)
+
+    def command(name, act, flags, writes=False, names=False):
+        sub = commands.add_parser(name, add_help=False, allow_abbrev=False)
+        sub.set_defaults(act=act)
+        sub.add_argument("--run", required=True)
+        for flag, required in flags:
+            sub.add_argument("--" + flag, required=required)
+        if writes:
+            sub.add_argument("--scratch", action="append", default=[])
+        if names:
+            sub.add_argument("names", nargs="*")
+
+    stage = [("round", True), ("stage", True), ("cycle", False), ("attempt", True)]
+    command("report", report, stage + [("reporter", True)], writes=True)
+    command("ledger-add", ledger_add, [], writes=True)
+    command("ledger-set", ledger_set, [], writes=True)
+    command("clause-set", clause_set, [("clause", True), ("instrument", False), ("commit", False), ("scope", False), ("status", False)], writes=True)
+    command("check-reports", check_reports, stage, names=True)
+    command("check-ledger", check_ledger, [], names=True)
+    if not argv or argv[0] not in commands.choices:
+        refuse("usage", "%s is not a subcommand: the subcommands are %s — see dev/stabilize-record --help" % (shown(argv[0]) if argv else "nothing", ", ".join(commands.choices)))
+    return parser.parse_args(argv)
+
+
+def main(argv):
+    # UTF-8 out, whatever the caller's locale claims: a result is read by a script.
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+    flags = argv[: argv.index("--")] if "--" in argv else argv
+    if any(arg in ("-h", "--help") for arg in flags):
+        usage_help()
+        return 0
+    # A terminated run unwinds, so the temporary of a write in flight goes with it.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(128 + signal.SIGTERM))
+    signal.signal(signal.SIGHUP, lambda *_: sys.exit(128 + signal.SIGHUP))
+    try:
+        args = arguments(argv)
+        return args.act(args) or 0
+    except Refusal as refusal:
+        sys.stderr.write("%s: refused %s: %s\n" % (PROG, refusal.kind, " ".join(refusal.detail.split())))
+        return STATUS[refusal.kind]
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

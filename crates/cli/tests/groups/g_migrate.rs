@@ -17,6 +17,8 @@ mod crate_readme;
 mod dev_gate_report;
 #[path = "../dev_rig_parity.rs"]
 mod dev_rig_parity;
+#[path = "../dev_stabilize_record.rs"]
+mod dev_stabilize_record;
 #[path = "../duplicate_field_finding_keys.rs"]
 mod duplicate_field_finding_keys;
 #[path = "../flow10_acceptance.rs"]
