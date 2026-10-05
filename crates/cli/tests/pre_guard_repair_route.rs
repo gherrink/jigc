@@ -762,27 +762,27 @@ fn an_ordinary_tasks_conflict_is_offered_no_baseline_drop() {
     );
 }
 
-/// **Arm 2 — the migration-source route may not send an operator to a review that does
-/// not carry what the route is about to replace** (M46 Increment 5, validate→fix).
+/// **Arm 2 — a migration source edited after the mint is not replaced** (M46 Increment 5,
+/// validate→fix; re-taken by the rc.24 fix pass's completion audit).
 ///
 /// Arm 1 plants every external edit **before** `jigc migrate` mints, which is the one
 /// arrangement where the mint-time snapshot happens to contain the drift. The state an
 /// operator actually reaches is the other one: the migration is minted, the rewrite is
 /// authored against the source **as this task recorded it at mint**, and *then* a hand
-/// edit lands on that file — which is precisely the edit the `jigc unmanage` exit's
-/// finalize replaces.
+/// edit lands on that file.
 ///
 /// The fidelity diff cannot review that edit: it renders the recorded source seam
-/// (`crates/cli/src/migrate.rs` persists it at mint; `task.rs` renders *that*), so a
-/// route telling the operator the `--approve` diff is where the replacement is reviewed
-/// is a law-1 lie whose consequence is a silent overwrite at exit 0.
+/// (`crates/cli/src/migrate.rs` persists it at mint; `task.rs` renders *that*). At M46 the
+/// route was made to stop promising a review it did not get, and it still offered `jigc
+/// unmanage` — the exit whose finalize replaced the edit at exit 0, having said so. It no
+/// longer does: the door compares the file against what the task recorded, and a source
+/// that differs blocks with a presentation of its own, which offers no baseline drop.
 ///
-/// This arm measures both halves through the real binary — the review's rendered bytes,
-/// then the route's — and finishes on the exit the route names for keeping the file:
-/// lifted out of the printed text and run verbatim, with the on-disk edit still there
-/// afterwards.
+/// Driven through the real binary, and both printed commands are lifted out of the route
+/// and run verbatim: the discard keeps the operator's edit on disk, and the migrate span
+/// mints a migration whose recorded source carries it.
 #[test]
-fn the_migration_source_route_does_not_promise_a_review_it_does_not_get() {
+fn a_migration_source_edited_after_the_mint_is_offered_no_baseline_drop() {
     let corpus = corrupted_corpus();
 
     // The corruption's slot-prose repair, at the depth the emitted diagnosis names — the
@@ -795,12 +795,7 @@ fn the_migration_source_route_does_not_promise_a_review_it_does_not_get() {
         .expect("write the demoted heading");
 
     let minted = corpus.jigc_ok(&["migrate", SPEC_PATH, "--as", "spec"]);
-    let task = minted
-        .lines()
-        .find_map(|l| l.strip_prefix("task minted: "))
-        .expect("`jigc migrate` mints a task")
-        .trim()
-        .to_string();
+    let task = minted_task(&minted);
 
     // **After the mint** — the edit the recorded source cannot contain, and the one the
     // operator means to keep.
@@ -838,73 +833,59 @@ fn the_migration_source_route_does_not_promise_a_review_it_does_not_get() {
         ),
     );
 
-    let blocked = corpus.jigc(&["task", "finalize", &task]);
-    let text = both_streams(&blocked);
-    assert_eq!(
-        blocked.status.code(),
-        Some(3),
-        "the migration finalize must block on the conflict; got:\n{text}"
-    );
+    // Both spellings of the committing door refuse, and the edit is still on disk.
+    for args in [
+        vec!["task", "finalize", task.as_str()],
+        vec!["task", "finalize", task.as_str(), "--approve"],
+    ] {
+        let blocked = corpus.jigc(&args);
+        let text = both_streams(&blocked);
+        assert_eq!(
+            blocked.status.code(),
+            Some(3),
+            "`jigc {}` must block on the edited source; got:\n{text}",
+            args.join(" ")
+        );
+        assert!(
+            text.contains("blocking · reconciliation.conflict-block")
+                && text.contains("no longer holds what the migration recorded"),
+            "the block is the edited-source conflict; got:\n{text}"
+        );
+    }
+    let text = both_streams(&corpus.jigc(&["task", "finalize", &task, "--approve"]));
     let route = route_text(&text);
     assert!(
-        route.contains("jigc unmanage"),
-        "this arm drives the migration-source exit; got:\n{route}"
+        !route.contains("unmanage"),
+        "no baseline drop is offered over an edit the rewrite does not carry; got:\n{route}"
     );
-
-    // Half one, measured: run the exit as printed, reach the review the route talks
-    // about, and read what it actually renders.
-    let argv = route_argv(&text);
-    let run: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
-    let exit = corpus.jigc(&run);
-    assert!(
-        exit.status.success(),
-        "the printed route must run from here; `jigc {}` gave:\n{}",
-        run.join(" "),
-        both_streams(&exit)
-    );
-    let hold = corpus.jigc(&["task", "finalize", &task]);
-    let review = both_streams(&hold);
-    assert_eq!(
-        hold.status.code(),
-        Some(4),
-        "the re-run finalize must reach the migration review hold; got:\n{review}"
-    );
-    assert!(
-        review.contains(&demoted_heading),
-        "the review renders the source seam this task recorded at mint; got:\n{review}"
-    );
-    assert!(
-        !review.contains(POST_MINT_EDIT),
-        "the review does not carry the post-mint on-disk edit — if it ever does, this \
-         arm's premise changed and the route's wording is re-taken, not inherited; got:\n{review}"
-    );
-
-    // Half two: the route, held to what half one measured.
     assert!(
         !route.contains(FALSE_REVIEW_CLAIM),
-        "the route sends the operator to the `--approve` fidelity diff to review a \
-         replacement that diff never shows — the edit made after the mint is overwritten \
-         at exit 0 with no surface carrying it; got:\n{route}"
+        "and the route still does not send the operator to a review of the on-disk bytes; \
+         got:\n{route}"
     );
-    let preserving = route_jigc_spans(&text)
-        .into_iter()
-        .find(|argv| argv.get(1..3) == Some(&["task".to_string(), "discard".to_string()]))
-        .unwrap_or_else(|| {
-            panic!(
-                "the route must still name the exit that keeps the on-disk bytes — the \
-                 general route's whole-task discard, which the keyed presentation replaces \
-                 wholesale; got:\n{route}"
-            )
-        });
-    assert_eq!(
-        preserving,
-        vec!["jigc", "task", "discard", task.as_str(), "--force"],
-        "the preserving exit carries the real task id, substituted, and the consent the \
-         staged-prose guard requires of this door"
+    assert!(
+        fs::read_to_string(&path)
+            .expect("the source is readable")
+            .contains(POST_MINT_EDIT),
+        "a refused finalize leaves the operator's edit where it was"
     );
 
-    // And it preserves: run it verbatim, the operator's edit is still on disk.
-    let run: Vec<&str> = preserving[1..].iter().map(String::as_str).collect();
+    // Exit one, as printed: retire the migration, keep the file.
+    let spans = route_jigc_spans(&text);
+    assert_eq!(
+        spans.first().map(Vec::as_slice),
+        Some(
+            &[
+                "jigc".to_string(),
+                "task".to_string(),
+                "discard".to_string(),
+                task.clone(),
+                "--force".to_string()
+            ][..]
+        ),
+        "the route leads with the exit that keeps the on-disk bytes, id substituted"
+    );
+    let run: Vec<&str> = spans[0][1..].iter().map(String::as_str).collect();
     let kept = corpus.jigc(&run);
     assert!(
         kept.status.success(),
@@ -912,11 +893,328 @@ fn the_migration_source_route_does_not_promise_a_review_it_does_not_get() {
         run.join(" "),
         both_streams(&kept)
     );
-    let on_disk = fs::read_to_string(&path).expect("the source is readable");
     assert!(
-        on_disk.contains(POST_MINT_EDIT),
-        "the exit the route names as the one that keeps the file must keep it; got:\n{on_disk}"
+        fs::read_to_string(&path)
+            .expect("the source is readable")
+            .contains(POST_MINT_EDIT),
+        "the exit the route names as the one that keeps the file must keep it"
     );
+
+    // …then the command it names for migrating the file as it now reads, as printed: the
+    // new migration's recorded source carries the edit, so its review will.
+    let remigrate = spans
+        .iter()
+        .find(|argv| argv.get(1).map(String::as_str) == Some("migrate"))
+        .unwrap_or_else(|| panic!("the route must name the re-migrate command; got:\n{route}"));
+    let run: Vec<&str> = remigrate[1..].iter().map(String::as_str).collect();
+    let again = corpus.jigc(&run);
+    let composed = both_streams(&again);
+    assert!(
+        again.status.success(),
+        "the re-migrate must run as printed; `jigc {}` gave:\n{composed}",
+        run.join(" ")
+    );
+    assert!(
+        composed.contains(POST_MINT_EDIT),
+        "the second migration is minted against the file as it now reads; got:\n{composed}"
+    );
+}
+
+/// The task id `jigc migrate` printed on its `task minted:` line.
+fn minted_task(output: &str) -> String {
+    output
+        .lines()
+        .find_map(|l| l.strip_prefix("task minted: "))
+        .expect("`jigc migrate` mints a task")
+        .trim()
+        .to_string()
+}
+
+/// A foreign, non-conformant file a `vision` migration is minted over.
+const FOREIGN_DIRECTION: &str = "# Product Direction\n\nWe build a deterministic context \
+                                 compiler.\n\n## Principles\n\nStructure belongs to the CLI; \
+                                 prose belongs to the model.\n";
+
+/// The `vision` rewrite of [`FOREIGN_DIRECTION`].
+const VISION_PAYLOAD: &str = "title: Vision\n\
+     sections:\n\
+     \x20 - id: thesis\n\
+     \x20   set:\n\
+     \x20     thesis: |-\n\
+     \x20       <<We build a deterministic context compiler.>>\n\
+     \x20 - id: invariants\n\
+     \x20   set:\n\
+     \x20     invariants: |-\n\
+     \x20       <<Structure belongs to the CLI; prose belongs to the model.>>\n\
+     \x20 - id: open-questions\n\
+     \x20   set:\n\
+     \x20     open-questions: |-\n\
+     \x20       <<Which domains earn a pack of their own.>>\n";
+
+/// The paragraph a hand adds to a migration's source after `jigc migrate` minted.
+const HAND_AFTER_MINT: &str = "A paragraph the human added during the migration.";
+
+/// **A migration's source edited after the mint is never replaced or removed — wherever
+/// the source lives** (the rc.24 fix pass's completion audit).
+///
+/// Arm 2 above drives the one shape the M46 route was written for: a *baselined* source,
+/// which conflict-blocks on its recorded hash. The audit drove the dominant one — a
+/// foreign file jigc never adopted, which has no recorded hash at any finalize — and the
+/// edit was replaced at `jigc task finalize --approve`, exit 0, in no git object, on a
+/// review that never showed it. That is one cell of a class the brief did not enumerate:
+/// a migration task replaces a **same-path** source and **deletes** a source anywhere
+/// else, and neither act compared the file against what the task recorded.
+///
+/// So this iterates where the source lives — at the doctype's own home (replaced), outside
+/// every managed location (retired, and never swept), inside another doctype's managed
+/// location (retired, swept as a doc the task did not stage) — and at each: the preview
+/// door and both spellings of the committing door refuse, `HEAD` does not move, the edit
+/// is still on disk, no baseline drop is offered; and the route's second exit, taken —
+/// the edit undone — lets the same task reach its review hold and land.
+#[test]
+fn a_migration_source_edited_after_the_mint_is_never_replaced_or_removed() {
+    for source in [
+        "VISION.md",
+        "notes/direction.md",
+        "docs/decisions/direction.md",
+    ] {
+        let corpus = TrialCorpus::build(State::Fresh);
+        let path = corpus.repo().join(source);
+        fs::create_dir_all(path.parent().expect("the source has a parent")).expect("mk the dir");
+        fs::write(&path, FOREIGN_DIRECTION).expect("write the foreign source");
+        corpus.git(&["add", source]);
+        corpus.git(&["commit", "-q", "-m", "add the direction doc"]);
+
+        let task = minted_task(&corpus.jigc_ok(&["migrate", source, "--as", "vision"]));
+        corpus.jigc_stdin_ok(
+            &[
+                "doc",
+                "author",
+                "vision",
+                "--from-file",
+                "-",
+                "--task",
+                &task,
+            ],
+            VISION_PAYLOAD,
+        );
+        let head = corpus.git(&["rev-parse", "HEAD"]);
+
+        fs::write(
+            &path,
+            format!("{FOREIGN_DIRECTION}\n## Pricing\n\n{HAND_AFTER_MINT}\n"),
+        )
+        .expect("write the post-mint edit");
+
+        for args in [
+            vec!["task", "validate", task.as_str()],
+            vec!["task", "finalize", task.as_str()],
+            vec!["task", "finalize", task.as_str(), "--approve"],
+        ] {
+            let refused = corpus.jigc(&args);
+            let text = both_streams(&refused);
+            assert_eq!(
+                refused.status.code(),
+                Some(3),
+                "{source}: `jigc {}` must refuse over the edited source; got:\n{text}",
+                args.join(" ")
+            );
+            assert!(
+                text.contains(&format!(
+                    "blocking · reconciliation.conflict-block — conflict on `{source}`"
+                )),
+                "{source}: the refusal names the source; got:\n{text}"
+            );
+            let route = route_text(&text);
+            assert!(
+                !route.contains("unmanage"),
+                "{source}: no baseline drop is offered; got:\n{route}"
+            );
+            assert_eq!(
+                route_jigc_spans(&text).first().map(|argv| argv.join(" ")),
+                Some(format!("jigc task discard {task} --force")),
+                "{source}: the route leads with the exit that keeps the file"
+            );
+        }
+        assert_eq!(
+            corpus.git(&["rev-parse", "HEAD"]),
+            head,
+            "{source}: a refused finalize commits nothing"
+        );
+        assert!(
+            fs::read_to_string(&path)
+                .expect("the source is still there")
+                .contains(HAND_AFTER_MINT),
+            "{source}: and the edit is still on disk"
+        );
+
+        // The route's other exit: undo the edit, and the same task lands as authored.
+        fs::write(&path, FOREIGN_DIRECTION).expect("undo the post-mint edit");
+        let hold = corpus.jigc(&["task", "finalize", &task]);
+        assert_eq!(
+            hold.status.code(),
+            Some(4),
+            "{source}: with the edit undone the finalize reaches its review hold; got:\n{}",
+            both_streams(&hold)
+        );
+        let landed = corpus.jigc(&["task", "finalize", &task, "--approve"]);
+        assert!(
+            landed.status.success(),
+            "{source}: and the approved migration lands; got:\n{}",
+            both_streams(&landed)
+        );
+        assert!(
+            corpus
+                .git(&["show", "HEAD:VISION.md"])
+                .contains("schema-version"),
+            "{source}: the managed vision is what HEAD holds"
+        );
+    }
+}
+
+/// **The comparison never refuses a source nobody edited** — the *must not refuse* cells
+/// of the guard above, over git's conversion settings and the fresh-clone shape.
+///
+/// The guard compares the file against the bytes the task recorded at its mint, and the
+/// rc.24 fix pass's own audit is the record of what a hand-rolled byte comparison does in
+/// a converting checkout: it refuses a file no hand touched, with an edit-shaped route and
+/// no edit to undo. Byte-equal is the answer in every cell where nothing rewrote the file,
+/// under any setting — the first six cells. The seventh is the one a byte comparison alone
+/// gets wrong: git itself rewrites the source between the mint and the finalize (a
+/// re-checkout under `core.autocrlf=true` turns the recorded `\n` file into a `\r\n` one),
+/// the bytes differ, and the door asks git whether they are the same content at that path
+/// — which they are.
+///
+/// One corpus, one migration per cell: each cell commits its own foreign file under its
+/// own setting, migrates it `--as adr`, and lands — the source retired, the doc at `HEAD`.
+/// Not covered: a clean/smudge filter, a submodule, a worktree of a bare repository and a
+/// `--separate-git-dir` checkout (a linked worktree the user made cannot commit a migration
+/// at all — the mint refuses).
+#[test]
+fn an_unedited_migration_source_lands_under_every_conversion() {
+    struct Cell {
+        name: &'static str,
+        /// `core.autocrlf` for the cell.
+        autocrlf: &'static str,
+        /// A `.gitattributes` line committed with the source, if any.
+        attributes: Option<&'static str>,
+        /// The line ending the source is written and committed with.
+        eol: &'static str,
+        /// Remove the file and let git check it out again after the mint.
+        recheckout: bool,
+        /// Empty the gitignored state cache first — what a fresh clone holds.
+        fresh_clone: bool,
+    }
+    let cell = |name, autocrlf, attributes, eol| Cell {
+        name,
+        autocrlf,
+        attributes,
+        eol,
+        recheckout: false,
+        fresh_clone: false,
+    };
+    let cells = [
+        cell("no-conversion", "false", None, "\n"),
+        cell("autocrlf-true", "true", None, "\n"),
+        cell("autocrlf-input", "input", None, "\n"),
+        cell("text-auto", "false", Some("* text=auto"), "\n"),
+        cell("crlf-blob", "false", None, "\r\n"),
+        Cell {
+            fresh_clone: true,
+            ..cell("fresh-clone", "false", None, "\n")
+        },
+        Cell {
+            recheckout: true,
+            ..cell("autocrlf-true-recheckout", "true", None, "\n")
+        },
+    ];
+
+    let corpus = TrialCorpus::build(State::Fresh);
+    for cell in cells {
+        let name = cell.name;
+        if cell.fresh_clone {
+            corpus.fresh_clone_shape();
+        }
+        corpus.git(&["config", "core.autocrlf", cell.autocrlf]);
+        let source = format!("notes/{name}.md");
+        let path = corpus.repo().join(&source);
+        fs::create_dir_all(path.parent().expect("a parent")).expect("mk notes/");
+        let foreign =
+            format!("# Decision {name}\n\nWe considered a queue.\n\nWe will use a table.\n")
+                .replace('\n', cell.eol);
+        fs::write(&path, &foreign).expect("write the foreign source");
+        let attributes = corpus.repo().join(".gitattributes");
+        match cell.attributes {
+            Some(line) => fs::write(&attributes, format!("{line}\n")).expect("write attributes"),
+            None => fs::write(&attributes, "").expect("clear attributes"),
+        }
+        corpus.git(&["add", "--", &source, ".gitattributes"]);
+        corpus.git(&[
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            &format!("add {name}"),
+        ]);
+
+        let task = minted_task(&corpus.jigc_ok(&["migrate", &source, "--as", "adr"]));
+        corpus.jigc_stdin_ok(
+            &["doc", "author", "adr", "--from-file", "-", "--task", &task],
+            &format!(
+                "title: \"Decision {name}\"\n\
+                 sections:\n\
+                 \x20 - id: status\n\
+                 \x20   set:\n\
+                 \x20     status: accepted\n\
+                 \x20 - id: context\n\
+                 \x20   set:\n\
+                 \x20     context: \"<<We considered a queue.>>\"\n\
+                 \x20 - id: decision\n\
+                 \x20   set:\n\
+                 \x20     decision: \"<<We will use a table.>>\"\n\
+                 \x20 - id: consequences\n\
+                 \x20   set:\n\
+                 \x20     consequences: \"<<Operations owns the table.>>\"\n"
+            ),
+        );
+
+        if cell.recheckout {
+            // git rewrites the file, no hand does: under `core.autocrlf=true` the checkout
+            // writes `\r\n` where the recorded source holds `\n`.
+            fs::remove_file(&path).expect("remove the source");
+            corpus.git(&["checkout", "--", &source]);
+            assert_ne!(
+                fs::read(&path).expect("the source is back"),
+                foreign.as_bytes(),
+                "{name}: the premise — the re-checkout changed the file's bytes"
+            );
+        }
+
+        let hold = corpus.jigc(&["task", "finalize", &task]);
+        assert_eq!(
+            hold.status.code(),
+            Some(4),
+            "{name}: an unedited source reaches the review hold; got:\n{}",
+            both_streams(&hold)
+        );
+        let landed = corpus.jigc(&["task", "finalize", &task, "--approve"]);
+        assert!(
+            landed.status.success(),
+            "{name}: and lands; got:\n{}",
+            both_streams(&landed)
+        );
+        assert!(
+            !path.exists(),
+            "{name}: the foreign original is retired with the commit"
+        );
+        let slug = format!("decision-{name}");
+        assert!(
+            corpus
+                .git(&["show", &format!("HEAD:docs/decisions/{slug}.md")])
+                .contains("We will use a table."),
+            "{name}: and the managed adr is what HEAD holds"
+        );
+    }
 }
 
 /// Every backticked `` `jigc …` `` command span the conflict-block route prints, in the

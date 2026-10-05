@@ -2757,6 +2757,17 @@ impl TaskArea {
         let migration_source = state::read_migration_source(&self.dir).with_context(|| {
             format!("could not read the source path for task at {:?}", self.dir)
         })?;
+        // The conflict route is the caller's, and this caller is a named task: a
+        // `DRIFTED + TOUCHED` block routes at the REAL id (M47 inc-2 / T4). A **migration**
+        // task also holds the one path whose general route cannot be followed — its own
+        // recorded source (M46 inc-5 / T2): discarding retires the migration, and the revert
+        // the route's other exit names is the act the adapter forbids over a managed doc, on
+        // a file that was already hand-broken out of band. So the source path rides along
+        // and carries its own exit; every other conflicting path, here and at a
+        // non-migration task, keeps the general one. Which of the source's two presentations
+        // it carries is decided here, against what this task itself recorded at its mint
+        // ([`Self::migration_conflict`]).
+        let (conflict, edited_source) = self.migration_conflict(migration_source.as_ref())?;
         // The managed-vs-foreign discriminator's three pack facts (M48 Inc 4 / T1): the
         // committed-store sweep this call drives must answer a foreign squatter with the
         // *store* door's code and route, and the engine produces none of them.
@@ -2781,20 +2792,7 @@ impl TaskArea {
             &changed_code,
             base_tree.path(),
             &pinned,
-            // The conflict route is the caller's, and this caller is a named task: a
-            // `DRIFTED + TOUCHED` block routes at the REAL id (M47 inc-2 / T4). A
-            // **migration** task also holds the one path whose general route cannot be
-            // followed — its own recorded source (M46 inc-5 / T2): discarding retires the
-            // migration, and the revert the route's other exit names is the act the adapter
-            // forbids over a managed doc, on a file that was already hand-broken out of
-            // band. So the source path rides along and carries its own exit; every other
-            // conflicting path, here and at a non-migration task, keeps the general one.
-            &engine::file_state::ConflictBlock::task(
-                &self.id,
-                migration_source
-                    .as_ref()
-                    .map(state::MigrationSource::recorded),
-            ),
+            &conflict,
             &engine::validate::AdoptionInputs::new(
                 &versions,
                 &priors,
@@ -2809,6 +2807,30 @@ impl TaskArea {
             &self.live_milestone_record(&schemas),
         )
         .with_context(|| format!("validating task at {:?}", self.dir))?;
+        // **A migration source edited after the mint blocks, wherever it lives** (the rc.24
+        // fix pass's completion audit). The sweep above raises this conflict itself when the
+        // source is a managed doc it classifies as drifted or off its pin; it cannot where
+        // the record happens to agree with the edited file, and it never reaches a source
+        // outside every managed location — which the retire step deletes all the same. So
+        // the door that made the comparison raises the finding where the sweep did not, in
+        // the sweep's own identity and the same presentation.
+        let report = match edited_source {
+            Some(source)
+                if !report.findings.iter().any(|finding| {
+                    finding.code == "reconciliation.conflict-block"
+                        && finding
+                            .location
+                            .as_ref()
+                            .and_then(|location| location.address.as_deref())
+                            == Some(source.as_str())
+                }) =>
+            {
+                let mut findings = report.findings.into_vec();
+                findings.push(conflict.finding_at(&source));
+                engine::result::ValidationReport::new(findings, &self.severity_cascade()?)
+            }
+            _ => report,
+        };
         let report = self.preview_gates(report, preview, &schemas)?;
         // The stale-commit-summary advisory (M51 Inc 11 / T2 — the rc.14 trial's F-9).
         // Sited HERE, outside [`Self::preview_gates`] and ahead of the route scoping, for
@@ -2830,6 +2852,61 @@ impl TaskArea {
         };
         let report = self.scope_repair_routes(report)?;
         Ok((report, record))
+    }
+
+    /// **The conflict presentation this task's sweep carries**, and — for a migration whose
+    /// source was edited after the mint — the path that edit is on (the rc.24 fix pass's
+    /// completion audit; `design/reconciliation.md` → The conflict route belongs to the
+    /// caller, the migration case).
+    ///
+    /// A migration task is the one task that **replaces or deletes a file it did not stage
+    /// from**: its rewrite lands over a same-path source, and a source anywhere else is
+    /// retired. Whether that is safe is a comparison between the file now and the file as
+    /// this task took it in — and the task holds that itself, in its own working area: the
+    /// source seam `jigc migrate` staged at the mint ([`state::SOURCE_FILE`]), the bytes the
+    /// rewrite was authored against and the `--approve` fidelity diff renders. Nothing
+    /// compared them. The file-state record cannot stand in — a foreign source that was
+    /// never adopted has no key, so it read `UNKNOWN` at every finalize and was exempt from
+    /// the base-pin backstop as *the migration's own source* — and driven, a paragraph added
+    /// to the source after the mint was replaced (same-path) or deleted (retired) at
+    /// `jigc task finalize --approve`, exit 0, in no git object, on a review that never
+    /// showed it.
+    ///
+    /// So the comparison is made here, against the task's own recording, and a source that
+    /// no longer holds it takes the edited-source presentation
+    /// ([`engine::file_state::ConflictBlock::task_over_edited_source`]), which is not exempt
+    /// from the backstop and offers no baseline drop.
+    fn migration_conflict(
+        &self,
+        migration_source: Option<&state::MigrationSource>,
+    ) -> Result<(engine::file_state::ConflictBlock, Option<String>)> {
+        use engine::file_state::ConflictBlock;
+        let Some(source) = migration_source.map(state::MigrationSource::recorded) else {
+            return Ok((ConflictBlock::task(&self.id, None), None));
+        };
+        if !migration_source_edited_since_mint(&self.repo_root, &self.dir, source)? {
+            return Ok((ConflictBlock::task(&self.id, Some(source)), None));
+        }
+        // The command that migrates the file again as it now reads: the verb's own
+        // absolute spelling ([`engine::finding::migrate_at`]) and the doctype this task was
+        // minted for, read off its recorded `migrate-<doctype>` workflow.
+        let doctype = state::read_workflow_id(&self.dir)
+            .with_context(|| format!("could not read the workflow of task `{}`", self.id))?
+            .and_then(|workflow| workflow.trim().strip_prefix("migrate-").map(str::to_owned))
+            .with_context(|| {
+                format!(
+                    "task `{}` records a migration source but no `migrate-<doctype>` workflow",
+                    self.id
+                )
+            })?;
+        let remigrate = format!(
+            "{} --as {doctype}",
+            engine::finding::migrate_at(&self.repo_root, source)
+        );
+        Ok((
+            ConflictBlock::task_over_edited_source(&self.id, source, &remigrate),
+            Some(source.to_string()),
+        ))
     }
 
     /// Scope every gate-block repair route in `report` to **this** task (M49 Increment 8 /
@@ -6066,6 +6143,76 @@ fn stageable_owner_artifacts(repo_root: &Path, paths: &[String]) -> Vec<String> 
         })
         .cloned()
         .collect()
+}
+
+/// Whether a migration task's **source no longer holds what the task recorded at its mint**
+/// — the question [`TaskArea::migration_conflict`] decides the source's conflict
+/// presentation on (the rc.24 fix pass's completion audit).
+///
+/// Both sides are working-file bytes jigc read itself: the source seam `jigc migrate` staged
+/// (`<task>/source`, [`state::SOURCE_FILE`]) and the file at the recorded path now, resolved
+/// against the root the mint read it from. Nothing here is compared against a blob.
+///
+/// 1. **The same bytes ⇒ not edited**, and git is never asked — every migration nobody
+///    touched answers here, in any repository layout.
+/// 2. **Different bytes ⇒ git is asked whether they are the same content** under this
+///    repository's own conversion rules: each side is hashed as `git add` would hash it at
+///    the source's path (`git hash-object --path=<source>`, so the path's `core.autocrlf`,
+///    `text`/`eol` attributes and clean filters apply to both alike), and equal ids are not
+///    an edit. That is the case of a file git itself rewrote between the mint and the
+///    finalize — a source checked out again in another line-ending form — which no hand
+///    touched, and which a byte comparison alone would refuse with no edit to undo. The
+///    question is symmetric (two byte strings through one conversion, never one against a
+///    committed blob), so the index's own rule for a blob that already holds CRLF cannot
+///    make the two sides disagree.
+/// 3. **Different ids, or a git that cannot answer ⇒ edited.** The bytes differ, and where
+///    git cannot say they are the same content the door does not write over them.
+///
+/// A source that is **gone** is not an edit: there are no bytes to replace or delete, and
+/// the retire step already reads an absent original as retired.
+///
+/// **Only a path this repository can act on is compared.** The recorded value is task state
+/// in a mutable working area, and one the repository cannot retire — an absolute path, a
+/// pathspec, a path through a link — is refused whole by the retire sink and the review
+/// hold that forecasts it (`finalize.retire-untrackable`, [`ValidatedRetirement`]). It is
+/// asked through that same rule here, so this comparison never opens a file outside the
+/// repository on the say-so of a recorded string, and never answers for a path another
+/// refusal already owns.
+fn migration_source_edited_since_mint(
+    repo_root: &Path,
+    task_dir: &Path,
+    recorded: &str,
+) -> Result<bool> {
+    let Ok(recorded) = crate::trackable::resolve_source_token(repo_root, repo_root, recorded)
+    else {
+        return Ok(false);
+    };
+    let recorded = recorded.as_str();
+    let seam = task_dir.join(state::SOURCE_FILE);
+    let minted = std::fs::read(&seam).with_context(|| {
+        format!("could not read the source this migration recorded for `{recorded}`")
+    })?;
+    let on_disk = repo_root.join(recorded);
+    let now = match std::fs::read(&on_disk) {
+        Ok(now) => now,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(err) => {
+            return Err(err)
+                .with_context(|| format!("could not read the migration source `{recorded}`"));
+        }
+    };
+    if now == minted {
+        return Ok(false);
+    }
+    let at_path = format!("--path={recorded}");
+    let as_git_stores = |file: &Path| {
+        file.to_str()
+            .and_then(|file| git_capture(repo_root, &["hash-object", &at_path, "--", file]).ok())
+    };
+    Ok(match (as_git_stores(&seam), as_git_stores(&on_disk)) {
+        (Some(minted), Some(now)) => minted != now,
+        _ => true,
+    })
 }
 
 /// Whether **promoting** the staged doc at `source` to the repo-relative `destination` would

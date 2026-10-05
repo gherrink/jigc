@@ -311,10 +311,27 @@ pub struct ConflictBlock {
     detail: String,
     /// The way out, already substituted by the caller.
     route: crate::finding::Route,
-    /// The caller's **path-keyed** second presentation: `(path, detail, route)`, used in
-    /// place of the pair above when the conflict is on exactly that path
-    /// ([`ConflictBlock::presentation`]).
-    keyed: Option<(String, String, crate::finding::Route)>,
+    /// The caller's **path-keyed** second presentation, used in place of the pair above
+    /// when the conflict is on exactly that path ([`ConflictBlock::presentation`]).
+    keyed: Option<Keyed>,
+}
+
+/// A [`ConflictBlock`]'s **path-keyed** presentation — a migration task's own recorded
+/// source, in one of the two states that path can be in at the committing door.
+#[derive(Clone, Debug)]
+struct Keyed {
+    /// The path the pair below replaces the general one at.
+    path: String,
+    /// The clause after ``conflict on `<path>`: ``.
+    detail: String,
+    /// The way out, already substituted by the caller.
+    route: crate::finding::Route,
+    /// Whether the file at `path` still holds **what the migration recorded at its mint**
+    /// ([`ConflictBlock::task`]) or has been edited since
+    /// ([`ConflictBlock::task_over_edited_source`]). It decides the one thing the classifier
+    /// asks of this value beyond its words: whether the base-pin backstop steps aside for
+    /// the path ([`ConflictBlock::keys`]).
+    as_recorded: bool,
 }
 
 impl ConflictBlock {
@@ -338,7 +355,7 @@ impl ConflictBlock {
     /// → A route offered on a wider domain must be gated on that domain).
     fn presentation(&self, path: &str) -> (&str, &crate::finding::Route) {
         match &self.keyed {
-            Some((keyed_path, detail, route)) if keyed_path == path => (detail, route),
+            Some(keyed) if keyed.path == path => (&keyed.detail, &keyed.route),
             _ => (&self.detail, &self.route),
         }
     }
@@ -358,15 +375,26 @@ impl ConflictBlock {
     }
 
     /// Whether `path` is the caller's **path-keyed** subject — a migration task's own
-    /// recorded source ([`ConflictBlock::task`]).
+    /// recorded source — **and still holds what the migration recorded at its mint**
+    /// ([`ConflictBlock::task`]).
     ///
     /// The base-pin backstop asks it ([`reconcile_committed`], the `UNKNOWN` arm): the keyed
     /// route's exit is `jigc unmanage <source>`, which drops that path's baseline *so that*
     /// the next finalize takes the `UNKNOWN` arm and lands the migration's rewrite over the
     /// source. A backstop that blocked that path too would turn the one sanctioned exit into
     /// a loop — unmanage, finalize, blocked on the same path, routed at unmanage again.
+    ///
+    /// **That is all the exemption is for, so that is all it covers** (the rc.24 fix pass's
+    /// completion audit). It was unconditional on the path, and a foreign source that was
+    /// never baselined is `UNKNOWN` at every finalize: a hand edit made to it after the mint
+    /// took this arm with no unmanage anywhere in the story, and the promote replaced it at
+    /// exit 0 with no surface having shown it. The staged rewrite replaces the bytes the
+    /// migration **recorded** — the ones it was authored against, the ones the `--approve`
+    /// fidelity diff renders. A source that no longer holds them
+    /// ([`ConflictBlock::task_over_edited_source`]) is not exempt: it answers `false` here,
+    /// and its conflict carries that state's own words.
     fn keys(&self, path: &str) -> bool {
-        matches!(&self.keyed, Some((keyed_path, _, _)) if keyed_path == path)
+        matches!(&self.keyed, Some(keyed) if keyed.path == path && keyed.as_recorded)
     }
 
     /// The **task-scope** preset — the sweep runs inside a named task, so the route names
@@ -388,27 +416,77 @@ impl ConflictBlock {
             ),
         );
         if let Some(source) = migration_source {
-            block.keyed = Some((
-                source.to_string(),
-                "an external edit and this migration's staged rewrite both changed it — this \
-                 path is the source the task is migrating, so replacing it is the point"
+            block.keyed = Some(Keyed {
+                path: source.to_string(),
+                detail: "an external edit and this migration's staged rewrite both changed it \
+                         — this path is the source the task is migrating, so replacing it is \
+                         the point"
                     .to_string(),
-                crate::finding::Route::mechanical(
+                route: crate::finding::Route::mechanical(
                     ["jigc", "unmanage", &crate::finding::shell_token(source)],
                     format!(
                         " to drop the stale baseline on that path, then run this finalize \
                          again — the guard is dropped for that path only and the bytes stay \
                          on disk; they are not merged, this task's staged rewrite replaces \
-                         them, and that rewrite was authored against the source as this task \
-                         recorded it at mint, so an edit made to the file since is replaced \
-                         without appearing in the `--approve` fidelity diff (which renders \
-                         the recorded source, not what is on disk now). To keep the file as \
-                         it stands, `jigc task discard {task_id} --force` retires the migration \
-                         instead and leaves it untouched"
+                         them. They are the bytes this migration recorded at its mint — what \
+                         the rewrite was authored against and what the `--approve` fidelity \
+                         diff renders; an edit made to the file after the mint blocks this \
+                         finalize instead of being replaced. To keep the file as it stands, \
+                         `jigc task discard {task_id} --force` retires the migration instead \
+                         and leaves it untouched"
                     ),
                 ),
-            ));
+                as_recorded: true,
+            });
         }
+        block
+    }
+
+    /// The task-scope preset for a migration whose **source was edited after the mint** —
+    /// the file at `source` no longer holds what the task recorded when `jigc migrate` minted
+    /// it (the rc.24 fix pass's completion audit; `reconciliation.md` → The conflict route
+    /// belongs to the caller, the migration case).
+    ///
+    /// The staged rewrite was authored against the recorded source, and the `--approve`
+    /// fidelity diff renders that recording — so an edit made since is in neither, and the
+    /// finalize that follows either writes the rewrite over the file or deletes it as the
+    /// retired original. Driven before this state had a presentation: both happened at exit
+    /// 0, the edit in no git object, on a surface that never named the path. So the caller
+    /// that holds the recording compares, and where the file differs the conflict is this
+    /// one — wherever the source lives, which is why the caller may also raise it itself
+    /// ([`ConflictBlock::finding_at`]): a source outside every managed location is never
+    /// swept, and it is deleted all the same.
+    ///
+    /// **No baseline drop is offered.** `jigc unmanage <source>` is the exit of the *other*
+    /// state ([`ConflictBlock::task`]): it lands the rewrite over bytes the rewrite was
+    /// authored against. Here it would land it over bytes nothing reviewed, so the path is
+    /// not exempt from the base-pin backstop either ([`ConflictBlock::keys`]). The two exits
+    /// that are true of this state are the general route's two, said for a migration:
+    /// retire it and migrate the file again as it now reads — `remigrate` is that command,
+    /// rendered by the caller, which knows the repository root and the doctype
+    /// ([`crate::finding::migrate_at`]) — or undo the edit and land the rewrite as authored.
+    pub fn task_over_edited_source(task_id: &str, source: &str, remigrate: &str) -> Self {
+        let mut block = Self::task(task_id, None);
+        block.keyed = Some(Keyed {
+            path: source.to_string(),
+            detail: "this path is the source the task is migrating, and it no longer holds \
+                     what the migration recorded when it was minted — the staged rewrite was \
+                     authored against the recorded source, so an edit made to the file since \
+                     is not in it"
+                .to_string(),
+            route: crate::finding::Route::mechanical(
+                ["jigc", "task", "discard", task_id, "--force"],
+                format!(
+                    " to retire this migration and leave the file as it stands, then \
+                     `{remigrate}` to migrate it again as it now reads — or undo the edit \
+                     made since the mint and run this finalize again, which lands the rewrite \
+                     as authored. Nothing replaces or removes the file while it differs from \
+                     the recorded source, and the `--approve` fidelity diff renders that \
+                     recording, never what is on disk now"
+                ),
+            ),
+            as_recorded: false,
+        });
         block
     }
 }
@@ -509,8 +587,9 @@ impl LiveRecord {
 ///   **could not answer** ([`PinVerdict::Unanswered`](crate::validate::PinVerdict)), the arm
 ///   refuses under the same identity, saying that and quoting git, and records nothing: a
 ///   door that cannot tell does not adopt on a guess. A `None` lookup (an untracked doc, no
-///   pin, an unborn `HEAD`) and the caller's path-keyed migration source
-///   ([`ConflictBlock::keys`]) keep the adoption above. **The milestone-record door reaches
+///   pin, an unborn `HEAD`) and the caller's path-keyed migration source **while it still holds
+///   what the migration recorded at its mint** ([`ConflictBlock::keys`]) keep the adoption
+///   above. **The milestone-record door reaches
 ///   this arm too**: it has no task and so no base pin, and asks about the record's blob at
 ///   `HEAD` — every record write lands in a commit, so that blob is what jigc last wrote
 ///   (`reconciliation.md` → Baseline adoption, the record door's witness).
@@ -2806,11 +2885,11 @@ Referrers must point at the new decision.
             format!(
                 "`jigc unmanage {source}` to drop the stale baseline on that path, then run \
                  this finalize again — the guard is dropped for that path only and the bytes \
-                 stay on disk; they are not merged, this task's staged rewrite replaces them, \
-                 and that rewrite was authored against the source as this task recorded it at \
-                 mint, so an edit made to the file since is replaced without appearing in the \
-                 `--approve` fidelity diff (which renders the recorded source, not what is on \
-                 disk now). To keep the file as it stands, \
+                 stay on disk; they are not merged, this task's staged rewrite replaces them. \
+                 They are the bytes this migration recorded at its mint — what the rewrite was \
+                 authored against and what the `--approve` fidelity diff renders; an edit made \
+                 to the file after the mint blocks this finalize instead of being replaced. To \
+                 keep the file as it stands, \
                  `jigc task discard migrate-adr-decisions-cache --force` retires the \
                  migration instead and leaves it untouched"
             ),
@@ -2844,6 +2923,74 @@ Referrers must point at the new decision.
             .expect("the source-less caller routes")
             .as_str(),
             "and it is byte-identical to the route a source-less caller would have supplied"
+        );
+    }
+
+    /// **A source edited after the mint is offered no baseline drop** (the rc.24 fix pass's
+    /// completion audit) — the other state of the same path, and the one whose finalize would
+    /// replace or delete bytes the rewrite was never authored against.
+    ///
+    /// The presentation is still keyed on the source alone, it leads with the exit that
+    /// keeps the file, it names the command that migrates the file again as it now reads,
+    /// and `jigc unmanage` appears nowhere in it: followed from here, that exit lands the
+    /// rewrite over an edit no review rendered.
+    #[test]
+    fn a_source_edited_after_the_mint_is_offered_no_baseline_drop() {
+        let source = ADR_B_PATH;
+        let remigrate = format!("jigc migrate /repo/{source} --as adr");
+        let conflict = ConflictBlock::task_over_edited_source("migrate-adr-b", source, &remigrate);
+
+        let on_source = conflict_block_finding(source, &conflict);
+        assert_eq!(on_source.code, "reconciliation.conflict-block");
+        assert_eq!(on_source.severity, Severity::Blocking);
+        assert!(
+            on_source
+                .message
+                .contains("no longer holds what the migration recorded when it was minted"),
+            "it says which state the source is in: {on_source:?}"
+        );
+        let route = on_source
+            .route
+            .as_ref()
+            .expect("the edited-source arm routes");
+        assert!(
+            route
+                .as_str()
+                .starts_with("`jigc task discard migrate-adr-b --force`"),
+            "it leads with the exit that keeps the file: {route:?}"
+        );
+        assert!(
+            route.as_str().contains(&format!("`{remigrate}`")),
+            "and names the command that migrates the file again as it now reads: {route:?}"
+        );
+        assert!(
+            !route.as_str().contains("unmanage"),
+            "no baseline drop is offered over bytes the rewrite was not authored against: \
+             {route:?}"
+        );
+        assert!(
+            matches!(route.kind(), crate::finding::RouteKind::Mechanical { .. })
+                && !route.as_str().contains('<')
+                && crate::finding::command_spans_are_shell_safe(route.as_str()),
+            "a runnable, fully substituted route: {route:?}"
+        );
+        assert!(
+            !conflict.keys(source),
+            "and the backstop does not step aside"
+        );
+        assert!(
+            ConflictBlock::task("migrate-adr-b", Some(source)).keys(source),
+            "where the source as recorded still does"
+        );
+
+        // Away from the source it is the general route, byte for byte.
+        assert_eq!(
+            conflict_block_finding("decisions/unrelated.md", &conflict).route,
+            conflict_block_finding(
+                "decisions/unrelated.md",
+                &test_conflict_for("migrate-adr-b")
+            )
+            .route,
         );
     }
 
@@ -4963,8 +5110,9 @@ sections: []
     /// file* one statement before the promote overwrote it. Every other cell is the arm as
     /// it was: untouched never asks the pin; a file git calls unmodified adopts **whatever
     /// its bytes** (the eol cell — the answer is git's, not a hash comparison); a pin with no
-    /// blob adopts; and the migration task's own source keeps the arm whole, so its
-    /// `jigc unmanage <source>` exit stays an exit.
+    /// blob adopts; and the migration task's own source keeps the arm whole **while it holds
+    /// what the migration recorded**, so its `jigc unmanage <source>` exit stays an exit —
+    /// and loses the exemption once it was edited after the mint.
     #[test]
     fn unknown_and_touched_is_decided_by_the_base_pin() {
         let schema = adr_schema();
@@ -4983,6 +5131,11 @@ sections: []
         let general = test_conflict();
         let migrating_this = ConflictBlock::task("migrate-it", Some(ADR_B_PATH));
         let migrating_other = ConflictBlock::task("migrate-it", Some("docs/elsewhere.md"));
+        let migrating_this_edited = ConflictBlock::task_over_edited_source(
+            "migrate-it",
+            ADR_B_PATH,
+            "jigc migrate /repo/docs/decisions/b.md --as adr",
+        );
 
         struct Cell<'a> {
             name: &'a str,
@@ -5095,6 +5248,24 @@ sections: []
                 conflict: &migrating_this,
                 codes: &[ADOPT],
                 recorded: true,
+            },
+            Cell {
+                name: "the migration source EDITED SINCE THE MINT, git says modified → blocks",
+                bytes: edited,
+                touched: true,
+                pinned: &modified,
+                conflict: &migrating_this_edited,
+                codes: &[CONFLICT],
+                recorded: false,
+            },
+            Cell {
+                name: "the migration source edited since the mint, git could not answer → refuses",
+                bytes: edited,
+                touched: true,
+                pinned: &unanswered,
+                conflict: &migrating_this_edited,
+                codes: &[CONFLICT],
+                recorded: false,
             },
             Cell {
                 name: "a migration task's OTHER doc, git says modified → blocks",

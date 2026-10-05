@@ -774,6 +774,15 @@ const MIGRATE_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
          worktree's file",
     ),
     (
+        "crates/cli/src/task.rs",
+        "migration_conflict",
+        Aim::Aimed,
+        "the edited-source conflict's second step (the rc.24 fix pass's completion audit): a \
+         migration whose source was edited after the mint is retired and the file migrated \
+         again as it now reads — the task's own recorded source, a path jigc holds, so the \
+         re-migrate runs from wherever the reader stands",
+    ),
+    (
         "crates/cli/src/migrate.rs",
         "adjudicate_source_tracked",
         Aim::DeclaredOut,
