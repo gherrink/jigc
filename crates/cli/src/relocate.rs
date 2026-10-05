@@ -338,6 +338,12 @@ pub(crate) struct MoveRollback {
     /// The file-state record's own identity, once captured — the one entry of the batch
     /// that is not per-doc, since [`move_doc`] rewrites that file on every call.
     record: Option<String>,
+    /// The foreign squatters this batch **parked** on its way — `(destination it stood at,
+    /// where in the workbench it is now)` — recorded the moment each is moved, so they are
+    /// known on every path out of the sweep, a refused one included. The rollback does not
+    /// put them back ([`rollback_relocations`], the declared bound); this is what lets the
+    /// refusal say so ([`Self::parked`]).
+    parked: Vec<(String, String)>,
 }
 
 impl MoveRollback {
@@ -349,7 +355,15 @@ impl MoveRollback {
             family: crate::rollback::PreImageFamily::empty(door),
             staged: Vec::new(),
             record: None,
+            parked: Vec::new(),
         }
+    }
+
+    /// The foreign squatters this batch moved into the workbench, in the order it met
+    /// them: `(destination, workbench path)`, both repo-relative. They are still there
+    /// after [`rollback_relocations`].
+    pub(crate) fn parked(&self) -> &[(String, String)] {
+        &self.parked
     }
 
     /// Capture what a move is **about** to overwrite: the destination as it stands now, and
@@ -430,6 +444,10 @@ impl MoveRollback {
 /// re-occupied. It is the residual M52 Increment 5's plan carries by name (bound (vi)):
 /// restoring it is a second, opposite act — a move back *out* of the workbench — and it has
 /// no entry in this family because the displacement is not one of the moves this batch made.
+/// **The refusal that follows this undo says so** ([`MoveRollback::parked`]; the rc.24 fix
+/// pass's completion audit, CPL-8): its route read *every doc this re-point moved is back
+/// at its prior home* and stopped there, over a file that was no longer where the reader
+/// had left it and that only a stderr line of the refused run had named.
 pub(crate) fn rollback_relocations(
     repo_root: &Path,
     jigc_root: &Path,
@@ -765,6 +783,12 @@ fn relocate_one(
     // destination's squatter its place first.
     refuse_foreign_source(repo_root, old_rel, new_rel)?;
     let displaced = displace_foreign_squatter(repo_root, jigc_root, new_rel)?;
+    // Known to the undo from this moment — whatever happens to the move below, the
+    // squatter is in the workbench now, and a refusal has to be able to say so.
+    let mut undo = undo;
+    if let (Some(pair), Some(undo)) = (&displaced, undo.as_deref_mut()) {
+        undo.parked.push(pair.clone());
+    }
     let bytes = std::fs::read(repo_root.join(old_rel))
         .with_context(|| format!("reading the stranded doc {old_rel}"))?;
     let new_hash = hash_bytes(&bytes);

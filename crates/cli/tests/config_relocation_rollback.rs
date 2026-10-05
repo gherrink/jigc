@@ -432,6 +432,11 @@ fn a_move_that_fails_rolls_the_transaction_back_instead_of_landing_the_knob() {
         "…and the per-doc failure reaches the surface with an identity, not as a bare \
          narration line; stderr:\n{stderr}",
     );
+    assert!(
+        !stderr.contains("parked"),
+        "nothing was parked here, so the route says nothing about a parked file; \
+         stderr:\n{stderr}",
+    );
     assert_eq!(
         bytes_at(&repo, "docs/roadmap.md").as_ref(),
         Some(&before_roadmap),
@@ -448,6 +453,142 @@ fn a_move_that_fails_rolls_the_transaction_back_instead_of_landing_the_knob() {
             .contains("notes"),
         "the knob did not land",
     );
+}
+
+/// **A refused re-point says which foreign file it parked and did not put back** (the rc.24
+/// fix pass's completion audit, CPL-8).
+///
+/// The sweep moves a foreign file out of a new home before it moves the doc in, and the
+/// undo behind a refusal puts the *docs* back and leaves that file in the gitignored
+/// workbench (the declared bound). The refusal's route read *every doc this re-point moved
+/// is back at its prior home* and stopped — true, and silent about a file that was no
+/// longer where the reader had put it. Driven before this: only a stderr narration line of
+/// the refused run named the move, and under `--format json` nothing did.
+///
+/// The trigger is the pass's own refusal: the second doc of the sweep stands at a
+/// committed link, which no door moves, after the first doc's destination held a squatter.
+/// Both formats are driven; the squatter-less control is the sibling above, whose route
+/// must go on saying nothing about a parked file.
+#[test]
+#[cfg(unix)]
+fn a_refused_repoint_names_the_foreign_file_it_parked_and_did_not_put_back() {
+    for json in [false, true] {
+        let cell = if json { "--format json" } else { "text" };
+        let corpus = TrialCorpus::build(State::CommittedSingletons);
+        let repo = corpus.repo();
+        corpus.git(&["mv", "docs/roadmap.md", "docs/roadmap-real.md"]);
+        std::os::unix::fs::symlink("roadmap-real.md", repo.join("docs/roadmap.md"))
+            .expect("make the roadmap's home a link");
+        corpus.git(&["add", "docs/roadmap.md"]);
+        corpus.git(&["commit", "-q", "-m", "the roadmap home is a link"]);
+        fs::create_dir_all(repo.join("handbook")).expect("mk the new home");
+        fs::write(repo.join("handbook/decisions-log.md"), "SQUATTER-MARKER\n")
+            .expect("write the squatter");
+        let before_log = bytes_at(&repo, "docs/decisions-log.md").expect("the corpus holds it");
+        // One cell also has an earlier displacement's file already parked under the same
+        // name: this door parks through the same function `jigc relocate` does, so the
+        // squatter goes beside it, never over it — and the route names where it went.
+        let parked = if json {
+            fs::create_dir_all(repo.join(".jigc/displaced")).expect("mk the parking home");
+            fs::write(
+                repo.join(".jigc/displaced/decisions-log.md"),
+                "EARLIER-PARKED\n",
+            )
+            .expect("park an earlier file");
+            ".jigc/displaced/decisions-log.md.2"
+        } else {
+            ".jigc/displaced/decisions-log.md"
+        };
+
+        let mut args = vec!["config", "set", "placement-root", "handbook"];
+        if json {
+            args.splice(0..0, ["--format", "json"]);
+        }
+        let out = corpus.jigc(&args);
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "{cell}: the re-point is refused; stderr:\n{stderr}",
+        );
+        assert!(
+            stderr.contains(REPOINT_FAILED),
+            "{cell}: …under its own code; stderr:\n{stderr}",
+        );
+
+        // The docs are all-or-nothing, as they were.
+        assert_eq!(
+            bytes_at(&repo, "docs/decisions-log.md").as_ref(),
+            Some(&before_log),
+            "{cell}: the doc that had moved is back at its prior home",
+        );
+        // The squatter is where the sweep parked it, bytes intact…
+        assert_eq!(
+            fs::read_to_string(repo.join(parked)).ok().as_deref(),
+            Some("SQUATTER-MARKER\n"),
+            "{cell}: the squatter's bytes survive in the workbench; stderr:\n{stderr}",
+        );
+        if json {
+            assert_eq!(
+                fs::read_to_string(repo.join(".jigc/displaced/decisions-log.md"))
+                    .ok()
+                    .as_deref(),
+                Some("EARLIER-PARKED\n"),
+                "{cell}: …beside the file already parked under that name, which is intact",
+            );
+        }
+        assert!(
+            !repo.join("handbook/decisions-log.md").exists(),
+            "{cell}: …and it is not back where it stood (the declared bound)",
+        );
+
+        // …and the refusal's own statement of what was undone says so, naming both paths.
+        let route = if json {
+            let doc: serde_json::Value =
+                serde_json::from_str(stderr.trim()).expect("stderr is one JSON document");
+            doc["findings"]
+                .as_array()
+                .expect("a findings array")
+                .iter()
+                .find(|finding| finding["code"] == REPOINT_FAILED)
+                .map(|finding| finding["route"].to_string())
+                .unwrap_or_else(|| panic!("{cell}: no `{REPOINT_FAILED}` finding:\n{stderr}"))
+        } else {
+            stderr
+                .lines()
+                .filter(|line| line.trim_start().starts_with("route:"))
+                .find(|line| line.contains("is unchanged"))
+                .unwrap_or_else(|| panic!("{cell}: no route states the undo:\n{stderr}"))
+                .to_owned()
+        };
+        assert!(
+            route.contains("handbook/decisions-log.md") && route.contains(&format!("`{parked}`")),
+            "{cell}: the route that says what was undone must name the file that was not \
+             put back, and where it is; route:\n{route}",
+        );
+
+        // The route's own re-run, once what the message names is fixed: the link replaced
+        // by the doc itself, as the refusal says. The squatter's old place is free now.
+        fs::remove_file(repo.join("docs/roadmap.md")).expect("remove the link");
+        fs::rename(
+            repo.join("docs/roadmap-real.md"),
+            repo.join("docs/roadmap.md"),
+        )
+        .expect("put the doc itself at its home");
+        corpus.git(&["add", "-A", "docs"]);
+        corpus.git(&["commit", "-q", "-m", "the roadmap is a regular file again"]);
+        let rerun = corpus.jigc(&["config", "set", "placement-root", "handbook"]);
+        assert!(
+            rerun.status.success(),
+            "{cell}: the route's re-run lands; stderr:\n{}",
+            String::from_utf8_lossy(&rerun.stderr),
+        );
+        assert!(
+            repo.join("handbook/roadmap.md").is_file()
+                && repo.join("handbook/decisions-log.md").is_file(),
+            "{cell}: …with both docs at the new home",
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

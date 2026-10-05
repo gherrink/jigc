@@ -642,7 +642,7 @@ fn reject_repoint(
         .iter()
         .map(|failure| match failure {
             RepointBlocker::Cause { at, cause } => {
-                repoint_failed(key, value, at, cause, !conflicts.is_empty())
+                repoint_failed(key, value, at, cause, !conflicts.is_empty(), undo.parked())
             }
             RepointBlocker::Raised(finding) => finding.clone(),
         })
@@ -659,12 +659,42 @@ fn reject_repoint(
 /// conflicted rollback leaves one path holding somebody else's bytes, so the unqualified
 /// *"every doc is back at its prior home"* would be a law-1 lie on exactly the run where the
 /// reader most needs the truth (`design/surface-contract.md` → law 1).
-fn repoint_failed(key: &str, value: &str, at: &str, cause: &str, conflicted: bool) -> Finding {
+///
+/// **And it states what the undo never covers** (the rc.24 fix pass's completion audit,
+/// CPL-8): a foreign file the sweep parked out of a new home before it refused. The undo
+/// puts the *docs* back and leaves that file in the gitignored workbench
+/// ([`crate::relocate::rollback_relocations`], the declared bound), so *every doc … is
+/// back* was true and still left the reader with a file that was not where they had put
+/// it — named until now only by a stderr line of the refused run, and by nothing under
+/// `--format json`. `parked` is `(where it stood, where it is now)` per file.
+fn repoint_failed(
+    key: &str,
+    value: &str,
+    at: &str,
+    cause: &str,
+    conflicted: bool,
+    parked: &[(String, String)],
+) -> Finding {
     let restored = if conflicted {
         "every doc this re-point moved is back at its prior home except the path(s) \
          the `config.rollback-conflict` finding(s) beside this one name"
     } else {
         "every doc this re-point moved is back at its prior home"
+    };
+    let parked = if parked.is_empty() {
+        String::new()
+    } else {
+        let pairs: Vec<String> = parked
+            .iter()
+            .map(|(from, to)| format!("`{from}` → `{to}`"))
+            .collect();
+        format!(
+            " — but {} file(s) that were not jigc's, which it had moved out of the way at \
+             the new home first, are not: each is still parked in the gitignored workbench \
+             ({}), its bytes intact; move one back if you want it where it stood",
+            parked.len(),
+            pairs.join(", "),
+        )
     };
     Finding::graded(
         engine::finding::Severity::Blocking,
@@ -672,8 +702,8 @@ fn repoint_failed(key: &str, value: &str, at: &str, cause: &str, conflicted: boo
         format!("`{key}` was not set to `{value}`: {cause} — the re-point was undone"),
         Some(engine::finding::Location::addressed(at.to_owned(), 1, 1)),
         Some(engine::finding::Route::human(format!(
-            "`{key}` is unchanged and {restored}. Fix what this message names, then \
-             re-run `jigc config set {} {}`",
+            "`{key}` is unchanged and {restored}{parked}. Fix what this message names, \
+             then re-run `jigc config set {} {}`",
             engine::finding::shell_token(key),
             engine::finding::shell_token(value),
         ))),
