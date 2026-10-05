@@ -115,6 +115,8 @@ mod repo_posture;
 mod rollback_population_registry;
 #[path = "../severity_tuning.rs"]
 mod severity_tuning;
+#[path = "../stabilize_harness_fence.rs"]
+mod stabilize_harness_fence;
 #[path = "../store_door_home_shape.rs"]
 mod store_door_home_shape;
 #[path = "../store_version_stamp.rs"]

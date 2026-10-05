@@ -35,6 +35,11 @@
 //!   the increment branch and pushes the milestone branch — and no separate push step exists.
 //! - **(j)** every `build-git` step the harness spawns or returns carries `model: GIT_MODEL`,
 //!   which is Sonnet.
+//! - **(k)** the stabilization harness (`.claude/workflows/stabilize.js`) merges too — a
+//!   round into its loop branch, and at the close `origin/main` into the loop branch — and
+//!   lets the same logs conflict: its `SYNC_LOGS` is this harness's and the script's, its
+//!   sync step is the same step, and its land step resolves with the script and aborts
+//!   every other conflict.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -42,6 +47,7 @@ use std::process::{Command, Output};
 
 const SCRIPT: &str = "dev/merge-logs";
 const HARNESS: &str = ".claude/workflows/milestone-build.js";
+const STABILIZE: &str = ".claude/workflows/stabilize.js";
 const DECISIONS: &str = "DECISIONS.md";
 const HISTORY: &str = "implementation/project-history.md";
 
@@ -436,5 +442,74 @@ fn j_every_git_step_runs_on_sonnet() {
             call.contains("model: GIT_MODEL"),
             "a build-git step without `model: GIT_MODEL`: {call}"
         );
+    }
+}
+
+#[test]
+fn k_the_stabilization_harness_lets_the_same_logs_conflict_and_no_other() {
+    let root = repo_root();
+    let build = fs::read_to_string(root.join(HARNESS)).expect("read the build harness");
+    let stabilize = fs::read_to_string(root.join(STABILIZE)).expect("read the stabilize harness");
+    let logs = quoted_list(&stabilize, "const SYNC_LOGS = [", ']');
+    assert_eq!(
+        logs,
+        quoted_list(&build, "const SYNC_LOGS = [", ']'),
+        "the two harnesses let the same logs conflict"
+    );
+    assert_eq!(logs, vec![DECISIONS.to_string(), HISTORY.to_string()]);
+
+    let step_of = |harness: &str, name: &str| -> String {
+        let step = &harness[harness
+            .find(&format!("function {name}("))
+            .unwrap_or_else(|| panic!("the step `{name}`"))..];
+        step[..step.find("\n}\n").expect("its end")].to_owned()
+    };
+    // The close's sync step is one step, whichever harness returns it: the same numbered
+    // commands, to the byte — each harness's own branch and its own list standing where
+    // the text says `m` and `logs`.
+    let commands = |step: &str| -> Vec<String> {
+        step.lines()
+            .map(str::trim)
+            .filter(|line| {
+                let mut chars = line.chars();
+                chars.next() == Some('\'')
+                    && chars.next().is_some_and(|c| c.is_ascii_digit())
+                    && chars.next() == Some('.')
+            })
+            .map(str::to_owned)
+            .collect()
+    };
+    let ours = commands(&step_of(&stabilize, "syncMainPrompt"));
+    assert_eq!(ours.len(), 8, "the sync step's eight commands: {ours:#?}");
+    assert_eq!(
+        ours,
+        commands(&step_of(&build, "syncMainPrompt")),
+        "the stabilization harness's sync step is the build harness's"
+    );
+
+    let land = step_of(&stabilize, "landPrompt");
+    for needle in [
+        "SYNC_LOGS",
+        "`git merge --no-ff --no-edit ' + branch + '`",
+        "`dev/merge-logs`",
+        "`git merge --abort`, then HALT",
+        "`git commit --no-edit`",
+        "`git push origin ' + loop + '`",
+        "tip_moved",
+    ] {
+        assert!(
+            land.contains(needle),
+            "the round's land step lists {needle}"
+        );
+    }
+    for forbidden in ["--force", "rebase", "git pull", "git reset"] {
+        let listed = land
+            .lines()
+            .filter(|line| line.trim_start().starts_with('\''))
+            .any(|line| {
+                line.contains(&format!("`git {forbidden}"))
+                    || line.contains(&format!(" {forbidden} "))
+            });
+        assert!(!listed, "the round's land step runs `{forbidden}`");
     }
 }
