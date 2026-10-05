@@ -1,12 +1,19 @@
 # cargo-nextest configuration — the test runner `dev/gate` uses.
 #
 # **nextest is the gate's test step** (since 2026-10-02; `implementation/dev-workflow.md`
-# → Gate): `dev/gate` runs `cargo nextest run --workspace --no-fail-fast` and then
-# `cargo test --workspace --doc`, because nextest does not run doctests, so the two
+# → Gate): `dev/gate` runs the suite as two `cargo nextest run --workspace --no-fail-fast`
+# runs — a fast tier and then its complement (since 2026-10-05) — and then
+# `cargo test --workspace --doc`, because nextest does not run doctests, so the three
 # together are the full suite. Where nextest is not installed, `dev/gate` runs
 # `cargo test` instead and says so; install it with `cargo install cargo-nextest --locked`
 # (`implementation/machine-setup.md`). CI does not use nextest: each `[[test]]` group is
 # its own `cargo test` leg (`.github/workflows/ci.yml`).
+#
+# **The gate's two tiers are not in this file.** `dev/gate` writes them per run, as the
+# profiles `gate-tier1` and `gate-tier2` of a tool config it hands nextest
+# (`--tool-config-file`): each is a `default-filter` derived from the last run's timings
+# plus a JUnit report. Both inherit `[profile.default]` below, so what is set there is
+# what the gate runs under.
 #
 # **Why it is the gate now, when this file used to say it must not be.** Until M54 about
 # thirty suites shelled out to cargo to build the detached `doc-code` probe workspace, all
@@ -32,3 +39,16 @@ final-status-level = "slow"
 
 [profile.ci]
 fail-fast = false
+
+# A scoped run during red → green — one suite, one test:
+#
+#     cargo nextest run -p jigc --profile scoped <suite>::
+#
+# `cargo test` has no per-test timeout, and a test blocked on a FIFO once hung a scoped
+# run until the ten-minute tool ceiling. Here such a test is terminated after two minutes
+# and reported as `TIMEOUT` by name. The slowest test of the suite runs about 35 s alone
+# and 141 s inside a full gate's load, so two minutes is room for any one suite and too
+# little for the whole suite at once — which this profile is never for: `dev/gate` does
+# not use it, and a scoped green is never a gate (`implementation/dev-workflow.md` → Gate).
+[profile.scoped]
+slow-timeout = { period = "30s", terminate-after = 4 }

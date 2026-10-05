@@ -15,11 +15,17 @@
 #   * `rm -rf $V/$D` is refused before it runs. So this script has no teardown and
 #     no --clean: logs go to a mktemp-minted path and stay there.
 #
-# It writes only to the repo's own target/ (via cargo) and to $TMPDIR. Never ~/.local.
+# It writes only to the target directory (through cargo, and its own timing record at
+# `<target>/jigc-gate/`) and to $TMPDIR. Never ~/.local.
 #
 # Usage:
-#   dev/gate                     # full gate: fmt, clippy, build, test (cargo nextest,
-#                                #   then the doctests; `cargo test` without nextest)
+#   dev/gate                     # full gate: fmt, clippy, build, then the suite in two
+#                                #   tiers (cargo nextest) and the doctests; `cargo test`
+#                                #   without nextest
+#   dev/gate --fast              # fmt, clippy, build and the FAST test tier only -- a
+#                                #   pre-check for a registry row or a fence a change
+#                                #   owes. It prints neither the totals line nor the
+#                                #   verdict line of a full gate: never commit on it
 #   dev/gate --quick             # fmt, clippy, build only -- a fast pre-check
 #   dev/gate --private-target    # build in a private CARGO_TARGET_DIR (no lock
 #                                #   contention with a concurrent gate in this tree).
@@ -29,6 +35,23 @@
 #                                #   a log, so this is also how it is TESTED
 #                                #   (crates/cli/tests/dev_gate_report.rs), in
 #                                #   milliseconds instead of a five-minute gate run.
+#
+# A run stops at the first red stage, so a red costs what it takes to see it: a red fmt,
+# clippy or build step launches no test, and a red fast tier launches neither the second
+# tier nor the doctests. A red therefore reports the stage that stopped the run and
+# nothing after it. A green gate runs every test: the second tier is `not (<the fast
+# tier's filter>)`, built from the same variable.
+#
+# The fast tier is every test this machine has not measured at JIGC_GATE_FAST_UNDER
+# seconds or more (default 2). Nobody lists it: every nextest step writes a JUnit report,
+# and the run folds each test's seconds into `<target>/jigc-gate/test-seconds.tsv`, which
+# the next run reads. A test with no row -- a new one, or every test where no record
+# exists yet -- runs in the fast tier, and is placed by its own seconds from then on.
+#
+# The log carries what a later performance analysis needs: one `step-seconds` line per
+# step (name, exit code, seconds) and one `test-seconds` line per test the run measured
+# (seconds, binary, test), tab-separated at column 0. The run prints the heaviest suites
+# and tests from them.
 #
 # Every run prints `gate: deps <N> entries` for the `<target>/debug/deps` it is about to
 # build into, and WARNS above JIGC_GATE_DEPS_WARN (default 100000) naming
@@ -65,9 +88,10 @@ cd "$repo_root" || exit 2
 
 tmp_root=${TMPDIR:-/tmp}
 tmp_root=${tmp_root%/}
+tab=$(printf '\t')
 
 # --- the report layer -------------------------------------------------------
-# Pure text over a log file, in three functions, so `--report <log>` runs exactly
+# Pure text over a log file, in four functions, so `--report <log>` runs exactly
 # what a real gate run's tail runs and a fixture log can fence it without cargo.
 
 # `passed failed binaries`, summed over what the test steps printed. Two shapes:
@@ -81,9 +105,13 @@ tmp_root=${tmp_root%/}
 #     INDENTED `    test result: FAILED. …` nextest echoes from each failing test's
 #     captured output, and count every failing test as one more binary.
 #   * cargo nextest prints `Starting N tests across B binaries` once and
-#     `Summary [ <t>s] R tests run: P passed, …` once (R reads `R/T` on a run cut short).
-#     Failed is R - P: nextest splits the rest over `failed`, `timed out`, `exec failed`
-#     and more, and none of them passed.
+#     `Summary [ <t>s] R tests run: P passed, …` once (R reads `R/T` on a run cut short)
+#     per run, and the gate makes two runs, one per tier. Failed is R - P: nextest splits
+#     the rest over `failed`, `timed out`, `exec failed` and more, and none of them
+#     passed. The passed and failed counts SUM over the runs. The binary count does not:
+#     B is every test binary of the workspace whatever the run's filter selected
+#     (`Starting 13 tests across 15 binaries (4624 tests skipped)`), so both tiers print
+#     the same fifteen and the count is the largest B, never the sum.
 #
 # The count exists to prove the run measured something, so an inflated one is exactly the
 # lie it was added to prevent.
@@ -98,7 +126,7 @@ gate_totals() {
             next
         }
         $1 == "Starting" && / tests? across [0-9]+ binar/ {
-            for (i = 2; i <= NF; i++) if ($i == "across") n += $(i+1)
+            for (i = 2; i <= NF; i++) if ($i == "across" && $(i+1) + 0 > nx) nx = $(i+1) + 0
             next
         }
         $1 == "Summary" && $2 == "[" || $1 == "Summary" && $2 ~ /^\[/ {
@@ -110,7 +138,7 @@ gate_totals() {
             if (run != "") { p += pass; f += run - pass }
             next
         }
-        END { printf "%d %d %d", p+0, f+0, n+0 }
+        END { printf "%d %d %d", p+0, f+0, n+nx }
     ' "$1"
 }
 
@@ -145,6 +173,33 @@ gate_errors() {
     grep -E '^(error|error\[|Diff in )' "$1" | sort -u | head -20
 }
 
+# The heaviest suites and tests of the run, from the `test-seconds` rows the run wrote
+# into its log (`test-seconds<TAB>seconds<TAB>binary<TAB>test`, at column 0 -- an indented
+# copy is a failing test's echoed output, never a row). A suite is a binary and the first
+# segment of the test's path: the suite module inside a group binary, the top module
+# inside a unit-test one. Printed on every run so a suite's cost is seen when it lands.
+# Prints nothing over a log that carries no row.
+gate_heaviest() {
+    suites=$(awk -F'\t' '
+        $1 == "test-seconds" {
+            suite = $4
+            sub(/::.*/, "", suite)
+            key = $3 " " suite
+            sum[key] += $2
+            count[key]++
+        }
+        END { for (key in sum) printf "%8.1fs  %s  (%d tests)\n", sum[key], key, count[key] }
+    ' "$1" | sort -k1,1rn -k2 | head -5)
+    if [ -z "$suites" ]; then
+        return 0
+    fi
+    printf '%s\n' '--- heaviest of this run (seconds; every test is a `test-seconds` line in the log) ---'
+    printf 'suites:\n%s\n' "$suites"
+    printf 'tests:\n'
+    awk -F'\t' '$1 == "test-seconds" { printf "%8.1fs  %s %s\n", $2, $3, $4 }' "$1" \
+        | sort -k1,1rn -k2 | head -5
+}
+
 gate_report() {
     report_log=$1
     totals=$(gate_totals "$report_log")
@@ -154,6 +209,11 @@ gate_report() {
     binaries=${rest#* }
     printf 'tests   passed=%s failed=%s  (over %s test binaries)\n' \
         "$passed" "$failed" "$binaries"
+
+    heaviest=$(gate_heaviest "$report_log")
+    if [ -n "$heaviest" ]; then
+        printf '\n%s\n' "$heaviest"
+    fi
 
     names=$(gate_failing_names "$report_log")
     if [ -n "$names" ]; then
@@ -168,13 +228,60 @@ gate_report() {
     fi
 }
 
+# --- the tier layer ---------------------------------------------------------
+# Pure text again: a JUnit report in, rows out; a record of rows in, a filter out.
+
+# `seconds<TAB>binary<TAB>test` for every test case of a nextest JUnit report. nextest
+# writes one `<testcase name="…" classname="<binary id>" … time="…">` start tag per line.
+gate_junit_seconds() {
+    awk '
+        /<testcase / {
+            name = ""; binary = ""; seconds = ""
+            if (match($0, / name="[^"]*"/)) name = substr($0, RSTART + 7, RLENGTH - 8)
+            if (match($0, / classname="[^"]*"/)) binary = substr($0, RSTART + 12, RLENGTH - 13)
+            if (match($0, / time="[^"]*"/)) seconds = substr($0, RSTART + 7, RLENGTH - 8)
+            if (name != "" && binary != "" && seconds != "")
+                printf "%s\t%s\t%s\n", seconds, binary, name
+        }
+    ' "$1"
+}
+
+# The nextest filterset naming every test the record `$1` holds at `$2` seconds or more,
+# by binary and by exact name; `none()` where there is no such test or no record. The
+# fast tier is `not` this, so a test the record does not hold is in the fast tier -- and
+# so is a row whose names carry a character outside a Rust path, which is left out here
+# rather than escaped into a regex.
+gate_slow_filter() {
+    if [ ! -f "$1" ]; then
+        printf 'none()'
+        return 0
+    fi
+    sort -t "$tab" -k2,2 -k3,3 "$1" | awk -F'\t' -v min="$2" '
+        $1 + 0 < min + 0 { next }
+        $2 !~ "^[A-Za-z0-9_:/-]+$" || $3 !~ "^[A-Za-z0-9_:]+$" { next }
+        $2 != binary {
+            if (binary != "") printf ")$/)) | "
+            binary = $2
+            printf "(binary_id(=%s) & test(/^(%s", $2, $3
+            next
+        }
+        { printf "|%s", $3 }
+        END { if (binary != "") printf ")$/))"; else printf "none()" }
+    '
+}
+
 # --- arguments --------------------------------------------------------------
-quick=0
+mode=full
 private_target=0
 report_only=""
 while [ $# -gt 0 ]; do
     case "$1" in
-        --quick) quick=1; shift ;;
+        --quick|--fast)
+            if [ "$mode" != full ]; then
+                printf 'dev/gate: --quick and --fast are two pre-checks; name one\n' >&2
+                exit 2
+            fi
+            mode=${1#--}; shift ;;
         --private-target) private_target=1; shift ;;
         --report)
             if [ $# -lt 2 ]; then
@@ -187,11 +294,21 @@ while [ $# -gt 0 ]; do
         -h|--help) awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
         *)
             printf 'dev/gate: unknown option: %s\n' "$1" >&2
-            printf 'dev/gate: try --quick, --private-target, --report <log>, --help\n' >&2
+            printf 'dev/gate: try --fast, --quick, --private-target, --report <log>, --help\n' >&2
             exit 2
             ;;
     esac
 done
+
+# The fast tier's threshold, refused here rather than read as zero by awk later: at zero
+# every recorded test is slow, and the fast tier would silently be the new tests alone.
+fast_under=${JIGC_GATE_FAST_UNDER:-2}
+case "$fast_under" in
+    ''|.|*[!0-9.]*|*.*.*)
+        printf 'dev/gate: JIGC_GATE_FAST_UNDER must be a number of seconds, got: %s\n' "$fast_under" >&2
+        exit 2
+        ;;
+esac
 
 if [ -n "$report_only" ]; then
     if [ ! -f "$report_only" ]; then
@@ -229,8 +346,10 @@ printf 'gate: target %s\n' "$target_desc"
 if [ "$private_target" -eq 1 ] && [ -z "${JIGC_GATE_TARGET:-}" ]; then
     printf 'gate:        reuse it next run with: JIGC_GATE_TARGET=%s\n' "$CARGO_TARGET_DIR"
 fi
-if [ "$quick" -eq 1 ]; then
+if [ "$mode" = quick ]; then
     printf 'gate: mode   quick (fmt, clippy, build -- NOT the full gate, do not commit on it)\n'
+elif [ "$mode" = fast ]; then
+    printf 'gate: mode   fast (fmt, clippy, build, the fast test tier -- a PRE-CHECK, not the gate, do not commit on it)\n'
 else
     printf 'gate: mode   full\n'
 fi
@@ -378,6 +497,8 @@ run_step() {
     code=$?
     elapsed=$(( $(date +%s) - started ))
     printf '%s %s\n' "$name" "$code" >>"$results"
+    # The seconds were on stdout only, which no log survives.
+    printf 'step-seconds\t%s\t%s\t%s\n' "$name" "$code" "$elapsed" >>"$log"
     if [ "$code" -eq 0 ]; then
         printf '==> %-7s ok        (%ss)\n' "$name" "$elapsed"
     elif [ "$code" -eq 127 ]; then
@@ -394,23 +515,137 @@ run_step() {
     return 0
 }
 
-# The gate, in order.
+# --- the two test tiers -----------------------------------------------------
+# The suite runs as a fast tier and then everything else, so a red that a fast test can
+# show costs a minute or two and not the whole suite: of 23 red gates in one fix pass
+# every failing test ran under 6.3 s, and each red was reported after 8-10 minutes
+# (completions/artifacts/M55/fix-pass-rc25/perf/run-performance.md, 3.6).
+#
+# Membership is measured, never listed. The record holds each test's seconds from the
+# last run that executed it on this target directory; the fast tier is every test the
+# record does not hold at $fast_under seconds or more. So a new test starts in the fast
+# tier -- where a new test's red belongs -- and is placed by its own seconds from the
+# next run on, and with no record at all (a fresh clone, the run after `dev/clean-litter`,
+# a fresh --private-target) the fast tier is the whole suite for one run. A wrong or
+# stale row costs time, never coverage: the second tier is `not (<the fast tier>)`, built
+# from the same variable, so the two tiers are every test whatever the first one holds.
+#
+# The filters reach nextest as the `default-filter` of two profiles in a per-run tool
+# config, not as `-E` arguments: one filter names every slow test (137 KB on the day this
+# was written), and on Linux a single argument is capped at 128 KiB. Both profiles
+# inherit `[profile.default]` of .config/nextest.toml and add a JUnit report, which is
+# where the seconds come from. The same config names nextest's store directory, because
+# nextest keeps it at `<workspace>/target/nextest` whatever CARGO_TARGET_DIR says: a run
+# into a private target would otherwise write its report into the shared tree, over the
+# report of a gate running there.
+target_dir=${CARGO_TARGET_DIR:-$repo_root/target}
+record=$target_dir/jigc-gate/test-seconds.tsv
+run_seconds=$(mktemp "$tmp_root/jigc-gate-seconds-XXXXXX") || exit 2
+
+# Run one tier under its profile and collect the seconds its JUnit report holds. The
+# report of an earlier run is emptied first, so a tier that dies before it writes one
+# leaves no rows rather than the last run's.
+run_tier() {
+    tier_name=$1
+    tier_profile=$2
+    shift 2
+    junit=$target_dir/nextest/$tier_profile/junit.xml
+    if [ -f "$junit" ]; then
+        : >"$junit"
+    fi
+    run_step "$tier_name" cargo nextest run --workspace --no-fail-fast "$@" \
+        --tool-config-file "jigc-gate:$tiers" --profile "$tier_profile"
+    if [ -f "$junit" ]; then
+        gate_junit_seconds "$junit" >>"$run_seconds"
+    fi
+}
+
+# The gate, in order. It stops at the first red stage: the three cheap steps all run, so
+# one cycle shows a format diff and a lint together, and a red among them launches no
+# test; a red fast tier launches neither the second tier nor the doctests.
 run_step fmt cargo fmt --check
 run_step clippy cargo clippy --all-targets -- -D warnings
 run_step build cargo build
+tiers_green=0
+if [ "$mode" = quick ]; then
+    :
+elif [ -n "$failed_steps" ]; then
+    printf '==> NOTE    a lint or build step is red: no test was run\n'
 # The suite is nextest -- one process per test over one pool, measurably faster than
 # `cargo test`'s binary-after-binary -- and then the doctests, which nextest does not
 # run. Without nextest the gate is still the FULL suite: `cargo test`, which runs the
 # doctests itself, with a note that says why it is slower.
-if [ "$quick" -eq 0 ]; then
-    if cargo nextest --version >/dev/null 2>&1; then
-        run_step test cargo nextest run --workspace --no-fail-fast
-        run_step doctest cargo test --workspace --doc
+elif cargo nextest --version >/dev/null 2>&1; then
+    slow=$(gate_slow_filter "$record" "$fast_under")
+    tier1="not ($slow)"
+    tier2="not ($tier1)"
+    tiers=$(mktemp "$tmp_root/jigc-gate-tiers-XXXXXX") || exit 2
+    store=$(printf '%s' "$target_dir/nextest" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    {
+        printf '# Written by dev/gate for one run: its two test tiers, as nextest profiles.\n'
+        printf '[store]\ndir = "%s"\n' "$store"
+        printf "[profile.gate-tier1]\ndefault-filter = '%s'\n" "$tier1"
+        printf '[profile.gate-tier1.junit]\npath = "junit.xml"\n'
+        printf "[profile.gate-tier2]\ndefault-filter = '%s'\n" "$tier2"
+        printf '[profile.gate-tier2.junit]\npath = "junit.xml"\n'
+    } >"$tiers"
+    if [ -f "$record" ]; then
+        recorded=$(awk 'END { print NR }' "$record")
+        held=$(awk -F'\t' -v min="$fast_under" '$1 + 0 >= min + 0 { n++ } END { print n + 0 }' "$record")
+        printf 'gate: tiers  fast tier = every test not measured at %ss or more; %s of %s recorded tests wait for the second tier\n' \
+            "$fast_under" "$held" "$recorded"
+        printf 'gate:        record %s\n' "$record"
     else
-        printf '==> NOTE    cargo-nextest is not installed: the test step runs `cargo test`\n'
+        printf 'gate: tiers  no timing record at %s\n' "$record"
+        printf 'gate:        so the fast tier is the WHOLE suite this run, and this run writes the record\n'
+    fi
+
+    run_tier tier1 gate-tier1
+    if [ -n "$failed_steps" ]; then
+        printf '==> NOTE    the fast tier is red: the second tier and the doctests were not run,\n'
+        printf '            so the failures named below are this tier'"'"'s and may not be all of them\n'
+    elif [ "$mode" = full ]; then
+        # An empty second tier is a legitimate state -- no record yet, so the fast tier
+        # held every test -- and nextest exits 4 on an empty run unless told otherwise.
+        run_tier tier2 gate-tier2 --no-tests=pass
+        if [ -z "$failed_steps" ]; then
+            tiers_green=1
+        fi
+        run_step doctest cargo test --workspace --doc
+    fi
+
+    # The run's seconds go into the log, for whoever analyses this run, and into the
+    # record, for the next run's tiers. After two green tiers the run measured every test
+    # there is, so its rows ARE the record and a deleted test's row goes with them;
+    # otherwise the run's rows replace their own and every other row stands.
+    if [ -s "$run_seconds" ]; then
+        awk -F'\t' '{ printf "test-seconds\t%s\t%s\t%s\n", $1, $2, $3 }' "$run_seconds" >>"$log"
+        if mkdir -p "$target_dir/jigc-gate"; then
+            if [ "$tiers_green" -eq 1 ] || [ ! -f "$record" ]; then
+                cat "$run_seconds" >"$record"
+            else
+                merged=$(mktemp "$tmp_root/jigc-gate-record-XXXXXX") || exit 2
+                awk -F'\t' '
+                    NR == FNR { measured[$2 FS $3] = 1; print; next }
+                    !(($2 FS $3) in measured)
+                ' "$run_seconds" "$record" >"$merged"
+                cat "$merged" >"$record"
+            fi
+        fi
+    fi
+else
+    printf '==> NOTE    cargo-nextest is not installed'
+    if [ "$mode" = fast ]; then
+        printf ': the two tiers are nextest filters, so\n'
+        printf '            the fast tier did not run and this pre-check is fmt, clippy, build.\n'
+        printf '            Install it with:\n'
+    else
+        printf ': the test step runs `cargo test`\n'
         printf '            instead -- the same full suite, slower. Install it with:\n'
-        printf '                cargo install cargo-nextest --locked\n'
-        printf '            (implementation/machine-setup.md)\n'
+    fi
+    printf '                cargo install cargo-nextest --locked\n'
+    printf '            (implementation/machine-setup.md)\n'
+    if [ "$mode" = full ]; then
         run_step test cargo test --workspace --no-fail-fast
     fi
 fi
@@ -426,24 +661,40 @@ while read -r sname scode; do
 done <"$results"
 
 # Sum the per-target summary lines, so a run that compiled nothing is
-# distinguishable from a run that passed.
-if [ "$quick" -eq 0 ]; then
-    totals=$(gate_totals "$log")
-    passed=${totals%% *}
-    rest=${totals#* }
-    failed=${rest%% *}
-    binaries=${rest#* }
+# distinguishable from a run that passed. The pre-check says what it measured in words
+# of its own: the `tests   ...` line is one of the two the build harness accepts as a
+# passed gate (.claude/workflows/milestone-build.js), and a pre-check must not print it.
+totals=$(gate_totals "$log")
+passed=${totals%% *}
+rest=${totals#* }
+failed=${rest%% *}
+binaries=${rest#* }
+if [ "$mode" = full ]; then
     printf 'tests   passed=%s failed=%s  (over %s test binaries)\n' \
         "$passed" "$failed" "$binaries"
+elif [ "$mode" = fast ]; then
+    printf 'fast tier  %s passed, %s failed -- the second tier and the doctests were not run\n' \
+        "$passed" "$failed"
+fi
+
+heaviest=$(gate_heaviest "$log")
+if [ -n "$heaviest" ]; then
+    printf '\n%s\n' "$heaviest"
 fi
 
 # --- failure detail: named, never a blind tail ------------------------------
 # The named failures and the error lines come from the report layer above -- the same
 # functions `--report <log>` runs, which is what makes them fenceable without cargo.
+# The pre-check's verdict is its own word, red or green: `GATE:` is a gate's.
+if [ "$mode" = fast ]; then
+    verdict=PRE-CHECK
+else
+    verdict=GATE
+fi
 if [ -n "$failed_steps" ]; then
     first_failed=${failed_steps# }
     first_failed=${first_failed%% *}
-    printf '\nGATE: FAIL (step:%s)\n' "$failed_steps"
+    printf '\n%s: FAIL (step:%s)\n' "$verdict" "$failed_steps"
 
     if [ -n "$unrun_steps" ]; then
         printf '\nthese steps DID NOT RUN (exit 127 -- the command was not found, so\n'
@@ -469,6 +720,10 @@ if [ -n "$failed_steps" ]; then
     exit 1
 fi
 
-printf '\nGATE: PASS\n'
+if [ "$mode" = fast ]; then
+    printf '\nPRE-CHECK: PASS -- fmt, clippy, build and the fast test tier. NOT a gate: never commit on it\n'
+else
+    printf '\nGATE: PASS\n'
+fi
 printf 'full output: %s\n' "$log"
 exit 0

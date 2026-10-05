@@ -7,11 +7,11 @@
 //! tool over retyping the gate, and it is also the half that had never been checked —
 //! because checking it appeared to cost a five-minute gate run.
 //!
-//! It does not. The totals, the failing-name extraction and the error-line extraction
-//! are three `awk`/`grep` passes over a log; `dev/gate --report <log>` runs exactly
-//! those three and nothing else, so a fixture log fences them for the cost of a
-//! subprocess. That flag exists for this suite, and is not a second implementation:
-//! the live run calls the same three functions.
+//! It does not. The totals, the failing-name extraction, the error-line extraction and
+//! (since 2026-10-05) the heaviest-suites listing are `awk`/`grep` passes over a log;
+//! `dev/gate --report <log>` runs exactly those four and nothing else, so a fixture log
+//! fences them for the cost of a subprocess. That flag exists for this suite, and is not
+//! a second implementation: the live run calls the same four functions.
 //!
 //! **The defect this suite exists for.** The totals matched `/^test result:/`
 //! *undelimited*, so every test whose path begins `result::` — `engine/src/result.rs`
@@ -288,10 +288,11 @@ fn a_step_that_could_not_run_says_so_and_names_the_missing_binary() {
 // The nextest arm: what the test step prints since the gate runs `cargo nextest`.
 // ---------------------------------------------------------------------------
 //
-// `dev/gate` runs the suite as `cargo nextest run --workspace --no-fail-fast` and then
+// `dev/gate` runs the suite under `cargo nextest run` — twice since 2026-10-05, a fast
+// tier and then its complement (the section after this one) — and then
 // `cargo test --workspace --doc` (nextest does not run doctests). nextest prints no
-// per-target `test result:` line: it prints one `Starting N tests across B binaries`
-// header and one `Summary [ … ] R tests run: P passed, …` footer, and names each failure
+// per-target `test result:` line: per run it prints one `Starting N tests across B
+// binaries` header and one `Summary [ … ] R tests run: P passed, …` footer, and names each failure
 // on a `FAIL [ … ] (i/n) <binary> <test>` status line — once as it happens, once more in
 // the final summary. And it **echoes each failing test's captured libtest output,
 // indented** — `    test result: FAILED. 0 passed; 1 failed; …` included — so a totals
@@ -445,83 +446,350 @@ fn nextest_failures_are_named_by_binary_and_test_once_each() {
     );
 }
 
-/// Run the FULL `dev/gate` with a fake `cargo` first on `PATH` that records each argv it
-/// is handed and exits 0 — with `nextest` installed or not. Returns (stdout, argvs).
+// ---------------------------------------------------------------------------
+// The live run under a fake `cargo`: which commands, in which order, and where it stops.
+// ---------------------------------------------------------------------------
+//
+// The real commands are the suite, so the run's *shape* is fenced with a `cargo` that
+// records each argv it is handed and does nothing else. Since 2026-10-05 the shape has
+// three properties the arms below pin, each of them a way a red gate used to cost its
+// full ten minutes (completions/artifacts/M55/fix-pass-rc25/perf/run-performance.md
+// §3.6: 23 red gates, every failing test under 6.3 s, each reported after 8–10 min):
+//
+// * a red `fmt`, `clippy` or `build` launches no test;
+// * the suite runs as a **fast tier** and then its **complement** — the second filter is
+//   `not (<the first>)`, so the two cover every test whatever the first one holds — and a
+//   red fast tier launches neither the second tier nor the doctests;
+// * the fast tier alone is a pre-check, `--fast`, and that mode prints **neither** line
+//   `.claude/workflows/milestone-build.js` accepts as a passed gate.
+//
+// The tier is derived, never listed: it is every test the last run on this target
+// directory did not measure at the threshold or more, read from the record the gate
+// itself writes out of nextest's JUnit report. The last arm of this section drives that
+// loop twice, so a test nobody named moves to the second tier because a run timed it.
+
+/// A fake `cargo` first on `PATH`, with the scratch directory that is the run's
+/// `CARGO_TARGET_DIR` and `TMPDIR`.
 ///
-/// The fake is what makes the full mode fenceable at all: the real one is the suite.
-fn full_gate_with_fake_cargo(label: &str, nextest: bool) -> (String, Vec<String>) {
-    use std::os::unix::fs::PermissionsExt;
-    let scratch = ScratchDir::new(label);
-    let dir = scratch.path();
-    let bin = dir.join("bin");
-    std::fs::create_dir_all(&bin).expect("create the fake cargo's dir");
-    let argv_log = dir.join("argv.log");
-    let fake = bin.join("cargo");
-    std::fs::write(
-        &fake,
-        format!(
-            "#!/bin/sh\n\
-             if [ \"$1\" = nextest ] && [ {nextest} = 0 ]; then\n\
-             \x20 echo 'error: no such command: `nextest`' >&2\n\
-             \x20 exit 101\n\
-             fi\n\
-             printf '%s\\n' \"$*\" >> '{}'\n\
-             exit 0\n",
-            argv_log.display(),
-            nextest = u8::from(nextest),
-        ),
-    )
-    .expect("write the fake cargo");
-    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755))
-        .expect("make the fake cargo executable");
-    let out = gate_in(&scratch)
-        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
-        .env("CARGO_TARGET_DIR", dir)
-        .env("JIGC_GATE_HYGIENE", "off")
-        .output()
-        .expect("spawn dev/gate");
-    let argvs = std::fs::read_to_string(&argv_log)
-        .unwrap_or_default()
-        .lines()
-        .map(str::to_string)
-        .collect();
-    (String::from_utf8_lossy(&out.stdout).to_string(), argvs)
+/// The fake appends each argv to `argv.log`. For `nextest run` it also prints a green
+/// three-test summary over two binaries and, when [`FakeCargo::junit`] staged a report for
+/// the profile it was handed, writes that report where nextest would. It exits 1 for a
+/// step named in `FAKE_CARGO_RED` — by its first word (`clippy`) or by its nextest
+/// profile (`gate-tier1`).
+struct FakeCargo {
+    scratch: ScratchDir,
 }
 
-#[test]
-fn the_full_gate_runs_the_suite_under_nextest_and_then_the_doctests() {
-    let (text, argvs) = full_gate_with_fake_cargo("gate-steps-nextest", true);
-    let ran: Vec<&str> = argvs
+/// What one gate run under the fake printed and launched.
+struct FakeRun {
+    text: String,
+    /// Each cargo argv, in order, the per-run tier config's path replaced by `<tiers>`.
+    argvs: Vec<String>,
+    /// The body of the tier config the run wrote, empty when it wrote none.
+    tiers: String,
+    ok: bool,
+}
+
+impl FakeRun {
+    /// The `default-filter` the run gave `profile`.
+    fn filter(&self, profile: &str) -> &str {
+        let header = format!("[profile.{profile}]");
+        self.tiers
+            .lines()
+            .skip_while(|l| *l != header)
+            .nth(1)
+            .and_then(|l| l.strip_prefix("default-filter = '"))
+            .and_then(|l| l.strip_suffix('\''))
+            .unwrap_or_else(|| {
+                panic!(
+                    "the tier config gives `{profile}` no default-filter:\n{}",
+                    self.tiers
+                )
+            })
+    }
+}
+
+impl FakeCargo {
+    fn new(label: &str, nextest: bool) -> Self {
+        use std::os::unix::fs::PermissionsExt;
+        let scratch = ScratchDir::new(label);
+        let dir = scratch.path();
+        let bin = dir.join("bin");
+        std::fs::create_dir_all(&bin).expect("create the fake cargo's dir");
+        let fake = bin.join("cargo");
+        std::fs::write(
+            &fake,
+            format!(
+                "#!/bin/sh\n\
+                 here='{here}'\n\
+                 if [ \"$1\" = nextest ] && [ {nextest} = 0 ]; then\n\
+                 \x20 echo 'error: no such command: `nextest`' >&2\n\
+                 \x20 exit 101\n\
+                 fi\n\
+                 printf '%s\\n' \"$*\" >> \"$here/argv.log\"\n\
+                 profile=\n\
+                 prev=\n\
+                 for a in \"$@\"; do\n\
+                 \x20 if [ \"$prev\" = --profile ]; then profile=$a; fi\n\
+                 \x20 prev=$a\n\
+                 done\n\
+                 if [ \"$1 $2\" = 'nextest run' ]; then\n\
+                 \x20 echo '    Starting 3 tests across 2 binaries'\n\
+                 \x20 echo '     Summary [   0.100s] 3 tests run: 3 passed, 0 skipped'\n\
+                 \x20 if [ -f \"$here/junit-$profile.xml\" ]; then\n\
+                 \x20   mkdir -p \"$CARGO_TARGET_DIR/nextest/$profile\"\n\
+                 \x20   cp \"$here/junit-$profile.xml\" \"$CARGO_TARGET_DIR/nextest/$profile/junit.xml\"\n\
+                 \x20 fi\n\
+                 fi\n\
+                 for red in $FAKE_CARGO_RED; do\n\
+                 \x20 if [ \"$red\" = \"$1\" ] || [ \"$red\" = \"$profile\" ]; then exit 1; fi\n\
+                 done\n\
+                 exit 0\n",
+                here = dir.display(),
+                nextest = u8::from(nextest),
+            ),
+        )
+        .expect("write the fake cargo");
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755))
+            .expect("make the fake cargo executable");
+        FakeCargo { scratch }
+    }
+
+    fn dir(&self) -> &Path {
+        self.scratch.path()
+    }
+
+    /// Stage the JUnit report the fake writes for a `nextest run` under `profile`: one
+    /// `(binary, test, seconds)` per test case, in nextest's own one-tag-per-line shape.
+    fn junit(&self, profile: &str, cases: &[(&str, &str, &str)]) {
+        let mut xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites>\n");
+        for (binary, test, seconds) in cases {
+            xml.push_str(&format!(
+                "    <testsuite name=\"{binary}\" tests=\"1\">\n        <testcase \
+                 name=\"{test}\" classname=\"{binary}\" \
+                 timestamp=\"2026-10-05T19:41:23.446+02:00\" time=\"{seconds}\"/>\n    \
+                 </testsuite>\n"
+            ));
+        }
+        xml.push_str("</testsuites>\n");
+        std::fs::write(self.dir().join(format!("junit-{profile}.xml")), xml)
+            .expect("stage the fixture JUnit report");
+    }
+
+    /// Run `dev/gate <flags>` with the steps in `red` exiting 1.
+    fn run(&self, flags: &[&str], red: &[&str]) -> FakeRun {
+        let dir = self.dir();
+        let argv_log = dir.join("argv.log");
+        std::fs::write(&argv_log, "").expect("start the run with an empty argv log");
+        let out = gate_in(&self.scratch)
+            .args(flags)
+            .env(
+                "PATH",
+                format!("{}:/usr/bin:/bin", dir.join("bin").display()),
+            )
+            .env("CARGO_TARGET_DIR", dir)
+            .env("JIGC_GATE_HYGIENE", "off")
+            .env("FAKE_CARGO_RED", red.join(" "))
+            .output()
+            .expect("spawn dev/gate");
+        let mut tiers = String::new();
+        let mut argvs = Vec::new();
+        for line in std::fs::read_to_string(&argv_log)
+            .expect("read the argv log")
+            .lines()
+        {
+            let mut argv = line.to_string();
+            if let Some(at) = line.find("jigc-gate:") {
+                let path = line[at + "jigc-gate:".len()..]
+                    .split(' ')
+                    .next()
+                    .expect("split yields a first field");
+                tiers = std::fs::read_to_string(path).expect("read the run's tier config");
+                argv = line.replace(path, "<tiers>");
+            }
+            argvs.push(argv);
+        }
+        FakeRun {
+            text: String::from_utf8_lossy(&out.stdout).to_string(),
+            argvs,
+            tiers,
+            ok: out.status.success(),
+        }
+    }
+}
+
+/// The three steps every mode opens with.
+const LINT_AND_BUILD: [&str; 3] = [
+    "fmt --check",
+    "clippy --all-targets -- -D warnings",
+    "build",
+];
+const TIER_1: &str = "nextest run --workspace --no-fail-fast --tool-config-file \
+                      jigc-gate:<tiers> --profile gate-tier1";
+const TIER_2: &str = "nextest run --workspace --no-fail-fast --no-tests=pass \
+                      --tool-config-file jigc-gate:<tiers> --profile gate-tier2";
+
+/// The cargo argvs a run launched, without the `nextest --version` probe.
+fn launched(run: &FakeRun) -> Vec<&str> {
+    run.argvs
         .iter()
         .map(String::as_str)
         .filter(|a| *a != "nextest --version")
-        .collect();
+        .collect()
+}
+
+/// Does `text` carry either line the build harness accepts as a passed gate?
+///
+/// By substring, deliberately wider than the harness's whole-line patterns: a pre-check
+/// must not be readable as a gate by an agent skimming it either.
+fn reads_as_a_passed_gate(text: &str) -> bool {
+    text.contains("GATE: PASS") || text.contains("passed=")
+}
+
+#[test]
+fn the_full_gate_runs_the_fast_tier_then_its_complement_then_the_doctests() {
+    let run = FakeCargo::new("gate-steps-nextest", true).run(&[], &[]);
+    let text = &run.text;
+    let mut expected = LINT_AND_BUILD.to_vec();
+    expected.extend([TIER_1, TIER_2, "test --workspace --doc"]);
     assert_eq!(
-        ran,
-        vec![
-            "fmt --check",
-            "clippy --all-targets -- -D warnings",
-            "build",
-            "nextest run --workspace --no-fail-fast",
-            "test --workspace --doc",
-        ],
-        "the gate's commands, in order — nextest runs every test but the doctests, which \
-         the step after it runs, so the two together are the full suite.\n{text}",
+        launched(&run),
+        expected,
+        "the gate's commands, in order — the suite as two nextest runs, then the doctests, \
+         which nextest does not run.\n{text}",
     );
-    assert!(text.contains("GATE: PASS"), "{text}");
+    let fast = run.filter("gate-tier1");
+    assert_eq!(
+        run.filter("gate-tier2"),
+        format!("not ({fast})"),
+        "the second tier is the complement of the first BY CONSTRUCTION — `not (<the fast \
+         tier's filter>)` — so the two runs cover every test whatever the first one holds, \
+         and never a second list that can drift from it.\n{}",
+        run.tiers,
+    );
+    assert!(
+        text.lines()
+            .any(|l| l == "tests   passed=6 failed=0  (over 2 test binaries)"),
+        "two tier runs sum their passed counts, and count the workspace's test binaries \
+         once: each run prints every binary whatever its filter selected.\n{text}",
+    );
+    assert!(text.lines().any(|l| l == "GATE: PASS"), "{text}");
+}
+
+#[test]
+fn a_red_lint_or_build_step_launches_no_test() {
+    for red in ["fmt", "clippy", "build"] {
+        let run = FakeCargo::new(&format!("gate-red-{red}"), true).run(&[], &[red]);
+        let text = &run.text;
+        assert_eq!(
+            run.argvs, LINT_AND_BUILD,
+            "a red `{red}` ends the run after the three cheap steps: nothing is probed and \
+             no test is launched — the suite is ten minutes spent to report what three \
+             seconds already said.\n{text}",
+        );
+        assert!(
+            text.lines()
+                .any(|l| l == format!("GATE: FAIL (step: {red})")),
+            "{text}",
+        );
+        assert!(!run.ok && !text.contains("GATE: PASS"), "{text}");
+    }
+}
+
+#[test]
+fn a_red_fast_tier_launches_neither_the_second_tier_nor_the_doctests() {
+    let run = FakeCargo::new("gate-red-tier1", true).run(&[], &["gate-tier1"]);
+    let text = &run.text;
+    let mut expected = LINT_AND_BUILD.to_vec();
+    expected.push(TIER_1);
+    assert_eq!(launched(&run), expected, "{text}");
+    assert!(
+        text.lines().any(|l| l == "GATE: FAIL (step: tier1)"),
+        "{text}",
+    );
+    assert!(
+        text.contains("the second tier and the doctests were not run"),
+        "a red that stops the run must say what it left unmeasured, or a reader takes the \
+         named failures for the whole list.\n{text}",
+    );
+    assert!(!run.ok && !text.contains("GATE: PASS"), "{text}");
+}
+
+#[test]
+fn a_red_second_tier_still_runs_the_doctests() {
+    let run = FakeCargo::new("gate-red-tier2", true).run(&[], &["gate-tier2"]);
+    let mut expected = LINT_AND_BUILD.to_vec();
+    expected.extend([TIER_1, TIER_2, "test --workspace --doc"]);
+    assert_eq!(launched(&run), expected, "{}", run.text);
+    assert!(
+        run.text.lines().any(|l| l == "GATE: FAIL (step: tier2)"),
+        "{}",
+        run.text,
+    );
+}
+
+/// `--fast` is the fast tier as a pre-check, and it must never read as a gate.
+///
+/// `.claude/workflows/milestone-build.js` accepts an increment's gate on two lines —
+/// `GATE: PASS` and the `tests   passed=… failed=0  (over N test binaries)` totals — and
+/// `--quick` already prints the first of them. A pre-check that ran thousands of green
+/// tests would print both unless it is built not to, so a green `--fast` prints neither,
+/// in any form, and its own verdict says what it is not.
+#[test]
+fn the_fast_pre_check_runs_the_fast_tier_only_and_never_reads_as_a_gate() {
+    let fake = FakeCargo::new("gate-fast", true);
+    let run = fake.run(&["--fast"], &[]);
+    let text = &run.text;
+    let mut expected = LINT_AND_BUILD.to_vec();
+    expected.push(TIER_1);
+    assert_eq!(
+        launched(&run),
+        expected,
+        "the pre-check is lint, build and the fast tier — never the second tier, never \
+         the doctests.\n{text}",
+    );
+    assert!(run.ok, "a green pre-check exits 0.\n{text}");
+    assert!(
+        !reads_as_a_passed_gate(text),
+        "a green pre-check prints neither line the build harness accepts as a passed \
+         gate.\n{text}",
+    );
+    assert!(
+        text.lines().any(|l| l.starts_with("PRE-CHECK: PASS")
+            && l.contains("NOT a gate")
+            && l.contains("never commit on it")),
+        "its verdict is its own, and says what it is not.\n{text}",
+    );
+    assert!(
+        text.lines()
+            .any(|l| l.starts_with("fast tier  3 passed, 0 failed")),
+        "it still says how much it measured.\n{text}",
+    );
+
+    let red = fake.run(&["--fast"], &["gate-tier1"]);
+    assert!(
+        red.text
+            .lines()
+            .any(|l| l == "PRE-CHECK: FAIL (step: tier1)"),
+        "{}",
+        red.text,
+    );
+    assert!(
+        !red.ok && !red.text.contains("GATE:"),
+        "a red pre-check is not a gate verdict either.\n{}",
+        red.text,
+    );
 }
 
 #[test]
 fn without_nextest_the_full_gate_still_runs_the_full_suite_and_says_why() {
-    let (text, argvs) = full_gate_with_fake_cargo("gate-steps-fallback", false);
+    let fake = FakeCargo::new("gate-steps-fallback", false);
+    let run = fake.run(&[], &[]);
+    let text = &run.text;
+    let mut expected = LINT_AND_BUILD.to_vec();
+    expected.push("test --workspace --no-fail-fast");
     assert_eq!(
-        argvs,
-        vec![
-            "fmt --check",
-            "clippy --all-targets -- -D warnings",
-            "build",
-            "test --workspace --no-fail-fast",
-        ],
+        run.argvs, expected,
         "with nextest absent the test step is `cargo test` — the whole suite, doctests \
          included — never a skipped step and never a smaller suite.\n{text}",
     );
@@ -531,6 +799,288 @@ fn without_nextest_the_full_gate_still_runs_the_full_suite_and_says_why() {
         "the fallback is announced, with the line that ends it.\n{text}",
     );
     assert!(text.contains("GATE: PASS"), "{text}");
+
+    // The tiers are nextest filters, so without nextest there is no fast tier to run: the
+    // pre-check says so and stays a pre-check, rather than running the whole suite.
+    let fast = fake.run(&["--fast"], &[]);
+    assert_eq!(fast.argvs, LINT_AND_BUILD, "{}", fast.text);
+    assert!(
+        fast.text.contains("cargo-nextest is not installed")
+            && fast.text.contains("the fast tier did not run")
+            && !reads_as_a_passed_gate(&fast.text),
+        "{}",
+        fast.text,
+    );
+}
+
+/// The tier is derived from what the gate measured, and a new test needs no one to place it.
+///
+/// Run 1 has no record: every test is in the fast tier. Its fast tier's JUnit report
+/// times three tests, one of them at 12.5 s. Run 2, on the same target directory, holds
+/// that test — by binary and by name — out of the fast tier, and by construction in the
+/// second. Nothing here lists a suite, which is the point: the list this replaces would
+/// have rotted the day a suite was added.
+#[test]
+fn the_fast_tier_is_every_test_the_last_run_did_not_measure_as_slow() {
+    let fake = FakeCargo::new("gate-tier-derivation", true);
+    fake.junit(
+        "gate-tier1",
+        &[
+            (
+                "jigc::g_doc",
+                "slow_suite::drives_the_binary_a_lot",
+                "12.500",
+            ),
+            ("jigc::g_doc", "quick_suite::reads_a_registry", "0.020"),
+            ("jigc-engine", "parse::tests::round_trips", "1.999"),
+        ],
+    );
+
+    let first = fake.run(&[], &[]);
+    assert_eq!(
+        first.filter("gate-tier1"),
+        "not (none())",
+        "with no record every test is in the fast tier — a test nobody has timed is never \
+         assumed slow.\n{}",
+        first.text,
+    );
+    assert!(
+        first.text.contains("no timing record"),
+        "a run whose fast tier is the whole suite must say so.\n{}",
+        first.text,
+    );
+    let record = std::fs::read_to_string(fake.dir().join("jigc-gate/test-seconds.tsv"))
+        .expect("the run writes the record under the target directory it built into");
+    assert_eq!(
+        record.lines().collect::<Vec<_>>(),
+        vec![
+            "12.500\tjigc::g_doc\tslow_suite::drives_the_binary_a_lot",
+            "0.020\tjigc::g_doc\tquick_suite::reads_a_registry",
+            "1.999\tjigc-engine\tparse::tests::round_trips",
+        ],
+        "one row per test the run measured: seconds, binary, test.",
+    );
+
+    let second = fake.run(&[], &[]);
+    assert_eq!(
+        second.filter("gate-tier1"),
+        "not ((binary_id(=jigc::g_doc) & test(/^(slow_suite::drives_the_binary_a_lot)$/)))",
+        "the one test measured at 2 s or more leaves the fast tier, named by binary and \
+         by test; 1.999 s is under the threshold and stays.\n{}",
+        second.text,
+    );
+    assert_eq!(
+        second.filter("gate-tier2"),
+        format!("not ({})", second.filter("gate-tier1")),
+        "{}",
+        second.tiers,
+    );
+}
+
+#[test]
+fn a_threshold_that_is_not_a_number_is_refused_before_anything_runs() {
+    let fake = FakeCargo::new("gate-bad-threshold", true);
+    let out = gate_in(&fake.scratch)
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", fake.dir().join("bin").display()),
+        )
+        .env("CARGO_TARGET_DIR", fake.dir())
+        .env("JIGC_GATE_FAST_UNDER", "soon")
+        .output()
+        .expect("spawn dev/gate");
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "awk reads a non-number as zero, and at zero every recorded test is slow: the \
+         fast tier would silently be the unrecorded tests alone.",
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr)
+            .contains("JIGC_GATE_FAST_UNDER must be a number of seconds, got: soon"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        !fake.dir().join("argv.log").exists(),
+        "a usage error launches nothing.",
+    );
+}
+
+/// Lever 6: the log carries the timings, so the next analysis need not re-run the suite.
+#[test]
+fn the_log_carries_each_steps_seconds_and_each_tests_seconds() {
+    let fake = FakeCargo::new("gate-log-timings", true);
+    fake.junit(
+        "gate-tier1",
+        &[("jigc::g_doc", "quick_suite::reads_a_registry", "0.020")],
+    );
+    fake.junit(
+        "gate-tier2",
+        &[
+            (
+                "jigc::g_doc",
+                "slow_suite::drives_the_binary_a_lot",
+                "12.500",
+            ),
+            ("jigc::g_doc", "slow_suite::drives_it_again", "30.300"),
+        ],
+    );
+    let run = fake.run(&[], &[]);
+    let text = &run.text;
+    let store = format!("dir = \"{}/nextest\"", fake.dir().display());
+    assert!(
+        run.tiers
+            .lines()
+            .skip_while(|l| *l != "[store]")
+            .nth(1)
+            .is_some_and(|l| l == store),
+        "the run tells nextest where its store is — the target directory the run builds \
+         into. Left to itself nextest writes its JUnit report under the workspace's own \
+         `target/` whatever `CARGO_TARGET_DIR` says, where this run would not find it and \
+         a gate running there would lose its own.\nwant: {store}\n{}",
+        run.tiers,
+    );
+    let log_path = text
+        .lines()
+        .find_map(|l| l.strip_prefix("gate: log    "))
+        .unwrap_or_else(|| panic!("the header names the log.\n{text}"));
+    let log = std::fs::read_to_string(log_path).expect("read the run's log");
+    for step in ["fmt", "clippy", "build", "tier1", "tier2", "doctest"] {
+        let prefix = format!("step-seconds\t{step}\t0\t");
+        assert!(
+            log.lines().any(|l| l
+                .strip_prefix(&prefix)
+                .is_some_and(|s| s.parse::<u64>().is_ok())),
+            "the log holds `{step}`'s exit code and elapsed seconds at column 0 — they were \
+             on stdout only, which no log survives.\nlog:\n{log}",
+        );
+    }
+    for row in [
+        "test-seconds\t0.020\tjigc::g_doc\tquick_suite::reads_a_registry",
+        "test-seconds\t12.500\tjigc::g_doc\tslow_suite::drives_the_binary_a_lot",
+        "test-seconds\t30.300\tjigc::g_doc\tslow_suite::drives_it_again",
+    ] {
+        assert!(
+            log.lines().any(|l| l == row),
+            "the log holds every measured test's seconds, both tiers'.\nwant: {row}\nlog:\n{log}",
+        );
+    }
+    assert!(
+        text.lines()
+            .any(|l| l == "    42.8s  jigc::g_doc slow_suite  (2 tests)")
+            && text
+                .lines()
+                .any(|l| l == "    30.3s  jigc::g_doc slow_suite::drives_it_again"),
+        "the run prints its heaviest suites and tests, so a suite's cost is seen when it \
+         lands rather than by an audit.\n{text}",
+    );
+}
+
+#[test]
+fn a_green_two_tier_log_totals_what_one_run_over_the_same_tests_did() {
+    // The same 4222 tests over the same 15 binaries as the one-run fixture above, cut in
+    // two: each tier's `Starting` line counts every binary of the workspace.
+    let one = nextest_log("4222", 4222, &[]).replace(
+        "Starting 4 tests across 2 binaries (1 test skipped)",
+        "Starting 4222 tests across 15 binaries",
+    );
+    let doctests_at = one
+        .find("===== STEP doctest =====")
+        .expect("the fixture ends with the doctest step");
+    let (suite, doctests) = one.split_at(doctests_at);
+    let tier = |run: u32, skipped: u32| {
+        suite
+            .replace(
+                "Starting 4222 tests across 15 binaries",
+                &format!("Starting {run} tests across 15 binaries ({skipped} tests skipped)"),
+            )
+            .replace(
+                "4222 tests run: 4222 passed, 0 failed, 1 skipped",
+                &format!("{run} tests run: {run} passed, {skipped} skipped"),
+            )
+    };
+    let log = format!("{}{}{doctests}", tier(3100, 1122), tier(1122, 3100));
+    let report = report_over("gate-report-two-tiers", &log);
+    assert!(
+        report
+            .lines()
+            .any(|l| l == "tests   passed=4222 failed=0  (over 17 test binaries)"),
+        "a green gate's totals line reads as it did before the suite ran in two tiers: the \
+         passed counts sum, and the fifteen binaries both runs print are fifteen, not \
+         thirty.\nreport:\n{report}",
+    );
+}
+
+#[test]
+fn the_report_names_the_heaviest_suites_and_tests_of_a_log_that_carries_them() {
+    let log = "test-seconds\t0.5\tjigc::g_doc\talpha::one\n\
+               test-seconds\t3.26\tjigc::g_doc\talpha::two\n\
+               test-seconds\t9\tjigc::g_flow\tbeta::only\n\
+               \x20   test-seconds\t99\tjigc::g_flow\techoed::from_a_failing_tests_output\n\
+               test-seconds\t0.01\tjigc-engine\tparse::tests::tiny\n";
+    let report = report_over("gate-report-heaviest", log);
+    let block: Vec<&str> = report
+        .lines()
+        .skip_while(|l| !l.starts_with("--- heaviest"))
+        .collect();
+    assert_eq!(
+        block,
+        vec![
+            "--- heaviest of this run (seconds; every test is a `test-seconds` line in the log) ---",
+            "suites:",
+            "     9.0s  jigc::g_flow beta  (1 tests)",
+            "     3.8s  jigc::g_doc alpha  (2 tests)",
+            "     0.0s  jigc-engine parse  (1 tests)",
+            "tests:",
+            "     9.0s  jigc::g_flow beta::only",
+            "     3.3s  jigc::g_doc alpha::two",
+            "     0.5s  jigc::g_doc alpha::one",
+            "     0.0s  jigc-engine parse::tests::tiny",
+        ],
+        "suites by summed seconds and tests by their own, heaviest first; an indented copy \
+         of the row — a failing test's echoed output — is not a row.\nreport:\n{report}",
+    );
+
+    let bare = report_over("gate-report-no-timings", &summary_line(3, 0));
+    assert!(
+        !bare.contains("heaviest"),
+        "a log with no timings prints no empty block.\nreport:\n{bare}",
+    );
+}
+
+/// Lever 9: a scoped run has a profile that turns a hung test into a named timeout —
+/// and the gate never runs under it.
+#[test]
+fn the_scoped_profile_terminates_a_hung_test_and_the_gate_never_uses_it() {
+    let config = std::fs::read_to_string(repo_root().join(".config/nextest.toml"))
+        .expect(".config/nextest.toml is readable");
+    let scoped: Vec<&str> = config
+        .lines()
+        .skip_while(|l| *l != "[profile.scoped]")
+        .skip(1)
+        .take_while(|l| !l.starts_with('['))
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .collect();
+    assert!(
+        scoped
+            .iter()
+            .any(|l| l.starts_with("slow-timeout") && l.contains("terminate-after")),
+        "`[profile.scoped]` must set a `slow-timeout` with a `terminate-after`: under \
+         `cargo test` a test blocked on a FIFO hung a scoped run for ten minutes.\n{config}",
+    );
+    let src = std::fs::read_to_string(gate()).expect("dev/gate is readable");
+    let naming: Vec<&str> = src
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#') && l.contains("scoped"))
+        .collect();
+    assert!(
+        naming.is_empty(),
+        "the gate runs under its own two profiles, which inherit `[profile.default]`; a \
+         scoped run's timeout must not reach the full suite, where a legitimate test runs \
+         for minutes under load.\n{}",
+        naming.join("\n"),
+    );
 }
 
 /// The exact totals line `.claude/workflows/milestone-build.js` matches, rendered.
