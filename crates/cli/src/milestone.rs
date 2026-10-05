@@ -3464,9 +3464,12 @@ pub(crate) struct WorktreeRegistration {
     /// git's own verdict that the record is stale — its `prunable` line (*"gitdir file
     /// points to non-existent location"*): the checkout's `.git` link is not where the
     /// record says. It is exactly the set a `git worktree prune` would drop, **read**
-    /// rather than acted on. Never set for a locked worktree.
+    /// rather than acted on. Never set for a locked worktree. Where git's listing prints
+    /// no such line at all (git < 2.31) it is read from the same file git decides it by
+    /// ([`read_unprinted_verdicts`]).
     pub(crate) prunable: bool,
-    /// The record carries a `locked` line: git refuses to remove it without an unlock.
+    /// The record is locked — its `locked` line, or on a git that prints none the `locked`
+    /// file in its admin directory: git refuses to remove it without an unlock.
     pub(crate) locked: bool,
 }
 
@@ -3479,9 +3482,10 @@ pub(crate) struct WorktreeRegistration {
 /// an unmounted volume, one moved with `mv`, a host worktree seen from inside a container
 /// are all `prunable` to git and none of them is jigc's.
 ///
-/// Bound: the `prunable` and `locked` lines are git ≥ 2.31's (2021-03). On an older git no
-/// record carries either, so a stale registration of jigc's own reads as live and
-/// `milestone provision` reuses it.
+/// **The two verdicts are read on every git, not only where `list` prints them**
+/// ([`read_unprinted_verdicts`]). The `prunable` and `locked` lines are git ≥ 2.31's
+/// (2021-03); an older git prints neither, and this read once took their absence for
+/// *live*.
 pub(crate) fn worktree_registrations(repo_root: &Path) -> Result<Vec<WorktreeRegistration>> {
     let out = git_worktree(repo_root, &["worktree", "list", "--porcelain"])?;
     let mut records: Vec<WorktreeRegistration> = Vec::new();
@@ -3504,7 +3508,52 @@ pub(crate) fn worktree_registrations(repo_root: &Path) -> Result<Vec<WorktreeReg
             _ => {}
         }
     }
+    read_unprinted_verdicts(repo_root, &mut records);
     Ok(records)
+}
+
+/// Fill in `prunable` and `locked` for the linked records git's listing printed **neither**
+/// line for — every record, on git older than 2.31 — from the two files git itself decides
+/// them by (`worktree.c`: a registration is locked when its admin directory holds a
+/// `locked` file, and stale when it is not locked and the `.git` link its `gitdir` file
+/// names is not there).
+///
+/// **Why this exists** (the rc.24 fix pass's completion audit, worktree-registrations F2).
+/// The registration-reach fix replaced *prune, then list* with *list, and read `prunable`*.
+/// On a git that prints no such line a sub-task worktree whose directory was gone then read
+/// as **live**: `jigc milestone provision` reused it, printed `provisioned`, and left no
+/// directory — at exit 0, and `jigc milestone execute`'s advisory routed back at the
+/// provision that had just done nothing. `1.0.0-rc.24` re-created it there.
+///
+/// **On a git that does print the lines this changes no record.** Such a git leaves a
+/// linked record unmarked only when it is not locked and its `.git` link exists, which is
+/// exactly the state this function leaves alone — so the answer stays git's own wherever
+/// git gives one, and the files are consulted only where it did not.
+///
+/// The first record is the main worktree (or the bare repository), which has no `gitdir`
+/// file and is never either. Absence is `NotFound` and nothing else: a link the probe could
+/// not stat is not called stale, since *stale* is the verdict that lets a door drop the
+/// record. The admin directories are read only once a link is actually missing, so a
+/// healthy fan-out costs one `stat` per worktree here and nothing more.
+fn read_unprinted_verdicts(repo_root: &Path, records: &mut [WorktreeRegistration]) {
+    let mut admins: Option<Vec<AdminRecord>> = None;
+    for record in records.iter_mut().skip(1) {
+        if record.prunable || record.locked {
+            continue;
+        }
+        let link_is_gone = matches!(
+            std::fs::symlink_metadata(record.path.join(".git")),
+            Err(ref err) if err.kind() == std::io::ErrorKind::NotFound
+        );
+        if !link_is_gone {
+            continue;
+        }
+        let admins = admins.get_or_insert_with(|| admin_records(repo_root));
+        record.locked = admins.iter().any(|admin| {
+            same_worktree_path(&admin.path, &record.path) && admin.admin.join("locked").exists()
+        });
+        record.prunable = !record.locked;
+    }
 }
 
 /// The canonical absolute paths of the repo's currently-registered worktrees

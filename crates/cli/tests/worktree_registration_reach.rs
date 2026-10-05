@@ -713,6 +713,200 @@ fn provision_still_heals_its_own_stale_registration_and_only_its_own() {
     assert_foreign_untouched(&fx, &foreign, "provision re-run over its own stale records");
 }
 
+/// A `git` that answers the way one **older than 2.31** does: every call goes to the real
+/// git unchanged, except that `git worktree list --porcelain` comes back without its
+/// `prunable` and `locked` lines — the one difference in this listing between those
+/// versions (git's 2.31 release notes; driven against a real git 2.30.9 when this cell was
+/// written, where the listing carries neither line and the unfixed door behaved exactly as
+/// it does under this stand-in).
+///
+/// It is a stand-in, said plainly: the suite runs on whatever git the machine has. The
+/// directory returned goes first on `PATH`.
+fn git_without_verdict_lines(root: &Path) -> PathBuf {
+    let real = String::from_utf8(
+        Command::new("sh")
+            .args(["-c", "command -v git"])
+            .output()
+            .expect("locate git")
+            .stdout,
+    )
+    .expect("utf-8 git path")
+    .trim()
+    .to_owned();
+    assert!(Path::new(&real).is_absolute(), "git resolves to `{real}`");
+    let dir = root.join("old-git-bin");
+    fs::create_dir_all(&dir).expect("mk the wrapper dir");
+    let script = format!(
+        "#!/bin/sh\n\
+         real='{real}'\n\
+         worktree=0 list=0 porcelain=0\n\
+         for arg in \"$@\"; do\n\
+         \x20 case \"$arg\" in\n\
+         \x20   worktree) worktree=1 ;;\n\
+         \x20   list) list=1 ;;\n\
+         \x20   --porcelain) porcelain=1 ;;\n\
+         \x20 esac\n\
+         done\n\
+         if [ \"$worktree$list$porcelain\" = 111 ]; then\n\
+         \x20 out=$(\"$real\" \"$@\") || exit $?\n\
+         \x20 printf '%s\\n' \"$out\" | grep -v -e '^prunable' -e '^locked'\n\
+         \x20 exit 0\n\
+         fi\n\
+         exec \"$real\" \"$@\"\n"
+    );
+    let wrapper = dir.join("git");
+    fs::write(&wrapper, script).expect("write the wrapper");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).expect("chmod");
+    }
+    dir
+}
+
+/// **`provision` heals its own stale registration on a git that prints no `prunable` line**
+/// (the rc.24 fix pass's completion audit, F2).
+///
+/// The reach fix replaced *prune, then list* with *list, and read `prunable`* — a line git
+/// has printed only since 2.31. On an older git a sub-task worktree whose directory was gone
+/// read as live: `jigc milestone provision` reused it, printed `provisioned`, and left no
+/// directory, at exit 0, where `1.0.0-rc.24` re-created it; `jigc milestone execute` then
+/// routed back at the provision that had done nothing.
+///
+/// Three cells under [`git_without_verdict_lines`], each against what the real git does:
+/// a healthy fan-out is **reused** untouched (the must-not-drop control), a registration
+/// whose directory is gone is **re-created** at the base pin, and a **locked** one is left
+/// exactly as it is — git never calls a locked registration stale, with the line or
+/// without it.
+#[test]
+fn provision_heals_its_own_stale_registration_where_git_prints_no_prunable_line() {
+    let fx = Fixture::mint("old-git");
+    let old_git = git_without_verdict_lines(fx.root.path());
+    let path = format!(
+        "{}:{}",
+        old_git.display(),
+        std::env::var("PATH").expect("PATH is set"),
+    );
+    let run_old = |args: &[&str]| -> Output {
+        Command::new(env!("CARGO_BIN_EXE_jigc"))
+            .args(args)
+            .current_dir(&fx.repo)
+            .env("HOME", fx.home.path())
+            .env("PATH", &path)
+            .env_remove("JIGC_PACK_DIR")
+            .output()
+            .expect("run the jigc binary")
+    };
+    let listing_old = || -> String {
+        let out = Command::new("git")
+            .args(["worktree", "list", "--porcelain"])
+            .current_dir(&fx.repo)
+            .env("PATH", &path)
+            .output()
+            .expect("run the wrapped git");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let provision = ["milestone", "provision", MILESTONE];
+
+    fx.jigc_ok(&provision);
+    let base = git_ok(&fx.repo, &["rev-parse", "HEAD"]);
+
+    // (1) Healthy: nothing is stale, so the re-run reuses both worktrees untouched — a file
+    // only that checkout holds is still there.
+    let marker = fx.worktree(SUBS[1]).join("only-copy.txt");
+    fs::write(&marker, "kept\n").expect("write a marker");
+    let out = run_old(&provision);
+    assert!(
+        out.status.success() && marker.is_file(),
+        "a healthy fan-out is reused untouched on a git with no verdict lines; got {:?}\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // (2) The directory gone, the registration empty — the crashed-run shape.
+    fs::remove_dir_all(fx.worktree(SUBS[0])).expect("delete the worktree directory");
+    let foreign = plant_foreign(&fx);
+    assert!(
+        fx.registration(&fx.worktree(SUBS[0]))
+            .is_some_and(|record| record.contains("prunable")),
+        "fixture: the real git reads the registration as stale",
+    );
+    assert!(
+        !listing_old()
+            .lines()
+            .any(|line| line.starts_with("prunable") || line.starts_with("locked")),
+        "fixture: the stand-in prints neither verdict line; got:\n{}",
+        listing_old(),
+    );
+    let out = run_old(&provision);
+    assert!(
+        out.status.success(),
+        "the re-run must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let worktree = fx.worktree(SUBS[0]);
+    assert!(
+        worktree.is_dir(),
+        "the sub-task worktree whose directory was gone must be there again — the door \
+         printed:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert_eq!(
+        git_ok(&worktree, &["rev-parse", "HEAD"]),
+        base,
+        "…as a live worktree at the base pin",
+    );
+    assert_eq!(
+        fx.admin_names()
+            .iter()
+            .filter(|name| name.starts_with("area-"))
+            .count(),
+        SUBS.len(),
+        "the stale record must have been replaced, not duplicated; `.git/worktrees/` holds \
+         {:?}",
+        fx.admin_names(),
+    );
+    assert!(
+        marker.is_file(),
+        "…and the healthy sibling is still untouched"
+    );
+    assert_foreign_untouched(&fx, &foreign, "provision on a git with no verdict lines");
+    let execute = run_old(&["milestone", "execute", MILESTONE]);
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&execute.stdout),
+        String::from_utf8_lossy(&execute.stderr),
+    );
+    assert!(
+        !said.contains("milestone.worktrees-partial"),
+        "`milestone execute` must have nothing partial left to report; got:\n{said}",
+    );
+
+    // (3) Locked and gone. git calls a locked registration stale on no version, so the
+    // door leaves the record exactly as it is — and answers as it does on the real git.
+    git_ok(
+        &fx.repo,
+        &["worktree", "lock", fx.worktree(SUBS[1]).to_str().unwrap()],
+    );
+    fs::remove_dir_all(fx.worktree(SUBS[1])).expect("delete the locked worktree's directory");
+    let before = bytes_under(&fx.admin(SUBS[1]));
+    let old = run_old(&provision);
+    assert_eq!(
+        bytes_under(&fx.admin(SUBS[1])),
+        before,
+        "a locked registration is never dropped; stderr:\n{}",
+        String::from_utf8_lossy(&old.stderr),
+    );
+    let real = fx.run(&provision);
+    assert_eq!(
+        old.status.code(),
+        real.status.code(),
+        "the door answers a locked registration the same way with the verdict lines and \
+         without them",
+    );
+    assert_eq!(bytes_under(&fx.admin(SUBS[1])), before);
+}
+
 /// **The mirror**: jigc's own registrations, seen from a path that is not the one they were
 /// made at — a repository moved with `mv`, or the same repository at another mount.
 ///
