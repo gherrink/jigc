@@ -255,6 +255,148 @@ fn a_foreign_squatter_is_displaced_into_the_workbench_and_the_ack_names_it() {
     );
 }
 
+/// What already stands in the parking home under the squatter's basename.
+#[derive(Clone, Copy, Debug)]
+enum Parked {
+    /// A file an earlier displacement left there — the only copy of its bytes.
+    EarlierFile,
+    /// The same, and a second one already beside it under the first free name.
+    TwoEarlierFiles,
+    /// A dangling symbolic link: a name in the way that `exists()` reads as absent.
+    DanglingLink,
+}
+
+/// **A parked squatter never replaces a file already parked under its name** (the rc.24 fix
+/// pass's completion audit, CPL-4).
+///
+/// The workbench is where a displaced file's **only** copy lives — it is gitignored and in
+/// no commit — and this arm parked by basename: driven on `1.0.0-rc.24` and on the tree
+/// before this cell, with `.jigc/displaced/<name>` left by an earlier displacement, the next
+/// `jigc relocate` printed `displaced … → .jigc/displaced/<name>` at exit 0 and the earlier
+/// file was in no file anywhere. The parking home's other producer already had the rule
+/// (`<name>.<n>`, the first free); this one now uses it.
+///
+/// Every cell asserts on the bytes: the earlier occupants are byte-identical where they
+/// were, and the path the ack **names** is where the new squatter's bytes are.
+#[test]
+fn a_parked_squatter_never_replaces_a_file_already_parked_under_its_name() {
+    for parked in [
+        Parked::EarlierFile,
+        Parked::TwoEarlierFiles,
+        Parked::DanglingLink,
+    ] {
+        let cell = format!("{parked:?}");
+        let repo = TempDir::new("park-collision");
+        let home = TempDir::new("home");
+        git_init(repo.path());
+        let note_pack = repo.path().join(".jigc").join("note-pack");
+        write_note_pack(&note_pack);
+        fs::write(
+            repo.path().join(".jigc").join("config").join("packs.yaml"),
+            format!("packs:\n  - {}\n", note_pack.display()),
+        )
+        .expect("write packs.yaml naming the note pack");
+
+        let prior_rel = "docs/legacy-notes/cache-benchmarks.md";
+        let dest_rel = "docs/notes/cache-benchmarks.md";
+        fs::create_dir_all(repo.path().join("docs").join("legacy-notes")).expect("mk prior home");
+        fs::write(
+            repo.path().join(prior_rel),
+            "# Cache Benchmarks\n\n## Body\n\nA single node caps throughput.\n",
+        )
+        .expect("write the stranded note");
+        git(repo.path(), &["add", prior_rel]);
+        git(repo.path(), &["commit", "-q", "-m", "strand the note"]);
+        // The squatter is untracked: nothing in git holds its bytes either.
+        fs::create_dir_all(repo.path().join("docs").join("notes")).expect("mk destination dir");
+        fs::write(repo.path().join(dest_rel), "NEW-SQUATTER-MARKER\n").expect("write squatter");
+
+        let workbench = repo.path().join(".jigc").join("displaced");
+        fs::create_dir_all(&workbench).expect("mk the parking home");
+        let first = workbench.join("cache-benchmarks.md");
+        let second = workbench.join("cache-benchmarks.md.2");
+        match parked {
+            Parked::EarlierFile => {
+                fs::write(&first, "EARLIER-PARKED-MARKER\n").expect("park an earlier file");
+            }
+            Parked::TwoEarlierFiles => {
+                fs::write(&first, "EARLIER-PARKED-MARKER\n").expect("park an earlier file");
+                fs::write(&second, "SECOND-PARKED-MARKER\n").expect("park a second one");
+            }
+            Parked::DanglingLink => {
+                #[cfg(unix)]
+                std::os::unix::fs::symlink("nowhere-at-all.md", &first).expect("plant a link");
+                #[cfg(not(unix))]
+                fs::write(&first, "EARLIER-PARKED-MARKER\n").expect("park an earlier file");
+            }
+        }
+
+        let out = jigc(
+            repo.path(),
+            home.path(),
+            &["relocate", "note", "--from", "docs/legacy-notes/"],
+        );
+        assert_ok(
+            &out,
+            &format!("{cell}: `jigc relocate note --from docs/legacy-notes/`"),
+        );
+        let report = stdout_of(&out);
+
+        // The earlier occupants are exactly where and what they were.
+        match parked {
+            Parked::EarlierFile | Parked::TwoEarlierFiles => {
+                assert_eq!(
+                    fs::read_to_string(&first).ok().as_deref(),
+                    Some("EARLIER-PARKED-MARKER\n"),
+                    "{cell}: the earlier parked file must be byte-identical; ack:\n{report}",
+                );
+            }
+            Parked::DanglingLink => {
+                #[cfg(unix)]
+                assert_eq!(
+                    fs::read_link(&first).ok(),
+                    Some(PathBuf::from("nowhere-at-all.md")),
+                    "{cell}: the link already parked there must be untouched; ack:\n{report}",
+                );
+            }
+        }
+        if matches!(parked, Parked::TwoEarlierFiles) {
+            assert_eq!(
+                fs::read_to_string(&second).ok().as_deref(),
+                Some("SECOND-PARKED-MARKER\n"),
+                "{cell}: …and so must the second; ack:\n{report}",
+            );
+        }
+
+        // The ack names where the new squatter went, and that is where its bytes are.
+        let named = report
+            .split_whitespace()
+            .find(|word| word.starts_with(".jigc/displaced/"))
+            .unwrap_or_else(|| panic!("{cell}: the ack must name the parked path; got:\n{report}"));
+        assert_eq!(
+            fs::read_to_string(repo.path().join(named)).ok().as_deref(),
+            Some("NEW-SQUATTER-MARKER\n"),
+            "{cell}: the path the ack names (`{named}`) must hold the squatter's bytes; \
+             ack:\n{report}",
+        );
+        let expected = match parked {
+            Parked::EarlierFile | Parked::DanglingLink => ".jigc/displaced/cache-benchmarks.md.2",
+            Parked::TwoEarlierFiles => ".jigc/displaced/cache-benchmarks.md.3",
+        };
+        assert_eq!(
+            named, expected,
+            "{cell}: the first free name beside the taken one"
+        );
+
+        // …and the managed doc landed.
+        assert!(
+            fs::read_to_string(repo.path().join(dest_rel))
+                .is_ok_and(|landed| landed.contains("A single node caps throughput.")),
+            "{cell}: the managed note must land at its schema home",
+        );
+    }
+}
+
 /// Every file under `dir`, recursively. Small by construction — the `.jigc/` tree of a
 /// freshly relocated fixture repo.
 fn walk(dir: &Path) -> Vec<PathBuf> {

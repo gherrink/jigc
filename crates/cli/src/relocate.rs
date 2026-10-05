@@ -800,6 +800,12 @@ fn relocate_one(
 /// is the same one — a gitignored tree inside `.jigc/` that no commit can sweep up — and it is
 /// named from here rather than re-spelled, so the entry in
 /// [`crate::gitignore::ENTRIES`] governs both.
+///
+/// **And both park under one no-clobber rule** ([`crate::task::free_displacement_path`]): a
+/// name already taken in the parking home gets the first free `<name>.<n>` beside it. This
+/// arm parked at the bare basename until the rc.24 fix pass's completion audit, and a
+/// basename is not an identity — `fs::rename` replaced whatever an earlier displacement had
+/// left under that name, at exit 0, and the earlier file was the only copy of its bytes.
 pub(crate) const WORKBENCH_SUBDIR: &str = "displaced";
 
 /// Resolve a **collision at the relocation destination** `dest_rel` by *kind*
@@ -864,7 +870,9 @@ fn displace_foreign_squatter(
     let workbench_dir = jigc_root.join(WORKBENCH_SUBDIR);
     std::fs::create_dir_all(&workbench_dir)
         .with_context(|| format!("creating the .jigc workbench {workbench_dir:?}"))?;
-    let workbench_abs = workbench_dir.join(name);
+    // Never over a file already parked under that name — an earlier displacement's, or
+    // another destination's squatter in this same sweep: the first free name beside it.
+    let workbench_abs = crate::task::free_displacement_path(workbench_dir.join(name));
     // **Re-probe immediately before the index mutation** (M52 Increment 3 / T4;
     // `settle-record.md` → D2.5), as [`crate::repo::SeamAct::Move`] — the same class
     // [`move_doc`] asks, for the same reason, at the last of the eleven index-mutating

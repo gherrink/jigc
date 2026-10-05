@@ -7840,7 +7840,10 @@ pub(crate) struct Unmoved {
 /// `wanted`, or the first `<wanted>.<n>` (n ≥ 2) nothing occupies — the no-clobber rule
 /// [`displace_foreign_area`] states, asked with `symlink_metadata` so a dangling symlink
 /// counts as occupied (it is a name in the way, not an absence).
-fn free_displacement_path(wanted: PathBuf) -> PathBuf {
+///
+/// `pub(crate)` for the workbench's other producer, `crate::relocate`'s squatter
+/// displacement: one parking home, one rule for a name that is already taken in it.
+pub(crate) fn free_displacement_path(wanted: PathBuf) -> PathBuf {
     if std::fs::symlink_metadata(&wanted).is_err() {
         return wanted;
     }
