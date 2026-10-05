@@ -822,8 +822,9 @@ change, not a tooling one.
 
 ## 7. The scripts
 
-All under `perf/`, standard-library Python 3 and POSIX shell; each opens with a comment saying what it reads
-and prints. They print aggregates only and never echo a transcript line.
+All under [`scripts/`](scripts/README.md) beside this report (`perf/scripts/`, whose README gives the inputs they
+need and the order to run them in), standard-library Python 3 and POSIX shell; each opens with a comment saying
+what it reads and prints. They print aggregates only and never echo a transcript line.
 
 | script | what it does |
 |---|---|

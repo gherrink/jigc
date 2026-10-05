@@ -173,6 +173,7 @@ Before step 1, by the human's decision at the close: **the gate loop is built as
 | `planning/plan-promote.md` · `plan-install.md` · `plan-worktree.md` · `plan-linked-worktree.md` | the four family plans written before any fix |
 | `planning/advocate-install-1.md` · `advocate-install-2.md` · `advocate-promote-1.md` · `advocate-promote-2.md` · `advocate-worktree-1.md` | the five robust-case advocacies, one per fork |
 | [perf/run-performance.md](perf/run-performance.md) | where the wall clock and the tokens of the whole gate run went, with twelve ranked levers — **recommendations only**; the next session decides with the human |
+| [perf/scripts/](perf/scripts/README.md) | that report's instrument — the scripts that measured it, with every host path and run id turned into an input so the measurement can be repeated; the datasets they derive from the session's transcripts are not here |
 
 **Every report here is a lead, not a measurement.** The fixers' and auditors' returns are copied verbatim; the ledger's `FIXED` was checked against `git show` and, where it names a symbol, the tree, and says *as reported* where it could not be.
 
