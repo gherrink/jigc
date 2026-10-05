@@ -4079,6 +4079,15 @@ fn staged_in_registration(jigc_home: &Path, admin: &Path) -> Result<Vec<StagedPa
 /// `kept/<id>`), and [`branch_is_free`] answers all three with one predicate. An unreadable
 /// ref list degrades to the plain name: the command may then fail loudly, and it loses
 /// nothing when it does.
+///
+/// **A branch that differs only in letter case is in the way too** (the same pass's
+/// completion audit, F6). git keeps a loose ref as a file, so on a case-insensitive
+/// filesystem — the macOS and Windows defaults — a branch `Kept` *is* the file `kept`, and
+/// `KEPT/<id>` *is* `kept/<id>`. Driven on such a volume, the two dead-ends above came
+/// straight back through a case variant, exit 128 as printed. So every comparison here is
+/// made on the case-folded names, **on every filesystem**: where case is significant that
+/// only passes over a name that would have worked, and the name it picks instead works
+/// everywhere — which also keeps the printed command the same on every machine.
 fn kept_branch(aim: &Path, path: &Path) -> String {
     let sub_id = path
         .file_name()
@@ -4095,7 +4104,9 @@ fn kept_branch(aim: &Path, path: &Path) -> String {
     ) else {
         return plain;
     };
-    let taken: Vec<&str> = listed.lines().collect();
+    // Case-folded once, here: every question below is asked of these.
+    let folded: Vec<String> = listed.lines().map(str::to_lowercase).collect();
+    let taken: Vec<&str> = folded.iter().map(String::as_str).collect();
     // A branch named `kept` blocks every `kept/…` name, whatever its suffix.
     let stem = if taken.contains(&"kept") {
         format!("kept-{sub_id}")
@@ -4115,6 +4126,9 @@ fn kept_branch(aim: &Path, path: &Path) -> String {
 /// Whether `git branch <name>` can create `name` beside the branches in `taken`: no branch
 /// has that name, none is a path-prefix of it, and it is a path-prefix of none (git stores
 /// a ref as a file, so `a` and `a/b` cannot both exist).
+///
+/// Both sides are compared as given — [`kept_branch`] hands in `taken` already case-folded,
+/// and every candidate it builds is lower-case (a sub-task id is a slug).
 fn branch_is_free(taken: &[&str], name: &str) -> bool {
     !taken.iter().any(|existing| {
         *existing == name

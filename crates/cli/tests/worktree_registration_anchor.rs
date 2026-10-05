@@ -1365,13 +1365,51 @@ fn the_boundary_prints_the_fold_that_lands_a_commit_made_inside_a_live_worktree(
 }
 
 /// How a branch already in the repository gets in the keep command's way.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Occupied {
     /// `kept/<sub-task-id>` exists — an earlier keep from the same sub-task.
     TheName,
     /// A branch named exactly `kept` exists, which makes every `kept/…` name uncreatable.
     TheNamespace,
+    /// `KEPT/<sub-task-id>` exists: the same file as the name on a case-insensitive
+    /// filesystem, where git stores a loose ref.
+    TheNameInAnotherCase,
+    /// A branch named `Kept` exists: on such a filesystem it is the file `kept`, and blocks
+    /// the namespace exactly as the lower-case one does.
+    TheNamespaceInAnotherCase,
+    /// `KEPT/<sub-task-id>/older` exists, which makes `kept/<sub-task-id>` a directory
+    /// there.
+    BelowTheNameInAnotherCase,
 }
+
+impl Occupied {
+    /// The branch that is in the way.
+    fn branch(self) -> String {
+        match self {
+            Occupied::TheName => format!("kept/{SUB}"),
+            Occupied::TheNamespace => "kept".to_owned(),
+            Occupied::TheNameInAnotherCase => format!("KEPT/{SUB}"),
+            Occupied::TheNamespaceInAnotherCase => "Kept".to_owned(),
+            Occupied::BelowTheNameInAnotherCase => format!("KEPT/{SUB}/older"),
+        }
+    }
+
+    /// Whether the member differs from the name only in letter case — the cells whose
+    /// harm needs a case-insensitive filesystem to show. The door axis is already walked by
+    /// the exact-case members over the same one predicate, so these drive the two doors
+    /// that print the command on different lines (a consenting door and the boundary).
+    fn is_a_case_variant(self) -> bool {
+        !matches!(self, Occupied::TheName | Occupied::TheNamespace)
+    }
+}
+
+const OCCUPIED: [Occupied; 5] = [
+    Occupied::TheName,
+    Occupied::TheNamespace,
+    Occupied::TheNameInAnotherCase,
+    Occupied::TheNamespaceInAnotherCase,
+    Occupied::BelowTheNameInAnotherCase,
+];
 
 /// **The keep command never dead-ends on a branch that is already there.** Driven on the
 /// tree before this fix, the printed `git branch kept/<sub-task-id> <sha>` exited 128 in
@@ -1379,20 +1417,30 @@ enum Occupied {
 /// exists* — leaving the reader at a refusal whose own route had just failed. The name is
 /// chosen against the refs that exist, at every door that prints it and in the narration
 /// that prints it after a drop.
+///
+/// **And against the refs that exist in another letter case** (the pass's completion audit,
+/// F6): on a case-insensitive filesystem `Kept` and `KEPT/<sub-task-id>` are the same files
+/// as their lower-case spellings, and the printed command exited 128 over each. The name is
+/// compared case-folded on every filesystem, so the cell asserts the same thing wherever
+/// the suite runs — the command runs as printed — and on a case-sensitive one it is the
+/// control that folding costs nothing.
 #[test]
 fn the_keep_command_picks_a_branch_name_git_can_create() {
     let occupy = |fx: &Fixture, occupied: Occupied| -> String {
-        let name = match occupied {
-            Occupied::TheName => format!("kept/{SUB}"),
-            Occupied::TheNamespace => "kept".to_owned(),
-        };
+        let name = occupied.branch();
         git_ok(&fx.repo, &["branch", &name, "main"]);
         name
     };
-    for occupied in [Occupied::TheName, Occupied::TheNamespace] {
+    for occupied in OCCUPIED {
         for door in WORKTREE_DOORS {
             for standing in STANDINGS {
                 if !reaches(door, standing) {
+                    continue;
+                }
+                if occupied.is_a_case_variant()
+                    && !(standing == Standing::Live
+                        && (door.verb == DISCARD_DOOR.verb || is_boundary(door)))
+                {
                     continue;
                 }
                 let cell = format!(
@@ -1439,6 +1487,9 @@ fn the_keep_command_picks_a_branch_name_git_can_create() {
             }
         }
 
+        if occupied.is_a_case_variant() {
+            continue;
+        }
         // The narration after a consented drop prints the same command, aimed at the main
         // checkout — and it must be as runnable.
         let cell = format!(
