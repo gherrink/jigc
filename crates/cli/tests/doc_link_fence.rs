@@ -142,6 +142,7 @@ const LIVE_DOCS: &[&str] = &[
     "ideas/finding-doctype.md",
     "ideas/flow-doctype.md",
     "ideas/form-vision-research-routing.md",
+    "ideas/gate-loop-workflow.md",
     "ideas/glossary-term-injection.md",
     "ideas/issue-tracker-integration.md",
     "ideas/linked-worktree-doc-work.md",
