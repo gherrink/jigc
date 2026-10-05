@@ -1002,6 +1002,170 @@ fn uninstall_drops_the_registrations_under_its_own_worktrees_root() {
     assert_foreign_untouched(&fx, &foreign, "uninstall over its own registrations");
 }
 
+/// How a worktree **the user made** under `.jigc/worktrees/` stands when `uninstall` runs.
+#[derive(Clone, Copy, Debug)]
+enum HandMade {
+    /// On a branch, an unstaged edit inside it, the checkout then moved out of the
+    /// repository with `mv` — still a working checkout at its new path.
+    BranchMovedAway,
+    /// Detached, a staged file in its index, moved away the same way.
+    DetachedStagedMovedAway,
+    /// Its directory simply deleted, a staged file still in the registration's index.
+    StagedDirectoryDeleted,
+}
+
+const HAND_MADE: [HandMade; 3] = [
+    HandMade::BranchMovedAway,
+    HandMade::DetachedStagedMovedAway,
+    HandMade::StagedDirectoryDeleted,
+];
+
+/// **`uninstall` drops no registration jigc did not make — under its own worktrees root
+/// either** (the rc.24 fix pass's completion audit, F3).
+///
+/// Ownership was decided by where the record points: every registration recorded as a
+/// direct child of `.jigc/worktrees/` was dropped and attributed to the fan-out. Driven
+/// before this: `git worktree add -b mine .jigc/worktrees/mine`, an edit inside it, `mv` of
+/// the checkout out of the repository, `jigc uninstall` — exit 0, *dropped git's
+/// registrations of the fan-out worktrees*, and the moved checkout answered `not a git
+/// repository`. A registration is jigc's own when jigc **recorded** making it: a sub-task
+/// on a milestone's roster, or a boundary's dedicated name.
+///
+/// Each shape is driven twice — beside a provisioned fan-out, whose own registrations still
+/// go (the control that the door has not simply stopped dropping), and alone, where the
+/// door dropped nothing and must not say it did. The un-forced door is asked too: it must
+/// not refuse over a registration it would leave exactly as it found it.
+#[test]
+fn uninstall_leaves_a_registration_it_did_not_make_under_its_own_worktrees_root() {
+    for shape in HAND_MADE {
+        for provisioned in [true, false] {
+            let cell = format!("{shape:?} × own fan-out provisioned: {provisioned}");
+            let fx = Fixture::mint("hand-made");
+            if provisioned {
+                fx.jigc_ok(&["milestone", "provision", MILESTONE]);
+            }
+            let made = fx.repo.join(".jigc").join("worktrees").join("mine");
+            fs::create_dir_all(made.parent().unwrap()).expect("mk the worktrees root");
+            let moved = fx.root.path().join("mine-moved");
+            match shape {
+                HandMade::BranchMovedAway => {
+                    git_ok(
+                        &fx.repo,
+                        &[
+                            "worktree",
+                            "add",
+                            "-q",
+                            "-b",
+                            "mine",
+                            made.to_str().unwrap(),
+                            "HEAD",
+                        ],
+                    );
+                    fs::write(made.join("README.md"), "hello\nedited by hand\n").expect("edit");
+                    fs::rename(&made, &moved).expect("mv the checkout away");
+                }
+                HandMade::DetachedStagedMovedAway | HandMade::StagedDirectoryDeleted => {
+                    git_ok(
+                        &fx.repo,
+                        &[
+                            "worktree",
+                            "add",
+                            "-q",
+                            "--detach",
+                            made.to_str().unwrap(),
+                            "HEAD",
+                        ],
+                    );
+                    fs::write(made.join("mine.txt"), "staged by hand\n").expect("write");
+                    git_ok(&made, &["add", "mine.txt"]);
+                    if matches!(shape, HandMade::DetachedStagedMovedAway) {
+                        fs::rename(&made, &moved).expect("mv the checkout away");
+                    } else {
+                        fs::remove_dir_all(&made).expect("delete the directory");
+                    }
+                }
+            }
+            let admin = fx.admin("mine");
+            let before = bytes_under(&admin);
+            assert!(!before.is_empty(), "{cell}: fixture — `mine` is registered");
+
+            // Un-forced first: whatever else this door refuses over here, it is not a
+            // worktree registration it does not own.
+            let unforced = fx.run(&["uninstall"]);
+            let stderr = String::from_utf8_lossy(&unforced.stderr).into_owned();
+            assert!(
+                !stderr.contains("worktrees/mine"),
+                "{cell}: the un-forced door must not answer for a registration it would \
+                 not drop; stderr:\n{stderr}",
+            );
+
+            // …and where it refused over something else, consent takes the tree.
+            let out = if unforced.status.success() {
+                unforced
+            } else {
+                fx.run(&["uninstall", "--force"])
+            };
+            let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+            let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+            assert!(
+                out.status.success(),
+                "{cell}: `jigc uninstall --force` must exit 0; stderr:\n{stderr}",
+            );
+            // `assert!`, not `assert_eq!`: the two sides are a registration's whole bytes.
+            assert!(
+                bytes_under(&admin) == before,
+                "{cell}: the registration jigc did not make must be byte-identical; \
+                 `.git/worktrees/` now holds {:?}",
+                fx.admin_names(),
+            );
+            assert_eq!(
+                fx.admin_names(),
+                vec!["mine".to_owned()],
+                "{cell}: …and it is the only one left — jigc's own are gone",
+            );
+            assert!(
+                !stderr.contains("mine.txt") && !stderr.contains("worktrees/mine"),
+                "{cell}: nothing of that worktree was taken, so nothing of it is narrated; \
+                 stderr:\n{stderr}",
+            );
+            assert_eq!(
+                stdout.contains("dropped git's registrations"),
+                provisioned,
+                "{cell}: the door says it dropped registrations exactly when it dropped one \
+                 of its own; stdout:\n{stdout}",
+            );
+
+            // What the user still has, asked of git.
+            match shape {
+                HandMade::BranchMovedAway => assert_eq!(
+                    git_ok(&moved, &["status", "--porcelain"]),
+                    "M README.md",
+                    "{cell}: the moved checkout still answers, edit and all",
+                ),
+                HandMade::DetachedStagedMovedAway => assert_eq!(
+                    git_ok(&moved, &["status", "--porcelain"]),
+                    "A  mine.txt",
+                    "{cell}: the moved checkout still answers, its path still staged",
+                ),
+                HandMade::StagedDirectoryDeleted => {
+                    let staged = Command::new("git")
+                        .arg("--git-dir")
+                        .arg(&admin)
+                        .args(["diff", "--cached", "--name-only"])
+                        .current_dir(&fx.repo)
+                        .output()
+                        .expect("read the registration's index");
+                    assert_eq!(
+                        String::from_utf8_lossy(&staged.stdout).trim(),
+                        "mine.txt",
+                        "{cell}: the registration's index still holds the staged path",
+                    );
+                }
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The remedy a leaked worktree prints.
 // ---------------------------------------------------------------------------

@@ -3571,9 +3571,17 @@ pub(crate) fn registered_worktrees(repo_root: &Path) -> Result<Vec<PathBuf>> {
         .collect())
 }
 
-/// Whether `path` is one **jigc created**: a direct child of `<root>/.jigc/worktrees/` — a
-/// sub-task's `<sub-task-id>` or a boundary's `.combine-*` (`design/storage.md` →
-/// Repository layout). The whole of jigc's reach over git's worktree registry.
+/// Whether `path` lies **where jigc creates worktrees**: a direct child of
+/// `<root>/.jigc/worktrees/` (`design/storage.md` → Repository layout). The whole of jigc's
+/// *reach* over git's worktree registry — and reach only.
+///
+/// **It is a statement about location, not about who made the record** (the rc.24 fix
+/// pass's completion audit, F3). It read *"is one jigc created"* until then, and the one
+/// caller that *enumerates* registrations instead of naming them — `jigc uninstall` — took
+/// that at its word: it dropped every registration recorded under this root, a worktree the
+/// user had added there and since moved away with it. A caller that builds its path from a
+/// sub-task id or from its own `.combine-*` name has made the record it names; one that
+/// walks git's list asks [`is_jigc_made_registration`].
 ///
 /// Both sides are compared canonical, because git records realpaths at `add` time (on macOS
 /// `/tmp/…` lists as `/private/tmp/…`); a parent that is no longer on disk — `jigc
@@ -3590,6 +3598,45 @@ pub(crate) fn is_owned_worktree_path(root: &Path, path: &Path) -> bool {
         return false;
     };
     parent == owned || parent.canonicalize().is_ok_and(|parent| parent == owned)
+}
+
+/// Whether the registration git records at `path` is one **jigc made** — the question a
+/// door asks before it drops a record it found by *listing* git's registry rather than by
+/// building the path itself (the rc.24 fix pass's completion audit, F3).
+///
+/// Two things have to hold, and the second is read from what jigc **recorded**, never from
+/// the shape of the path:
+///
+/// * the path is where jigc creates worktrees ([`is_owned_worktree_path`]), and
+/// * its name is one jigc gave a worktree: a **sub-task id on a milestone's roster** in this
+///   workbench ([`engine::milestone::owning_milestone`] — the list `jigc milestone
+///   provision` walks to create them), or a boundary's own dedicated name
+///   ([`DEDICATED_PREFIX`], a dotted name no sub-task id can spell).
+///
+/// So a worktree somebody added under `.jigc/worktrees/` by hand is not jigc's, wherever its
+/// directory is now. Driven before this: `git worktree add .jigc/worktrees/mine`, an edit
+/// inside it, `mv` of the checkout out of the repository, then `jigc uninstall` — the
+/// registration was dropped at exit 0, attributed to the fan-out, and the moved checkout
+/// answered `not a git repository`.
+///
+/// **The roster has to be on disk when this is asked**, so `jigc uninstall` asks it before
+/// it removes `.jigc/` and drops afterwards exactly the set it got
+/// (`crate::setup::drop_workbench_registrations`).
+///
+/// **Bounds, stated not glossed.** A worktree whose milestone is already settled and torn
+/// down while its registration leaked (a removal git refused) is on no roster any more: it
+/// is left registered, which is the safe side — the record is git's to expire. And the
+/// dedicated name is still a name, not a record: jigc keeps none for a throwaway checkout
+/// that lives for one boundary.
+pub(crate) fn is_jigc_made_registration(jigc_home: &Path, path: &Path) -> bool {
+    if !is_owned_worktree_path(jigc_home, path) {
+        return false;
+    }
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    name.starts_with(DEDICATED_PREFIX)
+        || engine::milestone::owning_milestone(&jigc_home.join(".jigc"), name).is_some()
 }
 
 /// Remove **one** registration from git's worktree registry — the one at `path` — together
@@ -3610,9 +3657,12 @@ pub(crate) fn is_owned_worktree_path(root: &Path, path: &Path) -> bool {
 ///   vouch for are never deleted through this call;
 /// * a **locked** registration refuses.
 ///
-/// **It refuses a path jigc did not create before git is asked** ([`is_owned_worktree_path`]).
-/// Every caller builds its path under `.jigc/worktrees/` already; the check is here so that
-/// the rule is a property of the one function that can break it, not of each caller's care.
+/// **It refuses a path outside jigc's reach before git is asked**
+/// ([`is_owned_worktree_path`]) — the check is here so that the bound is a property of the
+/// one function that can break it, not of each caller's care. *Whose* record it is, is the
+/// caller's to have established: four of the five build the path from a sub-task id on the
+/// roster they are walking or from their own dedicated name, and the fifth — `jigc
+/// uninstall`, which lists — asks [`is_jigc_made_registration`] first.
 ///
 /// `root` is the checkout whose `.jigc/worktrees/` the path was created under — `jigc_home`
 /// for a sub-task's worktree, the committing checkout for a boundary's dedicated one.

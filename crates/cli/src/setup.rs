@@ -4489,6 +4489,10 @@ fn uninstall(
         // nor is either a reason to report bytes as gone that a failed `remove_dir_all` left
         // exactly where they were (`crate::milestone::PendingLoss`).
         let pending = pending_teardown(jigc_home);
+        // Which of git's registrations are this door's to drop is read **before** the
+        // removal: the answer rests on the milestone rosters, and they live in the tree
+        // about to go ([`own_workbench_registrations`]).
+        let own_registrations = own_workbench_registrations(jigc_home);
         let outcome = std::fs::remove_dir_all(&jigc_dir);
         pending.narrate_taken(jigc_home);
         outcome.map_err(|err| {
@@ -4505,7 +4509,7 @@ fn uninstall(
         // go the way every door here takes a registration: by path, this door's own only.
         // Best-effort: git's admin is bookkeeping, and a record that will not go is not a
         // reason to fail a completed teardown.
-        pruned_worktrees = drop_workbench_registrations(jigc_home);
+        pruned_worktrees = drop_workbench_registrations(jigc_home, &own_registrations);
         pending.narrate_dropped(jigc_home);
     }
 
@@ -4632,31 +4636,46 @@ fn uninstall(
     })
 }
 
+/// The registrations in git's worktree registry that **jigc made** under this workbench —
+/// the set [`drop_workbench_registrations`] may drop, read while `.jigc/` is still there.
+///
+/// **Ownership is what jigc recorded, not where the record points**
+/// (`crate::milestone::is_jigc_made_registration`; the rc.24 fix pass's completion audit,
+/// F3): a sub-task on a milestone's roster, or a boundary's dedicated worktree a crashed run
+/// left behind. It was every registration recorded under `.jigc/worktrees/`, which took a
+/// worktree the user had added there by hand — and, with its checkout since moved away,
+/// left that checkout answering `not a git repository`.
+///
+/// An unreadable registry is the empty set: nothing is dropped on a list that was not read.
+fn own_workbench_registrations(jigc_home: &Path) -> Vec<PathBuf> {
+    crate::milestone::worktree_registrations(jigc_home)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|registration| registration.path)
+        .filter(|path| crate::milestone::is_jigc_made_registration(jigc_home, path))
+        .collect()
+}
+
 /// Drop git's registrations for the worktrees the removed `.jigc/` tree held, returning
 /// whether any record was actually dropped (the confirmation pass, LOW 7).
 ///
-/// **Keyed to this door's own paths** — every registration that is a direct child of
-/// `<jigc_home>/.jigc/worktrees/` (a sub-task's worktree, or a boundary's dedicated one a
-/// crashed run left behind), removed one at a time by path
+/// **Keyed to this door's own registrations** — `own`, the set
+/// [`own_workbench_registrations`] read before the tree went — removed one at a time by path
 /// (`crate::milestone::remove_owned_registration`). It was a repository-wide
 /// `git worktree prune --verbose` until the rc.24 fix pass, which dropped — and then
 /// attributed to jigc's fan-out — the registration of any worktree in the repository whose
-/// directory was not where git recorded it.
+/// directory was not where git recorded it; and then every registration *recorded under*
+/// `.jigc/worktrees/`, which is the same mistake one directory in.
 ///
-/// The answer is *measured*: `true` iff a removal succeeded, so a repository with no
-/// worktree under `.jigc/worktrees/` does not gain an ack line claiming work jigc did not
-/// do. A locked registration refuses the removal and stays, as it did under the prune.
-fn drop_workbench_registrations(jigc_home: &Path) -> bool {
-    let Ok(registrations) = crate::milestone::worktree_registrations(jigc_home) else {
-        return false;
-    };
+/// The answer is *measured*: `true` iff a removal succeeded, so a repository in which jigc
+/// made no worktree does not gain an ack line claiming work jigc did not do. A locked
+/// registration refuses the removal and stays, as it did under the prune.
+fn drop_workbench_registrations(jigc_home: &Path, own: &[PathBuf]) -> bool {
     let mut dropped = false;
-    for registration in registrations {
+    for path in own {
         // The path exactly as git recorded it: with `.jigc/` gone there is no directory left
         // for git to resolve any other spelling of it through.
-        if crate::milestone::is_owned_worktree_path(jigc_home, &registration.path)
-            && crate::milestone::remove_owned_registration(jigc_home, &registration.path).is_ok()
-        {
+        if crate::milestone::remove_owned_registration(jigc_home, path).is_ok() {
             dropped = true;
         }
     }
@@ -4785,7 +4804,7 @@ fn dirty_fanout_worktrees(jigc_home: &Path) -> Result<Vec<HeldWorktreePath>, Fin
 /// registered under it is the empty set, so the no-fan-out teardown (and the idempotent
 /// second run over an already-removed `.jigc/`) short-circuits before any `git` call.
 ///
-/// **And every path git still has registered under that root, directory or no directory**
+/// **And every path jigc registered with git under that root, directory or no directory**
 /// (the rc.24 fix pass). The subject was *the children on disk*, and a sub-task worktree
 /// whose directory is gone is not one of them — while git's registration of it, which this
 /// teardown drops ([`drop_workbench_registrations`]), still carries that checkout's `HEAD`
@@ -4821,7 +4840,10 @@ fn fanout_worktree_paths(jigc_home: &Path) -> std::io::Result<Vec<PathBuf>> {
         return Ok(paths);
     }
     for record in crate::milestone::admin_records(jigc_home) {
-        if crate::milestone::is_owned_worktree_path(jigc_home, &record.path)
+        // Only a registration jigc made: this door drops no other
+        // ([`own_workbench_registrations`]), so over any other there is no removal for the
+        // guard to answer for.
+        if crate::milestone::is_jigc_made_registration(jigc_home, &record.path)
             && matches!(
                 std::fs::symlink_metadata(&record.path),
                 Err(ref err) if err.kind() == std::io::ErrorKind::NotFound
