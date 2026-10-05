@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 #
 # dev/stabilize-record — the one script through which a stabilization run's records
-# reach the repository (DECISIONS.md -> 2026-10-05, "The stabilization workflow, as
-# ruled": rulings 12, 13 and 16; the builder's choices are the entry of the same date,
-# "The record script, as built").
+# reach the repository, and the one place its state is read back and decided
+# (DECISIONS.md -> 2026-10-05, "The stabilization workflow, as ruled": rulings 4, 5, 9,
+# 10, 12, 13 and 16; the builders' choices are the two entries of the same date, "The
+# record script, as built" and "The record script reads the run back").
 #
 # A stage's reporters have a shell and no write tool, and what they write is public on
 # the next push and read by fences on the next gate. So neither an agent nor the harness
@@ -11,12 +12,24 @@
 # replaces host paths, stops on the public-hygiene scan and writes atomically — or
 # refuses in one line and writes nothing.
 #
+# And the harness is a script with no file system and no shell: it sees what an agent
+# returns to it. So the run's state leaves this script as ONE JSON document (state), which
+# an agent relays and never compiles; and what follows from that state — whether a finding
+# is inside the round's test set, where it is routed, what the round does next — is
+# computed here, where a suite holds it to a truth table, and nowhere else.
+#
 # One run's files, all under completions/artifacts/<run>/:
 #
 #   opening.md                              the opening record — the human-led step's, never
 #                                           this script's
-#   ledger.md                               one row per finding          (ledger-add, ledger-set)
+#   ledger.md                               one row per finding          (ledger-add, ledger-set,
+#                                                                         triage-set: the grade)
 #   clauses.md                              one row per clause           (clause-set)
+#   bounds.md                               one row per declared bound   (bound-set)
+#   r<N>/scope.md                           the round's doors            (scope-set)
+#   r<N>/triage.md                          the round's triage record    (triage-set)
+#   r<N>/round.md                           the round record — not this script's; state says
+#                                           whether it is there
 #   r<N>/reports/test/<reporter>.a<A>.md    a test-stage report          (report)
 #   r<N>/reports/fix/c<K>/<reporter>.a<A>.md  a fix-stage report, cycle K  (report)
 #
@@ -37,6 +50,12 @@
 #       The report on stdin, written to the path above; prints that path. --cycle is
 #       the fix stage's and only its. A path already taken is refused (exists): a
 #       re-run passes the next attempt and the stale report stays where it is.
+#       A REPORT ENDS WITH THE LINE
+#           <!-- end of report -->
+#       as its last line, and it stays in the file. A report without it was cut off on
+#       its way — the command it was piped from died — or was never finished, and is
+#       refused (truncated): a short text is still text, and nothing else tells the two
+#       apart. Input that is JSON needs no such line: cut off, it is not JSON.
 #
 #   dev/stabilize-record ledger-add --run R [--scratch DIR]... <rows.json
 #       One JSON object per finding, or an array of them:
@@ -49,12 +68,16 @@
 #   dev/stabilize-record ledger-set --run R [--scratch DIR]... <patches.json
 #       One JSON object per row, or an array: key, and a grade or a disposition.
 #         grade        ungraded | breaks | unclear | no-break | out-of-scope
-#                      | confirmed | regression | refuted
-#         graded_by    triage      gives breaks, unclear, no-break, out-of-scope
+#                      | needs-bound | confirmed | regression | refuted
+#         graded_by    triage      gives breaks, unclear, no-break, out-of-scope and
+#                                  needs-bound (out of scope as triage reads it, under
+#                                  no declared bound: the finding goes to the human)
 #                      verify-real gives confirmed, regression (confirmed, and green on
 #                                  the previous release), refuted
 #                      human       gives any of them; ungraded has no grader
-#         bound        with out-of-scope and only with it: the declared bound it cites
+#         bound        with out-of-scope and only with it: the declared bound it cites.
+#                      It is a row of bounds.md, or the whole batch is refused
+#                      (no-such-bound) — here, in ledger-add and in triage-set.
 #         disposition  open | fixed | admitted | bound | later | no-action
 #         detail       fixed: the fix's sha · bound: its reach · admitted, later,
 #                      no-action: a note, optional · open: none
@@ -67,6 +90,107 @@
 #       instrument, a scope and a status. green and red need the commit the instrument
 #       ran on; void is "not reached, or could not run", with or without a commit.
 #       Prints {"clauses", "clause", "status"}.
+#
+#   dev/stabilize-record bound-set --run R --bound B [--reach TEXT] [--ruling TEXT]
+#                        [--pin TEXT] [--scratch DIR]...
+#       Writes the declared bound's row, or updates the cells named. A bound is always
+#       the human's ruling, so a row enters the list only as the record of one: a new
+#       row needs its reach, where the human ruled it (--ruling: the opening record, a
+#       stop's list and item), and the test that pins it or the word `unpinned` (--pin).
+#       None of the three may be blank. Prints {"bounds", "bound"}.
+#
+#   dev/stabilize-record scope-set --run R --round N [--scratch DIR]... <scope.json
+#       The round's doors, as the scope step resolved them — one JSON object:
+#         {"included": [DOOR...], "excluded": [DOOR...]}
+#         DOOR = {"door", "registry", "derivation"}   — text, none of it blank: the door,
+#                the registry it comes from, and how it was derived
+#       Both sides are named, even when empty, and a door stands on one side, once.
+#       Where a whole registry is inside, every door of it is listed. A round's test
+#       set is written ONCE: a second scope for the round is refused (exists).
+#       Prints {"scope", "included", "excluded"} — the path and the two counts.
+#
+#   dev/stabilize-record triage-set --run R --round N <entries.json
+#       What the round's triage and the verifier established — one JSON object per
+#       finding, or an array of them:
+#         key          a row of the ledger (a finding is added before it is triaged)
+#         grade        triage's: breaks | unclear | no-break | out-of-scope | needs-bound
+#         bound        with out-of-scope and only with it: a row of bounds.md
+#         verdict      the verifier's, of a finding graded breaks or unclear:
+#                      confirmed | refuted. Without one, the finding awaits it.
+#         regression   with confirmed and only with it: true when the repro is green on
+#                      the previous release's binary — the verifier's fact
+#       NOTHING ELSE IS TAKEN. Whether the finding is INSIDE the round's test set is
+#       computed here — its ledger row's door is one of the round's included doors, as
+#       scope-set wrote them — and is never supplied; a round with no scope is refused
+#       (no-scope). The entry's row in r<N>/triage.md says: inside | outside: excluded
+#       | outside: unlisted, triage's grade, the verdict, the regression, and the
+#       disposition the ledger row carried when the round recorded it ("found with").
+#       An entry recorded again replaces its row — that is how a verdict arrives later,
+#       and how a round says that it found a finding again: only then is it re-recorded.
+#       The ledger's grade follows from the same entry, so the two cannot disagree: the
+#       verdict where there is one (regression, confirmed, refuted; by verify-real),
+#       else triage's grade. A disposition is never touched: a finding found again
+#       inherits its row's. Two files, the triage record first: killed between them,
+#       the ledger still shows the finding as it was, and the call is simply repeated.
+#       Prints {"triage", "ledger", "recorded"}.
+#
+#   dev/stabilize-record state --run R
+#       The run's committed state, as one line of JSON; writes nothing. A run that was
+#       never opened is an answer here, not a refusal: {"run", "opened": false}.
+#       Otherwise:
+#         run, opened
+#         rounds       per round with a directory: {round, scope, triage, record —
+#                      whether each file is there — test_reports, fix_cycles: [{cycle,
+#                      reports}]}, the reports counted by file name
+#         round        the highest of them, or null
+#         doors        that round's {included, excluded}, each [{door, registry,
+#                      derivation}] — or null before its scope is written
+#         bounds       [{bound, reach, ruling, pin}]
+#         clauses      [{clause, instrument, commit, scope, status}]
+#         ledger       per row: key, doctype, round, source, door, clause, grade,
+#                      bound, graded_by, disposition, detail, repro — and
+#                        triage  the row's entry in the latest round that triaged it:
+#                                {round, inside, door: included | excluded | unlisted,
+#                                grade, bound, verdict, regression, found_with}, or null
+#                        route   fix | human | recorded | unsettled, and `why`
+#         blockers     the keys routed fix
+#         human_list   [{key, why}] — the findings routed human
+#         unsettled    [{cell, keys}] — states the rulings do not settle (below)
+#         forbids_close  [{clause, status} | {"clauses": "no row"} | {finding, route}]
+#         next         fix | rule | close | unsettled
+#       A cell is given as the table holds it, a `|` unescaped; `-` for none is null
+#       where the cell is not free text. A table that is not this script's, a cell
+#       outside its vocabulary, or a triage row that disagrees with the doors it was
+#       computed from is refused (corrupt) — the state is never read on a guess.
+#
+#       THE ROUTE of a finding, a pure function of its row, the round's doors and the
+#       bounds list — by its disposition first, then by its grade:
+#         fixed                  recorded (fixed) — unless the round found it again
+#                                with that same fix on its row: unsettled
+#         bound, later           recorded (ruled): it carries the human's ruling
+#         admitted               fix (admitted): the human admitted it to this run
+#         open, no-action        by the grade — no-action is neither a fix nor a ruling:
+#           ungraded             unsettled (ungraded)
+#           breaks, unclear      unsettled (unverified): no verdict yet
+#           no-break, refuted    recorded (not-a-break)
+#           out-of-scope         recorded (out-of-scope) while its bound is on the
+#                                list; human (bound-not-listed) when it is not
+#           needs-bound          human (needs-bound)
+#           regression           fix (regression) — wherever it was found
+#           confirmed            fix (inside) when the latest round that triaged it
+#                                has its door among the included; human (outside)
+#                                when not; human (untriaged) when no round placed it
+#       THE NEXT STEP, a pure function of the routes and the clause table:
+#         rule       a finding is routed human: the human's list has an unruled item
+#         unsettled  else, a finding is routed unsettled
+#         fix        else, a finding is routed fix
+#         close      else, when every clause row is green and there is at least one
+#         unsettled  else: a clause row is void, red or missing, and nothing is open
+#       Close is forbidden by every row that is not green, by a table with no row, and
+#       by every finding not routed recorded — forbids_close lists them all.
+#       UNSETTLED is not a decision: it names a state the recorded rulings do not
+#       settle, and hands it to the human instead of guessing. The cells: ungraded ·
+#       unverified · found-again-after-its-fix · nothing-open-and-no-close.
 #
 #   dev/stabilize-record check-reports --run R --round N --stage test|fix [--cycle K]
 #                        --attempt A [--] [REPORTER...]
@@ -82,12 +206,13 @@
 #       "missing", "duplicated"}.
 #
 # All of a batch is written, or none of it, and a table has one writer at a time: the
-# three table writers queue on the run directory's lock, so rows written at once are
-# all written — a lock taken once a writer has its input, never while it waits for it.
-# Every JSON result is one line on stdout.
+# table writers queue on the run directory's lock, so rows written at once are all
+# written — a lock taken once a writer has its input, never while it waits for it — and
+# state reads between two of them, never across one. Every JSON result is one line on
+# stdout.
 #
-# What a writer does to its text, in order — report, ledger-add, ledger-set and
-# clause-set alike, because every write goes through one function:
+# What a writer does to its text, in order — every writer alike, because every write
+# goes through one function:
 #
 #   1. Host paths become the public placeholders. A path into this repository becomes
 #      its repository-relative form (`.` for the root); a path under a --scratch root
@@ -117,7 +242,7 @@
 # Exit status, and the word a refusal opens with — `stabilize-record: refused <word>:
 # …`, one line on stderr, nothing on stdout:
 #
-#    0  written, or the check holds
+#    0  written, the check holds, or the state is printed
 #    2  usage         an unknown subcommand or flag, a missing argument
 #    3  not-opened    the run has no opening record
 #    4  bad-id        an identifier outside its grammar
@@ -130,7 +255,11 @@
 #   10  host-path     a host path the placeholders could not replace
 #   11  hygiene       the public-hygiene scan found a hit
 #   12  did-not-run   a scanner could not run
-#   13  corrupt       ledger.md or clauses.md is not the table this script writes
+#   13  corrupt       a table is not the one this script writes, or holds a cell it
+#                     does not write
+#   14  no-such-bound out-of-scope cites a bound the declared-bounds list lacks
+#   15  no-scope      triage-set names a round whose scope was never written
+#   16  truncated     the report does not end with its last line: it was cut off
 #   20  check-reports failed: a report is missing or extra (the result is on stdout)
 #   21  check-ledger  failed: a row is missing or duplicated (the result is on stdout)
 #
@@ -164,6 +293,9 @@ STATUS = {
     "hygiene": 11,
     "did-not-run": 12,
     "corrupt": 13,
+    "no-such-bound": 14,
+    "no-scope": 15,
+    "truncated": 16,
 }
 REPORTS_MISMATCH = 20
 LEDGER_MISMATCH = 21
@@ -178,10 +310,17 @@ NUMBER = re.compile(r"[1-9][0-9]{0,5}")
 SHA = re.compile(r"[0-9a-f]{7,40}")
 REPORT_NAME = re.compile(r"(%s)\.a([1-9][0-9]{0,5})\.md" % SLUG.pattern)
 STAGES = ("test", "fix")
+# The last line of a report. A text without it was cut off, or never finished.
+REPORT_ENDS = "<!-- end of report -->"
 
 DOCTYPES = ("jigc-feedback", "inconsistency")
-TRIAGE_GRADES = ("breaks", "unclear", "no-break", "out-of-scope")
+TRIAGE_GRADES = ("breaks", "unclear", "no-break", "out-of-scope", "needs-bound")
 VERIFIED_GRADES = ("confirmed", "regression", "refuted")
+# The triage grades the verifier is sent, and the two verdicts it returns.
+SENT_ON = ("breaks", "unclear")
+VERDICTS = ("confirmed", "refuted")
+# How a grade cell cites its declared bound.
+OUT_OF_SCOPE = "out-of-scope: "
 GRADERS = {
     "triage": TRIAGE_GRADES,
     "verify-real": VERIFIED_GRADES,
@@ -211,6 +350,10 @@ LEDGER_COLUMNS = (
     "repro pointer",
 )
 CLAUSE_COLUMNS = ("clause", "instrument", "last commit", "scope", "status")
+BOUND_COLUMNS = ("bound", "reach", "ruling", "pin")
+SCOPE_COLUMNS = ("door", "test set", "registry", "derivation")
+SIDES = ("included", "excluded")
+TRIAGE_COLUMNS = ("key", "inside", "triage", "verdict", "regression", "found with")
 
 # A fence that reads every markdown file of the tree, untracked ones included, and what
 # makes a line of a file redden it. One member today; a second such fence owes a row.
@@ -503,13 +646,13 @@ def hygiene_scan(rel, text):
             did_not_run("gitleaks exited %d: %s" % (out.returncode, last_line(out)))
 
 
-def publish(run_dir, parts, text, replace):
+def publish(run_dir, parts, text, replace, taken="a re-run passes the next attempt"):
     """Write `text` at `parts` below the run directory — fenced, scanned, atomically —
     and return the path written, repository-relative. Every writer ends here."""
     target = below(run_dir, parts)
     rel = "/".join(ARTIFACTS + (os.path.basename(run_dir),) + tuple(parts))
     if os.path.lexists(target) and not (replace and os.path.isfile(target)):
-        refuse("exists", "%s exists — a re-run passes the next attempt" % rel)
+        refuse("exists", "%s exists — %s" % (rel, taken))
     fence_check(text)
     hygiene_scan(rel, text)
 
@@ -529,7 +672,7 @@ def publish(run_dir, parts, text, replace):
             try:
                 os.link(temporary, target)
             except FileExistsError:
-                refuse("exists", "%s exists — a re-run passes the next attempt" % rel)
+                refuse("exists", "%s exists — %s" % (rel, taken))
     finally:
         if temporary is not None:
             os.unlink(temporary)
@@ -592,12 +735,16 @@ def untick(text):
     return text.strip("`")
 
 
-def json_rows(what):
-    """Stdin as a non-empty list of JSON objects."""
+def json_stdin():
     try:
-        rows = json.loads(sys.stdin.buffer.read().decode("utf-8"))
+        return json.loads(sys.stdin.buffer.read().decode("utf-8"))
     except ValueError as err:
         refuse("bad-value", "stdin is not JSON (%s)" % str(err).split("\n")[0])
+
+
+def json_rows(what):
+    """Stdin as a non-empty list of JSON objects."""
+    rows = json_stdin()
     if isinstance(rows, dict):
         rows = [rows]
     if not isinstance(rows, list) or not rows or not all(isinstance(row, dict) for row in rows):
@@ -620,6 +767,14 @@ def text_of(row, name, what, scratch):
     return cell(public(row[name], scratch))
 
 
+def said(row, name, what, scratch):
+    """A cell that must say something."""
+    text = text_of(row, name, what, scratch)
+    if not row[name].strip():
+        refuse("bad-value", "%s: %s says nothing" % (what, name))
+    return text
+
+
 def one_of(value, allowed, what):
     if not isinstance(value, str) or value not in allowed:
         refuse("bad-value", "%s %s is not one of %s" % (what, shown(value), ", ".join(allowed)))
@@ -639,7 +794,7 @@ def grade_cells(row, what):
     one_of(grader, tuple(GRADERS), what + ": graded_by")
     one_of(grade, GRADERS[grader], "%s: a grade given by %s," % (what, grader))
     if bound is not None:
-        return "out-of-scope: " + slug(bound, what + ": bound"), grader
+        return OUT_OF_SCOPE + slug(bound, what + ": bound"), grader
     return grade, grader
 
 
@@ -694,12 +849,12 @@ def ledger_row(row, scratch):
     return key, cells
 
 
-def table_file(run_dir, name, columns, title, says):
+def table_file(run_dir, parts, columns, title, says):
     """(the table file's repository-relative path, the lines above its table, its rows).
     A file that does not exist yet opens with `title` and what the table `says`."""
     run = os.path.basename(run_dir)
-    rel = "/".join(ARTIFACTS + (run, name))
-    table = read_table(below(run_dir, [name]), rel, columns)
+    rel = "/".join(ARTIFACTS + (run,) + tuple(parts))
+    table = read_table(below(run_dir, parts), rel, columns)
     if table is None:
         table = (["# %s — %s" % (run, title), "", says, ""], [])
     return (rel,) + table
@@ -708,10 +863,40 @@ def table_file(run_dir, name, columns, title, says):
 def read_ledger(run_dir):
     return table_file(
         run_dir,
-        "ledger.md",
+        ["ledger.md"],
         LEDGER_COLUMNS,
         "the findings ledger",
         "One row per finding of this stabilization run. Written by `dev/stabilize-record` and never by hand; its header states the columns and the vocabularies of `grade`, `graded by` and `disposition`.",
+    )
+
+
+def read_clauses(run_dir):
+    return table_file(
+        run_dir,
+        ["clauses.md"],
+        CLAUSE_COLUMNS,
+        "the closing condition, clause by clause",
+        "One row per clause of the closing condition: the instrument that judges it, the last commit that instrument ran on, the scope of that run, and `green`, `red` or `void` — not reached, or could not run. Written by `dev/stabilize-record` and never by hand. A void row, or a missing one, forbids closing.",
+    )
+
+
+def read_bounds(run_dir):
+    return table_file(
+        run_dir,
+        ["bounds.md"],
+        BOUND_COLUMNS,
+        "the declared bounds",
+        "One row per declared bound: its reach, where the human ruled it, and the test that pins it or `unpinned`. A bound is always the human's ruling, and a row is the record of one. Written by `dev/stabilize-record` and never by hand. A grade of `out-of-scope` cites a row of this list, or is refused.",
+    )
+
+
+def read_triage(run_dir, round_number):
+    return table_file(
+        run_dir,
+        ["r%s" % round_number, "triage.md"],
+        TRIAGE_COLUMNS,
+        "round %s, the triage record" % round_number,
+        "One row per finding this round triaged: whether its door is inside the round's test set (computed from `scope.md`, never supplied), triage's grade, the verifier's verdict, whether it is a regression, and the disposition its ledger row carried when the round recorded it. Written by `dev/stabilize-record` and never by hand.",
     )
 
 
@@ -721,6 +906,53 @@ def unique_rows(rel, rows):
     if twice:
         refuse("corrupt", "%s holds more than one row for %s; it is not rewritten on a guess" % (rel, ", ".join(twice)))
     return keys
+
+
+def spoiled(rel, what):
+    refuse("corrupt", "%s %s; it is not read on a guess" % (rel, what))
+
+
+def read_scope(run_dir, round_number):
+    """(the scope file's repository-relative path, its rows) for a round — or None before
+    the round's scope is written."""
+    parts = ["r%s" % round_number, "scope.md"]
+    rel = "/".join(ARTIFACTS + (os.path.basename(run_dir),) + tuple(parts))
+    table = read_table(below(run_dir, parts), rel, SCOPE_COLUMNS)
+    if table is None:
+        return None
+    rows = table[1]
+    for row in rows:
+        if row[1] not in SIDES:
+            spoiled(rel, "puts the door %s on the side %s, which this script does not write" % (row[0], shown(row[1])))
+    if len({row[0] for row in rows}) != len(rows):
+        spoiled(rel, "lists a door twice")
+    return rel, rows
+
+
+def placed(door, scope_rows):
+    """Where a round's scope puts a door: `included`, `excluded` or — in neither list —
+    `unlisted`. Inside the round's test set is `included`, and nothing else is."""
+    for row in scope_rows:
+        if row[0] == door:
+            return row[1]
+    return "unlisted"
+
+
+def inside_cell(side):
+    return "inside" if side == "included" else "outside: " + side
+
+
+def hold_to_the_list(run_dir, cited):
+    """Refuse an out-of-scope grade that cites no row of the declared-bounds list: it is
+    the one grade that takes a finding off the human's list unseen."""
+    cited = [(what, grade[len(OUT_OF_SCOPE):]) for what, grade in cited if grade.startswith(OUT_OF_SCOPE)]
+    if not cited:
+        return
+    rel, _, rows = read_bounds(run_dir)
+    listed = unique_rows(rel, rows)
+    for what, bound in cited:
+        if bound not in listed:
+            refuse("no-such-bound", "%s: out-of-scope cites the bound %s, which the declared-bounds list (%s) lacks — a bound is the human's ruling, entered with bound-set, and without one the grade is needs-bound; nothing was written" % (what, bound, rel))
 
 
 # --- the subcommands --------------------------------------------------------------
@@ -740,6 +972,8 @@ def report(args):
         refuse("bad-value", "the report on stdin is not UTF-8 text")
     if "\0" in text or not text.strip():
         refuse("bad-value", "the report on stdin is empty, or is not text")
+    if text.rstrip().rsplit("\n", 1)[-1].strip() != REPORT_ENDS:
+        refuse("truncated", "the report on stdin does not end with the line `%s`: it was cut off on its way, or its reporter never finished it; nothing was written" % REPORT_ENDS)
     text = public(text, scratch)
     if not text.endswith("\n"):
         text += "\n"
@@ -751,6 +985,7 @@ def ledger_add(args):
     scratch = scratch_roots(args)
     given = [ledger_row(row, scratch) for row in json_rows("ledger row")]
     one_writer(run_dir)
+    hold_to_the_list(run_dir, [("row %s" % key, cells[6]) for key, cells in given])
     rel, above, rows = read_ledger(run_dir)
     keys = unique_rows(rel, rows)
     appended, existing = [], []
@@ -778,6 +1013,7 @@ def ledger_set(args):
             refuse("bad-value", "patch %s sets neither a grade nor a disposition" % key)
         patches.append((key, cells))
     one_writer(run_dir)
+    hold_to_the_list(run_dir, [("patch %s" % key, text) for key, cells in patches for at, text in cells if at == 6])
     rel, above, rows = read_ledger(run_dir)
     keys = unique_rows(rel, rows)
     for key, cells in patches:
@@ -802,13 +1038,7 @@ def clause_set(args):
         refuse("bad-value", "commit %s is neither a sha of 7 to 40 hex digits nor `-`" % shown(named["commit"]))
     one_writer(run_dir)
 
-    rel, above, rows = table_file(
-        run_dir,
-        "clauses.md",
-        CLAUSE_COLUMNS,
-        "the closing condition, clause by clause",
-        "One row per clause of the closing condition: the instrument that judges it, the last commit that instrument ran on, the scope of that run, and `green`, `red` or `void` — not reached, or could not run. Written by `dev/stabilize-record` and never by hand. A void row, or a missing one, forbids closing.",
-    )
+    rel, above, rows = read_clauses(run_dir)
     keys = [untick(row[0]) for row in rows]
     if len(set(keys)) != len(keys):
         refuse("corrupt", "%s holds more than one row for a clause; it is not rewritten on a guess" % rel)
@@ -831,6 +1061,320 @@ def clause_set(args):
         refuse("bad-value", "clause %s: %s is a verdict, and a verdict names the commit the instrument ran on — pass --commit" % (clause, row[4]))
     publish(run_dir, ["clauses.md"], render_table(above, CLAUSE_COLUMNS, rows), replace=True)
     print(json.dumps({"clauses": rel, "clause": clause, "status": row[4]}))
+
+
+def bound_set(args):
+    run_dir = open_run(args.run)
+    bound = slug(args.bound, "bound")
+    scratch = scratch_roots(args)
+    named = {}
+    for at, name in enumerate(BOUND_COLUMNS[1:], 1):
+        text = getattr(args, name)
+        if text is not None:
+            if not text.strip():
+                refuse("bad-value", "bound %s: --%s says nothing" % (bound, name))
+            named[at] = cell(public(text, scratch))
+    if not named:
+        refuse("usage", "bound-set sets nothing: pass --reach, --ruling or --pin")
+    one_writer(run_dir)
+    rel, above, rows = read_bounds(run_dir)
+    keys = unique_rows(rel, rows)
+    if bound in keys:
+        row = rows[keys.index(bound)]
+    else:
+        missing = [name for at, name in enumerate(BOUND_COLUMNS[1:], 1) if at not in named]
+        if missing:
+            refuse("bad-value", "bound %s has no row yet, and a row is the record of the human's ruling: its first needs --%s" % (bound, ", --".join(missing)))
+        row = [tick(bound), "", "", ""]
+        rows.append(row)
+    for at, text in named.items():
+        row[at] = text
+    publish(run_dir, ["bounds.md"], render_table(above, BOUND_COLUMNS, rows), replace=True)
+    print(json.dumps({"bounds": rel, "bound": bound}))
+
+
+def scope_set(args):
+    run_dir = open_run(args.run)
+    parts = ["r" + number(args.round, "round"), "scope.md"]
+    scratch = scratch_roots(args)
+    given = json_stdin()
+    if not isinstance(given, dict):
+        refuse("bad-value", "stdin must be one scope as a JSON object: its included and its excluded doors")
+    fields(given, SIDES, (), "a scope")
+    rows = []
+    for side in SIDES:
+        if not isinstance(given[side], list) or not all(isinstance(door, dict) for door in given[side]):
+            refuse("bad-value", "a scope's %s doors must be an array of JSON objects" % side)
+        for door in given[side]:
+            fields(door, ("door", "registry", "derivation"), (), "a door")
+            what = "door %s" % shown(door["door"])
+            name, registry, derivation = [said(door, field, what, scratch) for field in ("door", "registry", "derivation")]
+            rows.append([name, side, registry, derivation])
+    distinct([row[0] for row in rows], "door")
+    above = [
+        "# %s — round %s, the test set" % (args.run, args.round),
+        "",
+        "One row per door the round's scope step resolved: whether it is `included` in the round's test set or `excluded` from it, the registry it comes from, and how it was derived. Written once, by `dev/stabilize-record`, and never by hand. A finding is inside the test set when its door is an included row here.",
+        "",
+    ]
+    rel = publish(run_dir, parts, render_table(above, SCOPE_COLUMNS, rows), replace=False, taken="a round's test set is written once")
+    print(json.dumps({"scope": rel, "included": len(given["included"]), "excluded": len(given["excluded"])}))
+
+
+def triage_entry(entry):
+    """(key, the entry's cells in the triage record after `inside`, the ledger's grade and
+    grader). Nothing of an entry says where the finding was found: that is computed."""
+    fields(entry, ("key", "grade"), ("bound", "verdict", "regression"), "a triage entry")
+    what = "entry %s" % shown(entry["key"])
+    key = slug(entry["key"], "key")
+    grade = one_of(entry["grade"], TRIAGE_GRADES, what + ": grade")
+    if ("bound" in entry) != (grade == "out-of-scope"):
+        refuse("bad-value", "%s: out-of-scope cites a declared bound as `bound`, and no other grade does" % what)
+    if "bound" in entry:
+        grade = OUT_OF_SCOPE + slug(entry["bound"], what + ": bound")
+    if "verdict" not in entry:
+        if "regression" in entry:
+            refuse("bad-value", "%s: a regression is the verifier's fact about a finding it confirmed" % what)
+        return key, [grade, "-", "-"], (grade, "triage")
+    if grade not in SENT_ON:
+        refuse("bad-value", "%s: a verdict is the verifier's, and the verifier is sent %s — not %s" % (what, " and ".join(SENT_ON), grade))
+    if one_of(entry["verdict"], VERDICTS, what + ": verdict") == "refuted":
+        if "regression" in entry:
+            refuse("bad-value", "%s: a regression is the verifier's fact about a finding it confirmed" % what)
+        return key, [grade, "refuted", "-"], ("refuted", "verify-real")
+    if not isinstance(entry.get("regression"), bool):
+        refuse("bad-value", "%s: confirmed says whether the finding is a regression — `regression` is true when the repro is green on the previous release, else false" % what)
+    if entry["regression"]:
+        return key, [grade, "confirmed", "yes"], ("regression", "verify-real")
+    return key, [grade, "confirmed", "no"], ("confirmed", "verify-real")
+
+
+def triage_set(args):
+    run_dir = open_run(args.run)
+    round_number = number(args.round, "round")
+    given = [triage_entry(entry) for entry in json_rows("triage entry")]
+    distinct([key for key, _, _ in given], "finding")
+    one_writer(run_dir)
+    ledger, ledger_above, ledger_rows = read_ledger(run_dir)
+    keys = unique_rows(ledger, ledger_rows)
+    for key, _, _ in given:
+        if key not in keys:
+            refuse("no-such-row", "the ledger has no row %s — a finding is added before it is triaged; nothing was written" % key)
+    hold_to_the_list(run_dir, [("entry %s" % key, cells[0]) for key, cells, _ in given])
+    scope = read_scope(run_dir, round_number)
+    if scope is None:
+        refuse("no-scope", "round %s has no scope yet: whether a finding is inside the test set is computed from the round's doors, which scope-set writes; nothing was written" % round_number)
+    rel, above, rows = read_triage(run_dir, round_number)
+    triaged = unique_rows(rel, rows)
+    for key, cells, grade in given:
+        row = ledger_rows[keys.index(key)]
+        # The disposition the row carries into this round goes into the record with it:
+        # a finding found again inherits it, and the record says what it inherited.
+        entry = [tick(key), inside_cell(placed(row[4], scope[1]))] + cells + [row[8]]
+        if key in triaged:
+            rows[triaged.index(key)] = entry
+        else:
+            triaged.append(key)
+            rows.append(entry)
+        row[6], row[7] = grade
+    publish(run_dir, ["r" + round_number, "triage.md"], render_table(above, TRIAGE_COLUMNS, rows), replace=True)
+    publish(run_dir, ["ledger.md"], render_table(ledger_above, LEDGER_COLUMNS, ledger_rows), replace=True)
+    print(json.dumps({"triage": rel, "ledger": ledger, "recorded": [key for key, _, _ in given]}))
+
+
+# --- the state, and what follows from it ----------------------------------------------
+
+
+def as_data(text):
+    """A cell as the table holds it, its pipes unescaped."""
+    return text.replace("\\|", "|")
+
+
+def grade_read(rel, key, text):
+    """(grade, the bound it cites) of a grade cell."""
+    if text.startswith(OUT_OF_SCOPE) and SLUG.fullmatch(text[len(OUT_OF_SCOPE):]):
+        return "out-of-scope", text[len(OUT_OF_SCOPE):]
+    if text != "out-of-scope" and text in ("ungraded",) + GRADERS["human"]:
+        return text, None
+    spoiled(rel, "gives %s the grade %s, which this script does not write" % (key, shown(text)))
+
+
+def route_of(finding, triage, listed):
+    """Where one finding goes, and why: `fix` (without asking), `human` (the human's
+    list), `recorded` (nothing more in this run) — or `unsettled`, where the recorded
+    rulings do not say. A pure function of the row, the round's triage of it and the
+    declared bounds; the header's table is this function."""
+    grade, disposition = finding["grade"], finding["disposition"]
+    if disposition == "fixed":
+        stands = triage is not None and (triage["verdict"] == "confirmed" or (triage["verdict"] is None and triage["grade"] in SENT_ON + ("needs-bound",)))
+        if stands and triage["found_with"] == "fixed: %s" % finding["detail"]:
+            return "unsettled", "found-again-after-its-fix"
+        return "recorded", "fixed"
+    if disposition in ("bound", "later"):
+        return "recorded", "ruled"
+    if disposition == "admitted":
+        return "fix", "admitted"
+    # open — or no-action, which is neither a fix nor the human's ruling.
+    if grade == "ungraded":
+        return "unsettled", "ungraded"
+    if grade in SENT_ON:
+        return "unsettled", "unverified"
+    if grade in ("no-break", "refuted"):
+        return "recorded", "not-a-break"
+    if grade == "out-of-scope":
+        return ("recorded", "out-of-scope") if finding["bound"] in listed else ("human", "bound-not-listed")
+    if grade == "needs-bound":
+        return "human", "needs-bound"
+    # A verified break: confirmed, or a regression.
+    if grade == "regression":
+        return "fix", "regression"
+    if triage is None:
+        return "human", "untriaged"
+    return ("fix", "inside") if triage["inside"] else ("human", "outside")
+
+
+UNSETTLED = ("ungraded", "unverified", "found-again-after-its-fix")
+NO_STEP = "nothing-open-and-no-close"
+
+
+def next_of(findings, clauses):
+    """(the next step, what forbids closing, the unsettled cells) — a pure function of the
+    routes and the clause table."""
+    forbids = [{"clause": row["clause"], "status": row["status"]} for row in clauses if row["status"] != "green"]
+    if not clauses:
+        forbids.append({"clauses": "no row"})
+    still = [finding for finding in findings if finding["route"] != "recorded"]
+    unsettled = [
+        {"cell": name, "keys": [finding["key"] for finding in still if finding["why"] == name]}
+        for name in UNSETTLED
+        if any(finding["route"] == "unsettled" and finding["why"] == name for finding in still)
+    ]
+    if forbids and not still:
+        unsettled.append({"cell": NO_STEP, "keys": []})
+    forbids += [{"finding": finding["key"], "route": finding["route"]} for finding in still]
+    routes = {finding["route"] for finding in still}
+    if "human" in routes:
+        step = "rule"
+    elif "unsettled" in routes:
+        step = "unsettled"
+    elif "fix" in routes:
+        step = "fix"
+    else:
+        step = "unsettled" if forbids else "close"
+    return step, forbids, unsettled
+
+
+def numbered(run_dir, parts, letter):
+    """The numbers N of the directories `<letter>N` at `parts` below the run directory."""
+    directory = below(run_dir, parts) if parts else run_dir
+    found = []
+    for name in os.listdir(directory) if os.path.isdir(directory) else []:
+        if re.fullmatch(letter + NUMBER.pattern, name) and os.path.isdir(below(run_dir, parts + [name])):
+            found.append(int(name[1:]))
+    return sorted(found)
+
+
+def reports_in(run_dir, parts):
+    directory = below(run_dir, parts)
+    names = os.listdir(directory) if os.path.isdir(directory) else []
+    return len([name for name in names if REPORT_NAME.fullmatch(name) and os.path.isfile(below(run_dir, parts + [name]))])
+
+
+def state(args):
+    try:
+        run_dir = open_run(args.run)
+    except Refusal as refusal:
+        if refusal.kind != "not-opened":
+            raise
+        print(json.dumps({"run": args.run, "opened": False}))
+        return
+    fcntl.flock(os.open(run_dir, os.O_RDONLY), fcntl.LOCK_SH)
+
+    bounds_rel, _, bound_rows = read_bounds(run_dir)
+    listed = unique_rows(bounds_rel, bound_rows)
+    clauses_rel, _, clause_rows = read_clauses(run_dir)
+    unique_rows(clauses_rel, clause_rows)
+    for row in clause_rows:
+        if row[4] not in CLAUSE_STATUSES:
+            spoiled(clauses_rel, "gives %s the status %s, which this script does not write" % (row[0], shown(row[4])))
+    ledger_rel, _, ledger_rows = read_ledger(run_dir)
+    keys = unique_rows(ledger_rel, ledger_rows)
+
+    # Each round's records, and each finding's entry in the latest round that triaged it.
+    rounds, doors, triage = [], None, {}
+    for number_ in numbered(run_dir, [], "r"):
+        name = "r%d" % number_
+        scope = read_scope(run_dir, number_)
+        rel, _, rows = read_triage(run_dir, number_)
+        for key, row in zip(unique_rows(rel, rows), rows):
+            if scope is None:
+                spoiled(rel, "is a triage record with no scope beside it")
+            if key not in keys:
+                spoiled(rel, "triages %s, a finding the ledger lacks" % key)
+            side = placed(ledger_rows[keys.index(key)][4], scope[1])
+            grade, bound = grade_read(rel, key, row[2])
+            if row[1] != inside_cell(side) or grade not in TRIAGE_GRADES or row[3] not in VERDICTS + ("-",) or row[4] not in ("yes", "no", "-"):
+                spoiled(rel, "holds a row for %s that does not follow from the round's doors and the triage vocabulary" % key)
+            triage[key] = {
+                "round": number_,
+                "inside": side == "included",
+                "door": side,
+                "grade": grade,
+                "bound": bound,
+                "verdict": None if row[3] == "-" else row[3],
+                "regression": None if row[4] == "-" else row[4] == "yes",
+                "found_with": as_data(row[5]),
+            }
+        doors = scope and {side: [{"door": as_data(row[0]), "registry": as_data(row[2]), "derivation": as_data(row[3])} for row in scope[1] if row[1] == side] for side in SIDES}
+        rounds.append({
+            "round": number_,
+            "scope": scope is not None,
+            "triage": os.path.isfile(below(run_dir, [name, "triage.md"])),
+            "record": os.path.isfile(below(run_dir, [name, "round.md"])),
+            "test_reports": reports_in(run_dir, [name, "reports", "test"]),
+            "fix_cycles": [{"cycle": cycle, "reports": reports_in(run_dir, [name, "reports", "fix", "c%d" % cycle])} for cycle in numbered(run_dir, [name, "reports", "fix"], "c")],
+        })
+
+    findings = []
+    for key, row in zip(keys, ledger_rows):
+        grade, bound = grade_read(ledger_rel, key, row[6])
+        disposition, _, detail = row[8].partition(": ")
+        if disposition not in DISPOSITIONS or not row[2].isdigit() or row[7] not in ("-",) + tuple(GRADERS):
+            spoiled(ledger_rel, "holds a row for %s with a cell this script does not write" % key)
+        finding = {
+            "key": key,
+            "doctype": untick(row[1]),
+            "round": int(row[2]),
+            "source": as_data(row[3]),
+            "door": as_data(row[4]),
+            "clause": as_data(row[5]),
+            "grade": grade,
+            "bound": bound,
+            "graded_by": None if row[7] == "-" else row[7],
+            "disposition": disposition,
+            "detail": as_data(detail) or None,
+            "repro": as_data(row[9]),
+            "triage": triage.get(key),
+        }
+        finding["route"], finding["why"] = route_of(finding, triage.get(key), listed)
+        findings.append(finding)
+    clauses = [{"clause": untick(row[0]), "instrument": as_data(row[1]), "commit": None if row[2] == "-" else untick(row[2]), "scope": as_data(row[3]), "status": row[4]} for row in clause_rows]
+    step, forbids, unsettled = next_of(findings, clauses)
+    print(json.dumps({
+        "run": args.run,
+        "opened": True,
+        "rounds": rounds,
+        "round": rounds[-1]["round"] if rounds else None,
+        "doors": doors,
+        "bounds": [dict(zip(BOUND_COLUMNS, [untick(row[0])] + [as_data(text) for text in row[1:]])) for row in bound_rows],
+        "clauses": clauses,
+        "ledger": findings,
+        "blockers": [finding["key"] for finding in findings if finding["route"] == "fix"],
+        "human_list": [{"key": finding["key"], "why": finding["why"]} for finding in findings if finding["route"] == "human"],
+        "unsettled": unsettled,
+        "forbids_close": forbids,
+        "next": step,
+    }))
 
 
 def distinct(names, what):
@@ -910,6 +1454,10 @@ def arguments(argv):
     command("clause-set", clause_set, [("clause", True), ("instrument", False), ("commit", False), ("scope", False), ("status", False)], writes=True)
     command("check-reports", check_reports, stage, names=True)
     command("check-ledger", check_ledger, [], names=True)
+    command("bound-set", bound_set, [("bound", True), ("reach", False), ("ruling", False), ("pin", False)], writes=True)
+    command("scope-set", scope_set, [("round", True)], writes=True)
+    command("triage-set", triage_set, [("round", True)])
+    command("state", state, [])
     if not argv or argv[0] not in commands.choices:
         refuse("usage", "%s is not a subcommand: the subcommands are %s — see dev/stabilize-record --help" % (shown(argv[0]) if argv else "nothing", ", ".join(commands.choices)))
     return parser.parse_args(argv)

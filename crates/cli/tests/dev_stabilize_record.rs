@@ -1,13 +1,23 @@
 //! **`dev/stabilize-record` — the one script through which a stabilization run's records
-//! reach the repository** ([DECISIONS.md](../../../DECISIONS.md) → *2026-10-05 — The
-//! stabilization workflow, as ruled*, rulings 12, 13 and 16; the builder's choices are the
-//! entry of the same date, *The record script, as built*).
+//! reach the repository, and the one place its state is read back and decided**
+//! ([DECISIONS.md](../../../DECISIONS.md) → *2026-10-05 — The stabilization workflow, as
+//! ruled*, rulings 4, 5, 9, 10, 12, 13 and 16; the builders' choices are the two entries of
+//! the same date, *The record script, as built* and *The record script reads the run
+//! back*).
 //!
 //! A reporter of a stage has a shell and no write tool, and what it writes is public on the
 //! next push and read by fences on the next gate. So one script decides where a report
 //! lands, what a ledger row may say and what is refused, and this suite holds it to that by
 //! **driving the script's own bytes** — copied into a throwaway repository, because the
 //! script finds its repository from where it lies — and reading what it left on disk.
+//!
+//! And the workflow's harness sees only what an agent returns to it. So the run's state
+//! leaves the script as one JSON document, and what follows from it — whether a finding is
+//! inside the round's test set, where it is routed, what the round does next — is computed
+//! by the script. **Two truth tables hold those decisions** ([`findings`], [`ROUNDS`]):
+//! each cell is stood up through the script's own writers, never as a table this suite
+//! wrote by hand, and read off the state document. A cell the rulings do not settle is in
+//! the tables too, as `unsettled` — the script's word for *not decided here*.
 //!
 //! **Every arm runs under a shell-hostile root** (a space, a `'`, a `"` and a `#` in the
 //! repository's path — [dev-workflow.md](../../../implementation/dev-workflow.md), the rule
@@ -20,12 +30,13 @@
 //!   a cycle, a reporter, an attempt, a ledger key, a cited bound, a clause, each name a
 //!   check is handed — is driven with every hostile value ([`HOSTILE_IDS`]): each is
 //!   refused as `bad-id` and leaves the tree as it was.
-//! - *The writers.* Four subcommands put a caller's free text into a file ([`WRITERS`]):
-//!   a report's body, a ledger row's cells as it is added and as it is set, a clause
-//!   row's cells. The host-path replacement, the hygiene stop, the scanner that could not
-//!   run and the killed write are each driven through all four. The list is held to the
-//!   script's own parser — every subcommand it names is a writer on the list or one of
-//!   the two checks ([`every_subcommand_is_a_listed_writer_or_a_check`]) — so a writer
+//! - *The writers.* Seven subcommands write a file ([`WRITERS`]), and six of them put a
+//!   caller's free text into it: a report's body, a ledger row's cells as it is added and
+//!   as it is set, a clause row's cells, a bound's, a door's derivation. The scanner that
+//!   could not run and the killed write are driven through all seven; the host-path
+//!   replacement and the hygiene stop through the six. The list is held to the script's
+//!   own parser — every subcommand it names is a writer on the list or one of the three
+//!   that write nothing ([`every_subcommand_is_a_listed_writer_or_a_check`]) — so a writer
 //!   added to the script meets every one of those arms or reddens that one.
 //! - *The scanner's ways of not running* ([`SCAN_BREAKS`]): each is `did-not-run`, never a
 //!   pass, and writes nothing.
@@ -49,6 +60,26 @@
 //! report each read as a pass; the caller's `GIT_*` environment handed to the scan; and
 //! the table writers' lock dropped, the lock taken before the input is read, and the
 //! output's encoding left to the caller's locale.
+//!
+//! And on sixty-two more, for what the script reads back and decides. *The route:* a
+//! regression not fixed unasked; an inside finding sent to the human and an outside one
+//! fixed unasked; a break no round placed fixed unasked; `admitted` not fixed; `bound`,
+//! `later` each no ruling, and `no-action` one; `fixed` inherited by a finding found again,
+//! in each of its five shapes; an ungraded and an unverified finding recorded, or fixed;
+//! *refuted* and *no-break* each read as a break; *out-of-scope* recorded without a listed
+//! bound, or never; `needs-bound` recorded; the first round that triaged a finding placing
+//! it. *The next step:* each pair of its precedence swapped; a void, a red and a missing
+//! clause row each no bar to closing, and an open finding none; the state with no step
+//! closed, and left unnamed. *Inside:* an excluded and an unlisted door each inside;
+//! `inside` supplied; a triage record not held to its doors. *The writers:* a bound cited
+//! off the list, through each of the three that take a grade; a bound entered with no
+//! ruling, or a blank cell; a scope replaced, a door on both sides, a blank door cell; a
+//! round with no scope and a finding with no row triaged; the inherited disposition not
+//! recorded; a regression recorded as confirmed; the ledger's grade not following; a
+//! verdict on any grade, with no word on regression, twice in a batch; a cut-off report
+//! taken, and its last line taken from anywhere. *The state:* a run never opened refused;
+//! a write in flight not waited for; a cell returned escaped; a grade, a status, a
+//! disposition, a side written by hand each read, and a triage record with no scope.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -96,6 +127,9 @@ const HOST_PATH: i32 = 10;
 const HYGIENE: i32 = 11;
 const DID_NOT_RUN: i32 = 12;
 const CORRUPT: i32 = 13;
+const NO_SUCH_BOUND: i32 = 14;
+const NO_SCOPE: i32 = 15;
+const TRUNCATED: i32 = 16;
 const REPORTS_MISMATCH: i32 = 20;
 const LEDGER_MISMATCH: i32 = 21;
 
@@ -113,6 +147,9 @@ const REFUSALS: &[(i32, &str)] = &[
     (HYGIENE, "hygiene"),
     (DID_NOT_RUN, "did-not-run"),
     (CORRUPT, "corrupt"),
+    (NO_SUCH_BOUND, "no-such-bound"),
+    (NO_SCOPE, "no-scope"),
+    (TRUNCATED, "truncated"),
 ];
 
 const LEDGER_COLUMNS: [&str; 10] = [
@@ -130,6 +167,22 @@ const LEDGER_COLUMNS: [&str; 10] = [
 
 const CLAUSE_COLUMNS: [&str; 5] = ["clause", "instrument", "last commit", "scope", "status"];
 
+const BOUND_COLUMNS: [&str; 4] = ["bound", "reach", "ruling", "pin"];
+
+const SCOPE_COLUMNS: [&str; 4] = ["door", "test set", "registry", "derivation"];
+
+const TRIAGE_COLUMNS: [&str; 6] = [
+    "key",
+    "inside",
+    "triage",
+    "verdict",
+    "regression",
+    "found with",
+];
+
+/// The line a report ends with: a report that does not was cut off on its way.
+const ENDS: &str = "<!-- end of report -->";
+
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -146,7 +199,8 @@ fn repo_root() -> PathBuf {
 /// on a finding, anything else when it could not run. `STUB_GITLEAKS` picks a failure:
 /// `crash` exits 1 as gitleaks does on an error of its own, `kill-parent` kills the script
 /// that launched it, which is the deterministic way to kill a write at its last step
-/// before the file exists.
+/// before the file exists — and `slow` scans as ever, two seconds late, which holds a
+/// write in flight for as long.
 const GITLEAKS_STUB: &str = r#"#!/bin/sh
 code=1
 report=
@@ -166,6 +220,7 @@ done
 case "${STUB_GITLEAKS:-scan}" in
     crash) echo "stub gitleaks: could not load its config" >&2; exit 1 ;;
     kill-parent) kill -9 "$PPID"; exit 0 ;;
+    slow) sleep 2 ;;
 esac
 if grep -rq --exclude-dir=.git @SECRET@ "$repo"; then
     if [ -n "$report" ]; then printf '[{"RuleID":"stub-rule","StartLine":3}]' >"$report"; fi
@@ -312,6 +367,19 @@ impl Rig {
         let mut seen = BTreeMap::new();
         walk(self.dir.path(), self.dir.path(), &self.tmp, &mut seen);
         seen
+    }
+
+    /// The run's state document.
+    fn state(&self) -> Value {
+        let seen = self.run(&state(RUN), "");
+        seen.must(OK, "state");
+        assert_eq!(
+            seen.stdout.lines().count(),
+            1,
+            "the state is one line of JSON: {}",
+            seen.stdout
+        );
+        seen.json()
     }
 
     /// Seeded ledger rows, one call, for the arms that set or check them.
@@ -486,6 +554,61 @@ fn check_ledger(run: &str, keys: &[&str]) -> Vec<String> {
     args
 }
 
+/// `bound-set` for the bound `bound`, with the cells `rest` names.
+fn bound_set(run: &str, bound: &str, rest: &[&str]) -> Vec<String> {
+    let mut args = vec![
+        "bound-set".to_owned(),
+        format!("--run={run}"),
+        format!("--bound={bound}"),
+    ];
+    args.extend(strings(rest));
+    args
+}
+
+/// The cells a bound's first row must name.
+const BOUND: [&str; 3] = [
+    "--reach=races against a writer that is not jigc",
+    "--ruling=the opening record, declared bounds",
+    "--pin=unpinned",
+];
+
+fn scope_set(run: &str, round: &str) -> Vec<String> {
+    vec![
+        "scope-set".to_owned(),
+        format!("--run={run}"),
+        format!("--round={round}"),
+    ]
+}
+
+fn triage_set(run: &str, round: &str) -> Vec<String> {
+    vec![
+        "triage-set".to_owned(),
+        format!("--run={run}"),
+        format!("--round={round}"),
+    ]
+}
+
+fn state(run: &str) -> Vec<String> {
+    vec!["state".to_owned(), format!("--run={run}")]
+}
+
+/// A door as the scope step hands it over.
+fn door(name: &str) -> Value {
+    json!({
+        "door": name,
+        "registry": "the verb table",
+        "derivation": format!("a changed symbol is read by `{name}`"),
+    })
+}
+
+/// A round's scope: the doors inside its test set, and the doors left out of it.
+fn scope(included: &[&str], excluded: &[&str]) -> Value {
+    json!({
+        "included": included.iter().map(|name| door(name)).collect::<Vec<_>>(),
+        "excluded": excluded.iter().map(|name| door(name)).collect::<Vec<_>>(),
+    })
+}
+
 /// A well-formed ledger row.
 fn row(key: &str) -> Value {
     json!({
@@ -558,6 +681,18 @@ fn clauses_path() -> String {
     format!("completions/artifacts/{RUN}/clauses.md")
 }
 
+fn bounds_path() -> String {
+    format!("completions/artifacts/{RUN}/bounds.md")
+}
+
+fn scope_path(round: &str) -> String {
+    format!("completions/artifacts/{RUN}/r{round}/scope.md")
+}
+
+fn triage_path(round: &str) -> String {
+    format!("completions/artifacts/{RUN}/r{round}/triage.md")
+}
+
 fn report_path(round: &str, reporter: &str, attempt: &str) -> String {
     format!("completions/artifacts/{RUN}/r{round}/reports/test/{reporter}.a{attempt}.md")
 }
@@ -569,6 +704,9 @@ fn report_path(round: &str, reporter: &str, attempt: &str) -> String {
 /// A subcommand that puts free text into a file of the run.
 struct Writer {
     name: &'static str,
+    /// Whether the call puts `text` into the file. `triage-set` takes identifiers and
+    /// closed vocabularies only: it meets the arms about a write, not the arms about text.
+    free_text: bool,
     /// Anything the writer needs on disk first.
     prepare: fn(&Rig),
     /// The call that writes `text`, with `extra` flags, and the file it writes.
@@ -578,18 +716,20 @@ struct Writer {
 const WRITERS: &[Writer] = &[
     Writer {
         name: "report (the body)",
+        free_text: true,
         prepare: |_| {},
         call: |rig, text, extra| {
             let mut args = report(RUN, "1", "audit-install", "1");
             args.extend_from_slice(extra);
             (
-                rig.run(&args, &format!("# a report\n\n{text}\n")),
+                rig.run(&args, &format!("# a report\n\n{text}\n{ENDS}\n")),
                 report_path("1", "audit-install", "1"),
             )
         },
     },
     Writer {
         name: "ledger-add (a row's `source` cell)",
+        free_text: true,
         prepare: |_| {},
         call: |rig, text, extra| {
             let mut entry = row("audit-f3");
@@ -601,6 +741,7 @@ const WRITERS: &[Writer] = &[
     },
     Writer {
         name: "ledger-set (a disposition's detail)",
+        free_text: true,
         prepare: |rig| rig.seed_rows(&["audit-f3"]),
         call: |rig, text, extra| {
             let patch = json!({"key": "audit-f3", "disposition": "bound", "detail": text});
@@ -611,6 +752,7 @@ const WRITERS: &[Writer] = &[
     },
     Writer {
         name: "clause-set (the `instrument` cell)",
+        free_text: true,
         prepare: |_| {},
         call: |rig, text, extra| {
             let mut args = clause_set(
@@ -623,10 +765,51 @@ const WRITERS: &[Writer] = &[
             (rig.run(&args, ""), clauses_path())
         },
     },
+    Writer {
+        name: "bound-set (the `reach` cell)",
+        free_text: true,
+        prepare: |_| {},
+        call: |rig, text, extra| {
+            let mut args = bound_set(RUN, "non-jigc-writer", &BOUND[1..]);
+            args.push(format!("--reach={text}"));
+            args.extend_from_slice(extra);
+            (rig.run(&args, ""), bounds_path())
+        },
+    },
+    Writer {
+        name: "scope-set (a door's derivation)",
+        free_text: true,
+        prepare: |_| {},
+        call: |rig, text, extra| {
+            let mut given = scope(&["jigc setup"], &[]);
+            given["included"][0]["derivation"] = json!(text);
+            let mut args = scope_set(RUN, "1");
+            args.extend_from_slice(extra);
+            (rig.run(&args, &given.to_string()), scope_path("1"))
+        },
+    },
+    Writer {
+        name: "triage-set (no free text)",
+        free_text: false,
+        prepare: |rig| {
+            rig.seed_rows(&["audit-f3"]);
+            rig.run(
+                &scope_set(RUN, "1"),
+                &scope(&["jigc setup"], &[]).to_string(),
+            )
+            .must(OK, "the round's scope");
+        },
+        call: |rig, _, extra| {
+            let entry = json!({"key": "audit-f3", "grade": "no-break"});
+            let mut args = triage_set(RUN, "1");
+            args.extend_from_slice(extra);
+            (rig.run(&args, &entry.to_string()), triage_path("1"))
+        },
+    },
 ];
 
-/// The two subcommands that write nothing.
-const CHECKS: [&str; 2] = ["check-reports", "check-ledger"];
+/// The three subcommands that write nothing.
+const READERS: [&str; 3] = ["check-reports", "check-ledger", "state"];
 
 /// The subcommands, as the script's own parser names them when it is handed none of them.
 fn subcommands(rig: &Rig) -> Vec<String> {
@@ -641,7 +824,7 @@ fn subcommands(rig: &Rig) -> Vec<String> {
 }
 
 /// A subcommand added to the script is a writer — and then every arm that iterates
-/// [`WRITERS`] drives it — or a check, or this arm is red.
+/// [`WRITERS`] drives it — or one of the three that write nothing, or this arm is red.
 #[test]
 fn every_subcommand_is_a_listed_writer_or_a_check() {
     let rig = Rig::new("subcommands");
@@ -649,11 +832,11 @@ fn every_subcommand_is_a_listed_writer_or_a_check() {
     let known: BTreeSet<String> = WRITERS
         .iter()
         .map(|writer| writer.name.split(' ').next().expect("a name").to_owned())
-        .chain(CHECKS.map(str::to_owned))
+        .chain(READERS.map(str::to_owned))
         .collect();
     assert_eq!(
         named, known,
-        "the script's subcommands (left) are the listed writers and the two checks (right)"
+        "the script's subcommands (left) are the listed writers and the three readers (right)"
     );
 }
 
@@ -680,13 +863,13 @@ fn for_every_writer(label: &str, arm: impl Fn(&Writer, &mut Rig) + Sync) {
 fn a_report_lands_at_the_path_the_script_decides_and_prints_it() {
     let rig = Rig::new("report-path");
     rig.init_repository();
-    let body = "# audit of the install doors\n\nNothing found.\n";
+    let body = &format!("# audit of the install doors\n\nNothing found.\n{ENDS}\n");
 
     let seen = rig.run(&report(RUN, "1", "audit-install", "1"), body);
     seen.must(OK, "a test-stage report");
     let path = report_path("1", "audit-install", "1");
     assert_eq!(seen.stdout, format!("{path}\n"), "the path it wrote, alone");
-    assert_eq!(rig.read(&path), body, "the report, byte for byte");
+    assert_eq!(&rig.read(&path), body, "the report, byte for byte");
 
     // A fix-stage report belongs to a cycle of its round.
     let mut fix = strings(&["report", "--round=2", "--stage=fix", "--cycle=3"]);
@@ -696,7 +879,7 @@ fn a_report_lands_at_the_path_the_script_decides_and_prints_it() {
     seen.must(OK, "a fix-stage report");
     let path = format!("completions/artifacts/{RUN}/r2/reports/fix/c3/fixer-install.a1.md");
     assert_eq!(seen.stdout, format!("{path}\n"));
-    assert_eq!(rig.read(&path), body);
+    assert_eq!(&rig.read(&path), body);
 
     // The cycle is the fix stage's and only the fix stage's.
     let mut stray = report(RUN, "1", "audit-install", "2");
@@ -725,22 +908,20 @@ fn a_report_lands_at_the_path_the_script_decides_and_prints_it() {
 #[test]
 fn a_taken_attempt_is_refused_and_the_next_attempt_lands_beside_it() {
     let rig = Rig::new("attempts");
-    let first = "# the first attempt\n";
+    let first = &format!("# the first attempt\n{ENDS}\n");
     rig.run(&report(RUN, "1", "audit-install", "1"), first)
         .must(OK, "the first attempt");
 
     let before = rig.snapshot();
-    rig.run(&report(RUN, "1", "audit-install", "1"), "# a re-run\n")
+    let again = &format!("# a re-run\n{ENDS}\n");
+    rig.run(&report(RUN, "1", "audit-install", "1"), again)
         .refused(EXISTS, "the same reporter and attempt again");
     assert_eq!(rig.snapshot(), before, "the stale report is not replaced");
 
-    rig.run(&report(RUN, "1", "audit-install", "2"), "# a re-run\n")
+    rig.run(&report(RUN, "1", "audit-install", "2"), again)
         .must(OK, "the next attempt");
-    assert_eq!(rig.read(&report_path("1", "audit-install", "1")), first);
-    assert_eq!(
-        rig.read(&report_path("1", "audit-install", "2")),
-        "# a re-run\n"
-    );
+    assert_eq!(&rig.read(&report_path("1", "audit-install", "1")), first);
+    assert_eq!(&rig.read(&report_path("1", "audit-install", "2")), again);
 
     // A link lying at the path is not a free path, wherever it points.
     let outside = rig.dir.path().join("elsewhere.md");
@@ -751,7 +932,7 @@ fn a_taken_attempt_is_refused_and_the_next_attempt_lands_beside_it() {
     .expect("plant a link");
     rig.run(
         &report(RUN, "1", "audit-install", "3"),
-        "# through a link\n",
+        &format!("# through a link\n{ENDS}\n"),
     )
     .refused(OUTSIDE, "a dangling link at the report's path");
     assert!(!outside.exists(), "nothing was written through the link");
@@ -831,7 +1012,7 @@ struct IdSite {
     call: fn(&Rig, value: &str) -> Seen,
 }
 
-const BODY: &str = "# a report\n\nNothing found.\n";
+const BODY: &str = "# a report\n\nNothing found.\n<!-- end of report -->\n";
 
 const ID_SITES: &[IdSite] = &[
     IdSite {
@@ -965,6 +1146,63 @@ const ID_SITES: &[IdSite] = &[
         numeric: false,
         call: |rig, v| rig.run(&check_ledger(RUN, &["seeded", v]), ""),
     },
+    IdSite {
+        name: "bound-set --run",
+        numeric: false,
+        call: |rig, v| rig.run(&bound_set(v, "non-jigc-writer", &BOUND), ""),
+    },
+    IdSite {
+        name: "bound-set --bound",
+        numeric: false,
+        call: |rig, v| rig.run(&bound_set(RUN, v, &BOUND), ""),
+    },
+    IdSite {
+        name: "scope-set --run",
+        numeric: false,
+        call: |rig, v| rig.run(&scope_set(v, "1"), &scope(&["jigc setup"], &[]).to_string()),
+    },
+    IdSite {
+        name: "scope-set --round",
+        numeric: true,
+        call: |rig, v| rig.run(&scope_set(RUN, v), &scope(&["jigc setup"], &[]).to_string()),
+    },
+    IdSite {
+        name: "triage-set --run",
+        numeric: false,
+        call: |rig, v| {
+            let entry = json!({"key": "seeded", "grade": "no-break"});
+            rig.run(&triage_set(v, "1"), &entry.to_string())
+        },
+    },
+    IdSite {
+        name: "triage-set --round",
+        numeric: true,
+        call: |rig, v| {
+            let entry = json!({"key": "seeded", "grade": "no-break"});
+            rig.run(&triage_set(RUN, v), &entry.to_string())
+        },
+    },
+    IdSite {
+        name: "triage-set, an entry's key",
+        numeric: false,
+        call: |rig, v| {
+            let entry = json!({"key": v, "grade": "no-break"});
+            rig.run(&triage_set(RUN, "1"), &entry.to_string())
+        },
+    },
+    IdSite {
+        name: "triage-set, an entry's cited bound",
+        numeric: false,
+        call: |rig, v| {
+            let entry = json!({"key": "seeded", "grade": "out-of-scope", "bound": v});
+            rig.run(&triage_set(RUN, "1"), &entry.to_string())
+        },
+    },
+    IdSite {
+        name: "state --run",
+        numeric: false,
+        call: |rig, v| rig.run(&state(v), ""),
+    },
 ];
 
 #[test]
@@ -1004,7 +1242,7 @@ fn a_hostile_identifier_is_refused_at_every_site_and_nothing_is_written() {
             .map(|worker| worker.join().expect("a worker thread"))
             .sum()
     });
-    assert!(driven > 400, "the axis collapsed to {driven} cells");
+    assert!(driven > 600, "the axis collapsed to {driven} cells");
 }
 
 /// A slug has a length the file system can carry: a name of a thousand letters is not one.
@@ -1022,7 +1260,8 @@ fn an_identifier_too_long_for_a_file_name_is_refused() {
 // 3 · A run that was never opened
 // ---------------------------------------------------------------------------
 
-/// Every subcommand, aimed at `run`.
+/// Every subcommand but `state` — for which a run that was never opened is an answer and
+/// not a refusal — aimed at `run`.
 fn every_subcommand(rig: &Rig, run: &str) -> Vec<(&'static str, Seen)> {
     let patch = json!({"key": "seeded", "disposition": "later"});
     let rest = [
@@ -1049,6 +1288,24 @@ fn every_subcommand(rig: &Rig, run: &str) -> Vec<(&'static str, Seen)> {
             rig.run(&check_reports(run, "1", "1", &["audit-install"]), ""),
         ),
         ("check-ledger", rig.run(&check_ledger(run, &["seeded"]), "")),
+        (
+            "bound-set",
+            rig.run(&bound_set(run, "non-jigc-writer", &BOUND), ""),
+        ),
+        (
+            "scope-set",
+            rig.run(
+                &scope_set(run, "1"),
+                &scope(&["jigc setup"], &[]).to_string(),
+            ),
+        ),
+        (
+            "triage-set",
+            rig.run(
+                &triage_set(run, "1"),
+                &json!({"key": "seeded", "grade": "no-break"}).to_string(),
+            ),
+        ),
     ]
 }
 
@@ -1062,6 +1319,10 @@ fn a_run_that_was_never_opened_is_refused_and_no_directory_is_minted() {
     for (name, seen) in every_subcommand(&rig, "rc42") {
         seen.refused(NOT_OPENED, &format!("{name} on a run with no directory"));
     }
+    // To the one subcommand that only reads, "not opened" is the answer — as data.
+    let seen = rig.run(&state("rc42"), "");
+    seen.must(OK, "the state of a run with no directory");
+    assert_eq!(seen.json(), json!({"run": "rc42", "opened": false}));
     assert_eq!(rig.snapshot(), before, "no second run directory was minted");
 
     // A directory is not an opening: without its opening record the run is not open.
@@ -1079,6 +1340,11 @@ fn a_run_that_was_never_opened_is_refused_and_no_directory_is_minted() {
         for (name, seen) in every_subcommand(&rig, run) {
             seen.refused(NOT_OPENED, &format!("{name} on `{run}`"));
         }
+        assert_eq!(
+            rig.run(&state(run), "").json(),
+            json!({"run": run, "opened": false}),
+            "the state of `{run}`"
+        );
     }
     assert_eq!(rig.snapshot(), before);
 
@@ -1112,6 +1378,13 @@ fn a_link_inside_the_run_directory_never_carries_a_write_outside_it() {
             .refused(OUTSIDE, &format!("a report through a linked `{linked}`"));
         rig.run(&check_reports(RUN, "1", "1", &["audit-install"]), "")
             .refused(OUTSIDE, &format!("a check through a linked `{linked}`"));
+        rig.run(&state(RUN), "")
+            .refused(OUTSIDE, &format!("the state through a linked `{linked}`"));
+        if n == 0 {
+            let given = scope(&["jigc setup"], &[]).to_string();
+            rig.run(&scope_set(RUN, "1"), &given)
+                .refused(OUTSIDE, "a scope through a linked round directory");
+        }
         assert_eq!(rig.snapshot(), before);
     }
 
@@ -1121,6 +1394,9 @@ fn a_link_inside_the_run_directory_never_carries_a_write_outside_it() {
     fs::write(&outside, "not the run's\n").expect("a file outside the run");
     symlink(&outside, rig.run_dir().join("ledger.md")).expect("link the ledger");
     symlink(&outside, rig.run_dir().join("clauses.md")).expect("link the clause table");
+    symlink(&outside, rig.run_dir().join("bounds.md")).expect("link the bounds list");
+    fs::create_dir_all(rig.run_dir().join("r1")).expect("a round directory");
+    symlink(&outside, rig.run_dir().join("r1/scope.md")).expect("link a round's scope");
     let before = rig.snapshot();
     rig.run(&ledger_add(RUN), &row("audit-f3").to_string())
         .refused(OUTSIDE, "a ledger that is a link");
@@ -1128,6 +1404,15 @@ fn a_link_inside_the_run_directory_never_carries_a_write_outside_it() {
         .refused(OUTSIDE, "a check of a ledger that is a link");
     rig.run(&clause_set(RUN, "no-lost-files", &rest), "")
         .refused(OUTSIDE, "a clause table that is a link");
+    rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "")
+        .refused(OUTSIDE, "a bounds list that is a link");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&["jigc setup"], &[]).to_string(),
+    )
+    .refused(OUTSIDE, "a scope that is a link");
+    rig.run(&state(RUN), "")
+        .refused(OUTSIDE, "the state of a run whose tables are links");
     assert_eq!(rig.snapshot(), before);
 
     // The run directory itself, a link to an opened-looking directory elsewhere.
@@ -1143,6 +1428,8 @@ fn a_link_inside_the_run_directory_never_carries_a_write_outside_it() {
             &format!("{name} on a run directory that is a link"),
         );
     }
+    rig.run(&state("linked"), "")
+        .refused(OUTSIDE, "the state of a run directory that is a link");
     assert_eq!(rig.snapshot(), before);
 }
 
@@ -1236,10 +1523,12 @@ fn a_report_carries_no_host_path_only_the_public_placeholders() {
         ),
     ];
     let body: String = lines.iter().map(|(raw, _)| format!("{raw}\n")).collect();
+    let body = format!("{body}{ENDS}\n");
     let want: String = lines
         .iter()
         .map(|(_, clean)| format!("{clean}\n"))
         .collect();
+    let want = format!("{want}{ENDS}\n");
 
     let mut args = report(RUN, "1", "audit-install", "1");
     args.push(format!("--scratch={scratch}"));
@@ -1250,6 +1539,9 @@ fn a_report_carries_no_host_path_only_the_public_placeholders() {
 #[test]
 fn every_writer_replaces_a_host_path() {
     for_every_writer("writer-paths", |writer, rig| {
+        if !writer.free_text {
+            return;
+        }
         let scratch = format!("{}/agent/scratchpad", rig.tmp.display());
         let text = format!(
             "see {}/dev/gate, {}/notes and {scratch}/run.sh",
@@ -1280,6 +1572,9 @@ fn every_writer_replaces_a_host_path() {
 #[test]
 fn an_undeclared_scratch_area_is_refused_rather_than_half_replaced() {
     for_every_writer("writer-scratch", |writer, rig| {
+        if !writer.free_text {
+            return;
+        }
         let scratch = format!(
             "{}/agent-501/{}-projects-jigc/0a1b/scratchpad",
             rig.tmp.display(),
@@ -1324,6 +1619,9 @@ fn a_scratch_root_that_is_not_an_absolute_path_is_refused() {
 #[test]
 fn every_writer_stops_hard_on_a_denylist_hit_and_never_says_what_matched() {
     for_every_writer("writer-denylist", |writer, rig| {
+        if !writer.free_text {
+            return;
+        }
         // Case-insensitively, as the scanner matches.
         let term = DENY_TERM.to_uppercase();
         let before = rig.snapshot();
@@ -1342,6 +1640,9 @@ fn every_writer_stops_hard_on_a_denylist_hit_and_never_says_what_matched() {
 #[test]
 fn every_writer_stops_hard_on_a_secret_shaped_string() {
     for_every_writer("writer-secret", |writer, rig| {
+        if !writer.free_text {
+            return;
+        }
         let before = rig.snapshot();
         let (seen, _) = (writer.call)(rig, &format!("the token was {STUB_SECRET}"), &[]);
         seen.refused(HYGIENE, writer.name);
@@ -1475,7 +1776,7 @@ fn the_machines_own_gitleaks_never_lets_a_credential_through() {
     let before = rig.snapshot();
     let seen = rig.run(
         &report(RUN, "1", "audit-install", "1"),
-        &format!("# a report\n\nthe environment held {token}\n"),
+        &format!("# a report\n\nthe environment held {token}\n{ENDS}\n"),
     );
     let (status, what) = if installed {
         (HYGIENE, "gitleaks is installed: a credential is a hit")
@@ -1515,7 +1816,7 @@ fn a_report_that_would_redden_the_install_line_fence_is_refused_by_that_fences_n
     ] {
         let seen = rig.run(
             &report(RUN, "1", "audit-install", "1"),
-            &format!("# the install proof\n\n{line}\n"),
+            &format!("# the install proof\n\n{line}\n{ENDS}\n"),
         );
         seen.refused(FENCE, why);
         assert!(
@@ -1530,8 +1831,9 @@ fn a_report_that_would_redden_the_install_line_fence_is_refused_by_that_fences_n
 
     // The same command where the fence does not read it is a report like any other — and
     // the fence's own census says so, over the tree the script wrote.
-    let body =
-        format!("# the install proof\n\nRan `{INSTALL_COMMAND} --locked`.\n$ {INSTALL_COMMAND}\n");
+    let body = format!(
+        "# the install proof\n\nRan `{INSTALL_COMMAND} --locked`.\n$ {INSTALL_COMMAND}\n{ENDS}\n"
+    );
     rig.run(&report(RUN, "1", "audit-install", "1"), &body)
         .must(OK, "the command inside a line");
     assert_eq!(install_line_carriers(&rig.root), BTreeSet::new());
@@ -1542,7 +1844,7 @@ fn a_report_that_would_redden_the_install_line_fence_is_refused_by_that_fences_n
 #[test]
 fn no_table_cell_can_redden_the_install_line_fence() {
     for_every_writer("fence-cells", |writer, rig| {
-        if writer.name.starts_with("report") {
+        if writer.name.starts_with("report") || !writer.free_text {
             return;
         }
         rig.init_repository();
@@ -1744,6 +2046,8 @@ fn no_cell_can_break_the_table() {
 #[test]
 fn a_rows_grade_and_disposition_are_set_later_from_a_closed_vocabulary() {
     let rig = Rig::new("ledger-set");
+    rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "")
+        .must(OK, "the bound a grade below cites");
 
     // Every grade its grader may give, and every disposition, with the cell it becomes.
     let sayable: &[(Value, usize, &str)] = &[
@@ -1761,6 +2065,11 @@ fn a_rows_grade_and_disposition_are_set_later_from_a_closed_vocabulary() {
             json!({"grade": "out-of-scope", "graded_by": "triage", "bound": "non-jigc-writer"}),
             6,
             "out-of-scope: non-jigc-writer",
+        ),
+        (
+            json!({"grade": "needs-bound", "graded_by": "triage"}),
+            6,
+            "needs-bound",
         ),
         (
             json!({"grade": "confirmed", "graded_by": "verify-real"}),
@@ -1962,6 +2271,10 @@ fn a_value_outside_the_vocabulary_is_refused_and_nothing_of_its_batch_is_written
         (
             graded("out-of-scope", json!("triage")),
             "out of scope, citing no bound",
+        ),
+        (
+            graded("needs-bound", json!("verify-real")),
+            "a triage grade given by the verifier",
         ),
         (
             {
@@ -2461,7 +2774,7 @@ fn help_is_the_header_and_states_every_subcommand_and_every_exit_status() {
     let seen = rig.run(&strings(&["--help"]), "");
     seen.must(OK, "--help");
     let subcommands = subcommands(&rig);
-    assert!(subcommands.len() >= 6, "the parser names its subcommands");
+    assert!(subcommands.len() >= 10, "the parser names its subcommands");
     for subcommand in subcommands {
         assert!(
             seen.stdout
@@ -2485,6 +2798,10 @@ fn help_is_the_header_and_states_every_subcommand_and_every_exit_status() {
     assert!(
         seen.stdout.contains("opening.md"),
         "--help says what an opened run is"
+    );
+    assert!(
+        seen.stdout.contains(ENDS),
+        "--help spells the line a report ends with"
     );
 
     for (args, why) in [
@@ -2511,4 +2828,1604 @@ fn help_is_the_header_and_states_every_subcommand_and_every_exit_status() {
         "the refusal's dash arrives as itself: {}",
         refusal.stderr
     );
+}
+
+// ---------------------------------------------------------------------------
+// 13 · A report that was cut off is not a short report
+// ---------------------------------------------------------------------------
+
+/// A report piped from a command that died arrives as a shorter text, and a shorter text
+/// is still text. So a report ends with one line saying that it ended, and what lacks it
+/// is refused.
+#[test]
+fn a_report_that_was_cut_off_is_refused_and_never_written_as_a_short_report() {
+    let rig = Rig::new("cut-off");
+    let whole = format!("# a long report\n\nfinding 1: lost a file\nfinding 2: none\n{ENDS}\n");
+    let at = |needle: &str| whole.find(needle).expect("the needle is in the report");
+    let before = rig.snapshot();
+
+    let cut: Vec<(String, &str)> = vec![
+        (
+            whole[..at("finding 2")].to_owned(),
+            "the pipe closed between two findings",
+        ),
+        (
+            whole[..at("finding 2") + 4].to_owned(),
+            "the pipe closed inside a line",
+        ),
+        (
+            whole[..at(ENDS) + 9].to_owned(),
+            "the pipe closed inside the last line",
+        ),
+        (
+            format!("{whole}and a line after the end\n"),
+            "text after the line that ends the report",
+        ),
+        (
+            format!("# a report\n\nIt ends with `{ENDS}`, always.\n"),
+            "the line only quoted inside another",
+        ),
+    ];
+    for (text, why) in &cut {
+        let seen = rig.run(&report(RUN, "1", "audit-install", "1"), text);
+        seen.refused(TRUNCATED, why);
+        assert!(
+            seen.stderr.contains(ENDS),
+            "{why}: the refusal spells the line: {}",
+            seen.stderr
+        );
+        assert_eq!(rig.snapshot(), before, "{why}: nothing written");
+    }
+
+    // The whole report, however its last line is terminated.
+    for (n, (text, why)) in [
+        (whole.clone(), "the whole report"),
+        (whole.trim_end().to_owned(), "with no final line break"),
+        (
+            format!("{}\r\n\n\n", whole.trim_end()),
+            "with a CR and blank lines after it",
+        ),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let attempt = (n + 1).to_string();
+        rig.run(&report(RUN, "1", "audit-install", &attempt), text)
+            .must(OK, why);
+        assert!(
+            rig.read(&report_path("1", "audit-install", &attempt))
+                .starts_with(&whole[..at(ENDS)]),
+            "{why}: every finding is in the file"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 14 · The declared-bounds list
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_bound_enters_the_list_only_as_the_record_of_a_ruling() {
+    let rig = Rig::new("bounds");
+    let seen = rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "");
+    seen.must(OK, "a bound's first row");
+    assert_eq!(
+        seen.json(),
+        json!({"bounds": bounds_path(), "bound": "non-jigc-writer"})
+    );
+    rig.run(
+        &bound_set(
+            RUN,
+            "planted-state",
+            &[
+                "--reach=a state nobody reaches without planting it",
+                "--ruling=the stop after round 1, item 3",
+                "--pin=flow12::a_planted_state_is_refused",
+            ],
+        ),
+        "",
+    )
+    .must(OK, "a second bound");
+    // A bound is pinned later: the cell named, and nothing else of the row.
+    rig.run(
+        &bound_set(RUN, "non-jigc-writer", &["--pin=flow9::two_writers"]),
+        "",
+    )
+    .must(OK, "the pin, set later");
+    assert_eq!(
+        table(&rig.read(&bounds_path()), &BOUND_COLUMNS),
+        vec![
+            vec![
+                "`non-jigc-writer`",
+                "races against a writer that is not jigc",
+                "the opening record, declared bounds",
+                "flow9::two_writers",
+            ],
+            vec![
+                "`planted-state`",
+                "a state nobody reaches without planting it",
+                "the stop after round 1, item 3",
+                "flow12::a_planted_state_is_refused",
+            ],
+        ]
+    );
+    assert_eq!(
+        rig.state()["bounds"],
+        json!([
+            {
+                "bound": "non-jigc-writer",
+                "reach": "races against a writer that is not jigc",
+                "ruling": "the opening record, declared bounds",
+                "pin": "flow9::two_writers",
+            },
+            {
+                "bound": "planted-state",
+                "reach": "a state nobody reaches without planting it",
+                "ruling": "the stop after round 1, item 3",
+                "pin": "flow12::a_planted_state_is_refused",
+            },
+        ]),
+        "the list, read back as data"
+    );
+
+    // A row with no ruling behind it, no reach or no word on its pin is no row.
+    let before = rig.snapshot();
+    let refused: &[(&[&str], &str, i32)] = &[
+        (
+            &BOUND[..2],
+            "a new bound with no word on its pin",
+            BAD_VALUE,
+        ),
+        (&BOUND[1..], "a new bound with no reach", BAD_VALUE),
+        (
+            &[BOUND[0], BOUND[2]],
+            "a new bound with no ruling behind it",
+            BAD_VALUE,
+        ),
+        (
+            &[BOUND[0], "--ruling=  ", BOUND[2]],
+            "a ruling of whitespace",
+            BAD_VALUE,
+        ),
+        (&[], "an update that sets nothing", USAGE),
+    ];
+    for (rest, why, status) in refused {
+        rig.run(&bound_set(RUN, "a-third", rest), "")
+            .refused(*status, why);
+    }
+    rig.run(&bound_set(RUN, "planted-state", &["--reach="]), "")
+        .refused(BAD_VALUE, "a reach emptied later");
+    assert_eq!(rig.snapshot(), before);
+}
+
+/// Every way a grade reaches the ledger, citing `bound`.
+fn grade_citers(rig: &Rig, bound: &str) -> Vec<(&'static str, Seen)> {
+    let mut entry = row("audit-f9");
+    entry["grade"] = json!("out-of-scope");
+    entry["graded_by"] = json!("triage");
+    entry["bound"] = json!(bound);
+    let patch =
+        json!({"key": "seeded", "grade": "out-of-scope", "graded_by": "human", "bound": bound});
+    let triaged = json!({"key": "seeded", "grade": "out-of-scope", "bound": bound});
+    vec![
+        (
+            "ledger-add",
+            rig.run(
+                &ledger_add(RUN),
+                &json!([row("audit-f8"), entry]).to_string(),
+            ),
+        ),
+        ("ledger-set", rig.run(&ledger_set(RUN), &patch.to_string())),
+        (
+            "triage-set",
+            rig.run(&triage_set(RUN, "1"), &triaged.to_string()),
+        ),
+    ]
+}
+
+/// "Out of scope" is the one grade that takes a finding off the human's list unseen, so it
+/// is sayable only of a bound the human declared.
+#[test]
+fn out_of_scope_is_refused_unless_it_cites_a_bound_on_the_list() {
+    let rig = Rig::new("bound-cited");
+    rig.seed_rows(&["seeded"]);
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&["jigc setup"], &[]).to_string(),
+    )
+    .must(OK, "the round's scope");
+
+    // No list at all, and then a list that holds another bound.
+    for listed in [None, Some("planted-state")] {
+        if let Some(bound) = listed {
+            rig.run(&bound_set(RUN, bound, &BOUND), "")
+                .must(OK, "another bound");
+        }
+        let before = rig.snapshot();
+        for (name, seen) in grade_citers(&rig, "non-jigc-writer") {
+            let what = format!("{name} citing a bound the list lacks (listed: {listed:?})");
+            seen.refused(NO_SUCH_BOUND, &what);
+            assert!(
+                seen.stderr.contains("non-jigc-writer"),
+                "{what}: the refusal names the bound: {}",
+                seen.stderr
+            );
+        }
+        assert_eq!(rig.snapshot(), before, "nothing of any batch was written");
+    }
+
+    // The control: once the human's ruling is on the list, each of the three takes it.
+    rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "")
+        .must(OK, "the bound, declared");
+    for (name, seen) in grade_citers(&rig, "non-jigc-writer") {
+        seen.must(OK, &format!("{name} citing a listed bound"));
+    }
+    let rows = table(&rig.read(&ledger_path()), &LEDGER_COLUMNS);
+    assert_eq!(rows[0][6], "out-of-scope: non-jigc-writer");
+}
+
+// ---------------------------------------------------------------------------
+// 15 · A round's doors
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_rounds_doors_are_written_once_from_structured_input_and_read_back() {
+    let rig = Rig::new("scope");
+    let mut given = scope(&["jigc setup", "jigc task finalize"], &["jigc doc show"]);
+    given["excluded"][0]["derivation"] = json!(format!(
+        "no changed symbol reaches it | see {}/dev/gate",
+        rig.root.display()
+    ));
+
+    let seen = rig.run(&scope_set(RUN, "2"), &given.to_string());
+    seen.must(OK, "a round's scope");
+    assert_eq!(
+        seen.json(),
+        json!({"scope": scope_path("2"), "included": 2, "excluded": 1})
+    );
+    assert_eq!(
+        table(&rig.read(&scope_path("2")), &SCOPE_COLUMNS),
+        vec![
+            vec![
+                "jigc setup",
+                "included",
+                "the verb table",
+                "a changed symbol is read by `jigc setup`",
+            ],
+            vec![
+                "jigc task finalize",
+                "included",
+                "the verb table",
+                "a changed symbol is read by `jigc task finalize`",
+            ],
+            vec![
+                "jigc doc show",
+                "excluded",
+                "the verb table",
+                "no changed symbol reaches it | see dev/gate",
+            ],
+        ]
+    );
+
+    // Read back as data: the doors of the highest round, as they were handed over.
+    let read = rig.state();
+    assert_eq!(read["round"], json!(2));
+    assert_eq!(
+        read["doors"],
+        json!({
+            "included": [
+                {
+                    "door": "jigc setup",
+                    "registry": "the verb table",
+                    "derivation": "a changed symbol is read by `jigc setup`",
+                },
+                {
+                    "door": "jigc task finalize",
+                    "registry": "the verb table",
+                    "derivation": "a changed symbol is read by `jigc task finalize`",
+                },
+            ],
+            "excluded": [
+                {
+                    "door": "jigc doc show",
+                    "registry": "the verb table",
+                    "derivation": "no changed symbol reaches it | see dev/gate",
+                },
+            ],
+        })
+    );
+
+    // A round's test set is written once: a second scope is refused, whatever it says.
+    let before = rig.snapshot();
+    rig.run(&scope_set(RUN, "2"), &scope(&[], &[]).to_string())
+        .refused(EXISTS, "a second scope for the round");
+
+    // And a scope says, of every door, which side it is on, where it comes from and why.
+    let with = |side: &str, field: &str, value: Value| {
+        let mut given = scope(&["jigc setup"], &["jigc doc show"]);
+        given[side][0][field] = value;
+        given
+    };
+    let without = |side: &str, field: &str| {
+        let mut given = scope(&["jigc setup"], &["jigc doc show"]);
+        given[side][0]
+            .as_object_mut()
+            .expect("a door object")
+            .remove(field);
+        given
+    };
+    let malformed: Vec<(String, &str)> = vec![
+        (String::new(), "no input"),
+        (
+            "{\"included\": [{\"door\"".to_owned(),
+            "input that was cut off",
+        ),
+        ("[]".to_owned(), "a scope that is a list"),
+        (
+            json!({"included": []}).to_string(),
+            "no excluded doors named",
+        ),
+        (
+            json!({"excluded": []}).to_string(),
+            "no included doors named",
+        ),
+        (
+            json!({"included": {}, "excluded": []}).to_string(),
+            "a side that is not a list",
+        ),
+        (
+            json!({"included": ["jigc setup"], "excluded": []}).to_string(),
+            "a door that is only a name",
+        ),
+        (
+            without("included", "derivation").to_string(),
+            "a door with no derivation",
+        ),
+        (
+            without("excluded", "registry").to_string(),
+            "a door with no registry",
+        ),
+        (
+            with("excluded", "derivation", json!("  ")).to_string(),
+            "a derivation of whitespace",
+        ),
+        (
+            with("included", "door", json!("")).to_string(),
+            "a door with no name",
+        ),
+        (
+            with("included", "door", json!(7)).to_string(),
+            "a door that is not text",
+        ),
+        (
+            with("included", "inside", json!(true)).to_string(),
+            "a field nobody knows",
+        ),
+        (
+            scope(&["jigc setup", "jigc setup"], &[]).to_string(),
+            "a door listed twice",
+        ),
+        (
+            scope(&["jigc setup"], &["jigc setup"]).to_string(),
+            "a door on both sides",
+        ),
+    ];
+    for (input, why) in &malformed {
+        rig.run(&scope_set(RUN, "3"), input).refused(BAD_VALUE, why);
+    }
+    assert_eq!(rig.snapshot(), before);
+
+    // A round that tests nothing says so, with both sides empty.
+    rig.run(&scope_set(RUN, "3"), &scope(&[], &[]).to_string())
+        .must(OK, "a scope with no door");
+    assert_eq!(
+        rig.state()["doors"],
+        json!({"included": [], "excluded": []})
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 16 · A round's triage record
+// ---------------------------------------------------------------------------
+
+/// The three doors of the truth tables: one inside the round's test set, one the scope
+/// step left out of it, and one it never listed.
+const INSIDE: &str = "jigc setup";
+const EXCLUDED: &str = "jigc doc show";
+const UNLISTED: &str = "jigc rename";
+
+/// A ledger row at `door`.
+fn row_at(key: &str, door: &str) -> Value {
+    let mut entry = row(key);
+    entry["door"] = json!(door);
+    entry
+}
+
+#[test]
+fn a_rounds_triage_is_recorded_with_inside_computed_from_the_rounds_doors() {
+    let rig = Rig::new("triage");
+    rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "")
+        .must(OK, "a declared bound");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "round 1's scope");
+    let mut fixed = row_at("f-fixed", INSIDE);
+    fixed["disposition"] = json!("fixed");
+    fixed["detail"] = json!("0f34d8f0");
+    let rows = json!([
+        row_at("f-in", INSIDE),
+        row_at("f-out", EXCLUDED),
+        row_at("f-unlisted", UNLISTED),
+        row_at("f-bounded", INSIDE),
+        row_at("f-waiting", INSIDE),
+        fixed,
+        row_at("f-untouched", INSIDE),
+    ]);
+    rig.run(&ledger_add(RUN), &rows.to_string())
+        .must(OK, "the round's findings");
+
+    let entries = json!([
+        {"key": "f-in", "grade": "breaks", "verdict": "confirmed", "regression": false},
+        {"key": "f-out", "grade": "unclear", "verdict": "confirmed", "regression": true},
+        {"key": "f-unlisted", "grade": "breaks", "verdict": "refuted"},
+        {"key": "f-bounded", "grade": "out-of-scope", "bound": "non-jigc-writer"},
+        {"key": "f-waiting", "grade": "unclear"},
+        {"key": "f-fixed", "grade": "needs-bound"},
+    ]);
+    let seen = rig.run(&triage_set(RUN, "1"), &entries.to_string());
+    seen.must(OK, "the round's triage");
+    assert_eq!(
+        seen.json(),
+        json!({
+            "triage": triage_path("1"),
+            "ledger": ledger_path(),
+            "recorded": ["f-in", "f-out", "f-unlisted", "f-bounded", "f-waiting", "f-fixed"],
+        })
+    );
+
+    // The round's record: what triage and the verifier established, where the script put
+    // each finding, and the disposition each row carried into the round.
+    assert_eq!(
+        table(&rig.read(&triage_path("1")), &TRIAGE_COLUMNS),
+        vec![
+            vec!["`f-in`", "inside", "breaks", "confirmed", "no", "open"],
+            vec![
+                "`f-out`",
+                "outside: excluded",
+                "unclear",
+                "confirmed",
+                "yes",
+                "open"
+            ],
+            vec![
+                "`f-unlisted`",
+                "outside: unlisted",
+                "breaks",
+                "refuted",
+                "-",
+                "open"
+            ],
+            vec![
+                "`f-bounded`",
+                "inside",
+                "out-of-scope: non-jigc-writer",
+                "-",
+                "-",
+                "open",
+            ],
+            vec!["`f-waiting`", "inside", "unclear", "-", "-", "open"],
+            vec![
+                "`f-fixed`",
+                "inside",
+                "needs-bound",
+                "-",
+                "-",
+                "fixed: 0f34d8f0"
+            ],
+        ]
+    );
+    // And the ledger's grade follows from it — one entry, never two that could disagree.
+    let ledger = table(&rig.read(&ledger_path()), &LEDGER_COLUMNS);
+    let graded: Vec<(&str, &str, &str)> = ledger
+        .iter()
+        .map(|r| (r[0].as_str(), r[6].as_str(), r[7].as_str()))
+        .collect();
+    assert_eq!(
+        graded,
+        [
+            ("`f-in`", "confirmed", "verify-real"),
+            ("`f-out`", "regression", "verify-real"),
+            ("`f-unlisted`", "refuted", "verify-real"),
+            ("`f-bounded`", "out-of-scope: non-jigc-writer", "triage"),
+            ("`f-waiting`", "unclear", "triage"),
+            ("`f-fixed`", "needs-bound", "triage"),
+            ("`f-untouched`", "ungraded", "-"),
+        ]
+    );
+    assert_eq!(
+        ledger[5][8], "fixed: 0f34d8f0",
+        "a disposition is never touched"
+    );
+
+    // The verdict arrives later: the entry is recorded again and replaces its row.
+    let verdict = json!({"key": "f-waiting", "grade": "unclear", "verdict": "refuted"});
+    rig.run(&triage_set(RUN, "1"), &verdict.to_string())
+        .must(OK, "the verdict, later");
+    let rows = table(&rig.read(&triage_path("1")), &TRIAGE_COLUMNS);
+    assert_eq!(rows.len(), 6, "one row per finding of the round");
+    assert_eq!(
+        rows[4],
+        ["`f-waiting`", "inside", "unclear", "refuted", "-", "open"]
+    );
+
+    // Read back as data, beside the row it belongs to.
+    let read = rig.state();
+    let found = |key: &str| {
+        read["ledger"]
+            .as_array()
+            .expect("the ledger's rows")
+            .iter()
+            .find(|entry| entry["key"] == key)
+            .unwrap_or_else(|| panic!("no row `{key}` in {read}"))
+            .clone()
+    };
+    assert_eq!(
+        found("f-out")["triage"],
+        json!({
+            "round": 1,
+            "inside": false,
+            "door": "excluded",
+            "grade": "unclear",
+            "bound": null,
+            "verdict": "confirmed",
+            "regression": true,
+            "found_with": "open",
+        })
+    );
+    assert_eq!(found("f-untouched")["triage"], Value::Null);
+
+    // What an entry may not say. `inside` above all: it is computed, never supplied.
+    let before = rig.snapshot();
+    let entry = |extra: Value| {
+        let mut entry = json!({"key": "f-untouched", "grade": "breaks"});
+        for (field, value) in extra.as_object().expect("an object") {
+            entry[field] = value.clone();
+        }
+        entry
+    };
+    let malformed: Vec<(Value, &str)> = vec![
+        (entry(json!({"inside": true})), "`inside`, supplied"),
+        (entry(json!({"door": INSIDE})), "a door, supplied"),
+        (entry(json!({"graded_by": "human"})), "a grader, supplied"),
+        (
+            entry(json!({"grade": "confirmed"})),
+            "a verdict as the triage grade",
+        ),
+        (
+            entry(json!({"grade": "severe"})),
+            "a grade outside the vocabulary",
+        ),
+        (
+            entry(json!({"verdict": "confirmed"})),
+            "confirmed, with no word on regression",
+        ),
+        (
+            entry(json!({"verdict": "confirmed", "regression": "yes"})),
+            "a regression that is not a boolean",
+        ),
+        (
+            entry(json!({"verdict": "refuted", "regression": false})),
+            "a regression of a refuted finding",
+        ),
+        (
+            entry(json!({"regression": true})),
+            "a regression with no verdict",
+        ),
+        (
+            entry(json!({"verdict": "regression"})),
+            "a verdict outside the two",
+        ),
+        (
+            entry(json!({"grade": "no-break", "verdict": "refuted"})),
+            "a verdict on a finding triage did not send to the verifier",
+        ),
+        (
+            entry(json!({"grade": "out-of-scope"})),
+            "out of scope, citing no bound",
+        ),
+        (
+            entry(json!({"bound": "non-jigc-writer"})),
+            "a bound cited by another grade",
+        ),
+        (json!({"grade": "breaks"}), "an entry with no key"),
+        (json!({"key": "f-untouched"}), "an entry with no grade"),
+    ];
+    for (entry, why) in &malformed {
+        let batch = json!([{"key": "f-in", "grade": "no-break"}, entry]);
+        rig.run(&triage_set(RUN, "1"), &batch.to_string())
+            .refused(BAD_VALUE, why);
+        assert_eq!(rig.snapshot(), before, "{why}: nothing of the batch");
+    }
+    let twice = json!([
+        {"key": "f-in", "grade": "no-break"},
+        {"key": "f-in", "grade": "breaks"},
+    ]);
+    rig.run(&triage_set(RUN, "1"), &twice.to_string())
+        .refused(BAD_VALUE, "a finding triaged twice in one batch");
+    for (input, why) in [
+        ("", "no input"),
+        ("[{\"key\": \"f-in\", \"gra", "a batch cut off"),
+    ] {
+        rig.run(&triage_set(RUN, "1"), input)
+            .refused(BAD_VALUE, why);
+    }
+
+    // A finding with no ledger row has no door to compute from; a round with no scope has
+    // no doors to compute against.
+    let stranger = json!([
+        {"key": "f-in", "grade": "no-break"},
+        {"key": "never-filed", "grade": "no-break"},
+    ]);
+    rig.run(&triage_set(RUN, "1"), &stranger.to_string())
+        .refused(NO_SUCH_ROW, "a finding the ledger lacks");
+    rig.run(
+        &triage_set(RUN, "2"),
+        &json!({"key": "f-in", "grade": "no-break"}).to_string(),
+    )
+    .refused(NO_SCOPE, "a round whose scope was never written");
+    assert_eq!(rig.snapshot(), before);
+}
+
+// ---------------------------------------------------------------------------
+// 17 · The state, as one document
+// ---------------------------------------------------------------------------
+
+#[test]
+fn state_is_the_runs_committed_state_as_one_json_document() {
+    let rig = Rig::new("state");
+
+    // An opened run with nothing in it — and reading it writes nothing.
+    let before = rig.snapshot();
+    assert_eq!(
+        rig.state(),
+        json!({
+            "run": RUN,
+            "opened": true,
+            "rounds": [],
+            "round": null,
+            "doors": null,
+            "bounds": [],
+            "clauses": [],
+            "ledger": [],
+            "blockers": [],
+            "human_list": [],
+            "unsettled": [{"cell": "nothing-open-and-no-close", "keys": []}],
+            "forbids_close": [{"clauses": "no row"}],
+            "next": "unsettled",
+        })
+    );
+    assert_eq!(rig.snapshot(), before, "the state is read, never written");
+
+    // Round 1: two test-stage reports and a re-run of one, two fix cycles, a scope, a
+    // triage record and a round record. Round 2: one report, and nothing else yet.
+    for (round, reporter, attempt) in [
+        ("1", "audit-install", "1"),
+        ("1", "review-source", "1"),
+        ("1", "review-source", "2"),
+        ("2", "audit-install", "1"),
+    ] {
+        rig.run(&report(RUN, round, reporter, attempt), BODY)
+            .must(OK, "a test-stage report");
+    }
+    for cycle in ["1", "2"] {
+        let mut fix = strings(&["report", "--round=1", "--stage=fix", "--attempt=1"]);
+        fix.extend([
+            format!("--run={RUN}"),
+            format!("--cycle={cycle}"),
+            "--reporter=fixer-install".to_owned(),
+        ]);
+        rig.run(&fix, BODY).must(OK, "a fix-stage report");
+    }
+    fs::write(rig.run_dir().join("r1/round.md"), "# round 1\n").expect("a round record");
+    rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "")
+        .must(OK, "a declared bound");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "round 1's scope");
+    rig.run(
+        &clause_set(
+            RUN,
+            "no-lost-files",
+            &[
+                "--instrument=the audit | of the fix diff",
+                "--scope=the delta",
+                "--commit=0f34d8f0",
+                "--status=green",
+            ],
+        ),
+        "",
+    )
+    .must(OK, "a clause that ran");
+    rig.run(
+        &clause_set(
+            RUN,
+            "no-regression",
+            &[
+                "--instrument=the scripted regression set",
+                "--scope=everything",
+                "--status=void",
+            ],
+        ),
+        "",
+    )
+    .must(OK, "a clause that never ran");
+    let mut second = row_at("audit-f4", EXCLUDED);
+    second["doctype"] = json!("inconsistency");
+    second["round"] = json!(0);
+    second["grade"] = json!("out-of-scope");
+    second["graded_by"] = json!("human");
+    second["bound"] = json!("non-jigc-writer");
+    second["disposition"] = json!("later");
+    second["detail"] = json!("the 1.x fix pass");
+    rig.run(
+        &ledger_add(RUN),
+        &json!([row_at("audit-f3", INSIDE), second]).to_string(),
+    )
+    .must(OK, "two findings");
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "audit-f3", "grade": "breaks", "verdict": "confirmed", "regression": false})
+            .to_string(),
+    )
+    .must(OK, "round 1's triage");
+
+    assert_eq!(
+        rig.state(),
+        json!({
+            "run": RUN,
+            "opened": true,
+            "rounds": [
+                {
+                    "round": 1,
+                    "scope": true,
+                    "triage": true,
+                    "record": true,
+                    "test_reports": 3,
+                    "fix_cycles": [
+                        {"cycle": 1, "reports": 1},
+                        {"cycle": 2, "reports": 1},
+                    ],
+                },
+                {
+                    "round": 2,
+                    "scope": false,
+                    "triage": false,
+                    "record": false,
+                    "test_reports": 1,
+                    "fix_cycles": [],
+                },
+            ],
+            "round": 2,
+            "doors": null,
+            "bounds": [{
+                "bound": "non-jigc-writer",
+                "reach": "races against a writer that is not jigc",
+                "ruling": "the opening record, declared bounds",
+                "pin": "unpinned",
+            }],
+            "clauses": [
+                {
+                    "clause": "no-lost-files",
+                    "instrument": "the audit | of the fix diff",
+                    "commit": "0f34d8f0",
+                    "scope": "the delta",
+                    "status": "green",
+                },
+                {
+                    "clause": "no-regression",
+                    "instrument": "the scripted regression set",
+                    "commit": null,
+                    "scope": "everything",
+                    "status": "void",
+                },
+            ],
+            "ledger": [
+                {
+                    "key": "audit-f3",
+                    "doctype": "jigc-feedback",
+                    "round": 1,
+                    "source": "audit-install, finding 3",
+                    "door": INSIDE,
+                    "clause": "no-lost-files",
+                    "grade": "confirmed",
+                    "bound": null,
+                    "graded_by": "verify-real",
+                    "disposition": "open",
+                    "detail": null,
+                    "repro": "r1/reports/test/audit-install.a1.md, the third block",
+                    "triage": {
+                        "round": 1,
+                        "inside": true,
+                        "door": "included",
+                        "grade": "breaks",
+                        "bound": null,
+                        "verdict": "confirmed",
+                        "regression": false,
+                        "found_with": "open",
+                    },
+                    "route": "fix",
+                    "why": "inside",
+                },
+                {
+                    "key": "audit-f4",
+                    "doctype": "inconsistency",
+                    "round": 0,
+                    "source": "audit-install, finding 3",
+                    "door": EXCLUDED,
+                    "clause": "no-lost-files",
+                    "grade": "out-of-scope",
+                    "bound": "non-jigc-writer",
+                    "graded_by": "human",
+                    "disposition": "later",
+                    "detail": "the 1.x fix pass",
+                    "repro": "r1/reports/test/audit-install.a1.md, the third block",
+                    "triage": null,
+                    "route": "recorded",
+                    "why": "ruled",
+                },
+            ],
+            "blockers": ["audit-f3"],
+            "human_list": [],
+            "unsettled": [],
+            "forbids_close": [
+                {"clause": "no-regression", "status": "void"},
+                {"finding": "audit-f3", "route": "fix"},
+            ],
+            "next": "fix",
+        })
+    );
+}
+
+/// A table writer replaces its file, and `triage-set` replaces two. The state is read
+/// between two writes, never across one: it waits for the write in flight.
+#[test]
+fn state_waits_for_a_write_in_flight_and_reads_what_it_wrote() {
+    let mut rig = Rig::new("state-lock");
+    rig.env.push(("STUB_GITLEAKS", "slow".to_owned()));
+    let mut writer = rig
+        .command(&ledger_add(RUN))
+        .spawn()
+        .expect("spawn the writer");
+    child_stdin::feed(&mut writer, row("audit-f3").to_string());
+    // The writer is in its scan — it holds the lock, and will for two seconds more —
+    // once the scan's working directory is there.
+    let patience = Instant::now() + Duration::from_secs(30);
+    let scanning = |tmp: &Path| {
+        fs::read_dir(tmp)
+            .expect("read the rig's temp directory")
+            .flatten()
+            .any(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("jigc-stabilize-scan-")
+            })
+    };
+    while !scanning(&rig.tmp) {
+        assert!(
+            Instant::now() < patience,
+            "the writer never reached its scan"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        !rig.root.join(ledger_path()).exists(),
+        "the control: nothing is written yet"
+    );
+
+    rig.env.clear();
+    let read = rig.state();
+    assert_eq!(
+        read["ledger"][0]["key"],
+        json!("audit-f3"),
+        "the state was read after the write, not during it: {read}"
+    );
+    let status = writer.wait().expect("the writer exits");
+    assert!(status.success(), "the writer wrote: {status:?}");
+}
+
+/// The state is read from five tables, and none of them is read on a guess: a table that
+/// is not the script's, a cell outside its vocabulary, and a triage record that disagrees
+/// with the doors it was computed from are each refused.
+#[test]
+fn state_refuses_a_record_it_cannot_read_as_the_scripts_own() {
+    type Damage = (&'static str, fn() -> String, fn(&str) -> String);
+    let damage: &[Damage] = &[
+        ("a ledger row that lost a cell", ledger_path, |text| {
+            text.replacen("| `jigc-feedback` ", "", 1)
+        }),
+        ("a grade somebody wrote by hand", ledger_path, |text| {
+            text.replacen("| confirmed |", "| severe |", 1)
+        }),
+        (
+            "a disposition somebody wrote by hand",
+            ledger_path,
+            |text| text.replacen("| open |", "| wontfix |", 1),
+        ),
+        (
+            "a clause status somebody wrote by hand",
+            clauses_path,
+            |text| text.replacen("| green |", "| passed |", 1),
+        ),
+        ("prose after the bounds list", bounds_path, |text| {
+            format!("{text}\nA bound somebody thought of.\n")
+        }),
+        (
+            "a door on a side nobody knows",
+            || scope_path("1"),
+            |text| text.replacen("| excluded |", "| maybe |", 1),
+        ),
+        (
+            "a triage row moved inside by hand",
+            || triage_path("1"),
+            |text| text.replacen("| outside: excluded |", "| inside |", 1),
+        ),
+        (
+            "a triage row for a finding the ledger lacks",
+            || triage_path("1"),
+            |text| text.replacen("`f-out`", "`f-gone`", 1),
+        ),
+        (
+            "a verdict somebody wrote by hand",
+            || triage_path("1"),
+            |text| text.replacen("| confirmed | no |", "| likely | no |", 1),
+        ),
+    ];
+    std::thread::scope(|threads| {
+        for (n, (why, file, damaged)) in damage.iter().enumerate() {
+            threads.spawn(move || {
+                let rig = Rig::new(&format!("state-corrupt-{n}"));
+                rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "")
+                    .must(OK, "a declared bound");
+                // The first excluded door is one no finding stands at.
+                rig.run(
+                    &scope_set(RUN, "1"),
+                    &scope(&[INSIDE], &["jigc task finalize", EXCLUDED]).to_string(),
+                )
+                .must(OK, "round 1's scope");
+                let rest = ["--instrument=the audit", "--scope=the delta"];
+                let mut green = clause_set(RUN, "no-lost-files", &rest);
+                green.extend(strings(&["--commit=0f34d8f0", "--status=green"]));
+                rig.run(&green, "").must(OK, "a clause");
+                rig.run(
+                    &ledger_add(RUN),
+                    &json!([row_at("f-in", INSIDE), row_at("f-out", EXCLUDED)]).to_string(),
+                )
+                .must(OK, "two findings");
+                let entries = json!([
+                    {"key": "f-in", "grade": "breaks", "verdict": "confirmed", "regression": false},
+                    {"key": "f-out", "grade": "breaks", "verdict": "confirmed", "regression": false},
+                ]);
+                rig.run(&triage_set(RUN, "1"), &entries.to_string())
+                    .must(OK, "round 1's triage");
+                rig.run(&state(RUN), "")
+                    .must(OK, "the control: the state as written");
+
+                let path = rig.root.join(file());
+                let text = fs::read_to_string(&path).expect("read the table");
+                let hurt = damaged(&text);
+                assert_ne!(hurt, text, "{why}: the damage must land");
+                fs::write(&path, hurt).expect("damage the table");
+                let before = rig.snapshot();
+                rig.run(&state(RUN), "").refused(CORRUPT, why);
+                assert_eq!(rig.snapshot(), before, "{why}: the file is left as it was");
+            });
+        }
+    });
+
+    // A triage record with no scope beside it has nothing it was computed from — though
+    // its row says what an empty scope would have said.
+    let rig = Rig::new("state-corrupt-scope");
+    rig.seed_rows(&["seeded"]);
+    rig.run(&scope_set(RUN, "1"), &scope(&[], &[]).to_string())
+        .must(OK, "round 1's scope");
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "seeded", "grade": "no-break"}).to_string(),
+    )
+    .must(OK, "round 1's triage");
+    fs::remove_file(rig.root.join(scope_path("1"))).expect("remove the scope");
+    rig.run(&state(RUN), "")
+        .refused(CORRUPT, "a triage record whose scope is gone");
+}
+
+// ---------------------------------------------------------------------------
+// 18 · The routing and the next step: two truth tables
+// ---------------------------------------------------------------------------
+
+/// One finding of the truth table: how it comes to stand in the run's records, and where
+/// the script must route it.
+struct Finding {
+    key: &'static str,
+    door: &'static str,
+    /// What the row says as it is added, beyond the columns every row has: a disposition
+    /// it carries into the round's triage, or a grade the human gave it.
+    said: Value,
+    /// The round's triage entry, less its key; `None` for a finding the round never saw.
+    triage: Option<Value>,
+    /// A ledger patch made after the triage, less its key.
+    then: Option<Value>,
+    route: &'static str,
+    why: &'static str,
+}
+
+impl Finding {
+    fn new(key: &'static str, door: &'static str, routed: (&'static str, &'static str)) -> Self {
+        Finding {
+            key,
+            door,
+            said: json!({}),
+            triage: None,
+            then: None,
+            route: routed.0,
+            why: routed.1,
+        }
+    }
+
+    fn said(mut self, said: Value) -> Self {
+        self.said = said;
+        self
+    }
+
+    fn triaged(mut self, entry: Value) -> Self {
+        self.triage = Some(entry);
+        self
+    }
+
+    fn then(mut self, patch: Value) -> Self {
+        self.then = Some(patch);
+        self
+    }
+}
+
+fn confirmed() -> Value {
+    json!({"grade": "breaks", "verdict": "confirmed", "regression": false})
+}
+
+fn regression() -> Value {
+    json!({"grade": "unclear", "verdict": "confirmed", "regression": true})
+}
+
+fn refuted() -> Value {
+    json!({"grade": "breaks", "verdict": "refuted"})
+}
+
+fn graded(grade: &str) -> Value {
+    json!({"grade": grade})
+}
+
+fn disposed(disposition: &str) -> Value {
+    match disposition {
+        "fixed" => json!({"disposition": "fixed", "detail": "0f34d8f0"}),
+        "bound" => json!({"disposition": "bound", "detail": "a planted state"}),
+        other => json!({"disposition": other}),
+    }
+}
+
+/// **The per-finding truth table.** Every cell the rulings settle, and the three they do
+/// not — routed `unsettled`, to the human, and never guessed.
+fn findings() -> Vec<Finding> {
+    const FIX_INSIDE: (&str, &str) = ("fix", "inside");
+    const FIX_REGRESSION: (&str, &str) = ("fix", "regression");
+    const FIX_ADMITTED: (&str, &str) = ("fix", "admitted");
+    const HUMAN_OUTSIDE: (&str, &str) = ("human", "outside");
+    const NOT_A_BREAK: (&str, &str) = ("recorded", "not-a-break");
+    const RULED: (&str, &str) = ("recorded", "ruled");
+    const FIXED: (&str, &str) = ("recorded", "fixed");
+    const UNVERIFIED: (&str, &str) = ("unsettled", "unverified");
+    const FOUND_AGAIN: (&str, &str) = ("unsettled", "found-again-after-its-fix");
+    let f = Finding::new;
+    vec![
+        // A verified break nobody has disposed of: by its door, unless it is a regression.
+        f("in-confirmed", INSIDE, FIX_INSIDE).triaged(confirmed()),
+        f("out-confirmed", EXCLUDED, HUMAN_OUTSIDE).triaged(confirmed()),
+        f("unlisted-confirmed", UNLISTED, HUMAN_OUTSIDE).triaged(confirmed()),
+        f("in-regression", INSIDE, FIX_REGRESSION).triaged(regression()),
+        f("out-regression", EXCLUDED, FIX_REGRESSION).triaged(regression()),
+        // Not a break, by the verifier or by triage.
+        f("in-refuted", INSIDE, NOT_A_BREAK).triaged(refuted()),
+        f("in-no-break", INSIDE, NOT_A_BREAK).triaged(graded("no-break")),
+        // Out of scope: recorded under a listed bound, the human's without one.
+        f("oos-listed", INSIDE, ("recorded", "out-of-scope"))
+            .triaged(json!({"grade": "out-of-scope", "bound": "non-jigc-writer"})),
+        f("needs-bound", INSIDE, ("human", "needs-bound")).triaged(graded("needs-bound")),
+        // Triage that is not finished.
+        f("in-unverified", INSIDE, UNVERIFIED).triaged(graded("breaks")),
+        f("in-unclear", EXCLUDED, UNVERIFIED).triaged(graded("unclear")),
+        f("never-triaged", INSIDE, ("unsettled", "ungraded")),
+        // A break the human graded, which no round's triage placed.
+        f("human-confirmed", INSIDE, ("human", "untriaged"))
+            .said(json!({"grade": "confirmed", "graded_by": "human"})),
+        f("human-regression", EXCLUDED, FIX_REGRESSION)
+            .said(json!({"grade": "regression", "graded_by": "human"})),
+        // The human's three rulings, and a fix.
+        f("out-admitted", EXCLUDED, FIX_ADMITTED)
+            .triaged(confirmed())
+            .then(disposed("admitted")),
+        f("out-bound", EXCLUDED, RULED)
+            .triaged(confirmed())
+            .then(disposed("bound")),
+        f("out-later", EXCLUDED, RULED)
+            .triaged(confirmed())
+            .then(disposed("later")),
+        f("in-fixed", INSIDE, FIXED)
+            .triaged(confirmed())
+            .then(disposed("fixed")),
+        f("needs-bound-later", INSIDE, RULED)
+            .triaged(graded("needs-bound"))
+            .then(disposed("later")),
+        // `no-action` is neither a fix nor a ruling: a verified break under it is open.
+        f("in-no-action", INSIDE, FIX_INSIDE)
+            .triaged(confirmed())
+            .then(disposed("no-action")),
+        f("out-no-action", EXCLUDED, HUMAN_OUTSIDE)
+            .triaged(confirmed())
+            .then(disposed("no-action")),
+        // A finding found again inherits its row's disposition.
+        f("again-later", EXCLUDED, RULED)
+            .said(disposed("later"))
+            .triaged(confirmed()),
+        f("again-bound", EXCLUDED, RULED)
+            .said(disposed("bound"))
+            .triaged(confirmed()),
+        f("again-admitted", EXCLUDED, FIX_ADMITTED)
+            .said(disposed("admitted"))
+            .triaged(confirmed()),
+        f("again-no-action", EXCLUDED, HUMAN_OUTSIDE)
+            .said(disposed("no-action"))
+            .triaged(confirmed()),
+        // …and of `fixed` the rulings do not say whether it is inherited.
+        f("again-fixed", INSIDE, FOUND_AGAIN)
+            .said(disposed("fixed"))
+            .triaged(confirmed()),
+        f("again-fixed-unverified", INSIDE, FOUND_AGAIN)
+            .said(disposed("fixed"))
+            .triaged(graded("breaks")),
+        f("again-fixed-needs-bound", INSIDE, FOUND_AGAIN)
+            .said(disposed("fixed"))
+            .triaged(graded("needs-bound")),
+        f("again-fixed-refuted", INSIDE, FIXED)
+            .said(disposed("fixed"))
+            .triaged(refuted()),
+        f("again-refixed", INSIDE, FIXED)
+            .said(disposed("fixed"))
+            .triaged(confirmed())
+            .then(json!({"disposition": "fixed", "detail": "967ca491"})),
+    ]
+}
+
+/// The ground every cell stands on: one declared bound, and round 1's doors.
+fn ground(rig: &Rig) {
+    rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "")
+        .must(OK, "the declared bound");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "round 1's scope");
+}
+
+/// Bring `findings` into the run through the script's own writers: the rows, then the
+/// round's triage, then what became of a row afterwards.
+fn plant(rig: &Rig, findings: &[&Finding]) {
+    let keyed = |fields: &Value, key: &str| {
+        let mut entry = fields.clone();
+        entry["key"] = json!(key);
+        entry
+    };
+    let rows: Vec<Value> = findings
+        .iter()
+        .map(|finding| {
+            let mut entry = row_at(finding.key, finding.door);
+            for (field, value) in finding.said.as_object().expect("an object") {
+                entry[field] = value.clone();
+            }
+            entry
+        })
+        .collect();
+    let entries: Vec<Value> = findings
+        .iter()
+        .filter_map(|finding| Some(keyed(finding.triage.as_ref()?, finding.key)))
+        .collect();
+    let patches: Vec<Value> = findings
+        .iter()
+        .filter_map(|finding| Some(keyed(finding.then.as_ref()?, finding.key)))
+        .collect();
+    for (args, batch, what) in [
+        (ledger_add(RUN), rows, "the rows"),
+        (triage_set(RUN, "1"), entries, "the round's triage"),
+        (ledger_set(RUN), patches, "what became of a row afterwards"),
+    ] {
+        if !batch.is_empty() {
+            rig.run(&args, &json!(batch).to_string()).must(OK, what);
+        }
+    }
+}
+
+/// `(route, why)` of the row `key` in a state document.
+fn routed(read: &Value, key: &str) -> (String, String) {
+    let entry = read["ledger"]
+        .as_array()
+        .expect("the ledger's rows")
+        .iter()
+        .find(|entry| entry["key"] == key)
+        .unwrap_or_else(|| panic!("no row `{key}` in {read}"));
+    let text = |field: &str| entry[field].as_str().expect("text").to_owned();
+    (text("route"), text("why"))
+}
+
+#[test]
+fn every_finding_is_routed_by_its_grade_its_disposition_and_the_rounds_doors() {
+    let rig = Rig::new("routes");
+    ground(&rig);
+    let truth = findings();
+    plant(&rig, &truth.iter().collect::<Vec<_>>());
+
+    let read = rig.state();
+    for finding in &truth {
+        assert_eq!(
+            routed(&read, finding.key),
+            (finding.route.to_owned(), finding.why.to_owned()),
+            "the route of `{}`",
+            finding.key
+        );
+    }
+    assert!(
+        truth.len() >= 30,
+        "the table collapsed to {} cells",
+        truth.len()
+    );
+
+    // The three lists a stage acts on are the routes, and nothing an agent compiled.
+    let routed_as = |route: &str| -> Vec<&Finding> {
+        truth
+            .iter()
+            .filter(|finding| finding.route == route)
+            .collect()
+    };
+    assert_eq!(
+        read["blockers"],
+        json!(routed_as("fix").iter().map(|f| f.key).collect::<Vec<_>>())
+    );
+    assert_eq!(
+        read["human_list"],
+        json!(
+            routed_as("human")
+                .iter()
+                .map(|f| json!({"key": f.key, "why": f.why}))
+                .collect::<Vec<_>>()
+        )
+    );
+    let cell = |why: &str| -> Value {
+        let keys: Vec<&str> = routed_as("unsettled")
+            .iter()
+            .filter(|f| f.why == why)
+            .map(|f| f.key)
+            .collect();
+        json!({"cell": why, "keys": keys})
+    };
+    assert_eq!(
+        read["unsettled"],
+        json!([
+            cell("ungraded"),
+            cell("unverified"),
+            cell("found-again-after-its-fix"),
+        ])
+    );
+
+    // A later round has doors of its own, and the latest round that triaged a finding is
+    // the one that places it; a finding it did not triage stays where its round put it.
+    rig.run(
+        &scope_set(RUN, "2"),
+        &scope(&[EXCLUDED], &[INSIDE]).to_string(),
+    )
+    .must(OK, "round 2's scope, the other way round");
+    let again = json!([
+        {"key": "in-confirmed", "grade": "breaks", "verdict": "confirmed", "regression": false},
+        {"key": "out-confirmed", "grade": "breaks", "verdict": "confirmed", "regression": false},
+    ]);
+    rig.run(&triage_set(RUN, "2"), &again.to_string())
+        .must(OK, "round 2's triage of two of them");
+    let read = rig.state();
+    let placed = |key: &str, route: &str, why: &str| {
+        assert_eq!(
+            routed(&read, key),
+            (route.to_owned(), why.to_owned()),
+            "the route of `{key}` after round 2"
+        );
+    };
+    placed("in-confirmed", "human", "outside");
+    placed("out-confirmed", "fix", "inside");
+    placed("in-no-action", "fix", "inside");
+    placed("unlisted-confirmed", "human", "outside");
+
+    // A bound that left the list takes its findings back to the human: an out-of-scope
+    // grade without a listed bound never reaches `recorded` — unless the human has ruled.
+    let out_of_scope = |key: &str, disposition: &str| {
+        let mut entry = row_at(key, INSIDE);
+        for (field, value) in [
+            ("grade", "out-of-scope"),
+            ("graded_by", "triage"),
+            ("bound", "non-jigc-writer"),
+            ("disposition", disposition),
+        ] {
+            entry[field] = json!(value);
+        }
+        entry
+    };
+    let more = json!([
+        out_of_scope("oos-ruled", "later"),
+        out_of_scope("oos-no-action", "no-action"),
+    ]);
+    rig.run(&ledger_add(RUN), &more.to_string())
+        .must(OK, "two more out-of-scope rows");
+    let recorded = ("recorded".to_owned(), "out-of-scope".to_owned());
+    let read = rig.state();
+    assert_eq!(routed(&read, "oos-listed"), recorded);
+    assert_eq!(routed(&read, "oos-no-action"), recorded);
+
+    let bounds = rig.root.join(bounds_path());
+    let text = fs::read_to_string(&bounds).expect("read the bounds list");
+    let without: String = text
+        .lines()
+        .filter(|line| !line.starts_with("| `non-jigc-writer`"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    assert_ne!(without, text, "the bound's row is gone");
+    fs::write(&bounds, without).expect("take the bound off the list");
+    let read = rig.state();
+    let human = ("human".to_owned(), "bound-not-listed".to_owned());
+    assert_eq!(routed(&read, "oos-listed"), human);
+    assert_eq!(routed(&read, "oos-no-action"), human);
+    assert_eq!(
+        routed(&read, "oos-ruled"),
+        ("recorded".to_owned(), "ruled".to_owned()),
+        "the human's ruling records it, never the grade"
+    );
+}
+
+/// One state of a round: its clause table and the findings standing in its ledger, by
+/// their keys in [`findings`] — and the step that must follow.
+struct Round {
+    name: &'static str,
+    clauses: &'static [(&'static str, &'static str)],
+    findings: &'static [&'static str],
+    next: &'static str,
+}
+
+/// The run's two clauses, both green, and one of them not.
+const GREEN: &[(&str, &str)] = &[("clause-a", "green"), ("clause-b", "green")];
+const ONE_VOID: &[(&str, &str)] = &[("clause-a", "green"), ("clause-b", "void")];
+
+/// **The round's truth table.**
+const ROUNDS: &[Round] = &[
+    Round {
+        name: "every clause green, and no finding",
+        clauses: GREEN,
+        findings: &[],
+        next: "close",
+    },
+    Round {
+        name: "every clause green, and nothing that breaks one",
+        clauses: GREEN,
+        findings: &["in-refuted", "in-no-break", "oos-listed"],
+        next: "close",
+    },
+    Round {
+        name: "every blocker fixed, every item ruled, one found again",
+        clauses: GREEN,
+        findings: &["in-fixed", "out-later", "out-bound", "again-later"],
+        next: "close",
+    },
+    // A clause row that is void, red or missing forbids close — and with nothing open the
+    // rulings name no step.
+    Round {
+        name: "a void clause row",
+        clauses: ONE_VOID,
+        findings: &[],
+        next: "unsettled",
+    },
+    Round {
+        name: "a void clause row, every finding fixed",
+        clauses: &[("clause-a", "void"), ("clause-b", "green")],
+        findings: &["in-fixed"],
+        next: "unsettled",
+    },
+    Round {
+        name: "a red clause row",
+        clauses: &[("clause-a", "green"), ("clause-b", "red")],
+        findings: &[],
+        next: "unsettled",
+    },
+    Round {
+        name: "no clause row at all",
+        clauses: &[],
+        findings: &[],
+        next: "unsettled",
+    },
+    // The human's list.
+    Round {
+        name: "an unruled item on the human's list",
+        clauses: GREEN,
+        findings: &["out-confirmed"],
+        next: "rule",
+    },
+    Round {
+        name: "a finding that needs a bound nobody declared",
+        clauses: GREEN,
+        findings: &["needs-bound"],
+        next: "rule",
+    },
+    Round {
+        name: "an unruled item beside an open blocker: the ruling comes first",
+        clauses: GREEN,
+        findings: &["in-confirmed", "out-confirmed"],
+        next: "rule",
+    },
+    Round {
+        name: "an unruled item under a void clause",
+        clauses: ONE_VOID,
+        findings: &["out-confirmed"],
+        next: "rule",
+    },
+    Round {
+        name: "an unruled item beside a finding nobody verified",
+        clauses: GREEN,
+        findings: &["in-unverified", "out-confirmed"],
+        next: "rule",
+    },
+    // Fixed without asking.
+    Round {
+        name: "an open blocker inside the test set",
+        clauses: GREEN,
+        findings: &["in-confirmed"],
+        next: "fix",
+    },
+    Round {
+        name: "a regression found outside the test set",
+        clauses: GREEN,
+        findings: &["out-regression"],
+        next: "fix",
+    },
+    Round {
+        name: "an item the human admitted to the run",
+        clauses: GREEN,
+        findings: &["out-admitted"],
+        next: "fix",
+    },
+    Round {
+        name: "an open blocker under a void clause",
+        clauses: ONE_VOID,
+        findings: &["in-confirmed", "in-fixed"],
+        next: "fix",
+    },
+    // What the rulings do not settle is never fixed past, and never closed over.
+    Round {
+        name: "a finding nobody verified",
+        clauses: GREEN,
+        findings: &["in-unverified"],
+        next: "unsettled",
+    },
+    Round {
+        name: "a finding nobody graded",
+        clauses: GREEN,
+        findings: &["never-triaged"],
+        next: "unsettled",
+    },
+    Round {
+        name: "a finding nobody verified beside an open blocker",
+        clauses: GREEN,
+        findings: &["in-unverified", "in-confirmed"],
+        next: "unsettled",
+    },
+    Round {
+        name: "a finding found again after its fix",
+        clauses: GREEN,
+        findings: &["again-fixed", "in-fixed"],
+        next: "unsettled",
+    },
+];
+
+/// Stand `round` up in a rig of its own and hold the state document to it.
+fn drive_round(label: &str, round: &Round, truth: &[Finding]) {
+    let rig = Rig::new(label);
+    ground(&rig);
+    for (clause, status) in round.clauses {
+        let rest = ["--instrument=its instrument", "--scope=the delta"];
+        let mut args = clause_set(RUN, clause, &rest);
+        args.push(format!("--status={status}"));
+        if *status != "void" {
+            args.push("--commit=0f34d8f0".to_owned());
+        }
+        rig.run(&args, "").must(OK, "a clause row");
+    }
+    let standing: Vec<&Finding> = round
+        .findings
+        .iter()
+        .map(|key| {
+            truth
+                .iter()
+                .find(|finding| finding.key == *key)
+                .unwrap_or_else(|| panic!("no finding `{key}` in the table"))
+        })
+        .collect();
+    plant(&rig, &standing);
+
+    let read = rig.state();
+    let what = round.name;
+    assert_eq!(read["next"], json!(round.next), "{what}: {read}");
+
+    // What forbids closing, by the clause table and by the ledger — and `close` exactly
+    // when nothing does.
+    let mut forbids: Vec<Value> = round
+        .clauses
+        .iter()
+        .filter(|(_, status)| *status != "green")
+        .map(|(clause, status)| json!({"clause": clause, "status": status}))
+        .collect();
+    if round.clauses.is_empty() {
+        forbids.push(json!({"clauses": "no row"}));
+    }
+    let open: Vec<&&Finding> = standing
+        .iter()
+        .filter(|finding| finding.route != "recorded")
+        .collect();
+    forbids.extend(
+        open.iter()
+            .map(|finding| json!({"finding": finding.key, "route": finding.route})),
+    );
+    assert_eq!(read["forbids_close"], json!(forbids), "{what}: {read}");
+    assert_eq!(
+        round.next == "close",
+        forbids.is_empty(),
+        "{what}: close, exactly when nothing forbids it"
+    );
+    let no_step = json!({"cell": "nothing-open-and-no-close", "keys": []});
+    assert_eq!(
+        read["unsettled"]
+            .as_array()
+            .expect("the unsettled cells")
+            .contains(&no_step),
+        open.is_empty() && round.next != "close",
+        "{what}: the state the rulings name no step for is named: {read}"
+    );
+}
+
+#[test]
+fn the_next_step_is_computed_from_the_clause_table_and_the_ledger() {
+    let truth = findings();
+    let truth = &truth;
+    let driven: usize = std::thread::scope(|threads| {
+        let workers: Vec<_> = ROUNDS
+            .chunks(4)
+            .enumerate()
+            .map(|(n, rounds)| {
+                threads.spawn(move || {
+                    for (m, round) in rounds.iter().enumerate() {
+                        drive_round(&format!("next-{n}-{m}"), round, truth);
+                    }
+                    rounds.len()
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .map(|worker| worker.join().expect("a worker thread"))
+            .sum()
+    });
+    assert!(driven >= 20, "the table collapsed to {driven} cells");
 }
