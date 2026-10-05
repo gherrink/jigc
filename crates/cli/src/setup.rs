@@ -1617,10 +1617,31 @@ fn install(
         is_fresh_repo(jigc_home),
         None,
         guide_file.as_deref(),
+        &[],
     );
     if let Some(refusal) = replaced_path_refusal(jigc_home, &members) {
         return Err(refusal);
     }
+
+    // 0d′b. **A file the install merges into is followed through a link only to a file
+    //       this repository can commit — asked before the first write** (the rc.24 fix
+    //       pass's completion audit, the end-to-end tester's F2). The members above are the
+    //       ones whose writer replaces; these are the ones whose writer keeps what it finds,
+    //       and they open their destination through whatever is there too. `through` is
+    //       where each accepted link leads, and from here on those files are install
+    //       members like any other: asked about by the dirty gate, named in the install
+    //       commit.
+    let through = merged_through_links(jigc_home, &members, &line_file, &allowlist_file)?;
+    hook_link_refusal(jigc_home).map_or(Ok(()), Err)?;
+    let through_paths: Vec<String> = through.iter().map(|link| link.target.clone()).collect();
+    let members = install_tracked_paths(
+        &line_file,
+        &allowlist_file,
+        is_fresh_repo(jigc_home),
+        None,
+        guide_file.as_deref(),
+        &through_paths,
+    );
 
     // 0d″. **The ask** (step 0c's): what differs from `HEAD` before this run writes, plus
     //      what `git status` cannot see at the paths this run would write.
@@ -1640,6 +1661,7 @@ fn install(
             &line_file,
             &allowlist_file,
             guide_file.as_deref(),
+            &through_paths,
         )
         .into_iter()
         .map(|member| member.path)
@@ -1669,6 +1691,7 @@ fn install(
                 &line_file,
                 &allowlist_file,
                 guide_file.as_deref(),
+                &through_paths,
             );
             let refusals = dirty_install_refusals(jigc_home, &candidates, before);
             if !refusals.is_empty() {
@@ -1703,6 +1726,7 @@ fn install(
                 &line_file,
                 &allowlist_file,
                 guide_file.as_deref(),
+                &through_paths,
             );
             let forced = dirty_install_refusals(jigc_home, &candidates, before);
             if !forced.is_empty() {
@@ -1756,6 +1780,7 @@ fn install(
             &line_file,
             &allowlist_file,
             guide_file.as_deref(),
+            &through_paths,
         );
         // Under the same rule as the record above: only a run that asked. Whatever stands
         // at an ignored replaced path now either passed that ask or was written since.
@@ -1775,13 +1800,26 @@ fn install(
     //    failure).
     let committed = commit_install(
         jigc_home,
-        &line_file,
-        &allowlist_file,
+        &InstallFiles {
+            line_file: &line_file,
+            allowlist_file: &allowlist_file,
+            guide_file: guide_file.as_deref(),
+            through: &through_paths,
+        },
         seeded_gitignore,
         &hook_path,
-        guide_file.as_deref(),
         &subject,
     );
+    // The ack for a member that was merged through a link: which file was written. On
+    // stderr, beside the summary, where this door says what the summary's pinned keys
+    // cannot — `line_file` stays the path the assistant reads, which is the link.
+    for link in &through {
+        eprintln!(
+            "note: `{}` is a link, so `jigc setup` merged into the file it leads to, `{}` — \
+             that is the file the install commit carries.",
+            link.link, link.target,
+        );
+    }
     // 6b. **Keep the provenance of what this run wrote where no commit will hold it** (the
     //     rc.24 fix pass, the ignored sibling of `(R1, F1)`). Asked after the commit step
     //     whatever it answered, and under any subject: the write span completed, so every
@@ -2122,6 +2160,7 @@ fn install_tracked_paths(
     seeded_gitignore: bool,
     hook: Option<&str>,
     guide: Option<&str>,
+    through: &[String],
 ) -> Vec<InstallMember> {
     use InstallPathDisposition::{ExemptWhenJigcOwned, Refuses};
     use InstallWriter::Preserves;
@@ -2197,6 +2236,14 @@ fn install_tracked_paths(
     // [`install_precommit_hook`] keeps a foreign hook verbatim and splices jigc's block in.
     if let Some(hook) = hook {
         members.push(member(hook, Refuses, Preserves));
+    }
+    // The files a merged-into member's **link** leads to ([`merged_through_links`]) — the
+    // bytes the merge actually lands in, so the bytes the dirty gate has to ask about and
+    // the install commit has to carry. Merged into, like the member that leads to them.
+    for target in through {
+        if !members.iter().any(|known| &known.path == target) {
+            members.push(member(target, Refuses, Preserves));
+        }
     }
     members
 }
@@ -2397,7 +2444,7 @@ pub fn install_path_dispositions(
     guide: Option<&str>,
     hook: Option<&str>,
 ) -> Vec<InstallMember> {
-    install_tracked_paths(line_file, allowlist_file, true, hook, guide)
+    install_tracked_paths(line_file, allowlist_file, true, hook, guide, &[])
 }
 
 /// Whether `<jigc_home>/.jigc/version` currently holds **jigc's own** provenance stamp:
@@ -2434,10 +2481,13 @@ fn version_stamp_is_jigcs(jigc_home: &Path) -> bool {
 ///
 /// It reads the **table** ([`InstallWriter::Replaces`]), not a list of paths: a member
 /// declared replacing is asked the day it is declared, under the code its declaration
-/// carries. The members whose writer *preserves* are not asked, and that is the rule rather
-/// than an omission — a merge that goes through a link changes what the link points at by
-/// exactly what it would have changed in a regular file, and a `CLAUDE.md` that is a link
-/// to a shared file is an ordinary thing for a repository to have. Nor is a path git
+/// carries. The members whose writer *preserves* are not asked **here**: a merge that goes
+/// through a link changes what the link points at by exactly what it would have changed in
+/// a regular file, and a `CLAUDE.md` that is a link to a shared file is an ordinary thing
+/// for a repository to have — so a link there is *followed*, to a file the repository can
+/// commit and nowhere else, which is [`merged_through_links`]' question (this sentence
+/// first read as *not asked at all*, and the install wrote through such a link to a file
+/// outside the repository at exit 0). Nor is a path git
 /// ignores excused: an ignored link's target is written through all the same, so this asks
 /// the members themselves and never the dirty gate's candidates, which drop an ignored
 /// path the install merges into.
@@ -2497,6 +2547,230 @@ fn replaced_path_refusal(jigc_home: &Path, members: &[InstallMember]) -> Option<
              pointed at. `--force` does not change this: it consents to replacing a file, \
              not to following one",
             acts.join(", "),
+        ),
+    ))
+}
+
+/// A merged-into install member whose path is a link the install may follow: the member's
+/// own path, and the repo-relative file its writes land in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct MergedThrough {
+    /// The install member's path — the link.
+    link: String,
+    /// The file it leads to, relative to the checkout root.
+    target: String,
+}
+
+/// Where a link at a merged-into member leads, as far as the install is concerned.
+enum LinkEnd {
+    /// A regular file inside this checkout that git does not ignore — repo-relative.
+    Mergeable(String),
+    /// Anything else, as the clause the refusal says of it.
+    Refused(String),
+}
+
+/// **Follow the link at `<jigc_home>/<path>` the way the member's writer will, and say
+/// whether that is somewhere the install may write.**
+///
+/// The answer is `Mergeable` only for a **regular file inside the checkout that git does
+/// not ignore**. Whether git *holds* that file is then asked like any other member's: it
+/// joins the install's path class, so on a born `HEAD` an untracked or modified one draws
+/// the dirty-install refusal by name, and on an unborn one it rides the first commit with
+/// the link (`DirtyPaths::rides_the_first_commit`). An ignored file is refused here because
+/// that gate cannot refuse it — it drops an ignored path the install merges into, since no
+/// commit would carry it either way — and a link is followed only to a file a commit can.
+fn link_end(jigc_home: &Path, path: &str) -> LinkEnd {
+    let Ok(real) = std::fs::canonicalize(jigc_home.join(path)) else {
+        return LinkEnd::Refused(
+            "leads to nothing, so merging through it would create a file wherever it points"
+                .to_string(),
+        );
+    };
+    let relative = std::fs::canonicalize(jigc_home)
+        .ok()
+        .and_then(|root| real.strip_prefix(root).ok().map(Path::to_path_buf))
+        .and_then(|relative| relative.to_str().map(str::to_string));
+    let Some(relative) = relative else {
+        // Outside the checkout there is no repo-relative spelling, so the shared renderer
+        // gives the absolute one (`engine::path::repo_relative`).
+        return LinkEnd::Refused(format!(
+            "leads out of this repository, to `{}`",
+            crate::render::repo_relative(jigc_home, &real)
+        ));
+    };
+    if !real.is_file() {
+        return LinkEnd::Refused(format!(
+            "leads to `{relative}`, which is not a regular file"
+        ));
+    }
+    if relative == ".git" || relative.starts_with(".git/") || git_path_ignored(jigc_home, &relative)
+    {
+        return LinkEnd::Refused(format!(
+            "leads to `{relative}`, which git does not track and never will — it is ignored, \
+             or inside git's own directory — so no commit would carry what jigc merges there"
+        ));
+    }
+    LinkEnd::Mergeable(relative)
+}
+
+/// **The links at merged-into install members, each resolved to the file the merge lands
+/// in** — or the one refusal that names every link the install will not follow (the rc.24
+/// fix pass's completion audit, the end-to-end tester's F2).
+///
+/// [`replaced_path_refusal`] asks the members whose writer *replaces* and leaves these to
+/// the rule that *a merge through a link changes its target by what it would have changed
+/// in a file*. That rule is right about the bytes and silent about **where they are**.
+/// Driven on `1.0.0-rc.24` and at `b54b58b2`, a committed `CLAUDE.md` or
+/// `.claude/settings.json` that is a link: to a file **outside the repository**, `jigc
+/// setup` exited 0 and that file grew jigc's section, with a clean `git status` and an ack
+/// naming an install no commit carried; **dangling**, it created the file wherever the
+/// link pointed; to a **tracked file in the repository**, it merged there and left that
+/// file modified and uncommitted beside an install commit that did not name it.
+///
+/// **So a link is followed only to a file this repository can commit, and then that file
+/// is the member** ([`link_end`]). `CLAUDE.md -> AGENTS.md` is an ordinary thing for a
+/// repository to have, and it keeps working: the reference is merged into `AGENTS.md`,
+/// `AGENTS.md` is asked about by the dirty gate and named in the install commit, and the
+/// ack says which file was written. Every other end refuses before the first write.
+///
+/// **`.jigc/.gitignore` is the one member a link is never followed at**: its writer
+/// (`crate::gitignore::ensure`) refuses a symlink itself, and did so *after* the bootstrap
+/// file was written, under a route about write permission. It is refused here instead,
+/// with nothing written.
+///
+/// Only a **link** is this function's subject — at the member's path or at a directory on
+/// the way to it ([`crate::regular_file::blocker`], asked without following). A directory
+/// or special file at a member's path is left to the writer, which fails on it loudly, as
+/// before. `--force` is not consulted, for the reason [`replaced_path_refusal`] gives.
+fn merged_through_links(
+    jigc_home: &Path,
+    members: &[InstallMember],
+    line_file: &str,
+    allowlist_file: &str,
+) -> Result<Vec<MergedThrough>, Finding> {
+    let mut through = Vec::new();
+    let mut code = None;
+    let mut states: Vec<String> = Vec::new();
+    let mut acts: Vec<String> = Vec::new();
+    for member in members {
+        if member.writer != InstallWriter::Preserves {
+            continue;
+        }
+        let Some(blocker) = crate::regular_file::blocker(jigc_home, &member.path) else {
+            continue;
+        };
+        if blocker.shape != crate::regular_file::ForeignEntry::Symlink {
+            continue;
+        }
+        let amended_in_place = member.path == ".jigc/.gitignore";
+        let end = if amended_in_place {
+            LinkEnd::Refused("is one jigc amends in place and never through a link".to_string())
+        } else {
+            link_end(jigc_home, &member.path)
+        };
+        match end {
+            LinkEnd::Mergeable(target) => through.push(MergedThrough {
+                link: member.path.clone(),
+                target,
+            }),
+            LinkEnd::Refused(why) => {
+                // The member's own existing write-failure code, as at a replaced path.
+                code.get_or_insert(if member.path == line_file {
+                    "setup.inject-reference"
+                } else if member.path == allowlist_file {
+                    "setup.inject-allowlist"
+                } else if member.path == ".gitignore" {
+                    "setup.secrets-gitignore"
+                } else {
+                    "setup.init-project-layer"
+                });
+                states.push(format!("{} and {why}", blocker.describe()));
+                acts.push(if amended_in_place || !blocker.at_leaf() {
+                    blocker.clearing_act()
+                } else {
+                    format!(
+                        "{}, or point it at a file inside this repository that git does not \
+                         ignore",
+                        blocker.clearing_act()
+                    )
+                });
+            }
+        }
+    }
+    let Some(code) = code else {
+        return Ok(through);
+    };
+    Err(Finding::block(
+        code,
+        format!(
+            "{} — `jigc setup` merges into the file at {}, and it follows a link there only \
+             to a regular file this repository can commit. Nothing was installed and no \
+             install commit was made",
+            states.join("; "),
+            if states.len() == 1 {
+                "that path"
+            } else {
+                "each of those paths"
+            },
+        ),
+        format!(
+            "{} — committing the change where git tracks the link — then re-run `jigc \
+             setup`. `--force` does not change this: it consents to replacing a file, not to \
+             following a link",
+            acts.join("; "),
+        ),
+    ))
+}
+
+/// **The refusal a `pre-commit` hook that is a link draws when it leads out of both the
+/// repository and its own hooks directory** — the fifth merged-into member, asked where
+/// the other four are ([`merged_through_links`]).
+///
+/// [`install_precommit_hook`] reads the hook it finds and splices jigc's block into it,
+/// through whatever is at the path. A hook that is a link to a script the repository
+/// tracks (`.git/hooks/pre-commit -> ../../scripts/pre-commit`) or to a sibling in the
+/// same hooks directory is the adopter's arrangement and is followed, as before —
+/// [`committable_hook_path`] already resolves the link and names the file it leads to in
+/// the install commit. One that leads **anywhere else** is a file this repository does not
+/// hold, shared with whatever else points at it; one that **dangles** would be created
+/// there. Both refuse before the first write.
+///
+/// `None` when the hooks directory cannot be resolved: the install's own hook step then
+/// fails with git's reason, as it always has.
+fn hook_link_refusal(jigc_home: &Path) -> Option<Finding> {
+    let hooks_dir = resolve_hooks_dir(jigc_home).ok()?;
+    let hook = precommit_hook_in(&hooks_dir);
+    if !std::fs::symlink_metadata(&hook).is_ok_and(|entry| entry.file_type().is_symlink()) {
+        return None;
+    }
+    let shown = display_hook_path(jigc_home, &hook);
+    let why = match std::fs::canonicalize(&hook) {
+        Err(_) => {
+            "leads to nothing, so installing would create a file wherever it points".to_string()
+        }
+        Ok(real) => {
+            let inside =
+                |dir: &Path| std::fs::canonicalize(dir).is_ok_and(|dir| real.starts_with(dir));
+            if inside(jigc_home) || inside(&hooks_dir) {
+                return None;
+            }
+            format!(
+                "leads out of this repository and its hooks directory, to `{}`",
+                crate::render::repo_relative(jigc_home, &real)
+            )
+        }
+    };
+    Some(Finding::block(
+        "setup.install-hook",
+        format!(
+            "the `pre-commit` hook `{shown}` is a symbolic link and {why} — `jigc setup` \
+             splices its block into the hook it finds, and it follows a link there only to \
+             a file of this repository. Nothing was installed and no install commit was made"
+        ),
+        format!(
+            "remove the link at `{shown}`, or point it at a script inside this repository, \
+             then re-run `jigc setup`. `--force` does not change this: it consents to \
+             replacing a file, not to following a link"
         ),
     ))
 }
@@ -2573,6 +2847,7 @@ fn install_candidates(
     line_file: &str,
     allowlist_file: &str,
     guide_file: Option<&str>,
+    through: &[String],
 ) -> Vec<InstallMember> {
     install_tracked_paths(
         line_file,
@@ -2580,6 +2855,7 @@ fn install_candidates(
         is_fresh_repo(jigc_home),
         None,
         guide_file,
+        through,
     )
     .into_iter()
     .filter(|member| std::fs::symlink_metadata(jigc_home.join(&member.path)).is_ok())
@@ -2947,6 +3223,7 @@ fn record_failed_install(
     line_file: &str,
     allowlist_file: &str,
     guide_file: Option<&str>,
+    through: &[String],
 ) {
     let InstallSubject::Dirty(before) = subject else {
         return;
@@ -2954,11 +3231,12 @@ fn record_failed_install(
     let Some(now) = dirty_against_head(jigc_home, &[]) else {
         return;
     };
-    let written: Vec<String> = install_candidates(jigc_home, line_file, allowlist_file, guide_file)
-        .into_iter()
-        .map(|member| member.path)
-        .filter(|path| now.contains(path) && !before.contains(path))
-        .collect();
+    let written: Vec<String> =
+        install_candidates(jigc_home, line_file, allowlist_file, guide_file, through)
+            .into_iter()
+            .map(|member| member.path)
+            .filter(|path| now.contains(path) && !before.contains(path))
+            .collect();
     record_install_footprint(jigc_home, &written);
     if !written.is_empty() {
         let _ = stage_paths(jigc_home, &written);
@@ -3545,13 +3823,17 @@ fn is_git_identity_rejection(git_err: &str) -> bool {
 /// is the scope the two shipped guides' universal takes, in Increment 9's batch.)
 fn commit_install(
     jigc_home: &Path,
-    line_file: &str,
-    allowlist_file: &str,
+    files: &InstallFiles<'_>,
     seeded_gitignore: bool,
     hook_file: &Path,
-    guide_file: Option<&str>,
     subject: &InstallSubject,
 ) -> Result<InstallCommitOutcome, InstallCommitRejection> {
+    let InstallFiles {
+        line_file,
+        allowlist_file,
+        guide_file,
+        through,
+    } = *files;
     // Require a git work tree — but DO mint on an **unborn HEAD** (a brand-new repo with
     // no commits). Setup owns committing its own install footprint regardless of HEAD
     // state (M30 audit finding 1): on a cold-start repo the first `finalize` since M30
@@ -3574,6 +3856,7 @@ fn commit_install(
         seeded_gitignore,
         hook.as_deref(),
         guide_file,
+        through,
     )
     .into_iter()
     .filter(|member| jigc_home.join(&member.path).exists())
@@ -3851,6 +4134,18 @@ impl InstallCommitOutcome {
             hook_committed: false,
         }
     }
+}
+
+/// The install's own files, as [`commit_install`] is told about them — the paths every
+/// conditional before the write span has already settled: the two host files, the guide
+/// when this run wrote one, and the files a merged-into member's link leads to
+/// ([`merged_through_links`]).
+#[derive(Clone, Copy, Debug)]
+struct InstallFiles<'a> {
+    line_file: &'a str,
+    allowlist_file: &'a str,
+    guide_file: Option<&'a str>,
+    through: &'a [String],
 }
 
 /// What one `git add -- <paths>` did, with git-could-not-be-spawned kept distinct from
@@ -6365,11 +6660,14 @@ mod tests {
 
         let rejection = commit_install(
             dir.path(),
-            "CLAUDE.md",
-            ".claude/settings.json",
+            &InstallFiles {
+                line_file: "CLAUDE.md",
+                allowlist_file: ".claude/settings.json",
+                guide_file: None,
+                through: &[],
+            },
             false,
             Path::new("/nonexistent/hooks/pre-commit"),
-            None,
             // These arms exercise the GIT-step refusals; the pre-write dirty guard is a
             // different subject with its own suite, so the fixture consents past it.
             &InstallSubject::Consented(DirtyPaths::default()),
@@ -6980,11 +7278,14 @@ mod tests {
 
         let outcome = commit_install(
             dir.path(),
-            "CLAUDE.md",
-            ".claude/settings.json",
+            &InstallFiles {
+                line_file: "CLAUDE.md",
+                allowlist_file: ".claude/settings.json",
+                guide_file: None,
+                through: &[],
+            },
             false,
             &hook,
-            None,
             &InstallSubject::Consented(DirtyPaths::default()),
         )
         .expect("a refusal the hook caused must not sink the install commit");
@@ -7018,11 +7319,14 @@ mod tests {
         std::fs::write(dir.path().join("CLAUDE.md"), "y\n").expect("dirty an install file");
         let rejection = commit_install(
             dir.path(),
-            "CLAUDE.md",
-            ".claude/settings.json",
+            &InstallFiles {
+                line_file: "CLAUDE.md",
+                allowlist_file: ".claude/settings.json",
+                guide_file: None,
+                through: &[],
+            },
             false,
             &hook,
-            None,
             &InstallSubject::Consented(DirtyPaths::default()),
         )
         .expect_err("a refusal the hook did NOT cause must stay loud");

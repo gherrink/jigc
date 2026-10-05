@@ -31,6 +31,14 @@
 //!   nor staged unless it is absent or jigc's own one-line stamp, and the landed envelope
 //!   carries one advisory under the stamp writer's own code.
 //!
+//! **And a file jigc merges into is followed through a link only to a file the
+//! repository can commit** (the rc.24 fix pass's completion audit, the end-to-end tester's
+//! F2; cells m1–m3). The rule above left the merged-into members unasked, and `jigc setup`
+//! wrote through a committed `CLAUDE.md` link into a file outside the repository at exit
+//! 0. Cell m1 iterates the member × where its link leads, m2 is the must-not-refuse half —
+//! `CLAUDE.md -> AGENTS.md` under each conversion setting and in each layout this door is
+//! reachable in — and m3 holds the file behind an accepted link to the dirty-install guard.
+//!
 //! Every cell drives the real binary (`CARGO_BIN_EXE_jigc`) over a throwaway `git init`.
 
 #![cfg(unix)]
@@ -1011,5 +1019,464 @@ fn a_finalize_still_refreshes_a_stale_stamp_that_is_jigcs_own() {
         git(repo, &["status", "--porcelain"]),
         "",
         "nothing left over"
+    );
+}
+
+// ──── merged-into members: a link is followed only to a file this repository can commit ────
+
+/// Run `git` in `repo` without asserting.
+fn git_try(repo: &Path, args: &[&str]) -> std::process::Output {
+    Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("run git")
+}
+
+/// The existing write-failure code a merged-into member's link refusal rides.
+fn merge_refusal_code(path: &str) -> &'static str {
+    match path {
+        "CLAUDE.md" => "setup.inject-reference",
+        ".claude/settings.json" => "setup.inject-allowlist",
+        ".jigc/.gitignore" => "setup.init-project-layer",
+        ".gitignore" => "setup.secrets-gitignore",
+        other => panic!("`{other}` is a merged-into member with no pinned refusal code"),
+    }
+}
+
+/// Bytes an adopter could keep in the file a link at a merged-into member leads to.
+fn merged_plant(path: &str) -> &'static str {
+    match path {
+        ".claude/settings.json" => "{\n  \"env\": { \"TEAM\": \"USERMARK\" }\n}\n",
+        _ => "# House rules — USERMARK\n\nNever deploy on a Friday.\n",
+    }
+}
+
+/// (m1) **A link at a merged-into member that leads anywhere the repository cannot commit
+/// refuses before the first write** (the rc.24 fix pass's completion audit, the end-to-end
+/// tester's F2).
+///
+/// Driven on `1.0.0-rc.24` and at `b54b58b2`: a committed `CLAUDE.md` or
+/// `.claude/settings.json` link to a file **outside the repository** — `jigc setup` exit 0,
+/// that file rewritten with jigc's section, `git status` empty, the ack naming an install
+/// no commit carried; **dangling** — the file created wherever the link pointed.
+///
+/// The axis is the member × where its link leads. For the two host files: out of the
+/// repository, nowhere, to an ignored file in it, to a directory in it. In each, plain and
+/// `--force`: exit 1 under the member's own write-failure code, nothing installed, the
+/// link's end byte-identical (or still absent). Then the route as printed — the link
+/// removed, the removal committed — and one re-run installs a regular file there with the
+/// link's old end still untouched.
+#[test]
+fn a_merged_into_member_refuses_a_link_the_repository_cannot_commit() {
+    let ends = ["outside", "dangling", "ignored", "directory"];
+    std::thread::scope(|scope| {
+        for path in ["CLAUDE.md", ".claude/settings.json"] {
+            for end in ends {
+                scope.spawn(move || {
+                    let what = format!("`{path}` → {end}");
+                    let (repo, home) = born_repo("merged-link");
+                    let elsewhere = TempDir::new("merged-link-elsewhere");
+                    let (repo, home) = (repo.path(), home.path());
+                    // Where the link leads, and the file whose bytes must not move.
+                    let (target, kept): (String, Option<PathBuf>) = match end {
+                        "outside" => {
+                            let file = elsewhere.path().join("shared");
+                            fs::write(&file, merged_plant(path)).expect("plant");
+                            (file.display().to_string(), Some(file))
+                        }
+                        "dangling" => {
+                            let file = elsewhere.path().join("nowhere");
+                            (file.display().to_string(), Some(file))
+                        }
+                        "ignored" => {
+                            write(repo, ".gitignore", "local/\n");
+                            write(repo, "local/mine", merged_plant(path));
+                            ("local/mine".to_string(), Some(repo.join("local/mine")))
+                        }
+                        _ => {
+                            write(repo, "shared-dir/keep", "x\n");
+                            ("shared-dir".to_string(), None)
+                        }
+                    };
+                    link(repo, path, &target);
+                    git(repo, &["add", "-A"]);
+                    git(repo, &["commit", "-q", "-m", "our layout"]);
+                    let head = git(repo, &["rev-parse", "HEAD"]);
+                    let before = kept.as_ref().map(|file| fs::read(file).ok());
+
+                    for args in [&["setup"][..], &["setup", "--force"][..]] {
+                        let out = jigc(repo, home, args);
+                        let said = said(&out);
+                        assert_eq!(out.status.code(), Some(1), "{what} {args:?}: {said}");
+                        assert!(
+                            said.contains(merge_refusal_code(path))
+                                && !said.contains("setup.dirty-install-path"),
+                            "{what} {args:?}: under the member's own code: {said}"
+                        );
+                        assert_eq!(git(repo, &["rev-parse", "HEAD"]), head, "{what}: no commit");
+                        assert!(
+                            !repo.join(".jigc").exists(),
+                            "{what} {args:?}: asked before the first write: {said}"
+                        );
+                        assert!(is_link(repo, path), "{what}: the link is as it was");
+                        assert_eq!(
+                            kept.as_ref().map(|file| fs::read(file).ok()),
+                            before,
+                            "{what} {args:?}: where the link leads is byte-identical"
+                        );
+                    }
+
+                    // The route as printed: remove the link, commit the removal, re-run.
+                    let said_route = route(&jigc(repo, home, &["setup"]));
+                    assert!(
+                        said_route.contains(&format!("remove the link at `{path}`")),
+                        "{what}: {said_route}"
+                    );
+                    git(repo, &["rm", "-q", "--", path]);
+                    git(repo, &["commit", "-q", "-m", "drop the link"]);
+                    let out = jigc(repo, home, &["setup"]);
+                    assert_eq!(out.status.code(), Some(0), "{what}: {}", said(&out));
+                    assert!(is_regular(repo, path), "{what}: a regular file now");
+                    assert_eq!(
+                        kept.as_ref().map(|file| fs::read(file).ok()),
+                        before,
+                        "{what}: and the link's old end was never written"
+                    );
+                    assert_eq!(git(repo, &["status", "--porcelain"]), "", "{what}");
+                });
+            }
+        }
+    });
+
+    // `.jigc/.gitignore` is amended in place and never through a link, wherever it leads —
+    // its writer said so only after the bootstrap file had been written.
+    let (repo, home) = born_repo("merged-link-ignore");
+    let (repo, home) = (repo.path(), home.path());
+    write(repo, "our-ignores", "scratch/\n");
+    link(repo, ".jigc/.gitignore", "our-ignores");
+    git(repo, &["add", "-A"]);
+    git(repo, &["commit", "-q", "-m", "our layout"]);
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    assert!(
+        said(&out).contains(merge_refusal_code(".jigc/.gitignore")),
+        "{}",
+        said(&out)
+    );
+    assert!(
+        !repo.join(".jigc/AGENT.md").exists() && !repo.join("CLAUDE.md").exists(),
+        "asked before the first write: {}",
+        said(&out)
+    );
+    assert_eq!(read(repo, "our-ignores"), "scratch/\n");
+
+    // The secrets-floor `.gitignore` of a repository with no commit: the same rule.
+    let (repo, home) = unborn_repo("merged-link-floor");
+    let elsewhere = TempDir::new("merged-link-floor-elsewhere");
+    let (repo, home) = (repo.path(), home.path());
+    let shared = elsewhere.path().join("gitignore");
+    fs::write(&shared, "*.log\n").expect("plant");
+    link(repo, ".gitignore", &shared.display().to_string());
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    assert!(
+        said(&out).contains(merge_refusal_code(".gitignore")),
+        "{}",
+        said(&out)
+    );
+    assert_eq!(fs::read_to_string(&shared).expect("read"), "*.log\n");
+    assert!(!repo.join(".jigc").exists(), "nothing was installed");
+
+    // The `pre-commit` hook, the fifth merged-into member: a link out of the repository
+    // and its hooks directory, or to nothing.
+    for end in ["outside", "dangling"] {
+        let (repo, home) = born_repo("merged-link-hook");
+        let elsewhere = TempDir::new("merged-link-hook-elsewhere");
+        let (repo, home) = (repo.path(), home.path());
+        let shared = elsewhere.path().join("pre-commit");
+        if end == "outside" {
+            fs::write(&shared, "#!/bin/sh\necho ours # USERMARK\n").expect("plant");
+        }
+        let before = fs::read(&shared).ok();
+        fs::create_dir_all(repo.join(".git/hooks")).expect("hooks dir");
+        symlink(&shared, repo.join(".git/hooks/pre-commit")).expect("plant the link");
+        for args in [&["setup"][..], &["setup", "--force"][..]] {
+            let out = jigc(repo, home, args);
+            assert_eq!(out.status.code(), Some(1), "hook → {end}: {}", said(&out));
+            assert!(
+                said(&out).contains("setup.install-hook"),
+                "hook → {end}: {}",
+                said(&out)
+            );
+            assert!(
+                !repo.join(".jigc").exists(),
+                "hook → {end}: nothing installed"
+            );
+            assert_eq!(fs::read(&shared).ok(), before, "hook → {end}: untouched");
+        }
+        fs::remove_file(repo.join(".git/hooks/pre-commit")).expect("the route: remove the link");
+        let out = jigc(repo, home, &["setup"]);
+        assert_eq!(out.status.code(), Some(0), "hook → {end}: {}", said(&out));
+        assert_eq!(
+            fs::read(&shared).ok(),
+            before,
+            "hook → {end}: never written"
+        );
+    }
+}
+
+/// (m2) **…and a link to a file the repository tracks keeps working, and the install
+/// answers for the file it wrote** — the must-not-refuse half of (m1). `CLAUDE.md ->
+/// AGENTS.md` is an ordinary layout, and `1.0.0-rc.24` installs there at exit 0; what it
+/// got wrong is what happened next: `AGENTS.md` was left modified and uncommitted beside an
+/// install commit that did not name it.
+///
+/// Iterated over the conversion settings a checkout can carry × the layouts this door is
+/// reachable in (a plain checkout, a fresh clone, a linked worktree the user made): the
+/// install lands, says which file it merged into, **commits that file**, leaves the
+/// repository clean, and a re-run changes nothing. The link is still a link and the
+/// adopter's lines are still in the file behind it. Then the teardown unwires the same
+/// file through the same link.
+#[test]
+fn a_link_to_a_tracked_file_is_merged_through_and_committed() {
+    std::thread::scope(|scope| {
+        for conversion in [
+            "none",
+            "core.autocrlf=true",
+            "core.autocrlf=input",
+            "* text=auto",
+        ] {
+            for layout in ["plain", "clone", "linked worktree"] {
+                scope.spawn(move || {
+                    let what = format!("{conversion} / {layout}");
+                    let (origin, home) = born_repo("merged-through");
+                    let aside = TempDir::new("merged-through-aside");
+                    let home = home.path();
+                    let configure = |repo: &Path| match conversion {
+                        "none" | "* text=auto" => {}
+                        setting => {
+                            let (key, value) = setting.split_once('=').expect("key=value");
+                            git(repo, &["config", key, value]);
+                        }
+                    };
+                    let seed = origin.path();
+                    if conversion == "* text=auto" {
+                        write(seed, ".gitattributes", "* text=auto\n");
+                    }
+                    write(seed, "AGENTS.md", merged_plant("CLAUDE.md"));
+                    write(
+                        seed,
+                        "config/claude.json",
+                        merged_plant(".claude/settings.json"),
+                    );
+                    link(seed, "CLAUDE.md", "AGENTS.md");
+                    link(seed, ".claude/settings.json", "config/claude.json");
+                    git(seed, &["add", "-A"]);
+                    git(seed, &["commit", "-q", "-m", "our layout"]);
+                    configure(seed);
+                    // The checkout `jigc setup` is typed in, and the one it installs at.
+                    let (typed_in, installed_at): (PathBuf, PathBuf) = match layout {
+                        "plain" => (seed.to_path_buf(), seed.to_path_buf()),
+                        "clone" => {
+                            let clone = aside.path().join("clone");
+                            git(
+                                aside.path(),
+                                &[
+                                    "clone",
+                                    "-q",
+                                    &seed.display().to_string(),
+                                    &clone.display().to_string(),
+                                ],
+                            );
+                            git(&clone, &["config", "user.email", "test@example.com"]);
+                            git(&clone, &["config", "user.name", "Test"]);
+                            configure(&clone);
+                            (clone.clone(), clone)
+                        }
+                        _ => {
+                            let linked = aside.path().join("linked");
+                            git(
+                                seed,
+                                &[
+                                    "worktree",
+                                    "add",
+                                    "-q",
+                                    "-b",
+                                    "side",
+                                    &linked.display().to_string(),
+                                ],
+                            );
+                            (linked, seed.to_path_buf())
+                        }
+                    };
+                    let repo = installed_at.as_path();
+                    assert_eq!(git(repo, &["status", "--porcelain"]), "", "{what}: premise");
+
+                    let out = jigc(&typed_in, home, &["setup"]);
+                    assert_eq!(out.status.code(), Some(0), "{what}: {}", said(&out));
+                    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+                    for (member, target) in [
+                        ("CLAUDE.md", "AGENTS.md"),
+                        (".claude/settings.json", "config/claude.json"),
+                    ] {
+                        assert!(
+                            stderr.contains(&format!("`{member}` is a link"))
+                                && stderr.contains(&format!("`{target}`")),
+                            "{what}: the ack says which file was written: {stderr}"
+                        );
+                        assert!(is_link(repo, member), "{what}: `{member}` is still a link");
+                        assert!(
+                            git(repo, &["show", "--stat", "--format=", "HEAD"]).contains(target),
+                            "{what}: the install commit carries `{target}`"
+                        );
+                        assert!(
+                            read(repo, target).contains(MARK),
+                            "{what}: the adopter's bytes are still in `{target}`"
+                        );
+                    }
+                    assert!(
+                        read(repo, "AGENTS.md").contains("@.jigc/AGENT.md"),
+                        "{what}: the reference was merged into the file behind the link"
+                    );
+                    assert_eq!(git(repo, &["status", "--porcelain"]), "", "{what}: clean");
+                    let head = git(repo, &["rev-parse", "HEAD"]);
+                    let rerun = jigc(&typed_in, home, &["setup"]);
+                    assert_eq!(rerun.status.code(), Some(0), "{what}: {}", said(&rerun));
+                    assert_eq!(
+                        git(repo, &["rev-parse", "HEAD"]),
+                        head,
+                        "{what}: no second commit"
+                    );
+                    assert_eq!(
+                        git(repo, &["status", "--porcelain"]),
+                        "",
+                        "{what}: still clean"
+                    );
+
+                    // The teardown goes back through the same link.
+                    let out = jigc(repo, home, &["uninstall"]);
+                    assert_eq!(out.status.code(), Some(0), "{what}: {}", said(&out));
+                    assert!(is_link(repo, "CLAUDE.md"), "{what}: the link survives");
+                    assert!(
+                        !read(repo, "AGENTS.md").contains("@.jigc/AGENT.md")
+                            && read(repo, "AGENTS.md").contains(MARK),
+                        "{what}: jigc's section is out of `AGENTS.md`, the adopter's lines are in"
+                    );
+                });
+            }
+        }
+    });
+
+    // The hook, linked to a script the repository tracks: followed, as before.
+    let (repo, home) = born_repo("merged-through-hook");
+    let (repo, home) = (repo.path(), home.path());
+    write(
+        repo,
+        "scripts/pre-commit",
+        "#!/bin/sh\necho ours # USERMARK\n",
+    );
+    git(repo, &["add", "-A"]);
+    git(repo, &["commit", "-q", "-m", "our hook"]);
+    fs::create_dir_all(repo.join(".git/hooks")).expect("hooks dir");
+    symlink(
+        "../../scripts/pre-commit",
+        repo.join(".git/hooks/pre-commit"),
+    )
+    .expect("link");
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "a hook linked into the repository: {}",
+        said(&out)
+    );
+    assert!(
+        read(repo, "scripts/pre-commit").contains(MARK)
+            && read(repo, "scripts/pre-commit").contains("jigc-managed"),
+        "jigc's block is spliced into the tracked script, beside the adopter's lines"
+    );
+}
+
+/// (m3) **Whether git holds the file behind the link is git's to say** — the link's end
+/// joins the install's path class, so the dirty-install guard answers for it exactly as it
+/// does for a regular `CLAUDE.md`.
+///
+/// - born `HEAD`, the file **untracked** ⇒ `setup.dirty-install-path` naming *that file*,
+///   nothing written; committed as the route says, one re-run installs.
+/// - born `HEAD`, the file tracked with an **uncommitted edit** ⇒ the same refusal, the
+///   edit byte-identical.
+/// - **unborn** `HEAD`, link and file both untracked ⇒ exit 0: the declared on-ramp, and
+///   the first commit carries both.
+#[test]
+fn the_file_behind_a_link_is_asked_about_like_any_install_path() {
+    // Untracked behind a committed link.
+    let (repo, home) = born_repo("behind-untracked");
+    let (repo, home) = (repo.path(), home.path());
+    link(repo, "CLAUDE.md", "AGENTS.md");
+    git(repo, &["add", "--", "CLAUDE.md"]);
+    git(repo, &["commit", "-q", "-m", "the link only"]);
+    write(repo, "AGENTS.md", merged_plant("CLAUDE.md"));
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    assert!(
+        said(&out).contains("setup.dirty-install-path") && said(&out).contains("  `AGENTS.md`"),
+        "the file the merge would land in is named: {}",
+        said(&out)
+    );
+    assert_eq!(
+        read(repo, "AGENTS.md"),
+        merged_plant("CLAUDE.md"),
+        "untouched"
+    );
+    assert!(!repo.join(".jigc").exists(), "nothing installed");
+    git(repo, &["add", "--", "AGENTS.md"]);
+    git(repo, &["commit", "-q", "-m", "our rules"]);
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "committed, one re-run: {}",
+        said(&out)
+    );
+    assert_eq!(git(repo, &["status", "--porcelain"]), "");
+
+    // Tracked behind the link, with an edit no commit holds.
+    let (repo, home) = born_repo("behind-edited");
+    let (repo, home) = (repo.path(), home.path());
+    write(repo, "AGENTS.md", merged_plant("CLAUDE.md"));
+    link(repo, "CLAUDE.md", "AGENTS.md");
+    git(repo, &["add", "-A"]);
+    git(repo, &["commit", "-q", "-m", "our layout"]);
+    let edited = format!(
+        "{}One more rule nobody committed.\n",
+        merged_plant("CLAUDE.md")
+    );
+    write(repo, "AGENTS.md", &edited);
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    assert!(
+        said(&out).contains("setup.dirty-install-path") && said(&out).contains("  `AGENTS.md`"),
+        "{}",
+        said(&out)
+    );
+    assert_eq!(read(repo, "AGENTS.md"), edited, "byte-identical");
+
+    // No commit yet: the on-ramp.
+    let (repo, home) = unborn_repo("behind-unborn");
+    let (repo, home) = (repo.path(), home.path());
+    write(repo, "AGENTS.md", merged_plant("CLAUDE.md"));
+    link(repo, "CLAUDE.md", "AGENTS.md");
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(out.status.code(), Some(0), "the on-ramp: {}", said(&out));
+    let committed = git(repo, &["ls-tree", "-r", "--name-only", "HEAD"]);
+    assert!(
+        committed.lines().any(|path| path == "AGENTS.md")
+            && committed.lines().any(|path| path == "CLAUDE.md"),
+        "the first commit carries the link and the file behind it: {committed}"
+    );
+    assert!(
+        git_try(repo, &["diff", "--quiet"]).status.success(),
+        "clean"
     );
 }
