@@ -340,11 +340,14 @@ pub enum Command {
     /// all four with the install. jigc's own caches and locks under `.jigc/index/`
     /// and `.jigc/state/` are rebuildable, so they go with `.jigc/` — and the
     /// teardown names each file it takes, and each open task or milestone whose
-    /// bookkeeping goes with them. A log you moved out stays out: with the
-    /// `invocation-log` knob on, `jigc uninstall` — landing, refusing, or printing
-    /// this help — adds its record only to a log that is already there and never
-    /// creates one, so a refusal never puts the log back in the next run's way.
-    /// Every other jigc verb still starts the log while the knob is on.
+    /// bookkeeping goes with them. The teardown itself never puts back a log you
+    /// moved out: with the `invocation-log` knob on, `jigc uninstall` — landing,
+    /// refusing, or printing this help — adds its record only to a log that is
+    /// already there and never creates one. Every other jigc invocation still
+    /// starts the log while the knob is on, and that includes the installed
+    /// `pre-commit` hook's `jigc validate` on each `git commit` — so turn the knob
+    /// off (`jigc config set invocation-log false`, then `git add` the config
+    /// change) before you move the log out.
     Uninstall {
         /// Remove `.jigc/` even when it holds a fan-out worktree with content, an
         /// open task's staged docs, a file jigc did not write, or a workbench file

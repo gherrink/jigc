@@ -182,7 +182,11 @@ log: `jigc uninstall` adds its record only to a log that is already there, so a
 teardown that succeeds does not bring `.jigc/` back to log itself, and one that
 refuses does not put back a log you moved out. That log is yours and nothing
 else has a copy of it, so `jigc uninstall` refuses while it is there — move it
-out of `.jigc/` or delete it, then re-run, or pass `--force`.
+out of `.jigc/` or delete it, then re-run, or pass `--force`. Every *other* jigc
+run starts the log again while the knob is on, and the installed `pre-commit` hook
+is one: a plain `git commit` between two attempts brings it back. So turn the knob
+off first (`jigc config set invocation-log false`, and `git add` the config file
+that changes), then move the log out.
 
 ### Reading while the task is open
 

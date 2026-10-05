@@ -565,10 +565,26 @@ fn uninstall_help_names_every_guard_the_door_runs() {
     // The log rule the door's own record runs on (left open by `(R9, F5)`, ruled inside
     // it): the teardown blocks over the log, so its help says the teardown never starts
     // one — and says which runs still do, because that is where the rule ends.
+    //
+    // **[Corrected 2026-10-05 (the rc.24 fix pass's completion audit, XC-5).** This pinned
+    // *"A log you moved out stays out"*, and that sentence is false: the rule is about the
+    // one verb, and the installed `pre-commit` hook is a jigc invocation — driven, the log
+    // moved out, one plain `git commit`, and the log was back with a `validate` record.
+    // The help now says what the teardown itself does not do, names the hook among the
+    // runs that still start the log, and gives the order that ends it
+    // (`uninstall_workbench_subject::a_plain_commit_restarts_the_log_and_the_documented_order_ends_it`
+    // drives it).**]**
+    assert!(
+        !help.contains("A log you moved out stays out"),
+        "`uninstall --help` must not promise the log stays out — a commit's hook restarts \
+         it; got:\n{help}"
+    );
     for claim in [
-        "A log you moved out stays out",
+        "The teardown itself never puts back a log you moved out",
         "never creates one",
-        "Every other jigc verb still starts the log while the knob is on",
+        "Every other jigc invocation still starts the log while the knob is on",
+        "`pre-commit` hook's `jigc validate` on each `git commit`",
+        "turn the knob off",
     ] {
         assert!(
             help.contains(claim),

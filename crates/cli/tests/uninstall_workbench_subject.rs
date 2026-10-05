@@ -1554,3 +1554,74 @@ fn the_teardown_takes_only_jigcs_lines_out_of_an_extended_hook() {
     assert!(forced.status.success(), "the forced re-run lands");
     assert!(!hook.exists(), "and takes the file");
 }
+
+/// **(r)** *The teardown never starts the log* is a rule about one verb, and the bound on
+/// it is every **other** jigc invocation — the ones nobody types included (the rc.24 fix
+/// pass's completion audit, XC-5).
+///
+/// The design stated the bound as *two of the teardown's four refusals route through
+/// another jigc verb*. That undercounts: the installed `pre-commit` hook runs `jigc
+/// validate`, so a plain `git commit` between two teardown attempts — which
+/// `uninstall.dirty-worktree`'s own route offers — brings the log back. This cell holds the
+/// corrected sentence to the binary: the log moved out, one commit, and the log is there
+/// again with the hook's record; then the order the docs now give ends it in one pass —
+/// knob off, the config change staged, the log moved out, the teardown.
+#[test]
+fn a_plain_commit_restarts_the_log_and_the_documented_order_ends_it() {
+    let site = Installed::new("log-hook");
+    turn_the_log_on(&site);
+    let log = site.repo().join(LOG);
+    let commit = |what: &str| {
+        let out = Command::new("git")
+            .args(["commit", "-q", "-m", what])
+            .current_dir(site.repo())
+            .env("HOME", site.home.path())
+            .env_remove("JIGC_PACK_DIR")
+            .output()
+            .expect("run git commit");
+        assert!(
+            out.status.success(),
+            "git commit `{what}`: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    commit("turn the log on");
+    // Whatever the runs so far logged, moved out — the operator clearing the refusal.
+    let _ = fs::remove_dir_all(site.repo().join(".jigc/logs"));
+    assert!(!log.exists(), "the premise: no log");
+
+    // A refused teardown does not start it (the rule itself)…
+    plant(&site, ".jigc/stray.txt", "x\n");
+    assert!(!site.run(&["uninstall"]).status.success());
+    assert!(!log.exists(), "the teardown never starts the log");
+    fs::remove_file(site.repo().join(".jigc/stray.txt")).expect("clear the plant");
+
+    // …and a plain commit does: the hook is a jigc invocation.
+    fs::write(site.repo().join("scratch.txt"), "s\n").expect("write");
+    git_ok(site.repo(), &["add", "--", "scratch.txt"]);
+    commit("an ordinary commit");
+    let records = fs::read_to_string(&log)
+        .expect("the installed pre-commit hook's `jigc validate` started the log again");
+    assert!(
+        records.lines().count() == 1 && records.contains("\"validate\""),
+        "one record, the hook's: {records}"
+    );
+    let refused = site.run(&["uninstall"]);
+    assert!(
+        !refused.status.success() && String::from_utf8_lossy(&refused.stderr).contains(LOG),
+        "so the teardown refuses over the log once more"
+    );
+
+    // The order the docs give: knob off, its config change staged, the log out, teardown.
+    let off = site.run(&["config", "set", "invocation-log", "false"]);
+    assert!(off.status.success(), "knob off");
+    git_ok(site.repo(), &["add", "--", ".jigc/config"]);
+    fs::remove_dir_all(site.repo().join(".jigc/logs")).expect("move the log out");
+    let out = site.run(&["uninstall"]);
+    assert!(
+        out.status.success(),
+        "one pass: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!site.repo().join(".jigc").exists(), "`.jigc/` is gone");
+}
