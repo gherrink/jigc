@@ -339,7 +339,8 @@ pub enum Command {
     /// Any of them removes nothing until you re-run — or pass `--force`, which deletes
     /// all four with the install. jigc's own caches and locks under `.jigc/index/`
     /// and `.jigc/state/` are rebuildable, so they go with `.jigc/` — and the
-    /// teardown names each file it takes. A log you moved out stays out: with the
+    /// teardown names each file it takes, and each open task or milestone whose
+    /// bookkeeping goes with them. A log you moved out stays out: with the
     /// `invocation-log` knob on, `jigc uninstall` — landing, refusing, or printing
     /// this help — adds its record only to a log that is already there and never
     /// creates one, so a refusal never puts the log back in the next run's way.

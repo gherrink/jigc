@@ -626,11 +626,38 @@ fn a_teardown_that_removed_nothing_narrates_nothing() {
         Some(PRECIOUS),
         "the premise: nothing was taken; stderr:\n{stderr}",
     );
+    // **Per path, not per run** (the rc.24 fix pass's completion audit, install-teardown
+    // F6). `remove_dir_all` on a `.jigc/` it cannot unlink from still empties whichever
+    // child *directory* the read order hands it first, before the unlink of that child
+    // fails — so this run can take the two sub-task areas and nothing else. No narration
+    // covered those areas until the work-unit one was added, so the assertion here read
+    // *claims no removal at all* and held by silence. The rule it stands for is the one
+    // every narration states: name what is gone, and nothing that is still standing.
     assert!(
-        !claims_a_removal(&stderr),
-        "a teardown that took nothing must claim no removal at all — of the workbench, of a \
-         worktree, or of staged prose; stderr:\n{stderr}",
+        !stderr.contains("notes.md"),
+        "the file that survived must not be named as removed; stderr:\n{stderr}",
     );
+    for named in stderr
+        .lines()
+        .filter_map(|line| line.strip_prefix("    "))
+        .filter(|line| line.starts_with(".jigc/"))
+    {
+        assert!(
+            fs::symlink_metadata(held.repo.join(named)).is_err(),
+            "`{named}` is still standing, so the teardown must not name it as removed; \
+             stderr:\n{stderr}",
+        );
+    }
+    if !claims_a_removal(&stderr) {
+        // The read order reached a file first: nothing was taken, and nothing is claimed.
+        for area in ["area-yak", "area-zed"] {
+            assert!(
+                held.repo.join(".jigc/tasks").join(area).is_dir(),
+                "no removal was claimed, so the sub-task area `{area}` must still be there; \
+                 stderr:\n{stderr}",
+            );
+        }
+    }
 
     let cleared = Fixture::mint();
     let taken = cleared.repo.join(".jigc").join("notes.md");

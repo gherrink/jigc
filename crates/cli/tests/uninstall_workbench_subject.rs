@@ -779,6 +779,9 @@ fn jigcs_own_caches_are_never_foreign_and_every_one_is_named() {
         let mut own = leaves_under(&repo, ".jigc/state");
         own.extend(leaves_under(&repo, ".jigc/index"));
         seen += own.len();
+        // The work-unit areas: jigc's registry files for each open task and milestone are
+        // named through the directory that holds them (arm (n″) below).
+        let units = work_units(&repo);
 
         // Unforced: whatever else this state refuses over (an open task's staged docs, in
         // `refs-post-hoc`), it is never jigc's own cache under the foreign code.
@@ -805,7 +808,7 @@ fn jigcs_own_caches_are_never_foreign_and_every_one_is_named() {
             out.status.success(),
             "[{state:?}] the teardown must complete; stderr:\n{stderr}",
         );
-        for path in &own {
+        for path in own.iter().chain(&units) {
             assert!(
                 stderr.contains(path.as_str()),
                 "[{state:?}] the teardown must name `{path}` as it takes it; got:\n{stderr}",
@@ -819,6 +822,78 @@ fn jigcs_own_caches_are_never_foreign_and_every_one_is_named() {
     assert!(
         seen > 0,
         "at least one corpus state must carry jigc's caches, or this arm asserts nothing",
+    );
+}
+
+/// The work-unit directories under `.jigc/tasks/` and `.jigc/milestones/`, repo-relative.
+fn work_units(repo: &Path) -> Vec<String> {
+    let mut units = Vec::new();
+    for area in [".jigc/tasks", ".jigc/milestones"] {
+        let Ok(children) = fs::read_dir(repo.join(area)) else {
+            continue;
+        };
+        for child in children.flatten() {
+            if child.path().is_dir() {
+                units.push(format!("{area}/{}", child.file_name().to_string_lossy()));
+            }
+        }
+    }
+    units.sort();
+    units
+}
+
+/// **(n″)** *Whatever this door takes, it names* — over the population the rule left out
+/// (the rc.24 fix pass's completion audit, install-teardown F6): the registry files jigc
+/// keeps for an open work unit. Driven at `b54b58b2`: `jigc milestone create`, then `jigc
+/// uninstall` at exit 0, and the milestone's `base.json`, `tasks.json`,
+/// `staged-snapshot.json` and `record-commit-msg.txt` were gone with no line naming them
+/// or the milestone — the narration listed the tracked install files and `state/` only.
+/// The guards over the two work-unit areas refuse what jigc did **not** write there;
+/// nothing spoke for what it did.
+///
+/// They are named through their work unit, once, and nothing is refused: none of it is
+/// the operator's, and the teardown lands as it did.
+#[test]
+fn a_work_units_bookkeeping_is_named_as_the_teardown_takes_it() {
+    let site = Installed::new("work-unit");
+    let made = site.run(&["milestone", "create", "Ship the cache"]);
+    assert!(
+        made.status.success(),
+        "`jigc milestone create`: {}",
+        String::from_utf8_lossy(&made.stderr)
+    );
+    let units = work_units(site.repo());
+    assert_eq!(
+        units,
+        vec![".jigc/milestones/ship-the-cache".to_string()],
+        "the premise: one open milestone, whose area holds jigc's registry files"
+    );
+    assert!(
+        !leaves_under(site.repo(), ".jigc/milestones").is_empty(),
+        "the premise: there are files in it to take"
+    );
+
+    let out = site.run(&["uninstall"]);
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(
+        out.status.success(),
+        "nothing here is the operator's, so the teardown lands: {stderr}"
+    );
+    assert!(
+        stderr.contains("jigc's own bookkeeping for 1 open work unit(s)")
+            && stderr.contains("    .jigc/milestones/ship-the-cache"),
+        "and it names the milestone whose bookkeeping it took: {stderr}"
+    );
+    assert!(!site.repo().join(".jigc").exists(), "`.jigc/` is gone");
+
+    // The control: no open work unit, no line.
+    let site = Installed::new("no-work-unit");
+    let out = site.run(&["uninstall"]);
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(out.status.success(), "{stderr}");
+    assert!(
+        !stderr.contains("open work unit"),
+        "a teardown that took no work unit's bookkeeping says nothing of one: {stderr}"
     );
 }
 

@@ -4363,9 +4363,19 @@ impl RemovedArtifacts {
 /// **What no guard refuses over is jigc's own rebuildable state** — the file-state record,
 /// the edge index, their save locks and the install-footprint record
 /// ([`OwnTransientFile::Disposable`]). It goes with the tree, and it is **named** as it
-/// goes ([`narrate_own_state`]): the four guards and that one narration partition every
-/// byte under `.jigc/`, so the teardown takes nothing it has not either refused over or
-/// named.
+/// goes ([`narrate_own_state`]).
+///
+/// **And the registry files jigc keeps for each open work unit** — a task's or a
+/// milestone's base pin, task list and snapshots under `.jigc/tasks/<id>/` and
+/// `.jigc/milestones/<slug>/` — go the same way and are named **by work unit**
+/// ([`narrate_work_units`]). This comment said *the four guards and that one narration
+/// partition every byte under `.jigc/`*, and they did not (the rc.24 fix pass's completion
+/// audit, install-teardown F6): after `jigc milestone create`, the teardown took that
+/// milestone's four registry files at exit 0 and no line said so — the guards over those
+/// two areas refuse the bytes jigc did **not** write and the staged docs, and nothing
+/// spoke for the rows jigc did. With the second narration the partition holds: every
+/// file under `.jigc/` is refused over, named itself, or named through the work unit
+/// whose bookkeeping it is.
 ///
 /// `force` is the operator's consent to delete. It skips the four guards, and — the one
 /// other thing this teardown refuses on its own — takes the adapter's owned guide artifact
@@ -5542,7 +5552,30 @@ fn pending_teardown(jigc_home: &Path) -> PendingTeardown {
         own_state: own_transient_leaves(jigc_home)
             .map(|leaves| leaves.disposable)
             .unwrap_or_default(),
+        work_units: work_unit_areas(jigc_home),
     }
+}
+
+/// The work-unit areas standing under `.jigc/` — every directory directly inside
+/// `.jigc/tasks/` and `.jigc/milestones/`, repo-relative and sorted. Read off the disk
+/// through the same walk the foreign-bytes guard takes ([`workbench_foreign_areas`]), so
+/// what is named here is exactly the set that guard was asked about. A non-directory child
+/// is not a work unit and is that guard's own subject, so it is not listed. Best-effort,
+/// like every narration's read: an unreadable area names nothing.
+fn work_unit_areas(jigc_home: &Path) -> Vec<String> {
+    let mut areas: Vec<String> = workbench_foreign_areas(jigc_home)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(path, kind)| {
+            matches!(
+                kind,
+                crate::task::AreaKind::Task | crate::task::AreaKind::Milestone
+            ) && std::fs::symlink_metadata(path).is_ok_and(|shape| shape.is_dir())
+        })
+        .map(|(path, _)| crate::render::repo_relative(jigc_home, &path))
+        .collect();
+    areas.sort();
+    areas
 }
 
 /// Everything `jigc uninstall`'s `remove_dir_all(<repo>/.jigc)` was aimed at, read before it
@@ -5565,6 +5598,9 @@ struct PendingTeardown {
     /// jigc's own rebuildable state inside the transient directories
     /// ([`OwnTransientFile::Disposable`]).
     own_state: Vec<String>,
+    /// The work-unit areas — each open task's and milestone's directory, whose registry
+    /// files jigc wrote ([`work_unit_areas`]).
+    work_units: Vec<String>,
 }
 
 impl PendingTeardown {
@@ -5578,6 +5614,7 @@ impl PendingTeardown {
         self.prose.narrate_taken(jigc_home);
         narrate_workbench_files(jigc_home, &self.workbench);
         narrate_own_state(jigc_home, &self.own_state);
+        narrate_work_units(jigc_home, &self.work_units);
     }
 
     /// Name what went with each registration [`drop_workbench_registrations`] actually
@@ -5598,7 +5635,8 @@ impl PendingTeardown {
 /// the operator's is in them. It is not a reason to take them unnamed. Before the rc.24 fix
 /// pass the teardown's surfaces accounted for the tracked install files and for nothing
 /// else under `index/`, `state/` or `logs/`, so *"whatever this door takes, it names"* was
-/// true of every directory but three.
+/// true of every directory but three — and, until [`narrate_work_units`], of none of the
+/// registry files in the two work-unit areas.
 ///
 /// **Each path is filtered on its own survival**, like every sibling narration: a removal
 /// that failed names what is gone and stays silent about what is still there.
@@ -5615,6 +5653,41 @@ fn narrate_own_state(jigc_home: &Path, own_state: &[String]) {
          under it:\n{}\n  note: jigc wrote each one — a cache, a save lock or its own \
          bookkeeping — and rebuilds what it needs from the committed docs; nothing of yours \
          is in them.",
+        gone.len(),
+        gone.iter()
+            .map(|path| format!("    {path}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+}
+
+/// Name the **work units** whose bookkeeping `remove_dir_all(<repo>/.jigc)` took — each
+/// open task's and milestone's directory under `.jigc/tasks/` and `.jigc/milestones/`,
+/// read before the removal ran ([`work_unit_areas`]).
+///
+/// One line per work unit, not per file: what a reader needs to know is *which* task or
+/// milestone jigc has now forgotten, and the files inside are the same handful for every
+/// one of them. What was the operator's in those directories is spoken for elsewhere —
+/// the staged docs by the staged-prose narration, a byte jigc did not write by the
+/// foreign-bytes one — so this names the rest: jigc's own registry rows, which nothing
+/// named until the rc.24 fix pass's completion audit drove a `jigc milestone create`
+/// followed by a teardown that took four of them in silence.
+///
+/// **Each path is filtered on its own survival**, like every sibling narration.
+fn narrate_work_units(jigc_home: &Path, work_units: &[String]) {
+    let gone: Vec<&String> = work_units
+        .iter()
+        .filter(|path| std::fs::symlink_metadata(jigc_home.join(path.as_str())).is_err())
+        .collect();
+    if gone.is_empty() {
+        return;
+    }
+    eprintln!(
+        "warning: removing `.jigc/` also removes jigc's own bookkeeping for {} open work \
+         unit(s) under it:\n{}\n  note: these are the registry files jigc keeps for a task or \
+         a milestone — its base pin, its task list, its snapshots. Anything you had staged \
+         in one is named above; a milestone's committed record and every committed doc are \
+         untouched.",
         gone.len(),
         gone.iter()
             .map(|path| format!("    {path}"))
