@@ -3814,8 +3814,10 @@ pub struct StagedPath {
 /// `HEAD` reachable from a ref or at the milestone's base pin, nothing staged — still clears,
 /// so the idempotent re-provision survives exactly where it is harmless. **And at `jigc
 /// milestone finalize`, before the boundary lands** ([`unlanded_work`]): the fourth worktree
-/// door narrated this subject *after* landing until the same day's second ruling, which
-/// left the work out of a milestone already settled as `joined`.
+/// door narrated this subject *after* landing — which left the work out of a milestone
+/// already settled as `joined` — until the refusal was taken to it the same day
+/// (`DECISIONS.md` → 2026-10-04, *five further class members queued*, item 4, which
+/// records whose call that was).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Anchored {
     /// The commits only this registration's `HEAD` reaches, or `None` when a ref (or the
@@ -4608,9 +4610,11 @@ pub const TASK_FINALIZE_DOOR: DestroyingDoor = DestroyingDoor {
 /// reaches, the staged paths of a worktree whose directory is gone — has neither of this
 /// door's other two answers available: no commit of the boundary's takes it (so the
 /// narrating warrant fails, as it did for the working areas), and there is nowhere to move
-/// it (it is a `HEAD` and an index, not a file). The human's ruling is the third arm,
-/// taken **before the boundary lands** ([`unlanded_work`], [`FINALIZE_HELD_CODE`]): refuse,
-/// commit nothing, leave the record `active`. It is a refusal with **no consent** — this
+/// it (it is a `HEAD` and an index, not a file). The answer taken is the third arm,
+/// **before the boundary lands** ([`unlanded_work`], [`FINALIZE_HELD_CODE`]; `DECISIONS.md`
+/// → 2026-10-04, *five further class members queued*, item 4, which records whose call it
+/// was): refuse, commit nothing, leave the record `active`. It is a refusal with **no
+/// consent** — this
 /// door has no `--force`, and one would be a new capability rather than a guard — which is
 /// why the row stays [`Disposition::Displace`] (what it does with the bytes it *does*
 /// reach) and [`DestroyingDoor::consent`] stays `None`: the exits are the commands the
@@ -7847,8 +7851,11 @@ struct UnlandedWork {
 
 /// **Every sub-task worktree registration that holds work `jigc milestone finalize` would
 /// land without** — the boundary's pre-landing guard over the leftover probe's third leg
-/// (the rc.24 fix pass; the human's ruling of 2026-10-04 on this class: *refuse while it
-/// holds staged paths or an unreachable commit, stale or live*).
+/// (the rc.24 fix pass). The human's ruling of 2026-10-04 on this class — *refuse while it
+/// holds staged paths or an unreachable commit, stale or live* — named the three consenting
+/// doors and had this one name what it drops *after* landing; taking the refusal to this
+/// door, *before* it lands, is `DECISIONS.md` → 2026-10-04, *five further class members
+/// queued*, item 4, which records whose call that was.
 ///
 /// The boundary lands exactly one thing out of a sub-task's worktree — **the paths staged
 /// in a live checkout of a sub-task it lands** — and then its teardown drops git's
