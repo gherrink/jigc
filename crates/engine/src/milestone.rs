@@ -4069,7 +4069,9 @@ A cold node loses its sessions; clients re-authenticate.
         .expect("provision created doc");
         let zebra_dir = root.path().join("tasks").join("zebra-area");
         let adr_source = "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# Zebra decision\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nDo the thing.\n";
-        crate::state::copy_in(&zebra_dir, "adr", "zebra-decision", adr_source)
+        let read =
+            crate::state::CopyInRead::of("decisions/zebra-decision.md", adr_source, &|_, _| None);
+        crate::state::copy_in(&zebra_dir, "adr", "zebra-decision", &read)
             .expect("copy in edited-from-base doc");
 
         // The fixture's RECORDED task list is reverse-id insertion order, the

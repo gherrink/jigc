@@ -1,42 +1,42 @@
-//! M46 Increment 1 / T4, restaged by the rc.24 fix pass `(R3, F7)` — **the baseline
-//! contrast**: what the `file-state` baseline is *worth*, and what its absence costs,
-//! pinned as arms of one fixture rather than described.
+//! M46 Increment 1 / T4, restaged by the rc.24 fix pass `(R3, F7)` and again by its
+//! witness decision (2026-10-05) — **the contrast**: what decides whether a hand edit and a
+//! task's write to the same managed doc block or merge, pinned as arms of one fixture
+//! rather than described.
 //!
 //! `CLAUDE.md` → Architectural invariants states that out-of-band edits are
 //! *"detected and routed — conformant non-conflicts absorbed, conflicts blocked and
-//! routed to a human, **never silently merged**"*. That guarantee is a property of the
-//! reconciliation state machine **plus a recorded baseline**:
-//! `engine::file_state::reconcile_committed` reaches its `DRIFTED + TOUCHED →
-//! conflict-block` arm only from `record.get(path) == Some(_)`.
+//! routed to a human, **never silently merged**"*.
 //!
-//! The arms are one function with **one branch**: identical repo, identical committed
-//! ADR, identical out-of-band human edit (made before the task's first touch),
-//! identical in-task write over the same doc. The only difference is whether — and
-//! *when* — the ADR's key is missing from `.jigc/state/file-state.json`.
+//! The arms are one function with **two inputs**: identical repo, identical committed
+//! ADR, identical out-of-band human edit, identical in-task write over the same doc. What
+//! differs is (1) whether — and *when* — the ADR's key is missing from
+//! `.jigc/state/file-state.json`, and (2) which side of the task's first touch the human's
+//! edit falls on.
 //!
-//! | arm | the ADR's key | outcome |
+//! | the ADR's key | edit **before** the first touch | edit **after** it |
 //! |---|---|---|
-//! | **A** | present throughout | `reconciliation.conflict-block`, exit 3 ([`cli::task::EXIT_VALIDATION_BLOCKED`]), **no commit** |
-//! | **B** | absent **when the task first touches the doc** | exit 0, a commit lands carrying **both** sides' bytes — the declared merge order |
-//! | **C** | lost **after** the task's first touch | `reconciliation.conflict-block`, exit 3, **no commit** — the base-pin backstop |
+//! | present throughout | merge — exit 0, both sides in one commit | `reconciliation.conflict-block`, exit 3, no commit |
+//! | absent at the first touch | merge | conflict-block |
+//! | lost after the first touch | merge | conflict-block |
 //!
-//! **Arm B is the cost `design/storage.md` → Concurrent writers declares, and it is a
-//! merge, never a loss.** The task's copy-in carries the human's edit and records it as
-//! the doc's baseline (`engine::file_state::read_for_copy_in`), so the finalize lands
-//! both sides. Its fixture is not defect-only: `.jigc/` is gitignored, so a teammate's
-//! fresh clone has no record at all; `jigc unmanage` forgets a key by design; a deleted
-//! cache directory is sanctioned.
+//! **The table has one column of difference, and it is the order — never the key.** That
+//! is what this suite exists to show, and it is not what it showed before. Its first form
+//! (M46) pinned *present → block, absent → silent merge*: the guarantee was a property of
+//! a gitignored cache. The rc.24 fix pass `(R3, F7)` recorded the baseline at the copy-in
+//! and added a base-pin backstop, which made *lost after* block — in **both** orders, since
+//! a pin cannot say which side of the copy-in an edit fell on — and left *present* blocking
+//! an edit the task had in fact copied in and carried. So one sequence — hand edit, then
+//! the task's first write — landed in a fresh clone and blocked in a baselined checkout.
 //!
-//! **Arm C is the arm this suite used to pin as the silent merge.** Until the rc.24 fix
-//! pass a key lost at *any* point took the `UNKNOWN → baseline-adopt` arm — an advisory —
-//! and the finalize landed at exit 0. For this order of the edit that was a merge; for
-//! the other order (the hand edit *after* the task's first write) it was an exit-0
-//! **overwrite** of the human's bytes
-//! (`completions/artifacts/M55/per-axis-review-rc24/tier1-verification/R3-F7.md`), and
-//! with no record the staged copy cannot say which order it is in. So a touched doc with
-//! no record is decided by its base pin, and bytes that differ from the pin's blob block.
-//! The class is iterated in `copy_in_baseline.rs`; this suite keeps the three-arm
-//! contrast.
+//! The question the door asks is *is the file still what this task copied in?*, and the
+//! record that answers it is now the task's own
+//! (`engine::state::CopiedIn`, in the task area's `docs/provenance.json`;
+//! `design/reconciliation.md` → What a task copied in). An edit before the first touch is
+//! in the staged copy: it is carried, lands, and the door says the baseline moved. An edit
+//! after it is not: it blocks, and the human's bytes stay on disk. Whatever the cache holds.
+//!
+//! The class — both doors, both doctype kinds, every way the key is absent, the crossing
+//! cells — is iterated in `copy_in_baseline.rs`; this suite keeps the contrast.
 //!
 //! The arms drop the key through the engine API itself (`load` → `forget` → `save`),
 //! never by hand-editing bytes.
@@ -195,7 +195,17 @@ fn set_slot(repo: &Path, home: &Path, addr: &str, prose: &str) {
     );
 }
 
-/// Which arm is being driven — the set's **only** input difference.
+/// Which side of the task's first touch of the doc the human's edit falls on — the input
+/// that decides the outcome.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Order {
+    /// The edit is on disk when the task copies the doc in, so the staged copy carries it.
+    EditBeforeFirstTouch,
+    /// The edit is made after the copy-in, so the staged copy does not.
+    EditAfterFirstTouch,
+}
+
+/// What the `file-state` record holds for the doc — the input that decides nothing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Arm {
     /// The committed ADR's file-state baseline is present throughout.
@@ -259,9 +269,10 @@ struct Outcome {
     baseline_at_finalize: bool,
 }
 
-/// Drive one arm end to end. **One branch on `arm`** — the baseline drop — so the
-/// contrast the test asserts cannot come from anywhere else.
-fn drive(arm: Arm) -> Outcome {
+/// Drive one cell end to end. **One branch on `arm`** — the baseline drop — and **one on
+/// `order`** — where the human's edit is written — so the contrast the test asserts cannot
+/// come from anywhere else.
+fn drive(arm: Arm, order: Order) -> Outcome {
     let repo = TempDir::new(arm.tag());
     let home = TempDir::new("home");
     let repo = repo.path();
@@ -340,30 +351,36 @@ fn drive(arm: Arm) -> Outcome {
     // ── The human channel: an out-of-band, conformant, prose-only edit to the
     //    committed ADR, written on disk AFTER the warm task is minted and left
     //    uncommitted. HEAD stays at the task's base (a `finalize.base-mismatch` would
-    //    pre-empt the reconcile gate and the arms would prove nothing about
+    //    pre-empt the reconcile gate and the cells would prove nothing about
     //    reconciliation), and the edit is not the base pin's blob — a change made during
-    //    the task, which M55 Increment 4's pulled-edit absorb leaves to this arm's
-    //    conflict-block. It lands BEFORE the task's first touch, so the copy-in below
-    //    carries it: arm B's merge is a commit carrying both sides' prose.
+    //    the task, never a pulled one.
     let path = repo.join(ADR_PATH);
-    let body = fs::read_to_string(&path).expect("read the committed ADR");
-    let edited = body.replacen("A cold node loses its sessions.", HUMAN_PROSE, 1);
-    assert_ne!(body, edited, "the OOB edit must change the committed ADR");
-    fs::write(&path, edited).expect("apply the OOB edit");
+    let human_edit = || {
+        let body = fs::read_to_string(&path).expect("read the committed ADR");
+        let edited = body.replacen("A cold node loses its sessions.", HUMAN_PROSE, 1);
+        assert_ne!(body, edited, "the OOB edit must change the committed ADR");
+        fs::write(&path, edited).expect("apply the OOB edit");
+    };
+    if order == Order::EditBeforeFirstTouch {
+        human_edit();
+    }
 
-    // ── The one branch, first half: arm B has no key when the task first touches the
-    //    doc.
+    // ── The `arm` branch, first half: no key when the task first touches the doc.
     if arm == Arm::AbsentAtFirstTouch {
         drop_the_baseline(repo);
     }
     let baseline_at_first_touch = baseline_recorded(repo);
 
-    // ── The warm task touches the SAME doc through the CLI (copy-in for update), so
-    //    both sides have moved: the committed file and this task's staged writes.
+    // ── The warm task touches the SAME doc through the CLI (copy-in for update). The
+    //    copy-in is where the task records what it copied in.
     set_slot(repo, home, "adr:single-node-cache#decision", TASK_PROSE);
     fill_commit(repo, home, warm, "revise the decision");
 
-    // ── The one branch, second half: arm C loses the key after that touch.
+    if order == Order::EditAfterFirstTouch {
+        human_edit();
+    }
+
+    // ── The `arm` branch, second half: the key is lost after that touch.
     if arm == Arm::LostAfterFirstTouch {
         drop_the_baseline(repo);
     }
@@ -428,69 +445,73 @@ fn assert_conflict_blocked(name: &str, arm: &Outcome) {
     );
 }
 
-/// **The contrast.** The same out-of-band edit over the same committed managed doc,
-/// touched by the same task. With the baseline recorded the conflict is detected and
-/// blocked. With no key at the task's first touch the copy-in adopts the human's bytes
-/// and the two sides land merged — the declared cost of a missing baseline. With the key
-/// lost after that touch the base pin blocks, where it used to merge silently.
-#[test]
-fn the_baseline_decides_between_a_block_and_the_declared_merge() {
-    let arm_a = drive(Arm::Present);
-    let arm_b = drive(Arm::AbsentAtFirstTouch);
-    let arm_c = drive(Arm::LostAfterFirstTouch);
-
-    // The fixture's own witness: the arms diverge exactly where they claim to.
-    assert!(
-        arm_a.baseline_at_first_touch && arm_a.baseline_at_finalize,
-        "arm A holds the ADR's recorded baseline throughout",
-    );
-    assert!(
-        !arm_b.baseline_at_first_touch,
-        "arm B reaches the task's first touch WITHOUT the ADR's recorded baseline",
-    );
-    assert!(
-        arm_b.baseline_at_finalize,
-        "arm B's copy-in recorded the baseline — the bytes it copied, the human's edit \
-         included",
-    );
-    assert!(
-        arm_c.baseline_at_first_touch && !arm_c.baseline_at_finalize,
-        "arm C loses the ADR's recorded baseline AFTER the task's first touch",
-    );
-
-    // ── Arm A — baseline present ⇒ detected, blocked, routed, nothing committed.
-    assert_conflict_blocked("arm A", &arm_a);
-
-    // ── Arm B — no key at the first touch ⇒ the copy-in carries the human's edit and
-    //    adopts it as the baseline; nothing has moved since, so the finalize lands and
-    //    the promoted doc carries BOTH sides' prose. A merge, by the declared order.
+/// Assert `cell` merged: exit 0, one commit, both sides' prose in the committed doc, and
+/// no conflict finding.
+fn assert_merged(name: &str, cell: &Outcome) {
     assert_eq!(
-        arm_b.exit,
+        cell.exit,
         i32::from(cli::task::EXIT_SUCCESS),
-        "arm B succeeds — nothing blocks; findings were {:?}",
-        arm_b.codes,
+        "{name} lands — nothing blocks; findings were {:?}",
+        cell.codes,
     );
     assert!(
-        !arm_b
+        !cell
             .codes
             .iter()
             .any(|c| c == "reconciliation.conflict-block"),
-        "arm B never reaches the conflict arm; got {:?}",
-        arm_b.codes,
+        "{name} never reaches the conflict arm; got {:?}",
+        cell.codes,
     );
     assert_eq!(
-        arm_b.commits_after,
-        arm_b.commits_before + 1,
-        "arm B lands a commit",
+        cell.commits_after,
+        cell.commits_before + 1,
+        "{name} lands one commit",
     );
     assert!(
-        arm_b.committed_adr.contains(HUMAN_PROSE) && arm_b.committed_adr.contains(TASK_PROSE),
-        "arm B merges both sides into the committed doc; got:\n{}",
-        arm_b.committed_adr,
+        cell.committed_adr.contains(HUMAN_PROSE) && cell.committed_adr.contains(TASK_PROSE),
+        "{name} carries both sides into the committed doc; got:\n{}",
+        cell.committed_adr,
     );
+}
 
-    // ── Arm C — the key lost after the first touch ⇒ no record says what the task
-    //    started from, so the base pin does: the on-disk bytes differ from its blob,
-    //    and the door blocks rather than adopt them.
-    assert_conflict_blocked("arm C", &arm_c);
+/// **The contrast.** The same out-of-band edit over the same committed managed doc,
+/// touched by the same task, in every state of the recorded baseline. The outcome follows
+/// the **order** of the edit and the task's first touch — carried and landed when the edit
+/// came first, blocked with the human's bytes left on disk when it came after — and is the
+/// same down each column, whatever the baseline held or lost.
+#[test]
+fn the_order_of_the_edit_decides_between_a_block_and_a_merge_not_the_baseline() {
+    for arm in [
+        Arm::Present,
+        Arm::AbsentAtFirstTouch,
+        Arm::LostAfterFirstTouch,
+    ] {
+        let before = drive(arm, Order::EditBeforeFirstTouch);
+        let after = drive(arm, Order::EditAfterFirstTouch);
+
+        // The fixture's own witness: the arms differ where they claim to.
+        for (order, cell) in [("before", &before), ("after", &after)] {
+            let what = format!("{arm:?}, edit {order} the first touch");
+            match arm {
+                Arm::Present => assert!(
+                    cell.baseline_at_first_touch && cell.baseline_at_finalize,
+                    "{what}: the ADR's recorded baseline is held throughout",
+                ),
+                Arm::AbsentAtFirstTouch => assert!(
+                    !cell.baseline_at_first_touch && cell.baseline_at_finalize,
+                    "{what}: no baseline at the first touch, and the copy-in records one",
+                ),
+                Arm::LostAfterFirstTouch => assert!(
+                    cell.baseline_at_first_touch && !cell.baseline_at_finalize,
+                    "{what}: the baseline is lost AFTER the task's first touch",
+                ),
+            }
+        }
+
+        // ── Edit before the first touch ⇒ the task copied it in: carried, landed.
+        assert_merged(&format!("{arm:?}, edit before the first touch"), &before);
+        // ── Edit after the first touch ⇒ the file is no longer what the task copied in:
+        //    detected, blocked, routed, nothing committed, the human's bytes on disk.
+        assert_conflict_blocked(&format!("{arm:?}, edit after the first touch"), &after);
+    }
 }

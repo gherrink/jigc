@@ -1293,7 +1293,7 @@ $ jigc task finalize m-drift
 2. **The three running docs are authored and maintained across two milestone runs.** Run 1 cold-creates the `roadmap`/`deferral-ledger`/`decisions-log` singletons via idempotent-create + `add-item`/`set-slot`/`set-field`, finalize promotes each to its own `location:` subdir byte-stable; run 2 warm-re-creates (copy-in preserves the prior milestone, provenance `edited-from-base`), appends, and re-promotes byte-stable with **both** runs present. The roadmap milestone entry authors **both** the `proves` and the prose `decomposition` slots (the two-slot repeatable-item case).
 3. **The conformance gate fires on a real empty leaf.** A half-authored roadmap entry — `proves` authored, `decomposition` genuinely empty — **blocks** finalize at `schema-conformance.required-slot-present` naming the empty `decomposition` slot, non-zero exit with no commit (Increment 1's per-item conformance over this schema's leaves, the vacuously-green-managed-doc-gate guard).
 4. **`planning` is off-router.** Bare `jigc start` lists no `planning` catalog line and the `--format json` `workflows` array carries no `planning` id — `selectable: false`, the M8 catalog-leak class, asserted on the live front-door bytes.
-5. **A drifted warm-append conflict-blocks, never silently merges.** With the committed baseline recorded by run 1's finalize, an out-of-band edit to the committed roadmap (DRIFTED) plus a warm task that touches it (TOUCHED) **conflict-blocks** at finalize-preflight with `reconciliation.conflict-block`, non-zero exit, no commit (the storage-is-human-editable invariant: OOB conflicts route to a human, never silent merge).
+5. **A drifted warm-append conflict-blocks, never silently merges.** An out-of-band edit made to the committed roadmap **after** a warm task has copied it in — the file is no longer what the task copied in ([reconciliation.md](reconciliation.md) → What a task copied in) — **conflict-blocks** at finalize-preflight with `reconciliation.conflict-block`, non-zero exit, no commit (the storage-is-human-editable invariant: OOB conflicts route to a human, never silent merge).
 6. **The honest bound is observed, not over-claimed.** The flow proves jigc *composes* the single-agent planning spine and *maintains* its three running docs on **fresh instances**; the fanned recon, the independent design review, and jigc managing its *own* historical two-level roadmap stay out of scope ([methodology-docs.md](methodology-docs.md#what-m16-proves-and-what-it-does-not)). The build-honesty watch holds: gap-detect and Settle stay agent-judgment prose, never a gap-count lint (the `methodology_honesty_artifact` bar).
 
 ## 20. Completion encode — jigc composes its own milestone-completion spine and the #5 owner-artifact gate (M16)
@@ -3192,7 +3192,8 @@ $ jigc task finalize add-rate-limiter      # a pre-commit hook runs `jigc unmana
 #                                            never resurrects the key it held since preflight
 $ jigc task finalize revise-the-cache-decision      # arm A — the baseline is recorded
 > blocking · reconciliation.conflict-block          # exit 3, nothing committed
-# arm B — the same drift, the baseline lost:  exit 0, one commit, BOTH sides' prose in it
+# arm B — the same hand edit after the task's first write, the baseline lost: the same
+# block. The task's own record of what it copied in decides, not the cache.
 
 # ── Arm 2 · every destroying door answers for what it removes. ──
 #     (the axis: DESTROYING_DOORS, read through `DestroyingDoor::disposition`)

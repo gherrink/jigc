@@ -8511,6 +8511,28 @@ fn milestone_boundary_gate(
     let versions = crate::pack::frozen_doctype_versions(pack.as_ref());
     let priors = crate::pack::prior_doctype_schemas(pack.as_ref(), &versions);
     let migratable = crate::pack::migratable_doctypes(pack.as_ref());
+    // **Each merged doc a sub-task copied in is decided by what that sub-task copied in**
+    // (the rc.24 fix pass; `design/reconciliation.md` → What a task copied in). A sub-task's
+    // area is a task area: its copy-in wrote the same witness beside `edited-from-base`, in
+    // its own `docs/provenance.json`. The merged area holds bodies and no manifest, so the
+    // witnesses are read where they were written — from the areas the join names as each
+    // body's source — and compared with the file at the doc's home in `jigc_home`, the
+    // checkout the copy-in read and this gate's sweep reads. One sub-task per
+    // `edited-from-base` doc, by the join's own clash rule; were two ever to answer for one
+    // home, an edit seen by either stands.
+    let mut held = BTreeMap::new();
+    for sub_id in sources.values().collect::<std::collections::BTreeSet<_>>() {
+        let sub_dir = jigc_root.join("tasks").join(sub_id);
+        let verdicts = engine::state::held_docs(&sub_dir, jigc_home, schemas, &|path, bytes| {
+            crate::task::git_id_as_stored(jigc_home, path, bytes)
+        });
+        for (home, verdict) in verdicts {
+            let seen = held.entry(home).or_insert(verdict);
+            if verdict == engine::file_state::CopyInVerdict::Edited {
+                *seen = verdict;
+            }
+        }
+    }
 
     // ONE validate over the persisted merged docs (the filtered `gate_staging` area) + the
     // merged code root — the committed edge index is keyed to the shared base (`base.sha`),
@@ -8542,7 +8564,8 @@ fn milestone_boundary_gate(
                 " names the live tasks — discard the sub-task that staged this doc, or revert \
                  the external edit on disk, then re-run the join",
             ),
-        ),
+        )
+        .holding(held),
         &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable, jigc_home),
         // No live-record carve-out at the join (M52 Inc 10 / T6). The carve-out names the
         // record of the work unit whose TASK is being swept, and this door sweeps no task:

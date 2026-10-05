@@ -893,6 +893,93 @@ pub enum Provenance {
 pub struct ProvenanceRecord {
     /// `<type>:<slug>` address → provenance, address-sorted for deterministic output.
     pub docs: std::collections::BTreeMap<String, Provenance>,
+    /// `<type>:<slug>` address → **what this task copied in** ([`CopiedIn`]): the witness of
+    /// the bytes at the doc's home when the copy-in read them, which the committing door
+    /// compares the file against before it replaces it ([`held_docs`]).
+    ///
+    /// Absent from the wire while empty, and defaulted on read: an area that copied nothing
+    /// in keeps the bytes it always had, and an area minted by a binary older than this
+    /// member loads as one with no witness — its docs are decided as they were before it
+    /// existed (the recorded baseline, then the base pin).
+    #[serde(
+        default,
+        rename = "copied-in",
+        skip_serializing_if = "std::collections::BTreeMap::is_empty"
+    )]
+    pub copied_in: std::collections::BTreeMap<String, CopiedIn>,
+}
+
+/// **What a task recorded about a doc when it copied it in** — the task's own witness of
+/// the bytes its staged copy was made from (the rc.24 fix pass; `design/reconciliation.md`
+/// → What a task copied in).
+///
+/// A task that copies a doc in will, at its committing door, **replace** the file at the
+/// doc's home with its staged copy. Whether that is safe is one question — *is the file
+/// still what this task copied in?* — and until this record existed it was put to the
+/// per-path `file-state` record, which answers a different one: *is the file what the
+/// last jigc writer of this path saw?* Every other writer moves that record (another
+/// task's landed finalize absorbs a hand edit into it, `jigc ingest` does, `jigc unmanage`
+/// drops it, the cache is deleted), and a doc that does not conform, or that git has
+/// never committed, is never in it at all. Driven: each of those let a hand edit made
+/// after the task's first write be overwritten at exit 0 and left in no git object. The
+/// witness is the task's, lives in the task's own working area, and no other writer
+/// touches it.
+///
+/// Two forms of one fact, because the working file has more than one faithful byte form:
+///
+/// - [`bytes`](Self::bytes) — the `blake3` of the raw bytes read. Equal bytes are the
+///   same file in every repository layout, and git is never asked.
+/// - [`git`](Self::git) — the id git stores those bytes under **at the doc's home**
+///   (`git hash-object --path=<home>`), so the path's `core.autocrlf`, `text`/`eol`
+///   attributes and clean filter are applied. A file git itself wrote again in another
+///   line-ending form between the copy-in and the door has different bytes and the same
+///   id, and no hand touched it. The comparison at the door is symmetric — two working
+///   files through one conversion, never one against a committed blob — so git's own rule
+///   for a blob that already holds CRLF cannot make the two sides disagree. `None` where
+///   the caller could not ask git; such a witness answers on bytes alone.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CopiedIn {
+    /// `blake3` of the raw bytes read at the doc's home ([`crate::file_state::hash_bytes`]).
+    pub bytes: String,
+    /// The id git stores those bytes under at the doc's home, where git could be asked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git: Option<String>,
+}
+
+impl CopiedIn {
+    /// The witness of `body` as read at the repo-relative `home`.
+    pub fn of(home: &str, body: &[u8], as_git_stores: &crate::validate::AsGitStores<'_>) -> Self {
+        Self {
+            bytes: crate::file_state::hash_bytes(body),
+            git: as_git_stores(home, body),
+        }
+    }
+
+    /// Whether `now` — the file at `home` as the committing door reads it — is **still
+    /// what the task copied in**.
+    ///
+    /// 1. **The same bytes ⇒ as copied in**, and git is not asked.
+    /// 2. **Different bytes ⇒ git is asked whether they are the same content**: `now` is
+    ///    hashed as git would store it at `home`, and an id equal to the recorded one is a
+    ///    file git wrote again in another byte form, not an edit.
+    /// 3. **Different ids, no recorded id, or a git that cannot answer ⇒ edited.** The
+    ///    bytes differ, and where git cannot say they are the same content the door does
+    ///    not write over them.
+    pub fn compare(
+        &self,
+        home: &str,
+        now: &[u8],
+        as_git_stores: &crate::validate::AsGitStores<'_>,
+    ) -> crate::file_state::CopyInVerdict {
+        use crate::file_state::CopyInVerdict;
+        if crate::file_state::hash_bytes(now) == self.bytes {
+            return CopyInVerdict::AsCopiedIn;
+        }
+        match (&self.git, as_git_stores(home, now)) {
+            (Some(then), Some(now)) if *then == now => CopyInVerdict::AsCopiedIn,
+            _ => CopyInVerdict::Edited,
+        }
+    }
 }
 
 impl ProvenanceRecord {
@@ -940,13 +1027,26 @@ impl ProvenanceRecord {
 /// Load the `docs/` provenance manifest, record `address` → `provenance`, and persist it
 /// atomically — the shared stage-time provenance write the two staging primitives perform
 /// **after** the `.md` body lands (so the body bytes stay byte-for-byte unchanged).
+///
+/// `copied_in` is the copy-in's witness ([`CopiedIn`]), recorded **in the same write** as
+/// the provenance it belongs to, so no area ever holds a copied-in doc and half its record.
+/// Unlike the provenance, which is write-once, the witness names the bytes the *current*
+/// staged copy was made from: a copy-in that stages the doc again (its earlier staging
+/// undone by a failed multi-step write) replaces it, because the staged copy it describes
+/// was replaced too.
 fn record_provenance(
     task_dir: &Path,
     address: &str,
     provenance: Provenance,
+    copied_in: Option<&CopiedIn>,
 ) -> std::io::Result<()> {
     let mut record = ProvenanceRecord::load(task_dir)?;
     record.record(address, provenance);
+    if let Some(witness) = copied_in {
+        record
+            .copied_in
+            .insert(address.to_string(), witness.clone());
+    }
     write_atomic(
         &ProvenanceRecord::path_in(task_dir),
         record.to_bytes().as_bytes(),
@@ -967,7 +1067,7 @@ pub fn record_doc_provenance(
     address: &str,
     provenance: Provenance,
 ) -> std::io::Result<()> {
-    record_provenance(task_dir, address, provenance)
+    record_provenance(task_dir, address, provenance, None)
 }
 
 /// **Provision** a workflow-provisioned empty doc instance into the task working area
@@ -1006,6 +1106,7 @@ pub fn provision_doc(
         task_dir,
         &format!("{}:{slug}", schema.ty),
         Provenance::Created,
+        None,
     )?;
     Ok(path)
 }
@@ -1036,32 +1137,55 @@ pub fn provisioned_bytes(
 /// EOL-preserving, everything else byte-for-byte) and persists the result atomically at
 /// `<task_dir>/docs/<type>:<slug>.md`, returning its path. The committed source file is
 /// untouched (this writes only the working copy).
+///
+/// It stages from a [`CopyInRead`] and nothing else, so **what was read is what is
+/// recorded**: the witness of those bytes ([`CopiedIn`]) goes into the provenance manifest
+/// in the same atomic write as `edited-from-base`, and a copy-in that staged a doc without
+/// saying what it was made from cannot be written.
 pub fn copy_in(
     task_dir: &Path,
     type_name: &str,
     slug: &str,
-    source: &str,
+    read: &CopyInRead,
 ) -> std::io::Result<PathBuf> {
     let path = instance_path(task_dir, type_name, slug);
-    let canonical = write::first_touch_canonicalize(source);
+    let canonical = write::first_touch_canonicalize(&read.body);
     write_atomic(&path, canonical.as_bytes())?;
-    // A base-existing instance copied in for editing: record `edited-from-base`.
+    // A base-existing instance copied in for editing: record `edited-from-base`, and what
+    // it was copied from.
     record_provenance(
         task_dir,
         &format!("{type_name}:{slug}"),
         Provenance::EditedFromBase,
+        Some(&read.copied_in),
     )?;
     Ok(path)
 }
 
-/// A doc read for a copy-in into a task: the body to hand [`copy_in`], and the file-state
-/// key whose baseline that read adopted, if it adopted one.
+/// A doc read for a copy-in into a task: the body [`copy_in`] stages, the file-state key
+/// whose baseline that read adopted, if it adopted one, and the task's own witness of the
+/// bytes read.
 pub struct CopyInRead {
     /// The doc's bytes at its home, exactly as read.
     pub body: String,
     /// `Some(key)` when the read recorded the doc's first baseline — the caller's ack owes
     /// the adoption a line ([`crate::file_state::CopyInBaseline::finding`]).
     pub adopted: Option<String>,
+    /// What the task records about the bytes it read ([`CopiedIn`]) — of [`body`](Self::body)
+    /// exactly, never of the canonicalized staged copy.
+    pub copied_in: CopiedIn,
+}
+
+impl CopyInRead {
+    /// A read of `body` at the repo-relative `home` that adopted no baseline — for a caller
+    /// that holds the bytes already and stages them through [`copy_in`].
+    pub fn of(home: &str, body: &str, as_git_stores: &crate::validate::AsGitStores<'_>) -> Self {
+        Self {
+            body: body.to_string(),
+            adopted: None,
+            copied_in: CopiedIn::of(home, body.as_bytes(), as_git_stores),
+        }
+    }
 }
 
 /// **The one read both copy-in sites stage from** — this module's [`create`] step 4 and the
@@ -1075,6 +1199,12 @@ pub struct CopyInRead {
 /// ([`staged_in_another_task`]) — the one fact about the working areas the record's module
 /// has no business reading.
 ///
+/// **The same read is the task's witness** ([`CopiedIn`]): the bytes returned are hashed
+/// here, raw and — through the caller's `as_git_stores`, the one question this module cannot
+/// put to git itself — as git stores them at the doc's home. The git ask runs **after** the
+/// record's save lock is released (that lock's standing rule is that nothing under it spawns
+/// a process), over the bytes already read, never a second read of the file.
+///
 /// An error is the caller's refusal: nothing has been staged yet, and nothing must be.
 pub fn read_for_copy_in(
     task_dir: &Path,
@@ -1083,6 +1213,7 @@ pub fn read_for_copy_in(
     type_name: &str,
     slug: &str,
     committed: &Path,
+    as_git_stores: &crate::validate::AsGitStores<'_>,
 ) -> std::io::Result<CopyInRead> {
     // A doctype with no home is never copied in (its canonical path is `None` before any
     // caller gets here), so a missing key is a caller bug, not a state to tolerate quietly.
@@ -1094,11 +1225,67 @@ pub fn read_for_copy_in(
     let source = crate::file_state::read_for_copy_in(jigc_root, committed, &key, schema, || {
         staged_in_another_task(task_dir, jigc_root, type_name, slug)
     })?;
+    let copied_in = CopiedIn::of(&key, source.body.as_bytes(), as_git_stores);
     let adopted = (source.baseline == crate::file_state::CopyInBaseline::Adopted).then_some(key);
     Ok(CopyInRead {
         body: source.body,
         adopted,
+        copied_in,
     })
+}
+
+/// **What each doc a task holds copied in reads as now** — `file-state key → verdict`, for
+/// every doc the area both stages and carries a witness for ([`CopiedIn`]), whose home holds
+/// a file. It is what a committing door hands the reconciler
+/// ([`crate::file_state::ConflictBlock::holding`]) so that, for a doc the task holds, the
+/// task's own record decides and the per-path one does not.
+///
+/// `repo_root` is the checkout the committed store is read from — the one the copy-in read,
+/// and the one the sweep reads. A witness whose doc is no longer staged, whose doctype has
+/// no home, or whose home holds no readable file contributes nothing: there is nothing at
+/// the home to compare, and the sweep — which reads the same file and skips a path it
+/// cannot read — answers for it with its own arms. An area with no witnesses — one that
+/// copied nothing in, or one minted before the witness existed — yields an empty map, and
+/// every doc it holds is decided as before.
+///
+/// **A manifest that cannot be read yields no verdicts either, and that is not where it is
+/// refused.** This runs at the previews as well as at the committing doors, and a preview
+/// has never read the manifest: answering an unreadable one with an error here would turn
+/// `jigc task validate` into a new failure over a file it does not otherwise open. The door
+/// that *writes* reads the same manifest itself and refuses on it before anything is
+/// promoted — `finalize.provenance-io` from the task door's clobber guard
+/// ([`crate::finalize::plan_finalize`]), the join's own read at the milestone boundary — so
+/// no promote ever runs on the strength of the empty answer given here.
+pub fn held_docs(
+    task_dir: &Path,
+    repo_root: &Path,
+    schemas: &std::collections::BTreeMap<String, Schema>,
+    as_git_stores: &crate::validate::AsGitStores<'_>,
+) -> std::collections::BTreeMap<String, crate::file_state::CopyInVerdict> {
+    let mut held = std::collections::BTreeMap::new();
+    let Ok(record) = ProvenanceRecord::load(task_dir) else {
+        return held;
+    };
+    for (address, witness) in &record.copied_in {
+        let Some((type_name, slug)) = address.split_once(':') else {
+            continue;
+        };
+        if !instance_path(task_dir, type_name, slug).is_file() {
+            continue;
+        }
+        let Some(key) = schemas
+            .get(type_name)
+            .and_then(|schema| crate::finalize::promote_destination(schema, slug))
+        else {
+            continue;
+        };
+        let Ok(now) = std::fs::read(repo_root.join(&key)) else {
+            continue;
+        };
+        let verdict = witness.compare(&key, &now, as_git_stores);
+        held.insert(key, verdict);
+    }
+    held
 }
 
 /// Whether an **open task other than `task_dir`'s** has `<type>:<slug>` staged in its
@@ -2361,6 +2548,10 @@ fn mint_instance(
 /// `jigc_root` is the `.jigc/` home whose `state/file-state.json` step 4 records into and
 /// whose `tasks/` it reads for a sibling's staging — handed in, never derived from
 /// `task_dir` or `repo_root`: the engine does not assume where a caller keeps either.
+///
+/// `as_git_stores` is the caller's answer to *what id does git store these bytes under at
+/// this path* ([`crate::validate::AsGitStores`]) — step 4's copy-in records it in the task's
+/// witness of what it copied in ([`CopiedIn`]), and the engine cannot ask git itself.
 #[allow(clippy::too_many_arguments)]
 pub fn create(
     task_dir: &Path,
@@ -2371,6 +2562,7 @@ pub fn create(
     jigc_root: &Path,
     on_create: &[crate::field_block::Field],
     slug_override: Option<&str>,
+    as_git_stores: &crate::validate::AsGitStores<'_>,
 ) -> Result<CreatedDoc, Finding> {
     // 1. Unknown doctype → reject before anything is minted or placed.
     let Some(schema) = schemas.get(type_name) else {
@@ -2385,7 +2577,14 @@ pub fn create(
     // its answer and never ask again.
     let home = occupied_home(repo_root, schema, &minted.slug).and_then(OccupiedHome::body);
     stage_minted(
-        task_dir, jigc_root, schema, type_name, minted, home, on_create,
+        task_dir,
+        jigc_root,
+        schema,
+        type_name,
+        minted,
+        home,
+        on_create,
+        as_git_stores,
     )
 }
 
@@ -2459,6 +2658,7 @@ impl OccupiedHome {
 /// canonical home holds a doc body to copy in). It never probes the home itself: the caller that decided what an occupied home
 /// means (copy in, or — under a create-only entry — refuse and never call this) hands its
 /// one observation down, so that decision and this copy-in cannot disagree.
+#[allow(clippy::too_many_arguments)]
 fn stage_minted(
     task_dir: &Path,
     jigc_root: &Path,
@@ -2467,6 +2667,7 @@ fn stage_minted(
     minted: MintedInstance,
     home: Option<PathBuf>,
     on_create: &[crate::field_block::Field],
+    as_git_stores: &crate::validate::AsGitStores<'_>,
 ) -> Result<CreatedDoc, Finding> {
     let MintedInstance {
         slug,
@@ -2499,9 +2700,17 @@ fn stage_minted(
     let migration_squatter = migration_targets_canonical_destination(task_dir, schema, &slug)
         .map_err(|err| io_finding(&address, "read the migration source path", &err))?;
     if !migration_squatter && let Some(committed) = home {
-        let source = read_for_copy_in(task_dir, jigc_root, schema, type_name, &slug, &committed)
-            .map_err(|err| io_finding(&address, "copy in the committed instance", &err))?;
-        let path = copy_in(task_dir, type_name, &slug, &source.body)
+        let source = read_for_copy_in(
+            task_dir,
+            jigc_root,
+            schema,
+            type_name,
+            &slug,
+            &committed,
+            as_git_stores,
+        )
+        .map_err(|err| io_finding(&address, "copy in the committed instance", &err))?;
+        let path = copy_in(task_dir, type_name, &slug, &source)
             .map_err(|err| io_finding(&address, "copy in the committed instance", &err))?;
         return Ok(CreatedDoc {
             address,
@@ -2617,6 +2826,7 @@ pub fn create_gated(
     jigc_root: &Path,
     on_create: &[crate::field_block::Field],
     slug_override: Option<&str>,
+    as_git_stores: &crate::validate::AsGitStores<'_>,
 ) -> Result<CreatedDoc, CreateRefusal> {
     // Steps 3 + 5: unknown doctype, then the gate — asked through the shared probe, so a
     // caller that must not out-rank them asks the identical question.
@@ -2659,7 +2869,14 @@ pub fn create_gated(
         }
     } else {
         stage_minted(
-            task_dir, jigc_root, schema, type_name, minted, home, on_create,
+            task_dir,
+            jigc_root,
+            schema,
+            type_name,
+            minted,
+            home,
+            on_create,
+            as_git_stores,
         )?
     };
     // … then bind it to the entry's `as:` role if the entry declares one. The create-gate
@@ -3829,7 +4046,8 @@ sections:
 
         let source =
             "\u{feff}---\nstatus: accepted\n---\n\n# Rate-limit\n\n## Context\n\nForces.\n\n\n";
-        let path = copy_in(&task_dir, "adr", "rate-limit", source).expect("copy-in succeeds");
+        let read = CopyInRead::of("decisions/rate-limit.md", source, &|_, _| None);
+        let path = copy_in(&task_dir, "adr", "rate-limit", &read).expect("copy-in succeeds");
 
         assert_eq!(
             path,
@@ -3903,10 +4121,21 @@ sections:
             &[],
         )
         .expect("provision succeeds");
+        // **An area that has copied nothing in keeps the bytes it always had**: the
+        // `copied-in` member is absent while it is empty, so a binary older than the
+        // witness reads this manifest exactly as it read its own.
+        assert_eq!(
+            std::fs::read_to_string(ProvenanceRecord::path_in(&task_dir))
+                .expect("provenance manifest on disk"),
+            "{\n  \"docs\": {\n    \"commit:add-rate-limiter\": \"created\"\n  }\n}\n",
+            "a manifest with no copy-in is byte-identical to the pre-witness form",
+        );
         // `copy_in` stages a base-existing `edited-from-base` instance.
         let source = "---\nstatus: accepted\n---\n\n# Rate-limit\n\n## Context\n\nForces.\n";
-        let edited_path =
-            copy_in(&task_dir, "adr", "rate-limit", source).expect("copy-in succeeds");
+        let read = CopyInRead::of("decisions/rate-limit.md", source, &|_, _| {
+            Some("3b18e512dba79e4c8300dd08aeb37f8e728b8dad".to_string())
+        });
+        let edited_path = copy_in(&task_dir, "adr", "rate-limit", &read).expect("copy-in succeeds");
 
         // The `.md` body bytes are byte-for-byte the pre-change staging output —
         // the provenance bit rides beside the doc, never in it.
@@ -3936,10 +4165,166 @@ sections:
             "copy_in records `edited-from-base`"
         );
 
+        // …and, in the same write, what it was copied from: the raw-byte hash of the
+        // source (never of the canonicalized staged copy) and the id the caller's git
+        // stores it under. A `created` doc has no witness.
+        assert_eq!(
+            record.copied_in.keys().collect::<Vec<_>>(),
+            vec!["adr:rate-limit"],
+            "only the copied-in doc carries a witness",
+        );
+        assert_eq!(
+            record.copied_in["adr:rate-limit"],
+            CopiedIn {
+                bytes: crate::file_state::hash_bytes(source.as_bytes()),
+                git: Some("3b18e512dba79e4c8300dd08aeb37f8e728b8dad".to_string()),
+            },
+        );
+
         // Golden over the frozen on-disk byte form of the provenance manifest.
         let bytes = std::fs::read_to_string(ProvenanceRecord::path_in(&task_dir))
             .expect("provenance manifest on disk");
         insta::assert_snapshot!("provenance_two_staged_docs", bytes);
+    }
+
+    /// **A manifest the previous format wrote loads as one with no witness** — no
+    /// `copied-in` member at all — and a witness with no git id round-trips without one, so
+    /// neither absence is ever written out as a `null`.
+    #[test]
+    fn a_manifest_without_a_witness_loads_and_a_witness_without_a_git_id_stays_so() {
+        let root = TempRoot::new("provenance-previous-format");
+        let task_dir = root.path().join("tasks").join("older");
+        let previous = "{\n  \"docs\": {\n    \"adr:rate-limit\": \"edited-from-base\"\n  }\n}\n";
+        std::fs::create_dir_all(task_dir.join(DOCS_DIR)).expect("mk docs/");
+        std::fs::write(ProvenanceRecord::path_in(&task_dir), previous).expect("write it");
+        let record = ProvenanceRecord::load(&task_dir).expect("the previous format loads");
+        assert_eq!(
+            record.get("adr:rate-limit"),
+            Some(Provenance::EditedFromBase)
+        );
+        assert!(record.copied_in.is_empty(), "and holds no witness");
+        assert_eq!(record.to_bytes(), previous, "and is written back unchanged");
+
+        let read = CopyInRead::of("decisions/rate-limit.md", "body\n", &|_, _| None);
+        copy_in(&task_dir, "adr", "rate-limit", &read).expect("copy-in succeeds");
+        let bytes = std::fs::read_to_string(ProvenanceRecord::path_in(&task_dir))
+            .expect("provenance manifest on disk");
+        assert!(
+            bytes.contains("\"copied-in\"")
+                && !bytes.contains("\"git\"")
+                && !bytes.contains("null"),
+            "a witness git was not asked for carries its byte hash alone: {bytes}",
+        );
+    }
+
+    /// **[`CopiedIn::compare`]'s table** — bytes first, then git, and anything git cannot
+    /// vouch for is an edit.
+    #[test]
+    fn a_witness_compares_bytes_first_and_asks_git_only_when_they_differ() {
+        use crate::file_state::CopyInVerdict::{AsCopiedIn, Edited};
+        // A stand-in for git's conversion at a path: line endings are not content.
+        let normalized = |_: &str, bytes: &[u8]| {
+            Some(crate::file_state::hash_bytes(
+                String::from_utf8_lossy(bytes)
+                    .replace("\r\n", "\n")
+                    .as_bytes(),
+            ))
+        };
+        let never_asked =
+            |_: &str, _: &[u8]| -> Option<String> { panic!("equal bytes never reach git") };
+        let cannot_answer = |_: &str, _: &[u8]| None;
+        let home = "decisions/rate-limit.md";
+        let mixed = b"one\r\ntwo\nthree\r\n";
+        let witness = CopiedIn::of(home, mixed, &normalized);
+
+        assert_eq!(witness.compare(home, mixed, &never_asked), AsCopiedIn);
+        assert_eq!(
+            witness.compare(home, b"one\r\ntwo\r\nthree\r\n", &normalized),
+            AsCopiedIn,
+            "the same content in the form git checks out is not an edit",
+        );
+        assert_eq!(
+            witness.compare(home, b"one\r\ntwo\nthree\r\nfour\r\n", &normalized),
+            Edited,
+        );
+        assert_eq!(
+            witness.compare(home, b"one\r\ntwo\r\nthree\r\n", &cannot_answer),
+            Edited,
+            "different bytes git cannot vouch for are not written over",
+        );
+        let bytes_only = CopiedIn::of(home, mixed, &cannot_answer);
+        assert_eq!(bytes_only.compare(home, mixed, &never_asked), AsCopiedIn);
+        assert_eq!(
+            bytes_only.compare(home, b"one\r\ntwo\r\nthree\r\n", &normalized),
+            Edited,
+            "a witness with no git id answers on bytes alone",
+        );
+    }
+
+    /// **[`held_docs`]** answers for exactly the docs an area both stages and holds a
+    /// witness for, keyed by the home the sweep reads them under — a placement doctype's
+    /// literal file as much as a `location:` one's — and for nothing else.
+    #[test]
+    fn held_docs_answers_for_each_staged_doc_with_a_witness_at_its_home() {
+        use crate::file_state::CopyInVerdict::{AsCopiedIn, Edited};
+        let root = TempRoot::new("held-docs");
+        let repo = root.path();
+        let task_dir = repo.join(".jigc").join("tasks").join("holder");
+        let adr = crate::schema::load_schema(
+            b"type: adr\nlocation: decisions/\nsections:\n  - id: context\n    slot: {}\n",
+        )
+        .expect("the adr schema loads");
+        let schemas = std::collections::BTreeMap::from([
+            ("adr".to_string(), adr),
+            ("changelog".to_string(), placement_singleton_schema()),
+        ]);
+        let no_git = |_: &str, _: &[u8]| None;
+        let at_home = |rel: &str, body: &str| {
+            let path = repo.join(rel);
+            std::fs::create_dir_all(path.parent().expect("a parent")).expect("mk the dir");
+            std::fs::write(path, body).expect("write the doc");
+        };
+        for (ty, slug, home) in [
+            ("adr", "kept", "decisions/kept.md"),
+            ("adr", "edited", "decisions/edited.md"),
+            ("adr", "gone", "decisions/gone.md"),
+            ("adr", "unstaged", "decisions/unstaged.md"),
+            ("changelog", "changelog", "CHANGELOG.md"),
+        ] {
+            at_home(home, "as copied in\n");
+            let read = CopyInRead::of(home, "as copied in\n", &no_git);
+            copy_in(&task_dir, ty, slug, &read).expect("copy-in succeeds");
+        }
+        at_home("decisions/edited.md", "as copied in\nand a hand line\n");
+        std::fs::remove_file(repo.join("decisions/gone.md")).expect("remove a home");
+        std::fs::remove_file(instance_path(&task_dir, "adr", "unstaged")).expect("unstage one");
+
+        let held = held_docs(&task_dir, repo, &schemas, &no_git);
+        assert_eq!(
+            held,
+            std::collections::BTreeMap::from([
+                ("CHANGELOG.md".to_string(), AsCopiedIn),
+                ("decisions/edited.md".to_string(), Edited),
+                ("decisions/kept.md".to_string(), AsCopiedIn),
+            ]),
+            "a home that is gone and a doc no longer staged answer nothing",
+        );
+
+        // An area the previous format minted holds no witness, so it answers for nothing.
+        let older = repo.join(".jigc").join("tasks").join("older");
+        std::fs::create_dir_all(older.join(DOCS_DIR)).expect("mk docs/");
+        std::fs::write(
+            ProvenanceRecord::path_in(&older),
+            "{\n  \"docs\": {\n    \"adr:kept\": \"edited-from-base\"\n  }\n}\n",
+        )
+        .expect("write the previous-format manifest");
+        std::fs::write(instance_path(&older, "adr", "kept"), "staged\n").expect("stage it");
+        assert!(held_docs(&older, repo, &schemas, &no_git).is_empty());
+
+        // A manifest that cannot be read answers nothing — the committing door reads it
+        // itself and refuses there (`finalize.provenance-io`).
+        std::fs::write(ProvenanceRecord::path_in(&task_dir), "{ not json").expect("break it");
+        assert!(held_docs(&task_dir, repo, &schemas, &no_git).is_empty());
     }
 
     /// A schema-set keyed type → `Schema`, the engine-domain-empty contract the
@@ -3973,6 +4358,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("create of a known type succeeds");
         assert_eq!(
@@ -4008,6 +4394,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect_err("unknown doctype rejects");
         assert_eq!(err.severity, Severity::Blocking);
@@ -4034,6 +4421,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect_err("a serial collision on an existing instance id rejects");
         assert_eq!(collide.severity, Severity::Blocking);
@@ -4073,6 +4461,7 @@ sections:
                 &root.path().join(".jigc"),
                 &[],
                 None,
+                &|_, _| None,
             )
             .expect_err("a title that slugs to nothing rejects");
             assert_eq!(err.severity, Severity::Blocking);
@@ -4100,6 +4489,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("a normal title still creates");
         assert_eq!(ok.address, "commit:add-cache");
@@ -4124,6 +4514,7 @@ sections: []
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("a singleton create with an empty id-source stays green");
         assert_eq!(sing.address, "changelog:changelog");
@@ -4162,6 +4553,7 @@ sections: []
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("singleton create succeeds");
         assert_eq!(
@@ -4184,6 +4576,7 @@ sections: []
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("non-singleton create succeeds");
         assert_eq!(
@@ -4231,6 +4624,7 @@ sections: []
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("vision singleton create succeeds");
         let body = std::fs::read_to_string(&created.path).expect("read created vision");
@@ -4260,6 +4654,7 @@ sections: []
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("changelog singleton create succeeds");
         let body = std::fs::read_to_string(&created.path).expect("read created changelog");
@@ -4331,6 +4726,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("cold singleton create succeeds");
         assert_eq!(created.address, "roadmap:roadmap");
@@ -4395,6 +4791,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("warm singleton create succeeds");
         assert_eq!(created.address, "roadmap:roadmap");
@@ -4472,6 +4869,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("a non-singleton create over a committed slug copies in");
         assert_eq!(warm.address, "adr:rate-limit");
@@ -4509,6 +4907,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("a fresh non-singleton create still mints");
         assert!(
@@ -4532,6 +4931,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect_err("a same-slug re-create rejects, unchanged");
         assert_eq!(collide.severity, Severity::Blocking);
@@ -4602,6 +5002,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("copy the committed adr in");
         assert_eq!(
@@ -4620,6 +5021,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("a fresh mint");
         assert_eq!(occupied("Burst limit", None), None);
@@ -4764,6 +5166,7 @@ sections:
                     &root.path().join(".jigc"),
                     &[],
                     Some(slug),
+                    &|_, _| None,
                 );
                 if new {
                     assert_eq!(
@@ -5008,7 +5411,8 @@ sections:
                 match arm.area {
                     Area::Empty => {}
                     Area::StagedByAnotherVerb => {
-                        copy_in(&task_dir, arm.ty, "rate-limit", adr_body).expect("the edit seam");
+                        let read = CopyInRead::of("rate-limit.md", adr_body, &|_, _| None);
+                        copy_in(&task_dir, arm.ty, "rate-limit", &read).expect("the edit seam");
                     }
                     Area::MigrationOntoTheHome => {
                         persist(&task_dir.join(SOURCE_PATH_FILE), b"CHANGELOG.md")
@@ -5032,6 +5436,7 @@ sections:
                     &root.path().join(".jigc"),
                     &[],
                     arm.slug,
+                    &|_, _| None,
                 );
 
                 match outcome {
@@ -5107,6 +5512,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("a free home mints under `new: true`");
         assert!(!fresh.existed, "a fresh mint, not a copy-in");
@@ -5125,6 +5531,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("re-running the task's own fresh create stays idempotent");
         assert!(again.existed && again.staged_pre_image.is_some());
@@ -5141,6 +5548,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("an entry without `new` keeps create-or-update");
         assert!(copied.existed, "the occupant is copied in for update");
@@ -5189,6 +5597,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("create succeeds");
 
@@ -5281,6 +5690,7 @@ sections:
             &root.path().join(".jigc"),
             &seed,
             None,
+            &|_, _| None,
         )
         .expect("seeded create succeeds");
         let staged = std::fs::read_to_string(&created.path).expect("read staged");
@@ -5351,6 +5761,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("a gate-admitted type proceeds");
         assert_eq!(ok.address, "adr:some-decision");
@@ -5366,6 +5777,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .map_err(blocked_finding)
         .expect_err("a disallowed type is gate-blocked");
@@ -5402,6 +5814,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .map_err(blocked_finding)
         .expect_err("an unknown type rejects before the gate");
@@ -5460,6 +5873,7 @@ sections:
                 &root.path().join(".jigc"),
                 &[],
                 None,
+                &|_, _| None,
             )
             .expect("the gate admits `adr`")
         };
@@ -5562,6 +5976,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .map_err(blocked_finding)
         .expect_err("a gate-less workflow blocks every create");
@@ -5575,6 +5990,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .map_err(blocked_finding)
         .expect_err("a gate-less workflow blocks every create");
@@ -5607,6 +6023,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .map_err(blocked_finding)
         .expect_err("an unknown type rejects before the gate");
@@ -5634,6 +6051,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .map_err(blocked_finding)
         .expect_err("a title that slugs to nothing rejects");
@@ -5655,6 +6073,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("the first create mints");
         let collide = create(
@@ -5666,6 +6085,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect_err("a serial collision rejects");
         assert_eq!(collide.code, "create.serial-collision");
@@ -5714,6 +6134,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("the gate-admitted adr is created");
         assert_eq!(created.address, "adr:shared-redis-session-cache");
@@ -5748,6 +6169,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("the bare-form-gated commit is created");
         assert!(
@@ -5812,6 +6234,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("squatter migration create succeeds");
         assert_eq!(created.address, "roadmap:roadmap");
@@ -5883,6 +6306,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("placement squatter migration create succeeds");
         assert_eq!(created.address, "changelog:changelog");
@@ -5945,6 +6369,7 @@ sections:
             &root.path().join(".jigc"),
             &[],
             None,
+            &|_, _| None,
         )
         .expect("off-canonical migration create succeeds");
 
@@ -5995,6 +6420,7 @@ sections:
                 &root.path().join(".jigc"),
                 &[],
                 None,
+                &|_, _| None,
             )
             .expect("squatter migration create succeeds");
             let staged = std::fs::read_to_string(&created.path).expect("read staged");
@@ -6055,6 +6481,7 @@ sections:
                 &root.join(".jigc"),
                 &[],
                 None,
+                &|_, _| None,
             )
             .expect("the create copies the committed adr in")
         };

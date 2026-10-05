@@ -686,19 +686,8 @@ fn drive_contrast(baseline_present: bool) -> ContrastOutcome {
         "`jigc start` (warm task)",
     ));
 
-    // The human channel: an out-of-band, conformant, prose-only edit, written on disk
-    // **after** the warm task mints and left uncommitted — so HEAD stays at the task's
-    // base (a base-mismatch cannot pre-empt the reconcile gate) and the edit is not the
-    // base pin's blob, a change made during the task that M55 Increment 4's pulled-edit
-    // absorb leaves to arm A's conflict-block. It lands **before** the task's first touch,
-    // so the copy-in below carries it into the staged copy.
-    let path = repo.join(CONTRAST_ADR);
-    let body = fs::read_to_string(&path).expect("read the committed ADR");
-    let edited = body.replacen("A cold node loses its sessions.", HUMAN_PROSE, 1);
-    assert_ne!(body, edited, "the out-of-band edit must change the ADR");
-    fs::write(&path, edited).expect("apply the out-of-band edit");
-
-    // The warm task touches the SAME doc through the CLI, so both sides have moved.
+    // The warm task touches the doc through the CLI — the copy-in, where the task records
+    // what it copied in.
     run_jigc_stdin_ok(
         repo,
         home,
@@ -713,6 +702,18 @@ fn drive_contrast(baseline_present: bool) -> ContrastOutcome {
         "set-slot #decision (warm task)",
     );
     fill_commit(repo, home, &warm, "revise the decision");
+
+    // The human channel: an out-of-band, conformant, prose-only edit to the SAME doc,
+    // written on disk **after** the task's first touch and left uncommitted — so HEAD
+    // stays at the task's base (a base-mismatch cannot pre-empt the reconcile gate), the
+    // staged copy does not carry it, and both sides have moved. (Written *before* the
+    // first touch it is carried by the copy-in and lands with the task, in both arms —
+    // `reconciliation_baseline_contrast` holds that column.)
+    let path = repo.join(CONTRAST_ADR);
+    let body = fs::read_to_string(&path).expect("read the committed ADR");
+    let edited = body.replacen("A cold node loses its sessions.", HUMAN_PROSE, 1);
+    assert_ne!(body, edited, "the out-of-band edit must change the ADR");
+    fs::write(&path, edited).expect("apply the out-of-band edit");
 
     // The one branch — arm B loses the baseline through the engine API that owns the
     // record, which is the shape a forgetting writer (or a discarded concurrent save)
@@ -762,15 +763,16 @@ fn drive_contrast(baseline_present: bool) -> ContrastOutcome {
 /// `.jigc/state/file-state.json` when finalize runs. With it: `reconciliation.conflict-block`,
 /// exit 3, no commit.
 ///
-/// Without it this arm used to land at exit 0 with **both** sides' prose in one commit —
-/// a write that reported success for a delta it discarded did not degrade the guarantee,
-/// it switched it off. Since the rc.24 fix pass `(R3, F7)` a staged doc with no record is
-/// decided by its **base pin** (`design/reconciliation.md` → Baseline adoption, the
-/// base-pin backstop): the on-disk bytes differ from the pin's blob, so the same finding
-/// blocks the same door. A key lost after the task's first touch no longer switches the
-/// guarantee off. (The arm in which it still merges — no key *at* the first touch, where
-/// the copy-in carries the edit and records it — is
-/// `reconciliation_baseline_contrast`'s arm B.)
+/// Without it this arm used to land at exit 0 — a write that reported success for a delta
+/// it discarded did not degrade the guarantee, it switched it off, and for an edit made
+/// after the task's first touch what landed was the staged copy **over** the human's
+/// bytes. The door no longer asks the cache: the task records what it copied in, in its
+/// own working area, and the file is compared with that (`design/reconciliation.md` → What
+/// a task copied in). The edit here is made after the first touch, so the file is not what
+/// the task copied in and the same finding blocks the same door in both arms. A key lost
+/// after the task's first touch does not switch the guarantee off. (The other column — an
+/// edit made *before* the first touch, which the copy-in carries and the door lands,
+/// whatever the baseline held — is `reconciliation_baseline_contrast`'s.)
 #[test]
 fn a_lost_baseline_no_longer_switches_off_the_never_silently_merged_guarantee() {
     let arm_a = drive_contrast(true);

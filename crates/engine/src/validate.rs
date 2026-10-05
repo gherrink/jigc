@@ -192,6 +192,26 @@ pub enum PinVerdict {
 /// shells out zero times.
 pub type AgainstPin<'a> = dyn Fn(&str) -> Option<PinVerdict> + 'a;
 
+/// The CLI-supplied **question to git about a byte string** — a
+/// `Fn(&str, &[u8]) -> Option<String>` taking a **repo-relative** path and the bytes of a
+/// working file, and answering with the id git would store those bytes under at that path
+/// (`git hash-object --path=<path>`: the path's `core.autocrlf`, `text`/`eol` attributes and
+/// clean filter applied), or `None` when git could not be asked. Built on the
+/// [`HistoryPredicate`] mold: the CLI owns the shell-out, the engine never spawns one.
+///
+/// It is what makes **a task's witness of what it copied in**
+/// ([`crate::state::CopiedIn`]) safe under conversion (the rc.24 fix pass;
+/// `design/reconciliation.md` → What a task copied in). The witness is compared with the file
+/// at the doc's home when the task's committing door is about to replace it. A working file
+/// has as many faithful byte forms as it has writers — git re-checks a doc out in another
+/// line-ending form, and no hand touched it — so two working files that differ in bytes are
+/// put to git as two byte strings through **one** conversion, and equal ids are the same
+/// content. Both sides are asked the same way, at the same path; neither is compared with a
+/// committed blob, so the rule git applies to a blob that already holds CRLF cannot make them
+/// disagree. Asked at the copy-in (once, of the bytes read) and at the door only when the
+/// bytes differ, so an unedited doc shells out zero times there.
+pub type AsGitStores<'a> = dyn Fn(&str, &[u8]) -> Option<String> + 'a;
+
 /// Validate one task working area — the single engine both `task validate` and
 /// `finalize` phase 2 call (`validation.md` → How it gates `finalize`: one engine,
 /// two entry points, so what `validate` reports and what `finalize` blocks on can

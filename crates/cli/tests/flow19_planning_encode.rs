@@ -679,14 +679,14 @@ fn flow19_planning_is_absent_from_the_router_catalog() {
 
 #[test]
 fn flow19_warm_append_over_an_oob_drifted_singleton_conflict_blocks_at_finalize() {
-    // (5) The warm-drift red. The cold finalize records the committed baseline FIRST;
-    // a second planning task is minted, and the committed docs/roadmap.md is then drifted
-    // OUT-OF-BAND (a human edit on disk moves the bytes but does NOT touch the recorded
-    // file-state baseline, so it diverges → DRIFTED). The task copies-in + edits the
-    // roadmap (TOUCHED). finalize-preflight's `reconcile_committed_store` sees
-    // DRIFTED+TOUCHED and conflict-blocks — both sides moved, no silent merge. (An
-    // unrecorded baseline would baseline-adopt vacuously; recording-first is what makes
-    // this a genuine red — the singleton_running_doc.rs lesson.)
+    // (5) The warm-drift red. A second planning task is minted and copies the committed
+    // docs/roadmap.md in; the file is then drifted OUT-OF-BAND (a human edit on disk). The
+    // task edits its staged copy (TOUCHED). finalize-preflight's
+    // `reconcile_committed_store` finds the file is no longer what the task copied in and
+    // conflict-blocks — both sides moved, no silent merge. (Through the rc.24 fix pass the
+    // drift was written before the copy-in and the block came from the recorded baseline
+    // the cold finalize left; since 2026-10-05 the task's own record of what it copied in
+    // decides, so that order is carried and lands — and this cell drifts the file after.)
     let repo = TempDir::new("drift");
     let home = TempDir::new("home");
     init_repo(repo.path());
@@ -713,12 +713,23 @@ fn flow19_warm_append_over_an_oob_drifted_singleton_conflict_blocks_at_finalize(
     let warm = "m-drift";
     start_planning(repo.path(), home.path(), "M-Drift");
 
-    // OOB drift: a human hand-edits the committed roadmap on disk AFTER the warm task is
-    // minted, uncommitted — so HEAD still equals the warm task's base (no
-    // `finalize.base-mismatch` pre-empting the reconcile gate) and the drift is not the
-    // base pin's blob: a change made DURING the task, which M55 Increment 4's pulled-edit
-    // absorb leaves conflict-blocking. A drift committed before the mint is at the pin
-    // and is absorbed instead (`l1_pull_absorption`).
+    assert_ok(
+        &jigc_doc(
+            repo.path(),
+            home.path(),
+            &["create", "roadmap", "--title", "Roadmap"],
+            None,
+        ),
+        "`doc create roadmap` (drift/run2 warm copy-in)",
+    );
+
+    // OOB drift: a human hand-edits the committed roadmap on disk AFTER the warm task has
+    // copied it in, uncommitted — so HEAD still equals the warm task's base (no
+    // `finalize.base-mismatch` pre-empting the reconcile gate), and the file is no longer
+    // what the task copied in, which is what the door decides on (`design/reconciliation.md`
+    // → What a task copied in). The same edit made BEFORE the copy-in is carried by it and
+    // lands with the task, recorded baseline or not (`reconciliation_baseline_contrast`); a
+    // drift committed before the mint is at the pin and lands too (`l1_pull_absorption`).
     let committed_path = repo.path().join("docs").join("roadmap.md");
     let on_disk = fs::read_to_string(&committed_path).expect("read committed roadmap on disk");
     fs::write(
@@ -729,15 +740,6 @@ fn flow19_warm_append_over_an_oob_drifted_singleton_conflict_blocks_at_finalize(
         ),
     )
     .expect("apply OOB drift");
-    assert_ok(
-        &jigc_doc(
-            repo.path(),
-            home.path(),
-            &["create", "roadmap", "--title", "Roadmap"],
-            None,
-        ),
-        "`doc create roadmap` (drift/run2 warm copy-in)",
-    );
     let item = jigc_doc(
         repo.path(),
         home.path(),

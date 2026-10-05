@@ -3325,6 +3325,12 @@ fn move_staged_identity(
         .context("could not read the task's staged-doc provenance")?;
     if let Some(recorded) = provenance.docs.remove(&old_uri) {
         provenance.docs.insert(new_uri.to_string(), recorded);
+        // A witness of what was copied in follows the address it was recorded under. A
+        // re-slug is refused for an `edited-from-base` doc, so in practice there is none
+        // to move — it is moved all the same, so the two maps can never name different docs.
+        if let Some(witness) = provenance.copied_in.remove(&old_uri) {
+            provenance.copied_in.insert(new_uri.to_string(), witness);
+        }
         state::persist(
             &state::ProvenanceRecord::path_in(&task.dir),
             provenance.to_bytes().as_bytes(),
@@ -4091,6 +4097,7 @@ fn run_create(
         &task.jigc_root(),
         &on_create,
         slug_override,
+        &|path, bytes| crate::task::git_id_as_stored(&task.jigc_home, path, bytes),
     )
     .map_err(|refusal| create_refused(&task, schema, entry, "create", slug_override, refusal))?;
     // A whole-doc create carries only the target head (`doctype`+`slug`) — contract §2.
@@ -4217,6 +4224,7 @@ fn run_author(
         &task.jigc_root(),
         &on_create,
         slug_override.as_deref(),
+        &|path, bytes| crate::task::git_id_as_stored(&task.jigc_home, path, bytes),
     )
     .map_err(|refusal| {
         create_refused(
@@ -6918,6 +6926,10 @@ impl ActiveTask {
             // failure is one of three (the lock, the record, the doc), each of which names
             // its own subject and route — it said *"could not read committed `<addr>`"*
             // over an unreadable **record**, about a doc that read perfectly well.
+            //
+            // The same read is this task's witness of what it copied in
+            // ([`state::CopiedIn`]): `copy_in` records it beside `edited-from-base`, and
+            // the committing door compares the file against it before replacing it.
             let read = state::read_for_copy_in(
                 &self.dir,
                 &self.jigc_root(),
@@ -6925,11 +6937,12 @@ impl ActiveTask {
                 address.r#type.as_str(),
                 slug,
                 &committed,
+                &|path, bytes| crate::task::git_id_as_stored(&self.jigc_home, path, bytes),
             )
             .with_context(|| {
                 format!("could not copy `{addr}` in for editing — nothing was staged")
             })?;
-            state::copy_in(&self.dir, address.r#type.as_str(), slug, &read.body)
+            state::copy_in(&self.dir, address.r#type.as_str(), slug, &read)
                 .with_context(|| format!("could not copy in `{addr}` for editing"))?;
             // The copy-on-write staged the committed doc; bind the workflow's object-form
             // `allows-create` role for this doctype so the set-field-first / edit-first

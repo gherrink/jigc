@@ -358,6 +358,12 @@ pub fn staged_copy_finding(dest: &str) -> Finding {
 /// operator every exit the general route gave them and it is still true of: the migration
 /// arm re-names the whole-task discard as the way to keep the on-disk bytes, since its own
 /// exit replaces them (M46 inc-5, validate→fix).
+///
+/// And a caller that **holds docs copied in** hands over what its own record of each says
+/// ([`ConflictBlock::holding`]; the rc.24 fix pass) — the same shape of fact as the
+/// migration source's *as recorded or edited since*: a comparison only the caller can make,
+/// against a recording only the caller has, which decides whether this value's conflict is
+/// raised at all for that path.
 #[derive(Clone, Debug)]
 pub struct ConflictBlock {
     /// The clause after ``conflict on `<path>`: `` — names what moved on the CLI side.
@@ -367,6 +373,33 @@ pub struct ConflictBlock {
     /// The caller's **path-keyed** second presentation, used in place of the pair above
     /// when the conflict is on exactly that path ([`ConflictBlock::presentation`]).
     keyed: Option<Keyed>,
+    /// What the caller's **own record of what it copied in** says about each doc it holds —
+    /// `file-state key → verdict` ([`ConflictBlock::holding`]). Empty for a caller that
+    /// holds none.
+    held: BTreeMap<String, CopyInVerdict>,
+}
+
+/// **Whether the file at a doc's home is still what the work unit holding it copied in** —
+/// the answer a committing door makes from the task's own witness
+/// ([`crate::state::CopiedIn`]) and hands the classifier ([`ConflictBlock::holding`]; the
+/// rc.24 fix pass, `reconciliation.md` → What a task copied in).
+///
+/// It is the caller's comparison, never the classifier's, for the reason the migration
+/// source's is ([`ConflictBlock::task_over_edited_source`]): the classifier sees a path and
+/// a hash of the bytes on disk, not which task staged the doc or what that task read when it
+/// did. And it is a verdict rather than a hash because two working files can differ in bytes
+/// and be the same content — a doc git checked out again in another line-ending form — which
+/// is git's to say ([`crate::validate::AsGitStores`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CopyInVerdict {
+    /// The file is what the work unit copied in: its staged copy was made from exactly
+    /// these bytes, so what replaces the file is the file with the work unit's own writes
+    /// applied to it.
+    AsCopiedIn,
+    /// The file differs from what the work unit copied in — or the bytes differ and git
+    /// could not say they are the same content. The staged copy does not carry what is on
+    /// disk now, so the door does not write over it.
+    Edited,
 }
 
 /// A [`ConflictBlock`]'s **path-keyed** presentation — a migration task's own recorded
@@ -395,7 +428,29 @@ impl ConflictBlock {
             detail: detail.into(),
             route,
             keyed: None,
+            held: BTreeMap::new(),
         }
+    }
+
+    /// Attach the caller's verdicts on **the docs it holds copied in** — `file-state key →`
+    /// [`CopyInVerdict`], one entry per doc the work unit staged from its home and recorded
+    /// a witness for ([`crate::state::held_docs`]).
+    ///
+    /// **For a doc in this map the per-path record is not the arbiter**
+    /// ([`reconcile_committed`]): the file is compared with what *this* work unit copied in,
+    /// and that answer decides — [`CopyInVerdict::Edited`] is this value's conflict-block
+    /// whatever the record holds, [`CopyInVerdict::AsCopiedIn`] is never one. A doc absent
+    /// from the map (held by an area that recorded no witness, or not held at all) is
+    /// classified exactly as it was before the witness existed.
+    #[must_use]
+    pub fn holding(mut self, held: BTreeMap<String, CopyInVerdict>) -> Self {
+        self.held = held;
+        self
+    }
+
+    /// The caller's verdict on `path`, when it holds the doc there copied in.
+    fn held(&self, path: &str) -> Option<CopyInVerdict> {
+        self.held.get(path).copied()
     }
 
     /// The presentation for a conflict at `path` — the caller's path-keyed pair when it
@@ -616,6 +671,12 @@ impl LiveRecord {
 /// Reads the `(committed-state, task-state)` pair for the doc at `path` (its
 /// file-state key and `<type>:<slug>` identity `from`) and routes deterministically:
 ///
+/// - **A doc the caller holds copied in, with its own witness of what it copied**
+///   (`task_touched`, and `conflict` carries a [`CopyInVerdict`] for the path —
+///   [`ConflictBlock::holding`]) → decided by that verdict, **ahead of every arm below and
+///   whatever the record holds** ([`reconcile_held`]; the rc.24 fix pass,
+///   `reconciliation.md` → What a task copied in). The `TOUCHED` arms below are the
+///   classification of a doc held *without* a witness — an area an older binary minted.
 /// - **`UNKNOWN`** (no recorded hash) → **baseline-adopt**: record the current hash,
 ///   emit the advisory `file-state.baseline-adopt` finding (absent-hash is not drift).
 ///   A **non-conformant** file here is not adopted; which advisory it draws is the
@@ -688,6 +749,16 @@ pub fn reconcile_committed(
 ) -> Vec<Finding> {
     use crate::validate::PinVerdict;
     let current = hash_bytes(bytes);
+    // **A doc the caller holds copied in is decided by the caller's own witness, first**
+    // (the rc.24 fix pass; `reconciliation.md` → What a task copied in). Every arm below
+    // reads the per-path record, and for a doc a task has staged that record answers the
+    // wrong question: it says what the last jigc writer of the path saw, and any writer
+    // moves it. The task's question is whether the file is still what *it* copied in.
+    if task_touched && let Some(verdict) = conflict.held(path) {
+        return reconcile_held(
+            record, index, schema, path, from, bytes, current, verdict, conflict,
+        );
+    }
     match record.get(path) {
         // UNKNOWN → the G4 conformance gate (M21; `project-setup.md` → Flow 2 hardening):
         // a fresh-checkout doc is baseline-adopted **only if it classifies conformant** —
@@ -749,6 +820,7 @@ pub fn reconcile_committed(
                                 cause,
                                 &source,
                                 adoption.current(&schema.ty),
+                                task_touched,
                             )],
                         }
                     }
@@ -788,6 +860,63 @@ pub fn reconcile_committed(
             // Schema-invalid / parse fail → conformance-block, naming the first error.
             Err(cause) => vec![conformance_block_finding(path, cause)],
         },
+    }
+}
+
+/// [`reconcile_committed`] for **a doc the caller holds copied in and has a witness for** —
+/// the caller's [`CopyInVerdict`] decides, and the per-path record only follows (the rc.24
+/// fix pass; `reconciliation.md` → What a task copied in).
+///
+/// - **[`CopyInVerdict::Edited`]** → the caller's **conflict-block**, whatever the record
+///   holds, and nothing recorded. This is the arm the per-path record could not reach:
+///   another task's landed finalize or `jigc ingest` had absorbed the hand edit into the
+///   record (so the doc read `IN_SYNC`), or the doc had never been in the record and the pin
+///   held no blob for it (so it read `UNKNOWN` and was adopted), and the promote wrote the
+///   staged copy over the edit at exit 0.
+/// - **[`CopyInVerdict::AsCopiedIn`]** → never a block. The staged copy was made from
+///   exactly this file, so what replaces it is the file with the task's own writes applied —
+///   including an edit made before the task's first write, which is carried into the copy
+///   and lands with it (under whatever the task's own writes then made of that part), with
+///   or without a recorded baseline. The
+///   record then catches up exactly as the untouched arms would move it, and says so: no
+///   recorded hash and a conformant file is the first encounter's `file-state.baseline-adopt`;
+///   a recorded hash the file has drifted from is absorbed, under words that are true of a
+///   file the staged copy is about to replace ([`carried_by_the_staged_copy_finding`]).
+///   A file that does not conform is **not** recorded and draws **no** finding here: the
+///   staged copy that replaces it is validated in-task, and the hand-repair sanction — *"fix
+///   the file … yours to hand-edit"* — would direct exactly the edit this door then refuses.
+#[allow(clippy::too_many_arguments)]
+fn reconcile_held(
+    record: &mut FileStateRecord,
+    index: &mut crate::index::EdgeIndex,
+    schema: &crate::schema::Schema,
+    path: &str,
+    from: &str,
+    bytes: &[u8],
+    current: String,
+    verdict: CopyInVerdict,
+    conflict: &ConflictBlock,
+) -> Vec<Finding> {
+    if verdict == CopyInVerdict::Edited {
+        return vec![conflict_block_finding(path, conflict)];
+    }
+    let recorded = record.get(path).map(str::to_owned);
+    if recorded.as_deref() == Some(current.as_str()) {
+        return Vec::new();
+    }
+    let Ok(doc) = conformance_gate(schema, bytes) else {
+        return Vec::new();
+    };
+    match recorded {
+        None => {
+            record.record(path, current);
+            vec![baseline_adopt_finding(path)]
+        }
+        Some(_) => {
+            record.record(path, current);
+            index.absorb_doc(schema, from, &doc);
+            vec![carried_by_the_staged_copy_finding(path)]
+        }
     }
 }
 
@@ -2077,6 +2206,56 @@ fn absorb_under_a_staged_copy_finding(path: &str) -> Finding {
     )
 }
 
+/// The `reconciliation.absorb` advisory for **a drifted doc that is what the caller copied
+/// in** ([`reconcile_held`]) — the same code and key as [`absorb_finding`], in the words that
+/// are true when the caller's own witness has answered.
+///
+/// [`absorb_under_a_staged_copy_finding`] hedges, because the arm it speaks for holds only a
+/// pin verdict: it cannot say whether the staged copy carries what is on disk. Here the
+/// caller compared the file with what it copied in and they are the same, so both halves are
+/// facts: the staged copy was made from this file, and from here on a change to the file
+/// blocks the door rather than being replaced.
+///
+/// What it does **not** say is that everything in the file lands. The staged copy is the
+/// file *plus this work's own writes*, and a write to a part the file had changed before
+/// the copy-in — an uncommitted hand edit to the very slot the task then sets — replaces
+/// that part in the copy, as it would had the edit been committed first. The route states
+/// the composition and leaves the reader to read the staged copy.
+fn carried_by_the_staged_copy_finding(path: &str) -> Finding {
+    Finding::graded(
+        Severity::Advisory,
+        "reconciliation.absorb",
+        format!(
+            "baseline moved to the file on disk: `{path}` — it is what this work copied in, \
+             and the staged copy replaces it when this lands"
+        ),
+        Some(Location::addressed(path, 1, 1)),
+        Some(
+            "no action needed — the staged copy was made from this file as it is now, so \
+             what lands is this file with this work's own writes applied to it; a change \
+             made to the file from here on blocks this door instead of being replaced"
+                .into(),
+        ),
+    )
+}
+
+/// The route of the advisory `UNKNOWN` arm over a non-conformant doc **the caller has
+/// staged** — said instead of [`hand_repair_sanction`] (the rc.24 fix pass's completion
+/// audit).
+///
+/// The sanction tells the reader the file is theirs to hand-edit. Over a doc a task holds a
+/// staged copy of, that is the one instruction the door then punishes: the arm is reached
+/// with no witness of what the task copied in (an area minted before the witness existed)
+/// and no blob at the pin, so the file is adopted and the staged copy replaces it — driven,
+/// the advisory printed and the line it invited was gone at exit 0, in no git object. The
+/// repair belongs in the staged copy, through the CLI, and the route says so.
+fn staged_copy_replaces_it_route() -> String {
+    "leave the file as it is — this work holds a staged copy of the doc, and the staged copy \
+     replaces the file when this lands, so an edit made to the file now is not in what \
+     lands. Repair the doc in the staged copy, through the CLI"
+        .to_string()
+}
+
 /// The **hand-repair sanction** — the route over a **managed** doc that is at the schema-version
 /// this binary knows and still does not conform (round-2 D7): the adapter rule bans hand-editing
 /// managed files, but out-of-band damage is repaired where it happened, so this is the one case
@@ -2168,6 +2347,7 @@ fn conformance_advisory_finding(
     cause: Option<Finding>,
     source: &str,
     current: Option<u32>,
+    staged: bool,
 ) -> Finding {
     let (detail, line) = match &cause {
         Some(f) => (
@@ -2183,6 +2363,12 @@ fn conformance_advisory_finding(
         Some(Location::addressed(path, line, 1)),
         Some(hand_repair_sanction().into()),
     );
+    // A doc the caller has staged is not the reader's to hand-edit, at any version: the
+    // staged copy replaces the file ([`staged_copy_replaces_it_route`]).
+    if staged {
+        finding.route = Some(staged_copy_replaces_it_route().into());
+        return finding;
+    }
     // Read the stamp from the RAW front matter, exactly as the discriminator does: a
     // below-version doc of a structurally-changed doctype does not parse under the current
     // schema — which is why it is in this arm at all.
@@ -3160,6 +3346,7 @@ Referrers must point at the new decision.
             None,
             "---\nschema-version: 2\n---\n\n# Cache sessions in memory\n",
             Some(2),
+            false,
         );
         let blocking = conformance_block_finding(path, None);
 
@@ -5471,6 +5658,216 @@ sections: []
         assert!(
             route.as_str().starts_with("nothing was written"),
             "and routes at making git answer: {route:?}"
+        );
+    }
+
+    /// **A doc the caller holds copied in is decided by the caller's witness, and the
+    /// per-path record only follows** ([`reconcile_held`]; the rc.24 fix pass).
+    ///
+    /// The table is `(what the record holds, the caller's verdict, the bytes)` → the codes,
+    /// and whether the record ends up naming the bytes on disk. Each cell is run under the
+    /// pin answer that would have decided it the *other* way before the witness existed —
+    /// `Unmodified` for an edited doc (the pin adopted or absorbed), `Modified` for one that
+    /// is as copied in (the pin blocked) — so a cell that still consulted the pin fails.
+    ///
+    /// The three cells the per-path record got wrong are named: a record another writer had
+    /// already moved to the edited bytes (`IN_SYNC` → landed over the edit), a doc with no
+    /// record and nothing at the pin (`UNKNOWN` → adopted, and the hand-repair sanction
+    /// printed over a doc the promote then replaced), and an edit made before the first
+    /// write under a held baseline (`DRIFTED` → blocked, where a clone with no record
+    /// landed the same sequence).
+    #[test]
+    fn a_doc_the_caller_holds_copied_in_is_decided_by_the_callers_witness() {
+        use crate::validate::PinVerdict;
+        let schema = adr_schema();
+        let base = ADR_B_BASE.as_bytes();
+        let edited = ADR_B_EDITED_SUPERSEDES.as_bytes();
+        let broken = ADR_B_EDITED_BAD_DATE.as_bytes();
+        let holding =
+            |verdict| test_conflict().holding(BTreeMap::from([(ADR_B_PATH.to_string(), verdict)]));
+        #[derive(Clone, Copy, Debug)]
+        enum Recorded {
+            Nothing,
+            TheBytesOnDisk,
+            OtherBytes,
+        }
+        const ADOPT: (&str, Severity) = ("file-state.baseline-adopt", Severity::Advisory);
+        const CARRIED: (&str, Severity) = ("reconciliation.absorb", Severity::Advisory);
+        const CONFLICT: (&str, Severity) = ("reconciliation.conflict-block", Severity::Blocking);
+        // (name, recorded, verdict, bytes, codes, the record names the bytes on disk after)
+        type Cell<'a> = (
+            &'a str,
+            Recorded,
+            CopyInVerdict,
+            &'a [u8],
+            &'a [(&'a str, Severity)],
+            bool,
+        );
+        let cells: [Cell<'_>; 9] = [
+            (
+                "another writer moved the record to the edited bytes → blocks",
+                Recorded::TheBytesOnDisk,
+                CopyInVerdict::Edited,
+                edited,
+                &[CONFLICT],
+                true,
+            ),
+            (
+                "no record, edited → blocks, nothing adopted",
+                Recorded::Nothing,
+                CopyInVerdict::Edited,
+                edited,
+                &[CONFLICT],
+                false,
+            ),
+            (
+                "no record, edited, non-conformant → blocks, never the advisory",
+                Recorded::Nothing,
+                CopyInVerdict::Edited,
+                broken,
+                &[CONFLICT],
+                false,
+            ),
+            (
+                "a held baseline, edited → blocks",
+                Recorded::OtherBytes,
+                CopyInVerdict::Edited,
+                edited,
+                &[CONFLICT],
+                false,
+            ),
+            (
+                "as copied in, the record agrees → silent",
+                Recorded::TheBytesOnDisk,
+                CopyInVerdict::AsCopiedIn,
+                base,
+                &[],
+                true,
+            ),
+            (
+                "as copied in, no record → the first encounter's adoption",
+                Recorded::Nothing,
+                CopyInVerdict::AsCopiedIn,
+                edited,
+                &[ADOPT],
+                true,
+            ),
+            (
+                "as copied in, no record, non-conformant → silent and unrecorded",
+                Recorded::Nothing,
+                CopyInVerdict::AsCopiedIn,
+                broken,
+                &[],
+                false,
+            ),
+            (
+                "an edit before the first write under a held baseline → carried, and said",
+                Recorded::OtherBytes,
+                CopyInVerdict::AsCopiedIn,
+                edited,
+                &[CARRIED],
+                true,
+            ),
+            (
+                "as copied in, a held baseline, non-conformant → silent, the record unmoved",
+                Recorded::OtherBytes,
+                CopyInVerdict::AsCopiedIn,
+                broken,
+                &[],
+                false,
+            ),
+        ];
+        for (name, recorded, verdict, bytes, codes, names_disk_after) in cells {
+            let mut record = FileStateRecord::new();
+            match recorded {
+                Recorded::Nothing => {}
+                Recorded::TheBytesOnDisk => record.record(ADR_B_PATH, hash_bytes(bytes)),
+                Recorded::OtherBytes => record.record(ADR_B_PATH, hash_bytes(b"other bytes")),
+            }
+            let against = match verdict {
+                CopyInVerdict::Edited => PinVerdict::Unmodified,
+                CopyInVerdict::AsCopiedIn => PinVerdict::Modified,
+            };
+            let conflict = holding(verdict);
+            let findings = reconcile_committed(
+                &mut record,
+                &mut EdgeIndex::default(),
+                &schema,
+                ADR_B_PATH,
+                ADR_B_FROM,
+                bytes,
+                true,
+                &|_| Some(against.clone()),
+                &conflict,
+                &crate::validate::AdoptionInputs::inert(),
+            );
+            let got: Vec<(&str, Severity)> = findings
+                .iter()
+                .map(|f| (f.code.as_str(), f.severity))
+                .collect();
+            assert_eq!(got, codes, "{name}: {findings:?}");
+            assert_eq!(
+                record.get(ADR_B_PATH) == Some(hash_bytes(bytes).as_str()),
+                names_disk_after,
+                "{name}: the record",
+            );
+            for finding in &findings {
+                let route = finding.route.as_ref().map_or("", |route| route.as_str());
+                assert!(
+                    !route.contains("yours to hand-edit"),
+                    "{name}: a doc the caller has staged is never called the reader's to \
+                     hand-edit: {finding:?}",
+                );
+            }
+            if verdict == CopyInVerdict::Edited {
+                assert_eq!(
+                    findings,
+                    vec![conflict_block_finding(ADR_B_PATH, &conflict)],
+                    "{name}: the block is the caller's own presentation",
+                );
+            }
+        }
+
+        // The witness speaks only for a doc the caller has staged: the same map over an
+        // untouched path changes nothing, so an untouched doc's drift is still absorbed.
+        let mut record = FileStateRecord::new();
+        record.record(ADR_B_PATH, hash_bytes(base));
+        let findings = reconcile_committed(
+            &mut record,
+            &mut EdgeIndex::default(),
+            &schema,
+            ADR_B_PATH,
+            ADR_B_FROM,
+            edited,
+            false,
+            &|_| None,
+            &holding(CopyInVerdict::Edited),
+            &crate::validate::AdoptionInputs::inert(),
+        );
+        assert_eq!(findings, vec![absorb_finding(ADR_B_PATH)]);
+
+        // And a staged doc the caller holds NO witness for keeps every arm it had — and,
+        // where that arm is the non-conformant advisory, no longer the hand-repair sanction.
+        let findings = reconcile_committed(
+            &mut FileStateRecord::new(),
+            &mut EdgeIndex::default(),
+            &schema,
+            ADR_B_PATH,
+            ADR_B_FROM,
+            broken,
+            true,
+            &|_| None,
+            &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
+        );
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].code, "reconciliation.conformance-block");
+        assert_eq!(findings[0].severity, Severity::Advisory);
+        let route = findings[0].route.as_ref().expect("it routes").as_str();
+        assert!(
+            route.contains("the staged copy replaces the file") && !route.contains("hand-edit"),
+            "the advisory over a staged doc says what lands, not that the file is the \
+             reader's to edit: {route}",
         );
     }
 

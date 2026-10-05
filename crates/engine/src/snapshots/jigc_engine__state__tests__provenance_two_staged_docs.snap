@@ -6,5 +6,11 @@ expression: bytes
   "docs": {
     "adr:rate-limit": "edited-from-base",
     "commit:add-rate-limiter": "created"
+  },
+  "copied-in": {
+    "adr:rate-limit": {
+      "bytes": "bb6e130a6f3289c120afff6d7315a2645e6be8296357138c75e22c7fbcf35afa",
+      "git": "3b18e512dba79e4c8300dd08aeb37f8e728b8dad"
+    }
   }
 }

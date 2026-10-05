@@ -491,12 +491,10 @@ fn warm_recreate_copies_in_appends_and_repromotes_byte_stable() {
 
 #[test]
 fn warm_edit_over_an_oob_drifted_singleton_conflict_blocks_at_finalize() {
-    // (c) The warm-drift spike. The cold finalize records the committed baseline FIRST;
-    // a second task copies-in + edits (TOUCHED), then the committed runlog/runlog.md is
-    // drifted OUT-OF-BAND (DRIFTED vs the recorded baseline). finalize-preflight's
-    // `reconcile_committed_store` sees DRIFTED+TOUCHED and conflict-blocks — both sides
-    // moved, no silent merge. (An unrecorded baseline would baseline-adopt vacuously;
-    // recording-first is what makes this a genuine red.)
+    // (c) The warm-drift spike. A second task copies the committed runlog/runlog.md in
+    // (TOUCHED), the file is then drifted OUT-OF-BAND, and the task edits its staged copy.
+    // finalize-preflight's `reconcile_committed_store` finds the file is no longer what
+    // the task copied in and conflict-blocks — both sides moved, no silent merge.
     let repo = TempDir::new("drift");
     let home = TempDir::new("home");
     init_repo(repo.path());
@@ -535,14 +533,25 @@ fn warm_edit_over_an_oob_drifted_singleton_conflict_blocks_at_finalize() {
     let warm = "drift-the-running-log";
     start_keep_runlog(repo.path(), home.path(), "drift the running log", warm);
 
+    assert_ok(
+        &jigc_doc(
+            repo.path(),
+            home.path(),
+            &["create", "runlog", "--title", "runlog"],
+            None,
+        ),
+        "`doc create runlog` (drift/run2 warm copy-in)",
+    );
+
     // OOB drift: a human hand-edits the committed runlog/runlog.md on disk, AFTER the
-    // warm task is minted and left uncommitted. The cold finalize recorded the baseline
-    // hash in the file-state record; this edit moves the on-disk bytes but not that
-    // record, so the recorded baseline now diverges from disk (DRIFTED). Uncommitted, so
-    // HEAD still equals the warm task's base (no `finalize.base-mismatch` pre-empting the
-    // reconcile gate) and the drift is not the base pin's blob — a change made DURING the
-    // task, which M55 Increment 4's pulled-edit absorb leaves conflict-blocking. A drift
-    // committed before the mint would be at the pin and absorbed (`l1_pull_absorption`).
+    // warm task has copied it in, and leaves it uncommitted. The file is then no longer
+    // what the task copied in — which is what the door decides on, from the task's own
+    // record of that copy-in (`design/reconciliation.md` → What a task copied in), whatever
+    // the file-state record holds. Uncommitted, so HEAD still equals the warm task's base
+    // (no `finalize.base-mismatch` pre-empting the reconcile gate). The same edit made
+    // BEFORE the copy-in is carried into the staged copy and lands with the task
+    // (`reconciliation_baseline_contrast`); a drift committed before the mint lands too
+    // (`l1_pull_absorption`).
     let committed_path = repo.path().join("docs").join("runlog").join("runlog.md");
     let on_disk = fs::read_to_string(&committed_path).expect("read committed runlog on disk");
     fs::write(
@@ -557,23 +566,14 @@ fn warm_edit_over_an_oob_drifted_singleton_conflict_blocks_at_finalize() {
         &jigc_doc(
             repo.path(),
             home.path(),
-            &["create", "runlog", "--title", "runlog"],
-            None,
-        ),
-        "`doc create runlog` (drift/run2 warm copy-in)",
-    );
-    assert_ok(
-        &jigc_doc(
-            repo.path(),
-            home.path(),
             &["set-slot", "runlog:runlog#overview", "--from-file", "-"],
             Some(b"The task-edited overview.\n"),
         ),
         "`set-slot overview` (drift/run2 — the task TOUCHED the singleton)",
     );
 
-    // finalize-preflight: DRIFTED (committed != recorded baseline) + TOUCHED (staged in
-    // the warm area) → conflict-block, non-zero exit, NO new commit.
+    // finalize-preflight: the file differs from what the warm task copied in, and the
+    // task holds it staged → conflict-block, non-zero exit, NO new commit.
     fill_commit(repo.path(), home.path(), warm);
     let before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
         .trim()

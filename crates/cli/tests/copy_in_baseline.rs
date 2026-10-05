@@ -20,13 +20,28 @@
 //!    binary copied in): `UNKNOWN` + touched + the pin carries a blob for the path + the
 //!    on-disk bytes differ from it → the same conflict-block.
 //!
+//! 3. **For a doc a task holds, the task's own witness decides** (`DECISIONS.md` →
+//!    2026-10-05, option A; the completion audit's reconcile-baseline F1 · F2 · F7 and the
+//!    e2e's F5). Rules 1 and 2 put the task's question — *is the file still what I copied
+//!    in?* — to a record keyed by path, which every other jigc writer moves and a doc that
+//!    does not conform, or that git never committed, is never in. So each copy-in also
+//!    writes, into the task's own `docs/provenance.json`, the hash of the bytes it read
+//!    (raw, and as git stores them at the doc's home), and both committing doors compare
+//!    the file with it. One rule everywhere: an edit before the task's first write is
+//!    carried and lands; an edit after it blocks. A working area with no witness — one an
+//!    older binary minted — is still decided by rules 1 and 2.
+//!
 //! The suite iterates the class, not the reported instance: both committing doors × a
 //! placement and a location doctype × every way the key is absent at the first write × the
 //! two orders of the hand edit, every `doc` write leaf as the first touch, and the nine
 //! cells the new writer brings (the planning's advocacy, `advocate-promote-1`): raw-bytes
 //! hash · the sweep's key · the save-lock timeout · concurrent first writes · a
 //! non-conformant doc · the adoption stated at the write door · the store sweep's reading ·
-//! two tasks on one doc · a task with no record.
+//! two tasks on one doc · a task with no record. And the crossing cells the audit found
+//! skipped, which are where the losses were: a second jigc writer of the key between the
+//! hand edit and the holding task's door · an untracked doc that does not conform · an
+//! untracked doc whose key is lost after the copy-in · two tasks on one untracked doc ·
+//! a doc git checked out again in another line-ending form between the copy-in and the door.
 //!
 //! Real binary throughout, in throwaway corpora built by the shared fixture builder.
 
@@ -371,6 +386,107 @@ fn run_emitted(corpus: &TrialCorpus, command: &str) -> Output {
     corpus.jigc(&args)
 }
 
+/// The task's own record of what it copied in — `docs/provenance.json` → `copied-in`.
+fn witness(corpus: &TrialCorpus, task: &str) -> serde_json::Value {
+    let manifest = corpus
+        .repo()
+        .join(".jigc/tasks")
+        .join(task)
+        .join("docs/provenance.json");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(manifest).expect("read the manifest"))
+            .expect("the manifest is JSON");
+    manifest["copied-in"].clone()
+}
+
+/// Rewrite `task`'s manifest **without** its `copied-in` member — byte for byte what a
+/// binary older than the witness wrote, so the area is one *the previous format minted*.
+fn strip_witness(corpus: &TrialCorpus, task: &str) {
+    let path = corpus
+        .repo()
+        .join(".jigc/tasks")
+        .join(task)
+        .join("docs/provenance.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).expect("read the manifest"))
+            .expect("the manifest is JSON");
+    assert!(
+        manifest
+            .as_object_mut()
+            .expect("the manifest is an object")
+            .remove("copied-in")
+            .is_some(),
+        "the premise: `{task}` recorded a witness before it is stripped",
+    );
+    let mut bytes = serde_json::to_string_pretty(&manifest).expect("serialize the manifest");
+    bytes.push('\n');
+    fs::write(&path, bytes).expect("write the previous-format manifest");
+}
+
+/// Write `prose` into `slot` for `task` — a `doc set-slot`, returning the ack envelope.
+fn write_slot(corpus: &TrialCorpus, task: &str, slot: &str, prose: &str) -> serde_json::Value {
+    let out = corpus.jigc_stdin(
+        &[
+            "doc",
+            "set-slot",
+            slot,
+            "--from-file",
+            "-",
+            "--task",
+            task,
+            "--format",
+            "json",
+        ],
+        &format!("{prose}\n"),
+    );
+    stdout_json(&out, &[0], &format!("`doc set-slot {slot}`"))
+}
+
+/// An ADR that is on disk at its home and **git has never committed** — a hand-started
+/// draft. `conformant: false` leaves its required `consequences` slot empty, so it parses
+/// and fails the conformance gate: the copy-in records no baseline for it, and there is no
+/// blob for it at any pin.
+struct Draft;
+
+impl Draft {
+    const HOME: &'static str = "docs/decisions/draft-queue.md";
+    const ADDRESS: &'static str = "adr:draft-queue";
+    /// The line the hand edit lands under — in a slot the task does not write.
+    const ANCHOR: &'static str = "Session lookups must stay sub-millisecond.\n";
+
+    /// Write the draft; returns its bytes.
+    fn write(corpus: &TrialCorpus, conformant: bool) -> String {
+        let committed = read(&corpus.repo(), ADR_HOME);
+        let mut draft = committed.replacen("# Single-node cache", "# Draft queue", 1);
+        if !conformant {
+            draft = draft.replacen("A cold node loses its sessions.\n", "", 1);
+        }
+        assert_ne!(committed, draft, "the draft is its own doc");
+        fs::write(corpus.repo().join(Self::HOME), &draft).expect("write the draft");
+        assert_eq!(
+            corpus.git(&["ls-files", "--", Self::HOME]),
+            "",
+            "the premise: git has never seen the draft",
+        );
+        draft
+    }
+
+    /// The slot the task writes — the one the non-conformant draft leaves empty.
+    fn slot() -> String {
+        format!("{}#consequences", Self::ADDRESS)
+    }
+
+    /// Append [`HAND`] under [`Self::ANCHOR`], on disk.
+    fn hand_edit(corpus: &TrialCorpus) -> String {
+        let path = corpus.repo().join(Self::HOME);
+        let before = fs::read_to_string(&path).expect("read the draft");
+        let after = before.replacen(Self::ANCHOR, &format!("{}{HAND}\n", Self::ANCHOR), 1);
+        assert_ne!(before, after, "the hand edit changes the draft");
+        fs::write(&path, &after).expect("write the hand edit");
+        after
+    }
+}
+
 /// **The class.** Both committing doors × both doctype kinds × every way the key is absent
 /// at the first write: a hand edit made *after* the task's first write blocks the door at
 /// exit 3 under `reconciliation.conflict-block`, commits nothing, and leaves the hand line on
@@ -574,13 +690,57 @@ fn a_second_clones_first_task_does_not_overwrite_a_hand_edit() {
     );
 }
 
-/// **The declared order keeps landing.** A hand edit made *before* the task's first write is
-/// carried by the copy-in, so the door lands both sides in one commit
-/// (`design/storage.md` → Concurrent writers, *What none of this buys*) — at both doors, for
-/// both kinds, whichever way the key was absent.
+/// **The declared order keeps landing — with or without a recorded baseline.** A hand edit
+/// made *before* the task's first write is carried by the copy-in, so the door lands both
+/// sides in one commit (`design/storage.md` → Concurrent writers, *What none of this buys*)
+/// — at both doors, for both kinds, whichever way the key was absent, **and where it was
+/// held**. That last cell is the one the task's own witness changed (`DECISIONS.md` →
+/// 2026-10-05, the first accepted consequence): through the previous round a held baseline
+/// conflict-blocked this order while a clone with no record landed it, so one sequence had
+/// two outcomes decided by a gitignored cache. The file is what the task copied in, so it
+/// lands — and the door says the baseline moved, under `reconciliation.absorb`, in words
+/// that name the staged copy rather than an "external edit".
 #[test]
 fn a_hand_edit_before_the_first_write_still_lands_merged() {
     let base = baselined_corpus();
+    for door in Door::ALL {
+        for kind in Kind::ALL {
+            // The held cell is engine-identical across kinds; the second kind rides the
+            // task door only.
+            if door == Door::Milestone && kind == Kind::Location {
+                continue;
+            }
+            let what = format!("{door:?}/{kind:?}/held");
+            let corpus = base.copy_state();
+            let held = recorded(&corpus, kind.home());
+            assert!(held.is_some(), "{what}: the premise — the key is held");
+            let task = door.mint(&corpus);
+            kind.hand_edit(&corpus);
+            kind.first_write(&corpus, &task);
+            assert_eq!(
+                recorded(&corpus, kind.home()),
+                held,
+                "{what}: a held key is never moved by the copy-in",
+            );
+            let out = door.finalize(&corpus, &task);
+            let envelope: serde_json::Value = stdout_json(&out, &[0], &what);
+            if door == Door::Task {
+                let carried = keyed(&findings(&envelope), "reconciliation.absorb", kind.home());
+                assert_eq!(carried.len(), 1, "{what}: the move is said; {}", text(&out));
+                let said = carried[0]["message"].as_str().unwrap_or_default();
+                assert!(
+                    said.contains("it is what this work copied in")
+                        && !said.contains("external edit"),
+                    "{what}: in words true of a doc the task holds: {said}",
+                );
+            }
+            let at_head = corpus.git(&["show", &format!("HEAD:{}", kind.home())]);
+            assert!(
+                at_head.contains(HAND) && at_head.contains(TASK_PROSE),
+                "{what}: both sides are in the commit; got:\n{at_head}",
+            );
+        }
+    }
     for door in Door::ALL {
         for kind in Kind::ALL {
             for absent in Absent::ALL {
@@ -612,43 +772,75 @@ fn a_hand_edit_before_the_first_write_still_lands_merged() {
     }
 }
 
-/// **A hand edit undone after the copy-in still lands — and the door says what lands** (the
-/// rc.24 fix pass's completion audit).
+/// **A hand edit undone after the copy-in is an edit after it, and blocks** (the rc.24 fix
+/// pass's completion audit, F8 and its silent sibling).
 ///
-/// The copy-in records the bytes it copies, the edited ones; the hand then puts the file
-/// back (`git checkout -- <doc>`). The file is at the task's base pin and off its recorded
-/// baseline, which is the pulled-edit arm — and that arm printed *"external edit absorbed
-/// … no action needed"* while the promote committed the undone paragraph and wrote it back
-/// into the worktree. Nothing is lost and the outcome is `1.0.0-rc.24`'s; what was false is
-/// the sentence. The advisory at that arm now says what happens — the staged copy replaces
-/// the file — and its route names the consequence: a change undone on disk after the
-/// copy-in is still in the staged copy.
+/// The hand adds a line, the task copies the doc in — carrying the line — and the hand then
+/// puts the file back (`git checkout -- <doc>`). The staged copy still holds the line and
+/// the file does not, so landing would commit, and write back into the worktree, a line its
+/// author had just removed. Through the previous round the door did exactly that: where the
+/// copy-in had recorded the baseline it said so in an advisory, and where a baseline was
+/// already held the doc read in-sync and it said nothing at all. The file is no longer what
+/// the task copied in, which is the one question the door now asks, so it blocks — with the
+/// key absent at the copy-in and with it held — and the emitted discard runs.
+///
+/// A working area the previous format minted has no witness, so it keeps the arm it had and
+/// that arm's words: the staged copy lands, and the advisory says a change undone on disk is
+/// still in it.
 #[test]
-fn an_edit_undone_after_the_copy_in_lands_with_the_staged_copy_and_the_door_says_so() {
-    let corpus = baselined_corpus();
-    corpus.fresh_clone_shape();
+fn an_edit_undone_after_the_copy_in_blocks_and_an_older_area_says_what_lands() {
+    let base = baselined_corpus();
     let kind = Kind::Placement;
+    for held in [false, true] {
+        let what = format!("the key held at the copy-in: {held}");
+        let corpus = base.copy_state();
+        if !held {
+            corpus.fresh_clone_shape();
+        }
+        let task = mint_task(&corpus, "sharpen the questions");
+        kind.hand_edit(&corpus);
+        kind.first_write(&corpus, &task);
+        corpus.git(&["checkout", "--", kind.home()]);
+        let disk = read(&corpus.repo(), kind.home());
+        assert!(
+            !disk.contains(HAND),
+            "{what}: the premise — the edit is undone"
+        );
+        let head_before = head(&corpus);
+        let out = Door::Task.finalize(&corpus, &task);
+        let conflict = assert_blocked(&corpus, &out, kind.home(), &head_before, &disk, &what);
+        let route = conflict["route"].as_str().expect("the conflict routes");
+        let spans = jigc_spans(route);
+        assert_eq!(spans.len(), 1, "{what}: one `jigc` span in: {route}");
+        let ran = run_emitted(&corpus, spans[0]);
+        assert_eq!(ran.status.code(), Some(0), "{what}: {}", text(&ran));
+        assert_eq!(
+            read(&corpus.repo(), kind.home()),
+            disk,
+            "{what}: the file stays"
+        );
+    }
+
+    // The previous format: no witness, so the pulled-edit arm and its sentence.
+    let corpus = base.copy_state();
+    corpus.fresh_clone_shape();
     let task = mint_task(&corpus, "sharpen the questions");
     kind.hand_edit(&corpus);
     kind.first_write(&corpus, &task);
+    strip_witness(&corpus, &task);
     corpus.git(&["checkout", "--", kind.home()]);
-    assert!(
-        !read(&corpus.repo(), kind.home()).contains(HAND),
-        "the premise: the hand edit is undone on disk",
-    );
-
     let out = corpus.jigc(&["task", "finalize", &task]);
     let said = text(&out);
-    assert_eq!(out.status.code(), Some(0), "the task lands; {said}");
+    assert_eq!(out.status.code(), Some(0), "the older area lands; {said}");
     assert!(
         said.contains("reconciliation.absorb")
             && said.contains("the staged copy replaces it when this lands")
             && said.contains("a change undone on disk after the copy-in is still in it"),
-        "the door says what lands; {said}",
+        "and the door says what lands; {said}",
     );
     assert!(
         !said.contains("external edit absorbed"),
-        "and no longer says an external edit was absorbed; {said}",
+        "never that an external edit was absorbed; {said}",
     );
     let at_head = corpus.git(&["show", &format!("HEAD:{}", kind.home())]);
     assert!(
@@ -1296,20 +1488,20 @@ fn concurrent_first_writes_all_record_their_baselines() {
     }
 }
 
-/// **Cell 5 — a non-conformant doc is never baselined**, and the door still does not
-/// overwrite it. A hand edit that breaks conformance (a malformed `date`) sits on disk when
-/// the task first writes the doc: the copy-in records nothing and adopts nothing, and the
-/// door blocks on the base-pin backstop instead of advising *fix the file* and then
-/// overwriting it. The same break made *after* the first write blocks on the recorded
-/// baseline.
+/// **Cell 5 — a non-conformant doc is never baselined, and never overwritten.** A hand edit
+/// that breaks conformance (a malformed `date`) and adds a line:
 ///
-/// **The bound of this cell is the doc being tracked.** The backstop it leans on needs a
-/// blob at the pin. The crossing cell — a doc git has never committed that does not conform
-/// when it is copied in — has neither a record nor a blob, and there the finalize still
-/// adopts and promotes over a later hand edit at exit 0; it is open, and stated where the
-/// rule is (`design/reconciliation.md` → What the per-path record cannot answer). So is a
-/// second jigc writer moving the key between the hand edit and the holding task's finalize,
-/// which no cell of this suite lands: cell 8 covers the copy-in writer only.
+/// - made **after** the first write, it blocks the door on the conflict — the file is not
+///   what the task copied in;
+/// - made **before** it, it is carried into the task like any edit before the first write.
+///   The copy-in records no baseline (the per-path rule), but the task's own witness names
+///   the broken bytes, so the door does not conflict — and the staged copy, which carries
+///   the break, fails the task's own conformance gate with a route that repairs it **in the
+///   staged copy, through the CLI**. Run as printed, the route lands the task with the hand
+///   line in it. Nothing told the reader to edit the file, and nothing was written over.
+///
+/// The crossing cell — a doc git has never committed that does not conform when it is copied
+/// in — is [`an_untracked_draft_that_does_not_conform_is_never_promoted_over_a_hand_edit`].
 #[test]
 fn a_non_conformant_doc_is_never_baselined_and_never_overwritten() {
     let base = baselined_corpus();
@@ -1326,64 +1518,86 @@ fn a_non_conformant_doc_is_never_baselined_and_never_overwritten() {
         assert_ne!(body, broken);
         fs::write(&path, format!("{broken}\n{HAND}\n")).expect("break the doc");
     };
-    let staged = |corpus: &TrialCorpus, task: &str| {
-        corpus
-            .repo()
-            .join(".jigc/tasks")
-            .join(task)
-            .join("docs")
-            .join(format!("{}.md", kind.address()))
-    };
 
-    for before_the_first_write in [true, false] {
-        let what = format!("broken before the first write: {before_the_first_write}");
-        let corpus = base.copy_state();
-        corpus.fresh_clone_shape();
-        let task = Door::Task.mint(&corpus);
-        if before_the_first_write {
-            break_it(&corpus);
-            // The write itself is refused — the doc it copied in does not conform, so the
-            // splice has nothing sound to land in — but the copy-in ran first: the doc is
-            // staged, and that is what makes the door's sweep read it *touched*.
-            let out = corpus.jigc_stdin(
-                &[
-                    "doc",
-                    "set-slot",
-                    &kind.slot(),
-                    "--from-file",
-                    "-",
-                    "--task",
-                    &task,
-                    "--format",
-                    "json",
-                ],
-                &format!("{TASK_PROSE}\n"),
-            );
-            assert!(
-                staged(&corpus, &task).is_file(),
-                "{what}: the premise — the copy-in staged the doc; {}",
-                text(&out),
-            );
-            assert_eq!(
-                recorded(&corpus, kind.home()),
-                None,
-                "{what}: a non-conformant doc is not baselined at the copy-in",
-            );
-            assert!(
-                !String::from_utf8_lossy(&out.stdout).contains(ADOPT)
-                    && !String::from_utf8_lossy(&out.stderr).contains(ADOPT),
-                "{what}: and the write claims no adoption; {}",
-                text(&out),
-            );
-        } else {
-            kind.first_write(&corpus, &task);
-            break_it(&corpus);
-        }
-        let disk = read(&corpus.repo(), kind.home());
-        let head_before = head(&corpus);
-        let out = Door::Task.finalize(&corpus, &task);
-        assert_blocked(&corpus, &out, kind.home(), &head_before, &disk, &what);
-    }
+    // After the first write: the conflict.
+    let corpus = base.copy_state();
+    corpus.fresh_clone_shape();
+    let task = Door::Task.mint(&corpus);
+    kind.first_write(&corpus, &task);
+    break_it(&corpus);
+    let disk = read(&corpus.repo(), kind.home());
+    let head_before = head(&corpus);
+    let out = Door::Task.finalize(&corpus, &task);
+    assert_blocked(
+        &corpus,
+        &out,
+        kind.home(),
+        &head_before,
+        &disk,
+        "broken after the first write",
+    );
+
+    // Before the first write: carried, and repaired in the staged copy.
+    let what = "broken before the first write";
+    let corpus = base.copy_state();
+    corpus.fresh_clone_shape();
+    let task = Door::Task.mint(&corpus);
+    break_it(&corpus);
+    let ack = kind.first_write(&corpus, &task);
+    assert_eq!(
+        recorded(&corpus, kind.home()),
+        None,
+        "{what}: a non-conformant doc is not baselined at the copy-in",
+    );
+    assert!(
+        keyed(&findings(&ack), ADOPT, kind.home()).is_empty(),
+        "{what}: and the write claims no adoption: {ack}",
+    );
+    let disk = read(&corpus.repo(), kind.home());
+    let head_before = head(&corpus);
+    let out = Door::Task.finalize(&corpus, &task);
+    let envelope: serde_json::Value = stdout_json(&out, &[3], what);
+    let rows = findings(&envelope);
+    assert!(
+        keyed(&rows, CONFLICT, kind.home()).is_empty(),
+        "{what}: the file is what the task copied in — no conflict; {}",
+        text(&out),
+    );
+    let blocking: Vec<&serde_json::Value> = rows
+        .iter()
+        .filter(|f| f["severity"] == "blocking")
+        .collect();
+    assert_eq!(blocking.len(), 1, "{what}: one block; {}", text(&out));
+    assert_eq!(
+        blocking[0]["key"]["code"],
+        "schema-conformance.field-value-conformant",
+        "{what}: the staged copy's own conformance; {}",
+        text(&out),
+    );
+    assert!(
+        !text(&out).contains("yours to hand-edit"),
+        "{what}: nothing tells the reader to edit a file the task holds; {}",
+        text(&out),
+    );
+    assert_eq!(head(&corpus), head_before, "{what}: nothing is committed");
+    assert_eq!(
+        read(&corpus.repo(), kind.home()),
+        disk,
+        "{what}: the file stays"
+    );
+    // The route, as printed, with a value.
+    let route = blocking[0]["route"].as_str().expect("the block routes");
+    let spans = jigc_spans(route);
+    assert_eq!(spans.len(), 1, "{what}: one `jigc` span in: {route}");
+    let ran = run_emitted(&corpus, &spans[0].replace("<value>", "2026-10-05"));
+    assert_eq!(ran.status.code(), Some(0), "{what}: {}", text(&ran));
+    let landed = Door::Task.finalize(&corpus, &task);
+    assert_eq!(landed.status.code(), Some(0), "{what}: {}", text(&landed));
+    let at_head = corpus.git(&["show", &format!("HEAD:{}", kind.home())]);
+    assert!(
+        at_head.contains(HAND) && at_head.contains(TASK_PROSE) && at_head.contains("2026-10-05"),
+        "{what}: the carried line, the task's prose and the repair landed; got:\n{at_head}",
+    );
 }
 
 /// **Cell 6 — the adoption is stated where it happens, once.** The write that records the
@@ -1566,13 +1780,20 @@ fn a_second_tasks_copy_in_records_nothing_while_another_task_holds_the_doc_unrec
     }
 }
 
-/// **Cell 9 — a task with a staged doc and no record gets the backstop.** That is every task
-/// a binary older than the copy-in baseline copied in, and every key lost after the copy-in.
-/// The base pin decides: bytes off the pin block, in either order of the hand edit (the
-/// staged copy cannot say which side it carries); bytes at the pin land. And `jigc unmanage`
-/// after a block no longer switches the guard off.
+/// **Cell 9 — a task with a staged doc and no record.** The key is lost after the copy-in
+/// (a deleted cache, an `unmanage`), under each order of the hand edit, at both doors:
+///
+/// - **the task holds its witness** → it decides. No edit lands; an edit *after* the copy-in
+///   blocks; an edit *before* it is what the task copied in, so it is carried and lands —
+///   the cell the previous round blocked, because the pin could not say which side of the
+///   copy-in an edit fell on. The witness can.
+/// - **an area the previous format minted** (no `copied-in` member — every task a binary
+///   older than the witness copied in) → the base pin decides, as it did: bytes at the pin
+///   land, bytes off it block in either order.
+///
+/// And `jigc unmanage` after a block does not switch the guard off, in either area.
 #[test]
-fn a_staged_doc_with_no_record_is_decided_by_the_base_pin() {
+fn a_staged_doc_with_no_record_is_decided_by_the_witness_or_else_the_base_pin() {
     let base = baselined_corpus();
     #[derive(Clone, Copy, Debug)]
     enum Edit {
@@ -1580,31 +1801,56 @@ fn a_staged_doc_with_no_record_is_decided_by_the_base_pin() {
         BeforeTheCopyIn,
         AfterTheCopyIn,
     }
-    for door in Door::ALL {
-        for kind in Kind::ALL {
-            for edit in [Edit::None, Edit::BeforeTheCopyIn, Edit::AfterTheCopyIn] {
-                let what = format!("{door:?}/{kind:?}/{edit:?}");
-                let corpus = base.copy_state();
-                let task = door.mint(&corpus);
-                if matches!(edit, Edit::BeforeTheCopyIn) {
-                    kind.hand_edit(&corpus);
+    for previous_format in [false, true] {
+        for door in Door::ALL {
+            for kind in Kind::ALL {
+                // The previous format's arms are the pin's, unchanged and pinned cell by
+                // cell at the engine (`unknown_and_touched_is_decided_by_the_base_pin`);
+                // one doctype kind through both doors is the binary-level statement.
+                if previous_format && kind == Kind::Location {
+                    continue;
                 }
-                kind.first_write(&corpus, &task);
-                if matches!(edit, Edit::AfterTheCopyIn) {
-                    kind.hand_edit(&corpus);
-                }
-                forget(&corpus, kind.home());
-                let disk = read(&corpus.repo(), kind.home());
-                let head_before = head(&corpus);
-                let out = door.finalize(&corpus, &task);
-                match edit {
-                    Edit::None => assert_eq!(
-                        out.status.code(),
-                        Some(0),
-                        "{what}: bytes at the pin land; {}",
-                        text(&out),
-                    ),
-                    Edit::BeforeTheCopyIn | Edit::AfterTheCopyIn => {
+                for edit in [Edit::None, Edit::BeforeTheCopyIn, Edit::AfterTheCopyIn] {
+                    // …and at the join, the one cell whose outcome the format changes.
+                    if previous_format
+                        && door == Door::Milestone
+                        && !matches!(edit, Edit::BeforeTheCopyIn)
+                    {
+                        continue;
+                    }
+                    let what =
+                        format!("previous format: {previous_format}/{door:?}/{kind:?}/{edit:?}");
+                    let corpus = base.copy_state();
+                    let task = door.mint(&corpus);
+                    if matches!(edit, Edit::BeforeTheCopyIn) {
+                        kind.hand_edit(&corpus);
+                    }
+                    kind.first_write(&corpus, &task);
+                    if matches!(edit, Edit::AfterTheCopyIn) {
+                        kind.hand_edit(&corpus);
+                    }
+                    if previous_format {
+                        strip_witness(&corpus, &task);
+                    }
+                    forget(&corpus, kind.home());
+                    let disk = read(&corpus.repo(), kind.home());
+                    let head_before = head(&corpus);
+                    let out = door.finalize(&corpus, &task);
+                    let lands = match edit {
+                        Edit::None => true,
+                        Edit::BeforeTheCopyIn => !previous_format,
+                        Edit::AfterTheCopyIn => false,
+                    };
+                    if lands {
+                        assert_eq!(out.status.code(), Some(0), "{what}: {}", text(&out));
+                        let at_head = corpus.git(&["show", &format!("HEAD:{}", kind.home())]);
+                        assert_eq!(
+                            at_head.contains(HAND),
+                            matches!(edit, Edit::BeforeTheCopyIn),
+                            "{what}: an edit before the copy-in is carried; got:\n{at_head}",
+                        );
+                        assert!(at_head.contains(TASK_PROSE), "{what}: got:\n{at_head}");
+                    } else {
                         assert_blocked(&corpus, &out, kind.home(), &head_before, &disk, &what);
                     }
                 }
@@ -1612,22 +1858,392 @@ fn a_staged_doc_with_no_record_is_decided_by_the_base_pin() {
         }
     }
 
-    // `unmanage` after the block: the recorded baseline blocked, the key is dropped, and the
-    // backstop blocks the same finalize again.
-    for kind in Kind::ALL {
-        let what = format!("{kind:?}: unmanage after the block");
+    // `unmanage` after the block: the key is dropped, and the same finalize blocks again.
+    for previous_format in [false, true] {
+        for kind in Kind::ALL {
+            if previous_format && kind == Kind::Location {
+                continue;
+            }
+            let what = format!("previous format: {previous_format}/{kind:?}: unmanage");
+            let corpus = base.copy_state();
+            let task = Door::Task.mint(&corpus);
+            kind.first_write(&corpus, &task);
+            if previous_format {
+                strip_witness(&corpus, &task);
+            }
+            kind.hand_edit(&corpus);
+            let disk = read(&corpus.repo(), kind.home());
+            let head_before = head(&corpus);
+            let out = Door::Task.finalize(&corpus, &task);
+            assert_blocked(&corpus, &out, kind.home(), &head_before, &disk, &what);
+            corpus.jigc_ok(&["unmanage", kind.home()]);
+            assert_eq!(recorded(&corpus, kind.home()), None, "{what}");
+            let out = Door::Task.finalize(&corpus, &task);
+            assert_blocked(&corpus, &out, kind.home(), &head_before, &disk, &what);
+        }
+    }
+}
+
+/// **The crossing cells** (the completion audit's reconcile-baseline F7) — the cells the
+/// suite iterated *around*, which is where the audit drove three exit-0 losses of a hand
+/// edit made after a task's first write. Each crosses two axes the suite already had:
+///
+/// | cell | crosses | the finding |
+/// |---|---|---|
+/// | a second jigc writer of the key, between the edit and the holder's door | the record's writers × the order of the edit | F1 |
+/// | an untracked doc that does not conform | no blob at the pin × never baselined | F2 |
+/// | an untracked doc whose key is lost after the copy-in | no blob at the pin × key lost | e2e F5 |
+/// | two open tasks on one untracked doc | no blob at the pin × staged elsewhere | F2's third cell |
+///
+/// They are one test because they are one statement — *for a doc a task holds, what that
+/// task copied in decides* — over one fixture; each cell is its own function below, with
+/// what was driven before the witness existed.
+#[test]
+fn a_doc_a_task_holds_is_decided_by_what_that_task_copied_in() {
+    let base = baselined_corpus();
+    another_jigc_writer_of_the_record_never_unblocks_a_hand_edit(&base);
+    an_untracked_draft_that_does_not_conform_is_never_promoted_over_a_hand_edit(&base);
+    an_untracked_doc_whose_key_is_lost_after_the_copy_in_still_blocks_a_hand_edit(&base);
+    two_tasks_on_one_untracked_doc_are_each_decided_by_what_they_copied_in(&base);
+}
+
+/// A jigc writer, other than the task holding the doc, that moves the doc's `file-state` key
+/// to the bytes on disk.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mover {
+    /// An unrelated task's landed `jigc task finalize`: its sweep absorbs the hand edit to a
+    /// doc it never touched, and its post-commit persists the moved key.
+    UnrelatedFinalize,
+    /// `jigc ingest`, which absorbs an out-of-band edit into the baseline by design.
+    Ingest,
+}
+
+impl Mover {
+    const ALL: [Mover; 2] = [Mover::UnrelatedFinalize, Mover::Ingest];
+
+    fn run(self, corpus: &TrialCorpus) {
+        match self {
+            Mover::UnrelatedFinalize => {
+                let other = mint_task(corpus, "an unrelated code change");
+                fs::write(corpus.repo().join("unrelated.rs"), "fn unrelated() {}\n")
+                    .expect("write the unrelated file");
+                corpus.git(&["add", "--", "unrelated.rs"]);
+                let out = corpus.jigc(&["task", "finalize", &other]);
+                assert_eq!(
+                    out.status.code(),
+                    Some(0),
+                    "the unrelated task lands; {}",
+                    text(&out),
+                );
+            }
+            Mover::Ingest => {
+                corpus.jigc_ok(&["ingest"]);
+            }
+        }
+    }
+}
+
+/// **A second jigc writer between the hand edit and the holding task's door** (the
+/// completion audit's reconcile-baseline F1).
+///
+/// The record is per path, and the copy-in is not its only writer: an unrelated task's
+/// finalize sweeps the whole store and absorbs a conformant edit to a doc it never touched,
+/// and `jigc ingest` does the same on purpose. Either one, run after the hand edit, moves
+/// the key to the edited bytes — so the holding task read the doc `IN_SYNC` and its door
+/// promoted the staged copy over the edit at exit 0, the line in no git object. Driven on
+/// the previous round's build at both doors.
+///
+/// The holding task's own witness is untouched by either writer, so the door blocks. Then
+/// the route's second exit, as printed: the edit reverted on disk, the door lands.
+fn another_jigc_writer_of_the_record_never_unblocks_a_hand_edit(base: &TrialCorpus) {
+    let kind = Kind::Placement;
+    for door in Door::ALL {
+        for mover in Mover::ALL {
+            for clone in [false, true] {
+                // The clone shape adds nothing the held key does not at the milestone door,
+                // and an unrelated commit is not a mover there at all: it moves `HEAD` off
+                // the milestone's base, which `finalize.base-mismatch` refuses first.
+                if door == Door::Milestone && (clone || mover == Mover::UnrelatedFinalize) {
+                    continue;
+                }
+                // With no key at the copy-in the copy-in records one, and from there the
+                // two movers are the same cell; one of them carries the clone shape.
+                if clone && mover == Mover::Ingest {
+                    continue;
+                }
+                let what = format!("{door:?}/{mover:?}/clone: {clone}");
+                let corpus = base.copy_state();
+                if clone {
+                    corpus.fresh_clone_shape();
+                }
+                let task = door.mint(&corpus);
+                kind.first_write(&corpus, &task);
+                kind.hand_edit(&corpus);
+                let edited = read(&corpus.repo(), kind.home());
+
+                mover.run(&corpus);
+                assert_eq!(
+                    recorded(&corpus, kind.home()),
+                    Some(hash_bytes(edited.as_bytes())),
+                    "{what}: the premise — the other writer moved the key to the edited bytes",
+                );
+
+                let head_before = head(&corpus);
+                let out = door.finalize(&corpus, &task);
+                assert_blocked(&corpus, &out, kind.home(), &head_before, &edited, &what);
+                assert!(edited.contains(HAND), "{what}: the hand line survives");
+
+                corpus.git(&["checkout", "--", kind.home()]);
+                let landed = door.finalize(&corpus, &task);
+                assert_eq!(landed.status.code(), Some(0), "{what}: {}", text(&landed));
+                let at_head = corpus.git(&["show", &format!("HEAD:{}", kind.home())]);
+                assert!(
+                    at_head.contains(TASK_PROSE) && !at_head.contains(HAND),
+                    "{what}: the landed doc carries the task's prose; got:\n{at_head}",
+                );
+            }
+        }
+    }
+}
+
+/// **An untracked doc that does not conform** (the completion audit's reconcile-baseline F2
+/// — the crossing cell cell 5 used to state as open).
+///
+/// A hand-started draft with an empty required slot is the plainest way to meet a doc with
+/// neither a record nor a blob at any pin: it is never baselined (it does not conform) and
+/// git has never committed it. A task finishes it through the CLI; a line is then added to
+/// the file by hand. Driven on the previous round's build, from one task: the door printed
+/// the advisory *"fix the file … this is the one case a managed file is yours to hand-edit"*
+/// and then promoted the staged copy over the line, exit 0, the line in no git object.
+///
+/// The task's witness names the draft as it was copied in, so the door blocks, at both
+/// doors, and both exits run: the emitted discard leaves the draft and its line on disk, and
+/// with the line taken back out the door lands the finished draft. And the draft nobody
+/// edited lands with no sentence inviting an edit to it — `must not refuse` beside
+/// `must refuse`.
+fn an_untracked_draft_that_does_not_conform_is_never_promoted_over_a_hand_edit(base: &TrialCorpus) {
+    for door in Door::ALL {
+        for edited in [true, false] {
+            let what = format!("{door:?}/hand edit after the copy-in: {edited}");
+            let corpus = base.copy_state();
+            let draft = Draft::write(&corpus, false);
+            let task = door.mint(&corpus);
+            let ack = write_slot(&corpus, &task, &Draft::slot(), TASK_PROSE);
+            assert_eq!(ack["copied_in"], true, "{what}: the premise: {ack}");
+            assert_eq!(
+                recorded(&corpus, Draft::HOME),
+                None,
+                "{what}: the premise — a draft that does not conform is not baselined",
+            );
+            assert!(
+                witness(&corpus, &task)[Draft::ADDRESS]["bytes"] == hash_bytes(draft.as_bytes()),
+                "{what}: the task records what it copied in: {}",
+                witness(&corpus, &task),
+            );
+
+            if !edited {
+                let out = door.finalize(&corpus, &task);
+                assert_eq!(out.status.code(), Some(0), "{what}: {}", text(&out));
+                assert!(
+                    !text(&out).contains("yours to hand-edit"),
+                    "{what}: no door calls a doc the task holds the reader's to edit; {}",
+                    text(&out),
+                );
+                let at_head = corpus.git(&["show", &format!("HEAD:{}", Draft::HOME)]);
+                assert!(at_head.contains(TASK_PROSE), "{what}: got:\n{at_head}");
+                continue;
+            }
+
+            let on_disk = Draft::hand_edit(&corpus);
+            let head_before = head(&corpus);
+            let out = door.finalize(&corpus, &task);
+            let conflict =
+                assert_blocked(&corpus, &out, Draft::HOME, &head_before, &on_disk, &what);
+            assert!(
+                !text(&out).contains("yours to hand-edit"),
+                "{what}: and never the sanction over a doc it then refuses; {}",
+                text(&out),
+            );
+            let route = conflict["route"].as_str().expect("the conflict routes");
+
+            // Exit one, on a copy: the emitted `jigc …` command, run as printed.
+            let spans = jigc_spans(route);
+            assert_eq!(spans.len(), 1, "{what}: one `jigc` span in: {route}");
+            let aside = corpus.copy_state();
+            let ran = run_emitted(&aside, spans[0]);
+            assert_eq!(ran.status.code(), Some(0), "{what}: {}", text(&ran));
+            assert_eq!(
+                read(&aside.repo(), Draft::HOME),
+                on_disk,
+                "{what}: the line stays"
+            );
+
+            // Exit two: the edit taken back out, and the door lands the finished draft.
+            fs::write(corpus.repo().join(Draft::HOME), &draft).expect("revert the hand edit");
+            let landed = door.finalize(&corpus, &task);
+            assert_eq!(landed.status.code(), Some(0), "{what}: {}", text(&landed));
+            let at_head = corpus.git(&["show", &format!("HEAD:{}", Draft::HOME)]);
+            assert!(
+                at_head.contains(TASK_PROSE) && !at_head.contains(HAND),
+                "{what}: got:\n{at_head}",
+            );
+        }
+    }
+}
+
+/// **An untracked doc whose key is lost after the copy-in** (the e2e audit's F5 — the
+/// declared no-blob cell).
+///
+/// The doc conforms, so its copy-in records the baseline; the cache is then removed. With
+/// no record and no blob at the pin the previous round's door adopted whatever was on disk
+/// and promoted over a hand line at exit 0. Both copy-in sites are driven — an edit leaf,
+/// and `doc create` over the occupied home — because they are the two writers of the
+/// witness. Untouched, the same sequence lands.
+fn an_untracked_doc_whose_key_is_lost_after_the_copy_in_still_blocks_a_hand_edit(
+    base: &TrialCorpus,
+) {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Site {
+        EditLeaf,
+        Create,
+    }
+    for (door, site) in [
+        (Door::Task, Site::EditLeaf),
+        (Door::Task, Site::Create),
+        (Door::Milestone, Site::EditLeaf),
+    ] {
+        for edited in [true, false] {
+            // One untouched control: the landing does not depend on the site or the door.
+            if !edited && (door, site) != (Door::Task, Site::EditLeaf) {
+                continue;
+            }
+            let what = format!("{door:?}/{site:?}/edited: {edited}");
+            let corpus = base.copy_state();
+            Draft::write(&corpus, true);
+            let task = door.mint(&corpus);
+            if site == Site::Create {
+                let ack = corpus.jigc_ok(&[
+                    "doc",
+                    "create",
+                    "adr",
+                    "--title",
+                    "Draft queue",
+                    "--task",
+                    &task,
+                ]);
+                assert!(
+                    ack.contains("already existed — copied in for update"),
+                    "{what}: the premise — `doc create` copies the occupant in: {ack}",
+                );
+            }
+            write_slot(&corpus, &task, &Draft::slot(), TASK_PROSE);
+            assert!(
+                recorded(&corpus, Draft::HOME).is_some(),
+                "{what}: the premise — a conformant draft is baselined at its copy-in",
+            );
+            assert!(
+                witness(&corpus, &task)[Draft::ADDRESS]["bytes"].is_string(),
+                "{what}: this copy-in site records the witness: {}",
+                witness(&corpus, &task),
+            );
+            corpus.fresh_clone_shape();
+            assert_eq!(
+                recorded(&corpus, Draft::HOME),
+                None,
+                "{what}: the key is gone"
+            );
+
+            let head_before = head(&corpus);
+            if edited {
+                let on_disk = Draft::hand_edit(&corpus);
+                let out = door.finalize(&corpus, &task);
+                assert_blocked(&corpus, &out, Draft::HOME, &head_before, &on_disk, &what);
+            } else {
+                let out = door.finalize(&corpus, &task);
+                assert_eq!(out.status.code(), Some(0), "{what}: {}", text(&out));
+            }
+        }
+    }
+}
+
+/// **Two open tasks on one untracked doc** — the previous round's two-tasks cell (cell 8),
+/// on the doc where neither the record nor the pin could answer for the second task.
+///
+/// The record is per path, so with the key dropped a second task's copy-in records nothing
+/// (cell 8), and with no blob at the pin nothing was left to decide either task: a line
+/// added after both copy-ins was promoted over by whichever task finalized, exit 0. Each
+/// task now holds its own witness, so each is decided by what *it* copied in:
+///
+/// - a hand edit **after both** copy-ins blocks both tasks;
+/// - a hand edit **between** them blocks the first (it never saw the line) and lands the
+///   second, which copied the line in and carries it.
+fn two_tasks_on_one_untracked_doc_are_each_decided_by_what_they_copied_in(base: &TrialCorpus) {
+    for between in [false, true] {
+        let what = format!("the hand edit between the two copy-ins: {between}");
         let corpus = base.copy_state();
-        let task = Door::Task.mint(&corpus);
-        kind.first_write(&corpus, &task);
-        kind.hand_edit(&corpus);
-        let disk = read(&corpus.repo(), kind.home());
+        Draft::write(&corpus, true);
+        let first = Door::Task.mint(&corpus);
+        write_slot(
+            &corpus,
+            &first,
+            &Draft::slot(),
+            "FIRST-TASK its consequences.",
+        );
+        // The first task's key is dropped, so the second copy-in records nothing.
+        corpus.jigc_ok(&["unmanage", Draft::HOME]);
+        if between {
+            Draft::hand_edit(&corpus);
+        }
+        let second = mint_task(&corpus, "a second task on the same draft");
+        let ack = write_slot(
+            &corpus,
+            &second,
+            &Draft::slot(),
+            "SECOND-TASK its consequences.",
+        );
+        assert!(
+            keyed(&findings(&ack), ADOPT, Draft::HOME).is_empty()
+                && recorded(&corpus, Draft::HOME).is_none(),
+            "{what}: the premise — the second copy-in records nothing: {ack}",
+        );
+        if !between {
+            Draft::hand_edit(&corpus);
+        }
+        let on_disk = read(&corpus.repo(), Draft::HOME);
         let head_before = head(&corpus);
-        let out = Door::Task.finalize(&corpus, &task);
-        assert_blocked(&corpus, &out, kind.home(), &head_before, &disk, &what);
-        corpus.jigc_ok(&["unmanage", kind.home()]);
-        assert_eq!(recorded(&corpus, kind.home()), None, "{what}");
-        let out = Door::Task.finalize(&corpus, &task);
-        assert_blocked(&corpus, &out, kind.home(), &head_before, &disk, &what);
+
+        let out = Door::Task.finalize(&corpus, &first);
+        assert_blocked(
+            &corpus,
+            &out,
+            Draft::HOME,
+            &head_before,
+            &on_disk,
+            &format!("{what}: the first task"),
+        );
+        let out = Door::Task.finalize(&corpus, &second);
+        if between {
+            assert_eq!(
+                out.status.code(),
+                Some(0),
+                "{what}: the second; {}",
+                text(&out)
+            );
+            let at_head = corpus.git(&["show", &format!("HEAD:{}", Draft::HOME)]);
+            assert!(
+                at_head.contains(HAND) && at_head.contains("SECOND-TASK"),
+                "{what}: the second task carries the line it copied in; got:\n{at_head}",
+            );
+        } else {
+            assert_blocked(
+                &corpus,
+                &out,
+                Draft::HOME,
+                &head_before,
+                &on_disk,
+                &format!("{what}: the second task"),
+            );
+        }
     }
 }
 
@@ -1740,20 +2356,39 @@ enum Conversion {
     TextAuto,
     /// A clean/smudge filter over `*.md`: keyword expansion in the doc's prose.
     Filter,
+    /// No conversion at all — the control every other cell is a variation of.
+    None,
+    /// A **committed blob that itself holds CRLF**, under `core.autocrlf=input`: git leaves
+    /// such a blob alone in both directions (its rule for a path whose index entry already
+    /// has CRLF), which `git hash-object` on its own does not apply — the configuration
+    /// that refused clean repositories at `jigc setup` earlier in this pass.
+    CommittedCrlf,
 }
 
 impl Conversion {
-    const ALL: [Conversion; 5] = [
+    const ALL: [Conversion; 7] = [
         Conversion::AutocrlfTrue,
         Conversion::AutocrlfInput,
         Conversion::EolCrlf,
         Conversion::TextAuto,
         Conversion::Filter,
+        Conversion::None,
+        Conversion::CommittedCrlf,
     ];
 
     /// The keyword the filter cell expands.
     const KEYWORD: &'static str = "$Rev$";
     const EXPANDED: &'static str = "$Rev: 42 $";
+
+    /// Whether git writes this checkout's working files in a byte form other than the one
+    /// jigc's in-place write leaves — where a doc checked out again differs in bytes from
+    /// the same doc as a finalize landed it.
+    fn rewrites_on_checkout(self) -> bool {
+        matches!(
+            self,
+            Conversion::AutocrlfTrue | Conversion::EolCrlf | Conversion::TextAuto
+        )
+    }
 
     /// Put the corpus under this conversion **as a fresh clone would find it**: the setting
     /// in force, every tracked file checked out again through it, and no file-state cache.
@@ -1767,6 +2402,17 @@ impl Conversion {
         // Mask whatever this machine's ambient config converts.
         corpus.git(&["config", "core.autocrlf", "false"]);
         match self {
+            Conversion::None => {}
+            Conversion::CommittedCrlf => {
+                // The blob is committed holding CRLF while nothing converts, and only then
+                // does the setting come into force.
+                let home = repo.join(Kind::Placement.home());
+                let doc = fs::read_to_string(&home).expect("read the doc");
+                fs::write(&home, doc.replace('\n', "\r\n")).expect("write the doc as CRLF");
+                corpus.git(&["add", "--", Kind::Placement.home()]);
+                corpus.git(&["commit", "-q", "-m", "chore: a doc committed with CRLF"]);
+                corpus.git(&["config", "core.autocrlf", "input"]);
+            }
             Conversion::AutocrlfTrue => {
                 corpus.git(&["config", "core.autocrlf", "true"]);
             }
@@ -1812,11 +2458,16 @@ impl Conversion {
         );
         let doc = read(&repo, Kind::Placement.home());
         match self {
-            Conversion::AutocrlfTrue | Conversion::EolCrlf | Conversion::TextAuto => assert!(
+            Conversion::AutocrlfTrue
+            | Conversion::EolCrlf
+            | Conversion::TextAuto
+            | Conversion::CommittedCrlf => assert!(
                 doc.contains("\r\n"),
                 "{self:?}: the premise — the doc is checked out with CRLF endings",
             ),
-            Conversion::AutocrlfInput => assert!(!doc.contains('\r'), "{self:?}: premise"),
+            Conversion::AutocrlfInput | Conversion::None => {
+                assert!(!doc.contains('\r'), "{self:?}: premise")
+            }
             Conversion::Filter => assert!(
                 doc.contains(Self::EXPANDED),
                 "{self:?}: the premise — the working file is the smudged form",
@@ -1919,10 +2570,7 @@ fn an_unedited_doc_never_blocks_under_any_conversion_and_an_edited_one_still_doe
                 write(&task, "FIRST-PASS which domains earn a pack.");
                 lands(&task, "the clone's first task");
                 let doc = read(&corpus.repo(), home);
-                if matches!(
-                    conversion,
-                    Conversion::AutocrlfTrue | Conversion::EolCrlf | Conversion::TextAuto
-                ) {
+                if conversion.rewrites_on_checkout() {
                     assert!(
                         doc.contains("\r\n") && doc.replace("\r\n", "").contains('\n'),
                         "{conversion:?}: the premise — jigc's in-place write left a MIXED file",
@@ -1934,6 +2582,39 @@ fn an_unedited_doc_never_blocks_under_any_conversion_and_an_edited_one_still_doe
                 write(&task, "SECOND-PASS which domains earn a pack.");
                 lands(&task, "a second task, the key held");
 
+                // 2b. **git checks the doc out again between the copy-in and the door**
+                //     (`DECISIONS.md` → 2026-10-05, the third accepted consequence). The
+                //     task copied in the file as the finalize above left it; git then
+                //     writes it in its own form. Nobody edited it, so the task's witness
+                //     must not call it edited: the bytes are compared first, and where
+                //     they differ git is asked what it stores each side as, at the doc's
+                //     home. With the witness, and in an area the previous format minted.
+                for previous_format in [false, true] {
+                    let what = format!(
+                        "a doc git checked out again after the copy-in, previous format: \
+                         {previous_format}"
+                    );
+                    let task = mint_task(&corpus, &format!("re-checkout {previous_format}"));
+                    write(
+                        &task,
+                        &format!("RE-CHECKOUT {previous_format} which domains earn a pack."),
+                    );
+                    if previous_format {
+                        strip_witness(&corpus, &task);
+                    }
+                    let copied_in = fs::read(corpus.repo().join(home)).expect("read the doc");
+                    fs::remove_file(corpus.repo().join(home)).expect("remove the doc");
+                    corpus.git(&["checkout", "--", home]);
+                    let checked_out = fs::read(corpus.repo().join(home)).expect("read the doc");
+                    assert_eq!(
+                        copied_in != checked_out,
+                        conversion.rewrites_on_checkout(),
+                        "{conversion:?}: the premise — whether git's form differs in bytes \
+                         from the form the task copied in",
+                    );
+                    lands(&task, &what);
+                }
+
                 // 3. The key lost after the copy-in — the backstop's own arm.
                 let task = mint_task(&corpus, "third pass over the vision");
                 write(&task, "THIRD-PASS which domains earn a pack.");
@@ -1941,8 +2622,10 @@ fn an_unedited_doc_never_blocks_under_any_conversion_and_an_edited_one_still_doe
                 assert_eq!(recorded(&corpus, home), None, "{conversion:?}: premise");
                 lands(&task, "a third task, the key lost after its copy-in");
                 let landed = corpus.git(&["show", &format!("HEAD:{home}")]);
+                // A blob that already holds CRLF is the one git does not normalize.
                 assert!(
-                    landed.contains("THIRD-PASS") && !landed.contains('\r'),
+                    landed.contains("THIRD-PASS")
+                        && (conversion == Conversion::CommittedCrlf || !landed.contains('\r')),
                     "{conversion:?}: what landed is the task's prose, normalized: {landed}",
                 );
 
@@ -2003,6 +2686,16 @@ fn the_milestone_join_does_not_block_an_unedited_doc_under_conversion() {
 
     let sub = Door::Milestone.mint(&corpus);
     kind.first_write(&corpus, &sub);
+    // git checks the doc out again after the sub-task's copy-in: the sub-task's witness
+    // names the mixed file, the door meets git's own form, and nobody edited it.
+    let copied_in = fs::read(corpus.repo().join(kind.home())).expect("read the doc");
+    fs::remove_file(corpus.repo().join(kind.home())).expect("remove the doc");
+    corpus.git(&["checkout", "--", kind.home()]);
+    assert_ne!(
+        copied_in,
+        fs::read(corpus.repo().join(kind.home())).expect("read the doc"),
+        "the premise: git's form differs in bytes from the form the sub-task copied in",
+    );
     corpus.fresh_clone_shape();
     let out = Door::Milestone.finalize(&corpus, &sub);
     let envelope: serde_json::Value = stdout_json(&out, &[0], "the join");
@@ -2087,34 +2780,60 @@ fn the_design_states_the_copy_in_baseline_and_its_backstop() {
         "design/validation.md states what the store sweep reports in a clone after a copy-in",
     );
 
-    // What the two rules do **not** close is stated where each rule is — the completion
-    // audit found the bound claimed away in four sentences, one of them in the guide the
-    // install embeds. These are the open cells, so the statement is the only fence they
-    // have until the witness a task holds for itself is decided.
+    // What the two rules could not answer is answered by the task's own witness, and each
+    // doc that stated the bound as open now states the rule that closed it — and the one
+    // bound that is left, an area minted before the witness existed.
+    assert!(
+        reconciliation.contains("### What a task copied in")
+            && reconciliation.contains("the task's own witness decides")
+            && reconciliation.contains(
+                "an edit before the task's first write is carried and lands; an edit after \
+                 it blocks"
+            )
+            && reconciliation.contains("git hash-object --path=<home>")
+            && reconciliation.contains("An area with no witness is decided as before"),
+        "design/reconciliation.md states the witness, its one rule, the form it is compared \
+         in and the previous-format bound",
+    );
+    assert!(
+        reconciliation
+            .contains("`jigc unmanage` is not an exit from a conflict on a doc a task holds"),
+        "design/reconciliation.md states that dropping the baseline is no exit",
+    );
+    assert!(
+        storage.contains("the task now answers itself") && storage.contains("`copied-in`"),
+        "design/storage.md names the witness and where it is kept",
+    );
     for (doc, body) in [
         ("design/reconciliation.md", reconciliation.as_str()),
         ("design/storage.md", storage.as_str()),
+        ("design/validation.md", validation.as_str()),
     ] {
-        assert!(
-            body.contains("What the per-path record cannot answer"),
-            "{doc} names the open bound of the per-path record",
-        );
+        for claimed_open in [
+            "(open — found by the rc.24 fix pass's completion audit)",
+            "Both are open",
+            "it is not built",
+        ] {
+            assert!(
+                !body.contains(claimed_open),
+                "{doc} no longer states the closed cells as open: `{claimed_open}`",
+            );
+        }
     }
-    assert!(
-        reconciliation.contains("Another jigc writer moves the record")
-            && reconciliation.contains("The no-record, no-blob cell is reachable from one task"),
-        "design/reconciliation.md states both open cells",
-    );
     let guide = fs::read_to_string(format!(
         "{}/guides/MIGRATING.md",
         env!("CARGO_MANIFEST_DIR")
     ))
     .expect("read the migrating guide");
     assert!(
-        guide.contains("That guard has two bounds")
-            && !guide.contains("is never overwritten by that task")
-            && !guide.contains("is carried into the task and lands with it"),
-        "the guide states the guard's bounds and no longer claims either sentence the audit \
-         found false",
+        guide.contains(
+            "an edit you made *before* the task first wrote the doc is in the task's staged \
+             copy and lands with the task"
+        ) && guide.contains("and an edit you make *after* it blocks")
+            && guide.contains("`jigc unmanage` is not a third")
+            && !guide.contains("That guard has two bounds")
+            && !guide.contains("still writes its staged copy over your edit at exit 0"),
+        "the guide the install embeds states the one rule, and no longer the two bounds it \
+         closed",
     );
 }

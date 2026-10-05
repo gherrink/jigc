@@ -2768,6 +2768,20 @@ impl TaskArea {
         // it carries is decided here, against what this task itself recorded at its mint
         // ([`Self::migration_conflict`]).
         let (conflict, edited_source) = self.migration_conflict(migration_source.as_ref())?;
+        // **The docs this task holds copied in are decided by what it copied in** (the
+        // rc.24 fix pass; `design/reconciliation.md` → What a task copied in). The task's
+        // own witness, written at the copy-in beside `edited-from-base`, is compared with
+        // the file at each doc's home now — read at `jigc_home`, where the copy-in read it
+        // and the sweep below reads it — and the answers ride the conflict presentation
+        // exactly as the migration source's does: the comparison is this caller's, against
+        // its own recording. An area with no witness yields none, and its docs are decided
+        // by the recorded baseline and the pin as before.
+        let conflict = conflict.holding(state::held_docs(
+            &self.dir,
+            &self.jigc_home,
+            &schemas,
+            &|path, bytes| git_id_as_stored(&self.jigc_home, path, bytes),
+        ));
         // The managed-vs-foreign discriminator's three pack facts (M48 Inc 4 / T1): the
         // committed-store sweep this call drives must answer a foreign squatter with the
         // *store* door's code and route, and the engine produces none of them.
@@ -8780,6 +8794,47 @@ pub(crate) fn git_against_rev(repo_root: &Path, rev: &str, path: &str) -> Option
              answer for the file)"
         ))),
     }
+}
+
+/// **The id git stores `bytes` under at `path`** — `git hash-object --path=<path> --stdin`,
+/// the engine's [`engine::validate::AsGitStores`] seam; `None` when git could not be asked
+/// or did not answer with an id.
+///
+/// It is the form a task's witness of what it copied in is recorded and compared in beside
+/// the raw-byte hash ([`engine::state::CopiedIn`]; the rc.24 fix pass). `--path` makes git
+/// hash the bytes *as it would store them at that path*: `core.autocrlf`, the path's
+/// `text`/`eol` attributes and its clean filter are applied, so two working files that are
+/// the same content under this repository's conversion rules — a doc as jigc's in-place
+/// write left it, and the same doc after git checked it out again in another line-ending
+/// form — hash to one id. The witness is asked at the copy-in and the file is asked at the
+/// committing door, **the same way at the same path**: it is never one working file against
+/// a committed blob, which is the comparison that met git's own rule for a blob already
+/// holding CRLF and refused clean repositories (the `setup` regression this pass fixed by
+/// asking git — the discipline is the same one, applied to a question git answers this way).
+///
+/// The bytes go in on stdin, never as a second read of the file: what is hashed is exactly
+/// what the caller read. `path` is relative to `repo_root`, the checkout the doc was read
+/// from, and is passed as one argv word, so no path can be read as an option or a pathspec.
+/// Nothing is written to the object database (no `-w`).
+pub(crate) fn git_id_as_stored(repo_root: &Path, path: &str, bytes: &[u8]) -> Option<String> {
+    let mut child = Command::new("git")
+        .args(["hash-object", &format!("--path={path}"), "--stdin"])
+        .current_dir(repo_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    // `hash-object` reads its whole input before it prints, so the write cannot block
+    // against an unread stdout; the handle is dropped to close the pipe.
+    let written = child.stdin.take().map(|mut stdin| stdin.write_all(bytes))?;
+    let out = child.wait_with_output().ok()?;
+    written.ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let id = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    (!id.is_empty() && id.bytes().all(|byte| byte.is_ascii_hexdigit())).then_some(id)
 }
 
 /// **Which of `paths` git tracks, and whether each one's index entry carries a flag that
