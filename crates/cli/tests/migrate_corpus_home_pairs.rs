@@ -706,6 +706,265 @@ fn a_destination_already_populated_blocks_instead_of_clobbering() {
     );
 }
 
+/// What stands at the relocation destination that is **not** a regular file.
+#[derive(Clone, Copy, Debug)]
+enum NotAFile {
+    /// A symbolic link pointing at nothing, never added to git.
+    DanglingLinkUntracked,
+    /// The same link, committed.
+    DanglingLinkTracked,
+    /// A link to a file elsewhere in the repository — which a read *through* the link finds.
+    LiveLink,
+    /// A link to a file holding exactly the bytes the migration would write: read through,
+    /// it looks like this very document already moved.
+    LiveLinkToTheMigratedBytes,
+    /// A directory.
+    Directory,
+}
+
+const NOT_A_FILE: [NotAFile; 5] = [
+    NotAFile::DanglingLinkUntracked,
+    NotAFile::DanglingLinkTracked,
+    NotAFile::LiveLink,
+    NotAFile::LiveLinkToTheMigratedBytes,
+    NotAFile::Directory,
+];
+
+/// **A relocation destination that is not a regular file blocks, and is left exactly as it
+/// is** (the rc.24 fix pass's completion audit, CPL-6).
+///
+/// The collision rule above read the destination with `fs::read(…).ok()`: a read *through*
+/// whatever stood there, with every failure folded into *nothing there*. So a **dangling
+/// link** read as a free home — driven on the tree before this cell, `jigc migrate-corpus`
+/// replaced it with the migrated file at exit 0, `1 migrated, 0 blocked`, the link named
+/// nowhere (committed, in the tracked variant) — and a live link let a file somewhere else
+/// decide whether this one collided. The destination is asked what the entry *is*.
+///
+/// Every shape × both modes: `--dry-run` forecasts the block the applying run makes, the
+/// entry is byte-for-byte what it was, the stranded source is untouched and `HEAD` has not
+/// moved. The free destination and the interrupted move (a regular file holding exactly the
+/// migrated bytes) are the must-not-block controls, driven last.
+#[test]
+#[cfg(unix)]
+fn a_destination_that_is_not_a_regular_file_blocks_and_is_left_as_it_is() {
+    use std::os::unix::fs::symlink;
+
+    let mint = |tag: &str| -> (TempDir, TempDir, TempDir, String) {
+        let (pack, from_version) = bumped_pack(
+            tag,
+            "changelog",
+            |shipped| shipped.to_string(),
+            |shipped| {
+                swap(
+                    shipped,
+                    CHANGELOG_PLACEMENT,
+                    "placement: { file: HISTORY.md }\n",
+                )
+            },
+        );
+        let home = TempDir::new(&format!("home-{tag}"));
+        let repo = set_up_repo(tag, home.path(), pack.path());
+        let stranded = changelog_body(from_version);
+        commit_doc(repo.path(), "CHANGELOG.md", &stranded);
+        (pack, home, repo, stranded)
+    };
+    let head = |repo: &Path| -> String {
+        let out = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(repo)
+            .output()
+            .expect("run git");
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+
+    for shape in NOT_A_FILE {
+        let (pack, home, repo, stranded) = mint("not-a-file");
+        let destination = repo.path().join("HISTORY.md");
+        match shape {
+            NotAFile::DanglingLinkUntracked => {
+                symlink("nowhere-important.md", &destination).expect("plant the link");
+            }
+            NotAFile::DanglingLinkTracked => {
+                symlink("nowhere-important.md", &destination).expect("plant the link");
+                git(repo.path(), &["add", "HISTORY.md"]);
+                git(
+                    repo.path(),
+                    &["commit", "-q", "-m", "commit a dangling link"],
+                );
+            }
+            NotAFile::LiveLink => {
+                fs::write(repo.path().join("elsewhere.md"), "another file entirely\n")
+                    .expect("write the link's target");
+                symlink("elsewhere.md", &destination).expect("plant the link");
+            }
+            NotAFile::LiveLinkToTheMigratedBytes => {
+                // The bytes the migration writes are what a clean run lands — taken from one.
+                let (pack2, home2, repo2, _) = mint("not-a-file-control");
+                let (clean, ok) = report(
+                    repo2.path(),
+                    home2.path(),
+                    pack2.path(),
+                    &["migrate-corpus", "--format", "json"],
+                );
+                assert!(
+                    ok,
+                    "control: a free destination migrates; report:\n{clean:#}"
+                );
+                let migrated =
+                    fs::read(repo2.path().join("HISTORY.md")).expect("read the migrated doc");
+                fs::write(repo.path().join("elsewhere.md"), migrated)
+                    .expect("write the link's target");
+                symlink("elsewhere.md", &destination).expect("plant the link");
+            }
+            NotAFile::Directory => {
+                fs::create_dir_all(destination.join("inside")).expect("mk the directory");
+                fs::write(destination.join("inside").join("kept.txt"), "kept\n")
+                    .expect("write into the directory");
+            }
+        }
+        let entry_before = fs::read_link(&destination).ok();
+        let head_before = head(repo.path());
+
+        for mode in [
+            &["migrate-corpus", "--dry-run", "--format", "json"][..],
+            &["migrate-corpus", "--format", "json"][..],
+        ] {
+            let cell = format!("{shape:?} × `jigc {}`", mode.join(" "));
+            let (report, ok) = report(repo.path(), home.path(), pack.path(), mode);
+            assert!(
+                !ok,
+                "{cell}: a blocked doc holds the exit non-zero; report:\n{report:#}"
+            );
+            let blocked = report["blocked"].as_array().expect("a `blocked[]` array");
+            assert_eq!(
+                blocked.len(),
+                1,
+                "{cell}: exactly one doc blocks; report:\n{report:#}"
+            );
+            assert_eq!(
+                blocked[0]["code"], "migrate-corpus.destination-collision",
+                "{cell}: the destination is taken, and the shipped collision code says so; \
+                 finding:\n{:#}",
+                blocked[0],
+            );
+            let message = blocked[0]["message"].as_str().unwrap_or_default();
+            let noun = if matches!(shape, NotAFile::Directory) {
+                "a directory"
+            } else {
+                "a symbolic link"
+            };
+            assert!(
+                message.contains(noun) && !message.contains("*different* document"),
+                "{cell}: the refusal names what stands there, not a document that is not \
+                 there; message:\n{message}",
+            );
+            assert_eq!(
+                report["migrated"],
+                serde_json::json!([]),
+                "{cell}: nothing migrated; report:\n{report:#}",
+            );
+            assert_eq!(
+                fs::read_link(&destination).ok(),
+                entry_before,
+                "{cell}: the entry at the destination is what it was",
+            );
+            if matches!(shape, NotAFile::Directory) {
+                assert_eq!(
+                    fs::read_to_string(destination.join("inside").join("kept.txt"))
+                        .ok()
+                        .as_deref(),
+                    Some("kept\n"),
+                    "{cell}: …with everything inside it",
+                );
+            } else {
+                assert!(
+                    fs::symlink_metadata(&destination)
+                        .is_ok_and(|meta| meta.file_type().is_symlink()),
+                    "{cell}: …still a link",
+                );
+            }
+            assert_eq!(
+                fs::read_to_string(repo.path().join("CHANGELOG.md"))
+                    .ok()
+                    .as_deref(),
+                Some(stranded.as_str()),
+                "{cell}: the stranded source is byte-untouched — nothing is half-moved",
+            );
+            assert_eq!(
+                head(repo.path()),
+                head_before,
+                "{cell}: nothing was committed"
+            );
+        }
+
+        // The route's act, then the re-run: with the entry out of the way the doc lands.
+        if matches!(shape, NotAFile::DanglingLinkUntracked) {
+            fs::remove_file(&destination).expect("move the link out of the way");
+            let (after, ok) = report(
+                repo.path(),
+                home.path(),
+                pack.path(),
+                &["migrate-corpus", "--format", "json"],
+            );
+            assert!(
+                ok,
+                "{shape:?}: the re-run lands once the link is gone; report:\n{after:#}"
+            );
+            assert!(
+                fs::symlink_metadata(&destination).is_ok_and(|meta| meta.is_file()),
+                "{shape:?}: …as a regular file at the destination",
+            );
+        }
+    }
+
+    // MUST NOT BLOCK — the interrupted move: a regular file already at the destination,
+    // holding exactly the migrated bytes, is this document half-moved, and the run completes
+    // it (the free destination is the control taken inside the loop above).
+    let (pack, home, repo, _) = mint("interrupted");
+    let (pack2, home2, repo2, _) = mint("interrupted-control");
+    let (clean, ok) = report(
+        repo2.path(),
+        home2.path(),
+        pack2.path(),
+        &["migrate-corpus", "--dry-run", "--format", "json"],
+    );
+    assert!(
+        ok,
+        "control: the dry run forecasts a clean migration; report:\n{clean:#}"
+    );
+    let (applied, ok) = report(
+        repo2.path(),
+        home2.path(),
+        pack2.path(),
+        &["migrate-corpus", "--format", "json"],
+    );
+    assert!(
+        ok,
+        "control: …and the applying run makes it; report:\n{applied:#}"
+    );
+    let migrated = fs::read(repo2.path().join("HISTORY.md")).expect("read the migrated doc");
+    fs::write(repo.path().join("HISTORY.md"), &migrated).expect("leave the destination half");
+    let (report, ok) = report(
+        repo.path(),
+        home.path(),
+        pack.path(),
+        &["migrate-corpus", "--format", "json"],
+    );
+    assert!(
+        ok,
+        "an interrupted move is completed, never blocked; report:\n{report:#}",
+    );
+    assert!(
+        !repo.path().join("CHANGELOG.md").exists(),
+        "…and the old-home strand is removed",
+    );
+    assert_eq!(
+        fs::read(repo.path().join("HISTORY.md")).ok(),
+        Some(migrated),
+        "…the destination holding the migrated bytes",
+    );
+}
+
 // ---------------------------------------------------------------------------------------------
 // The walk's other half: what it refuses to enumerate over (M52 Increment 7 / T2).
 // ---------------------------------------------------------------------------------------------

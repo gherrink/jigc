@@ -268,13 +268,20 @@ const MIGRATE_ROUTE_SITES: &[RouteSite] = &[
     RouteSite {
         file: "crates/cli/src/migrate_corpus.rs",
         func: "destination_collision_finding",
-        sites: 1,
-        state: "both homes populated: a relocating instance whose destination already holds a \
-                *different* document — the hazard the widened walk itself widens",
+        // One route per occupant since the rc.24 fix pass's completion audit (CPL-6): a
+        // different document, a file that cannot be read, and an entry that is no regular
+        // file at all (a link, a directory) each get the act that fits them, then the re-run.
+        sites: 3,
+        state: "a relocating instance whose destination is taken: both homes populated (it \
+                already holds a *different* document — the hazard the widened walk itself \
+                widens), or the entry there is not a readable regular file",
         disposition: Disposition::Answered(
             "driven as a state, with its finding and its no-clobber guarantee, by T1's \
-             `a_destination_already_populated_blocks_instead_of_clobbering`; the re-run here is \
-             the emitting door's own",
+             `a_destination_already_populated_blocks_instead_of_clobbering` and, for an entry \
+             that is no regular file, by \
+             `a_destination_that_is_not_a_regular_file_blocks_and_is_left_as_it_is` (the \
+             route's act and its re-run driven through to a landed migration); the re-run \
+             here is the emitting door's own",
         ),
     },
     RouteSite {

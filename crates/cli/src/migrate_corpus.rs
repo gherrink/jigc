@@ -963,15 +963,19 @@ pub(crate) fn migrate_committed_corpus(
                 // first (a destination an earlier doc in this run already migrated onto — the
                 // bytes the applying run wrote there, and the bytes `--dry-run` *would* have),
                 // then disk (a destination that was already committed). Never candidate order.
+                //
+                // **And disk is asked what the entry IS, never what a read through it finds**
+                // ([`destination_occupant`]; the rc.24 fix pass's completion audit, CPL-6).
                 if moved {
-                    let existing = match claimed.get(target) {
-                        Some(bytes) => Some(bytes.as_bytes().to_vec()),
-                        None => std::fs::read(repo_root.join(target)).ok(),
+                    let occupant = match claimed.get(target) {
+                        Some(bytes) if bytes.as_bytes() == v2.as_bytes() => None,
+                        Some(_) => Some(Occupant::AnotherDocument),
+                        None => destination_occupant(repo_root, target, v2.as_bytes()),
                     };
-                    if existing.is_some_and(|existing| existing != v2.as_bytes()) {
+                    if let Some(occupant) = occupant {
                         report
                             .blocked
-                            .push(destination_collision_finding(id, target));
+                            .push(destination_collision_finding(id, target, occupant));
                         continue;
                     }
                 }
@@ -2108,24 +2112,102 @@ fn fold_refused_finding(rel_key: &str, cause: String, route: String) -> Finding 
     )
 }
 
+/// What stands at a relocation destination **in the way** of the doc moving there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Occupant {
+    /// A regular file holding other bytes than the migrated doc — a different document.
+    AnotherDocument,
+    /// A regular file whose bytes could not be read, so nothing can say they are the
+    /// migrated doc's.
+    Unreadable,
+    /// An entry that is not a regular file — a symbolic link (dangling or live, wherever it
+    /// points), a directory, a special file.
+    Foreign(engine::store::ForeignEntry),
+}
+
+/// What stands in the way at the relocation destination `target`, or `None` when the doc
+/// may land there: the path is **free**, or it is a regular file holding **exactly** the
+/// migrated bytes `v2` (an interrupted move, which the write below completes).
+///
+/// **The entry itself is asked, without following a link** (`engine::store::home_entry`,
+/// the one occupancy observation every other writer of a doc's home shares). This read
+/// `std::fs::read(…).ok()` until the rc.24 fix pass's completion audit (CPL-6), which
+/// follows a link and folds every failure into *nothing there*: a **dangling** link at the
+/// destination read as a free home, the write then replaced it, and the run exited 0 naming
+/// the link nowhere — while the arm's own rule one comment up is that a destination holding
+/// anything else blocks. A live link was read *through*, so a file somewhere else decided
+/// whether this one was a collision; and a regular file that could not be read at all was
+/// overwritten as if absent.
+///
+/// So anything that is not a regular file blocks ([`Occupant::Foreign`]) — the migration
+/// lands a regular file at a doc's home and writes through or over nothing else — and an
+/// unreadable regular file blocks too: *not these bytes* is the one thing a failed read
+/// did not establish.
+fn destination_occupant(repo_root: &Path, target: &str, v2: &[u8]) -> Option<Occupant> {
+    let destination = repo_root.join(target);
+    match engine::store::home_entry(&destination) {
+        engine::store::HomeEntry::Free => None,
+        engine::store::HomeEntry::RegularFile => match std::fs::read(&destination) {
+            Ok(existing) if existing == v2 => None,
+            Ok(_) => Some(Occupant::AnotherDocument),
+            Err(_) => Some(Occupant::Unreadable),
+        },
+        engine::store::HomeEntry::Foreign(entry) => Some(Occupant::Foreign(entry)),
+    }
+}
+
 /// The route for the **both-homes destination collision** (M42 — the walk union): a
-/// prior-home instance whose relocation destination already holds a *different* document. The
-/// migration refuses to overwrite it — **No-data-loss** is a declared property of the corpus
+/// prior-home instance whose relocation destination is already taken — by a *different*
+/// document, or by an entry that is no document at all ([`Occupant`]). The migration
+/// refuses to overwrite it — **No-data-loss** is a declared property of the corpus
 /// migration, and no deterministic merge of two documents exists — so the doc is blocked and
 /// the operator reconciles the two homes by hand (`design/corpus-migration.md` → the union).
-fn destination_collision_finding(rel_key: &str, target: &str) -> Finding {
+///
+/// One code for every occupant: the state is the same — the destination is not free — and
+/// the message and the route say which it is, so each tells the reader the act that fits.
+fn destination_collision_finding(rel_key: &str, target: &str, occupant: Occupant) -> Finding {
+    let (message, route) = match occupant {
+        Occupant::AnotherDocument => (
+            format!(
+                "`{rel_key}` relocates to `{target}`, which already holds a *different* \
+                 document; the migration never overwrites it (no data loss), and no \
+                 deterministic merge of two documents exists"
+            ),
+            format!(
+                "fold the content of `{rel_key}` into `{target}` through the write verbs, \
+                 delete `{rel_key}`, then re-run `jigc migrate-corpus`"
+            ),
+        ),
+        Occupant::Unreadable => (
+            format!(
+                "`{rel_key}` relocates to `{target}`, where a file stands that could not be \
+                 read — so nothing can say it is this document already moved, and the \
+                 migration never overwrites what it has not read (no data loss)"
+            ),
+            format!(
+                "make `{target}` readable (or move it out of the way if it is not this \
+                 document), then re-run `jigc migrate-corpus`"
+            ),
+        ),
+        Occupant::Foreign(entry) => (
+            format!(
+                "`{rel_key}` relocates to `{target}`, where {} stands; the migration lands a \
+                 regular file at a doc's home and never writes through or over anything \
+                 else (no data loss), so `{rel_key}` was left where it is",
+                entry.noun(),
+            ),
+            format!(
+                "move the {} at `{target}` out of the way — it is not a document jigc can \
+                 land on — then re-run `jigc migrate-corpus`",
+                entry.bare(),
+            ),
+        ),
+    };
     blocked_finding(
         "migrate-corpus.destination-collision",
         rel_key,
-        format!(
-            "`{rel_key}` relocates to `{target}`, which already holds a *different* document; the \
-             migration never overwrites it (no data loss), and no deterministic merge of two \
-             documents exists"
-        ),
-        format!(
-            "fold the content of `{rel_key}` into `{target}` through the write verbs, delete \
-             `{rel_key}`, then re-run `jigc migrate-corpus`"
-        ),
+        message,
+        route,
     )
 }
 
@@ -4404,14 +4486,24 @@ sections:
     /// (`design/corpus-migration.md` → Relocation: write-to-`to` precedes remove-`from`, so an
     /// abort between strands neither copy). The move writes the gated v2 bytes to the target
     /// home **first**, then removes the old-home source. When the write to `to` is forced to
-    /// fail (its atomic temp-sibling `CHANGELOG.md.tmp` is pre-occupied by a directory, so
-    /// [`engine::state::persist`] errors before the rename), the old-home source is **never
-    /// removed** — the doc still exists at `from` (never zero copies). Under the *wrong*
-    /// (remove-first) ordering the source would already be gone **and** the write failed → the
-    /// doc lost entirely; this test fails there, so it pins the ordering. The move never
-    /// completed, so the file-state baseline is **not** prematurely re-keyed.
+    /// fail (the directory the destination lives in is made unwritable, so
+    /// [`engine::state::persist`] cannot create its temp sibling), the old-home source is
+    /// **never removed** — the doc still exists at `from` (never zero copies). Under the
+    /// *wrong* (remove-first) ordering the source would already be gone **and** the write
+    /// failed → the doc lost entirely; this test fails there, so it pins the ordering. The
+    /// move never completed, so the file-state baseline is **not** prematurely re-keyed.
+    ///
+    /// The fault was a **directory at the destination** until the rc.24 fix pass's completion
+    /// audit (CPL-6): the collision adjudicator read that as *nothing there* and let the
+    /// write meet it. It now blocks such a destination before any write — which is the
+    /// right answer and no longer a write fault — so the fault here is one the adjudicator
+    /// cannot see: a free destination in a directory nothing can be created in
+    /// (`crates/cli/tests/migrate_corpus_home_pairs.rs` drives the directory cell).
     #[test]
+    #[cfg(unix)]
     fn relocation_abort_at_the_write_strands_neither_copy() {
+        use std::os::unix::fs::PermissionsExt;
+
         let repo = TempDir::new("relocate-abort");
         let jigc_root = repo.path().join(".jigc");
 
@@ -4431,13 +4523,16 @@ sections:
         fs::create_dir_all(&jigc_root).expect("mk .jigc");
         seed.save(&jigc_root).expect("seed the baseline");
 
-        // Force the write to the TO home to fail: occupy the destination `CHANGELOG.md`
-        // *itself* with a directory, so `persist`'s temp→final `rename` fails (EISDIR) — the
+        // Force the write to the TO home to fail: the destination `CHANGELOG.md` is free —
+        // so the collision adjudicator passes it — and the repository root it would be
+        // created in is made unwritable, so `persist` cannot create its temp sibling. The
         // move aborts AT the write, BEFORE the source removal (write-before-remove). This is
-        // temp-name-independent (the atomic temp sibling is process-unique, M45 Inc 7), unlike
-        // occupying a fixed `CHANGELOG.md.tmp` path. The collision adjudicator reads the
-        // destination as `None` (a directory does not read as a doc), so it routes to the write.
-        fs::create_dir_all(repo.path().join("CHANGELOG.md")).expect("occupy destination");
+        // temp-name-independent (the atomic temp sibling is process-unique, M45 Inc 7).
+        let writable = fs::metadata(repo.path())
+            .expect("stat the root")
+            .permissions();
+        fs::set_permissions(repo.path(), fs::Permissions::from_mode(0o555))
+            .expect("freeze the destination's directory");
 
         let result = migrate_committed_corpus(
             &pack,
@@ -4446,6 +4541,7 @@ sections:
             &[migration(to, 2)],
             Options::default(),
         );
+        fs::set_permissions(repo.path(), writable).expect("thaw the destination's directory");
         assert!(
             result.is_err(),
             "the aborted write surfaces as an error: {result:?}"
@@ -4457,10 +4553,9 @@ sections:
             repo.path().join("docs/changelog/changelog.md").exists(),
             "the from copy survives the aborted write (never zero copies)"
         );
-        // The rename failed, so no partial target *file* was written (only the empty
-        // occupying directory remains — the injection artifact, not a partial write).
+        // The write never began, so nothing stands at the target.
         assert!(
-            !repo.path().join("CHANGELOG.md").is_file(),
+            fs::symlink_metadata(repo.path().join("CHANGELOG.md")).is_err(),
             "the aborted write left no partial target file"
         );
         // The move never completed, so the baseline is intact — no premature re-key.
