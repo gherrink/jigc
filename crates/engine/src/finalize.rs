@@ -2362,7 +2362,9 @@ fn carried_staged_finding(
 /// resolving act — exits 1 with *"You do not have the initial commit yet"*, with or without
 /// `-u`. So that arm states what is true there (the bytes exist only where the adopter left
 /// them) and routes at acts that run with no commit: move the file out of the install path,
-/// or commit it — naming the `riding` paths that commit must carry — then `--force`.
+/// or commit it — naming the `riding` paths that commit must carry, **and what a first
+/// commit forfeits**: the door seeds its secrets-floor root `.gitignore` only where there is
+/// no commit, so the arm says the move keeps it and the commit does not — then `--force`.
 ///
 /// **And for the paths git's own status could not see** ([`SetupUnseen`]; the rc.24 fix
 /// pass, the ignored sibling of `(R1, F1)`). Every route arm above is an act git performs
@@ -2553,6 +2555,22 @@ pub fn setup_dirty_install_finding(
                     named.join(", "),
                 )
             };
+            // What the commit arm costs, said on the arm that costs it (the rc.24 fix
+            // pass's completion audit, install-teardown F8). `jigc setup` seeds its
+            // secrets-floor root `.gitignore` only into a repository with no commit, so a
+            // reader who follows *commit them* gets an install without it and nothing says
+            // why — driven: the arm followed, the re-run at exit 0, no root `.gitignore`,
+            // where the plain unborn install seeds one. The move arm keeps the repository
+            // unborn and the floor with it, so the sentence names that. At the backstop
+            // the install has already run and seeded it, and the clause would be false.
+            let floor = if install_written {
+                ""
+            } else {
+                " — a first commit also ends the fresh-repository install, so `jigc setup` \
+                 will not seed its secrets-floor root `.gitignore` afterwards (it writes \
+                 that only where there is no commit yet; moving the file out instead keeps \
+                 it)"
+            };
             // The unstage names the index it acts on (M53 — the cwd census, the route
             // class): a route is read from wherever the reader stands.
             let unstage = crate::finding::git_at(home, "rm --cached -- <path>");
@@ -2566,7 +2584,7 @@ pub fn setup_dirty_install_finding(
                     "move the file(s) out of those path(s) — `{unstage}` first where you \
                      had staged one — then re-run `jigc setup`; or commit \
                      them{with} and re-run, so git holds your copy before the install runs \
-                     over the path; {FORCE}"
+                     over the path{floor}; {FORCE}"
                 )
             } else if seen == 0 {
                 format!(
@@ -2579,7 +2597,7 @@ pub fn setup_dirty_install_finding(
                      had staged one — then re-run `jigc setup`; or commit the one(s) git does \
                      not ignore{with} and move {} out, since git will not commit an ignored \
                      file, then re-run, so git holds your copy before the install runs over \
-                     the path; {force}",
+                     the path{floor}; {force}",
                     ticked(&ignored),
                 )
             };
@@ -7566,6 +7584,21 @@ sections:
                 && !written.message.contains("exist only where you left them"),
             "the backstop arm claims nothing about the worktree: {:?}",
             written.message
+        );
+
+        // What the commit arm costs is said where it is true — before the install has
+        // run. At the backstop the install has already seeded the secrets floor, so the
+        // clause would be false there (the completion audit's install-teardown F8).
+        let said = |finding: &Finding| finding.route.as_deref().unwrap_or_default().to_string();
+        assert!(
+            said(&finding).contains("secrets-floor root `.gitignore`"),
+            "the pre-write commit arm names the secrets floor a first commit forfeits: {}",
+            said(&finding)
+        );
+        assert!(
+            !said(&written).contains("secrets-floor"),
+            "the backstop's does not — the install has run: {}",
+            said(&written)
         );
 
         // Order-invariant over both sets, like the born arm.

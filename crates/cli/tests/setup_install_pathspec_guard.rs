@@ -1296,6 +1296,12 @@ fn route(out: &std::process::Output) -> String {
         .to_string()
 }
 
+/// Where `needle` starts in `text` — the route's arms are located, never assumed.
+fn at_in(text: &str, needle: &str) -> usize {
+    text.find(needle)
+        .unwrap_or_else(|| panic!("`{needle}` is in: {text}"))
+}
+
 /// Assert `out` is the pre-write refusal over exactly `path` on an unborn `HEAD`: exit 1,
 /// the door's code, the one path named, **no commit minted**, and nothing staged.
 fn assert_refused_unborn(repo: &Path, out: &std::process::Output, path: &str) {
@@ -1694,6 +1700,11 @@ fn the_unborn_refusals_route_followed_verbatim_lands_the_install_in_one_run() {
         read(repo, "agent-notes.md").contains(MARK),
         "the adopter's notes are where they moved them"
     );
+    assert!(
+        read(repo, ".gitignore").contains("jigc secrets floor"),
+        "and the move kept the repository's first install, secrets floor included — which \
+         is what the commit arm below says it gives up"
+    );
 
     // (b) Commit — in one commit with the path the route says that commit must carry.
     let (repo, home, said_route) = refused("unborn-route-commit");
@@ -1702,9 +1713,23 @@ fn the_unborn_refusals_route_followed_verbatim_lands_the_install_in_one_run() {
         said_route.contains("in one commit with `CLAUDE.md`"),
         "the commit arm names the untracked install path that commit must carry: {said_route}"
     );
+    // …and the arm says what it costs (the completion audit's install-teardown F8): the
+    // first commit ends the fresh-repository install, and the secrets-floor `.gitignore`
+    // is seeded only there. Followed silently, it was simply missing afterwards.
+    let commit_arm = &said_route[at_in(&said_route, "or commit them")..];
+    let commit_arm = &commit_arm[..at_in(commit_arm, "jigc setup --force")];
+    assert!(
+        commit_arm.contains("secrets-floor") && commit_arm.contains("moving the file out"),
+        "the commit arm names the secrets floor it forfeits, and the arm that keeps it: \
+         {said_route}"
+    );
     git(repo, &["add", "--", ".jigc/AGENT.md", "CLAUDE.md"]);
     git(repo, &["commit", "-q", "-m", "our notes"]);
     landed(repo, home, "committed");
+    assert!(
+        !repo.join(".gitignore").exists(),
+        "and it is as the arm said: no secrets floor after a first commit"
+    );
     assert!(
         git(repo, &["log", "--all", "-p"]).contains("Always run the linter."),
         "git holds the adopter's copy of the file the install then replaced"
