@@ -109,7 +109,14 @@
 //! other reason — the install home is no work tree — plus the ones where it walks a
 //! submodule.
 //!
-//! Forty-two cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
+//! **And what cells 31–32 certify is `setup`, not the layout** (cell 43; the completion
+//! audit's install-teardown F5). A repository that gitignores jigc's own paths re-runs
+//! `setup` forever and is not thereby supported: driven end to end, `task finalize` lands
+//! only where the ignored path is `.jigc/AGENT.md`, and `uninstall` refuses over every
+//! ignored file under `.jigc/`. The design says so now; cell 43 holds each door to the two
+//! things that leaves owed — nothing lost, and a route that works as printed.
+//!
+//! Forty-three cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
 //! `git init` repos.
 
 use crate::support::older_guide::as_an_older_build_wrote_it;
@@ -3331,6 +3338,7 @@ fn git_that_answers_is_never_refused_as_git_that_does_not() {
         &[
             "clone",
             "-q",
+            "--no-local",
             &superproject.path().display().to_string(),
             &clone.display().to_string(),
         ],
@@ -3423,4 +3431,165 @@ fn git_that_answers_is_never_refused_as_git_that_does_not() {
             );
         }
     }
+}
+
+/// Open a `single-task` task in `repo`, stage one code file, and author its commit doc —
+/// everything `jigc task finalize` needs. Returns the task id.
+fn a_task_ready_to_finalize(repo: &Path, home: &Path) -> &'static str {
+    const TASK: &str = "add-a-file";
+    let ok = |args: &[&str]| {
+        let out = jigc(repo, home, args);
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "`jigc {args:?}`: {}",
+            said(&out)
+        );
+    };
+    ok(&["start", "--workflow", "single-task", "add a file"]);
+    write(repo, "code.txt", "code\n");
+    git(repo, &["add", "--", "code.txt"]);
+    let address = |leaf: &str| format!("commit:{TASK}#{leaf}");
+    ok(&[
+        "doc",
+        "set-field",
+        &address("type"),
+        "--value",
+        "feat",
+        "--task",
+        TASK,
+    ]);
+    ok(&[
+        "doc",
+        "set-field",
+        &address("scope"),
+        "--value",
+        "core",
+        "--task",
+        TASK,
+    ]);
+    for (leaf, prose) in [("summary", "add a file"), ("body", "It holds the code.")] {
+        let scratch = repo.join(".git").join(format!("slot-{leaf}"));
+        fs::write(&scratch, format!("{prose}\n")).expect("write the slot's prose");
+        ok(&[
+            "doc",
+            "set-slot",
+            &address(leaf),
+            "--from-file",
+            &scratch.display().to_string(),
+            "--task",
+            TASK,
+        ]);
+    }
+    TASK
+}
+
+/// (43) **A repository that gitignores jigc's own paths: what each door does there, held
+/// to what the design now says** (the rc.24 fix pass's completion audit, install-teardown
+/// F5).
+///
+/// Cells 31–32 certify such a repository at `setup`, and the design row read as if that
+/// made it a supported layout. Driven end to end across the ignore shapes on the three
+/// doors, on this tree and on `1.0.0-rc.24` alike: `setup` re-runs at exit 0 in all of
+/// them; `jigc task finalize` lands only where the ignored path is `.jigc/AGENT.md` —
+/// it commits `.jigc/config/`, `.jigc/.gitignore` and `.jigc/version` with the work, so
+/// with any of those ignored its `git add` is refused (`finalize.stage-failed`, exit 3);
+/// and `jigc uninstall` refuses over every ignored file under `.jigc/`, jigc's own
+/// included. The doors are not made to agree: the design says the layout is **not
+/// supported** beyond `setup` losing nothing in it, and this cell holds the two things
+/// that sentence owes — no byte is lost at any door, and each refusal's route works as
+/// printed (the finalize route named only a stale index lock, which was not the cause).
+#[test]
+fn a_repository_that_ignores_jigcs_own_paths_is_held_to_what_the_design_says() {
+    std::thread::scope(|scope| {
+        for (pattern, lands) in [
+            (".jigc/AGENT.md", true),
+            (".jigc/version", false),
+            (".jigc/config/", false),
+            (".jigc/.gitignore", false),
+            (".jigc/", false),
+        ] {
+            scope.spawn(move || {
+                let (repo, home) = born_repo("ignores-own");
+                let (repo, home) = (repo.path(), home.path());
+                write(repo, ".gitignore", &format!("{pattern}\n"));
+                git(repo, &["add", "--", ".gitignore"]);
+                git(repo, &["commit", "-q", "-m", "our ignores"]);
+                for run in ["install", "re-run"] {
+                    let out = jigc(repo, home, &["setup"]);
+                    assert_eq!(
+                        out.status.code(),
+                        Some(0),
+                        "`{pattern}`, {run}: {}",
+                        said(&out)
+                    );
+                }
+                let task = a_task_ready_to_finalize(repo, home);
+                let out = jigc(repo, home, &["task", "finalize", task]);
+                if lands {
+                    assert_eq!(out.status.code(), Some(0), "`{pattern}`: {}", said(&out));
+                } else {
+                    let said_out = said(&out);
+                    assert_eq!(out.status.code(), Some(3), "`{pattern}`: {said_out}");
+                    assert!(
+                        said_out.contains("finalize.stage-failed"),
+                        "`{pattern}`: {said_out}"
+                    );
+                    let said_route = route(&out);
+                    assert!(
+                        said_route.contains(&format!("jigc task finalize {task}"))
+                            && said_route.contains(".gitignore")
+                            && said_route.contains("`.jigc/version`"),
+                        "`{pattern}`: the route names the cause this is — git will not add \
+                         a path it ignores — beside the re-run: {said_route}"
+                    );
+                    assert!(
+                        staged(repo).contains(&"code.txt".to_string()),
+                        "`{pattern}`: the task and its staged code survive"
+                    );
+                    // The route as printed: stop ignoring the path, then the same re-run.
+                    write(repo, ".gitignore", "");
+                    let out = jigc(repo, home, &["task", "finalize", task]);
+                    assert_eq!(
+                        out.status.code(),
+                        Some(0),
+                        "`{pattern}`: un-ignored, the printed re-run lands: {}",
+                        said(&out)
+                    );
+                }
+                let landed = git(repo, &["show", "--name-only", "--format=", "HEAD"]);
+                assert!(
+                    landed.lines().any(|path| path == "code.txt"),
+                    "`{pattern}`: the work is in a commit: {landed}"
+                );
+            });
+        }
+    });
+
+    // The teardown, `.jigc/` ignored whole and never edited: it refuses over jigc's own
+    // files — it asks git, not the ownership oracles `setup` asks — and its route works.
+    let (repo, home) = born_repo("ignores-own-teardown");
+    let (repo, home) = (repo.path(), home.path());
+    write(repo, ".gitignore", ".jigc/\n");
+    git(repo, &["add", "--", ".gitignore"]);
+    git(repo, &["commit", "-q", "-m", "our ignores"]);
+    assert_eq!(jigc(repo, home, &["setup"]).status.code(), Some(0));
+    let out = jigc(repo, home, &["uninstall"]);
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    assert!(
+        said(&out).contains("uninstall.untracked-workbench-file")
+            && said(&out).contains(".jigc/AGENT.md")
+            && route(&out).contains("jigc uninstall --force"),
+        "{}",
+        said(&out)
+    );
+    assert!(repo.join(".jigc/AGENT.md").is_file(), "nothing was removed");
+    let out = jigc(repo, home, &["uninstall", "--force"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "the printed consent lands: {}",
+        said(&out)
+    );
+    assert!(!repo.join(".jigc").exists());
 }

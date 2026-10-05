@@ -7360,9 +7360,16 @@ fn stage_failed_finding(
         Some(work_unit_location(task_id)),
         Some(engine::finding::Route::mechanical(
             argv,
-            " once the embedded git failure is resolved (e.g. remove a stale \
-             `.git/index.lock`) — the task survives intact, so the same re-run lands the \
-             commit",
+            // Two ordinary causes, both named (the rc.24 fix pass's completion audit,
+            // install-teardown F5): the route named the index lock alone, and in a
+            // repository whose `.gitignore` covers one of the three paths jigc commits
+            // with the work, git's refusal is about that — removing a lock that is not
+            // there changes nothing, and the re-run failed identically.
+            " once the embedded git failure is resolved — a stale `.git/index.lock` \
+             removed, or the `.gitignore` rule dropped that covers `.jigc/config`, \
+             `.jigc/.gitignore` or `.jigc/version`: jigc commits those three with the \
+             work, and git will not add a path it ignores — the task survives intact, so \
+             the same re-run lands the commit",
         )),
     )
 }

@@ -1282,9 +1282,14 @@ fn a_link_to_a_tracked_file_is_merged_through_and_committed() {
                             let clone = aside.path().join("clone");
                             git(
                                 aside.path(),
+                                // `--no-local`: over the pack transport, not a file-by-file
+                                // copy of the origin's object directory — that copy lost a
+                                // race once under the full gate's load (*failed to copy
+                                // file … No such file or directory*).
                                 &[
                                     "clone",
                                     "-q",
+                                    "--no-local",
                                     &seed.display().to_string(),
                                     &clone.display().to_string(),
                                 ],

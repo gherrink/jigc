@@ -127,7 +127,13 @@ sweeping them in — at its other door.
 warned you, and no commit or stash would have taken a copy, so the route there is to
 move the file out of the path. The exception is jigc's own generated content: if you
 ignore `.jigc/AGENT.md` (or all of `.jigc/`) and never edit it, `jigc setup` keeps
-re-running at exit 0, after an upgrade too. And a change hidden from `git status` by
+re-running at exit 0, after an upgrade too. **That is a promise about `setup` only —
+do not ignore `.jigc/` to keep jigc out of your history.** `.jigc/AGENT.md` is the
+one path of jigc's own you can ignore and keep working: `jigc task finalize` commits
+`.jigc/config/`, `.jigc/.gitignore` and `.jigc/version` with your work, so with any
+of those ignored (or `.jigc/` whole) it stops at `finalize.stage-failed` until you
+drop the ignore rule, and `jigc uninstall` refuses over every ignored file under
+`.jigc/` until you delete it or pass `--force`. And a change hidden from `git status` by
 an index flag (`--assume-unchanged`, `--skip-worktree`) is still a change: the
 refusal prints the two commands that clear the flag.
 
