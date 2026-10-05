@@ -4,7 +4,8 @@
 # reach the repository, and the one place its state is read back and decided
 # (DECISIONS.md -> 2026-10-05, "The stabilization workflow, as ruled": rulings 4, 5, 9,
 # 10, 12, 13 and 16; the builders' choices are the two entries of the same date, "The
-# record script, as built" and "The record script reads the run back").
+# record script, as built" and "The record script reads the run back", and the entry of
+# 2026-10-06, "The record script holds what the harness reads its work from").
 #
 # A stage's reporters have a shell and no write tool, and what they write is public on
 # the next push and read by fences on the next gate. So neither an agent nor the harness
@@ -26,10 +27,10 @@
 #                                                                         triage-set: the grade)
 #   clauses.md                              one row per clause           (clause-set)
 #   bounds.md                               one row per declared bound   (bound-set)
+#   test-set.md                             one row per instrument item  (item-set)
 #   r<N>/scope.md                           the round's doors            (scope-set)
 #   r<N>/triage.md                          the round's triage record    (triage-set)
-#   r<N>/round.md                           the round record — not this script's; state says
-#                                           whether it is there
+#   r<N>/round.md                           the round record: its facts  (round-set)
 #   r<N>/reports/test/<reporter>.a<A>.md    a test-stage report          (report)
 #   r<N>/reports/fix/c<K>/<reporter>.a<A>.md  a fix-stage report, cycle K  (report)
 #
@@ -37,7 +38,8 @@
 # file opening.md. This script creates neither, so a mistyped run name is refused
 # (not-opened) and never mints a second run directory.
 #
-# Identifiers. <run>, <reporter>, a ledger key, a cited bound and a clause are slugs
+# Identifiers. <run>, <reporter>, a ledger key, a cited bound, a clause, and a test-set
+# item and its kind are slugs
 # — a-z0-9 words joined by single `-`, at most 100 characters, the key grammar of
 # completions/artifacts/M55/seed-ledger.md. A round, a cycle and an attempt are
 # positive integers without a leading zero. Anything else is refused (bad-id) before a
@@ -134,19 +136,67 @@
 #       the ledger still shows the finding as it was, and the call is simply repeated.
 #       Prints {"triage", "ledger", "recorded"}.
 #
+#   dev/stabilize-record item-set --run R [--scratch DIR]... <items.json
+#       The run's test set, item by item — one JSON object per instrument item, or an
+#       array of them:
+#         item         the item's id                                   — a slug
+#         kind         what kind of instrument it is: a review row, a trial arm, an
+#                      audit area, a deterministic check. A slug, and NOT a vocabulary of
+#                      this script's: the harness has a chain of agents per kind, and a
+#                      kind it has none for is its halt, never a guess of either's.
+#         clause       the clause of the closing condition it judges   — a slug
+#         runs         every-candidate | in-scope — on every candidate, or only in a
+#                      round whose test set reaches it ("hunt once per change, check
+#                      always")
+#         brief        where its brief lies, or what it is             — text, not blank
+#         doors        the doors it covers, each in the door's own words — an array of
+#         registries   texts; and the registries it covers whole. Optional, but an
+#                      in-scope item names at least one of either, or no round could
+#                      ever reach it. An entry is one line, without `<br>`.
+#       An item the test set holds is replaced whole: that is how a brief is corrected
+#       and how an instrument that was built later takes its row. Prints {"test_set",
+#       "written"}.
+#
+#   dev/stabilize-record round-set --run R --round N <facts.json
+#       The round record's facts — one JSON object naming at least one of:
+#         candidate    the commit the round tests, a full sha. A round whose record
+#                      names its candidate is TESTED: its test stage was recorded.
+#         base         the commit the round's change is measured from, a sha
+#         binary       the sha256 of the one binary the candidate was driven as
+#         cycles       how many fix -> audit cycles of the round are recorded: a
+#                      positive integer, which never goes down
+#         outcome      dropped | part — the round is OVER without having landed whole:
+#                      it was dropped, or a part of it landed. A round that lands whole
+#                      needs no word: it is over when nothing of it is open.
+#         cross-model       the items whose source pass was ALSO read by a model of
+#         cross-model-void  another family in this round, and the items named for such a
+#                      pass that did not get one — each an array of item ids, so that
+#                      the use of that pass, and how much of it, shows at every stop
+#       candidate, base, binary and outcome are written ONCE: a second, different value
+#       is refused (exists). NOTHING ELSE IS TAKEN, and none of it is free text. Prints
+#       {"round", "facts"} — the path, and every fact the record now holds.
+#
 #   dev/stabilize-record state --run R
 #       The run's committed state, as one line of JSON; writes nothing. A run that was
 #       never opened is an answer here, not a refusal: {"run", "opened": false}.
 #       Otherwise:
 #         run, opened
 #         rounds       per round with a directory: {round, scope, triage, record —
-#                      whether each file is there — test_reports, fix_cycles: [{cycle,
-#                      reports}]}, the reports counted by file name
+#                      whether each file is there — facts: {candidate, base, binary,
+#                      cycles, outcome, cross-model, cross-model-void} as round-set
+#                      wrote them (null where it did not; cycles 0, the two lists
+#                      empty), test_reports, test_attempt, fix_cycles: [{cycle,
+#                      reports, attempt}]}, the reports counted by file name and the
+#                      attempt the highest one a report's name carries (0 for none)
 #         round        the highest of them, or null
 #         doors        that round's {included, excluded}, each [{door, registry,
 #                      derivation}] — or null before its scope is written
 #         bounds       [{bound, reach, ruling, pin}]
 #         clauses      [{clause, instrument, commit, scope, status}]
+#         items        [{item, kind, clause, runs, doors, registries, brief, selected}]
+#                      — the test set, and whether the latest round runs each item
+#                      (below); selected is null for an in-scope item while that round
+#                      has no scope
 #         ledger       per row: key, doctype, round, source, door, clause, grade,
 #                      bound, graded_by, disposition, detail, repro — and
 #                        triage  the row's entry in the latest round that triaged it:
@@ -158,6 +208,8 @@
 #         unsettled    [{cell, keys}] — states the rulings do not settle (below)
 #         forbids_close  [{clause, status} | {"clauses": "no row"} | {finding, route}]
 #         next         fix | rule | close | unsettled
+#         position     {test, fix} — what an invocation of each stage would work on
+#                      (below)
 #       A cell is given as the table holds it, a `|` unescaped; `-` for none is null
 #       where the cell is not free text. A table that is not this script's, a cell
 #       outside its vocabulary, or a triage row that disagrees with the doors it was
@@ -191,6 +243,32 @@
 #       UNSETTLED is not a decision: it names a state the recorded rulings do not
 #       settle, and hands it to the human instead of guessing. The cells: ungraded ·
 #       unverified · found-again-after-its-fix · nothing-open-and-no-close.
+#
+#       WHETHER THE LATEST ROUND RUNS AN ITEM, a pure function of the item's row and
+#       that round's doors: an every-candidate item is selected, always; an in-scope
+#       item is selected when one of the round's INCLUDED doors is one of its doors, or
+#       comes from one of its registries — matched by the cell's text, exactly, as a
+#       finding's door is.
+#
+#       THE POSITION, a pure function of the rounds' records and the routes — the round,
+#       the cycle and the attempt are read here and are never an argument of anybody's.
+#       A finding is OPEN while it is not routed recorded. With R the latest round:
+#         no round yet           test {round 1, attempt 1} · fix refused (no-round)
+#         R is not tested        test {round R, attempt: the highest test attempt on
+#                                disk + 1} — a test stage that never reached its record
+#                                is run again, as the next attempt
+#                                · fix refused (not-tested)
+#         R's outcome is set     test {round R+1, attempt 1} · fix refused (round-over)
+#         R is tested, a finding test refused (round-open): fix it, rule on it, or drop
+#         is open                the round · fix {round R, cycle: its recorded cycles
+#                                + 1, attempt: the highest attempt of that cycle on
+#                                disk + 1, land: false}
+#         R is tested, nothing   test {round R+1, attempt 1} · fix {round R, cycle,
+#         is open                attempt as above, land: whether a cycle is recorded} —
+#                                the round's fix diff was audited and left nothing open
+#       A refusal is {"refused": WORD, "round": R}. The state is read from the working
+#       tree, so it is the checked-out branch's: a fix stage's records ride its round
+#       branch until the round lands.
 #
 #   dev/stabilize-record check-reports --run R --round N --stage test|fix [--cycle K]
 #                        --attempt A [--] [REPORTER...]
@@ -247,7 +325,8 @@
 #    3  not-opened    the run has no opening record
 #    4  bad-id        an identifier outside its grammar
 #    5  outside       a link below the run directory: the write would land outside it
-#    6  exists        the report's path is taken — pass the next attempt
+#    6  exists        the report's path is taken — pass the next attempt; or a round's
+#                     scope, or a fact of its record, is written once and stands
 #    7  bad-value     a value outside its vocabulary, a malformed row, a report that is
 #                     not text
 #    8  no-such-row   ledger-set names a key the ledger lacks
@@ -308,6 +387,8 @@ SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 SLUG_MAX = 100
 NUMBER = re.compile(r"[1-9][0-9]{0,5}")
 SHA = re.compile(r"[0-9a-f]{7,40}")
+FULL_SHA = re.compile(r"[0-9a-f]{40}")
+SHA256 = re.compile(r"[0-9a-f]{64}")
 REPORT_NAME = re.compile(r"(%s)\.a([1-9][0-9]{0,5})\.md" % SLUG.pattern)
 STAGES = ("test", "fix")
 # The last line of a report. A text without it was cut off, or never finished.
@@ -354,6 +435,21 @@ BOUND_COLUMNS = ("bound", "reach", "ruling", "pin")
 SCOPE_COLUMNS = ("door", "test set", "registry", "derivation")
 SIDES = ("included", "excluded")
 TRIAGE_COLUMNS = ("key", "inside", "triage", "verdict", "regression", "found with")
+ITEM_COLUMNS = ("item", "kind", "clause", "runs", "doors", "registries", "brief")
+# When an item runs: on every candidate, or only in a round whose test set reaches it.
+ITEM_RUNS = ("every-candidate", "in-scope")
+# How the entries of a list share one cell. An entry never holds it, nor a line break.
+LIST_BREAK = "<br>"
+ROUND_COLUMNS = ("fact", "value")
+# A round record's facts, in the order its table holds them.
+ROUND_FACTS = ("candidate", "base", "binary", "cycles", "outcome", "cross-model", "cross-model-void")
+# The facts that are lists of item ids, and how a list shares its cell.
+ROUND_LISTS = ("cross-model", "cross-model-void")
+ITEMS_BREAK = ", "
+# The facts written once: a second, different value is refused.
+ROUND_ONCE = ("candidate", "base", "binary", "outcome")
+# How a round ends without landing whole.
+OUTCOMES = ("dropped", "part")
 
 # A fence that reads every markdown file of the tree, untracked ones included, and what
 # makes a line of a file redden it. One member today; a second such fence owes a row.
@@ -900,6 +996,52 @@ def read_triage(run_dir, round_number):
     )
 
 
+def read_test_set(run_dir):
+    return table_file(
+        run_dir,
+        ["test-set.md"],
+        ITEM_COLUMNS,
+        "the test set",
+        "One row per instrument item: its kind, the clause of the closing condition it judges, whether it runs on every candidate or only in a round whose test set reaches it, the doors and the registries it covers, and its brief. Written by `dev/stabilize-record` and never by hand. The harness runs a fixed chain of agents per kind; which items a round runs is computed from this table and the round's doors.",
+    )
+
+
+def read_round(run_dir, round_number):
+    return table_file(
+        run_dir,
+        ["r%s" % round_number, "round.md"],
+        ROUND_COLUMNS,
+        "round %s, the round record" % round_number,
+        "One row per fact of the round: the candidate it tests, the commit its change is measured from, the hash of the one binary the candidate was driven as, how many fix cycles are recorded, and — for a round that did not land whole — its outcome. Written by `dev/stabilize-record` and never by hand.",
+    )
+
+
+def round_facts(rel, rows):
+    """A round record's rows as {fact: value}, every fact named — None where the record
+    does not hold it, and 0 for the cycles. A row that is not this script's is refused."""
+    facts = dict.fromkeys(ROUND_FACTS)
+    for name in unique_rows(rel, rows):
+        if name not in ROUND_FACTS:
+            spoiled(rel, "holds the fact %s, which this script does not write" % shown(name))
+    for row in rows:
+        name, value = untick(row[0]), untick(row[1])
+        listed = value.split(ITEMS_BREAK)
+        holds = {
+            "candidate": FULL_SHA.fullmatch(value),
+            "base": SHA.fullmatch(value),
+            "binary": SHA256.fullmatch(value),
+            "cycles": NUMBER.fullmatch(value),
+            "outcome": value in OUTCOMES,
+        }.get(name, all(SLUG.fullmatch(item) for item in listed) and len(set(listed)) == len(listed))
+        if not holds:
+            spoiled(rel, "gives the fact %s the value %s, which this script does not write" % (name, shown(value)))
+        facts[name] = int(value) if name == "cycles" else listed if name in ROUND_LISTS else value
+    facts["cycles"] = facts["cycles"] or 0
+    for name in ROUND_LISTS:
+        facts[name] = facts[name] or []
+    return facts
+
+
 def unique_rows(rel, rows):
     keys = [untick(row[0]) for row in rows]
     twice = sorted({key for key in keys if keys.count(key) > 1})
@@ -1121,6 +1263,85 @@ def scope_set(args):
     print(json.dumps({"scope": rel, "included": len(given["included"]), "excluded": len(given["excluded"])}))
 
 
+def entries_of(row, name, what, scratch):
+    """The cells of a list `row` may name: each entry one line of text, none blank, none
+    twice — because the entries share one cell, and are matched by their text."""
+    given = row.get(name, [])
+    if not isinstance(given, list) or not all(isinstance(text, str) for text in given):
+        refuse("bad-value", "%s: %s must be an array of texts, not %s" % (what, name, shown(given)))
+    made = []
+    for text in given:
+        made.append(cell(public(text, scratch)))
+        if not text.strip() or made[-1] == "-" or LIST_BREAK in made[-1]:
+            refuse("bad-value", "%s: an entry of %s is one line of text that says something, without `%s` — not %s" % (what, name, LIST_BREAK, shown(text)))
+    distinct(made, "%s: the entry of %s" % (what, name))
+    return made
+
+
+def item_set(args):
+    run_dir = open_run(args.run)
+    scratch = scratch_roots(args)
+    given = []
+    for item in json_rows("test-set item"):
+        fields(item, ("item", "kind", "clause", "runs", "brief"), ("doors", "registries"), "a test-set item")
+        what = "item %s" % shown(item["item"])
+        key = slug(item["item"], "item")
+        cells = [tick(key), tick(slug(item["kind"], what + ": kind")), tick(slug(item["clause"], what + ": clause"))]
+        cells.append(one_of(item["runs"], ITEM_RUNS, what + ": runs"))
+        covers = [entries_of(item, name, what, scratch) for name in ("doors", "registries")]
+        if item["runs"] == "in-scope" and not any(covers):
+            refuse("bad-value", "%s: an in-scope item names a door or a registry it covers — without one no round's test set could ever reach it" % what)
+        cells += [LIST_BREAK.join(entries) or "-" for entries in covers]
+        cells.append(said(item, "brief", what, scratch))
+        given.append((key, cells))
+    distinct([key for key, _ in given], "item")
+    one_writer(run_dir)
+    rel, above, rows = read_test_set(run_dir)
+    keys = unique_rows(rel, rows)
+    for key, cells in given:
+        if key in keys:
+            rows[keys.index(key)] = cells
+        else:
+            keys.append(key)
+            rows.append(cells)
+    publish(run_dir, ["test-set.md"], render_table(above, ITEM_COLUMNS, rows), replace=True)
+    print(json.dumps({"test_set": rel, "written": [key for key, _ in given]}))
+
+
+def round_set(args):
+    run_dir = open_run(args.run)
+    round_number = number(args.round, "round")
+    given = json_stdin()
+    if not isinstance(given, dict) or not given:
+        refuse("bad-value", "stdin must be one round record as a JSON object naming at least one of %s" % ", ".join(ROUND_FACTS))
+    fields(given, (), ROUND_FACTS, "a round record")
+    what = "round %s" % round_number
+    for name, shape, means in (("candidate", FULL_SHA, "a full sha of 40 hex digits"), ("base", SHA, "a sha of 7 to 40 hex digits"), ("binary", SHA256, "a sha256 of 64 hex digits")):
+        if name in given and not (isinstance(given[name], str) and shape.fullmatch(given[name])):
+            refuse("bad-value", "%s: %s is %s, not %s" % (what, name, means, shown(given[name])))
+    if "cycles" in given and (isinstance(given["cycles"], bool) or not isinstance(given["cycles"], int) or not NUMBER.fullmatch(str(given["cycles"]))):
+        refuse("bad-value", "%s: cycles is a positive whole number, not %s" % (what, shown(given["cycles"])))
+    if "outcome" in given:
+        one_of(given["outcome"], OUTCOMES, what + ": outcome")
+    for name in ROUND_LISTS:
+        if name in given:
+            if not isinstance(given[name], list):
+                refuse("bad-value", "%s: %s is an array of item ids, not %s" % (what, name, shown(given[name])))
+            distinct([slug(item, "%s: an item of %s" % (what, name)) for item in given[name]], "%s: the item of %s" % (what, name))
+    one_writer(run_dir)
+    rel, above, rows = read_round(run_dir, round_number)
+    facts = round_facts(rel, rows)
+    for name, value in given.items():
+        if name in ROUND_ONCE and facts[name] not in (None, value):
+            refuse("exists", "%s holds %s %s — it is written once; nothing was written" % (rel, name, facts[name]))
+        if name == "cycles" and value < facts[name]:
+            refuse("bad-value", "%s: %d cycles are recorded, and the count never goes down to %d; nothing was written" % (what, facts[name], value))
+        facts[name] = value
+    rows = [[tick(name), tick(ITEMS_BREAK.join(facts[name]) if name in ROUND_LISTS else str(facts[name]))] for name in ROUND_FACTS if facts[name]]
+    publish(run_dir, ["r" + round_number, "round.md"], render_table(above, ROUND_COLUMNS, rows), replace=True)
+    print(json.dumps({"round": rel, "facts": facts}))
+
+
 def triage_entry(entry):
     """(key, the entry's cells in the triage record after `inside`, the ledger's grade and
     grader). Nothing of an entry says where the finding was found: that is computed."""
@@ -1275,9 +1496,47 @@ def numbered(run_dir, parts, letter):
 
 
 def reports_in(run_dir, parts):
+    """(how many reports the stage's directory holds, the highest attempt one carries)."""
     directory = below(run_dir, parts)
     names = os.listdir(directory) if os.path.isdir(directory) else []
-    return len([name for name in names if REPORT_NAME.fullmatch(name) and os.path.isfile(below(run_dir, parts + [name]))])
+    attempts = [int(REPORT_NAME.fullmatch(name).group(2)) for name in names if REPORT_NAME.fullmatch(name) and os.path.isfile(below(run_dir, parts + [name]))]
+    return len(attempts), max(attempts, default=0)
+
+
+def selected_by(item, scope_rows):
+    """Whether the latest round runs an item: always, for one that runs on every
+    candidate; else when one of the round's included doors is one of the item's, or comes
+    from one of its registries — and None while that round has no scope to ask."""
+    if item[3] == "every-candidate":
+        return True
+    if scope_rows is None:
+        return None
+    doors, registries = [[] if text == "-" else text.split(LIST_BREAK) for text in item[4:6]]
+    return any(row[1] == "included" and (row[0] in doors or row[2] in registries) for row in scope_rows)
+
+
+def position_of(rounds, findings):
+    """What an invocation of each stage would work on — the round, the cycle and the
+    attempt — or why it is refused. A pure function of the rounds' records and the
+    routes; the header's table is this function."""
+    if not rounds:
+        return {"test": {"round": 1, "attempt": 1}, "fix": {"refused": "no-round", "round": None}}
+    last = rounds[-1]
+    number_, facts = last["round"], last["facts"]
+
+    def refused(word):
+        return {"refused": word, "round": number_}
+
+    if facts["candidate"] is None:
+        return {"test": {"round": number_, "attempt": last["test_attempt"] + 1}, "fix": refused("not-tested")}
+    onward = {"round": number_ + 1, "attempt": 1}
+    if facts["outcome"] is not None:
+        return {"test": onward, "fix": refused("round-over")}
+    still = any(finding["route"] != "recorded" for finding in findings)
+    cycle = facts["cycles"] + 1
+    attempt = max([held["attempt"] for held in last["fix_cycles"] if held["cycle"] == cycle], default=0) + 1
+    fix = {"round": number_, "cycle": cycle, "attempt": attempt, "land": facts["cycles"] >= 1 and not still}
+    return {"test": refused("round-open") if still else onward, "fix": fix}
 
 
 def state(args):
@@ -1301,10 +1560,12 @@ def state(args):
     keys = unique_rows(ledger_rel, ledger_rows)
 
     # Each round's records, and each finding's entry in the latest round that triaged it.
-    rounds, doors, triage = [], None, {}
+    rounds, doors, triage, scope = [], None, {}, None
     for number_ in numbered(run_dir, [], "r"):
         name = "r%d" % number_
         scope = read_scope(run_dir, number_)
+        record_rel, _, record_rows = read_round(run_dir, number_)
+        test_reports, test_attempt = reports_in(run_dir, [name, "reports", "test"])
         rel, _, rows = read_triage(run_dir, number_)
         for key, row in zip(unique_rows(rel, rows), rows):
             if scope is None:
@@ -1331,8 +1592,10 @@ def state(args):
             "scope": scope is not None,
             "triage": os.path.isfile(below(run_dir, [name, "triage.md"])),
             "record": os.path.isfile(below(run_dir, [name, "round.md"])),
-            "test_reports": reports_in(run_dir, [name, "reports", "test"]),
-            "fix_cycles": [{"cycle": cycle, "reports": reports_in(run_dir, [name, "reports", "fix", "c%d" % cycle])} for cycle in numbered(run_dir, [name, "reports", "fix"], "c")],
+            "facts": round_facts(record_rel, record_rows),
+            "test_reports": test_reports,
+            "test_attempt": test_attempt,
+            "fix_cycles": [dict(zip(("cycle", "reports", "attempt"), (cycle,) + reports_in(run_dir, [name, "reports", "fix", "c%d" % cycle]))) for cycle in numbered(run_dir, [name, "reports", "fix"], "c")],
         })
 
     findings = []
@@ -1360,6 +1623,24 @@ def state(args):
         findings.append(finding)
     clauses = [{"clause": untick(row[0]), "instrument": as_data(row[1]), "commit": None if row[2] == "-" else untick(row[2]), "scope": as_data(row[3]), "status": row[4]} for row in clause_rows]
     step, forbids, unsettled = next_of(findings, clauses)
+    items_rel, _, item_rows = read_test_set(run_dir)
+    unique_rows(items_rel, item_rows)
+    for row in item_rows:
+        if row[3] not in ITEM_RUNS:
+            spoiled(items_rel, "says that %s runs %s, which this script does not write" % (row[0], shown(row[3])))
+    items = [
+        {
+            "item": untick(row[0]),
+            "kind": untick(row[1]),
+            "clause": untick(row[2]),
+            "runs": row[3],
+            "doors": [] if row[4] == "-" else [as_data(text) for text in row[4].split(LIST_BREAK)],
+            "registries": [] if row[5] == "-" else [as_data(text) for text in row[5].split(LIST_BREAK)],
+            "brief": as_data(row[6]),
+            "selected": selected_by(row, scope[1] if rounds and scope else None),
+        }
+        for row in item_rows
+    ]
     print(json.dumps({
         "run": args.run,
         "opened": True,
@@ -1368,12 +1649,14 @@ def state(args):
         "doors": doors,
         "bounds": [dict(zip(BOUND_COLUMNS, [untick(row[0])] + [as_data(text) for text in row[1:]])) for row in bound_rows],
         "clauses": clauses,
+        "items": items,
         "ledger": findings,
         "blockers": [finding["key"] for finding in findings if finding["route"] == "fix"],
         "human_list": [{"key": finding["key"], "why": finding["why"]} for finding in findings if finding["route"] == "human"],
         "unsettled": unsettled,
         "forbids_close": forbids,
         "next": step,
+        "position": position_of(rounds, findings),
     }))
 
 
@@ -1457,6 +1740,8 @@ def arguments(argv):
     command("bound-set", bound_set, [("bound", True), ("reach", False), ("ruling", False), ("pin", False)], writes=True)
     command("scope-set", scope_set, [("round", True)], writes=True)
     command("triage-set", triage_set, [("round", True)])
+    command("item-set", item_set, [], writes=True)
+    command("round-set", round_set, [("round", True)])
     command("state", state, [])
     if not argv or argv[0] not in commands.choices:
         refuse("usage", "%s is not a subcommand: the subcommands are %s — see dev/stabilize-record --help" % (shown(argv[0]) if argv else "nothing", ", ".join(commands.choices)))
