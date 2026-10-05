@@ -3738,17 +3738,13 @@ impl TaskArea {
                 staged_promotable || owner_changed
             } else {
                 let staged_code = !git_capture(&self.repo_root, &["diff", "--cached"])?.is_empty();
-                let config_pending = !git_capture(
-                    &self.repo_root,
-                    &[
-                        "status",
-                        "--porcelain",
-                        "--",
-                        ".jigc/config",
-                        ".jigc/.gitignore",
-                    ],
-                )?
-                .is_empty();
+                // An untracked delta counts ([`Untracked::Normal`], stated): a bare `git
+                // status` drops it under the user's `status.showUntrackedFiles=no`, and a
+                // task whose whole change is a new `.jigc/config` file then reads as
+                // having nothing to commit.
+                let mut pending_args = status_argv(Untracked::Normal).to_vec();
+                pending_args.extend(["--", ".jigc/config", ".jigc/.gitignore"]);
+                let config_pending = !git_capture(&self.repo_root, &pending_args)?.is_empty();
                 staged_code || staged_promotable || config_pending || owner_changed
             }
         };
@@ -6253,17 +6249,10 @@ fn owner_artifacts_change_head(repo_root: &Path, paths: &[String]) -> bool {
     stageable_owner_artifacts(repo_root, paths)
         .iter()
         .any(|path| {
-            git_capture(
-                repo_root,
-                &[
-                    "status",
-                    "--porcelain",
-                    "--untracked-files=all",
-                    "--",
-                    &literal_pathspec(path),
-                ],
-            )
-            .map_or(true, |status| !status.is_empty())
+            let literal = literal_pathspec(path);
+            let mut args = status_argv(Untracked::All).to_vec();
+            args.extend(["--", literal.as_str()]);
+            git_capture(repo_root, &args).map_or(true, |status| !status.is_empty())
         })
 }
 
@@ -8364,15 +8353,70 @@ pub(crate) fn git_changed_paths(
         .collect())
 }
 
-/// List the repo-relative dirty working-tree paths — `git status --porcelain
-/// --untracked-files=all`, untracked included (the finalize stage is `git add --all`,
+/// How a `git status` treats untracked files — **stated at every call**
+/// ([`status_argv`]), never left to git's default.
+///
+/// git's default is not git's: it is the user's `status.showUntrackedFiles`, and `no` —
+/// what anyone with a large or a home-directory repository sets — removes every untracked
+/// path from the listing. A door that decides what it may destroy or commit from that
+/// listing therefore decided it from somebody's dotfiles.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Untracked {
+    /// `--untracked-files=no` — tracked paths only. For a caller whose question is about
+    /// the index and the files it lists, where an untracked path is no answer either way.
+    No,
+    /// `--untracked-files=normal` — git's own built-in default: a wholly untracked
+    /// directory is the one entry `dir/`.
+    Normal,
+    /// `--untracked-files=all` — every untracked file by its own path.
+    All,
+}
+
+/// **The head of every `git status` argv this binary runs** — `status --porcelain`, with
+/// the two things a porcelain listing still takes from the user's configuration pinned on
+/// the command line (the rc.24 fix pass's completion audit).
+///
+/// `--porcelain` is stable across git versions and **not** across configuration:
+///
+/// * `status.showUntrackedFiles` decides whether an untracked path is listed at all, so
+///   the mode is a required argument ([`Untracked`]). Driven on `1.0.0-rc.24` with it set
+///   to `no`: an un-forced `jigc milestone discard` and an un-forced `jigc uninstall` each
+///   removed a sub-agent's untracked file at exit 0, because the refusal probe ran a bare
+///   `git status --porcelain` and read an empty listing;
+/// * `status.renames` / `diff.renames` (and their limits) decide whether a staged rename
+///   is one two-path record or its two halves — so `--no-renames`, always: every record
+///   names exactly one path, which is also what every parser of this listing assumes.
+///
+/// The keys git defers for its long and short formats (`status.branch`, `status.short`,
+/// `status.relativePaths`, `color.status`, …) do not reach a porcelain listing at all;
+/// `crates/cli/tests/git_status_own_flags.rs` drives the whole set against this argv, and
+/// fences that no production source spells a `git status` of its own — so a new call site
+/// cannot inherit configuration by forgetting a flag.
+///
+/// A caller appends what is its own: `-z`, `--ignored=…`, a `--` pathspec.
+#[must_use]
+pub const fn status_argv(untracked: Untracked) -> [&'static str; 4] {
+    [
+        "status",
+        "--porcelain",
+        match untracked {
+            Untracked::No => "--untracked-files=no",
+            Untracked::Normal => "--untracked-files=normal",
+            Untracked::All => "--untracked-files=all",
+        },
+        "--no-renames",
+    ]
+}
+
+/// List the repo-relative dirty working-tree paths — [`status_argv`] with
+/// [`Untracked::All`], untracked included (the finalize stage is `git add --all`,
 /// which commits them, so they are part of the task's footprint; `=all` lists files
 /// inside untracked directories individually, else a collapsed `dir/` entry could
-/// never match a changed file path and an overlap would slip). A rename line names
-/// both sides; both count.
+/// never match a changed file path and an overlap would slip). A staged rename is its
+/// two halves, each its own record; both count.
 pub(crate) fn git_dirty_paths(repo_root: &Path) -> Result<Vec<String>> {
     let out = Command::new("git")
-        .args(["status", "--porcelain", "--untracked-files=all"])
+        .args(status_argv(Untracked::All))
         .current_dir(repo_root)
         .output()
         .context("could not run `git` (is it on PATH?)")?;
@@ -8385,29 +8429,24 @@ pub(crate) fn git_dirty_paths(repo_root: &Path) -> Result<Vec<String>> {
     let text = String::from_utf8(out.stdout).context("`git status` produced non-UTF-8 output")?;
     let mut paths = Vec::new();
     for line in text.lines() {
-        // Porcelain v1: two status columns + a space, then the path; a rename
-        // reads `R  old -> new`.
+        // Porcelain v1: two status columns + a space, then the one path the record names
+        // (`--no-renames`: no record carries a second).
         let Some(path) = line.get(3..) else { continue };
-        match path.split_once(" -> ") {
-            Some((old, new)) => {
-                paths.push(old.to_string());
-                paths.push(new.to_string());
-            }
-            None => paths.push(path.to_string()),
-        }
+        paths.push(path.to_string());
     }
     Ok(paths)
 }
 
 /// The status-preserving sibling of [`git_dirty_paths`] (B1 dirty-tree sweep): each dirty
-/// working-tree path paired with its **two-column** porcelain status code (`git status
-/// --porcelain --untracked-files=all`). The full XY is preserved (never collapsed) so the
+/// working-tree path paired with its **two-column** porcelain status code ([`status_argv`]
+/// with [`Untracked::All`]). The full XY is preserved (never collapsed) so the
 /// `--dry-run` manifest prediction can split the X (index → included) and Y (worktree →
-/// left-out) columns independently (M30 G3). A rename `R old -> new` splits to `old`
-/// (`D `, staged delete) + `new` (`A `, staged add) — the shape the staged index carries.
+/// left-out) columns independently (M30 G3). A staged rename arrives as git lists it under
+/// `--no-renames`: `old` (`D `, staged delete) + `new` (`A `, staged add, with whatever
+/// the worktree column says about it) — the shape the staged index carries.
 pub(crate) fn git_status_entries(repo_root: &Path) -> Result<Vec<(String, String)>> {
     let out = Command::new("git")
-        .args(["status", "--porcelain", "--untracked-files=all"])
+        .args(status_argv(Untracked::All))
         .current_dir(repo_root)
         .output()
         .context("could not run `git` (is it on PATH?)")?;
@@ -8423,13 +8462,7 @@ pub(crate) fn git_status_entries(repo_root: &Path) -> Result<Vec<(String, String
         // Porcelain v1: two status columns + a space, then the path.
         let Some(code) = line.get(..2) else { continue };
         let Some(path) = line.get(3..) else { continue };
-        match path.split_once(" -> ") {
-            Some((old, new)) => {
-                entries.push(("D ".to_string(), old.to_string()));
-                entries.push(("A ".to_string(), new.to_string()));
-            }
-            None => entries.push((code.to_string(), path.to_string())),
-        }
+        entries.push((code.to_string(), path.to_string()));
     }
     Ok(entries)
 }
@@ -8816,14 +8849,8 @@ pub(crate) fn git_modified_without_flags(
     let scratch = CombineIndex::new();
     git_index(repo_root, scratch.path(), &["read-tree", rev]).ok()?;
     let literals: Vec<String> = paths.iter().map(|path| literal_pathspec(path)).collect();
-    let mut args: Vec<&str> = vec![
-        "status",
-        "--porcelain",
-        "--untracked-files=no",
-        "--no-renames",
-        "-z",
-        "--",
-    ];
+    let mut args: Vec<&str> = status_argv(Untracked::No).to_vec();
+    args.extend(["-z", "--"]);
     args.extend(literals.iter().map(String::as_str));
     // `core.fileMode` off: content against the blob, never an executable bit (the comparison
     // [`git_against_rev`] makes for an unflagged path, kept the same here).

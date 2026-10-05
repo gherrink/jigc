@@ -13,6 +13,8 @@ mod destroying_door_sibling_surfaces;
 mod flow42_acceptance;
 #[path = "../flow43_acceptance.rs"]
 mod flow43_acceptance;
+#[path = "../git_status_own_flags.rs"]
+mod git_status_own_flags;
 #[path = "../leftover_operation_in_progress.rs"]
 mod leftover_operation_in_progress;
 #[path = "../leftover_probe_fail_closed.rs"]

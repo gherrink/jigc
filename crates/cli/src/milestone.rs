@@ -5901,6 +5901,14 @@ fn unverified_subtask_prose_finding(milestone_id: &str, err: std::io::Error) -> 
 /// **untracked** alike (`git worktree remove --force` deletes the checkout). So the guard's probe
 /// is the union `git status --porcelain` reports.
 ///
+/// **The union is asked for by flag, never left to the user's configuration**
+/// ([`crate::task::status_argv`], [`crate::task::Untracked::Normal`] — git's own built-in
+/// default, said). This ran a bare `git status --porcelain` until the rc.24 fix pass's
+/// completion audit, and a bare one drops every untracked path under
+/// `status.showUntrackedFiles=no`: driven, an un-forced `jigc milestone discard` and an
+/// un-forced `jigc uninstall` each removed a sub-agent's untracked file at exit 0, the loss
+/// named by [`discarded_work`] — which already passed its own flag — *after* the removal.
+///
 /// **And that union stays without `--ignored`, deliberately** — this is the *refusal* probe, and
 /// [`discarded_work`] is the *narration* probe that does read the ignored set and names those
 /// bytes; the measured evidence for the split and the declared cost (**visible, not prevented**)
@@ -5927,7 +5935,7 @@ pub(crate) fn dirty_worktrees(worktrees: &[PathBuf]) -> Result<Vec<(PathBuf, Vec
     let mut dirty = Vec::new();
     for wt in worktrees {
         let out = Command::new("git")
-            .args(["status", "--porcelain"])
+            .args(crate::task::status_argv(crate::task::Untracked::Normal))
             .current_dir(wt)
             .output()
             .context("could not run `git status` (is git on PATH?)")?;
@@ -8556,9 +8564,9 @@ fn worktree_staged_file_count(worktree: &Path) -> Result<usize> {
 /// **`--porcelain -z`, not `--porcelain`.** Git display-quotes a path holding a space,
 /// a quote or a non-ASCII byte **regardless of `core.quotePath`**, and a fan-out worktree
 /// holds arbitrary user code — so the plain form would name a path the repo does not
-/// contain. The `-z` form emits verbatim paths in NUL-terminated records; a rename/copy
-/// entry appends its origin path as an extra record, consumed here so the stream stays
-/// aligned.
+/// contain. The `-z` form emits verbatim paths in NUL-terminated records, one path each:
+/// the argv is [`crate::task::status_argv`]'s, whose `--no-renames` leaves a staged rename
+/// as its two halves, so no record carries an origin path behind it.
 ///
 /// **`--untracked-files=all`, not git's default collapse.** The default reports a wholly
 /// untracked directory as the single entry `notes/`, naming a *directory* where this
@@ -8583,41 +8591,32 @@ fn discarded_work(worktree: &Path) -> Result<Vec<render::DiscardedWork>> {
 /// every door narrated through the landed subtraction, so `jigc milestone discard --force`
 /// over a worktree holding one `git add`-ed file printed nothing at all.
 fn worktree_work(worktree: &Path) -> Result<Vec<(String, Option<render::DiscardState>)>> {
-    const PROBE: [&str; 5] = [
-        "status",
-        "--porcelain",
-        "-z",
-        "--untracked-files=all",
-        "--ignored=matching",
-    ];
+    let mut probe = crate::task::status_argv(crate::task::Untracked::All).to_vec();
+    probe.extend(["-z", "--ignored=matching"]);
     let out = Command::new("git")
-        .args(PROBE)
+        .args(&probe)
         .current_dir(worktree)
         .output()
         .context("could not run `git status` (is git on PATH?)")?;
     if !out.status.success() {
         bail!(
             "`git {}` in worktree {worktree:?} failed: {}",
-            PROBE.join(" "),
+            probe.join(" "),
             String::from_utf8_lossy(&out.stderr).trim()
         );
     }
 
-    let mut records = out.stdout.split(|byte| *byte == 0);
     let mut discarded = Vec::new();
-    while let Some(record) = records.next() {
+    for record in out.stdout.split(|byte| *byte == 0) {
         // `XY <path>` — two status columns, one space, then the verbatim path.
         if record.len() < 4 {
             continue;
         }
         let index = record[0];
         let tree = record[1];
+        // One path per record: the seam's `--no-renames` means no rename or copy record,
+        // and so no origin path riding behind one.
         let path = String::from_utf8_lossy(&record[3..]).into_owned();
-        if index == b'R' || index == b'C' {
-            // A rename/copy carries its origin path as the next record — consume it so
-            // the origin is never mistaken for a status entry.
-            let _ = records.next();
-        }
         let state = if index == b'!' {
             // Ignored — no commit could carry it, and the teardown deletes it anyway.
             Some(render::DiscardState::Ignored)

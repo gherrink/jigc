@@ -3429,13 +3429,8 @@ fn home_is_a_work_tree(jigc_home: &Path) -> Result<bool, Unanswered> {
 /// records and only need to know that there was no answer.
 fn ask_dirty_against_head(jigc_home: &Path, pathspec: &[String]) -> Result<DirtyPaths, Unanswered> {
     const ASKED: &str = "status";
-    let mut args: Vec<&str> = vec![
-        "status",
-        "--porcelain",
-        "--untracked-files=all",
-        "--no-renames",
-        "-z",
-    ];
+    let mut args: Vec<&str> = crate::task::status_argv(crate::task::Untracked::All).to_vec();
+    args.push("-z");
     if !pathspec.is_empty() {
         args.push("--");
         args.extend(pathspec.iter().map(String::as_str));
@@ -5188,19 +5183,13 @@ fn classify_workbench_paths(jigc_home: &Path) -> anyhow::Result<(Vec<String>, Ve
     let cached: Vec<&str> = listed.split('\0').filter(|s| !s.is_empty()).collect();
     // The second leg: of the paths the index *lists*, the ones whose bytes it does not
     // carry. Porcelain v1 `-z` records are `XY <path>\0`; the worktree column is `Y`, and
-    // `--no-renames` keeps every record to one path so the offset is fixed.
-    let status = git_capture_untrimmed(
-        jigc_home,
-        &[
-            "--no-optional-locks",
-            "status",
-            "--porcelain",
-            "-z",
-            "--no-renames",
-            "--",
-            ".jigc",
-        ],
-    )?;
+    // `--no-renames` keeps every record to one path so the offset is fixed. Untracked
+    // paths are no part of the question — the index does not list them — so the mode is
+    // [`crate::task::Untracked::No`], said rather than inherited.
+    let mut status_args: Vec<&str> = vec!["--no-optional-locks"];
+    status_args.extend(crate::task::status_argv(crate::task::Untracked::No));
+    status_args.extend(["-z", "--", ".jigc"]);
+    let status = git_capture_untrimmed(jigc_home, &status_args)?;
     let modified: Vec<&str> = status
         .split('\0')
         .filter(|record| record.len() > 3 && record.as_bytes()[1] != b' ')
