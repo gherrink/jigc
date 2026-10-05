@@ -577,7 +577,38 @@ fn refusal_of(fx: &Fixture, door: &DestroyingDoor, cell: &str) -> String {
         stderr.contains(&format!("blocking · {code}")),
         "{cell}: the refusal carries the door's own code `{code}`; stderr:\n{stderr}",
     );
+    assert_the_route_promises_only_what_the_line_prints(fx, &stderr, cell);
     stderr
+}
+
+/// Whether `span` is something a reader runs — one of the commands a refusal line prints
+/// (the keep, `reset --soft` and stash commands, the restore recipe, the re-link) — rather
+/// than a backticked name such as `` `.git` ``.
+fn is_runnable(span: &str) -> bool {
+    ["git ", "mkdir ", "printf "]
+        .iter()
+        .any(|head| span.starts_with(head))
+}
+
+/// **A route that says *run the command on that line* is a promise about that line** (the
+/// rc.24 fix pass's completion audit, F5). Asked of every refusal this suite drives, so
+/// each cell of the door × holding × standing grid holds it rather than the one cell the
+/// finding was reported at.
+fn assert_the_route_promises_only_what_the_line_prints(fx: &Fixture, stderr: &str, cell: &str) {
+    if !stderr.contains("run the command on that line") {
+        return;
+    }
+    let printed = fx.printed();
+    let runnable = stderr
+        .lines()
+        .filter(|line| line.trim_start().starts_with(&format!("{printed}:")))
+        .flat_map(|line| line.split('`').skip(1).step_by(2))
+        .any(is_runnable);
+    assert!(
+        runnable,
+        "{cell}: the route tells the reader to run the command on `{printed}`'s line, and \
+         that line prints none; stderr:\n{stderr}",
+    );
 }
 
 /// The one span on [`SUB`]'s refusal line that `is` picks — or a panic naming what was
@@ -1597,28 +1628,84 @@ fn an_unlinked_checkout_is_re_linked_by_the_command_the_refusal_prints() {
         );
     }
 
-    // The control: a `.git` entry that IS there and names something git cannot read is
-    // another repository's linkage, not a missing one. The door still refuses — the
-    // registration still holds the staged path — and prints no line that would overwrite it.
-    for door in [&DISCARD_DOOR, &FINALIZE_DOOR] {
-        let cell = format!("{} × Staged × a `.git` link naming nothing", door.verb);
-        let fx = Fixture::mint("relink-ctl");
-        prepare(&fx, door);
-        fx.plant(Holding::Staged, Standing::Live);
-        let link = fx.worktree(SUB).join(".git");
-        fs::write(&link, "gitdir: /nonexistent/elsewhere/.git/worktrees/x\n")
-            .expect("rewrite the link");
-        let stderr = refusal_of(&fx, door, &cell);
-        assert!(
-            !stderr.contains("printf 'gitdir: "),
-            "{cell}: a link that is there is never overwritten by a printed command; \
-             stderr:\n{stderr}",
-        );
-        assert_eq!(
-            fs::read_to_string(&link).ok().as_deref(),
-            Some("gitdir: /nonexistent/elsewhere/.git/worktrees/x\n"),
-            "{cell}: …and the refusal left it alone",
-        );
+    // The control: a `.git` entry that IS there and leads nowhere git can read is another
+    // repository's linkage, not a missing one. The door still refuses — the registration
+    // still holds the staged path — and prints no line that would overwrite it. **And the
+    // line says what the reader can do** (the completion audit, F5): until then the
+    // boundary named what the registration held under a route that said *run the command on
+    // that line*, over a line with no command on it, at the one door with no consent to
+    // fall back on. The step is the reader's — move the entry aside — and it is driven
+    // here through to a landed boundary.
+    let entries: [(&str, &[u8]); 3] = [
+        (
+            "a link naming nothing",
+            b"gitdir: /nonexistent/elsewhere/.git/worktrees/x\n",
+        ),
+        ("bytes that are no link at all", b"garbage\n"),
+        ("an empty directory", b""),
+    ];
+    for (what, bytes) in entries {
+        for door in [&DISCARD_DOOR, &FINALIZE_DOOR] {
+            if bytes.is_empty() && !is_boundary(door) {
+                continue;
+            }
+            let cell = format!("{} × Staged × a `.git` entry: {what}", door.verb);
+            let fx = Fixture::mint("relink-ctl");
+            prepare(&fx, door);
+            fx.plant(Holding::Staged, Standing::Live);
+            let worktree = fx.worktree(SUB);
+            let link = worktree.join(".git");
+            fs::remove_file(&link).expect("take the real link out");
+            if bytes.is_empty() {
+                fs::create_dir(&link).expect("leave a directory named `.git`");
+            } else {
+                fs::write(&link, bytes).expect("write the entry");
+            }
+            let stderr = refusal_of(&fx, door, &cell);
+            assert!(
+                !stderr.contains("printf 'gitdir: "),
+                "{cell}: an entry that is there is never overwritten by a printed command; \
+                 stderr:\n{stderr}",
+            );
+            if !bytes.is_empty() {
+                assert_eq!(
+                    fs::read(&link).ok().as_deref(),
+                    Some(bytes),
+                    "{cell}: …and the refusal left it alone",
+                );
+            }
+            assert!(
+                stderr.contains("move that entry aside"),
+                "{cell}: the line names the step that is the reader's; stderr:\n{stderr}",
+            );
+            if !is_boundary(door) {
+                continue;
+            }
+            assert!(
+                !stderr.contains("run the command on that line"),
+                "{cell}: no command is on that line, so the route must not send the reader \
+                 to one; stderr:\n{stderr}",
+            );
+
+            // The step, by hand — out of the worktree, so nothing new is left inside it.
+            fs::rename(&link, fx.home.path().join("the-entry-moved-aside"))
+                .expect("move the entry aside");
+            let stderr = refusal_of(&fx, door, &cell);
+            let relink = span_where(
+                &stderr,
+                &fx.printed(),
+                "the command that re-links the checkout",
+                &cell,
+                |span| span.starts_with("printf 'gitdir: "),
+            );
+            run_as_printed(&fx, &relink, &cell);
+            fx.jigc_ok(&["milestone", "finalize", MILESTONE]);
+            assert_eq!(
+                git_ok(&fx.repo, &["show", &format!("HEAD:{}", STAGED.0)]),
+                STAGED.1.trim_end(),
+                "{cell}: the sub-agent's staged code is landed",
+            );
+        }
     }
 }
 

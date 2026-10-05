@@ -4763,36 +4763,61 @@ fn held_here(jigc_home: &Path, abs: &Path, hold: &LeftoverHold) -> String {
     }
     if let Some(anchored) = &hold.anchored {
         let mut words = anchored_words(jigc_home, abs, anchored);
-        // A directory with no `.git` entry beside a registration that still names it: the
-        // checkout is there and unlinked. One line gives it back to that registration.
-        if let Some(relink) = relink_command(abs, anchored) {
-            words.push_str(&format!(
+        match unlinked_checkout(abs, anchored) {
+            // A directory with no `.git` entry beside a registration that still names it:
+            // the checkout is there and unlinked. One line gives it back to that
+            // registration.
+            Some(Unlinked::NoEntry(relink)) => words.push_str(&format!(
                 " — what stands there has no `.git` link: `{relink}` makes it that \
                  registration's checkout again, its files untouched",
-            ));
+            )),
+            // …and one whose `.git` entry is there and leads nowhere git can read. No
+            // command is printed over it ([`unlinked_checkout`]), so the line says the step
+            // that is the reader's, and what it leads to — a line with nothing to do on it
+            // is a dead end at the one door here that has no consent to fall back on.
+            Some(Unlinked::EntryInTheWay) => words.push_str(
+                " — what stands there has a `.git` entry git reads no repository through, \
+                 and no printed command overwrites one: move that entry aside, and this \
+                 door then prints the one line that re-links the checkout, its files \
+                 untouched",
+            ),
+            None => {}
         }
         parts.push(words);
     }
     parts.join("; and ")
 }
 
-/// **The one command that gives an unlinked checkout back to git's registration of it**:
-/// write the `.git` link the registration's own `gitdir` file names — `None` unless a
-/// directory stands at `path` with **no `.git` entry at all** and the registration was
-/// read out of this repository's registry (`!anchored.live`).
+/// How a directory stands **unlinked** beside a registration that still names its path.
+enum Unlinked {
+    /// No `.git` entry at all — carrying the one command that writes the link back.
+    NoEntry(String),
+    /// A `.git` entry is there, and git reads no repository through it.
+    EntryInTheWay,
+}
+
+/// **Whether `path` is a checkout cut off from git's registration of it, and how** — `None`
+/// unless a directory stands there that git does not read as a worktree of its own and the
+/// registration was read out of this repository's registry (`!anchored.live`).
 ///
-/// It is [`restore_recipe`]'s middle step alone, and the split is the point: the recipe
-/// recreates a directory and lets `git restore .` write the index out, which is right when
-/// nothing stands at the path and would overwrite files when something does. Here the
-/// working files are on disk, so the link is all that is missing — after it the path is a
-/// live worktree again, at the `HEAD` git recorded, its index as the sub-agent left it and
-/// every file where it was, and each door asks its ordinary question of it.
+/// **[`Unlinked::NoEntry`] carries the one command that gives the checkout back**: write
+/// the `.git` link the registration's own `gitdir` file names. It is [`restore_recipe`]'s
+/// middle step alone, and the split is the point: the recipe recreates a directory and lets
+/// `git restore .` write the index out, which is right when nothing stands at the path and
+/// would overwrite files when something does. Here the working files are on disk, so the
+/// link is all that is missing — after it the path is a live worktree again, at the `HEAD`
+/// git recorded, its index as the sub-agent left it and every file where it was, and each
+/// door asks its ordinary question of it.
 ///
-/// **Only where no `.git` entry exists.** A `.git` that is there and points somewhere git
-/// cannot read is another repository's linkage (the copy-then-move shape,
-/// [`LeftoverVerdict::Unverifiable`]), and overwriting it would cut that checkout off from
-/// the repository it belongs to. `NotFound` is the one answer that makes the write
-/// non-destructive.
+/// **The command is printed only where no `.git` entry exists.** A `.git` that is there and
+/// points somewhere git cannot read is another repository's linkage (the copy-then-move
+/// shape, [`LeftoverVerdict::Unverifiable`]), and overwriting it would cut that checkout off
+/// from the repository it belongs to. `NotFound` is the one answer that makes the write
+/// non-destructive. **That cell is [`Unlinked::EntryInTheWay`], and it is said rather than
+/// passed over** (the rc.24 fix pass's completion audit, F5): the refusal line named what
+/// the registration holds and nothing the reader could do about it, under a route that told
+/// them to *run the command on that line*. Moving the entry aside is the reader's step —
+/// it destroys nothing, and what stands there is then the first cell.
 ///
 /// **By hand, not `git worktree repair`** — for [`restore_recipe`]'s reason, now driven
 /// rather than reasoned (the rc.24 fix pass): that verb fixes this link too, and on the
@@ -4800,20 +4825,19 @@ fn held_here(jigc_home: &Path, abs: &Path, hold: &LeftoverHold) -> String {
 /// repository carries. In a `cp -R` copy those registrations name the **source's**
 /// worktrees, and one `git worktree repair` in the copy left each of the source's live
 /// checkouts answering for the copy.
-fn relink_command(path: &Path, anchored: &Anchored) -> Option<String> {
+fn unlinked_checkout(path: &Path, anchored: &Anchored) -> Option<Unlinked> {
     if anchored.live || leftover_at(path) != LeftoverAt::Directory {
         return None;
     }
     let link = path.join(".git");
     match std::fs::symlink_metadata(&link) {
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-        _ => return None,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Some(Unlinked::NoEntry(format!(
+            "printf 'gitdir: %s\\n' {} > {}",
+            engine::finding::shell_operand(&anchored.admin.to_string_lossy()),
+            engine::finding::shell_operand(&link.to_string_lossy()),
+        ))),
+        _ => Some(Unlinked::EntryInTheWay),
     }
-    Some(format!(
-        "printf 'gitdir: %s\\n' {} > {}",
-        engine::finding::shell_operand(&anchored.admin.to_string_lossy()),
-        engine::finding::shell_operand(&link.to_string_lossy()),
-    ))
 }
 
 /// Why the door may not dispose of what it found — one sentence per (shape, verdict), shared
@@ -7808,7 +7832,7 @@ fn unlanded_work(
 ///
 /// **The line is [`hold_line`]'s**, so one state reads one way at all four worktree doors —
 /// the keep command for a commit, [`restore_recipe`] where the directory is gone,
-/// [`relink_command`] where a checkout stands unlinked. Two commands are this door's own,
+/// [`unlinked_checkout`] where a checkout stands unlinked. Two commands are this door's own,
 /// because only here does *landing* the work make sense:
 ///
 /// * a commit in a live worktree of a sub-task the boundary lands — `git reset --soft
@@ -7892,6 +7916,14 @@ fn unlanded_work_finding(
                     .to_owned(),
             );
         }
+        // The path could not even be stat'ed, for a reason that is not absence: nothing
+        // on the line says what stands there, so the step is to make it readable.
+        if let LeftoverAt::Unreadable(err) = leftover_at(&held.path) {
+            exits.push(format!(
+                "the path itself could not be read ({err}): mend that, and re-run for the \
+                 command that fits what stands there"
+            ));
+        }
     }
     let exits = if exits.is_empty() {
         String::new()
@@ -7906,16 +7938,38 @@ fn unlanded_work_finding(
         "a path brought back or re-linked is a live worktree again, and this door asks it \
          the same question"
     };
-    // The first move differs by what the line carries: a command to run, or — where the
-    // registration could not even be read — git's own message and nothing to paste.
+    // **Whether that line carries a command at all** — asked of the same facts that put
+    // one there, so the route cannot promise what the line does not print (the rc.24 fix
+    // pass's completion audit, F5): the keep command rides a held commit
+    // ([`anchored_words`]), the recipe a path nothing stands at ([`hold_line`]), the
+    // re-link a directory with no `.git` entry ([`unlinked_checkout`]), and this door's
+    // own stash a live index. A `.git` entry git cannot read through, and a file in the
+    // way, each leave a step that is the reader's and no line to paste.
+    let carries_command = anchored.is_some_and(|anchored| {
+        anchored.commit.is_some()
+            || matches!(held.hold.shape, LeftoverShape::Registration)
+            || matches!(
+                unlinked_checkout(&held.path, anchored),
+                Some(Unlinked::NoEntry(_))
+            )
+            || (!anchored.staged.is_empty() && live)
+    });
+    // The first move differs by what the line carries: a command to run, a step to take
+    // by hand, or — where the registration could not even be read — git's own message and
+    // nothing to paste.
     let first = if unreadable {
         "mend what git's message on that line names — there is no command to run for a \
          registration that cannot be read —"
             .to_owned()
-    } else {
+    } else if carries_command {
         format!(
             "run the command on that line that fits what you want kept or landed (a kept \
              commit clears the path, and {landing}),"
+        )
+    } else {
+        format!(
+            "that line carries no command, because none is safe to print over what stands \
+             at the path — take the step it names by hand ({landing}),"
         )
     };
     Finding::graded(
