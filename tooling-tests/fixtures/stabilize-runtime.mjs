@@ -7,8 +7,9 @@
 //   node stabilize-runtime.mjs <the harness script> <a scenario file>
 //
 // run from the root of the repository the stage works on. The scenario is the suite's:
-// { args, checks, scope, agents, record } — the invocation's arguments, and what the
-// scripted agents say (below).
+// { args, checks, gate, scope, agents, record, wrongBinary } — the invocation's arguments,
+// and what the scripted agents say (below). `wrongBinary` names the reporters that return
+// another hash than the one they were handed: a driver that drove something else.
 //
 // WHAT AN AGENT IS HERE. A function chosen by the call's label. Four kinds do what their
 // definition gives the role to do in the repository, by running the commands their prompt
@@ -18,11 +19,18 @@
 //   preflight  stabilize-preflight the two environment asserts a test can run, held as
 //                                  the definition words them; each binary a FILE at the
 //                                  path the prompt names (no build), its sha256 measured;
-//                                  each check answered as the scenario scripts it
+//                                  each check answered as the scenario scripts it; and
+//                                  the candidate's gate NOT RUN — what a full gate prints,
+//                                  green or as the scenario scripts it red (`gate`),
+//                                  written to the file the prompt names
 //   scope      stabilize-scope     the round's doors written with the prompt's `scope-set`
-//   record:*   build-executor      the calls the prompt lists, in its order; a payload
-//                                  written as the prompt says and held to its hash; NO
-//                                  GATE (scripted green or red); the one commit
+//                                  — or `stands`, where an earlier attempt wrote them
+//   record:*   build-executor      the steps the prompt lists, in its order: the payload
+//                                  written as the prompt says and held to its hash, the
+//                                  batch applied by the prompt's own `apply`, and the gate
+//                                  NOT RUN — its output, green or as scripted
+//                                  (`record.gate`), written to the file the prompt names.
+//                                  It makes no commit: that is a git step (`git:record:*`)
 //
 // Every other label is a reporter the scenario scripts by that label: its structured
 // return is the scenario's, its report is written through the real
@@ -85,6 +93,21 @@ function span(text, opens) {
   const at = text.indexOf('`' + opens)
   return at < 0 ? null : text.slice(at + 1, text.indexOf('`', at + 1))
 }
+// What a full `dev/gate` prints, as much of it as anybody reads: its totals line, its
+// verdict line, and the failing tests by name. `red` is { steps, tests }, or nothing.
+function gateOutput(red) {
+  const steps = (red && red.steps) || []
+  const tests = (red && red.tests) || []
+  return ['gate: log    (scripted by the simulation: no gate ran)', '', '--- summary ---', 'tests   passed=1 failed=' + tests.length + '  (over 1 test binaries)', '']
+    .concat(steps.length ? ['GATE: FAIL (step: ' + steps.join(' ') + ')', ''].concat(tests.length ? ['failing tests:'].concat(tests.map((t) => '  ' + t), ['']) : []) : ['GATE: PASS'])
+    .join('\n') + '\n'
+}
+function keepGate(command, red) {
+  const file = /^dev\/gate > (\S+) 2>&1$/.exec(command)[1]
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, gateOutput(red))
+  return file
+}
 function treeState() {
   return 'branch ' + git('branch', '--show-current').stdout + '\n' + git('status', '--porcelain').stdout
 }
@@ -118,7 +141,7 @@ function gitStep(label, prompt) {
 
 function preflight(label, prompt) {
   const asked = /^Candidate: label (\S+), commit ([0-9a-f]{40}) /m.exec(prompt)
-  const runDir = /may show untracked report files under `([^`]+)\/` and nothing else/.exec(prompt)
+  const runDir = /may show untracked files under `([^`]+)\/` and nothing else/.exec(prompt)
   if (!asked || !runDir) fail('the preflight\'s prompt names no candidate, or no run directory')
   const [, candidate, sha] = asked
   // The environment asserts (stabilize-preflight.md): `git rev-parse HEAD` is the
@@ -146,6 +169,8 @@ function preflight(label, prompt) {
   const previous = /the previous release's binary: version `([^`]+)`, built from commit [0-9a-f]{40} .*? at `([^`]+)`/.exec(prompt)
   if (previous) back.previous = { version: previous[1], binary: previous[2], sha256: standIn(previous[2], 'release ' + previous[1]) }
   if (/\d+\. the trial image, built and verified/.test(prompt)) back.image = { tag: 'jigc-trial:' + candidate, verified: true, failed: [] }
+  const gate = span(prompt, 'dev/gate > ')
+  if (gate) keepGate(gate, scenario.gate)
   if (prompt.includes('whether the cross-model pass\'s tool answers')) fail('the cross-model pass is not scripted')
   for (const [, item] of prompt.matchAll(/^ {3}- ([a-z0-9-]+): /gm)) {
     const status = (scenario.checks || {})[item]
@@ -161,52 +186,54 @@ function scopeStep(label, prompt) {
   const between = /base = ([0-9a-f]{40}) .*; tip = ([0-9a-f]{40}) /.exec(prompt)
   if (!command || !between || !scenario.scope) fail('the scope step is not scripted, or its prompt names no `scope-set` and no two commits')
   const out = sh(command, JSON.stringify({ included: scenario.scope.included, excluded: scenario.scope.excluded }))
-  if (out.code !== 0) fail('`scope-set` refused the scripted scope: ' + out.stderr)
-  return Object.assign({ status: 'written', base: between[1], tip: between[2], scope: JSON.parse(out.stdout).scope, report: writeReport(label, prompt, 'Written.') }, scenario.scope)
+  // A round's scope is written once: where an earlier attempt of the stage wrote it, it
+  // stands (stabilize-scope.md), and the script's refusal is the evidence.
+  const stands = out.code === 6 && out.stderr.includes('refused exists: ')
+  if (out.code !== 0 && !stands) fail('`scope-set` refused the scripted scope: ' + out.stderr)
+  return Object.assign({ status: stands ? 'stands' : 'written', base: between[1], tip: between[2], report: writeReport(label, prompt, stands ? 'Stands.' : 'Written.') }, stands ? {} : { scope: JSON.parse(out.stdout).scope }, scenario.scope)
 }
 
-// The record step (build-executor.md, the RECORD STEP paragraph): the listed calls, in
-// order, each exactly as written; a failed check or any refusal is a halt; then the gate;
-// then ONE commit of the run directory's paths.
+// The record step (build-executor.md, the RECORD STEP paragraph): the numbered steps of
+// the prompt, in order, each exactly as written — the payload, the batch applied, the gate —
+// and NO commit. A refusal is a halt, its one line the evidence.
 function recordStep(label, prompt) {
   const lines = prompt.split('\n')
-  const from = lines.findIndex((line) => line.startsWith('Run these calls from the repository\'s root'))
-  const to = lines.findIndex((line) => line.startsWith('Then the full gate, and ONE commit of the paths under `'))
-  const branch = /^BRANCH: (\S+?)[ ,]/m.exec(prompt)
-  const commit = /ONE commit of the paths under `([^`]+)` and nothing else, with the subject `([^`]+)`/.exec(lines[to] || '')
-  if (from < 0 || !branch || !commit) fail('the record step `' + label + '` is not the prompt a record step is handed')
-  const calls = []
+  const from = lines.findIndex((line) => line.startsWith('Run th'))
+  const to = lines.findIndex((line) => line.startsWith('YOU MAKE NO COMMIT'))
+  if (from < 0 || to < 0 || !/^BRANCH: (\S+?)[ ,]/m.test(prompt)) fail('the record step `' + label + '` is not the prompt a record step is handed')
+  const steps = []
   for (const line of lines.slice(from + 1, to)) {
-    if (line.startsWith(calls.length + 1 + '. ')) calls.push([line.slice(String(calls.length + 1).length + 2)])
-    else calls[calls.length - 1].push(line)
+    if (line.startsWith(steps.length + 1 + '. ')) steps.push([line.slice(String(steps.length + 1).length + 2)])
+    else steps[steps.length - 1].push(line)
   }
-  const halted = (cause, evidence) => ({ status: 'halted', halt: { root_cause: cause, evidence, tree_state: treeState(), recommendation: 'the record step stopped where it stood: nothing was committed' } })
-  const checks = []
-  for (const call of calls) {
-    if (call[0].startsWith('Write ')) {
-      // A payload: the text, by the here-document the prompt spells, held to its hash.
-      const file = span(call[0], '/')
-      const text = call.slice(1, -1).join('\n')
-      const hash = /must print `([0-9a-f]{64})`/.exec(call[call.length - 1])
-      const wrote = sh(span(call[0], 'mkdir -p ') + ' && ' + span(call[0], 'cat > ') + '\n' + text + '\nSTABILIZE_PAYLOAD\n')
-      if (wrote.code !== 0 || !hash || sha256Of(file) !== hash[1]) return halted('a payload of the record step is not the text it was handed: ' + file, wrote.stderr)
+  const halted = (cause, evidence) => ({ status: 'halted', halt: { root_cause: cause, evidence, tree_state: treeState(), recommendation: 'the record step stopped where it stood: it commits nothing' } })
+  const ruled = scenario.record || {}
+  let gate = null
+  for (const step of steps) {
+    if (step[0].startsWith('Write ')) {
+      // The payload: the text, by the here-document the prompt spells, held to its hash.
+      const file = span(step[0], '/')
+      const text = step.slice(1, -1).join('\n')
+      const hash = /must print `([0-9a-f]{64})`/.exec(step[step.length - 1])
+      const wrote = sh(span(step[0], 'mkdir -p ') + ' && ' + span(step[0], 'cat > ') + '\n' + text + '\nSTABILIZE_PAYLOAD\n')
+      if (wrote.code !== 0 || !hash || sha256Of(file) !== hash[1]) return halted('the payload of the record step is not the text it was handed: ' + file, wrote.stderr)
       continue
     }
-    const command = call[0].slice(1, call[0].indexOf('`', 1))
+    const command = span(step[0], 'dev/')
+    if (!command) fail('a step of the record step `' + label + '` spells no command: ' + step[0])
+    if (command.startsWith('dev/gate > ')) {
+      // THE GATE IS NOT RUN: a test inside the gate cannot run the gate.
+      gate = keepGate(command, ruled.gate)
+      continue
+    }
+    if (!command.startsWith('dev/stabilize-record apply ')) fail('the record step `' + label + '` runs a command that is neither its batch nor its gate: ' + command)
+    // A record step that did nothing and says it did: the batch is never applied.
+    if (ruled.apply === 'skipped') continue
     const out = sh(command)
-    if (/^dev\/stabilize-record check-/.test(command)) checks.push(out.stdout.trim())
-    if (out.code !== 0) return halted('a call of the record step failed: ' + command, out.stdout + out.stderr)
+    if (out.code !== 0) return halted('the batch of the record step was refused: ' + out.stderr.trim(), command)
   }
-  // THE GATE IS NOT RUN: a test inside the gate cannot run the gate. Green unless scripted.
-  const ruled = scenario.record || {}
-  if (ruled.gate === 'red') return halted('the full gate is red', 'GATE: FAIL (step: test) — scripted by the simulation')
-  if (git('branch', '--show-current').stdout !== branch[1]) return halted('the branch checked out is not ' + branch[1], '')
-  const added = git('add', '--', commit[1])
-  const made = added.code === 0 ? git('commit', '-q', '-m', commit[2]) : added
-  if (made.code !== 0) return halted('the record commit could not be made', made.stderr)
-  const back = { status: 'completed', commit: git('rev-parse', 'HEAD').stdout, gate_totals: 'tests   passed=1 failed=0  (over 1 test binaries)', gate_verdict: 'GATE: PASS', checks }
-  if (ruled.checks === 'omitted') delete back.checks
-  return back
+  if (!gate) fail('the record step `' + label + '` names no gate')
+  return { status: 'gated', gate }
 }
 
 // ---- a scripted reporter ----
@@ -217,7 +244,7 @@ function reporter(label, prompt, opts) {
   // — in the `shasum` its prompt spells. The hash it returns is measured, not copied.
   const binary = /^BINARY: candidate `([^`]+)` sha256 [0-9a-f]{64} \(commit [0-9a-f]{40}, label [^)]+\)(?:; previous release `([^`]+)`)?/m.exec(prompt)
   const spelled = span(prompt, 'shasum -a 256 ')
-  if (binary || spelled) back.asserted_sha256 = sha256Of(binary ? binary[1] : spelled.slice('shasum -a 256 '.length))
+  if (binary || spelled) back.asserted_sha256 = (scenario.wrongBinary || []).includes(label) ? '0'.repeat(64) : sha256Of(binary ? binary[1] : spelled.slice('shasum -a 256 '.length))
   if (binary && opts.agentType === 'finding-verifier') back.ran_on = { candidate: back.asserted_sha256, previous: sha256Of(binary[2]) }
   back.report = writeReport(label, prompt, 'Returned: ' + JSON.stringify(scripted[label]))
   return back

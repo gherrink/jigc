@@ -507,7 +507,8 @@
 #       What of the run is written and in no commit yet, AS THIS SCRIPT KNOWS IT; writes
 #       nothing. Prints {"run", "opened", "journal", "interrupted", "batch", "once"}:
 #       whether a write was killed between its files; the applied batch — {round,
-#       subject, calls, checks, files: {path: sha256}} — or null; and the files on disk
+#       subject, calls, checks, files: {path: sha256}, altered: the files of it whose
+#       content is no longer what the batch wrote} — or null; and the files on disk
 #       that are written once and never rewritten: every report, and each round's scope.
 #       Whether one of those is in a commit is git's to say, and this script reads no
 #       git: dev/stabilize-step holds a tree to this answer.
@@ -2618,7 +2619,16 @@ def pending(args):
                     once.append("/".join([prefix] + parts + [report_name]))
     batch = held["batch"]
     if batch is not None:
-        batch = {"round": batch["round"], "subject": batch["subject"], "calls": batch["calls"], "checks": batch["checks"], "files": {"%s/%s" % (prefix, name): entry["sha256"] for name, entry in batch["files"].items()}}
+        altered = []
+        for name, entry in batch["files"].items():
+            target = below(run_dir, name.split("/"))
+            try:
+                same = hashlib.sha256(open(target, "rb").read()).hexdigest() == entry["sha256"]
+            except OSError:
+                same = False
+            if not same:
+                altered.append("%s/%s" % (prefix, name))
+        batch = {"round": batch["round"], "subject": batch["subject"], "calls": batch["calls"], "checks": batch["checks"], "files": {"%s/%s" % (prefix, name): entry["sha256"] for name, entry in batch["files"].items()}, "altered": altered}
     say(json.dumps({"run": args.run, "opened": True, "journal": "%s/%s" % (prefix, JOURNAL), "interrupted": bool(held["placing"]), "batch": batch, "once": once}))
 
 

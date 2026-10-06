@@ -20,9 +20,11 @@
 //!
 //! **What is stubbed, and why** — only what cannot run inside a test:
 //!
-//! - *The full gate a record step runs.* The gate runs this suite; the record step's
-//!   stand-in returns the two lines the harness reads for a green gate, or halts where a
-//!   scenario scripts a red one.
+//! - *The full gate — the candidate's, which the preflight runs, and the one a record step
+//!   runs.* The gate runs this suite; each stand-in writes what a full gate prints — green,
+//!   or red with the steps and tests a scenario scripts — to the file its prompt names. What
+//!   reads that file is real: `dev/stabilize-record gate-set` and `gate-check`, and the
+//!   commit step that holds one to the other.
 //! - *gitleaks, of the two hygiene scanners.* A test runner has none; the stand-in is the
 //!   record suite's, which keeps gitleaks' exit contract
 //!   ([`gitleaks_stub`]). The denylist half is the real `dev/hygiene-scan`, over a denylist
@@ -64,10 +66,12 @@
 //!
 //! **Defects the reviews recorded are pinned where a stage meets them, and repaired by
 //! nothing here.** Each such assertion says what the stage does *today* and names the
-//! finding by its id; the task that repairs it turns the assertion. They are `M2`, `M3`,
-//! `M4` and `M6` of the harness review and `F3` of the state machine's, the lead *a red
-//! check without a ledger row*, and the first of the build record's *Found while the
-//! workflow's doc was written*.
+//! finding by its id; the task that repairs it turns the assertion. They are `M3` and `M6`
+//! of the harness review and `F3` of the state machine's, and the lead *a red check
+//! without a ledger row*. **Turned by the repair's task 3, and asserted as repaired:** `M2`
+//! (a record step that returns no evidence), `M4` (a record step under a red gate) and the
+//! first of the build record's *Found while the workflow's doc was written* (the scope file
+//! of a stage that stopped).
 //!
 //! **The `fix` stage refuses to start**, and that is all that is asserted of it; the rig,
 //! the scenario and the stand-in are shaped so that its half's tasks add its agents here.
@@ -777,6 +781,23 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
         candidate,
         "the record is the one commit on the candidate"
     );
+    // THE CANDIDATE'S GATE IS ON RECORD, in that commit: what the preflight's run showed —
+    // green here — as a table of the round, which every record commit of it is held to.
+    assert!(
+        paths.contains(&format!("{RUN_DIR}/r1/gate.md").as_str()),
+        "the candidate's gate is a file of the record commit: {paths:?}"
+    );
+    let gate = sim.rig.read(&format!("{RUN_DIR}/r1/gate.md"));
+    assert!(
+        gate.contains(&format!("| commit | `{candidate}` |"))
+            && gate.contains("| verdict | pass |"),
+        "it names the candidate and what its gate said: {gate}"
+    );
+    assert_eq!(
+        sim.record(&["pending", "--run", RUN], "")["batch"],
+        Value::Null,
+        "and the batch the record step applied is settled"
+    );
 
     // (5) THE RETURN THE ORCHESTRATOR READS — `next` as the record script computes it.
     assert_eq!(state["next"], "rule", "{state}");
@@ -870,6 +891,84 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
         "nothing ran beyond the two reads"
     );
     assert_eq!(sim.rig.rev("HEAD"), head, "and nothing was committed");
+
+    // THE HUMAN'S RULINGS ON THE LIST, WHILE THE `fix` STAGE REFUSES TO START: an
+    // invocation of `test` that carries only rulings records them on the loop branch, by
+    // the one step that may write them, and starts nothing.
+    let rulings = json!([
+        {"key": OUTSIDE, "ruling": "later", "note": "for the release after this one"},
+        {"key": REFUTED, "ruling": "bound", "bound": "exit-codes", "reach": "the exit code of a refused write",
+         "where": "the stop after round 1, item 2", "pin": "unpinned"},
+        {"bound": "second-writer", "reach": "a writer that is not jigc", "where": "the stop after round 1", "pin": "unpinned"},
+    ]);
+    let stranger = sim.invoke(
+        sim.args(
+            "test",
+            json!({"rulings": [{"key": "no-such-finding", "ruling": "later"}]}),
+        ),
+        json!({}),
+    );
+    assert_eq!(stranger.result["status"], "refused", "{}", stranger.result);
+    assert_eq!(
+        stranger.trace,
+        lines(&TWO_READS),
+        "a ruling on no row records nothing"
+    );
+    let ruled = sim.invoke(sim.args("test", json!({"rulings": rulings})), json!({}));
+    assert_eq!(ruled.result["status"], "ruled", "{}", ruled.result);
+    assert_eq!(
+        ruled.agents(),
+        [
+            "git:state",
+            "git:state:test-1",
+            "record:rulings:r1",
+            "git:record:rulings:r1",
+            "git:push:rulings",
+            "git:state:test-2"
+        ],
+        "two reads, the one step that records rulings, its commit, the push, the state: nothing is started"
+    );
+    let after = sim.state();
+    let disposition = |key: &str| -> Value {
+        let row = after["ledger"]
+            .as_array()
+            .expect("the ledger")
+            .iter()
+            .find(|row| row["key"] == key)
+            .expect("the row");
+        json!([row["disposition"], row["detail"], row["route"]])
+    };
+    assert_eq!(
+        disposition(OUTSIDE),
+        json!(["later", "for the release after this one", "recorded"])
+    );
+    assert_eq!(
+        disposition(REFUTED),
+        json!(["bound", "the exit code of a refused write", "recorded"])
+    );
+    let bounds: Vec<&str> = after["bounds"]
+        .as_array()
+        .expect("the bounds")
+        .iter()
+        .map(|bound| bound["bound"].as_str().expect("a bound"))
+        .collect();
+    assert_eq!(bounds, ["windows", "exit-codes", "second-writer"]);
+    assert_eq!(
+        ruled.result["next"], "fix",
+        "nothing is left to rule on, and the blocker is a fixer's: {}",
+        ruled.result
+    );
+    let recorded = sim.rig.rev("HEAD");
+    assert_eq!(sim.rig.rev("HEAD~1"), head, "one commit");
+    assert_eq!(ruled.result["record"], recorded.as_str());
+    assert_eq!(sim.rig.remote(LOOP), Some(recorded.clone()), "pushed");
+    assert_eq!(sim.rig.status(), "");
+    // … and the stage those rulings wait for still refuses, whatever it carries.
+    let fix = sim.invoke(sim.args("fix", json!({"rulings": rulings})), json!({}));
+    assert_eq!(fix.result["status"], "refused", "{}", fix.result);
+    assert_eq!(fix.result["not_fit"]["stage"], "fix");
+    assert_eq!(fix.trace, Vec::<String>::new());
+    assert_eq!(sim.rig.rev("HEAD"), recorded);
 }
 
 // ---------------------------------------------------------------------------
@@ -965,91 +1064,500 @@ fn an_unverified_finding_goes_back_as_triage_and_the_invocation_that_finishes_it
     );
 }
 
+/// A scenario's red gate: the fast tier failed, on these tests.
+fn red(tests: &[&str]) -> Value {
+    json!({"steps": ["tier1"], "tests": tests})
+}
+
+const FLAKY: &str = "jigc::g_tooling a_suite::a_test_that_fails_now_and_then";
+const KNOWN: &str = "jigc::g_finalize a_suite::red_on_the_candidate";
+
+/// The small stage every scenario below runs: one audit area that found nothing.
+fn small_stage(more: Value) -> Value {
+    let mut script = json!({"scope": one_door(), "agents": {"area-a:review": nothing()}});
+    for (name, value) in more.as_object().expect("more of a scenario is an object") {
+        script[name] = value.clone();
+    }
+    script
+}
+
+/// The subject and the paths of the commit at `HEAD`.
+fn head_commit(sim: &Sim) -> (String, Vec<String>) {
+    let shown = sim.rig.git(&["show", "--name-only", "--format=%s", "HEAD"]);
+    let mut shown = shown.lines();
+    let subject = shown.next().expect("a subject").to_owned();
+    (
+        subject,
+        shown
+            .filter(|line| !line.is_empty())
+            .map(str::to_owned)
+            .collect(),
+    )
+}
+
+/// REPAIRED — M4 (harness-agents-gate.md): a record step under a red gate. The step applies
+/// its tables as ONE batch, which the record script holds as pending; the gate is red with
+/// something the candidate's gate did not show; the commit step refuses, naming it — and the
+/// tree is no dirty tree: the next invocation finds the batch, gates it again and commits it.
 #[test]
-fn a_record_step_under_a_red_gate_leaves_a_tree_no_stage_starts_from() {
+fn a_red_gate_in_a_record_step_leaves_a_pending_batch_that_the_next_invocation_commits() {
     if !can_run() {
         return;
     }
     let sim = Sim::opened("red-gate", &one_area());
     let opened = sim.rig.rev("HEAD");
-
-    // PINNED — M4 (harness-agents-gate.md): the record step writes its tables, then gates,
-    // then commits. Under a red gate the stage halts with the tables written and nothing
-    // committed. (What an agent does to the tree after a red gate is the canary's to show;
-    // the stand-in stops where it stands.)
     let ran = sim.invoke(
         sim.args("test", json!({})),
-        json!({"scope": one_door(), "agents": {"area-a:review": nothing()},
-               "record": {"gate": "red"}}),
+        small_stage(json!({"record": {"gate": red(&[FLAKY])}})),
     );
     let halted = &ran.result;
     assert_eq!(halted["status"], "halted", "{halted}");
     assert_eq!(halted["halted"]["phase"], "record", "{halted}");
-    assert_eq!(halted["halted"]["reason"], "the full gate is red");
+    let reason = halted["halted"]["reason"].as_str().expect("a reason");
+    assert!(
+        reason.starts_with("gate-red: ") && reason.contains(&format!("test {FLAKY}")),
+        "the halt names what is red only with the records: {reason}"
+    );
+    assert_eq!(
+        halted["halted"]["gate"]["new"],
+        json!(["step tier1", format!("test {FLAKY}")])
+    );
     assert_eq!(sim.rig.rev("HEAD"), opened, "nothing was committed");
     assert_eq!(
         sim.rig.remote(LOOP),
         Some(opened.clone()),
         "and nothing pushed"
     );
+
+    // WHAT IS LEFT is the applied batch, exactly: the tables it wrote, the journal that
+    // holds them, and what the stage's reporters wrote before it.
     let status = sim.rig.status();
-    assert!(
-        status.contains(&format!(" M {RUN_DIR}/clauses.md"))
-            && status.contains(&format!("?? {RUN_DIR}/r1/round.md")),
-        "M4: the tables are written and uncommitted:\n{status}"
+    for line in [
+        format!(" M {RUN_DIR}/clauses.md"),
+        format!("?? {RUN_DIR}/r1/round.md"),
+        format!("?? {RUN_DIR}/r1/gate.md"),
+        format!("?? {RUN_DIR}/.pending.json"),
+        format!("?? {RUN_DIR}/r1/scope.md"),
+    ] {
+        assert!(status.contains(&line), "`{line}` in:\n{status}");
+    }
+    let pending = sim.record(&["pending", "--run", RUN], "");
+    assert_eq!(
+        json!([
+            pending["batch"]["subject"],
+            pending["batch"]["round"],
+            pending["batch"]["altered"]
+        ]),
+        json!(["docs(record): rc24 r1 — the test stage's record", 1, []])
     );
 
-    // PINNED — M4, its other half: the halt says to invoke the stage again with the same
-    // args (the sentence every halt ends with, which `L2` finds wrong elsewhere too) …
+    // THE HALT SAYS WHAT TO DO, AND IT IS TRUE: invoke the stage again — or take the batch
+    // back with the one command it names.
+    let message = halted["message"].as_str().expect("a message");
     assert!(
-        halted["message"]
-            .as_str()
-            .is_some_and(|m| m.contains("invoke the stage again with the same args")),
-        "M4: {halted}"
+        message.contains("Invoke the stage again: where a batch is pending, that invocation runs the full gate on it once more, commits and pushes it, and does nothing else")
+            && message.contains("`dev/stabilize-record discard --run rc24`")
+            && !message.contains("with the same args"),
+        "{message}"
     );
-    // … and the stage that is invoked again halts on that tree, before any read. A
-    // candidate whose gate is red cannot have its `test` stage recorded at all.
-    let again = sim.invoke(sim.args("test", json!({})), json!({}));
-    assert_eq!(again.result["status"], "halted", "{}", again.result);
+    // The gate is red again, in the same way: the batch stays, and the halt is the same.
+    let still = sim.invoke(
+        sim.args("test", json!({})),
+        json!({"record": {"gate": red(&[FLAKY])}}),
+    );
     assert_eq!(
-        again.result["halted"]["phase"], "git",
-        "M4: {}",
-        again.result
+        still.result["halted"]["phase"], "record",
+        "{}",
+        still.result
     );
+    assert_eq!(
+        sim.rig.status(),
+        status,
+        "a second red gate changes nothing"
+    );
+    // And then it is green: the invocation commits the batch, pushes it, and does nothing
+    // else of a stage — no preflight, no instrument, no triage.
+    let again = sim.invoke(sim.args("test", json!({})), json!({}));
+    assert_eq!(again.result["status"], "recorded", "{}", again.result);
+    assert_eq!(
+        again.agents(),
+        [
+            "git:state",
+            "record:pending",
+            "git:record:pending",
+            "git:push:pending",
+            "git:state:test-1"
+        ]
+    );
+    let head = sim.rig.rev("HEAD");
+    assert_eq!(sim.rig.rev("HEAD~1"), opened, "one commit");
+    assert_eq!(again.result["record"], head.as_str());
+    let (subject, paths) = head_commit(&sim);
+    assert_eq!(subject, "docs(record): rc24 r1 — the test stage's record");
     assert!(
-        again.result["halted"]["halt"]["root_cause"]
-            .as_str()
-            .is_some_and(|cause| cause.starts_with("dirty: ")),
-        "M4: {}",
-        again.result
+        paths
+            .iter()
+            .all(|path| path.starts_with(&format!("{RUN_DIR}/")))
+            && !paths.iter().any(|path| path.ends_with(".pending.json"))
+            && paths.contains(&format!("{RUN_DIR}/r1/reports/test/area-a-review.a1.md")),
+        "the run directory's pending paths, and never the journal: {paths:?}"
     );
-    assert_eq!(again.trace, lines(&TWO_READS[..2]));
+    assert_eq!(sim.rig.remote(LOOP), Some(head), "pushed");
+    assert_eq!(sim.rig.status(), "", "and the tree is clean");
+    let state = sim.state();
+    assert_eq!(again.result["next"], state["next"]);
+    assert_eq!(state["rounds"][0]["facts"]["candidate"], opened.as_str());
 }
 
+/// THE HUMAN'S RULING OF 2026-10-06 (DECISIONS.md → *A stabilization run's record commit
+/// under a red candidate*): a record commit is accepted if its gate turns nothing red that
+/// the candidate's own gate did not already show red. The candidate's failing tests are on
+/// record, in the round; a test that is red only with the records is a halt that names it.
 #[test]
-fn a_record_step_that_returns_no_check_is_taken_as_recorded() {
+fn a_red_candidate_is_recorded_and_a_test_red_only_with_the_records_halts_by_name() {
     if !can_run() {
         return;
     }
-    let sim = Sim::opened("no-checks", &one_area());
-    // PINNED — M2 (harness-agents-gate.md): the harness composes two checks for this
-    // record step and reads the return of neither. A record step that hands back no check
-    // line at all is taken as a record whose checks held.
+    // (1) The candidate's gate is red, and the gate on the tree with the records shows the
+    // same red: the round is recorded — the one thing it could not be.
+    let sim = Sim::opened("red-candidate", &one_area());
+    let candidate = sim.rig.rev("HEAD");
     let ran = sim.invoke(
         sim.args("test", json!({})),
-        json!({"scope": one_door(), "agents": {"area-a:review": nothing()},
-               "record": {"checks": "omitted"}}),
+        small_stage(json!({"gate": red(&[KNOWN]), "record": {"gate": red(&[KNOWN])}})),
     );
-    assert_eq!(ran.result["status"], "triaged", "M2: {}", ran.result);
-    assert_eq!(ran.result["record"], sim.rig.rev("HEAD").as_str());
+    assert_eq!(ran.result["status"], "triaged", "{}", ran.result);
+    assert_eq!(sim.rig.rev("HEAD~1"), candidate);
+    assert_eq!(sim.rig.status(), "");
+    let gate = sim.rig.read(&format!("{RUN_DIR}/r1/gate.md"));
+    for row in [
+        format!("| commit | `{candidate}` |"),
+        "| verdict | fail |".to_owned(),
+        "| step | `tier1` |".to_owned(),
+        format!("| test | `{KNOWN}` |"),
+    ] {
+        assert!(gate.contains(&row), "`{row}` is data of the round: {gate}");
+    }
+    // A later record commit of the round — the human's go — is held to the same list.
+    let go = sim.invoke(
+        sim.args("test", json!({"rulings": [{"go": true}]})),
+        json!({"record": {"gate": red(&[KNOWN])}}),
+    );
+    assert_eq!(go.result["status"], "ruled", "{}", go.result);
+
+    // (2) The same candidate, and a test that is red only with the records.
+    let sim = Sim::opened("red-with-the-records", &one_area());
+    let candidate = sim.rig.rev("HEAD");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"gate": red(&[KNOWN]), "record": {"gate": red(&[KNOWN, FLAKY])}})),
+    );
+    let halted = &ran.result;
+    assert_eq!(halted["halted"]["phase"], "record", "{halted}");
+    assert_eq!(
+        halted["halted"]["gate"]["new"],
+        json!([format!("test {FLAKY}")]),
+        "what the candidate's gate showed red is not named: {halted}"
+    );
+    assert_eq!(
+        halted["halted"]["gate"]["known"],
+        json!(["step tier1", format!("test {KNOWN}")])
+    );
+    assert_eq!(sim.rig.rev("HEAD"), candidate);
+
+    // THE OTHER WAY OUT: the batch is taken back — every table as it was, the reports and
+    // the scope kept — and the stage is run again, as the next attempt.
+    sim.record(&["discard", "--run", RUN], "");
+    let status = sim.rig.status();
+    assert!(
+        !status.contains(" M ") && !status.contains(".pending.json") && !status.contains("gate.md"),
+        "no table of the batch is left:\n{status}"
+    );
+    let rerun = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"gate": red(&[KNOWN]), "record": {"gate": red(&[KNOWN])}})),
+    );
+    assert_eq!(rerun.result["status"], "triaged", "{}", rerun.result);
+    assert_eq!(rerun.result["scope"]["status"], "stands");
+    assert_eq!(sim.rig.rev("HEAD~1"), candidate);
+    assert_eq!(sim.rig.status(), "");
 }
 
+/// REPAIRED — M2 (harness-agents-gate.md): what is accepted as recorded is the commit step's
+/// own line, held to its hash, with one result per check the harness composed — never what
+/// a record step says of itself. A record step that applied nothing has nothing to show.
 #[test]
-fn a_stage_stopped_after_its_scope_step_halts_the_invocation_that_follows() {
+fn a_record_step_that_returns_no_evidence_of_its_checks_is_not_taken_as_recorded() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::opened("no-evidence", &one_area());
+    let opened = sim.rig.rev("HEAD");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"record": {"apply": "skipped"}})),
+    );
+    let halted = &ran.result;
+    assert_eq!(halted["status"], "halted", "M2: {halted}");
+    assert_eq!(halted["halted"]["phase"], "record", "M2: {halted}");
+    assert!(
+        halted["halted"]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.starts_with("no-batch: ")),
+        "M2: {halted}"
+    );
+    assert_eq!(sim.rig.rev("HEAD"), opened, "nothing was committed");
+    assert_eq!(
+        ran.agents()[ran.agents().len() - 2..],
+        ["record:test:r1", "git:record:test:r1"],
+        "the commit step ran, and is what refused"
+    );
+    // Nothing is pending, so the stage invoked again works the next attempt.
+    let again = sim.invoke(sim.args("test", json!({})), small_stage(json!({})));
+    assert_eq!(again.result["status"], "triaged", "{}", again.result);
+    assert_eq!(again.result["counts"]["reporters"], 3);
+}
+
+/// The hash comparison of ruling 11, driven: a driver that asserts another binary than the
+/// one the preflight built drove something else, and nothing it found is evidence about
+/// the candidate. (The whole-stage test could not see this comparison removed: every
+/// driver there measures the file it was handed.)
+#[test]
+fn a_driver_that_drove_another_binary_halts_the_stage_before_anything_is_recorded() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::opened(
+        "wrong-binary",
+        &Opening {
+            clauses: vec!["audit-clean"],
+            items: json!([item("drive-a", "audit-drive", "audit-clean")]),
+            bounds: vec![],
+            rows: json!([]),
+        },
+    );
+    let opened = sim.rig.rev("HEAD");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        json!({"scope": one_door(), "agents": {"drive-a:drive": nothing()},
+               "wrongBinary": ["drive-a:drive"]}),
+    );
+    let halted = &ran.result;
+    assert_eq!(halted["status"], "halted", "{halted}");
+    assert_eq!(halted["halted"]["phase"], "binary", "{halted}");
+    assert_eq!(
+        halted["halted"]["mismatched"],
+        json!([{"reporter": "drive-a-drive", "asserted": "0".repeat(64)}])
+    );
+    assert!(
+        !ran.agents()
+            .iter()
+            .any(|label| label.starts_with("record:") || label.starts_with("triage:")),
+        "nothing is graded and nothing recorded: {:?}",
+        ran.agents()
+    );
+    assert_eq!(sim.rig.rev("HEAD"), opened);
+}
+
+/// The commit step of a record, driven as an act (`dev/stabilize-step record`): it commits
+/// exactly the applied batch and what the stage's reporters left, under the subject the
+/// batch carries, when the gate holds — and refuses, committing and undoing nothing, a
+/// batch that is not the one the step names, a file of it changed since, a stray file, a
+/// gate that is newly red, and a gate's output that is none.
+#[test]
+fn the_records_commit_step_commits_exactly_the_applied_batch_or_nothing() {
+    let sim = Sim::opened("commit-step", &one_area());
+    let opened = sim.rig.rev("HEAD");
+    let scratch = sim.rig.scratch.display().to_string();
+    let gate = |name: &str, text: &str| -> String {
+        let file = format!("{scratch}/{name}.txt");
+        fs::write(&file, text).expect("write a gate's output");
+        file
+    };
+    let green = gate(
+        "green",
+        "tests   passed=9 failed=0  (over 2 test binaries)\n\nGATE: PASS\n",
+    );
+    let red = gate(
+        "red",
+        "tests   passed=8 failed=1  (over 2 test binaries)\n\nGATE: FAIL (step: tier1)\n\nfailing tests:\n  jigc::g_a s::one\n",
+    );
+    let pre_check = gate(
+        "pre-check",
+        "PRE-CHECK: PASS -- fmt, clippy, build and the fast test tier\n",
+    );
+    let record = |file: &str, calls: &str, branch: &str| {
+        sim.rig.step(&[
+            "record",
+            "--branch",
+            branch,
+            "--run-dir",
+            RUN_DIR,
+            "--gate",
+            file,
+            "--calls",
+            calls,
+            "--checks",
+            "1",
+        ])
+    };
+    let clauses = format!("{RUN_DIR}/clauses.md");
+
+    // No batch applied: there is nothing this step records.
+    record(&green, "2", LOOP).refused("no-batch");
+    let batch = json!([
+        {"argv": ["clause-set", "--run", RUN, "--clause", "audit-clean", "--instrument", "area-a",
+                  "--scope", "round 1", "--status", "void"]},
+        {"argv": ["check-ledger", "--run", RUN, "--"]},
+    ]);
+    sim.record(
+        &["apply", "--run", RUN, "--subject", "docs(record): a record"],
+        &batch.to_string(),
+    );
+    let applied = sim.rig.read(&clauses);
+    let pending = sim.rig.status();
+
+    // The git state a stage starts from says what is pending, and is no refusal.
+    let product = ["Cargo.toml".to_owned()];
+    let state = sim.rig.step(&[
+        "git-state",
+        "--stage",
+        "test",
+        "--loop",
+        LOOP,
+        "--rounds",
+        "fix/rc24-r",
+        "--run-dir",
+        RUN_DIR,
+        "--product",
+        &product[0],
+    ]);
+    assert_eq!(
+        state.done("git-state", "ready")["pending"],
+        json!({"round": null, "subject": "docs(record): a record", "calls": 2,
+               "checks": [{"check": "ledger", "ok": true, "missing": [], "duplicated": []}],
+               "files": [clauses]})
+    );
+
+    for (what, seen, word) in [
+        (
+            "another branch than the one checked out",
+            record(&green, "2", "fix/rc24-r1"),
+            "wrong-branch",
+        ),
+        (
+            "a batch of another number of calls",
+            record(&green, "3", LOOP),
+            "no-batch",
+        ),
+        (
+            "a gate that is red, with no candidate's gate on record",
+            record(&red, "2", LOOP),
+            "gate-red",
+        ),
+        (
+            "a pre-check's output",
+            record(&pre_check, "2", LOOP),
+            "record",
+        ),
+        (
+            "a gate's output that is not there",
+            record(&format!("{scratch}/none.txt"), "2", LOOP),
+            "record",
+        ),
+    ] {
+        seen.refused(word);
+        assert_eq!(sim.rig.rev("HEAD"), opened, "{what}: nothing is committed");
+        assert_eq!(sim.rig.status(), pending, "{what}: and nothing undone");
+    }
+    assert_eq!(
+        record(&red, "2", LOOP).refused("gate-red")["gate"]["new"],
+        json!(["step tier1", "test jigc::g_a s::one"]),
+        "the refusal's line carries what is newly red"
+    );
+    // A file of the batch changed after the batch wrote it, and a file nobody wrote.
+    sim.rig.write(&clauses, &applied.replace("void", "green"));
+    record(&green, "2", LOOP).refused("dirty");
+    sim.rig.write(&clauses, &applied);
+    sim.rig.write(&format!("{RUN_DIR}/notes.md"), "a note\n");
+    record(&green, "2", LOOP).refused("dirty");
+    fs::remove_file(sim.rig.root.join(format!("{RUN_DIR}/notes.md"))).expect("remove the note");
+    assert_eq!(sim.rig.rev("HEAD"), opened);
+
+    // THE COMMIT: the pending paths by name, one commit, the batch's subject, a clean tree.
+    let done = record(&green, "2", LOOP);
+    let line = done.done("record", "recorded");
+    let head = sim.rig.rev("HEAD");
+    assert_eq!(sim.rig.rev("HEAD~1"), opened);
+    assert_eq!(
+        json!([
+            line["commit"],
+            line["branch"],
+            line["paths"],
+            line["applied"]["calls"],
+            line["gate"]["ok"]
+        ]),
+        json!([head, LOOP, [clauses], 2, true])
+    );
+    assert_eq!(
+        head_commit(&sim),
+        ("docs(record): a record".to_owned(), vec![clauses.clone()])
+    );
+    assert_eq!(sim.rig.status(), "");
+    assert_eq!(
+        done.trace,
+        lines(&[
+            "branch --show-current",
+            "status --porcelain --untracked-files=all",
+            &format!("add -- {clauses}"),
+            "commit -q -m docs(record): a record",
+            "rev-parse HEAD",
+            "status --porcelain --untracked-files=all",
+        ]),
+        "the commands of the act, in order: nothing is pushed, and no path is added by a directory"
+    );
+    record(&green, "2", LOOP).refused("no-batch");
+
+    // A write of the record that was killed between its files is no state a step reads.
+    fs::write(
+        sim.rig.root.join(format!("{RUN_DIR}/.pending.json")),
+        "{\"placing\": [{\"path\": \"ledger.md\", \"temporary\": \".stabilize-record.x.tmp\", \"replace\": true}], \"batch\": null}\n",
+    )
+    .expect("a journal");
+    let killed = sim.rig.step(&[
+        "git-state",
+        "--stage",
+        "test",
+        "--loop",
+        LOOP,
+        "--rounds",
+        "fix/rc24-r",
+        "--run-dir",
+        RUN_DIR,
+        "--product",
+        &product[0],
+    ]);
+    assert!(
+        killed.refused("record")["halt"]["recommendation"]
+            .as_str()
+            .is_some_and(|what| what.contains("recover --run rc24")),
+        "the refusal names what finishes the write: {}",
+        killed.raw
+    );
+}
+
+/// REPAIRED — the build record's *Found while the workflow's doc was written*, item 1: a
+/// stage stopped after its scope step. The scope it wrote is a pending write — a file the
+/// record script wrote and no record step committed — and no dirty tree, exactly as its
+/// reports are: the invocation that follows runs the stage as the next attempt, the scope
+/// stands, and the record commit holds both attempts.
+#[test]
+fn a_stage_stopped_after_its_scope_step_is_run_again_by_the_invocation_that_follows() {
     if !can_run() {
         return;
     }
     let sim = Sim::opened("stopped", &one_area());
+    let opened = sim.rig.rev("HEAD");
     let ran = sim.invoke(
         sim.args("test", json!({"stopAfter": "preflight"})),
         json!({"scope": one_door()}),
@@ -1071,25 +1579,40 @@ fn a_stage_stopped_after_its_scope_step_halts_the_invocation_that_follows() {
             "git:state:test-2"
         ]
     );
-
-    // PINNED — the build record's *Found while the workflow's doc was written*, item 1
-    // (completions/artifacts/M55/stabilization-build/README.md; named by neither review and
-    // by no task of the plan): the scope step wrote the round's scope, which is no report,
-    // and the step that opens every stage admits untracked files only where they are
-    // reports. So the invocation that follows a stage stopped after its scope step — by
-    // `stopAfter`, or by any halt — halts on the scope file.
-    let again = sim.invoke(sim.args("test", json!({})), json!({}));
-    assert_eq!(again.result["status"], "halted", "{}", again.result);
-    assert_eq!(again.result["halted"]["phase"], "git", "{}", again.result);
-    let halt = &again.result["halted"]["halt"];
     assert!(
-        halt["root_cause"]
-            .as_str()
-            .is_some_and(|cause| cause.starts_with("dirty: "))
-            && halt.to_string().contains(&format!("{RUN_DIR}/r1/scope.md")),
-        "the scope file is what the tree is refused for: {halt}"
+        sim.rig
+            .status()
+            .contains(&format!("?? {RUN_DIR}/r1/scope.md")),
+        "the round's scope is written and in no commit"
     );
-    assert_eq!(again.trace, lines(&TWO_READS[..2]));
+
+    let again = sim.invoke(sim.args("test", json!({})), small_stage(json!({})));
+    assert_eq!(again.result["status"], "triaged", "{}", again.result);
+    assert_eq!(again.result["round"], 1);
+    assert_eq!(
+        again.result["scope"]["status"], "stands",
+        "a round's scope is written once"
+    );
+    assert_eq!(
+        sim.reports(1),
+        lines(&[
+            "area-a-review.a2.md",
+            "preflight.a1.md",
+            "preflight.a2.md",
+            "scope.a1.md",
+            "scope.a2.md"
+        ]),
+        "the second attempt's reports beside the first's"
+    );
+    assert_eq!(sim.rig.rev("HEAD~1"), opened, "one record commit");
+    let (_, paths) = head_commit(&sim);
+    assert_eq!(
+        paths.len(),
+        5 + 4,
+        "five reports, the scope, the gate, the round's facts and the clause table: {paths:?}"
+    );
+    assert!(paths.contains(&format!("{RUN_DIR}/r1/scope.md")));
+    assert_eq!(sim.rig.status(), "");
 }
 
 #[test]
@@ -1152,6 +1675,7 @@ fn a_red_check_reaches_nobody_and_a_go_is_recorded_without_starting_anything() {
             "git:state",
             "git:state:test-1",
             "record:rulings:r1",
+            "git:record:rulings:r1",
             "git:push:rulings",
             "git:state:test-2"
         ]

@@ -50,7 +50,8 @@
 //   test   git state (the path-class assert) -> state -> preflight ∥ scope -> state ->
 //          the round's instruments, in parallel -> the reports checked -> triage ->
 //          verify-real -> per fork an advocate and an independent drive -> the record
-//          step (gate, one commit on the loop branch) -> push -> state.
+//          step (its batch applied, the full gate) -> the record's one commit on the loop
+//          branch, held to the candidate's gate -> push -> state.
 //          Returns {status: 'triaged', round, candidate, counts, human_list, forks, next}.
 //   fix    git state -> state -> the round's branch found -> [the human's rulings
 //          recorded] -> per cycle: the round branch opened -> fixers, one area at a time,
@@ -106,10 +107,26 @@
 // below. Each is spelled here exactly as the definitions spell it, and
 // tooling-tests/stabilize_harness_fence.rs holds the two together.
 //
+// THE RECORD STEP (the repair's change C4; DECISIONS.md -> 2026-10-06, "A stabilization
+// run's record commit under a red candidate"). A stage's tables are written in ONE place and
+// in three acts. (1) A `build-executor` applies the record's calls as ONE batch
+// (`dev/stabilize-record apply`): every table is written or none is, and the record script
+// holds the batch as pending. (2) The same agent runs the FULL gate on the tree with the
+// records and keeps its whole output. (3) A git step makes the one commit
+// (`dev/stabilize-step record`): it holds that gate to the candidate's own — which the
+// preflight ran, and whose red steps and tests the batch itself puts on record — and commits
+// when nothing is red that the candidate's gate did not show red. On a green candidate that
+// is the rule that a commit follows a green gate. Red that is new is a halt that names it,
+// with the batch still applied: THE NEXT INVOCATION OF EITHER STAGE FINDS THE PENDING BATCH,
+// runs the gate on it again and commits it, and does nothing else (`finishRecord`). What is
+// accepted as recorded is the commit step's own line, held to its hash: the commit, the gate
+// check that holds, and as many calls and checks as this script composed.
+//
 // RESUMING. A stage that returned — halted, stopped at a bound, or finished — is not
-// resumed: the next invocation is a fresh one and reads the state as it stands. A report a
-// halted stage left untracked stays where it is; the next attempt's reports carry the next
-// attempt number, which the state document gives. `resumeFromRunId` is for a KILLED run
+// resumed: the next invocation is a fresh one and reads the state as it stands. What a
+// halted stage wrote through the record script and no record step committed — its reports,
+// the round's scope — is pending, not a dirty tree, and stays where it is; the next
+// attempt's reports carry the next attempt number, which the state document gives. `resumeFromRunId` is for a KILLED run
 // only, and then with the SAME args: every agent call's cache key is its prompt.
 //
 // Usage:  Workflow({ name: 'stabilize', args: { stage: 'test', run: '<run>', scratch: '<dir>' } })
@@ -140,10 +157,13 @@
 //               approved suggestion, never auto-run — implementation/milestone-planning-
 //               workflow.md -> Review — and naming the item is the approval.)
 //   rulings   — OPTIONAL: the human's rulings, recorded by ONE step.
-//               On a finding or a bound, `fix` only, before anything is fixed:
+//               On a finding or a bound:
 //               [{ key, ruling: 'admitted' | 'later', note? } | { key, ruling: 'bound',
 //               bound, reach, where, pin } | { bound, reach, where, pin }] — `where` is where
 //               the human ruled it, `pin` the test that pins the bound or the word `unpinned`.
+//               On `fix` they are recorded before anything is fixed, and the stage goes on.
+//               On `test` the invocation records them on the loop branch and starts nothing
+//               — the road they take while the `fix` stage refuses to start.
 //               About the run, either stage — the invocation records them and starts nothing:
 //               [{ go: true } | { rerun: '<clause>' } | { rounds: N }] — the go after the
 //               stop the state names (`stop.why: 'every-round'`); one more re-run of a clause
@@ -419,7 +439,7 @@ const NOT_FIT = {
 function notFit(a) {
   if (!NOT_FIT[a.stage]) return null
   if (a.rulings != null && a.rulings.every(runRuling)) return null
-  return 'the `' + a.stage + '` stage is NOT FIT FOR USE and refuses to start: ' + NOT_FIT[a.stage] + '. The build of the stabilization workflow was reviewed red — its record is ' + BUILD_RECORD + ' — and a stage is used only once its half is repaired and re-reviewed. Nothing was run: no agent, no read. What is taken meanwhile: ' + STAGES.filter((stage) => !NOT_FIT[stage]).map((stage) => 'the `' + stage + '` stage').concat(['what the human rules about the run (args.rulings: `go`, `rerun`, `rounds`), which either stage records and which starts nothing']).join('; and ') + '. A ruling on a finding or a declared bound is this stage\'s own first step, and waits with it'
+  return 'the `' + a.stage + '` stage is NOT FIT FOR USE and refuses to start: ' + NOT_FIT[a.stage] + '. The build of the stabilization workflow was reviewed red — its record is ' + BUILD_RECORD + ' — and a stage is used only once its half is repaired and re-reviewed. Nothing was run: no agent, no read. What is taken meanwhile: ' + STAGES.filter((stage) => !NOT_FIT[stage]).map((stage) => 'the `' + stage + '` stage').concat(['what the human rules about the run (args.rulings: `go`, `rerun`, `rounds`), which either stage records and which starts nothing']).join('; and ') + '. A ruling on a finding or a declared bound is this stage\'s own first step and waits with it — until then an invocation of `test` that carries only such rulings records them on the loop branch, and starts nothing'
 }
 
 // validateArgs — every refusal that precedes the first agent. Returns the message of the
@@ -455,8 +475,7 @@ function validateArgs(a) {
     const why = validateRulings(a.rulings)
     if (why) return why
     const run = a.rulings.every(runRuling)
-    if (a.stage === 'test' && !run) return 'args.rulings on the `test` stage takes the rulings about the run — `go`, `rerun`, `rounds` — and no other: a ruling on a finding, and a declared bound, belong to the `fix` stage'
-    if (run && ['scope', 'clause', 'crossModel', 'raise', 'exit', 'stopAfter'].some((name) => a[name] != null)) return 'an invocation that carries rulings about the run records them and starts nothing: it takes no scope, clause, crossModel, raise, exit or stopAfter — invoke the step the returned `next` names afterwards'
+    if ((run || a.stage === 'test') && ['scope', 'clause', 'crossModel', 'raise', 'exit', 'stopAfter'].some((name) => a[name] != null)) return 'an invocation that only records rulings — about the run, on either stage; on a finding or a bound, on `test` — records them and starts nothing: it takes no scope, clause, crossModel, raise, exit or stopAfter — invoke the step the returned `next` names afterwards'
   }
   if (a.raise != null) {
     const named = plain(a.raise) ? Object.keys(a.raise) : []
@@ -560,6 +579,16 @@ function runRulingsFault(rulings, state) {
     if (r.rounds != null && facts.rounds != null && r.rounds <= facts.rounds) return 'the bound across rounds is ' + facts.rounds + ': `rounds` raises it, and ' + r.rounds + ' does not'
   }
   return null
+}
+
+// findingRulingsFault — why rulings on findings and bounds cannot be recorded by an
+// invocation that starts nothing, or null: a ruling names a row the ledger holds. Whether a
+// ruling is the right one is the human's; the record script takes the three dispositions on
+// any row (its header: WHAT THIS SCRIPT CANNOT KNOW).
+function findingRulingsFault(rulings, state) {
+  const held = (state.ledger || []).map((row) => row.key)
+  const strangers = rulings.filter((r) => r.key != null && !held.includes(r.key)).map((r) => r.key)
+  return strangers.length ? 'the ledger has no row ' + strangers.join(', ') + ': a ruling is on a finding the run has recorded' : null
 }
 
 // ledgerSource — the rows of the ledger whose triage is not finished (the state's
@@ -901,16 +930,16 @@ const FIXER_SCHEMA = {
     report: { type: 'string' },
   },
 }
+// What the record step's executor returns: that the gate ran to its verdict, red or green.
+// It makes no commit and returns no evidence of its own: the commit step reads the batch
+// and the gate's output itself.
 const RECORD_SCHEMA = {
   type: 'object',
   required: ['status'],
   properties: {
-    status: { type: 'string', enum: ['completed', 'halted'] },
+    status: { type: 'string', enum: ['gated', 'halted'] },
     halt: HALT,
-    commit: { type: 'string', description: 'the full sha of the one commit' },
-    gate_totals: { type: 'string', description: 'the gate\'s `tests   passed=… failed=…  (over N test binaries)` line, verbatim' },
-    gate_verdict: { type: 'string', description: 'the gate\'s `GATE: PASS` line, verbatim' },
-    checks: Object.assign({ description: 'each check\'s JSON line, as printed, in the order the checks ran' }, STRINGS),
+    gate: { type: 'string', description: 'the file the gate\'s whole output was kept in, as the prompt names it' },
   },
 }
 
@@ -944,6 +973,13 @@ function openRoundPrompt(v, round, branch) {
 }
 function pushPrompt(v, branch) {
   return stepPrompt('push `' + branch + '` of the stabilization run `' + v.run + '` by name', 'push', '--branch ' + branch)
+}
+// The RECORD step's commit: the applied batch committed as ONE commit, when the gate that
+// ran on the tree with the records shows nothing red that the candidate's own gate did not.
+// The act is handed how many calls and checks the batch was composed of, and refuses a
+// batch that is another's.
+function recordCommitPrompt(v, branch, gate, expect) {
+  return stepPrompt('the ONE commit of a record step of `' + v.run + '` on `' + branch + '`: the applied batch, held to the gate that ran on it', 'record', '--branch ' + branch + ' --run-dir ' + runDir(v.run) + ' --gate ' + gate + ' --calls ' + expect.calls + ' --checks ' + expect.checks)
 }
 // The LAND step: a round's branch merged `--no-ff` into the loop branch and the loop branch
 // pushed, as one act.
@@ -986,12 +1022,13 @@ function opening(v) {
   return 'The run\'s opening record is `' + runDir(v.run) + '/opening.md`; its state is `dev/stabilize-record state --run ' + v.run + '`.'
 }
 function preflightPrompt(ctx, launch, name, plan) {
-  const steps = ['the environment asserts — `git status --porcelain` may show untracked report files under `' + runDir(ctx.run) + '/` and nothing else']
+  const steps = ['the environment asserts — `git status --porcelain` may show untracked files under `' + runDir(ctx.run) + '/` and nothing else: what the record script wrote and no record step has committed yet — reports, the round\'s scope, its journal']
   const asked = plan.crossModel ? crossModelAssert() : null
   if (plan.build) {
     steps.push('the build: the candidate\'s binary, from `git archive ' + plan.sha + '`, copied to `' + plan.binary + '`')
     steps.push('the previous release\'s binary: version `' + plan.previous.version + '`, built from commit ' + plan.previous.commit + ' (`git rev-parse --verify ' + plan.previous.commit + '^{commit}` must resolve it) with `git archive`, exactly as the candidate is built, at `' + ctx.scratch + '/bin/previous/jigc` — one that is there already, read-only, is kept once its `--version` prints that version. Both are facts of the run\'s record (`facts.previous`, `facts.previous-commit` of its state), and neither is read from prose')
   }
+  if (plan.gate) steps.push('the candidate\'s full gate, ONCE: `dev/gate > ' + plan.gate + ' 2>&1` (`mkdir -p` its directory first) — in the background, waited for in this same turn in slices of under five minutes, until that file holds the gate\'s verdict line; never `--fast`, never `--quick`, never piped. It is a FACT about the candidate, not an assert: `GATE: FAIL` is an answer and never your halt. The stage\'s record step reads which steps and tests it shows red out of that file, and a record commit is held to exactly that list — so the file is the gate\'s whole output, unedited. A check below whose brief is the full gate is answered from this same run: the gate is not run twice')
   if (plan.image) steps.push('the trial image, built and verified from the candidate\'s commit')
   if (asked) steps.push(asked)
   if (plan.checks.length) steps.push('the deterministic checks, one per item below, each returned in `checks` under `check` = the item\'s id; a CI run still in progress is waited for at most 60 minutes:\n' + plan.checks.map((c) => '   - ' + c.item + ': ' + c.brief).join('\n'))
@@ -1147,63 +1184,87 @@ function payload(dir, name, value, lines) {
     write: 'Write ' + (lines ? 'these lines' : 'this ONE line') + ', exactly, to `' + file + '` (`mkdir -p ' + dir + '` first) — `cat > ' + file + ' <<\'' + PAYLOAD_ENDS + '\'`, the text, then `' + PAYLOAD_ENDS + '` on a line of its own:\n' + text + '\n   Then `shasum -a 256 ' + file + '` must print `' + sha256(text + '\n') + '` — if it does not, the text was altered on its way: write it again, and halt if it still differs.',
   }
 }
-function recordPrompt(v, what, branch, commands, subject) {
-  return [
+// gateStep — the full gate of a record step, its whole output kept where the commit step
+// reads it.
+function gateStep(file) {
+  return 'The FULL gate on the tree as it now stands, its WHOLE output kept: `dev/gate > ' + file + ' 2>&1` — in the background, waited for in this same turn in slices of under five minutes, until that file holds the gate\'s verdict line. Never `--fast`, never `--quick`, never piped, and the file is never edited.'
+}
+const RECORD_RETURNS = 'YOU MAKE NO COMMIT, and stage nothing: the harness\'s next step reads the gate\'s output, holds it to the gate of the round\'s candidate, and makes the one commit. So a RED gate is not your halt: return status = gated as soon as the file holds the gate\'s verdict line — `GATE: PASS` or `GATE: FAIL` alike — and gate = the file. A halt is a refusal of step 2, or a gate that printed no verdict line.'
+// call — one call of a record's batch: a subcommand of the record script with its flags, as
+// its argument list, and what it reads on stdin.
+function call(flags, more, stdin) {
+  const made = { argv: flags.split(' ').concat(more || []) }
+  if (stdin !== undefined) made.stdin = JSON.stringify(stdin)
+  return made
+}
+function isCheck(made) {
+  return made.argv[0].startsWith('check-')
+}
+// recordPrompt — a record step: the calls as ONE batch, then the gate. Returns the prompt,
+// the file the gate's output is kept in, and what the commit step is held to.
+function recordPrompt(v, what, branch, dir, round, calls, subject) {
+  const batch = payload(dir, 'batch.json', calls)
+  const gate = dir + '/gate.txt'
+  const text = [
     LABELS.record + ' — stabilization run `' + v.run + '`: ' + what + '.',
     branchLine(branch, branchName(v.run)),
-    'Run these calls from the repository\'s root, in this order, each exactly as written and each exit status read bare. A check that fails, or any refusal, is a halt — its one line the evidence:',
-  ].concat(commands.map((c, i) => (i + 1) + '. ' + c)).concat([
-    'Then the full gate, and ONE commit of the paths under `' + runDir(v.run) + '/` and nothing else, with the subject `docs(record): ' + subject + '`. Return the commit\'s full sha, the gate\'s totals line and its `GATE: PASS` line verbatim, and each check\'s JSON line as printed.',
-  ]).join('\n')
+    'Run these from the repository\'s root, in this order, each exactly as written and each exit status read bare. A refusal is a halt — its one line the evidence — and nothing it names is repaired by hand:',
+    '1. ' + batch.write,
+    '2. `dev/stabilize-record apply --run ' + v.run + (round ? ' --round ' + round : '') + ' --subject ' + shq('docs(record): ' + subject) + ' --scratch ' + v.scratch + ' < ' + batch.file + '` — the ' + calls.length + ' call(s) of this record as ONE batch: every table is written, or none is. It prints one line of JSON.',
+    '3. ' + gateStep(gate),
+    RECORD_RETURNS,
+  ].join('\n')
+  return { text, gate, expect: { calls: calls.length, checks: calls.filter(isCheck).length } }
 }
-// stageRecordCommands — a stage's record: the reports checked first, then the rows, then
-// the ledger checked. Every row is composed here, from structured returns. THE DISPOSITIONS
-// ARE WRITTEN BEFORE THE TRIAGE: a round's triage records the disposition a row carried when
-// it was found, and a fix cycle's audit finds a finding AFTER that cycle's fix — written the
-// other way round, a fix that did not hold would be read as a finding followed by its fix.
-function stageRecordCommands(ctx, dir, rec) {
-  const record = 'dev/stabilize-record'
-  const commands = []
-  if (rec.reporters.length) commands.push('`' + record + ' check-reports ' + stageFlags(ctx) + ' --attempt ' + ctx.attempt + ' -- ' + rec.reporters.join(' ') + '`')
-  const feed = (name, value, call) => {
-    const p = payload(dir, name, value)
-    commands.push(p.write)
-    commands.push('`' + record + ' ' + call + ' < ' + p.file + '`')
-  }
-  if (rec.rows.length) feed('rows.json', rec.rows, 'ledger-add --run ' + ctx.run + ' --scratch ' + ctx.scratch)
-  if (rec.patches.length) feed('patches.json', rec.patches, 'ledger-set --run ' + ctx.run + ' --scratch ' + ctx.scratch)
-  if (rec.triage.length) feed('triage.json', rec.triage, 'triage-set --run ' + ctx.run + ' --round ' + ctx.round)
-  for (const row of rec.clauses) commands.push('`' + record + ' clause-set --run ' + ctx.run + ' --clause ' + row.clause + ' --instrument ' + shq(row.instrument) + ' --commit ' + row.commit + ' --scope ' + shq(row.scope) + ' --status ' + row.status + ' --scratch ' + ctx.scratch + '`')
-  if (rec.facts) feed('round.json', rec.facts, 'round-set --run ' + ctx.run + ' --round ' + ctx.round)
-  if (rec.keys.length) commands.push('`' + record + ' check-ledger --run ' + ctx.run + ' -- ' + rec.keys.join(' ') + '`')
-  return commands
+// pendingRecordPrompt — the record step of a batch an earlier invocation applied and did not
+// commit: the gate again, and nothing else.
+function pendingRecordPrompt(v, branch, dir, pending) {
+  const gate = dir + '/gate.txt'
+  const text = [
+    LABELS.record + ' — stabilization run `' + v.run + '`: a record step of an earlier invocation applied its batch — ' + pending.calls + ' call(s), `' + pending.subject + '` — and did not commit it. The batch is on disk and pending; you apply NOTHING and write no table.',
+    branchLine(branch, branchName(v.run)),
+    'Run this from the repository\'s root, exactly as written (`mkdir -p ' + dir + '` first):',
+    '1. ' + gateStep(gate),
+    RECORD_RETURNS,
+  ].join('\n')
+  return { text, gate, expect: { calls: pending.calls, checks: (pending.checks || []).length } }
+}
+// stageRecordCommands — a stage's record, as the calls of its ONE batch: the reports checked
+// first, then the candidate's gate (a `test` stage's), then the rows, then the ledger
+// checked. Every row is composed here, from structured returns. THE DISPOSITIONS ARE WRITTEN
+// BEFORE THE TRIAGE: a round's triage records the disposition a row carried when it was
+// found, and a fix cycle's audit finds a finding AFTER that cycle's fix — written the other
+// way round, a fix that did not hold would be read as a finding followed by its fix.
+function stageRecordCommands(ctx, rec) {
+  const calls = []
+  if (rec.reporters.length) calls.push(call('check-reports ' + stageFlags(ctx) + ' --attempt ' + ctx.attempt + ' --', rec.reporters))
+  if (rec.gate) calls.push(call('gate-set --run ' + ctx.run + ' --round ' + ctx.round + ' --commit ' + rec.gate.commit + ' --summary ' + rec.gate.file + ' --scratch ' + ctx.scratch))
+  if (rec.rows.length) calls.push(call('ledger-add --run ' + ctx.run + ' --scratch ' + ctx.scratch, [], rec.rows))
+  if (rec.patches.length) calls.push(call('ledger-set --run ' + ctx.run + ' --scratch ' + ctx.scratch, [], rec.patches))
+  if (rec.triage.length) calls.push(call('triage-set --run ' + ctx.run + ' --round ' + ctx.round, [], rec.triage))
+  for (const row of rec.clauses) calls.push(call('clause-set --run ' + ctx.run + ' --clause ' + row.clause + ' --commit ' + row.commit + ' --status ' + row.status + ' --scratch ' + ctx.scratch, ['--instrument', row.instrument, '--scope', row.scope]))
+  if (rec.facts) calls.push(call('round-set --run ' + ctx.run + ' --round ' + ctx.round, [], rec.facts))
+  if (rec.keys.length) calls.push(call('check-ledger --run ' + ctx.run + ' --', rec.keys))
+  return calls
 }
 // rulingsRecordPrompt — THE one step through which the human's rulings reach the record
 // (ruling 4): the three dispositions that are the human's, and the rows of the declared-
-// bounds list. No other prompt of this script carries either command with those values.
+// bounds list. No other function of this script composes either call with those values.
 function rulingsRecordPrompt(v, round, branch, rulings, ran) {
-  const record = 'dev/stabilize-record'
-  const dir = v.scratch + '/record/rulings-r' + round
-  const commands = []
+  const calls = []
   // What the human ruled about the run: the go after the stop that follows `round`, one
   // more re-run of a clause — a fact of the round its instrument last ran in — and the
   // bound across rounds, raised. The record script takes the first two only while the
   // state asks for them.
   const about = rulings.filter((r) => runRuling(r))
   for (const r of about) {
-    const fact = r.go != null ? { name: 'go.json', value: { go: true }, call: 'round-set --run ' + v.run + ' --round ' + round }
-      : r.rerun != null ? { name: 'granted-' + r.rerun + '.json', value: { granted: r.rerun }, call: 'round-set --run ' + v.run + ' --round ' + ran[r.rerun] }
-        : { name: 'rounds.json', value: { rounds: r.rounds }, call: 'run-set --run ' + v.run }
-    const p = payload(dir, fact.name, fact.value)
-    commands.push(p.write)
-    commands.push('`' + record + ' ' + fact.call + ' < ' + p.file + '`')
+    const fact = r.go != null ? { value: { go: true }, call: 'round-set --run ' + v.run + ' --round ' + round }
+      : r.rerun != null ? { value: { granted: r.rerun }, call: 'round-set --run ' + v.run + ' --round ' + ran[r.rerun] }
+        : { value: { rounds: r.rounds }, call: 'run-set --run ' + v.run }
+    calls.push(call(fact.call, [], fact.value))
   }
   const bounds = rulings.filter((r) => r.bound != null)
-  if (bounds.length) {
-    const p = payload(dir, 'bounds.sh', bounds.map((r) => record + ' bound-set --run ' + v.run + ' --bound ' + r.bound + ' --reach ' + shq(r.reach) + ' --ruling ' + shq(r.where) + ' --pin ' + shq(r.pin) + ' --scratch ' + v.scratch), true)
-    commands.push(p.write)
-    commands.push('`sh -e ' + p.file + '` — ' + bounds.length + ' `bound-set` call(s), one JSON line each; a refusal stops it, and is a halt')
-  }
+  for (const r of bounds) calls.push(call('bound-set --run ' + v.run + ' --bound ' + r.bound + ' --scratch ' + v.scratch, ['--reach', r.reach, '--ruling', r.where, '--pin', r.pin]))
   const patches = rulings.filter((r) => r.key != null).map((r) => {
     const patch = { key: r.key, disposition: r.ruling }
     if (r.ruling === 'bound') patch.detail = r.reach
@@ -1211,12 +1272,10 @@ function rulingsRecordPrompt(v, round, branch, rulings, ran) {
     return patch
   })
   if (patches.length) {
-    const p = payload(dir, 'rulings.json', patches)
-    commands.push(p.write)
-    commands.push('`' + record + ' ledger-set --run ' + v.run + ' --scratch ' + v.scratch + ' < ' + p.file + '`')
-    commands.push('`' + record + ' check-ledger --run ' + v.run + ' -- ' + patches.map((p2) => p2.key).join(' ') + '`')
+    calls.push(call('ledger-set --run ' + v.run + ' --scratch ' + v.scratch, [], patches))
+    calls.push(call('check-ledger --run ' + v.run + ' --', patches.map((p2) => p2.key)))
   }
-  return recordPrompt(v, 'the human\'s rulings — ' + patches.length + ' on a finding, ' + bounds.length + ' declared bound(s), ' + about.length + ' about the run. They are the human\'s, relayed: record them as given, and judge none of them', branch, commands, v.run + ' r' + round + ' — the human\'s rulings')
+  return recordPrompt(v, 'the human\'s rulings — ' + patches.length + ' on a finding, ' + bounds.length + ' declared bound(s), ' + about.length + ' about the run. They are the human\'s, relayed: record them as given, and judge none of them', branch, v.scratch + '/record/rulings-r' + round, round, calls, v.run + ' r' + round + ' — the human\'s rulings')
 }
 
 // ---- self-test: this script's own logic, with no agent ----
@@ -1246,7 +1305,7 @@ function selfTest() {
     ['a scope on fix', Object.assign({}, fix, { scope: 'everything' })], ['a scope nobody defined', Object.assign({}, base, { scope: 'all' })],
     ['a range that is no range', Object.assign({}, base, { scope: { range: 'main..HEAD' } })], ['doors that are no list', Object.assign({}, base, { scope: { doors: 'jigc setup' } })],
     ['no door at all', Object.assign({}, base, { scope: { doors: [] } })], ['a door of two lines', Object.assign({}, base, { scope: { doors: ['a\nb'] } })],
-    ['a finding\'s ruling on test', Object.assign({}, base, { rulings: [{ key: 'f-1', ruling: later }] })], ['a declared bound on test', Object.assign({}, base, { rulings: [{ bound: 'b', reach: 'x', where: 'y', pin: 'unpinned' }] })], ['a raise on test', Object.assign({}, base, { raise: { cycles: 5 } })],
+    ['a finding\'s ruling on test beside a scope', Object.assign({}, base, { scope: 'everything', rulings: [{ key: 'f-1', ruling: later }] })], ['a declared bound on test beside a tuning stop', Object.assign({}, base, { stopAfter: 'state', rulings: [{ bound: 'b', reach: 'x', where: 'y', pin: 'unpinned' }] })], ['a finding\'s ruling on test beside a clause', Object.assign({}, base, { clause: 'no-lost-files', rulings: [{ key: 'f-1', ruling: admitted }] })], ['a raise on test', Object.assign({}, base, { raise: { cycles: 5 } })],
     ['a go that is no truth', Object.assign({}, base, { rulings: [{ go: 'yes' }] })], ['a go taken back', Object.assign({}, fix, { rulings: [{ go: false }] })], ['a go said twice', Object.assign({}, base, { rulings: [{ go: true }, { go: true }] })],
     ['a go beside a finding\'s ruling', Object.assign({}, fix, { rulings: [{ go: true }, { key: 'f-1', ruling: later }] })], ['a go with a note', Object.assign({}, base, { rulings: [{ go: true, note: 'on' }] })], ['a go and a re-run in one entry', Object.assign({}, base, { rulings: [{ go: true, rerun: 'no-lost-files' }] })],
     ['a re-run of no clause', Object.assign({}, base, { rulings: [{ rerun: 'No lost files' }] })], ['a re-run granted twice', Object.assign({}, fix, { rulings: [{ rerun: 'no-lost-files' }, { rerun: 'no-lost-files' }] })],
@@ -1280,6 +1339,7 @@ function selfTest() {
     Object.assign({}, base, { clause: 'no-lost-files' }), Object.assign({}, base, { crossModel: ['row-3'] }), Object.assign({}, base, { crossModel: ['row-3', 'row-7'], clause: 'no-lost-files' }),
     Object.assign({}, fix, { raise: { cycles: DEFAULT_CYCLES + 1 } }), Object.assign({}, fix, { exit: 'drop' }), Object.assign({}, fix, { exit: { part: ['abcdef1', '0123456789abcdef0123456789abcdef01234567'] } }),
     Object.assign({}, base, { rulings: [{ go: true }] }), Object.assign({}, fix, { rulings: [{ go: true }, { rerun: 'no-lost-files' }, { rerun: 'no-regression' }] }), Object.assign({}, fix, { rulings: [{ rounds: 4 }] }), Object.assign({}, base, { rulings: [{ rounds: 4 }, { rerun: 'no-lost-files' }] }),
+    Object.assign({}, base, { rulings: [{ key: 'f-1', ruling: later }] }), Object.assign({}, base, { rulings: [{ key: 'f-1', ruling: admitted, note: 'n' }, { bound: 'b', reach: 'x', where: 'y', pin: 'unpinned' }] }),
     Object.assign({}, fix, { rulings: [{ key: 'f-1', ruling: admitted, note: 'build the robust path' }, { key: 'f-2', ruling: later }, { key: 'f-3', ruling: bound, bound: 'non-jigc-writer', reach: 'races against a writer that is not jigc', where: 'the stop after round 1, item 3', pin: 'unpinned' }, { bound: 'planted-state', reach: 'a state nobody reaches', where: 'the stop after round 1', pin: 'flow12::planted' }] }),
   ]
   for (const given of taken) check('taken: ' + JSON.stringify(given), validateArgs(given) === null)
@@ -1349,6 +1409,7 @@ function selfTest() {
   check('a go is taken at no other state', [boundState, { next: 'close', stop: null }, { next: 'fix', stop: null }, { next: 'stop', stop: null }, {}].every((state) => typeof runRulingsFault([{ go: true }], state) === 'string'))
   check('one more re-run is granted to a clause that is the human\'s, and to no other', typeof runRulingsFault([{ rerun: 'no-regression' }], stoppedState) === 'string' && typeof runRulingsFault([{ rerun: 'no-lost-files' }], boundState) === 'string' && typeof runRulingsFault([{ rerun: 'no-lost-files' }], {}) === 'string')
   check('the bound is raised, never lowered or said again', runRulingsFault([{ rounds: 4 }], boundState) === null && typeof runRulingsFault([{ rounds: 3 }], boundState) === 'string' && typeof runRulingsFault([{ rounds: 2 }], boundState) === 'string' && runRulingsFault([{ rounds: 1 }], { facts: { stop: 'every-round', rounds: null } }) === null)
+  check('a ruling on a finding is recorded only on a row the ledger holds', findingRulingsFault([{ key: 'f-1', ruling: later }, { bound: 'b', reach: 'x', where: 'y', pin: 'z' }], { ledger: [{ key: 'f-1' }] }) === null && typeof findingRulingsFault([{ key: 'f-9', ruling: later }], { ledger: [{ key: 'f-1' }] }) === 'string' && typeof findingRulingsFault([{ key: 'f-1', ruling: later }], {}) === 'string')
   check('which rulings are about the run', runRuling({ go: true }) && runRuling({ rerun: 'x' }) && runRuling({ rounds: 4 }) && !runRuling({ key: 'f-1', ruling: later }) && !runRuling({ bound: 'b', reach: 'x', where: 'y', pin: 'z' }) && !runRuling(null) && !runRuling('go'))
 
   // Every triage is handed the rows of the ledger whose triage nobody finished.
@@ -1383,13 +1444,13 @@ function selfTest() {
     proposal: proposalPrompt(ctx, launch.add(['proposal', 'f-1']), fork, { proposal: 'p', report: 'r.md', driven: [] }, built),
     crossModel: crossModelPrompt(ctx, launch.add(['row-3', 'crossmodel']), unit),
     fixer: fixerPrompt(ctx, launch, launch.add(['fix', 'area', '1']), { n: 1, registry: 'the verb table', findings: [entry] }, 'fix/rc24-tier1-r2'),
-    record: recordPrompt(ctx, 'x', 'fix/rc24-tier1-r2', stageRecordCommands(ctx, '/tmp/scratch-1/record/x', { reporters: launch.names, rows: [], triage: [], patches: [], clauses: [], facts: { cycles: 3 }, keys: ['f-1'] }), 's'),
+    record: recordPrompt(ctx, 'x', 'fix/rc24-tier1-r2', '/tmp/scratch-1/record/x', 2, stageRecordCommands(ctx, { reporters: launch.names, rows: [], triage: [], patches: [], clauses: [], facts: { cycles: 3 }, keys: ['f-1'] }), 's').text,
   }
   check('a prompt for every role', Object.keys(ROLES).every((role) => typeof prompts[role] === 'string') && Object.keys(prompts).length === Object.keys(ROLES).length)
   for (const role of Object.keys(ROLES)) {
     for (const label of Object.keys(LABELS)) check('the ' + role + ' prompt and ' + LABELS[label], carries(prompts[role], label) === ROLES[role].labels.includes(label))
   }
-  check('a record step opens with its label', prompts.record.startsWith(LABELS.record) && rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).startsWith(LABELS.record))
+  check('a record step opens with its label', prompts.record.startsWith(LABELS.record) && rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).text.startsWith(LABELS.record) && pendingRecordPrompt(fix, 'fix/rc24-tier1', '/tmp/scratch-1/record/pending-r1', { calls: 3, checks: [{}], subject: 's', round: 1 }).text.startsWith(LABELS.record))
   check('the preflight is handed the previous release as data', prompts.preflight.includes('version `1.0.0-rc.24`') && prompts.preflight.includes('built from commit ' + 'e'.repeat(40)) && prompts.preflight.includes('the tip of `fix/rc24-tier1`'))
   check('a round\'s base is the earlier candidate, or the previous release\'s commit', prompts.scope.includes('base = ' + 'd'.repeat(40)) && scopePrompt(ctx, launcher(ctx), 'scope', { sha: 'c'.repeat(40), label: 'c1', base: null, earlier: false, scope: null, previous: previousOf({ facts }), fallback: 'everything' }).includes('base = ' + 'e'.repeat(40) + ' (the previous release, 1.0.0-rc.24'))
   check('a triage is told what the ledger\'s rows are', triagePrompt(ctx, launcher(ctx), 'triage-p1', handed, 1).includes('The source `' + LEDGER_SOURCE + '` is no reporter') && !prompts.triage.includes('is no reporter'))
@@ -1409,16 +1470,16 @@ function selfTest() {
   check('the review row without the opt-in, and with it', asOf(chainOf('review-row', false)) === 'source driver reconciler<source+driver' && asOf(chainOf('review-row', true)) === 'source driver crossmodel reconciler<source+driver+crossmodel' && chainOf('no-such-kind', true).length === 0)
   // Every git step is ONE command of the tool, and its prompt is that command and "relay
   // its line" — all but the re-cut of a part, which is the list of commands it was.
-  const steps = { 'git-state': gitStatePrompt(base), state: statePrompt(base, 't'), 'find-round': findRoundPrompt(fix, 1), 'open-round': openRoundPrompt(fix, 1, 'fix/rc24-tier1-r1'), push: pushPrompt(fix, 'fix/rc24-tier1-r1'), land: landPrompt(fix, 1, 'fix/rc24-tier1-r1'), 'round-commits': roundCommitsPrompt(fix, 1, 'fix/rc24-tier1-r1'), carry: carryPrompt(fix, 1, ['a'.repeat(40)], null), 'sync-main': syncMainPrompt('rc24-tier1'), 'check-reports': checkReportsPrompt(ctx, ['x']) }
+  const steps = { 'git-state': gitStatePrompt(base), state: statePrompt(base, 't'), 'find-round': findRoundPrompt(fix, 1), 'open-round': openRoundPrompt(fix, 1, 'fix/rc24-tier1-r1'), push: pushPrompt(fix, 'fix/rc24-tier1-r1'), land: landPrompt(fix, 1, 'fix/rc24-tier1-r1'), 'round-commits': roundCommitsPrompt(fix, 1, 'fix/rc24-tier1-r1'), carry: carryPrompt(fix, 1, ['a'.repeat(40)], null), 'sync-main': syncMainPrompt('rc24-tier1'), 'check-reports': checkReportsPrompt(ctx, ['x']), record: recordCommitPrompt(fix, 'fix/rc24-tier1', '/tmp/scratch-1/record/x/gate.txt', { calls: 3, checks: 2 }) }
   const recut = carryPrompt(fix, 1, ['a'.repeat(40)], 'fix/rc24-tier1-r1-part1')
   for (const act of Object.keys(steps)) {
     const numbered = steps[act].split('\n')
     check('the `' + act + '` step is one command of the tool, and its line relayed', numbered.length === 3 && numbered[0].startsWith('GIT STEP — ') && numbered[0].endsWith(STEP_RULES) && numbered[1].startsWith('1. `' + STEP_TOOL + ' ' + act + ' ') && numbered[1].endsWith('`') && numbered[2].startsWith('2. Report status = ran and line = ') && !/`git (?!stash|status|branch --show-current)/.test(steps[act]))
   }
-  check('the names a step hands the tool are the harness\'s', steps['git-state'].includes('`' + STEP_TOOL + ' git-state --stage test --loop fix/rc24-tier1 --rounds fix/rc24-tier1-r --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates`') && steps.land.includes(' land --loop fix/rc24-tier1 --branch fix/rc24-tier1-r1 --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates --log DECISIONS.md --log implementation/project-history.md`') && steps.carry.endsWith(STEP_RULES + '\n1. `' + STEP_TOOL + ' carry --loop fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates -- ' + 'a'.repeat(40) + '`\n' + steps.carry.split('\n')[2]) && steps['sync-main'].includes(' sync-main --loop fix/rc24-tier1 --log DECISIONS.md --log implementation/project-history.md`') && steps.state.includes(' state --run rc24-tier1 --scratch /tmp/scratch-1 --tag t`') && steps['find-round'].includes(' find-round --prefix fix/rc24-tier1-r1`') && steps.push.includes(' push --branch fix/rc24-tier1-r1`'))
+  check('the names a step hands the tool are the harness\'s', steps['git-state'].includes('`' + STEP_TOOL + ' git-state --stage test --loop fix/rc24-tier1 --rounds fix/rc24-tier1-r --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates`') && steps.land.includes(' land --loop fix/rc24-tier1 --branch fix/rc24-tier1-r1 --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates --log DECISIONS.md --log implementation/project-history.md`') && steps.carry.endsWith(STEP_RULES + '\n1. `' + STEP_TOOL + ' carry --loop fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates -- ' + 'a'.repeat(40) + '`\n' + steps.carry.split('\n')[2]) && steps['sync-main'].includes(' sync-main --loop fix/rc24-tier1 --log DECISIONS.md --log implementation/project-history.md`') && steps.state.includes(' state --run rc24-tier1 --scratch /tmp/scratch-1 --tag t`') && steps['find-round'].includes(' find-round --prefix fix/rc24-tier1-r1`') && steps.push.includes(' push --branch fix/rc24-tier1-r1`') && steps.record.includes(' record --branch fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --gate /tmp/scratch-1/record/x/gate.txt --calls 3 --checks 2`'))
   check('the re-cut of a part is still the list of commands it was', recut.startsWith('GIT STEP — re-cut a part of round 1 of `rc24-tier1` as a branch of its own, `fix/rc24-tier1-r1-part1`') && recut.includes(CARRY_RULES) && recut.includes('`git cherry-pick -x <sha>`') && recut.includes('`git push origin fix/rc24-tier1-r1-part1`') && !recut.includes(STEP_TOOL) && recut.split('\n').length === 8)
   const gitPrompts = Object.keys(steps).map((act) => steps[act]).concat([recut])
-  check('no prompt names the tool without the opt-in', Object.keys(prompts).filter((role) => names.test(prompts[role])).join(' ') === 'crossModel' && !names.test(rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {})) && !names.test(gitPrompts.join('\n')))
+  check('no prompt names the tool without the opt-in', Object.keys(prompts).filter((role) => names.test(prompts[role])).join(' ') === 'crossModel' && !names.test(rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).text) && !names.test(gitPrompts.join('\n')))
   const asserts = (crossModel) => preflightPrompt(ctx, launcher(ctx), 'preflight', { build: false, image: false, sha: 'c'.repeat(40), label: 'c2', branch: 'b', binary: 'x', checks: [], crossModel })
   check('the preflight is asked about the tool only when an item is named', names.test(asserts(true)) && asserts(true).includes('`' + CROSS_CHECK + '`') && !names.test(asserts(false)) && !names.test(asserts(undefined)) && !asserts(false).includes(CROSS_CHECK))
   const dropping = launcher(ctx)
@@ -1436,12 +1497,37 @@ function selfTest() {
   let tooLong = false
   try { launch.add(['verify', 'p1', 'k'.repeat(100)]) } catch (e) { tooLong = true }
   check('a reporter launched twice, or with no name', twice && tooLong && launch.names.length === 10 && reporterName(['a', 'B']) === null)
-  check('the check names every reporter launched', launch.names.every((n) => checkReportsPrompt(ctx, launch.names).includes(' ' + n)) && checkReportsPrompt(ctx, launch.names).includes('`' + STEP_TOOL + ' check-reports --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 -- ' + launch.names.join(' ') + '`') && prompts.record.includes('check-reports --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 -- ' + launch.names.join(' ')))
-  check('the ledger check names every key', prompts.record.includes('check-ledger --run rc24-tier1 -- f-1'))
-  check('a payload is held to its hash', prompts.record.includes(sha256('{"cycles":3}\n')) && prompts.record.includes('round-set --run rc24-tier1 --round 2 < /tmp/scratch-1/record/x/round.json'))
-  const cycleRecord = stageRecordCommands(ctx, '/tmp/scratch-1/record/y', { reporters: [], rows: [{ key: 'f-2' }], triage: [{ key: 'f-1', grade: 'breaks' }], patches: [{ key: 'f-1', disposition: 'fixed', detail: 'c'.repeat(40) }], clauses: [], facts: null, keys: ['f-1', 'f-2'] }).join('\n')
-  const at = (call) => cycleRecord.indexOf('dev/stabilize-record ' + call + ' ')
+  // A record step: its calls as ONE batch, the gate, and no commit of the executor's.
+  const batchOf = (text) => JSON.parse(text.split('\n').find((l) => l.startsWith('[{"argv"')))
+  const spelled = (made) => made.argv.join(' ')
+  const recordCalls = batchOf(prompts.record)
+  check('the check names every reporter launched', launch.names.every((n) => checkReportsPrompt(ctx, launch.names).includes(' ' + n)) && checkReportsPrompt(ctx, launch.names).includes('`' + STEP_TOOL + ' check-reports --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 -- ' + launch.names.join(' ') + '`') && spelled(recordCalls[0]) === 'check-reports --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 -- ' + launch.names.join(' '))
+  check('the ledger check names every key', spelled(recordCalls[recordCalls.length - 1]) === 'check-ledger --run rc24-tier1 -- f-1')
+  check('a record\'s calls are one payload, held to its hash', prompts.record.includes(sha256(JSON.stringify(recordCalls) + '\n')) && prompts.record.includes('`cat > /tmp/scratch-1/record/x/batch.json <<\'' + PAYLOAD_ENDS + '\'`') && spelled(recordCalls[1]) === 'round-set --run rc24-tier1 --round 2' && recordCalls[1].stdin === '{"cycles":3}' && recordCalls.length === 3)
+  check('a record step applies its calls as one batch, runs the full gate, and makes no commit', prompts.record.includes('\n2. `dev/stabilize-record apply --run rc24-tier1 --round 2 --subject \'docs(record): s\' --scratch /tmp/scratch-1 < /tmp/scratch-1/record/x/batch.json`') && prompts.record.includes('\n3. The FULL gate') && prompts.record.includes('`dev/gate > /tmp/scratch-1/record/x/gate.txt 2>&1`') && prompts.record.endsWith(RECORD_RETURNS) && !/`git (add|commit)/.test(prompts.record) && prompts.record.includes('Never `--fast`, never `--quick`'))
+  const stageRecord = recordPrompt(ctx, 'x', 'fix/rc24-tier1', '/tmp/scratch-1/record/z', 0, stageRecordCommands(Object.assign({}, ctx, { stage: 'test' }), { reporters: ['a'], gate: { commit: 'c'.repeat(40), file: '/tmp/scratch-1/gate/c2.a4.txt' }, rows: [], triage: [], patches: [], clauses: [{ clause: 'x', commit: 'c'.repeat(40), status: 'green', instrument: 'a, b', scope: 'round 2: it\'s the delta' }], facts: { candidate: 'c'.repeat(40) }, keys: [] }), 's')
+  check('what the commit step is held to is what was composed', JSON.stringify(stageRecord.expect) === JSON.stringify({ calls: 4, checks: 1 }) && stageRecord.gate === '/tmp/scratch-1/record/z/gate.txt' && !stageRecord.text.includes(' --round 0') && JSON.stringify(recordPrompt(ctx, 'x', 'b', '/d', 2, recordCalls, 's').expect) === JSON.stringify({ calls: 3, checks: 2 }))
+  check('a test stage\'s record puts the candidate\'s gate on record, from the file the preflight kept', spelled(batchOf(stageRecord.text)[1]) === 'gate-set --run rc24-tier1 --round 2 --commit ' + 'c'.repeat(40) + ' --summary /tmp/scratch-1/gate/c2.a4.txt --scratch /tmp/scratch-1' && !recordCalls.some((made) => made.argv[0] === 'gate-set'))
+  check('a cell of free text is one argument, whatever it holds', JSON.stringify(batchOf(stageRecord.text)[2].argv.slice(-4)) === JSON.stringify(['--instrument', 'a, b', '--scope', 'round 2: it\'s the delta']))
+  const resumed = pendingRecordPrompt(fix, 'fix/rc24-tier1', '/tmp/scratch-1/record/pending-r1', { calls: 5, checks: [{ ok: true }, { ok: true }], subject: 'docs(record): x', round: 1 })
+  check('a pending batch is gated again and nothing is applied', !resumed.text.includes('stabilize-record apply') && !resumed.text.includes(PAYLOAD_ENDS) && resumed.text.includes('`dev/gate > /tmp/scratch-1/record/pending-r1/gate.txt 2>&1`') && resumed.text.endsWith(RECORD_RETURNS) && JSON.stringify(resumed.expect) === JSON.stringify({ calls: 5, checks: 2 }))
+  const cycleRecord = stageRecordCommands(ctx, { reporters: [], rows: [{ key: 'f-2' }], triage: [{ key: 'f-1', grade: 'breaks' }], patches: [{ key: 'f-1', disposition: 'fixed', detail: 'c'.repeat(40) }], clauses: [], facts: null, keys: ['f-1', 'f-2'] }).map((made) => made.argv[0])
+  const at = (name) => cycleRecord.indexOf(name)
   check('a cycle\'s fixes are on the rows before its audit\'s triage reads them', at('ledger-add') >= 0 && at('ledger-add') < at('ledger-set') && at('ledger-set') < at('triage-set') && at('triage-set') < at('check-ledger'))
+
+  // What is accepted as recorded: the commit step's own line, with one result per check.
+  const held = { status: 'recorded', commit: 'a'.repeat(40), gate: { check: 'gate', ok: true, new: [] }, applied: { calls: 4, checks: [{ check: 'reports', ok: true }, { check: 'ledger', ok: true }] } }
+  const composed = { calls: 4, checks: 2 }
+  const lacking = (change) => recordFault(Object.assign({}, held, change), composed)
+  check('a record whose line holds is recorded', recordFault(held, composed) === null)
+  check('a record step that returns nothing, or halts, is not recorded', isText(recordFault(null, composed)) && recordFault({ status: 'halted', halt: { root_cause: 'gate-red: x' } }, composed) === 'gate-red: x' && isText(recordFault({ status: 'halted' }, composed)))
+  check('a record without a commit, or without a gate check that holds, is not recorded', isText(lacking({ commit: 'abc' })) && isText(lacking({ gate: undefined })) && isText(lacking({ gate: { ok: false, new: ['test x'] } })) && isText(lacking({ gate: 'GATE: PASS' })))
+  check('a record that returns no evidence of its checks is not recorded', isText(lacking({ applied: undefined })) && isText(lacking({ applied: { calls: 4 } })) && isText(lacking({ applied: { calls: 4, checks: [] } })) && isText(lacking({ applied: { calls: 4, checks: [{ check: 'reports', ok: true }] } })) && isText(lacking({ applied: { calls: 3, checks: held.applied.checks } })))
+  check('a record one of whose checks does not hold is not recorded', isText(lacking({ applied: { calls: 4, checks: [{ check: 'reports', ok: true }, { check: 'ledger', ok: false }] } })) && isText(lacking({ applied: { calls: 4, checks: [{ check: 'reports', ok: true }, 'ok'] } })))
+
+  // The candidate's gate is run by the first preflight of a `test` stage, and by no other.
+  const gated = (gate) => preflightPrompt(ctx, launcher(ctx), 'preflight', { build: false, image: false, gate, sha: 'c'.repeat(40), label: 'c2', branch: 'b', binary: 'x', checks: [], crossModel: false })
+  check('the preflight keeps the candidate\'s gate where the record step reads it', gated('/tmp/scratch-1/gate/c2.a4.txt').includes('`dev/gate > /tmp/scratch-1/gate/c2.a4.txt 2>&1`') && gated('/tmp/scratch-1/gate/c2.a4.txt').includes('never your halt') && !gated(undefined).includes('dev/gate') && !prompts.preflight.includes('dev/gate >'))
 
   // Ruling 11's comparison.
   const good = { status: 'reported', asserted_sha256: 'b'.repeat(64) }
@@ -1449,11 +1535,13 @@ function selfTest() {
   check('a hash that differs, and one never returned', JSON.stringify(hashMismatch('b'.repeat(64), [{ name: 'a', drives: true, result: { status: 'reported', asserted_sha256: 'c'.repeat(64) } }, { name: 'b', drives: true, result: { status: 'reported' } }, { name: 'c', drives: true, result: good }])) === JSON.stringify([{ reporter: 'a', asserted: 'c'.repeat(64) }, { reporter: 'b', asserted: null }]))
 
   // The human's rulings enter in one step.
-  const rulingsPrompt = rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {})
+  const rulingsCalls = batchOf(rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).text)
+  const rulingsText = rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).text
   const aboutTheRun = rulingsRecordPrompt(base, 2, 'fix/rc24-tier1', [{ go: true }, { rerun: 'no-lost-files' }, { rounds: 4 }], { 'no-lost-files': 1 })
-  check('the rulings step writes the go, the granted re-run and the raised bound', aboutTheRun.includes('round-set --run rc24-tier1 --round 2 < /tmp/scratch-1/record/rulings-r2/go.json') && aboutTheRun.includes(sha256('{"go":true}\n')) && aboutTheRun.includes('round-set --run rc24-tier1 --round 1 < /tmp/scratch-1/record/rulings-r2/granted-no-lost-files.json') && aboutTheRun.includes(sha256('{"granted":"no-lost-files"}\n')) && aboutTheRun.includes('run-set --run rc24-tier1 < /tmp/scratch-1/record/rulings-r2/rounds.json') && aboutTheRun.includes(sha256('{"rounds":4}\n')))
-  check('a ruling about the run writes no bound and no disposition', !aboutTheRun.includes('bound-set') && !aboutTheRun.includes('ledger-set') && aboutTheRun.includes('3 about the run') && rulingsPrompt.includes('0 about the run') && !rulingsPrompt.includes('round-set') && !rulingsPrompt.includes('run-set'))
-  check('the rulings step writes the bounds and the dispositions', rulingsPrompt.includes('bound-set --run rc24-tier1 --bound non-jigc-writer --reach \'races against a writer that is not jigc\' --ruling \'the stop after round 1, item 3\' --pin \'unpinned\'') && rulingsPrompt.includes('bound-set --run rc24-tier1 --bound planted-state') && rulingsPrompt.includes(JSON.stringify([{ key: 'f-1', disposition: admitted, detail: 'build the robust path' }, { key: 'f-2', disposition: later }, { key: 'f-3', disposition: bound, detail: 'races against a writer that is not jigc' }])) && rulingsPrompt.includes('check-ledger --run rc24-tier1 -- f-1 f-2 f-3'))
+  const aboutCalls = batchOf(aboutTheRun.text)
+  check('the rulings step writes the go, the granted re-run and the raised bound', JSON.stringify(aboutCalls) === JSON.stringify([{ argv: ['round-set', '--run', 'rc24-tier1', '--round', '2'], stdin: '{"go":true}' }, { argv: ['round-set', '--run', 'rc24-tier1', '--round', '1'], stdin: '{"granted":"no-lost-files"}' }, { argv: ['run-set', '--run', 'rc24-tier1'], stdin: '{"rounds":4}' }]) && aboutTheRun.text.includes(' apply --run rc24-tier1 --round 2 --subject '))
+  check('a ruling about the run writes no bound and no disposition', !aboutCalls.some((made) => ['bound-set', 'ledger-set'].includes(made.argv[0])) && aboutTheRun.text.includes('3 about the run') && rulingsText.includes('0 about the run') && !rulingsCalls.some((made) => ['round-set', 'run-set'].includes(made.argv[0])) && JSON.stringify(aboutTheRun.expect) === JSON.stringify({ calls: 3, checks: 0 }))
+  check('the rulings step writes the bounds and the dispositions', JSON.stringify(rulingsCalls[0].argv) === JSON.stringify(['bound-set', '--run', 'rc24-tier1', '--bound', 'non-jigc-writer', '--scratch', '/tmp/scratch-1', '--reach', 'races against a writer that is not jigc', '--ruling', 'the stop after round 1, item 3', '--pin', 'unpinned']) && spelled(rulingsCalls[1]).startsWith('bound-set --run rc24-tier1 --bound planted-state ') && rulingsCalls[2].stdin === JSON.stringify([{ key: 'f-1', disposition: admitted, detail: 'build the robust path' }, { key: 'f-2', disposition: later }, { key: 'f-3', disposition: bound, detail: 'races against a writer that is not jigc' }]) && spelled(rulingsCalls[3]) === 'check-ledger --run rc24-tier1 -- f-1 f-2 f-3' && rulingsCalls.length === 4)
   check('a quote in a ruling cannot leave its argument', shq('it\'s a "bound" $(x) `y`') === '\'it\'\\\'\'s a "bound" $(x) `y`\'')
 
   // The clause rows of a test stage.
@@ -1563,7 +1651,7 @@ function halt(phaseName, why, more) {
     stage: v.stage,
     run: v.run,
     halted: Object.assign({ phase: phaseName, reason: why, transient }, more || {}),
-    message: 'stabilize ' + v.stage + ' of `' + v.run + '` HALTED at ' + phaseName + ': ' + why + (breakerTripped ? ' The rate-limit breaker is tripped (' + exhaustedLabels.join(', ') + '): wait for the window before invoking again.' : transient ? ' An agent returned no result after retries: that is infrastructure, not a verdict about the run.' : '') + ' What was committed stands; a report a reporter wrote and no record step committed is still untracked under ' + runDir(v.run) + '/ and stays there. Once the cause is dealt with, invoke the stage again with the same args: it reads the state as it stands and works the next attempt.',
+    message: 'stabilize ' + v.stage + ' of `' + v.run + '` HALTED at ' + phaseName + ': ' + why + (breakerTripped ? ' The rate-limit breaker is tripped (' + exhaustedLabels.join(', ') + '): wait for the window before invoking again.' : transient ? ' An agent returned no result after retries: that is infrastructure, not a verdict about the run.' : '') + ((more && more.then) || ' What was committed stands; a report a reporter wrote and no record step committed is still untracked under ' + runDir(v.run) + '/ and stays there. Once the cause is dealt with, invoke the stage again with the same args: it reads the state as it stands and works the next attempt.'),
   }
 }
 // gitHalt — a git step that did not do what the stage needs: it returned nothing, it
@@ -1599,28 +1687,47 @@ async function readState() {
   return { error: why }
 }
 
-// The checks of a record step's return: a commit, the gate's own two lines, every check ok.
-const GATE_PASS_RE = /^[ \t]*(?:[>*+-][ \t]*)*GATE: PASS[ \t]*$/m
-const GATE_TOTALS_RE = /^[ \t]*(?:[>*+-][ \t]*)*tests[ \t]+passed=\d+[ \t]+failed=0[ \t]+\(over [1-9]\d* test binaries\)[ \t]*$/m
-function recordFault(r) {
-  if (!r) return 'the record step returned no result'
-  if (r.status !== 'completed') return (r.halt && r.halt.root_cause) || 'the record step halted'
-  if (!SHA_RE.test(String(r.commit || ''))) return 'the record step returned no commit sha'
-  if (!GATE_PASS_RE.test(String(r.gate_verdict || '')) || !GATE_TOTALS_RE.test(String(r.gate_totals || ''))) return 'the record step did not return the gate\'s own `GATE: PASS` and totals lines'
-  for (const text of r.checks || []) {
-    try {
-      const c = JSON.parse(text)
-      if (!c || c.ok !== true) return 'a check of the record step failed: ' + text
-    } catch (e) {
-      return 'a check line of the record step is not JSON: ' + text
-    }
-  }
+// recordFault — why a record is NOT accepted as recorded, or null. What is accepted is the
+// commit step's own line — held to its hash by `readStep` — and nothing an agent says of
+// it: the commit, the gate check that holds, and ONE RESULT PER CHECK THIS SCRIPT COMPOSED,
+// each of which holds, in a batch of as many calls as were composed. A step that returns no
+// such evidence did not record.
+function recordFault(r, expect) {
+  if (!r) return 'the record\'s commit step returned no result'
+  if (r.status !== 'recorded') return (r.halt && r.halt.root_cause) || 'the record\'s commit step halted'
+  if (!SHA_RE.test(String(r.commit || ''))) return 'the record\'s commit step returned no commit sha'
+  if (!plain(r.gate) || r.gate.ok !== true) return 'the record\'s commit step returned no gate check that holds'
+  const applied = r.applied
+  if (!plain(applied) || applied.calls !== expect.calls || !Array.isArray(applied.checks) || applied.checks.length !== expect.checks) return 'the batch that was committed is not the one this stage composed: ' + expect.calls + ' call(s) and ' + expect.checks + ' check(s) were composed, and the commit step read ' + JSON.stringify(applied == null ? null : applied)
+  if (applied.checks.some((c) => !plain(c) || c.ok !== true)) return 'a check of the record does not hold: ' + JSON.stringify(applied.checks)
   return null
 }
-async function recordStep(label, prompt) {
-  const r = await roleStep('record', 'record:' + label, 'Record', prompt, RECORD_SCHEMA)
-  const fault = recordFault(r)
+// RECORD_THEN — what a halt of a record step says is to be done, in place of the sentence
+// every other halt ends with: it is true whether or not the batch was applied.
+const RECORD_THEN = ' What was committed stands. A record step that stopped may have left its batch APPLIED AND NOT COMMITTED — the tables written, held by the record script as pending, and no dirty tree. Invoke the stage again: where a batch is pending, that invocation runs the full gate on it once more, commits and pushes it, and does nothing else; where none is, it reads the state as it stands and works the next attempt. To take a pending batch back instead — the orchestrator\'s decision, a subagent\'s act — `dev/stabilize-record discard --run ' + v.run + '` puts every table back as it was before the record step, and keeps the reports and the round\'s scope.'
+// recordStep — a record step, whole: the executor applies the batch and runs the gate; then
+// the ONE commit, a git step. `rec` is what `recordPrompt` returned.
+async function recordStep(label, branch, rec) {
+  const gated = await roleStep('record', 'record:' + label, 'Record', rec.text, RECORD_SCHEMA)
+  if (!gated) return { fault: 'the record step returned no result', result: null }
+  if (gated.status !== 'gated') return { fault: (gated.halt && gated.halt.root_cause) || 'the record step halted', result: gated }
+  const r = await toolStep('record:' + label, 'Record', 'record', recordCommitPrompt(v, branch, rec.gate, rec.expect))
+  const fault = recordFault(r, rec.expect)
   return fault ? { fault, result: r } : { result: r }
+}
+// finishRecord — an invocation that finds a batch a record step applied and did not commit:
+// the gate on it again, the one commit, the push, the state — and NOTHING ELSE of a stage.
+async function finishRecord(gs) {
+  phase('Record')
+  const pending = gs.pending
+  log('a record step left its batch applied and not committed on ' + gs.branch + ' — ' + pending.calls + ' call(s), `' + pending.subject + '`: this invocation gates and commits it, and starts nothing')
+  const recorded = await recordStep('pending', gs.branch, pendingRecordPrompt(v, gs.branch, v.scratch + '/record/pending', pending))
+  if (recorded.fault) return halt('record', recorded.fault, { transient: !recorded.result, halt: recorded.result ? recorded.result.halt : null, gate: recorded.result ? recorded.result.gate : null, pending, then: RECORD_THEN })
+  const pushed = await toolStep('push:pending', 'Record', 'push', pushPrompt(v, gs.branch))
+  if (!onIt(pushed, gs.branch, true)) return gitHalt('push', pushed, 'the pending record is committed on ' + gs.branch + ' (' + recorded.result.commit + ') and the branch was not pushed')
+  const read = await readState()
+  if (!read.state) return halt('state', 'the pending record is committed and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + read.error, { transient: !!read.transient })
+  return Object.assign({ status: 'recorded', stage: v.stage, run: v.run, pending, record: recorded.result.commit, gate: recorded.result.gate, message: 'a record step of an earlier invocation had applied its batch and not committed it: this invocation ran the gate on it, committed and pushed it, and did nothing else — `next` names the step.' }, nextOf(read.state))
 }
 
 // findingLines — a reporter's structured findings as the lines triage is handed.
@@ -1805,8 +1912,8 @@ function nextOf(state) {
 // push of the branch it is on, and the state read back.
 async function rulingsStep(round, branch, ran) {
   phase('Record')
-  const ruled = await recordStep('rulings:r' + round, rulingsRecordPrompt(v, round, branch, v.rulings, ran))
-  if (ruled.fault) return { halted: halt('rulings', ruled.fault, { transient: !ruled.result, halt: ruled.result ? ruled.result.halt : null }) }
+  const ruled = await recordStep('rulings:r' + round, branch, rulingsRecordPrompt(v, round, branch, v.rulings, ran))
+  if (ruled.fault) return { halted: halt('rulings', ruled.fault, { transient: !ruled.result, halt: ruled.result ? ruled.result.halt : null, gate: ruled.result ? ruled.result.gate : null, then: RECORD_THEN }) }
   const pushed = await toolStep('push:rulings', 'Record', 'push', pushPrompt(v, branch))
   if (!onIt(pushed, branch, true)) return { halted: gitHalt('push', pushed, 'the rulings are recorded on ' + branch + ' (' + ruled.result.commit + ') and the branch was not pushed') }
   const read = await readState()
@@ -1814,20 +1921,22 @@ async function rulingsStep(round, branch, ran) {
   return { state: read.state, record: ruled.result.commit }
 }
 
-// ruleTheRun — an invocation that carries what the human ruled ABOUT THE RUN (a go after a
-// stop, one more re-run of a clause, the bound raised): they are recorded on the loop branch,
-// NOTHING is started, and the state's `next` goes back — which now names the step the human
-// was asked about. Either stage takes them, and does the same with them.
+// ruleTheRun — an invocation that ONLY RECORDS RULINGS: what the human ruled about the run
+// (a go after a stop, one more re-run of a clause, the bound raised), which either stage
+// takes — or, on the `test` stage, what the human ruled on findings and bounds. They are
+// recorded on the loop branch by the one step that may write them, NOTHING is started, and
+// the state's `next` goes back — which now names the step the human was asked about.
 async function ruleTheRun(state, checkedOut) {
   const told = { status: 'refused', stage: v.stage, run: v.run, next: state.next, stop: state.stop, human_clauses: state.human_clauses }
-  if (checkedOut !== loopBranch) return Object.assign(told, { message: 'a ruling about the run is recorded on the loop branch ' + loopBranch + ', and `' + checkedOut + '` is checked out. Nothing was run beyond the two reads.' })
-  const why = runRulingsFault(v.rulings, state)
+  if (checkedOut !== loopBranch) return Object.assign(told, { message: 'an invocation that only records rulings records them on the loop branch ' + loopBranch + ', and `' + checkedOut + '` is checked out. Nothing was run beyond the two reads.' })
+  const about = v.rulings.every(runRuling)
+  const why = about ? runRulingsFault(v.rulings, state) : findingRulingsFault(v.rulings, state)
   if (why) return Object.assign(told, { message: why + '. Nothing was recorded.' })
   const ran = {}
   for (const c of state.clauses || []) ran[c.clause] = c.round
-  const ruled = await rulingsStep((state.stop ? state.stop.round : state.round) || 0, loopBranch, ran)
+  const ruled = await rulingsStep((about && state.stop ? state.stop.round : state.round) || 0, loopBranch, ran)
   if (ruled.halted) return ruled.halted
-  return Object.assign({ status: 'ruled', stage: v.stage, run: v.run, rulings: v.rulings, record: ruled.record, message: 'the human\'s rulings about the run are recorded, and nothing was started: `next` names the step.' }, nextOf(ruled.state))
+  return Object.assign({ status: 'ruled', stage: v.stage, run: v.run, rulings: v.rulings, record: ruled.record, message: 'the human\'s rulings ' + (about ? 'about the run' : 'on the round\'s findings and bounds') + ' are recorded, and nothing was started: `next` names the step.' }, nextOf(ruled.state))
 }
 
 // finishTriage — a round's triage that a stage left unfinished (`next: 'triage'`), finished
@@ -1850,9 +1959,9 @@ async function finishTriage(ctx, state, tip, branch) {
   phase('Record')
   const rec = triageRecord(ctx, tri.entries)
   const dir = v.scratch + '/record/triage-r' + ctx.round + (ctx.stage === 'fix' ? '-c' + ctx.cycle : '') + '-a' + ctx.attempt
-  const commands = stageRecordCommands(ctx, dir, { reporters: launch.names, rows: rec.rows, triage: rec.triage, patches: [], clauses: [], facts: null, keys: tri.entries.map((e) => e.key) })
-  const recorded = await recordStep('triage:r' + ctx.round, recordPrompt(v, 'round ' + ctx.round + '\'s triage, finished — ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s) graded; no instrument ran', branch, commands, v.run + ' r' + ctx.round + ' — the round\'s triage, finished'))
-  if (recorded.fault) return { halted: halt('record', recorded.fault, { transient: !recorded.result, halt: recorded.result ? recorded.result.halt : null, launched: launch.names, branch }) }
+  const commands = stageRecordCommands(ctx, { reporters: launch.names, rows: rec.rows, triage: rec.triage, patches: [], clauses: [], facts: null, keys: tri.entries.map((e) => e.key) })
+  const recorded = await recordStep('triage:r' + ctx.round, branch, recordPrompt(v, 'round ' + ctx.round + '\'s triage, finished — ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s) graded; no instrument ran', branch, dir, ctx.round, commands, v.run + ' r' + ctx.round + ' — the round\'s triage, finished'))
+  if (recorded.fault) return { halted: halt('record', recorded.fault, { transient: !recorded.result, halt: recorded.result ? recorded.result.halt : null, gate: recorded.result ? recorded.result.gate : null, launched: launch.names, branch, forks: tri.forks, then: RECORD_THEN }) }
   const pushed = await toolStep('push:triage', 'Record', 'push', pushPrompt(v, branch))
   if (!onIt(pushed, branch, true)) return { halted: gitHalt('push', pushed, 'the triage is recorded on ' + branch + ' (' + recorded.result.commit + ') and the branch was not pushed') }
   const after = await readState()
@@ -1870,12 +1979,13 @@ function closeOf() {
 async function runTest() {
   phase('State')
   const gs = await toolStep('state', 'State', 'git-state', gitStatePrompt(v))
-  if (!onIt(gs, loopBranch, false)) return gitHalt('git', gs, 'the tree and the branches are not in the state the `test` stage starts from — the loop branch ' + loopBranch + ' checked out, clean, and holding no product change outside a round\'s merge')
+  if (!onIt(gs, loopBranch, false)) return gitHalt('git', gs, 'the tree and the branches are not in the state the `test` stage starts from — the loop branch ' + loopBranch + ' checked out, holding nothing but what the record script wrote and no commit holds yet, and no product change outside a round\'s merge')
+  if (gs.pending) return await finishRecord(gs)
   const first = await readState()
   if (!first.state) return halt('state', 'the run\'s state could not be read: ' + first.error, { transient: !!first.transient, halt: first.halt || null })
   let state = first.state
   if (!state.opened) return halt('state', 'the run `' + v.run + '` has no opening record (' + runDir(v.run) + '/opening.md): a run opens with the human-led step, and `test` does not start before it')
-  if (v.rulings && v.rulings.every(runRuling)) return await ruleTheRun(state, gs.branch)
+  if (v.rulings) return await ruleTheRun(state, gs.branch)
   const at = state.position.test
   if (at.refused) return { status: 'refused', stage: 'test', run: v.run, refused: at, message: 'the `test` stage is refused (' + at.refused + ', round ' + at.round + '): ' + refusalOf(at) + '. Nothing was run beyond the two reads.', next: state.next, not_ready: state.not_ready, stop: state.stop }
   const ctx = { run: v.run, round: at.round, stage: 'test', attempt: at.attempt, scratch: v.scratch }
@@ -1909,10 +2019,13 @@ async function runTest() {
   phase('Preflight and scope')
   const earlier = (state.rounds || []).find((r) => r.round === ctx.round - 1)
   const binary = v.scratch + '/bin/' + label + '.a' + ctx.attempt + '/jigc'
+  // The candidate's own gate: the preflight runs it once and keeps its whole output, and
+  // the record's batch puts what it shows red on record — what a record commit is held to.
+  const candidateGate = v.scratch + '/gate/' + label + '.a' + ctx.attempt + '.txt'
   const always = items.filter((i) => i.kind === CHECK_KIND && runs(i))
   const scopeName = launch.add(['scope'])
   const both = await parallel([
-    () => preflightOf(ctx, launch, ['preflight'], { build: true, image: false, sha, label, branch: loopBranch, binary, checks: always, crossModel: crossNamed.length > 0, previous: previousOf(state) }, 'Preflight and scope'),
+    () => preflightOf(ctx, launch, ['preflight'], { build: true, image: false, gate: candidateGate, sha, label, branch: loopBranch, binary, checks: always, crossModel: crossNamed.length > 0, previous: previousOf(state) }, 'Preflight and scope'),
     () => roleStep('scope', 'scope', 'Preflight and scope', scopePrompt(ctx, launch, scopeName, { sha, label, base: earlier && earlier.facts ? earlier.facts.candidate : null, earlier: !!earlier, scope: roundScope, clause: rerun ? v.clause : null, previous: previousOf(state), fallback: state.facts.scope }), SCOPE_SCHEMA),
   ])
   const pre = both[0] || { fault: 'the preflight returned no result', transient: true }
@@ -1986,9 +2099,9 @@ async function runTest() {
   if (crossNamed.length) Object.assign(facts, { 'cross-model': crossRan, 'cross-model-void': crossVoid.map((x) => x.item) })
   if (sc.base && SHORT_SHA_RE.test(sc.base)) facts.base = sc.base
   const dir = v.scratch + '/record/test-r' + ctx.round + '-a' + ctx.attempt
-  const commands = stageRecordCommands(ctx, dir, { reporters: launch.names, rows: rec.rows, triage: rec.triage, patches: [], clauses: clauseRows(unitStatus, sha, 'round ' + ctx.round + ': ' + scopeLabel(v.scope, rerun ? v.clause : null, state.facts.scope) + ' — ' + state.doors.included.length + ' door(s) inside'), facts, keys: tri.entries.map((e) => e.key) })
-  const recorded = await recordStep('test:r' + ctx.round, recordPrompt(v, 'the record of round ' + ctx.round + '\'s test stage — ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s)', loopBranch, commands, v.run + ' r' + ctx.round + ' — the test stage\'s record'))
-  if (recorded.fault) return halt('record', recorded.fault, { transient: !recorded.result, halt: recorded.result ? recorded.result.halt : null, launched: launch.names })
+  const commands = stageRecordCommands(ctx, { reporters: launch.names, gate: { commit: sha, file: candidateGate }, rows: rec.rows, triage: rec.triage, patches: [], clauses: clauseRows(unitStatus, sha, 'round ' + ctx.round + ': ' + scopeLabel(v.scope, rerun ? v.clause : null, state.facts.scope) + ' — ' + state.doors.included.length + ' door(s) inside'), facts, keys: tri.entries.map((e) => e.key) })
+  const recorded = await recordStep('test:r' + ctx.round, loopBranch, recordPrompt(v, 'the record of round ' + ctx.round + '\'s test stage — ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s)', loopBranch, dir, ctx.round, commands, v.run + ' r' + ctx.round + ' — the test stage\'s record'))
+  if (recorded.fault) return halt('record', recorded.fault, { transient: !recorded.result, halt: recorded.result ? recorded.result.halt : null, gate: recorded.result ? recorded.result.gate : null, launched: launch.names, forks: tri.forks, then: RECORD_THEN })
   const pushed = await toolStep('push', 'Record', 'push', pushPrompt(v, loopBranch))
   if (!onIt(pushed, loopBranch, true)) return gitHalt('push', pushed, 'the record is committed on ' + loopBranch + ' (' + recorded.result.commit + ') and the branch was not pushed')
   const last = await readState()
@@ -2021,6 +2134,7 @@ async function runFix() {
   phase('State')
   const gs = await toolStep('state', 'State', 'git-state', gitStatePrompt(v))
   if (!gs || gs.status !== 'ready') return gitHalt('git', gs, 'the tree or the branches are not in the state the `fix` stage starts from')
+  if (gs.pending) return await finishRecord(gs)
   let read = await readState()
   if (!read.state) return halt('state', 'the run\'s state could not be read: ' + read.error, { transient: !!read.transient, halt: read.halt || null })
   let state = read.state
@@ -2087,8 +2201,8 @@ async function runFix() {
     }
     const ctx = { run: v.run, round, stage: 'fix', cycle: state.position.fix.cycle, attempt: state.position.fix.attempt, scratch: v.scratch }
     const patches = reopenPatches(state.ledger, commits.fixes)
-    const commands = stageRecordCommands(ctx, v.scratch + '/record/drop-r' + round, { reporters: [], rows: [], triage: [], patches, clauses: [], facts: { outcome: 'dropped' }, keys: patches.map((p) => p.key) })
-    const recorded = await recordStep('drop:r' + round, recordPrompt(v, 'round ' + round + ' is DROPPED, by the human\'s ruling at a bound — ' + patches.length + ' finding(s) whose fix does not land are open again', branch, commands, v.run + ' r' + round + ' — the round is dropped'))
+    const commands = stageRecordCommands(ctx, { reporters: [], rows: [], triage: [], patches, clauses: [], facts: { outcome: 'dropped' }, keys: patches.map((p) => p.key) })
+    const recorded = await recordStep('drop:r' + round, branch, recordPrompt(v, 'round ' + round + ' is DROPPED, by the human\'s ruling at a bound — ' + patches.length + ' finding(s) whose fix does not land are open again', branch, v.scratch + '/record/drop-r' + round, round, commands, v.run + ' r' + round + ' — the round is dropped'))
     if (recorded.fault) return halt('record', recorded.fault, { transient: !recorded.result, halt: recorded.result ? recorded.result.halt : null })
     phase('Land')
     let carried = []
@@ -2161,8 +2275,8 @@ async function runFix() {
     const rec = triageRecord(ctx, tri.entries)
     const keys = tri.entries.map((e) => e.key)
     for (const patch of patches) if (!keys.includes(patch.key)) keys.push(patch.key)
-    const commands = stageRecordCommands(ctx, v.scratch + '/record/fix-r' + round + '-c' + ctx.cycle + '-a' + ctx.attempt, { reporters: launch.names, rows: rec.rows, triage: rec.triage, patches, clauses: [], facts: audited ? { cycles: ctx.cycle } : null, keys })
-    const recorded = await recordStep('fix:r' + round + ':c' + ctx.cycle, recordPrompt(v, 'the record of round ' + round + '\'s fix cycle ' + ctx.cycle + ' — ' + launch.names.length + ' report(s), ' + patches.length + ' ledger patch(es), ' + tri.entries.length + ' finding(s) triaged' + (audited ? '' : '; the fix diff was not audited, and the cycle is not counted'), branch, commands, v.run + ' r' + round + ' c' + ctx.cycle + ' — the fix cycle\'s record'))
+    const commands = stageRecordCommands(ctx, { reporters: launch.names, rows: rec.rows, triage: rec.triage, patches, clauses: [], facts: audited ? { cycles: ctx.cycle } : null, keys })
+    const recorded = await recordStep('fix:r' + round + ':c' + ctx.cycle, branch, recordPrompt(v, 'the record of round ' + round + '\'s fix cycle ' + ctx.cycle + ' — ' + launch.names.length + ' report(s), ' + patches.length + ' ledger patch(es), ' + tri.entries.length + ' finding(s) triaged' + (audited ? '' : '; the fix diff was not audited, and the cycle is not counted'), branch, v.scratch + '/record/fix-r' + round + '-c' + ctx.cycle + '-a' + ctx.attempt, round, commands, v.run + ' r' + round + ' c' + ctx.cycle + ' — the fix cycle\'s record'))
     if (recorded.fault) return { halted: halt('record', recorded.fault, { transient: !recorded.result, halt: recorded.result ? recorded.result.halt : null, launched: launch.names, branch }) }
     const pushed = await toolStep('push:' + branch + ':c' + ctx.cycle + ':record', 'Record', 'push', pushPrompt(v, branch))
     if (!onIt(pushed, branch, true)) return { halted: gitHalt('push', pushed, 'cycle ' + ctx.cycle + ' is recorded on ' + branch + ' (' + recorded.result.commit + ') and the branch was not pushed') }
@@ -2223,8 +2337,8 @@ async function runFix() {
     const fresh = state.blockers.filter((key) => !known.includes(key))
     const cutAs = { branch: part, kept, left, reopened: reopen.map((p) => p.key) }
     if (fresh.length || state.human_list.length || forks.length) return Object.assign(unlanded('bound', 'the part was audited as exactly its diff, and the audit is not clean: ' + fresh.length + ' new blocker(s)' + (fresh.length ? ' (' + fresh.join(', ') + ')' : '') + ', ' + state.human_list.length + ' item(s) for the human, ' + forks.length + ' fork(s) — it is unlanded, on ' + part), { part: Object.assign({ new_blockers: fresh }, cutAs), record: done.record }, nextOf(state))
-    const closing = stageRecordCommands(ctx, v.scratch + '/record/part-r' + round, { reporters: [], rows: [], triage: [], patches: [], clauses: [], facts: { outcome: 'part' }, keys: [] })
-    const said = await recordStep('part:r' + round, recordPrompt(v, 'a PART of round ' + round + ' lands, by the human\'s ruling at a bound — ' + kept.length + ' fix commit(s) kept, ' + left.length + ' left out and their finding(s) open again', part, closing, v.run + ' r' + round + ' — a part of the round lands'))
+    const closing = stageRecordCommands(ctx, { reporters: [], rows: [], triage: [], patches: [], clauses: [], facts: { outcome: 'part' }, keys: [] })
+    const said = await recordStep('part:r' + round, part, recordPrompt(v, 'a PART of round ' + round + ' lands, by the human\'s ruling at a bound — ' + kept.length + ' fix commit(s) kept, ' + left.length + ' left out and their finding(s) open again', part, v.scratch + '/record/part-r' + round, round, closing, v.run + ' r' + round + ' — a part of the round lands'))
     if (said.fault) return halt('record', said.fault, { transient: !said.result, halt: said.result ? said.result.halt : null, branch: part })
     return await land({ part: cutAs })
   }

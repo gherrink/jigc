@@ -48,5 +48,6 @@ agent advocate:doc-set-drops-a-slot · robust-advocate · opus · Triage
 agent proposal:doc-set-drops-a-slot · general-purpose · opus · Triage
 phase Record
 agent record:test:r1 · build-executor · opus · Record
+agent git:record:test:r1 · build-git · sonnet · Record
 agent git:push · build-git · sonnet · Record
 agent git:state:test-3 · build-git · sonnet · State

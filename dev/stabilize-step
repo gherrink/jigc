@@ -31,14 +31,15 @@
 #   dev/stabilize-step git-state --stage test|fix --loop L --rounds P --run-dir D
 #                      [--product PATH]...
 #       The state a stage starts from. The branch checked out is L (`test`), or L or a
-#       name that begins P (`fix`) — wrong-branch. The tree holds nothing but untracked
-#       reports under D (a path with `/reports/` in it) — dirty. The pushed L has no
+#       name that begins P (`fix`) — wrong-branch. The tree holds nothing but THE RUN'S
+#       PENDING WRITES (below) — dirty. The pushed L has no
 #       commit the local one lacks — remote-ahead. And THE PATH-CLASS ASSERT, from the
 #       commit that added D/opening.md on: no commit on L's first-parent line changed a
 #       product path outside a merge — product-path — and every merge there is a round's,
 #       its subject beginning `Merge branch 'P` — foreign-merge. Without an opening the
 #       assert does not run. Prints {status: ready, branch, head, loop_head, opening,
-#       untracked}.
+#       untracked, pending} — `pending` is null, or the applied batch a record step left
+#       uncommitted: {round, subject, calls, checks, files}.
 #
 #   dev/stabilize-step state --run R --scratch DIR --tag T
 #       The run's record, read: `dev/stabilize-record state --run R`, kept as
@@ -55,7 +56,8 @@
 #
 #   dev/stabilize-step open-round --loop L --branch B --run-dir D
 #       B checked out: switched to, or opened from L without an upstream. The tree as
-#       for git-state — dirty. Prints {status: ready, branch, head, created}.
+#       for git-state, and no applied batch — dirty. Prints {status: ready, branch, head,
+#       created}.
 #
 #   dev/stabilize-step push --branch B
 #       B pushed by name. B is checked out — wrong-branch; the pushed B has no commit
@@ -91,6 +93,22 @@
 #       carry-differs, and nothing is undone. Prints {status: carried, branch, head,
 #       remote_head, picked: [{from, to}]}.
 #
+#   dev/stabilize-step record --branch B --run-dir D --gate FILE --calls N --checks M
+#       A RECORD STEP'S ONE COMMIT (DECISIONS.md -> 2026-10-06, "A stabilization run's
+#       record commit under a red candidate"). B is checked out — wrong-branch. The run
+#       has an applied batch (`dev/stabilize-record apply`), of N calls and M checks
+#       each of which holds — no-batch — and the tree holds exactly the run's pending
+#       writes — dirty. FILE holds the whole output of the
+#       full `dev/gate` that ran on this tree, and `dev/stabilize-record gate-check` holds
+#       it to the candidate's gate as the batch's round has it on record: red that the
+#       candidate's gate did not show is refused — gate-red — naming it, and NOTHING IS
+#       COMMITTED OR UNDONE: the batch stays applied, for this act to be asked for again
+#       after another gate, or for `dev/stabilize-record discard`. Else every pending path
+#       is added by name, ONE commit is made with the subject the batch carries, and the
+#       batch is settled. Prints {status: recorded, branch, commit, head, round, paths,
+#       applied: {calls, checks}, gate: <the check's result>}; a refusal carries what of
+#       these the act had established.
+#
 #   dev/stabilize-step sync-main --loop L [--log PATH]...
 #       `origin/main` merged INTO L before its pull request, as the build harness's close
 #       step has it (.claude/workflows/milestone-build.js, syncMainPrompt). L is checked
@@ -99,6 +117,15 @@
 #       commit has L's old tip and origin/main as its parents and the tree is clean —
 #       else merge-differs. Nothing is pushed. Prints {status: merged, head,
 #       origin_main, resolved_logs}.
+#
+# THE RUN'S PENDING WRITES. What `dev/stabilize-record` wrote and no commit holds yet is
+# no dirty tree. This tool asks that script (`pending`) and holds `git status` to the
+# answer, path by path: an UNTRACKED file that is one of the run's written-once files —
+# a report, a round's scope; an untracked or modified file of THE APPLIED BATCH whose
+# content is still what the batch wrote; and the script's own journal. Any other line —
+# a tracked file changed by hand, a file of a batch changed after it was written, an
+# untracked file anywhere else — is a tree no step starts from. A write that was killed
+# between its files is refused (record), naming what finishes it.
 #
 # The line. One JSON object, `act` first, and LAST a `sha256` of the line as it stands
 # without that field — `…, "sha256": "<64 hex>"}` over `…}` — so that the harness can
@@ -128,6 +155,9 @@
 #   16  remote-differs after the push the remote does not stand at the local head
 #   17  record         dev/stabilize-record refused, failed or printed no JSON
 #   18  git            a git command failed where the act expects none to
+#   19  gate-red       the gate on the tree with the records shows red that the
+#                      candidate's own gate did not; nothing is committed or undone
+#   20  no-batch       the run has no applied batch, or nothing pending: nothing to record
 #
 # Needs python3 and git, which the gate needs already. It finds its repository from
 # where it lies, never from where it was called.
@@ -161,11 +191,15 @@ STATUS = {
     "remote-differs": 16,
     "record": 17,
     "git": 18,
+    "gate-red": 19,
+    "no-batch": 20,
 }
 # What `git ls-remote --exit-code` exits with when no ref matches.
 NO_SUCH_REF = 2
-# What `dev/stabilize-record check-reports` exits with for a missing or an extra report.
+# What `dev/stabilize-record check-reports` exits with for a missing or an extra report,
+# and `gate-check` for red the candidate's gate did not show.
 REPORTS_MISMATCH = 20
+GATE_MISMATCH = 22
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
@@ -285,21 +319,40 @@ def push(branch, facts):
     facts["remote_head"] = local
 
 
-def only_reports(status, run_dir):
-    """The untracked reports a tree may hold: every line of `git status --porcelain` an
-    untracked path under the run's directory with `/reports/` in it. Any other line — a
-    tracked file modified, staged or deleted, an untracked file anywhere else — is a
-    tree the step does not start from."""
-    untracked, other = [], []
+def pending_of(run_dir):
+    """What of the run is written and in no commit yet, as dev/stabilize-record says it."""
+    asking = run([RECORD, "pending", "--run", os.path.basename(run_dir)])
+    try:
+        pending = json.loads(asking.out) if asking.code == 0 else None
+    except ValueError:
+        pending = None
+    if not isinstance(pending, dict):
+        refuse("record", "dev/stabilize-record could not say what of the run is pending", asking.shown())
+    if pending.get("interrupted"):
+        refuse("record", "a write of the run's record was killed between its files", asking.shown(), "`dev/stabilize-record recover --run %s` finishes it; the step is then asked for again" % os.path.basename(run_dir))
+    return pending
+
+
+def admitted(status, pending):
+    """(the untracked written-once files, the files of the applied batch) a tree holds —
+    THE RUN'S PENDING WRITES, in the header's words. Any other line of `git status
+    --porcelain` is a tree the step does not start from."""
+    batch = pending.get("batch") or {}
+    once, files, altered = pending.get("once") or [], batch.get("files") or {}, batch.get("altered") or []
+    untracked, held, other = [], [], []
     for line in lines(status):
         path = line[3:]
-        if line.startswith("?? ") and path.startswith(run_dir + "/") and "/reports/" in path:
+        if line.startswith("?? ") and path == pending.get("journal"):
+            continue
+        if line.startswith("?? ") and path in once:
             untracked.append(path)
+        elif line[:3] in ("?? ", " M ") and path in files and path not in altered:
+            held.append(path)
         else:
             other.append(line)
     if other:
-        refuse("dirty", "the tree holds more than reports no record step has committed yet: %s" % "; ".join(other), "`git status --porcelain --untracked-files=all` printed: %s" % " | ".join(lines(status)))
-    return untracked
+        refuse("dirty", "the tree holds more than what dev/stabilize-record wrote and no commit holds yet: %s" % "; ".join(other), "`git status --porcelain --untracked-files=all` printed: %s" % " | ".join(lines(status)))
+    return untracked, held
 
 
 def clean(status, command):
@@ -351,7 +404,9 @@ def git_state(args, facts):
     if current != args.loop and not (args.stage == "fix" and current.startswith(args.rounds)):
         refuse("wrong-branch", "`%s` is checked out: the `%s` stage starts from %s" % (current, args.stage, "the loop branch `%s`" % args.loop if args.stage == "test" else "`%s` or a round's branch, `%s…`" % (args.loop, args.rounds)), "`git branch --show-current` printed `%s`" % current)
     # 2. The tree.
-    untracked = only_reports(said("status", "--porcelain", "--untracked-files=all"), args.run_dir)
+    pending = pending_of(args.run_dir)
+    untracked, held = admitted(said("status", "--porcelain", "--untracked-files=all"), pending)
+    batch = pending.get("batch")
     # 3. The pushed loop branch.
     pushed_is_not_ahead(args.loop)
     # 4. The commit that added the run's opening record.
@@ -367,7 +422,11 @@ def git_state(args, facts):
         if foreign:
             refuse("foreign-merge", "a merge on `%s` is not a round's: %s" % (args.loop, "; ".join(foreign)), "`git log --first-parent --merges --format=%%s %s`" % since)
     # 6. The report.
+    # An applied batch none of whose files the tree still holds was committed, and only
+    # its settling was lost: it is nothing pending.
+    live = batch is not None and (held or not batch["files"])
     facts.update(status="ready", branch=current, head=said("rev-parse", "HEAD"), loop_head=said("rev-parse", args.loop), opening=opening, untracked=untracked)
+    facts.update(pending={"round": batch["round"], "subject": batch["subject"], "calls": batch["calls"], "checks": batch["checks"], "files": held} if live else None)
 
 
 def state(args, facts):
@@ -410,7 +469,9 @@ def find_round(args, facts):
 
 
 def open_round(args, facts):
-    only_reports(said("status", "--porcelain", "--untracked-files=all"), args.run_dir)
+    _, held = admitted(said("status", "--porcelain", "--untracked-files=all"), pending_of(args.run_dir))
+    if held:
+        refuse("dirty", "a record's batch is applied and not committed: %s" % ", ".join(held), "`dev/stabilize-record pending`", "its record step commits it on the branch it was applied on, before any branch is opened")
     created = not answers(git("rev-parse", "--verify", "--quiet", "refs/heads/" + args.branch))
     if created:
         said("switch", args.loop)
@@ -507,6 +568,51 @@ def carry(args, facts):
     facts.update(picked=[{"from": sha, "to": to} for sha, to in zip(args.shas, made)])
 
 
+def record(args, facts):
+    run_name = os.path.basename(args.run_dir)
+    # 1. The branch.
+    current = checked_out(args.branch)
+    # 2. The applied batch, and the tree as exactly the run's pending writes.
+    pending = pending_of(args.run_dir)
+    batch = pending.get("batch")
+    if not batch:
+        refuse("no-batch", "run %s has no applied batch: there is nothing this step records" % run_name, "`dev/stabilize-record pending` printed no batch", "a record step applies its batch first (`dev/stabilize-record apply`)")
+    facts.update(round=batch["round"], applied={"calls": batch["calls"], "checks": batch["checks"]})
+    failed = [check for check in batch["checks"] if not (isinstance(check, dict) and check.get("ok") is True)]
+    if batch["calls"] != int(args.calls) or len(batch["checks"]) != int(args.checks) or failed:
+        refuse("no-batch", "the applied batch is not the one this step records: it ran %d call(s) and %d check(s), %d of which do not hold, and the step names %s and %s" % (batch["calls"], len(batch["checks"]), len(failed), args.calls, args.checks), "`dev/stabilize-record pending` printed: %s" % json.dumps(facts["applied"]), "nothing was committed: `dev/stabilize-record discard --run %s` takes a batch back that no step of this stage applied" % run_name)
+    untracked, held = admitted(said("status", "--porcelain", "--untracked-files=all"), pending)
+    paths = sorted(untracked + held)
+    facts.update(paths=paths)
+    if not paths:
+        refuse("no-batch", "nothing of run %s is pending: the batch's files are in a commit already" % run_name, "`git status --porcelain --untracked-files=all` printed nothing under %s" % args.run_dir, "`dev/stabilize-record settle --run %s` forgets a batch whose commit was made" % run_name)
+    # 3. The gate that ran on this tree, held to the candidate's.
+    flags = [] if batch["round"] is None else ["--round", str(batch["round"])]
+    checking = run([RECORD, "gate-check", "--run", run_name, "--summary", args.gate] + flags)
+    try:
+        gate = json.loads(checking.out) if checking.code in (0, GATE_MISMATCH) else None
+    except ValueError:
+        gate = None
+    if not isinstance(gate, dict):
+        refuse("record", "dev/stabilize-record could not hold the gate's output to the candidate's gate", checking.shown(), "the batch stays applied and uncommitted: the step is asked for again once the full gate's whole output is in that file")
+    facts.update(gate=gate)
+    if checking.code != 0:
+        refuse("gate-red", "the gate on the tree with the records shows red that the candidate's own gate did not: %s" % "; ".join(gate["new"]), checking.shown(), "nothing was committed or undone: the batch stays applied. A stage invoked again runs the gate on it once more and commits it if nothing is newly red; `dev/stabilize-record discard --run %s` takes the batch back instead" % run_name)
+    # 4. The one commit: every pending path by name, and the subject the batch carries.
+    subject = batch["subject"]
+    said("add", "--", *paths)
+    said("commit", "-q", "-m", subject)
+    commit = said("rev-parse", "HEAD")
+    facts.update(commit=commit, head=commit)
+    # 5. The batch is committed: the record script forgets it.
+    settling = run([RECORD, "settle", "--run", run_name])
+    if settling.code != 0:
+        refuse("record", "the record commit %s is made, and dev/stabilize-record could not settle its batch" % commit, settling.shown())
+    clean(said("status", "--porcelain", "--untracked-files=all"), "git status --porcelain --untracked-files=all")
+    # 6. The report.
+    facts.update(status="recorded", branch=current)
+
+
 def sync_main(args, facts):
     # 1. The branch and the tree.
     checked_out(args.loop)
@@ -563,6 +669,11 @@ def directory_outside(value):
     return value
 
 
+def file_outside(value):
+    return directory_outside(value)
+
+
+count = grammar(re.compile(r"[0-9]{1,4}"), "a count")
 branch_name = grammar(BRANCH, "a branch name with a prefix (`fix/<run>…`): `main` is no argument of a step")
 slug = grammar(SLUG, "a slug (a-z0-9 words joined by single `-`)")
 full_sha = grammar(FULL_SHA, "a full sha")
@@ -579,6 +690,9 @@ FLAGS = {
     "stage": grammar(re.compile("|".join(STAGES)), "one of " + ", ".join(STAGES)),
     "round": str,
     "attempt": str,
+    "gate": file_outside,
+    "calls": count,
+    "checks": count,
 }
 LISTS = {"product": path_in_repository, "log": path_in_repository}
 
@@ -608,6 +722,7 @@ def arguments(argv):
     act("land", land, ["loop", "branch", "run-dir"], lists=["product", "log"])
     act("round-commits", round_commits, ["loop", "branch", "run-dir"])
     act("carry", carry, ["loop", "run-dir"], lists=["product"], names=("shas", argparse.ONE_OR_MORE, full_sha))
+    act("record", record, ["branch", "run-dir", "gate", "calls", "checks"])
     act("sync-main", sync_main, ["loop"], lists=["log"])
     if not argv or argv[0] not in acts.choices:
         refuse("usage", "%s is not an act: the acts are %s — see dev/stabilize-step --help" % (json.dumps(argv[0]) if argv else "nothing", ", ".join(acts.choices)))

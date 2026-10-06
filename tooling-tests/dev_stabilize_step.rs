@@ -100,6 +100,8 @@ const REFUSALS: &[(&str, i32)] = &[
     ("remote-differs", 16),
     ("record", 17),
     ("git", 18),
+    ("gate-red", 19),
+    ("no-batch", 20),
 ];
 
 fn repo_root() -> PathBuf {
@@ -612,10 +614,14 @@ fn git_state_reads_the_state_a_stage_starts_from() {
     let rig = StepRig::new("git-state");
     let product = product();
     let opening = rig.rev("HEAD");
-    // A report a stage wrote and no record step has committed is the one thing a tree
-    // may hold.
+    // What a stage wrote through the record script and no record step has committed is
+    // what a tree may hold: a report, and the round's scope — each at the one path the
+    // record script names for it (`pending`). A stage that stopped after its scope step
+    // left exactly these.
     let report = format!("{RUN_DIR}/r1/reports/test/scope.a1.md");
+    let scope = format!("{RUN_DIR}/r1/scope.md");
     rig.write(&report, "a report\n");
+    rig.write(&scope, "the scope\n");
 
     let seen = rig.step(&git_state("test", &product));
     let line = seen.done("git-state", "ready");
@@ -623,8 +629,8 @@ fn git_state_reads_the_state_a_stage_starts_from() {
         *line,
         json!({
             "act": "git-state", "status": "ready", "branch": LOOP, "head": opening,
-            "loop_head": opening, "opening": opening, "untracked": [report],
-            "sha256": line["sha256"],
+            "loop_head": opening, "opening": opening, "untracked": [report, scope],
+            "pending": null, "sha256": line["sha256"],
         })
     );
     assert_eq!(
@@ -682,19 +688,32 @@ type Soil<'a> = &'a dyn Fn(&StepRig);
 #[test]
 fn git_state_refuses_a_tree_that_holds_more_than_reports() {
     let product = product();
-    let dirty: [(&str, Soil); 4] = [
+    let dirty: [(&str, Soil); 6] = [
         ("a tracked file modified", &|rig| {
             rig.write("README.md", "changed\n")
         }),
         ("an untracked file outside the run", &|rig| {
             rig.write("notes.txt", "x\n")
         }),
-        // PRESERVED: the round's scope file is no report, so a `test` stage that stopped
-        // after its scope step halts the next invocation here — the doc's own *Halt and
-        // resume* names it, and a later task of the repair turns this assertion.
-        ("the round's scope file", &|rig| {
-            rig.write(&format!("{RUN_DIR}/r1/scope.md"), "the scope\n");
+        // A file under the run's directory is pending only at a path the record script
+        // names: a note beside the tables, and a file beside the reports that is no
+        // report's name, are a tree no stage starts from.
+        ("an untracked file of the run that is no record's", &|rig| {
+            rig.write(&format!("{RUN_DIR}/notes.md"), "a note\n");
         }),
+        (
+            "an untracked file beside the reports that is no report",
+            &|rig| {
+                rig.write(&format!("{RUN_DIR}/r1/reports/test/notes.txt"), "x\n");
+            },
+        ),
+        // And a table nobody applied as a batch is a table changed by hand.
+        (
+            "a tracked file of the run modified, with no batch applied",
+            &|rig| {
+                rig.write(&format!("{RUN_DIR}/opening.md"), "# another opening\n");
+            },
+        ),
         ("a staged file", &|rig| {
             rig.write(&format!("{RUN_DIR}/r1/reports/test/x.a1.md"), "x\n");
             rig.git(&["add", "-A"]);
@@ -1962,7 +1981,8 @@ fn valid(flag: &str, scratch: &str) -> String {
         "tag" => "test-1".to_owned(),
         "scratch" => scratch.to_owned(),
         "stage" => "test".to_owned(),
-        "round" | "attempt" => "1".to_owned(),
+        "round" | "attempt" | "calls" | "checks" => "1".to_owned(),
+        "gate" => format!("{scratch}/gate.txt"),
         other => panic!("the suite has no value for the flag `--{other}`: give it one"),
     }
 }
@@ -2110,7 +2130,8 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("switch", &["--no-track", "-c"]),
     ("push", &[]),
     ("merge", &["--no-ff", "--no-edit", "--abort"]),
-    ("commit", &["--no-edit"]),
+    ("commit", &["--no-edit", "-q", "-m"]),
+    ("add", &["--"]),
     ("cherry-pick", &["-x", "--abort"]),
 ];
 
@@ -2127,7 +2148,8 @@ const CHANGING: &[(&str, &[&str])] = &[
         "merge",
         &["merge --no-ff --no-edit <target>", "merge --abort"],
     ),
-    ("commit", &["commit --no-edit"]),
+    ("commit", &["commit --no-edit", "commit -q -m <subject>"]),
+    ("add", &["add -- <paths>"]),
     (
         "cherry-pick",
         &["cherry-pick -x <sha>", "cherry-pick --abort"],
@@ -2379,6 +2401,10 @@ fn offences(source: &str) -> Vec<String> {
                             }
                             ("<target>", Arg::Expression(name)) => name == "target",
                             ("<sha>", Arg::Expression(name)) => name == "sha",
+                            // The record's commit: the subject its batch carries, and
+                            // the run's pending paths, each by name.
+                            ("<subject>", Arg::Expression(name)) => name == "subject",
+                            ("<paths>", Arg::Expression(name)) => name == "*paths",
                             (literal, Arg::Literal(text)) => text == literal,
                             _ => false,
                         })
@@ -2501,7 +2527,10 @@ fn offences(source: &str) -> Vec<String> {
         let known = (call.within == "git" && program == "[\"git\"] + list(argv)")
             || program == "[MERGE_LOGS]"
             || program.starts_with("[RECORD, \"state\", ")
-            || program.starts_with("[RECORD, \"check-reports\"] + ");
+            || program.starts_with("[RECORD, \"check-reports\"] + ")
+            || program.starts_with("[RECORD, \"pending\", ")
+            || program.starts_with("[RECORD, \"gate-check\", ")
+            || program.starts_with("[RECORD, \"settle\", ");
         if !known {
             found.push(format!(
                 "`run({program})` in `{}`: a program the tool does not run",

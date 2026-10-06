@@ -56,6 +56,13 @@
 //!   run's recorded facts, never from prose; `close` goes back with each clause's evidence;
 //!   and the verifier's definition says what an unverified finding means.
 //!
+//! - **(n)** a record is accepted on its commit step's own line, and on nothing an agent says
+//!   of it: one function runs a record step — the executor, which applies the batch and
+//!   runs the gate and commits nothing, then the ONE commit as a git step — and holds the
+//!   line to the commit, the gate check and one result per check the script composed; and
+//!   an invocation that finds a batch applied and not committed finishes it before it reads
+//!   the run's state, and starts nothing.
+//!
 //! **Driven, where `node` is on `PATH`** (it is on this project's development machines and
 //! on GitHub's hosted runners; where it is not, the arm fails under CI and passes anywhere
 //! else — the gate gains no dependency — and the gate's own summary names it as a test
@@ -578,7 +585,7 @@ fn f_the_humans_rulings_are_written_by_one_step_and_no_other() {
     let full = harness();
     let step = function(&full, "rulingsRecordPrompt");
     assert!(
-        step.contains(" bound-set --run ") && step.contains(" ledger-set --run "),
+        step.contains("call('bound-set --run ") && step.contains("call('ledger-set --run "),
         "the rulings step writes the declared-bounds list and the dispositions"
     );
     assert!(
@@ -865,10 +872,11 @@ fn j_what_the_record_script_decides_from_reaches_it_and_what_it_decides_is_passe
     let at = |payload: &str| {
         record
             .find(payload)
-            .unwrap_or_else(|| panic!("a stage's record feeds `{payload}`"))
+            .unwrap_or_else(|| panic!("a stage's record composes `{payload}`"))
     };
     assert!(
-        at("'rows.json'") < at("'patches.json'") && at("'patches.json'") < at("'triage.json'"),
+        at("call('ledger-add --run ") < at("call('ledger-set --run ")
+            && at("call('ledger-set --run ") < at("call('triage-set --run "),
         "a stage's record writes its rows, then its dispositions, then its triage"
     );
 
@@ -960,8 +968,21 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
     // An invocation that carries them records them and starts nothing: each stage hands
     // over before it reads its position, and what it hands over to launches no instrument,
     // no fixer and no landing.
-    let hand_over = "\n  if (v.rulings && v.rulings.every(runRuling)) return await ruleTheRun(state, gs.branch)\n";
-    for (name, stage) in [("runTest", test_stage), ("runFix", fix_stage)] {
+    // The `test` stage hands over every invocation that carries rulings — the ones about
+    // the run, and the ones on findings and bounds, which it records and does nothing with;
+    // the `fix` stage hands over the ones about the run, and records the others itself.
+    for (name, stage, hand_over) in [
+        (
+            "runTest",
+            test_stage,
+            "\n  if (v.rulings) return await ruleTheRun(state, gs.branch)\n",
+        ),
+        (
+            "runFix",
+            fix_stage,
+            "\n  if (v.rulings && v.rulings.every(runRuling)) return await ruleTheRun(state, gs.branch)\n",
+        ),
+    ] {
         let at = stage.find(hand_over).unwrap_or_else(|| {
             panic!("`{name}` hands a ruling about the run over, and returns what comes back")
         });
@@ -976,9 +997,10 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
     let rule = function(&full, "ruleTheRun");
     assert!(
         rule.contains("runRulingsFault(v.rulings, state)")
+            && rule.contains("findingRulingsFault(v.rulings, state)")
             && rule.contains("checkedOut !== loopBranch")
-            && rule.contains("await rulingsStep("),
-        "a ruling about the run is asked of the state, on the loop branch, then recorded"
+            && rule.matches("await rulingsStep(").count() == 1,
+        "a ruling is asked of the state, on the loop branch, then recorded by the one step"
     );
     for launching in [
         "runUnits(",
@@ -1127,6 +1149,124 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
         triage.contains("`ledger`"),
         "finding-triage.md says what the source `ledger` is"
     );
+}
+
+// ---------------------------------------------------------------------------
+// (n) the record step: accepted on the commit step's line, and the executor commits nothing
+// ---------------------------------------------------------------------------
+
+#[test]
+fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_nothing() {
+    let full = harness();
+    let source = code(&full);
+
+    // One function runs a record step: the executor first, then the ONE commit, a git step
+    // that is handed what the batch was composed of.
+    let step = function(&full, "recordStep");
+    let executor = step
+        .find("await roleStep('record', ")
+        .expect("a record step launches its executor");
+    let commit = step
+        .find("await toolStep('record:' + label, 'Record', 'record', recordCommitPrompt(v, branch, rec.gate, rec.expect))")
+        .expect("a record step's commit is the tool's `record` act, handed the gate's file and what was composed");
+    assert!(
+        executor < commit && step.contains("recordFault(r, rec.expect)"),
+        "the executor, then the commit, then the line held to what was composed"
+    );
+    assert_eq!(
+        source.matches("roleStep('record', ").count(),
+        1,
+        "the record's executor is launched in one place"
+    );
+    assert_eq!(
+        source.matches("recordCommitPrompt(").count()
+            - function(&full, "selfTest")
+                .matches("recordCommitPrompt(")
+                .count(),
+        2,
+        "and its commit is asked for in one place"
+    );
+
+    // What is accepted: the commit, the gate check that holds, and one result per check
+    // composed, each of which holds.
+    let fault = function(&full, "recordFault");
+    for held in [
+        "r.status !== 'recorded'",
+        "SHA_RE.test(String(r.commit || ''))",
+        "r.gate.ok !== true",
+        "applied.calls !== expect.calls",
+        "applied.checks.length !== expect.checks",
+        "c.ok !== true",
+    ] {
+        assert!(fault.contains(held), "`recordFault` holds `{held}`");
+    }
+    assert!(
+        function(&full, "recordPrompt")
+            .contains("expect: { calls: calls.length, checks: calls.filter(isCheck).length }"),
+        "what a record is held to is counted off the calls the script composed"
+    );
+
+    // The executor's prompt spells no commit: it applies the batch and runs the gate.
+    for name in ["recordPrompt", "pendingRecordPrompt", "gateStep"] {
+        let body = function(&full, name);
+        assert!(
+            !body.contains("git commit")
+                && !body.contains("git add")
+                && !body.contains("ONE commit of the paths"),
+            "`{name}` has the executor commit"
+        );
+    }
+    assert!(
+        source.contains("\nconst RECORD_RETURNS = 'YOU MAKE NO COMMIT, and stage nothing: ")
+            && function(&full, "recordPrompt").contains("    RECORD_RETURNS,\n")
+            && function(&full, "pendingRecordPrompt").contains("    RECORD_RETURNS,\n"),
+        "both prompts of a record step end by saying so"
+    );
+    assert!(
+        function(&full, "recordPrompt").contains("'2. `dev/stabilize-record apply --run '")
+            && !function(&full, "pendingRecordPrompt").contains("stabilize-record apply"),
+        "a record's calls are ONE batch, and a batch that is applied already is not applied again"
+    );
+    let executor = &definitions()["build-executor"];
+    assert!(
+        executor.contains("no commit of yours")
+            && executor.contains("a red gate is not your halt here")
+            && !executor.contains("its `GATE: PASS`"),
+        "build-executor.md still has the record step's executor commit, or halt on a red gate"
+    );
+
+    // An invocation that finds a batch applied and not committed finishes it first — before
+    // it reads the run's state — and what finishes it starts nothing.
+    for name in ["runTest", "runFix"] {
+        let stage = function(&full, name);
+        let found = stage
+            .find("\n  if (gs.pending) return await finishRecord(gs)\n")
+            .unwrap_or_else(|| panic!("`{name}` finishes a pending batch"));
+        let read = stage.find("readState()").expect("a stage reads the state");
+        assert!(
+            found < read,
+            "`{name}` finishes a pending batch before it reads the state"
+        );
+    }
+    let finish = function(&full, "finishRecord");
+    assert!(
+        finish.contains("await recordStep('pending', gs.branch, pendingRecordPrompt("),
+        "a pending batch is finished by a record step that applies nothing"
+    );
+    for launching in [
+        "runUnits(",
+        "preflightOf(",
+        "triagePasses(",
+        "rulingsStep(",
+        "scopePrompt(",
+        "landPrompt(",
+        "finishTriage(",
+    ] {
+        assert!(
+            !finish.contains(launching),
+            "`finishRecord` starts something: `{launching}`"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1500,7 +1640,10 @@ fn i_where_node_is_installed_the_script_parses_and_its_self_test_passes() {
         r#"{"stage": "test", "run": "rc24", "scratch": "relative/dir"}"#.to_owned(),
         r#"{"stage": "test", "run": "rc24", "scratch": "/tmp/it's here"}"#.to_owned(),
         r#"{"stage": "test", "run": "rc24"}"#.to_owned(),
-        format!(r#"{{"stage": "test", {run}, "rulings": [{{"key": "f-1", "ruling": "later"}}]}}"#),
+        format!(
+            r#"{{"stage": "test", {run}, "rulings": [{{"key": "f-1", "ruling": "later"}}], "stopAfter": "state"}}"#
+        ),
+        format!(r#"{{"stage": "test", {run}, "rulings": [{{"key": "f-1", "ruling": "fixed"}}]}}"#),
         format!(r#"{{"stage": "fix", {run}, "rulings": [{{"key": "f-1", "ruling": "fixed"}}]}}"#),
         format!(r#"{{"stage": "fix", {run}, "exit": "continue"}}"#),
         format!(r#"{{"stage": "fix", {run}, "raise": {{"cycles": 3}}}}"#),
