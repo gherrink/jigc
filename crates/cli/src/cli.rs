@@ -286,8 +286,9 @@ pub enum Command {
     /// or writing over it — asked of the files, so it holds where `git status` says
     /// nothing: a file git ignores at a path the install replaces (unless the bytes are
     /// jigc's own generated content, which keeps re-installing cleanly), and a change
-    /// hidden by an assume-unchanged or skip-worktree index flag. In a repository with no
-    /// commit yet, an untracked file it
+    /// hidden by an assume-unchanged or skip-worktree index flag. A footprint file you
+    /// deleted and did not commit is not such work: `setup` writes it again and commits
+    /// it. In a repository with no commit yet, an untracked file it
     /// merges into (`CLAUDE.md`, `.gitignore`, the settings file) rides the first commit
     /// instead; one it would replace still refuses. A file it replaces whole
     /// (`.jigc/AGENT.md`, `.jigc/version`, `.jigc/config/.gitkeep`,

@@ -2504,12 +2504,16 @@ fn version_stamp_is_jigcs(jigc_home: &Path) -> bool {
 /// re-run, and a route whose own act leads into a second refusal is the trap this check
 /// was written to close.
 ///
-/// **And it says to commit the removal where git tracks the entry**, which driving the
-/// route found it owed: a *committed* link removed and left uncommitted is a deleted
+/// **And it says to commit the removal where git tracks the entry.** Driving the route
+/// found it owed that once: a *committed* link removed and left uncommitted is a deleted
 /// tracked path — dirty against `HEAD` — so the re-run wrote the install and its
 /// commit-time backstop then refused over that very path, with the dirty-install route
-/// pointing at jigc's own freshly written file. With the removal committed the path is
-/// clean and absent, and one re-run installs.
+/// pointing at jigc's own freshly written file. **That is no longer what happens**
+/// ([`DirtyPaths::absent`], 2026-10-06): a path that was absent before the run is not the
+/// adopter's work, so the re-run installs over an uncommitted removal too and commits the
+/// regular file in the link's place. The route keeps the commit — it is true as printed
+/// and leaves the removal as a change of its own in the history — but the install no
+/// longer depends on it.
 fn replaced_path_refusal(jigc_home: &Path, members: &[InstallMember]) -> Option<Finding> {
     let mut code = None;
     let mut blocked: Vec<crate::regular_file::Blocker> = Vec::new();
@@ -2801,6 +2805,17 @@ fn jigc_owned_at(jigc_home: &Path, member: &InstallMember, before: &DirtyPaths) 
 /// commit ([`DirtyPaths::rides_the_first_commit`]). The one predicate both asks share —
 /// [`install`]'s pre-write gate over the candidate set, and [`commit_install`]'s backstop
 /// over the settled pathspec — and the one `--force` reports what it was spent on from.
+///
+/// **And not absent before the run** ([`DirtyPaths::absent`]; the human's ruling of
+/// 2026-10-06 on the fix pass's item 1). A tracked install file deleted from the working
+/// tree is a difference from `HEAD`, so it was in `before`; the pre-write gate asks only
+/// about paths that exist, so it passed; the install wrote the file; and the backstop then
+/// refused over it — naming jigc's own freshly written file as the adopter's uncommitted
+/// work, on every run wherever the restored bytes differ from `HEAD`'s (a merged-into file
+/// that had held the adopter's lines; a committed link, which a regular file never
+/// equals). Nothing of the adopter's was at such a path, on disk or in the index, so the
+/// install restores it and commits it. The deletion itself is not preserved: the install's
+/// job is to put the file there, and `HEAD` holds what was deleted.
 fn dirty_install_refusals(
     jigc_home: &Path,
     members: &[InstallMember],
@@ -2809,6 +2824,7 @@ fn dirty_install_refusals(
     members
         .iter()
         .filter(|member| before.contains(&member.path))
+        .filter(|member| !before.absent.contains(&member.path))
         .filter(|member| !jigc_owned_at(jigc_home, member, before))
         .filter(|member| !before.rides_the_first_commit(member))
         .map(|member| member.path.clone())
@@ -3203,7 +3219,10 @@ fn clear_install_footprint(jigc_home: &Path) {
 /// differed **before** the run. Those are exactly the paths that were clean before the run
 /// and are not clean now, so jigc wrote them in this run, whichever step failed and however
 /// far a callee got before its own `?`. A path the adopter had dirty before the run is in
-/// `before`, so it is never recorded.
+/// `before`, so it is never recorded — **except one that was dirty by being absent**
+/// ([`DirtyPaths::absent`]): a deleted tracked install file the failed run wrote afresh is
+/// jigc's by the same rule the commit's backstop applies, and left out of the record the
+/// re-run refused over it as the adopter's.
 ///
 /// **Then staged, mirroring [`commit_install`]'s refusal arm.** A record alone leaves a
 /// tracked install path (a committed `CLAUDE.md` the install merged into) refused, because
@@ -3235,7 +3254,9 @@ fn record_failed_install(
         install_candidates(jigc_home, line_file, allowlist_file, guide_file, through)
             .into_iter()
             .map(|member| member.path)
-            .filter(|path| now.contains(path) && !before.contains(path))
+            .filter(|path| {
+                now.contains(path) && (!before.contains(path) || before.absent.contains(path))
+            })
             .collect();
     record_install_footprint(jigc_home, &written);
     if !written.is_empty() {
@@ -3272,6 +3293,20 @@ struct DirtyPaths {
     /// is flagged assume-unchanged or skip-worktree, and git calls the file modified once
     /// asked without the flag ([`unseen_by_status`]). Filled like [`Self::ignored`].
     flagged: BTreeSet<String>,
+    /// The subset that **was not in the working tree** when the question was asked and
+    /// whose index entry holds nothing `HEAD` does not: a tracked file deleted, the
+    /// deletion staged (`D `) or not (` D`). git holds nothing of the adopter's at such a
+    /// path and neither does the disk, so whatever stands there once the install has run
+    /// is what the install wrote ([`dirty_install_refusals`]; the human's ruling of
+    /// 2026-10-06 on the fix pass's item 1).
+    ///
+    /// **Both halves are needed, and each is asked of whoever knows it.** The index half
+    /// is git's own status letter: a path staged and then deleted (`AD`, `MD`) is absent
+    /// too, and its staged blob is the adopter's, in no commit — that one still refuses.
+    /// The working-tree half is the entry itself, read without following a link: a staged
+    /// deletion says nothing about the disk, where an untracked file of the adopter's may
+    /// stand at the same path.
+    absent: BTreeSet<String>,
 }
 
 impl DirtyPaths {
@@ -3284,6 +3319,7 @@ impl DirtyPaths {
         self.untracked.remove(path);
         self.ignored.remove(path);
         self.flagged.remove(path);
+        self.absent.remove(path);
     }
 
     /// **The unborn-`HEAD` exemption, as a property of the member rather than of the
@@ -3466,6 +3502,16 @@ fn ask_dirty_against_head(jigc_home: &Path, pathspec: &[String]) -> Result<Dirty
         let path = record[3..].to_string();
         if record.starts_with("??") {
             dirty.untracked.insert(path.clone());
+        }
+        // A deletion and nothing else — never an unmerged `DD`/`DU`, whose letters mean
+        // something else — at a path the disk agrees is empty ([`DirtyPaths::absent`]).
+        // *Not found*, and no other failure: an entry that cannot be read is not known to
+        // be absent, and stays a subject.
+        if (record.starts_with(" D ") || record.starts_with("D  "))
+            && std::fs::symlink_metadata(jigc_home.join(&path))
+                .is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound)
+        {
+            dirty.absent.insert(path.clone());
         }
         dirty.all.insert(path);
     }
@@ -3886,9 +3932,12 @@ fn commit_install(
     // the candidate paths before the first write, so an ordinary refusal never gets here and
     // never has to write anything first. What reaches this ask is the member the pre-write
     // enumeration cannot name — the hook, whose home the install itself resolves — plus any
-    // path whose candidacy the pre-write filters answered differently (a staged deletion the
-    // install then recreates). The install *is* written and staged by the time this refuses,
-    // which is what its finding says.
+    // path whose candidacy the pre-write filters answered differently: one that was absent
+    // from the working tree while its **index** entry held bytes `HEAD` does not (staged,
+    // then deleted). A path absent with nothing of the adopter's in the index — a deleted
+    // tracked file, the deletion staged or not — is not one of them: the install wrote what
+    // stands there now ([`DirtyPaths::absent`]). The install *is* written and staged by the
+    // time this refuses, which is what its finding says.
     let (dirty, unborn): (Vec<String>, bool) = match subject {
         InstallSubject::Consented(_) => (Vec::new(), false),
         // No work tree at the home, so no commit — the benign skip this door has always

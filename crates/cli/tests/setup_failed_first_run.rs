@@ -643,3 +643,36 @@ fn on_an_unborn_head_a_write_span_failure_leaves_a_repo_a_plain_rerun_completes(
     let rerun = jigc(repo, home, &["setup"]);
     assert_rerun_completes(repo, &rerun);
 }
+
+/// (n) **A file the failed run restored is jigc's too** (the human's ruling of 2026-10-06
+/// on the fix pass's item 1, at this seam). A committed `CLAUDE.md` deleted from the working
+/// tree is a difference from `HEAD` *before* the run, and the record of a failed run was
+/// *what differs now, minus what differed before* — so the `CLAUDE.md` the failed run had
+/// just written afresh was left out of it, and the re-run refused over it as the adopter's
+/// work.
+#[test]
+fn a_failed_run_records_a_file_it_restored_after_a_deletion() {
+    let (repo, home) = bare_repo("restored");
+    let (repo, home) = (repo.path(), home.path());
+    commit_file(repo, "CLAUDE.md", "# Project\n\nOur notes.\n");
+    let hooks = ReadOnly::new(&in_repo_hooks_path(repo));
+    fs::remove_file(repo.join("CLAUDE.md")).expect("delete the committed file");
+
+    let first = jigc(repo, home, &["setup"]);
+    assert_fails_with(&first, "setup.install-hook", "a read-only hooks dir");
+    assert!(
+        fs::read_to_string(repo.join("CLAUDE.md"))
+            .expect("the failed run wrote CLAUDE.md afresh")
+            .contains(".jigc/AGENT.md"),
+        "the failure is after the reference was written"
+    );
+
+    hooks.restore();
+    let rerun = jigc(repo, home, &["setup"]);
+    assert!(
+        refused_paths(&rerun).is_empty(),
+        "nothing at an install path is the adopter's: {}",
+        said(&rerun)
+    );
+    assert_rerun_completes(repo, &rerun);
+}

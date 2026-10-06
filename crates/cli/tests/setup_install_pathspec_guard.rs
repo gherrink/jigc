@@ -116,7 +116,19 @@
 //! ignored file under `.jigc/`. The design says so now; cell 43 holds each door to the two
 //! things that leaves owed — nothing lost, and a route that works as printed.
 //!
-//! Forty-three cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
+//! **And a file that was not there before the run is not the adopter's work** (cells 44–46;
+//! the human's ruling of 2026-10-06 on the fix pass's item 1). A tracked install file
+//! deleted from the working tree is a difference from `HEAD`, the pre-write gate asks only
+//! about paths that exist, and the backstop before the commit then refused over the file
+//! the install had just written — once where jigc's bytes equalled `HEAD`'s, and on every
+//! run where they did not (a merged-into file that held the adopter's lines, a committed
+//! link). Cell 44 iterates every member a default install commits × how it was deleted
+//! (`rm`, `git rm`): one run restores it and commits it. Cell 45 is the committed link, at
+//! a member the install merges into and at one it replaces. Cell 46 is the must-refuse
+//! half: a path absent from the working tree whose **index** entry holds bytes `HEAD` does
+//! not is still the adopter's, and keeps its staged blob.
+//!
+//! Forty-six cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
 //! `git init` repos.
 
 use crate::support::older_guide::as_an_older_build_wrote_it;
@@ -3592,4 +3604,211 @@ fn a_repository_that_ignores_jigcs_own_paths_is_held_to_what_the_design_says() {
         said(&out)
     );
     assert!(!repo.join(".jigc").exists());
+}
+
+// ──── a file absent before the run, written by it, is not the adopter's work ────
+
+/// A born repository holding the adopter's own committed `CLAUDE.md` and settings file and
+/// an in-worktree hooks directory, with a default install committed over it — so every
+/// member of the install's path class but the fresh-repository `.gitignore` is in `HEAD`,
+/// and the two the install merges into differ from what a fresh write would put there.
+fn installed_with_every_member(tag: &str) -> (TempDir, TempDir) {
+    let (repo, home) = born_repo(tag);
+    {
+        let (repo, home) = (repo.path(), home.path());
+        write(repo, "CLAUDE.md", plant_for("CLAUDE.md"));
+        write(
+            repo,
+            ".claude/settings.json",
+            plant_for(".claude/settings.json"),
+        );
+        write(repo, ".githooks/README", "project hooks\n");
+        git(repo, &["add", "-A"]);
+        git(repo, &["commit", "-q", "-m", "our own files"]);
+        git(repo, &["config", "core.hooksPath", ".githooks"]);
+        let out = jigc(repo, home, &["setup"]);
+        assert_eq!(out.status.code(), Some(0), "the install: {}", said(&out));
+        assert_eq!(git(repo, &["status", "--porcelain"]), "", "premise: clean");
+    }
+    (repo, home)
+}
+
+/// (44) **A tracked install file deleted from the working tree is restored and committed in
+/// one run** — at every member a default install commits, deleted either way git knows
+/// (`rm`, leaving the index at `HEAD`; `git rm`, staging the deletion).
+///
+/// Driven on `1.0.0-rc.24` and on the fix pass alike: the pre-write gate passed (it asks
+/// about paths that exist), the install was written, and the backstop before the commit
+/// refused under `setup.dirty-install-path` over the file jigc had just written. A second
+/// run completed only where the restored bytes equalled `HEAD`'s; over a `CLAUDE.md` that
+/// had held the adopter's lines it refused on every run, the route pointing at jigc's own
+/// file.
+#[test]
+fn a_deleted_tracked_install_file_is_restored_and_committed_in_one_run() {
+    let committed: Vec<String> = {
+        let (repo, _home) = installed_with_every_member("deleted-premise");
+        let tree = git(repo.path(), &["ls-tree", "-r", "--name-only", "HEAD"]);
+        install_class()
+            .into_iter()
+            .map(|member| member.path)
+            .filter(|path| tree.lines().any(|line| line == path))
+            .collect()
+    };
+    assert!(
+        committed.len() >= 9 && committed.iter().any(|path| path == HOOK),
+        "premise: the default install commits every member but the fresh-repo `.gitignore`, \
+         the hook included: {committed:?}"
+    );
+    std::thread::scope(|scope| {
+        for path in &committed {
+            for how in ["rm", "git rm"] {
+                scope.spawn(move || {
+                    let what = format!("`{path}` deleted by `{how}`");
+                    let (repo, home) = installed_with_every_member("deleted");
+                    let (repo, home) = (repo.path(), home.path());
+                    match how {
+                        "rm" => fs::remove_file(repo.join(path)).expect("delete the file"),
+                        _ => drop(git(repo, &["rm", "-q", "--", path])),
+                    }
+                    assert_ne!(
+                        git(repo, &["status", "--porcelain"]),
+                        "",
+                        "{what}: premise — the deletion is a difference from `HEAD`"
+                    );
+
+                    let out = jigc(repo, home, &["setup"]);
+                    let said_out = said(&out);
+                    assert_eq!(out.status.code(), Some(0), "{what}: {said_out}");
+                    assert!(
+                        !said_out.contains(DIRTY_CODE)
+                            && !said_out.contains("setup.forced-install-path"),
+                        "{what}: nothing of the adopter's was at the path: {said_out}"
+                    );
+                    assert!(
+                        fs::symlink_metadata(repo.join(path)).is_ok_and(|entry| entry.is_file()),
+                        "{what}: the file is back"
+                    );
+                    assert_eq!(
+                        git(repo, &["status", "--porcelain"]),
+                        "",
+                        "{what}: restored and committed — nothing left over"
+                    );
+                    assert!(
+                        git(repo, &["ls-tree", "-r", "--name-only", "HEAD"])
+                            .lines()
+                            .any(|line| line == path),
+                        "{what}: `HEAD` carries it"
+                    );
+                    let head = git(repo, &["rev-parse", "HEAD"]);
+                    let rerun = jigc(repo, home, &["setup"]);
+                    assert_eq!(rerun.status.code(), Some(0), "{what}: {}", said(&rerun));
+                    assert_eq!(
+                        git(repo, &["rev-parse", "HEAD"]),
+                        head,
+                        "{what}: a re-run changes nothing"
+                    );
+                });
+            }
+        }
+    });
+}
+
+/// (45) **The same over a deleted committed link** — the variant the fix pass's fixer and
+/// its audit disagreed about. Both were right: where jigc's restored bytes equal `HEAD`'s a
+/// second run completed, and a link never does — the path is a type change against `HEAD`
+/// on every run, so `setup` refused until `git commit -- <path>`.
+///
+/// At a member the install merges into (`CLAUDE.md -> AGENTS.md`, the link removed), and at
+/// one it replaces (`.jigc/AGENT.md`, whose link the door's own refusal says to remove):
+/// one run installs a regular file there, commits it, and never writes what the link led to.
+#[test]
+fn a_deleted_committed_link_is_replaced_by_the_install_in_one_run() {
+    for (member, target, how) in [
+        ("CLAUDE.md", "AGENTS.md", "rm"),
+        ("CLAUDE.md", "AGENTS.md", "git rm"),
+        (".jigc/AGENT.md", "NOTES.md", "rm"),
+        (".jigc/AGENT.md", "NOTES.md", "git rm"),
+    ] {
+        let what = format!("`{member}` -> `{target}`, the link removed by `{how}`");
+        let (repo, home) = born_repo("deleted-link");
+        let (repo, home) = (repo.path(), home.path());
+        write(repo, target, plant_for("CLAUDE.md"));
+        let link = repo.join(member);
+        fs::create_dir_all(link.parent().expect("parent")).expect("create parent");
+        let depth = member.matches('/').count();
+        std::os::unix::fs::symlink(format!("{}{target}", "../".repeat(depth)), &link)
+            .expect("plant the link");
+        git(repo, &["add", "-A"]);
+        git(repo, &["commit", "-q", "-m", "our layout"]);
+        match how {
+            "rm" => fs::remove_file(&link).expect("remove the link"),
+            _ => drop(git(repo, &["rm", "-q", "--", member])),
+        }
+
+        let out = jigc(repo, home, &["setup"]);
+        assert_eq!(out.status.code(), Some(0), "{what}: {}", said(&out));
+        assert!(!said(&out).contains(DIRTY_CODE), "{what}: {}", said(&out));
+        assert!(
+            fs::symlink_metadata(&link).is_ok_and(|entry| entry.is_file()),
+            "{what}: a regular file stands where the link was"
+        );
+        assert!(
+            git(repo, &["ls-tree", "HEAD", "--", member]).starts_with("100644 blob"),
+            "{what}: and that is what `HEAD` carries"
+        );
+        assert_eq!(
+            read(repo, target),
+            plant_for("CLAUDE.md"),
+            "{what}: what the link led to was never written"
+        );
+        assert_eq!(git(repo, &["status", "--porcelain"]), "", "{what}: clean");
+    }
+}
+
+/// (46) **…and a path absent from the working tree whose index entry holds bytes `HEAD` does
+/// not is still refused, its staged blob intact** — the must-refuse half of (44). *Absent
+/// before the run* exempts a path only where git holds nothing of the adopter's there; a
+/// file staged and then deleted (`AD`), or edited, staged and deleted (`MD`), exists in the
+/// index alone, and the install commit would replace that entry.
+#[test]
+fn a_path_absent_from_the_worktree_but_staged_is_still_the_adopters() {
+    for (member, state) in [
+        ("CLAUDE.md", "AD"),
+        ("CLAUDE.md", "MD"),
+        (".jigc/AGENT.md", "AD"),
+        (".jigc/AGENT.md", "MD"),
+    ] {
+        let what = format!("`{member}` in state `{state}`");
+        let (repo, home) = born_repo("absent-staged");
+        let (repo, home) = (repo.path(), home.path());
+        if state == "MD" {
+            write(repo, member, "committed line\n");
+            git(repo, &["add", "--", member]);
+            git(repo, &["commit", "-q", "-m", "ours"]);
+        }
+        let staged_bytes = format!("committed line\n{}", plant_for(member));
+        write(repo, member, &staged_bytes);
+        git(repo, &["add", "--", member]);
+        fs::remove_file(repo.join(member)).expect("delete the working file");
+        assert!(
+            git(repo, &["status", "--porcelain", "--", member]).starts_with(state),
+            "{what}: premise"
+        );
+        let head = git(repo, &["rev-parse", "HEAD"]);
+
+        let out = jigc(repo, home, &["setup"]);
+        assert_eq!(out.status.code(), Some(1), "{what}: {}", said(&out));
+        assert!(
+            said(&out).contains(DIRTY_CODE) && refused_paths(&out) == [member.to_string()],
+            "{what}: refused by name: {}",
+            said(&out)
+        );
+        assert_eq!(git(repo, &["rev-parse", "HEAD"]), head, "{what}: no commit");
+        // `git show :<path>` prints the index entry; `git()` trims, so compare trimmed.
+        assert_eq!(
+            git(repo, &["show", &format!(":{member}")]),
+            staged_bytes.trim(),
+            "{what}: the staged blob is byte-identical"
+        );
+    }
 }
