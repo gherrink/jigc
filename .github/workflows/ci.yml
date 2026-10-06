@@ -19,12 +19,12 @@ name: CI
 # No leg `needs` another and the matrix is `fail-fast: false`, so one red leg never
 # hides or cancels the rest. Only `ci-ok` waits, on all of them, and it is the one
 # check `main`'s ruleset requires (implementation/release.md -> The main branch), so a
-# job added here and not to its `needs` reddens crates/cli/tests/ci_matrix_fence.rs
+# job added here and not to its `needs` reddens tooling-tests/ci_matrix_fence.rs
 # instead of going unrequired. Every leg checks out full history, prints `nproc` in its
 # `CPU count` step, and is bounded by `timeout-minutes` at max(10, 2 x its leg's
 # measured four-CPU proxy) — completions/artifacts/M54/ci-runtime.md. The `test`
 # matrix is fenced to the targets `cargo metadata` reports
-# (crates/cli/tests/ci_matrix_fence.rs), so a group root added to the manifest and not
+# (tooling-tests/ci_matrix_fence.rs), so a group root added to the manifest and not
 # here reddens instead of going unrun.
 #
 # Nothing here publishes. M36 F4's "internal-only, no external publish" was reversed on
@@ -235,7 +235,7 @@ jobs:
       fail-fast: false
       matrix:
         # Exactly the `[[test]]` targets of crates/cli/Cargo.toml — fenced to
-        # `cargo metadata` by crates/cli/tests/ci_matrix_fence.rs.
+        # `cargo metadata` by tooling-tests/ci_matrix_fence.rs.
         group:
           - g_flow
           - g_migrate
@@ -249,6 +249,7 @@ jobs:
           - g_doc
           - g_solo_store_sweep
           - g_solo_trial_corpus
+          - g_tooling
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -394,7 +395,7 @@ jobs:
   # `if: always()`, so it reports even when a leg fails, and it is green only when
   # every needed job's result is `success`: a failure, a cancellation and a skip all
   # turn it red. No checkout and no cargo: it reads the `needs` context and nothing
-  # else. crates/cli/tests/ci_matrix_fence.rs holds `needs` to every other job and runs
+  # else. tooling-tests/ci_matrix_fence.rs holds `needs` to every other job and runs
   # this body over each result.
   ci-ok:
     needs:

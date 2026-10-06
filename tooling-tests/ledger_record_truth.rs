@@ -10,7 +10,7 @@
 //! exists to close.
 //!
 //! This suite fences that discharge on the entry-7 precedent
-//! (`crates/cli/tests/ledger_entry_seven_discharged.rs`):
+//! (`tooling-tests/ledger_entry_seven_discharged.rs`):
 //!
 //!   * the bound sentence is **gone** — match count 0 over the whole ledger, not annotated
 //!     around, not softened in place;

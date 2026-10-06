@@ -3,7 +3,7 @@
 //!
 //! `design/validation.md` → *Exit semantics* settled the rule in M46: **point at the
 //! table, do not re-count** — *"the count is deliberately **not** restated here … the
-//! table **is** the enumeration"* — and `crates/cli/tests/record_foreign_arm.rs` already
+//! table **is** the enumeration"* — and `tooling-tests/record_foreign_arm.rs` already
 //! pins the byte it retired (`report-only, with three exit-flipping exceptions`) as
 //! falsified **in that one file**. The rule never reached the other homes, and by M49
 //! every one of them was stating a different wrong number against the same constant:

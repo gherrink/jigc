@@ -188,10 +188,19 @@ pub fn cfg_test_regions(code: &str) -> Vec<(usize, usize)> {
     regions
 }
 
-/// Whether the site at `offset` is test code: always, for a file in a `tests/` tree;
-/// otherwise only inside a `#[cfg(test)]` module.
+/// Whether the site at `offset` is test code: always, for a file in a `tests/` tree or
+/// under a suite home outside the crates ([`super::test_homes`] — the repository's
+/// tooling suites, whose directory is not named `tests`); otherwise only inside a
+/// `#[cfg(test)]` module. A file under such a home is recognised by the path
+/// [`super::test_homes::homes_outside_the_crates`] spells it with, which is the root a
+/// fence walks it from.
 pub fn is_test_domain(path: &Path, regions: &[(usize, usize)], offset: usize) -> bool {
+    static OUTSIDE: std::sync::OnceLock<Vec<std::path::PathBuf>> = std::sync::OnceLock::new();
     path.components().any(|c| c.as_os_str() == "tests")
+        || OUTSIDE
+            .get_or_init(super::test_homes::homes_outside_the_crates)
+            .iter()
+            .any(|home| path.starts_with(home))
         || regions.iter().any(|(lo, hi)| offset >= *lo && offset < *hi)
 }
 

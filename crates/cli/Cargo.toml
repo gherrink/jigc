@@ -26,8 +26,9 @@ include = [
     "LICENSE-APACHE",
 ]
 default-run = "jigc"
-# The ~250 suite files under `tests/` are NOT cargo targets of their own — they are
-# compiled into the 12 group targets declared at the bottom of this file
+# The ~250 suite files under `tests/` are NOT cargo targets of their own — they, and the
+# repository's own tooling suites outside `crates/`, are
+# compiled into the 13 group targets declared at the bottom of this file
 # (each group root pulls its suites in with `#[path = "../<name>.rs"] mod <name>;`, the
 # idiom `tests/pinned_facts.rs` already used). One cargo target per suite file cost a
 # **macOS Gatekeeper policy assessment per freshly-linked binary** — measured at ~44 s
@@ -36,7 +37,7 @@ default-run = "jigc"
 # the multiplier, so the gate got slower with every suite the milestone added.
 # `tests/test_target_registration.rs` fences the cost of turning discovery off: a suite
 # file that no group root registers would otherwise compile nowhere and silently never
-# run.
+# run. It reads each suite home off the `[[test]]` paths below, so it holds both.
 autotests = false
 
 [lib]
@@ -133,3 +134,15 @@ path = "tests/groups/g_solo_store_sweep.rs"
 [[test]]
 name = "g_solo_trial_corpus"
 path = "tests/groups/g_solo_trial_corpus.rs"
+
+# The repository's own tooling suites — the tests of `dev/` scripts, the CI and release
+# workflows, the stabilization harness, the docs' links and the records. They test no
+# product code, so they live outside `crates/`, where a change to one is not a change to
+# a product path (DECISIONS.md → 2026-10-06, the human's ruling on the workflow's own
+# tests; implementation/dev-workflow.md → Gate). This entry is the only line under
+# `crates/` a tooling suite needs: a new one is registered in that group root. The root
+# lies outside the package, so cargo drops this target from the published manifest, as
+# it drops the twelve above, whose roots `include` leaves out.
+[[test]]
+name = "g_tooling"
+path = "../../tooling-tests/groups/g_tooling.rs"

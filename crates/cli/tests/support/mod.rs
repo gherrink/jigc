@@ -17,6 +17,7 @@
 
 pub mod branch_and_pull;
 pub mod child_stdin;
+pub mod ci_workflow;
 pub mod committing_doors;
 pub mod composed;
 pub mod crate_readme;
@@ -33,6 +34,7 @@ pub mod run_then_parse;
 pub mod rust_source;
 pub mod scratch;
 pub mod shape_space;
+pub mod test_homes;
 pub mod trial_corpus;
 pub mod write_miss_cells;
 

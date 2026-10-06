@@ -1,6 +1,6 @@
 //! **`dev/stabilize-record` — the one script through which a stabilization run's records
 //! reach the repository, and the one place its state is read back and decided**
-//! ([DECISIONS.md](../../../DECISIONS.md) → *2026-10-05 — The stabilization workflow, as
+//! ([DECISIONS.md](../DECISIONS.md) → *2026-10-05 — The stabilization workflow, as
 //! ruled*, rulings 4, 5, 6, 9, 10, 12, 13 and 16; the builders' choices are the two entries
 //! of the same date, *The record script, as built* and *The record script reads the run
 //! back*, and the three entries of 2026-10-06, *The record script holds what the harness
@@ -31,7 +31,7 @@
 //! after a stop, and for one more fix round past the run's bound, is the human's to lift.
 //!
 //! **Every arm runs under a shell-hostile root** (a space, a `'`, a `"` and a `#` in the
-//! repository's path — [dev-workflow.md](../../../implementation/dev-workflow.md), the rule
+//! repository's path — [dev-workflow.md](../implementation/dev-workflow.md), the rule
 //! on a path that reaches a shell): the rig has no other kind of root, so no arm can pass
 //! only because its path was tame.
 //!

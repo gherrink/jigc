@@ -1,7 +1,7 @@
 //! **The seed ledger is the count, and it is held to its sources** (M55 Increment 9, T1;
 //! `DECISIONS.md` → *2026-10-03 — M55 Increment 9 planning*, P1 and P2).
 //!
-//! [`completions/artifacts/M55/seed-ledger.md`](../../../completions/artifacts/M55/seed-ledger.md)
+//! [`completions/artifacts/M55/seed-ledger.md`](../completions/artifacts/M55/seed-ledger.md)
 //! carries one row per distinct finding the seed files, and each row names every source row
 //! it was recorded at. The scope's *first, the count* is only a count if nothing is lost and
 //! nothing is counted twice, so this suite reads **the sources themselves**, never a list of

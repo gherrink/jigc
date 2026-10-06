@@ -21,8 +21,6 @@ mod compose_statefulness;
 mod compose_task_minted;
 #[path = "../create_or_update.rs"]
 mod create_or_update;
-#[path = "../dogfood_apparatus.rs"]
-mod dogfood_apparatus;
 #[path = "../dogfood_record_schema.rs"]
 mod dogfood_record_schema;
 #[path = "../flow16_acceptance.rs"]

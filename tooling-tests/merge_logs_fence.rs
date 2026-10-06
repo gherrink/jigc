@@ -1,12 +1,12 @@
 //! **The append-only logs' merge, held to "both sides kept, in date order, anything else
-//! refused"** (the human's decision of 2026-10-02 — [DECISIONS.md](../../../DECISIONS.md) →
+//! refused"** (the human's decision of 2026-10-02 — [DECISIONS.md](../DECISIONS.md) →
 //! *Merge `main` into the branch before every pull request*; the step's home is
-//! [dev-workflow.md](../../../implementation/dev-workflow.md) → Before a pull request to
+//! [dev-workflow.md](../implementation/dev-workflow.md) → Before a pull request to
 //! `main`).
 //!
 //! Every pull request to `main` first merges `origin/main` into its branch, and two
 //! branches that each add a `DECISIONS.md` entry or a fold-back span conflict in those
-//! logs and nowhere else — PR #6 against PR #5 did. [`dev/merge-logs`](../../../dev/merge-logs)
+//! logs and nowhere else — PR #6 against PR #5 did. [`dev/merge-logs`](../dev/merge-logs)
 //! resolves exactly that conflict and refuses every other, and the build harness's close
 //! runs it (`.claude/workflows/milestone-build.js`, `syncMainPrompt`). Each arm here stops a
 //! real merge on a real conflict in a throwaway repository and drives the script there:
@@ -25,11 +25,11 @@
 //! - **(f)** outside a merge: a usage error (exit 2), not a verdict.
 //! - **(g)** the harness's `SYNC_LOGS` is the script's `LOGS`, and the sync step runs the
 //!   script and aborts the merge when it refuses — so the step and the tool cannot drift.
-//! - **(h)** its twin, the branch-start rule ([dev-workflow.md](../../../implementation/dev-workflow.md)
+//! - **(h)** its twin, the branch-start rule ([dev-workflow.md](../implementation/dev-workflow.md)
 //!   → Starting a branch from `main`): the harness's milestone-branch step halts on a local
 //!   `main` that is not an ancestor of `origin/main`, and checks that a branch it creates
 //!   starts exactly at `origin/main`.
-//! - **(i)** the per-increment land step (one act since 2026-10-03 — [DECISIONS.md](../../../DECISIONS.md)
+//! - **(i)** the per-increment land step (one act since 2026-10-03 — [DECISIONS.md](../DECISIONS.md)
 //!   → *one land step per increment*) merges onto the milestone branch's current tip, lets the
 //!   same logs conflict and resolves them with the script, aborts any other conflict, deletes
 //!   the increment branch and pushes the milestone branch — and no separate push step exists.

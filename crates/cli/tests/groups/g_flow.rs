@@ -21,8 +21,6 @@ mod count_fences;
 mod e2e_audit;
 #[path = "../envelope_constants.rs"]
 mod envelope_constants;
-#[path = "../evolution_posture_policy.rs"]
-mod evolution_posture_policy;
 #[path = "../exit_codes.rs"]
 mod exit_codes;
 #[path = "../exit_flip_count_record.rs"]

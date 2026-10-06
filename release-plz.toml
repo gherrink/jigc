@@ -1,6 +1,6 @@
 # release-plz's configuration (M54 S9). Every value is pinned, with one line of why, in
 # implementation/release.md → The release PR → release-plz knobs, and fenced by
-# crates/cli/tests/release_pipeline_fence.rs. Proven against release-plz 0.3.169.
+# tooling-tests/release_pipeline_fence.rs. Proven against release-plz 0.3.169.
 
 [workspace]
 # Merging the release PR is the go: nothing publishes from any other push (gate-record O4).

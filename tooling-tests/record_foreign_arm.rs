@@ -6,7 +6,7 @@
 //!   * **`migrate-corpus` stops claiming a file that is not its subject** (T2). The verb
 //!     upgrades the *managed* corpus; a never-adopted foreign file at a managed home is
 //!     excluded before the fold and reported as the store door's advisory, verbatim.
-//!     [corpus-migration.md](../../../design/corpus-migration.md) had **no foreign arm at
+//!     [corpus-migration.md](../design/corpus-migration.md) had **no foreign arm at
 //!     all** — the walk section finds the file, and nothing said what the fold then does
 //!     with it. That gap is what let the verb block on it for four waves.
 //!   * **The store sweep's exit stops calling a never-adopted file harmless** (T1).
@@ -34,7 +34,7 @@
 //! on the `migrate-corpus` `--format json` report — an envelope the driver contract pins, and
 //! whose every prior additive key (`carried-over`, `hook_output`, `hook_file`, `committed`,
 //! `copied_in`, `committed_identity`, `milestone`/`no_docs_from`, `checked`) carries its own
-//! declaration paragraph in [command-output-contract.md](../../../design/command-output-contract.md)
+//! declaration paragraph in [command-output-contract.md](../design/command-output-contract.md)
 //! → Evolution posture. It had none — one wave after M48 refused a key on *this very envelope*
 //! on exactly that ground (`DECISIONS.md` → 2026-08-13 M48 Increment 9 / T4: *"No envelope key
 //! is minted — the additive window is spent"*). The key itself is proven on the wire by

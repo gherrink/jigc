@@ -18,12 +18,12 @@
 //! `fail-fast: false` and no `needs` on any leg; **(g)** the one aggregate, `ci-ok`,
 //! `needs` exactly every other job and runs `if: always()`; **(h)** its body is green
 //! only when every needed job's result is `success`, driven over each result GitHub
-//! reports. The design is [dev-workflow.md](../../../implementation/dev-workflow.md) →
-//! Gate, the required check [release.md](../../../implementation/release.md) → The main
+//! reports. The design is [dev-workflow.md](../implementation/dev-workflow.md) →
+//! Gate, the required check [release.md](../implementation/release.md) → The main
 //! branch; the measurement behind each `timeout-minutes` is
 //! `completions/artifacts/M54/ci-runtime.md`.
 
-use crate::manifest_freeze_fence::{CI_STEP_NAME, CI_STEP_RUN, CI_WORKFLOW, repo_root};
+use crate::support::ci_workflow::{CI_STEP_NAME, CI_STEP_RUN, CI_WORKFLOW, repo_root};
 use crate::support::run_then_parse::stdout_json;
 use serde_yaml_ng::Value;
 use std::collections::BTreeSet;

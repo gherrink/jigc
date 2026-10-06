@@ -6,7 +6,7 @@
 //! of those is a knob in `release-plz.toml`, and a knob that drifts changes what the
 //! pipeline does without anything reddening — release-plz reads the file only on `main`,
 //! after the merge. This suite is that fence. The pinned table and one line of why per
-//! knob live in [release.md](../../../implementation/release.md) → *release-plz knobs*;
+//! knob live in [release.md](../implementation/release.md) → *release-plz knobs*;
 //! each arm below names the property, never restates the why.
 //!
 //! The config arms: **(a)** `pr_name` uses `{{ package }}`/`{{ version }}` only inside the
@@ -51,7 +51,7 @@
 //! and every push the branch model allows (`milestone/*`, `fix/*`, `work/*`, named,
 //! unforced) is not.
 
-use crate::manifest_freeze_fence::repo_root;
+use crate::support::ci_workflow::repo_root;
 use crate::support::root_walk;
 use crate::support::run_then_parse::stdout_json;
 use crate::workflow_action_runtime_fence::vetted_uses;

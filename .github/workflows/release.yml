@@ -21,7 +21,7 @@ name: Release
 # Off `gherrink/jigc` — the dry-run rehearsal repository — the release runs with
 # `--dry-run` and verifies `jigc` against the local engine through a
 # `[patch.crates-io]` overlay, since crates.io does not yet carry the engine version
-# `jigc` pins. Held by crates/cli/tests/release_pipeline_fence.rs.
+# `jigc` pins. Held by tooling-tests/release_pipeline_fence.rs.
 on:
   push:
     branches: [main]

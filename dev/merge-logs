@@ -26,7 +26,7 @@
 # append, or nothing is written. On success each log is written and staged (`git add`);
 # the caller concludes the merge (`git commit --no-edit`). The build harness's close step
 # runs this (.claude/workflows/milestone-build.js, syncMainPrompt);
-# crates/cli/tests/merge_logs_fence.rs drives it.
+# tooling-tests/merge_logs_fence.rs drives it.
 #
 # Usage:
 #   dev/merge-logs          (from the repository root, inside a merge stopped on conflicts)

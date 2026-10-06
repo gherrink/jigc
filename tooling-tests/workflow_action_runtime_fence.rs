@@ -39,7 +39,7 @@
 //! action's empty `version` input, so runs `36821202910` and `36843531826` fetched
 //! `releases/latest`.
 
-use crate::manifest_freeze_fence::repo_root;
+use crate::support::ci_workflow::repo_root;
 use serde_yaml_ng::Value;
 use std::collections::BTreeSet;
 use std::fs;

@@ -2,7 +2,7 @@
 //! statements.**
 //!
 //! Two obligations land in that doc with this task, and both are prose, so both are fenced
-//! the way this repo fences prose ([`record_foreign_arm`](../record_foreign_arm.rs)'s
+//! the way this repo fences prose ([`record_foreign_arm`](../../../tooling-tests/record_foreign_arm.rs)'s
 //! pattern): **every falsified byte is named with the string it carried and asserted
 //! absent**, and **every replacement is asserted exactly once** — a correction restated in a
 //! second home is the rot the cross-reference rule exists to prevent, and a replacement

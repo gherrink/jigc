@@ -2,7 +2,7 @@
 
 The versioned capture substrate for M17's measured runs ([design/measurement.md](../../design/measurement.md) → The capture substrate, item 1): a Claude Code PostToolUse hook set + the pinned append-only log format + the tally script that derives the mechanized facts. **Home note:** this directory holds *runnable apparatus* in a directory of process markdown — a conscious placement, same bucket as the external build harness, not an erosion of the routing convention.
 
-The scripts run on stock `python3` (the no-non-stock-interpreter bound: they must run under `cargo test` on a dev machine — `crates/cli/tests/dogfood_apparatus.rs` executes both for real). Fact *definitions* live in measurement.md; this README documents only the apparatus mechanics. Seeded attribution is transcription protocol, never tally-inferred — the tally emits per-event grouped detail + totals so the transcribing agent can attribute seeded events against the run protocol.
+The scripts run on stock `python3` (the no-non-stock-interpreter bound: they must run under `cargo test` on a dev machine — `tooling-tests/dogfood_apparatus.rs` executes both for real). Fact *definitions* live in measurement.md; this README documents only the apparatus mechanics. Seeded attribution is transcription protocol, never tally-inferred — the tally emits per-event grouped detail + totals so the transcribing agent can attribute seeded events against the run protocol.
 
 ## Install (per measured run)
 

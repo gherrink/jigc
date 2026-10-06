@@ -1,5 +1,5 @@
 //! The **link fence** — every link and every repository path a live doc names resolves
-//! (M54 S15, completed by the human's O1 answer; [DECISIONS.md](../../../DECISIONS.md) →
+//! (M54 S15, completed by the human's O1 answer; [DECISIONS.md](../DECISIONS.md) →
 //! *M54 settled* → S15).
 //!
 //! Nothing fenced a doc link before M54, and M54 moves every path the census found cited:
@@ -209,6 +209,7 @@ const TOP_LEVEL_DIRS: &[&str] = &[
     "ideas/",
     "implementation/",
     "packs/",
+    "tooling-tests/",
 ];
 
 /// A token that **is** one of these names a root file: the files this repository keeps at

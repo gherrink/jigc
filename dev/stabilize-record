@@ -517,7 +517,7 @@
 #
 # Needs python3, git and bash (dev/hygiene-scan), which the gate needs already, and
 # gitleaks and a denylist to write anything at all.
-# crates/cli/tests/dev_stabilize_record.rs drives it.
+# tooling-tests/dev_stabilize_record.rs drives it.
 
 import argparse
 import fcntl

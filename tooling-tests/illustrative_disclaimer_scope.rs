@@ -10,7 +10,7 @@
 //! `storage.md` and passes in `surface-contract.md`.
 //!
 //! The fix is a scope, stated **once** and referenced from every header, never
-//! restated fourteen times ([`CLAUDE.md`](../../../CLAUDE.md) → *How we work
+//! restated fourteen times ([`CLAUDE.md`](../CLAUDE.md) → *How we work
 //! together* → *What "Notation is illustrative" disclaims*). This suite fences both
 //! halves of that: the reference is present wherever the disclaimer is, and the rule
 //! itself is stated in exactly one home.

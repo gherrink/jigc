@@ -63,14 +63,19 @@ fn workspace_root() -> PathBuf {
         .expect("canonicalize the workspace root")
 }
 
-/// Every `.rs` file under the workspace's two member crates, recursively.
+/// Every `.rs` file under the workspace's two member crates and under each suite home
+/// outside them, recursively.
 ///
 /// Membership is the crate tree itself, so a file added tomorrow is swept without
-/// anyone remembering to list it.
+/// anyone remembering to list it — and the homes outside the crates are read off the
+/// manifest's `[[test]]` paths ([`crate::support::test_homes`]), so the tooling suites
+/// that left `crates/` on 2026-10-06 did not leave this fence.
 fn workspace_sources(root: &Path) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = ["crates/engine", "crates/cli"]
         .iter()
-        .flat_map(|crate_dir| crate::support::rust_source::rust_files(&root.join(crate_dir)))
+        .map(|crate_dir| root.join(crate_dir))
+        .chain(crate::support::test_homes::homes_outside_the_crates())
+        .flat_map(|dir| crate::support::rust_source::rust_files(&dir))
         .collect();
     // The bundled `doc-code` probe cannot depend on `engine` — its wire types stay
     // independent of `engine` and `cli` (M54 S4) — so it cannot reach the mint.

@@ -1,7 +1,8 @@
 //! The registration guard for the consolidated test targets.
 //!
 //! `crates/cli/Cargo.toml` sets `autotests = false` so the ~250 suite files under
-//! `crates/cli/tests/` are compiled into 12 group targets instead of one cargo
+//! `crates/cli/tests/` — and, since 2026-10-06, the repository's own tooling suites
+//! outside `crates/` — are compiled into 13 group targets instead of one cargo
 //! target each (a source change relinked 256 binaries — a measured 7.7-minute link
 //! wave — before the consolidation). The cost of turning auto-discovery off is that
 //! a **newly added suite file is silently never run** unless a group root pulls it
@@ -21,98 +22,82 @@
 //! chain was trusted rather than checked: the manifest ↔ disk bijection over the
 //! roots, the aggregator ↔ disk bijection over submodule directories like
 //! `pinned_facts/`, and the count both this file and the manifest state in prose.
+//!
+//! **The suite homes are read off the same list** ([`test_homes`]): a home is the
+//! directory above the `groups/` a declared root sits in, so every arm below runs over
+//! each home there is — the crate's `tests/` and the tooling suites' directory today, a
+//! third by its manifest entry. A suite is keyed by its **file**, and a registration is
+//! resolved to the file its `#[path]` names from the root that carries it, so a file
+//! registered once in each of two homes' roots is one file with two owners. Until
+//! 2026-10-06 the fence took `crates/cli/tests/` for the only home, and a suite moved out
+//! of it would have been fenced by nothing ([dev-workflow.md](../../../implementation/dev-workflow.md)
+//! → Gate, *Where the tooling's own tests live*).
 
 use crate::support::root_walk;
+use crate::support::test_homes;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-fn crate_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
+/// The repository root — two levels above the `jigc` package — as the homes spell it.
+fn repo_root() -> PathBuf {
+    test_homes::normalize(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
+        .canonicalize()
+        .expect("the repository root is reachable from the cli crate")
 }
 
-fn tests_dir() -> PathBuf {
-    crate_dir().join("tests")
+/// `path` as a reader would type it: relative to the repository root.
+fn shown(path: &Path) -> String {
+    path.strip_prefix(repo_root())
+        .unwrap_or(path)
+        .display()
+        .to_string()
 }
 
-fn manifest_path() -> PathBuf {
-    crate_dir().join("Cargo.toml")
-}
-
-/// The `[[test]]` targets the manifest declares, as `(name, path)` in declaration
-/// order — the authority on what `cargo test` compiles.
-fn declared_test_targets() -> Vec<(String, String)> {
-    let body = fs::read_to_string(manifest_path()).expect("crates/cli/Cargo.toml is readable");
-    let mut out: Vec<(String, String)> = Vec::new();
-    let mut current: Option<(Option<String>, Option<String>)> = None;
-    fn flush(cur: Option<(Option<String>, Option<String>)>, out: &mut Vec<(String, String)>) {
-        if let Some((name, path)) = cur {
-            out.push((
-                name.expect("a [[test]] target declares a name"),
-                path.expect("a [[test]] target declares a path"),
-            ));
-        }
-    }
-    for line in body.lines() {
-        let line = line.trim();
-        if line.starts_with('#') {
-            continue;
-        }
-        if line.starts_with('[') {
-            flush(current.take(), &mut out);
-            if line == "[[test]]" {
-                current = Some((None, None));
-            }
-            continue;
-        }
-        if let Some((name, path)) = current.as_mut()
-            && let Some((key, value)) = line.split_once('=')
-        {
-            let value = value.trim().trim_matches('"').to_string();
-            match key.trim() {
-                "name" => *name = Some(value),
-                "path" => *path = Some(value),
-                _ => {}
-            }
-        }
-    }
-    flush(current.take(), &mut out);
-    out
-}
-
-/// Every `tests/*.rs` file — the suites that must each be owned by exactly one group.
-fn suite_files() -> Vec<String> {
-    let mut v: Vec<String> = root_walk::files_in(&tests_dir(), root_walk::ext("rs"))
+/// Every `<home>/*.rs` file of every suite home — the suites that must each be owned by
+/// exactly one group.
+fn suite_files() -> BTreeSet<PathBuf> {
+    test_homes::suite_homes()
         .iter()
-        .filter_map(|p| Some(p.file_stem()?.to_str()?.to_string()))
-        .collect();
-    v.sort();
-    v
+        .flat_map(|home| root_walk::files_in(home, root_walk::ext("rs")))
+        .collect()
 }
 
-/// Each group root's `mod` registrations, keyed suite -> owning group.
+/// Each group root's `mod` registrations, keyed suite file -> owning groups.
 ///
-/// The roots come from the manifest's `[[test]]` list, not from `tests/groups/`, so a
-/// suite whose only owner is an undeclared root reads as unregistered here — as it in
+/// The roots come from the manifest's `[[test]]` list, not from a `groups/` directory, so
+/// a suite whose only owner is an undeclared root reads as unregistered here — as it in
 /// fact is. `every_group_root_is_declared_as_a_test_target` names the stray root.
-fn registrations() -> BTreeMap<String, Vec<String>> {
-    let mut owners: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for (group, rel) in declared_test_targets() {
-        let body = fs::read_to_string(crate_dir().join(&rel)).unwrap_or_else(|e| {
-            panic!("declared [[test]] target `{group}` names {rel}, which is unreadable: {e}")
+///
+/// A registration is whatever file a root's `#[path = "…"]` resolves to, read from that
+/// root's own directory. One that lands **directly in a suite home** names a suite,
+/// whichever home the root itself belongs to; one that lands deeper — the shared
+/// `support/mod.rs` — is not a suite and is skipped.
+fn registrations() -> BTreeMap<PathBuf, Vec<String>> {
+    let homes = test_homes::suite_homes();
+    let mut owners: BTreeMap<PathBuf, Vec<String>> = BTreeMap::new();
+    for target in test_homes::declared_test_targets() {
+        let body = fs::read_to_string(&target.root).unwrap_or_else(|e| {
+            panic!(
+                "declared [[test]] target `{}` names {}, which is unreadable: {e}",
+                target.name,
+                shown(&target.root),
+            )
         });
+        let root_dir = target.root.parent().expect("a group root has a parent");
         for line in body.lines() {
-            let line = line.trim();
-            // `#[path = "../<suite>.rs"]` — the support root uses `../support/mod.rs`,
-            // which is not a suite and is skipped by the `../` + `.rs` shape below.
-            if let Some(rest) = line.strip_prefix("#[path = \"../")
-                && let Some(file) = rest.strip_suffix(".rs\"]")
-                && !file.contains('/')
+            if let Some(rel) = line
+                .trim()
+                .strip_prefix("#[path = \"")
+                .and_then(|rest| rest.strip_suffix("\"]"))
             {
-                owners
-                    .entry(file.to_string())
-                    .or_default()
-                    .push(group.clone());
+                let file = test_homes::normalize(&root_dir.join(rel));
+                if file
+                    .parent()
+                    .is_some_and(|dir| homes.iter().any(|h| h == dir))
+                {
+                    owners.entry(file).or_default().push(target.name.clone());
+                }
             }
         }
     }
@@ -124,20 +109,27 @@ fn every_suite_file_is_registered_in_exactly_one_group() {
     let suites = suite_files();
     let owners = registrations();
 
-    let unregistered: Vec<&String> = suites.iter().filter(|s| !owners.contains_key(*s)).collect();
+    let unregistered: Vec<String> = suites
+        .iter()
+        .filter(|s| !owners.contains_key(*s))
+        .map(|s| shown(s))
+        .collect();
     assert!(
         unregistered.is_empty(),
         "these suite files are compiled into NO test target, so they never run — add each to a \
-         group root under crates/cli/tests/groups/ as `#[path = \"../<name>.rs\"] mod <name>;`: \
-         {unregistered:?}"
+         group root under its own directory's `groups/` as `#[path = \"../<name>.rs\"] mod \
+         <name>;`: {unregistered:?}"
     );
 
-    let duplicated: Vec<(&String, &Vec<String>)> =
-        owners.iter().filter(|(_, g)| g.len() > 1).collect();
+    let duplicated: Vec<(String, &Vec<String>)> = owners
+        .iter()
+        .filter(|(_, g)| g.len() > 1)
+        .map(|(s, g)| (shown(s), g))
+        .collect();
     assert!(
         duplicated.is_empty(),
-        "these suite files are registered in more than one group, so their tests run twice \
-         under two binary names: {duplicated:?}"
+        "these suite files are registered more than once, so their tests run twice under \
+         two binary names: {duplicated:?}"
     );
 }
 
@@ -179,11 +171,13 @@ fn an_env_mutating_suite_is_alone_in_its_target() {
         // This file names the two calls it searches for, in this function and in the
         // doc comment above it, so a literal scan matches the scanner. It mutates no
         // environment itself — it only reads the tree.
-        if suite == "test_target_registration" {
+        if suite
+            .file_name()
+            .is_some_and(|name| name == "test_target_registration.rs")
+        {
             continue;
         }
-        let body = fs::read_to_string(tests_dir().join(format!("{suite}.rs")))
-            .expect("registered suite is readable");
+        let body = fs::read_to_string(&suite).expect("registered suite is readable");
         if !body.contains("env::set_var") && !body.contains("env::remove_var") {
             continue;
         }
@@ -191,7 +185,8 @@ fn an_env_mutating_suite_is_alone_in_its_target() {
             let n = group_size.get(&g).copied().unwrap_or(0);
             if n > 1 {
                 violations.push(format!(
-                    "{suite} mutates process env but shares `{g}` with {} other suite(s)",
+                    "{} mutates process env but shares `{g}` with {} other suite(s)",
+                    shown(&suite),
                     n - 1
                 ));
             }
@@ -209,8 +204,11 @@ fn an_env_mutating_suite_is_alone_in_its_target() {
 fn every_registration_points_at_a_file_that_exists() {
     let suites = suite_files();
     let owners = registrations();
-    let dangling: Vec<(&String, &Vec<String>)> =
-        owners.iter().filter(|(s, _)| !suites.contains(s)).collect();
+    let dangling: Vec<(String, &Vec<String>)> = owners
+        .iter()
+        .filter(|(s, _)| !suites.contains(*s))
+        .map(|(s, g)| (shown(s), g))
+        .collect();
     assert!(
         dangling.is_empty(),
         "these group registrations name a suite file that no longer exists — delete the \
@@ -219,24 +217,27 @@ fn every_registration_points_at_a_file_that_exists() {
 }
 
 /// The fence above reads its group roots from the manifest, which leaves one hole open
-/// at the level below: a root file that exists in `tests/groups/` while `Cargo.toml`
+/// at the level below: a root file that exists in a home's `groups/` while `Cargo.toml`
 /// declares no `[[test]]` target for it. Nothing compiles it, so every suite it lists
 /// is silently never run — the exact failure `autotests = false` bought, displaced one
 /// level up. The reverse is the sibling: a declared target whose root file is gone
 /// fails the build for everyone, but naming it here says *why* in one line.
+///
+/// Read per home, and a home is found through a declared root — so a `groups/` directory
+/// no declared root sits in is a directory this arm never opens. That bound is the
+/// derivation's: a directory of suites becomes a home by its first manifest entry.
 #[test]
 fn every_group_root_is_declared_as_a_test_target() {
-    let declared: BTreeSet<String> = declared_test_targets()
+    let declared: BTreeSet<PathBuf> = test_homes::declared_test_targets()
         .into_iter()
-        .map(|(_, path)| path)
+        .map(|target| target.root)
         .collect();
-    let on_disk: BTreeSet<String> =
-        root_walk::files_in(&tests_dir().join("groups"), root_walk::ext("rs"))
-            .iter()
-            .filter_map(|p| Some(format!("tests/groups/{}", p.file_name()?.to_str()?)))
-            .collect();
+    let on_disk: BTreeSet<PathBuf> = test_homes::suite_homes()
+        .iter()
+        .flat_map(|home| root_walk::files_in(&home.join("groups"), root_walk::ext("rs")))
+        .collect();
 
-    let undeclared: Vec<&String> = on_disk.difference(&declared).collect();
+    let undeclared: Vec<String> = on_disk.difference(&declared).map(|p| shown(p)).collect();
     assert!(
         undeclared.is_empty(),
         "these group roots exist on disk but no `[[test]]` target in crates/cli/Cargo.toml \
@@ -244,7 +245,7 @@ fn every_group_root_is_declared_as_a_test_target() {
          `[[test]]` entry for each, or delete the file: {undeclared:?}"
     );
 
-    let missing: Vec<&String> = declared.difference(&on_disk).collect();
+    let missing: Vec<String> = declared.difference(&on_disk).map(|p| shown(p)).collect();
     assert!(
         missing.is_empty(),
         "these `[[test]]` targets in crates/cli/Cargo.toml name a group root that does not \
@@ -252,23 +253,20 @@ fn every_group_root_is_declared_as_a_test_target() {
     );
 }
 
-/// Directories under `tests/` that a sibling `<name>.rs` aggregates — today only
-/// `pinned_facts/`. Derived rather than listed, so a second such directory joins the
-/// fence by existing. `support/` (a `mod.rs` directory) and the data directories have
-/// no `.rs` sibling and are not submodule aggregations.
-fn aggregated_dirs() -> Vec<String> {
-    let mut v: Vec<String> = fs::read_dir(tests_dir())
-        .expect("tests/ is readable")
+/// Directories under a suite home that a sibling `<name>.rs` aggregates — today only the
+/// crate's `pinned_facts/`. Derived rather than listed, so a second such directory joins
+/// the fence by existing, in either home. `support/` (a `mod.rs` directory), `groups/` and
+/// the data directories have no `.rs` sibling and are not submodule aggregations.
+fn aggregated_dirs(home: &Path) -> Vec<String> {
+    let mut v: Vec<String> = fs::read_dir(home)
+        .expect("a suite home is readable")
         .filter_map(|e| {
             let p = e.expect("dir entry").path();
             if !p.is_dir() {
                 return None;
             }
             let name = p.file_name()?.to_str()?.to_string();
-            tests_dir()
-                .join(format!("{name}.rs"))
-                .is_file()
-                .then_some(name)
+            home.join(format!("{name}.rs")).is_file().then_some(name)
         })
         .collect();
     v.sort();
@@ -277,53 +275,56 @@ fn aggregated_dirs() -> Vec<String> {
 
 /// The same bijection one level deeper. `tests/pinned_facts.rs` declares its repro
 /// blocks by hand with `#[path = "pinned_facts/<name>.rs"]`, and `suite_files()` scans
-/// only `tests/*.rs` — so until now a repro block dropped into that directory compiled
+/// only `<home>/*.rs` — so until now a repro block dropped into that directory compiled
 /// nowhere and reddened nothing, which is precisely the class of silence the pinned
 /// facts exist to prevent.
 #[test]
 fn every_aggregated_submodule_is_declared_by_its_aggregator() {
-    let dirs = aggregated_dirs();
+    let homes = test_homes::suite_homes();
     assert!(
-        !dirs.is_empty(),
-        "no `tests/<dir>/` has a sibling `tests/<dir>.rs` aggregator any more — if that idiom \
-         is genuinely gone, delete this fence; if it was renamed, teach `aggregated_dirs()` \
-         the new shape rather than leaving a fence that checks nothing"
+        homes.iter().any(|home| !aggregated_dirs(home).is_empty()),
+        "no suite home has a `<dir>/` with a sibling `<dir>.rs` aggregator any more — if that \
+         idiom is genuinely gone, delete this fence; if it was renamed, teach \
+         `aggregated_dirs()` the new shape rather than leaving a fence that checks nothing"
     );
 
-    for dir in dirs {
-        let on_disk: BTreeSet<String> =
-            root_walk::files_in(&tests_dir().join(&dir), root_walk::ext("rs"))
-                .iter()
-                .filter_map(|p| Some(p.file_stem()?.to_str()?.to_string()))
+    for home in &homes {
+        for dir in aggregated_dirs(home) {
+            let at = shown(&home.join(&dir));
+            let on_disk: BTreeSet<String> =
+                root_walk::files_in(&home.join(&dir), root_walk::ext("rs"))
+                    .iter()
+                    .filter_map(|p| Some(p.file_stem()?.to_str()?.to_string()))
+                    .collect();
+
+            let body =
+                fs::read_to_string(home.join(format!("{dir}.rs"))).expect("aggregator is readable");
+            let prefix = format!("#[path = \"{dir}/");
+            let declared: BTreeSet<String> = body
+                .lines()
+                .filter_map(|line| {
+                    line.trim()
+                        .strip_prefix(&prefix)?
+                        .strip_suffix(".rs\"]")
+                        .map(str::to_string)
+                })
                 .collect();
 
-        let body = fs::read_to_string(tests_dir().join(format!("{dir}.rs")))
-            .expect("aggregator is readable");
-        let prefix = format!("#[path = \"{dir}/");
-        let declared: BTreeSet<String> = body
-            .lines()
-            .filter_map(|line| {
-                line.trim()
-                    .strip_prefix(&prefix)?
-                    .strip_suffix(".rs\"]")
-                    .map(str::to_string)
-            })
-            .collect();
+            let undeclared: Vec<&String> = on_disk.difference(&declared).collect();
+            assert!(
+                undeclared.is_empty(),
+                "these files under {at}/ are declared by no `#[path = \"{dir}/<name>.rs\"] \
+                 mod <name>;` line in {at}.rs, so they compile nowhere and never run: \
+                 {undeclared:?}"
+            );
 
-        let undeclared: Vec<&String> = on_disk.difference(&declared).collect();
-        assert!(
-            undeclared.is_empty(),
-            "these files under tests/{dir}/ are declared by no `#[path = \"{dir}/<name>.rs\"] \
-             mod <name>;` line in tests/{dir}.rs, so they compile nowhere and never run: \
-             {undeclared:?}"
-        );
-
-        let dangling: Vec<&String> = declared.difference(&on_disk).collect();
-        assert!(
-            dangling.is_empty(),
-            "tests/{dir}.rs declares these submodules, but no such file exists under \
-             tests/{dir}/: {dangling:?}"
-        );
+            let dangling: Vec<&String> = declared.difference(&on_disk).collect();
+            assert!(
+                dangling.is_empty(),
+                "{at}.rs declares these submodules, but no such file exists under {at}/: \
+                 {dangling:?}"
+            );
+        }
     }
 }
 
@@ -336,9 +337,13 @@ fn every_aggregated_submodule_is_declared_by_its_aggregator() {
 /// reddens instead of quietly disagreeing with what cargo compiles.
 #[test]
 fn the_stated_target_count_matches_the_declared_targets() {
-    let needle = format!("{} group targets", declared_test_targets().len());
+    let needle = format!(
+        "{} group targets",
+        test_homes::declared_test_targets().len()
+    );
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     for rel in ["Cargo.toml", "tests/test_target_registration.rs"] {
-        let body = fs::read_to_string(crate_dir().join(rel)).expect("stating file is readable");
+        let body = fs::read_to_string(crate_dir.join(rel)).expect("stating file is readable");
         assert!(
             body.contains(&needle),
             "crates/cli/{rel} no longer states the current test-target count: it must spell \

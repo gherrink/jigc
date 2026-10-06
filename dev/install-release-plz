@@ -36,7 +36,7 @@
 set -euo pipefail
 
 # The pin. Moved only together with the row in release.md -> Publishing -> The
-# release-plz binary, which crates/cli/tests/release_pipeline_fence.rs holds to these
+# release-plz binary, which tooling-tests/release_pipeline_fence.rs holds to these
 # two lines.
 RELEASE_PLZ_VERSION=0.3.169
 RELEASE_PLZ_SHA256=1455106d3263712dd796ee04869eaee98b274e1e2e18011f67682b1f2840b64d

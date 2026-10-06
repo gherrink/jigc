@@ -464,8 +464,8 @@ fn absolute_path_write_corroborates_with_absorb_not_sums() {
 /// stops reading committed v1 capture goes red here.
 #[test]
 fn tally_reads_the_committed_v1_fixture() {
-    let fixture =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dogfood-hooklog-v1.jsonl");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tooling-tests/fixtures/dogfood-hooklog-v1.jsonl");
     assert!(
         fixture.is_file(),
         "committed fixture: {}",

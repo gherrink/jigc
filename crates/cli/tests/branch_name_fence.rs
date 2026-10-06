@@ -19,7 +19,7 @@
 //! hygiene step is conditional, so gitleaks runs, and the denylist step, without the
 //! secret a fork's pull request never receives, skips with its notice and exit 0.
 
-use crate::manifest_freeze_fence::{CI_WORKFLOW, repo_root};
+use crate::support::ci_workflow::{CI_WORKFLOW, repo_root};
 use serde_yaml_ng::Value;
 use std::fs;
 use std::process::{Command, Output};

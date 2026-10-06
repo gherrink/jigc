@@ -1,5 +1,5 @@
 //! **The stabilization harness, held to what its rulings ask of it by a scan of its own
-//! source** ([DECISIONS.md](../../../DECISIONS.md) → *2026-10-05 — The stabilization
+//! source** ([DECISIONS.md](../DECISIONS.md) → *2026-10-05 — The stabilization
 //! workflow, as ruled*, and the entries of 2026-10-06, *The stabilization harness, as built*
 //! and *The decision table's holes, closed*).
 //!

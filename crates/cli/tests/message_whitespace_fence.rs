@@ -116,8 +116,13 @@ fn offenders_in(path: &Path, body: &str) -> Vec<String> {
 /// adjacent literals concatenate.
 #[test]
 fn no_message_literal_carries_a_wrapped_source_lines_indentation() {
+    // `crates/`, and each suite home outside it: the tooling suites left `crates/` on
+    // 2026-10-06 and are read off the manifest's `[[test]]` paths, never listed here.
     let root = workspace_root();
-    let files = rust_files(&root.join("crates"));
+    let files: Vec<PathBuf> = std::iter::once(root.join("crates"))
+        .chain(crate::support::test_homes::homes_outside_the_crates())
+        .flat_map(|dir| rust_files(&dir))
+        .collect();
 
     let mut scanned_literals = 0usize;
     let mut offenders = Vec::new();

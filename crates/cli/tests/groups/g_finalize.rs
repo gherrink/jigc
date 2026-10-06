@@ -11,8 +11,6 @@ mod agent_co_author;
 mod anyhow_route_spans;
 #[path = "../branch_name_fence.rs"]
 mod branch_name_fence;
-#[path = "../ci_matrix_fence.rs"]
-mod ci_matrix_fence;
 #[path = "../commit_seam_posture.rs"]
 mod commit_seam_posture;
 #[path = "../copy_in_baseline.rs"]
@@ -71,10 +69,6 @@ mod git_span_aim;
 mod l1_pull_absorption;
 #[path = "../l2_branch_switch.rs"]
 mod l2_branch_switch;
-#[path = "../ledger_entry_seven_discharged.rs"]
-mod ledger_entry_seven_discharged;
-#[path = "../ledger_record_truth.rs"]
-mod ledger_record_truth;
 #[path = "../leg_two_refusal_homed.rs"]
 mod leg_two_refusal_homed;
 #[path = "../linked_worktree_doc_home.rs"]
@@ -83,8 +77,6 @@ mod linked_worktree_doc_home;
 mod manifest_freeze_fence;
 #[path = "../mention_resolves.rs"]
 mod mention_resolves;
-#[path = "../merge_logs_fence.rs"]
-mod merge_logs_fence;
 #[path = "../message_whitespace_fence.rs"]
 mod message_whitespace_fence;
 #[path = "../not_in_repo_axis.rs"]
@@ -105,8 +97,6 @@ mod promote_destination_shape;
 mod reconciliation_baseline_contrast;
 #[path = "../ref_edge_guidance.rs"]
 mod ref_edge_guidance;
-#[path = "../release_pipeline_fence.rs"]
-mod release_pipeline_fence;
 #[path = "../rename_rollback_conflict.rs"]
 mod rename_rollback_conflict;
 #[path = "../repo_posture.rs"]
@@ -115,8 +105,6 @@ mod repo_posture;
 mod rollback_population_registry;
 #[path = "../severity_tuning.rs"]
 mod severity_tuning;
-#[path = "../stabilize_harness_fence.rs"]
-mod stabilize_harness_fence;
 #[path = "../store_door_home_shape.rs"]
 mod store_door_home_shape;
 #[path = "../store_version_stamp.rs"]
@@ -129,8 +117,6 @@ mod temp_mint_fence;
 mod unreadable_project_layer;
 #[path = "../validate_previews_posture.rs"]
 mod validate_previews_posture;
-#[path = "../workflow_action_runtime_fence.rs"]
-mod workflow_action_runtime_fence;
 #[path = "../write_finding_keys.rs"]
 mod write_finding_keys;
 #[path = "../write_miss_shape_axis.rs"]

@@ -39,8 +39,6 @@ mod config_relocation_rollback;
 mod config_replace_remove_step;
 #[path = "../config_set_relocation_ack.rs"]
 mod config_set_relocation_ack;
-#[path = "../doc_link_fence.rs"]
-mod doc_link_fence;
 #[path = "../doctype_authoring_fences.rs"]
 mod doctype_authoring_fences;
 #[path = "../flow13_acceptance.rs"]
@@ -57,8 +55,6 @@ mod flow41_acceptance;
 mod flow44_acceptance;
 #[path = "../gate_coverage_fence.rs"]
 mod gate_coverage_fence;
-#[path = "../illustrative_disclaimer_scope.rs"]
-mod illustrative_disclaimer_scope;
 #[path = "../ingest.rs"]
 mod ingest;
 #[path = "../ingest_finding_keys.rs"]
