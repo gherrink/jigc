@@ -1,0 +1,230 @@
+{
+ "tool": "regression-set",
+ "status": "green",
+ "reason": null,
+ "detail": null,
+ "list": {
+  "path": "completions/artifacts/M55/stabilization-build/regression-set/intended-changes.tsv",
+  "sha256": "191d0a009de2ec86b8d3fb02b02f2487797791f479c5328c83ba25450c9f1424",
+  "rows": 21
+ },
+ "previous": {
+  "commit": "91834b5e011de2c36e2be2b79e96c0b9f60a803c",
+  "sha256": "56d5596e89fe92e6c972fdab8bf0394bf14ed627e5c905483e71958a5111e792"
+ },
+ "candidate": {
+  "commit": "d423f09bf1bdc98fa2169134e607a8c0b203919f",
+  "sha256": "007110b0386f10b17d4674714ff5eeb1ee66a28d8ad66aaa87072946b38532ab"
+ },
+ "seconds": {
+  "baseline": 783,
+  "build-candidate": 95,
+  "build-previous": 120,
+  "candidate": 1033,
+  "unpack-candidate": 3,
+  "unpack-previous": 3
+ },
+ "proof": {
+  "baked_path": "<scratch>/regression-set.oq93qke8/target-previous/debug/jigc",
+  "named_by": 12,
+  "baseline_after": "56d5596e89fe92e6c972fdab8bf0394bf14ed627e5c905483e71958a5111e792",
+  "baseline_before": "56d5596e89fe92e6c972fdab8bf0394bf14ed627e5c905483e71958a5111e792",
+  "candidate_after": "007110b0386f10b17d4674714ff5eeb1ee66a28d8ad66aaa87072946b38532ab",
+  "candidate_before": "007110b0386f10b17d4674714ff5eeb1ee66a28d8ad66aaa87072946b38532ab"
+ },
+ "counts": {
+  "tests": 4393,
+  "baseline_passed": 4382,
+  "baseline_failed": 11,
+  "candidate_passed": 4361,
+  "candidate_failed": 32,
+  "differences": 21,
+  "on_list": 21,
+  "not_on_list": 0,
+  "excluded": 11,
+  "stale": 0,
+  "fixed": 0
+ },
+ "not_on_list": [],
+ "on_list": [
+  {
+   "binary": "jigc::g_config",
+   "test": "flow19_planning_encode::flow19_warm_append_over_an_oob_drifted_singleton_conflict_blocks_at_finalize",
+   "change": "an uncommitted edit made before a task's first write is carried into the staged copy and lands, with or without a recorded baseline — the ruling's consequence 1, built at 0f34d8f0; `task finalize` exits 0 with `reconciliation.absorb` where the old test expects a conflict block",
+   "pointer": "ruling:DECISIONS.md#2026-10-05 — rc.24 fix pass, the copied-in witness"
+  },
+  {
+   "binary": "jigc::g_doc",
+   "test": "clap_error_kind_axis::every_producible_kind_holds_with_the_invocation_log_on",
+   "change": "not a behaviour difference: the test compares the binary's `--help` with the render of the previous release's own `cli` library, linked into the test, and the fix pass reworded the `setup` and `uninstall` help paragraphs — first at this commit",
+   "pointer": "commit:12398ddccccbe75810a087a0ff6e8d108fcd831a"
+  },
+  {
+   "binary": "jigc::g_doc",
+   "test": "clap_error_kind_axis::every_producible_kind_is_reached_by_driving_its_probe",
+   "change": "not a behaviour difference: the test compares the binary's `--help` with the render of the previous release's own `cli` library, linked into the test, and the fix pass reworded the `setup` and `uninstall` help paragraphs — first at this commit",
+   "pointer": "commit:12398ddccccbe75810a087a0ff6e8d108fcd831a"
+  },
+  {
+   "binary": "jigc::g_finalize",
+   "test": "pre_guard_repair_route::the_migration_source_route_does_not_promise_a_review_it_does_not_get",
+   "change": "a migration whose source was edited after the mint is refused under `reconciliation.conflict-block`, keyed at the source, and routed to `task discard --force` and a new `migrate`; the old test pins the `jigc unmanage <source>` route",
+   "pointer": "commit:4ba04efc91cc0047efda1108373b48281708b5ff"
+  },
+  {
+   "binary": "jigc::g_finalize",
+   "test": "reconciliation_baseline_contrast::a_lost_file_state_baseline_turns_a_conflict_block_into_a_silent_merge",
+   "change": "the old test pins the rc.24 defect itself — one sequence, two outcomes, decided by a gitignored cache: with the baseline held, the edit made before the first write now lands (exit 3 → 0) — the ruling's consequence 1, built at 0f34d8f0 after eb18e5fe renamed the test",
+   "pointer": "ruling:DECISIONS.md#2026-10-05 — rc.24 fix pass, the copied-in witness"
+  },
+  {
+   "binary": "jigc::g_flow",
+   "test": "flow48_acceptance::the_guide_artifact_is_installed_replaced_and_never_clobbered",
+   "change": "the guide's ownership oracle answers for the whole file, not its body: a copy whose front matter differs from what the running build would assemble reads as the adopter's and is left as it is; the old fixture moves the `jigc-version:` line alone and expects `setup` to replace the file",
+   "pointer": "commit:33620081b09a936cfcc6d7f9f1532414a6936bff"
+  },
+  {
+   "binary": "jigc::g_flow",
+   "test": "flow49_acceptance::a_lost_baseline_switches_off_the_never_silently_merged_guarantee",
+   "change": "the old test pins the rc.24 defect itself — one sequence, two outcomes, decided by a gitignored cache: with the baseline held, the edit made before the first write now lands (exit 3 → 0) — the ruling's consequence 1, built at 0f34d8f0 after eb18e5fe renamed the test",
+   "pointer": "ruling:DECISIONS.md#2026-10-05 — rc.24 fix pass, the copied-in witness"
+  },
+  {
+   "binary": "jigc::g_flow",
+   "test": "flow52_acceptance::a_refused_transaction_restores_its_config_layer_writes_without_overwriting_a_concurrent_edit",
+   "change": "`task finalize` refreshes `.jigc/version` only where it is jigc's to write — absent, or a regular file holding the one `jigc-version:` line; the old fixture's stamp is neither, so it is left unwritten and unstaged, and one pre-image is parked where the old test counts two",
+   "pointer": "commit:104a7d4b47ff8d56d35e767fc73d24b6d3a5d6ca"
+  },
+  {
+   "binary": "jigc::g_item",
+   "test": "singleton_running_doc::warm_edit_over_an_oob_drifted_singleton_conflict_blocks_at_finalize",
+   "change": "an uncommitted edit made before a task's first write is carried into the staged copy and lands, with or without a recorded baseline — the ruling's consequence 1, built at 0f34d8f0; `task finalize` exits 0 with `reconciliation.absorb` where the old test expects a conflict block",
+   "pointer": "ruling:DECISIONS.md#2026-10-05 — rc.24 fix pass, the copied-in witness"
+  },
+  {
+   "binary": "jigc::g_migrate",
+   "test": "adapter_artifact::a_pristine_stale_stamped_guide_is_replaced_and_restamped",
+   "change": "the guide's ownership oracle answers for the whole file, not its body: a copy whose front matter differs from what the running build would assemble reads as the adopter's and is left as it is; the old fixture is a hand-assembled stale guide with a true body hash, and expects a re-stamp",
+   "pointer": "commit:33620081b09a936cfcc6d7f9f1532414a6936bff"
+  },
+  {
+   "binary": "jigc::g_migrate",
+   "test": "config_layer_preimage::a_path_jigc_never_wrote_is_neither_restored_nor_reported",
+   "change": "`task finalize` refreshes `.jigc/version` only where it is jigc's to write — absent, or a regular file holding the one `jigc-version:` line; the old fixture's stamp is neither, so it is left unwritten and unstaged, and no rollback conflict is reported where the old test expects the stamp's",
+   "pointer": "commit:104a7d4b47ff8d56d35e767fc73d24b6d3a5d6ca"
+  },
+  {
+   "binary": "jigc::g_migrate",
+   "test": "config_layer_preimage::every_config_layer_pathspec_carries_a_disposition",
+   "change": "`task finalize` refreshes `.jigc/version` only where it is jigc's to write — absent, or a regular file holding the one `jigc-version:` line; the old fixture's stamp is neither, so it is left unwritten and unstaged, so `.jigc/version` is not among the stage's pathspecs",
+   "pointer": "commit:104a7d4b47ff8d56d35e767fc73d24b6d3a5d6ca"
+  },
+  {
+   "binary": "jigc::g_migrate",
+   "test": "config_layer_preimage::the_manufactured_shape_space_holds_over_both_files",
+   "change": "`task finalize` refreshes `.jigc/version` only where it is jigc's to write — absent, or a regular file holding the one `jigc-version:` line; the old fixture's stamp is neither, so it is left unwritten and unstaged, and one pre-image is parked where the old cell expects both",
+   "pointer": "commit:104a7d4b47ff8d56d35e767fc73d24b6d3a5d6ca"
+  },
+  {
+   "binary": "jigc::g_migrate",
+   "test": "setup::setup_writes_compose_embedded_methodology_marker",
+   "change": "`setup` in a repository with no commit refuses over an untracked file at a path it replaces, a pre-seeded `.jigc/config/packs.yaml` among them (`setup.dirty-install-path`; exit 0 → refused) — built at dc0d7586, and kept by the ruling's item 2",
+   "pointer": "ruling:DECISIONS.md#2026-10-04 — rc.24 fix pass, two rulings after the first fixes"
+  },
+  {
+   "binary": "jigc::g_migrate",
+   "test": "setup_install_pathspec_guard::an_owned_guide_artifact_is_not_a_subject_of_the_guard",
+   "change": "the guide's ownership oracle answers for the whole file, not its body: a copy whose front matter differs from what the running build would assemble reads as the adopter's and is left as it is; the old fixture is a tracked guide with only the stamp line moved, and expects the install to replace it",
+   "pointer": "commit:33620081b09a936cfcc6d7f9f1532414a6936bff"
+  },
+  {
+   "binary": "jigc::g_migrate",
+   "test": "version_stamp_rollback::a_hook_rejected_finalize_restores_a_staged_blob_at_a_promotion_destination",
+   "change": "an identity git holds is occupied: a `created` doc over a home the index holds a blob at blocks under `finalize.promote-clobber` (`task finalize` 0 → 3), before the commit phase the old test needs its hook to reject",
+   "pointer": "commit:78e8ded11df55f6e8e3a453bdff36affc6529b18"
+  },
+  {
+   "binary": "jigc::g_milestone",
+   "test": "cwd_verb_subject::uninstall_removes_the_workbench_home_install_from_every_cwd",
+   "change": "wording only: the `uninstall` ack says it dropped git's registrations of the fan-out worktrees, where the old test reads *pruned*",
+   "pointer": "commit:dcfa40f0f83cabd3123e7d198988965a2a4d25af"
+  },
+  {
+   "binary": "jigc::g_milestone",
+   "test": "leftover_probe_fail_closed::a_teardown_that_removed_nothing_narrates_nothing",
+   "change": "the teardown names each open work unit whose bookkeeping it takes, as a warning before it removes anything; the old test holds a failed `uninstall` to a stderr that claims nothing — the commit's message names this test as going red",
+   "pointer": "commit:1b1d765611e5ddab1d88e3273ade8f74b065ecd6"
+  },
+  {
+   "binary": "jigc::g_milestone",
+   "test": "milestone::milestone_finalize_warns_on_a_leaked_worktree_but_still_succeeds",
+   "change": "no repository-wide `git worktree prune` remains, and the leaked-worktree warning's remedy is `git worktree unlock` then `git worktree remove --force` for that one path, where the old test reads the prune; no exit code moved",
+   "pointer": "commit:8c1596227150ab17acc455c66e007ae93618e208"
+  },
+  {
+   "binary": "jigc::g_milestone",
+   "test": "milestone_landed_attribution::a_path_landed_by_two_chain_commits_is_one_manifest_entry_owned_by_the_last",
+   "change": "a promotion never replaces a file a sub-task worktree staged at its home: `milestone finalize` blocks under `finalize.promote-clobber`, keyed at the path (exit 0 → 3)",
+   "pointer": "commit:048724d0a6393707d4dd9b32088ca62cc86a34fe"
+  },
+  {
+   "binary": "jigc::g_milestone",
+   "test": "milestone_record_stale_base::stale_base_routes_finalize_without_committing",
+   "change": "a record door with no baseline compares the record against `HEAD`: the old fixture's uncommitted rewrite of the record blocks under `reconciliation.conflict-block`, where the old test expects the stale-base finding — a refusal either way",
+   "pointer": "commit:8d9c3afba71d8707554643c2e26162fff4697fc3"
+  }
+ ],
+ "excluded": [
+  {
+   "binary": "jigc::g_config",
+   "test": "set_kind_vocabulary::no_schema_hash_moved_and_the_pinned_projection_is_byte_identical"
+  },
+  {
+   "binary": "jigc::g_config",
+   "test": "stated_at_fence::every_declared_where_reachable_row_is_declared_by_the_step_it_names"
+  },
+  {
+   "binary": "jigc::g_finalize",
+   "test": "manifest_freeze_fence::historical::the_fixture_commits_are_reachable_and_a_whole_push_apart"
+  },
+  {
+   "binary": "jigc::g_finalize",
+   "test": "manifest_freeze_fence::historical::the_head_tilde_one_window_at_the_push_tip_is_clean"
+  },
+  {
+   "binary": "jigc::g_finalize",
+   "test": "manifest_freeze_fence::historical::the_repin_of_all_sixteen_is_flagged_over_the_pushed_range"
+  },
+  {
+   "binary": "jigc::g_finalize",
+   "test": "manifest_freeze_fence::record::every_home_states_what_is_now_fenced"
+  },
+  {
+   "binary": "jigc::g_finalize",
+   "test": "manifest_freeze_fence::record::no_home_still_says_the_rule_is_unfenced"
+  },
+  {
+   "binary": "jigc::g_migrate",
+   "test": "dev_gate_report::a_clean_denylist_says_clean"
+  },
+  {
+   "binary": "jigc::g_migrate",
+   "test": "dev_gate_report::a_denylist_hit_is_named_by_location_and_never_by_content"
+  },
+  {
+   "binary": "jigc::g_migrate",
+   "test": "install_line::the_install_line_has_one_owner_one_copy_and_one_derived_file"
+  },
+  {
+   "binary": "jigc::g_migrate",
+   "test": "package_contents::every_tracked_file_under_the_published_dirs_is_published"
+  }
+ ],
+ "stale": [],
+ "flaky": {
+  "baseline": [],
+  "candidate": []
+ },
+ "evidence": "<scratch>/regression-set.oq93qke8/evidence",
+ "work": "<scratch>/regression-set.oq93qke8"
+}
