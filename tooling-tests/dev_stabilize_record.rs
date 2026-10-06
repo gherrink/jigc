@@ -150,6 +150,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
@@ -196,8 +197,13 @@ const CORRUPT: i32 = 13;
 const NO_SUCH_BOUND: i32 = 14;
 const NO_SCOPE: i32 = 15;
 const TRUNCATED: i32 = 16;
+const INTERRUPTED: i32 = 17;
+const PENDING: i32 = 18;
+const CHECK: i32 = 19;
 const REPORTS_MISMATCH: i32 = 20;
 const LEDGER_MISMATCH: i32 = 21;
+const GATE_MISMATCH: i32 = 22;
+const FAULT: i32 = 23;
 
 /// Every refusal class with its status, as `--help` must list them.
 const REFUSALS: &[(i32, &str)] = &[
@@ -216,6 +222,10 @@ const REFUSALS: &[(i32, &str)] = &[
     (NO_SUCH_BOUND, "no-such-bound"),
     (NO_SCOPE, "no-scope"),
     (TRUNCATED, "truncated"),
+    (INTERRUPTED, "interrupted"),
+    (PENDING, "pending"),
+    (CHECK, "check"),
+    (FAULT, "fault"),
 ];
 
 const LEDGER_COLUMNS: [&str; 10] = [
@@ -276,8 +286,9 @@ fn repo_root() -> PathBuf {
 /// on a finding, anything else when it could not run. `STUB_GITLEAKS` picks a failure:
 /// `crash` exits 1 as gitleaks does on an error of its own, `kill-parent` kills the script
 /// that launched it, which is the deterministic way to kill a write at its last step
-/// before the file exists — and `slow` scans as ever, two seconds late, which holds a
-/// write in flight for as long.
+/// before the file exists — `slow` scans as ever, two seconds late, which holds a
+/// write in flight for as long — and `once` scans once and cannot run a second time, which
+/// is a scanner that dies between the two files of one call.
 const GITLEAKS_STUB: &str = r#"#!/bin/sh
 code=1
 report=
@@ -298,6 +309,11 @@ case "${STUB_GITLEAKS:-scan}" in
     crash) echo "stub gitleaks: could not load its config" >&2; exit 1 ;;
     kill-parent) kill -9 "$PPID"; exit 0 ;;
     slow) sleep 2 ;;
+    once)
+        if [ -e "${TMPDIR}stub-gitleaks-ran" ]; then
+            echo "stub gitleaks: could not run a second time" >&2; exit 1
+        fi
+        : >"${TMPDIR}stub-gitleaks-ran" ;;
 esac
 if grep -rq --exclude-dir=.git @SECRET@ "$repo"; then
     if [ -n "$report" ]; then printf '[{"RuleID":"stub-rule","StartLine":3}]' >"$report"; fi
@@ -463,6 +479,18 @@ impl Rig {
             seen.stdout
         );
         seen.json()
+    }
+
+    /// A file holding what a full gate printed, in the rig's temp directory — which no
+    /// snapshot walks: the gate's output is the step's, never the run's.
+    fn summary(&self, name: &str, steps: &[&str], tests: &[&str]) -> PathBuf {
+        self.summary_of(name, &gate_output(steps, tests))
+    }
+
+    fn summary_of(&self, name: &str, text: &str) -> PathBuf {
+        let path = self.tmp.join(format!("gate-{name}.txt"));
+        fs::write(&path, text).expect("write a gate's output");
+        path
     }
 
     /// Seeded ledger rows, one call, for the arms that set or check them.
@@ -669,6 +697,70 @@ fn triage_set(run: &str, round: &str) -> Vec<String> {
         format!("--run={run}"),
         format!("--round={round}"),
     ]
+}
+
+fn gate_set(run: &str, round: &str, commit: &str, summary: &Path) -> Vec<String> {
+    strings(&[
+        "gate-set",
+        &format!("--run={run}"),
+        &format!("--round={round}"),
+        &format!("--commit={commit}"),
+        &format!("--summary={}", summary.display()),
+    ])
+}
+
+fn gate_check(run: &str, round: Option<&str>, summary: &Path) -> Vec<String> {
+    let mut args = strings(&[
+        "gate-check",
+        &format!("--run={run}"),
+        &format!("--summary={}", summary.display()),
+    ]);
+    if let Some(round) = round {
+        args.push(format!("--round={round}"));
+    }
+    args
+}
+
+fn apply(run: &str, round: Option<&str>) -> Vec<String> {
+    let mut args = strings(&[
+        "apply",
+        &format!("--run={run}"),
+        "--subject=docs(record): a record step",
+    ]);
+    if let Some(round) = round {
+        args.push(format!("--round={round}"));
+    }
+    args
+}
+
+fn keeper(name: &str, run: &str) -> Vec<String> {
+    strings(&[name, &format!("--run={run}")])
+}
+
+fn gate_path(round: &str) -> String {
+    format!("completions/artifacts/{RUN}/r{round}/gate.md")
+}
+
+/// What a full `dev/gate` prints, as much of it as the script reads: the totals line, the
+/// verdict line, and the failing tests by name. No step failed: a green gate.
+fn gate_output(steps: &[&str], tests: &[&str]) -> String {
+    let mut text = format!(
+        "gate: log    <tmp>/jigc-gate-x\n==> fmt     ok        (1s)\n\n--- summary ---\ntests   passed=4700 failed={}  (over 15 test binaries)\n",
+        tests.len()
+    );
+    if steps.is_empty() {
+        text.push_str("\nGATE: PASS\nfull output: <tmp>/jigc-gate-x\n");
+        return text;
+    }
+    text.push_str(&format!("\nGATE: FAIL (step: {})\n", steps.join(" ")));
+    if !tests.is_empty() {
+        text.push_str("\nfailing tests:\n");
+        for test in tests {
+            text.push_str(&format!("  {test}\n"));
+        }
+    }
+    text.push_str("\nfull output: <tmp>/jigc-gate-x\nthe failing step is x\n");
+    text
 }
 
 fn state(run: &str) -> Vec<String> {
@@ -976,10 +1068,46 @@ const WRITERS: &[Writer] = &[
             )
         },
     },
+    Writer {
+        name: "gate-set (a failing test's name)",
+        free_text: true,
+        prepare: |_| {},
+        call: |rig, text, extra| {
+            let summary = rig.summary("writer", &["tier1"], &[text]);
+            let mut args = gate_set(RUN, "1", &sha('a'), &summary);
+            args.extend_from_slice(extra);
+            (rig.run(&args, ""), gate_path("1"))
+        },
+    },
+    Writer {
+        name: "apply (a row's `source` cell, in a batch of one call)",
+        free_text: true,
+        prepare: |_| {},
+        call: |rig, text, extra| {
+            let mut entry = row("audit-f3");
+            entry["source"] = json!(text);
+            let mut inner = ledger_add(RUN);
+            inner.extend_from_slice(extra);
+            let mut args = apply(RUN, Some("1"));
+            args.extend_from_slice(extra);
+            let batch = json!([{"argv": inner, "stdin": entry.to_string()}]);
+            (rig.run(&args, &batch.to_string()), ledger_path())
+        },
+    },
 ];
 
-/// The three subcommands that write nothing.
-const READERS: [&str; 3] = ["check-reports", "check-ledger", "state"];
+/// The subcommands that write nothing.
+const READERS: [&str; 5] = [
+    "check-reports",
+    "check-ledger",
+    "state",
+    "gate-check",
+    "pending",
+];
+
+/// The subcommands that settle a batch and take no text of a caller's: they finish a write
+/// that was killed, take an applied batch back, or forget it once it is committed.
+const KEEPERS: [&str; 3] = ["discard", "settle", "recover"];
 
 /// The subcommands, as the script's own parser names them when it is handed none of them.
 fn subcommands(rig: &Rig) -> Vec<String> {
@@ -1003,10 +1131,11 @@ fn every_subcommand_is_a_listed_writer_or_a_check() {
         .iter()
         .map(|writer| writer.name.split(' ').next().expect("a name").to_owned())
         .chain(READERS.map(str::to_owned))
+        .chain(KEEPERS.map(str::to_owned))
         .collect();
     assert_eq!(
         named, known,
-        "the script's subcommands (left) are the listed writers and the three readers (right)"
+        "the script's subcommands (left) are the listed writers, the readers and the three that settle a batch (right)"
     );
 }
 
@@ -3024,6 +3153,7 @@ fn help_is_the_header_and_states_every_subcommand_and_every_exit_status() {
     let mut statuses: Vec<(i32, &str)> = REFUSALS.to_vec();
     statuses.push((REPORTS_MISMATCH, "check-reports"));
     statuses.push((LEDGER_MISMATCH, "check-ledger"));
+    statuses.push((GATE_MISMATCH, "gate-check"));
     for (status, class) in statuses {
         assert!(
             seen.stdout
@@ -7764,4 +7894,808 @@ fn the_runs_facts_are_written_through_the_script_and_the_bound_is_only_raised() 
         .run(&state(RUN), "")
         .refused(CORRUPT, "the state over facts that are not the script's");
     assert_eq!(other.snapshot(), before);
+}
+
+// ---------------------------------------------------------------------------
+// The one write: a batch lands whole or not at all, and a killed one is seen
+// ---------------------------------------------------------------------------
+
+/// A rig with a finding triaged once: a ledger and a triage record that both exist, so that
+/// a second triage of it rewrites two files.
+fn triaged_once(label: &str) -> Rig {
+    let rig = Rig::new(label);
+    rig.seed_rows(&["audit-f3"]);
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&["jigc setup"], &[]).to_string(),
+    )
+    .must(OK, "the round's scope");
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "audit-f3", "grade": "breaks", "verdict": "refuted"}).to_string(),
+    )
+    .must(OK, "the first triage");
+    rig
+}
+
+fn found_again() -> String {
+    json!({"key": "audit-f3", "grade": "breaks", "verdict": "confirmed", "regression": true})
+        .to_string()
+}
+
+/// The ledger's grade of the one finding, and the round's triage row of it.
+fn two_files(rig: &Rig) -> (String, String) {
+    let ledger = table(&rig.read(&ledger_path()), &LEDGER_COLUMNS);
+    let triage = table(&rig.read(&triage_path("1")), &TRIAGE_COLUMNS);
+    (ledger[0][6].clone(), triage[0][3].clone())
+}
+
+/// State 11 of the repair's truth table, the state-machine review's `F4`: `triage-set`
+/// writes two files, and the scanner answers for the first and cannot run for the second.
+/// It said *nothing was written* with the triage record written — and `state` then read
+/// the stale grade without a word.
+#[test]
+fn a_call_that_writes_two_files_writes_both_or_neither() {
+    let mut rig = triaged_once("two-files");
+    let before = rig.snapshot();
+    let read = rig.state();
+    rig.env.push(("STUB_GITLEAKS", "once".to_owned()));
+    rig.run(&triage_set(RUN, "1"), &found_again()).refused(
+        DID_NOT_RUN,
+        "a scanner that dies between the two files of one call",
+    );
+    assert_eq!(
+        rig.snapshot(),
+        before,
+        "the refusal says that nothing was written, and nothing was"
+    );
+    rig.env.pop();
+    assert_eq!(rig.state(), read, "and the state is the state it was");
+
+    // The same call with a scanner that runs writes both.
+    rig.run(&triage_set(RUN, "1"), &found_again())
+        .must(OK, "the triage");
+    assert_eq!(
+        two_files(&rig),
+        ("regression".to_owned(), "confirmed".to_owned()),
+        "the ledger's grade and the triage record's verdict, from one entry"
+    );
+    assert!(
+        !rig.snapshot()
+            .keys()
+            .any(|path| path.ends_with(".pending.json")),
+        "a batch that landed leaves no journal"
+    );
+}
+
+/// A stand-in for a kill at a point no signal can be timed to: the interpreter is handed a
+/// `sitecustomize` that kills the script — or raises in it — at its Nth `os.replace`. The
+/// script makes one to write its journal and one per table it puts in place.
+const KILL_SWITCH: &str = r#"import os
+
+_kill = int(os.environ.get("STUB_KILL_AT_REPLACE", "0"))
+_fault = int(os.environ.get("STUB_FAULT_AT_REPLACE", "0"))
+_real = os.replace
+_seen = [0]
+
+
+def _replace(*args, **kwargs):
+    _seen[0] += 1
+    if _seen[0] == _kill:
+        os.kill(os.getpid(), 9)
+    if _seen[0] == _fault:
+        raise RuntimeError("a fault nobody foresaw")
+    return _real(*args, **kwargs)
+
+
+os.replace = _replace
+"#;
+
+fn with_kill_switch(rig: &mut Rig, name: &'static str, at: u32) {
+    let hooks = rig.tmp.join("hooks");
+    fs::create_dir_all(&hooks).expect("create the hook directory");
+    fs::write(hooks.join("sitecustomize.py"), KILL_SWITCH).expect("write the kill switch");
+    rig.env
+        .push(("PYTHONPATH", hooks.to_string_lossy().into_owned()));
+    rig.env.push((name, at.to_string()));
+}
+
+fn temporaries(rig: &Rig) -> Vec<String> {
+    rig.snapshot()
+        .into_keys()
+        .filter(|path| path.ends_with(".tmp") || path.ends_with(".pending.json"))
+        .collect()
+}
+
+/// A call killed between its two files leaves an INTERRUPTED write: the state is not read
+/// across it, and the next writer finishes the batch before it does anything else. Killed
+/// before its journal is written, it leaves no file of the batch, and the next writer
+/// removes what it left.
+#[test]
+fn a_write_killed_between_its_files_is_never_read_as_a_finished_one() {
+    // (1) Killed with the first file in place and the second not.
+    let mut rig = triaged_once("killed-between");
+    let read = rig.state();
+    with_kill_switch(&mut rig, "STUB_KILL_AT_REPLACE", 3);
+    let seen = rig.run(&triage_set(RUN, "1"), &found_again());
+    assert_eq!((seen.code, seen.signal), (None, Some(9)), "{seen:?}");
+    rig.env.truncate(0);
+    assert_eq!(
+        two_files(&rig),
+        ("refuted".to_owned(), "confirmed".to_owned()),
+        "the triage record is written and the ledger is not: half a batch"
+    );
+    let refused = rig.run(&state(RUN), "");
+    refused.refused(INTERRUPTED, "the state over half a batch");
+    assert!(
+        refused.stderr.contains("recover --run rc24"),
+        "the refusal names what finishes it: {}",
+        refused.stderr
+    );
+    let pending = rig.run(&keeper("pending", RUN), "");
+    pending.must(OK, "pending");
+    assert_eq!(pending.json()["interrupted"], true);
+    let recovered = rig.run(&keeper("recover", RUN), "");
+    recovered.must(OK, "recover");
+    assert_eq!(
+        recovered.json()["recovered"],
+        json!([triage_path("1"), ledger_path()])
+    );
+    assert_eq!(
+        two_files(&rig),
+        ("regression".to_owned(), "confirmed".to_owned()),
+        "the batch is whole"
+    );
+    assert_eq!(temporaries(&rig), Vec::<String>::new());
+    assert_ne!(rig.state(), read, "and the state reads what it says");
+
+    // (2) Killed with the journal written and no file in place: the next WRITER — any
+    // writer — finishes the batch first.
+    let mut rig = triaged_once("killed-journaled");
+    with_kill_switch(&mut rig, "STUB_KILL_AT_REPLACE", 2);
+    let seen = rig.run(&triage_set(RUN, "1"), &found_again());
+    assert_eq!((seen.code, seen.signal), (None, Some(9)), "{seen:?}");
+    rig.env.truncate(0);
+    assert_eq!(
+        two_files(&rig),
+        ("refuted".to_owned(), "refuted".to_owned())
+    );
+    rig.run(&state(RUN), "").refused(
+        INTERRUPTED,
+        "the state over a batch no file of which landed",
+    );
+    rig.run(
+        &clause_set(
+            RUN,
+            "no-lost-files",
+            &["--instrument=i", "--scope=s", "--status=void"],
+        ),
+        "",
+    )
+    .must(OK, "the next writer");
+    assert_eq!(
+        two_files(&rig),
+        ("regression".to_owned(), "confirmed".to_owned()),
+        "it finished the batch before its own write"
+    );
+    assert_eq!(temporaries(&rig), Vec::<String>::new());
+    rig.state();
+
+    // (3) Killed before the journal: no file of the batch, and what it left is removed.
+    let mut rig = triaged_once("killed-unjournaled");
+    let before = rig.snapshot();
+    let read = rig.state();
+    with_kill_switch(&mut rig, "STUB_KILL_AT_REPLACE", 1);
+    let seen = rig.run(&triage_set(RUN, "1"), &found_again());
+    assert_eq!((seen.code, seen.signal), (None, Some(9)), "{seen:?}");
+    rig.env.truncate(0);
+    assert_eq!(rig.state(), read, "no file of the batch is in place");
+    assert_eq!(
+        temporaries(&rig).len(),
+        3,
+        "its temporaries are what is left"
+    );
+    rig.run(&keeper("recover", RUN), "").must(OK, "recover");
+    assert_eq!(rig.snapshot(), before, "and they are removed");
+
+    // A journal somebody wrote by hand is not read on a guess.
+    fs::write(rig.run_dir().join(".pending.json"), "{\"placing\": 1}\n").expect("a journal");
+    for name in ["state", "pending", "recover", "discard", "settle"] {
+        rig.run(&keeper(name, RUN), "").refused(
+            CORRUPT,
+            &format!("`{name}` over a journal that is not the script's"),
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// A record step's writes, as one batch
+// ---------------------------------------------------------------------------
+
+fn call(argv: Vec<String>, stdin: &str) -> Value {
+    json!({"argv": argv, "stdin": stdin})
+}
+
+/// The calls of a small `test` stage's record: the candidate's gate, a row, its triage, a
+/// clause row, the round's facts, and the ledger checked.
+fn stage_batch(rig: &Rig) -> Value {
+    let summary = rig.summary("candidate", &[], &[]);
+    json!([
+        call(gate_set(RUN, "1", &sha('a'), &summary), ""),
+        call(ledger_add(RUN), &row("audit-f4").to_string()),
+        call(
+            triage_set(RUN, "1"),
+            &json!([{"key": "audit-f4", "grade": "no-break"}]).to_string()
+        ),
+        call(
+            clause_set(
+                RUN,
+                "no-lost-files",
+                &[
+                    "--instrument=area",
+                    "--scope=round 1",
+                    "--status=green",
+                    &format!("--commit={}", sha('a'))
+                ]
+            ),
+            ""
+        ),
+        call(
+            round_set(RUN, "1"),
+            &json!({"candidate": sha('a')}).to_string()
+        ),
+        call(check_ledger(RUN, &["audit-f3", "audit-f4"]), ""),
+    ])
+}
+
+#[test]
+fn a_record_steps_batch_is_written_whole_held_as_pending_and_can_be_taken_back() {
+    let rig = triaged_once("apply");
+    let before = rig.snapshot();
+    let read = rig.state();
+
+    // A BATCH THAT IS REFUSED WRITES NOTHING — whichever call of it is refused, and a
+    // check that does not hold refuses it too.
+    let mut batch = stage_batch(&rig);
+    batch[5] = call(check_ledger(RUN, &["audit-f3", "no-such-row"]), "");
+    let refused = rig.run(&apply(RUN, Some("1")), &batch.to_string());
+    refused.refused(CHECK, "a batch whose check does not hold");
+    assert!(
+        refused
+            .stderr
+            .contains("call 6 of the batch (`check-ledger`)")
+            && refused.stderr.contains("\"missing\": [\"no-such-row\"]"),
+        "it names the call and what the check found: {}",
+        refused.stderr
+    );
+    let mut batch = stage_batch(&rig);
+    batch[2] = call(
+        triage_set(RUN, "1"),
+        &json!([{"key": "audit-f9", "grade": "no-break"}]).to_string(),
+    );
+    let refused = rig.run(&apply(RUN, Some("1")), &batch.to_string());
+    refused.refused(NO_SUCH_ROW, "a batch whose third call is refused");
+    assert!(
+        refused
+            .stderr
+            .contains("call 3 of the batch (`triage-set`)"),
+        "{}",
+        refused.stderr
+    );
+    for (given, why) in [
+        (json!([]), "a batch of no call"),
+        (json!({"argv": ["ledger-add"]}), "a batch that is no list"),
+        (
+            json!([{"argv": "ledger-add"}]),
+            "a call whose argv is no list",
+        ),
+        (
+            json!([{"argv": ["state", "--run=rc24"]}]),
+            "a call that is no writer of a table",
+        ),
+        (
+            json!([{"argv": ["apply", "--run=rc24", "--subject=x"]}]),
+            "a batch inside a batch",
+        ),
+        (
+            json!([{"argv": ["report", "--run=rc24"]}]),
+            "a report inside a batch",
+        ),
+        (
+            json!([{"argv": ["ledger-add", "--run=other"], "stdin": row("x").to_string()}]),
+            "a call for another run",
+        ),
+        (
+            json!([{"argv": ["ledger-add", "--run=rc24"], "stdin": 3}]),
+            "an input that is no text",
+        ),
+        (
+            json!([{"argv": ["ledger-add", "--run=rc24"], "more": 1}]),
+            "a field nobody defined",
+        ),
+    ] {
+        rig.run(&apply(RUN, Some("1")), &given.to_string())
+            .refused(BAD_VALUE, why);
+    }
+    assert_eq!(rig.snapshot(), before, "no refused batch wrote anything");
+    assert_eq!(rig.state(), read);
+
+    // A BATCH THAT IS TAKEN: one result per call, every file written, and the journal
+    // holds it as the applied batch.
+    let applied = rig.run(&apply(RUN, Some("1")), &stage_batch(&rig).to_string());
+    applied.must(OK, "the batch");
+    let said = applied.json();
+    assert_eq!(said["applied"], 6);
+    assert_eq!(said["results"].as_array().map(Vec::len), Some(6));
+    assert_eq!(
+        said["results"][5],
+        json!({"check": "ledger", "ok": true, "missing": [], "duplicated": []})
+    );
+    let files = json!([
+        gate_path("1"),
+        ledger_path(),
+        triage_path("1"),
+        clauses_path(),
+        round_path("1")
+    ]);
+    assert_eq!(said["files"], files);
+    let pending = rig.run(&keeper("pending", RUN), "").json();
+    assert_eq!(pending["interrupted"], false);
+    assert_eq!(
+        json!([
+            pending["batch"]["round"],
+            pending["batch"]["subject"],
+            pending["batch"]["calls"],
+            pending["batch"]["checks"]
+        ]),
+        json!([1, "docs(record): a record step", 6,
+               [{"check": "ledger", "ok": true, "missing": [], "duplicated": []}]])
+    );
+    let held: Vec<&String> = pending["batch"]["files"]
+        .as_object()
+        .expect("the batch's files")
+        .keys()
+        .collect();
+    assert_eq!(held.len(), 5, "{pending}");
+    assert_eq!(pending["once"], json!([scope_path("1")]));
+    let state = rig.state();
+    assert_eq!(state["rounds"][0]["facts"]["candidate"], sha('a').as_str());
+    assert_eq!(state["ledger"].as_array().map(Vec::len), Some(2));
+
+    // ONE APPLIED BATCH AT A TIME.
+    let written = rig.snapshot();
+    rig.run(&apply(RUN, Some("1")), &stage_batch(&rig).to_string())
+        .refused(PENDING, "a second batch over one that no commit holds");
+    assert_eq!(rig.snapshot(), written);
+
+    // TAKEN BACK: every file as it was, the made ones gone, the journal with them — and
+    // what is no part of a batch, the round's scope, stays.
+    let discarded = rig.run(&keeper("discard", RUN), "");
+    discarded.must(OK, "discard");
+    assert_eq!(discarded.json()["discarded"], files);
+    assert_eq!(
+        rig.snapshot(),
+        before,
+        "the tree before the batch, byte for byte"
+    );
+    assert_eq!(rig.state(), read);
+    assert_eq!(
+        rig.run(&keeper("discard", RUN), "").json()["discarded"],
+        json!([]),
+        "nothing to take back is an answer"
+    );
+
+    // COMMITTED: the step that made the commit says so, and the batch is forgotten with
+    // its files where they are.
+    rig.run(&apply(RUN, Some("1")), &stage_batch(&rig).to_string())
+        .must(OK, "the batch again");
+    let settled = rig.run(&keeper("settle", RUN), "");
+    settled.must(OK, "settle");
+    assert_eq!(settled.json()["settled"].as_array().map(Vec::len), Some(5));
+    assert_eq!(
+        rig.run(&keeper("pending", RUN), "").json()["batch"],
+        Value::Null
+    );
+    assert_eq!(rig.state(), state);
+    assert_eq!(temporaries(&rig), Vec::<String>::new());
+
+    // A run that was never opened has nothing pending, and says so as `state` does.
+    let nobody = rig.run(&keeper("pending", "no-such-run"), "").json();
+    assert_eq!(
+        json!([nobody["opened"], nobody["batch"], nobody["once"]]),
+        json!([false, null, []])
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The candidate's gate, and a record commit's gate held to it
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_record_commits_gate_is_held_to_what_the_candidates_gate_showed_red() {
+    let a = "jigc::g_a suite::one";
+    let b = "jigc::g_a suite::two";
+    let c = "jigc::g_b other::new";
+    struct Row {
+        why: &'static str,
+        candidate: Option<(&'static [&'static str], Vec<&'static str>)>,
+        record: (&'static [&'static str], Vec<&'static str>),
+        new: Vec<String>,
+    }
+    let rows = vec![
+        Row {
+            why: "a green candidate, a green record gate: the rule as it was",
+            candidate: Some((&[], vec![])),
+            record: (&[], vec![]),
+            new: vec![],
+        },
+        Row {
+            why: "a green candidate, a red record gate",
+            candidate: Some((&[], vec![])),
+            record: (&["tier1"], vec![a]),
+            new: vec!["step tier1".into(), format!("test {a}")],
+        },
+        Row {
+            why: "a red candidate, the same red",
+            candidate: Some((&["tier1"], vec![a, b])),
+            record: (&["tier1"], vec![a, b]),
+            new: vec![],
+        },
+        Row {
+            why: "a red candidate, less red",
+            candidate: Some((&["tier1"], vec![a, b])),
+            record: (&["tier1"], vec![b]),
+            new: vec![],
+        },
+        Row {
+            why: "a red candidate, and a test red only with the records",
+            candidate: Some((&["tier1"], vec![a])),
+            record: (&["tier1"], vec![a, c]),
+            new: vec![format!("test {c}")],
+        },
+        Row {
+            why: "a candidate red in the second tier, a record gate red in the first",
+            candidate: Some((&["tier2"], vec![a])),
+            record: (&["tier1"], vec![a]),
+            new: vec!["step tier1".into()],
+        },
+        Row {
+            why: "a candidate whose lint is red, and no test ran on either",
+            candidate: Some((&["clippy"], vec![])),
+            record: (&["clippy"], vec![]),
+            new: vec![],
+        },
+        Row {
+            why: "a red candidate, and a lint red only with the records",
+            candidate: Some((&["tier1"], vec![a])),
+            record: (&["fmt", "clippy"], vec![]),
+            new: vec!["step fmt".into(), "step clippy".into()],
+        },
+        Row {
+            why: "a test step that failed and names no test",
+            candidate: Some((&["tier1"], vec![a])),
+            record: (&["tier1"], vec![]),
+            new: vec!["step tier1 (it names no failing test)".into()],
+        },
+        Row {
+            why: "no candidate's gate on record: nothing may be red",
+            candidate: None,
+            record: (&["tier1"], vec![a]),
+            new: vec!["step tier1".into(), format!("test {a}")],
+        },
+        Row {
+            why: "no candidate's gate on record, and a green gate",
+            candidate: None,
+            record: (&[], vec![]),
+            new: vec![],
+        },
+    ];
+    for (n, row) in rows.iter().enumerate() {
+        let rig = Rig::new(&format!("gate-{n}"));
+        if let Some((steps, tests)) = &row.candidate {
+            let set = rig.run(
+                &gate_set(RUN, "1", &sha('a'), &rig.summary("candidate", steps, tests)),
+                "",
+            );
+            set.must(OK, row.why);
+            assert_eq!(
+                set.json(),
+                json!({"gate": gate_path("1"), "commit": sha('a'),
+                       "verdict": if steps.is_empty() { "pass" } else { "fail" },
+                       "red": steps.len() + tests.len()}),
+                "{}",
+                row.why
+            );
+        }
+        let seen = rig.run(
+            &gate_check(
+                RUN,
+                Some("1"),
+                &rig.summary("record", row.record.0, &row.record.1),
+            ),
+            "",
+        );
+        seen.must(
+            if row.new.is_empty() {
+                OK
+            } else {
+                GATE_MISMATCH
+            },
+            row.why,
+        );
+        let said = seen.json();
+        assert_eq!(said["check"], "gate", "{}", row.why);
+        assert_eq!(said["ok"], row.new.is_empty(), "{}: {said}", row.why);
+        assert_eq!(said["new"], json!(row.new), "{}: {said}", row.why);
+        assert_eq!(
+            said["candidate"],
+            if row.candidate.is_some() {
+                json!(sha('a'))
+            } else {
+                Value::Null
+            },
+            "{}",
+            row.why
+        );
+    }
+
+    // THE TABLE, as it is written: the commit, the verdict, the gate's own totals line,
+    // and a row per step and per test it showed red.
+    let rig = Rig::new("gate-table");
+    let hostile = "jigc::g_a a|b `c` \\| d";
+    rig.run(
+        &gate_set(
+            RUN,
+            "2",
+            &sha('b'),
+            &rig.summary("candidate", &["tier1", "doctest"], &[a, hostile]),
+        ),
+        "",
+    )
+    .must(OK, "the candidate's gate");
+    let rows = table(&rig.read(&gate_path("2")), &["what", "value"]);
+    assert_eq!(rows[0], ["commit", &format!("`{}`", sha('b'))]);
+    assert_eq!(rows[1], ["verdict", "fail"]);
+    assert_eq!(
+        rows[2],
+        [
+            "totals",
+            "`tests   passed=4700 failed=2  (over 15 test binaries)`"
+        ]
+    );
+    assert_eq!(rows[3..5], [["step", "`tier1`"], ["step", "`doctest`"]]);
+    assert_eq!(rows.len(), 7, "{rows:?}");
+    // A name no cell could hold as it is still compares as itself.
+    rig.run(
+        &gate_check(
+            RUN,
+            Some("2"),
+            &rig.summary("record", &["tier1"], &[hostile]),
+        ),
+        "",
+    )
+    .must(OK, "a hostile test name, red on both");
+    // Without a round, nothing may be red — whatever a round holds.
+    rig.run(
+        &gate_check(RUN, None, &rig.summary("record", &["tier1"], &[a])),
+        "",
+    )
+    .must(GATE_MISMATCH, "a record commit that names no round");
+    // A round tests one candidate; the same candidate's gate may be read again.
+    let before = rig.snapshot();
+    rig.run(
+        &gate_set(RUN, "2", &sha('c'), &rig.summary("candidate", &[], &[])),
+        "",
+    )
+    .refused(EXISTS, "the gate of another commit for the same round");
+    assert_eq!(rig.snapshot(), before);
+    rig.run(
+        &gate_set(RUN, "2", &sha('b'), &rig.summary("candidate", &[], &[])),
+        "",
+    )
+    .must(OK, "the same candidate's gate, run again");
+
+    // WHAT IS NOT ONE FULL GATE'S OUTPUT is evidence about no tree.
+    let before = rig.snapshot();
+    let green = gate_output(&[], &[]);
+    for (text, why) in [
+        ("fast tier  12 passed, 0 failed -- the second tier and the doctests were not run\n\nPRE-CHECK: PASS -- fmt, clippy, build and the fast test tier. NOT a gate: never commit on it\n".to_owned(), "a pre-check"),
+        ("==> fmt     ok        (1s)\n\nGATE: PASS\n".to_owned(), "a gate without its tests: no totals line"),
+        (format!("{green}{green}"), "two gates in one file"),
+        (green.replace("GATE: PASS", "  GATE: PASS"), "a verdict that is quoted, not printed"),
+        (green.replace("failed=0", "failed=2"), "a green verdict over failed tests"),
+        (green.replace("\nGATE: PASS\n", "\n"), "a gate cut off before its verdict"),
+        (String::new(), "nothing"),
+    ] {
+        let file = rig.summary_of("bad", &text);
+        rig.run(&gate_check(RUN, Some("2"), &file), "")
+            .refused(BAD_VALUE, why);
+        rig.run(&gate_set(RUN, "3", &sha('d'), &file), "")
+            .refused(BAD_VALUE, why);
+    }
+    rig.run(
+        &gate_check(RUN, Some("2"), &rig.tmp.join("no-such-file")),
+        "",
+    )
+    .refused(BAD_VALUE, "a gate's output that is not there");
+    rig.run(
+        &gate_set(RUN, "3", "abcdef1", &rig.summary("candidate", &[], &[])),
+        "",
+    )
+    .refused(BAD_VALUE, "a candidate named by a short sha");
+    assert_eq!(rig.snapshot(), before, "no refusal wrote anything");
+
+    // A gate somebody wrote by hand is not compared against on a guess.
+    fs::write(
+        rig.root.join(gate_path("2")),
+        "# the gate\n\n| what | value |\n|---|---|\n| verdict | pass |\n| test | `x` |\n",
+    )
+    .expect("a gate by hand");
+    rig.run(
+        &gate_check(RUN, Some("2"), &rig.summary("record", &[], &[])),
+        "",
+    )
+    .refused(CORRUPT, "a candidate's gate that is not the script's");
+}
+
+// ---------------------------------------------------------------------------
+// Nothing the script is handed ends in a traceback
+// ---------------------------------------------------------------------------
+
+/// The state-machine review's `F11`, as an axis: every input the script parses — a JSON
+/// body, an argument, a table cell — is refused in one line, by the class it belongs to.
+#[test]
+fn no_input_ends_in_a_traceback() {
+    let rig = triaged_once("tracebacks");
+    let before = rig.snapshot();
+    let one_line = |seen: &Seen, code: i32, why: &str| {
+        seen.refused(code, why);
+        assert!(!seen.stderr.contains("Traceback"), "{why}: {}", seen.stderr);
+    };
+
+    // A JSON BODY, at every subcommand that reads one: nested past what the interpreter
+    // parses; and holding a text that JSON can spell and no file can hold.
+    let bodies: Vec<Vec<String>> = vec![
+        ledger_add(RUN),
+        ledger_set(RUN),
+        triage_set(RUN, "1"),
+        scope_set(RUN, "2"),
+        item_set(RUN),
+        round_set(RUN, "1"),
+        run_set(RUN),
+        apply(RUN, Some("1")),
+    ];
+    let deep = "[".repeat(200_000);
+    let lone = r#"{"key": "audit-f5", "source": "a \ud800 b", "note": ["\udfff"]}"#;
+    for args in &bodies {
+        one_line(
+            &rig.run(args, &deep),
+            BAD_VALUE,
+            &format!("`{}`: a body nested 200 000 deep", args[0]),
+        );
+        one_line(
+            &rig.run(args, lone),
+            BAD_VALUE,
+            &format!("`{}`: a lone surrogate", args[0]),
+        );
+        one_line(
+            &rig.run(args, "\u{feff}{}"),
+            BAD_VALUE,
+            &format!("`{}`: a byte-order mark", args[0]),
+        );
+    }
+    // The same text in a body that is otherwise one the call takes: the cell it would have
+    // been written into is where it ended in a traceback.
+    let mut entry = row("audit-f5");
+    entry["source"] = json!("a @@ b");
+    let mut doors = scope(&["jigc setup"], &[]);
+    doors["included"][0]["derivation"] = json!("a @@ b");
+    for (args, body) in [
+        (ledger_add(RUN), entry.to_string()),
+        (
+            ledger_set(RUN),
+            json!({"key": "audit-f3", "disposition": "later", "detail": "a @@ b"}).to_string(),
+        ),
+        (scope_set(RUN, "2"), doors.to_string()),
+    ] {
+        one_line(
+            &rig.run(&args, &body.replace("@@", "\\ud800")),
+            BAD_VALUE,
+            &format!("`{}`: a lone surrogate in a cell it would write", args[0]),
+        );
+    }
+    // … and inside a batch, where a call's input is the batch's text.
+    let inner = json!([{"argv": ledger_add(RUN), "stdin": deep}]);
+    one_line(
+        &rig.run(&apply(RUN, Some("1")), &inner.to_string()),
+        BAD_VALUE,
+        "a call of a batch whose body is nested 200 000 deep",
+    );
+
+    // AN ARGUMENT that is not UTF-8 text.
+    let mut command = rig.command(&clause_set(
+        RUN,
+        "no-lost-files",
+        &["--scope=s", "--status=void"],
+    ));
+    command.arg(std::ffi::OsStr::from_bytes(b"--instrument=a \xff b"));
+    let out = command
+        .stdin(Stdio::null())
+        .output()
+        .expect("the script exits");
+    let seen = Seen {
+        code: out.status.code(),
+        signal: out.status.signal(),
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+    };
+    one_line(&seen, BAD_VALUE, "an argument that is not UTF-8");
+    assert_eq!(rig.snapshot(), before, "no refused input wrote anything");
+
+    // A TABLE CELL a hand turned into something that only looks like a number: the three
+    // cells the script reads as one.
+    for (path, from, to, why) in [
+        (
+            ledger_path(),
+            "| 1 | audit-install, finding 3 |",
+            "| \u{b2} | audit-install, finding 3 |",
+            "a superscript two as a ledger row's round",
+        ),
+        (
+            ledger_path(),
+            "| 1 | audit-install, finding 3 |",
+            "| \u{661} | audit-install, finding 3 |",
+            "an Arabic-Indic one as a ledger row's round",
+        ),
+        (
+            ledger_path(),
+            "| 1 | audit-install, finding 3 |",
+            "| 1\u{b2} | audit-install, finding 3 |",
+            "a round with a superscript",
+        ),
+    ] {
+        let other = triaged_once("tracebacks-cell");
+        let text = other.read(&path);
+        assert!(text.contains(from), "the fixture's row: {text}");
+        fs::write(other.root.join(&path), text.replace(from, to)).expect("a cell by hand");
+        one_line(&other.run(&state(RUN), ""), CORRUPT, why);
+    }
+    for (facts, call, path, from, to, why) in [
+        (
+            json!({"cycles": 2}),
+            round_set(RUN, "1"),
+            round_path("1"),
+            "`2`",
+            "`\u{b2}`",
+            "a superscript two as a round's cycles",
+        ),
+        (
+            json!({"rounds": 3}),
+            run_set(RUN),
+            run_path(),
+            "`3`",
+            "`\u{663}`",
+            "an Arabic-Indic three as the bound across rounds",
+        ),
+    ] {
+        let other = triaged_once("tracebacks-fact");
+        other.run(&call, &facts.to_string()).must(OK, why);
+        let text = other.read(&path);
+        assert!(text.contains(from), "the fixture's row: {text}");
+        fs::write(other.root.join(&path), text.replace(from, to)).expect("a cell by hand");
+        one_line(&other.run(&state(RUN), ""), CORRUPT, why);
+    }
+
+    // AND WHAT NO REFUSAL NAMES is still one line, with a status of its own — never a
+    // traceback, and never a status another refusal has.
+    let mut faulty = triaged_once("tracebacks-fault");
+    with_kill_switch(&mut faulty, "STUB_FAULT_AT_REPLACE", 1);
+    let seen = faulty.run(&triage_set(RUN, "1"), &found_again());
+    one_line(&seen, FAULT, "a fault nobody foresaw");
+    assert!(
+        seen.stderr.contains("RuntimeError at line ")
+            && seen.stderr.contains("a fault nobody foresaw"),
+        "it says what was raised, and where: {}",
+        seen.stderr
+    );
 }

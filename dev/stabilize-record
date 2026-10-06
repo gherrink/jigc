@@ -35,6 +35,10 @@
 #   r<N>/scope.md                           the round's doors            (scope-set)
 #   r<N>/triage.md                          the round's triage record    (triage-set)
 #   r<N>/round.md                           the round record: its facts  (round-set)
+#   r<N>/gate.md                            the candidate's gate: what the full gate
+#                                           showed red before the round's records were
+#                                           written                      (gate-set)
+#   .pending.json                           the journal (below) — never committed
 #   r<N>/reports/test/<reporter>.a<A>.md    a test-stage report          (report)
 #   r<N>/reports/fix/c<K>/<reporter>.a<A>.md  a fix-stage report, cycle K  (report)
 #
@@ -144,8 +148,8 @@
 #       The ledger's grade follows from the same entry, so the two cannot disagree: the
 #       verdict where there is one (regression, confirmed, refuted; by verify-real),
 #       else triage's grade. A disposition is never touched: a finding found again
-#       inherits its row's. Two files, the triage record first: killed between them,
-#       the ledger still shows the finding as it was, and the call is simply repeated.
+#       inherits its row's. Two files, ONE batch: both are written or neither is, and
+#       a call killed between them is finished by the next writer (the journal, below).
 #       Prints {"triage", "ledger", "recorded"}.
 #
 #   dev/stabilize-record item-set --run R [--scratch DIR]... <items.json
@@ -192,7 +196,9 @@
 #                      Taken only for a clause the state lists in `human_clauses`, in the
 #                      round its instrument last ran in; else refused (bad-value).
 #                      Both are the human's rulings: the harness writes them in the one
-#                      step that records what the human ruled, and nowhere else.
+#                      step that records what the human ruled, and nowhere else — which
+#                      is the harness's to hold, never this script's (WHAT THIS SCRIPT
+#                      CANNOT KNOW, below).
 #         cross-model       the items whose source pass was ALSO read by a model of
 #         cross-model-void  another family in this round, and the items named for such a
 #                      pass that did not get one — each an array of item ids, so that
@@ -207,7 +213,8 @@
 #       one of:
 #         stop         every-round | at-the-bound — when the run stops for the human of
 #                      its own accord: after every round, or only once the bound across
-#                      rounds is reached and work remains
+#                      rounds is reached and work remains. It can be written again,
+#                      and nothing here asks who writes it
 #         rounds       the bound across rounds: how many rounds may have a FIX STAGE on
 #                      record (state: the stop). A positive integer, which never goes
 #                      down. Only the human raises it, and a raise is this call again.
@@ -283,7 +290,10 @@
 #       A cell is given as the table holds it, a `|` unescaped; `-` for none is null
 #       where the cell is not free text. A table that is not this script's, a cell
 #       outside its vocabulary, or a triage record that disagrees with the doors it was
-#       computed from is refused (corrupt) — the state is never read on a guess.
+#       computed from is refused (corrupt) — the state is never read on a guess. And a
+#       run one of whose writes was killed between its files is refused (interrupted):
+#       half a batch is never read as a finished one. An applied batch that no commit
+#       holds yet is read like any working tree: it is what the files say.
 #
 #       THE ROUTE of a finding, a pure function of its row, the round's doors and the
 #       bounds list — by its disposition first, then by its grade:
@@ -454,11 +464,97 @@
 #       Exactly one ledger row per finding id. Prints {"check": "ledger", "ok",
 #       "missing", "duplicated"}.
 #
-# All of a batch is written, or none of it, and a table has one writer at a time: the
-# table writers queue on the run directory's lock, so rows written at once are all
-# written — a lock taken once a writer has its input, never while it waits for it — and
-# state reads between two of them, never across one. Every JSON result is one line on
-# stdout.
+#   dev/stabilize-record gate-set --run R --round N --commit SHA --summary FILE
+#                        [--scratch DIR]...
+#       THE CANDIDATE'S GATE, on record: what the full `dev/gate` printed on the commit
+#       round N tests — FILE holds that run's whole output — as r<N>/gate.md: the commit,
+#       the verdict, the totals line, and a row per step and per test the gate showed
+#       red. FILE must hold ONE full gate's `GATE:` verdict line and its `tests   passed=`
+#       totals line; a pre-check (`--fast`, `--quick`) prints not both and is refused
+#       (bad-value). A round tests one candidate: another commit is refused (exists).
+#       Prints {"gate", "commit", "verdict", "red"}.
+#
+#   dev/stabilize-record gate-check [--round N] --summary FILE [--scratch DIR]...
+#       A RECORD COMMIT'S GATE, HELD TO THE CANDIDATE'S (DECISIONS.md -> 2026-10-06, "A
+#       stabilization run's record commit under a red candidate"): FILE holds the output
+#       of the full gate that ran on the tree WITH the records. The check holds when that
+#       gate shows nothing red — no step, no test — that is not a row of r<N>/gate.md.
+#       Without --round, or where round N holds no gate, nothing may be red: on a green
+#       candidate this is the rule that a commit follows a green gate, unchanged. A test
+#       step that failed and names no failing test never holds. Prints {"check": "gate",
+#       "ok", "verdict", "totals", "red", "candidate", "known", "new"} — `new` names what
+#       is red only with the records. THE GATE STOPS AT ITS FIRST RED STAGE, so under a
+#       candidate that is red in the fast tier, neither gate ran the tiers after it: what
+#       the records would turn red there is seen by neither, and by the first gate of a
+#       candidate on which that tier is green again.
+#
+#   dev/stabilize-record apply --run R [--round N] --subject TEXT [--scratch DIR]...
+#                        <batch.json
+#       A RECORD STEP'S WRITES, AS ONE BATCH. Stdin is a JSON array of calls, each
+#       {"argv": [SUBCOMMAND, FLAG...], "stdin": TEXT}: the table writers above and the
+#       two checks, exactly as they are called alone. They run in the batch's order, each
+#       reading what the ones before it wrote, and NOTHING IS ON DISK until every call
+#       was taken and every check among them holds; a refusal of one call, or a check
+#       that does not hold (check), refuses the batch, naming the call. Then every file
+#       the calls wrote is written as one batch (below), and the journal holds it as THE
+#       APPLIED BATCH: its files with the sha256 each was written with and its text
+#       before, the subject of the commit that records it, the round whose candidate
+#       gate that commit is held to, and how many calls and which checks it ran. A run
+#       has one applied batch at a time (pending). Prints {"applied", "files", "results"}
+#       — one result per call, as that call prints it.
+#
+#   dev/stabilize-record pending --run R
+#       What of the run is written and in no commit yet, AS THIS SCRIPT KNOWS IT; writes
+#       nothing. Prints {"run", "opened", "journal", "interrupted", "batch", "once"}:
+#       whether a write was killed between its files; the applied batch — {round,
+#       subject, calls, checks, files: {path: sha256}} — or null; and the files on disk
+#       that are written once and never rewritten: every report, and each round's scope.
+#       Whether one of those is in a commit is git's to say, and this script reads no
+#       git: dev/stabilize-step holds a tree to this answer.
+#
+#   dev/stabilize-record discard --run R
+#       Takes the applied batch back: every file of it as it was before the batch, or
+#       gone where the batch made it, and the journal's batch with it. The reports and
+#       the scope are no part of a batch and stay. Prints {"discarded"}.
+#
+#   dev/stabilize-record settle --run R
+#       Forgets the applied batch, because the commit that records it was made: the one
+#       caller is the step that made that commit (dev/stabilize-step record). Prints
+#       {"settled"}.
+#
+#   dev/stabilize-record recover --run R
+#       Settles a write that was killed, as every writer does before it writes (below).
+#       Prints {"recovered"} — the files it put in place.
+#
+# THE ONE WRITE, AND THE JOURNAL. Everything a call writes is ONE BATCH — one file for
+# most calls, two for triage-set, every table of a record step for apply — and a batch is
+# written whole or not at all: every text is fenced and scanned before any is written;
+# each is written to a temporary beside its target; where the batch is more than one
+# file the journal (.pending.json) then names which temporary becomes which file; each
+# is put in place; and the journal forgets them. A call killed before the journal is
+# written leaves no file of its batch, and its temporaries are removed by the next
+# writer. A call killed after it leaves an INTERRUPTED write: `state` refuses to read
+# across it (interrupted), and the next writer — or `recover` — puts the rest of the
+# batch in place before it does anything else. A table has one writer at a time: every
+# write is made under the run directory's lock, taken once a writer has its input and
+# never while it waits for it, so rows written at once are all written, and state reads
+# between two writes, never across one. Every JSON result is one line on stdout, printed
+# once the call's batch has landed.
+#
+# WHAT THIS SCRIPT CANNOT KNOW: ITS CALLER. It is a command, and whoever can run it can
+# make any call of it. What it guarantees of a call is its shape, its vocabulary, that a
+# fact written once stands, that a table has one writer at a time — and, for `go` and
+# `granted` alone, that the state asks for them. It does NOT know that a human ruled:
+# `admitted`, `bound` and `later`, a declared bound's row, the stop mode and the bound
+# across rounds are taken from any caller, at any time, on any row, any number of times,
+# and `ledger-set` with `open` takes a ruling back. THAT THE HUMAN'S RULINGS REACH THE
+# RECORD ONLY AS THE HUMAN'S IS HELD ELSEWHERE: the harness composes those calls in ONE
+# function, from the `rulings` argument of an invocation and from nothing else
+# (.claude/workflows/stabilize.js, `rulingsRecordPrompt`), and a fence holds that no
+# other code of it spells them (tooling-tests/stabilize_harness_fence.rs, arms f and k).
+# Outside the harness the confinement is the orchestrator's discipline, and nothing's
+# enforcement. Nor does it know git: `settle` trusts that the commit was made, and
+# whether a pending file is committed is dev/stabilize-step's to read.
 #
 # What a writer does to its text, in order — every writer alike, because every write
 # goes through one function:
@@ -485,8 +581,16 @@
 #      denylist, no gitleaks, a pattern no matcher accepts, a scanner error — DID NOT
 #      RUN (did-not-run): that is never a pass, and nothing is written.
 #   5. The write is atomic: a temporary beside the target, then a link (a report, which
-#      never replaces a file) or a rename (a table). A run killed at any point leaves
-#      no partial file at the target.
+#      never replaces a file) or a rename (a table) — and, for a batch of more than one
+#      file, journaled (THE ONE WRITE, above). A run killed at any point leaves no
+#      partial file at the target.
+#
+# WHAT IT IS HANDED NEVER ENDS IN A TRACEBACK. A JSON body nested past what the
+# interpreter parses, a text JSON can spell and no file can hold (a lone surrogate), an
+# argument that is not UTF-8, and a table cell a hand turned into something that only
+# looks like a number are each a refusal of the class they belong to (bad-value,
+# corrupt). And what no refusal names is still one line and a status of its own (fault),
+# with the line it was raised at.
 #
 # Exit status, and the word a refusal opens with — `stabilize-record: refused <word>:
 # …`, one line on stderr, nothing on stdout:
@@ -512,8 +616,15 @@
 #   14  no-such-bound out-of-scope cites a bound the declared-bounds list lacks
 #   15  no-scope      triage-set names a round whose scope was never written
 #   16  truncated     the report does not end with its last line: it was cut off
+#   17  interrupted   a write was killed between its files: the state is not read across
+#                     it, and the next writer — or `recover` — finishes it
+#   18  pending       a batch is applied and not committed: a second one is not applied
+#   19  check         a check inside a batch does not hold: the batch is not written
 #   20  check-reports failed: a report is missing or extra (the result is on stdout)
 #   21  check-ledger  failed: a row is missing or duplicated (the result is on stdout)
+#   22  gate-check    failed: the gate shows something red that the candidate's gate
+#                     did not (the result is on stdout)
+#   23  fault         an input no refusal names, or a defect of this script: one line
 #
 # Needs python3, git and bash (dev/hygiene-scan), which the gate needs already, and
 # gitleaks and a denylist to write anything at all.
@@ -521,6 +632,7 @@
 
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -548,9 +660,14 @@ STATUS = {
     "no-such-bound": 14,
     "no-scope": 15,
     "truncated": 16,
+    "interrupted": 17,
+    "pending": 18,
+    "check": 19,
+    "fault": 23,
 }
 REPORTS_MISMATCH = 20
 LEDGER_MISMATCH = 21
+GATE_MISMATCH = 22
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
@@ -646,6 +763,27 @@ FENCES = (
     ),
 )
 
+# The run's journal, in its directory: which temporaries of a batch become which files
+# while a batch is being placed, and the applied batch that no commit holds yet. It is
+# never committed, and it is gone when it has nothing to say.
+JOURNAL = ".pending.json"
+# What the call staged (target -> (path, text, replace, why a taken path is refused)), what
+# it prints once that has landed, the run directories it holds the lock of, and — inside a
+# batch — the input of the call that is running.
+STAGED = {}
+OUT = []
+LOCKED = set()
+INPUT = []
+# The calls a batch may hold (apply): the table writers, and the two checks.
+APPLICABLE = ("gate-set", "ledger-add", "ledger-set", "triage-set", "clause-set", "bound-set", "item-set", "round-set", "run-set", "check-reports", "check-ledger")
+CHECKS = ("check-reports", "check-ledger")
+# A full gate's own two lines (dev/gate), and the steps of it that run tests.
+GATE_VERDICT = re.compile(r"GATE: (PASS|FAIL \(step:((?: [A-Za-z0-9_-]+)+)\))")
+GATE_TOTALS = re.compile(r"tests   passed=([0-9]+) failed=([0-9]+)  \(over ([0-9]+) test binaries\)")
+GATE_NAMES = "failing tests:"
+GATE_TEST_STEPS = ("tier1", "tier2", "doctest", "test")
+GATE_COLUMNS = ("what", "value")
+
 # The exit status gitleaks is told to use for a finding, so that its own errors (1) can
 # never read as one, nor as a clean scan.
 GITLEAKS_FOUND = 97
@@ -722,8 +860,13 @@ def below(run_dir, parts):
 def one_writer(run_dir):
     """Hold the run directory's lock until this process ends. A table is read, changed
     and replaced, so two writers at once would each drop the other's rows. Taken once a
-    writer has its input in hand, never while it waits for it."""
+    writer has its input in hand, never while it waits for it. Whoever takes it settles
+    a write that was killed first: the lock is what says that no such write is alive."""
+    if run_dir in LOCKED:
+        return
     fcntl.flock(os.open(run_dir, os.O_RDONLY), fcntl.LOCK_EX)
+    LOCKED.add(run_dir)
+    recover(run_dir)
 
 
 def stage_parts(args):
@@ -928,36 +1071,156 @@ def hygiene_scan(rel, text):
 
 
 def publish(run_dir, parts, text, replace, taken="a re-run passes the next attempt"):
-    """Write `text` at `parts` below the run directory — fenced, scanned, atomically —
-    and return the path written, repository-relative. Every writer ends here."""
+    """Stage `text` for `parts` below the run directory and return the path it will be
+    written at, repository-relative. Every writer ends here; nothing is on disk until the
+    call's whole batch is (flush)."""
     target = below(run_dir, parts)
     rel = "/".join(ARTIFACTS + (os.path.basename(run_dir),) + tuple(parts))
-    if os.path.lexists(target) and not (replace and os.path.isfile(target)):
+    if target in STAGED:
+        held = not replace
+    else:
+        held = os.path.lexists(target) and not (replace and os.path.isfile(target))
+    if held:
         refuse("exists", "%s exists — %s" % (rel, taken))
-    fence_check(text)
-    hygiene_scan(rel, text)
+    STAGED[target] = (rel, text, replace, taken)
+    return rel
 
-    parent = os.path.dirname(target)
-    os.makedirs(parent, exist_ok=True)
-    handle, temporary = tempfile.mkstemp(dir=parent, prefix=".%s." % PROG, suffix=".tmp")
+
+def say(line):
+    """A line of the call's result. It is printed once the call's writes have landed."""
+    OUT.append(line)
+
+
+def journal_path(run_dir):
+    return below(run_dir, [JOURNAL])
+
+
+def read_journal(run_dir):
+    """The run's journal as {"placing": [...], "batch": {...} or None} — both empty where
+    there is no file. A file that is not this script's journal is refused."""
+    path = journal_path(run_dir)
+    if not os.path.lexists(path):
+        return {"placing": [], "batch": None}
+    rel = "/".join(ARTIFACTS + (os.path.basename(run_dir), JOURNAL))
     try:
-        with os.fdopen(handle, "w", encoding="utf-8", newline="") as out:
-            out.write(text)
-            out.flush()
-            os.fsync(out.fileno())
-        os.chmod(temporary, 0o644)
-        if replace:
-            os.replace(temporary, target)
-            temporary = None
-        else:
+        held = json.loads(open(path, encoding="utf-8").read())
+        placing, batch = held["placing"], held["batch"]
+        for entry in placing:
+            if not (isinstance(entry["path"], str) and re.fullmatch(r"\.%s\.[A-Za-z0-9_]+\.tmp" % re.escape(PROG), entry["temporary"]) and isinstance(entry["replace"], bool)):
+                raise ValueError("a placing entry")
+        if batch is not None:
+            for name, entry in batch["files"].items():
+                if not (isinstance(name, str) and SHA256.fullmatch(entry["sha256"]) and (entry["before"] is None or isinstance(entry["before"], str))):
+                    raise ValueError("a batch file")
+            if not (isinstance(batch["subject"], str) and isinstance(batch["calls"], int) and isinstance(batch["checks"], list) and (batch["round"] is None or isinstance(batch["round"], int))):
+                raise ValueError("a batch")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError) as err:
+        refuse("corrupt", "%s is not the journal this script writes (%s); it is not read on a guess" % (rel, " ".join(str(err).split()) or type(err).__name__))
+    return {"placing": placing, "batch": batch}
+
+
+def write_journal(run_dir, placing, batch):
+    """The journal, replaced atomically — or removed, once it has nothing to say."""
+    path = journal_path(run_dir)
+    if not placing and batch is None:
+        if os.path.lexists(path):
+            os.unlink(path)
+        return
+    handle, temporary = tempfile.mkstemp(dir=run_dir, prefix=".%s." % PROG, suffix=".tmp")
+    with os.fdopen(handle, "w", encoding="utf-8", newline="") as out:
+        out.write(json.dumps({"placing": placing, "batch": batch}) + "\n")
+        out.flush()
+        os.fsync(out.fileno())
+    os.replace(temporary, path)
+
+
+def place(run_dir, entry, settling=False):
+    """Put one file of a batch where it belongs, if it is not there yet."""
+    target = below(run_dir, entry["path"].split("/"))
+    temporary = os.path.join(os.path.dirname(target), entry["temporary"])
+    if not os.path.lexists(temporary):
+        return
+    if entry["replace"]:
+        os.replace(temporary, target)
+        return
+    try:
+        os.link(temporary, target)
+    except FileExistsError:
+        # Settling a killed write, the file is the one this temporary was linked to.
+        if not settling:
+            raise
+    os.unlink(temporary)
+
+
+def recover(run_dir):
+    """Settle a write that was killed, and return what was placed. A batch whose journal
+    is written is COMMITTED: every file of it that is not in place yet is put there. A
+    batch killed before its journal is DISCARDED: its temporaries are removed, and no file
+    of it was ever in place. Called under the run's exclusive lock, which every write is
+    made under — so a temporary found here belongs to nobody alive."""
+    held = read_journal(run_dir)
+    for entry in held["placing"]:
+        place(run_dir, entry, settling=True)
+    if held["placing"]:
+        write_journal(run_dir, [], held["batch"])
+    for directory, _, names in os.walk(run_dir):
+        for name in names:
+            if re.fullmatch(r"\.%s\..*\.tmp" % re.escape(PROG), name):
+                os.unlink(os.path.join(directory, name))
+    return ["/".join(ARTIFACTS + (os.path.basename(run_dir), entry["path"])) for entry in held["placing"]]
+
+
+def flush(run_dir, batch=None):
+    """THE ONE WRITE: everything the call staged, as one batch. Every text is fenced and
+    scanned BEFORE any of them is written; then each is written to a temporary beside its
+    target; then — where the batch is more than one file, or is an applied batch — the
+    journal says which temporaries become which files; then each is put in place; then the
+    journal forgets the placing. A run killed at any point leaves either nothing of the
+    batch, or a journal from which the next writer finishes it (recover)."""
+    staged = list(STAGED.items())
+    STAGED.clear()
+    if not staged and batch is None:
+        return
+    for target, (rel, text, replace, taken) in staged:
+        fence_check(text)
+        hygiene_scan(rel, text)
+    one_writer(run_dir)
+    held = read_journal(run_dir)
+    placing, journaled = [], False
+    try:
+        for target, (rel, text, replace, taken) in staged:
+            if os.path.lexists(target) and not (replace and os.path.isfile(target)):
+                refuse("exists", "%s exists — %s" % (rel, taken))
+            parent = os.path.dirname(target)
+            os.makedirs(parent, exist_ok=True)
+            if batch is not None:
+                before = open(target, encoding="utf-8", newline="").read() if os.path.isfile(target) else None
+                batch["files"][os.path.relpath(target, run_dir)] = {"sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(), "before": before}
+            handle, temporary = tempfile.mkstemp(dir=parent, prefix=".%s." % PROG, suffix=".tmp")
+            placing.append({"path": os.path.relpath(target, run_dir), "temporary": os.path.basename(temporary), "replace": replace})
+            with os.fdopen(handle, "w", encoding="utf-8", newline="") as out:
+                out.write(text)
+                out.flush()
+                os.fsync(out.fileno())
+            os.chmod(temporary, 0o644)
+        if len(placing) > 1 or batch is not None:
+            write_journal(run_dir, placing, batch if batch is not None else held["batch"])
+            journaled = True
+        for entry, (target, (rel, text, replace, taken)) in zip(placing, staged):
             try:
-                os.link(temporary, target)
+                place(run_dir, entry)
             except FileExistsError:
                 refuse("exists", "%s exists — %s" % (rel, taken))
+        if journaled:
+            write_journal(run_dir, [], batch if batch is not None else held["batch"])
     finally:
-        if temporary is not None:
-            os.unlink(temporary)
-    return rel
+        # Before the journal names them, the temporaries are nobody's: a refusal, or a
+        # terminated run, takes them with it. After it, they are the batch.
+        if not journaled:
+            for entry in placing:
+                temporary = os.path.join(os.path.dirname(below(run_dir, entry["path"].split("/"))), entry["temporary"])
+                if os.path.lexists(temporary):
+                    os.unlink(temporary)
 
 
 # --- tables ---------------------------------------------------------------------
@@ -980,12 +1243,16 @@ def read_table(path, rel, columns):
     None when there is no file yet. A file that is not this script's table is refused."""
     if os.path.islink(path):
         refuse("outside", "%s is a link: a write to it would land outside the run directory" % rel)
-    if not os.path.lexists(path):
+    if path in STAGED:
+        # What an earlier call of the same batch wrote (apply): not on disk yet.
+        lines = STAGED[path][1].split("\n")
+    elif not os.path.lexists(path):
         return None
-    try:
-        lines = open(path, encoding="utf-8", newline="").read().split("\n")
-    except (OSError, ValueError) as err:
-        refuse("corrupt", "%s cannot be read as text (%s)" % (rel, err))
+    else:
+        try:
+            lines = open(path, encoding="utf-8", newline="").read().split("\n")
+        except (OSError, ValueError) as err:
+            refuse("corrupt", "%s cannot be read as text (%s)" % (rel, err))
     head = header(columns)
     if head[0] not in lines:
         refuse("corrupt", "%s holds no table with this script's header; it is not rewritten on a guess" % rel)
@@ -1016,11 +1283,26 @@ def untick(text):
     return text.strip("`")
 
 
+def stdin_bytes():
+    """The call's input: its own stdin, or — for a call of a batch — what the batch gives."""
+    if INPUT:
+        return INPUT[-1].encode("utf-8", "surrogatepass")
+    return sys.stdin.buffer.read()
+
+
 def json_stdin():
     try:
-        return json.loads(sys.stdin.buffer.read().decode("utf-8"))
+        given = json.loads(stdin_bytes().decode("utf-8"))
+        # A text no file can hold — a lone surrogate, which JSON can spell and UTF-8
+        # cannot — is refused here, once, for every field of every body.
+        json.dumps(given, ensure_ascii=False).encode("utf-8")
+    except RecursionError:
+        refuse("bad-value", "stdin is not JSON this script reads: it is nested too deeply")
+    except UnicodeEncodeError:
+        refuse("bad-value", "stdin holds a text that is not Unicode text — a lone surrogate, which no file can hold")
     except ValueError as err:
         refuse("bad-value", "stdin is not JSON (%s)" % str(err).split("\n")[0])
+    return given
 
 
 def json_rows(what):
@@ -1327,7 +1609,7 @@ def report(args):
     if os.path.lexists(below(run_dir, parts + [name])):
         refuse("exists", "%s exists — a re-run passes the next attempt" % "/".join(ARTIFACTS + (args.run,) + tuple(parts) + (name,)))
     try:
-        text = sys.stdin.buffer.read().decode("utf-8")
+        text = stdin_bytes().decode("utf-8")
     except ValueError:
         refuse("bad-value", "the report on stdin is not UTF-8 text")
     if "\0" in text or not text.strip():
@@ -1337,7 +1619,7 @@ def report(args):
     text = public(text, scratch)
     if not text.endswith("\n"):
         text += "\n"
-    print(publish(run_dir, parts + [name], text, replace=False))
+    say(publish(run_dir, parts + [name], text, replace=False))
 
 
 def ledger_add(args):
@@ -1358,7 +1640,7 @@ def ledger_add(args):
             appended.append(key)
     if appended:
         publish(run_dir, ["ledger.md"], render_table(above, LEDGER_COLUMNS, rows), replace=True)
-    print(json.dumps({"ledger": rel, "appended": appended, "existing": existing}))
+    say(json.dumps({"ledger": rel, "appended": appended, "existing": existing}))
 
 
 def ledger_set(args):
@@ -1382,7 +1664,7 @@ def ledger_set(args):
         for at, text in cells:
             rows[keys.index(key)][at] = text
     publish(run_dir, ["ledger.md"], render_table(above, LEDGER_COLUMNS, rows), replace=True)
-    print(json.dumps({"ledger": rel, "updated": [key for key, _ in patches]}))
+    say(json.dumps({"ledger": rel, "updated": [key for key, _ in patches]}))
 
 
 def clause_set(args):
@@ -1420,7 +1702,7 @@ def clause_set(args):
     if row[4] != "void" and row[2] == "-":
         refuse("bad-value", "clause %s: %s is a verdict, and a verdict names the commit the instrument ran on — pass --commit" % (clause, row[4]))
     publish(run_dir, ["clauses.md"], render_table(above, CLAUSE_COLUMNS, rows), replace=True)
-    print(json.dumps({"clauses": rel, "clause": clause, "status": row[4]}))
+    say(json.dumps({"clauses": rel, "clause": clause, "status": row[4]}))
 
 
 def bound_set(args):
@@ -1450,7 +1732,7 @@ def bound_set(args):
     for at, text in named.items():
         row[at] = text
     publish(run_dir, ["bounds.md"], render_table(above, BOUND_COLUMNS, rows), replace=True)
-    print(json.dumps({"bounds": rel, "bound": bound}))
+    say(json.dumps({"bounds": rel, "bound": bound}))
 
 
 def scope_set(args):
@@ -1478,7 +1760,7 @@ def scope_set(args):
         "",
     ]
     rel = publish(run_dir, parts, render_table(above, SCOPE_COLUMNS, rows), replace=False, taken="a round's test set is written once")
-    print(json.dumps({"scope": rel, "included": len(given["included"]), "excluded": len(given["excluded"])}))
+    say(json.dumps({"scope": rel, "included": len(given["included"]), "excluded": len(given["excluded"])}))
 
 
 def entries_of(row, name, what, scratch):
@@ -1523,7 +1805,7 @@ def item_set(args):
             keys.append(key)
             rows.append(cells)
     publish(run_dir, ["test-set.md"], render_table(above, ITEM_COLUMNS, rows), replace=True)
-    print(json.dumps({"test_set": rel, "written": [key for key, _ in given]}))
+    say(json.dumps({"test_set": rel, "written": [key for key, _ in given]}))
 
 
 def round_set(args):
@@ -1565,7 +1847,7 @@ def round_set(args):
         facts[name] = value
     rows = [[tick(name), tick(GO if name == "go" else ITEMS_BREAK.join(facts[name]) if name in ROUND_LISTS else str(facts[name]))] for name in ROUND_FACTS if facts[name]]
     publish(run_dir, ["r" + round_number, "round.md"], render_table(above, ROUND_COLUMNS, rows), replace=True)
-    print(json.dumps({"round": rel, "facts": facts}))
+    say(json.dumps({"round": rel, "facts": facts}))
 
 
 def run_set(args):
@@ -1594,7 +1876,7 @@ def run_set(args):
     facts.update(given)
     rows = [[tick(name), tick(str(facts[name]))] for name in RUN_FACTS if facts[name] is not None]
     publish(run_dir, ["run.md"], render_table(above, ROUND_COLUMNS, rows), replace=True)
-    print(json.dumps({"run": rel, "facts": facts}))
+    say(json.dumps({"run": rel, "facts": facts}))
 
 
 def triage_entry(entry):
@@ -1655,7 +1937,7 @@ def triage_set(args):
         row[6], row[7] = grade
     publish(run_dir, ["r" + round_number, "triage.md"], render_table(above, TRIAGE_COLUMNS, rows), replace=True)
     publish(run_dir, ["ledger.md"], render_table(ledger_above, LEDGER_COLUMNS, ledger_rows), replace=True)
-    print(json.dumps({"triage": rel, "ledger": ledger, "recorded": [key for key, _, _ in given]}))
+    say(json.dumps({"triage": rel, "ledger": ledger, "recorded": [key for key, _, _ in given]}))
 
 
 # --- the state, and what follows from it ----------------------------------------------
@@ -1977,10 +2259,19 @@ def state(args):
     except Refusal as refusal:
         if refusal.kind != "not-opened":
             raise
-        print(json.dumps({"run": args.run, "opened": False}))
+        say(json.dumps({"run": args.run, "opened": False}))
         return
     fcntl.flock(os.open(run_dir, os.O_RDONLY), fcntl.LOCK_SH)
-    print(json.dumps(document(run_dir, args.run)))
+    interrupted(run_dir, args.run)
+    say(json.dumps(document(run_dir, args.run)))
+
+
+def interrupted(run_dir, run):
+    """Refuse to read a run one of whose writes was killed between its files. The reader
+    holds the shared lock, so the write is not alive: its journal is what is left."""
+    placing = read_journal(run_dir)["placing"]
+    if placing:
+        refuse("interrupted", "a write of run %s was killed between its files — %s of its batch are journaled and may not be in place: the state is not read across it. `dev/stabilize-record recover --run %s` finishes the batch, as any writer does first" % (run, ", ".join(entry["path"] for entry in placing), run))
 
 
 def document(run_dir, run):
@@ -2047,7 +2338,7 @@ def document(run_dir, run):
     for key, row in zip(keys, ledger_rows):
         grade, bound = grade_read(ledger_rel, key, row[6])
         disposition, _, detail = row[8].partition(": ")
-        if disposition not in DISPOSITIONS or not row[2].isdigit() or row[7] not in ("-",) + tuple(GRADERS):
+        if disposition not in DISPOSITIONS or not re.fullmatch(r"[0-9]{1,6}", row[2]) or row[7] not in ("-",) + tuple(GRADERS):
             spoiled(ledger_rel, "holds a row for %s with a cell this script does not write" % key)
         finding = {
             "key": key,
@@ -2135,7 +2426,7 @@ def check_reports(args):
             extra.append(name)
     missing = [name for name in launched if name not in seen]
     ok = not missing and not extra
-    print(json.dumps({
+    say(json.dumps({
         "check": "reports",
         "ok": ok,
         "dir": "/".join(ARTIFACTS + (args.run,) + tuple(parts)),
@@ -2154,8 +2445,226 @@ def check_ledger(args):
     missing = [key for key in wanted if key not in keys]
     duplicated = [key for key in wanted if keys.count(key) > 1]
     ok = not missing and not duplicated
-    print(json.dumps({"check": "ledger", "ok": ok, "missing": missing, "duplicated": duplicated}))
+    say(json.dumps({"check": "ledger", "ok": ok, "missing": missing, "duplicated": duplicated}))
     return 0 if ok else LEDGER_MISMATCH
+
+
+def gate_read(path, what):
+    """What ONE full `dev/gate` printed, read from the file its output was kept in: its
+    verdict, its totals, the steps it names as failed and the tests it names as failing.
+    Anything else — a pre-check, two runs in one file, a file cut off before the verdict —
+    is refused: it is not evidence about a tree."""
+    try:
+        lines = open(path, encoding="utf-8").read().split("\n")
+    except (OSError, ValueError) as err:
+        refuse("bad-value", "%s %s cannot be read as text (%s)" % (what, shown(path), " ".join(str(err).split())))
+    verdicts = [found for found in map(GATE_VERDICT.fullmatch, lines) if found]
+    totals = [found for found in map(GATE_TOTALS.fullmatch, lines) if found]
+    if len(verdicts) != 1 or len(totals) != 1:
+        refuse("bad-value", "%s %s is not the output of ONE full `dev/gate`: it holds %d `GATE:` verdict line(s) and %d totals line(s), and a full gate prints one of each — `--fast` and `--quick` are pre-checks, and print not both" % (what, shown(path), len(verdicts), len(totals)))
+    names = []
+    if GATE_NAMES in lines:
+        for line in lines[lines.index(GATE_NAMES) + 1 :]:
+            if not line.startswith("  ") or not line.strip():
+                break
+            names.append(line.strip())
+    steps = (verdicts[0].group(2) or "").split()
+    failed = int(totals[0].group(2))
+    if not steps and (failed or names):
+        refuse("bad-value", "%s %s says `GATE: PASS` and names %d failed test(s): it is not a gate's output as the gate prints it" % (what, shown(path), max(failed, len(names))))
+    return {"verdict": "fail" if steps else "pass", "totals": totals[0].group(0), "steps": steps, "tests": names}
+
+
+def read_gate(run_dir, round_number):
+    """(the file's path, {"commit", "verdict", "red": [...]}) of the candidate's gate as a
+    round holds it — or None where the round holds none."""
+    parts = ["r%s" % round_number, "gate.md"]
+    rel = "/".join(ARTIFACTS + (os.path.basename(run_dir),) + tuple(parts))
+    table = read_table(below(run_dir, parts), rel, GATE_COLUMNS)
+    if table is None:
+        return None
+    held = {"commit": None, "verdict": None, "totals": None, "red": []}
+    for what, value in table[1]:
+        value = as_data(untick(value))
+        if what in ("step", "test"):
+            held["red"].append("%s %s" % (what, value))
+        elif what in held and what != "red" and held[what] is None:
+            held[what] = value
+        else:
+            spoiled(rel, "holds a row %s, which this script does not write" % shown(what))
+    if not FULL_SHA.fullmatch(held["commit"] or "") or held["verdict"] not in ("pass", "fail") or (held["verdict"] == "pass") != (not held["red"]):
+        spoiled(rel, "is not a candidate's gate as this script writes it")
+    return rel, held
+
+
+def gate_set(args):
+    run_dir = open_run(args.run)
+    round_number = number(args.round, "round")
+    scratch = scratch_roots(args)
+    if not FULL_SHA.fullmatch(args.commit):
+        refuse("bad-value", "commit %s is not a full sha of 40 hex digits: the candidate the gate ran on" % shown(args.commit))
+    seen = gate_read(args.summary, "--summary")
+    one_writer(run_dir)
+    held = read_gate(run_dir, round_number)
+    if held is not None and held[1]["commit"] != args.commit:
+        refuse("exists", "%s holds the gate of %s — a round tests one candidate; nothing was written" % (held[0], held[1]["commit"]))
+    rows = [["commit", tick(args.commit)], ["verdict", seen["verdict"]], ["totals", tick(seen["totals"])]]
+    rows += [["step", tick(step)] for step in seen["steps"]]
+    rows += [["test", tick(cell(public(name, scratch)))] for name in seen["tests"]]
+    above = [
+        "# %s — round %s, the candidate's gate" % (args.run, round_number),
+        "",
+        "What the full gate showed on the candidate this round tests, before any record of the round was written: its verdict, and every step and every test it showed red. A record commit of this round is accepted when its own gate shows nothing red that is not a row here. Written by `dev/stabilize-record` from the gate's own output, and never by hand.",
+        "",
+    ]
+    rel = publish(run_dir, ["r" + round_number, "gate.md"], render_table(above, GATE_COLUMNS, rows), replace=True)
+    say(json.dumps({"gate": rel, "commit": args.commit, "verdict": seen["verdict"], "red": len(rows) - 3}))
+
+
+def gate_check(args):
+    """A record commit's gate, held to the candidate's (the human's ruling of 2026-10-06):
+    it holds when it shows nothing red that the candidate's own gate did not show red."""
+    run_dir = open_run(args.run)
+    seen = gate_read(args.summary, "--summary")
+    held = None
+    if args.round is not None:
+        held = read_gate(run_dir, number(args.round, "round"))
+    known = held[1]["red"] if held else []
+    # A test's name, as a row of the candidate's gate holds one.
+    red = ["step " + step for step in seen["steps"]] + ["test " + as_data(cell(public(name, scratch_roots(args)))) for name in seen["tests"]]
+    new = [name for name in red if name not in known]
+    # A test step that failed and names no test says nothing about WHICH tests are red.
+    unnamed = [step for step in seen["steps"] if step in GATE_TEST_STEPS and not seen["tests"]]
+    new += ["step %s (it names no failing test)" % step for step in unnamed if "step " + step in known]
+    ok = not new
+    say(json.dumps({"check": "gate", "ok": ok, "verdict": seen["verdict"], "totals": seen["totals"], "red": red, "candidate": held[1]["commit"] if held else None, "known": known, "new": new}))
+    return 0 if ok else GATE_MISMATCH
+
+
+def apply(args):
+    """A record step's writes, as ONE batch: the calls of the batch, in its order, each
+    reading what the ones before it wrote — and nothing on disk until every one of them
+    was taken and every check among them holds."""
+    run_dir = open_run(args.run)
+    round_number = None if args.round is None else int(number(args.round, "round"))
+    scratch_roots(args)
+    if not args.subject.strip() or "\n" in args.subject or "\r" in args.subject:
+        refuse("bad-value", "--subject is one line that says something: the subject of the commit this batch is recorded by")
+    given = json_stdin()
+    if not isinstance(given, list) or not given:
+        refuse("bad-value", "stdin must be a batch as a non-empty JSON array of calls, each {\"argv\": [...], \"stdin\": TEXT}")
+    for n, call in enumerate(given, 1):
+        if not isinstance(call, dict) or set(call) - {"argv", "stdin"} or not isinstance(call.get("argv"), list) or not call["argv"] or not all(isinstance(arg, str) for arg in call["argv"]) or not isinstance(call.get("stdin", ""), str):
+            refuse("bad-value", "call %d of the batch is not {\"argv\": [TEXT...], \"stdin\": TEXT}" % n)
+        if call["argv"][0] not in APPLICABLE:
+            refuse("bad-value", "call %d of the batch is %s: a batch holds %s" % (n, shown(call["argv"][0]), ", ".join(APPLICABLE)))
+    one_writer(run_dir)
+    if read_journal(run_dir)["batch"] is not None:
+        refuse("pending", "run %s has a batch that is applied and not committed: its record step commits it (`dev/stabilize-step record`), or `dev/stabilize-record discard --run %s` takes it back; nothing was written" % (args.run, args.run))
+    results, checks = [], []
+    for n, call in enumerate(given, 1):
+        name = call["argv"][0]
+        try:
+            sub = arguments(call["argv"])
+            if sub.run != args.run:
+                refuse("bad-value", "it names the run %s, and the batch is run %s's" % (shown(sub.run), args.run))
+            INPUT.append(call.get("stdin", ""))
+            mark = len(OUT)
+            try:
+                code = sub.act(sub) or 0
+            finally:
+                INPUT.pop()
+            printed = json.loads(OUT[mark])
+            del OUT[mark:]
+        except Refusal as refusal:
+            STAGED.clear()
+            refuse(refusal.kind, "call %d of the batch (`%s`): %s — nothing of the batch was written" % (n, name, refusal.detail))
+        if code:
+            STAGED.clear()
+            refuse("check", "call %d of the batch (`%s`) does not hold: %s — nothing of the batch was written" % (n, name, json.dumps(printed)))
+        results.append(printed)
+        if name in CHECKS:
+            checks.append(printed)
+    files = [staged[0] for staged in STAGED.values()]
+    flush(run_dir, {"round": round_number, "subject": args.subject, "calls": len(given), "checks": checks, "files": {}})
+    say(json.dumps({"applied": len(given), "files": files, "results": results}))
+
+
+def pending(args):
+    """What of the run is written and in no commit yet, as this script knows it: whether a
+    write was killed between its files; the applied batch; and the files that are written
+    once and never rewritten — the reports and each round's scope — that are on disk.
+    Whether one of those is committed is git's to say, which this script does not read."""
+    try:
+        run_dir = open_run(args.run)
+    except Refusal as refusal:
+        if refusal.kind != "not-opened":
+            raise
+        say(json.dumps({"run": args.run, "opened": False, "interrupted": False, "batch": None, "once": []}))
+        return
+    fcntl.flock(os.open(run_dir, os.O_RDONLY), fcntl.LOCK_SH)
+    held = read_journal(run_dir)
+    prefix = "/".join(ARTIFACTS + (args.run,))
+    once = []
+    for number_ in numbered(run_dir, [], "r"):
+        name = "r%d" % number_
+        if os.path.isfile(below(run_dir, [name, "scope.md"])):
+            once.append("%s/%s/scope.md" % (prefix, name))
+        stages = [[name, "reports", "test"]] + [[name, "reports", "fix", "c%d" % cycle] for cycle in numbered(run_dir, [name, "reports", "fix"], "c")]
+        for parts in stages:
+            directory = below(run_dir, parts)
+            for report_name in sorted(os.listdir(directory)) if os.path.isdir(directory) else []:
+                if REPORT_NAME.fullmatch(report_name) and os.path.isfile(below(run_dir, parts + [report_name])):
+                    once.append("/".join([prefix] + parts + [report_name]))
+    batch = held["batch"]
+    if batch is not None:
+        batch = {"round": batch["round"], "subject": batch["subject"], "calls": batch["calls"], "checks": batch["checks"], "files": {"%s/%s" % (prefix, name): entry["sha256"] for name, entry in batch["files"].items()}}
+    say(json.dumps({"run": args.run, "opened": True, "journal": "%s/%s" % (prefix, JOURNAL), "interrupted": bool(held["placing"]), "batch": batch, "once": once}))
+
+
+def discard(args):
+    """Take the applied batch back: every file of it as it was before the batch — or gone,
+    where the batch made it — and the journal with it. The reports and the scope of the
+    stage are no part of a batch, and stay."""
+    run_dir = open_run(args.run)
+    one_writer(run_dir)
+    batch = read_journal(run_dir)["batch"]
+    discarded = []
+    for name, entry in (batch["files"] if batch else {}).items():
+        target = below(run_dir, name.split("/"))
+        if entry["before"] is None:
+            if os.path.lexists(target):
+                os.unlink(target)
+        else:
+            handle, temporary = tempfile.mkstemp(dir=os.path.dirname(target), prefix=".%s." % PROG, suffix=".tmp")
+            with os.fdopen(handle, "w", encoding="utf-8", newline="") as out:
+                out.write(entry["before"])
+                out.flush()
+                os.fsync(out.fileno())
+            os.chmod(temporary, 0o644)
+            os.replace(temporary, target)
+        discarded.append("/".join(ARTIFACTS + (args.run, name)))
+    write_journal(run_dir, [], None)
+    say(json.dumps({"discarded": discarded}))
+
+
+def settle(args):
+    """Forget the applied batch: the commit that records it was made. The step that made
+    the commit calls this; a batch forgotten without one leaves a tree no stage starts
+    from, which is the safe side."""
+    run_dir = open_run(args.run)
+    one_writer(run_dir)
+    batch = read_journal(run_dir)["batch"]
+    write_journal(run_dir, [], None)
+    say(json.dumps({"settled": sorted("/".join(ARTIFACTS + (args.run, name)) for name in (batch["files"] if batch else {}))}))
+
+
+def recover_(args):
+    """Settle a write that was killed, as every writer does before it writes."""
+    run_dir = open_run(args.run)
+    held = read_journal(run_dir)["placing"]
+    one_writer(run_dir)
+    say(json.dumps({"recovered": ["/".join(ARTIFACTS + (args.run, entry["path"])) for entry in held]}))
 
 
 class Arguments(argparse.ArgumentParser):
@@ -2192,6 +2701,13 @@ def arguments(argv):
     command("round-set", round_set, [("round", True)])
     command("run-set", run_set, [])
     command("state", state, [])
+    command("gate-set", gate_set, [("round", True), ("commit", True), ("summary", True)], writes=True)
+    command("gate-check", gate_check, [("round", False), ("summary", True)], writes=True)
+    command("apply", apply, [("round", False), ("subject", True)], writes=True)
+    command("pending", pending, [])
+    command("discard", discard, [])
+    command("settle", settle, [])
+    command("recover", recover_, [])
     if not argv or argv[0] not in commands.choices:
         refuse("usage", "%s is not a subcommand: the subcommands are %s — see dev/stabilize-record --help" % (shown(argv[0]) if argv else "nothing", ", ".join(commands.choices)))
     return parser.parse_args(argv)
@@ -2209,11 +2725,28 @@ def main(argv):
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(128 + signal.SIGTERM))
     signal.signal(signal.SIGHUP, lambda *_: sys.exit(128 + signal.SIGHUP))
     try:
+        for arg in argv:
+            try:
+                arg.encode("utf-8")
+            except UnicodeEncodeError:
+                refuse("bad-value", "an argument is not UTF-8 text: %s" % shown(arg))
         args = arguments(argv)
-        return args.act(args) or 0
+        code = args.act(args) or 0
+        if STAGED:
+            flush(open_run(args.run))
+        sys.stdout.write("".join(line + "\n" for line in OUT))
+        return code
     except Refusal as refusal:
         sys.stderr.write("%s: refused %s: %s\n" % (PROG, refusal.kind, " ".join(refusal.detail.split())))
         return STATUS[refusal.kind]
+    except Exception as err:  # noqa: BLE001 — the last line of defence, by design
+        # Nothing this script is handed ends in a traceback: what no refusal above names
+        # is still one line and a status of its own, with where it was raised.
+        at = err.__traceback__
+        while at.tb_next is not None:
+            at = at.tb_next
+        sys.stderr.write("%s: refused fault: %s at line %d (%s) — an input this script has no refusal for, or a defect of its own; a write that was under way is settled by the next writer\n" % (PROG, type(err).__name__, at.tb_lineno, " ".join(str(err).split())[:200]))
+        return STATUS["fault"]
 
 
 if __name__ == "__main__":
