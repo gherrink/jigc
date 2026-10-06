@@ -31,13 +31,20 @@
 //!   nor staged unless it is absent or jigc's own one-line stamp, and the landed envelope
 //!   carries one advisory under the stamp writer's own code.
 //!
-//! **And a file jigc merges into is followed through a link only to a file the
-//! repository can commit** (the rc.24 fix pass's completion audit, the end-to-end tester's
+//! **And a file jigc merges into is followed through a link only to a regular file inside
+//! the repository** (the rc.24 fix pass's completion audit, the end-to-end tester's
 //! F2; cells m1–m3). The rule above left the merged-into members unasked, and `jigc setup`
 //! wrote through a committed `CLAUDE.md` link into a file outside the repository at exit
 //! 0. Cell m1 iterates the member × where its link leads, m2 is the must-not-refuse half —
 //! `CLAUDE.md -> AGENTS.md` under each conversion setting and in each layout this door is
 //! reachable in — and m3 holds the file behind an accepted link to the dirty-install guard.
+//!
+//! **A link to a file git ignores is followed too** (cell m4; the human's ruling of
+//! 2026-10-06 on the fix pass's item 18, reversing the refusal m1 first pinned). The target
+//! is treated as an ignored ordinary file at the member's own path is: merged into, in no
+//! commit. `1.0.0-rc.24` did that; the pass refused it under the member's write-failure
+//! code, and a merge loses nothing either way. What m1 still refuses is every end that is
+//! no working file of this repository: out of it, nowhere, a directory, git's own directory.
 //!
 //! Every cell drives the real binary (`CARGO_BIN_EXE_jigc`) over a throwaway `git init`.
 
@@ -1022,7 +1029,7 @@ fn a_finalize_still_refreshes_a_stale_stamp_that_is_jigcs_own() {
     );
 }
 
-// ──── merged-into members: a link is followed only to a file this repository can commit ────
+// ──── merged-into members: a link is followed only to a regular file in this repository ────
 
 /// Run `git` in `repo` without asserting.
 fn git_try(repo: &Path, args: &[&str]) -> std::process::Output {
@@ -1062,14 +1069,19 @@ fn merged_plant(path: &str) -> &'static str {
 /// no commit carried; **dangling** — the file created wherever the link pointed.
 ///
 /// The axis is the member × where its link leads. For the two host files: out of the
-/// repository, nowhere, to an ignored file in it, to a directory in it. In each, plain and
+/// repository, nowhere, to a directory in it, into git's own directory. In each, plain and
 /// `--force`: exit 1 under the member's own write-failure code, nothing installed, the
 /// link's end byte-identical (or still absent). Then the route as printed — the link
 /// removed, the removal committed — and one re-run installs a regular file there with the
 /// link's old end still untouched.
+///
+/// **An ignored file inside the repository was a fifth end here and is not one any more**
+/// (2026-10-06, the human's ruling on item 18): it is followed — cell m4. *Inside git's own
+/// directory* took its place on the axis, because the refusal's sentence had covered both
+/// in one clause and only one of them is still true.
 #[test]
 fn a_merged_into_member_refuses_a_link_the_repository_cannot_commit() {
-    let ends = ["outside", "dangling", "ignored", "directory"];
+    let ends = ["outside", "dangling", "directory", "git-dir"];
     std::thread::scope(|scope| {
         for path in ["CLAUDE.md", ".claude/settings.json"] {
             for end in ends {
@@ -1089,11 +1101,10 @@ fn a_merged_into_member_refuses_a_link_the_repository_cannot_commit() {
                             let file = elsewhere.path().join("nowhere");
                             (file.display().to_string(), Some(file))
                         }
-                        "ignored" => {
-                            write(repo, ".gitignore", "local/\n");
-                            write(repo, "local/mine", merged_plant(path));
-                            ("local/mine".to_string(), Some(repo.join("local/mine")))
-                        }
+                        "git-dir" => (
+                            ".git/description".to_string(),
+                            Some(repo.join(".git/description")),
+                        ),
                         _ => {
                             write(repo, "shared-dir/keep", "x\n");
                             ("shared-dir".to_string(), None)
@@ -1483,5 +1494,192 @@ fn the_file_behind_a_link_is_asked_about_like_any_install_path() {
     assert!(
         git_try(repo, &["diff", "--quiet"]).status.success(),
         "clean"
+    );
+}
+
+/// What jigc's merge leaves in the file a member's writes land in.
+fn merged_in(path: &str) -> &'static str {
+    match path {
+        ".claude/settings.json" => "Bash(jigc:*)",
+        _ => "@.jigc/AGENT.md",
+    }
+}
+
+/// Whether git's index or `HEAD` holds `path`.
+fn git_holds(repo: &Path, path: &str) -> bool {
+    !git(repo, &["ls-files", "--", path]).is_empty()
+        || git(repo, &["ls-tree", "-r", "--name-only", "HEAD"])
+            .lines()
+            .any(|line| line == path)
+}
+
+/// (m4) **A link at a merged-into member that leads to a file git ignores is followed, and
+/// the file is treated as an ignored ordinary file at the member's own path is** — merged
+/// into, in no commit (the human's ruling of 2026-10-06 on the fix pass's item 18).
+///
+/// The pass refused this end (`setup.inject-reference` · `setup.inject-allowlist`) where
+/// `1.0.0-rc.24` followed the link and merged, and where an ignored ordinary `CLAUDE.md`
+/// has always been merged into at exit 0. The axis: the two host files × whether git holds
+/// the link itself (committed, or covered by the same ignore rule) × plain and `--force`.
+/// In each: exit 0, no refusal code, the adopter's bytes and jigc's merge both in the file
+/// behind the link, that file in no commit and no index entry, the ack saying so, the
+/// repository clean, a re-run moving nothing — and the teardown going back through the same
+/// link. The control beside it is the ordinary file the ruling compares it to.
+#[test]
+fn a_link_to_an_ignored_file_is_followed_and_its_target_joins_no_commit() {
+    std::thread::scope(|scope| {
+        for path in ["CLAUDE.md", ".claude/settings.json"] {
+            for link_state in ["committed", "ignored"] {
+                for args in [&["setup"][..], &["setup", "--force"][..]] {
+                    scope.spawn(move || {
+                        let what =
+                            format!("`{path}` → an ignored file, the link {link_state}, {args:?}");
+                        let (repo, home) = born_repo("ignored-end");
+                        let (repo, home) = (repo.path(), home.path());
+                        let rules = match link_state {
+                            "committed" => "local/\n".to_string(),
+                            _ => format!("local/\n/{path}\n"),
+                        };
+                        write(repo, ".gitignore", &rules);
+                        write(repo, "local/mine", merged_plant(path));
+                        link(repo, path, "local/mine");
+                        git(repo, &["add", "-A"]);
+                        git(repo, &["commit", "-q", "-m", "our layout"]);
+                        assert_eq!(
+                            git_holds(repo, path),
+                            link_state == "committed",
+                            "{what}: premise — whether git holds the link"
+                        );
+                        assert!(!git_holds(repo, "local/mine"), "{what}: premise");
+
+                        let out = jigc(repo, home, args);
+                        let said_out = said(&out);
+                        assert_eq!(out.status.code(), Some(0), "{what}: {said_out}");
+                        assert!(
+                            !said_out.contains(merge_refusal_code(path))
+                                && !said_out.contains("setup.dirty-install-path")
+                                && !said_out.contains("setup.forced-install-path"),
+                            "{what}: nothing refuses and nothing was consented over: {said_out}"
+                        );
+                        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+                        assert!(
+                            stderr.contains(&format!("`{path}` is a link"))
+                                && stderr.contains("`local/mine`")
+                                && stderr.contains("git ignores that file")
+                                && !stderr.contains("the install commit carries"),
+                            "{what}: the ack names the file and says no commit carries it: {stderr}"
+                        );
+                        assert!(is_link(repo, path), "{what}: still a link");
+                        let merged = read(repo, "local/mine");
+                        assert!(
+                            merged.contains(MARK) && merged.contains(merged_in(path)),
+                            "{what}: the adopter's bytes and jigc's merge are both there: {merged}"
+                        );
+                        assert!(
+                            !git_holds(repo, "local/mine"),
+                            "{what}: the file behind the link is in no commit and no index entry"
+                        );
+                        assert!(
+                            git(repo, &["log", "-1", "--format=%s"]).contains("install jigc"),
+                            "{what}: the rest of the install is committed"
+                        );
+                        assert_eq!(git(repo, &["status", "--porcelain"]), "", "{what}: clean");
+                        let head = git(repo, &["rev-parse", "HEAD"]);
+                        let rerun = jigc(repo, home, &["setup"]);
+                        assert_eq!(rerun.status.code(), Some(0), "{what}: {}", said(&rerun));
+                        assert_eq!(git(repo, &["rev-parse", "HEAD"]), head, "{what}: no-op");
+                        assert_eq!(read(repo, "local/mine"), merged, "{what}: byte-stable");
+
+                        // The teardown goes back through the same link.
+                        let out = jigc(repo, home, &["uninstall"]);
+                        assert_eq!(out.status.code(), Some(0), "{what}: {}", said(&out));
+                        assert!(is_link(repo, path), "{what}: the link survives");
+                        let after = read(repo, "local/mine");
+                        assert!(
+                            after.contains(MARK) && !after.contains(merged_in(path)),
+                            "{what}: jigc's merge is out, the adopter's bytes are in: {after}"
+                        );
+                    });
+                }
+            }
+        }
+    });
+
+    // The control the ruling compares it to: the same bytes as an ignored ordinary file.
+    for path in ["CLAUDE.md", ".claude/settings.json"] {
+        let (repo, home) = born_repo("ignored-ordinary");
+        let (repo, home) = (repo.path(), home.path());
+        write(repo, ".gitignore", &format!("/{path}\n"));
+        write(repo, path, merged_plant(path));
+        git(repo, &["add", "-A"]);
+        git(repo, &["commit", "-q", "-m", "our layout"]);
+        let out = jigc(repo, home, &["setup"]);
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "ordinary `{path}`: {}",
+            said(&out)
+        );
+        let merged = read(repo, path);
+        assert!(
+            merged.contains(MARK) && merged.contains(merged_in(path)) && !git_holds(repo, path),
+            "ordinary `{path}`: merged into, in no commit: {merged}"
+        );
+        assert_eq!(git(repo, &["status", "--porcelain"]), "");
+    }
+
+    // No commit yet: the link rides the first commit, the ignored file behind it does not.
+    let (repo, home) = unborn_repo("ignored-end-unborn");
+    let (repo, home) = (repo.path(), home.path());
+    write(repo, ".git/info/exclude", "local/\n");
+    write(repo, "local/mine", merged_plant("CLAUDE.md"));
+    link(repo, "CLAUDE.md", "local/mine");
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(out.status.code(), Some(0), "unborn: {}", said(&out));
+    assert!(
+        git_holds(repo, "CLAUDE.md") && !git_holds(repo, "local/mine"),
+        "unborn: the first commit carries the link and not the file git ignores"
+    );
+    assert!(
+        read(repo, "local/mine").contains(MARK)
+            && read(repo, "local/mine").contains("@.jigc/AGENT.md"),
+        "unborn: merged into"
+    );
+
+    // And following the link buys nothing for the link itself: an untracked link on a born
+    // `HEAD` is an install path git holds no copy of, refused by name before any write — as
+    // an untracked ordinary `CLAUDE.md` is — and committed as the route says, it installs.
+    let (repo, home) = born_repo("ignored-end-untracked-link");
+    let (repo, home) = (repo.path(), home.path());
+    write(repo, ".gitignore", "local/\n");
+    git(repo, &["add", "-A"]);
+    git(repo, &["commit", "-q", "-m", "our ignores"]);
+    write(repo, "local/mine", merged_plant("CLAUDE.md"));
+    link(repo, "CLAUDE.md", "local/mine");
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    assert!(
+        said(&out).contains("setup.dirty-install-path") && said(&out).contains("  `CLAUDE.md`"),
+        "the untracked link is named: {}",
+        said(&out)
+    );
+    assert!(!repo.join(".jigc").exists(), "asked before the first write");
+    assert_eq!(
+        read(repo, "local/mine"),
+        merged_plant("CLAUDE.md"),
+        "untouched"
+    );
+    git(repo, &["add", "--", "CLAUDE.md"]);
+    git(repo, &["commit", "-q", "-m", "our link"]);
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "committed, one re-run: {}",
+        said(&out)
+    );
+    assert!(
+        !git_holds(repo, "local/mine"),
+        "and the file behind it is still in no commit"
     );
 }

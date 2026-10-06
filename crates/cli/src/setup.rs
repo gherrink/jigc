@@ -1623,14 +1623,15 @@ fn install(
         return Err(refusal);
     }
 
-    // 0d′b. **A file the install merges into is followed through a link only to a file
-    //       this repository can commit — asked before the first write** (the rc.24 fix
+    // 0d′b. **A file the install merges into is followed through a link only to a regular
+    //       file inside the checkout — asked before the first write** (the rc.24 fix
     //       pass's completion audit, the end-to-end tester's F2). The members above are the
     //       ones whose writer replaces; these are the ones whose writer keeps what it finds,
     //       and they open their destination through whatever is there too. `through` is
     //       where each accepted link leads, and from here on those files are install
-    //       members like any other: asked about by the dirty gate, named in the install
-    //       commit.
+    //       members like any other: asked about by the dirty gate and named in the install
+    //       commit — or, where git ignores the file, dropped from both exactly as an
+    //       ignored ordinary `CLAUDE.md` is (the human's ruling of 2026-10-06, item 18).
     let through = merged_through_links(jigc_home, &members, &line_file, &allowlist_file)?;
     hook_link_refusal(jigc_home).map_or(Ok(()), Err)?;
     let through_paths: Vec<String> = through.iter().map(|link| link.target.clone()).collect();
@@ -1814,11 +1815,19 @@ fn install(
     // stderr, beside the summary, where this door says what the summary's pinned keys
     // cannot — `line_file` stays the path the assistant reads, which is the link.
     for link in &through {
-        eprintln!(
-            "note: `{}` is a link, so `jigc setup` merged into the file it leads to, `{}` — \
-             that is the file the install commit carries.",
-            link.link, link.target,
-        );
+        if link.ignored {
+            eprintln!(
+                "note: `{}` is a link, so `jigc setup` merged into the file it leads to, \
+                 `{}` — git ignores that file, so no commit carries it.",
+                link.link, link.target,
+            );
+        } else {
+            eprintln!(
+                "note: `{}` is a link, so `jigc setup` merged into the file it leads to, \
+                 `{}` — that is the file the install commit carries.",
+                link.link, link.target,
+            );
+        }
     }
     // 6b. **Keep the provenance of what this run wrote where no commit will hold it** (the
     //     rc.24 fix pass, the ignored sibling of `(R1, F1)`). Asked after the commit step
@@ -2563,12 +2572,19 @@ struct MergedThrough {
     link: String,
     /// The file it leads to, relative to the checkout root.
     target: String,
+    /// Whether git ignores that file ([`LinkEnd::MergeableIgnored`]) — then no commit
+    /// carries what was merged there, and the ack says so.
+    ignored: bool,
 }
 
 /// Where a link at a merged-into member leads, as far as the install is concerned.
 enum LinkEnd {
     /// A regular file inside this checkout that git does not ignore — repo-relative.
     Mergeable(String),
+    /// A regular file inside this checkout that git **ignores** — repo-relative. Merged
+    /// into, and in no commit: exactly what the install does with an ignored ordinary file
+    /// at the member's own path.
+    MergeableIgnored(String),
     /// Anything else, as the clause the refusal says of it.
     Refused(String),
 }
@@ -2576,13 +2592,29 @@ enum LinkEnd {
 /// **Follow the link at `<jigc_home>/<path>` the way the member's writer will, and say
 /// whether that is somewhere the install may write.**
 ///
-/// The answer is `Mergeable` only for a **regular file inside the checkout that git does
-/// not ignore**. Whether git *holds* that file is then asked like any other member's: it
-/// joins the install's path class, so on a born `HEAD` an untracked or modified one draws
-/// the dirty-install refusal by name, and on an unborn one it rides the first commit with
-/// the link (`DirtyPaths::rides_the_first_commit`). An ignored file is refused here because
-/// that gate cannot refuse it — it drops an ignored path the install merges into, since no
-/// commit would carry it either way — and a link is followed only to a file a commit can.
+/// The link is followed to a **regular file inside the checkout**, and nowhere else. Where
+/// git does not ignore that file the answer is `Mergeable`, and whether git *holds* it is
+/// then asked like any other member's: it joins the install's path class, so on a born
+/// `HEAD` an untracked or modified one draws the dirty-install refusal by name, and on an
+/// unborn one it rides the first commit with the link
+/// (`DirtyPaths::rides_the_first_commit`).
+///
+/// **Where git ignores it, the answer is `MergeableIgnored` — the file is merged into and
+/// joins no commit** (the human's ruling of 2026-10-06 on the fix pass's item 18). The
+/// pass refused this end, on the reasoning that the dirty gate cannot refuse an ignored
+/// path the install merges into and a link should be followed only to a file a commit can
+/// carry. That made a link the one way to be refused over a file the install accepts
+/// everywhere else: an ignored ordinary `CLAUDE.md` gets jigc's section at exit 0 and is in
+/// no commit, `1.0.0-rc.24` followed this link and merged, and a merge loses nothing
+/// either way. So the target is what an ignored ordinary file at the member's own path is
+/// — same bytes written, same absence from the install commit — and it reaches both of
+/// that file's filters by the same road, as a member of the path class
+/// ([`install_candidates`] and [`commit_install`] each drop an ignored path the install
+/// merges into).
+///
+/// **Still refused:** an end outside the checkout, an end that does not exist, an end that
+/// is not a regular file, and an end inside git's own directory — which `git check-ignore`
+/// does not call ignored and which is no working file of the repository at all.
 fn link_end(jigc_home: &Path, path: &str) -> LinkEnd {
     let Ok(real) = std::fs::canonicalize(jigc_home.join(path)) else {
         return LinkEnd::Refused(
@@ -2607,12 +2639,14 @@ fn link_end(jigc_home: &Path, path: &str) -> LinkEnd {
             "leads to `{relative}`, which is not a regular file"
         ));
     }
-    if relative == ".git" || relative.starts_with(".git/") || git_path_ignored(jigc_home, &relative)
-    {
+    if relative == ".git" || relative.starts_with(".git/") {
         return LinkEnd::Refused(format!(
-            "leads to `{relative}`, which git does not track and never will — it is ignored, \
-             or inside git's own directory — so no commit would carry what jigc merges there"
+            "leads to `{relative}`, inside git's own directory, which is no working file of \
+             this repository"
         ));
+    }
+    if git_path_ignored(jigc_home, &relative) {
+        return LinkEnd::MergeableIgnored(relative);
     }
     LinkEnd::Mergeable(relative)
 }
@@ -2631,11 +2665,15 @@ fn link_end(jigc_home: &Path, path: &str) -> LinkEnd {
 /// link pointed; to a **tracked file in the repository**, it merged there and left that
 /// file modified and uncommitted beside an install commit that did not name it.
 ///
-/// **So a link is followed only to a file this repository can commit, and then that file
+/// **So a link is followed only to a regular file inside the checkout, and then that file
 /// is the member** ([`link_end`]). `CLAUDE.md -> AGENTS.md` is an ordinary thing for a
 /// repository to have, and it keeps working: the reference is merged into `AGENTS.md`,
 /// `AGENTS.md` is asked about by the dirty gate and named in the install commit, and the
-/// ack says which file was written. Every other end refuses before the first write.
+/// ack says which file was written. **A file git ignores is followed to as well** (the
+/// human's ruling of 2026-10-06, reversing this pass's refusal): it is merged into and
+/// joins no commit, as an ignored ordinary file at the member's own path does, and the ack
+/// says that instead. Every other end — out of the checkout, nowhere, a directory, git's
+/// own directory — refuses before the first write.
 ///
 /// **`.jigc/.gitignore` is the one member a link is never followed at**: its writer
 /// (`crate::gitignore::ensure`) refuses a symlink itself, and did so *after* the bootstrap
@@ -2676,6 +2714,12 @@ fn merged_through_links(
             LinkEnd::Mergeable(target) => through.push(MergedThrough {
                 link: member.path.clone(),
                 target,
+                ignored: false,
+            }),
+            LinkEnd::MergeableIgnored(target) => through.push(MergedThrough {
+                link: member.path.clone(),
+                target,
+                ignored: true,
             }),
             LinkEnd::Refused(why) => {
                 // The member's own existing write-failure code, as at a replaced path.
@@ -2693,8 +2737,7 @@ fn merged_through_links(
                     blocker.clearing_act()
                 } else {
                     format!(
-                        "{}, or point it at a file inside this repository that git does not \
-                         ignore",
+                        "{}, or point it at a regular file inside this repository",
                         blocker.clearing_act()
                     )
                 });
@@ -2708,8 +2751,8 @@ fn merged_through_links(
         code,
         format!(
             "{} — `jigc setup` merges into the file at {}, and it follows a link there only \
-             to a regular file this repository can commit. Nothing was installed and no \
-             install commit was made",
+             to a regular file inside this repository. Nothing was installed and no install \
+             commit was made",
             states.join("; "),
             if states.len() == 1 {
                 "that path"
