@@ -1,0 +1,821 @@
+#!/usr/bin/env python3
+#
+# dev/regression-set — the first part of the regression set: THE PREVIOUS RELEASE'S OWN
+# TEST SUITE, RUN AGAINST THE CANDIDATE'S BINARY (DECISIONS.md -> 2026-10-06, "The
+# regression set's first part, as a tool"; implementation/stabilization-workflow.md ->
+# The regression set).
+#
+# The release condition's second clause is "a working product others can rely on", and
+# its instrument is a regression set: no command that works on the previous release stops
+# working. The suite a release shipped with is what that release was held to. So this
+# tool builds that suite at the release's commit, runs it once on its own binary, puts
+# the candidate's binary where those tests look for theirs, and runs the same test
+# binaries again. A test that passed on the release's binary and fails on the candidate's
+# is a difference; a difference is intended only when a row of a committed list says so
+# and points at the commit or the ruling that made it. Any other difference is red.
+#
+# IT IS NOT A TEST FRAMEWORK. It defines no test and runs none itself: the tests are the
+# previous release's, built by cargo and run by cargo-nextest, the runner the gate uses
+# (implementation/pinning.md -> "No script-runner harness"). What is here is the swap,
+# the proof of which binary ran, and the comparison of two of that runner's reports.
+#
+# THE TRAP, AND WHY THE RUNS ARE MADE AS THEY ARE. The tests name their binary at compile
+# time (`env!("CARGO_BIN_EXE_jigc")`): one path, inside the previous release's target
+# directory. After the candidate's binary is put there, a plain `cargo nextest run`
+# puts the old one back before it runs a test — cargo finds the unit fresh and copies
+# `deps/jigc-<hash>` over the path again, printing nothing — and the run reads green: the
+# baseline, twice (measured 2026-10-06). So NO RUN HERE GOES THROUGH CARGO'S BUILD. The
+# test binaries are built once; the build is then recorded (`cargo nextest list
+# --list-type binaries-only`, `cargo metadata`) and BOTH runs are made from that record
+# (`--binaries-metadata`, `--cargo-metadata`), the reuse-build path, which starts no
+# compiler and copies no file.
+#
+# WHICH BINARY RAN IS PROVEN, NOT ASSUMED. The path is read out of the recorded build,
+# and at least one test binary must hold it in its bytes. The file at that path is hashed
+# before and after each run: the previous release's binary around the baseline, the
+# candidate's around the second run. A hash that is not the expected one — before or
+# after — makes the whole run VOID, never green; so does a candidate whose binary is byte
+# for byte the previous release's, since no hash could then tell the two runs apart.
+#
+# Usage — every call prints ONE line of JSON on stdout, whatever it exits with:
+#
+#   dev/regression-set run --previous SHA --candidate SHA --list FILE --scratch DIR
+#                      [--keep]
+#       The whole check. SHA is a full commit sha; the candidate and the previous release
+#       are built from `git archive` of their commits, never from the working tree. DIR
+#       exists and lies outside the repository; everything is done in one directory minted
+#       there. In order:
+#         1. the list is read (below) — a list that is refused costs no build;
+#         2. the previous release is unpacked and its tests built, `--locked`, in the dev
+#            profile, into a target directory of its own; the build is recorded;
+#         3. the candidate is unpacked and its binary built, `--locked`, the same profile,
+#            into another target directory;
+#         4. the baseline: the recorded test binaries, on the previous release's binary;
+#         5. the swap — a new file renamed over the path, never a write into the old one —
+#            and the same test binaries again;
+#         6. the verdict, as `verdict` gives it over what the run left.
+#       A step that cannot be done ends the run there, void. Unless --keep is given, the
+#       two source trees and the two target directories are removed at the end; the
+#       evidence stays.
+#
+#   dev/regression-set verdict --evidence DIR --list FILE
+#       The verdict over the evidence a run left, and no build and no test: the same
+#       function `run` ends with. DIR holds `run.json` — the two commits, the two
+#       binaries' hashes, the path, the four hashes taken at it, and a step that failed —
+#       and the runner's two reports, `baseline-junit.xml` and `candidate-junit.xml`.
+#
+#   dev/regression-set check-list --previous SHA --candidate SHA --list FILE
+#       The list alone, read as `run` reads it. Prints {status: listed, list}.
+#
+# THE LIST OF INTENDED CHANGES. A text file, UTF-8, one row per line; a line that is
+# empty or begins `#` is no row. A row is FOUR fields separated by ONE TAB each:
+#
+#     <binary>  <test>  <what changed, in one line>  <pointer>
+#
+#   binary   the test binary, as the runner names it (`jigc::g_flow`, `jigc-engine`)
+#   test     the test's path inside it (`setup::setup_writes_the_marker`)
+#   pointer  what made the change intended — one of
+#              commit:<full sha>        a commit the candidate holds and the previous
+#                                       release does not
+#              ruling:<path>#<heading>  a file of the candidate's commit, by its path in
+#                                       the repository, and the opening words of exactly
+#                                       one of its markdown headings
+# No field is empty or has space around it, and no test is listed twice. A ROW THAT
+# POINTS AT NOTHING IS REFUSED, and with it the whole list: a sha that is no commit, a
+# commit outside `previous..candidate`, a file the candidate does not have, a heading no
+# line or more than one line opens with. The tool reads the list; no agent does.
+#
+# THE VERDICT. Per test, by binary and name, from the two reports. Both runs are made
+# with one retry: a test counts as failed only when it failed twice in one run, and one
+# that passed on its retry is named under `flaky`.
+#
+#   green   every test that passed on the previous release's binary and fails on the
+#           candidate's is on the list — none at all included
+#   red     at least one is not on the list: each is named under `not_on_list`
+#   void    the check did not establish either. `reason` is one word, `detail` a sentence:
+#             did-not-run      a tool it needs is not on PATH
+#             build-previous   the previous release could not be unpacked, its tests did
+#                              not build, or the recorded build names no `jigc` binary
+#             build-candidate  the candidate could not be unpacked or did not build
+#             baseline         the baseline cannot be compared against: the file at the
+#                              path was not the previous release's binary around it, it
+#                              left no readable report, it ran no test, or more than one
+#                              test in a hundred failed on its own binary
+#             swap             the swap did not hold: the two binaries are the same
+#                              bytes, no test binary names the path, or the file at the
+#                              path was not the candidate's binary before or after the run
+#                              — the previous release's put back among them
+#             incomplete       the second run left no readable report, or did not run
+#                              exactly the tests the baseline ran
+#             evidence         `run.json` is missing, unreadable or lacks a fact
+#
+# A TEST THAT FAILS ON ITS OWN BINARY is no evidence about the candidate: it is excluded
+# from the comparison and named under `excluded`. A ROW THAT MATCHES NO DIFFERENCE is
+# stale and is named under `stale` with why — `no-such-test`, `failed-on-its-own-binary`,
+# `passed-on-the-candidate`. Stale rows do not change the verdict; they are reported so
+# that a list cannot quietly outlive what it excuses.
+#
+# The line: {tool, status, reason, detail, previous: {commit, sha256}, candidate:
+# {commit, sha256}, list: {path, sha256, rows}, counts: {tests, baseline_passed,
+# baseline_failed, candidate_passed, candidate_failed, differences, on_list, not_on_list,
+# excluded, stale, fixed}, not_on_list: [{binary, test}], on_list: [{binary, test,
+# change, pointer}], excluded: [{binary, test}], stale: [{binary, test, pointer, why}],
+# flaky: {baseline: [...], candidate: [...]}, proof: {baked_path, named_by,
+# baseline_before, baseline_after, candidate_before, candidate_after}, seconds, evidence,
+# work}. A void line carries what was established before it; a refusal prints {tool,
+# status: refused, refused: WORD, detail}.
+#
+# WHAT A GREEN RESULT ESTABLISHES, AND WHAT IT CANNOT SEE. Green says: nothing the
+# previous release's suite pinned THROUGH THE BINARY moved, but for the listed rows. It
+# is a floor, never "nothing that worked stopped working":
+#   - a test that runs in its own process — a unit test, a test that calls the library —
+#     never reaches the binary, and the swap cannot reach it (about half the suite);
+#   - it sees only the states the previous release's tests built: a regression in a
+#     layout or a configuration no old test sets up is invisible (the second part of the
+#     regression set, the success paths across configurations and layouts, is for those —
+#     and is not built);
+#   - a candidate whose package version was bumped fails the old tests that compare the
+#     binary's version with their own: run it before the bump, or list them;
+#   - where an old test hands the binary the previous release's pack on disk, the
+#     candidate runs with that pack and not its own;
+#   - one platform — the one it runs on — and one profile, dev.
+#
+# Exit status, and the word a refusal opens with — `regression-set: refused <word>: …`,
+# one line on stderr:
+#
+#    0  green
+#    1  red
+#    2  usage            an unknown act or flag, or a missing argument
+#    3  list             the list is not in its form, or a row points at nothing
+#    4  commit           a commit named is not the full sha of a commit this repository
+#                        holds
+#    5  scratch          the scratch directory does not exist, or lies inside the
+#                        repository
+#   10  did-not-run      void, as above — and so each of the next six
+#   11  build-previous
+#   12  build-candidate
+#   13  baseline
+#   14  swap
+#   15  incomplete
+#   16  evidence
+#
+# Needs python3 and git; `run` needs cargo, cargo-nextest and tar beside them. It finds
+# its repository from where it lies, never from where it was called.
+# tooling-tests/dev_regression_set.rs drives it.
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import xml.etree.ElementTree as ElementTree
+
+PROG = "regression-set"
+
+GREEN = 0
+RED = 1
+REFUSALS = {"usage": 2, "list": 3, "commit": 4, "scratch": 5}
+VOIDS = {
+    "did-not-run": 10,
+    "build-previous": 11,
+    "build-candidate": 12,
+    "baseline": 13,
+    "swap": 14,
+    "incomplete": 15,
+    "evidence": 16,
+}
+# A baseline is compared against while at most one test in this many failed on its own
+# binary.
+BASELINE_TOLERANCE = 100
+# The package whose binary the tests drive, and that binary's name.
+PACKAGE = "jigc"
+BINARY = "jigc"
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+ROOT = os.path.dirname(SCRIPT_DIR)
+
+FULL_SHA = re.compile(r"[0-9a-f]{40}")
+# A path inside the repository, of plain segments: it reaches git as `<commit>:<path>`.
+SEGMENT = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*")
+HEADING = re.compile(r"#{1,6} +(.*)")
+FIELDS = ("binary", "test", "change", "pointer")
+
+
+class Refusal(Exception):
+    def __init__(self, kind, detail):
+        super().__init__(detail)
+        self.kind = kind
+        self.detail = detail
+
+
+class Void(Exception):
+    def __init__(self, reason, detail):
+        super().__init__(detail)
+        self.reason = reason
+        self.detail = detail
+
+
+def refuse(kind, detail):
+    raise Refusal(kind, detail)
+
+
+def usage_help():
+    for line in open(__file__, encoding="utf-8").read().split("\n")[1:]:
+        if not line.startswith("#"):
+            break
+        print(re.sub(r"^# ?", "", line))
+
+
+def one_line(text):
+    return " ".join(str(text).split())
+
+
+# --- git ------------------------------------------------------------------------
+
+
+def git(*args):
+    try:
+        return subprocess.run(
+            ["git", "-C", ROOT, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+    except FileNotFoundError:
+        raise Void("did-not-run", "git is not on PATH")
+
+
+def commit_of(sha, what):
+    if not FULL_SHA.fullmatch(sha):
+        refuse("commit", "%s `%s` is not a full commit sha" % (what, sha))
+    found = git("rev-parse", "--verify", "--quiet", sha + "^{commit}")
+    if found.returncode != 0 or found.stdout.decode().strip() != sha:
+        refuse("commit", "%s `%s` is not a commit this repository holds" % (what, sha))
+    return sha
+
+
+def holds(descendant, ancestor, where):
+    """Whether `descendant` holds the commit `ancestor`."""
+    asked = git("merge-base", "--is-ancestor", ancestor, descendant)
+    if asked.returncode not in (0, 1):
+        refuse("list", "%s: git could not say whether `%s` holds `%s`: %s"
+               % (where, descendant, ancestor, one_line(asked.stderr.decode(errors="replace"))))
+    return asked.returncode == 0
+
+
+# --- the list of intended changes -----------------------------------------------
+
+
+def resolve(pointer, where, previous, candidate):
+    kind, _, rest = pointer.partition(":")
+    if kind == "commit":
+        if not FULL_SHA.fullmatch(rest):
+            refuse("list", "%s: a commit pointer is `commit:` and a full sha, not `%s`"
+                   % (where, pointer))
+        found = git("rev-parse", "--verify", "--quiet", rest + "^{commit}")
+        if found.returncode != 0 or found.stdout.decode().strip() != rest:
+            refuse("list", "%s points at nothing: `%s` is no commit of this repository"
+                   % (where, rest))
+        if not holds(candidate, rest, where):
+            refuse("list", "%s points at nothing: the candidate does not hold the commit `%s`"
+                   % (where, rest))
+        if holds(previous, rest, where):
+            refuse("list", "%s points at nothing: the previous release holds the commit `%s`"
+                   " already, so it changed nothing since" % (where, rest))
+        return
+    if kind == "ruling":
+        path, mark, heading = rest.partition("#")
+        segments = path.split("/")
+        if not mark or not heading or not all(SEGMENT.fullmatch(s) for s in segments):
+            refuse("list", "%s: a ruling pointer is `ruling:<path in the repository>#<the"
+                   " opening words of a heading>`, not `%s`" % (where, pointer))
+        shown = git("show", "%s:%s" % (candidate, path))
+        if shown.returncode != 0:
+            refuse("list", "%s points at nothing: the candidate has no file `%s`" % (where, path))
+        opened = 0
+        for line in shown.stdout.decode("utf-8", errors="replace").split("\n"):
+            found = HEADING.fullmatch(line)
+            if found and found.group(1).startswith(heading):
+                opened += 1
+        if opened != 1:
+            refuse("list", "%s points at %s: %d headings of `%s` open with `%s`, where it"
+                   " names exactly one" % (where, "nothing" if opened == 0 else "more than one",
+                                           opened, path, heading))
+        return
+    refuse("list", "%s: a pointer is `commit:<sha>` or `ruling:<path>#<heading>`, not `%s`"
+           % (where, pointer))
+
+
+def read_list(path, previous, candidate):
+    try:
+        raw = open(path, "rb").read()
+    except OSError as error:
+        refuse("list", "cannot read the list `%s`: %s" % (path, error.strerror))
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        refuse("list", "the list `%s` is not UTF-8" % path)
+    rows = []
+    lines = {}
+    for number, line in enumerate(text.split("\n"), 1):
+        if line == "" or line.startswith("#"):
+            continue
+        where = "line %d" % number
+        fields = line.split("\t")
+        if len(fields) != len(FIELDS):
+            refuse("list", "%s has %d fields, where a row has four — binary, test, what"
+                   " changed, pointer — with one tab between each" % (where, len(fields)))
+        for name, value in zip(FIELDS, fields):
+            if value == "" or value != value.strip():
+                refuse("list", "%s: `%s` is empty or has space around it" % (where, name))
+        row = dict(zip(FIELDS, fields))
+        key = (row["binary"], row["test"])
+        if key in lines:
+            refuse("list", "%s lists a test that line %d lists already: `%s` `%s`"
+                   % (where, lines[key], key[0], key[1]))
+        lines[key] = number
+        resolve(row["pointer"], where, previous, candidate)
+        rows.append(row)
+    return {"path": path, "sha256": hashlib.sha256(raw).hexdigest(), "rows": rows}
+
+
+# --- the evidence, and the verdict over it ---------------------------------------
+
+
+def sha256_of(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def fact(facts, *keys, kind=str):
+    at = facts
+    for key in keys:
+        at = at.get(key) if isinstance(at, dict) else None
+    if not isinstance(at, kind) or isinstance(at, bool):
+        raise Void("evidence", "`run.json` has no `%s`" % ".".join(keys))
+    return at
+
+
+def outcomes(path):
+    """A report of the runner's, as {(binary, test): pass | flaky | fail}."""
+    results = {}
+    for suite in ElementTree.parse(path).getroot().iter("testsuite"):
+        for case in suite.iter("testcase"):
+            key = (suite.get("name"), case.get("name"))
+            if None in key:
+                raise ValueError("a test without a name")
+            if key in results:
+                raise ValueError("`%s` `%s` is reported twice" % key)
+            children = {child.tag for child in case}
+            failed = children & {"failure", "error"}
+            again = children & {"flakyFailure", "flakyError", "rerunFailure", "rerunError"}
+            results[key] = "fail" if failed else "flaky" if again else "pass"
+    return results
+
+
+def report(evidence, name, reason):
+    path = os.path.join(evidence, name)
+    try:
+        return outcomes(path)
+    except (OSError, ValueError, ElementTree.ParseError) as error:
+        raise Void(reason, "no readable report `%s`: %s" % (name, one_line(error)))
+
+
+def hold_path(facts):
+    """The path is one the tests name."""
+    if fact(facts, "named_by", kind=int) < 1:
+        raise Void("swap", "no test binary of the recorded build names the path `%s`: a"
+                   " binary put there reaches no test" % fact(facts, "baked_path"))
+
+
+def hold_binaries(facts):
+    """The two binaries are two."""
+    if fact(facts, "previous", "sha256") == fact(facts, "candidate", "sha256"):
+        raise Void("swap", "the candidate's binary is byte for byte the previous release's"
+                   " (sha256 %s): no hash can say which of the two a run drove"
+                   % fact(facts, "candidate", "sha256"))
+
+
+def hold_baseline(facts, evidence):
+    """The baseline ran on the previous release's binary and can be compared against."""
+    previous = fact(facts, "previous", "sha256")
+    for moment in ("baseline_before", "baseline_after"):
+        found = fact(facts, "at_baked_path", moment)
+        if found != previous:
+            raise Void("baseline", "the file at the path was not the previous release's binary"
+                       " %s the baseline: sha256 %s, where that binary's is %s"
+                       % (moment.split("_")[1], found, previous))
+    baseline = report(evidence, "baseline-junit.xml", "baseline")
+    failed = sum(1 for outcome in baseline.values() if outcome == "fail")
+    if not baseline:
+        raise Void("baseline", "the baseline ran no test")
+    if failed * BASELINE_TOLERANCE > len(baseline):
+        raise Void("baseline", "%d of the %d tests failed on their own binary — more than one"
+                   " in %d: a baseline that red is not one to compare against"
+                   % (failed, len(baseline), BASELINE_TOLERANCE))
+    return baseline
+
+
+def hold_swap(facts, moments=("candidate_before", "candidate_after")):
+    """The file at the path was the candidate's binary at each of `moments`."""
+    candidate = fact(facts, "candidate", "sha256")
+    for moment in moments:
+        found = fact(facts, "at_baked_path", moment)
+        if found != candidate:
+            what = ("the previous release's binary, put back"
+                    if found == fact(facts, "previous", "sha256") else "another file")
+            raise Void("swap", "the swap did not hold: %s the run the file at the path was %s"
+                       " — sha256 %s, where the candidate's is %s"
+                       % (moment.split("_")[1], what, found, candidate))
+
+
+def named(keys):
+    return [{"binary": binary, "test": test} for binary, test in sorted(keys)]
+
+
+def judge(evidence, the_list):
+    """The line a run ends with: the verdict over `evidence` against `the_list`."""
+    line = {"tool": PROG, "status": None, "reason": None, "detail": None}
+    line["list"] = {
+        "path": the_list["path"],
+        "sha256": the_list["sha256"],
+        "rows": len(the_list["rows"]),
+    }
+    try:
+        try:
+            facts = json.load(open(os.path.join(evidence, "run.json"), encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise Void("evidence", "no readable `run.json`: %s" % one_line(error))
+        if not isinstance(facts, dict):
+            raise Void("evidence", "`run.json` is not an object")
+        for key in ("previous", "candidate", "seconds"):
+            if isinstance(facts.get(key), dict):
+                line[key] = facts[key]
+        if facts.get("baked_path") is not None:
+            hashes = facts.get("at_baked_path")
+            line["proof"] = dict(
+                {"baked_path": facts["baked_path"], "named_by": facts.get("named_by")},
+                **(hashes if isinstance(hashes, dict) else {})
+            )
+        if facts.get("failed") is not None:
+            raise Void(fact(facts, "failed", "reason"), fact(facts, "failed", "detail"))
+        hold_path(facts)
+        hold_binaries(facts)
+        baseline = hold_baseline(facts, evidence)
+        hold_swap(facts)
+        candidate = report(evidence, "candidate-junit.xml", "incomplete")
+        if set(candidate) != set(baseline):
+            only = sorted(set(baseline) ^ set(candidate))
+            raise Void("incomplete", "the two runs did not run the same tests: %d are in one"
+                       " report only, `%s` `%s` among them" % (len(only), only[0][0], only[0][1]))
+    except Void as void:
+        if void.reason not in VOIDS:
+            void = Void("evidence", "`run.json` records a failure of no known kind: `%s`"
+                        % one_line(void.reason))
+        line.update(status="void", reason=void.reason, detail=one_line(void.detail))
+        line["evidence"] = evidence
+        return line
+
+    excluded = {key for key, outcome in baseline.items() if outcome == "fail"}
+    differences = {
+        key for key in baseline if key not in excluded and candidate[key] == "fail"
+    }
+    rows = {(row["binary"], row["test"]): row for row in the_list["rows"]}
+    stale = []
+    for key, row in sorted(rows.items()):
+        if key in differences:
+            continue
+        why = (
+            "no-such-test" if key not in baseline
+            else "failed-on-its-own-binary" if key in excluded
+            else "passed-on-the-candidate"
+        )
+        stale.append({"binary": key[0], "test": key[1], "pointer": row["pointer"], "why": why})
+    unlisted = differences - set(rows)
+    line["status"] = "red" if unlisted else "green"
+    line["counts"] = {
+        "tests": len(baseline),
+        "baseline_passed": len(baseline) - len(excluded),
+        "baseline_failed": len(excluded),
+        "candidate_passed": sum(1 for outcome in candidate.values() if outcome != "fail"),
+        "candidate_failed": sum(1 for outcome in candidate.values() if outcome == "fail"),
+        "differences": len(differences),
+        "on_list": len(differences) - len(unlisted),
+        "not_on_list": len(unlisted),
+        "excluded": len(excluded),
+        "stale": len(stale),
+        "fixed": sum(1 for key in excluded if candidate[key] != "fail"),
+    }
+    line["not_on_list"] = named(unlisted)
+    line["on_list"] = [rows[key] for key in sorted(differences & set(rows))]
+    line["excluded"] = named(excluded)
+    line["stale"] = stale
+    line["flaky"] = {
+        "baseline": named(key for key, outcome in baseline.items() if outcome == "flaky"),
+        "candidate": named(key for key, outcome in candidate.items() if outcome == "flaky"),
+    }
+    line["evidence"] = evidence
+    return line
+
+
+# --- the run -------------------------------------------------------------------------
+
+
+def build_environment():
+    """The environment of every cargo command: on macOS the real git first on PATH and
+    SDKROOT named, as dev/gate has it — the tests drive git by the hundred thousand, and
+    `/usr/bin/git` is a trampoline."""
+    env = dict(os.environ)
+    if sys.platform == "darwin" and shutil.which("git") == "/usr/bin/git":
+        real = subprocess.run(["xcrun", "--find", "git"], stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL).stdout.decode().strip()
+        if real and os.access(real, os.X_OK):
+            env["PATH"] = os.path.dirname(real) + os.pathsep + env.get("PATH", "")
+            if not env.get("SDKROOT"):
+                sdk = subprocess.run(["xcrun", "--show-sdk-path"], stdout=subprocess.PIPE,
+                                     stderr=subprocess.DEVNULL).stdout.decode().strip()
+                if sdk:
+                    env["SDKROOT"] = sdk
+    return env
+
+
+class Run:
+    """One run's directory, its facts as `run.json` holds them, and its commands."""
+
+    def __init__(self, work, previous, candidate):
+        self.work = work
+        self.evidence = os.path.join(work, "evidence")
+        os.mkdir(self.evidence)
+        self.env = build_environment()
+        self.facts = {
+            "previous": {"commit": previous},
+            "candidate": {"commit": candidate},
+            "at_baked_path": {},
+            "exits": {},
+            "seconds": {},
+            "failed": None,
+        }
+        self.save()
+
+    def path(self, *parts):
+        return os.path.join(self.work, *parts)
+
+    def save(self):
+        staged = os.path.join(self.evidence, "run.json.new")
+        with open(staged, "w", encoding="utf-8") as handle:
+            json.dump(self.facts, handle, indent=1, sort_keys=True)
+            handle.write("\n")
+        os.replace(staged, os.path.join(self.evidence, "run.json"))
+
+    def command(self, step, log, argv, cwd, target=None, stdout=None):
+        """One command, timed under `step`, its output in the evidence's `log`; its exit
+        status."""
+        env = dict(self.env)
+        if target is not None:
+            env["CARGO_TARGET_DIR"] = target
+        began = time.time()
+        with open(os.path.join(self.evidence, log), "ab") as said:
+            said.write(("$ %s\n" % " ".join(argv)).encode())
+            said.flush()
+            if stdout is None:
+                status = subprocess.run(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                                        stdout=said, stderr=subprocess.STDOUT).returncode
+            else:
+                with open(stdout, "wb") as out:
+                    status = subprocess.run(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                                            stdout=out, stderr=said).returncode
+        self.facts["seconds"][step] = self.facts["seconds"].get(step, 0) + round(
+            time.time() - began)
+        self.save()
+        return status
+
+    def must(self, reason, step, log, argv, cwd, **how):
+        status = self.command(step, log, argv, cwd, **how)
+        if status != 0:
+            raise Void(reason, "`%s` exited %d — its output is `%s` of the evidence"
+                       % (" ".join(argv[:4]), status, log))
+
+    def unpack(self, reason, commit, name):
+        """The tree of `commit`, from `git archive`, as the directory `name`."""
+        tree = self.path(name)
+        os.mkdir(tree)
+        tar = self.path(name + ".tar")
+        log = "build-%s.log" % name
+        self.must(reason, "unpack-" + name, log,
+                  ["git", "-C", ROOT, "archive", "--format=tar", "-o", tar, commit], self.work)
+        self.must(reason, "unpack-" + name, log, ["tar", "-xf", tar, "-C", tree], self.work)
+        os.remove(tar)
+        return tree
+
+    def suite(self, which, tree):
+        """The recorded test binaries, run on whatever is at the path: the reuse-build
+        path, which starts no compiler and copies no file."""
+        profile = "regression-" + which
+        self.facts["exits"][which] = self.command(
+            which, which + ".log",
+            ["cargo", "nextest", "run", "--no-fail-fast", "--retries", "1",
+             "--binaries-metadata", os.path.join(self.evidence, "binaries-metadata.json"),
+             "--cargo-metadata", os.path.join(self.evidence, "cargo-metadata.json"),
+             "--tool-config-file", "%s:%s" % (PROG, os.path.join(self.evidence, "nextest.toml")),
+             "--profile", profile],
+            tree)
+        junit = self.path("nextest-store", profile, "junit.xml")
+        if os.path.isfile(junit):
+            shutil.copyfile(junit, os.path.join(self.evidence, which + "-junit.xml"))
+
+    def hashed(self, moment):
+        self.facts["at_baked_path"][moment] = sha256_of(self.facts["baked_path"])
+        self.save()
+
+
+def baked_path(metadata):
+    """The path the tests have compiled in, read out of the recorded build."""
+    meta = metadata["rust-build-meta"]
+    found = [
+        binary["path"]
+        for binaries in meta["non-test-binaries"].values()
+        for binary in binaries
+        if binary["name"] == BINARY and binary["kind"] == "bin-exe"
+    ]
+    if len(found) != 1:
+        raise KeyError("%d binaries named `%s`" % (len(found), BINARY))
+    tests = [binary["binary-path"] for binary in metadata["rust-binaries"].values()]
+    return os.path.join(meta["target-directory"], found[0]), found[0], tests
+
+
+def names(path, needle):
+    with open(path, "rb") as handle:
+        return needle in handle.read()
+
+
+def drive(run, previous, candidate):
+    for tool in ("cargo", "cargo-nextest", "tar"):
+        if shutil.which(tool, path=run.env.get("PATH")) is None:
+            raise Void("did-not-run", "%s is not on PATH" % tool)
+
+    # The previous release's tests, built once and recorded.
+    old = run.unpack("build-previous", previous, "previous")
+    target = run.path("target-previous")
+    run.must("build-previous", "build-previous", "build-previous.log",
+             ["cargo", "nextest", "run", "--workspace", "--locked", "--no-run"], old,
+             target=target)
+    recorded = os.path.join(run.evidence, "binaries-metadata.json")
+    run.must("build-previous", "build-previous", "build-previous.log",
+             ["cargo", "nextest", "list", "--workspace", "--locked", "--list-type",
+              "binaries-only", "--message-format", "json"], old, target=target, stdout=recorded)
+    run.must("build-previous", "build-previous", "build-previous.log",
+             ["cargo", "metadata", "--format-version=1", "--all-features", "--locked"], old,
+             target=target, stdout=os.path.join(run.evidence, "cargo-metadata.json"))
+    try:
+        baked, relative, tests = baked_path(json.load(open(recorded, encoding="utf-8")))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+        raise Void("build-previous", "the recorded build does not name the one `%s` binary: %s"
+                   % (BINARY, one_line(error)))
+    if not os.path.isfile(baked):
+        raise Void("build-previous", "the recorded build names `%s`, and no file is there" % baked)
+    run.facts["baked_path"] = baked
+    run.facts["named_by"] = sum(1 for test in tests if names(test, os.fsencode(baked)))
+    run.facts["previous"]["sha256"] = sha256_of(baked)
+    run.save()
+    hold_path(run.facts)
+
+    # The candidate's binary, in the same profile.
+    new = run.unpack("build-candidate", candidate, "candidate")
+    run.must("build-candidate", "build-candidate", "build-candidate.log",
+             ["cargo", "build", "-p", PACKAGE, "--locked"], new,
+             target=run.path("target-candidate"))
+    built = run.path("target-candidate", relative)
+    if not os.path.isfile(built):
+        raise Void("build-candidate", "the candidate's build left no file at `%s`" % built)
+    run.facts["candidate"]["sha256"] = sha256_of(built)
+    run.save()
+    hold_binaries(run.facts)
+
+    store = run.path("nextest-store").replace("\\", "\\\\").replace('"', '\\"')
+    with open(os.path.join(run.evidence, "nextest.toml"), "w", encoding="utf-8") as config:
+        config.write('[store]\ndir = "%s"\n' % store)
+        for which in ("baseline", "candidate"):
+            config.write('[profile.regression-%s.junit]\npath = "junit.xml"\n' % which)
+
+    # The baseline: the previous release's tests on the previous release's binary.
+    run.hashed("baseline_before")
+    run.suite("baseline", old)
+    run.hashed("baseline_after")
+    hold_baseline(run.facts, run.evidence)
+
+    # The swap: a new file renamed over the path, never a write into the old one.
+    staged = baked + ".swap"
+    shutil.copy2(built, staged)
+    os.replace(staged, baked)
+    run.hashed("candidate_before")
+    hold_swap(run.facts, ("candidate_before",))
+    run.suite("candidate", old)
+    run.hashed("candidate_after")
+
+
+def act_run(args):
+    previous = commit_of(args.previous, "the previous release's commit")
+    candidate = commit_of(args.candidate, "the candidate's commit")
+    the_list = read_list(args.list, previous, candidate)
+    scratch = os.path.realpath(args.scratch)
+    if not os.path.isdir(scratch):
+        refuse("scratch", "the scratch directory `%s` does not exist" % args.scratch)
+    if os.path.commonpath([scratch, os.path.realpath(ROOT)]) == os.path.realpath(ROOT):
+        refuse("scratch", "the scratch directory `%s` lies inside the repository" % args.scratch)
+    work = tempfile.mkdtemp(prefix=PROG + ".", dir=scratch)
+    run = Run(work, previous, candidate)
+    try:
+        drive(run, previous, candidate)
+    except Void as void:
+        run.facts["failed"] = {"reason": void.reason, "detail": one_line(void.detail)}
+        run.save()
+    line = judge(run.evidence, the_list)
+    line["work"] = work
+    if not args.keep:
+        for built in ("previous", "candidate", "target-previous", "target-candidate"):
+            shutil.rmtree(os.path.join(work, built), ignore_errors=True)
+    return line
+
+
+def act_verdict(args):
+    try:
+        facts = json.load(open(os.path.join(args.evidence, "run.json"), encoding="utf-8"))
+        previous = facts["previous"]["commit"]
+        candidate = facts["candidate"]["commit"]
+    except (OSError, ValueError, KeyError, TypeError):
+        # No list can be held to commits the evidence does not name: void, as `judge` says.
+        return judge(args.evidence, {"path": args.list, "sha256": None, "rows": []})
+    the_list = read_list(
+        args.list,
+        commit_of(previous, "the evidence's previous release"),
+        commit_of(candidate, "the evidence's candidate"),
+    )
+    return judge(args.evidence, the_list)
+
+
+def act_check_list(args):
+    previous = commit_of(args.previous, "the previous release's commit")
+    candidate = commit_of(args.candidate, "the candidate's commit")
+    return {"tool": PROG, "status": "listed", "list": read_list(args.list, previous, candidate)}
+
+
+# --- arguments ------------------------------------------------------------------------
+
+
+class Arguments(argparse.ArgumentParser):
+    def error(self, message):
+        refuse("usage", message)
+
+
+def arguments(argv):
+    parser = Arguments(prog=PROG, add_help=False)
+    acts = parser.add_subparsers(dest="act", required=True, parser_class=Arguments)
+
+    def act(name, does, *flags):
+        sub = acts.add_parser(name, add_help=False)
+        for flag in flags:
+            sub.add_argument(flag, required=True)
+        sub.set_defaults(does=does)
+        return sub
+
+    act("run", act_run, "--previous", "--candidate", "--list", "--scratch").add_argument(
+        "--keep", action="store_true")
+    act("verdict", act_verdict, "--evidence", "--list")
+    act("check-list", act_check_list, "--previous", "--candidate", "--list")
+    return parser.parse_args(argv)
+
+
+def main(argv):
+    # UTF-8 out, whatever the caller's locale claims: the line is read by a script.
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+    if any(arg in ("-h", "--help") for arg in argv):
+        usage_help()
+        return 0
+    try:
+        args = arguments(argv)
+        try:
+            line = args.does(args)
+        except Void as void:
+            # Before any evidence exists: a tool the list could not be read without.
+            line = {"tool": PROG, "status": "void", "reason": void.reason,
+                    "detail": one_line(void.detail)}
+        print(json.dumps(line, ensure_ascii=False))
+        if line["status"] == "void":
+            return VOIDS[line["reason"]]
+        return RED if line["status"] == "red" else GREEN
+    except Refusal as refusal:
+        detail = one_line(refusal.detail)
+        print(json.dumps({"tool": PROG, "status": "refused", "refused": refusal.kind,
+                          "detail": detail}, ensure_ascii=False))
+        sys.stderr.write("%s: refused %s: %s\n" % (PROG, refusal.kind, detail))
+        return REFUSALS[refusal.kind]
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

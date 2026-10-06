@@ -22,6 +22,8 @@ mod support;
 mod ci_matrix_fence;
 #[path = "../dev_gate_report.rs"]
 mod dev_gate_report;
+#[path = "../dev_regression_set.rs"]
+mod dev_regression_set;
 #[path = "../dev_stabilize_record.rs"]
 mod dev_stabilize_record;
 #[path = "../dev_stabilize_step.rs"]
