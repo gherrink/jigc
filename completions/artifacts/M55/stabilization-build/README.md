@@ -74,6 +74,7 @@ What was decided about the repair since the plan was returned — the human's ru
 | [state-machine.md](state-machine.md) | review A, as the reviewer wrote it |
 | [harness-agents-gate.md](harness-agents-gate.md) | review B, the orchestrator's transcription of the reviewer's return |
 | [repair-plan.md](repair-plan.md) | the repair's design, the orchestrator's transcription of the planner's return |
+| [pre-opening/](pre-opening/README.md) | **added 2026-10-06, after this record, and no part of the build's record:** the human's rulings ahead of the run's opening, the files they were taken from, and the orchestrator's lessons of the build and repair, folded into no doc yet — kept beside the build's record, with a README of its own |
 
 **Every report here is a lead, not a measurement**, until the repair's own red tests reproduce it.
 
