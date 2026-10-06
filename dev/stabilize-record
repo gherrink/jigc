@@ -186,12 +186,23 @@
 #                      confirmed | refuted. Without one, the finding awaits it.
 #         regression   with confirmed and only with it: true when the repro is green on
 #                      the previous release's binary — the verifier's fact
+#         fork         with a verdict and only with one: A FORK — the verifier found the
+#                      finding to contest a settled decision, so what is done about it is
+#                      the human's to rule and no fixer's. One object, all three named:
+#                        kind   contested
+#                        case   robust-now | cheap-cut-is-correct — the verdict of the
+#                               robust-advocate's case
+#                        drive  holds | differs — whether the independent drive of the
+#                               advocate's proposal found what the advocate reported
+#                      The case and the drive are the two reports of that fork among the
+#                      stage's; this cell is what a later invocation reads them by.
 #       NOTHING ELSE IS TAKEN. Whether the finding is INSIDE the round's test set is
 #       computed here — its ledger row's door is one of the round's included doors, as
 #       scope-set wrote them — and is never supplied; a round with no scope is refused
 #       (no-scope). The entry's row in r<N>/triage.md says: inside | outside: excluded
-#       | outside: unlisted, triage's grade, the verdict, the regression, and the
-#       disposition the ledger row carried when the round recorded it ("found with").
+#       | outside: unlisted, triage's grade, the verdict, the regression, the
+#       disposition the ledger row carried when the round recorded it ("found with"),
+#       and the fork (`<kind>: <case>, <drive>`, or `-`).
 #       An entry recorded again replaces its row — that is how a verdict arrives later,
 #       and how a round says that it found a finding again: only then is it re-recorded.
 #       The ledger's grade follows from the same entry, so the two cannot disagree: the
@@ -361,7 +372,8 @@
 #                      bound, graded_by, disposition, detail, repro — and
 #                        triage  the row's entry in the latest round that triaged it:
 #                                {round, inside, door: included | excluded | unlisted,
-#                                grade, bound, verdict, regression, found_with}, or null
+#                                grade, bound, verdict, regression, found_with, fork:
+#                                {kind, case, drive} or null}, or null
 #                        reopened  whether its fix did not hold: it is open again
 #                        route   fix | human | triage | recorded, and `why`
 #                        awaits  null — or, for a finding the round's triage has not
@@ -415,7 +427,12 @@
 #                                human's ruling, is what records it.
 #         bound, later           recorded (ruled): it carries the human's ruling
 #         admitted               fix (admitted): the human admitted it to this run
-#         open, no-action        by the grade — no-action is neither a fix nor a ruling:
+#         open, no-action        human (fork) while the latest round that triaged it
+#                                recorded A FORK on its entry (triage-set: fork) — whatever
+#                                the verdict, wherever it was found: a contested fix is
+#                                never a fixer's unasked. The human's ruling on it is one
+#                                of the three above. Without a fork,
+#                                by the grade — no-action is neither a fix nor a ruling:
 #           ungraded             triage (ungraded)   — the round's triage is not
 #           breaks, unclear      triage (unverified)   finished: never a fixer's, and
 #                                never on the human's list as if it were verified —
@@ -516,8 +533,8 @@
 #                    stage that left it finishes it (the position, below) — grading,
 #                    verification and the record, and no instrument run again
 #         rule       a finding is routed human: the human's list has an unruled item — one
-#                    found outside the test set, one that needs a bound, or one the
-#                    round's triage could not settle in two passes
+#                    found outside the test set, one that needs a bound, a fork, or one
+#                    the round's triage could not settle in two passes
 #         fix        a finding is routed fix
 #       — and with nothing open, on a current candidate, by the clause table:
 #         rule       a clause's retry is spent (human_clauses): the human may grant it
@@ -749,8 +766,8 @@
 #   anywhere    ledger-add, ledger-set, bound-set, item-set: the ledger, the declared
 #               bounds and the test set are held to no position. A finding is added by
 #               whichever stage finds it, and at the opening; a disposition is a fixer's
-#               record or the human's ruling, and a ruling on a fork has no state that
-#               asks for it yet; a bound is the human's at the opening and at every list;
+#               record or the human's ruling — on a fork too, which the route asks the
+#               human for; a bound is the human's at the opening and at every list;
 #               an instrument that is built later takes its row when it is built. What
 #               such a write CAN do is add work or record a ruling — it lifts no stop.
 #
@@ -983,7 +1000,12 @@ CLAUSE_COLUMNS = ("clause", "instrument", "last commit", "scope", "status")
 BOUND_COLUMNS = ("bound", "reach", "ruling", "pin")
 SCOPE_COLUMNS = ("door", "test set", "registry", "derivation")
 SIDES = ("included", "excluded")
-TRIAGE_COLUMNS = ("key", "inside", "triage", "verdict", "regression", "found with")
+TRIAGE_COLUMNS = ("key", "inside", "triage", "verdict", "regression", "found with", "fork")
+# A FORK: a verdict the verifier found to contest a settled decision, as the round's triage
+# recorded it — its kind, the verdict of the advocate's case, and whether the independent
+# drive of the advocate's proposal found what the advocate reported.
+FORK_FIELDS = {"kind": ("contested",), "case": ("robust-now", "cheap-cut-is-correct"), "drive": ("holds", "differs")}
+FORK = re.compile(r"(%s): (%s), (%s)" % tuple("|".join(FORK_FIELDS[name]) for name in ("kind", "case", "drive")))
 ITEM_COLUMNS = ("item", "kind", "clause", "runs", "doors", "registries", "brief")
 # When an item runs: on every candidate, or only in a round whose test set reaches it.
 ITEM_RUNS = ("every-candidate", "in-scope")
@@ -2461,10 +2483,17 @@ def run_set(args):
 def triage_entry(entry):
     """(key, the entry's cells in the triage record after `inside`, the ledger's grade and
     grader). Nothing of an entry says where the finding was found: that is computed."""
-    fields(entry, ("key", "grade"), ("bound", "verdict", "regression"), "a triage entry")
+    fields(entry, ("key", "grade"), ("bound", "verdict", "regression", "fork"), "a triage entry")
     what = "entry %s" % shown(entry["key"])
     key = slug(entry["key"], "key")
     grade = one_of(entry["grade"], TRIAGE_GRADES, what + ": grade")
+    fork = "-"
+    if "fork" in entry:
+        # A fork rides on the verdict that raised it: the verifier's, and nobody else's.
+        if "verdict" not in entry or not isinstance(entry["fork"], dict):
+            refuse("bad-value", "%s: a fork is the verifier's — raised with its verdict — and is one object, {kind, case, drive}" % what)
+        fields(entry["fork"], tuple(FORK_FIELDS), (), what + ": a fork")
+        fork = "%s: %s, %s" % tuple(one_of(entry["fork"][name], allowed, "%s: a fork's %s" % (what, name)) for name, allowed in FORK_FIELDS.items())
     if ("bound" in entry) != (grade == "out-of-scope"):
         refuse("bad-value", "%s: out-of-scope cites a declared bound as `bound`, and no other grade does" % what)
     if "bound" in entry:
@@ -2472,18 +2501,18 @@ def triage_entry(entry):
     if "verdict" not in entry:
         if "regression" in entry:
             refuse("bad-value", "%s: a regression is the verifier's fact about a finding it confirmed" % what)
-        return key, [grade, "-", "-"], (grade, "triage")
+        return key, [grade, "-", "-", fork], (grade, "triage")
     if grade not in SENT_ON:
         refuse("bad-value", "%s: a verdict is the verifier's, and the verifier is sent %s — not %s" % (what, " and ".join(SENT_ON), grade))
     if one_of(entry["verdict"], VERDICTS, what + ": verdict") == "refuted":
         if "regression" in entry:
             refuse("bad-value", "%s: a regression is the verifier's fact about a finding it confirmed" % what)
-        return key, [grade, "refuted", "-"], ("refuted", "verify-real")
+        return key, [grade, "refuted", "-", fork], ("refuted", "verify-real")
     if not isinstance(entry.get("regression"), bool):
         refuse("bad-value", "%s: confirmed says whether the finding is a regression — `regression` is true when the repro is green on the previous release, else false" % what)
     if entry["regression"]:
-        return key, [grade, "confirmed", "yes"], ("regression", "verify-real")
-    return key, [grade, "confirmed", "no"], ("confirmed", "verify-real")
+        return key, [grade, "confirmed", "yes", fork], ("regression", "verify-real")
+    return key, [grade, "confirmed", "no", fork], ("confirmed", "verify-real")
 
 
 def triage_set(args):
@@ -2508,7 +2537,7 @@ def triage_set(args):
         row = ledger_rows[keys.index(key)]
         # The disposition the row carries into this round goes into the record with it:
         # a finding found again inherits it, and the record says what it inherited.
-        entry = [tick(key), inside_cell(placed(row[4], scope[1]))] + cells + [row[8]]
+        entry = [tick(key), inside_cell(placed(row[4], scope[1]))] + cells[:3] + [row[8], cells[3]]
         if key in triaged:
             rows[triaged.index(key)] = entry
         else:
@@ -2581,6 +2610,11 @@ def route_of(finding, triage, listed):
         return "fix", "admitted"
     # open — or no-action, which is neither a fix nor the human's ruling — or fixed by a
     # fix that did not hold: open again.
+    # A FORK NOBODY RULED: the latest round that triaged the finding recorded that its
+    # verdict contests a settled decision. It is the human's, whatever the verdict and
+    # wherever it was found — never a fixer's unasked, and never recorded as no break.
+    if triage is not None and triage["fork"] is not None:
+        return "human", "fork"
     if grade == "ungraded":
         return "triage", "ungraded"
     if grade in SENT_ON:
@@ -3055,7 +3089,8 @@ def document(run_dir, run):
                 spoiled(rel, "triages %s, a finding the ledger lacks" % key)
             side = placed(ledger_rows[keys.index(key)][4], scope)
             grade, bound = grade_read(rel, key, row[2])
-            if row[1] != inside_cell(side) or grade not in TRIAGE_GRADES or row[3] not in VERDICTS + ("-",) or row[4] not in ("yes", "no", "-"):
+            fork = FORK.fullmatch(row[6])
+            if row[1] != inside_cell(side) or grade not in TRIAGE_GRADES or row[3] not in VERDICTS + ("-",) or row[4] not in ("yes", "no", "-") or (fork is None) != (row[6] == "-") or (fork is not None and row[3] == "-"):
                 spoiled(rel, "holds a row for %s that does not follow from the round's doors and the triage vocabulary" % key)
             triage[key] = {
                 "round": number_,
@@ -3066,6 +3101,7 @@ def document(run_dir, run):
                 "verdict": None if row[3] == "-" else row[3],
                 "regression": None if row[4] == "-" else row[4] == "yes",
                 "found_with": as_data(row[5]),
+                "fork": dict(zip(FORK_FIELDS, fork.groups())) if fork else None,
             }
             # Found again with a fix on its row, and standing: that fix did not hold.
             if row[5].startswith("fixed: ") and stands(triage[key]):

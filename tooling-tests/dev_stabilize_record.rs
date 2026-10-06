@@ -311,13 +311,14 @@ const ITEM_COLUMNS: [&str; 7] = [
 ];
 const ROUND_COLUMNS: [&str; 2] = ["fact", "value"];
 
-const TRIAGE_COLUMNS: [&str; 6] = [
+const TRIAGE_COLUMNS: [&str; 7] = [
     "key",
     "inside",
     "triage",
     "verdict",
     "regression",
     "found with",
+    "fork",
 ];
 
 /// The line a report ends with: a report that does not was cut off on its way.
@@ -4256,14 +4257,15 @@ fn a_rounds_triage_is_recorded_with_inside_computed_from_the_rounds_doors() {
     assert_eq!(
         table(&rig.read(&triage_path("1")), &TRIAGE_COLUMNS),
         vec![
-            vec!["`f-in`", "inside", "breaks", "confirmed", "no", "open"],
+            vec!["`f-in`", "inside", "breaks", "confirmed", "no", "open", "-"],
             vec![
                 "`f-out`",
                 "outside: excluded",
                 "unclear",
                 "confirmed",
                 "yes",
-                "open"
+                "open",
+                "-"
             ],
             vec![
                 "`f-unlisted`",
@@ -4271,7 +4273,8 @@ fn a_rounds_triage_is_recorded_with_inside_computed_from_the_rounds_doors() {
                 "breaks",
                 "refuted",
                 "-",
-                "open"
+                "open",
+                "-"
             ],
             vec![
                 "`f-bounded`",
@@ -4280,15 +4283,17 @@ fn a_rounds_triage_is_recorded_with_inside_computed_from_the_rounds_doors() {
                 "-",
                 "-",
                 "open",
+                "-",
             ],
-            vec!["`f-waiting`", "inside", "unclear", "-", "-", "open"],
+            vec!["`f-waiting`", "inside", "unclear", "-", "-", "open", "-"],
             vec![
                 "`f-fixed`",
                 "inside",
                 "needs-bound",
                 "-",
                 "-",
-                "fixed: 0f34d8f0"
+                "fixed: 0f34d8f0",
+                "-"
             ],
         ]
     );
@@ -4323,7 +4328,117 @@ fn a_rounds_triage_is_recorded_with_inside_computed_from_the_rounds_doors() {
     assert_eq!(rows.len(), 6, "one row per finding of the round");
     assert_eq!(
         rows[4],
-        ["`f-waiting`", "inside", "unclear", "refuted", "-", "open"]
+        [
+            "`f-waiting`",
+            "inside",
+            "unclear",
+            "refuted",
+            "-",
+            "open",
+            "-"
+        ]
+    );
+
+    // A FORK IS A CELL OF THE ENTRY — the harness review's `M3`: the verifier found the
+    // finding to contest a settled decision, an advocate argued the case, and an agent that
+    // is not the advocate drove the proposal. It is recorded with the verdict it rides on,
+    // replaces the row like any entry recorded again, and is gone when the entry is
+    // recorded again without it.
+    let contested = |fork: Value| json!({"key": "f-in", "grade": "breaks", "verdict": "confirmed", "regression": false, "fork": fork});
+    let fork = json!({"kind": "contested", "case": "robust-now", "drive": "differs"});
+    let before = rig.snapshot();
+    for (what, entry) in [
+        (
+            "a fork on a finding nobody verified",
+            json!({"key": "f-fixed", "grade": "needs-bound", "fork": fork}),
+        ),
+        (
+            "a fork of no kind",
+            contested(json!({"case": "robust-now", "drive": "holds"})),
+        ),
+        (
+            "a fork of a kind nobody raises here",
+            contested(json!({"kind": "disputed", "case": "robust-now", "drive": "holds"})),
+        ),
+        (
+            "a case that is no verdict of an advocate",
+            contested(json!({"kind": "contested", "case": "maybe", "drive": "holds"})),
+        ),
+        (
+            "a drive that says neither",
+            contested(json!({"kind": "contested", "case": "robust-now", "drive": "undriven"})),
+        ),
+        (
+            "a fork with a field nobody defined",
+            contested(
+                json!({"kind": "contested", "case": "robust-now", "drive": "holds", "note": "x"}),
+            ),
+        ),
+        ("a fork that is a word", contested(json!("contested"))),
+    ] {
+        rig.run(&triage_set(RUN, "1"), &entry.to_string())
+            .refused(BAD_VALUE, what);
+        assert_eq!(rig.snapshot(), before, "{what}: nothing was written");
+    }
+    rig.run(&triage_set(RUN, "1"), &contested(fork.clone()).to_string())
+        .must(OK, "a contested finding, with its fork");
+    let rows = table(&rig.read(&triage_path("1")), &TRIAGE_COLUMNS);
+    assert_eq!(
+        rows[0],
+        [
+            "`f-in`",
+            "inside",
+            "breaks",
+            "confirmed",
+            "no",
+            "open",
+            "contested: robust-now, differs"
+        ]
+    );
+    let read = rig.state();
+    let row = |read: &Value, key: &str| -> Value {
+        read["ledger"]
+            .as_array()
+            .expect("the ledger's rows")
+            .iter()
+            .find(|entry| entry["key"] == key)
+            .unwrap_or_else(|| panic!("no row `{key}` in {read}"))
+            .clone()
+    };
+    assert_eq!(
+        row(&read, "f-in")["triage"]["fork"],
+        fork,
+        "the fork, read back as data"
+    );
+    assert_eq!(row(&read, "f-out")["triage"]["fork"], Value::Null);
+    assert_eq!(
+        json!([
+            row(&read, "f-in")["route"],
+            row(&read, "f-in")["why"],
+            read["next"]
+        ]),
+        json!(["human", "fork", "not-ready"]),
+        "a fork nobody ruled is the human's, whatever its door"
+    );
+    // A cell a hand wrote is no fork.
+    let text = rig.read(&triage_path("1"));
+    fs::write(
+        rig.root.join(triage_path("1")),
+        text.replacen("contested: robust-now, differs", "contested: surely", 1),
+    )
+    .expect("edit the triage record");
+    rig.run(&state(RUN), "")
+        .refused(CORRUPT, "a fork cell somebody wrote by hand");
+    fs::write(rig.root.join(triage_path("1")), text).expect("put the record back");
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "f-in", "grade": "breaks", "verdict": "confirmed", "regression": false})
+            .to_string(),
+    )
+    .must(OK, "the same entry again, without a fork");
+    assert_eq!(
+        table(&rig.read(&triage_path("1")), &TRIAGE_COLUMNS)[0][6],
+        "-"
     );
 
     // Read back as data, beside the row it belongs to.
@@ -4348,6 +4463,7 @@ fn a_rounds_triage_is_recorded_with_inside_computed_from_the_rounds_doors() {
             "verdict": "confirmed",
             "regression": true,
             "found_with": "open",
+            "fork": null,
         })
     );
     assert_eq!(found("f-untouched")["triage"], Value::Null);
@@ -4779,6 +4895,7 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                         "verdict": "confirmed",
                         "regression": false,
                         "found_with": "open",
+                        "fork": null,
                     },
                     "reopened": false,
                     "route": "fix",
@@ -5190,6 +5307,13 @@ fn graded(grade: &str) -> Value {
     json!({"grade": grade})
 }
 
+/// A verified entry the verifier contested, with the advocate's case and what the
+/// independent drive of the proposal found.
+fn forked(mut entry: Value) -> Value {
+    entry["fork"] = json!({"kind": "contested", "case": "cheap-cut-is-correct", "drive": "holds"});
+    entry
+}
+
 fn disposed(disposition: &str) -> Value {
     match disposition {
         "fixed" => json!({"disposition": "fixed", "detail": "0f34d8f0"}),
@@ -5214,6 +5338,7 @@ fn findings() -> Vec<Finding> {
     const RULED: (&str, &str) = ("recorded", "ruled");
     const FIXED: (&str, &str) = ("recorded", "fixed");
     const UNVERIFIED: (&str, &str) = ("triage", "unverified");
+    const FORK: (&str, &str) = ("human", "fork");
     let f = Finding::new;
     vec![
         // A verified break nobody has disposed of: by its door, unless it is a regression.
@@ -5229,6 +5354,29 @@ fn findings() -> Vec<Finding> {
         f("oos-listed", INSIDE, ("recorded", "out-of-scope"))
             .triaged(json!({"grade": "out-of-scope", "bound": "non-jigc-writer"})),
         f("needs-bound", INSIDE, ("human", "needs-bound")).triaged(graded("needs-bound")),
+        // A FORK — a verdict the verifier found to contest a settled decision, with an
+        // advocate's case and an independent drive: the human's until the human rules it,
+        // wherever it was found, a regression and a refuted finding included. The ruling is
+        // one of the three dispositions; `no-action` is none.
+        f("fork-inside", INSIDE, FORK).triaged(forked(confirmed())),
+        f("fork-outside", EXCLUDED, FORK).triaged(forked(confirmed())),
+        f("fork-regression", INSIDE, FORK).triaged(forked(regression())),
+        f("fork-refuted", INSIDE, FORK).triaged(forked(refuted())),
+        f("fork-no-action", INSIDE, FORK)
+            .triaged(forked(confirmed()))
+            .then(disposed("no-action")),
+        f("fork-admitted", INSIDE, FIX_ADMITTED)
+            .triaged(forked(confirmed()))
+            .then(disposed("admitted")),
+        f("fork-later", INSIDE, RULED)
+            .triaged(forked(regression()))
+            .then(disposed("later")),
+        f("fork-bound", EXCLUDED, RULED)
+            .triaged(forked(confirmed()))
+            .then(disposed("bound")),
+        f("fork-fixed", INSIDE, FIXED)
+            .triaged(forked(confirmed()))
+            .then(disposed("fixed")),
         // Cell 1 — triage that is not finished: back to the round's triage, never to a
         // fixer and never to the human's list.
         f("in-unverified", INSIDE, UNVERIFIED).triaged(graded("breaks")),
@@ -5390,7 +5538,7 @@ fn every_finding_is_routed_by_its_grade_its_disposition_and_the_rounds_doors() {
         );
     }
     assert!(
-        truth.len() >= 32,
+        truth.len() >= 41,
         "the table collapsed to {} cells",
         truth.len()
     );
