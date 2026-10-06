@@ -39,6 +39,13 @@
 // findings (`ledgerSource`): a row seeded at the opening, and an entry an earlier stage left
 // without a verdict, never wait for a stage of their own.
 //
+// A STAGE THAT IS NOT FIT FOR USE REFUSES TO START (the human's ruling of 2026-10-06 on the
+// order of the repair: the `test` half first). The build was reviewed red, and the `fix`
+// stage is named in NOT_FIT: an invocation of it returns `refused` before any agent runs,
+// whatever its arguments — an exit at a bound included — until its own repair and the
+// re-review of that repair are recorded. The one invocation that is not refused starts no
+// stage: one that only records what the human ruled about the run (below).
+//
 // THE STAGES (ruling 9).
 //   test   git state (the path-class assert) -> state -> preflight ∥ scope -> state ->
 //          the round's instruments, in parallel -> the reports checked -> triage ->
@@ -389,6 +396,30 @@ function validateRulings(rulings) {
   if (!distinct(about)) return 'args.rulings says the same thing about the run more than once'
   if (about.length && about.length !== rulings.length) return 'args.rulings mixes rulings about the run (`go`, `rerun`, `rounds`) with rulings on a finding or a bound: the first are recorded on the loop branch by an invocation that starts nothing, the others ride the round — two invocations'
   return null
+}
+
+// NOT_FIT — the stages that refuse to start, each with why. The build of this workflow was
+// reviewed red; a stage is used on a real run only once the repair of its half and the
+// re-review of that repair are recorded in DECISIONS.md, the `test` half first (the human's
+// ruling of 2026-10-06 — DECISIONS.md, "The stabilization workflow's build, reviewed red",
+// ruling 3). LIFTING A REFUSAL IS ONE EDIT: the stage's line is deleted from this table, by
+// the commit that records that re-review under a DECISIONS.md heading with the words
+// "the `<stage>` half of the stabilization workflow, repaired and re-reviewed" —
+// tooling-tests/stabilize_harness_fence.rs, arm (m), takes the deletion in a tree that has
+// that heading and in no other, and neither it nor the self-test is edited with it.
+const BUILD_RECORD = 'completions/artifacts/M55/stabilization-build/README.md'
+const NOT_FIT = {
+  fix: 'its repair and the re-review of that repair are not recorded',
+}
+// notFit — why an invocation's stage refuses to start, or null. Asked before any agent runs.
+// An invocation that only records what the human ruled ABOUT THE RUN (`go`, `rerun`,
+// `rounds`) starts no stage — it runs two reads and the one record step, on the loop branch,
+// exactly as the other stage's does — and is not refused. A ruling on a finding, or a
+// declared bound, is the stage's own first step and is refused with it.
+function notFit(a) {
+  if (!NOT_FIT[a.stage]) return null
+  if (a.rulings != null && a.rulings.every(runRuling)) return null
+  return 'the `' + a.stage + '` stage is NOT FIT FOR USE and refuses to start: ' + NOT_FIT[a.stage] + '. The build of the stabilization workflow was reviewed red — its record is ' + BUILD_RECORD + ' — and a stage is used only once its half is repaired and re-reviewed. Nothing was run: no agent, no read. What is taken meanwhile: ' + STAGES.filter((stage) => !NOT_FIT[stage]).map((stage) => 'the `' + stage + '` stage').concat(['what the human rules about the run (args.rulings: `go`, `rerun`, `rounds`), which either stage records and which starts nothing']).join('; and ') + '. A ruling on a finding or a declared bound is this stage\'s own first step, and waits with it'
 }
 
 // validateArgs — every refusal that precedes the first agent. Returns the message of the
@@ -1253,6 +1284,24 @@ function selfTest() {
   ]
   for (const given of taken) check('taken: ' + JSON.stringify(given), validateArgs(given) === null)
 
+  // A stage that is not fit for use refuses to start — every invocation of it but the one
+  // that only records what the human ruled about the run. Read off the table: a stage that
+  // is not in it refuses nothing.
+  const aboutTheRunOnly = (given) => given.rulings != null && given.rulings.every(runRuling)
+  for (const given of taken.filter((t) => !t.selfTest)) {
+    const refusedAsUnfit = !!NOT_FIT[given.stage] && !aboutTheRunOnly(given)
+    check('a stage that is not fit for use refuses to start: ' + JSON.stringify(given), (typeof notFit(given) === 'string') === refusedAsUnfit)
+  }
+  for (const stage of Object.keys(NOT_FIT)) {
+    const of = (more) => notFit(Object.assign({ stage, run: 'rc24-tier1', scratch: '/tmp/scratch-1' }, more))
+    check('the `' + stage + '` stage is known, and says why it is not fit', STAGES.includes(stage) && isText(NOT_FIT[stage]))
+    check('the `' + stage + '` stage refuses whatever it is asked for', [{}, { stopAfter: STOPS[stage][0] }, { model: 'sonnet' }, { rulings: [{ key: 'f-1', ruling: later }] }, { rulings: [{ bound: 'b', reach: 'x', where: 'y', pin: 'unpinned' }] }].every((more) => isText(of(more))))
+    check('the refusal of `' + stage + '` names the stage, the build\'s record and that nothing ran', of({}).includes('the `' + stage + '` stage is NOT FIT FOR USE') && of({}).includes(BUILD_RECORD) && of({}).includes('Nothing was run') && of({}).includes(NOT_FIT[stage]))
+    check('what the human rules about the run is recorded while `' + stage + '` refuses', of({ rulings: [{ go: true }] }) === null && of({ rulings: [{ rounds: 4 }] }) === null && of({ rulings: [{ rerun: 'no-lost-files' }, { go: true }] }) === null)
+  }
+  check('an exit at a bound and a raised bound do not get past a `fix` stage that is not fit', !NOT_FIT.fix || [{ exit: 'drop' }, { exit: { part: ['abcdef1'] } }, { raise: { cycles: DEFAULT_CYCLES + 1 } }].every((more) => isText(notFit(Object.assign({}, fix, more)))))
+  check('a stage the table does not name refuses nothing', STAGES.filter((stage) => !NOT_FIT[stage]).every((stage) => notFit({ stage, run: 'rc24-tier1', scratch: '/tmp/scratch-1' }) === null) && notFit({ stage: 'no-such-stage' }) === null)
+
   // The one function that mints a branch name.
   check('the loop branch', branchName('rc24-tier1') === 'fix/rc24-tier1')
   check('a round branch', branchName('rc24-tier1', 2) === 'fix/rc24-tier1-r2' && branchName('rc24-tier1', 2, 1) === 'fix/rc24-tier1-r2')
@@ -1447,6 +1496,10 @@ if (refusal) {
   return { status: 'refused', message: refusal + '. Nothing was run. Usage: Workflow({ name: \'stabilize\', args: { stage: \'test\' | \'fix\', run: \'<run>\', scratch: \'<absolute dir>\' } }) — the script\'s header has the rest.' }
 }
 if (parsedArgs.selfTest) return selfTest()
+const unfit = notFit(parsedArgs)
+if (unfit) {
+  return { status: 'refused', stage: parsedArgs.stage, run: parsedArgs.run, not_fit: { stage: parsedArgs.stage, record: BUILD_RECORD }, message: unfit + '.' }
+}
 const v = parsedArgs
 const model = v.model ? String(v.model) : 'opus'
 const loopBranch = branchName(v.run)

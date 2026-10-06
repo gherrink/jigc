@@ -22,6 +22,12 @@
 //!   function, and each call names the act its prompt composes. The one step that is still
 //!   a list of commands is the re-cut of a part. What an act does is held where it is run
 //!   ([`dev_stabilize_step`](super::dev_stabilize_step)).
+//! - **(m)** a stage that is not fit for use refuses to start: the `fix` stage is named in
+//!   the script's `NOT_FIT` for as long as [DECISIONS.md](../DECISIONS.md) has no heading
+//!   that records its half as repaired and re-reviewed (the human's ruling of 2026-10-06 on
+//!   the order of the repair); the refusal is asked before anything that could launch an
+//!   agent; and it lets through only an invocation that records what the human ruled about
+//!   the run.
 //! - **(d)** each label the definitions' contracts bind on is spelled once in the script,
 //!   and identically in every definition that binds on it; and a role is sent only labels
 //!   its definition binds on.
@@ -1257,6 +1263,168 @@ fn l_every_git_step_is_one_command_of_the_tool_but_the_recut_of_a_part() {
         ["toolStep", "the part's re-cut"],
         "who calls `gitStep`"
     );
+}
+
+// ---------------------------------------------------------------------------
+// (m) a stage that is not fit for use refuses to start
+// ---------------------------------------------------------------------------
+
+/// The words a `DECISIONS.md` heading records a half's re-review with — the record that
+/// lifts a stage's refusal.
+fn re_review_heading(stage: &str) -> String {
+    format!("the `{stage}` half of the stabilization workflow, repaired and re-reviewed")
+}
+
+/// The stages the script's `NOT_FIT` names.
+fn not_fit(full: &str) -> Vec<String> {
+    let table = &full[full
+        .find("\nconst NOT_FIT = {\n")
+        .expect("the script's table of the stages that refuse to start")..];
+    table["\nconst NOT_FIT = {\n".len()..]
+        .lines()
+        .take_while(|line| *line != "}")
+        .filter_map(|line| line.strip_prefix("  "))
+        .filter_map(|line| line.split_once(": '").map(|(stage, _)| stage.to_owned()))
+        .collect()
+}
+
+#[test]
+fn m_a_stage_that_is_not_fit_for_use_refuses_to_start() {
+    let full = harness();
+    let source = code(&full);
+    let refusing = not_fit(&full);
+
+    // WHICH stages refuse is held to the record: the `fix` stage, until DECISIONS.md has a
+    // heading that records its half as repaired and re-reviewed. Lifting the refusal is the
+    // one edit that deletes the stage's line from `NOT_FIT`, made by the commit that writes
+    // that heading — and no edit to this arm.
+    let decisions =
+        fs::read_to_string(repo_root().join("DECISIONS.md")).expect("read DECISIONS.md");
+    let stage = "fix";
+    let words = re_review_heading(stage);
+    let recorded = decisions
+        .lines()
+        .any(|line| line.starts_with("## ") && line.contains(&words));
+    let refuses = refusing.iter().any(|named| named == stage);
+    assert!(
+        refuses || recorded,
+        "the `{stage}` stage no longer refuses to start, and DECISIONS.md has no heading \
+         with the words `{words}`: the refusal is lifted by the commit that records that \
+         re-review, and by no other"
+    );
+    assert!(
+        !(refuses && recorded),
+        "DECISIONS.md records `{words}`, and the `{stage}` stage still refuses to start: \
+         delete its line from `NOT_FIT` in {HARNESS}"
+    );
+    for stage in &refusing {
+        assert!(
+            quoted_in(&full, "const STAGES = ").contains(stage),
+            "`NOT_FIT` names `{stage}`, which is no stage"
+        );
+    }
+
+    // The refusal is asked of every invocation, after the arguments are refused and the
+    // self-test returned and BEFORE anything that could launch an agent is declared or run.
+    let asked = "\nif (parsedArgs.selfTest) return selfTest()\nconst unfit = notFit(parsedArgs)\nif (unfit) {\n  return { status: 'refused', ";
+    let at = source
+        .find(asked)
+        .expect("the stage's fitness is asked right after the self-test's return");
+    for launching in [
+        "await ",
+        "agent(",
+        "agentR(",
+        "gitStep(",
+        "toolStep(",
+        "roleStep(",
+    ] {
+        assert!(
+            !source[..at + asked.len()].contains(launching),
+            "`{launching}` stands before the refusal of a stage that is not fit for use"
+        );
+    }
+    assert_eq!(
+        source.matches("notFit(parsedArgs)").count(),
+        1,
+        "and it is asked once, of the arguments as parsed"
+    );
+
+    // What it lets through: a stage the table does not name — and, of a stage it names,
+    // only an invocation whose every ruling is about the run, which starts nothing.
+    let asks = function(&full, "notFit");
+    assert!(
+        asks.contains("\n  if (!NOT_FIT[a.stage]) return null\n  if (a.rulings != null && a.rulings.every(runRuling)) return null\n  return '"),
+        "`notFit` passes a stage that is fit, and an invocation that only records what the human ruled about the run: {asks}"
+    );
+    assert!(
+        asks.contains("BUILD_RECORD") && asks.contains("Nothing was run"),
+        "and its refusal points at the build's record and says that nothing ran"
+    );
+    let record = quoted_in(&full, "const BUILD_RECORD = ");
+    assert_eq!(record.len(), 1, "the build's record is one path");
+    assert!(
+        repo_root().join(&record[0]).is_file(),
+        "the build's record the refusal points at exists: {}",
+        record[0]
+    );
+
+    // Driven, where `node` is installed: every invocation of a stage that is not fit is
+    // refused with that word, and no agent is launched for it.
+    if node().is_none() {
+        eprintln!(
+            "SKIPPED: `node` is not on PATH, so the refusal of a stage that is not fit for \
+             use was read off {HARNESS} and not run on this machine"
+        );
+        return;
+    }
+    let scratch = ScratchDir::new("stabilize-not-fit");
+    let driver = scratch.path().join("driver.mjs");
+    fs::write(&driver, DRIVER).expect("write the driver");
+    for stage in &refusing {
+        let mut invocations = vec![
+            String::new(),
+            r#", "model": "sonnet""#.to_owned(),
+            r#", "rulings": [{"key": "f-1", "ruling": "later"}]"#.to_owned(),
+            r#", "rulings": [{"bound": "b", "reach": "x", "where": "y", "pin": "unpinned"}]"#
+                .to_owned(),
+        ];
+        if stage == "fix" {
+            for more in [
+                r#", "exit": "drop""#,
+                r#", "exit": {"part": ["abcdef1"]}"#,
+                r#", "raise": {"cycles": 4}"#,
+                r#", "stopAfter": "state""#,
+                r#", "rulings": [{"key": "f-1", "ruling": "admitted"}], "stopAfter": "rulings""#,
+            ] {
+                invocations.push(more.to_owned());
+            }
+        }
+        for more in invocations {
+            let args = format!(
+                r#"{{"stage": "{stage}", "run": "rc24-tier1", "scratch": "/tmp/scratch-1"{more}}}"#
+            );
+            let seen = invoke(&driver, &args);
+            assert_eq!(seen["status"], "refused", "args {args}: {seen}");
+            assert_eq!(
+                seen["not_fit"]["stage"],
+                stage.as_str(),
+                "args {args}: {seen}"
+            );
+            assert_eq!(
+                seen["not_fit"]["record"],
+                record[0].as_str(),
+                "args {args}: {seen}"
+            );
+            assert!(
+                seen["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains("NOT FIT FOR USE")
+                        && message.contains(&record[0])
+                        && message.contains("Nothing was run")),
+                "args {args}: {seen}"
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
