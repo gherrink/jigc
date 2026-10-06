@@ -2,6 +2,20 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-06 — The four bounds the human declared ahead of the run's opening, each written where its door is owned; and three of the eleven fixes returned to him (a record of where things were put and of what was found; nothing built by this entry)
+
+**The bounds** are the entry *Ahead of the run's opening*, below, 5c. Each is now stated as a declared bound of his, with its reach and a pointer to that ruling, in the design doc that owns the door — the form each doc already uses for one:
+
+- **Item 22 — content staged only in git's index for a doc a task is updating is replaced at finalize:** [finalize.md](design/finalize.md) → 4. Promote, a paragraph of its own behind *A home git holds is occupied*, because that paragraph asks git about a home for a doc the unit minted and this is the cell it does not ask. Driven again at `jigc task finalize` for the statement: exit 0, the staged content in no commit and no index entry, its blob left in the object store.
+- **Item 23 — an uncommitted edit that exists before a task's first write is carried, and a write by that task to the same part replaces it:** [reconciliation.md](design/reconciliation.md) → *What a task copied in*, on the first of the three consequences accepted with the copied-in record, which already described it.
+- **Item 3's remainder — while the invocation log is switched on, any jigc run but the teardown brings the log back:** [measurement.md](design/measurement.md) → *The in-repo invocation log*, item 7, where the previous build had put the sentence; it now carries its reach and its cost.
+- **Item 16 — a repository whose `.gitignore` covers jigc's own committed files is unsupported:** [validation.md](design/validation.md), in the statement the pass wrote on ignored install paths, which now says whose bound it is and which ignore rules are outside it.
+
+**Returned to the human, each under the gate his own ruling set — nothing was built for them, and what was found is on their lines at [decisions-pending.md](implementation/decisions-pending.md) → *Before the next release candidate*, the eleven fixes:**
+
+- **Item 15 (line 6).** Once the deletion is committed, the task's doc does **not** land: the next `jigc task finalize` exits 3 on `finalize.base-mismatch`, because the task was started before that commit and the commit touches the doc's own path. The exit the ruling names is therefore not one, from the refused state.
+- **Items 7 and 8 (line 3), and item 9 with them (line 4).** The shape *this path is not an ordinary file* is answered under six codes at about fourteen commands, and it reaches the promoting commands and a pinned contract table that the ruling's list of three codes does not name. No name was minted.
+
 ## 2026-10-06 — `jigc milestone finalize` also refuses over a discarded sub-task's unstaged edits and untracked files that git does not ignore, under `milestone.unlanded-work`; ignored files stay named (the build of the human's ruling on the fix pass's item 6; the builder's choices inside it)
 
 **The ruling** is the entry *Ahead of the run's opening*, below, 5b, 1: *`milestone finalize` also refuses over a discarded sub-task's unstaged edits and untracked, non-ignored files, under `milestone.unlanded-work`, with the same kind of route as the staged case; ignored files — build output — stay named, not refused.* **Built as one more read in `milestone::unlanded_work` (`loose_work`) and one more exit on the finding's line; no finding code, flag, stored file or registry moves.** `1.0.0-rc.24` landed at exit 0 and named those files afterwards as *not recoverable*.
