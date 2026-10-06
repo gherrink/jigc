@@ -138,14 +138,16 @@
 //   scope     — OPTIONAL, `test` only: the scope the round is started with — 'delta',
 //               'everything', { range: '<sha>..<sha>' } or { doors: [ … ] }. Absent: the
 //               run's default scope, a fact of its record. A round's scope is written once.
-//   clause    — OPTIONAL, `test` only: run ONE clause's instrument alone — every item of the
-//               test set that judges that clause and no other, on the same candidate, over
-//               the doors of the latest round's scope, named again. It is what the
-//               orchestrator starts when the state's `next` is `retest` — nothing is open
-//               and a clause has no green row — for the first clause its `retest` names
-//               (the human's ruling of 2026-10-06: that instrument is run again once). The
-//               round's record says which clause it ran alone, and that fact is what the
-//               record script computes "once" from. Never together with `scope`.
+//   clause    — `test` only, and REQUIRED EXACTLY WHEN THE STATE ASKS FOR A RE-RUN (`next` is
+//               `retest`): the first clause its `retest` names. The invocation runs the
+//               items of that clause the state lists as due — its position's `rerun` — and
+//               nothing else, as ONE MORE ATTEMPT INSIDE THE ROUND THAT SELECTED THEM, over
+//               that round's doors: no round is begun, no scope resolved, and the record is
+//               one result per item (the human's ruling of 2026-10-06: that instrument is
+//               run again once; the record script counts the attempts, and takes a re-run
+//               only where its state asks for one). A `clause` the state does not ask for,
+//               and a `retest` answered without it, are refused before any agent runs.
+//               Never together with `scope` or `crossModel`.
 //   crossModel — OPTIONAL, `test` only: [ '<item>', … ] — the items of the test set whose
 //               source pass is ALSO read by a model of another family, named one by one.
 //               There is no value that means every item: heavy use is a deliberate act,
@@ -262,6 +264,8 @@ const ROLES = {
 // data (dev/stabilize-record item-set), and a kind is added by adding its row here.
 // `check` has no chain of its own: a deterministic check is run by the preflight.
 const CHECK_KIND = 'check'
+// The doctype a red deterministic check is filed under: the candidate fails a check.
+const RED_DOCTYPE = 'jigc-feedback'
 // The id under which the preflight returns whether the cross-model pass's tool answers.
 const CROSS_CHECK = 'cross-model-tool'
 const CHAINS = {
@@ -461,7 +465,7 @@ function validateArgs(a) {
   if (a.crossModel != null && !(Array.isArray(a.crossModel) && a.crossModel.length > 0 && a.crossModel.every(isSlug) && distinct(a.crossModel))) return 'args.crossModel names the items of the test set that get a cross-model source pass, one by one: [ \'<item>\', … ] — not ' + JSON.stringify(a.crossModel) + '. There is no value that turns it on for every item'
   if (a.clause != null) {
     if (!isSlug(a.clause)) return 'args.clause ' + JSON.stringify(a.clause) + ' is not a clause of the closing condition: a slug, as the clause table spells it'
-    if (a.scope != null) return 'args.clause runs one clause\'s instrument over the scope of its last run: it takes no args.scope'
+    if (a.scope != null || a.crossModel != null) return 'args.clause runs the items of one clause again, inside the round that selected them and over that round\'s doors: it takes no args.scope and no args.crossModel'
   }
   if (a.scope != null) {
     const s = a.scope
@@ -556,7 +560,7 @@ function outcomeOf(state) {
 // does about it. The words are dev/stabilize-record's (its header: THE POSITION), and
 // tooling-tests/stabilize_harness_fence.rs holds this table to them.
 const REFUSALS = {
-  'not-ready': 'the run\'s opening is not done, and no stage starts before it is — the state\'s `not_ready` names what it owes: a row per clause of the closing condition (`dev/stabilize-record clause-set`), and the run\'s facts — the stop mode, the bound across rounds, the previous release and the default scope (`dev/stabilize-record run-set`)',
+  'not-ready': 'the run\'s opening is not done, and no stage starts before it is — the state\'s `not_ready` names what it owes, each a fact of the run: the clauses of the closing condition, the stop mode, the bound across rounds, the previous release and the default scope (`dev/stabilize-record run-set`)',
   'no-round': 'there is no tested round to fix — the `test` stage comes first, and records its triage',
   'not-tested': 'the round\'s `test` stage has not reached its record — it is run again first, as the next attempt',
   'round-open': 'the round is tested and a finding of it is still open — run `fix`, record the human\'s rulings with it, or drop the round (args.exit = \'drop\'); where the state\'s `next` is `triage`, the stage whose position says `triage` finishes the round\'s triage first',
@@ -609,12 +613,12 @@ function previousOf(state) {
   return { version: facts.previous, commit: facts['previous-commit'] }
 }
 
-// evidenceOf — per clause, what its row is worth on the current candidate, as the state
-// computed it: the round and the commit its instrument last ran on, how many fix rounds
-// behind the candidate that is, and why a green row does not count. It goes back with
-// `close`, so that the human closes with that number in front of them.
+// evidenceOf — per clause, what the record script derived for it: its status, the round and
+// the commit of the latest run among its items, how many fix rounds behind the candidate
+// that is, and where each item's own run stands. It goes back with `close`, so that the
+// human closes with that number in front of them.
 function evidenceOf(state) {
-  return (state.clauses || []).map((c) => ({ clause: c.clause, status: c.status, round: c.round, commit: c.commit, behind: c.behind, stale: c.stale }))
+  return (state.clauses || []).map((c) => ({ clause: c.clause, status: c.status, round: c.round, commit: c.commit, behind: c.behind, items: (c.items || []).map((i) => ({ item: i.item, round: i.round, attempt: i.attempt, standing: i.standing, why: i.why })) }))
 }
 
 // readStep — a git step's return as the object its command printed. The relayed line must
@@ -642,20 +646,20 @@ function readStep(r, act) {
   return said
 }
 
-// clauseRows — the clause rows a `test` stage writes: one per clause that has an item this
-// round ran. `void` when an item of the clause did not run to its end, else `red` when a
-// deterministic check of it is red, else `green`: the instrument ran, on this commit, over
-// this scope. What a hunting instrument FOUND is the ledger's, and forbids closing there.
-function clauseRows(units, sha, scopeText) {
-  const rows = []
-  for (const unit of units) {
-    let row = rows.find((r) => r.clause === unit.clause)
-    if (!row) rows.push(row = { clause: unit.clause, items: [], status: 'green' })
-    row.items.push(unit.item)
-    if (unit.status === 'void') row.status = 'void'
-    else if (unit.status === 'red' && row.status !== 'void') row.status = 'red'
-  }
-  return rows.map((r) => ({ clause: r.clause, status: r.status, commit: sha, instrument: r.items.join(', '), scope: scopeText }))
+// resultRows — what a `test` stage records of its items: ONE RESULT PER ITEM it ran, and
+// nothing about a clause — a clause's status is derived by the record script from these
+// rows, and no code of this script composes one. `void` with its reason when the item did
+// not run to its end; `red` for a deterministic check that is red — which the record script
+// files as a finding in the same call, so every red brings what that ledger row needs: a
+// doctype, the door it stands at (the check's own first door, or its name), and where the
+// evidence lies; else `green`: the item ran, on this commit, over the round's doors. What a
+// hunting item FOUND is the ledger's, and forbids closing there.
+function resultRows(units) {
+  return units.map((unit) => {
+    if (unit.status === 'void') return { item: unit.item, outcome: 'void', reason: unit.reason || 'it did not run to its end' }
+    if (unit.status === 'red') return { item: unit.item, outcome: 'red', doctype: RED_DOCTYPE, door: unit.door || 'the check `' + unit.item + '`', repro: unit.evidence || 'the check returned red, and no evidence beside it' }
+    return { item: unit.item, outcome: 'green' }
+  })
 }
 
 // classifyCommits — a round's commits, by what a carry-over may take: a commit confined to
@@ -1039,25 +1043,17 @@ function preflightPrompt(ctx, launch, name, plan) {
     'The steps this call covers, in this order, and nothing else:',
   ].concat(steps.map((s, i) => (i + 1) + '. ' + s)).join('\n')
 }
-function scopeText(scope, clause, fallback) {
-  if (clause != null) return 'the doors of the latest round\'s test set, named again — this round runs the instrument of clause `' + clause + '` alone, over the scope of its last run: ' + (scope.doors.map((d) => '`' + d + '`').join(' · ') || '(none)')
+function scopeText(scope, fallback) {
   if (scope == null) return 'the run\'s default scope, a fact of its record: ' + (fallback === 'everything' ? 'everything — every door of every registry is inside' : 'the derived delta')
   if (typeof scope === 'string') return scope === 'everything' ? 'everything — set by the human: every door of every registry is inside' : 'the derived delta'
   return scope.range ? 'the commit range ' + scope.range + ' — set by the human' : 'the named doors, set by the human: ' + scope.doors.map((d) => '`' + d + '`').join(' · ')
-}
-// The scope a clause row says its instrument ran over: a few plain words, for a table cell.
-function scopeLabel(scope, clause, fallback) {
-  if (clause != null) return 'the scope of the round before, again'
-  if (scope == null) return 'the run\'s default scope, ' + (fallback === 'everything' ? 'everything' : 'the derived delta')
-  if (typeof scope === 'string') return scope === 'everything' ? 'everything' : 'the derived delta'
-  return scope.range ? 'the range ' + scope.range : scope.doors.length + ' named door(s)'
 }
 function scopePrompt(ctx, launch, name, plan) {
   return [
     'SCOPE — stabilization run `' + ctx.run + '`, round ' + ctx.round + '. ' + opening(ctx),
     launch.line(name),
     'The round\'s change lies between: base = ' + (plan.base ? plan.base + ' (the candidate round ' + (ctx.round - 1) + ' tested)' : plan.previous.commit + ' (the previous release, ' + plan.previous.version + ', as the run\'s record names it)') + '; tip = ' + plan.sha + ' (label ' + plan.label + ').',
-    'The scope this stage was started with: ' + scopeText(plan.scope, plan.clause, plan.fallback) + '.',
+    'The scope this stage was started with: ' + scopeText(plan.scope, plan.fallback) + '.',
     plan.earlier ? 'The door lists of round ' + (ctx.round - 1) + '\'s fixers and fix-diff auditors — inputs, never the result: the `doors_affected` of every report under `' + runDir(ctx.run) + '/r' + (ctx.round - 1) + '/reports/fix/`, which this prompt hands you.' : 'There is no earlier round whose door lists could be an input.',
     'The units of the test set are the rows of `' + runDir(ctx.run) + '/test-set.md` (the state document\'s `items`).',
     'Write the round\'s scope with `dev/stabilize-record scope-set --run ' + ctx.run + ' --round ' + ctx.round + ' --scratch ' + ctx.scratch + '`, once.',
@@ -1230,8 +1226,10 @@ function pendingRecordPrompt(v, branch, dir, pending) {
   return { text, gate, expect: { calls: pending.calls, checks: (pending.checks || []).length } }
 }
 // stageRecordCommands — a stage's record, as the calls of its ONE batch: the reports checked
-// first, then the candidate's gate (a `test` stage's), then the rows, then the ledger
-// checked. Every row is composed here, from structured returns. THE DISPOSITIONS ARE WRITTEN
+// first, then the candidate's gate (a `test` stage's), then what each item did, then the
+// rows, then the ledger checked. Every row is composed here, from structured returns. THE
+// RESULTS COME BEFORE THE LEDGER'S ROWS: the record script takes a re-run only while its
+// state asks for one, and a finding the re-run found would end that. THE DISPOSITIONS ARE WRITTEN
 // BEFORE THE TRIAGE: a round's triage records the disposition a row carried when it was
 // found, and a fix cycle's audit finds a finding AFTER that cycle's fix — written the other
 // way round, a fix that did not hold would be read as a finding followed by its fix.
@@ -1239,10 +1237,10 @@ function stageRecordCommands(ctx, rec) {
   const calls = []
   if (rec.reporters.length) calls.push(call('check-reports ' + stageFlags(ctx) + ' --attempt ' + ctx.attempt + ' --', rec.reporters))
   if (rec.gate) calls.push(call('gate-set --run ' + ctx.run + ' --round ' + ctx.round + ' --commit ' + rec.gate.commit + ' --summary ' + rec.gate.file + ' --scratch ' + ctx.scratch))
+  if (rec.results && rec.results.rows.length) calls.push(call('result-set --run ' + ctx.run + ' --round ' + ctx.round + ' --commit ' + rec.results.commit + ' --scratch ' + ctx.scratch, [], rec.results.rows))
   if (rec.rows.length) calls.push(call('ledger-add --run ' + ctx.run + ' --scratch ' + ctx.scratch, [], rec.rows))
   if (rec.patches.length) calls.push(call('ledger-set --run ' + ctx.run + ' --scratch ' + ctx.scratch, [], rec.patches))
   if (rec.triage.length) calls.push(call('triage-set --run ' + ctx.run + ' --round ' + ctx.round, [], rec.triage))
-  for (const row of rec.clauses) calls.push(call('clause-set --run ' + ctx.run + ' --clause ' + row.clause + ' --commit ' + row.commit + ' --status ' + row.status + ' --scratch ' + ctx.scratch, ['--instrument', row.instrument, '--scope', row.scope]))
   if (rec.facts) calls.push(call('round-set --run ' + ctx.run + ' --round ' + ctx.round, [], rec.facts))
   if (rec.keys.length) calls.push(call('check-ledger --run ' + ctx.run + ' --', rec.keys))
   return calls
@@ -1253,15 +1251,15 @@ function stageRecordCommands(ctx, rec) {
 function rulingsRecordPrompt(v, round, branch, rulings, ran) {
   const calls = []
   // What the human ruled about the run: the go after the stop that follows `round`, one
-  // more re-run of a clause — a fact of the round its instrument last ran in — and the
-  // bound across rounds, raised. The record script takes the first two only while the
-  // state asks for them.
+  // more re-run of a clause — a fact of every round that selected an item of it whose
+  // re-run is spent — and the bound across rounds, raised. The record script takes the
+  // first two only while the state asks for them.
   const about = rulings.filter((r) => runRuling(r))
   for (const r of about) {
-    const fact = r.go != null ? { value: { go: true }, call: 'round-set --run ' + v.run + ' --round ' + round }
-      : r.rerun != null ? { value: { granted: r.rerun }, call: 'round-set --run ' + v.run + ' --round ' + ran[r.rerun] }
-        : { value: { rounds: r.rounds }, call: 'run-set --run ' + v.run }
-    calls.push(call(fact.call, [], fact.value))
+    const facts = r.go != null ? [{ value: { go: true }, call: 'round-set --run ' + v.run + ' --round ' + round }]
+      : r.rerun != null ? ran[r.rerun].map((spentIn) => ({ value: { granted: r.rerun }, call: 'round-set --run ' + v.run + ' --round ' + spentIn }))
+        : [{ value: { rounds: r.rounds }, call: 'run-set --run ' + v.run }]
+    for (const fact of facts) calls.push(call(fact.call, [], fact.value))
   }
   const bounds = rulings.filter((r) => r.bound != null)
   for (const r of bounds) calls.push(call('bound-set --run ' + v.run + ' --bound ' + r.bound + ' --scratch ' + v.scratch, ['--reach', r.reach, '--ruling', r.where, '--pin', r.pin]))
@@ -1328,7 +1326,7 @@ function selfTest() {
     ['a part of no commit', Object.assign({}, fix, { exit: { part: [] } })], ['a part that names a branch', Object.assign({}, fix, { exit: { part: ['HEAD~1'] } })],
     ['an exit beside a raise', Object.assign({}, fix, { exit: 'drop', raise: { cycles: 5 } })],
     ['a clause on fix', Object.assign({}, fix, { clause: 'no-lost-files' })], ['a clause that is no slug', Object.assign({}, base, { clause: 'No lost files' })],
-    ['a clause beside a scope', Object.assign({}, base, { clause: 'no-lost-files', scope: 'everything' })],
+    ['a clause beside a scope', Object.assign({}, base, { clause: 'no-lost-files', scope: 'everything' })], ['a clause beside a cross-model pass', Object.assign({}, base, { clause: 'no-lost-files', crossModel: ['row-3'] })],
     ['a cross-model pass on fix', Object.assign({}, fix, { crossModel: ['row-3'] })], ['a cross-model item that is no id', Object.assign({}, base, { crossModel: ['Row 3'] })],
     ['a cross-model item named twice', Object.assign({}, base, { crossModel: ['row-3', 'row-3'] })],
   ].concat([true, false, 'all', '*', 'every', 'row-3', 1, [], {}, { all: true }, ['*'], ['all rows'], [true]].map((every) => ['a cross-model pass for every item: ' + JSON.stringify(every), Object.assign({}, base, { crossModel: every })]))
@@ -1336,7 +1334,7 @@ function selfTest() {
   const taken = [
     base, fix, { selfTest: true }, Object.assign({}, base, { scope: 'everything' }), Object.assign({}, base, { scope: { range: 'abcdef1..1234567' } }),
     Object.assign({}, base, { scope: { doors: ['jigc setup', 'jigc doc show'] } }), Object.assign({}, base, { stopAfter: 'preflight', model: 'sonnet' }),
-    Object.assign({}, base, { clause: 'no-lost-files' }), Object.assign({}, base, { crossModel: ['row-3'] }), Object.assign({}, base, { crossModel: ['row-3', 'row-7'], clause: 'no-lost-files' }),
+    Object.assign({}, base, { clause: 'no-lost-files' }), Object.assign({}, base, { crossModel: ['row-3'] }), Object.assign({}, base, { crossModel: ['row-3', 'row-7'] }),
     Object.assign({}, fix, { raise: { cycles: DEFAULT_CYCLES + 1 } }), Object.assign({}, fix, { exit: 'drop' }), Object.assign({}, fix, { exit: { part: ['abcdef1', '0123456789abcdef0123456789abcdef01234567'] } }),
     Object.assign({}, base, { rulings: [{ go: true }] }), Object.assign({}, fix, { rulings: [{ go: true }, { rerun: 'no-lost-files' }, { rerun: 'no-regression' }] }), Object.assign({}, fix, { rulings: [{ rounds: 4 }] }), Object.assign({}, base, { rulings: [{ rounds: 4 }, { rerun: 'no-lost-files' }] }),
     Object.assign({}, base, { rulings: [{ key: 'f-1', ruling: later }] }), Object.assign({}, base, { rulings: [{ key: 'f-1', ruling: admitted, note: 'n' }, { bound: 'b', reach: 'x', where: 'y', pin: 'unpinned' }] }),
@@ -1423,7 +1421,7 @@ function selfTest() {
   // The release a run measures against, and what a clause's row is worth, are read off the state.
   const facts = { stop: 'every-round', rounds: null, previous: '1.0.0-rc.24', 'previous-commit': 'e'.repeat(40), scope: 'delta' }
   check('the previous release is the record\'s', JSON.stringify(previousOf({ facts })) === JSON.stringify({ version: '1.0.0-rc.24', commit: 'e'.repeat(40) }))
-  check('the evidence that goes back with close', JSON.stringify(evidenceOf({ clauses: [{ clause: 'no-lost-files', instrument: 'i', commit: 'c'.repeat(40), scope: 's', status: 'green', round: 1, behind: 2, stale: null, retry: null }] })) === JSON.stringify([{ clause: 'no-lost-files', status: 'green', round: 1, commit: 'c'.repeat(40), behind: 2, stale: null }]) && evidenceOf({}).length === 0)
+  check('the evidence that goes back with close', JSON.stringify(evidenceOf({ clauses: [{ clause: 'no-lost-files', instrument: 'i', commit: 'c'.repeat(40), scope: 's', status: 'green', round: 2, behind: 1, retry: null, items: [{ item: 'gate', runs: 'every-candidate', round: 2, attempt: 1, commit: 'c'.repeat(40), outcome: 'green', reason: null, standing: 'green', why: null, rerun: null }, { item: 'row-a', runs: 'in-scope', round: null, attempt: null, commit: null, outcome: null, reason: null, standing: 'not-selected', why: null, rerun: null }] }] })) === JSON.stringify([{ clause: 'no-lost-files', status: 'green', round: 2, commit: 'c'.repeat(40), behind: 1, items: [{ item: 'gate', round: 2, attempt: 1, standing: 'green', why: null }, { item: 'row-a', round: null, attempt: null, standing: 'not-selected', why: null }] }]) && evidenceOf({}).length === 0)
 
   // Every prompt carries the labels its definition binds on, spelled as LABELS spells them.
   const ctx = { run: 'rc24-tier1', round: 2, stage: 'fix', cycle: 3, attempt: 4, scratch: '/tmp/scratch-1' }
@@ -1486,8 +1484,7 @@ function selfTest() {
   dropping.add(['row-3', 'source'])
   dropping.drop(dropping.add(['row-3', 'crossmodel']))
   check('a cross-model reporter that left no report is not held to one', dropping.names.join(' ') === 'row-3-source')
-  check('a clause\'s re-run names the doors of its last run', scopeText({ doors: ['jigc setup', 'jigc doc show'] }, 'no-lost-files').includes('`jigc setup` · `jigc doc show`') && scopeText({ doors: ['jigc setup'] }, 'no-lost-files').includes('`no-lost-files` alone'))
-  check('a round with no scope of its own takes the run\'s default, as its record names it', scopeText(undefined, null, 'delta').endsWith('the derived delta') && scopeText(null, null, 'everything').includes('everything') && scopeText('delta', null, 'everything') === 'the derived delta' && scopeLabel(undefined, null, 'everything').endsWith('everything') && scopeLabel(undefined, null, 'delta').endsWith('the derived delta') && scopeLabel('everything', null, 'delta') === 'everything')
+  check('a round with no scope of its own takes the run\'s default, as its record names it', scopeText(undefined, 'delta').endsWith('the derived delta') && scopeText(null, 'everything').includes('everything') && scopeText('delta', 'everything') === 'the derived delta')
   check('a driving chain role is handed the binary', unitPrompt(ctx, launcher(ctx), 'x', CHAINS['trial-arm'][1][0], unit, built, []).includes('jigc-trial:c2'))
 
   // The reporters: every name once, and the check names every one of them.
@@ -1505,10 +1502,10 @@ function selfTest() {
   check('the ledger check names every key', spelled(recordCalls[recordCalls.length - 1]) === 'check-ledger --run rc24-tier1 -- f-1')
   check('a record\'s calls are one payload, held to its hash', prompts.record.includes(sha256(JSON.stringify(recordCalls) + '\n')) && prompts.record.includes('`cat > /tmp/scratch-1/record/x/batch.json <<\'' + PAYLOAD_ENDS + '\'`') && spelled(recordCalls[1]) === 'round-set --run rc24-tier1 --round 2' && recordCalls[1].stdin === '{"cycles":3}' && recordCalls.length === 3)
   check('a record step applies its calls as one batch, runs the full gate, and makes no commit', prompts.record.includes('\n2. `dev/stabilize-record apply --run rc24-tier1 --round 2 --subject \'docs(record): s\' --scratch /tmp/scratch-1 < /tmp/scratch-1/record/x/batch.json`') && prompts.record.includes('\n3. The FULL gate') && prompts.record.includes('`dev/gate > /tmp/scratch-1/record/x/gate.txt 2>&1`') && prompts.record.endsWith(RECORD_RETURNS) && !/`git (add|commit)/.test(prompts.record) && prompts.record.includes('Never `--fast`, never `--quick`'))
-  const stageRecord = recordPrompt(ctx, 'x', 'fix/rc24-tier1', '/tmp/scratch-1/record/z', 0, stageRecordCommands(Object.assign({}, ctx, { stage: 'test' }), { reporters: ['a'], gate: { commit: 'c'.repeat(40), file: '/tmp/scratch-1/gate/c2.a4.txt' }, rows: [], triage: [], patches: [], clauses: [{ clause: 'x', commit: 'c'.repeat(40), status: 'green', instrument: 'a, b', scope: 'round 2: it\'s the delta' }], facts: { candidate: 'c'.repeat(40) }, keys: [] }), 's')
+  const stageRecord = recordPrompt(ctx, 'x', 'fix/rc24-tier1', '/tmp/scratch-1/record/z', 0, stageRecordCommands(Object.assign({}, ctx, { stage: 'test' }), { reporters: ['a'], gate: { commit: 'c'.repeat(40), file: '/tmp/scratch-1/gate/c2.a4.txt' }, results: { commit: 'c'.repeat(40), rows: resultRows([{ item: 'a', status: 'green' }, { item: 'it\'s-b', status: 'void', reason: 'it\'s chain died' }]) }, rows: [], triage: [], patches: [], facts: { candidate: 'c'.repeat(40) }, keys: [] }), 's')
   check('what the commit step is held to is what was composed', JSON.stringify(stageRecord.expect) === JSON.stringify({ calls: 4, checks: 1 }) && stageRecord.gate === '/tmp/scratch-1/record/z/gate.txt' && !stageRecord.text.includes(' --round 0') && JSON.stringify(recordPrompt(ctx, 'x', 'b', '/d', 2, recordCalls, 's').expect) === JSON.stringify({ calls: 3, checks: 2 }))
   check('a test stage\'s record puts the candidate\'s gate on record, from the file the preflight kept', spelled(batchOf(stageRecord.text)[1]) === 'gate-set --run rc24-tier1 --round 2 --commit ' + 'c'.repeat(40) + ' --summary /tmp/scratch-1/gate/c2.a4.txt --scratch /tmp/scratch-1' && !recordCalls.some((made) => made.argv[0] === 'gate-set'))
-  check('a cell of free text is one argument, whatever it holds', JSON.stringify(batchOf(stageRecord.text)[2].argv.slice(-4)) === JSON.stringify(['--instrument', 'a, b', '--scope', 'round 2: it\'s the delta']))
+  check('what each item did is one call, its rows data whatever they hold', spelled(batchOf(stageRecord.text)[2]) === 'result-set --run rc24-tier1 --round 2 --commit ' + 'c'.repeat(40) + ' --scratch /tmp/scratch-1' && batchOf(stageRecord.text)[2].stdin === JSON.stringify([{ item: 'a', outcome: 'green' }, { item: 'it\'s-b', outcome: 'void', reason: 'it\'s chain died' }]))
   const resumed = pendingRecordPrompt(fix, 'fix/rc24-tier1', '/tmp/scratch-1/record/pending-r1', { calls: 5, checks: [{ ok: true }, { ok: true }], subject: 'docs(record): x', round: 1 })
   check('a pending batch is gated again and nothing is applied', !resumed.text.includes('stabilize-record apply') && !resumed.text.includes(PAYLOAD_ENDS) && resumed.text.includes('`dev/gate > /tmp/scratch-1/record/pending-r1/gate.txt 2>&1`') && resumed.text.endsWith(RECORD_RETURNS) && JSON.stringify(resumed.expect) === JSON.stringify({ calls: 5, checks: 2 }))
   const cycleRecord = stageRecordCommands(ctx, { reporters: [], rows: [{ key: 'f-2' }], triage: [{ key: 'f-1', grade: 'breaks' }], patches: [{ key: 'f-1', disposition: 'fixed', detail: 'c'.repeat(40) }], clauses: [], facts: null, keys: ['f-1', 'f-2'] }).map((made) => made.argv[0])
@@ -1537,19 +1534,21 @@ function selfTest() {
   // The human's rulings enter in one step.
   const rulingsCalls = batchOf(rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).text)
   const rulingsText = rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).text
-  const aboutTheRun = rulingsRecordPrompt(base, 2, 'fix/rc24-tier1', [{ go: true }, { rerun: 'no-lost-files' }, { rounds: 4 }], { 'no-lost-files': 1 })
+  const aboutTheRun = rulingsRecordPrompt(base, 2, 'fix/rc24-tier1', [{ go: true }, { rerun: 'no-lost-files' }, { rounds: 4 }], { 'no-lost-files': [1, 2] })
   const aboutCalls = batchOf(aboutTheRun.text)
-  check('the rulings step writes the go, the granted re-run and the raised bound', JSON.stringify(aboutCalls) === JSON.stringify([{ argv: ['round-set', '--run', 'rc24-tier1', '--round', '2'], stdin: '{"go":true}' }, { argv: ['round-set', '--run', 'rc24-tier1', '--round', '1'], stdin: '{"granted":"no-lost-files"}' }, { argv: ['run-set', '--run', 'rc24-tier1'], stdin: '{"rounds":4}' }]) && aboutTheRun.text.includes(' apply --run rc24-tier1 --round 2 --subject '))
-  check('a ruling about the run writes no bound and no disposition', !aboutCalls.some((made) => ['bound-set', 'ledger-set'].includes(made.argv[0])) && aboutTheRun.text.includes('3 about the run') && rulingsText.includes('0 about the run') && !rulingsCalls.some((made) => ['round-set', 'run-set'].includes(made.argv[0])) && JSON.stringify(aboutTheRun.expect) === JSON.stringify({ calls: 3, checks: 0 }))
+  check('the rulings step writes the go, the granted re-run — in every round an item of the clause is spent in — and the raised bound', JSON.stringify(aboutCalls) === JSON.stringify([{ argv: ['round-set', '--run', 'rc24-tier1', '--round', '2'], stdin: '{"go":true}' }, { argv: ['round-set', '--run', 'rc24-tier1', '--round', '1'], stdin: '{"granted":"no-lost-files"}' }, { argv: ['round-set', '--run', 'rc24-tier1', '--round', '2'], stdin: '{"granted":"no-lost-files"}' }, { argv: ['run-set', '--run', 'rc24-tier1'], stdin: '{"rounds":4}' }]) && aboutTheRun.text.includes(' apply --run rc24-tier1 --round 2 --subject '))
+  check('a ruling about the run writes no bound and no disposition', !aboutCalls.some((made) => ['bound-set', 'ledger-set'].includes(made.argv[0])) && aboutTheRun.text.includes('3 about the run') && rulingsText.includes('0 about the run') && !rulingsCalls.some((made) => ['round-set', 'run-set'].includes(made.argv[0])) && JSON.stringify(aboutTheRun.expect) === JSON.stringify({ calls: 4, checks: 0 }))
   check('the rulings step writes the bounds and the dispositions', JSON.stringify(rulingsCalls[0].argv) === JSON.stringify(['bound-set', '--run', 'rc24-tier1', '--bound', 'non-jigc-writer', '--scratch', '/tmp/scratch-1', '--reach', 'races against a writer that is not jigc', '--ruling', 'the stop after round 1, item 3', '--pin', 'unpinned']) && spelled(rulingsCalls[1]).startsWith('bound-set --run rc24-tier1 --bound planted-state ') && rulingsCalls[2].stdin === JSON.stringify([{ key: 'f-1', disposition: admitted, detail: 'build the robust path' }, { key: 'f-2', disposition: later }, { key: 'f-3', disposition: bound, detail: 'races against a writer that is not jigc' }]) && spelled(rulingsCalls[3]) === 'check-ledger --run rc24-tier1 -- f-1 f-2 f-3' && rulingsCalls.length === 4)
   check('a quote in a ruling cannot leave its argument', shq('it\'s a "bound" $(x) `y`') === '\'it\'\\\'\'s a "bound" $(x) `y`\'')
 
-  // The clause rows of a test stage.
-  const clause = (units) => clauseRows(units, 'c'.repeat(40), 'the delta').map((r) => r.clause + '=' + r.status).join(' ')
-  check('clause rows', clause([{ item: 'a', clause: 'x', status: 'green' }, { item: 'b', clause: 'x', status: 'green' }, { item: 'c', clause: 'y', status: 'red' }]) === 'x=green y=red')
-  check('a void item voids its clause', clause([{ item: 'a', clause: 'x', status: 'red' }, { item: 'b', clause: 'x', status: 'void' }, { item: 'c', clause: 'x', status: 'green' }]) === 'x=void' && clause([{ item: 'a', clause: 'x', status: 'void' }, { item: 'b', clause: 'x', status: 'red' }]) === 'x=void')
-  check('a red check reddens its clause', clause([{ item: 'a', clause: 'x', status: 'green' }, { item: 'b', clause: 'x', status: 'red' }]) === 'x=red' && clause([]) === '')
-  check('a clause row names its items', clauseRows([{ item: 'a', clause: 'x', status: 'green' }, { item: 'b', clause: 'x', status: 'green' }], 'c'.repeat(40), 's')[0].instrument === 'a, b')
+  // What a test stage records of its items: one result each, and nothing about a clause.
+  const results = (units) => JSON.stringify(resultRows(units))
+  check('a result per item, as it ran', results([{ item: 'a', status: 'green', reason: 'r' }, { item: 'b', status: 'green' }]) === JSON.stringify([{ item: 'a', outcome: 'green' }, { item: 'b', outcome: 'green' }]) && results([]) === '[]')
+  check('a void item says why', results([{ item: 'a', status: 'void', reason: 'a step of its chain did not report' }, { item: 'b', status: 'void' }]) === JSON.stringify([{ item: 'a', outcome: 'void', reason: 'a step of its chain did not report' }, { item: 'b', outcome: 'void', reason: 'it did not run to its end' }]))
+  check('a red check brings what its finding needs', results([{ item: 'gate', status: 'red', reason: 'r', door: 'jigc setup', evidence: 'two tests red' }, { item: 'ci', status: 'red', evidence: null }]) === JSON.stringify([{ item: 'gate', outcome: 'red', doctype: 'jigc-feedback', door: 'jigc setup', repro: 'two tests red' }, { item: 'ci', outcome: 'red', doctype: 'jigc-feedback', door: 'the check `ci`', repro: 'the check returned red, and no evidence beside it' }]))
+  check('no result names a clause, and no call sets one', !resultRows([{ item: 'a', clause: 'x', status: 'green' }]).some((row) => 'clause' in row) && !stageRecordCommands(ctx, { reporters: [], results: { commit: 'c'.repeat(40), rows: resultRows([{ item: 'a', status: 'green' }]) }, rows: [], triage: [], patches: [], facts: null, keys: [] }).some((made) => made.argv[0].startsWith('clause')))
+  const reRecord = stageRecordCommands(Object.assign({}, ctx, { stage: 'test' }), { reporters: ['a'], gate: null, results: { commit: 'c'.repeat(40), rows: resultRows([{ item: 'a', status: 'green' }]) }, rows: [{ key: 'f-1' }], triage: [{ key: 'f-1', grade: 'breaks' }], patches: [], facts: null, keys: ['f-1'] })
+  check('a re-run\'s record is its results before anything of the ledger, and no fact of the round', JSON.stringify(reRecord.map((made) => made.argv[0])) === JSON.stringify(['check-reports', 'result-set', 'ledger-add', 'triage-set', 'check-ledger']))
 
   // A dropped round, and a part.
   const classes = classifyCommits(['a1', 'b2', 'c3', 'd4', 'e5'], ['b2', 'd4', 'e5'], ['a1', 'c3', 'e5'])
@@ -1932,8 +1931,9 @@ async function ruleTheRun(state, checkedOut) {
   const about = v.rulings.every(runRuling)
   const why = about ? runRulingsFault(v.rulings, state) : findingRulingsFault(v.rulings, state)
   if (why) return Object.assign(told, { message: why + '. Nothing was recorded.' })
+  // The rounds in which a clause has an item whose re-run is spent: where a grant is a fact.
   const ran = {}
-  for (const c of state.clauses || []) ran[c.clause] = c.round
+  for (const c of state.clauses || []) ran[c.clause] = (c.items || []).filter((i) => i.rerun === 'spent').map((i) => i.round).filter((n, at, all) => all.indexOf(n) === at)
   const ruled = await rulingsStep((about && state.stop ? state.stop.round : state.round) || 0, loopBranch, ran)
   if (ruled.halted) return ruled.halted
   return Object.assign({ status: 'ruled', stage: v.stage, run: v.run, rulings: v.rulings, record: ruled.record, message: 'the human\'s rulings ' + (about ? 'about the run' : 'on the round\'s findings and bounds') + ' are recorded, and nothing was started: `next` names the step.' }, nextOf(ruled.state))
@@ -1997,46 +1997,51 @@ async function runTest() {
     if (done.halted) return done.halted
     return Object.assign({ status: 'triaged', stage: 'test', run: v.run, round: ctx.round, triage_only: true, candidate: done.candidate, record: done.record, counts: { reporters: done.reporters.length, findings_in: done.handed, entries: done.entries.length, blockers: done.state.blockers.length, for_the_human: done.state.human_list.length }, human_list: done.state.human_list, forks: done.forks, blockers: done.state.blockers, forbids_close: done.state.forbids_close }, nextOf(done.state))
   }
+  // A RE-RUN is the position's, never the invocation's to decide: the state asks for it
+  // (`rerun`) and names the clause, the round that selected its due items, and the attempt
+  // each one's run will be. `args.clause` says that the orchestrator read the same answer.
+  const rerun = at.rerun || null
+  if (rerun && v.clause !== rerun.clause) return { status: 'refused', stage: 'test', run: v.run, message: 'the state asks for a re-run (`next` is `' + state.next + '`): the items of clause `' + rerun.clause + '` that are due in round ' + rerun.round + ' — ' + rerun.items.map((i) => i.item + ' (attempt ' + i.attempt + ')').join(', ') + '. Invoke `test` with clause: \'' + rerun.clause + '\'; an invocation without it would begin a round nobody asked for. Nothing was run beyond the two reads.', next: state.next, retest: state.retest, position: at }
+  if (!rerun && v.clause != null) return { status: 'refused', stage: 'test', run: v.run, message: 'args.clause asks for a re-run, and the state does not (`next` is `' + state.next + '`): an item is run again only where the record script lists it as due, as an attempt of the round that selected it. Nothing was run beyond the two reads.', next: state.next, retest: state.retest }
   const sha = String(gs.head)
   const launch = launcher(ctx)
   const items = state.items || []
-  // One clause's instrument alone (args.clause): every item that judges it, over the doors
-  // of the latest round's scope, named again as this round's.
-  const rerun = v.clause != null
-  if (rerun && !items.some((i) => i.clause === v.clause)) return halt('state', 'no item of the test set judges the clause `' + v.clause + '`: there is no instrument to run — the clauses that have one are ' + (items.map((i) => i.clause).filter((c, n, all) => all.indexOf(c) === n).join(', ') || '(none)'))
-  if (rerun && !state.doors) return halt('state', 'the latest round has no scope: there is no last run whose scope `' + v.clause + '`\'s instrument could be run over again')
-  const roundScope = rerun ? { doors: state.doors.included.map((d) => d.door) } : v.scope
   // The items this invocation names for a cross-model source pass — none, unless it names them.
   const crossNamed = v.crossModel || []
   const crossStrangers = crossNamed.filter((id) => !items.some((i) => i.item === id && chainOf(i.kind, true).some((stepList) => stepList.some((s) => s.crossModel))))
   if (crossStrangers.length) return halt('state', 'args.crossModel names ' + crossStrangers.join(', ') + ', which is no item of the test set whose chain has a cross-model pass — the items that have one are ' + (items.filter((i) => chainOf(i.kind, true).some((stepList) => stepList.some((s) => s.crossModel))).map((i) => i.item).join(', ') || '(none)'))
-  const runs = (i) => (rerun ? i.clause === v.clause : i.selected === true)
-  log('round ' + ctx.round + ', attempt ' + ctx.attempt + ' of the test stage: candidate ' + label + ' = ' + sha + '; ' + items.length + ' item(s) in the test set' + (rerun ? '; the instrument of clause `' + v.clause + '` ALONE' : ''))
+  const runs = (i) => (rerun ? rerun.items.some((x) => x.item === i.item) : i.selected === true)
+  log('round ' + ctx.round + ', attempt ' + ctx.attempt + ' of the test stage: ' + (rerun ? 'A RE-RUN inside it, on ' + sha + ' — ' + rerun.items.map((i) => i.item + ' (its attempt ' + i.attempt + ')').join(', ') + ' of clause `' + rerun.clause + '`, and nothing else' : 'candidate ' + label + ' = ' + sha + '; ' + items.length + ' item(s) in the test set'))
   if (v.stopAfter === 'state') return { status: 'stopped', after: 'state', stage: 'test', run: v.run, round: ctx.round, attempt: ctx.attempt, candidate: { label, sha }, state: attached(state) }
 
   // Preflight (the asserts, the one build, the checks that run on every candidate) beside
-  // the scope step: neither reads what the other writes.
+  // the scope step: neither reads what the other writes. A RE-RUN has no scope step — the
+  // round's scope stands, and its doors are what the items run over again — and no gate of
+  // the candidate's to record: its round has one, and the record commit is held to the
+  // gate of the candidate the run tested last.
   phase('Preflight and scope')
   const earlier = (state.rounds || []).find((r) => r.round === ctx.round - 1)
   const binary = v.scratch + '/bin/' + label + '.a' + ctx.attempt + '/jigc'
   // The candidate's own gate: the preflight runs it once and keeps its whole output, and
   // the record's batch puts what it shows red on record — what a record commit is held to.
-  const candidateGate = v.scratch + '/gate/' + label + '.a' + ctx.attempt + '.txt'
+  const candidateGate = rerun ? null : v.scratch + '/gate/' + label + '.a' + ctx.attempt + '.txt'
   const always = items.filter((i) => i.kind === CHECK_KIND && runs(i))
-  const scopeName = launch.add(['scope'])
-  const both = await parallel([
-    () => preflightOf(ctx, launch, ['preflight'], { build: true, image: false, gate: candidateGate, sha, label, branch: loopBranch, binary, checks: always, crossModel: crossNamed.length > 0, previous: previousOf(state) }, 'Preflight and scope'),
-    () => roleStep('scope', 'scope', 'Preflight and scope', scopePrompt(ctx, launch, scopeName, { sha, label, base: earlier && earlier.facts ? earlier.facts.candidate : null, earlier: !!earlier, scope: roundScope, clause: rerun ? v.clause : null, previous: previousOf(state), fallback: state.facts.scope }), SCOPE_SCHEMA),
-  ])
+  const scopeName = rerun ? null : launch.add(['scope'])
+  const steps = [() => preflightOf(ctx, launch, ['preflight'], { build: true, image: false, gate: candidateGate, sha, label, branch: loopBranch, binary, checks: always, crossModel: crossNamed.length > 0, previous: previousOf(state) }, 'Preflight and scope')]
+  if (!rerun) steps.push(() => roleStep('scope', 'scope', 'Preflight and scope', scopePrompt(ctx, launch, scopeName, { sha, label, base: earlier && earlier.facts ? earlier.facts.candidate : null, earlier: !!earlier, scope: v.scope, previous: previousOf(state), fallback: state.facts.scope }), SCOPE_SCHEMA))
+  const both = await parallel(steps)
   const pre = both[0] || { fault: 'the preflight returned no result', transient: true }
-  const sc = both[1]
+  const sc = rerun ? { status: 'stands' } : both[1]
   if (pre.fault) return halt('preflight', pre.fault, { transient: !!pre.transient, halt: pre.halt || null })
   if (!sc || (sc.status !== 'written' && sc.status !== 'stands')) return halt('scope', sc ? 'the scope step halted: ' + ((sc.halt && sc.halt.root_cause) || 'no reason given') : 'the scope step returned no result', { transient: !sc, halt: sc ? sc.halt : null })
   const built = { candidate: { label, sha, binary, sha256: pre.result.candidate.sha256 }, previous: pre.result.previous, image: null }
   const second = await readState()
   if (!second.state) return halt('state', 'the run\'s state could not be read after the scope step: ' + second.error, { transient: !!second.transient, halt: second.halt || null })
   state = second.state
-  if (!state.doors || state.round !== ctx.round) return halt('scope', 'the scope step reported ' + sc.status + ', and the state holds no doors for round ' + ctx.round)
+  if (!rerun && (!state.doors || state.round !== ctx.round)) return halt('scope', 'the scope step reported ' + sc.status + ', and the state holds no doors for round ' + ctx.round)
+  // The doors the round's items run over: its own scope's — as the state reads them back, or
+  // as the re-run's position names them again.
+  const inside = rerun ? rerun.doors : state.doors.included
   const selected = state.items.filter(runs)
   const hunting = selected.filter((i) => i.kind !== CHECK_KIND)
   const late = selected.filter((i) => i.kind === CHECK_KIND && !always.some((x) => x.item === i.item))
@@ -2050,7 +2055,7 @@ async function runTest() {
     built.image = needsImage ? more.result.image : null
     checks = checks.concat(more.result.checks || [])
   }
-  log('scope ' + sc.status + ': ' + state.doors.included.length + ' door(s) inside, ' + state.doors.excluded.length + ' outside; ' + hunting.length + ' of ' + state.items.filter((i) => i.kind !== CHECK_KIND).length + ' hunting item(s) run this round, and ' + (always.length + late.length) + ' check(s)')
+  log('scope ' + sc.status + ': ' + inside.length + ' door(s) inside; ' + hunting.length + ' of ' + state.items.filter((i) => i.kind !== CHECK_KIND).length + ' hunting item(s) run ' + (rerun ? 'again' : 'this round') + ', and ' + (always.length + late.length) + ' check(s)')
   if (sc.uncovered && sc.uncovered.length) log('NOT COVERED: ' + sc.uncovered.length + ' door(s) of the round\'s test set are reached by no item — ' + sc.uncovered.join(' · '))
   if (v.stopAfter === 'preflight') return { status: 'stopped', after: 'preflight', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, previous: built.previous, checks, scope: { status: sc.status, uncovered: sc.uncovered || [], reached_but_excluded: sc.reached_but_excluded || [] }, reporters: launch.names }
 
@@ -2059,7 +2064,7 @@ async function runTest() {
   const crossTool = crossNamed.length > 0 && (pre.result.checks || []).some((c) => c.check === CROSS_CHECK && c.status === 'green')
   const crossVoid = crossNamed.filter((id) => !crossTool || !hunting.some((i) => i.item === id)).map((id) => ({ item: id, why: crossTool ? 'the item does not run in this round' : 'the tool of the cross-model pass did not answer on this machine' }))
   for (const lost of crossVoid) log('CROSS-MODEL PASS VOID for `' + lost.item + '`: ' + lost.why + ' — its other passes run regardless')
-  const units = hunting.map((i) => ({ item: i.item, kind: i.kind, clause: i.clause, brief: i.brief, chain: chainOf(i.kind, crossTool && crossNamed.includes(i.item)), doors: unitDoors(i, state.doors.included), range: null }))
+  const units = hunting.map((i) => ({ item: i.item, kind: i.kind, clause: i.clause, brief: i.brief, chain: chainOf(i.kind, crossTool && crossNamed.includes(i.item)), doors: unitDoors(i, inside), range: null }))
   const nameable = unitNames(units, launch.names)
   if (nameable.fault) return halt('state', nameable.fault)
   const ran = await runUnits(ctx, launch, built, units, 'Instruments')
@@ -2085,22 +2090,23 @@ async function runTest() {
   if (tri.faults.length) return halt('binary', tri.faults.join('; '))
   if (v.stopAfter === 'triage') return { status: 'stopped', after: 'triage', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, entries: tri.entries, forks: tri.forks, reporters: launch.names }
 
-  // The record step: the reports checked, the rows, the clause rows, the round's facts.
+  // The record step: the reports checked, what each item did, the rows, the round's facts.
+  // ONE RESULT PER ITEM THIS INVOCATION RAN — the record script derives every clause's
+  // status from them, and files a red check as a finding in the same call.
   phase('Record')
-  const unitStatus = ran.map((u) => ({ item: u.item, clause: u.clause, status: u.status }))
+  const unitStatus = ran.map((u) => ({ item: u.item, status: u.status, reason: 'a step of its chain did not report' }))
   for (const item of always.concat(late)) {
     const c = checks.find((x) => x.check === item.item)
-    unitStatus.push({ item: item.item, clause: item.clause, status: c ? c.status : 'void' })
+    unitStatus.push({ item: item.item, status: c ? c.status : 'void', reason: c ? c.evidence || 'the check could not run, and the preflight returned no reason' : 'the preflight returned nothing for it', door: item.doors[0], evidence: c && c.evidence ? c.evidence + ' — the preflight\'s report: ' + pre.result.report : null })
   }
   const rec = triageRecord(ctx, tri.entries)
-  const facts = { candidate: sha, binary: built.candidate.sha256 }
-  // A round that ran one clause's instrument alone says so: it is that clause's one re-run.
-  if (rerun) facts.alone = v.clause
+  // A re-run writes no fact of the round: the round is tested, and its record stands.
+  const facts = rerun ? null : { candidate: sha, binary: built.candidate.sha256 }
   if (crossNamed.length) Object.assign(facts, { 'cross-model': crossRan, 'cross-model-void': crossVoid.map((x) => x.item) })
-  if (sc.base && SHORT_SHA_RE.test(sc.base)) facts.base = sc.base
+  if (facts && sc.base && SHORT_SHA_RE.test(sc.base)) facts.base = sc.base
   const dir = v.scratch + '/record/test-r' + ctx.round + '-a' + ctx.attempt
-  const commands = stageRecordCommands(ctx, { reporters: launch.names, gate: { commit: sha, file: candidateGate }, rows: rec.rows, triage: rec.triage, patches: [], clauses: clauseRows(unitStatus, sha, 'round ' + ctx.round + ': ' + scopeLabel(v.scope, rerun ? v.clause : null, state.facts.scope) + ' — ' + state.doors.included.length + ' door(s) inside'), facts, keys: tri.entries.map((e) => e.key) })
-  const recorded = await recordStep('test:r' + ctx.round, loopBranch, recordPrompt(v, 'the record of round ' + ctx.round + '\'s test stage — ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s)', loopBranch, dir, ctx.round, commands, v.run + ' r' + ctx.round + ' — the test stage\'s record'))
+  const commands = stageRecordCommands(ctx, { reporters: launch.names, gate: rerun ? null : { commit: sha, file: candidateGate }, results: { commit: sha, rows: resultRows(unitStatus) }, rows: rec.rows, triage: rec.triage, patches: [], facts, keys: tri.entries.map((e) => e.key) })
+  const recorded = await recordStep('test:r' + ctx.round, loopBranch, recordPrompt(v, rerun ? 'the record of a re-run inside round ' + ctx.round + ' — ' + rerun.items.length + ' item(s) of clause `' + rerun.clause + '` run again, ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s)' : 'the record of round ' + ctx.round + '\'s test stage — ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s)', loopBranch, dir, rerun ? state.candidate.round : ctx.round, commands, v.run + ' r' + ctx.round + (rerun ? ' — a re-run of ' + rerun.clause : ' — the test stage\'s record')))
   if (recorded.fault) return halt('record', recorded.fault, { transient: !recorded.result, halt: recorded.result ? recorded.result.halt : null, gate: recorded.result ? recorded.result.gate : null, launched: launch.names, forks: tri.forks, then: RECORD_THEN })
   const pushed = await toolStep('push', 'Record', 'push', pushPrompt(v, loopBranch))
   if (!onIt(pushed, loopBranch, true)) return gitHalt('push', pushed, 'the record is committed on ' + loopBranch + ' (' + recorded.result.commit + ') and the branch was not pushed')
@@ -2116,7 +2122,7 @@ async function runTest() {
     stage: 'test',
     run: v.run,
     round: ctx.round,
-    clause_alone: rerun ? v.clause : null,
+    rerun,
     cross_model: { named: crossNamed, ran: crossRan, void: crossVoid },
     candidate: built.candidate,
     record: recorded.result.commit,

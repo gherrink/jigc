@@ -5,7 +5,8 @@
 //! of the same date, *The record script, as built* and *The record script reads the run
 //! back*, and the three entries of 2026-10-06, *The record script holds what the harness
 //! reads its work from*, *The run's decision table, settled* and *The decision table's
-//! holes, closed*).
+//! holes, closed* — and, for what a clause's status is, *Evidence belongs to a test-set
+//! item*).
 //!
 //! A reporter of a stage has a shell and no write tool, and what it writes is public on the
 //! next push and read by fences on the next gate. So one script decides where a report
@@ -24,6 +25,12 @@
 //! fix rounds, the human's go and one more re-run as recorded facts, the stage that
 //! finishes a triage, the opening's last facts; and the two states the decisions still do
 //! not cover are rows too, as `unsettled` — the script's word for *not decided here*.
+//! **Since the repair's task 4 a clause's status is DERIVED, and the table says what was
+//! done, never what was concluded**: a row of [`ROUNDS`] names what each item of the test
+//! set did in which round — the script's `result-set` — and, by hand, the status each clause
+//! must then have; the suite holds the state document AND the rendered clause table to it.
+//! No expectation of a clause's status is computed from the fixture by a rule of this
+//! suite's own.
 //! **Two more hold what the harness reads its work from** ([`SELECTIONS`], and
 //! [`POSITIONS`] with [`BOUND_POSITIONS`]): which items of the test set the latest round
 //! runs, and the round, the cycle and the attempt an invocation of each stage works on — or
@@ -43,7 +50,7 @@
 //!   refused as `bad-id` and leaves the tree as it was.
 //! - *The writers.* Ten subcommands write a file ([`WRITERS`]), and seven of them put a
 //!   caller's free text into it: a report's body, a ledger row's cells as it is added and
-//!   as it is set, a clause row's cells, a bound's, a door's derivation, a test-set item's
+//!   as it is set, a void run's reason, a bound's, a door's derivation, a test-set item's
 //!   brief. The scanner that could not run and the killed write are driven through all
 //!   ten; the host-path replacement and the hygiene stop through the seven. The list is
 //!   held to the script's
@@ -146,6 +153,24 @@
 //! of the three read though written by hand. Two survived at first — a go of any truthy
 //! value, where the one cell that tried it stood in a state that refuses every go, and a
 //! counted cycle with no report on disk — and each got the cell it lacked.
+//!
+//! **And on thirty-six more, for the derived clause** (the repair's task 4; the arms the
+//! lists above name for a clause row's `stale`, for a round run `alone` and for a row set
+//! by hand went with those mechanisms). *The derivation:* an item a round selected and never
+//! ran owing nothing; the round that owes an item taken for the FIRST that selected it; a
+//! void run standing as green; a run current whatever was fixed since; an item's run taken
+//! for its first attempt; a clause that is owed nothing green; a red item not reddening its
+//! clause; a clause never selected no state for the human; a census with no clause ready.
+//! *The re-run:* two automatic; never spent; a grant that allows nothing, in any round, for
+//! a clause that is not the human's; a re-run taken whatever the state asks, and whatever
+//! the step is; the position naming none, and naming the latest round. *The results:* an
+//! item the round's scope does not select; a second result in a round that is not tested; a
+//! candidate with no scope, and one that is not the commit the results are of. *The view:*
+//! read whatever it says; rendered over a hand's change; not rendered by each of its four
+//! writers; the census written again. *The red finding:* none filed; `fixed` inherited by a
+//! check red after its fix; a red result read though its finding is gone. *The state:* a
+//! tested round with no scope, a result whose earlier attempt is gone, an outcome and a
+//! granted run of any shape, each read. Every one turned an arm that names it red.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -242,6 +267,8 @@ const LEDGER_COLUMNS: [&str; 10] = [
 ];
 
 const CLAUSE_COLUMNS: [&str; 5] = ["clause", "instrument", "last commit", "scope", "status"];
+/// The table of a round's results, as `result-set` writes it.
+const RESULT_COLUMNS: [&str; 5] = ["item", "attempt", "commit", "outcome", "detail"];
 
 const BOUND_COLUMNS: [&str; 4] = ["bound", "reach", "ruling", "pin"];
 
@@ -632,14 +659,24 @@ fn ledger_set(run: &str) -> Vec<String> {
     vec!["ledger-set".to_owned(), format!("--run={run}")]
 }
 
-fn clause_set(run: &str, clause: &str, rest: &[&str]) -> Vec<String> {
-    let mut args = vec![
-        "clause-set".to_owned(),
+fn result_set(run: &str, round: &str, commit: &str) -> Vec<String> {
+    vec![
+        "result-set".to_owned(),
         format!("--run={run}"),
-        format!("--clause={clause}"),
-    ];
-    args.extend(strings(rest));
-    args
+        format!("--round={round}"),
+        format!("--commit={commit}"),
+    ]
+}
+
+/// One item's run, as `result-set` takes it: green; void, with a reason; or red, with what
+/// the finding it is filed as needs.
+fn ran(item: &str, outcome: &str) -> Value {
+    match outcome {
+        "void" => json!({"item": item, "outcome": outcome, "reason": "its driver died"}),
+        "red" => json!({"item": item, "outcome": outcome, "doctype": "jigc-feedback",
+                        "door": "jigc setup", "repro": "what the check printed"}),
+        _ => json!({"item": item, "outcome": outcome}),
+    }
 }
 
 fn check_reports(run: &str, round: &str, attempt: &str, launched: &[&str]) -> Vec<String> {
@@ -913,6 +950,10 @@ fn round_path(round: &str) -> String {
     format!("completions/artifacts/{RUN}/r{round}/round.md")
 }
 
+fn results_path(round: &str) -> String {
+    format!("completions/artifacts/{RUN}/r{round}/results.md")
+}
+
 fn run_path() -> String {
     format!("completions/artifacts/{RUN}/run.md")
 }
@@ -975,18 +1016,23 @@ const WRITERS: &[Writer] = &[
         },
     },
     Writer {
-        name: "clause-set (the `instrument` cell)",
+        name: "result-set (a void run's `reason`)",
         free_text: true,
-        prepare: |_| {},
+        prepare: |rig| {
+            rig.run(&item_set(RUN), &item("row-setup").to_string())
+                .must(OK, "the item");
+            rig.run(
+                &scope_set(RUN, "1"),
+                &scope(&["jigc setup"], &[]).to_string(),
+            )
+            .must(OK, "the round's scope");
+        },
         call: |rig, text, extra| {
-            let mut args = clause_set(
-                RUN,
-                "no-lost-files",
-                &["--scope=the delta", "--status=void"],
-            );
-            args.push(format!("--instrument={text}"));
+            let mut given = ran("row-setup", "void");
+            given["reason"] = json!(text);
+            let mut args = result_set(RUN, "1", &sha('a'));
             args.extend_from_slice(extra);
-            (rig.run(&args, ""), clauses_path())
+            (rig.run(&args, &given.to_string()), results_path("1"))
         },
     },
     Writer {
@@ -1045,7 +1091,13 @@ const WRITERS: &[Writer] = &[
     Writer {
         name: "round-set (no free text)",
         free_text: false,
-        prepare: |_| {},
+        prepare: |rig| {
+            rig.run(
+                &scope_set(RUN, "1"),
+                &scope(&["jigc setup"], &[]).to_string(),
+            )
+            .must(OK, "the round's scope");
+        },
         call: |rig, _, extra| {
             let mut args = round_set(RUN, "1");
             args.extend_from_slice(extra);
@@ -1392,28 +1444,39 @@ const ID_SITES: &[IdSite] = &[
         },
     },
     IdSite {
-        name: "clause-set --run",
+        name: "result-set --run",
         numeric: false,
         call: |rig, v| {
-            let rest = [
-                "--instrument=the audit",
-                "--scope=the delta",
-                "--status=void",
-            ];
-            rig.run(&clause_set(v, "no-lost-files", &rest), "")
+            rig.run(
+                &result_set(v, "1", &sha('a')),
+                &ran("row-setup", "green").to_string(),
+            )
         },
     },
     IdSite {
-        name: "clause-set --clause",
+        name: "result-set --round",
+        numeric: true,
+        call: |rig, v| {
+            rig.run(
+                &result_set(RUN, v, &sha('a')),
+                &ran("row-setup", "green").to_string(),
+            )
+        },
+    },
+    IdSite {
+        name: "result-set, a result's item",
         numeric: false,
         call: |rig, v| {
-            let rest = [
-                "--instrument=the audit",
-                "--scope=the delta",
-                "--status=void",
-            ];
-            rig.run(&clause_set(RUN, v, &rest), "")
+            rig.run(
+                &result_set(RUN, "1", &sha('a')),
+                &ran(v, "green").to_string(),
+            )
         },
+    },
+    IdSite {
+        name: "run-set, a clause of the census",
+        numeric: false,
+        call: |rig, v| rig.run(&run_set(RUN), &json!({"clauses": [v]}).to_string()),
     },
     IdSite {
         name: "check-reports --run",
@@ -1541,11 +1604,6 @@ const ID_SITES: &[IdSite] = &[
         call: |rig, v| rig.run(&round_set(RUN, v), &json!({"cycles": 1}).to_string()),
     },
     IdSite {
-        name: "round-set, the clause whose instrument ran alone",
-        numeric: false,
-        call: |rig, v| rig.run(&round_set(RUN, "1"), &json!({"alone": v}).to_string()),
-    },
-    IdSite {
         name: "round-set, the clause granted one more re-run",
         numeric: false,
         call: |rig, v| rig.run(&round_set(RUN, "1"), &json!({"granted": v}).to_string()),
@@ -1616,11 +1674,6 @@ fn an_identifier_too_long_for_a_file_name_is_refused() {
 /// not a refusal — aimed at `run`.
 fn every_subcommand(rig: &Rig, run: &str) -> Vec<(&'static str, Seen)> {
     let patch = json!({"key": "seeded", "disposition": "later"});
-    let rest = [
-        "--instrument=the audit",
-        "--scope=the delta",
-        "--status=void",
-    ];
     vec![
         (
             "report",
@@ -1632,8 +1685,11 @@ fn every_subcommand(rig: &Rig, run: &str) -> Vec<(&'static str, Seen)> {
         ),
         ("ledger-set", rig.run(&ledger_set(run), &patch.to_string())),
         (
-            "clause-set",
-            rig.run(&clause_set(run, "no-lost-files", &rest), ""),
+            "result-set",
+            rig.run(
+                &result_set(run, "1", &sha('a')),
+                &ran("row-setup", "green").to_string(),
+            ),
         ),
         (
             "check-reports",
@@ -1723,12 +1779,6 @@ fn a_run_that_was_never_opened_is_refused_and_no_directory_is_minted() {
 
 #[test]
 fn a_link_inside_the_run_directory_never_carries_a_write_outside_it() {
-    let rest = [
-        "--instrument=the audit",
-        "--scope=the delta",
-        "--status=void",
-    ];
-
     // Each directory a report's path passes through, replaced by a link out of the run.
     for (n, linked) in ["r1", "r1/reports", "r1/reports/test"].iter().enumerate() {
         let rig = Rig::new(&format!("outside-dir-{n}"));
@@ -1767,8 +1817,11 @@ fn a_link_inside_the_run_directory_never_carries_a_write_outside_it() {
         .refused(OUTSIDE, "a ledger that is a link");
     rig.run(&check_ledger(RUN, &["audit-f3"]), "")
         .refused(OUTSIDE, "a check of a ledger that is a link");
-    rig.run(&clause_set(RUN, "no-lost-files", &rest), "")
-        .refused(OUTSIDE, "a clause table that is a link");
+    rig.run(&item_set(RUN), &item("row-setup").to_string())
+        .refused(
+            OUTSIDE,
+            "a test-set row under a clause table that is a link: the table is read first",
+        );
     rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "")
         .refused(OUTSIDE, "a bounds list that is a link");
     rig.run(&run_set(RUN), &json!({"rounds": 3}).to_string())
@@ -2372,14 +2425,35 @@ fn no_cell_can_break_the_table() {
             .must(OK, &format!("a hostile `{field}`"));
         expected.push(key);
     }
-    // A disposition's detail and a clause row's two cells are free text too.
+    // A disposition's detail is free text too — and so is the reason of a void run, which
+    // the clause table is rendered with: the view says it again, inside a cell of its own.
     let patch = json!({"key": "hostile-0", "disposition": "bound", "detail": hostile});
     rig.run(&ledger_set(RUN), &patch.to_string())
         .must(OK, "a hostile disposition detail");
-    let mut clause = clause_set(RUN, "no-lost-files", &["--status=void"]);
-    clause.push(format!("--instrument={hostile}"));
-    clause.push(format!("--scope={hostile}"));
-    rig.run(&clause, "").must(OK, "hostile clause cells");
+    rig.run(
+        &run_set(RUN),
+        &json!({"clauses": ["no-lost-files"]}).to_string(),
+    )
+    .must(OK, "the census");
+    rig.run(&item_set(RUN), &item("row-setup").to_string())
+        .must(OK, "the item");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&["jigc setup"], &[]).to_string(),
+    )
+    .must(OK, "the round's scope");
+    let mut void = ran("row-setup", "void");
+    void["reason"] = json!(hostile);
+    rig.run(&result_set(RUN, "1", &sha('a')), &void.to_string())
+        .must(OK, "a hostile reason");
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"candidate": sha('a')}).to_string(),
+    )
+    .must(
+        OK,
+        "the round, tested: the view is rendered with the reason",
+    );
 
     let rows = table(&rig.read(&ledger_path()), &LEDGER_COLUMNS);
     let keys: Vec<String> = rows
@@ -2397,8 +2471,30 @@ fn no_cell_can_break_the_table() {
             "the cell keeps what it was given, its line breaks as `<br>`: {cell}"
         );
     }
+    let results = table(&rig.read(&results_path("1")), &RESULT_COLUMNS);
+    assert_eq!(results.len(), 1, "one result row");
+    assert!(
+        results[0][4].starts_with("a | b<br>second line<br>| `injected` | x |<br>|---|---| tab "),
+        "the reason keeps what it was given: {results:?}"
+    );
     let clauses = table(&rig.read(&clauses_path()), &CLAUSE_COLUMNS);
     assert_eq!(clauses.len(), 1, "one clause row");
+    assert!(
+        clauses[0][1].contains(&results[0][4]) && clauses[0][4] == "void",
+        "the view says the reason again, and is one row still: {clauses:?}"
+    );
+    // The view is the one the results give, read back cell for cell: the state is read —
+    // and gives the cell back as data, its pipes unescaped.
+    let read = rig.state();
+    let text = |value: &Value| value.as_str().expect("text").to_owned();
+    assert_eq!(read["clauses"][0]["status"], json!("void"));
+    assert!(
+        text(&read["clauses"][0]["instrument"])
+            .contains(": a | b<br>second line<br>| `injected` | x |")
+            && text(&read["clauses"][0]["items"][0]["reason"]).starts_with("a | b<br>second line")
+            && text(&read["rounds"][0]["results"][0]["reason"]).starts_with("a | b<br>second line"),
+        "{read}"
+    );
 
     // And the script reads its own table back the same way.
     let refs: Vec<&str> = expected.iter().map(String::as_str).collect();
@@ -2732,7 +2828,7 @@ fn a_value_outside_the_vocabulary_is_refused_and_nothing_of_its_batch_is_written
 fn rows_written_at_once_are_all_written() {
     let rig = Rig::new("at-once");
     let keys: Vec<String> = (0..6).map(|n| format!("audit-f{n}")).collect();
-    let clauses: Vec<String> = (0..3).map(|n| format!("clause-{n}")).collect();
+    let items: Vec<String> = (0..3).map(|n| format!("row-{n}")).collect();
     std::thread::scope(|scope| {
         for key in &keys {
             let rig = &rig;
@@ -2741,16 +2837,10 @@ fn rows_written_at_once_are_all_written() {
                     .must(OK, key);
             });
         }
-        for clause in &clauses {
+        for id in &items {
             let rig = &rig;
             scope.spawn(move || {
-                let rest = [
-                    "--instrument=the audit",
-                    "--scope=the delta",
-                    "--status=void",
-                ];
-                rig.run(&clause_set(RUN, clause, &rest), "")
-                    .must(OK, clause);
+                rig.run(&item_set(RUN), &item(id).to_string()).must(OK, id);
             });
         }
     });
@@ -2768,8 +2858,8 @@ fn rows_written_at_once_are_all_written() {
         keys.into_iter().collect()
     );
     assert_eq!(
-        first_cells(rig.read(&clauses_path()), &CLAUSE_COLUMNS),
-        clauses.into_iter().collect()
+        first_cells(rig.read(&test_set_path()), &ITEM_COLUMNS),
+        items.into_iter().collect()
     );
 }
 
@@ -2862,129 +2952,609 @@ fn a_table_the_script_did_not_write_is_refused_as_corrupt_and_left_alone() {
 }
 
 // ---------------------------------------------------------------------------
-// 10 · The per-clause table
+// 10 · An item's results, and the per-clause table that is rendered from them
 // ---------------------------------------------------------------------------
 
-#[test]
-fn the_clause_table_is_written_and_updated_row_by_row() {
-    let rig = Rig::new("clauses");
-    let opening = [
-        "--instrument=the audit of the fix diff",
-        "--scope=product paths of the delta",
-        "--status=void",
-    ];
-    let seen = rig.run(&clause_set(RUN, "no-lost-files", &opening), "");
-    seen.must(OK, "a clause's first row");
-    assert_eq!(
-        seen.json(),
-        json!({"clauses": clauses_path(), "clause": "no-lost-files", "status": "void"})
-    );
-    let rest = [
-        "--instrument=the scripted regression set",
-        "--scope=everything",
-        "--status=void",
-    ];
-    rig.run(&clause_set(RUN, "no-regression", &rest), "")
-        .must(OK, "a second clause");
-    assert_eq!(
-        table(&rig.read(&clauses_path()), &CLAUSE_COLUMNS),
-        vec![
-            vec![
-                "`no-lost-files`",
-                "the audit of the fix diff",
-                "-",
-                "product paths of the delta",
-                "void",
-            ],
-            vec![
-                "`no-regression`",
-                "the scripted regression set",
-                "-",
-                "everything",
-                "void",
-            ],
-        ]
-    );
+/// The run of the review's first HIGH finding, opened: one clause judged by a check and by
+/// two hunts, each behind a door of its own.
+fn three_item_run(label: &str) -> Rig {
+    let rig = Rig::new(label);
+    rig.run(
+        &run_set(RUN),
+        &format!(r#"{{{BOUNDED}, {RELEASE}, "clauses": ["no-lost-files"]}}"#),
+    )
+    .must(OK, "the run's facts, and its census");
+    let mut gate = item("gate");
+    gate["kind"] = json!("check");
+    gate["runs"] = json!("every-candidate");
+    gate["doors"] = json!([]);
+    let setup = item("review-setup");
+    let mut show = item("review-show");
+    show["doors"] = json!([EXCLUDED]);
+    rig.run(&item_set(RUN), &json!([gate, setup, show]).to_string())
+        .must(OK, "the test set");
+    rig
+}
 
-    // The instrument ran: its commit and its verdict, and nothing else of the row.
+/// A round of [`three_item_run`], recorded as its `test` stage does: its doors, what each
+/// item did, its candidate.
+fn stage(rig: &Rig, n: usize, doors: &Value, results: &[(&str, &str)]) {
+    rig.run(&scope_set(RUN, &n.to_string()), &doors.to_string())
+        .must(OK, "a round's scope");
+    let rows: Vec<Value> = results
+        .iter()
+        .map(|(item, outcome)| ran(item, outcome))
+        .collect();
     rig.run(
-        &clause_set(RUN, "no-lost-files", &["--commit=0f34d8f0", "--status=red"]),
-        "",
+        &result_set(RUN, &n.to_string(), &candidate(n)),
+        &json!(rows).to_string(),
     )
-    .must(OK, "the instrument ran red");
+    .must(OK, "what the round's items did");
     rig.run(
-        &clause_set(
-            RUN,
-            "no-lost-files",
-            &[
-                "--commit=967ca491",
-                "--status=green",
-                "--scope=the doors of round 2",
-            ],
-        ),
-        "",
+        &round_set(RUN, &n.to_string()),
+        &json!({"candidate": candidate(n)}).to_string(),
     )
-    .must(OK, "and then green, over another scope");
-    assert_eq!(
-        table(&rig.read(&clauses_path()), &CLAUSE_COLUMNS),
-        vec![
-            vec![
-                "`no-lost-files`",
-                "the audit of the fix diff",
-                "`967ca491`",
-                "the doors of round 2",
-                "green",
-            ],
-            vec![
-                "`no-regression`",
-                "the scripted regression set",
-                "-",
-                "everything",
-                "void",
-            ],
-        ]
-    );
+    .must(OK, "the round's candidate");
+}
+
+/// A result is recorded per test-set item, per round: which item ran, which attempt of it,
+/// on which commit, with which outcome — green, void with its reason, red with the finding
+/// it is filed as. The attempt is computed; and what is no run of an item the round's
+/// scope selected is refused, leaving nothing.
+#[test]
+fn an_items_result_is_recorded_per_round_with_its_attempt_computed() {
+    let rig = three_item_run("results");
+    let before = rig.snapshot();
+    rig.run(
+        &result_set(RUN, "1", &sha('a')),
+        &ran("gate", "green").to_string(),
+    )
+    .refused(NO_SCOPE, "a result in a round that has no scope");
+    assert_eq!(rig.snapshot(), before);
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "round 1's scope");
 
     let before = rig.snapshot();
-    let refused: &[(&[&str], &str, i32)] = &[
+    let commit = sha('a');
+    let on = commit.as_str();
+    let refused: &[(Value, &str, &str, i32)] = &[
         (
-            &["--status=passed"],
-            "a status outside green, red and void",
+            json!({"item": "gate", "outcome": "passed"}),
+            on,
+            "an outcome outside green, red and void",
             BAD_VALUE,
         ),
         (
-            &["--commit=HEAD", "--status=red"],
-            "a commit that is not a sha",
+            json!({"item": "gate", "outcome": "void"}),
+            on,
+            "void, and no reason",
             BAD_VALUE,
         ),
         (
-            &["--commit=-", "--status=green"],
-            "green on no commit",
+            json!({"item": "gate", "outcome": "void", "reason": "  "}),
+            on,
+            "void, with a reason that says nothing",
             BAD_VALUE,
         ),
-        (&[], "an update that sets nothing", USAGE),
+        (
+            json!({"item": "gate", "outcome": "green", "reason": "why not"}),
+            on,
+            "a reason beside green",
+            BAD_VALUE,
+        ),
+        (
+            json!({"item": "gate", "outcome": "red"}),
+            on,
+            "red, and nothing of its finding",
+            BAD_VALUE,
+        ),
+        (
+            json!({"item": "gate", "outcome": "red", "doctype": "jigc-feedback", "door": "the gate"}),
+            on,
+            "red, and no repro",
+            BAD_VALUE,
+        ),
+        (
+            json!({"item": "gate", "outcome": "red", "doctype": "a-note", "door": "the gate", "repro": "r"}),
+            on,
+            "red, filed under a doctype nobody defined",
+            BAD_VALUE,
+        ),
+        (
+            json!({"item": "gate", "outcome": "green", "repro": "r"}),
+            on,
+            "a finding's field beside green",
+            BAD_VALUE,
+        ),
+        (
+            json!({"item": "gate", "outcome": "green", "attempt": 1}),
+            on,
+            "an attempt supplied: it is computed",
+            BAD_VALUE,
+        ),
+        (
+            json!([ran("gate", "green"), ran("gate", "green")]),
+            on,
+            "an item twice in one call",
+            BAD_VALUE,
+        ),
+        (
+            ran("gate", "green"),
+            "0f34d8f0",
+            "a commit that is not a full sha",
+            BAD_VALUE,
+        ),
+        (
+            ran("review-row-nobody-listed", "green"),
+            on,
+            "an item the test set lacks",
+            NO_SUCH_ROW,
+        ),
+        (
+            ran("review-show", "green"),
+            on,
+            "an item the round's scope does not select",
+            BAD_VALUE,
+        ),
     ];
-    for (rest, why, status) in refused {
-        rig.run(&clause_set(RUN, "no-lost-files", rest), "")
+    for (given, commit, why, status) in refused {
+        rig.run(&result_set(RUN, "1", commit), &given.to_string())
             .refused(*status, why);
     }
-    // A verdict needs a commit it was reached on, and a new row needs all it must say.
-    rig.run(&clause_set(RUN, "no-regression", &["--status=green"]), "")
-        .refused(BAD_VALUE, "green, on a row that never ran");
-    rig.run(&clause_set(RUN, "a-third", &["--status=void"]), "")
-        .refused(BAD_VALUE, "a new row with no instrument and no scope");
-    assert_eq!(rig.snapshot(), before);
+    assert_eq!(rig.snapshot(), before, "a refused result writes nothing");
 
-    // Void is sayable of a commit: the instrument could not run on it.
+    let seen = rig.run(
+        &result_set(RUN, "1", on),
+        &json!([ran("gate", "green"), ran("review-setup", "void")]).to_string(),
+    );
+    seen.must(OK, "what round 1's items did");
+    assert_eq!(
+        seen.json(),
+        json!({"results": results_path("1"), "findings": [], "recorded": [
+            {"item": "gate", "attempt": 1, "outcome": "green"},
+            {"item": "review-setup", "attempt": 1, "outcome": "void"}]})
+    );
+    let ticked = format!("`{commit}`");
+    assert_eq!(
+        table(&rig.read(&results_path("1")), &RESULT_COLUMNS),
+        [
+            ["`gate`", "1", ticked.as_str(), "green", "-"],
+            [
+                "`review-setup`",
+                "1",
+                ticked.as_str(),
+                "void",
+                "its driver died"
+            ],
+        ]
+    );
+    // A round that is not tested yet has one result per item: its test stage's.
+    let before = rig.snapshot();
+    rig.run(&result_set(RUN, "1", on), &ran("gate", "green").to_string())
+        .refused(
+            EXISTS,
+            "a second result of an item in a round that is not tested",
+        );
+    // And a round tests one candidate: the commit its results are of.
     rig.run(
-        &clause_set(
-            RUN,
-            "no-regression",
-            &["--commit=967ca491", "--status=void"],
-        ),
-        "",
+        &round_set(RUN, "1"),
+        &json!({"candidate": sha('b')}).to_string(),
     )
-    .must(OK, "could not run on a commit");
+    .refused(
+        BAD_VALUE,
+        "a candidate that is not the commit the results are of",
+    );
+    assert_eq!(rig.snapshot(), before);
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"candidate": commit}).to_string(),
+    )
+    .must(OK, "the round's candidate");
+    assert_eq!(
+        rig.state()["rounds"][0]["results"],
+        json!([
+            {"item": "gate", "attempt": 1, "commit": commit, "outcome": "green", "reason": null, "finding": null},
+            {"item": "review-setup", "attempt": 1, "commit": commit, "outcome": "void",
+             "reason": "its driver died", "finding": null},
+        ])
+    );
+
+    // A candidate is the candidate of a round that has a scope.
+    fs::create_dir_all(rig.run_dir().join("r2")).expect("a round directory");
+    let before = rig.snapshot();
+    rig.run(
+        &round_set(RUN, "2"),
+        &json!({"candidate": sha('b')}).to_string(),
+    )
+    .refused(NO_SCOPE, "a candidate for a round with no scope");
+    assert_eq!(rig.snapshot(), before);
+}
+
+/// **The first of the review's HIGH findings, and the repair plan's state 1.** Three items
+/// judge one clause. Round 1 leaves one hunt void; its fix lands; round 2's scope does not
+/// select that hunt, and everything round 2 ran is green. The run answers the re-run of
+/// that hunt — an attempt of round 1 — and never `close`: an instrument that never ran to
+/// its end is not turned green by a later round that ran the others.
+#[test]
+fn an_instrument_that_never_ran_to_its_end_is_not_turned_green_by_a_later_round_that_ran_the_others()
+ {
+    let rig = three_item_run("f1");
+    stage(
+        &rig,
+        1,
+        &scope(&[INSIDE, EXCLUDED], &[]),
+        &[
+            ("gate", "green"),
+            ("review-setup", "void"),
+            ("review-show", "green"),
+        ],
+    );
+    rig.run(&ledger_add(RUN), &row_at("f-1", EXCLUDED).to_string())
+        .must(OK, "a finding of round 1");
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "f-1", "grade": "breaks", "verdict": "confirmed", "regression": false})
+            .to_string(),
+    )
+    .must(OK, "its triage");
+    assert_eq!(rig.state()["next"], json!("fix"));
+    rig.run(
+        &ledger_set(RUN),
+        &json!({"key": "f-1", "disposition": "fixed", "detail": sha('f')}).to_string(),
+    )
+    .must(OK, "its fix");
+    rig.run(&round_set(RUN, "1"), &json!({"cycles": 1}).to_string())
+        .must(OK, "the fix cycle");
+    assert_eq!(rig.state()["next"], json!("test"));
+
+    // Round 2: the fix's door only. It selects the check and one hunt, and both are green.
+    stage(
+        &rig,
+        2,
+        &scope(&[EXCLUDED], &[INSIDE]),
+        &[("gate", "green"), ("review-show", "green")],
+    );
+    let read = rig.state();
+    assert_eq!(
+        (&read["next"], &read["retest"], &read["forbids_close"]),
+        (
+            &json!("retest"),
+            &json!(["no-lost-files"]),
+            &json!([{"clause": "no-lost-files", "status": "void"}])
+        ),
+        "never `close`: {read}"
+    );
+    assert_eq!(
+        read["position"]["test"],
+        json!({"round": 1, "attempt": 1, "rerun": {
+            "clause": "no-lost-files", "round": 1,
+            "items": [{"item": "review-setup", "attempt": 2}],
+            "doors": [door(INSIDE), door(EXCLUDED)]}}),
+        "the re-run of that hunt, inside the round that selected it: {read}"
+    );
+    // The clause table says so, item by item — each one's own run, in its own round.
+    let commit = format!("`{}`", candidate(2));
+    assert_eq!(
+        table(&rig.read(&clauses_path()), &CLAUSE_COLUMNS),
+        [[
+            "`no-lost-files`",
+            "`gate` — green (round 2, attempt 1)<br>`review-setup` — void (round 1, attempt 1): its driver died<br>`review-show` — green (round 2, attempt 1)",
+            commit.as_str(),
+            "round 1, round 2",
+            "void",
+        ]]
+    );
+
+    // The hunt runs to its end on the candidate, as attempt 2 of round 1: now it closes.
+    rerun(&rig, 1, 2, "review-setup", "green").must(OK, "the hunt's re-run");
+    let read = rig.state();
+    assert_eq!(
+        (&read["next"], &read["forbids_close"], &read["round"]),
+        (&json!("close"), &json!([]), &json!(2)),
+        "{read}"
+    );
+}
+
+/// **The per-clause table is a view, rendered by the script from the item results, and
+/// nothing sets a clause's status.** It holds a row per clause of the census, written once
+/// at the opening; and a table that differs from what the results give — a status a hand
+/// changed, a row or the file deleted, a row added, a cell reworded — is refused by `state`
+/// and by every writer that renders it, naming what differs: never read as it stands, and
+/// never quietly rendered over.
+#[test]
+fn the_clause_table_is_rendered_from_the_item_results_and_a_table_that_differs_is_refused() {
+    let rig = three_item_run("view");
+    // The census is written once, and the table has its rows from that moment on.
+    let before = rig.snapshot();
+    rig.run(
+        &run_set(RUN),
+        &json!({"clauses": ["no-lost-files", "no-regression"]}).to_string(),
+    )
+    .refused(EXISTS, "a second census");
+    for (said, why) in [
+        (json!({"clauses": []}), "a census of no clause"),
+        (
+            json!({"clauses": "no-lost-files"}),
+            "a census that is no list",
+        ),
+        (json!({"clauses": ["a", "a"]}), "a clause named twice"),
+    ] {
+        rig.run(&run_set(RUN), &said.to_string())
+            .refused(BAD_VALUE, why);
+    }
+    assert_eq!(rig.snapshot(), before);
+    rig.run(
+        &run_set(RUN),
+        &json!({"clauses": ["no-lost-files"]}).to_string(),
+    )
+    .must(OK, "the census said again, as it stands");
+    assert_eq!(
+        table(&rig.read(&clauses_path()), &CLAUSE_COLUMNS),
+        [[
+            "`no-lost-files`",
+            "`gate` — not selected by any tested round: it owes nothing<br>`review-setup` — not selected by any tested round: it owes nothing<br>`review-show` — not selected by any tested round: it owes nothing",
+            "-",
+            "-",
+            "void",
+        ]],
+        "before any round is tested no item is owed, and the clause is void"
+    );
+    assert!(
+        !subcommands(&rig)
+            .iter()
+            .any(|name| name.starts_with("clause")),
+        "no subcommand writes a clause's row"
+    );
+
+    let all_green = [
+        ("gate", "green"),
+        ("review-setup", "green"),
+        ("review-show", "green"),
+    ];
+    stage(&rig, 1, &scope(&[INSIDE, EXCLUDED], &[]), &all_green);
+    let commit = format!("`{}`", candidate(1));
+    let green = [[
+        "`no-lost-files`",
+        "`gate` — green (round 1, attempt 1)<br>`review-setup` — green (round 1, attempt 1)<br>`review-show` — green (round 1, attempt 1)",
+        commit.as_str(),
+        "round 1",
+        "green",
+    ]];
+    assert_eq!(table(&rig.read(&clauses_path()), &CLAUSE_COLUMNS), green);
+    assert_eq!(rig.state()["next"], json!("close"));
+
+    // What a hand does to it. Each is refused by the state, by its own word for it — and
+    // by each writer that would otherwise render the table again, which leaves the tree.
+    let held = rig.read(&clauses_path());
+    let path = rig.root.join(clauses_path());
+    let row = held.lines().last().expect("the clause's row").to_owned();
+    let damaged: &[(String, &str, &str)] = &[
+        (
+            held.replace("| green |", "| void |"),
+            "says \"void\" of `no-lost-files` where the results give \"green\"",
+            "a status changed by hand",
+        ),
+        (
+            held.replace(&format!("{row}\n"), ""),
+            "has no row for `no-lost-files`",
+            "the clause's row deleted",
+        ),
+        (
+            format!("{held}| `no-regression` | - | - | - | green |\n"),
+            "holds a row for `no-regression`, which is no clause of the run",
+            "a row added by hand",
+        ),
+        (
+            held.replace("| round 1 |", "| every door |"),
+            "holds a row for `no-lost-files` whose cells are not the ones the results give",
+            "a cell reworded by hand",
+        ),
+    ];
+    for (text, names, why) in damaged {
+        assert_ne!(text, &held, "{why}: the damage is done");
+        fs::write(&path, text).expect("damage the clause table");
+        let before = rig.snapshot();
+        let seen = rig.run(&state(RUN), "");
+        seen.refused(CORRUPT, why);
+        assert!(seen.stderr.contains(names), "{why}: {}", seen.stderr);
+        for (args, body, writer) in [
+            (run_set(RUN), json!({"rounds": 4}), "run-set"),
+            (item_set(RUN), item("review-rename"), "item-set"),
+            (round_set(RUN, "1"), json!({"cycles": 1}), "round-set"),
+            (
+                result_set(RUN, "1", &candidate(1)),
+                ran("gate", "green"),
+                "result-set",
+            ),
+        ] {
+            rig.run(&args, &body.to_string())
+                .refused(CORRUPT, &format!("{writer}, over {why}"));
+        }
+        assert_eq!(rig.snapshot(), before, "{why}: nothing renders over it");
+    }
+    fs::remove_file(&path).expect("delete the clause table");
+    let seen = rig.run(&state(RUN), "");
+    seen.refused(CORRUPT, "the clause table deleted");
+    assert!(
+        seen.stderr.contains("has no row for `no-lost-files`"),
+        "a deleted table is a table without its rows: {}",
+        seen.stderr
+    );
+    fs::write(&path, &held).expect("take the table back");
+    assert_eq!(rig.state()["next"], json!("close"));
+
+    // And every writer whose table the derivation reads renders it in its own batch: a
+    // fix cycle on record, and no run is current.
+    rig.run(&round_set(RUN, "1"), &json!({"cycles": 1}).to_string())
+        .must(OK, "a fix cycle");
+    let said = table(&rig.read(&clauses_path()), &CLAUSE_COLUMNS);
+    assert_eq!(
+        (
+            said[0][4].as_str(),
+            said[0][1].matches("void: not current").count()
+        ),
+        ("void", 3),
+        "{said:?}"
+    );
+    // An item that takes its row later owes a run where a tested round selects it.
+    stage(&rig, 2, &scope(&[INSIDE, EXCLUDED], &[]), &all_green);
+    assert_eq!(rig.state()["next"], json!("close"));
+    let mut late = item("regression-set");
+    late["kind"] = json!("check");
+    late["runs"] = json!("every-candidate");
+    late["doors"] = json!([]);
+    rig.run(&item_set(RUN), &late.to_string())
+        .must(OK, "an instrument that was built later");
+    let read = rig.state();
+    assert_eq!(
+        (
+            &read["next"],
+            &read["clauses"][0]["status"],
+            &read["position"]["test"]["rerun"]["items"]
+        ),
+        (
+            &json!("retest"),
+            &json!("void"),
+            &json!([{"item": "regression-set", "attempt": 1}])
+        ),
+        "{read}"
+    );
+}
+
+/// **A red deterministic check becomes a finding with a ledger row** — by the call that
+/// records the red, so that no caller can record one and file nothing: ungraded and open,
+/// under a key of the item's own, it is the next triage's to grade and then routed, ruled
+/// or fixed like any other. A red result whose finding the ledger lacks is refused; and a
+/// check that is red again after its finding was fixed opens that finding again.
+#[test]
+fn a_red_run_is_filed_as_a_finding_and_is_open_again_when_it_is_red_after_its_fix() {
+    let rig = three_item_run("red");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "round 1's scope");
+    let mut red = ran("gate", "red");
+    red["repro"] = json!("the gate's own output: two tests red");
+    let seen = rig.run(
+        &result_set(RUN, "1", &candidate(1)),
+        &json!([red, ran("review-setup", "green")]).to_string(),
+    );
+    seen.must(OK, "a red check, and a green hunt");
+    assert_eq!(seen.json()["findings"], json!(["red-gate"]));
+    assert_eq!(
+        table(&rig.read(&ledger_path()), &LEDGER_COLUMNS),
+        [[
+            "`red-gate`",
+            "`jigc-feedback`",
+            "1",
+            "the item `gate` of the test set, red in round 1 (attempt 1)",
+            INSIDE,
+            "no-lost-files",
+            "ungraded",
+            "-",
+            "open",
+            "the gate's own output: two tests red",
+        ]],
+        "the finding's row, as the call that recorded the red wrote it"
+    );
+    assert_eq!(
+        table(&rig.read(&results_path("1")), &RESULT_COLUMNS)[0][3..],
+        ["red", "`red-gate`"]
+    );
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"candidate": candidate(1)}).to_string(),
+    )
+    .must(OK, "the round's candidate");
+    // It is handed to somebody: the round's triage is not finished until it is graded.
+    let read = rig.state();
+    assert_eq!(
+        (
+            &read["next"],
+            &read["untriaged"],
+            &read["clauses"][0]["status"]
+        ),
+        (
+            &json!("triage"),
+            &json!([{"key": "red-gate", "why": "ungraded"}]),
+            &json!("red")
+        ),
+        "{read}"
+    );
+    // The finding is the ledger's to hold: its row deleted is a state that is not read.
+    let ledger = rig.read(&ledger_path());
+    let kept: String = ledger
+        .lines()
+        .filter(|line| !line.contains("`red-gate`"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    fs::write(rig.root.join(ledger_path()), kept).expect("delete the finding's row");
+    let seen = rig.run(&state(RUN), "");
+    seen.refused(CORRUPT, "a red result whose finding is gone");
+    assert!(seen.stderr.contains("lacks red-gate"), "{}", seen.stderr);
+    fs::write(rig.root.join(ledger_path()), ledger).expect("take the ledger back");
+
+    // Graded, verified, fixed like any other: inside the round's test set, so a fixer's.
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "red-gate", "grade": "breaks", "verdict": "confirmed", "regression": false})
+            .to_string(),
+    )
+    .must(OK, "its triage");
+    let read = rig.state();
+    assert_eq!(
+        (&read["next"], &read["blockers"]),
+        (&json!("fix"), &json!(["red-gate"])),
+        "{read}"
+    );
+    rig.run(
+        &ledger_set(RUN),
+        &json!({"key": "red-gate", "disposition": "fixed", "detail": sha('f')}).to_string(),
+    )
+    .must(OK, "its fix");
+    rig.run(&round_set(RUN, "1"), &json!({"cycles": 1}).to_string())
+        .must(OK, "the fix cycle");
+
+    // Round 2: the check is red again. Its finding keeps its row and does not inherit
+    // `fixed` — the fix did not hold — so it is a fixer's again, and nothing closes.
+    rig.run(
+        &scope_set(RUN, "2"),
+        &scope(&[EXCLUDED], &[INSIDE]).to_string(),
+    )
+    .must(OK, "round 2's scope");
+    let mut again = ran("gate", "red");
+    again["repro"] = json!("the gate's own output, on the next candidate");
+    let seen = rig.run(
+        &result_set(RUN, "2", &candidate(2)),
+        &json!([again, ran("review-show", "green")]).to_string(),
+    );
+    seen.must(OK, "red again");
+    assert_eq!(seen.json()["findings"], json!(["red-gate"]));
+    rig.run(
+        &round_set(RUN, "2"),
+        &json!({"candidate": candidate(2)}).to_string(),
+    )
+    .must(OK, "round 2's candidate");
+    let rows = table(&rig.read(&ledger_path()), &LEDGER_COLUMNS);
+    assert_eq!(
+        (rows.len(), rows[0][8].as_str(), rows[0][9].as_str()),
+        (1, "open", "the gate's own output: two tests red"),
+        "one row per finding: found again, it keeps its row and is open again"
+    );
+    let read = rig.state();
+    assert_eq!(
+        (
+            &read["next"],
+            &read["blockers"],
+            &read["clauses"][0]["status"]
+        ),
+        (&json!("fix"), &json!(["red-gate"]), &json!("red")),
+        "{read}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -3869,6 +4439,7 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                 "previous": null,
                 "previous-commit": null,
                 "scope": null,
+                "clauses": null,
             },
             "not_ready": [
                 "no-clause-row",
@@ -3925,11 +4496,6 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
         ]);
         rig.run(&fix, BODY).must(OK, "a fix-stage report");
     }
-    rig.run(
-        &round_set(RUN, "1"),
-        &json!({"candidate": sha('c'), "binary": sha256('b'), "cycles": 2}).to_string(),
-    )
-    .must(OK, "round 1's record");
     let mut check = item("the-gate");
     check["kind"] = json!("check");
     check["runs"] = json!("every-candidate");
@@ -3941,41 +4507,30 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
     .must(OK, "the test set");
     rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "")
         .must(OK, "a declared bound");
-    rig.run(&run_set(RUN), &format!("{{{BOUNDED}, {RELEASE}}}"))
-        .must(OK, "the run's facts");
+    rig.run(
+        &run_set(RUN),
+        &format!(r#"{{{BOUNDED}, {RELEASE}, "clauses": ["no-lost-files", "no-regression"]}}"#),
+    )
+    .must(OK, "the run's facts, and its census");
     rig.run(
         &scope_set(RUN, "1"),
         &scope(&[INSIDE], &[EXCLUDED]).to_string(),
     )
     .must(OK, "round 1's scope");
-    // The commit its row names is round 1's candidate, cut short as a row may cut it.
+    // What round 1's two items did — the check green, the review row void — and then the
+    // round's record: its candidate, its binary, and two fix cycles.
+    let mut void = ran("row-setup", "void");
+    void["reason"] = json!("its driver | died");
     rig.run(
-        &clause_set(
-            RUN,
-            "no-lost-files",
-            &[
-                "--instrument=the audit | of the fix diff",
-                "--scope=the delta",
-                "--commit=cccccccc",
-                "--status=green",
-            ],
-        ),
-        "",
+        &result_set(RUN, "1", &sha('c')),
+        &json!([ran("the-gate", "green"), void]).to_string(),
     )
-    .must(OK, "a clause that ran");
+    .must(OK, "round 1's results");
     rig.run(
-        &clause_set(
-            RUN,
-            "no-regression",
-            &[
-                "--instrument=the scripted regression set",
-                "--scope=everything",
-                "--status=void",
-            ],
-        ),
-        "",
+        &round_set(RUN, "1"),
+        &json!({"candidate": sha('c'), "binary": sha256('b'), "cycles": 2}).to_string(),
     )
-    .must(OK, "a clause that never ran");
+    .must(OK, "round 1's record");
     let mut second = row_at("audit-f4", EXCLUDED);
     second["doctype"] = json!("inconsistency");
     second["round"] = json!(0);
@@ -4007,6 +4562,7 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                 "previous": "1.0.0-rc.24",
                 "previous-commit": sha('e'),
                 "scope": "delta",
+                "clauses": ["no-lost-files", "no-regression"],
             },
             "not_ready": [],
             "rounds": [
@@ -4021,12 +4577,17 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                         "binary": sha256('b'),
                         "cycles": 2,
                         "outcome": null,
-                        "alone": null,
                         "go": false,
-                        "granted": null,
+                        "granted": [],
                         "cross-model": [],
                         "cross-model-void": [],
                     },
+                    "results": [
+                        {"item": "the-gate", "attempt": 1, "commit": sha('c'), "outcome": "green",
+                         "reason": null, "finding": null},
+                        {"item": "row-setup", "attempt": 1, "commit": sha('c'), "outcome": "void",
+                         "reason": "its driver | died", "finding": null},
+                    ],
                     "reopened": [],
                     "test_reports": 3,
                     "test_attempt": 2,
@@ -4046,12 +4607,12 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                         "binary": null,
                         "cycles": 0,
                         "outcome": null,
-                        "alone": null,
                         "go": false,
-                        "granted": null,
+                        "granted": [],
                         "cross-model": [],
                         "cross-model-void": [],
                     },
+                    "results": [],
                     "reopened": [],
                     "test_reports": 1,
                     "test_attempt": 1,
@@ -4066,32 +4627,40 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                 "ruling": "the opening record, declared bounds",
                 "pin": "unpinned",
             }],
-            // The first clause's instrument last ran in round 1, and a fix stage is on
-            // record in that round: its row is one fix round behind, and a check that
-            // runs on every candidate judges it, so its green does not count. The second
-            // never ran, and no item of the test set judges it.
+            // Round 1 selected both items of the first clause, and a fix stage is on
+            // record in it that no tested round has followed: neither run is current, so
+            // the clause is void, one fix round behind, and nothing is run again yet — a
+            // round that is begun and not tested changes nothing here. The second clause
+            // has no item of the test set at all.
             "clauses": [
                 {
                     "clause": "no-lost-files",
-                    "instrument": "the audit | of the fix diff",
-                    "commit": "cccccccc",
-                    "scope": "the delta",
-                    "status": "green",
+                    "instrument": "`the-gate` — void: not current — round 1 selected it, a fix stage is on record since, and no tested round has followed that<br>`row-setup` — void: not current — round 1 selected it, a fix stage is on record since, and no tested round has followed that",
+                    "commit": sha('c'),
+                    "scope": "round 1",
+                    "status": "void",
                     "round": 1,
                     "behind": 1,
-                    "stale": "check-always",
-                    "retry": "due",
+                    "retry": null,
+                    "items": [
+                        {"item": "the-gate", "runs": "every-candidate", "round": 1, "attempt": 1,
+                         "commit": sha('c'), "outcome": "green", "reason": null,
+                         "standing": "void", "why": "not-current", "rerun": null},
+                        {"item": "row-setup", "runs": "in-scope", "round": 1, "attempt": 1,
+                         "commit": sha('c'), "outcome": "void", "reason": "its driver | died",
+                         "standing": "void", "why": "not-current", "rerun": null},
+                    ],
                 },
                 {
                     "clause": "no-regression",
-                    "instrument": "the scripted regression set",
+                    "instrument": "-",
                     "commit": null,
-                    "scope": "everything",
+                    "scope": "-",
                     "status": "void",
                     "round": null,
                     "behind": null,
-                    "stale": null,
                     "retry": "no-instrument",
+                    "items": [],
                 },
             ],
             // Round 2 is the latest and has no scope yet: nobody can say whether it
@@ -4175,7 +4744,7 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
             "human_clauses": [],
             "unsettled": [],
             "forbids_close": [
-                {"clause": "no-lost-files", "status": "green", "stale": "check-always"},
+                {"clause": "no-lost-files", "status": "void"},
                 {"clause": "no-regression", "status": "void"},
                 {"finding": "audit-f3", "route": "fix"},
                 {"candidate": "not-tested", "round": 2},
@@ -4262,7 +4831,33 @@ fn state_refuses_a_record_it_cannot_read_as_the_scripts_own() {
         (
             "a clause status somebody wrote by hand",
             clauses_path,
-            |text| text.replacen("| green |", "| passed |", 1),
+            |text| text.replacen("| void |", "| passed |", 1),
+        ),
+        (
+            "an outcome somebody wrote by hand",
+            || results_path("1"),
+            |text| text.replacen("| green | - |", "| passed | - |", 1),
+        ),
+        (
+            "a green run with a reason beside it",
+            || results_path("1"),
+            |text| text.replacen("| green | - |", "| green | it went well |", 1),
+        ),
+        (
+            "a run whose attempt a hand renumbered: the one before it is gone",
+            || results_path("1"),
+            |text| text.replacen("| `row-setup` | 1 |", "| `row-setup` | 2 |", 1),
+        ),
+        (
+            "a run cut loose from its commit",
+            || results_path("1"),
+            |text| {
+                text.replacen(
+                    "| `cccccccccccccccccccccccccccccccccccccccc` |",
+                    "| `ccccccc` |",
+                    1,
+                )
+            },
         ),
         ("prose after the bounds list", bounds_path, |text| {
             format!("{text}\nA bound somebody thought of.\n")
@@ -4307,11 +4902,16 @@ fn state_refuses_a_record_it_cannot_read_as_the_scripts_own() {
             || round_path("1"),
             |text| text.replacen("| `row-setup` |", "| `Row Setup, row-setup` |", 1),
         ),
-        (
-            "a clause nobody could have named",
-            || round_path("1"),
-            |text| text.replacen("| `no-lost-files` |", "| `No lost files` |", 1),
-        ),
+        ("a clause nobody could have named", run_path, |text| {
+            text.replacen("| `no-lost-files` |", "| `No lost files` |", 1)
+        }),
+        ("a clause the census names twice", run_path, |text| {
+            text.replacen(
+                "| `no-lost-files` |",
+                "| `no-lost-files, no-lost-files` |",
+                1,
+            )
+        }),
         ("a stop mode somebody wrote by hand", run_path, |text| {
             text.replacen("| `at-the-bound` |", "| `whenever` |", 1)
         }),
@@ -4342,9 +4942,9 @@ fn state_refuses_a_record_it_cannot_read_as_the_scripts_own() {
             |text| format!("{text}| `go` | `maybe` |\n"),
         ),
         (
-            "a granted clause nobody could have named",
+            "a granted run nobody could have named",
             || round_path("1"),
-            |text| format!("{text}| `granted` | `No lost files` |\n"),
+            |text| format!("{text}| `granted` | `no-lost-files` |\n"),
         ),
         ("an item that runs on a whim", test_set_path, |text| {
             text.replacen("| in-scope |", "| sometimes |", 1)
@@ -4366,10 +4966,18 @@ fn state_refuses_a_record_it_cannot_read_as_the_scripts_own() {
                     &scope(&[INSIDE], &["jigc task finalize", EXCLUDED]).to_string(),
                 )
                 .must(OK, "round 1's scope");
-                let rest = ["--instrument=the audit", "--scope=the delta"];
-                let mut green = clause_set(RUN, "no-lost-files", &rest);
-                green.extend(strings(&["--commit=0f34d8f0", "--status=green"]));
-                rig.run(&green, "").must(OK, "a clause");
+                rig.run(
+                    &run_set(RUN),
+                    &format!(r#"{{{BOUNDED}, {RELEASE}, "clauses": ["no-lost-files"]}}"#),
+                )
+                .must(OK, "the run's facts, and its census");
+                rig.run(&item_set(RUN), &item("row-setup").to_string())
+                    .must(OK, "the test set");
+                rig.run(
+                    &result_set(RUN, "1", &sha('c')),
+                    &ran("row-setup", "green").to_string(),
+                )
+                .must(OK, "what the round's item did");
                 rig.run(
                     &ledger_add(RUN),
                     &json!([row_at("f-in", INSIDE), row_at("f-out", EXCLUDED)]).to_string(),
@@ -4386,16 +4994,11 @@ fn state_refuses_a_record_it_cannot_read_as_the_scripts_own() {
                     &json!({
                         "cycles": 1,
                         "outcome": "dropped",
-                        "alone": "no-lost-files",
                         "cross-model": ["row-setup"],
                     })
                     .to_string(),
                 )
                 .must(OK, "round 1's record");
-                rig.run(&run_set(RUN), &format!("{{{BOUNDED}, {RELEASE}}}"))
-                    .must(OK, "the run's facts");
-                rig.run(&item_set(RUN), &item("row-setup").to_string())
-                    .must(OK, "the test set");
                 rig.run(&state(RUN), "")
                     .must(OK, "the control: the state as written");
 
@@ -4425,6 +5028,21 @@ fn state_refuses_a_record_it_cannot_read_as_the_scripts_own() {
     fs::remove_file(rig.root.join(scope_path("1"))).expect("remove the scope");
     rig.run(&state(RUN), "")
         .refused(CORRUPT, "a triage record whose scope is gone");
+
+    // And a tested round is tested over its doors: which items it owes a run is computed
+    // from them, so a candidate with no scope beside it is no state to read.
+    let rig = Rig::new("state-corrupt-tested");
+    rig.run(&scope_set(RUN, "1"), &scope(&[INSIDE], &[]).to_string())
+        .must(OK, "round 1's scope");
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"candidate": sha('c')}).to_string(),
+    )
+    .must(OK, "round 1's candidate");
+    rig.run(&state(RUN), "").must(OK, "the control");
+    fs::remove_file(rig.root.join(scope_path("1"))).expect("remove the scope");
+    rig.run(&state(RUN), "")
+        .refused(CORRUPT, "a tested round whose scope is gone");
 }
 
 // ---------------------------------------------------------------------------
@@ -4837,20 +5455,34 @@ fn every_finding_is_routed_by_its_grade_its_disposition_and_the_rounds_doors() {
 /// One state of a run — its opening's facts, its clause table, its rounds and the findings
 /// standing in its ledger, by their keys in [`findings`] — and the step that must follow.
 #[derive(Clone, Copy)]
+/// What is done once every round of a [`Round`] stands, in order — each one call of the
+/// script, taken only while the state asks for it.
+enum Then {
+    /// An item run again: one more result in the round that selected it.
+    Rerun(usize, &'static str, &'static str),
+    /// A fact written to a round's record: one more re-run granted by the human.
+    Fact(usize, &'static str),
+    /// The human's ruling on a finding: its disposition.
+    Rule(&'static str, &'static str),
+}
+
 struct Round {
     name: &'static str,
     /// The run's facts as the opening wrote them — the inside of a JSON object; empty
     /// for an opening that wrote none.
     run: &'static str,
-    /// The clause table: a clause, its status, and the round its instrument last ran in
-    /// — its row names that round's candidate. Round 0 is no round: a row that is void
-    /// names no commit (not yet run), any other a commit no round tested.
+    /// The clauses of the census, each with WHAT ITS ITEMS DID, as shorthand for the
+    /// results: `(clause, outcome, round)` — in that round's test stage every item that
+    /// judges the clause and that the round's scope selects ran, with that outcome.
+    /// Round 0 is no round: the clause's items have no result anywhere.
     clauses: &'static [(&'static str, &'static str, usize)],
     /// The clauses an item of the test set judges — an in-scope item, a hunt, whose one
     /// door is [`INSIDE`].
     instruments: &'static [&'static str],
     /// The clauses a deterministic check judges: an item that runs on every candidate.
     checks: &'static [&'static str],
+    /// The clauses a hunt judges whose one door is [`UNLISTED`]: no round's scope names it.
+    beyond: &'static [&'static str],
     /// Whether the opening wrote the previous release and the default scope.
     release: bool,
     /// The rounds, in order: what each one's record holds beside its candidate, as the
@@ -4858,12 +5490,20 @@ struct Round {
     rounds: &'static [Option<&'static str>],
     /// The rounds whose scope leaves [`INSIDE`] out: their doors reach no hunt.
     away: &'static [usize],
-    /// Facts written to a round's record once everything else stands — the human's go,
-    /// one more re-run granted — as `(round, the inside of a JSON object)`.
+    /// Facts written to a round's record as soon as it stands — the human's go — as
+    /// `(round, the inside of a JSON object)`.
     after: &'static [(usize, &'static str)],
     findings: &'static [&'static str],
-    /// The clauses whose green row does not count on the current candidate, and why.
-    stale: &'static [(&'static str, &'static str)],
+    /// What follows once every round stands: re-runs, grants, the human's rulings.
+    then: &'static [Then],
+    /// Findings planted after that: found by what ran last.
+    later: &'static [&'static str],
+    /// The findings a red result filed, and where each is routed — `(key, route)`.
+    filed: &'static [(&'static str, &'static str)],
+    /// WHAT THE DERIVATION GIVES, written by hand for each cell and never computed: the
+    /// status of each clause named here. A clause not named has the status its shorthand
+    /// in `clauses` says — its items' one outcome, where that is also what is derived.
+    derived: &'static [(&'static str, &'static str)],
     next: &'static str,
     /// What the document says beside `next`, as the inside of a JSON object.
     says: &'static str,
@@ -4882,8 +5522,6 @@ const RELEASE: &str = r#""previous": "1.0.0-rc.24", "previous-commit": "eeeeeeee
 const TESTED_ONCE: &[Option<&str>] = &[Some("")];
 const LANDED: &[Option<&str>] = &[Some(r#""cycles": 1"#)];
 const DROPPED: &[Option<&str>] = &[Some(r#""cycles": 3, "outcome": "dropped""#)];
-/// Round 2 ran the instrument of `clause-b` alone.
-const RERUN_B: &[Option<&str>] = &[Some(""), Some(r#""alone": "clause-b""#)];
 /// Round 1's fixes landed, and round 2 tested what they left.
 const CONFIRMED: &[Option<&str>] = &[Some(r#""cycles": 1"#), Some("")];
 /// Three rounds with a fix stage on record — the bound of [`BOUNDED`], spent — and the
@@ -4894,9 +5532,9 @@ const SPENT: &[Option<&str>] = &[
     Some(r#""cycles": 1"#),
     Some(""),
 ];
-/// What both clauses' green rows are worth once a fix stage is on record in the round
-/// they are from and no round has resolved the doors of its fixes: nothing yet.
-const UNSCOPED: &[(&str, &str)] = &[("clause-a", "not-scoped"), ("clause-b", "not-scoped")];
+/// What both clauses are once a fix stage is on record in the latest tested round: void.
+/// No run is current — what that fix stage left is tested by nobody.
+const BOTH_VOID: &[(&str, &str)] = &[("clause-a", "void"), ("clause-b", "void")];
 /// Both clauses green on round 2's candidate, and on round 4's.
 const GREEN_2: &[(&str, &str, usize)] = &[("clause-a", "green", 2), ("clause-b", "green", 2)];
 const GREEN_4: &[(&str, &str, usize)] = &[("clause-a", "green", 4), ("clause-b", "green", 4)];
@@ -4909,12 +5547,16 @@ const ROUND: Round = Round {
     clauses: GREEN,
     instruments: &["clause-a", "clause-b"],
     checks: &[],
+    beyond: &[],
     release: true,
     rounds: TESTED_ONCE,
     away: &[],
     after: &[],
     findings: &[],
-    stale: &[],
+    then: &[],
+    later: &[],
+    filed: &[],
+    derived: &[],
     next: "",
     says: "{}",
 };
@@ -5043,27 +5685,27 @@ const ROUNDS: &[Round] = &[
     },
     Round {
         name: "round 1 landed, round 2 begun and not recorded: every row green closes nothing",
-        stale: UNSCOPED,
         rounds: &[Some(r#""cycles": 1"#), None],
         findings: &["in-fixed"],
         next: "test",
+        derived: BOTH_VOID,
         ..ROUND
     },
     Round {
         name: "a dropped round, its blocker open again: the next round's test, not a fixer",
-        stale: UNSCOPED,
         rounds: DROPPED,
         findings: &["in-confirmed"],
         next: "test",
         says: r#"{"blockers": ["in-confirmed"], "stop": null}"#,
+        derived: BOTH_VOID,
         ..ROUND
     },
     Round {
         name: "a part landed, an item left for the human",
-        stale: UNSCOPED,
         rounds: &[Some(r#""cycles": 2, "outcome": "part""#)],
         findings: &["out-confirmed"],
         next: "test",
+        derived: BOTH_VOID,
         ..ROUND
     },
     // Cell 1 — a finding with no grade, or a break nobody verified: the round's triage
@@ -5188,108 +5830,94 @@ const ROUNDS: &[Round] = &[
         ..ROUND
     },
     Round {
-        name: "a red clause row, and no finding",
+        name: "a red check is a finding: nobody's yet, so the round's triage is not finished",
         clauses: &[("clause-a", "green", 1), ("clause-b", "red", 1)],
-        next: "retest",
-        says: r#"{"retest": ["clause-b"]}"#,
+        next: "triage",
+        says: r#"{"untriaged": [{"key": "red-check-clause-b", "why": "ungraded"}], "retest": [], "blockers": []}"#,
+        instruments: &["clause-a"],
+        checks: &["clause-b"],
+        filed: &[("red-check-clause-b", "triage")],
         ..ROUND
     },
     Round {
-        name: "a row never run, once round 1 is tested",
+        name: "a red check whose finding the human ruled for later: nothing is open, and the check is run again once",
+        instruments: &["clause-a"],
+        checks: &["clause-b"],
+        clauses: &[("clause-a", "green", 1), ("clause-b", "red", 1)],
+        then: &[Then::Rule("red-check-clause-b", "later")],
+        filed: &[("red-check-clause-b", "recorded")],
+        next: "retest",
+        says: r#"{"retest": ["clause-b"], "untriaged": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a red check, red again on its one re-run, its finding ruled: the clause is the human's",
+        instruments: &["clause-a"],
+        checks: &["clause-b"],
+        clauses: &[("clause-a", "green", 1), ("clause-b", "red", 1)],
+        then: &[
+            Then::Rule("red-check-clause-b", "later"),
+            Then::Rerun(1, "check-clause-b", "red"),
+        ],
+        filed: &[("red-check-clause-b", "recorded")],
+        next: "rule",
+        says: r#"{"human_clauses": [{"clause": "clause-b", "why": "not-green-after-its-rerun"}], "retest": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "an item round 1 selected and holds no run of: it never ran to its end",
         clauses: &[("clause-a", "green", 1), ("clause-b", "void", 0)],
         next: "retest",
         says: r#"{"retest": ["clause-b"]}"#,
         ..ROUND
     },
     Round {
-        name: "a red row whose commit no round tested",
-        clauses: &[("clause-a", "green", 1), ("clause-b", "red", 0)],
-        next: "retest",
-        says: r#"{"retest": ["clause-b"]}"#,
-        ..ROUND
-    },
-    Round {
         name: "two clauses without a green row: both are named",
-        clauses: &[("clause-a", "void", 1), ("clause-b", "red", 1)],
+        clauses: &[("clause-a", "void", 1), ("clause-b", "void", 1)],
         next: "retest",
         says: r#"{"retest": ["clause-a", "clause-b"]}"#,
         ..ROUND
     },
     Round {
         name: "the one re-run turned the row green",
-        clauses: &[("clause-a", "green", 1), ("clause-b", "green", 2)],
-        rounds: RERUN_B,
+        clauses: ONE_VOID,
         next: "close",
+        then: &[Then::Rerun(1, "row-clause-b", "green")],
+        derived: &[("clause-b", "green")],
         ..ROUND
     },
     Round {
         name: "still void after its one re-run: the human's",
-        clauses: &[("clause-a", "green", 1), ("clause-b", "void", 2)],
-        rounds: RERUN_B,
+        clauses: ONE_VOID,
         next: "rule",
         says: r#"{"human_clauses": [{"clause": "clause-b", "why": "not-green-after-its-rerun"}], "retest": [], "human_list": []}"#,
+        then: &[Then::Rerun(1, "row-clause-b", "void")],
         ..ROUND
     },
     Round {
-        name: "still red after its one re-run",
-        clauses: &[("clause-a", "green", 1), ("clause-b", "red", 2)],
-        rounds: RERUN_B,
-        next: "rule",
-        ..ROUND
-    },
-    Round {
-        name: "the re-run was another clause's: the retry is per clause",
-        clauses: &[("clause-a", "void", 1), ("clause-b", "green", 2)],
-        rounds: RERUN_B,
+        name: "the re-run was another clause's item's: an attempt is counted per item",
+        clauses: &[("clause-a", "void", 1), ("clause-b", "void", 1)],
         next: "retest",
         says: r#"{"retest": ["clause-a"], "human_clauses": []}"#,
-        ..ROUND
-    },
-    Round {
-        name: "a row that names a round which ran another clause alone: not its own re-run",
-        clauses: &[("clause-a", "void", 2), ("clause-b", "green", 2)],
-        rounds: RERUN_B,
-        next: "retest",
-        says: r#"{"retest": ["clause-a"]}"#,
+        then: &[Then::Rerun(1, "row-clause-b", "green")],
+        derived: &[("clause-b", "green")],
         ..ROUND
     },
     Round {
         name: "one clause's retry spent, another's due: the human's comes first",
-        clauses: &[("clause-a", "void", 1), ("clause-b", "void", 2)],
-        rounds: RERUN_B,
+        clauses: &[("clause-a", "void", 1), ("clause-b", "void", 1)],
         next: "rule",
         says: r#"{"human_clauses": [{"clause": "clause-b", "why": "not-green-after-its-rerun"}], "retest": []}"#,
+        then: &[Then::Rerun(1, "row-clause-b", "void")],
         ..ROUND
     },
     Round {
         name: "a spent retry beside an open blocker: the clause is the human's once nothing is open",
-        clauses: &[("clause-a", "green", 1), ("clause-b", "void", 2)],
-        rounds: RERUN_B,
-        findings: &["in-confirmed"],
+        clauses: ONE_VOID,
         next: "fix",
         says: r#"{"human_clauses": [], "retest": [], "unsettled": []}"#,
-        ..ROUND
-    },
-    Round {
-        name: "a spent retry stays spent though a later round ran another clause alone",
-        clauses: &[("clause-a", "green", 3), ("clause-b", "void", 2)],
-        rounds: &[
-            Some(""),
-            Some(r#""alone": "clause-b""#),
-            Some(r#""alone": "clause-a""#),
-        ],
-        run: r#""stop": "at-the-bound", "rounds": 9"#,
-        next: "rule",
-        says: r#"{"human_clauses": [{"clause": "clause-b", "why": "not-green-after-its-rerun"}]}"#,
-        ..ROUND
-    },
-    Round {
-        name: "a round that ran more than the one instrument earns the clause a new re-run",
-        clauses: &[("clause-a", "green", 1), ("clause-b", "void", 3)],
-        rounds: &[Some(""), Some(r#""alone": "clause-b""#), Some("")],
-        run: r#""stop": "at-the-bound", "rounds": 9"#,
-        next: "retest",
-        says: r#"{"retest": ["clause-b"], "human_clauses": []}"#,
+        then: &[Then::Rerun(1, "row-clause-b", "void")],
+        later: &["in-confirmed"],
         ..ROUND
     },
     // What the rulings still do not settle: a clause without a green row that no item of
@@ -5302,21 +5930,34 @@ const ROUNDS: &[Round] = &[
         says: r#"{"unsettled": [{"cell": "not-green-and-no-instrument", "clauses": ["clause-b"]}], "retest": []}"#,
         ..ROUND
     },
+    // And the second cell: items judge the clause, and no tested round's scope has selected
+    // one. An item no scope selected owes nothing — and a clause with no green run on
+    // record does not close: the rulings name no step, so it is the human's.
     Round {
-        name: "a clause no item judges beside one whose retry is due: nothing is run on a guess",
-        clauses: &[("clause-a", "void", 1), ("clause-b", "red", 1)],
+        name: "a clause whose items no scope has selected: it owes nothing and has no evidence",
+        clauses: &[("clause-a", "green", 1), ("clause-b", "void", 0)],
         instruments: &["clause-a"],
+        beyond: &["clause-b"],
         next: "unsettled",
-        says: r#"{"unsettled": [{"cell": "not-green-and-no-instrument", "clauses": ["clause-b"]}], "retest": []}"#,
+        says: r#"{"unsettled": [{"cell": "judged-and-never-selected", "clauses": ["clause-b"]}], "retest": [], "human_clauses": []}"#,
         ..ROUND
     },
     Round {
-        name: "a clause no item judges beside one whose retry is spent: the human's comes first",
-        clauses: &[("clause-a", "void", 1), ("clause-b", "void", 2)],
-        instruments: &["clause-b"],
-        rounds: RERUN_B,
-        next: "rule",
-        says: r#"{"unsettled": [{"cell": "not-green-and-no-instrument", "clauses": ["clause-a"]}]}"#,
+        name: "a clause never selected beside an open blocker: the blocker is fixed first",
+        clauses: &[("clause-a", "green", 1), ("clause-b", "void", 0)],
+        instruments: &["clause-a"],
+        beyond: &["clause-b"],
+        findings: &["in-confirmed"],
+        next: "fix",
+        says: r#"{"unsettled": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a clause no item judges beside one whose retry is due: nothing is run on a guess",
+        clauses: &[("clause-a", "void", 1), ("clause-b", "void", 0)],
+        instruments: &["clause-a"],
+        next: "unsettled",
+        says: r#"{"unsettled": [{"cell": "not-green-and-no-instrument", "clauses": ["clause-b"]}], "retest": []}"#,
         ..ROUND
     },
     // The stops (ruling 6). A run that stops after every round stops once its latest
@@ -5330,12 +5971,12 @@ const ROUNDS: &[Round] = &[
     },
     Round {
         name: "every round a stop: a round that landed is followed by its test",
-        stale: UNSCOPED,
         run: EVERY_ROUND,
         rounds: LANDED,
         findings: &["in-fixed"],
         next: "stop",
         says: r#"{"stop": {"why": "every-round", "round": 1, "then": "test"}}"#,
+        derived: BOTH_VOID,
         ..ROUND
     },
     Round {
@@ -5348,12 +5989,12 @@ const ROUNDS: &[Round] = &[
     },
     Round {
         name: "every round a stop: a dropped round",
-        stale: UNSCOPED,
         run: EVERY_ROUND,
         rounds: DROPPED,
         findings: &["in-confirmed"],
         next: "stop",
         says: r#"{"stop": {"why": "every-round", "round": 1, "then": "test"}}"#,
+        derived: BOTH_VOID,
         ..ROUND
     },
     Round {
@@ -5401,20 +6042,20 @@ const ROUNDS: &[Round] = &[
     },
     Round {
         name: "every round a stop, and the go on record after a dropped round: its test",
-        stale: UNSCOPED,
         run: EVERY_ROUND,
         rounds: DROPPED,
         findings: &["in-confirmed"],
         after: &[(1, r#""go": true"#)],
         next: "test",
         says: r#"{"stop": null}"#,
+        derived: BOTH_VOID,
         ..ROUND
     },
     Round {
         name: "the go was round 1's: round 2 is over, and the run stops again",
         run: EVERY_ROUND,
-        clauses: &[("clause-a", "green", 1), ("clause-b", "green", 2)],
-        rounds: RERUN_B,
+        clauses: GREEN_2,
+        rounds: &[Some(""), Some("")],
         after: &[(1, r#""go": true"#)],
         next: "stop",
         says: r#"{"stop": {"why": "every-round", "round": 2, "then": "close"}}"#,
@@ -5425,53 +6066,53 @@ const ROUNDS: &[Round] = &[
     // clause table says — and never `close`.
     Round {
         name: "round 1's fixes landed, every clause row green, nothing open: the candidate is not tested",
-        stale: UNSCOPED,
         rounds: LANDED,
         findings: &["in-fixed"],
         next: "test",
         says: r#"{"stop": null, "retest": [], "human_clauses": [], "unsettled": [], "candidate": {"round": 1, "commit": "1111111111111111111111111111111111111111", "current": false}, "fix_rounds": 1}"#,
+        derived: BOTH_VOID,
         ..ROUND
     },
     Round {
         name: "a landed round and a ledger with no row at all",
-        stale: UNSCOPED,
         rounds: LANDED,
         next: "test",
+        derived: BOTH_VOID,
         ..ROUND
     },
     Round {
         name: "a landed round under a void clause: the round's test, not the clause's re-run",
-        stale: &[("clause-a", "not-scoped")],
         rounds: LANDED,
         clauses: ONE_VOID,
         next: "test",
         says: r#"{"retest": []}"#,
+        derived: BOTH_VOID,
         ..ROUND
     },
     Round {
         name: "a landed round and a clause no item judges: nothing is asked of the table yet",
-        stale: &[("clause-a", "not-scoped")],
         rounds: LANDED,
         clauses: ONE_VOID,
         instruments: &["clause-a"],
         next: "test",
         says: r#"{"unsettled": []}"#,
+        derived: BOTH_VOID,
         ..ROUND
     },
     Round {
         name: "a part landed, and nothing is left open",
-        stale: UNSCOPED,
         rounds: &[Some(r#""cycles": 2, "outcome": "part""#)],
         findings: &["in-fixed"],
         next: "test",
+        derived: BOTH_VOID,
         ..ROUND
     },
     Round {
         name: "a dropped round, everything ruled since: the latest stage on record is a fix stage",
-        stale: UNSCOPED,
         rounds: DROPPED,
         findings: &["out-later"],
         next: "test",
+        derived: BOTH_VOID,
         ..ROUND
     },
     Round {
@@ -5492,20 +6133,20 @@ const ROUNDS: &[Round] = &[
         clauses: &[("clause-a", "green", 1), ("clause-b", "green", 2)],
         instruments: &["clause-b"],
         checks: &["clause-a"],
-        stale: &[("clause-a", "check-always")],
         next: "retest",
         says: r#"{"retest": ["clause-a"]}"#,
+        derived: &[("clause-a", "void")],
         ..ROUND
     },
     Round {
-        name: "a check and a hunt judge the clause: the check decides",
+        name: "a check and a hunt judge the clause, and the check has no run on this candidate: the hunt's green does not stand in for it",
         rounds: CONFIRMED,
-        clauses: &[("clause-a", "green", 1), ("clause-b", "green", 2)],
+        clauses: GREEN,
         checks: &["clause-a"],
         away: &[2],
-        stale: &[("clause-a", "check-always")],
         next: "retest",
         says: r#"{"retest": ["clause-a"]}"#,
+        derived: &[("clause-a", "void")],
         ..ROUND
     },
     Round {
@@ -5524,37 +6165,45 @@ const ROUNDS: &[Round] = &[
         clauses: &[("clause-a", "green", 2), ("clause-b", "green", 1)],
         instruments: &["clause-b"],
         checks: &["clause-a"],
-        stale: &[("clause-b", "reached")],
         next: "retest",
         says: r#"{"retest": ["clause-b"]}"#,
+        derived: &[("clause-b", "void")],
         ..ROUND
     },
+    // An item round 1's scope selected and round 2's does not, under each of its outcomes:
+    // what it owes is round 1's, and a later round that ran the items beside it settles
+    // nothing of it. (Green is the row above the last: the run closes.)
     Round {
-        name: "a hunt's green from before a landing, and no round has resolved the fixes' doors",
-        rounds: &[Some(r#""cycles": 1"#), Some(r#""alone": "clause-a""#)],
-        clauses: &[("clause-a", "green", 2), ("clause-b", "green", 1)],
+        name: "a hunt void in round 1 that round 2 does not select: its void stands, and nothing closes over it",
+        rounds: CONFIRMED,
+        clauses: &[("clause-a", "green", 2), ("clause-b", "void", 1)],
         instruments: &["clause-b"],
         checks: &["clause-a"],
         away: &[2],
-        stale: &[("clause-b", "not-scoped")],
+        next: "retest",
+        says: r#"{"retest": ["clause-b"], "position": {"test": {"round": 1, "attempt": 1, "rerun": {"clause": "clause-b", "round": 1, "items": [{"item": "row-clause-b", "attempt": 2}], "doors": [{"door": "jigc setup", "registry": "the verb table", "derivation": "a changed symbol is read by `jigc setup`"}]}}, "fix": {"round": 2, "cycle": 1, "attempt": 1, "land": false}}}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a hunt round 1 selected and never ran, that round 2 does not select: it is owed still",
+        rounds: CONFIRMED,
+        clauses: &[("clause-a", "green", 2), ("clause-b", "void", 0)],
+        instruments: &["clause-b"],
+        checks: &["clause-a"],
+        away: &[2],
         next: "retest",
         says: r#"{"retest": ["clause-b"]}"#,
         ..ROUND
     },
     Round {
-        name: "two landings, and only the second one's doors were resolved",
-        rounds: &[
-            Some(r#""cycles": 1"#),
-            Some(r#""alone": "clause-a", "cycles": 1"#),
-            Some(""),
-        ],
-        clauses: &[("clause-a", "green", 3), ("clause-b", "green", 1)],
+        name: "an item red in round 1 that round 2 does not select: its finding is still nobody's",
+        rounds: CONFIRMED,
+        clauses: &[("clause-a", "green", 2), ("clause-b", "red", 1)],
         instruments: &["clause-b"],
         checks: &["clause-a"],
-        away: &[2, 3],
-        run: r#""stop": "at-the-bound", "rounds": 9"#,
-        stale: &[("clause-b", "not-scoped")],
-        next: "retest",
+        away: &[2],
+        filed: &[("red-row-clause-b", "triage")],
+        next: "triage",
         ..ROUND
     },
     Round {
@@ -5574,119 +6223,102 @@ const ROUNDS: &[Round] = &[
         instruments: &["clause-b"],
         checks: &["clause-a"],
         away: &[3],
-        stale: &[("clause-b", "reached")],
         next: "retest",
+        derived: &[("clause-b", "void")],
         ..ROUND
     },
     Round {
-        name: "a green row from before a round that fixed nothing counts as it stands",
+        name: "a hunt's green from before a round that fixed nothing stands while that round's scope does not select it",
         rounds: &[Some(""), Some("")],
-        clauses: GREEN,
+        clauses: &[("clause-a", "green", 2), ("clause-b", "green", 1)],
         checks: &["clause-a"],
         next: "close",
+        instruments: &["clause-b"],
+        away: &[2],
         ..ROUND
     },
     Round {
-        name: "a green row whose commit no round tested",
-        clauses: &[("clause-a", "green", 1), ("clause-b", "green", 0)],
-        stale: &[("clause-b", "no-round")],
-        next: "retest",
-        says: r#"{"retest": ["clause-b"]}"#,
-        ..ROUND
-    },
-    Round {
-        name: "a stale green row beside a void one: both are named",
+        name: "a check with no run on this candidate beside a void hunt: both are named",
         rounds: CONFIRMED,
         clauses: &[("clause-a", "green", 1), ("clause-b", "void", 2)],
         instruments: &["clause-b"],
         checks: &["clause-a"],
-        stale: &[("clause-a", "check-always")],
         next: "retest",
         says: r#"{"retest": ["clause-a", "clause-b"]}"#,
+        derived: &[("clause-a", "void")],
         ..ROUND
     },
     Round {
-        name: "a stale green row beside an open blocker: the blocker is fixed first",
+        name: "a check with no run on this candidate beside an open blocker: the blocker is fixed first",
         rounds: CONFIRMED,
         clauses: &[("clause-a", "green", 1), ("clause-b", "green", 2)],
         instruments: &["clause-b"],
         checks: &["clause-a"],
         findings: &["in-confirmed"],
-        stale: &[("clause-a", "check-always")],
         next: "fix",
         says: r#"{"retest": []}"#,
-        ..ROUND
-    },
-    Round {
-        name: "a stale green row whose last run was its own re-run: one more is due, not the human's",
-        run: r#""stop": "at-the-bound", "rounds": 9"#,
-        rounds: &[
-            Some(""),
-            Some(r#""alone": "clause-a", "cycles": 1"#),
-            Some(""),
-        ],
-        clauses: &[("clause-a", "green", 2), ("clause-b", "green", 3)],
-        instruments: &["clause-b"],
-        checks: &["clause-a"],
-        stale: &[("clause-a", "check-always")],
-        next: "retest",
-        says: r#"{"retest": ["clause-a"], "human_clauses": []}"#,
+        derived: &[("clause-a", "void")],
         ..ROUND
     },
     // What the rulings still do not settle, the second cell: a green row from before a
     // fix round that no item judges. Nothing can say whether it still holds.
     Round {
-        name: "a green row from before a landing that no item judges",
-        rounds: CONFIRMED,
-        clauses: &[("clause-a", "green", 2), ("clause-b", "green", 1)],
-        instruments: &["clause-a"],
-        stale: &[("clause-b", "no-instrument")],
-        next: "unsettled",
-        says: r#"{"unsettled": [{"cell": "stale-and-no-instrument", "clauses": ["clause-b"]}], "retest": []}"#,
-        ..ROUND
-    },
-    Round {
-        name: "both cells at once: a void clause and a stale one, neither judged",
-        rounds: CONFIRMED,
-        clauses: &[("clause-a", "void", 2), ("clause-b", "green", 1)],
+        name: "both cells at once: a clause no item judges, and one whose items no scope has selected",
+        clauses: &[("clause-a", "void", 0), ("clause-b", "void", 0)],
         instruments: &[],
-        stale: &[("clause-b", "no-instrument")],
         next: "unsettled",
-        says: r#"{"unsettled": [{"cell": "not-green-and-no-instrument", "clauses": ["clause-a"]}, {"cell": "stale-and-no-instrument", "clauses": ["clause-b"]}]}"#,
+        says: r#"{"unsettled": [{"cell": "not-green-and-no-instrument", "clauses": ["clause-a"]}, {"cell": "judged-and-never-selected", "clauses": ["clause-b"]}], "retest": [], "human_clauses": []}"#,
+        beyond: &["clause-b"],
         ..ROUND
     },
     // A clause still not green after its one re-run is the human's, and the one ruling
     // with a recorded form is one more re-run of it.
     Round {
         name: "still void after its re-run, and the human grants one more",
-        clauses: &[("clause-a", "green", 1), ("clause-b", "void", 2)],
-        rounds: RERUN_B,
-        after: &[(2, r#""granted": "clause-b""#)],
+        clauses: ONE_VOID,
         next: "retest",
         says: r#"{"retest": ["clause-b"], "human_clauses": []}"#,
+        then: &[
+            Then::Rerun(1, "row-clause-b", "void"),
+            Then::Fact(1, r#""granted": "clause-b""#),
+        ],
         ..ROUND
     },
     Round {
         name: "the granted re-run left it void again: the human's again",
-        clauses: &[("clause-a", "green", 1), ("clause-b", "void", 3)],
-        rounds: &[
-            Some(""),
-            Some(r#""alone": "clause-b""#),
-            Some(r#""alone": "clause-b""#),
-        ],
+        clauses: ONE_VOID,
         next: "rule",
         says: r#"{"human_clauses": [{"clause": "clause-b", "why": "not-green-after-its-rerun"}], "retest": []}"#,
+        then: &[
+            Then::Rerun(1, "row-clause-b", "void"),
+            Then::Fact(1, r#""granted": "clause-b""#),
+            Then::Rerun(1, "row-clause-b", "void"),
+        ],
         ..ROUND
     },
     Round {
         name: "the granted re-run turned the row green",
-        clauses: &[("clause-a", "green", 1), ("clause-b", "green", 3)],
-        rounds: &[
-            Some(""),
-            Some(r#""alone": "clause-b""#),
-            Some(r#""alone": "clause-b""#),
-        ],
+        clauses: ONE_VOID,
         next: "close",
+        then: &[
+            Then::Rerun(1, "row-clause-b", "void"),
+            Then::Fact(1, r#""granted": "clause-b""#),
+            Then::Rerun(1, "row-clause-b", "green"),
+        ],
+        derived: &[("clause-b", "green")],
+        ..ROUND
+    },
+    Round {
+        name: "granted, spent again, and granted again: each grant is one more attempt",
+        clauses: ONE_VOID,
+        then: &[
+            Then::Rerun(1, "row-clause-b", "void"),
+            Then::Fact(1, r#""granted": "clause-b""#),
+            Then::Rerun(1, "row-clause-b", "void"),
+            Then::Fact(1, r#""granted": "clause-b""#),
+        ],
+        next: "retest",
+        says: r#"{"retest": ["clause-b"], "human_clauses": []}"#,
         ..ROUND
     },
     // The bound across rounds (ruling 6) counts FIX ROUNDS, never test stages: a run that
@@ -5711,7 +6343,6 @@ const ROUNDS: &[Round] = &[
     },
     Round {
         name: "the bound spent, the last allowed fix round landed: its test is always allowed",
-        stale: UNSCOPED,
         rounds: &[
             Some(r#""cycles": 1"#),
             Some(r#""cycles": 2"#),
@@ -5720,11 +6351,11 @@ const ROUNDS: &[Round] = &[
         findings: &["in-fixed"],
         next: "test",
         says: r#"{"stop": null, "fix_rounds": 3}"#,
+        derived: BOTH_VOID,
         ..ROUND
     },
     Round {
         name: "the bound spent, in the round that spent it: its own blocker is still fixed",
-        stale: UNSCOPED,
         rounds: &[
             Some(r#""cycles": 1"#),
             Some(r#""cycles": 2"#),
@@ -5733,6 +6364,7 @@ const ROUNDS: &[Round] = &[
         findings: &["in-confirmed"],
         next: "fix",
         says: r#"{"stop": null}"#,
+        derived: BOTH_VOID,
         ..ROUND
     },
     Round {
@@ -5776,20 +6408,7 @@ const ROUNDS: &[Round] = &[
         findings: &["in-confirmed"],
         next: "fix",
         says: r#"{"stop": null, "fix_rounds": 0}"#,
-        ..ROUND
-    },
-    Round {
-        name: "a clause's re-run among the rounds is no fix round",
-        rounds: &[
-            Some(r#""cycles": 1"#),
-            Some(r#""alone": "clause-b""#),
-            Some(r#""cycles": 1"#),
-            Some(""),
-        ],
         clauses: GREEN_4,
-        findings: &["in-confirmed"],
-        next: "fix",
-        says: r#"{"stop": null, "fix_rounds": 2}"#,
         ..ROUND
     },
     Round {
@@ -5808,7 +6427,6 @@ const ROUNDS: &[Round] = &[
     },
     Round {
         name: "the bound spent, a dropped round with its blocker open again: its test, then the stop",
-        stale: UNSCOPED,
         rounds: &[
             Some(r#""cycles": 1"#),
             Some(r#""cycles": 1"#),
@@ -5817,6 +6435,7 @@ const ROUNDS: &[Round] = &[
         findings: &["in-confirmed"],
         next: "test",
         says: r#"{"stop": null}"#,
+        derived: BOTH_VOID,
         ..ROUND
     },
     Round {
@@ -5859,11 +6478,19 @@ fn drive_round(label: &str, round: &Round, truth: &[Finding]) {
         rig.run(&run_set(RUN), &format!("{{{RELEASE}}}"))
             .must(OK, "the previous release and the default scope");
     }
-    let hunts = round.instruments.iter().map(|clause| {
+    let census: Vec<&str> = round.clauses.iter().map(|(clause, _, _)| *clause).collect();
+    if !census.is_empty() {
+        rig.run(&run_set(RUN), &json!({"clauses": census}).to_string())
+            .must(OK, "the census");
+    }
+    let hunt = |clause: &&str, door: &str| {
         let mut judged = item(&format!("row-{clause}"));
         judged["clause"] = json!(clause);
+        judged["doors"] = json!([door]);
         judged
-    });
+    };
+    let hunts = round.instruments.iter().map(|clause| hunt(clause, INSIDE));
+    let beyond = round.beyond.iter().map(|clause| hunt(clause, UNLISTED));
     let checks = round.checks.iter().map(|clause| {
         let mut judged = item(&format!("check-{clause}"));
         judged["clause"] = json!(clause);
@@ -5872,42 +6499,34 @@ fn drive_round(label: &str, round: &Round, truth: &[Finding]) {
         judged["doors"] = json!([]);
         judged
     });
-    let items: Vec<Value> = hunts.chain(checks).collect();
+    let items: Vec<Value> = hunts.chain(beyond).chain(checks).collect();
     if !items.is_empty() {
         rig.run(&item_set(RUN), &json!(items).to_string())
             .must(OK, "the test set");
     }
-    for (clause, status, ran) in round.clauses {
-        let rest = ["--instrument=its instrument", "--scope=the delta"];
-        let mut args = clause_set(RUN, clause, &rest);
-        args.push(format!("--status={status}"));
-        match (*ran, *status) {
-            (0, "void") => {}
-            (0, _) => args.push("--commit=0f34d8f0".to_owned()),
-            (n, _) => args.push(format!("--commit={}", candidate(n))),
-        }
-        rig.run(&args, "").must(OK, "a clause row");
-    }
-    let standing: Vec<&Finding> = round
-        .findings
-        .iter()
-        .map(|key| {
-            truth
-                .iter()
-                .find(|finding| finding.key == *key)
-                .unwrap_or_else(|| panic!("no finding `{key}` in the table"))
-        })
-        .collect();
+    let found = |keys: &[&'static str]| -> Vec<&Finding> {
+        keys.iter()
+            .map(|key| {
+                truth
+                    .iter()
+                    .find(|finding| finding.key == *key)
+                    .unwrap_or_else(|| panic!("no finding `{key}` in the table"))
+            })
+            .collect()
+    };
+    let standing = found(round.findings);
+    let later = found(round.later);
     if standing.iter().any(|finding| finding.key == "oos-listed") {
         rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "")
             .must(OK, "the declared bound");
     }
     // The rounds, one after the other: a round's scope, the findings once round 1 has
-    // doors to place them by, its record — and then what the human ruled after it, which
-    // the script takes only while the state asks for it.
+    // doors to place them by, what its items did in its test stage, its record — and then
+    // what the human ruled after it, which the script takes only while the state asks.
     for (n, record) in round.rounds.iter().enumerate() {
         let number = (n + 1).to_string();
-        let doors = if round.away.contains(&(n + 1)) {
+        let away = round.away.contains(&(n + 1));
+        let doors = if away {
             scope(&[EXCLUDED], &[INSIDE])
         } else {
             scope(&[INSIDE], &[EXCLUDED])
@@ -5916,6 +6535,24 @@ fn drive_round(label: &str, round: &Round, truth: &[Finding]) {
             .must(OK, "a round's scope");
         if n == 0 {
             plant(&rig, &standing);
+        }
+        // Every item that judges the clause and that this round's scope selects: a hunt
+        // behind `INSIDE` unless the round is away, a check always.
+        let mut results = Vec::new();
+        for (clause, outcome, _) in round.clauses.iter().filter(|(_, _, ran)| *ran == n + 1) {
+            if round.instruments.contains(clause) && !away {
+                results.push(ran(&format!("row-{clause}"), outcome));
+            }
+            if round.checks.contains(clause) {
+                results.push(ran(&format!("check-{clause}"), outcome));
+            }
+        }
+        if !results.is_empty() {
+            rig.run(
+                &result_set(RUN, &number, &candidate(n + 1)),
+                &json!(results).to_string(),
+            )
+            .must(OK, "what the round's items did");
         }
         if let Some(facts) = record {
             let mut given: Value =
@@ -5929,8 +6566,30 @@ fn drive_round(label: &str, round: &Round, truth: &[Finding]) {
                 .must(OK, "what the human ruled after the round");
         }
     }
+    let latest = candidate(round.rounds.len());
+    for step in round.then {
+        match step {
+            Then::Rerun(at, item, outcome) => rig
+                .run(
+                    &result_set(RUN, &at.to_string(), &latest),
+                    &ran(item, outcome).to_string(),
+                )
+                .must(OK, "an item run again, where the state asks for it"),
+            Then::Fact(at, facts) => rig
+                .run(&round_set(RUN, &at.to_string()), &format!("{{{facts}}}"))
+                .must(OK, "what the human granted"),
+            Then::Rule(key, disposition) => rig
+                .run(
+                    &ledger_set(RUN),
+                    &json!({"key": key, "disposition": disposition}).to_string(),
+                )
+                .must(OK, "what the human ruled on a finding"),
+        };
+    }
+    plant(&rig, &later);
     assert!(
-        round.away.iter().all(|n| *n > 1) && (!round.rounds.is_empty() || standing.is_empty()),
+        round.away.iter().all(|n| *n > 1)
+            && (!round.rounds.is_empty() || (standing.is_empty() && later.is_empty())),
         "{what}: round 1 is where the findings are placed"
     );
 
@@ -5948,46 +6607,77 @@ fn drive_round(label: &str, round: &Round, truth: &[Finding]) {
         "{what}: {read}"
     );
 
-    // What each green row is worth on the current candidate.
-    let stale_of = |clause: &str| {
+    // What the derivation gives each clause: the status this cell's row names by hand —
+    // or, where it names none, the one outcome its items had. And the clause table on
+    // disk says the same, row for row: it is the view of exactly this.
+    let status_of = |clause: &str, shorthand: &'static str| {
         round
-            .stale
+            .derived
             .iter()
             .find(|(named, _)| *named == clause)
-            .map(|(_, why)| *why)
+            .map_or(shorthand, |(_, status)| *status)
     };
-    for row in read["clauses"].as_array().expect("the clause rows") {
-        let clause = row["clause"].as_str().expect("a clause");
-        assert_eq!(
-            row["stale"],
-            json!(stale_of(clause)),
-            "{what}: whether the green row of `{clause}` counts: {read}"
-        );
+    let derived: Vec<(&str, &str)> = round
+        .clauses
+        .iter()
+        .map(|(clause, outcome, _)| (*clause, status_of(clause, outcome)))
+        .collect();
+    let said: Vec<(String, String)> = read["clauses"]
+        .as_array()
+        .expect("the clause rows")
+        .iter()
+        .map(|row| {
+            let text = |field: &str| row[field].as_str().expect("text").to_owned();
+            (text("clause"), text("status"))
+        })
+        .collect();
+    assert_eq!(
+        said,
+        derived
+            .iter()
+            .map(|(clause, status)| ((*clause).to_owned(), (*status).to_owned()))
+            .collect::<Vec<_>>(),
+        "{what}: what the item results give each clause: {read}"
+    );
+    if !census.is_empty() {
+        let view: Vec<(String, String)> = table(&rig.read(&clauses_path()), &CLAUSE_COLUMNS)
+            .into_iter()
+            .map(|row| (row[0].trim_matches('`').to_owned(), row[4].clone()))
+            .collect();
+        assert_eq!(view, said, "{what}: the clause table is the view of it");
     }
 
     // What forbids closing, by the clause table, by the ledger and by the candidate — and
     // `close`, now or after a stop, only when nothing does.
-    let mut forbids: Vec<Value> = round
-        .clauses
+    let mut forbids: Vec<Value> = derived
         .iter()
-        .filter_map(|(clause, status, _)| match (*status, stale_of(clause)) {
-            ("green", None) => None,
-            ("green", Some(why)) => Some(json!({"clause": clause, "status": status, "stale": why})),
-            _ => Some(json!({"clause": clause, "status": status})),
-        })
+        .filter(|(_, status)| *status != "green")
+        .map(|(clause, status)| json!({"clause": clause, "status": status}))
         .collect();
     if round.clauses.is_empty() {
         forbids.push(json!({"clauses": "no row"}));
     }
-    let open: Vec<&&Finding> = standing
-        .iter()
-        .filter(|finding| finding.route != "recorded")
-        .collect();
     forbids.extend(
-        open.iter()
+        standing
+            .iter()
+            .filter(|finding| finding.route != "recorded")
             .map(|finding| json!({"finding": finding.key, "route": finding.route})),
     );
-    // The candidate is tested while the latest round has a record and no fix stage in it.
+    forbids.extend(
+        round
+            .filed
+            .iter()
+            .filter(|(_, route)| *route != "recorded")
+            .map(|(key, route)| json!({"finding": key, "route": route})),
+    );
+    forbids.extend(
+        later
+            .iter()
+            .filter(|finding| finding.route != "recorded")
+            .map(|finding| json!({"finding": finding.key, "route": finding.route})),
+    );
+    // The candidate is tested while the latest round has a record and no fix stage in it:
+    // each cell's `rounds` says so in the fixture's own words.
     let current = round.rounds.last().is_some_and(|last| {
         last.is_some_and(|facts| !facts.contains("cycles") && !facts.contains("outcome"))
     });
@@ -6016,6 +6706,12 @@ fn drive_round(label: &str, round: &Round, truth: &[Finding]) {
             );
         }
     }
+    // A re-run is the `test` stage's position exactly when it is the step.
+    assert_eq!(
+        round.next == "retest",
+        !read["position"]["test"]["rerun"].is_null(),
+        "{what}: the position names a re-run when it is the step, and only then: {read}"
+    );
     // And an unfinished triage has exactly one stage that finishes it.
     let finishes = ["test", "fix"]
         .iter()
@@ -6056,7 +6752,7 @@ fn drive_rounds(part: usize) {
             .sum()
     });
     assert!(
-        driven >= 33 && ROUNDS.len() >= 101,
+        driven >= 32 && ROUNDS.len() >= 97,
         "the table collapsed to {driven} cells of {}",
         ROUNDS.len()
     );
@@ -6077,51 +6773,15 @@ fn the_next_step_is_computed_from_the_runs_recorded_state_part_3_of_3() {
     drive_rounds(2);
 }
 
-/// A clause's instrument last ran in the HIGHEST round that tested the commit its row
-/// names. Two rounds name one candidate only when a record never moved the tip between
-/// them — and then it is the later one's record that says whether the clause ran alone.
-#[test]
-fn a_clauses_instrument_last_ran_in_the_highest_round_that_tested_its_commit() {
-    let rig = Rig::new("last-round");
-    rig.run(&run_set(RUN), &format!("{{{BOUNDED}, {RELEASE}}}"))
-        .must(OK, "the run's facts");
-    let mut judged = item("row-clause-b");
-    judged["clause"] = json!("clause-b");
-    rig.run(&item_set(RUN), &judged.to_string())
-        .must(OK, "the test set");
-    for (round, facts) in [
-        ("1", json!({"candidate": sha('a')})),
-        ("2", json!({"candidate": sha('a'), "alone": "clause-b"})),
-    ] {
-        rig.run(&scope_set(RUN, round), &scope(&[INSIDE], &[]).to_string())
-            .must(OK, "a round's scope");
-        rig.run(&round_set(RUN, round), &facts.to_string())
-            .must(OK, "a round's record");
-    }
-    let mut row = clause_set(
-        RUN,
-        "clause-b",
-        &["--instrument=its instrument", "--scope=the delta"],
-    );
-    row.extend([format!("--commit={}", sha('a')), "--status=void".to_owned()]);
-    rig.run(&row, "").must(OK, "a clause row");
-
-    let read = rig.state();
-    assert_eq!(
-        (&read["clauses"][0]["round"], &read["clauses"][0]["retry"]),
-        (&json!(2), &json!("spent")),
-        "the later of the two rounds, and its record: {read}"
-    );
-    assert_eq!(read["next"], json!("rule"), "{read}");
-}
-
 /// A run of two clauses — `clause-a` judged by a check that runs on every candidate,
-/// `clause-b` by a hunt whose one door is [`INSIDE`] — opened with `facts`, both rows not
-/// yet run.
+/// `clause-b` by a hunt whose one door is [`INSIDE`] — opened with `facts`, and no round yet.
 fn two_clause_run(label: &str, facts: &str) -> Rig {
     let rig = Rig::new(label);
-    rig.run(&run_set(RUN), &format!("{{{facts}, {RELEASE}}}"))
-        .must(OK, "the run's facts");
+    rig.run(
+        &run_set(RUN),
+        &format!(r#"{{{facts}, {RELEASE}, "clauses": ["clause-a", "clause-b"]}}"#),
+    )
+    .must(OK, "the run's facts, and its census");
     let mut check = item("check-clause-a");
     check["clause"] = json!("clause-a");
     check["kind"] = json!("check");
@@ -6131,27 +6791,13 @@ fn two_clause_run(label: &str, facts: &str) -> Rig {
     hunt["clause"] = json!("clause-b");
     rig.run(&item_set(RUN), &json!([check, hunt]).to_string())
         .must(OK, "the test set");
-    for clause in ["clause-a", "clause-b"] {
-        clause_row(&rig, clause, "void", None);
-    }
     rig
 }
 
-/// Write `clause`'s row as a round's `test` stage does: its status, on round `ran`'s
-/// candidate.
-fn clause_row(rig: &Rig, clause: &str, status: &str, ran: Option<usize>) {
-    let rest = ["--instrument=its instrument", "--scope=the delta"];
-    let mut args = clause_set(RUN, clause, &rest);
-    args.push(format!("--status={status}"));
-    if let Some(n) = ran {
-        args.push(format!("--commit={}", candidate(n)));
-    }
-    rig.run(&args, "").must(OK, "a clause row");
-}
-
-/// Record round `n` as tested, with `more` beside its candidate, over doors that reach
-/// the hunt or leave it out.
-fn tested_round(rig: &Rig, n: usize, reaches: bool, more: Value) {
+/// Record round `n` as its `test` stage does — over doors that reach the hunt or leave it
+/// out: what each of `results` did, as `(item, outcome)`, and then its candidate, with
+/// `more` beside it.
+fn tested_round(rig: &Rig, n: usize, reaches: bool, results: &[(&str, &str)], more: Value) {
     let doors = if reaches {
         scope(&[INSIDE], &[EXCLUDED])
     } else {
@@ -6159,46 +6805,65 @@ fn tested_round(rig: &Rig, n: usize, reaches: bool, more: Value) {
     };
     rig.run(&scope_set(RUN, &n.to_string()), &doors.to_string())
         .must(OK, "a round's scope");
+    if !results.is_empty() {
+        let rows: Vec<Value> = results
+            .iter()
+            .map(|(item, outcome)| ran(item, outcome))
+            .collect();
+        rig.run(
+            &result_set(RUN, &n.to_string(), &candidate(n)),
+            &json!(rows).to_string(),
+        )
+        .must(OK, "what the round's items did");
+    }
     let mut facts = more;
     facts["candidate"] = json!(candidate(n));
     rig.run(&round_set(RUN, &n.to_string()), &facts.to_string())
         .must(OK, "a round's record");
 }
 
-/// `(round, behind, stale, retry)` of each clause row, in the table's order.
+/// One item run again in round `n`, on the candidate round `on` tested.
+fn rerun(rig: &Rig, n: usize, on: usize, item: &str, outcome: &str) -> Seen {
+    rig.run(
+        &result_set(RUN, &n.to_string(), &candidate(on)),
+        &ran(item, outcome).to_string(),
+    )
+}
+
+/// `(round, behind, status, retry)` of each clause, in the census's order.
 fn worth(read: &Value) -> Vec<Value> {
     read["clauses"]
         .as_array()
         .expect("the clause rows")
         .iter()
-        .map(|row| json!([row["round"], row["behind"], row["stale"], row["retry"]]))
+        .map(|row| json!([row["round"], row["behind"], row["status"], row["retry"]]))
         .collect()
 }
 
 /// What the dissent on scoping by door was answered with: at closing the record shows,
 /// per clause, how far behind the current candidate its last evidence is. The unit is the
-/// one the committed record supports — fix rounds on record since the row's own round.
+/// one the committed record supports — fix rounds on record since the round of its latest
+/// run. And what that evidence is worth: a check's run is current only on the present
+/// candidate, a hunt's while no landed fix reaches its doors.
 #[test]
 fn a_clauses_evidence_says_how_many_fix_rounds_behind_the_candidate_it_is() {
     let rig = two_clause_run("behind", r#""stop": "at-the-bound", "rounds": 9"#);
     assert_eq!(
         worth(&rig.state()),
         [
-            json!([null, null, null, "due"]),
-            json!([null, null, null, "due"])
+            json!([null, null, "void", "never-selected"]),
+            json!([null, null, "void", "never-selected"])
         ],
-        "rows not yet run are behind nothing"
+        "before any round is tested no item is owed, and nothing is behind anything"
     );
 
-    // Round 1 runs both instruments. While no fix stage is on record its candidate is
-    // the run's, and both rows count.
-    tested_round(&rig, 1, true, json!({}));
-    clause_row(&rig, "clause-a", "green", Some(1));
-    clause_row(&rig, "clause-b", "green", Some(1));
+    // Round 1 runs both items. While no fix stage is on record its candidate is the run's.
+    let both = [("check-clause-a", "green"), ("row-clause-b", "green")];
+    tested_round(&rig, 1, true, &both, json!({}));
     let read = rig.state();
     assert_eq!(
         worth(&read),
-        [json!([1, 0, null, null]), json!([1, 0, null, null])]
+        [json!([1, 0, "green", null]), json!([1, 0, "green", null])]
     );
     assert_eq!(
         (&read["next"], &read["candidate"]),
@@ -6209,17 +6874,14 @@ fn a_clauses_evidence_says_how_many_fix_rounds_behind_the_candidate_it_is() {
         "{read}"
     );
 
-    // A fix cycle is recorded in round 1: the candidate it tested is no longer the run's,
-    // every row is one fix round behind, and nothing closes — whatever the table says.
+    // A fix cycle is recorded in round 1: the candidate it tested is no longer the run's.
+    // No run is current — the clause table says void, of both — and nothing closes.
     rig.run(&round_set(RUN, "1"), &json!({"cycles": 1}).to_string())
         .must(OK, "a recorded fix cycle");
     let read = rig.state();
     assert_eq!(
         worth(&read),
-        [
-            json!([1, 1, "check-always", "due"]),
-            json!([1, 1, "not-scoped", "due"])
-        ]
+        [json!([1, 1, "void", null]), json!([1, 1, "void", null])]
     );
     assert_eq!(
         (&read["next"], &read["candidate"], &read["fix_rounds"]),
@@ -6233,35 +6895,50 @@ fn a_clauses_evidence_says_how_many_fix_rounds_behind_the_candidate_it_is() {
     assert_eq!(
         read["forbids_close"],
         json!([
-            {"clause": "clause-a", "status": "green", "stale": "check-always"},
-            {"clause": "clause-b", "status": "green", "stale": "not-scoped"},
+            {"clause": "clause-a", "status": "void"},
+            {"clause": "clause-b", "status": "void"},
             {"candidate": "not-tested", "round": 1},
         ]),
         "{read}"
     );
+    assert_eq!(
+        (
+            &read["clauses"][0]["items"][0]["why"],
+            &read["clauses"][1]["items"][0]["why"]
+        ),
+        (&json!("not-current"), &json!("not-current")),
+        "{read}"
+    );
 
-    // Round 2 tests what the fixes left, over doors that do not reach the hunt. The check
-    // ran again; the hunt did not, and its green from before the landing counts — one
-    // fix round behind, and the document says so.
-    tested_round(&rig, 2, false, json!({}));
+    // Round 2 tests what the fixes left, over doors that do not reach the hunt — and its
+    // record holds no run of the check. The hunt's green from before the landing stands,
+    // one fix round behind; the check's does not: it is of an earlier candidate.
+    tested_round(&rig, 2, false, &[], json!({}));
     let read = rig.state();
     assert_eq!(
         (worth(&read), &read["next"], &read["retest"]),
         (
             vec![
-                json!([1, 1, "check-always", "due"]),
-                json!([1, 1, null, null])
+                json!([null, null, "void", "due"]),
+                json!([1, 1, "green", null])
             ],
             &json!("retest"),
             &json!(["clause-a"])
         ),
-        "the check's row is still round 1's: {read}"
+        "a check green on an earlier candidate has no say on this one: {read}"
     );
-    clause_row(&rig, "clause-a", "green", Some(2));
+    assert_eq!(
+        read["clauses"][0]["items"][0],
+        json!({"item": "check-clause-a", "runs": "every-candidate", "round": 2, "attempt": null,
+               "commit": null, "outcome": null, "reason": null, "standing": "void",
+               "why": "not-run", "rerun": "due"}),
+        "{read}"
+    );
+    rerun(&rig, 2, 2, "check-clause-a", "green").must(OK, "the check, run on this candidate");
     let read = rig.state();
     assert_eq!(
         worth(&read),
-        [json!([2, 0, null, null]), json!([1, 1, null, null])]
+        [json!([2, 0, "green", null]), json!([1, 1, "green", null])]
     );
     assert_eq!(
         (&read["next"], &read["forbids_close"]),
@@ -6269,23 +6946,25 @@ fn a_clauses_evidence_says_how_many_fix_rounds_behind_the_candidate_it_is() {
         "{read}"
     );
 
-    // A second landing, and a round 3 whose doors do reach the hunt: its row is two fix
-    // rounds behind, and does not count until its instrument has run on this candidate.
+    // A second landing, and a round 3 whose doors do reach the hunt: round 3 owes its run,
+    // and the green of round 1 is no longer what stands for it.
     rig.run(&round_set(RUN, "2"), &json!({"cycles": 2}).to_string())
         .must(OK, "round 2's fix cycles");
-    tested_round(&rig, 3, true, json!({}));
-    clause_row(&rig, "clause-a", "green", Some(3));
+    tested_round(&rig, 3, true, &[("check-clause-a", "green")], json!({}));
     let read = rig.state();
     assert_eq!(
         (worth(&read), &read["next"], &read["fix_rounds"]),
         (
-            vec![json!([3, 0, null, null]), json!([1, 2, "reached", "due"])],
+            vec![
+                json!([3, 0, "green", null]),
+                json!([null, null, "void", "due"])
+            ],
             &json!("retest"),
             &json!(2)
         ),
         "{read}"
     );
-    clause_row(&rig, "clause-b", "green", Some(3));
+    rerun(&rig, 3, 3, "row-clause-b", "green").must(OK, "the hunt, run where the fixes reach");
     assert_eq!(rig.state()["next"], json!("close"));
 }
 
@@ -6305,9 +6984,8 @@ fn the_humans_go_is_a_recorded_fact_taken_only_for_the_stop_it_answers() {
     assert_eq!(rig.snapshot(), before, "a refused go writes nothing");
 
     // Round 1 is tested and leaves a blocker: the round is not over, and nothing stops.
-    tested_round(&rig, 1, true, json!({}));
-    clause_row(&rig, "clause-a", "green", Some(1));
-    clause_row(&rig, "clause-b", "green", Some(1));
+    let both = [("check-clause-a", "green"), ("row-clause-b", "green")];
+    tested_round(&rig, 1, true, &both, json!({}));
     rig.seed_rows(&["blocker"]);
     rig.run(
         &triage_set(RUN, "1"),
@@ -6387,8 +7065,7 @@ fn the_humans_go_is_a_recorded_fact_taken_only_for_the_stop_it_answers() {
 
     // Round 2 confirms the candidate and leaves nothing: over, and the run stops again —
     // round 1's go is round 1's.
-    tested_round(&rig, 2, false, json!({}));
-    clause_row(&rig, "clause-a", "green", Some(2));
+    tested_round(&rig, 2, false, &[("check-clause-a", "green")], json!({}));
     let read = rig.state();
     assert_eq!(
         (&read["next"], stopped(&read)),
@@ -6405,9 +7082,7 @@ fn the_humans_go_is_a_recorded_fact_taken_only_for_the_stop_it_answers() {
     // A run that stops at its bound has no such stop — and the stop at a spent bound is
     // not one a go lifts: that go is the raised bound, and only the human raises it.
     let other = two_clause_run("go-bounded", r#""stop": "at-the-bound", "rounds": 1"#);
-    tested_round(&other, 1, true, json!({}));
-    clause_row(&other, "clause-a", "green", Some(1));
-    clause_row(&other, "clause-b", "green", Some(1));
+    tested_round(&other, 1, true, &both, json!({}));
     assert_eq!(other.state()["next"], json!("close"));
     other
         .run(&round_set(RUN, "1"), &go)
@@ -6415,7 +7090,7 @@ fn the_humans_go_is_a_recorded_fact_taken_only_for_the_stop_it_answers() {
     other
         .run(&round_set(RUN, "1"), &json!({"cycles": 1}).to_string())
         .must(OK, "round 1's fix cycle: the bound of one is spent");
-    tested_round(&other, 2, true, json!({}));
+    tested_round(&other, 2, true, &both, json!({}));
     other.seed_rows(&["blocker"]);
     other
         .run(
@@ -6450,90 +7125,216 @@ fn the_humans_go_is_a_recorded_fact_taken_only_for_the_stop_it_answers() {
     );
 }
 
-/// A clause still not green after its one re-run is the human's. The one ruling with a
-/// recorded form is one more re-run of it — granted in the round its re-run was, to that
-/// clause and to no other. Nothing removes a clause: that is the run's opening.
+/// **A re-run is an attempt inside the round that selected the item — one automatic
+/// attempt, on record, then the human.** It is a result like any other, taken only where
+/// the state asks for it (the review's `F5`, the repair plan's state 9); it begins no round,
+/// so it resolves no scope and counts against no bound; and the one ruling with a recorded
+/// form is one more of it, granted to the clause whose item is spent — in the round that
+/// selected that item, and to no other. Nothing removes a clause: that is the run's opening.
 #[test]
-fn one_more_rerun_is_granted_only_to_a_clause_that_is_the_humans() {
-    let rig = two_clause_run("granted", r#""stop": "at-the-bound", "rounds": 9"#);
+fn a_rerun_is_an_attempt_inside_its_round_taken_only_where_the_state_asks_and_granted_by_the_human()
+{
+    let rig = two_clause_run("rerun", r#""stop": "at-the-bound", "rounds": 9"#);
     let grant = |clause: &str| json!({"granted": clause}).to_string();
-    tested_round(&rig, 1, true, json!({}));
-    clause_row(&rig, "clause-a", "green", Some(1));
-    clause_row(&rig, "clause-b", "void", Some(1));
-
-    // Its one re-run is due, and nothing is the human's yet: there is nothing to grant.
-    let read = rig.state();
-    assert_eq!(
-        (&read["next"], &read["retest"]),
-        (&json!("retest"), &json!(["clause-b"]))
+    tested_round(
+        &rig,
+        1,
+        true,
+        &[("check-clause-a", "green"), ("row-clause-b", "void")],
+        json!({}),
     );
-    let before = rig.snapshot();
-    rig.run(&round_set(RUN, "1"), &grant("clause-b"))
-        .refused(BAD_VALUE, "a grant before the one re-run was spent");
-    assert_eq!(rig.snapshot(), before, "a refused grant writes nothing");
 
-    // The re-run, alone, leaves it void: the clause is the human's.
-    tested_round(&rig, 2, true, json!({"alone": "clause-b"}));
-    clause_row(&rig, "clause-b", "void", Some(2));
+    // The hunt's one re-run is due: the position of the `test` stage IS that re-run — its
+    // round, the attempt it will be, the doors it runs over again — and no new round.
     let read = rig.state();
     assert_eq!(
-        (&read["next"], &read["human_clauses"]),
+        (&read["next"], &read["retest"], &read["position"]["test"]),
         (
-            &json!("rule"),
-            &json!([{"clause": "clause-b", "why": "not-green-after-its-rerun"}])
+            &json!("retest"),
+            &json!(["clause-b"]),
+            &json!({"round": 1, "attempt": 1, "rerun": {
+                "clause": "clause-b", "round": 1,
+                "items": [{"item": "row-clause-b", "attempt": 2}],
+                "doors": [door(INSIDE)]}})
         ),
         "{read}"
     );
+    // Nothing is the human's yet: there is nothing to grant. And a re-run nobody is asked
+    // for is refused — of an item that is green, in a round that is not the item's, in a
+    // round that does not exist.
     let before = rig.snapshot();
-    for (round, clause, why) in [
-        ("2", "clause-a", "a grant for a clause that is green"),
+    rig.run(&round_set(RUN, "1"), &grant("clause-b"))
+        .refused(BAD_VALUE, "a grant before the one re-run was spent");
+    rerun(&rig, 1, 1, "check-clause-a", "green")
+        .refused(BAD_VALUE, "a re-run of an item that is green");
+    rerun(&rig, 2, 1, "row-clause-b", "green")
+        .refused(NO_SCOPE, "a re-run in a round that has no scope");
+    assert_eq!(
+        rig.snapshot(),
+        before,
+        "a refused re-run, or grant, writes nothing"
+    );
+
+    // The re-run leaves it void: attempt 2 of round 1, and the clause is the human's.
+    let seen = rerun(&rig, 1, 1, "row-clause-b", "void");
+    seen.must(OK, "the one re-run that is automatic");
+    assert_eq!(
+        seen.json()["recorded"],
+        json!([{"item": "row-clause-b", "attempt": 2, "outcome": "void"}])
+    );
+    let read = rig.state();
+    assert_eq!(
+        (&read["next"], &read["human_clauses"], &read["round"]),
         (
-            "1",
-            "clause-b",
-            "a grant in a round that was not its re-run",
+            &json!("rule"),
+            &json!([{"clause": "clause-b", "why": "not-green-after-its-rerun"}]),
+            &json!(1)
         ),
-        ("2", "clause-c", "a grant for a clause the table lacks"),
-        ("3", "clause-b", "a grant in a round that does not exist"),
+        "a re-run began no round: {read}"
+    );
+    assert!(read["position"]["test"]["rerun"].is_null(), "{read}");
+    let before = rig.snapshot();
+    rerun(&rig, 1, 1, "row-clause-b", "green").refused(BAD_VALUE, "a third attempt nobody granted");
+    for (round, clause, why) in [
+        ("1", "clause-a", "a grant for a clause that is green"),
+        ("1", "clause-c", "a grant for a clause the census lacks"),
+        (
+            "2",
+            "clause-b",
+            "a grant in a round that selected no item of it",
+        ),
     ] {
         rig.run(&round_set(RUN, round), &grant(clause))
             .refused(BAD_VALUE, why);
     }
     assert_eq!(rig.snapshot(), before);
 
-    // Granted: one more re-run is due, and the clause is nobody's list.
-    rig.run(&round_set(RUN, "2"), &grant("clause-b"))
-        .must(OK, "one more re-run, granted");
-    rig.run(&round_set(RUN, "2"), &grant("clause-b"))
-        .must(OK, "the grant said again, as it stands");
-    rig.run(&round_set(RUN, "2"), &grant("clause-a"))
-        .refused(EXISTS, "another clause granted in the same round");
+    // Granted: the record holds the attempt it allows, one more re-run is due, and a
+    // second grant is not asked for — one grant, one attempt.
+    let seen = rig.run(&round_set(RUN, "1"), &grant("clause-b"));
+    seen.must(OK, "one more re-run, granted");
+    assert_eq!(seen.json()["facts"]["granted"], json!(["row-clause-b a3"]));
+    rig.run(&round_set(RUN, "1"), &grant("clause-b"))
+        .refused(BAD_VALUE, "a second grant while the first is not spent");
     let read = rig.state();
     assert_eq!(
-        (&read["next"], &read["retest"], &read["human_clauses"]),
-        (&json!("retest"), &json!(["clause-b"]), &json!([])),
+        (
+            &read["next"],
+            &read["retest"],
+            &read["human_clauses"],
+            &read["position"]["test"]["rerun"]["items"]
+        ),
+        (
+            &json!("retest"),
+            &json!(["clause-b"]),
+            &json!([]),
+            &json!([{"item": "row-clause-b", "attempt": 3}])
+        ),
         "{read}"
     );
-    assert_eq!(read["rounds"][1]["facts"]["granted"], json!("clause-b"));
 
-    // That re-run leaves it void again: the human's again, and one more may be granted
-    // there. A grant is spent by the round it was granted in.
-    tested_round(&rig, 3, true, json!({"alone": "clause-b"}));
-    clause_row(&rig, "clause-b", "void", Some(3));
+    // That one leaves it void again: the human's again, and one more may be granted. Then
+    // it runs green, and the run closes — on four attempts of one round.
+    rerun(&rig, 1, 1, "row-clause-b", "void").must(OK, "the granted re-run");
     let read = rig.state();
     assert_eq!(
         (&read["next"], &read["clauses"][1]["retry"]),
         (&json!("rule"), &json!("spent")),
         "{read}"
     );
-    rig.run(&round_set(RUN, "3"), &grant("clause-b"))
+    rig.run(&round_set(RUN, "1"), &grant("clause-b"))
         .must(OK, "and one more");
-    assert_eq!(rig.state()["next"], json!("retest"));
+    assert_eq!(
+        table(&rig.read(&round_path("1")), &ROUND_COLUMNS)[1],
+        ["`granted`", "`row-clause-b a3, row-clause-b a4`"],
+        "each grant is on record, as the attempt it allowed"
+    );
+    rerun(&rig, 1, 1, "row-clause-b", "green").must(OK, "the second granted re-run");
+    let read = rig.state();
+    assert_eq!(
+        (&read["next"], &read["fix_rounds"], &read["round"]),
+        (&json!("close"), &json!(0), &json!(1)),
+        "three re-runs are no round and no fix round: {read}"
+    );
+    let commit = format!("`{}`", candidate(1));
+    assert_eq!(
+        table(&rig.read(&results_path("1")), &RESULT_COLUMNS),
+        [
+            ["`check-clause-a`", "1", commit.as_str(), "green", "-"],
+            [
+                "`row-clause-b`",
+                "1",
+                commit.as_str(),
+                "void",
+                "its driver died"
+            ],
+            [
+                "`row-clause-b`",
+                "2",
+                commit.as_str(),
+                "void",
+                "its driver died"
+            ],
+            [
+                "`row-clause-b`",
+                "3",
+                commit.as_str(),
+                "void",
+                "its driver died"
+            ],
+            ["`row-clause-b`", "4", commit.as_str(), "green", "-"],
+        ],
+        "which item ran, which attempt, on which commit, with which outcome"
+    );
 
-    // The script has no call that removes a clause's row or an item of the test set.
+    // A fix lands, and round 2's doors reach the hunt again: its attempts are round 2's,
+    // counted anew — round 1's grants allow nothing here.
+    rig.run(&round_set(RUN, "1"), &json!({"cycles": 1}).to_string())
+        .must(OK, "round 1's fix cycle");
+    tested_round(
+        &rig,
+        2,
+        true,
+        &[("check-clause-a", "green"), ("row-clause-b", "void")],
+        json!({}),
+    );
+    assert_eq!(
+        rig.state()["position"]["test"]["rerun"]["items"],
+        json!([{"item": "row-clause-b", "attempt": 2}])
+    );
+    rerun(&rig, 1, 2, "row-clause-b", "green").refused(
+        BAD_VALUE,
+        "a re-run in round 1, which is no longer the round that owes the item",
+    );
+    rerun(&rig, 2, 2, "row-clause-b", "void").must(OK, "round 2's one re-run");
+    let read = rig.state();
+    assert_eq!(
+        (&read["next"], &read["rounds"][1]["facts"]["granted"]),
+        (&json!("rule"), &json!([])),
+        "{read}"
+    );
+
+    // And while a finding is open the state asks for no re-run at all, granted or not.
+    rig.run(&round_set(RUN, "2"), &grant("clause-b"))
+        .must(OK, "one more, granted in round 2");
+    rig.seed_rows(&["blocker"]);
+    rig.run(
+        &triage_set(RUN, "2"),
+        &json!({"key": "blocker", "grade": "breaks", "verdict": "confirmed", "regression": false})
+            .to_string(),
+    )
+    .must(OK, "round 2's triage");
+    assert_eq!(rig.state()["next"], json!("fix"));
+    let before = rig.snapshot();
+    rerun(&rig, 2, 2, "row-clause-b", "green")
+        .refused(BAD_VALUE, "a re-run while a finding is open");
+    assert_eq!(rig.snapshot(), before);
+
+    // The script has no call that removes a clause or an item of the test set.
     let help = rig.run(&strings(&["--help"]), "");
     help.must(OK, "the header");
     assert!(
-        help.stdout.contains("NOTHING REMOVES A CLAUSE'S ROW"),
+        help.stdout.contains("NOTHING REMOVES A CLAUSE"),
         "the header says why no removal is offered"
     );
     assert!(
@@ -6907,6 +7708,8 @@ fn which_items_a_round_runs_is_computed_from_the_test_set_and_the_rounds_doors()
 #[test]
 fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
     let rig = Rig::new("round-record");
+    rig.run(&scope_set(RUN, "1"), &scope(&[INSIDE], &[]).to_string())
+        .must(OK, "the round's scope: a round is tested over its doors");
     let seen = rig.run(
         &round_set(RUN, "1"),
         &json!({"binary": sha256('b'), "candidate": sha('c'), "base": "0f34d8f0"}).to_string(),
@@ -6922,9 +7725,8 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
                 "binary": sha256('b'),
                 "cycles": 0,
                 "outcome": null,
-                "alone": null,
                 "go": false,
-                "granted": null,
+                "granted": [],
                 "cross-model": [],
                 "cross-model-void": [],
             },
@@ -6937,12 +7739,9 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
     // A fact written once may be said again, as it stands.
     rig.run(
         &round_set(RUN, "1"),
-        &json!({"candidate": sha('c'), "outcome": "part", "alone": "no-lost-files"}).to_string(),
+        &json!({"candidate": sha('c'), "outcome": "part"}).to_string(),
     )
-    .must(
-        OK,
-        "the candidate again, the round's outcome, and the clause it ran alone",
-    );
+    .must(OK, "the candidate again, and the round's outcome");
     assert_eq!(
         table(&rig.read(&round_path("1")), &ROUND_COLUMNS),
         vec![
@@ -6951,7 +7750,6 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
             vec!["`binary`".to_owned(), format!("`{}`", sha256('b'))],
             vec!["`cycles`".to_owned(), "`2`".to_owned()],
             vec!["`outcome`".to_owned(), "`part`".to_owned()],
-            vec!["`alone`".to_owned(), "`no-lost-files`".to_owned()],
         ],
         "the facts, in the record's own order whatever order they came in"
     );
@@ -6963,9 +7761,8 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
             "binary": sha256('b'),
             "cycles": 2,
             "outcome": "part",
-            "alone": "no-lost-files",
             "go": false,
-            "granted": null,
+            "granted": [],
             "cross-model": [],
             "cross-model-void": [],
         })
@@ -6977,10 +7774,6 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
         (json!({"base": "0f34d8f1"}), "another base"),
         (json!({"binary": sha256('d')}), "another binary"),
         (json!({"outcome": "dropped"}), "another outcome"),
-        (
-            json!({"alone": "no-regression"}),
-            "another clause run alone",
-        ),
         (
             json!({"cycles": 3, "outcome": "dropped"}),
             "another outcome beside a fact that would be taken",
@@ -7023,6 +7816,10 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
             "a go nobody asked for beside a fact that would be taken",
         ),
         (json!({"landed": sha('c')}), "a fact nobody defined"),
+        (
+            json!({"alone": "no-lost-files"}),
+            "a clause run alone: a re-run is no round of its own, and the fact is gone",
+        ),
         (json!({}), "a record that says nothing"),
         (json!([{"cycles": 3}]), "a list of records"),
     ];
@@ -7095,16 +7892,6 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
             json!({"cross-model": [3]}),
             BAD_ID,
             "an item that is a number",
-        ),
-        (
-            json!({"alone": "No lost files"}),
-            BAD_ID,
-            "a clause that is no slug",
-        ),
-        (
-            json!({"alone": ["no-lost-files"]}),
-            BAD_ID,
-            "a list of clauses",
         ),
         (
             json!({"granted": "No lost files"}),
@@ -7595,13 +8382,11 @@ fn drive_position(label: &str, opening: Opening, position: &Position, truth: &[F
             .must(OK, "the run's facts");
     }
     if clause_row {
-        let rest = [
-            "--instrument=the audit",
-            "--scope=the delta",
-            "--status=void",
-        ];
-        rig.run(&clause_set(RUN, "no-lost-files", &rest), "")
-            .must(OK, "a clause row, not yet run");
+        rig.run(
+            &run_set(RUN),
+            &json!({"clauses": ["no-lost-files"]}).to_string(),
+        )
+        .must(OK, "the census: a clause, not yet run");
     }
     match position.finding {
         // Before any round nothing was triaged: the finding is a row of the opening's.
@@ -7621,6 +8406,17 @@ fn drive_position(label: &str, opening: Opening, position: &Position, truth: &[F
         let round = (n + 1).to_string();
         fs::create_dir_all(rig.run_dir().join(format!("r{round}"))).expect("a round directory");
         if let Some(facts) = facts {
+            // A round is tested over its doors: its record names a candidate once it has
+            // a scope — which round 1 has already, where a finding was placed by it.
+            if facts.contains("candidate")
+                && !rig.run_dir().join(format!("r{round}/scope.md")).exists()
+            {
+                rig.run(
+                    &scope_set(RUN, &round),
+                    &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+                )
+                .must(OK, "the round's scope");
+            }
             rig.run(&round_set(RUN, &round), &format!("{{{facts}}}"))
                 .must(OK, "the round's record");
         }
@@ -7716,6 +8512,7 @@ fn the_runs_facts_are_written_through_the_script_and_the_bound_is_only_raised() 
             "previous": previous,
             "previous-commit": commit,
             "scope": scope,
+            "clauses": null,
         })
     };
     let none = Value::Null;
@@ -8064,15 +8861,8 @@ fn a_write_killed_between_its_files_is_never_read_as_a_finished_one() {
         INTERRUPTED,
         "the state over a batch no file of which landed",
     );
-    rig.run(
-        &clause_set(
-            RUN,
-            "no-lost-files",
-            &["--instrument=i", "--scope=s", "--status=void"],
-        ),
-        "",
-    )
-    .must(OK, "the next writer");
+    rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "")
+        .must(OK, "the next writer");
     assert_eq!(
         two_files(&rig),
         ("regression".to_owned(), "confirmed".to_owned()),
@@ -8116,8 +8906,8 @@ fn call(argv: Vec<String>, stdin: &str) -> Value {
     json!({"argv": argv, "stdin": stdin})
 }
 
-/// The calls of a small `test` stage's record: the candidate's gate, a row, its triage, a
-/// clause row, the round's facts, and the ledger checked.
+/// The calls of a small `test` stage's record: the candidate's gate, a row, its triage, an
+/// item's result, the round's facts, and the ledger checked.
 fn stage_batch(rig: &Rig) -> Value {
     let summary = rig.summary("candidate", &[], &[]);
     json!([
@@ -8128,17 +8918,8 @@ fn stage_batch(rig: &Rig) -> Value {
             &json!([{"key": "audit-f4", "grade": "no-break"}]).to_string()
         ),
         call(
-            clause_set(
-                RUN,
-                "no-lost-files",
-                &[
-                    "--instrument=area",
-                    "--scope=round 1",
-                    "--status=green",
-                    &format!("--commit={}", sha('a'))
-                ]
-            ),
-            ""
+            result_set(RUN, "1", &sha('a')),
+            &ran("row-setup", "green").to_string()
         ),
         call(
             round_set(RUN, "1"),
@@ -8151,6 +8932,13 @@ fn stage_batch(rig: &Rig) -> Value {
 #[test]
 fn a_record_steps_batch_is_written_whole_held_as_pending_and_can_be_taken_back() {
     let rig = triaged_once("apply");
+    rig.run(
+        &run_set(RUN),
+        &json!({"clauses": ["no-lost-files"]}).to_string(),
+    )
+    .must(OK, "the census");
+    rig.run(&item_set(RUN), &item("row-setup").to_string())
+        .must(OK, "the item the batch records a result of");
     let before = rig.snapshot();
     let read = rig.state();
 
@@ -8231,12 +9019,15 @@ fn a_record_steps_batch_is_written_whole_held_as_pending_and_can_be_taken_back()
         said["results"][5],
         json!({"check": "ledger", "ok": true, "missing": [], "duplicated": []})
     );
+    // The clause table is one of them: the round's candidate made the item's run count,
+    // and the writer that recorded it rendered the view in the same batch.
     let files = json!([
         gate_path("1"),
         ledger_path(),
         triage_path("1"),
-        clauses_path(),
-        round_path("1")
+        results_path("1"),
+        round_path("1"),
+        clauses_path()
     ]);
     assert_eq!(said["files"], files);
     let pending = rig.run(&keeper("pending", RUN), "").json();
@@ -8256,10 +9047,18 @@ fn a_record_steps_batch_is_written_whole_held_as_pending_and_can_be_taken_back()
         .expect("the batch's files")
         .keys()
         .collect();
-    assert_eq!(held.len(), 5, "{pending}");
+    assert_eq!(held.len(), 6, "{pending}");
     assert_eq!(pending["once"], json!([scope_path("1")]));
     let state = rig.state();
     assert_eq!(state["rounds"][0]["facts"]["candidate"], sha('a').as_str());
+    assert_eq!(
+        (
+            &state["clauses"][0]["status"],
+            &read["clauses"][0]["status"]
+        ),
+        (&json!("green"), &json!("void")),
+        "the batch turned the clause green, in the table and in the state"
+    );
     assert_eq!(state["ledger"].as_array().map(Vec::len), Some(2));
 
     // ONE APPLIED BATCH AT A TIME.
@@ -8291,7 +9090,7 @@ fn a_record_steps_batch_is_written_whole_held_as_pending_and_can_be_taken_back()
         .must(OK, "the batch again");
     let settled = rig.run(&keeper("settle", RUN), "");
     settled.must(OK, "settle");
-    assert_eq!(settled.json()["settled"].as_array().map(Vec::len), Some(5));
+    assert_eq!(settled.json()["settled"].as_array().map(Vec::len), Some(6));
     assert_eq!(
         rig.run(&keeper("pending", RUN), "").json()["batch"],
         Value::Null
@@ -8613,12 +9412,8 @@ fn no_input_ends_in_a_traceback() {
     );
 
     // AN ARGUMENT that is not UTF-8 text.
-    let mut command = rig.command(&clause_set(
-        RUN,
-        "no-lost-files",
-        &["--scope=s", "--status=void"],
-    ));
-    command.arg(std::ffi::OsStr::from_bytes(b"--instrument=a \xff b"));
+    let mut command = rig.command(&bound_set(RUN, "non-jigc-writer", &BOUND[1..]));
+    command.arg(std::ffi::OsStr::from_bytes(b"--reach=a \xff b"));
     let out = command
         .stdin(Stdio::null())
         .output()

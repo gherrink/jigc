@@ -67,11 +67,14 @@
 //! **Defects the reviews recorded are pinned where a stage meets them, and repaired by
 //! nothing here.** Each such assertion says what the stage does *today* and names the
 //! finding by its id; the task that repairs it turns the assertion. They are `M3` and `M6`
-//! of the harness review and `F3` of the state machine's, and the lead *a red check
-//! without a ledger row*. **Turned by the repair's task 3, and asserted as repaired:** `M2`
-//! (a record step that returns no evidence), `M4` (a record step under a red gate) and the
-//! first of the build record's *Found while the workflow's doc was written* (the scope file
-//! of a stage that stopped).
+//! of the harness review and `F3` of the state machine's. **Turned by the repair's task 3,
+//! and asserted as repaired:** `M2` (a record step that returns no evidence), `M4` (a record
+//! step under a red gate) and the first of the build record's *Found while the workflow's
+//! doc was written* (the scope file of a stage that stopped). **Turned by its task 4:** the
+//! lead *a red check without a ledger row* — the call that records a red check files it as
+//! a finding. And that task's own path is driven beside them: a check that could not run,
+//! the re-run the state then asks for — an attempt inside the round, with no scope step and
+//! no fact of the round — and the invocations the state asks no re-run of.
 //!
 //! **The `fix` stage refuses to start**, and that is all that is asserted of it; the rig,
 //! the scenario and the stand-in are shaped so that its half's tasks add its agents here.
@@ -297,7 +300,8 @@ impl Sim {
     }
 
     /// The opening (implementation/stabilization-workflow.md → *Opening a run*): the
-    /// opening record, the run's facts, a row per clause, the test set, the declared
+    /// opening record, the run's facts — the clauses of its closing condition among them
+    /// — the test set, the declared
     /// bounds and the ledger's opening rows — each by the record script's own call — then
     /// ONE commit, pushed. Ready when the state says so.
     fn open(&self, opening: &Opening) {
@@ -309,27 +313,10 @@ impl Sim {
         self.record(
             &["run-set", "--run", RUN],
             &json!({"stop": "every-round", "previous": PREVIOUS,
-                    "previous-commit": previous, "scope": "delta"})
+                    "previous-commit": previous, "scope": "delta",
+                    "clauses": opening.clauses})
             .to_string(),
         );
-        for clause in &opening.clauses {
-            self.record(
-                &[
-                    "clause-set",
-                    "--run",
-                    RUN,
-                    "--clause",
-                    clause,
-                    "--instrument",
-                    "not yet run",
-                    "--scope",
-                    "not yet run",
-                    "--status",
-                    "void",
-                ],
-                "",
-            );
-        }
         self.record(&["item-set", "--run", RUN], &opening.items.to_string());
         for bound in &opening.bounds {
             self.record(
@@ -1401,20 +1388,19 @@ fn the_records_commit_step_commits_exactly_the_applied_batch_or_nothing() {
             "1",
         ])
     };
-    let clauses = format!("{RUN_DIR}/clauses.md");
+    let facts = format!("{RUN_DIR}/run.md");
 
     // No batch applied: there is nothing this step records.
     record(&green, "2", LOOP).refused("no-batch");
     let batch = json!([
-        {"argv": ["clause-set", "--run", RUN, "--clause", "audit-clean", "--instrument", "area-a",
-                  "--scope", "round 1", "--status", "void"]},
+        {"argv": ["run-set", "--run", RUN], "stdin": json!({"rounds": 3}).to_string()},
         {"argv": ["check-ledger", "--run", RUN, "--"]},
     ]);
     sim.record(
         &["apply", "--run", RUN, "--subject", "docs(record): a record"],
         &batch.to_string(),
     );
-    let applied = sim.rig.read(&clauses);
+    let applied = sim.rig.read(&facts);
     let pending = sim.rig.status();
 
     // The git state a stage starts from says what is pending, and is no refusal.
@@ -1436,7 +1422,7 @@ fn the_records_commit_step_commits_exactly_the_applied_batch_or_nothing() {
         state.done("git-state", "ready")["pending"],
         json!({"round": null, "subject": "docs(record): a record", "calls": 2,
                "checks": [{"check": "ledger", "ok": true, "missing": [], "duplicated": []}],
-               "files": [clauses]})
+               "files": [facts]})
     );
 
     for (what, seen, word) in [
@@ -1476,9 +1462,9 @@ fn the_records_commit_step_commits_exactly_the_applied_batch_or_nothing() {
         "the refusal's line carries what is newly red"
     );
     // A file of the batch changed after the batch wrote it, and a file nobody wrote.
-    sim.rig.write(&clauses, &applied.replace("void", "green"));
+    sim.rig.write(&facts, &applied.replace("`3`", "`4`"));
     record(&green, "2", LOOP).refused("dirty");
-    sim.rig.write(&clauses, &applied);
+    sim.rig.write(&facts, &applied);
     sim.rig.write(&format!("{RUN_DIR}/notes.md"), "a note\n");
     record(&green, "2", LOOP).refused("dirty");
     fs::remove_file(sim.rig.root.join(format!("{RUN_DIR}/notes.md"))).expect("remove the note");
@@ -1497,11 +1483,11 @@ fn the_records_commit_step_commits_exactly_the_applied_batch_or_nothing() {
             line["applied"]["calls"],
             line["gate"]["ok"]
         ]),
-        json!([head, LOOP, [clauses], 2, true])
+        json!([head, LOOP, [facts], 2, true])
     );
     assert_eq!(
         head_commit(&sim),
-        ("docs(record): a record".to_owned(), vec![clauses.clone()])
+        ("docs(record): a record".to_owned(), vec![facts.clone()])
     );
     assert_eq!(sim.rig.status(), "");
     assert_eq!(
@@ -1509,7 +1495,7 @@ fn the_records_commit_step_commits_exactly_the_applied_batch_or_nothing() {
         lines(&[
             "branch --show-current",
             "status --porcelain --untracked-files=all",
-            &format!("add -- {clauses}"),
+            &format!("add -- {facts}"),
             "commit -q -m docs(record): a record",
             "rev-parse HEAD",
             "status --porcelain --untracked-files=all",
@@ -1608,30 +1594,28 @@ fn a_stage_stopped_after_its_scope_step_is_run_again_by_the_invocation_that_foll
     let (_, paths) = head_commit(&sim);
     assert_eq!(
         paths.len(),
-        5 + 4,
-        "five reports, the scope, the gate, the round's facts and the clause table: {paths:?}"
+        5 + 5,
+        "five reports, the scope, the gate, the items' results, the round's facts and the clause table: {paths:?}"
     );
     assert!(paths.contains(&format!("{RUN_DIR}/r1/scope.md")));
     assert_eq!(sim.rig.status(), "");
 }
 
 #[test]
-fn a_red_check_reaches_nobody_and_a_go_is_recorded_without_starting_anything() {
+fn a_red_check_is_filed_as_a_finding_and_a_go_is_recorded_without_starting_anything() {
     if !can_run() {
         return;
     }
-    let sim = Sim::opened(
-        "red-check",
-        &Opening {
-            clauses: vec!["gate-green", "audit-clean"],
-            items: json!([
-                item("gate", "check", "gate-green"),
-                item("area-a", "audit-area", "audit-clean"),
-            ]),
-            bounds: vec![],
-            rows: json!([]),
-        },
-    );
+    let opening = Opening {
+        clauses: vec!["gate-green", "audit-clean"],
+        items: json!([
+            item("gate", "check", "gate-green"),
+            item("area-a", "audit-area", "audit-clean"),
+        ]),
+        bounds: vec![],
+        rows: json!([]),
+    };
+    let sim = Sim::opened("red-check", &opening);
     let ran = sim.invoke(
         sim.args("test", json!({})),
         json!({"checks": {"gate": "red"}, "scope": one_door(),
@@ -1640,24 +1624,60 @@ fn a_red_check_reaches_nobody_and_a_go_is_recorded_without_starting_anything() {
     let result = &ran.result;
     assert_eq!(result["status"], "triaged", "{result}");
 
-    // PINNED — the lead *a red check without a ledger row* (repair-plan.md §2;
-    // stabilization-workflow.md → *A red deterministic check*): the check's clause row is
-    // red, and that is all. No finding, no row, no blocker — nothing hands a red check to
-    // triage or to a fixer. What the state asks for is the check run again.
-    assert_eq!(result["state"]["ledger"], json!([]), "{result}");
+    // TURNED — the lead *a red check without a ledger row* (repair-plan.md §2;
+    // stabilization-workflow.md → *A red deterministic check*). A RED CHECK IS A FINDING:
+    // the call that records the red files it — one ledger row, under a key of the item's
+    // own, ungraded and open — so the round's triage is not finished, and the next triage
+    // that runs grades it like any other; then it is a fixer's, or the human's. It is no
+    // blocker yet, and nobody's re-run: the round is not over, so the run does not stop.
+    let ledger = result["state"]["ledger"].as_array().expect("the ledger");
+    assert_eq!(ledger.len(), 1, "{result}");
+    assert_eq!(
+        json!([
+            ledger[0]["key"],
+            ledger[0]["round"],
+            ledger[0]["clause"],
+            ledger[0]["grade"],
+            ledger[0]["disposition"],
+            ledger[0]["route"]
+        ]),
+        json!(["red-gate", 1, "gate-green", "ungraded", "open", "triage"]),
+        "{result}"
+    );
     assert_eq!(result["blockers"], json!([]));
     assert_eq!(
         result["forbids_close"],
-        json!([{"clause": "gate-green", "status": "red"}])
+        json!([{"clause": "gate-green", "status": "red"},
+               {"finding": "red-gate", "route": "triage"}])
     );
-    assert_eq!(result["state"]["retest"], json!(["gate-green"]));
+    assert_eq!(
+        result["state"]["untriaged"],
+        json!([{"key": "red-gate", "why": "ungraded"}])
+    );
+    assert_eq!(result["state"]["retest"], json!([]));
+    assert_eq!(result["next"], "triage", "{result}");
+    assert_eq!(result["returned_to_orchestrator"], true);
+    assert_eq!(
+        result["state"]["position"]["test"],
+        json!({"round": 1, "attempt": 2, "triage": true}),
+        "the stage that left the triage unfinished is the one that finishes it"
+    );
+    assert_eq!(result["state"]["stop"], Value::Null);
 
-    // THE RUN STOPS AFTER EVERY ROUND, and `stop` is a value the script only relays.
+    // THE RUN STOPS AFTER EVERY ROUND, and `stop` is a value the script only relays: a
+    // round whose check is green leaves nothing open, and is over.
+    let sim = Sim::opened("green-check", &opening);
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        json!({"checks": {"gate": "green"}, "scope": one_door(),
+               "agents": {"area-a:review": nothing()}}),
+    );
+    let result = &ran.result;
     assert_eq!(result["next"], "stop", "{result}");
     assert_eq!(result["returned_to_orchestrator"], true);
     assert_eq!(
         result["state"]["stop"],
-        json!({"why": "every-round", "round": 1, "then": "retest"})
+        json!({"why": "every-round", "round": 1, "then": "close"})
     );
     let tested = sim.rig.rev("HEAD");
 
@@ -1668,7 +1688,7 @@ fn a_red_check_reaches_nobody_and_a_go_is_recorded_without_starting_anything() {
         json!({}),
     );
     assert_eq!(go.result["status"], "ruled", "{}", go.result);
-    assert_eq!(go.result["next"], "retest");
+    assert_eq!(go.result["next"], "close");
     assert_eq!(
         go.agents(),
         [
@@ -1685,6 +1705,169 @@ fn a_red_check_reaches_nobody_and_a_go_is_recorded_without_starting_anything() {
     assert_eq!(go.result["record"], head.as_str());
     assert_eq!(sim.rig.remote(LOOP), Some(head), "pushed");
     assert_eq!(sim.state()["rounds"][0]["facts"]["go"], true);
+}
+
+/// **A re-run is an attempt inside the round that selected the item — never a round of its
+/// own.** A check that could not run leaves its clause void; with nothing open the state asks
+/// for that check again, and the `test` stage's position IS that re-run. The invocation that
+/// answers it names the clause, launches no scope step, records one result and no fact of
+/// the round — and an invocation the state did not ask for a re-run of, or that answers
+/// `retest` without one, is refused before any agent runs.
+#[test]
+fn a_rerun_is_an_attempt_inside_its_round_begins_no_round_and_is_refused_where_the_state_asks_for_none()
+ {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::opened(
+        "rerun",
+        &Opening {
+            clauses: vec!["gate-green", "audit-clean"],
+            items: json!([
+                item("gate", "check", "gate-green"),
+                item("area-a", "audit-area", "audit-clean"),
+            ]),
+            bounds: vec![],
+            rows: json!([]),
+        },
+    );
+    // A `clause` nobody asked for: before round 1 the state asks for no re-run.
+    let early = sim.invoke(sim.args("test", json!({"clause": "gate-green"})), json!({}));
+    assert_eq!(early.result["status"], "refused", "{}", early.result);
+    assert_eq!(early.agents(), ["git:state", "git:state:test-1"]);
+
+    // Round 1: the check could not run. Nothing is open, so the round is over — the run
+    // stops after it — and what follows the go is the check, again.
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        json!({"checks": {"gate": "void"}, "scope": one_door(),
+               "agents": {"area-a:review": nothing()}}),
+    );
+    assert_eq!(ran.result["status"], "triaged", "{}", ran.result);
+    assert_eq!(
+        ran.result["state"]["stop"],
+        json!({"why": "every-round", "round": 1, "then": "retest"})
+    );
+    assert_eq!(ran.result["counts"]["voided"], json!(["gate"]));
+    let go = sim.invoke(
+        sim.args("test", json!({"rulings": [{"go": true}]})),
+        json!({}),
+    );
+    assert_eq!(go.result["next"], "retest", "{}", go.result);
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            state["retest"],
+            state["position"]["test"]["round"],
+            state["position"]["test"]["attempt"],
+            state["position"]["test"]["rerun"]["clause"],
+            state["position"]["test"]["rerun"]["items"]
+        ]),
+        json!([["gate-green"], 1, 2, "gate-green", [{"item": "gate", "attempt": 2}]]),
+        "{state}"
+    );
+    let asked = sim.rig.rev("HEAD");
+
+    // `retest` answered without the clause, and with another clause: refused, and nothing
+    // ran beyond the two reads — no round is begun on a guess.
+    for (wrong, why) in [
+        (json!({}), "an invocation that would begin a round"),
+        (
+            json!({"clause": "audit-clean"}),
+            "a clause that is not the one that is due",
+        ),
+    ] {
+        let refused = sim.invoke(sim.args("test", wrong), json!({}));
+        assert_eq!(
+            refused.result["status"], "refused",
+            "{why}: {}",
+            refused.result
+        );
+        assert_eq!(refused.agents(), ["git:state", "git:state:test-1"], "{why}");
+    }
+    assert_eq!(
+        sim.rig.rev("HEAD"),
+        asked,
+        "a refused invocation commits nothing"
+    );
+    assert_eq!(sim.rig.status(), "");
+
+    // The re-run: the check, on the loop branch's tip, and nothing else — no scope step, no
+    // item beside it. One record commit, pushed.
+    let again = sim.invoke(
+        sim.args("test", json!({"clause": "gate-green"})),
+        json!({"checks": {"gate": "green"}}),
+    );
+    let result = &again.result;
+    assert_eq!(result["status"], "triaged", "{result}");
+    assert_eq!(
+        json!([
+            result["round"],
+            result["rerun"]["clause"],
+            result["rerun"]["round"],
+            result["counts"]["items_run"]
+        ]),
+        json!([1, "gate-green", 1, 1]),
+        "{result}"
+    );
+    assert_eq!(
+        again.agents(),
+        [
+            "git:state",
+            "git:state:test-1",
+            "preflight",
+            "git:state:test-2",
+            "git:check-reports",
+            "record:test:r1",
+            "git:record:test:r1",
+            "git:push",
+            "git:state:test-3"
+        ],
+        "a re-run launches no scope step and no item it was not asked for"
+    );
+    assert_eq!(sim.rig.rev("HEAD~1"), asked, "one record commit");
+    let (subject, paths) = head_commit(&sim);
+    assert_eq!(
+        subject,
+        format!("docs(record): {RUN} r1 — a re-run of gate-green")
+    );
+    assert_eq!(
+        paths,
+        lines(&[
+            &format!("{RUN_DIR}/clauses.md"),
+            &format!("{RUN_DIR}/r1/reports/test/preflight.a2.md"),
+            &format!("{RUN_DIR}/r1/results.md"),
+        ]),
+        "the re-run's one report, its result, and the clause table the result rendered"
+    );
+    assert_eq!(sim.rig.remote(LOOP), Some(sim.rig.rev("HEAD")), "pushed");
+
+    // It began no round, wrote no fact of round 1, and is on record as attempt 2 of it — on
+    // the commit it ran on. The clause is green, and the run closes.
+    let state = sim.state();
+    assert_eq!(state["round"], 1, "{state}");
+    assert_eq!(
+        state["rounds"][0]["facts"]["candidate"], ran.result["candidate"]["sha"],
+        "{state}"
+    );
+    let results = state["rounds"][0]["results"]
+        .as_array()
+        .expect("the results");
+    let gate: Vec<Value> = results
+        .iter()
+        .filter(|row| row["item"] == "gate")
+        .map(|row| json!([row["attempt"], row["outcome"], row["commit"]]))
+        .collect();
+    assert_eq!(
+        gate,
+        [
+            json!([1, "void", ran.result["candidate"]["sha"]]),
+            json!([2, "green", asked]),
+        ],
+        "{state}"
+    );
+    assert_eq!(result["next"], "close", "{result}");
+    assert_eq!(result["forbids_close"], json!([]));
 }
 
 // ---------------------------------------------------------------------------

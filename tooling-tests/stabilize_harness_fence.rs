@@ -43,7 +43,10 @@
 //! - **(h)** the script's self-test and everything it calls launch no agent, and the script
 //!   uses nothing the runtime forbids.
 //! - **(j)** what `dev/stabilize-record` decides from reaches it, and what it decides is
-//!   passed on: a round that ran one clause's instrument alone says so in its record; a
+//!   passed on: a stage records ONE RESULT PER ITEM it ran and nothing about a clause —
+//!   a clause's status is the record script's to derive — and its results before anything
+//!   of the ledger; a re-run is the position's (`rerun`), never the invocation's to decide,
+//!   begins no round and writes no fact of one; a
 //!   stage's dispositions are written before its triage, so that a finding found again
 //!   after its fix is found *with* that fix; the script has a sentence for every word the
 //!   record script refuses a stage with; and `next` is relayed, never recomputed.
@@ -849,21 +852,62 @@ fn j_what_the_record_script_decides_from_reaches_it_and_what_it_decides_is_passe
     let full = harness();
     let source = code(&full);
 
-    // A clause without a green row is owed ONE re-run of its instrument, and the record
-    // script computes "once" from a fact of the round's record. The `test` stage writes
-    // it exactly when it ran one clause's instrument alone.
+    // EVIDENCE BELONGS TO A TEST-SET ITEM, and a clause's status is derived by the record
+    // script: this script composes one result per item it ran — in one function, called by
+    // the `test` stage and by nothing else — and no call of it names a clause's status.
     assert!(
-        function(&full, "runTest").contains("\n  if (rerun) facts.alone = v.clause\n"),
-        "a round that ran one clause's instrument alone says so in its record"
+        !source.contains("clause-set") && !source.contains("clauseRows"),
+        "no code of the script writes a clause's row: its status is the record script's to derive"
     );
     assert_eq!(
-        source.matches("facts.alone").count(),
-        1,
-        "and nothing else of the script writes that fact"
+        source.matches("resultRows(").count()
+            - function(&full, "selfTest").matches("resultRows(").count(),
+        2,
+        "what an item did is composed in one function, with one caller: the `test` stage's record"
     );
     assert!(
-        source.contains("\n  const rerun = v.clause != null\n"),
-        "`rerun` is the invocation's `clause` argument, and nothing else"
+        function(&full, "runTest")
+            .contains("results: { commit: sha, rows: resultRows(unitStatus) }")
+            && function(&full, "stageRecordCommands").contains("'result-set --run '"),
+        "the `test` stage's record holds one result per item it ran"
+    );
+    // The results come before anything of the ledger: the record script takes a re-run
+    // only while its state asks for one, and a finding the re-run found ends that.
+    let composed = function(&full, "stageRecordCommands");
+    let placed = |call: &str| {
+        composed
+            .find(call)
+            .unwrap_or_else(|| panic!("`{call}` is no call of a stage's record"))
+    };
+    assert!(
+        placed("'result-set --run '") < placed("'ledger-add --run '")
+            && placed("'result-set --run '") < placed("'triage-set --run '")
+            && placed("'result-set --run '") < placed("'round-set --run '"),
+        "a stage's results are written before its ledger rows, its triage and the round's facts"
+    );
+    // A RE-RUN IS THE POSITION'S: the state asks for it and names its clause, its round and
+    // its items; the invocation's `clause` only has to agree. It begins no round, resolves
+    // no scope, and writes no fact of the round it runs inside.
+    let tested = function(&full, "runTest");
+    assert!(
+        tested.contains("\n  const rerun = at.rerun || null\n")
+            && tested
+                .contains("if (rerun && v.clause !== rerun.clause) return { status: 'refused'")
+            && tested.contains("if (!rerun && v.clause != null) return { status: 'refused'"),
+        "a re-run is read from the position; a `clause` the state does not ask for, and a re-run answered without it, are refused"
+    );
+    assert_eq!(
+        source.matches("v.clause").count(),
+        3,
+        "the invocation's `clause` is compared with the position's, and decides nothing else"
+    );
+    assert!(
+        tested.contains(
+            "const facts = rerun ? null : { candidate: sha, binary: built.candidate.sha256 }"
+        ) && tested.contains("if (!rerun) steps.push(() => roleStep('scope', 'scope',")
+            && tested.contains("gate: rerun ? null : { commit: sha, file: candidateGate }")
+            && !source.contains("alone"),
+        "a re-run writes no fact of the round, resolves no scope and records no candidate's gate"
     );
 
     // A round's triage records the disposition a row carried when the finding was found.
@@ -1030,7 +1074,7 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
         "runUnits(",
         "scopePrompt(",
         "fixerPrompt(",
-        "clauseRows(",
+        "resultRows(",
         "unitPrompt(",
     ] {
         assert!(
@@ -1120,8 +1164,7 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
         "and the binary it returns is held to that release"
     );
     assert!(
-        source.contains("fallback: state.facts.scope")
-            && source.contains("scopeLabel(v.scope, rerun ? v.clause : null, state.facts.scope)"),
+        source.contains("scope: v.scope, previous: previousOf(state), fallback: state.facts.scope"),
         "the default scope is the state's fact"
     );
 
@@ -1132,7 +1175,12 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
         "`close` goes back with each clause's evidence"
     );
     let evidence = function(&full, "evidenceOf");
-    for field in ["behind: c.behind", "stale: c.stale", "round: c.round"] {
+    for field in [
+        "behind: c.behind",
+        "round: c.round",
+        "items: (c.items || [])",
+        "standing: i.standing",
+    ] {
         assert!(evidence.contains(field), "the evidence carries `{field}`");
     }
 
@@ -1649,6 +1697,9 @@ fn i_where_node_is_installed_the_script_parses_and_its_self_test_passes() {
         format!(r#"{{"stage": "fix", {run}, "raise": {{"cycles": 3}}}}"#),
         format!(r#"{{"stage": "test", {run}, "stopAfer": "state"}}"#),
         format!(r#"{{"stage": "test", {run}, "clause": "no-lost-files", "scope": "everything"}}"#),
+        format!(
+            r#"{{"stage": "test", {run}, "clause": "no-lost-files", "crossModel": ["row-3"]}}"#
+        ),
         format!(r#"{{"stage": "test", {run}, "rulings": [{{"go": false}}]}}"#),
         format!(
             r#"{{"stage": "test", {run}, "rulings": [{{"go": true}}], "scope": "everything"}}"#
