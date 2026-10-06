@@ -171,6 +171,32 @@
 //! check red after its fix; a red result read though its finding is gone. *The state:* a
 //! tested round with no scope, a result whose earlier attempt is gone, an outcome and a
 //! granted run of any shape, each read. Every one turned an arm that names it red.
+//!
+//! **And on thirty-nine more, for the counters, the exits and the writers' table** (the
+//! repair's task 6: every loop has a counter on record and an exit to the human, and a
+//! write is taken only where the state asks for it — [`PLACES`], [`HERE`], [`NEXT`]: every
+//! writer and every fact of the script's own lists at every position, each cell a letter
+//! written by hand). *The triage passes:* a second pass without a verdict not the human's;
+//! two automatic; a grant never spent; a record that does not name a finding counting no
+//! pass against it; ungraded-then-unverified going on counting; the passes taken from a
+//! caller; one more triage granted to a finding that is not the human's. *The attempts of
+//! a stage:* never spent; an attempt that reached its record counted; a batch that names
+//! none; one more granted to any stage, and never spent; the step still naming the spent
+//! stage; the fix stage refused for spent attempts where a bound is what stops it, and
+//! where the round still has to land; the reports of a recorded attempt not missed. *The bounds and the go:* no stop at
+//! the cycle bound, and no refusal of the fix stage there; a bound raised at any state, and
+//! at the other bound's stop; a go lifting every later stop of its round. *The writers'
+//! table:* a round begun by any write, past a stop, and two rounds ahead; the stop mode and
+//! the default scope rewritten; what a test stage records taken in a tested round; a fix
+//! cycle counted in a round that is not tested, and where the position refuses a fix
+//! stage; the round's outcome taken in any round; the table not held to the script's own
+//! lists. *What is deleted:* a ledger row the census names, and one added by hand; the
+//! ledger's own writers writing past a row that is gone; an item's last result, and a
+//! result added by hand; a finding the round's triage left, not held to the ledger by that
+//! record. *The fix:* a fix that is its sha's text. *The scan:* a batch scanned file by file,
+//! where it is one scan. Every one turned an arm that names it
+//! red, and none survived — one, as first written, changed nothing (a condition read before
+//! the call it was meant to follow), and was written again.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -314,8 +340,8 @@ fn repo_root() -> PathBuf {
 /// `crash` exits 1 as gitleaks does on an error of its own, `kill-parent` kills the script
 /// that launched it, which is the deterministic way to kill a write at its last step
 /// before the file exists — `slow` scans as ever, two seconds late, which holds a
-/// write in flight for as long — and `once` scans once and cannot run a second time, which
-/// is a scanner that dies between the two files of one call.
+/// write in flight for as long — and `once` scans once and cannot run a second time: a
+/// call's files are one scan, so it is the NEXT call that meets a scanner that cannot run.
 const GITLEAKS_STUB: &str = r#"#!/bin/sh
 code=1
 report=
@@ -1223,12 +1249,12 @@ fn a_report_lands_at_the_path_the_script_decides_and_prints_it() {
     assert_eq!(&rig.read(&path), body, "the report, byte for byte");
 
     // A fix-stage report belongs to a cycle of its round.
-    let mut fix = strings(&["report", "--round=2", "--stage=fix", "--cycle=3"]);
+    let mut fix = strings(&["report", "--round=1", "--stage=fix", "--cycle=3"]);
     fix.extend(strings(&["--reporter=fixer-install", "--attempt=1"]));
     fix.push(format!("--run={RUN}"));
     let seen = rig.run(&fix, body);
     seen.must(OK, "a fix-stage report");
-    let path = format!("completions/artifacts/{RUN}/r2/reports/fix/c3/fixer-install.a1.md");
+    let path = format!("completions/artifacts/{RUN}/r1/reports/fix/c3/fixer-install.a1.md");
     assert_eq!(seen.stdout, format!("{path}\n"));
     assert_eq!(&rig.read(&path), body);
 
@@ -4015,14 +4041,14 @@ fn a_rounds_doors_are_written_once_from_structured_input_and_read_back() {
         rig.root.display()
     ));
 
-    let seen = rig.run(&scope_set(RUN, "2"), &given.to_string());
+    let seen = rig.run(&scope_set(RUN, "1"), &given.to_string());
     seen.must(OK, "a round's scope");
     assert_eq!(
         seen.json(),
-        json!({"scope": scope_path("2"), "included": 2, "excluded": 1})
+        json!({"scope": scope_path("1"), "included": 2, "excluded": 1})
     );
     assert_eq!(
-        table(&rig.read(&scope_path("2")), &SCOPE_COLUMNS),
+        table(&rig.read(&scope_path("1")), &SCOPE_COLUMNS),
         vec![
             vec![
                 "jigc setup",
@@ -4047,7 +4073,7 @@ fn a_rounds_doors_are_written_once_from_structured_input_and_read_back() {
 
     // Read back as data: the doors of the highest round, as they were handed over.
     let read = rig.state();
-    assert_eq!(read["round"], json!(2));
+    assert_eq!(read["round"], json!(1));
     assert_eq!(
         read["doors"],
         json!({
@@ -4075,7 +4101,7 @@ fn a_rounds_doors_are_written_once_from_structured_input_and_read_back() {
 
     // A round's test set is written once: a second scope is refused, whatever it says.
     let before = rig.snapshot();
-    rig.run(&scope_set(RUN, "2"), &scope(&[], &[]).to_string())
+    rig.run(&scope_set(RUN, "1"), &scope(&[], &[]).to_string())
         .refused(EXISTS, "a second scope for the round");
 
     // And a scope says, of every door, which side it is on, where it comes from and why.
@@ -4149,15 +4175,17 @@ fn a_rounds_doors_are_written_once_from_structured_input_and_read_back() {
         ),
     ];
     for (input, why) in &malformed {
-        rig.run(&scope_set(RUN, "3"), input).refused(BAD_VALUE, why);
+        rig.run(&scope_set(RUN, "1"), input).refused(BAD_VALUE, why);
     }
     assert_eq!(rig.snapshot(), before);
 
     // A round that tests nothing says so, with both sides empty.
-    rig.run(&scope_set(RUN, "3"), &scope(&[], &[]).to_string())
+    let empty = Rig::new("scope-empty");
+    empty
+        .run(&scope_set(RUN, "1"), &scope(&[], &[]).to_string())
         .must(OK, "a scope with no door");
     assert_eq!(
-        rig.state()["doors"],
+        empty.state()["doors"],
         json!({"included": [], "excluded": []})
     );
 }
@@ -4408,12 +4436,17 @@ fn a_rounds_triage_is_recorded_with_inside_computed_from_the_rounds_doors() {
     ]);
     rig.run(&triage_set(RUN, "1"), &stranger.to_string())
         .refused(NO_SUCH_ROW, "a finding the ledger lacks");
-    rig.run(
-        &triage_set(RUN, "2"),
-        &json!({"key": "f-in", "grade": "no-break"}).to_string(),
-    )
-    .refused(NO_SCOPE, "a round whose scope was never written");
     assert_eq!(rig.snapshot(), before);
+    let scopeless = Rig::new("triage-no-scope");
+    scopeless.seed_rows(&["f-in"]);
+    let before = scopeless.snapshot();
+    scopeless
+        .run(
+            &triage_set(RUN, "1"),
+            &json!({"key": "f-in", "grade": "no-break"}).to_string(),
+        )
+        .refused(NO_SCOPE, "a round whose scope was never written");
+    assert_eq!(scopeless.snapshot(), before);
 }
 
 // ---------------------------------------------------------------------------
@@ -4436,10 +4469,12 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
             "facts": {
                 "stop": null,
                 "rounds": null,
+                "cycles": null,
                 "previous": null,
                 "previous-commit": null,
                 "scope": null,
                 "clauses": null,
+                "findings": null,
             },
             "not_ready": [
                 "no-clause-row",
@@ -4449,6 +4484,8 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
             ],
             "rounds": [],
             "round": null,
+            // Round 1 is the round a write may begin: the opening's own order is not held.
+            "begins": 1,
             "doors": null,
             "bounds": [],
             "clauses": [],
@@ -4456,6 +4493,7 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
             "ledger": [],
             "blockers": [],
             "human_list": [],
+            "human_stages": [],
             "candidate": {"round": null, "commit": null, "current": false},
             "fix_rounds": 0,
             "untriaged": [],
@@ -4477,12 +4515,12 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
     assert_eq!(rig.snapshot(), before, "the state is read, never written");
 
     // Round 1: two test-stage reports and a re-run of one, two fix cycles, a scope, a
-    // triage record and a round record. Round 2: one report, and nothing else yet.
+    // triage record and a round record — and it was dropped. Round 2: one report, and
+    // nothing else yet; it is begun only once round 1 is over.
     for (round, reporter, attempt) in [
         ("1", "audit-install", "1"),
         ("1", "review-source", "1"),
         ("1", "review-source", "2"),
-        ("2", "audit-install", "1"),
     ] {
         rig.run(&report(RUN, round, reporter, attempt), BODY)
             .must(OK, "a test-stage report");
@@ -4528,7 +4566,7 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
     .must(OK, "round 1's results");
     rig.run(
         &round_set(RUN, "1"),
-        &json!({"candidate": sha('c'), "binary": sha256('b'), "cycles": 2}).to_string(),
+        &json!({"candidate": sha('c'), "binary": sha256('b')}).to_string(),
     )
     .must(OK, "round 1's record");
     let mut second = row_at("audit-f4", EXCLUDED);
@@ -4550,6 +4588,20 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
             .to_string(),
     )
     .must(OK, "round 1's triage");
+    let before = rig.snapshot();
+    rig.run(&report(RUN, "2", "audit-install", "1"), BODY)
+        .refused(
+            BAD_VALUE,
+            "a report of round 2, while round 1 is still open",
+        );
+    assert_eq!(rig.snapshot(), before);
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"cycles": 2, "outcome": "dropped"}).to_string(),
+    )
+    .must(OK, "round 1's two fix cycles, and the human's exit from it");
+    rig.run(&report(RUN, "2", "audit-install", "1"), BODY)
+        .must(OK, "round 2's first report");
 
     assert_eq!(
         rig.state(),
@@ -4559,10 +4611,12 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
             "facts": {
                 "stop": "at-the-bound",
                 "rounds": 3,
+                "cycles": null,
                 "previous": "1.0.0-rc.24",
                 "previous-commit": sha('e'),
                 "scope": "delta",
                 "clauses": ["no-lost-files", "no-regression"],
+                "findings": ["audit-f3", "audit-f4"],
             },
             "not_ready": [],
             "rounds": [
@@ -4576,11 +4630,16 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                         "base": null,
                         "binary": sha256('b'),
                         "cycles": 2,
-                        "outcome": null,
+                        "outcome": "dropped",
                         "go": false,
                         "granted": [],
+                        "reverify": [],
+                        "again": [],
                         "cross-model": [],
                         "cross-model-void": [],
+                        "ran": ["the-gate a1", "row-setup a1"],
+                        "awaiting": [],
+                        "recorded": [],
                     },
                     "results": [
                         {"item": "the-gate", "attempt": 1, "commit": sha('c'), "outcome": "green",
@@ -4591,9 +4650,12 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                     "reopened": [],
                     "test_reports": 3,
                     "test_attempt": 2,
+                    // No attempt reached its record through a batch: each one on disk is
+                    // an attempt that left reports and nothing else.
+                    "test_unrecorded": 2,
                     "fix_cycles": [
-                        {"cycle": 1, "reports": 1, "attempt": 1},
-                        {"cycle": 2, "reports": 1, "attempt": 1},
+                        {"cycle": 1, "reports": 1, "attempt": 1, "unrecorded": 1},
+                        {"cycle": 2, "reports": 1, "attempt": 1, "unrecorded": 1},
                     ],
                 },
                 {
@@ -4609,17 +4671,24 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                         "outcome": null,
                         "go": false,
                         "granted": [],
+                        "reverify": [],
+                        "again": [],
                         "cross-model": [],
                         "cross-model-void": [],
+                        "ran": [],
+                        "awaiting": [],
+                        "recorded": [],
                     },
                     "results": [],
                     "reopened": [],
                     "test_reports": 1,
                     "test_attempt": 1,
+                    "test_unrecorded": 1,
                     "fix_cycles": [],
                 },
             ],
             "round": 2,
+            "begins": null,
             "doors": null,
             "bounds": [{
                 "bound": "non-jigc-writer",
@@ -4714,6 +4783,7 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                     "reopened": false,
                     "route": "fix",
                     "why": "inside",
+                    "awaits": null,
                 },
                 {
                     "key": "audit-f4",
@@ -4732,10 +4802,12 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                     "reopened": false,
                     "route": "recorded",
                     "why": "ruled",
+                    "awaits": null,
                 },
             ],
             "blockers": ["audit-f3"],
             "human_list": [],
+            "human_stages": [],
             // Round 1 is the latest that tested a candidate, and round 2 is begun.
             "candidate": {"round": 1, "commit": sha('c'), "current": false},
             "fix_rounds": 1,
@@ -4919,7 +4991,7 @@ fn state_refuses_a_record_it_cannot_read_as_the_scripts_own() {
             text.replacen("| `3` |", "| `three` |", 1)
         }),
         ("a fact of the run nobody defined", run_path, |text| {
-            text.replacen("| `rounds` |", "| `cycles` |", 1)
+            text.replacen("| `rounds` |", "| `laps` |", 1)
         }),
         (
             "a previous release somebody wrote by hand",
@@ -4991,14 +5063,14 @@ fn state_refuses_a_record_it_cannot_read_as_the_scripts_own() {
                     .must(OK, "round 1's triage");
                 rig.run(
                     &round_set(RUN, "1"),
-                    &json!({
-                        "cycles": 1,
-                        "outcome": "dropped",
-                        "cross-model": ["row-setup"],
-                    })
-                    .to_string(),
+                    &json!({"candidate": sha('c'), "cross-model": ["row-setup"]}).to_string(),
                 )
                 .must(OK, "round 1's record");
+                rig.run(
+                    &round_set(RUN, "1"),
+                    &json!({"cycles": 1, "outcome": "dropped"}).to_string(),
+                )
+                .must(OK, "a fix cycle, and the human's exit from the round");
                 rig.run(&state(RUN), "")
                     .must(OK, "the control: the state as written");
 
@@ -5247,9 +5319,14 @@ fn ground(rig: &Rig) {
     .must(OK, "round 1's scope");
 }
 
-/// Bring `findings` into the run through the script's own writers: the rows, then the
-/// round's triage, then what became of a row afterwards.
+/// Bring `findings` into the run through the script's own writers: the rows, then round
+/// 1's triage, then what became of a row afterwards.
 fn plant(rig: &Rig, findings: &[&Finding]) {
+    plant_in(rig, findings, "1");
+}
+
+/// … in the round whose triage found them.
+fn plant_in(rig: &Rig, findings: &[&Finding], round: &str) {
     let keyed = |fields: &Value, key: &str| {
         let mut entry = fields.clone();
         entry["key"] = json!(key);
@@ -5275,7 +5352,7 @@ fn plant(rig: &Rig, findings: &[&Finding]) {
         .collect();
     for (args, batch, what) in [
         (ledger_add(RUN), rows, "the rows"),
-        (triage_set(RUN, "1"), entries, "the round's triage"),
+        (triage_set(RUN, round), entries, "the round's triage"),
         (ledger_set(RUN), patches, "what became of a row afterwards"),
     ] {
         if !batch.is_empty() {
@@ -5383,6 +5460,18 @@ fn every_finding_is_routed_by_its_grade_its_disposition_and_the_rounds_doors() {
 
     // A later round has doors of its own, and the latest round that triaged a finding is
     // the one that places it; a finding it did not triage stays where its round put it.
+    // (Round 1 is tested and dropped first: with a finding open, a round is begun only
+    // after the human's exit from the one before it.)
+    for (facts, what) in [
+        (json!({"candidate": sha('c')}), "round 1's candidate"),
+        (
+            json!({"outcome": "dropped"}),
+            "the human's exit from round 1",
+        ),
+    ] {
+        rig.run(&round_set(RUN, "1"), &facts.to_string())
+            .must(OK, what);
+    }
     rig.run(
         &scope_set(RUN, "2"),
         &scope(&[EXCLUDED], &[INSIDE]).to_string(),
@@ -5464,6 +5553,15 @@ enum Then {
     Fact(usize, &'static str),
     /// The human's ruling on a finding: its disposition.
     Rule(&'static str, &'static str),
+    /// One more record of a round's triage: an entry for a finding, less its key.
+    Triage(usize, &'static str, &'static str),
+    /// A report of a round's `test` stage, by its attempt: an attempt that left a report
+    /// and reached no record.
+    Report(usize, &'static str),
+    /// A ledger patch, less its key.
+    Patch(&'static str, &'static str),
+    /// A fact of the run, written again: a bound, raised.
+    Run(&'static str),
 }
 
 struct Round {
@@ -5500,6 +5598,9 @@ struct Round {
     later: &'static [&'static str],
     /// The findings a red result filed, and where each is routed — `(key, route)`.
     filed: &'static [(&'static str, &'static str)],
+    /// Where a standing finding is routed once `then` is done, where that is not where
+    /// [`findings`] routes it as planted — `(key, route)`, by hand.
+    rerouted: &'static [(&'static str, &'static str)],
     /// WHAT THE DERIVATION GIVES, written by hand for each cell and never computed: the
     /// status of each clause named here. A clause not named has the status its shorthand
     /// in `clauses` says — its items' one outcome, where that is also what is derived.
@@ -5556,6 +5657,7 @@ const ROUND: Round = Round {
     then: &[],
     later: &[],
     filed: &[],
+    rerouted: &[],
     derived: &[],
     next: "",
     says: "{}",
@@ -6006,9 +6108,10 @@ const ROUNDS: &[Round] = &[
         ..ROUND
     },
     Round {
-        name: "every round a stop, and the next round is begun: no stop inside a round",
+        name: "every round a stop, the go given and the next round begun: no stop inside a round",
         run: EVERY_ROUND,
         rounds: &[Some(""), None],
+        after: &[(1, r#""go": true"#)],
         next: "test",
         says: r#"{"stop": null}"#,
         ..ROUND
@@ -6196,8 +6299,8 @@ const ROUNDS: &[Round] = &[
         ..ROUND
     },
     Round {
-        name: "an item red in round 1 that round 2 does not select: its finding is still nobody's",
-        rounds: CONFIRMED,
+        name: "an item red in round 1, which was dropped, that round 2 does not select: its finding is still nobody's",
+        rounds: &[Some(r#""cycles": 1, "outcome": "dropped""#), Some("")],
         clauses: &[("clause-a", "green", 2), ("clause-b", "red", 1)],
         instruments: &["clause-b"],
         checks: &["clause-a"],
@@ -6452,10 +6555,275 @@ const ROUNDS: &[Round] = &[
         name: "every round a stop, three fix rounds and a bound of one: the bound is the other mode's",
         run: r#""stop": "every-round", "rounds": 1"#,
         rounds: SPENT,
+        after: &[
+            (1, r#""go": true"#),
+            (2, r#""go": true"#),
+            (3, r#""go": true"#),
+        ],
         clauses: GREEN_4,
         findings: &["in-confirmed"],
         next: "fix",
         says: r#"{"stop": null}"#,
+        ..ROUND
+    },
+    // `triage` CANNOT SPIN (the review's `F3`, the repair plan's state 3). A finding the
+    // round's triage leaves without a grade or a verdict is tried once more without the
+    // human — the passes are counted in the round's record, by the call that records a
+    // triage — and after that it is the human's: to rule, or to grant one more.
+    Round {
+        name: "a finding left unverified by a second record of the round's triage: it is the human's",
+        findings: &["in-unverified"],
+        then: &[Then::Triage(1, "in-unverified", r#""grade": "breaks""#)],
+        rerouted: &[("in-unverified", "human")],
+        next: "rule",
+        says: r#"{"human_list": [{"key": "in-unverified", "why": "unverified-after-retry"}], "untriaged": [], "blockers": [], "human_stages": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "left unverified twice, and the human grants one more triage: the round's triage is finished once more",
+        findings: &["in-unverified"],
+        then: &[
+            Then::Triage(1, "in-unverified", r#""grade": "breaks""#),
+            Then::Fact(1, r#""reverify": "in-unverified""#),
+        ],
+        next: "triage",
+        says: r#"{"untriaged": [{"key": "in-unverified", "why": "unverified"}], "human_list": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "granted, and left unverified a third time: one grant is one more triage, and it is the human's again",
+        findings: &["in-unverified"],
+        then: &[
+            Then::Triage(1, "in-unverified", r#""grade": "breaks""#),
+            Then::Fact(1, r#""reverify": "in-unverified""#),
+            Then::Triage(1, "in-unverified", r#""grade": "unclear""#),
+        ],
+        rerouted: &[("in-unverified", "human")],
+        next: "rule",
+        says: r#"{"human_list": [{"key": "in-unverified", "why": "unverified-after-retry"}]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "left unverified once, and confirmed by the one triage that is automatic: a fixer's, and nobody is asked",
+        findings: &["in-unverified"],
+        then: &[Then::Triage(
+            1,
+            "in-unverified",
+            r#""grade": "breaks", "verdict": "confirmed", "regression": false"#,
+        )],
+        rerouted: &[("in-unverified", "fix")],
+        next: "fix",
+        says: r#"{"blockers": ["in-unverified"], "human_list": [], "untriaged": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "left unverified twice, and ruled for a later release: one of the human's three, and it is recorded",
+        findings: &["in-unverified"],
+        then: &[
+            Then::Triage(1, "in-unverified", r#""grade": "breaks""#),
+            Then::Rule("in-unverified", "later"),
+        ],
+        rerouted: &[("in-unverified", "recorded")],
+        next: "close",
+        says: r#"{"human_list": [], "untriaged": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "left unverified twice, and admitted by the human: a fixer's",
+        findings: &["in-unverified"],
+        then: &[
+            Then::Triage(1, "in-unverified", r#""grade": "breaks""#),
+            Then::Rule("in-unverified", "admitted"),
+        ],
+        rerouted: &[("in-unverified", "fix")],
+        next: "fix",
+        ..ROUND
+    },
+    Round {
+        name: "a finding nobody graded, left so by two records of the round's triage: it is the human's",
+        findings: &["never-triaged", "in-refuted"],
+        then: &[Then::Triage(
+            1,
+            "in-refuted",
+            r#""grade": "breaks", "verdict": "refuted""#,
+        )],
+        rerouted: &[("never-triaged", "human")],
+        next: "rule",
+        says: r#"{"human_list": [{"key": "never-triaged", "why": "ungraded-after-retry"}], "untriaged": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "left ungraded once, then graded and left unverified: that is its first pass without a verdict",
+        findings: &["never-triaged", "in-refuted"],
+        then: &[Then::Triage(1, "never-triaged", r#""grade": "unclear""#)],
+        next: "triage",
+        says: r#"{"untriaged": [{"key": "never-triaged", "why": "unverified"}], "human_list": []}"#,
+        ..ROUND
+    },
+    // THE ATTEMPTS OF A STAGE: one that leaves reports and no record is made once more
+    // without the human, and then the next one is the human's to grant.
+    Round {
+        name: "a round's test stage left reports and no record, once: it is run again",
+        clauses: &[("clause-a", "void", 0), ("clause-b", "void", 0)],
+        rounds: &[None],
+        then: &[Then::Report(1, "1")],
+        next: "test",
+        says: r#"{"human_stages": [], "position": {"test": {"round": 1, "attempt": 2}, "fix": {"refused": "not-tested", "round": 1}}}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a round's test stage left reports and no record, twice: the next attempt is the human's",
+        clauses: &[("clause-a", "void", 0), ("clause-b", "void", 0)],
+        rounds: &[None],
+        then: &[Then::Report(1, "1"), Then::Report(1, "2")],
+        next: "rule",
+        says: r#"{"human_stages": [{"stage": "test", "round": 1, "cycle": null, "at": "test", "attempt": 3, "attempts": 2, "why": "not-recorded-after-retry"}], "human_list": [], "human_clauses": [], "position": {"test": {"refused": "attempts-spent", "round": 1}, "fix": {"refused": "not-tested", "round": 1}}}"#,
+        ..ROUND
+    },
+    Round {
+        name: "twice without a record, and the human grants one more attempt: the stage is run again",
+        clauses: &[("clause-a", "void", 0), ("clause-b", "void", 0)],
+        rounds: &[None],
+        then: &[
+            Then::Report(1, "1"),
+            Then::Report(1, "2"),
+            Then::Fact(1, r#""again": "test""#),
+        ],
+        next: "test",
+        says: r#"{"human_stages": [], "position": {"test": {"round": 1, "attempt": 3}, "fix": {"refused": "not-tested", "round": 1}}}"#,
+        ..ROUND
+    },
+    Round {
+        name: "the granted attempt left a report and no record too: one grant is one attempt",
+        clauses: &[("clause-a", "void", 0), ("clause-b", "void", 0)],
+        rounds: &[None],
+        then: &[
+            Then::Report(1, "1"),
+            Then::Report(1, "2"),
+            Then::Fact(1, r#""again": "test""#),
+            Then::Report(1, "3"),
+        ],
+        next: "rule",
+        says: r#"{"human_stages": [{"stage": "test", "round": 1, "cycle": null, "at": "test", "attempt": 4, "attempts": 3, "why": "not-recorded-after-retry"}]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "the stage that finishes a triage left reports and no record twice: its next attempt is the human's",
+        findings: &["in-unverified"],
+        then: &[Then::Report(1, "1"), Then::Report(1, "2")],
+        next: "rule",
+        says: r#"{"human_stages": [{"stage": "test", "round": 1, "cycle": null, "at": "test", "attempt": 3, "attempts": 2, "why": "not-recorded-after-retry"}], "untriaged": [{"key": "in-unverified", "why": "unverified"}], "human_list": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "an item's re-run left reports and no record twice: the next attempt of the stage is the human's",
+        clauses: ONE_VOID,
+        then: &[Then::Report(1, "1"), Then::Report(1, "2")],
+        next: "rule",
+        says: r#"{"retest": [], "human_clauses": [], "human_stages": [{"stage": "test", "round": 1, "cycle": null, "at": "test", "attempt": 3, "attempts": 2, "why": "not-recorded-after-retry"}]}"#,
+        ..ROUND
+    },
+    // THE BOUND INSIDE A ROUND (ruling 6) is a fact, and the script answers at it: at most
+    // three fix -> audit cycles, until the human raises it.
+    Round {
+        name: "two fix cycles in a round and a blocker left: under the bound, a fixer's",
+        rounds: &[Some(r#""cycles": 2"#)],
+        findings: &["in-confirmed"],
+        next: "fix",
+        says: r#"{"stop": null}"#,
+        derived: BOTH_VOID,
+        ..ROUND
+    },
+    Round {
+        name: "three fix cycles in a round and a blocker left: the bound on a round's cycles is spent",
+        rounds: &[Some(r#""cycles": 3"#)],
+        findings: &["in-confirmed"],
+        next: "stop",
+        says: r#"{"stop": {"why": "cycle-bound", "round": 1, "then": "fix"}, "position": {"test": {"refused": "round-open", "round": 1}, "fix": {"refused": "cycle-bound", "round": 1}}}"#,
+        derived: BOTH_VOID,
+        ..ROUND
+    },
+    Round {
+        name: "three fix cycles and nothing left open: no bound stops a round that lands",
+        rounds: &[Some(r#""cycles": 3"#)],
+        findings: &["in-fixed"],
+        next: "test",
+        says: r#"{"stop": null}"#,
+        derived: BOTH_VOID,
+        ..ROUND
+    },
+    Round {
+        name: "the cycle bound written as four at the opening: the third cycle's blocker is a fixer's",
+        run: r#""stop": "at-the-bound", "rounds": 3, "cycles": 4"#,
+        rounds: &[Some(r#""cycles": 3"#)],
+        findings: &["in-confirmed"],
+        next: "fix",
+        says: r#"{"stop": null}"#,
+        derived: BOTH_VOID,
+        ..ROUND
+    },
+    Round {
+        name: "at the cycle bound, and the human raises it: one more cycle",
+        rounds: &[Some(r#""cycles": 3"#)],
+        findings: &["in-confirmed"],
+        then: &[Then::Run(r#""cycles": 4"#)],
+        next: "fix",
+        says: r#"{"stop": null, "position": {"test": {"refused": "round-open", "round": 1}, "fix": {"round": 1, "cycle": 4, "attempt": 1, "land": false}}}"#,
+        derived: BOTH_VOID,
+        ..ROUND
+    },
+    Round {
+        name: "at the cycle bound, and the round is dropped: the next round's test",
+        rounds: &[Some(r#""cycles": 3"#)],
+        findings: &["in-confirmed"],
+        then: &[Then::Fact(1, r#""outcome": "dropped""#)],
+        next: "test",
+        says: r#"{"stop": null}"#,
+        derived: BOTH_VOID,
+        ..ROUND
+    },
+    Round {
+        name: "every round a stop, three cycles and a blocker: the cycle bound stops inside a round",
+        run: EVERY_ROUND,
+        rounds: &[Some(r#""cycles": 3"#)],
+        findings: &["in-confirmed"],
+        next: "stop",
+        says: r#"{"stop": {"why": "cycle-bound", "round": 1, "then": "fix"}}"#,
+        derived: BOTH_VOID,
+        ..ROUND
+    },
+    // The review's `F12`: a fix is a commit, at whatever length its sha is written.
+    Round {
+        name: "a fix that did not hold, named again by the same commit cut shorter: the finding is still open",
+        findings: &["again-fixed"],
+        then: &[Then::Patch(
+            "again-fixed",
+            r#""disposition": "fixed", "detail": "0f34d8f""#,
+        )],
+        next: "fix",
+        says: r#"{"blockers": ["again-fixed"]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a fix that did not hold, named again by the same commit written in full: the finding is still open",
+        findings: &["again-fixed"],
+        then: &[Then::Patch(
+            "again-fixed",
+            r#""disposition": "fixed", "detail": "0f34d8f0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa""#,
+        )],
+        next: "fix",
+        says: r#"{"blockers": ["again-fixed"]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a fix that did not hold, and another commit on its row: that one records it",
+        findings: &["again-fixed"],
+        then: &[Then::Patch(
+            "again-fixed",
+            r#""disposition": "fixed", "detail": "0f34d8e""#,
+        )],
+        rerouted: &[("again-fixed", "recorded")],
+        next: "close",
         ..ROUND
     },
 ];
@@ -6532,14 +6900,27 @@ fn drive_round(label: &str, round: &Round, truth: &[Finding]) {
             scope(&[INSIDE], &[EXCLUDED])
         };
         rig.run(&scope_set(RUN, &number), &doors.to_string())
-            .must(OK, "a round's scope");
-        if n == 0 {
-            plant(&rig, &standing);
+            .must(OK, &format!("{what}: round {number}'s scope"));
+        // The findings stand in the LATEST round: it is that round's triage that found
+        // them — a round is begun only once the one before it left nothing open, or was
+        // dropped.
+        if n + 1 == round.rounds.len() {
+            plant_in(&rig, &standing, &number);
         }
         // Every item that judges the clause and that this round's scope selects: a hunt
-        // behind `INSIDE` unless the round is away, a check always.
+        // behind `INSIDE` unless the round is away, a check always. In a round BEFORE the
+        // one the row names for a clause, those items ran green: a round is begun only
+        // where the one before it owes no run — unless a fix stage followed it, after which
+        // the next round's `test` comes whatever the clause table says.
         let mut results = Vec::new();
-        for (clause, outcome, _) in round.clauses.iter().filter(|(_, _, ran)| *ran == n + 1) {
+        let fixed =
+            record.is_some_and(|facts| facts.contains("cycles") || facts.contains("outcome"));
+        for (clause, outcome, at) in round.clauses {
+            let outcome = match (n + 1).cmp(at) {
+                std::cmp::Ordering::Equal => outcome,
+                std::cmp::Ordering::Less if *at > 0 && !fixed && record.is_some() => &"green",
+                _ => continue,
+            };
             if round.instruments.contains(clause) && !away {
                 results.push(ran(&format!("row-{clause}"), outcome));
             }
@@ -6558,8 +6939,7 @@ fn drive_round(label: &str, round: &Round, truth: &[Finding]) {
             let mut given: Value =
                 serde_json::from_str(&format!("{{{facts}}}")).expect("a round's facts");
             given["candidate"] = json!(candidate(n + 1));
-            rig.run(&round_set(RUN, &number), &given.to_string())
-                .must(OK, "a round's record");
+            write_round(&rig, &number, &given.to_string());
         }
         for (_, facts) in round.after.iter().filter(|(at, _)| *at == n + 1) {
             rig.run(&round_set(RUN, &number), &format!("{{{facts}}}"))
@@ -6584,13 +6964,28 @@ fn drive_round(label: &str, round: &Round, truth: &[Finding]) {
                     &json!({"key": key, "disposition": disposition}).to_string(),
                 )
                 .must(OK, "what the human ruled on a finding"),
+            Then::Triage(at, key, entry) => rig
+                .run(
+                    &triage_set(RUN, &at.to_string()),
+                    &format!(r#"{{"key": "{key}", {entry}}}"#),
+                )
+                .must(OK, "one more record of the round's triage"),
+            Then::Report(at, attempt) => rig
+                .run(&report(RUN, &at.to_string(), "preflight", attempt), BODY)
+                .must(OK, "the report of an attempt that reached no record"),
+            Then::Patch(key, patch) => rig
+                .run(&ledger_set(RUN), &format!(r#"{{"key": "{key}", {patch}}}"#))
+                .must(OK, "a ledger patch"),
+            Then::Run(facts) => rig
+                .run(&run_set(RUN), &format!("{{{facts}}}"))
+                .must(OK, "a bound, raised by the human"),
         };
     }
-    plant(&rig, &later);
+    plant_in(&rig, &later, &round.rounds.len().to_string());
     assert!(
-        round.away.iter().all(|n| *n > 1)
-            && (!round.rounds.is_empty() || (standing.is_empty() && later.is_empty())),
-        "{what}: round 1 is where the findings are placed"
+        (!round.away.contains(&round.rounds.len()) && !round.rounds.is_empty())
+            || (standing.is_empty() && later.is_empty()),
+        "{what}: the latest round is where the findings are placed, by the doors of [`ground`]"
     );
 
     let read = rig.state();
@@ -6657,11 +7052,18 @@ fn drive_round(label: &str, round: &Round, truth: &[Finding]) {
     if round.clauses.is_empty() {
         forbids.push(json!({"clauses": "no row"}));
     }
+    let routed_to = |finding: &Finding| {
+        round
+            .rerouted
+            .iter()
+            .find(|(key, _)| *key == finding.key)
+            .map_or(finding.route, |(_, route)| *route)
+    };
     forbids.extend(
         standing
             .iter()
-            .filter(|finding| finding.route != "recorded")
-            .map(|finding| json!({"finding": finding.key, "route": finding.route})),
+            .filter(|finding| routed_to(finding) != "recorded")
+            .map(|finding| json!({"finding": finding.key, "route": routed_to(finding)})),
     );
     forbids.extend(
         round
@@ -6752,7 +7154,7 @@ fn drive_rounds(part: usize) {
             .sum()
     });
     assert!(
-        driven >= 32 && ROUNDS.len() >= 97,
+        driven >= 40 && ROUNDS.len() >= 121,
         "the table collapsed to {driven} cells of {}",
         ROUNDS.len()
     );
@@ -7046,7 +7448,7 @@ fn the_humans_go_is_a_recorded_fact_taken_only_for_the_stop_it_answers() {
     assert_eq!(seen.json()["facts"]["go"], json!(true));
     assert!(
         table(&rig.read(&round_path("1")), &ROUND_COLUMNS)
-            .contains(&vec!["`go`".to_owned(), "`yes`".to_owned()]),
+            .contains(&vec!["`go`".to_owned(), "`c1`".to_owned()]),
         "the go is a row of the round's record"
     );
     rig.run(&round_set(RUN, "1"), &go)
@@ -7168,7 +7570,7 @@ fn a_rerun_is_an_attempt_inside_its_round_taken_only_where_the_state_asks_and_gr
     rerun(&rig, 1, 1, "check-clause-a", "green")
         .refused(BAD_VALUE, "a re-run of an item that is green");
     rerun(&rig, 2, 1, "row-clause-b", "green")
-        .refused(NO_SCOPE, "a re-run in a round that has no scope");
+        .refused(BAD_VALUE, "a re-run in a round the run has not begun");
     assert_eq!(
         rig.snapshot(),
         before,
@@ -7684,7 +8086,13 @@ fn which_items_a_round_runs_is_computed_from_the_test_set_and_the_rounds_doors()
     }
 
     // It is the LATEST round's doors that are asked: a round 2 that includes nothing runs
-    // only what runs on every candidate.
+    // only what runs on every candidate. (Round 1 is tested first, and left nothing open:
+    // a round is begun where the state hands it to a `test` stage.)
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"candidate": sha('c')}).to_string(),
+    )
+    .must(OK, "round 1's candidate");
     rig.run(
         &scope_set(RUN, "2"),
         &scope(&[], &["jigc setup"]).to_string(),
@@ -7727,8 +8135,13 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
                 "outcome": null,
                 "go": false,
                 "granted": [],
+                "reverify": [],
+                "again": [],
                 "cross-model": [],
                 "cross-model-void": [],
+                "ran": [],
+                "awaiting": [],
+                "recorded": [],
             },
         })
     );
@@ -7763,8 +8176,13 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
             "outcome": "part",
             "go": false,
             "granted": [],
+            "reverify": [],
+            "again": [],
             "cross-model": [],
             "cross-model-void": [],
+            "ran": [],
+            "awaiting": [],
+            "recorded": [],
         })
     );
 
@@ -7832,12 +8250,12 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
     // Which items a cross-model pass read, and which were named for one and got none:
     // two lists of item ids, replaced whole, and gone from the table when empty.
     rig.run(
-        &round_set(RUN, "3"),
+        &round_set(RUN, "2"),
         &json!({"cross-model": ["row-3", "row-setup"], "cross-model-void": ["row-7"]}).to_string(),
     )
     .must(OK, "the round's cross-model passes");
     assert_eq!(
-        table(&rig.read(&round_path("3")), &ROUND_COLUMNS),
+        table(&rig.read(&round_path("2")), &ROUND_COLUMNS),
         vec![
             vec!["`cross-model`", "`row-3, row-setup`"],
             vec!["`cross-model-void`", "`row-7`"],
@@ -7853,12 +8271,12 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
         "the two lists, read back as data: {read}"
     );
     rig.run(
-        &round_set(RUN, "3"),
+        &round_set(RUN, "2"),
         &json!({"cross-model": ["row-3"], "cross-model-void": []}).to_string(),
     )
     .must(OK, "the lists, replaced");
     assert_eq!(
-        table(&rig.read(&round_path("3")), &ROUND_COLUMNS),
+        table(&rig.read(&round_path("2")), &ROUND_COLUMNS),
         vec![vec!["`cross-model`", "`row-3`"]]
     );
     let before = rig.snapshot();
@@ -7900,13 +8318,12 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
         ),
     ];
     for (given, status, why) in lists {
-        rig.run(&round_set(RUN, "3"), &given.to_string())
+        rig.run(&round_set(RUN, "2"), &given.to_string())
             .refused(*status, why);
     }
     assert_eq!(rig.snapshot(), before, "a refused list writes nothing");
 
     // A round record somebody wrote by hand is not rewritten on a guess.
-    fs::create_dir_all(rig.run_dir().join("r2")).expect("round 2's directory");
     fs::write(rig.root.join(round_path("2")), "# round 2\n\nAll fine.\n").expect("a note");
     let before = rig.snapshot();
     rig.run(&round_set(RUN, "2"), &json!({"cycles": 1}).to_string())
@@ -7956,10 +8373,17 @@ const POSITIONS: &[Position] = &[
         fix: r#"{"refused": "no-round", "round": null}"#,
     },
     Position {
-        name: "a round whose test stage left reports and no record",
-        rounds: &[(None, &[("test", "1"), ("test", "3")])],
+        name: "a round whose test stage left reports and no record: it is run again, once",
+        rounds: &[(None, &[("test", "1")])],
         finding: None,
-        test: r#"{"round": 1, "attempt": 4}"#,
+        test: r#"{"round": 1, "attempt": 2}"#,
+        fix: r#"{"refused": "not-tested", "round": 1}"#,
+    },
+    Position {
+        name: "a round whose test stage left reports and no record twice: the next attempt is the human's",
+        rounds: &[(None, &[("test", "1"), ("test", "2")])],
+        finding: None,
+        test: r#"{"refused": "attempts-spent", "round": 1}"#,
         fix: r#"{"refused": "not-tested", "round": 1}"#,
     },
     Position {
@@ -7967,13 +8391,6 @@ const POSITIONS: &[Position] = &[
         rounds: &[(Some(r#""base": "0f34d8f0""#), &[])],
         finding: Some("in-confirmed"),
         test: r#"{"round": 1, "attempt": 1}"#,
-        fix: r#"{"refused": "not-tested", "round": 1}"#,
-    },
-    Position {
-        name: "a record that counts a cycle and names no candidate",
-        rounds: &[(Some(r#""cycles": 1"#), &[("test", "1")])],
-        finding: Some("in-confirmed"),
-        test: r#"{"round": 1, "attempt": 2}"#,
         fix: r#"{"refused": "not-tested", "round": 1}"#,
     },
     Position {
@@ -7994,9 +8411,9 @@ const POSITIONS: &[Position] = &[
     // which, and that invocation runs no instrument.
     Position {
         name: "a tested round with a finding nobody verified: the test stage finishes its triage",
-        rounds: &[(Some(TESTED), &[("test", "1"), ("test", "2")])],
+        rounds: &[(Some(TESTED), &[("test", "1")])],
         finding: Some("in-unverified"),
-        test: r#"{"round": 1, "attempt": 3, "triage": true}"#,
+        test: r#"{"round": 1, "attempt": 2, "triage": true}"#,
         fix: r#"{"round": 1, "cycle": 1, "attempt": 1, "land": false}"#,
     },
     Position {
@@ -8043,11 +8460,18 @@ const POSITIONS: &[Position] = &[
         fix: r#"{"round": 1, "cycle": 1, "attempt": 1, "land": false}"#,
     },
     Position {
-        name: "a fix cycle that was started and never recorded",
+        name: "a fix cycle that was started and never recorded: it is run again, once",
+        rounds: &[(Some(TESTED), &[("fix/c1", "1")])],
+        finding: Some("in-confirmed"),
+        test: r#"{"refused": "round-open", "round": 1}"#,
+        fix: r#"{"round": 1, "cycle": 1, "attempt": 2, "land": false}"#,
+    },
+    Position {
+        name: "a fix cycle that was started twice and never recorded: the next attempt is the human's",
         rounds: &[(Some(TESTED), &[("fix/c1", "1"), ("fix/c1", "2")])],
         finding: Some("in-confirmed"),
         test: r#"{"refused": "round-open", "round": 1}"#,
-        fix: r#"{"round": 1, "cycle": 1, "attempt": 3, "land": false}"#,
+        fix: r#"{"refused": "attempts-spent", "round": 1}"#,
     },
     Position {
         name: "one cycle recorded, a blocker left",
@@ -8060,14 +8484,14 @@ const POSITIONS: &[Position] = &[
         fix: r#"{"round": 1, "cycle": 2, "attempt": 1, "land": false}"#,
     },
     Position {
-        name: "two cycles recorded, the third started twice",
+        name: "two cycles recorded, the third started once",
         rounds: &[(
             Some(r#""candidate": "cccccccccccccccccccccccccccccccccccccccc", "cycles": 2"#),
-            &[("fix/c1", "1"), ("fix/c2", "1"), ("fix/c3", "2")],
+            &[("fix/c1", "1"), ("fix/c2", "1"), ("fix/c3", "1")],
         )],
         finding: Some("in-confirmed"),
         test: r#"{"refused": "round-open", "round": 1}"#,
-        fix: r#"{"round": 1, "cycle": 3, "attempt": 3, "land": false}"#,
+        fix: r#"{"round": 1, "cycle": 3, "attempt": 2, "land": false}"#,
     },
     Position {
         name: "a cycle recorded and nothing left open: the round lands",
@@ -8078,6 +8502,26 @@ const POSITIONS: &[Position] = &[
         finding: Some("in-fixed"),
         test: r#"{"round": 2, "attempt": 1}"#,
         fix: r#"{"round": 1, "cycle": 2, "attempt": 1, "land": true}"#,
+    },
+    Position {
+        name: "a cycle recorded, nothing left open, and two attempts of the next cycle without a record: the round still lands",
+        rounds: &[(
+            Some(r#""candidate": "cccccccccccccccccccccccccccccccccccccccc", "cycles": 1"#),
+            &[("fix/c2", "1"), ("fix/c2", "2")],
+        )],
+        finding: Some("in-fixed"),
+        test: r#"{"round": 2, "attempt": 1}"#,
+        fix: r#"{"round": 1, "cycle": 2, "attempt": 3, "land": true}"#,
+    },
+    Position {
+        name: "three cycles recorded, a blocker left, and two attempts of the fourth without a record: the bound is said first",
+        rounds: &[(
+            Some(r#""candidate": "cccccccccccccccccccccccccccccccccccccccc", "cycles": 3"#),
+            &[("fix/c4", "1"), ("fix/c4", "2")],
+        )],
+        finding: Some("in-confirmed"),
+        test: r#"{"refused": "round-open", "round": 1}"#,
+        fix: r#"{"refused": "cycle-bound", "round": 1}"#,
     },
     Position {
         name: "a round that was dropped, its blocker open again",
@@ -8125,10 +8569,10 @@ const POSITIONS: &[Position] = &[
                 Some(r#""candidate": "cccccccccccccccccccccccccccccccccccccccc", "cycles": 1"#),
                 &[],
             ),
-            (None, &[("test", "2")]),
+            (None, &[("test", "1")]),
         ],
         finding: Some("in-fixed"),
-        test: r#"{"round": 2, "attempt": 3}"#,
+        test: r#"{"round": 2, "attempt": 2}"#,
         fix: r#"{"refused": "not-tested", "round": 2}"#,
     },
 ];
@@ -8374,6 +8818,30 @@ const BOUND_POSITIONS: &[(Opening, Position)] = &[
     ),
 ];
 
+/// A round's facts, written as the stages write them: what its `test` stage records — the
+/// candidate, and what is written with it — and then, in a call of its own, what a fix
+/// stage or the human's exit adds to a tested round. The script takes each only there.
+fn write_round(rig: &Rig, round: &str, facts: &str) {
+    let given: Value = serde_json::from_str(facts).expect("a round's facts");
+    let (mut tested, mut after) = (json!({}), json!({}));
+    for (name, value) in given.as_object().expect("an object") {
+        if ["cycles", "outcome"].contains(&name.as_str()) {
+            after[name] = value.clone();
+        } else {
+            tested[name] = value.clone();
+        }
+    }
+    for (facts, what) in [
+        (tested, "the round's record"),
+        (after, "what a fix stage left in it"),
+    ] {
+        if facts.as_object().is_some_and(|facts| !facts.is_empty()) {
+            rig.run(&round_set(RUN, round), &facts.to_string())
+                .must(OK, what);
+        }
+    }
+}
+
 fn drive_position(label: &str, opening: Opening, position: &Position, truth: &[Finding]) {
     let rig = Rig::new(label);
     let (facts, clause_row) = opening;
@@ -8417,8 +8885,7 @@ fn drive_position(label: &str, opening: Opening, position: &Position, truth: &[F
                 )
                 .must(OK, "the round's scope");
             }
-            rig.run(&round_set(RUN, &round), &format!("{{{facts}}}"))
-                .must(OK, "the round's record");
+            write_round(&rig, &round, &format!("{{{facts}}}"));
         }
         for (stage, attempt) in *reports {
             let mut args = strings(&["report", "--reporter=preflight"]);
@@ -8481,7 +8948,7 @@ fn the_position_of_each_stage_is_computed_from_the_rounds_records_and_the_routes
         .map(|position| (OPENED, position))
         .collect();
     let driven = drive_positions("position", &cells);
-    assert!(driven >= 21, "the table collapsed to {driven} cells");
+    assert!(driven >= 24, "the table collapsed to {driven} cells");
 }
 
 #[test]
@@ -8509,10 +8976,12 @@ fn the_runs_facts_are_written_through_the_script_and_the_bound_is_only_raised() 
         json!({
             "stop": stop,
             "rounds": rounds,
+            "cycles": null,
             "previous": previous,
             "previous-commit": commit,
             "scope": scope,
             "clauses": null,
+            "findings": null,
         })
     };
     let none = Value::Null;
@@ -8578,9 +9047,10 @@ fn the_runs_facts_are_written_through_the_script_and_the_bound_is_only_raised() 
     );
     assert_eq!(rig.state()["not_ready"], json!(["no-clause-row"]));
 
-    // The human raises the bound, and a raise is the same call; a bound said again
-    // stands, and the mode and the default scope may change — the first run stops after
-    // every round. The release said again stands too.
+    // While the opening is being written the bound may still go up, and a raise is the
+    // same call; a bound said again stands, and so does every other fact said again as it
+    // is. (Once a round is begun, a bound is raised only at its own stop: the writers'
+    // table, below.)
     for rounds in [5, 5] {
         rig.run(&run_set(RUN), &json!({"rounds": rounds}).to_string())
             .must(OK, "the bound, raised and said again");
@@ -8588,9 +9058,9 @@ fn the_runs_facts_are_written_through_the_script_and_the_bound_is_only_raised() 
     rig.run(
         &run_set(RUN),
         &json!({
-            "stop": "every-round",
+            "stop": "at-the-bound",
             "rounds": 12,
-            "scope": "everything",
+            "scope": "delta",
             "previous": "1.0.0-rc.24",
             "previous-commit": sha('e'),
         })
@@ -8598,16 +9068,16 @@ fn the_runs_facts_are_written_through_the_script_and_the_bound_is_only_raised() 
     )
     .must(
         OK,
-        "the other mode, a higher bound, the other scope, the release again",
+        "the mode, the scope and the release again, and a higher bound",
     );
     assert_eq!(
         rig.state()["facts"],
         facts(
-            json!("every-round"),
+            json!("at-the-bound"),
             json!(12),
             json!("1.0.0-rc.24"),
             json!(sha('e')),
-            json!("everything")
+            json!("delta")
         )
     );
 
@@ -8625,6 +9095,10 @@ fn the_runs_facts_are_written_through_the_script_and_the_bound_is_only_raised() 
             json!({"rounds": 13, "previous": "1.0.0"}),
             "another release beside a fact that would be taken",
         ),
+        // WHEN A RUN STOPS IS WRITTEN ONCE (the review's `F7`, its third way): the mode
+        // rewritten would take a stop at a spent bound away without the bound being raised.
+        (json!({"stop": "every-round"}), "another stop mode"),
+        (json!({"scope": "everything"}), "another default scope"),
     ];
     for (given, why) in stands {
         rig.run(&run_set(RUN), &given.to_string())
@@ -8642,7 +9116,15 @@ fn the_runs_facts_are_written_through_the_script_and_the_bound_is_only_raised() 
         (json!({"rounds": true}), "a bound that is a truth value"),
         (json!({"stop": "sometimes"}), "a mode nobody defined"),
         (json!({"stop": true}), "a mode that is a truth value"),
-        (json!({"cycles": 3}), "a fact nobody defined"),
+        (json!({"laps": 3}), "a fact nobody defined"),
+        (
+            json!({"cycles": 2}),
+            "a bound on a round's fix cycles below the three it starts at",
+        ),
+        (
+            json!({"findings": ["audit-f3"]}),
+            "the ledger's census, which the script counts and no caller writes",
+        ),
         (
             json!({"stop": "every-round", "release": "1.0.0"}),
             "a fact nobody defined beside one that would be taken",
@@ -8736,10 +9218,10 @@ fn a_call_that_writes_two_files_writes_both_or_neither() {
     let mut rig = triaged_once("two-files");
     let before = rig.snapshot();
     let read = rig.state();
-    rig.env.push(("STUB_GITLEAKS", "once".to_owned()));
+    rig.env.push(("STUB_GITLEAKS", "crash".to_owned()));
     rig.run(&triage_set(RUN, "1"), &found_again()).refused(
         DID_NOT_RUN,
-        "a scanner that dies between the two files of one call",
+        "a scanner that cannot run, under a call that writes more than one file",
     );
     assert_eq!(
         rig.snapshot(),
@@ -8749,9 +9231,13 @@ fn a_call_that_writes_two_files_writes_both_or_neither() {
     rig.env.pop();
     assert_eq!(rig.state(), read, "and the state is the state it was");
 
-    // The same call with a scanner that runs writes both.
+    // A CALL'S FILES ARE SCANNED AS ONE BATCH, before any of them is written: a scanner
+    // that answers once and can never run again scans the whole call. (The review's `F4`
+    // had it die between the call's two files — which no call can meet any more: there is
+    // one scan, however many files the call writes.)
+    rig.env.push(("STUB_GITLEAKS", "once".to_owned()));
     rig.run(&triage_set(RUN, "1"), &found_again())
-        .must(OK, "the triage");
+        .must(OK, "the triage: every file of it, in one scan");
     assert_eq!(
         two_files(&rig),
         ("regression".to_owned(), "confirmed".to_owned()),
@@ -8763,6 +9249,10 @@ fn a_call_that_writes_two_files_writes_both_or_neither() {
             .any(|path| path.ends_with(".pending.json")),
         "a batch that landed leaves no journal"
     );
+    let written = rig.snapshot();
+    rig.run(&triage_set(RUN, "1"), &found_again())
+        .refused(DID_NOT_RUN, "the next call, whose scan cannot run");
+    assert_eq!(rig.snapshot(), written, "and that call wrote nothing");
 }
 
 /// A stand-in for a kill at a point no signal can be timed to: the interpreter is handed a
@@ -9024,6 +9514,7 @@ fn a_record_steps_batch_is_written_whole_held_as_pending_and_can_be_taken_back()
     let files = json!([
         gate_path("1"),
         ledger_path(),
+        run_path(),
         triage_path("1"),
         results_path("1"),
         round_path("1"),
@@ -9047,7 +9538,7 @@ fn a_record_steps_batch_is_written_whole_held_as_pending_and_can_be_taken_back()
         .expect("the batch's files")
         .keys()
         .collect();
-    assert_eq!(held.len(), 6, "{pending}");
+    assert_eq!(held.len(), 7, "{pending}");
     assert_eq!(pending["once"], json!([scope_path("1")]));
     let state = rig.state();
     assert_eq!(state["rounds"][0]["facts"]["candidate"], sha('a').as_str());
@@ -9090,7 +9581,7 @@ fn a_record_steps_batch_is_written_whole_held_as_pending_and_can_be_taken_back()
         .must(OK, "the batch again");
     let settled = rig.run(&keeper("settle", RUN), "");
     settled.must(OK, "settle");
-    assert_eq!(settled.json()["settled"].as_array().map(Vec::len), Some(6));
+    assert_eq!(settled.json()["settled"].as_array().map(Vec::len), Some(7));
     assert_eq!(
         rig.run(&keeper("pending", RUN), "").json()["batch"],
         Value::Null
@@ -9245,14 +9736,14 @@ fn a_record_commits_gate_is_held_to_what_the_candidates_gate_showed_red() {
     rig.run(
         &gate_set(
             RUN,
-            "2",
+            "1",
             &sha('b'),
             &rig.summary("candidate", &["tier1", "doctest"], &[a, hostile]),
         ),
         "",
     )
     .must(OK, "the candidate's gate");
-    let rows = table(&rig.read(&gate_path("2")), &["what", "value"]);
+    let rows = table(&rig.read(&gate_path("1")), &["what", "value"]);
     assert_eq!(rows[0], ["commit", &format!("`{}`", sha('b'))]);
     assert_eq!(rows[1], ["verdict", "fail"]);
     assert_eq!(
@@ -9268,7 +9759,7 @@ fn a_record_commits_gate_is_held_to_what_the_candidates_gate_showed_red() {
     rig.run(
         &gate_check(
             RUN,
-            Some("2"),
+            Some("1"),
             &rig.summary("record", &["tier1"], &[hostile]),
         ),
         "",
@@ -9283,13 +9774,13 @@ fn a_record_commits_gate_is_held_to_what_the_candidates_gate_showed_red() {
     // A round tests one candidate; the same candidate's gate may be read again.
     let before = rig.snapshot();
     rig.run(
-        &gate_set(RUN, "2", &sha('c'), &rig.summary("candidate", &[], &[])),
+        &gate_set(RUN, "1", &sha('c'), &rig.summary("candidate", &[], &[])),
         "",
     )
     .refused(EXISTS, "the gate of another commit for the same round");
     assert_eq!(rig.snapshot(), before);
     rig.run(
-        &gate_set(RUN, "2", &sha('b'), &rig.summary("candidate", &[], &[])),
+        &gate_set(RUN, "1", &sha('b'), &rig.summary("candidate", &[], &[])),
         "",
     )
     .must(OK, "the same candidate's gate, run again");
@@ -9307,18 +9798,18 @@ fn a_record_commits_gate_is_held_to_what_the_candidates_gate_showed_red() {
         (String::new(), "nothing"),
     ] {
         let file = rig.summary_of("bad", &text);
-        rig.run(&gate_check(RUN, Some("2"), &file), "")
+        rig.run(&gate_check(RUN, Some("1"), &file), "")
             .refused(BAD_VALUE, why);
-        rig.run(&gate_set(RUN, "3", &sha('d'), &file), "")
+        rig.run(&gate_set(RUN, "1", &sha('d'), &file), "")
             .refused(BAD_VALUE, why);
     }
     rig.run(
-        &gate_check(RUN, Some("2"), &rig.tmp.join("no-such-file")),
+        &gate_check(RUN, Some("1"), &rig.tmp.join("no-such-file")),
         "",
     )
     .refused(BAD_VALUE, "a gate's output that is not there");
     rig.run(
-        &gate_set(RUN, "3", "abcdef1", &rig.summary("candidate", &[], &[])),
+        &gate_set(RUN, "1", "abcdef1", &rig.summary("candidate", &[], &[])),
         "",
     )
     .refused(BAD_VALUE, "a candidate named by a short sha");
@@ -9326,12 +9817,12 @@ fn a_record_commits_gate_is_held_to_what_the_candidates_gate_showed_red() {
 
     // A gate somebody wrote by hand is not compared against on a guess.
     fs::write(
-        rig.root.join(gate_path("2")),
+        rig.root.join(gate_path("1")),
         "# the gate\n\n| what | value |\n|---|---|\n| verdict | pass |\n| test | `x` |\n",
     )
     .expect("a gate by hand");
     rig.run(
-        &gate_check(RUN, Some("2"), &rig.summary("record", &[], &[])),
+        &gate_check(RUN, Some("1"), &rig.summary("record", &[], &[])),
         "",
     )
     .refused(CORRUPT, "a candidate's gate that is not the script's");
@@ -9474,6 +9965,13 @@ fn no_input_ends_in_a_traceback() {
         ),
     ] {
         let other = triaged_once("tracebacks-fact");
+        // A fix cycle is counted in a tested round.
+        other
+            .run(
+                &round_set(RUN, "1"),
+                &json!({"candidate": sha('c')}).to_string(),
+            )
+            .must(OK, "the round's candidate");
         other.run(&call, &facts.to_string()).must(OK, why);
         let text = other.read(&path);
         assert!(text.contains(from), "the fixture's row: {text}");
@@ -9493,4 +9991,1405 @@ fn no_input_ends_in_a_traceback() {
         "it says what was raised, and where: {}",
         seen.stderr
     );
+}
+
+// ---------------------------------------------------------------------------
+// 27 · Every loop has a counter on record and an exit to the human
+// ---------------------------------------------------------------------------
+
+/// The passes of a round's triage are counted BY THE CALL THAT RECORDS ONE, in the round's
+/// own record — never by an invocation, and never supplied: every finding a triage record
+/// leaves without a grade or a verdict is named there with how many of the round's records
+/// in a row have left it so. One more pass is automatic; after it the finding is the
+/// human's, with the reason — and what the human may do is rule it, or grant one more.
+#[test]
+fn a_finding_the_triage_cannot_settle_is_tried_once_more_and_then_it_is_the_humans() {
+    let rig = two_clause_run("passes", r#""stop": "at-the-bound", "rounds": 9"#);
+    let both = [("check-clause-a", "green"), ("row-clause-b", "green")];
+    tested_round(&rig, 1, true, &both, json!({}));
+    rig.run(
+        &ledger_add(RUN),
+        &json!([row_at("f-open", INSIDE), row_at("f-seeded", INSIDE)]).to_string(),
+    )
+    .must(OK, "two findings");
+    let unverified = json!({"key": "f-open", "grade": "breaks"}).to_string();
+    let awaiting = |rig: &Rig| rig.state()["rounds"][0]["facts"]["awaiting"].clone();
+    let awaits = |rig: &Rig, key: &str| {
+        let read = rig.state();
+        let row = read["ledger"]
+            .as_array()
+            .expect("the ledger")
+            .iter()
+            .find(|row| row["key"] == key)
+            .expect("the row")
+            .clone();
+        json!([row["route"], row["why"], row["awaits"]])
+    };
+
+    // The stage's own triage: one finding graded and sent on, the verifier settled
+    // nothing; the other was never graded. Both are counted, once.
+    rig.run(&triage_set(RUN, "1"), &unverified)
+        .must(OK, "the stage's own triage");
+    assert_eq!(
+        awaiting(&rig),
+        json!(["f-open unverified 1", "f-seeded ungraded 1"])
+    );
+    assert_eq!(
+        awaits(&rig, "f-open"),
+        json!(["triage", "unverified", {"why": "unverified", "passes": 1, "retry": "due"}])
+    );
+    assert!(
+        table(&rig.read(&round_path("1")), &ROUND_COLUMNS).contains(&vec![
+            "`awaiting`".to_owned(),
+            "`f-open unverified 1, f-seeded ungraded 1`".to_owned()
+        ]),
+        "the count is a row of the round's record"
+    );
+    assert_eq!(rig.state()["next"], json!("triage"));
+    // Nothing is the human's yet, and nothing is granted before it is.
+    let before = rig.snapshot();
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"reverify": "f-open"}).to_string(),
+    )
+    .refused(
+        BAD_VALUE,
+        "one more triage before the automatic one is spent",
+    );
+    // The count is the script's: no caller writes it.
+    for (given, why) in [
+        (
+            json!({"awaiting": ["f-open unverified 1"]}),
+            "the passes, supplied",
+        ),
+        (json!({"awaiting": []}), "the passes, taken back"),
+        (json!({"ran": ["row-clause-b a1"]}), "the runs, supplied"),
+        (
+            json!({"recorded": ["test a1"]}),
+            "an attempt that reached its record, supplied",
+        ),
+    ] {
+        rig.run(&round_set(RUN, "1"), &given.to_string())
+            .refused(BAD_VALUE, why);
+    }
+    assert_eq!(rig.snapshot(), before);
+
+    // The one pass that is automatic grades the seeded finding and still cannot verify
+    // the other: that one is the human's, with the reason — and the seeded one, graded
+    // now and unverified for the first time, is not.
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!([{"key": "f-open", "grade": "unclear"}, {"key": "f-seeded", "grade": "breaks"}])
+            .to_string(),
+    )
+    .must(OK, "the finishing triage");
+    assert_eq!(
+        awaiting(&rig),
+        json!(["f-open unverified 2", "f-seeded unverified 1"])
+    );
+    assert_eq!(
+        awaits(&rig, "f-open"),
+        json!(["human", "unverified-after-retry",
+               {"why": "unverified", "passes": 2, "retry": "spent"}])
+    );
+    let read = rig.state();
+    assert_eq!(
+        (&read["next"], &read["human_list"], &read["untriaged"]),
+        (
+            &json!("triage"),
+            &json!([{"key": "f-open", "why": "unverified-after-retry"}]),
+            &json!([{"key": "f-seeded", "why": "unverified"}])
+        ),
+        "the other finding's triage is finished first: {read}"
+    );
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "f-seeded", "grade": "breaks", "verdict": "refuted"}).to_string(),
+    )
+    .must(OK, "the seeded finding, refuted");
+    assert_eq!(
+        awaiting(&rig),
+        json!(["f-open unverified 3"]),
+        "a record that settles a finding names it no more, and one that leaves a finding counts"
+    );
+    let read = rig.state();
+    assert_eq!(
+        (&read["next"], &read["position"]["test"]),
+        (
+            &json!("rule"),
+            &json!({"refused": "round-open", "round": 1})
+        ),
+        "no stage finishes this triage again unasked: {read}"
+    );
+
+    // Granted: the record holds the pass it allows, and one grant is one pass.
+    let before = rig.snapshot();
+    for (round, key, why) in [
+        (
+            "1",
+            "f-seeded",
+            "one more triage of a finding that is settled",
+        ),
+        (
+            "1",
+            "f-nowhere",
+            "one more triage of a finding the ledger lacks",
+        ),
+    ] {
+        rig.run(
+            &round_set(RUN, round),
+            &json!({"reverify": key}).to_string(),
+        )
+        .refused(BAD_VALUE, why);
+    }
+    assert_eq!(rig.snapshot(), before);
+    let seen = rig.run(
+        &round_set(RUN, "1"),
+        &json!({"reverify": "f-open"}).to_string(),
+    );
+    seen.must(OK, "one more triage, granted");
+    assert_eq!(seen.json()["facts"]["reverify"], json!(["f-open p4"]));
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"reverify": "f-open"}).to_string(),
+    )
+    .refused(BAD_VALUE, "a second grant while the first is not spent");
+    let read = rig.state();
+    assert_eq!(
+        (&read["next"], &read["position"]["test"]),
+        (
+            &json!("triage"),
+            &json!({"round": 1, "attempt": 1, "triage": true})
+        ),
+        "{read}"
+    );
+    // … and the granted pass confirms it: a fixer's, counted no more.
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "f-open", "grade": "breaks", "verdict": "confirmed", "regression": false})
+            .to_string(),
+    )
+    .must(OK, "the granted triage");
+    assert_eq!(awaiting(&rig), json!([]));
+    assert_eq!(rig.state()["next"], json!("fix"));
+
+    // A red check's finding is filed ungraded by the call that records the result: the
+    // record that files it counts one pass without a grade, and the first triage that
+    // grades it and cannot verify it counts its FIRST pass without a verdict.
+    let other = two_clause_run("passes-red", r#""stop": "at-the-bound", "rounds": 9"#);
+    other
+        .run(
+            &scope_set(RUN, "1"),
+            &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+        )
+        .must(OK, "the scope");
+    let mut red = ran("check-clause-a", "red");
+    for (field, value) in [
+        ("doctype", "jigc-feedback"),
+        ("door", INSIDE),
+        ("repro", "the gate"),
+    ] {
+        red[field] = json!(value);
+    }
+    other
+        .run(
+            &result_set(RUN, "1", &candidate(1)),
+            &json!([red, ran("row-clause-b", "green")]).to_string(),
+        )
+        .must(OK, "a red check");
+    other.seed_rows(&["beside"]);
+    other
+        .run(
+            &triage_set(RUN, "1"),
+            &json!({"key": "beside", "grade": "no-break"}).to_string(),
+        )
+        .must(
+            OK,
+            "the stage's triage, which was never handed the red check",
+        );
+    other
+        .run(
+            &round_set(RUN, "1"),
+            &json!({"candidate": candidate(1)}).to_string(),
+        )
+        .must(OK, "the candidate");
+    assert_eq!(awaiting(&other), json!(["red-check-clause-a ungraded 1"]));
+    other
+        .run(
+            &triage_set(RUN, "1"),
+            &json!({"key": "red-check-clause-a", "grade": "breaks"}).to_string(),
+        )
+        .must(OK, "the finishing triage grades it");
+    assert_eq!(awaiting(&other), json!(["red-check-clause-a unverified 1"]));
+    assert_eq!(
+        other.state()["next"],
+        json!("triage"),
+        "the verifier gets its one more attempt"
+    );
+}
+
+/// **A stop is lifted by its go, and by nothing else** (the review's `F7`, three ways, and
+/// `F9`; the repair plan's state 10). A write that names a round the run has not begun is
+/// taken only where the state hands that round to a `test` stage; when a run stops is
+/// written once; a bound is raised only at its own stop; and a go answers the stop it was
+/// given at — a round that is over again after one more fix cycle stops again.
+#[test]
+fn a_stop_is_lifted_by_its_go_and_by_no_other_write() {
+    let rig = two_clause_run("stops", EVERY_ROUND);
+    let both = [("check-clause-a", "green"), ("row-clause-b", "green")];
+    tested_round(&rig, 1, true, &both, json!({}));
+    let stopped = json!({"why": "every-round", "round": 1, "then": "close"});
+    let read = rig.state();
+    assert_eq!(
+        (&read["next"], &read["stop"], &read["begins"]),
+        (&json!("stop"), &stopped, &json!(null)),
+        "{read}"
+    );
+
+    // The three ways, and every other write that names the round after: each refused,
+    // each leaving the tree and the stop as they were.
+    let before = rig.snapshot();
+    let summary = rig.summary("stops", &[], &[]);
+    let lifts: Vec<(Seen, &str)> = vec![
+        (
+            rig.run(
+                &round_set(RUN, "2"),
+                &json!({"base": "abcdef1"}).to_string(),
+            ),
+            "a fact of round 2's record",
+        ),
+        (
+            rig.run(&report(RUN, "2", "scope", "1"), BODY),
+            "a report of round 2",
+        ),
+        (
+            rig.run(
+                &scope_set(RUN, "2"),
+                &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+            ),
+            "round 2's scope",
+        ),
+        (
+            rig.run(&gate_set(RUN, "2", &candidate(2), &summary), ""),
+            "the gate of round 2's candidate",
+        ),
+        (
+            rig.run(
+                &result_set(RUN, "2", &candidate(2)),
+                &ran("check-clause-a", "green").to_string(),
+            ),
+            "a result of round 2",
+        ),
+        (
+            rig.run(
+                &triage_set(RUN, "2"),
+                &json!({"key": "nobody", "grade": "no-break"}).to_string(),
+            ),
+            "round 2's triage",
+        ),
+        (
+            rig.run(&run_set(RUN), &json!({"rounds": 50}).to_string()),
+            "a bound across rounds, written past the opening and at no stop of its own",
+        ),
+        (
+            rig.run(&run_set(RUN), &json!({"cycles": 50}).to_string()),
+            "a bound on a round's cycles, raised at no stop of its own",
+        ),
+    ];
+    for (seen, why) in &lifts {
+        seen.refused(BAD_VALUE, why);
+        assert!(
+            seen.stderr.contains("the state does not ask for it"),
+            "{why}: the refusal says that the state does not ask for the write: {}",
+            seen.stderr
+        );
+    }
+    rig.run(&run_set(RUN), &json!({"stop": "at-the-bound"}).to_string())
+        .refused(EXISTS, "the stop mode, rewritten");
+    assert_eq!(rig.snapshot(), before, "a refused write writes nothing");
+    assert_eq!(rig.state()["stop"], stopped, "and the stop stands");
+
+    // The go lifts it: the record holds the count of fix cycles it was given at.
+    let go = json!({"go": true}).to_string();
+    rig.run(&round_set(RUN, "1"), &go).must(OK, "the go");
+    assert!(
+        table(&rig.read(&round_path("1")), &ROUND_COLUMNS)
+            .contains(&vec!["`go`".to_owned(), "`c0`".to_owned()])
+    );
+    let read = rig.state();
+    assert_eq!(
+        (&read["next"], &read["stop"], &read["begins"]),
+        (&json!("close"), &json!(null), &json!(2)),
+        "{read}"
+    );
+
+    // F9 — the human does not close: a finding is admitted and fixed, and a fix cycle is
+    // recorded. The round is over AGAIN, and the go given before that cycle is no answer
+    // to this stop: the next round's `test` does not start unasked.
+    rig.seed_rows(&["admitted-late"]);
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "admitted-late", "grade": "breaks", "verdict": "confirmed", "regression": false})
+            .to_string(),
+    )
+    .must(OK, "a finding, confirmed");
+    for patch in [
+        json!({"key": "admitted-late", "disposition": "admitted"}),
+        json!({"key": "admitted-late", "disposition": "fixed", "detail": "0f34d8f0"}),
+    ] {
+        rig.run(&ledger_set(RUN), &patch.to_string())
+            .must(OK, "admitted, then fixed");
+    }
+    rig.run(&round_set(RUN, "1"), &json!({"cycles": 1}).to_string())
+        .must(OK, "the fix cycle");
+    let read = rig.state();
+    assert_eq!(
+        (
+            &read["next"],
+            &read["stop"],
+            &read["rounds"][0]["facts"]["go"],
+            &read["position"]["test"],
+            &read["begins"]
+        ),
+        (
+            &json!("stop"),
+            &json!({"why": "every-round", "round": 1, "then": "test"}),
+            &json!(false),
+            &json!({"refused": "stopped", "round": 1}),
+            &json!(null)
+        ),
+        "a go lifts one stop, and not the next: {read}"
+    );
+    rig.run(&round_set(RUN, "1"), &go)
+        .must(OK, "the go after the cycle");
+    assert!(
+        table(&rig.read(&round_path("1")), &ROUND_COLUMNS)
+            .contains(&vec!["`go`".to_owned(), "`c1`".to_owned()])
+    );
+    let read = rig.state();
+    assert_eq!(
+        (&read["next"], &read["begins"]),
+        (&json!("test"), &json!(2)),
+        "{read}"
+    );
+    // Round 2 is begun where the state hands it out — and round 3 is not.
+    rig.run(&report(RUN, "3", "scope", "1"), BODY)
+        .refused(BAD_VALUE, "a report two rounds ahead");
+    rig.run(&report(RUN, "2", "scope", "1"), BODY)
+        .must(OK, "round 2's first report");
+    rig.run(&report(RUN, "1", "late", "9"), BODY)
+        .must(OK, "a report of a round the run has begun");
+
+    // At a spent bound across rounds: the mode stands, the other bound is not the one that
+    // is asked for, and the raise is the go.
+    let other = two_clause_run("stops-bound", r#""stop": "at-the-bound", "rounds": 1"#);
+    tested_round(&other, 1, true, &both, json!({}));
+    other
+        .run(&round_set(RUN, "1"), &json!({"cycles": 1}).to_string())
+        .must(OK, "round 1's fix cycle: the bound of one is spent");
+    tested_round(&other, 2, true, &both, json!({}));
+    other.seed_rows(&["blocker"]);
+    other
+        .run(
+            &triage_set(RUN, "2"),
+            &json!({"key": "blocker", "grade": "breaks", "verdict": "confirmed", "regression": false})
+                .to_string(),
+        )
+        .must(OK, "round 2's triage");
+    let at_bound = json!({"why": "round-bound", "round": 2, "then": "fix"});
+    assert_eq!(other.state()["stop"], at_bound);
+    let before = other.snapshot();
+    other
+        .run(&run_set(RUN), &json!({"stop": "every-round"}).to_string())
+        .refused(
+            EXISTS,
+            "the other stop mode, in which the bound is not applied",
+        );
+    other
+        .run(&run_set(RUN), &json!({"cycles": 4}).to_string())
+        .refused(
+            BAD_VALUE,
+            "the bound on a round's cycles, at the stop of the other bound",
+        );
+    other
+        .run(&round_set(RUN, "2"), &json!({"cycles": 1}).to_string())
+        .refused(
+            BAD_VALUE,
+            "a fix cycle counted past the bound across rounds",
+        );
+    assert_eq!(other.snapshot(), before);
+    assert_eq!(other.state()["stop"], at_bound);
+    other
+        .run(&run_set(RUN), &json!({"rounds": 2}).to_string())
+        .must(OK, "the bound, raised at its own stop");
+    assert_eq!(other.state()["next"], json!("fix"));
+    other
+        .run(&run_set(RUN), &json!({"rounds": 3}).to_string())
+        .refused(
+            BAD_VALUE,
+            "the bound, raised again where nothing stops at it",
+        );
+}
+
+/// **What is deleted is missed** (the review's `F6`, and the item's last result the entry
+/// *Evidence belongs to a test-set item* left uncaught). A ledger row, a result and a
+/// report that a record names and that are gone are each a refusal that names what is
+/// missing — never a quieter state.
+#[test]
+fn what_is_deleted_is_missed_and_named() {
+    let build = |label: &str| {
+        let rig = two_clause_run(label, r#""stop": "at-the-bound", "rounds": 9"#);
+        tested_round(
+            &rig,
+            1,
+            true,
+            &[("check-clause-a", "green"), ("row-clause-b", "void")],
+            json!({}),
+        );
+        rerun(&rig, 1, 1, "row-clause-b", "green").must(OK, "the hunt's re-run");
+        rig.run(
+            &ledger_add(RUN),
+            &json!([
+                row_at("f-triaged", INSIDE),
+                row_at("f-left", INSIDE),
+                row_at("f-opening", INSIDE)
+            ])
+            .to_string(),
+        )
+        .must(OK, "three findings");
+        rig
+    };
+    let without = |rig: &Rig, rel: &str, marker: &str| {
+        let path = rig.root.join(rel);
+        let text = fs::read_to_string(&path).expect("read the table");
+        let kept: String = text
+            .lines()
+            .filter(|line| !line.contains(marker))
+            .map(|line| format!("{line}\n"))
+            .collect();
+        assert_ne!(kept, text, "the row `{marker}` was there");
+        fs::write(&path, kept).expect("delete the row");
+    };
+    let refusal = |rig: &Rig, names: &[&str], why: &str| {
+        let seen = rig.run(&state(RUN), "");
+        seen.refused(CORRUPT, why);
+        for name in names {
+            assert!(
+                seen.stderr.contains(name),
+                "{why}: the refusal names `{name}`: {}",
+                seen.stderr
+            );
+        }
+    };
+
+    // The review's own repro: a finding nobody triaged yet — an opening row — deleted from
+    // the ledger. The run's record names every finding the ledger was handed.
+    let rig = build("deleted-untriaged");
+    assert_eq!(rig.state()["next"], json!("triage"));
+    assert_eq!(
+        rig.state()["facts"]["findings"],
+        json!(["f-triaged", "f-left", "f-opening"])
+    );
+    without(&rig, &ledger_path(), "`f-opening`");
+    refusal(
+        &rig,
+        &["f-opening", "run.md"],
+        "a ledger row no round has triaged, deleted",
+    );
+    // … and no writer writes past it: not the ledger's own, and not another table's.
+    let before = rig.snapshot();
+    rig.run(&ledger_add(RUN), &row_at("f-new", INSIDE).to_string())
+        .refused(CORRUPT, "a row added to a ledger with a row gone");
+    rig.run(
+        &ledger_set(RUN),
+        &json!({"key": "f-left", "disposition": "later"}).to_string(),
+    )
+    .refused(CORRUPT, "a ruling on a ledger with a row gone");
+    rig.run(&round_set(RUN, "1"), &json!({"cycles": 1}).to_string())
+        .refused(
+            CORRUPT,
+            "a fact of the round, over a ledger with a row gone",
+        );
+    assert_eq!(rig.snapshot(), before);
+
+    // A row a recorded triage names — by its entry, and by the count of what it left.
+    let rig = build("deleted-triaged");
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "f-triaged", "grade": "no-break"}).to_string(),
+    )
+    .must(OK, "round 1's triage: one graded, two left");
+    for (key, by) in [("f-triaged", "triages"), ("f-left", "left without a grade")] {
+        let other = build(&format!("deleted-{key}"));
+        other
+            .run(
+                &triage_set(RUN, "1"),
+                &json!({"key": "f-triaged", "grade": "no-break"}).to_string(),
+            )
+            .must(OK, "round 1's triage");
+        without(&other, &ledger_path(), &format!("`{key}`"));
+        refusal(
+            &other,
+            &[key, by],
+            "a ledger row a recorded triage names, deleted",
+        );
+    }
+    // A row a hand ADDED is no finding of the run either.
+    let text = rig.read(&ledger_path());
+    let added = text
+        .lines()
+        .find(|line| line.contains("`f-left`"))
+        .expect("the row")
+        .replace("`f-left`", "`f-by-hand`");
+    fs::write(rig.root.join(ledger_path()), format!("{text}{added}\n")).expect("add a row");
+    refusal(&rig, &["f-by-hand"], "a ledger row added by hand");
+
+    // An item's LAST result: its re-run's row, which made the clause green. Without the
+    // round's count of its runs the state would read "void, and its one re-run is due".
+    let rig = build("deleted-result");
+    assert!(
+        table(&rig.read(&round_path("1")), &ROUND_COLUMNS).contains(&vec![
+            "`ran`".to_owned(),
+            "`check-clause-a a1, row-clause-b a2`".to_owned()
+        ]),
+        "the round's record counts the runs of each item"
+    );
+    let results = rig.root.join(results_path("1"));
+    let text = fs::read_to_string(&results).expect("the results");
+    let last = text.lines().last().expect("a row");
+    assert!(last.contains("`row-clause-b` | 2 |"), "{last}");
+    fs::write(&results, text.replace(&format!("{last}\n"), "")).expect("delete the last result");
+    refusal(
+        &rig,
+        &["attempt 2 of row-clause-b", "round.md"],
+        "an item's last result, deleted",
+    );
+    rerun(&rig, 1, 1, "row-clause-b", "green").refused(
+        CORRUPT,
+        "the re-run a quieter state would have asked for again",
+    );
+    // An item's ONLY result, and a result a hand added.
+    let rig = build("deleted-only-result");
+    without(&rig, &results_path("1"), "`check-clause-a`");
+    refusal(
+        &rig,
+        &["attempt 1 of check-clause-a"],
+        "an item's only result, deleted",
+    );
+    let rig = build("added-result");
+    let text = rig.read(&results_path("1"));
+    let extra = text
+        .lines()
+        .last()
+        .expect("a row")
+        .replace("| 2 |", "| 3 |");
+    fs::write(rig.root.join(results_path("1")), format!("{text}{extra}\n")).expect("add a result");
+    refusal(
+        &rig,
+        &["attempt 3 of row-clause-b", "does not count"],
+        "a result added by hand",
+    );
+}
+
+/// **The attempts of a stage are counted from the last one that reached its record.** A
+/// batch that holds a stage's report check is the record of that attempt, and `apply` says
+/// so in the round's record; an attempt after it that left reports and nothing else is
+/// counted, one more is made without the human, and then the stage is the human's — who
+/// grants one more attempt, one grant one attempt.
+#[test]
+fn the_attempts_of_a_stage_are_counted_from_the_last_that_reached_its_record() {
+    let rig = two_clause_run("attempts", r#""stop": "at-the-bound", "rounds": 9"#);
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "round 1's scope");
+    rig.seed_rows(&["f-open"]);
+    // Attempt 1 halted after its preflight; attempt 2 reaches its record, as a stage's
+    // batch: the reports checked, what each item did, the triage, the candidate.
+    rig.run(&report(RUN, "1", "preflight", "1"), BODY)
+        .must(OK, "attempt 1's report");
+    rig.run(&report(RUN, "1", "preflight", "2"), BODY)
+        .must(OK, "attempt 2's report");
+    let unrecorded = |rig: &Rig| rig.state()["rounds"][0]["test_unrecorded"].clone();
+    assert_eq!(unrecorded(&rig), json!(2));
+    let batch = json!([
+        call(check_reports(RUN, "1", "2", &["preflight"]), ""),
+        call(
+            result_set(RUN, "1", &candidate(1)),
+            &json!([ran("check-clause-a", "green"), ran("row-clause-b", "green")]).to_string()
+        ),
+        call(
+            triage_set(RUN, "1"),
+            &json!({"key": "f-open", "grade": "breaks"}).to_string()
+        ),
+        call(
+            round_set(RUN, "1"),
+            &json!({"candidate": candidate(1)}).to_string()
+        ),
+    ]);
+    rig.run(&apply(RUN, Some("1")), &batch.to_string())
+        .must(OK, "the stage's record");
+    rig.run(&keeper("settle", RUN), "").must(OK, "its commit");
+    assert!(
+        table(&rig.read(&round_path("1")), &ROUND_COLUMNS)
+            .contains(&vec!["`recorded`".to_owned(), "`test a2`".to_owned()]),
+        "the batch that held the report check is the record of that attempt"
+    );
+    let read = rig.state();
+    assert_eq!(
+        (
+            unrecorded(&rig),
+            &read["next"],
+            &read["position"]["test"],
+            &read["human_stages"]
+        ),
+        (
+            json!(0),
+            &json!("triage"),
+            &json!({"round": 1, "attempt": 3, "triage": true}),
+            &json!([])
+        ),
+        "an attempt that reached its record is counted against nothing: {read}"
+    );
+
+    // The finishing invocation halts at its preflight: a report, and no record. Once more
+    // is automatic.
+    rig.run(&report(RUN, "1", "preflight", "3"), BODY)
+        .must(OK, "the halted finishing attempt's report");
+    let read = rig.state();
+    assert_eq!(
+        (unrecorded(&rig), &read["next"], &read["position"]["test"]),
+        (
+            json!(1),
+            &json!("triage"),
+            &json!({"round": 1, "attempt": 4, "triage": true})
+        ),
+        "{read}"
+    );
+    let before = rig.snapshot();
+    rig.run(&round_set(RUN, "1"), &json!({"again": "test"}).to_string())
+        .refused(
+            BAD_VALUE,
+            "one more attempt before the automatic one is spent",
+        );
+    assert_eq!(rig.snapshot(), before);
+    // It halts again: the stage is the human's, with the reason, and it is refused.
+    rig.run(&report(RUN, "1", "preflight", "4"), BODY)
+        .must(OK, "the second halted attempt's report");
+    let read = rig.state();
+    let spent = json!([{"stage": "test", "round": 1, "cycle": null, "at": "test",
+                        "attempt": 5, "attempts": 2, "why": "not-recorded-after-retry"}]);
+    assert_eq!(
+        (
+            &read["next"],
+            &read["human_stages"],
+            &read["position"]["test"],
+            &read["untriaged"]
+        ),
+        (
+            &json!("rule"),
+            &spent,
+            &json!({"refused": "attempts-spent", "round": 1}),
+            &json!([{"key": "f-open", "why": "unverified"}])
+        ),
+        "{read}"
+    );
+    let before = rig.snapshot();
+    for (round, stage, why) in [
+        ("1", "fix", "one more attempt of the other stage"),
+        (
+            "2",
+            "test",
+            "one more attempt in a round the run has not begun",
+        ),
+    ] {
+        rig.run(&round_set(RUN, round), &json!({"again": stage}).to_string())
+            .refused(BAD_VALUE, why);
+    }
+    rig.run(&round_set(RUN, "1"), &json!({"again": "both"}).to_string())
+        .refused(BAD_VALUE, "one more attempt of no stage");
+    assert_eq!(rig.snapshot(), before);
+    let seen = rig.run(&round_set(RUN, "1"), &json!({"again": "test"}).to_string());
+    seen.must(OK, "one more attempt, granted");
+    assert_eq!(seen.json()["facts"]["again"], json!(["test a5"]));
+    let read = rig.state();
+    assert_eq!(
+        (
+            &read["next"],
+            &read["position"]["test"],
+            &read["human_stages"]
+        ),
+        (
+            &json!("triage"),
+            &json!({"round": 1, "attempt": 5, "triage": true}),
+            &json!([])
+        ),
+        "{read}"
+    );
+    // The granted attempt reaches its record: the count starts again from it.
+    rig.run(&report(RUN, "1", "preflight", "5"), BODY)
+        .must(OK, "attempt 5's report");
+    let finished = json!([
+        call(check_reports(RUN, "1", "5", &["preflight"]), ""),
+        call(
+            triage_set(RUN, "1"),
+            &json!({"key": "f-open", "grade": "breaks", "verdict": "refuted"}).to_string()
+        ),
+    ]);
+    rig.run(&apply(RUN, Some("1")), &finished.to_string())
+        .must(OK, "the finished triage's record");
+    rig.run(&keeper("settle", RUN), "").must(OK, "its commit");
+    let read = rig.state();
+    assert_eq!(
+        (
+            unrecorded(&rig),
+            &read["next"],
+            &read["rounds"][0]["facts"]["recorded"]
+        ),
+        (json!(0), &json!("close"), &json!(["test a5"])),
+        "{read}"
+    );
+
+    // WHAT IS DELETED IS MISSED: the reports of an attempt that reached its record.
+    fs::remove_file(rig.root.join(report_path("1", "preflight", "5"))).expect("delete a report");
+    let seen = rig.run(&state(RUN), "");
+    seen.refused(CORRUPT, "the reports of a recorded attempt, deleted");
+    assert!(
+        seen.stderr.contains("attempt 5 of test"),
+        "it names the attempt: {}",
+        seen.stderr
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 28 · The writer × state table: a write is taken only where the state asks for it
+// ---------------------------------------------------------------------------
+
+/// The positions of a run the table is driven at, in the order of every row's cells —
+/// each stood up through the script's own writers by [`place`].
+const PLACES: [&str; 17] = [
+    "the opening: nothing written, no round",
+    "ready, and no round yet",
+    "round 1 begun: a scope, and no record",
+    "tested, a blocker open: a fixer's",
+    "tested, a finding unverified: the triage is finished once more",
+    "tested, the finding unverified after its retry: the human's",
+    "tested, a finding outside the test set: the human's list",
+    "tested, nothing open, every clause green: close",
+    "tested, an item void: its re-run",
+    "tested, the re-run spent: the human's clause",
+    "every round a stop: stopped after round 1",
+    "every round a stop: the go given",
+    "a round that landed: the next round's test",
+    "stopped at the bound across rounds, in round 2",
+    "stopped at the bound on a round's cycles",
+    "round 1 begun, two attempts without a record: the human's stage",
+    "a dropped round: the next round's test",
+];
+
+/// Stand position `n` of [`PLACES`] up in a rig of its own.
+fn place(n: usize) -> Rig {
+    let label = format!("place-{n}");
+    let both = [("check-clause-a", "green"), ("row-clause-b", "green")];
+    let voided = [("check-clause-a", "green"), ("row-clause-b", "void")];
+    let rig = match n {
+        0 => Rig::new(&label),
+        10 | 11 => two_clause_run(&label, EVERY_ROUND),
+        13 => two_clause_run(&label, r#""stop": "at-the-bound", "rounds": 1"#),
+        _ => two_clause_run(&label, BOUNDED),
+    };
+    // A finding that is recorded everywhere: a row for the writers of the ledger to name.
+    let mut prop = row_at("prop", INSIDE);
+    prop["grade"] = json!("no-break");
+    prop["graded_by"] = json!("human");
+    rig.run(&ledger_add(RUN), &prop.to_string())
+        .must(OK, "a recorded finding");
+    let begun = |rig: &Rig| {
+        rig.run(
+            &scope_set(RUN, "1"),
+            &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+        )
+        .must(OK, "round 1's scope");
+    };
+    let found = |rig: &Rig, round: &str, door: &str, entry: Value| {
+        rig.run(&ledger_add(RUN), &row_at("blocker", door).to_string())
+            .must(OK, "a finding");
+        rig.run(&triage_set(RUN, round), &entry.to_string())
+            .must(OK, "its triage");
+    };
+    let confirmed =
+        json!({"key": "blocker", "grade": "breaks", "verdict": "confirmed", "regression": false});
+    let unverified = json!({"key": "blocker", "grade": "breaks"});
+    let fact = |rig: &Rig, round: &str, facts: Value| {
+        rig.run(&round_set(RUN, round), &facts.to_string())
+            .must(OK, "a fact of the round");
+    };
+    match n {
+        0 | 1 => {}
+        2 => begun(&rig),
+        3 | 14 | 16 => {
+            tested_round(&rig, 1, true, &both, json!({}));
+            found(&rig, "1", INSIDE, confirmed);
+            if n == 14 {
+                fact(&rig, "1", json!({"cycles": 3}));
+            }
+            if n == 16 {
+                fact(&rig, "1", json!({"outcome": "dropped"}));
+            }
+        }
+        4 | 5 => {
+            tested_round(&rig, 1, true, &both, json!({}));
+            found(&rig, "1", INSIDE, unverified.clone());
+            if n == 5 {
+                rig.run(&triage_set(RUN, "1"), &unverified.to_string())
+                    .must(OK, "the triage, once more");
+            }
+        }
+        6 => {
+            tested_round(&rig, 1, true, &both, json!({}));
+            found(&rig, "1", EXCLUDED, confirmed);
+        }
+        7 | 10 | 11 | 12 => {
+            tested_round(&rig, 1, true, &both, json!({}));
+            if n == 11 {
+                fact(&rig, "1", json!({"go": true}));
+            }
+            if n == 12 {
+                fact(&rig, "1", json!({"cycles": 1}));
+            }
+        }
+        8 | 9 => {
+            tested_round(&rig, 1, true, &voided, json!({}));
+            if n == 9 {
+                rerun(&rig, 1, 1, "row-clause-b", "void").must(OK, "the one re-run");
+            }
+        }
+        13 => {
+            tested_round(&rig, 1, true, &both, json!({}));
+            fact(&rig, "1", json!({"cycles": 1}));
+            tested_round(&rig, 2, true, &both, json!({}));
+            found(&rig, "2", INSIDE, confirmed);
+        }
+        15 => {
+            begun(&rig);
+            for attempt in ["1", "2"] {
+                rig.run(&report(RUN, "1", "preflight", attempt), BODY)
+                    .must(OK, "an attempt's report");
+            }
+        }
+        _ => unreachable!("a place of the table"),
+    }
+    rig
+}
+
+/// What each place answers, by hand: `(next, stop.why, begins)`.
+const PLACE_SAYS: [(&str, Option<&str>, Option<u64>); 17] = [
+    ("not-ready", None, Some(1)),
+    ("test", None, Some(1)),
+    ("test", None, None),
+    ("fix", None, None),
+    ("triage", None, None),
+    ("rule", None, None),
+    ("rule", None, None),
+    ("close", None, Some(2)),
+    ("retest", None, None),
+    ("rule", None, Some(2)),
+    ("stop", Some("every-round"), None),
+    ("close", None, Some(2)),
+    ("test", None, Some(2)),
+    ("stop", Some("round-bound"), None),
+    ("stop", Some("cycle-bound"), None),
+    ("rule", None, None),
+    ("test", None, Some(2)),
+];
+
+/// One write of the table: a writer — where it names a round, for the latest round the
+/// run has begun (`here`; round 1 where it has begun none) and for the round after it
+/// (`next`) — or one fact of a writer that takes facts. `takes` is a cell per place of
+/// [`PLACES`], WRITTEN BY HAND: `a` the state takes it (exit 0), `r` it is refused as not
+/// asked for or as written once, and the tree is as it was, `s` the table takes it and
+/// the round has no scope to write it under.
+struct Taken {
+    name: &'static str,
+    takes: &'static str,
+    call: fn(&Rig, &Value, usize) -> Seen,
+}
+
+/// The round's candidate where it is tested, else one of its own.
+fn commit_of(read: &Value, round: usize) -> String {
+    read["rounds"]
+        .as_array()
+        .expect("the rounds")
+        .iter()
+        .find(|held| held["round"] == json!(round))
+        .and_then(|held| held["facts"]["candidate"].as_str())
+        .map_or_else(|| candidate(round), str::to_owned)
+}
+
+fn fact_of_round(rig: &Rig, round: usize, facts: Value) -> Seen {
+    rig.run(&round_set(RUN, &round.to_string()), &facts.to_string())
+}
+
+fn fact_of_run(rig: &Rig, facts: Value) -> Seen {
+    rig.run(&run_set(RUN), &facts.to_string())
+}
+
+fn written_report(rig: &Rig, _: &Value, round: usize) -> Seen {
+    rig.run(&report(RUN, &round.to_string(), "prop", "9"), BODY)
+}
+
+fn written_scope(rig: &Rig, _: &Value, round: usize) -> Seen {
+    rig.run(
+        &scope_set(RUN, &round.to_string()),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+}
+
+fn written_triage(rig: &Rig, _: &Value, round: usize) -> Seen {
+    rig.run(
+        &triage_set(RUN, &round.to_string()),
+        &json!({"key": "prop", "grade": "no-break"}).to_string(),
+    )
+}
+
+fn written_result(rig: &Rig, read: &Value, round: usize) -> Seen {
+    rig.run(
+        &result_set(RUN, &round.to_string(), &commit_of(read, round)),
+        &ran("row-clause-b", "green").to_string(),
+    )
+}
+
+fn written_gate(rig: &Rig, read: &Value, round: usize) -> Seen {
+    let summary = rig.summary("place", &[], &[]);
+    rig.run(
+        &gate_set(RUN, &round.to_string(), &commit_of(read, round), &summary),
+        "",
+    )
+}
+
+const ANYWHERE: &str = "aaaaaaaaaaaaaaaaa";
+const NOWHERE: &str = "rrrrrrrrrrrrrrrrr";
+/// A round the run has not begun is written only where the state hands it to a `test`
+/// stage: after a round that left nothing open, was dropped, or landed — and never past
+/// a stop, past an open round, or while a re-run is what is asked.
+const WHERE_A_ROUND_BEGINS: &str = "rrrrrrrararaarrra";
+/// … where the write then meets a round with no scope yet.
+const WHERE_A_ROUND_BEGINS_UNSCOPED: &str = "rrrrrrrsrsrssrrrs";
+/// What a round's test stage records is taken while the round is not tested.
+const WHILE_NOT_TESTED: &str = "aaarrrrrrrrrrrrar";
+/// What the opening writes once is taken where the run does not hold it yet.
+const AT_THE_OPENING: &str = "arrrrrrrrrrrrrrrr";
+
+const HERE: &[Taken] = &[
+    Taken {
+        name: "report",
+        takes: ANYWHERE,
+        call: written_report,
+    },
+    Taken {
+        name: "scope-set",
+        takes: "aarrrrrrrrrrrrrrr",
+        call: written_scope,
+    },
+    Taken {
+        name: "triage-set",
+        takes: "ssaaaaaaaaaaaaaaa",
+        call: written_triage,
+    },
+    Taken {
+        name: "result-set",
+        takes: "ssarrrrrarrrrrrar",
+        call: written_result,
+    },
+    Taken {
+        name: "gate-set",
+        takes: WHILE_NOT_TESTED,
+        call: written_gate,
+    },
+    Taken {
+        name: "ledger-add",
+        takes: ANYWHERE,
+        call: |rig, _, _| {
+            let mut new = row_at("prop-new", INSIDE);
+            new["grade"] = json!("no-break");
+            new["graded_by"] = json!("human");
+            rig.run(&ledger_add(RUN), &new.to_string())
+        },
+    },
+    Taken {
+        name: "ledger-set",
+        takes: ANYWHERE,
+        call: |rig, _, _| {
+            rig.run(
+                &ledger_set(RUN),
+                &json!({"key": "prop", "disposition": "later"}).to_string(),
+            )
+        },
+    },
+    Taken {
+        name: "bound-set",
+        takes: ANYWHERE,
+        call: |rig, _, _| rig.run(&bound_set(RUN, "prop-bound", &BOUND), ""),
+    },
+    Taken {
+        name: "item-set",
+        takes: ANYWHERE,
+        call: |rig, _, _| rig.run(&item_set(RUN), &item("prop-item").to_string()),
+    },
+    Taken {
+        name: "apply",
+        takes: ANYWHERE,
+        call: |rig, _, _| {
+            let mut new = row_at("prop-new", INSIDE);
+            new["grade"] = json!("no-break");
+            new["graded_by"] = json!("human");
+            let batch = json!([call(ledger_add(RUN), &new.to_string())]);
+            rig.run(&apply(RUN, None), &batch.to_string())
+        },
+    },
+    Taken {
+        name: "round-set candidate",
+        takes: "ssarrrrrrrrrrrrar",
+        call: |rig, _, round| fact_of_round(rig, round, json!({"candidate": sha('9')})),
+    },
+    Taken {
+        name: "round-set base",
+        takes: WHILE_NOT_TESTED,
+        call: |rig, _, round| fact_of_round(rig, round, json!({"base": "abcdef1"})),
+    },
+    Taken {
+        name: "round-set binary",
+        takes: WHILE_NOT_TESTED,
+        call: |rig, _, round| fact_of_round(rig, round, json!({"binary": sha256('9')})),
+    },
+    Taken {
+        name: "round-set cross-model",
+        takes: WHILE_NOT_TESTED,
+        call: |rig, _, round| fact_of_round(rig, round, json!({"cross-model": ["row-clause-b"]})),
+    },
+    Taken {
+        name: "round-set cross-model-void",
+        takes: WHILE_NOT_TESTED,
+        call: |rig, _, round| {
+            fact_of_round(rig, round, json!({"cross-model-void": ["row-clause-b"]}))
+        },
+    },
+    Taken {
+        // One more fix cycle: in the latest round, tested, where a fix stage works — not
+        // past either bound, and not in a round the human left.
+        name: "round-set cycles",
+        takes: "rrraaaaaaaaaarrrr",
+        call: |rig, read, round| {
+            let held = read["rounds"]
+                .as_array()
+                .expect("the rounds")
+                .iter()
+                .find(|held| held["round"] == json!(round))
+                .map_or(0, |held| held["facts"]["cycles"].as_u64().expect("a count"));
+            fact_of_round(rig, round, json!({"cycles": held + 1}))
+        },
+    },
+    Taken {
+        // The human's exit from the latest round, once it is tested — at a bound too.
+        name: "round-set outcome",
+        takes: "rrraaaaaaaaaaaarr",
+        call: |rig, _, round| fact_of_round(rig, round, json!({"outcome": "part"})),
+    },
+    Taken {
+        // The go: at the stop after a round — and said again where it stands.
+        name: "round-set go",
+        takes: "rrrrrrrrrraarrrrr",
+        call: |rig, _, round| fact_of_round(rig, round, json!({"go": true})),
+    },
+    Taken {
+        name: "round-set granted",
+        takes: "rrrrrrrrrarrrrrrr",
+        call: |rig, _, round| fact_of_round(rig, round, json!({"granted": "clause-b"})),
+    },
+    Taken {
+        name: "round-set reverify",
+        takes: "rrrrrarrrrrrrrrrr",
+        call: |rig, _, round| fact_of_round(rig, round, json!({"reverify": "blocker"})),
+    },
+    Taken {
+        name: "round-set again",
+        takes: "rrrrrrrrrrrrrrrar",
+        call: |rig, _, round| fact_of_round(rig, round, json!({"again": "test"})),
+    },
+    Taken {
+        name: "round-set ran",
+        takes: NOWHERE,
+        call: |rig, _, round| fact_of_round(rig, round, json!({"ran": ["row-clause-b a1"]})),
+    },
+    Taken {
+        name: "round-set awaiting",
+        takes: NOWHERE,
+        call: |rig, _, round| fact_of_round(rig, round, json!({"awaiting": ["prop ungraded 1"]})),
+    },
+    Taken {
+        name: "round-set recorded",
+        takes: NOWHERE,
+        call: |rig, _, round| fact_of_round(rig, round, json!({"recorded": ["test a1"]})),
+    },
+    Taken {
+        name: "run-set stop",
+        takes: AT_THE_OPENING,
+        call: |rig, read, _| {
+            let other = if read["facts"]["stop"] == "every-round" {
+                "at-the-bound"
+            } else {
+                "every-round"
+            };
+            fact_of_run(rig, json!({"stop": other}))
+        },
+    },
+    Taken {
+        name: "run-set previous",
+        takes: AT_THE_OPENING,
+        call: |rig, _, _| fact_of_run(rig, json!({"previous": "9.9.9"})),
+    },
+    Taken {
+        name: "run-set previous-commit",
+        takes: AT_THE_OPENING,
+        call: |rig, _, _| fact_of_run(rig, json!({"previous-commit": sha('f')})),
+    },
+    Taken {
+        name: "run-set scope",
+        takes: AT_THE_OPENING,
+        call: |rig, _, _| fact_of_run(rig, json!({"scope": "everything"})),
+    },
+    Taken {
+        name: "run-set clauses",
+        takes: AT_THE_OPENING,
+        call: |rig, _, _| fact_of_run(rig, json!({"clauses": ["another-clause"]})),
+    },
+    Taken {
+        // The bound across rounds: at the opening and before any round — and raised only
+        // at the stop it names.
+        name: "run-set rounds",
+        takes: "aarrrrrrrrrrrarrr",
+        call: |rig, read, _| {
+            let held = read["facts"]["rounds"].as_u64().unwrap_or(4);
+            fact_of_run(rig, json!({"rounds": held + 1}))
+        },
+    },
+    Taken {
+        // The bound on a round's cycles: the same, at its own stop.
+        name: "run-set cycles",
+        takes: "aarrrrrrrrrrrrarr",
+        call: |rig, _, _| fact_of_run(rig, json!({"cycles": 4})),
+    },
+    Taken {
+        name: "run-set findings",
+        takes: NOWHERE,
+        call: |rig, _, _| fact_of_run(rig, json!({"findings": ["prop"]})),
+    },
+];
+
+/// The writes that name a round, for the round AFTER the latest one the run has begun.
+const NEXT: &[Taken] = &[
+    Taken {
+        name: "report",
+        takes: WHERE_A_ROUND_BEGINS,
+        call: written_report,
+    },
+    Taken {
+        name: "scope-set",
+        takes: WHERE_A_ROUND_BEGINS,
+        call: written_scope,
+    },
+    Taken {
+        name: "triage-set",
+        takes: WHERE_A_ROUND_BEGINS_UNSCOPED,
+        call: written_triage,
+    },
+    Taken {
+        name: "result-set",
+        takes: WHERE_A_ROUND_BEGINS_UNSCOPED,
+        call: written_result,
+    },
+    Taken {
+        name: "gate-set",
+        takes: WHERE_A_ROUND_BEGINS,
+        call: written_gate,
+    },
+    Taken {
+        name: "round-set base",
+        takes: WHERE_A_ROUND_BEGINS,
+        call: |rig, _, round| fact_of_round(rig, round, json!({"base": "abcdef1"})),
+    },
+];
+
+/// What a refusal of the script lists after `opens`, up to the next ` —` or the line's end.
+fn listed_in(seen: &Seen, opens: &str) -> BTreeSet<String> {
+    let (_, rest) = seen
+        .stderr
+        .split_once(opens)
+        .unwrap_or_else(|| panic!("the refusal lists them after `{opens}`: {}", seen.stderr));
+    rest.trim_end()
+        .split(" — ")
+        .next()
+        .expect("a list")
+        .split(", ")
+        .map(str::to_owned)
+        .collect()
+}
+
+fn copy_tree(from: &Path, to: &Path) {
+    fs::create_dir_all(to).expect("create a directory");
+    for entry in fs::read_dir(from).expect("read a directory") {
+        let entry = entry.expect("an entry");
+        let target = to.join(entry.file_name());
+        if entry.file_type().expect("its type").is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), &target).expect("copy a file");
+        }
+    }
+}
+
+/// **A recorded fact is accepted only where the state asks for it** (the review's `F7` is
+/// the case in hand; the repair plan's change C5). The table is the script's own —
+/// `WRITERS`, `ROUND_TAKES`, `RUN_TAKES` — and this arm holds it cell by cell: EVERY
+/// writer, and EVERY fact of a round's record and of the run's, driven at EVERY position
+/// of [`PLACES`], each cell's expectation written by hand in the row. And the rows are
+/// held to the script's own lists — its subcommands, and the facts its two fact writers
+/// name — so a writer or a fact added later has a row here, or this arm is red; and the
+/// script itself takes no call while its own table lacks one.
+#[test]
+fn every_writer_and_every_fact_is_taken_only_where_the_state_asks_for_it() {
+    // The rows are the script's own lists, whole.
+    let rig = Rig::new("table-lists");
+    let named: BTreeSet<String> = subcommands(&rig).into_iter().collect();
+    let facts_of = |args: Vec<String>, opens: &str| {
+        let seen = rig.run(&args, "{}");
+        seen.refused(BAD_VALUE, "facts that say nothing");
+        listed_in(&seen, opens)
+    };
+    let round_facts = facts_of(round_set(RUN, "1"), "naming at least one of ");
+    let run_facts = facts_of(run_set(RUN), "naming at least one of ");
+    assert!(
+        round_facts.len() >= 14 && run_facts.len() >= 8,
+        "the script lists its facts: {round_facts:?} {run_facts:?}"
+    );
+    let rows: BTreeSet<String> = HERE.iter().map(|write| write.name.to_owned()).collect();
+    let mut owed: BTreeSet<String> = named
+        .iter()
+        .filter(|name| {
+            !READERS.contains(&name.as_str())
+                && !KEEPERS.contains(&name.as_str())
+                && !["round-set", "run-set"].contains(&name.as_str())
+        })
+        .cloned()
+        .collect();
+    owed.extend(round_facts.iter().map(|fact| format!("round-set {fact}")));
+    owed.extend(run_facts.iter().map(|fact| format!("run-set {fact}")));
+    assert_eq!(
+        rows, owed,
+        "the table's rows (left) are every writer and every fact the script names (right)"
+    );
+    assert_eq!(HERE.len(), rows.len(), "and no row stands twice");
+    for write in HERE.iter().chain(NEXT) {
+        assert!(
+            write.takes.len() == PLACES.len()
+                && write.takes.chars().all(|cell| "ars".contains(cell)),
+            "`{}` has a cell per place",
+            write.name
+        );
+    }
+
+    // The table, cell by cell: a thread per place, the place stood up once and put back
+    // as it was before every write.
+    let cells: usize = std::thread::scope(|threads| {
+        let workers: Vec<_> = (0..PLACES.len())
+            .map(|n| {
+                threads.spawn(move || {
+                    let rig = place(n);
+                    let read = rig.state();
+                    let (next, stop, begins) = PLACE_SAYS[n];
+                    assert_eq!(
+                        json!([read["next"], read["stop"]["why"], read["begins"]]),
+                        json!([next, stop, begins]),
+                        "the place `{}`: {read}",
+                        PLACES[n]
+                    );
+                    let pristine = rig.tmp.join("pristine");
+                    copy_tree(&rig.run_dir(), &pristine);
+                    let here = usize::try_from(read["round"].as_u64().unwrap_or(1))
+                        .expect("a round");
+                    let mut driven = 0;
+                    for (writes, round) in [(HERE, here), (NEXT, here + 1)] {
+                        for write in writes {
+                            fs::remove_dir_all(rig.run_dir()).expect("clear the run");
+                            copy_tree(&pristine, &rig.run_dir());
+                            let before = rig.snapshot();
+                            let seen = (write.call)(&rig, &read, round);
+                            let what = format!(
+                                "`{}` for round {round} at `{}`",
+                                write.name, PLACES[n]
+                            );
+                            match write.takes.as_bytes()[n] {
+                                b'a' => {
+                                    seen.must(OK, &what);
+                                }
+                                b's' => {
+                                    seen.refused(NO_SCOPE, &what);
+                                }
+                                _ => {
+                                    assert!(
+                                        [Some(BAD_VALUE), Some(EXISTS)].contains(&seen.code),
+                                        "{what}: refused as not asked for, or as written once: {seen:?}"
+                                    );
+                                    assert_eq!(rig.snapshot(), before, "{what}: nothing written");
+                                }
+                            }
+                            driven += 1;
+                        }
+                    }
+                    driven
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .map(|worker| worker.join().expect("a place's thread"))
+            .sum()
+    });
+    assert_eq!(cells, (HERE.len() + NEXT.len()) * PLACES.len());
+
+    // COVERED BY CONSTRUCTION: a fact or a subcommand added to the script without its row
+    // in the script's own table is no call the script takes — every call says so.
+    for (from, to, names) in [
+        (
+            "ROUND_FACTS = (\"candidate\",",
+            "ROUND_FACTS = (\"landed\", \"candidate\",",
+            "landed",
+        ),
+        (
+            "RUN_FACTS = (\"stop\",",
+            "RUN_FACTS = (\"laps\", \"stop\",",
+            "laps",
+        ),
+        (
+            "    command(\"recover\", recover_, [])\n",
+            "    command(\"recover\", recover_, [])\n    command(\"forget\", recover_, [])\n",
+            "forget",
+        ),
+    ] {
+        let other = Rig::new(&format!("table-{names}"));
+        let script = other.root.join(SCRIPT);
+        let text = fs::read_to_string(&script).expect("the rig's script");
+        assert!(text.contains(from), "the script's own list: `{from}`");
+        fs::write(&script, text.replace(from, to)).expect("add one without its row");
+        for args in [state(RUN), ledger_add(RUN), run_set(RUN)] {
+            let seen = other.run(&args, &row("audit-f3").to_string());
+            seen.refused(FAULT, "a call of a script whose table lacks a row");
+            assert!(
+                seen.stderr.contains(names) && seen.stderr.contains("writer x state table"),
+                "it names what has no row: {}",
+                seen.stderr
+            );
+        }
+    }
 }

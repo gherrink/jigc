@@ -986,13 +986,17 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
     let test_stage = function(&full, "runTest");
     let fix_stage = function(&full, "runFix");
 
-    // The human's go after a stop, one more re-run of a clause, and the raised bound are
-    // facts of the record — and the rulings step writes them, and nothing else does.
+    // The human's go after a stop, one more re-run of a clause, one more triage of a
+    // finding, one more attempt of a stage, and either bound raised are facts of the record
+    // — and the rulings step writes them, and nothing else does.
     let step = function(&full, "rulingsRecordPrompt");
     for written in [
         "value: { go: true }",
         "value: { granted: r.rerun }",
+        "value: { reverify: r.reverify }",
+        "value: { again: r.again }",
         "value: { rounds: r.rounds }",
+        "value: { cycles: r.cycles }",
         "'round-set --run '",
         "'run-set --run '",
     ] {
@@ -1002,10 +1006,16 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
         );
     }
     let elsewhere = without(&full, &["rulingsRecordPrompt", "selfTest"]);
-    for fact in ["go: true", "granted:", "run-set --run"] {
+    for fact in [
+        "go: true",
+        "granted:",
+        "reverify: r",
+        "again: r",
+        "run-set --run",
+    ] {
         assert!(
             !elsewhere.contains(fact),
-            "`{fact}` stands outside the rulings step: a go, a granted re-run or a raised bound has a second writer"
+            "`{fact}` stands outside the rulings step: a go, a grant or a raised bound has a second writer"
         );
     }
 

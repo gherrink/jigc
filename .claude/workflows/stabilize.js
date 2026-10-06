@@ -167,10 +167,16 @@
 //               On `test` the invocation records them on the loop branch and starts nothing
 //               — the road they take while the `fix` stage refuses to start.
 //               About the run, either stage — the invocation records them and starts nothing:
-//               [{ go: true } | { rerun: '<clause>' } | { rounds: N }] — the go after the
-//               stop the state names (`stop.why: 'every-round'`); one more re-run of a clause
-//               the state lists in `human_clauses`; the bound across rounds, raised (the go
-//               after `stop.why: 'round-bound'`). The two kinds are two invocations.
+//               [{ go: true } | { rerun: '<clause>' } | { rounds: N } | { cycles: N }
+//               | { reverify: '<key>' } | { again: 'test' | 'fix' }] — the go after the
+//               stop the state names (`stop.why: 'every-round'`), which answers that stop and
+//               no later one; one more re-run of a clause the state lists in `human_clauses`;
+//               the bound across rounds, raised (the go after `stop.why: 'round-bound'`), and
+//               the bound on a round's fix cycles, raised (after `stop.why: 'cycle-bound'`);
+//               one more triage of a finding the state's `human_list` names as still ungraded
+//               or unverified after its retry; one more attempt of a stage the state lists in
+//               `human_stages`. The record script takes each only while its state asks for it.
+//               The two kinds are two invocations.
 //   raise     — OPTIONAL, `fix` only: { cycles: N }, the human's raise of the cycle bound.
 //   exit      — OPTIONAL, `fix` only: 'drop' or { part: [ … ] }, the human's exit at a bound.
 //   stopAfter — OPTIONAL: return after a named step (STOPS), for tuning. Nothing is recorded.
@@ -378,9 +384,11 @@ function distinct(list) {
 // validateRulings — the `rulings` argument, or why it is refused. A ruling is one of the
 // human's three dispositions on a finding, or a declared bound; nothing else is one.
 // runRuling — whether a ruling is about the RUN and not about a finding or a bound: the go
-// after a stop, one more re-run of a clause, the bound across rounds raised.
+// after a stop, one more re-run of a clause, one more triage of a finding, one more attempt
+// of a stage, and either bound raised.
+const RUN_RULINGS = ['go', 'rerun', 'rounds', 'cycles', 'reverify', 'again']
 function runRuling(r) {
-  return plain(r) && (r.go != null || r.rerun != null || r.rounds != null)
+  return plain(r) && RUN_RULINGS.some((name) => r[name] != null)
 }
 function validateRulings(rulings) {
   if (!Array.isArray(rulings) || rulings.length === 0) return 'args.rulings must be a non-empty list of rulings'
@@ -390,11 +398,14 @@ function validateRulings(rulings) {
     if (!plain(r)) return 'a ruling must be an object, not ' + JSON.stringify(r)
     if (runRuling(r)) {
       const named = Object.keys(r)
-      if (named.length !== 1) return 'a ruling about the run names one thing — `go`, `rerun` or `rounds` — and nothing beside it: ' + JSON.stringify(r)
+      if (named.length !== 1) return 'a ruling about the run names one thing — ' + RUN_RULINGS.map((name) => '`' + name + '`').join(', ') + ' — and nothing beside it: ' + JSON.stringify(r)
       if (r.go != null && r.go !== true) return 'the human\'s go is `go` as true, or is not passed at all: ' + JSON.stringify(r)
       if (r.rerun != null && !isSlug(r.rerun)) return '`rerun` names the clause that is granted one more re-run, a slug as the clause table spells it: ' + JSON.stringify(r)
       if (r.rounds != null && !(Number.isInteger(r.rounds) && r.rounds >= 1 && r.rounds <= MAX_ROUNDS)) return '`rounds` is the bound across rounds, raised: a whole number from 1 to ' + MAX_ROUNDS + ', not ' + JSON.stringify(r.rounds)
-      about.push(named[0] + ':' + (r.rerun || ''))
+      if (r.cycles != null && !(Number.isInteger(r.cycles) && r.cycles > DEFAULT_CYCLES && r.cycles <= MAX_CYCLES)) return '`cycles` is the bound on a round\'s fix cycles, raised: a whole number above ' + DEFAULT_CYCLES + ' and at most ' + MAX_CYCLES + ', not ' + JSON.stringify(r.cycles)
+      if (r.reverify != null && !isSlug(r.reverify)) return '`reverify` names the finding that is granted one more triage, by its ledger key: ' + JSON.stringify(r)
+      if (r.again != null && !STAGES.includes(r.again)) return '`again` names the stage that is granted one more attempt — ' + STAGES.join(' or ') + ': ' + JSON.stringify(r)
+      about.push(named[0] + ':' + (r.rerun || r.reverify || r.again || ''))
       continue
     }
     const declares = r.bound != null
@@ -418,7 +429,7 @@ function validateRulings(rulings) {
   }
   if (!distinct(keys)) return 'args.rulings rules on a finding more than once'
   if (!distinct(about)) return 'args.rulings says the same thing about the run more than once'
-  if (about.length && about.length !== rulings.length) return 'args.rulings mixes rulings about the run (`go`, `rerun`, `rounds`) with rulings on a finding or a bound: the first are recorded on the loop branch by an invocation that starts nothing, the others ride the round — two invocations'
+  if (about.length && about.length !== rulings.length) return 'args.rulings mixes rulings about the run (' + RUN_RULINGS.map((name) => '`' + name + '`').join(', ') + ') with rulings on a finding or a bound: the first are recorded on the loop branch by an invocation that starts nothing, the others ride the round — two invocations'
   return null
 }
 
@@ -436,14 +447,14 @@ const NOT_FIT = {
   fix: 'its repair and the re-review of that repair are not recorded',
 }
 // notFit — why an invocation's stage refuses to start, or null. Asked before any agent runs.
-// An invocation that only records what the human ruled ABOUT THE RUN (`go`, `rerun`,
-// `rounds`) starts no stage — it runs two reads and the one record step, on the loop branch,
+// An invocation that only records what the human ruled ABOUT THE RUN (RUN_RULINGS) starts
+// no stage — it runs two reads and the one record step, on the loop branch,
 // exactly as the other stage's does — and is not refused. A ruling on a finding, or a
 // declared bound, is the stage's own first step and is refused with it.
 function notFit(a) {
   if (!NOT_FIT[a.stage]) return null
   if (a.rulings != null && a.rulings.every(runRuling)) return null
-  return 'the `' + a.stage + '` stage is NOT FIT FOR USE and refuses to start: ' + NOT_FIT[a.stage] + '. The build of the stabilization workflow was reviewed red — its record is ' + BUILD_RECORD + ' — and a stage is used only once its half is repaired and re-reviewed. Nothing was run: no agent, no read. What is taken meanwhile: ' + STAGES.filter((stage) => !NOT_FIT[stage]).map((stage) => 'the `' + stage + '` stage').concat(['what the human rules about the run (args.rulings: `go`, `rerun`, `rounds`), which either stage records and which starts nothing']).join('; and ') + '. A ruling on a finding or a declared bound is this stage\'s own first step and waits with it — until then an invocation of `test` that carries only such rulings records them on the loop branch, and starts nothing'
+  return 'the `' + a.stage + '` stage is NOT FIT FOR USE and refuses to start: ' + NOT_FIT[a.stage] + '. The build of the stabilization workflow was reviewed red — its record is ' + BUILD_RECORD + ' — and a stage is used only once its half is repaired and re-reviewed. Nothing was run: no agent, no read. What is taken meanwhile: ' + STAGES.filter((stage) => !NOT_FIT[stage]).map((stage) => 'the `' + stage + '` stage').concat(['what the human rules about the run (args.rulings: ' + RUN_RULINGS.map((name) => '`' + name + '`').join(', ') + '), which either stage records and which starts nothing']).join('; and ') + '. A ruling on a finding or a declared bound is this stage\'s own first step and waits with it — until then an invocation of `test` that carries only such rulings records them on the loop branch, and starts nothing'
 }
 
 // validateArgs — every refusal that precedes the first agent. Returns the message of the
@@ -548,11 +559,12 @@ function hashMismatch(expected, returns) {
 
 // outcomeOf — `next` exactly as the state document gives it, and whether this script knows
 // the value. It knows nothing else about it — but `rule` is the human's step for a finding
-// on the human's list and for a clause that is still not green after its one re-run, so
-// both lists go back with it.
+// on the human's list (one that is still ungraded or unverified after its retry among them:
+// its `why` says so), for a clause that is still not green after its one re-run, and for a
+// stage whose attempts did not reach their record, so all three lists go back with it.
 function outcomeOf(state) {
   const out = { next: state.next, known: KNOWN_NEXT.includes(state.next) }
-  if (out.next === 'rule') out.rule = { findings: state.human_list || [], clauses: state.human_clauses || [] }
+  if (out.next === 'rule') out.rule = { findings: state.human_list || [], clauses: state.human_clauses || [], stages: state.human_stages || [] }
   return out
 }
 
@@ -565,6 +577,8 @@ const REFUSALS = {
   'not-tested': 'the round\'s `test` stage has not reached its record — it is run again first, as the next attempt',
   'round-open': 'the round is tested and a finding of it is still open — run `fix`, record the human\'s rulings with it, or drop the round (args.exit = \'drop\'); where the state\'s `next` is `triage`, the stage whose position says `triage` finishes the round\'s triage first',
   'round-over': 'the round is over — the next stage is `test`',
+  'cycle-bound': 'the bound on a round\'s fix cycles is spent — as many fix -> audit cycles are recorded in this round as it allows — and the next step is the human\'s: one more cycle is allowed by the raised bound, passed as a ruling about the run (args.rulings, `cycles`), which records it (`dev/stabilize-record run-set`) and starts nothing; the other exits are to rule on what is still open, or to leave the round',
+  'attempts-spent': 'this stage has left reports and no record in this round as many times in a row as are tried without the human — the state\'s `human_stages` names it — and one more attempt is the human\'s to grant: pass it as a ruling about the run (args.rulings, `again`), which records it and starts nothing; what the earlier attempts halted on is in their returns and their reports',
   'round-bound': 'the bound across rounds is spent — as many rounds have a fix stage on record as it allows — and one more fix round is the human\'s to allow: pass the raised bound as a ruling about the run (args.rulings, `rounds`), which records it (`dev/stabilize-record run-set`) and starts nothing',
   'stopped': 'the run stops after every round, and the round is over: the next one waits for the human\'s go — pass it as a ruling about the run (args.rulings, `go`), which records it and starts nothing; the state\'s `stop.then` names the step that follows',
 }
@@ -581,6 +595,11 @@ function runRulingsFault(rulings, state) {
     if (r.go != null && !(state.next === 'stop' && state.stop && state.stop.why === 'every-round')) return 'the run is not stopped after a round for the human\'s go — its `next` is `' + state.next + '`' + (state.stop ? ' (' + state.stop.why + ')' : '') + ': a go is recorded for that stop and for no other state'
     if (r.rerun != null && !(state.human_clauses || []).some((c) => c.clause === r.rerun)) return 'the clause `' + r.rerun + '` is not the human\'s: one more re-run is granted to a clause that is still not green after its re-run — the state\'s `human_clauses` names ' + ((state.human_clauses || []).map((c) => c.clause).join(', ') || 'none')
     if (r.rounds != null && facts.rounds != null && r.rounds <= facts.rounds) return 'the bound across rounds is ' + facts.rounds + ': `rounds` raises it, and ' + r.rounds + ' does not'
+    if (r.rounds != null && (state.rounds || []).length && !(state.not_ready || []).length && !(state.stop && state.stop.why === 'round-bound')) return 'the run is not stopped at its bound across rounds — its `next` is `' + state.next + '`' + (state.stop ? ' (' + state.stop.why + ')' : '') + ': once a round is begun that bound is raised at its own stop, and at no other state'
+    if (r.cycles != null && !(state.next === 'stop' && state.stop && state.stop.why === 'cycle-bound')) return 'the run is not stopped at the bound on a round\'s fix cycles — its `next` is `' + state.next + '`' + (state.stop ? ' (' + state.stop.why + ')' : '') + ': that bound is raised at its own stop, and at no other state'
+    if (r.cycles != null && facts.cycles != null && r.cycles <= facts.cycles) return 'the bound on a round\'s fix cycles is ' + facts.cycles + ': `cycles` raises it, and ' + r.cycles + ' does not'
+    if (r.reverify != null && !(state.human_list || []).some((f) => f.key === r.reverify && /-after-retry$/.test(String(f.why)))) return 'the finding `' + r.reverify + '` is not the human\'s to grant one more triage: that is granted to a finding the state\'s `human_list` names as still ungraded or unverified after its retry — it names ' + ((state.human_list || []).filter((f) => /-after-retry$/.test(String(f.why))).map((f) => f.key).join(', ') || 'none')
+    if (r.again != null && !(state.human_stages || []).some((h) => h.stage === r.again)) return 'the `' + r.again + '` stage is not the human\'s to grant one more attempt: that is granted to a stage the state\'s `human_stages` names — it names ' + ((state.human_stages || []).map((h) => h.stage).join(', ') || 'none')
   }
   return null
 }
@@ -1248,17 +1267,21 @@ function stageRecordCommands(ctx, rec) {
 // rulingsRecordPrompt — THE one step through which the human's rulings reach the record
 // (ruling 4): the three dispositions that are the human's, and the rows of the declared-
 // bounds list. No other function of this script composes either call with those values.
-function rulingsRecordPrompt(v, round, branch, rulings, ran) {
+function rulingsRecordPrompt(v, round, branch, rulings, ran, at) {
   const calls = []
-  // What the human ruled about the run: the go after the stop that follows `round`, one
+  // What the human ruled about the run: the go after the stop that follows `round`; one
   // more re-run of a clause — a fact of every round that selected an item of it whose
-  // re-run is spent — and the bound across rounds, raised. The record script takes the
-  // first two only while the state asks for them.
+  // re-run is spent; one more triage of a finding — a fact of the latest round, whose
+  // record counts them; one more attempt of a stage — a fact of the round it is spent in;
+  // and either bound, raised. The record script takes each only while the state asks for it.
   const about = rulings.filter((r) => runRuling(r))
   for (const r of about) {
     const facts = r.go != null ? [{ value: { go: true }, call: 'round-set --run ' + v.run + ' --round ' + round }]
       : r.rerun != null ? ran[r.rerun].map((spentIn) => ({ value: { granted: r.rerun }, call: 'round-set --run ' + v.run + ' --round ' + spentIn }))
-        : [{ value: { rounds: r.rounds }, call: 'run-set --run ' + v.run }]
+        : r.reverify != null ? [{ value: { reverify: r.reverify }, call: 'round-set --run ' + v.run + ' --round ' + at.round }]
+          : r.again != null ? [{ value: { again: r.again }, call: 'round-set --run ' + v.run + ' --round ' + at.stages[r.again] }]
+            : r.cycles != null ? [{ value: { cycles: r.cycles }, call: 'run-set --run ' + v.run }]
+              : [{ value: { rounds: r.rounds }, call: 'run-set --run ' + v.run }]
     for (const fact of facts) calls.push(call(fact.call, [], fact.value))
   }
   const bounds = rulings.filter((r) => r.bound != null)
@@ -1308,6 +1331,7 @@ function selfTest() {
     ['a go beside a finding\'s ruling', Object.assign({}, fix, { rulings: [{ go: true }, { key: 'f-1', ruling: later }] })], ['a go with a note', Object.assign({}, base, { rulings: [{ go: true, note: 'on' }] })], ['a go and a re-run in one entry', Object.assign({}, base, { rulings: [{ go: true, rerun: 'no-lost-files' }] })],
     ['a re-run of no clause', Object.assign({}, base, { rulings: [{ rerun: 'No lost files' }] })], ['a re-run granted twice', Object.assign({}, fix, { rulings: [{ rerun: 'no-lost-files' }, { rerun: 'no-lost-files' }] })],
     ['a bound that is no number', Object.assign({}, fix, { rulings: [{ rounds: '4' }] })], ['a bound of no round', Object.assign({}, base, { rulings: [{ rounds: 0 }] })], ['half a round', Object.assign({}, base, { rulings: [{ rounds: 3.5 }] })],
+    ['a cycle bound that raises nothing', Object.assign({}, base, { rulings: [{ cycles: DEFAULT_CYCLES }] })], ['a cycle bound that is no number', Object.assign({}, fix, { rulings: [{ cycles: '4' }] })], ['one more triage of no finding', Object.assign({}, base, { rulings: [{ reverify: 'Not a key' }] })], ['one more triage granted twice', Object.assign({}, base, { rulings: [{ reverify: 'f-1' }, { reverify: 'f-1' }] })], ['one more attempt of no stage', Object.assign({}, base, { rulings: [{ again: 'triage' }] })], ['one more attempt beside a finding\'s ruling', Object.assign({}, base, { rulings: [{ again: 'test' }, { key: 'f-1', ruling: later }] })], ['one more triage and one more attempt in one entry', Object.assign({}, base, { rulings: [{ reverify: 'f-1', again: 'test' }] })],
     ['a go beside a scope', Object.assign({}, base, { scope: 'everything', rulings: [{ go: true }] })], ['a go beside a clause', Object.assign({}, base, { clause: 'no-lost-files', rulings: [{ go: true }] })], ['a raised bound beside an exit', Object.assign({}, fix, { exit: 'drop', rulings: [{ rounds: 4 }] })], ['a go beside a tuning stop', Object.assign({}, fix, { stopAfter: 'rulings', rulings: [{ go: true }] })],
     ['an exit on test', Object.assign({}, base, { exit: 'drop' })], ['no ruling at all', Object.assign({}, fix, { rulings: [] })],
     ['a ruling that is not the human\'s', Object.assign({}, fix, { rulings: [{ key: 'f-1', ruling: 'fixed' }] })],
@@ -1336,7 +1360,7 @@ function selfTest() {
     Object.assign({}, base, { scope: { doors: ['jigc setup', 'jigc doc show'] } }), Object.assign({}, base, { stopAfter: 'preflight', model: 'sonnet' }),
     Object.assign({}, base, { clause: 'no-lost-files' }), Object.assign({}, base, { crossModel: ['row-3'] }), Object.assign({}, base, { crossModel: ['row-3', 'row-7'] }),
     Object.assign({}, fix, { raise: { cycles: DEFAULT_CYCLES + 1 } }), Object.assign({}, fix, { exit: 'drop' }), Object.assign({}, fix, { exit: { part: ['abcdef1', '0123456789abcdef0123456789abcdef01234567'] } }),
-    Object.assign({}, base, { rulings: [{ go: true }] }), Object.assign({}, fix, { rulings: [{ go: true }, { rerun: 'no-lost-files' }, { rerun: 'no-regression' }] }), Object.assign({}, fix, { rulings: [{ rounds: 4 }] }), Object.assign({}, base, { rulings: [{ rounds: 4 }, { rerun: 'no-lost-files' }] }),
+    Object.assign({}, base, { rulings: [{ go: true }] }), Object.assign({}, fix, { rulings: [{ go: true }, { rerun: 'no-lost-files' }, { rerun: 'no-regression' }] }), Object.assign({}, fix, { rulings: [{ rounds: 4 }] }), Object.assign({}, base, { rulings: [{ rounds: 4 }, { rerun: 'no-lost-files' }] }), Object.assign({}, base, { rulings: [{ reverify: 'f-1' }, { reverify: 'f-2' }, { again: 'test' }] }), Object.assign({}, fix, { rulings: [{ cycles: 4 }, { again: 'fix' }] }),
     Object.assign({}, base, { rulings: [{ key: 'f-1', ruling: later }] }), Object.assign({}, base, { rulings: [{ key: 'f-1', ruling: admitted, note: 'n' }, { bound: 'b', reach: 'x', where: 'y', pin: 'unpinned' }] }),
     Object.assign({}, fix, { rulings: [{ key: 'f-1', ruling: admitted, note: 'build the robust path' }, { key: 'f-2', ruling: later }, { key: 'f-3', ruling: bound, bound: 'non-jigc-writer', reach: 'races against a writer that is not jigc', where: 'the stop after round 1, item 3', pin: 'unpinned' }, { bound: 'planted-state', reach: 'a state nobody reaches', where: 'the stop after round 1', pin: 'flow12::planted' }] }),
   ]
@@ -1395,10 +1419,10 @@ function selfTest() {
     check('next relayed verbatim: ' + JSON.stringify(next), out.next === next && out.known === ['fix', 'rule', 'close'].includes(next))
   }
   const ruled = outcomeOf({ next: 'rule', human_list: [{ key: 'f-1', why: 'outside' }], human_clauses: [{ clause: 'no-lost-files', why: 'not-green-after-its-rerun' }] })
-  check('`rule` goes back with both of the human\'s lists', JSON.stringify(ruled.rule) === JSON.stringify({ findings: [{ key: 'f-1', why: 'outside' }], clauses: [{ clause: 'no-lost-files', why: 'not-green-after-its-rerun' }] }) && JSON.stringify(outcomeOf({ next: 'rule' }).rule) === JSON.stringify({ findings: [], clauses: [] }) && outcomeOf({ next: 'fix', human_list: [{ key: 'f-1' }] }).rule === undefined)
-  for (const word of ['not-ready', 'no-round', 'not-tested', 'round-open', 'round-over', 'round-bound', 'stopped']) check('a refusal the orchestrator can act on: ' + word, isText(refusalOf({ refused: word, round: 1 })) && !refusalOf({ refused: word, round: 1 }).includes('no sentence'))
+  check('`rule` goes back with all three of the human\'s lists', JSON.stringify(ruled.rule) === JSON.stringify({ findings: [{ key: 'f-1', why: 'outside' }], clauses: [{ clause: 'no-lost-files', why: 'not-green-after-its-rerun' }], stages: [] }) && JSON.stringify(outcomeOf({ next: 'rule', human_stages: [{ stage: 'test', round: 1 }] }).rule) === JSON.stringify({ findings: [], clauses: [], stages: [{ stage: 'test', round: 1 }] }) && outcomeOf({ next: 'fix', human_list: [{ key: 'f-1' }] }).rule === undefined)
+  for (const word of ['not-ready', 'no-round', 'not-tested', 'round-open', 'round-over', 'round-bound', 'cycle-bound', 'attempts-spent', 'stopped']) check('a refusal the orchestrator can act on: ' + word, isText(refusalOf({ refused: word, round: 1 })) && !refusalOf({ refused: word, round: 1 }).includes('no sentence'))
   check('a refusal nobody defined is said to be one', refusalOf({ refused: 'round-closed', round: 1 }).includes('no sentence') && refusalOf({ refused: 'not-ready', round: null }).includes('run-set') && refusalOf({ refused: 'round-bound', round: 3 }).includes('run-set'))
-  check('a refusal the human lifts names the ruling that lifts it', refusalOf({ refused: 'stopped', round: 1 }).includes('args.rulings') && refusalOf({ refused: 'round-bound', round: 3 }).includes('args.rulings') && refusalOf({ refused: 'round-open', round: 1 }).includes('`triage`'))
+  check('a refusal the human lifts names the ruling that lifts it', refusalOf({ refused: 'stopped', round: 1 }).includes('args.rulings, `go`') && refusalOf({ refused: 'round-bound', round: 3 }).includes('args.rulings, `rounds`') && refusalOf({ refused: 'cycle-bound', round: 1 }).includes('args.rulings, `cycles`') && refusalOf({ refused: 'attempts-spent', round: 1 }).includes('args.rulings, `again`') && refusalOf({ refused: 'round-open', round: 1 }).includes('`triage`'))
 
   // What the human rules about the run is taken only where the state asks for it.
   const stoppedState = { next: 'stop', stop: { why: 'every-round', round: 2, then: 'test' }, human_clauses: [{ clause: 'no-lost-files', why: 'not-green-after-its-rerun' }], facts: { stop: 'every-round', rounds: 3 } }
@@ -1408,7 +1432,14 @@ function selfTest() {
   check('one more re-run is granted to a clause that is the human\'s, and to no other', typeof runRulingsFault([{ rerun: 'no-regression' }], stoppedState) === 'string' && typeof runRulingsFault([{ rerun: 'no-lost-files' }], boundState) === 'string' && typeof runRulingsFault([{ rerun: 'no-lost-files' }], {}) === 'string')
   check('the bound is raised, never lowered or said again', runRulingsFault([{ rounds: 4 }], boundState) === null && typeof runRulingsFault([{ rounds: 3 }], boundState) === 'string' && typeof runRulingsFault([{ rounds: 2 }], boundState) === 'string' && runRulingsFault([{ rounds: 1 }], { facts: { stop: 'every-round', rounds: null } }) === null)
   check('a ruling on a finding is recorded only on a row the ledger holds', findingRulingsFault([{ key: 'f-1', ruling: later }, { bound: 'b', reach: 'x', where: 'y', pin: 'z' }], { ledger: [{ key: 'f-1' }] }) === null && typeof findingRulingsFault([{ key: 'f-9', ruling: later }], { ledger: [{ key: 'f-1' }] }) === 'string' && typeof findingRulingsFault([{ key: 'f-1', ruling: later }], {}) === 'string')
-  check('which rulings are about the run', runRuling({ go: true }) && runRuling({ rerun: 'x' }) && runRuling({ rounds: 4 }) && !runRuling({ key: 'f-1', ruling: later }) && !runRuling({ bound: 'b', reach: 'x', where: 'y', pin: 'z' }) && !runRuling(null) && !runRuling('go'))
+  const cycleState = { next: 'stop', stop: { why: 'cycle-bound', round: 1, then: 'fix' }, facts: { stop: 'at-the-bound', rounds: 3, cycles: null } }
+  const retriedState = { next: 'rule', stop: null, human_list: [{ key: 'f-1', why: 'unverified-after-retry' }, { key: 'f-2', why: 'outside' }], human_stages: [{ stage: 'test', round: 2 }] }
+  const begun = { rounds: [{ round: 1 }], not_ready: [] }
+  check('the bound across rounds is raised at its own stop once a round is begun, and written before that', runRulingsFault([{ rounds: 4 }], Object.assign({}, boundState, begun)) === null && typeof runRulingsFault([{ rounds: 4 }], Object.assign({}, stoppedState, begun)) === 'string' && typeof runRulingsFault([{ rounds: 4 }], Object.assign({ next: 'fix', stop: null, facts: { rounds: 3 } }, begun)) === 'string' && runRulingsFault([{ rounds: 4 }], { next: 'test', stop: null, facts: { rounds: 3 }, rounds: [], not_ready: [] }) === null)
+  check('the bound on a round\'s cycles is raised at its own stop, and at no other', runRulingsFault([{ cycles: 4 }], cycleState) === null && typeof runRulingsFault([{ cycles: 4 }], boundState) === 'string' && typeof runRulingsFault([{ cycles: 4 }], stoppedState) === 'string' && typeof runRulingsFault([{ cycles: 4 }], Object.assign({}, cycleState, { facts: { cycles: 5 } })) === 'string')
+  check('one more triage is granted to a finding that is the human\'s after its retry, and to no other', runRulingsFault([{ reverify: 'f-1' }], retriedState) === null && typeof runRulingsFault([{ reverify: 'f-2' }], retriedState) === 'string' && typeof runRulingsFault([{ reverify: 'f-1' }], stoppedState) === 'string' && typeof runRulingsFault([{ reverify: 'f-1' }], {}) === 'string')
+  check('one more attempt is granted to a stage that is the human\'s, and to no other', runRulingsFault([{ again: 'test' }], retriedState) === null && typeof runRulingsFault([{ again: 'fix' }], retriedState) === 'string' && typeof runRulingsFault([{ again: 'test' }], stoppedState) === 'string')
+  check('which rulings are about the run', runRuling({ reverify: 'f-1' }) && runRuling({ again: 'test' }) && runRuling({ cycles: 4 }) && runRuling({ go: true }) && runRuling({ rerun: 'x' }) && runRuling({ rounds: 4 }) && !runRuling({ key: 'f-1', ruling: later }) && !runRuling({ bound: 'b', reach: 'x', where: 'y', pin: 'z' }) && !runRuling(null) && !runRuling('go'))
 
   // Every triage is handed the rows of the ledger whose triage nobody finished.
   const awaiting = { untriaged: [{ key: 'seeded-1', why: 'ungraded' }, { key: 'f-9', why: 'unverified' }], ledger: [{ key: 'f-1', grade: 'confirmed', door: 'd', clause: 'c', repro: 'r' }, { key: 'seeded-1', grade: 'ungraded', door: 'jigc setup', clause: 'no-lost-files', repro: 'the opening record, row 3' }, { key: 'f-9', grade: 'unclear', door: 'jigc rename', clause: 'no-regression', repro: 'r1/reports/fix/c1/fix-area-1.a1.md, left open 2' }] }
@@ -1537,6 +1568,8 @@ function selfTest() {
   const aboutTheRun = rulingsRecordPrompt(base, 2, 'fix/rc24-tier1', [{ go: true }, { rerun: 'no-lost-files' }, { rounds: 4 }], { 'no-lost-files': [1, 2] })
   const aboutCalls = batchOf(aboutTheRun.text)
   check('the rulings step writes the go, the granted re-run — in every round an item of the clause is spent in — and the raised bound', JSON.stringify(aboutCalls) === JSON.stringify([{ argv: ['round-set', '--run', 'rc24-tier1', '--round', '2'], stdin: '{"go":true}' }, { argv: ['round-set', '--run', 'rc24-tier1', '--round', '1'], stdin: '{"granted":"no-lost-files"}' }, { argv: ['round-set', '--run', 'rc24-tier1', '--round', '2'], stdin: '{"granted":"no-lost-files"}' }, { argv: ['run-set', '--run', 'rc24-tier1'], stdin: '{"rounds":4}' }]) && aboutTheRun.text.includes(' apply --run rc24-tier1 --round 2 --subject '))
+  const granted = batchOf(rulingsRecordPrompt(base, 3, 'fix/rc24-tier1', [{ reverify: 'f-1' }, { again: 'test' }, { cycles: 4 }], {}, { round: 2, stages: { test: 1 } }).text)
+  check('the rulings step writes one more triage in the latest round, one more attempt in the round the stage is spent in, and the raised cycle bound', JSON.stringify(granted) === JSON.stringify([{ argv: ['round-set', '--run', 'rc24-tier1', '--round', '2'], stdin: '{"reverify":"f-1"}' }, { argv: ['round-set', '--run', 'rc24-tier1', '--round', '1'], stdin: '{"again":"test"}' }, { argv: ['run-set', '--run', 'rc24-tier1'], stdin: '{"cycles":4}' }]))
   check('a ruling about the run writes no bound and no disposition', !aboutCalls.some((made) => ['bound-set', 'ledger-set'].includes(made.argv[0])) && aboutTheRun.text.includes('3 about the run') && rulingsText.includes('0 about the run') && !rulingsCalls.some((made) => ['round-set', 'run-set'].includes(made.argv[0])) && JSON.stringify(aboutTheRun.expect) === JSON.stringify({ calls: 4, checks: 0 }))
   check('the rulings step writes the bounds and the dispositions', JSON.stringify(rulingsCalls[0].argv) === JSON.stringify(['bound-set', '--run', 'rc24-tier1', '--bound', 'non-jigc-writer', '--scratch', '/tmp/scratch-1', '--reach', 'races against a writer that is not jigc', '--ruling', 'the stop after round 1, item 3', '--pin', 'unpinned']) && spelled(rulingsCalls[1]).startsWith('bound-set --run rc24-tier1 --bound planted-state ') && rulingsCalls[2].stdin === JSON.stringify([{ key: 'f-1', disposition: admitted, detail: 'build the robust path' }, { key: 'f-2', disposition: later }, { key: 'f-3', disposition: bound, detail: 'races against a writer that is not jigc' }]) && spelled(rulingsCalls[3]) === 'check-ledger --run rc24-tier1 -- f-1 f-2 f-3' && rulingsCalls.length === 4)
   check('a quote in a ruling cannot leave its argument', shq('it\'s a "bound" $(x) `y`') === '\'it\'\\\'\'s a "bound" $(x) `y`\'')
@@ -1895,7 +1928,7 @@ async function preflightOf(ctx, launch, parts, plan, phaseTitle) {
 }
 
 function attached(state) {
-  return { next: state.next, stop: state.stop, not_ready: state.not_ready, candidate: state.candidate, fix_rounds: state.fix_rounds, evidence: evidenceOf(state), blockers: state.blockers, human_list: state.human_list, untriaged: state.untriaged, retest: state.retest, human_clauses: state.human_clauses, unsettled: state.unsettled, forbids_close: state.forbids_close, position: state.position }
+  return { next: state.next, stop: state.stop, not_ready: state.not_ready, candidate: state.candidate, fix_rounds: state.fix_rounds, evidence: evidenceOf(state), blockers: state.blockers, human_list: state.human_list, untriaged: state.untriaged, retest: state.retest, human_clauses: state.human_clauses, human_stages: state.human_stages, unsettled: state.unsettled, forbids_close: state.forbids_close, position: state.position }
 }
 // What a stage returns of `next`: the value itself, always; the whole state beside it when
 // this script does not know the value; and with `close` the step the close owes first, and
@@ -1909,9 +1942,9 @@ function nextOf(state) {
 
 // rulingsStep — the ONE call of the step that records what the human ruled: its record, the
 // push of the branch it is on, and the state read back.
-async function rulingsStep(round, branch, ran) {
+async function rulingsStep(round, branch, ran, at) {
   phase('Record')
-  const ruled = await recordStep('rulings:r' + round, branch, rulingsRecordPrompt(v, round, branch, v.rulings, ran))
+  const ruled = await recordStep('rulings:r' + round, branch, rulingsRecordPrompt(v, round, branch, v.rulings, ran, at))
   if (ruled.fault) return { halted: halt('rulings', ruled.fault, { transient: !ruled.result, halt: ruled.result ? ruled.result.halt : null, gate: ruled.result ? ruled.result.gate : null, then: RECORD_THEN }) }
   const pushed = await toolStep('push:rulings', 'Record', 'push', pushPrompt(v, branch))
   if (!onIt(pushed, branch, true)) return { halted: gitHalt('push', pushed, 'the rulings are recorded on ' + branch + ' (' + ruled.result.commit + ') and the branch was not pushed') }
@@ -1926,7 +1959,7 @@ async function rulingsStep(round, branch, ran) {
 // recorded on the loop branch by the one step that may write them, NOTHING is started, and
 // the state's `next` goes back — which now names the step the human was asked about.
 async function ruleTheRun(state, checkedOut) {
-  const told = { status: 'refused', stage: v.stage, run: v.run, next: state.next, stop: state.stop, human_clauses: state.human_clauses }
+  const told = { status: 'refused', stage: v.stage, run: v.run, next: state.next, stop: state.stop, human_clauses: state.human_clauses, human_stages: state.human_stages }
   if (checkedOut !== loopBranch) return Object.assign(told, { message: 'an invocation that only records rulings records them on the loop branch ' + loopBranch + ', and `' + checkedOut + '` is checked out. Nothing was run beyond the two reads.' })
   const about = v.rulings.every(runRuling)
   const why = about ? runRulingsFault(v.rulings, state) : findingRulingsFault(v.rulings, state)
@@ -1934,7 +1967,10 @@ async function ruleTheRun(state, checkedOut) {
   // The rounds in which a clause has an item whose re-run is spent: where a grant is a fact.
   const ran = {}
   for (const c of state.clauses || []) ran[c.clause] = (c.items || []).filter((i) => i.rerun === 'spent').map((i) => i.round).filter((n, at, all) => all.indexOf(n) === at)
-  const ruled = await rulingsStep((about && state.stop ? state.stop.round : state.round) || 0, loopBranch, ran)
+  // The round a finding's passes are counted in, and the round each stage is spent in.
+  const stages = {}
+  for (const h of state.human_stages || []) stages[h.stage] = h.round
+  const ruled = await rulingsStep((about && state.stop ? state.stop.round : state.round) || 0, loopBranch, ran, { round: state.round, stages })
   if (ruled.halted) return ruled.halted
   return Object.assign({ status: 'ruled', stage: v.stage, run: v.run, rulings: v.rulings, record: ruled.record, message: 'the human\'s rulings ' + (about ? 'about the run' : 'on the round\'s findings and bounds') + ' are recorded, and nothing was started: `next` names the step.' }, nextOf(ruled.state))
 }

@@ -67,7 +67,13 @@
 //! **Defects the reviews recorded are pinned where a stage meets them, and repaired by
 //! nothing here.** Each such assertion says what the stage does *today* and names the
 //! finding by its id; the task that repairs it turns the assertion. They are `M3` and `M6`
-//! of the harness review and `F3` of the state machine's. **Turned by the repair's task 3,
+//! of the harness review. **Turned by the repair's task 6:** `F3` of the state machine's
+//! review — the laps of a triage that is not finished are counted on record, and after
+//! one more the next step is the human's, who rules or grants one more; the invocation
+//! that would finish a triage still halts at its preflight (`M6`, pinned), so what the
+//! simulation drives is the stage's attempts that reached no record, and — recorded here by
+//! the record script's own call, as a finishing lap's record would write it — a finding the
+//! round's triage left unverified a second time. **Turned by the repair's task 3,
 //! and asserted as repaired:** `M2` (a record step that returns no evidence), `M4` (a record
 //! step under a red gate) and the first of the build record's *Found while the workflow's
 //! doc was written* (the scope file of a stage that stopped). **Turned by its task 4:** the
@@ -1034,9 +1040,11 @@ fn an_unverified_finding_goes_back_as_triage_and_the_invocation_that_finishes_it
         "no instrument runs, and no triage either"
     );
 
-    // PINNED — F3 (state-machine.md): nothing counts the laps. The halted lap left a
-    // report, so the state hands the same stage the next attempt, and `next` is `triage`
-    // as before — with no bound and no way to the human.
+    // REPAIRED — F3 (state-machine.md): the laps are counted on record, and the loop has an
+    // exit. The stage's own attempt reached its record, and the batch that held its report
+    // check says so in the round's record; the halted lap left a report and reached none.
+    // ONE attempt without a record is tried once more without the human: the state hands
+    // the same stage the next attempt — and says what it counted.
     let state = sim.state();
     assert_eq!(state["next"], "triage", "F3: {state}");
     assert_eq!(
@@ -1045,10 +1053,151 @@ fn an_unverified_finding_goes_back_as_triage_and_the_invocation_that_finishes_it
         "F3: {state}"
     );
     assert_eq!(
+        json!([
+            state["rounds"][0]["facts"]["recorded"],
+            state["rounds"][0]["test_unrecorded"],
+            state["rounds"][0]["facts"]["awaiting"]
+        ]),
+        json!([["test a1"], 1, [format!("{key} unverified 1")]]),
+        "F3: the attempt that reached its record, the attempts since, and the finding the round's triage left without a verdict, once: {state}"
+    );
+    assert_eq!(
         sim.rig.rev("HEAD"),
         recorded,
         "the halted lap committed nothing"
     );
+
+    // THE FINDING, LEFT UNVERIFIED A SECOND TIME, IS THE HUMAN'S. No finishing lap reaches
+    // its record here (M6), so its record is written by the record script's own call, as
+    // that lap would write it: the same entry again, without a verdict.
+    sim.record(
+        &["triage-set", "--run", RUN, "--round", "1"],
+        &json!({"key": key, "grade": "breaks"}).to_string(),
+    );
+    sim.rig.commit(
+        "docs(record): the round's triage, once more — by hand, as a finishing lap records it",
+    );
+    sim.rig.git(&["push", "-q", "origin", LOOP]);
+    let state = sim.state();
+    assert_eq!(state["next"], "rule", "F3: {state}");
+    assert_eq!(
+        state["human_list"],
+        json!([{"key": key, "why": "unverified-after-retry"}]),
+        "F3: with the reason"
+    );
+    let refused = sim.invoke(sim.args("test", json!({})), json!({}));
+    assert_eq!(refused.result["status"], "refused", "{}", refused.result);
+    assert_eq!(
+        refused.result["refused"],
+        json!({"refused": "round-open", "round": 1}),
+        "F3: no invocation finishes that triage again unasked"
+    );
+    assert_eq!(refused.trace, lines(&TWO_READS));
+    // What the human may do is rule it — or grant one more triage, a fact the one step
+    // that records rulings writes, and that the record script takes only here.
+    let early = sim.invoke(
+        sim.args("test", json!({"rulings": [{"again": "test"}]})),
+        json!({}),
+    );
+    assert_eq!(early.result["status"], "refused", "{}", early.result);
+    assert_eq!(
+        early.trace,
+        lines(&TWO_READS),
+        "one more attempt of a stage nobody is asked about records nothing"
+    );
+    let granted = sim.invoke(
+        sim.args("test", json!({"rulings": [{"reverify": key}]})),
+        json!({}),
+    );
+    assert_eq!(granted.result["status"], "ruled", "{}", granted.result);
+    assert_eq!(
+        granted.agents(),
+        [
+            "git:state",
+            "git:state:test-1",
+            "record:rulings:r1",
+            "git:record:rulings:r1",
+            "git:push:rulings",
+            "git:state:test-2"
+        ],
+        "two reads, the one step that records rulings, its commit, the push, the state"
+    );
+    assert_eq!(granted.result["next"], "triage", "{}", granted.result);
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            state["rounds"][0]["facts"]["reverify"],
+            state["position"]["test"]
+        ]),
+        json!([[format!("{key} p3")], {"round": 1, "attempt": 3, "triage": true}]),
+        "F3: one grant, one more triage: {state}"
+    );
+
+    // THE STAGE THAT HALTS AGAIN IS THE HUMAN'S TOO. The granted lap halts where the first
+    // did (M6): two attempts in a row with a report and no record.
+    let halted_again = sim.invoke(sim.args("test", json!({})), json!({}));
+    assert_eq!(halted_again.result["status"], "halted");
+    assert_eq!(halted_again.result["halted"]["phase"], "preflight");
+    let state = sim.state();
+    assert_eq!(state["next"], "rule", "F3: {state}");
+    assert_eq!(
+        state["human_stages"],
+        json!([{"stage": "test", "round": 1, "cycle": null, "at": "test", "attempt": 4,
+                "attempts": 2, "why": "not-recorded-after-retry"}]),
+        "F3: the stage, how often it left reports and no record, and why it is the human's"
+    );
+    let spent = sim.invoke(sim.args("test", json!({})), json!({}));
+    assert_eq!(spent.result["status"], "refused", "{}", spent.result);
+    assert_eq!(
+        spent.result["refused"],
+        json!({"refused": "attempts-spent", "round": 1})
+    );
+    assert!(
+        spent.result["message"]
+            .as_str()
+            .is_some_and(|said| said.contains("args.rulings, `again`")),
+        "the refusal names the ruling that lifts it: {}",
+        spent.result
+    );
+    assert_eq!(spent.trace, lines(&TWO_READS), "and it launches nothing");
+    let again = sim.invoke(
+        sim.args("test", json!({"rulings": [{"again": "test"}]})),
+        json!({}),
+    );
+    assert_eq!(again.result["status"], "ruled", "{}", again.result);
+    assert_eq!(again.result["next"], "triage", "{}", again.result);
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            state["rounds"][0]["facts"]["again"],
+            state["position"]["test"],
+            state["human_stages"]
+        ]),
+        json!([["test a4"], {"round": 1, "attempt": 4, "triage": true}, []]),
+        "F3: one grant, one more attempt: {state}"
+    );
+
+    // … AND THE HUMAN RULES THE FINDING: one of the three dispositions, by the same step.
+    let ruled = sim.invoke(
+        sim.args(
+            "test",
+            json!({"rulings": [{"key": key, "ruling": "later", "note": "nobody can drive it"}]}),
+        ),
+        json!({}),
+    );
+    assert_eq!(ruled.result["status"], "ruled", "{}", ruled.result);
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            state["next"],
+            state["stop"]["then"],
+            state["untriaged"],
+            state["human_list"]
+        ]),
+        json!(["stop", "close", [], []]),
+        "the triage is finished by the ruling, and the round is over: {state}"
+    );
+    assert_eq!(sim.rig.status(), "");
 }
 
 /// A scenario's red gate: the fast tier failed, on these tests.
@@ -1837,8 +1986,9 @@ fn a_rerun_is_an_attempt_inside_its_round_begins_no_round_and_is_refused_where_t
             &format!("{RUN_DIR}/clauses.md"),
             &format!("{RUN_DIR}/r1/reports/test/preflight.a2.md"),
             &format!("{RUN_DIR}/r1/results.md"),
+            &format!("{RUN_DIR}/r1/round.md"),
         ]),
-        "the re-run's one report, its result, and the clause table the result rendered"
+        "the re-run's one report, its result, the clause table the result rendered — and the round's record, in which the record script counts the item's runs and names the attempt of the stage that reached its record"
     );
     assert_eq!(sim.rig.remote(LOOP), Some(sim.rig.rev("HEAD")), "pushed");
 

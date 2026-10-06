@@ -7,7 +7,8 @@
 # record script, as built" and "The record script reads the run back", and the three
 # entries of 2026-10-06, "The record script holds what the harness reads its work from",
 # "The run's decision table, settled" and "The decision table's holes, closed" — and, for
-# what a clause's status is, "Evidence belongs to a test-set item").
+# what a clause's status is, "Evidence belongs to a test-set item"; for the counters, the
+# exits and where a write is taken, "Every loop has a counter on record").
 #
 # A stage's reporters have a shell and no write tool, and what they write is public on
 # the next push and read by fences on the next gate. So neither an agent nor the harness
@@ -25,10 +26,11 @@
 #
 #   opening.md                              the opening record — the human-led step's, never
 #                                           this script's
-#   run.md                                  the run's facts: its stop mode, the bound across
-#                                           rounds, the previous release, the default
-#                                           scope and the clauses of its closing condition
-#                                                                        (run-set)
+#   run.md                                  the run's facts: its stop mode, its two bounds,
+#                                           the previous release, the default scope and
+#                                           the clauses of its closing condition (run-set)
+#                                           — and the census of the ledger, which this
+#                                           script counts (ledger-add, result-set)
 #   ledger.md                               one row per finding          (ledger-add, ledger-set,
 #                                                                         triage-set: the grade,
 #                                                                         result-set: a red run)
@@ -38,7 +40,11 @@
 #   test-set.md                             one row per instrument item  (item-set)
 #   r<N>/scope.md                           the round's doors            (scope-set)
 #   r<N>/triage.md                          the round's triage record    (triage-set)
-#   r<N>/round.md                           the round record: its facts  (round-set)
+#   r<N>/round.md                           the round record: its facts  (round-set) — and
+#                                           what this script counts in the round: the runs
+#                                           of each item (result-set), the findings its
+#                                           triage left (triage-set), the attempts of a
+#                                           stage that reached their record (apply)
 #   r<N>/results.md                         one row per run of an item the round's scope
 #                                           selected                     (result-set)
 #   r<N>/gate.md                            the candidate's gate: what the full gate
@@ -80,6 +86,10 @@
 #         grade, graded_by, bound, disposition, detail — optional, as for ledger-set
 #       A key the ledger already holds is not appended again and keeps its row: a
 #       finding found again inherits it. Prints {"ledger", "appended", "existing"}.
+#       THE LEDGER'S CENSUS: every key a call adds is named in the run's own record
+#       (run.md: findings), in the same batch. A row the census names is a row the ledger
+#       has, whoever deleted it: `state` and every writer of the ledger refuse (corrupt) a
+#       ledger that lacks one, or holds a row the census does not name.
 #
 #   dev/stabilize-record ledger-set --run R [--scratch DIR]... <patches.json
 #       One JSON object per row, or an array: key, and a grade or a disposition.
@@ -127,6 +137,10 @@
 #       (bad-value). A round with no scope is refused (no-scope).
 #       Prints {"results", "recorded": [{item, attempt, outcome}], "findings"} — the path,
 #       what was recorded, and the ledger keys this call filed or opened again.
+#       HOW MANY RUNS OF EACH ITEM THE ROUND HOLDS is counted into the round's own record
+#       by the same call (round.md: ran, as `<item> a<K>`): a result that is gone later —
+#       an item's last one, or its only one — is missed there, and `state` refuses (corrupt)
+#       results that hold fewer runs of an item, or more, than the record counts.
 #
 #       THE CLAUSE TABLE (clauses.md) IS RENDERED, AND NOTHING SETS A CLAUSE'S STATUS. It
 #       is the view of the derivation below — a row per clause of the run's census (run-set:
@@ -183,8 +197,14 @@
 #       The ledger's grade follows from the same entry, so the two cannot disagree: the
 #       verdict where there is one (regression, confirmed, refuted; by verify-real),
 #       else triage's grade. A disposition is never touched: a finding found again
-#       inherits its row's. Two files, ONE batch: both are written or neither is, and
+#       inherits its row's. Its files are ONE batch: all are written or none is, and
 #       a call killed between them is finished by the next writer (the journal, below).
+#       THE PASSES ARE COUNTED BY THIS CALL, never by an invocation and never supplied:
+#       every finding the record LEAVES without a grade or a verdict — named by an entry or
+#       not — is named in the round's own record (round.md: awaiting, as `<key> ungraded
+#       <K>` or `<key> unverified <K>`), K being how many of the round's triage records IN
+#       A ROW have left it for that reason. A finding the record settles is named no more,
+#       and one that changes from ungraded to unverified starts at 1 (state: `awaits`).
 #       Prints {"triage", "ledger", "recorded"}.
 #
 #   dev/stabilize-record item-set --run R [--scratch DIR]... <items.json
@@ -223,6 +243,10 @@
 #                      run that stops after every round. Taken only while the state's
 #                      `next` is `stop`, for that reason and that round; any other time it
 #                      is refused (bad-value), so a go never lifts a stop nobody has seen.
+#                      A GO ANSWERS ONE STOP: the record holds the count of fix cycles the
+#                      round had when it was given (`c<K>`), and it stands while the round
+#                      has that many. A round that is over AGAIN after one more fix cycle
+#                      stops again, and takes its own go.
 #         granted      the clause the human GRANTS ONE MORE RE-RUN, a slug: a clause
 #                      with an item this round's scope selected whose re-run is spent
 #                      and which is still not green. Taken only for a clause the state
@@ -230,19 +254,31 @@
 #                      else refused (bad-value). The record holds what it allows — the
 #                      next attempt of each such item, as `<item> a<K>` — and a later
 #                      grant adds to it: one grant, one more attempt.
-#                      Both are the human's rulings: the harness writes them in the one
-#                      step that records what the human ruled, and nowhere else — which
-#                      is the harness's to hold, never this script's (WHAT THIS SCRIPT
-#                      CANNOT KNOW, below).
+#         reverify     the finding the human GRANTS ONE MORE TRIAGE, a ledger key: one
+#                      the state's `human_list` names as still ungraded or unverified
+#                      after its retry (`…-after-retry`). A fact of the latest round, whose
+#                      record counts the passes; else refused (bad-value). The record
+#                      holds the pass it allows, as `<key> p<K>`: one grant, one more.
+#         again        test | fix — the stage the human GRANTS ONE MORE ATTEMPT: one the
+#                      state's `human_stages` names, in the round it is spent in; else
+#                      refused (bad-value). The record holds the attempt it allows, as
+#                      `test a<K>` or `fix-c<C> a<K>`: one grant, one attempt.
+#                      All four are the human's rulings: the harness writes them in the
+#                      one step that records what the human ruled, and nowhere else —
+#                      which is the harness's to hold, never this script's (WHAT THIS
+#                      SCRIPT CANNOT KNOW, below).
 #         cross-model       the items whose source pass was ALSO read by a model of
 #         cross-model-void  another family in this round, and the items named for such a
 #                      pass that did not get one — each an array of item ids, so that
 #                      the use of that pass, and how much of it, shows at every stop
-#       candidate, base, binary, outcome and go are written ONCE: a second, different
+#       candidate, base, binary and outcome are written ONCE: a second, different
 #       value is refused (exists). A candidate is taken for a round that has a scope
 #       (no-scope) and whose results are of runs on that commit (bad-value): a round is
-#       tested over the doors its scope resolved, on one candidate. NOTHING ELSE IS TAKEN,
-#       and none of it is free text.
+#       tested over the doors its scope resolved, on one candidate. EVERY FACT IS TAKEN
+#       ONLY WHERE THE STATE ASKS FOR IT (WHERE THE STATE TAKES A WRITE, below) — and a fact
+#       said again as it stands changes nothing and is taken anywhere. What the record
+#       holds beside these — ran, awaiting, recorded — this script counts, and no caller
+#       writes it. NOTHING ELSE IS TAKEN, and none of it is free text.
 #       Prints {"round", "facts"} — the path, and every fact the record now holds.
 #
 #   dev/stabilize-record run-set --run R <facts.json
@@ -250,17 +286,23 @@
 #       one of:
 #         stop         every-round | at-the-bound — when the run stops for the human of
 #                      its own accord: after every round, or only once the bound across
-#                      rounds is reached and work remains. It can be written again,
-#                      and nothing here asks who writes it
+#                      rounds is reached and work remains. Written ONCE (exists): the
+#                      other mode would take a stop at a spent bound away unseen.
 #         rounds       the bound across rounds: how many rounds may have a FIX STAGE on
 #                      record (state: the stop). A positive integer, which never goes
-#                      down. Only the human raises it, and a raise is this call again.
+#                      down. Only the human raises it, and a raise is this call again —
+#                      TAKEN ONLY AT ITS OWN STOP (`round-bound`): the raise is the go.
+#         cycles       the bound inside a round: how many fix -> audit cycles a round may
+#                      have (state: the stop). Three where it is not written; a number
+#                      above the one that holds, raised only at ITS stop (`cycle-bound`).
+#                      Either bound is also written while the run's opening is not done,
+#                      or before any round is begun.
 #         previous     the previous release's version (`1.2.3`, `1.2.3-rc.4`), and
 #         previous-commit  the commit it was released from, a full sha: what the second
 #                      binary of a round is built from, and what "a regression of the run"
 #                      is measured against. Each is written ONCE (exists).
 #         scope        delta | everything — the scope a round is started with when its
-#                      invocation names none
+#                      invocation names none. Written ONCE (exists).
 #         clauses      THE CENSUS: the clauses of the closing condition, a non-empty
 #                      array of slugs. Written ONCE (exists) — it is what the run must
 #                      satisfy, and what the clause table is held against: a clause the
@@ -269,33 +311,43 @@
 #       human-led step's prose, which this script neither writes nor reads; the step
 #       that writes it calls run-set before its one commit. A run that lacks them is NOT
 #       READY (state).
-#       NOTHING ELSE IS TAKEN, and none of it is free text. Prints {"run", "facts"} —
-#       the path, and every fact.
+#       What the table holds beside these — findings, the ledger's census — this script
+#       counts. NOTHING ELSE IS TAKEN, and none of it is free text. Prints {"run",
+#       "facts"} — the path, and every fact.
 #
 #   dev/stabilize-record state --run R
 #       The run's committed state, as one line of JSON; writes nothing. A run that was
 #       never opened is an answer here, not a refusal: {"run", "opened": false}.
 #       Otherwise:
 #         run, opened
-#         facts        {stop, rounds, previous, previous-commit, scope, clauses} as run-set
-#                      wrote them (null where it did not)
+#         facts        {stop, rounds, cycles, previous, previous-commit, scope, clauses}
+#                      as run-set wrote them (null where it did not; the bound on a
+#                      round's cycles is three where it is null), and findings: the
+#                      ledger's census
 #         not_ready    what the opening still owes, or []: no-clause-row (the census names
 #                      no clause, so the clause table has no row) · no-stop-mode ·
 #                      no-round-bound (the mode is at-the-bound, and no number is written)
 #                      · no-previous-release · no-default-scope
 #         rounds       per round with a directory: {round, scope, triage, record —
 #                      whether each file is there — facts: {candidate, base, binary,
-#                      cycles, outcome, go, granted, cross-model, cross-model-void}
-#                      as round-set wrote them (null where it did not; cycles 0, go false,
-#                      the three lists empty), results: [{item, attempt, commit, outcome,
+#                      cycles, outcome, go, granted, reverify, again, cross-model,
+#                      cross-model-void} as round-set wrote them (null where it did not;
+#                      cycles 0, the lists empty; go: whether the go STANDS — it was given
+#                      with as many fix cycles on record as the round has now) and {ran,
+#                      awaiting, recorded} as this script counted them,
+#                      results: [{item, attempt, commit, outcome,
 #                      reason, finding}] as result-set wrote them, in the order they were
 #                      recorded, reopened: the keys of the findings this
 #                      round's triage found again, standing, with a fix on their row —
 #                      the fixes that did not hold, counted where the round's stop shows
-#                      them — test_reports, test_attempt, fix_cycles: [{cycle, reports,
-#                      attempt}]}, the reports counted by file name and the attempt the
-#                      highest one a report's name carries (0 for none)
+#                      them — test_reports, test_attempt, test_unrecorded, fix_cycles:
+#                      [{cycle, reports, attempt, unrecorded}]}, the reports counted by
+#                      file name, the attempt the highest one a report's name carries (0
+#                      for none), and `unrecorded` how many attempts lie above the last
+#                      one that reached its record (THE ATTEMPTS OF A STAGE, below)
 #         round        the highest of them, or null
+#         begins       the round a write may BEGIN — the one a `test` stage is handed that
+#                      no directory holds yet — or null (WHERE THE STATE TAKES A WRITE)
 #         doors        that round's {included, excluded}, each [{door, registry,
 #                      derivation}] — or null before its scope is written
 #         bounds       [{bound, reach, ruling, pin}]
@@ -312,8 +364,15 @@
 #                                grade, bound, verdict, regression, found_with}, or null
 #                        reopened  whether its fix did not hold: it is open again
 #                        route   fix | human | triage | recorded, and `why`
+#                        awaits  null — or, for a finding the round's triage has not
+#                                finished, {why: ungraded | unverified, passes: how many
+#                                triage records of the latest round in a row left it so,
+#                                retry: due | spent}
 #         blockers     the keys routed fix
 #         human_list   [{key, why}] — the findings routed human
+#         human_stages [{stage, round, cycle, at, attempt, attempts, why}] — the stage
+#                      whose attempts are spent, when the step is that stage's: `attempt`
+#                      is the one a grant would allow, `attempts` how many left no record
 #         candidate    {round, commit, current} — the latest round that tested a
 #                      candidate, the commit it tested, and whether that candidate is
 #                      still the run's: false once a fix stage is on record in that round,
@@ -328,7 +387,8 @@
 #                      | {"candidate": "not-tested", round}]
 #         next         not-ready | test | triage | rule | fix | retest | close | stop
 #                      | unsettled
-#         stop         null — or, when next is stop, {why, round, then}
+#         stop         null — or, when next is stop, {why: every-round | round-bound |
+#                      cycle-bound, round, then}
 #         position     {test, fix} — what an invocation of each stage would work on
 #                      (below)
 #       A cell is given as the table holds it, a `|` unescaped; `-` for none is null
@@ -336,7 +396,11 @@
 #       outside its vocabulary, a triage record that disagrees with the doors it was
 #       computed from, a clause table that is not the one the results give, a tested round
 #       without a scope, a result whose earlier attempt is gone, or a red result whose
-#       finding the ledger lacks is refused (corrupt) — the state is never read on a guess. And a
+#       finding the ledger lacks is refused (corrupt) — the state is never read on a guess.
+#       AND WHAT IS DELETED IS MISSED, by the same refusal, naming what is gone: a ledger
+#       row that the census, a triage record or a round's count of what its triage left
+#       names; a result the round's record counts; the reports of an attempt the round's
+#       record says reached its record. And a
 #       run one of whose writes was killed between its files is refused (interrupted):
 #       half a batch is never read as a finished one. An applied batch that no commit
 #       holds yet is read like any working tree: it is what the files say.
@@ -354,7 +418,13 @@
 #         open, no-action        by the grade — no-action is neither a fix nor a ruling:
 #           ungraded             triage (ungraded)   — the round's triage is not
 #           breaks, unclear      triage (unverified)   finished: never a fixer's, and
-#                                never on the human's list as if it were verified
+#                                never on the human's list as if it were verified —
+#                                ONCE MORE, and then the human's: where the latest round's
+#                                record counts two triage records in a row that left it so
+#                                (awaiting), and the human granted no further pass
+#                                (reverify), the route is human (ungraded-after-retry,
+#                                unverified-after-retry). The human rules it — admitted,
+#                                bound, later — or grants one more triage.
 #           no-break, refuted    recorded (not-a-break)
 #           out-of-scope         recorded (out-of-scope) while its bound is on the
 #                                list; human (bound-not-listed) when it is not
@@ -445,7 +515,9 @@
 #         triage     a finding is routed triage: the round's triage is not finished. The
 #                    stage that left it finishes it (the position, below) — grading,
 #                    verification and the record, and no instrument run again
-#         rule       a finding is routed human: the human's list has an unruled item
+#         rule       a finding is routed human: the human's list has an unruled item — one
+#                    found outside the test set, one that needs a bound, or one the
+#                    round's triage could not settle in two passes
 #         fix        a finding is routed fix
 #       — and with nothing open, on a current candidate, by the clause table:
 #         rule       a clause's retry is spent (human_clauses): the human may grant it
@@ -458,11 +530,29 @@
 #                    such clause; one invocation runs the first one's due items of one
 #                    round (the position, below).
 #         close      every clause is green
+#       THE ATTEMPTS OF A STAGE. Where the step is a stage's — test, triage, fix, retest —
+#       and that stage has left reports and no record, in the directory it works in, as
+#       many times in a row as anything is tried without the human (twice: its own attempt
+#       and one more), the step is the human's instead: `next` is `rule`, `human_stages`
+#       names the stage, and its position is refused (attempts-spent) until the human
+#       grants one more attempt (round-set: again). (Only where the step IS that stage's:
+#       a round whose last cycle left nothing open still has to land, whatever halted
+#       before, and a bound that is spent is said first.) WHICH ATTEMPT REACHED ITS RECORD is a
+#       fact this script writes: a batch (apply) that holds a stage's report check is the
+#       record of that attempt, and names it in the round's record (recorded). An attempt
+#       that left no report is not counted: it stopped before any reporter wrote, and its
+#       halt went back to whoever invoked it.
 #       THE STOP. The step above can be the human's first: `next` is then `stop`, and
 #       `stop.then` is the step that follows the human's go.
 #         every-round  the run's stop mode is every-round, R is over — whatever the step
-#                      is — and R's record holds no `go`. THE HUMAN'S GO IS A RECORDED
-#                      FACT (round-set: go): once it is written, `next` answers the step.
+#                      is — and R's record holds no `go` that stands. THE HUMAN'S GO IS A
+#                      RECORDED FACT (round-set: go), AND IT ANSWERS ONE STOP: once it is
+#                      written, `next` answers the step — until a fix cycle is recorded
+#                      in R after it, where R, over again, stops again.
+#         cycle-bound  the step is `fix`, and R's record counts as many fix -> audit
+#                      cycles as the bound inside a round allows (facts.cycles, or
+#                      three). The human's exits: the bound raised (run-set: cycles), the
+#                      round left (round-set: outcome), or what is open ruled.
 #         round-bound  the mode is at-the-bound, the step is `fix`, no fix stage is on
 #                      record in R yet, and as many rounds have one as the bound allows
 #                      (fix_rounds >= facts.rounds): one more fix round would start here.
@@ -524,8 +614,10 @@
 #                                round is begun, no scope resolved. · fix as above
 #       Where the table says test {round R+1} and `next` is `stop` because the run stops
 #       after every round, test is refused (stopped) instead: round R+1 waits for the
-#       human's go. Where it says fix {…} and `next` is `stop` because the bound is spent,
-#       fix is refused (round-bound): one more fix round is the human's to allow. A
+#       human's go. Where it says fix {…} and `next` is `stop` because a bound is spent,
+#       fix is refused (round-bound, cycle-bound): one more fix round, or one more fix
+#       cycle, is the human's to allow. And where a stage's attempts are spent (THE
+#       ATTEMPTS OF A STAGE, above), its position is refused (attempts-spent). A
 #       refusal is {"refused": WORD, "round": R}. The state is read from the working
 #       tree, so it is the checked-out branch's: a fix stage's records ride its round
 #       branch until the round lands.
@@ -579,8 +671,11 @@
 #       APPLIED BATCH: its files with the sha256 each was written with and its text
 #       before, the subject of the commit that records it, the round whose candidate
 #       gate that commit is held to, and how many calls and which checks it ran. A run
-#       has one applied batch at a time (pending). Prints {"applied", "files", "results"}
-#       — one result per call, as that call prints it.
+#       has one applied batch at a time (pending). A BATCH THAT HOLDS A STAGE'S REPORT
+#       CHECK IS THE RECORD OF THAT ATTEMPT of the stage, and says so in the round's
+#       record (round.md: recorded, as `test a<K>` or `fix-c<C> a<K>`) — which is what the
+#       attempts that left no record are counted from (state). Prints {"applied", "files",
+#       "results"} — one result per call, as that call prints it.
 #
 #   dev/stabilize-record pending --run R
 #       What of the run is written and in no commit yet, AS THIS SCRIPT KNOWS IT; writes
@@ -621,13 +716,78 @@
 # between two writes, never across one. Every JSON result is one line on stdout, printed
 # once the call's batch has landed.
 #
+# WHERE THE STATE TAKES A WRITE — THE WRITER x STATE TABLE. A write is taken only where
+# the state asks for it; anywhere else it is refused (bad-value: "the state does not ask
+# for it") and nothing is written. The table is this script's own (WRITERS, ROUND_TAKES,
+# RUN_TAKES): every subcommand has its row, and every fact of a round's record and of the
+# run's, and a subcommand or a fact added without one is no call this script takes
+# (fault). Each row, and why:
+#   a round     report, scope-set, triage-set, result-set — and every fact of a round — are
+#               taken for a round the run HAS BEGUN (its directory is there), and for the
+#               ONE round the state hands a `test` stage (state: begins): after a round
+#               that left nothing open, was dropped, or landed. Never past a stop nobody
+#               lifted, past a round that is still open, while an item's re-run is what
+#               is asked, or two rounds ahead: a round begun unasked would be the latest
+#               round, and every stop is computed from the latest round. (While the
+#               run's opening is not done no stage starts and nothing is decided, and the
+#               opening's own order is not held: round 1 may be begun then.)
+#   untested    gate-set, and the facts candidate, base, binary, cross-model and
+#               cross-model-void: as a round, and only while that round is not tested —
+#               they are its test stage's record, written with or before the candidate.
+#   fix         the fact cycles: in the latest round, once it is tested, where the
+#               position refuses no fix stage — not past either bound, not after the
+#               round's outcome.
+#   tested      the fact outcome: in the latest round, once it is tested — the human's
+#               exit from it, at a bound too.
+#   asked       the facts go, granted, reverify and again: only while the state asks the
+#               human for exactly that (round-set).
+#   once        the run's stop mode, previous release, default scope and clauses: where
+#               the run does not hold them yet, and then never again.
+#   raised      the run's two bounds: at the opening, and then only at the stop that
+#               names the bound.
+#   counted     ran, awaiting, recorded and the run's findings: never from a caller.
+#   anywhere    ledger-add, ledger-set, bound-set, item-set: the ledger, the declared
+#               bounds and the test set are held to no position. A finding is added by
+#               whichever stage finds it, and at the opening; a disposition is a fixer's
+#               record or the human's ruling, and a ruling on a fork has no state that
+#               asks for it yet; a bound is the human's at the opening and at every list;
+#               an instrument that is built later takes its row when it is built. What
+#               such a write CAN do is add work or record a ruling — it lifts no stop.
+#
+# EVERY LOOP HAS A COUNTER ON RECORD AND AN EXIT TO THE HUMAN. Of the nine values of `next`
+# five hand over — not-ready, rule, unsettled, close, stop — and four are steps a stage
+# takes without asking: test, triage, fix, retest. A stage that takes one either REACHES
+# ITS RECORD, and then one of these counters moved, or it does not, and then its attempt
+# is counted. So every pair of steps that can follow each other without the human is
+# bounded by what the step it ARRIVES at counts:
+#   … -> test    a round is begun only after one that is over, and with a finding open a
+#                round is over only by the human's exit (outcome); the rounds that have a
+#                fix stage are counted (fix_rounds) and bounded by the bound across rounds,
+#                where the run stops (round-bound) — or the run stops after every round
+#   … -> triage  the triage records that left a finding unsettled are counted per finding
+#                (awaiting): two, then the finding is the human's (…-after-retry)
+#   … -> fix     the fix cycles of the round are counted (cycles) and bounded by the bound
+#                inside a round, where the run stops (cycle-bound)
+#   … -> retest  an item's runs in its round are counted (results, ran): two, then its
+#                clause is the human's (human_clauses)
+#   and x -> x without a record, for each of the four: the attempts of the stage that
+#                left no record are counted (unrecorded): two, then the stage is the
+#                human's (human_stages).
+# A step that is the human's becomes a stage's again only by a fact the human's ruling
+# writes: a go, a raised bound, a disposition, or one more — re-run, triage, attempt —
+# each of which allows exactly one.
+# ONE RECORD MOVES NO COUNTER, and is not bounded here: a fix stage's record that writes a
+# fix and counts no cycle (a cycle that was not audited). `cycles` is the one fact that
+# says a fix stage worked, and what a fix cycle leaves on record is the `fix` half's to
+# rebuild (the repair plan's change C2); that stage refuses to start until it is.
+#
 # WHAT THIS SCRIPT CANNOT KNOW: ITS CALLER. It is a command, and whoever can run it can
 # make any call of it. What it guarantees of a call is its shape, its vocabulary, that a
-# fact written once stands, that a table has one writer at a time — and, for `go`,
-# `granted` and an item's re-run alone, that the state asks for them. It does NOT know
+# fact written once stands, that a table has one writer at a time — and that the state
+# takes the write where it stands (the table above). It does NOT know
 # that a human ruled, nor that an item ran:
-# `admitted`, `bound` and `later`, a declared bound's row, the stop mode and the bound
-# across rounds are taken from any caller, at any time, on any row, any number of times,
+# `admitted`, `bound` and `later` and a declared bound's row are taken from any caller,
+# at any time, on any row, any number of times,
 # and `ledger-set` with `open` takes a ruling back. THAT THE HUMAN'S RULINGS REACH THE
 # RECORD ONLY AS THE HUMAN'S IS HELD ELSEWHERE: the harness composes those calls in ONE
 # function, from the `rulings` argument of an invocation and from nothing else
@@ -653,9 +813,10 @@
 #      untracked ones included — install_line (crates/cli/tests/install_line.rs): a
 #      file with a line that starts `cargo install jigc` is refused (fence), naming it.
 #      Reports stay markdown; write the command inside a line, or behind a `$ `.
-#   4. The public-hygiene scan, hard (implementation/public-hygiene.md). The file is
-#      committed at its own path into a throwaway repository, and the two scanners CI
-#      runs over a push run over that commit: dev/hygiene-scan, unmodified, with the
+#   4. The public-hygiene scan, hard (implementation/public-hygiene.md). The files of
+#      the call's batch are committed, each at its own path, into ONE throwaway
+#      repository, and the two scanners CI runs over a push run over that commit — once
+#      per batch, however many files it holds: dev/hygiene-scan, unmodified, with the
 #      private denylist ($JIGC_DENYLIST_FILE, else ~/.config/jigc/denylist), and
 #      gitleaks with this repository's .gitleaks.toml. A hit is refused (hygiene), by
 #      where it is and never by what matched. A scanner that could not run — no
@@ -682,13 +843,14 @@
 #    4  bad-id        an identifier outside its grammar
 #    5  outside       a link below the run directory: the write would land outside it
 #    6  exists        the report's path is taken — pass the next attempt; or a round's
-#                     scope, a fact of its record, the run's previous release or its
-#                     clauses are written once and stand; or an item has its result in
-#                     a round that is not tested yet
+#                     scope, a fact of its record, the run's stop mode, previous
+#                     release, default scope or clauses are written once and stand; or
+#                     an item has its result in a round that is not tested yet
 #    7  bad-value     a value outside its vocabulary, a malformed row, a report that is
-#                     not text — or a go, one more re-run of a clause, or the re-run of
-#                     an item, that the state does not ask for; a result for an item
-#                     the round's scope does not select
+#                     not text — or A WRITE THE STATE DOES NOT ASK FOR: a round that is not
+#                     begun and not handed out, a fact outside its position, a go, a
+#                     grant, a raised bound or the re-run of an item nobody is asked
+#                     for; a result for an item the round's scope does not select
 #    8  no-such-row   ledger-set names a key the ledger lacks, or result-set an item the
 #                     test set lacks
 #    9  fence         the file would redden a standing fence, which is named
@@ -697,7 +859,8 @@
 #   12  did-not-run   a scanner could not run
 #   13  corrupt       a table is not the one this script writes, or holds a cell it
 #                     does not write — the clause table too, which is the one the item
-#                     results give or is refused
+#                     results give or is refused — or lacks a row, a result or a report
+#                     that a record names: what is deleted is missed
 #   14  no-such-bound out-of-scope cites a bound the declared-bounds list lacks
 #   15  no-scope      triage-set, result-set or a round's candidate names a round whose
 #                     scope was never written
@@ -794,12 +957,15 @@ DISPOSITIONS = {
 }
 CLAUSE_STATUSES = ("green", "red", "void")
 # An item's run, as a round's results hold it; what a red one's finding is keyed with; the
-# fields a red result brings for that finding; and how many runs of an item a round takes
-# without the human: the test stage's own, and the ONE re-run that is automatic.
+# fields a red result brings for that finding; and HOW MANY TIMES ANYTHING IS TRIED WITHOUT
+# THE HUMAN: its own attempt, and the ONE more that is automatic — an item's run, a
+# finding's triage, a stage's attempt at its record.
 RESULT_COLUMNS = ("item", "attempt", "commit", "outcome", "detail")
 RED = "red-"
 RED_FIELDS = ("doctype", "door", "repro")
 AUTOMATIC = 2
+# Ruling 6: at most three fix -> audit cycles in a round, until the human raises it.
+CYCLES = 3
 
 LEDGER_COLUMNS = (
     "key",
@@ -825,25 +991,45 @@ ITEM_RUNS = ("every-candidate", "in-scope")
 LIST_BREAK = "<br>"
 ROUND_COLUMNS = ("fact", "value")
 # A round record's facts, in the order its table holds them.
-ROUND_FACTS = ("candidate", "base", "binary", "cycles", "outcome", "go", "granted", "cross-model", "cross-model-void")
+ROUND_FACTS = ("candidate", "base", "binary", "cycles", "outcome", "go", "granted", "reverify", "again", "cross-model", "cross-model-void", "ran", "awaiting", "recorded")
 # The facts that are lists of item ids, and how a list shares its cell.
 ROUND_LISTS = ("cross-model", "cross-model-void")
 ITEMS_BREAK = ", "
-# The runs the human granted, as the record holds each: the item, and which attempt.
+# The runs the human granted, as the record holds each: the item, and which attempt — and,
+# in the same words, how many runs of an item the round's results hold (`ran`).
 GRANT = re.compile(r"(%s) a([1-9][0-9]{0,5})" % SLUG.pattern)
+# One more triage of a finding the human granted: the finding, and which record of it.
+REVERIFY = re.compile(r"(%s) p([1-9][0-9]{0,5})" % SLUG.pattern)
+# A finding a triage record of the round left without a grade or a verdict: the finding,
+# which of the two, and how many of the round's records in a row have left it so.
+AWAITS = ("ungraded", "unverified")
+AWAITING = re.compile(r"(%s) (%s) ([1-9][0-9]{0,5})" % (SLUG.pattern, "|".join(AWAITS)))
+# An attempt of a stage in the round — `test`, or cycle K of `fix` — as the record names
+# one that reached its record (`recorded`) and one the human granted (`again`).
+ATTEMPT = re.compile(r"(test|fix-c[1-9][0-9]{0,5}) a([1-9][0-9]{0,5})")
+# What the human grants, each a list the record adds to; what this script counts for
+# itself and takes from no caller; and how each list's entries are spelled.
+ROUND_GRANTS = ("granted", "reverify", "again")
+ROUND_COUNTED = ("ran", "awaiting", "recorded")
+ROUND_ENTRIES = {"granted": GRANT, "ran": GRANT, "reverify": REVERIFY, "awaiting": AWAITING, "again": ATTEMPT, "recorded": ATTEMPT}
 # The facts written once: a second, different value is refused.
-ROUND_ONCE = ("candidate", "base", "binary", "outcome", "go")
-# How the record holds the human's go: the fact is there, or it is not.
-GO = "yes"
+ROUND_ONCE = ("candidate", "base", "binary", "outcome")
+# How the record holds the human's go: the count of fix cycles it was given at.
+GO = re.compile(r"c(0|[1-9][0-9]{0,5})")
 # How a round ends without landing whole.
 OUTCOMES = ("dropped", "part")
 # The run's facts, in the order their table holds them, and when a run stops for the
 # human of its own accord.
-RUN_FACTS = ("stop", "rounds", "previous", "previous-commit", "scope", "clauses")
+RUN_FACTS = ("stop", "rounds", "cycles", "previous", "previous-commit", "scope", "clauses", "findings")
 STOP_MODES = ("every-round", "at-the-bound")
-# The facts written once: the release a run measures against does not change under it,
-# and neither do the clauses it must satisfy.
-RUN_ONCE = ("previous", "previous-commit", "clauses")
+# The facts written once: when a run stops, the release it measures against, its default
+# scope and the clauses it must satisfy do not change under it.
+RUN_ONCE = ("stop", "previous", "previous-commit", "scope", "clauses")
+# The two bounds, which only go up, and the stop at which the human raises each.
+RUN_BOUNDS = {"rounds": "round-bound", "cycles": "cycle-bound"}
+# What this script counts for itself: the census of the ledger.
+RUN_COUNTED = ("findings",)
+RUN_LISTS = ("clauses", "findings")
 # A released version, as the previous release's fact names it.
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?")
 # The scope a round is started with when its invocation names none.
@@ -873,6 +1059,63 @@ INPUT = []
 # The calls a batch may hold (apply): the table writers, and the two checks.
 APPLICABLE = ("gate-set", "ledger-add", "ledger-set", "triage-set", "result-set", "bound-set", "item-set", "round-set", "run-set", "check-reports", "check-ledger")
 CHECKS = ("check-reports", "check-ledger")
+
+# THE WRITER x STATE TABLE (the header: WHERE THE STATE TAKES A WRITE). Every subcommand has
+# its row, and every fact of a round's record and of the run's: where the state takes it.
+# `arguments` holds the three tables to the parser's own subcommands and to ROUND_FACTS and
+# RUN_FACTS, so a writer or a fact added without a row is refused (fault) at every call.
+#   anywhere   at every position of a run — the reason is the header's
+#   a-round    for a round the run has begun, or the one the state hands a `test` stage
+#   untested   as a-round, and only while that round is not tested: its test stage's record
+#   fix        in the latest round, tested, where the state does not refuse a fix stage
+#   tested     in the latest round, once it is tested: the human's exit from it
+#   asked      only while the state asks the human for exactly this
+#   once       where the run does not hold it yet — the opening — and then never again
+#   raised     first at the opening; raised only at the stop that names it
+#   counted    never from a caller: this script counts it
+#   by-fact    by each fact the call names · by-call  by each call of the batch
+WRITERS = {
+    "report": "a-round",
+    "scope-set": "a-round",
+    "triage-set": "a-round",
+    "result-set": "a-round",
+    "gate-set": "untested",
+    "round-set": "by-fact",
+    "run-set": "by-fact",
+    "ledger-add": "anywhere",
+    "ledger-set": "anywhere",
+    "bound-set": "anywhere",
+    "item-set": "anywhere",
+    "apply": "by-call",
+}
+READERS = ("state", "pending", "check-reports", "check-ledger", "gate-check")
+KEEPERS = ("discard", "settle", "recover")
+ROUND_TAKES = {
+    "candidate": "untested",
+    "base": "untested",
+    "binary": "untested",
+    "cross-model": "untested",
+    "cross-model-void": "untested",
+    "cycles": "fix",
+    "outcome": "tested",
+    "go": "asked",
+    "granted": "asked",
+    "reverify": "asked",
+    "again": "asked",
+    "ran": "counted",
+    "awaiting": "counted",
+    "recorded": "counted",
+}
+RUN_TAKES = {
+    "stop": "once",
+    "previous": "once",
+    "previous-commit": "once",
+    "scope": "once",
+    "clauses": "once",
+    "rounds": "raised",
+    "cycles": "raised",
+    "findings": "counted",
+}
 # A full gate's own two lines (dev/gate), and the steps of it that run tests.
 GATE_VERDICT = re.compile(r"GATE: (PASS|FAIL \(step:((?: [A-Za-z0-9_-]+)+)\))")
 GATE_TOTALS = re.compile(r"tests   passed=([0-9]+) failed=([0-9]+)  \(over ([0-9]+) test binaries\)")
@@ -1085,9 +1328,12 @@ def did_not_run(why):
     refuse("did-not-run", "the public-hygiene scan did not run, so nothing was written: %s" % why)
 
 
-def hygiene_scan(rel, text):
-    """The two scanners CI runs over a push, over `text` committed at `rel` into a
-    throwaway repository. Returns only when both ran and found nothing."""
+def hygiene_scan(files):
+    """The two scanners CI runs over a push, over `files` — every (path, text) of ONE
+    batch — committed, each at its own path, into one throwaway repository. Returns only
+    when both ran and found nothing: a batch is scanned whole before any of it is written,
+    and once, however many files it holds."""
+    rels = ", ".join(rel for rel, _ in files)
     denylist = os.environ.get("JIGC_DENYLIST_FILE") or os.path.join(os.path.expanduser("~"), ".config", "jigc", "denylist")
     if not os.path.isfile(denylist):
         did_not_run("no denylist at %s (implementation/public-hygiene.md)" % denylist)
@@ -1125,12 +1371,13 @@ def hygiene_scan(rel, text):
         repo = os.path.join(work, "repo")
         os.makedirs(os.path.join(repo, "dev"))
         os.symlink(scanner, os.path.join(repo, "dev", "hygiene-scan"))
-        os.makedirs(os.path.dirname(os.path.join(repo, rel)))
-        with open(os.path.join(repo, rel), "w", encoding="utf-8", newline="") as copy:
-            copy.write(text)
+        for rel, text in files:
+            os.makedirs(os.path.dirname(os.path.join(repo, rel)), exist_ok=True)
+            with open(os.path.join(repo, rel), "w", encoding="utf-8", newline="") as copy:
+                copy.write(text)
         for step, argv in (
             ("init", ["init", "-q", "--template="]),
-            ("add", ["add", "--", rel]),
+            ("add", ["add", "--"] + [rel for rel, _ in files]),
             # No background maintenance: it would outlive the commit, in a repository
             # that is removed as soon as the scan is done.
             ("commit", ["-c", "commit.gpgsign=false", "-c", "maintenance.auto=false", "-c", "gc.auto=0", "commit", "-q", "--no-verify", "-m", "."]),
@@ -1146,7 +1393,7 @@ def hygiene_scan(rel, text):
                 found = re.fullmatch(r"  (?:tree|path|added +[0-9a-f]+) +(\S.*)", line)
                 if found and found.group(1) not in places:
                     places.append(found.group(1))
-            refuse("hygiene", "the denylist matches at %s — by where, never by what; reword it (implementation/public-hygiene.md)" % (", ".join(places) or rel))
+            refuse("hygiene", "the denylist matches at %s — by where, never by what; reword it (implementation/public-hygiene.md)" % (", ".join(places) or rels))
         if out.returncode != 0:
             did_not_run("dev/hygiene-scan exited %d: %s" % (out.returncode, last_line(out)))
 
@@ -1158,10 +1405,10 @@ def hygiene_scan(rel, text):
         out = ran(argv + [repo], "gitleaks")
         if out.returncode == GITLEAKS_FOUND:
             try:
-                found = ["rule %s at line %s" % (leak["RuleID"], leak["StartLine"]) for leak in json.load(open(report, encoding="utf-8"))]
+                found = ["rule %s at line %s%s" % (leak["RuleID"], leak["StartLine"], " of %s" % leak["File"] if len(files) > 1 and leak.get("File") else "") for leak in json.load(open(report, encoding="utf-8"))]
             except (OSError, ValueError, KeyError, TypeError):
                 found = []
-            refuse("hygiene", "gitleaks found a secret-shaped string in %s: %s — a credential is never committed, even a revoked one" % (rel, "; ".join(found) or "no location reported"))
+            refuse("hygiene", "gitleaks found a secret-shaped string in %s: %s — a credential is never committed, even a revoked one" % (rels, "; ".join(found) or "no location reported"))
         if out.returncode != 0:
             did_not_run("gitleaks exited %d: %s" % (out.returncode, last_line(out)))
 
@@ -1279,7 +1526,8 @@ def flush(run_dir, batch=None):
         return
     for target, (rel, text, replace, taken) in staged:
         fence_check(text)
-        hygiene_scan(rel, text)
+    if staged:
+        hygiene_scan([(rel, text) for target, (rel, text, replace, taken) in staged])
     one_writer(run_dir)
     held = read_journal(run_dir)
     placing, journaled = [], False
@@ -1606,23 +1854,32 @@ def run_facts(rel, rows):
     for name, row in zip(unique_rows(rel, rows), rows):
         value = untick(row[1])
         listed = value.split(ITEMS_BREAK)
+        slugs = all(SLUG.fullmatch(entry) for entry in listed) and len(set(listed)) == len(listed)
         holds = {
             "stop": value in STOP_MODES,
             "rounds": NUMBER.fullmatch(value),
+            "cycles": NUMBER.fullmatch(value),
             "previous": VERSION.fullmatch(value),
             "previous-commit": FULL_SHA.fullmatch(value),
             "scope": value in DEFAULT_SCOPES,
-            "clauses": all(SLUG.fullmatch(clause) for clause in listed) and len(set(listed)) == len(listed),
+            "clauses": slugs,
+            "findings": slugs,
         }
         if not holds.get(name):
             spoiled(rel, "gives the fact %s the value %s, which this script does not write" % (shown(name), shown(value)))
-        facts[name] = int(value) if name == "rounds" else listed if name == "clauses" else value
+        facts[name] = int(value) if name in RUN_BOUNDS else listed if name in RUN_LISTS else value
     return facts
+
+
+def run_rows(facts):
+    """The run's facts as the rows of their table."""
+    return [[tick(name), tick(ITEMS_BREAK.join(facts[name]) if name in RUN_LISTS else str(facts[name]))] for name in RUN_FACTS if facts[name] is not None]
 
 
 def round_facts(rel, rows):
     """A round record's rows as {fact: value}, every fact named — None where the record
-    does not hold it, and 0 for the cycles. A row that is not this script's is refused."""
+    does not hold it, 0 for the cycles, [] for a list, and for the go the count of fix cycles
+    it was given at. A row that is not this script's is refused."""
     facts = dict.fromkeys(ROUND_FACTS)
     for name in unique_rows(rel, rows):
         if name not in ROUND_FACTS:
@@ -1630,23 +1887,58 @@ def round_facts(rel, rows):
     for row in rows:
         name, value = untick(row[0]), untick(row[1])
         listed = value.split(ITEMS_BREAK)
+        entry = ROUND_ENTRIES.get(name, SLUG)
         holds = {
             "candidate": FULL_SHA.fullmatch(value),
             "base": SHA.fullmatch(value),
             "binary": SHA256.fullmatch(value),
             "cycles": NUMBER.fullmatch(value),
             "outcome": value in OUTCOMES,
-            "go": value == GO,
-            "granted": all(GRANT.fullmatch(run) for run in listed) and len(set(listed)) == len(listed),
-        }.get(name, all(SLUG.fullmatch(item) for item in listed) and len(set(listed)) == len(listed))
+            "go": GO.fullmatch(value),
+        }.get(name, all(entry.fullmatch(said_) for said_ in listed) and len({said_.split(" ")[0] if name in ROUND_COUNTED else said_ for said_ in listed}) == len(listed))
         if not holds:
             spoiled(rel, "gives the fact %s the value %s, which this script does not write" % (name, shown(value)))
-        facts[name] = int(value) if name == "cycles" else listed if name in ROUND_LISTS + ("granted",) else value
+        facts[name] = int(value) if name == "cycles" else int(value[1:]) if name == "go" else value if name in ROUND_ONCE else listed
     facts["cycles"] = facts["cycles"] or 0
-    facts["go"] = facts["go"] is not None
-    for name in ROUND_LISTS + ("granted",):
-        facts[name] = facts[name] or []
+    for name in ROUND_FACTS:
+        if name in ROUND_LISTS + ROUND_GRANTS + ROUND_COUNTED:
+            facts[name] = facts[name] or []
     return facts
+
+
+def as_said(facts):
+    """A round's facts as the state gives them: the go as WHETHER IT STANDS — it was given
+    with as many fix cycles on record as the round has now. A go answers one stop."""
+    return dict(facts, go=facts["go"] is not None and facts["go"] == facts["cycles"])
+
+
+def round_rows(facts):
+    """A round's facts as the rows of its record."""
+    rows = []
+    for name in ROUND_FACTS:
+        value = facts[name]
+        if value is None or value == [] or (name == "cycles" and value == 0):
+            continue
+        rows.append([tick(name), tick("c%d" % value if name == "go" else ITEMS_BREAK.join(value) if isinstance(value, list) else str(value))])
+    return rows
+
+
+def counted(run_dir, round_number, name, value):
+    """Stage a fact this script counts for itself into a round's record, where it changed."""
+    rel, above, rows = read_round(run_dir, round_number)
+    facts = round_facts(rel, rows)
+    if facts[name] != value:
+        facts[name] = value
+        publish(run_dir, ["r%s" % round_number, "round.md"], render_table(above, ROUND_COLUMNS, round_rows(facts)), replace=True)
+
+
+def by_name(entries):
+    """The entries of a counted fact — `<name> … <N>` — as {name: (the words between, N)}."""
+    held = {}
+    for entry in entries:
+        words = entry.split(" ")
+        held[words[0]] = (" ".join(words[1:-1]), int(words[-1].lstrip("ap")))
+    return held
 
 
 def unique_rows(rel, rows):
@@ -1704,6 +1996,45 @@ def hold_to_the_list(run_dir, cited):
             refuse("no-such-bound", "%s: out-of-scope cites the bound %s, which the declared-bounds list (%s) lacks — a bound is the human's ruling, entered with bound-set, and without one the grade is needs-bound; nothing was written" % (what, bound, rel))
 
 
+# --- where the state takes a write ------------------------------------------------------
+
+
+def standing(run_dir, run):
+    """The state as it stands, for a writer that holds the run's lock and asks before it
+    writes: a write killed between its files was settled when the lock was taken."""
+    return document(run_dir, run)
+
+
+def not_asked(what, read, why):
+    refuse("bad-value", "%s: the state does not ask for it — %s; the run's next step is `%s`. Nothing was written" % (what, why, read["stop"]["then"] + "`, after the stop `" + read["stop"]["why"] if read["stop"] else read["next"]))
+
+
+def a_round(read, round_number, what):
+    """Refuse a write that names a round the run has not begun and the state does not hand
+    to a `test` stage: a round begins where the position says so, and nowhere else — never
+    past a stop nobody lifted, past a round that is still open, or two rounds ahead."""
+    wanted = int(round_number)
+    if wanted != read["begins"] and all(held["round"] != wanted for held in read["rounds"]):
+        begun = ", ".join("round %d" % held["round"] for held in read["rounds"]) or "no round"
+        not_asked(what, read, "round %d is not begun (the run has begun %s), and %s" % (wanted, begun, "the round a `test` stage would begin is round %d" % read["begins"] if read["begins"] else "the state hands no new round to a `test` stage — its position: %s" % json.dumps(read["position"]["test"])))
+
+
+def untested(read, round_number, what):
+    """Refuse what belongs to a round's test stage once that round is tested."""
+    a_round(read, round_number, what)
+    if any(held["round"] == int(round_number) and held["facts"]["candidate"] is not None for held in read["rounds"]):
+        not_asked(what, read, "round %s is tested, and this is written by its test stage's record, with or before the candidate" % round_number)
+
+
+def latest_tested(read, round_number, what):
+    """Refuse what belongs to the fix stage, or to the human's exit from a round, anywhere
+    but in the latest round once it is tested."""
+    last = read["rounds"][-1] if read["rounds"] else None
+    if last is None or last["round"] != int(round_number) or last["facts"]["candidate"] is None:
+        not_asked(what, read, "it is a fact of the latest round, once that round is tested, and round %s is %s" % (round_number, "not that round" if last and last["round"] != int(round_number) else "not tested"))
+    return last
+
+
 # --- the subcommands --------------------------------------------------------------
 
 
@@ -1715,6 +2046,20 @@ def report(args):
     # Asked before the report is read, and again by the write itself.
     if os.path.lexists(below(run_dir, parts + [name])):
         refuse("exists", "%s exists — a re-run passes the next attempt" % "/".join(ARTIFACTS + (args.run,) + tuple(parts) + (name,)))
+    # And whether the state takes a report for this round — read between two writes, and
+    # let go of before the scan: reporters write side by side.
+    asking = os.open(run_dir, os.O_RDONLY)
+    fcntl.flock(asking, fcntl.LOCK_SH)
+    try:
+        killed = bool(read_journal(run_dir)["placing"])
+        if not killed:
+            a_round(document(run_dir, args.run), args.round, "a report of round %s" % args.round)
+    finally:
+        os.close(asking)
+    if killed:
+        # A write was killed between its files: it is settled first, as every writer does.
+        one_writer(run_dir)
+        a_round(document(run_dir, args.run), args.round, "a report of round %s" % args.round)
     try:
         text = stdin_bytes().decode("utf-8")
     except ValueError:
@@ -1737,6 +2082,7 @@ def ledger_add(args):
     hold_to_the_list(run_dir, [("row %s" % key, cells[6]) for key, cells in given])
     rel, above, rows = read_ledger(run_dir)
     keys = unique_rows(rel, rows)
+    hold_census(run_dir, rel, keys)
     appended, existing = [], []
     for key, cells in given:
         if key in keys:
@@ -1747,7 +2093,27 @@ def ledger_add(args):
             appended.append(key)
     if appended:
         publish(run_dir, ["ledger.md"], render_table(above, LEDGER_COLUMNS, rows), replace=True)
+        census(run_dir, appended)
     say(json.dumps({"ledger": rel, "appended": appended, "existing": existing}))
+
+
+def hold_census(run_dir, ledger_rel, keys):
+    """WHAT IS DELETED IS MISSED: every finding the run's census names has its row, and the
+    ledger holds no row the census does not name — refused by `state` and by every writer
+    of the ledger, before it writes."""
+    named = run_facts(*read_run(run_dir)[::2])["findings"] or []
+    gone, strange = [key for key in named if key not in keys], [key for key in keys if key not in named]
+    if gone or strange:
+        spoiled(ledger_rel, "is not the ledger the run's record (run.md) names the findings of — it %s. A row is added by this script and removed by nobody: take the file back from the commit that holds it" % "; ".join(["lacks %s" % ", ".join(gone)] * bool(gone) + ["holds %s, which the census does not name" % ", ".join(strange)] * bool(strange)))
+
+
+def census(run_dir, added):
+    """Name the findings a call added in the run's own record: THE LEDGER'S CENSUS. A row
+    the census names is a row the ledger has, whoever deleted it (state)."""
+    rel, above, rows = read_run(run_dir)
+    facts = run_facts(rel, rows)
+    facts["findings"] = (facts["findings"] or []) + [key for key in added if key not in (facts["findings"] or [])]
+    publish(run_dir, ["run.md"], render_table(above, ROUND_COLUMNS, run_rows(facts)), replace=True)
 
 
 def ledger_set(args):
@@ -1765,6 +2131,7 @@ def ledger_set(args):
     hold_to_the_list(run_dir, [("patch %s" % key, text) for key, cells in patches for at, text in cells if at == 6])
     rel, above, rows = read_ledger(run_dir)
     keys = unique_rows(rel, rows)
+    hold_census(run_dir, rel, keys)
     for key, cells in patches:
         if key not in keys:
             refuse("no-such-row", "the ledger has no row %s; nothing was written" % key)
@@ -1801,8 +2168,9 @@ def result_set(args):
     distinct([name for name, _, _, _ in given], "item")
     one_writer(run_dir)
     # The state as it stands before the write: what the round is, and what it asks for.
-    read = document(run_dir, args.run)
+    read = standing(run_dir, args.run)
     what = "round %s" % round_number
+    a_round(read, round_number, "a result of round %s" % round_number)
     scope = read_scope(run_dir, round_number)
     if scope is None:
         refuse("no-scope", "%s has no scope yet: a result is the run of an item the round's scope selected, and scope-set writes the round's doors; nothing was written" % what)
@@ -1813,7 +2181,7 @@ def result_set(args):
     due = [(entry["item"], entry["round"]) for clause in read["clauses"] for entry in clause["items"] if entry["rerun"] == "due"] if read["next"] == "retest" else []
     ledger, ledger_above, ledger_rows = read_ledger(run_dir)
     keys = unique_rows(ledger, ledger_rows)
-    recorded, filed = [], []
+    recorded, filed, added = [], [], []
     for name, outcome, detail, finding in given:
         if name not in items:
             refuse("no-such-row", "the test set has no item %s; nothing was written" % name)
@@ -1843,9 +2211,18 @@ def result_set(args):
             keys.append(key)
             ledger_rows.append(finding[:2] + [round_number, source, finding[2], untick(item[2]), "ungraded", "-", "open", finding[3]])
             filed.append(key)
+            added.append(key)
     publish(run_dir, ["r" + round_number, "results.md"], render_table(above, RESULT_COLUMNS, rows), replace=True)
+    # How many runs of each item the round now holds, in the round's own record: a result
+    # that is gone later is missed there (state).
+    runs = {}
+    for row in rows:
+        runs[untick(row[0])] = runs.get(untick(row[0]), 0) + 1
+    counted(run_dir, round_number, "ran", ["%s a%d" % held for held in runs.items()])
     if filed:
         publish(run_dir, ["ledger.md"], render_table(ledger_above, LEDGER_COLUMNS, ledger_rows), replace=True)
+    if added:
+        census(run_dir, added)
     render_view(run_dir)
     say(json.dumps({"results": rel, "recorded": recorded, "findings": filed}))
 
@@ -1898,6 +2275,8 @@ def scope_set(args):
             name, registry, derivation = [said(door, field, what, scratch) for field in ("door", "registry", "derivation")]
             rows.append([name, side, registry, derivation])
     distinct([row[0] for row in rows], "door")
+    one_writer(run_dir)
+    a_round(standing(run_dir, args.run), args.round, "the scope of round %s" % args.round)
     above = [
         "# %s — round %s, the test set" % (args.run, args.round),
         "",
@@ -1961,7 +2340,7 @@ def round_set(args):
     given = json_stdin()
     if not isinstance(given, dict) or not given:
         refuse("bad-value", "stdin must be one round record as a JSON object naming at least one of %s" % ", ".join(ROUND_FACTS))
-    fields(given, (), ROUND_FACTS, "a round record")
+    fields(given, (), tuple(name for name in ROUND_FACTS if name not in ROUND_COUNTED), "a round record")
     what = "round %s" % round_number
     for name, shape, means in (("candidate", FULL_SHA, "a full sha of 40 hex digits"), ("base", SHA, "a sha of 7 to 40 hex digits"), ("binary", SHA256, "a sha256 of 64 hex digits")):
         if name in given and not (isinstance(given[name], str) and shape.fullmatch(given[name])):
@@ -1972,6 +2351,10 @@ def round_set(args):
         one_of(given["outcome"], OUTCOMES, what + ": outcome")
     if "granted" in given:
         slug(given["granted"], what + ": the clause granted one more re-run")
+    if "reverify" in given:
+        slug(given["reverify"], what + ": the finding granted one more triage")
+    if "again" in given:
+        one_of(given["again"], STAGES, what + ": again, the stage granted one more attempt,")
     if "go" in given and given["go"] is not True:
         refuse("bad-value", "%s: go is true — the human's go after the round's stop — or is not said at all, not %s" % (what, shown(given["go"])))
     for name in ROUND_LISTS:
@@ -1980,25 +2363,43 @@ def round_set(args):
                 refuse("bad-value", "%s: %s is an array of item ids, not %s" % (what, name, shown(given[name])))
             distinct([slug(item, "%s: an item of %s" % (what, name)) for item in given[name]], "%s: the item of %s" % (what, name))
     one_writer(run_dir)
-    hold_view(run_dir)
+    # The state as it stands before the write: every fact is held to it (THE WRITER x STATE
+    # TABLE), and a fact said again as it stands changes nothing and is taken anywhere.
+    read = standing(run_dir, args.run)
     rel, above, rows = read_round(run_dir, round_number)
     facts = round_facts(rel, rows)
+    before = dict(facts)
     for name, value in given.items():
-        if name in ROUND_ONCE and facts[name] not in (None, False, value):
-            refuse("exists", "%s holds %s %s — it is written once; nothing was written" % (rel, name, facts[name]))
-        if name == "cycles" and value < facts[name]:
-            refuse("bad-value", "%s: %d cycles are recorded, and the count never goes down to %d; nothing was written" % (what, facts[name], value))
-        if name == "candidate" and facts[name] is None:
-            tested_on(run_dir, round_number, value)
-        if name == "go" and not facts[name]:
-            asked_for(document(run_dir, args.run), int(round_number), name, value)
-        if name == "granted":
-            value = facts[name] + asked_for(document(run_dir, args.run), int(round_number), name, value)
+        if name in ROUND_ONCE and before[name] not in (None, value):
+            refuse("exists", "%s holds %s %s — it is written once; nothing was written" % (rel, name, before[name]))
+        if name == "cycles" and value < before[name]:
+            refuse("bad-value", "%s: %d cycles are recorded, and the count never goes down to %d; nothing was written" % (what, before[name], value))
+    for name in [name for name in ROUND_FACTS if name in given]:
+        value, where = given[name], "%s: %s" % (what, name)
+        if name in ROUND_GRANTS:
+            value = before[name] + asked_for(read, int(round_number), name, value)
+        elif name == "go":
+            if as_said(before)["go"]:
+                continue
+            asked_for(read, int(round_number), name, value)
+            value = before["cycles"]
+        elif before[name] == value:
+            continue
+        elif ROUND_TAKES[name] == "untested":
+            untested(read, round_number, where)
+            if name == "candidate":
+                tested_on(run_dir, round_number, value)
+        elif ROUND_TAKES[name] == "fix":
+            at = read["position"]["fix"]
+            # (While the opening is not done every stage is refused, and its order is not held.)
+            if latest_tested(read, round_number, where)["facts"]["outcome"] is not None or at.get("refused", "not-ready") != "not-ready":
+                not_asked(where, read, "a fix cycle is counted where a fix stage works, and the position refuses one here (%s)" % at.get("refused", "round-over"))
+        elif ROUND_TAKES[name] == "tested":
+            latest_tested(read, round_number, where)
         facts[name] = value
-    rows = [[tick(name), tick(GO if name == "go" else ITEMS_BREAK.join(facts[name]) if name in ROUND_LISTS + ("granted",) else str(facts[name]))] for name in ROUND_FACTS if facts[name]]
-    publish(run_dir, ["r" + round_number, "round.md"], render_table(above, ROUND_COLUMNS, rows), replace=True)
+    publish(run_dir, ["r" + round_number, "round.md"], render_table(above, ROUND_COLUMNS, round_rows(facts)), replace=True)
     render_view(run_dir)
-    say(json.dumps({"round": rel, "facts": facts}))
+    say(json.dumps({"round": rel, "facts": as_said(facts)}))
 
 
 def tested_on(run_dir, round_number, candidate):
@@ -2017,11 +2418,12 @@ def run_set(args):
     given = json_stdin()
     if not isinstance(given, dict) or not given:
         refuse("bad-value", "stdin must be the run's facts as a JSON object naming at least one of %s" % ", ".join(RUN_FACTS))
-    fields(given, (), RUN_FACTS, "a run's facts")
+    fields(given, (), tuple(name for name in RUN_FACTS if name not in RUN_COUNTED), "a run's facts")
     if "stop" in given:
         one_of(given["stop"], STOP_MODES, "stop")
-    if "rounds" in given and (isinstance(given["rounds"], bool) or not isinstance(given["rounds"], int) or not NUMBER.fullmatch(str(given["rounds"]))):
-        refuse("bad-value", "rounds is a positive whole number, not %s" % shown(given["rounds"]))
+    for name in RUN_BOUNDS:
+        if name in given and (isinstance(given[name], bool) or not isinstance(given[name], int) or not NUMBER.fullmatch(str(given[name]))):
+            refuse("bad-value", "%s is a positive whole number, not %s" % (name, shown(given[name])))
     for name, shape, means in (("previous", VERSION, "a released version, as `1.2.3` or `1.2.3-rc.4`"), ("previous-commit", FULL_SHA, "a full sha of 40 hex digits")):
         if name in given and not (isinstance(given[name], str) and shape.fullmatch(given[name])):
             refuse("bad-value", "%s is %s, not %s" % (name, means, shown(given[name])))
@@ -2032,17 +2434,26 @@ def run_set(args):
             refuse("bad-value", "clauses is the closing condition's clauses, a non-empty array of slugs, not %s" % shown(given["clauses"]))
         distinct([slug(clause, "a clause of the closing condition") for clause in given["clauses"]], "clause")
     one_writer(run_dir)
-    hold_view(run_dir)
+    read = standing(run_dir, args.run)
     rel, above, rows = read_run(run_dir)
     facts = run_facts(rel, rows)
-    if "rounds" in given and facts["rounds"] is not None and given["rounds"] < facts["rounds"]:
-        refuse("bad-value", "the bound across rounds is %d, and it never goes down to %d: only the human raises it; nothing was written" % (facts["rounds"], given["rounds"]))
     for name in RUN_ONCE:
         if name in given and facts[name] not in (None, given[name]):
-            refuse("exists", "%s holds %s %s — the release a run measures against, and the clauses it must satisfy, are written once; nothing was written" % (rel, name, ITEMS_BREAK.join(facts[name]) if name == "clauses" else facts[name]))
+            refuse("exists", "%s holds %s %s — when a run stops, the release it measures against, its default scope and the clauses it must satisfy are written once, at its opening; nothing was written" % (rel, name, ITEMS_BREAK.join(facts[name]) if name == "clauses" else facts[name]))
+    for name, stop in RUN_BOUNDS.items():
+        # A bound only goes up. It is written at the opening — before any round is begun,
+        # or while the run is not ready — and after that RAISED only at the stop that names
+        # it: the raise is the human's go there, and lifts no stop nobody has seen.
+        held = facts[name] if name == "rounds" else facts[name] or CYCLES
+        if name not in given or given[name] == facts[name]:
+            continue
+        if held is not None and given[name] < held:
+            refuse("bad-value", "the bound %s is %d, and it never goes down to %d: only the human raises it; nothing was written" % ("across rounds" if name == "rounds" else "on a round's fix cycles", held, given[name]))
+        opening = not read["rounds"] or bool(read["not_ready"])
+        if not opening and not (read["stop"] and read["stop"]["why"] == stop):
+            not_asked("the bound `%s`" % name, read, "it is written at the run's opening, and raised only while the run is stopped at it (`%s`)" % stop)
     facts.update(given)
-    rows = [[tick(name), tick(ITEMS_BREAK.join(facts[name]) if name == "clauses" else str(facts[name]))] for name in RUN_FACTS if facts[name] is not None]
-    publish(run_dir, ["run.md"], render_table(above, ROUND_COLUMNS, rows), replace=True)
+    publish(run_dir, ["run.md"], render_table(above, ROUND_COLUMNS, run_rows(facts)), replace=True)
     render_view(run_dir)
     say(json.dumps({"run": rel, "facts": facts}))
 
@@ -2081,6 +2492,7 @@ def triage_set(args):
     given = [triage_entry(entry) for entry in json_rows("triage entry")]
     distinct([key for key, _, _ in given], "finding")
     one_writer(run_dir)
+    a_round(standing(run_dir, args.run), round_number, "the triage of round %s" % round_number)
     ledger, ledger_above, ledger_rows = read_ledger(run_dir)
     keys = unique_rows(ledger, ledger_rows)
     for key, _, _ in given:
@@ -2105,6 +2517,16 @@ def triage_set(args):
         row[6], row[7] = grade
     publish(run_dir, ["r" + round_number, "triage.md"], render_table(above, TRIAGE_COLUMNS, rows), replace=True)
     publish(run_dir, ["ledger.md"], render_table(ledger_above, LEDGER_COLUMNS, ledger_rows), replace=True)
+    # THE PASSES ARE COUNTED HERE, never by an invocation: every finding this record leaves
+    # without a grade or a verdict is named in the round's own record, with how many of the
+    # round's triage records in a row have left it so. A finding it settles is named no more.
+    left = by_name(round_facts(*read_round(run_dir, round_number)[::2])["awaiting"])
+    awaiting = []
+    for finding in document(run_dir, args.run)["ledger"]:
+        if finding["awaits"] is not None:
+            why, passes = left.get(finding["key"], (None, 0))
+            awaiting.append("%s %s %d" % (finding["key"], finding["awaits"]["why"], passes + 1 if why == finding["awaits"]["why"] else 1))
+    counted(run_dir, round_number, "awaiting", awaiting)
     say(json.dumps({"triage": rel, "ledger": ledger, "recorded": [key for key, _, _ in given]}))
 
 
@@ -2135,7 +2557,14 @@ def fix_held(finding, triage):
     """Whether a row's `fixed` stands. It does not when the latest round that triaged the
     finding found it again, standing, with that same fix on its row: a fix that did not
     hold is neither a fix nor the human's ruling."""
-    return not (triage is not None and stands(triage) and triage["found_with"] == "fixed: %s" % finding["detail"])
+    return not (triage is not None and stands(triage) and same_fix(triage["found_with"], finding["detail"]))
+
+
+def same_fix(found_with, detail):
+    """Whether the disposition a finding was found with is the fix its row names now: the
+    same commit, written at whatever length — 7 to 40 hex digits of one sha are one fix."""
+    found = found_with[len("fixed: "):] if found_with.startswith("fixed: ") else None
+    return bool(found) and bool(detail) and (found.startswith(detail) or detail.startswith(found))
 
 
 def route_of(finding, triage, listed):
@@ -2170,6 +2599,8 @@ def route_of(finding, triage, listed):
     return ("fix", "inside") if triage["inside"] else ("human", "outside")
 
 
+NOT_RECORDED = "not-recorded-after-retry"
+AFTER_RETRY = "-after-retry"
 NO_INSTRUMENT = "not-green-and-no-instrument"
 NEVER_SELECTED = "judged-and-never-selected"
 STILL_NOT_GREEN = "not-green-after-its-rerun"
@@ -2319,11 +2750,22 @@ def grounds(run_dir):
     for number_ in numbered(run_dir, [], "r"):
         scope = read_scope(run_dir, number_)
         record_rel, _, record_rows = read_round(run_dir, number_)
-        held = {"round": number_, "doors": scope and scope[1], "facts": round_facts(record_rel, record_rows)}
+        held = {"round": number_, "doors": scope and scope[1], "facts": as_said(round_facts(record_rel, record_rows))}
         if held["facts"]["candidate"] is not None and scope is None:
             spoiled(record_rel, "names the candidate of a round that has no scope")
         results_rel, _, result_rows = read_results(run_dir, number_)
         held["results"] = results_of(results_rel, result_rows)
+        # WHAT IS DELETED IS MISSED: the round's record counts the runs of each item, and
+        # the results hold exactly those.
+        counts, runs = by_name(held["facts"]["ran"]), {}
+        for ran in held["results"]:
+            runs[ran["item"]] = ran["attempt"]
+        for name in sorted(set(counts) | set(runs)):
+            has, said_ = runs.get(name, 0), counts.get(name, ("", 0))[1]
+            if has < said_:
+                spoiled(results_rel, "lacks attempt %d of %s — the round's record (%s) counts %d run(s) of it, and a result that is gone is not read as a run that never was" % (has + 1, name, record_rel, said_))
+            if has > said_:
+                spoiled(results_rel, "holds attempt %d of %s, a run the round's record (%s) does not count" % (has, name, record_rel))
         rounds.append(held)
     return facts, item_rows, rounds
 
@@ -2408,11 +2850,15 @@ def next_of(findings, clauses, rounds, facts, owed):
     else:
         step = "close"
     why = None
-    if step != "not-ready" and facts["stop"] == "every-round":
-        # After every round — until the human's go for that round is on record.
-        if done and not last["facts"]["go"]:
+    if step != "not-ready" and facts["stop"] == "every-round" and done:
+        # After every round — until the human's go for that stop is on record: a go given
+        # with fewer fix cycles on record than the round has now answered an earlier stop.
+        if not last["facts"]["go"]:
             why = "every-round"
-    elif step == "fix" and not fixed_in(last) and fix_rounds >= facts["rounds"]:
+    elif step == "fix" and last["facts"]["cycles"] >= (facts["cycles"] or CYCLES):
+        # The bound inside a round: as many fix -> audit cycles are recorded as it allows.
+        why = "cycle-bound"
+    elif step == "fix" and facts["stop"] == "at-the-bound" and not fixed_in(last) and fix_rounds >= facts["rounds"]:
         # The bound counts fix rounds: one more would start here, and it is spent.
         why = "round-bound"
     ran = [held for held in rounds if held["facts"]["candidate"] is not None]
@@ -2441,6 +2887,19 @@ def asked_for(read, round_number, name, value):
             at_bound = " at its bound across rounds, where the go is the raised bound (run-set: rounds)" if stop and stop["why"] == "round-bound" else ""
             refuse("bad-value", "round %d: the run is not stopped after this round for the human's go — its next step is `%s`%s; a go is recorded for the stop after a round, and for no other state; nothing was written" % (round_number, read["next"], at_bound))
         return None
+    if name == "reverify":
+        # One more triage of a finding that is still without a grade or a verdict after
+        # the one that is automatic: a fact of the latest round, whose record counts them.
+        awaits = [finding["awaits"] for finding in read["ledger"] if finding["key"] == value and finding["awaits"] and finding["awaits"]["retry"] == "spent"]
+        if not awaits or round_number != read["round"]:
+            refuse("bad-value", "round %d: the finding %s is not the human's to grant one more triage there — that is granted to a finding the state's human_list names as still ungraded or unverified after its retry, in the latest round; nothing was written" % (round_number, value))
+        return ["%s p%d" % (value, awaits[0]["passes"] + 1)]
+    if name == "again":
+        # One more attempt of a stage that did not reach its record twice in a row.
+        spent = [entry for entry in read["human_stages"] if entry["stage"] == value and entry["round"] == round_number]
+        if not spent:
+            refuse("bad-value", "round %d: the `%s` stage is not the human's to grant one more attempt there — that is granted to a stage the state's human_stages names: one whose attempts did not reach their record; nothing was written" % (round_number, value))
+        return ["%s a%d" % (spent[0]["at"], spent[0]["attempt"])]
     spent = [entry for row in read["clauses"] if row["clause"] == value for entry in row["items"] if entry["rerun"] == "spent" and entry["round"] == round_number]
     if not any(entry["clause"] == value for entry in read["human_clauses"]) or not spent:
         refuse("bad-value", "round %d: the clause %s is not the human's there — one more re-run is granted to a clause an item of which is still not green after its re-run (the state's human_clauses), in the round that selected that item; nothing was written" % (round_number, value))
@@ -2481,47 +2940,73 @@ def position_of(rounds, findings, owed, stop, rerun):
     """What an invocation of each stage would work on — the round, the cycle and the
     attempt — or why it is refused. A pure function of the rounds' records, the routes,
     what the opening owes and the stop the next step computed from the run's facts; the
-    header's table is this function."""
+    header's table is this function. The third entry, `spent`, is no stage's position: it
+    names the stages refused because their attempts are spent."""
     number_ = rounds[-1]["round"] if rounds else None
+    spent = []
 
     def refused(word):
         return {"refused": word, "round": number_}
 
+    def attempted(stage, held, cycle=None):
+        """The next attempt of a stage in a round — or, where as many attempts in a row as
+        are tried without the human left reports and no record, and the human granted no
+        further one, its refusal."""
+        at = "test" if stage == "test" else "fix-c%d" % cycle
+        on_disk = held["test_attempt"] if stage == "test" else max([had["attempt"] for had in held["fix_cycles"] if had["cycle"] == cycle], default=0)
+        unrecorded = held["test_unrecorded"] if stage == "test" else max([had["unrecorded"] for had in held["fix_cycles"] if had["cycle"] == cycle], default=0)
+        if unrecorded >= AUTOMATIC and "%s a%d" % (at, on_disk + 1) not in held["facts"]["again"]:
+            spent.append({"stage": stage, "round": held["round"], "cycle": cycle, "at": at, "attempt": on_disk + 1, "attempts": unrecorded, "why": NOT_RECORDED})
+            return None
+        return on_disk + 1
+
+    def placed_(test, fix):
+        return {"test": test, "fix": fix, "spent": spent}
+
     if owed:
-        return {"test": refused("not-ready"), "fix": refused("not-ready")}
+        return placed_(refused("not-ready"), refused("not-ready"))
     if not rounds:
-        return {"test": {"round": 1, "attempt": 1}, "fix": refused("no-round")}
+        return placed_({"round": 1, "attempt": 1}, refused("no-round"))
     last = rounds[-1]
     if last["facts"]["candidate"] is None:
-        return {"test": {"round": number_, "attempt": last["test_attempt"] + 1}, "fix": refused("not-tested")}
+        attempt = attempted("test", last)
+        return placed_({"round": number_, "attempt": attempt} if attempt else refused("attempts-spent"), refused("not-tested"))
     # Round R+1 — which waits for the human's go where the run is stopped after R.
     onward = {"round": number_ + 1, "attempt": 1}
     if stop and stop["why"] == "every-round":
         onward = refused("stopped")
     if last["facts"]["outcome"] is not None:
-        return {"test": onward, "fix": refused("round-over")}
+        return placed_(onward, refused("round-over"))
     still = not over(rounds, findings)
     cycle = last["facts"]["cycles"] + 1
-    attempt = max([held["attempt"] for held in last["fix_cycles"] if held["cycle"] == cycle], default=0) + 1
-    fix = {"round": number_, "cycle": cycle, "attempt": attempt, "land": last["facts"]["cycles"] >= 1 and not still}
+    # The fix stage's attempts may be spent too — but its position is refused for that only
+    # where the step is that stage's (the state, below): a round whose last cycle left
+    # nothing open still has to land, whatever halted before.
+    fix = {"round": number_, "cycle": cycle, "attempt": attempted("fix", last, cycle) or 1 + max([had["attempt"] for had in last["fix_cycles"] if had["cycle"] == cycle], default=0), "land": last["facts"]["cycles"] >= 1 and not still}
     if rerun:
         # The step is an item's run again: an attempt INSIDE the round that selected it.
         within = [held for held in rounds if held["round"] == rerun["round"]][0]
-        return {"test": {"round": rerun["round"], "attempt": within["test_attempt"] + 1, "rerun": rerun}, "fix": fix}
+        attempt = attempted("test", within)
+        return placed_({"round": rerun["round"], "attempt": attempt, "rerun": rerun} if attempt else refused("attempts-spent"), fix)
     if not still:
-        return {"test": onward, "fix": fix}
+        return placed_(onward, fix)
     test = refused("round-open")
-    if stop and stop["why"] == "round-bound":
+    bound = stop["why"] if stop else None
+    if bound == "round-bound":
         # One more fix round is the human's to allow.
         fix = refused("round-bound")
+    elif bound == "cycle-bound":
+        # And so is one more fix cycle in this round.
+        fix = refused("cycle-bound")
     elif any(finding["route"] == "triage" for finding in findings):
         # The round's triage is not finished: the stage that left it finishes it — the fix
         # stage where one has left a counted cycle or a report in the round, else `test`.
         if fixed_in(last) or any(held["reports"] for held in last["fix_cycles"]):
             fix["triage"] = True
         else:
-            test = {"round": number_, "attempt": last["test_attempt"] + 1, "triage": True}
-    return {"test": test, "fix": fix}
+            attempt = attempted("test", last)
+            test = {"round": number_, "attempt": attempt, "triage": True} if attempt else refused("attempts-spent")
+    return placed_(test, fix)
 
 
 def state(args):
@@ -2590,6 +3075,18 @@ def document(run_dir, run):
             if ran["finding"] is not None and ran["finding"] not in keys:
                 spoiled(ledger_rel, "lacks %s, the finding round %d's results file the red run of %s under" % (ran["finding"], number_, ran["item"]))
         doors = None if scope is None else {side: [{"door": as_data(row[0]), "registry": as_data(row[2]), "derivation": as_data(row[3])} for row in scope if row[1] == side] for side in SIDES}
+        # THE ATTEMPTS OF A STAGE: how many of them, after the last one that reached its
+        # record, left reports and nothing else.
+        reached = by_name(held["facts"]["recorded"])
+        cycles = [dict(zip(("cycle", "reports", "attempt"), (cycle,) + reports_in(run_dir, [name, "reports", "fix", "c%d" % cycle]))) for cycle in numbered(run_dir, [name, "reports", "fix"], "c")]
+        for at, on_disk in [("test", test_attempt)] + [("fix-c%d" % had["cycle"], had["attempt"]) for had in cycles]:
+            if reached.get(at, ("", 0))[1] > on_disk:
+                spoiled("/".join(ARTIFACTS + (run, name, "round.md")), "says that attempt %d of %s reached its record, and the reports of that attempt are gone" % (reached[at][1], at))
+        for had in cycles:
+            had["unrecorded"] = had["attempt"] - reached.get("fix-c%d" % had["cycle"], ("", 0))[1]
+        for at in reached:
+            if at != "test" and all("fix-c%d" % had["cycle"] != at for had in cycles):
+                spoiled("/".join(ARTIFACTS + (run, name, "round.md")), "says that an attempt of %s reached its record, and that cycle's reports are gone" % at)
         rounds.append({
             "round": number_,
             "scope": scope is not None,
@@ -2600,9 +3097,18 @@ def document(run_dir, run):
             "reopened": reopened,
             "test_reports": test_reports,
             "test_attempt": test_attempt,
-            "fix_cycles": [dict(zip(("cycle", "reports", "attempt"), (cycle,) + reports_in(run_dir, [name, "reports", "fix", "c%d" % cycle]))) for cycle in numbered(run_dir, [name, "reports", "fix"], "c")],
+            "test_unrecorded": test_attempt - reached.get("test", ("", 0))[1],
+            "fix_cycles": cycles,
         })
 
+    # THE TRIAGE PASSES OF A FINDING, as the latest round's record counts them, and the
+    # further ones the human granted there.
+    passes = by_name(rounds[-1]["facts"]["awaiting"]) if rounds else {}
+    again = rounds[-1]["facts"]["reverify"] if rounds else []
+    for held in rounds:
+        for key in by_name(held["facts"]["awaiting"]):
+            if key not in keys:
+                spoiled(ledger_rel, "lacks %s, a finding round %d's record names as left without a grade or a verdict by its triage" % (key, held["round"]))
     findings = []
     for key, row in zip(keys, ledger_rows):
         grade, bound = grade_read(ledger_rel, key, row[6])
@@ -2626,7 +3132,20 @@ def document(run_dir, run):
         }
         finding["reopened"] = disposition == "fixed" and not fix_held(finding, triage.get(key))
         finding["route"], finding["why"] = route_of(finding, triage.get(key), listed)
+        # A finding the round's triage has not finished is tried once more without the
+        # human, and then it is the human's: `awaits` says which of the two it lacks, how
+        # many triage records of the latest round in a row have left it so, and whether
+        # the next one is due or — spent — the human's to rule or to grant.
+        finding["awaits"] = None
+        if finding["route"] == "triage":
+            why, count = passes.get(key, (None, 0))
+            count = count if why == finding["why"] else 0
+            due = count < AUTOMATIC or "%s p%d" % (key, count + 1) in again
+            finding["awaits"] = {"why": finding["why"], "passes": count, "retry": "due" if due else "spent"}
+            if not due:
+                finding["route"], finding["why"] = "human", finding["why"] + AFTER_RETRY
         findings.append(finding)
+    hold_census(run_dir, ledger_rel, keys)
     items = [
         {
             "item": untick(row[0]),
@@ -2659,6 +3178,19 @@ def document(run_dir, run):
             "items": [{"item": entry["item"], "attempt": (entry["attempt"] or 0) + 1} for entry in due if entry["round"] == within],
             "doors": [{"door": as_data(row[0]), "registry": as_data(row[2]), "derivation": as_data(row[3])} for row in inside if row[1] == "included"],
         }
+    position = position_of(rounds, findings, owed, following["stop"], rerun)
+    # THE ATTEMPTS OF A STAGE: where the step is a stage's and that stage's attempts are
+    # spent, the step is the human's — who may grant one more (round-set: again).
+    step = following["stop"]["then"] if following["stop"] else following["next"]
+    finishing = "fix" if rounds and (fixed_in(rounds[-1]) or any(had["reports"] for had in rounds[-1]["fix_cycles"])) else "test"
+    stage = {"test": "test", "retest": "test", "fix": "fix", "triage": finishing}.get(step)
+    human_stages = [entry for entry in position.pop("spent") if entry["stage"] == stage and (position[stage].get("refused") == "attempts-spent" or (stage == "fix" and "refused" not in position["fix"]))]
+    if human_stages:
+        position[stage] = {"refused": "attempts-spent", "round": human_stages[0]["round"]}
+        following.update(retest=[], **({"stop": dict(following["stop"], then="rule")} if following["stop"] else {"next": "rule"}))
+    # THE ROUND A WRITE MAY BEGIN: the one a `test` stage is handed that no directory holds
+    # yet — asked as if the opening were done, whose own order is not this script's to hold.
+    free = position_of(rounds, findings, [], following["stop"], rerun)["test"]
     return {
         "run": run,
         "opened": True,
@@ -2666,6 +3198,7 @@ def document(run_dir, run):
         "not_ready": owed,
         "rounds": rounds,
         "round": rounds[-1]["round"] if rounds else None,
+        "begins": free["round"] if "refused" not in free and all(held["round"] != free["round"] for held in rounds) else None,
         "doors": doors,
         "bounds": [dict(zip(BOUND_COLUMNS, [untick(row[0])] + [as_data(text) for text in row[1:]])) for row in bound_rows],
         "clauses": clauses,
@@ -2673,8 +3206,9 @@ def document(run_dir, run):
         "ledger": findings,
         "blockers": [finding["key"] for finding in findings if finding["route"] == "fix"],
         "human_list": [{"key": finding["key"], "why": finding["why"]} for finding in findings if finding["route"] == "human"],
+        "human_stages": human_stages,
         **following,
-        "position": position_of(rounds, findings, owed, following["stop"], rerun),
+        "position": position,
     }
 
 
@@ -2784,6 +3318,7 @@ def gate_set(args):
         refuse("bad-value", "commit %s is not a full sha of 40 hex digits: the candidate the gate ran on" % shown(args.commit))
     seen = gate_read(args.summary, "--summary")
     one_writer(run_dir)
+    untested(standing(run_dir, args.run), round_number, "the candidate's gate of round %s" % round_number)
     held = read_gate(run_dir, round_number)
     if held is not None and held[1]["commit"] != args.commit:
         refuse("exists", "%s holds the gate of %s — a round tests one candidate; nothing was written" % (held[0], held[1]["commit"]))
@@ -2840,7 +3375,7 @@ def apply(args):
     one_writer(run_dir)
     if read_journal(run_dir)["batch"] is not None:
         refuse("pending", "run %s has a batch that is applied and not committed: its record step commits it (`dev/stabilize-step record`), or `dev/stabilize-record discard --run %s` takes it back; nothing was written" % (args.run, args.run))
-    results, checks = [], []
+    results, checks, reached = [], [], []
     for n, call in enumerate(given, 1):
         name = call["argv"][0]
         try:
@@ -2864,6 +3399,15 @@ def apply(args):
         results.append(printed)
         if name in CHECKS:
             checks.append(printed)
+        if name == "check-reports":
+            reached.append((sub.round, "test" if sub.stage == "test" else "fix-c%s" % sub.cycle, int(sub.attempt)))
+    # A batch that holds a stage's report check IS THE RECORD OF THAT ATTEMPT of the stage:
+    # the round's record says which attempt reached it, so that the attempts after it — the
+    # ones that left reports and no record — can be counted (state: THE ATTEMPTS OF A STAGE).
+    for round_, stage_, attempt in reached:
+        marks = by_name(round_facts(*read_round(run_dir, round_)[::2])["recorded"])
+        marks[stage_] = ("", max(attempt, marks.get(stage_, ("", 0))[1]))
+        counted(run_dir, round_, "recorded", ["%s a%d" % (stage, held[1]) for stage, held in marks.items()])
     files = [staged[0] for staged in STAGED.values()]
     flush(run_dir, {"round": round_number, "subject": args.subject, "calls": len(given), "checks": checks, "files": {}})
     say(json.dumps({"applied": len(given), "files": files, "results": results}))
@@ -2996,6 +3540,12 @@ def arguments(argv):
     command("discard", discard, [])
     command("settle", settle, [])
     command("recover", recover_, [])
+    # THE WRITER x STATE TABLE has a row for every subcommand and for every fact: one added
+    # without its row is no call this script takes.
+    rows = [(set(commands.choices), set(WRITERS) | set(READERS) | set(KEEPERS), "subcommand"), (set(ROUND_FACTS), set(ROUND_TAKES), "fact of a round's record"), (set(RUN_FACTS), set(RUN_TAKES), "fact of the run")]
+    for there, tabled, what in rows:
+        if there != tabled:
+            raise LookupError("the writer x state table and the script's own list of each %s differ in %s: where the state takes it is decided for every one, on purpose" % (what, ", ".join(sorted(there ^ tabled))))
     if not argv or argv[0] not in commands.choices:
         refuse("usage", "%s is not a subcommand: the subcommands are %s — see dev/stabilize-record --help" % (shown(argv[0]) if argv else "nothing", ", ".join(commands.choices)))
     return parser.parse_args(argv)
