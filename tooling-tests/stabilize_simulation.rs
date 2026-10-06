@@ -1312,9 +1312,10 @@ fn an_unverified_finding_is_finished_by_the_next_invocation_and_after_one_more_i
     assert_eq!(sim.rig.status(), "");
 }
 
-/// A scenario's red gate: the fast tier failed, on these tests.
+/// A scenario's red gate: the suite failed, on these tests. A stabilization run's gates
+/// keep going (`dev/gate --keep-going`), so the suite is one step, `test`.
 fn red(tests: &[&str]) -> Value {
-    json!({"steps": ["tier1"], "tests": tests})
+    json!({"steps": ["test"], "tests": tests})
 }
 
 const FLAKY: &str = "jigc::g_tooling a_suite::a_test_that_fails_now_and_then";
@@ -1368,7 +1369,7 @@ fn a_red_gate_in_a_record_step_leaves_a_pending_batch_that_the_next_invocation_c
     );
     assert_eq!(
         halted["halted"]["gate"]["new"],
-        json!(["step tier1", format!("test {FLAKY}")])
+        json!(["step test", format!("test {FLAKY}")])
     );
     assert_eq!(sim.rig.rev("HEAD"), opened, "nothing was committed");
     assert_eq!(
@@ -1481,7 +1482,7 @@ fn a_red_candidate_is_recorded_and_a_test_red_only_with_the_records_halts_by_nam
     for row in [
         format!("| commit | `{candidate}` |"),
         "| verdict | fail |".to_owned(),
-        "| step | `tier1` |".to_owned(),
+        "| step | `test` |".to_owned(),
         format!("| test | `{KNOWN}` |"),
     ] {
         assert!(gate.contains(&row), "`{row}` is data of the round: {gate}");
@@ -1509,7 +1510,7 @@ fn a_red_candidate_is_recorded_and_a_test_red_only_with_the_records_halts_by_nam
     );
     assert_eq!(
         halted["halted"]["gate"]["known"],
-        json!(["step tier1", format!("test {KNOWN}")])
+        json!(["step test", format!("test {KNOWN}")])
     );
     assert_eq!(sim.rig.rev("HEAD"), candidate);
 
@@ -1631,7 +1632,13 @@ fn the_records_commit_step_commits_exactly_the_applied_batch_or_nothing() {
     );
     let red = gate(
         "red",
-        "tests   passed=8 failed=1  (over 2 test binaries)\n\nGATE: FAIL (step: tier1)\n\nfailing tests:\n  jigc::g_a s::one\n",
+        "gate: mode   full, keep-going (no red step stops the run but a red build; the suite is ONE step, `test` -- what is named red is all that is red)\ntests   passed=8 failed=1  (over 2 test binaries)\n\nGATE: FAIL (step: test)\n\nfailing tests:\n  jigc::g_a s::one\n",
+    );
+    // The same red, of a gate that stopped at its first red stage: what it names red is
+    // not all that is red, so it is held to nothing.
+    let stopped = gate(
+        "stopped",
+        "gate: mode   full\ntests   passed=8 failed=1  (over 2 test binaries)\n\nGATE: FAIL (step: tier1)\n\nfailing tests:\n  jigc::g_a s::one\n",
     );
     let pre_check = gate(
         "pre-check",
@@ -1711,6 +1718,11 @@ fn the_records_commit_step_commits_exactly_the_applied_batch_or_nothing() {
             "record",
         ),
         (
+            "a red gate that did not keep going",
+            record(&stopped, "2", LOOP),
+            "record",
+        ),
+        (
             "a gate's output that is not there",
             record(&format!("{scratch}/none.txt"), "2", LOOP),
             "record",
@@ -1722,7 +1734,7 @@ fn the_records_commit_step_commits_exactly_the_applied_batch_or_nothing() {
     }
     assert_eq!(
         record(&red, "2", LOOP).refused("gate-red")["gate"]["new"],
-        json!(["step tier1", "test jigc::g_a s::one"]),
+        json!(["step test", "test jigc::g_a s::one"]),
         "the refusal's line carries what is newly red"
     );
     // A file of the batch changed after the batch wrote it, and a file nobody wrote.

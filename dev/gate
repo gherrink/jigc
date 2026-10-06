@@ -22,6 +22,13 @@
 #   dev/gate                     # full gate: fmt, clippy, build, then the suite in two
 #                                #   tiers (cargo nextest) and the doctests; `cargo test`
 #                                #   without nextest
+#   dev/gate --keep-going        # the full gate, and NO RED STEP STOPS IT: a red fmt or
+#                                #   clippy still runs the tests, and the suite runs as
+#                                #   ONE step, `test`, then the doctests. So what a red
+#                                #   run names red is all that is red. Green, it is a
+#                                #   full gate like any other: the same tests, the same
+#                                #   two lines. For a run whose red is COMPARED with
+#                                #   another run's (a stabilization run's record commit)
 #   dev/gate --fast              # fmt, clippy, build and the FAST test tier only -- a
 #                                #   pre-check for a registry row or a fence a change
 #                                #   owes. It prints neither the totals line nor the
@@ -41,6 +48,18 @@
 # tier nor the doctests. A red therefore reports the stage that stopped the run and
 # nothing after it. A green gate runs every test: the second tier is `not (<the fast
 # tier's filter>)`, built from the same variable.
+#
+# `--keep-going` is the same gate for the reader who needs the WHOLE red, not the first
+# of it: a run whose failing set is held against another run's. Nothing red stops it,
+# with one exception -- a red build launches no test in any mode, because there is
+# nothing to run one from, and so does a red `test-build`, the build of the tests, which
+# this mode runs as a step of its own. And the suite is one nextest run, the step `test`, not two
+# tiers: a tier is a place to stop, which this mode never does, and a test's tier is this
+# machine's last measurement of it -- a failing test that took two seconds is in the
+# second tier on the next run, and its step would read as newly red though no test is.
+# It reads no timing record, so no record can touch it; it writes one, like any run. Its
+# mode line says `full, keep-going`, and green it prints the totals line and `GATE: PASS`
+# of a full gate, over the same tests.
 #
 # The fast tier is every test this machine has not measured at JIGC_GATE_FAST_UNDER
 # seconds or more (default 2). Nobody lists it: every nextest step writes a JUnit report,
@@ -327,6 +346,7 @@ gate_slow_filter() {
 
 # --- arguments --------------------------------------------------------------
 mode=full
+keep_going=0
 private_target=0
 report_only=""
 while [ $# -gt 0 ]; do
@@ -337,6 +357,7 @@ while [ $# -gt 0 ]; do
                 exit 2
             fi
             mode=${1#--}; shift ;;
+        --keep-going) keep_going=1; shift ;;
         --private-target) private_target=1; shift ;;
         --report)
             if [ $# -lt 2 ]; then
@@ -349,11 +370,16 @@ while [ $# -gt 0 ]; do
         -h|--help) awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
         *)
             printf 'dev/gate: unknown option: %s\n' "$1" >&2
-            printf 'dev/gate: try --fast, --quick, --private-target, --report <log>, --help\n' >&2
+            printf 'dev/gate: try --keep-going, --fast, --quick, --private-target, --report <log>, --help\n' >&2
             exit 2
             ;;
     esac
 done
+# A pre-check that kept going would be a third thing: neither a gate nor a quick answer.
+if [ "$keep_going" -eq 1 ] && [ "$mode" != full ]; then
+    printf 'dev/gate: --keep-going is the full gate with no stop; --%s is a pre-check -- name one\n' "$mode" >&2
+    exit 2
+fi
 
 # The fast tier's threshold, refused here rather than read as zero by awk later: at zero
 # every recorded test is slow, and the fast tier would silently be the new tests alone.
@@ -405,6 +431,10 @@ if [ "$mode" = quick ]; then
     printf 'gate: mode   quick (fmt, clippy, build -- NOT the full gate, do not commit on it)\n'
 elif [ "$mode" = fast ]; then
     printf 'gate: mode   fast (fmt, clippy, build, the fast test tier -- a PRE-CHECK, not the gate, do not commit on it)\n'
+elif [ "$keep_going" -eq 1 ]; then
+    # `gate: mode   full, keep-going` is read by a machine: dev/stabilize-record takes a
+    # RED gate as evidence only where its output carries it.
+    printf 'gate: mode   full, keep-going (no red step stops the run but a red build; the suite is ONE step, `test` -- what is named red is all that is red)\n'
 else
     printf 'gate: mode   full\n'
 fi
@@ -629,6 +659,11 @@ run_seconds=$(mktemp "$tmp_root/jigc-gate-seconds-XXXXXX") || exit 2
 JIGC_GATE_SKIPS=$(mktemp "$tmp_root/jigc-gate-skips-XXXXXX") || exit 2
 export JIGC_GATE_SKIPS
 
+# The `[store]` table of the run's tool config.
+write_store() {
+    printf '[store]\ndir = "%s"\n' "$(printf '%s' "$store" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+}
+
 # Write the run's tool config: its store, and the two tiers as profiles, the fast one
 # `not ($1)`.
 write_tiers() {
@@ -636,11 +671,22 @@ write_tiers() {
     tier2="not ($tier1)"
     {
         printf '# Written by dev/gate for one run: its two test tiers, as nextest profiles.\n'
-        printf '[store]\ndir = "%s"\n' "$(printf '%s' "$store" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+        write_store
         printf "[profile.gate-tier1]\ndefault-filter = '%s'\n" "$tier1"
         printf '[profile.gate-tier1.junit]\npath = "junit.xml"\n'
         printf "[profile.gate-tier2]\ndefault-filter = '%s'\n" "$tier2"
         printf '[profile.gate-tier2.junit]\npath = "junit.xml"\n'
+    } >"$tiers"
+}
+
+# Write the tool config of a run that keeps going: its store, and the whole suite as one
+# profile. It names no test and no binary, so nothing a record holds reaches it.
+write_whole_suite() {
+    {
+        printf '# Written by dev/gate for one run: the whole suite, as one nextest profile.\n'
+        write_store
+        printf "[profile.gate-all]\ndefault-filter = 'all()'\n"
+        printf '[profile.gate-all.junit]\npath = "junit.xml"\n'
     } >"$tiers"
 }
 
@@ -653,36 +699,21 @@ run_tier() {
     shift 2
     run_step "$tier_name" cargo nextest run --workspace --no-fail-fast "$@" \
         --tool-config-file "jigc-gate:$tiers" --profile "$tier_profile"
+    tier_code=$code
     junit=$store/$tier_profile/junit.xml
     if [ -f "$junit" ]; then
         gate_junit_seconds "$junit" >>"$run_seconds"
     fi
 }
 
-# The gate, in order. It stops at the first red stage: the three cheap steps all run, so
-# one cycle shows a format diff and a lint together, and a red among them launches no
-# test; a red fast tier launches neither the second tier nor the doctests.
-run_step fmt cargo fmt --check
-run_step clippy cargo clippy --all-targets -- -D warnings
-run_step build cargo build
-tiers_green=0
-if [ "$mode" = quick ]; then
-    :
-elif [ -n "$failed_steps" ]; then
-    printf '==> NOTE    a lint or build step is red: no test was run\n'
-# The suite is nextest -- one process per test over one pool, measurably faster than
-# `cargo test`'s binary-after-binary -- and then the doctests, which nextest does not
-# run. Without nextest the gate is still the FULL suite: `cargo test`, which runs the
-# doctests itself, with a note that says why it is slower.
-elif cargo nextest --version >/dev/null 2>&1; then
+# The suite as a run that may stop runs it: the fast tier, then its complement, then the
+# doctests -- and the question it asks nextest about the record first.
+run_two_tiers() {
     slow=$(gate_slow_filter "$record" "$fast_under")
-    tiers=$(mktemp "$tmp_root/jigc-gate-tiers-XXXXXX") || exit 2
-    store=$(mktemp -d "$tmp_root/jigc-gate-store-XXXXXX") || exit 2
     write_tiers "$slow"
     # The probe (above: A WRONG OR STALE RECORD). Only a record that holds a slow test
     # gives nextest anything it could refuse. Its output goes into the log indented, so
     # no line of it is read as a step's by the report layer.
-    record_refused=0
     if [ "$slow" != 'none()' ]; then
         probe_out=$(mktemp "$tmp_root/jigc-gate-probe-XXXXXX") || exit 2
         probe_started=$(date +%s)
@@ -728,13 +759,69 @@ elif cargo nextest --version >/dev/null 2>&1; then
         fi
         run_step doctest cargo test --workspace --doc
     fi
+}
+
+# The suite as a run that keeps going runs it: the tests built, as a step of its own;
+# then ONE nextest run of every test, then the doctests, whatever is red. No tier, so no
+# filter, no timing record read, and no question to ask nextest about one.
+#
+# The build of the tests is its own step because it is a build: where it is red there is
+# nothing to run a test from, exactly as after a red `build`. Left inside the suite's step
+# it would be a red test step that names no failing test -- which says nothing about which
+# tests are red, and which no comparison of two runs can hold. (A plain gate never gets
+# here with tests that do not compile: `clippy --all-targets` is red first, and stops it.)
+run_whole_suite() {
+    run_step test-build cargo test --workspace --no-run
+    if [ "$code" -ne 0 ]; then
+        printf '==> NOTE    the tests do not build: none was run\n'
+        return 0
+    fi
+    write_whole_suite
+    printf 'gate: tiers  none -- the suite runs as ONE step, `test`, and reads no timing record\n'
+    run_tier test gate-all
+    if [ "$tier_code" -eq 0 ]; then
+        tiers_green=1
+    fi
+    run_step doctest cargo test --workspace --doc
+}
+
+# The gate, in order. It stops at the first red stage: the three cheap steps all run, so
+# one cycle shows a format diff and a lint together, and a red among them launches no
+# test; a red fast tier launches neither the second tier nor the doctests. With
+# --keep-going nothing red stops it but a red build -- the binary's here, or the tests'
+# (run_whole_suite) -- which leaves no test to run.
+run_step fmt cargo fmt --check
+run_step clippy cargo clippy --all-targets -- -D warnings
+run_step build cargo build
+build_code=$code
+tiers_green=0
+record_refused=0
+if [ "$mode" = quick ]; then
+    :
+elif [ "$keep_going" -eq 1 ] && [ "$build_code" -ne 0 ]; then
+    printf '==> NOTE    the build is red: no test can be built, so none was run\n'
+elif [ "$keep_going" -eq 0 ] && [ -n "$failed_steps" ]; then
+    printf '==> NOTE    a lint or build step is red: no test was run\n'
+# The suite is nextest -- one process per test over one pool, measurably faster than
+# `cargo test`'s binary-after-binary -- and then the doctests, which nextest does not
+# run. Without nextest the gate is still the FULL suite: `cargo test`, which runs the
+# doctests itself, with a note that says why it is slower.
+elif cargo nextest --version >/dev/null 2>&1; then
+    tiers=$(mktemp "$tmp_root/jigc-gate-tiers-XXXXXX") || exit 2
+    store=$(mktemp -d "$tmp_root/jigc-gate-store-XXXXXX") || exit 2
+    if [ "$keep_going" -eq 1 ]; then
+        run_whole_suite
+    else
+        run_two_tiers
+    fi
 
     # The run's seconds go into the log, for whoever analyses this run, and into the
-    # record, for the next run's tiers. After two green tiers the run measured every test
-    # there is, so its rows ARE the record and a deleted test's row goes with them; so
-    # they are where nextest did not take the record's tiers -- the fast tier was the
-    # whole suite -- and where there was no record. Otherwise the run's rows replace their
-    # own and every other row stands. The new record is written beside the old one and
+    # record, for the next run's tiers. After two green tiers -- or the one green `test`
+    # step of a run that keeps going -- the run measured every test there is, so its rows
+    # ARE the record and a deleted test's row goes with them; so they are where nextest
+    # did not take the record's tiers -- the fast tier was the whole suite -- and where
+    # there was no record. Otherwise the run's rows replace their own and every other row
+    # stands. The new record is written beside the old one and
     # renamed over it, so a gate reading the record meanwhile reads one of the two, whole.
     # A record that cannot be written is a slower next run and nothing else.
     if [ -s "$run_seconds" ]; then
@@ -765,7 +852,17 @@ else
     printf '                cargo install cargo-nextest --locked\n'
     printf '            (implementation/machine-setup.md)\n'
     if [ "$mode" = full ]; then
-        run_step test cargo test --workspace --no-fail-fast
+        # A run that keeps going builds the tests as a step of its own (run_whole_suite).
+        tests_build=0
+        if [ "$keep_going" -eq 1 ]; then
+            run_step test-build cargo test --workspace --no-run
+            tests_build=$code
+        fi
+        if [ "$tests_build" -eq 0 ]; then
+            run_step test cargo test --workspace --no-fail-fast
+        else
+            printf '==> NOTE    the tests do not build: none was run\n'
+        fi
     fi
 fi
 

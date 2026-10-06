@@ -148,6 +148,15 @@ fn logs() -> Vec<String> {
 
 /// The rig's `git`: it writes down a call the tool itself made — never one of a script
 /// the tool ran, nor one of the fixture's — and runs the real git.
+///
+/// It tells the tool's own calls by its parent's command line, which it asks `ps` for —
+/// so this suite, and the simulation that shares its rig, need `ps` beside `git` and
+/// `python3`. Both places they must run have it (established 2026-10-06): the image
+/// `dev/runner-faithful` builds is `FROM ubuntu:24.04`, whose base carries `procps`
+/// (`/usr/bin/ps`; priority *important*) though the image's own install list does not
+/// name it, and on a GitHub-hosted `ubuntu-latest` runner every test of this suite passed
+/// (CI run 37513437924) — which none that reads a trace can without it. A machine without
+/// `ps` would leave every trace EMPTY: the arms that expect calls fail, by name.
 const GIT_SHIM: &str = r#"#!/bin/sh
 if [ -n "${STEP_TRACE:-}" ]; then
 case "$(ps -o command= -p "$PPID")" in

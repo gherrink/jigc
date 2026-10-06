@@ -107,17 +107,20 @@ function span(text, opens) {
   const at = text.indexOf('`' + opens)
   return at < 0 ? null : text.slice(at + 1, text.indexOf('`', at + 1))
 }
-// What a full `dev/gate` prints, as much of it as anybody reads: its totals line, its
-// verdict line, and the failing tests by name. `red` is { steps, tests }, or nothing.
+// What a full `dev/gate --keep-going` prints, as much of it as anybody reads: its mode
+// line, its totals line, its verdict line, and the failing tests by name. `red` is
+// { steps, tests }, or nothing.
 function gateOutput(red) {
   const steps = (red && red.steps) || []
   const tests = (red && red.tests) || []
-  return ['gate: log    (scripted by the simulation: no gate ran)', '', '--- summary ---', 'tests   passed=1 failed=' + tests.length + '  (over 1 test binaries)', '']
+  return ['gate: log    (scripted by the simulation: no gate ran)', 'gate: mode   full, keep-going (no red step stops the run but a red build; the suite is ONE step, `test` -- what is named red is all that is red)', '', '--- summary ---', 'tests   passed=1 failed=' + tests.length + '  (over 1 test binaries)', '']
     .concat(steps.length ? ['GATE: FAIL (step: ' + steps.join(' ') + ')', ''].concat(tests.length ? ['failing tests:'].concat(tests.map((t) => '  ' + t), ['']) : []) : ['GATE: PASS'])
     .join('\n') + '\n'
 }
 function keepGate(command, red) {
-  const file = /^dev\/gate > (\S+) 2>&1$/.exec(command)[1]
+  // THE GATE OF A STABILIZATION RUN KEEPS GOING: a stage that spells a plain `dev/gate`
+  // has no gate this stand-in keeps, and its record step halts on the file that is not there.
+  const file = /^dev\/gate --keep-going > (\S+) 2>&1$/.exec(command)[1]
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, gateOutput(red))
   return file
@@ -178,7 +181,7 @@ function preflight(label, prompt) {
   const status = git('status', '--porcelain').stdout
   const stray = status.split('\n').filter((line) => line && !line.startsWith('?? ' + runDir[1] + '/'))
   const notHead = prompt.includes('THE CANDIDATE IS NOT `HEAD` HERE') && new RegExp('`git merge-base --is-ancestor ' + sha + ' HEAD` must hold').test(prompt)
-  const readsTheTree = prompt.includes('dev/gate > ') || /^ {3}- [a-z0-9-]+: /m.test(prompt)
+  const readsTheTree = prompt.includes('dev/gate --keep-going > ') || /^ {3}- [a-z0-9-]+: /m.test(prompt)
   const failed = notHead && git('merge-base', '--is-ancestor', sha, 'HEAD').code !== 0 ? 'the candidate ' + sha + ' is no commit that `HEAD` (' + head + ') holds'
     : notHead && readsTheTree ? 'the candidate ' + sha + ' is not `HEAD`, and this call lists a step that reads the working tree'
       : !notHead && head !== sha ? '`git rev-parse HEAD` is ' + head + ', and the candidate is ' + sha + ': the tree is not the candidate'
@@ -199,7 +202,7 @@ function preflight(label, prompt) {
   const previous = /the previous release's binary: version `([^`]+)`, built from commit [0-9a-f]{40} .*? at `([^`]+)`/.exec(prompt)
   if (previous) back.previous = { version: previous[1], binary: previous[2], sha256: standIn(previous[2], 'release ' + previous[1]) }
   if (/\d+\. the trial image, built and verified/.test(prompt)) back.image = { tag: 'jigc-trial:' + candidate, verified: true, failed: [] }
-  const gate = span(prompt, 'dev/gate > ')
+  const gate = span(prompt, 'dev/gate --keep-going > ')
   if (gate) keepGate(gate, scenario.gate)
   // Whether the cross-model pass's tool answers: one more entry of `checks`, under the id
   // the prompt names — an answer, never an assert.
@@ -259,7 +262,7 @@ function recordStep(label, prompt) {
     }
     const command = span(step[0], 'dev/')
     if (!command) fail('a step of the record step `' + label + '` spells no command: ' + step[0])
-    if (command.startsWith('dev/gate > ')) {
+    if (command.startsWith('dev/gate --keep-going > ')) {
       // THE GATE IS NOT RUN: a test inside the gate cannot run the gate.
       gate = keepGate(command, ruled.gate)
       continue

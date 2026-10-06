@@ -805,11 +805,16 @@ fn gate_path(round: &str) -> String {
     format!("completions/artifacts/{RUN}/r{round}/gate.md")
 }
 
-/// What a full `dev/gate` prints, as much of it as the script reads: the totals line, the
-/// verdict line, and the failing tests by name. No step failed: a green gate.
+/// The mode line of a gate that was run as `dev/gate --keep-going`: no red step stopped
+/// it, so what it names red is all that is red. A red gate is evidence only with it.
+const KEEPS_GOING: &str = "gate: mode   full, keep-going (no red step stops the run but a red build; the suite is ONE step, `test` -- what is named red is all that is red)";
+
+/// What a full `dev/gate --keep-going` prints, as much of it as the script reads: the mode
+/// line, the totals line, the verdict line, and the failing tests by name. No step
+/// failed: a green gate.
 fn gate_output(steps: &[&str], tests: &[&str]) -> String {
     let mut text = format!(
-        "gate: log    <tmp>/jigc-gate-x\n==> fmt     ok        (1s)\n\n--- summary ---\ntests   passed=4700 failed={}  (over 15 test binaries)\n",
+        "gate: log    <tmp>/jigc-gate-x\n{KEEPS_GOING}\n==> fmt     ok        (1s)\n\n--- summary ---\ntests   passed=4700 failed={}  (over 15 test binaries)\n",
         tests.len()
     );
     if steps.is_empty() {
@@ -1152,7 +1157,7 @@ const WRITERS: &[Writer] = &[
         free_text: true,
         prepare: |_| {},
         call: |rig, text, extra| {
-            let summary = rig.summary("writer", &["tier1"], &[text]);
+            let summary = rig.summary("writer", &["test"], &[text]);
             let mut args = gate_set(RUN, "1", &sha('a'), &summary);
             args.extend_from_slice(extra);
             (rig.run(&args, ""), gate_path("1"))
@@ -9770,56 +9775,56 @@ fn a_record_commits_gate_is_held_to_what_the_candidates_gate_showed_red() {
         Row {
             why: "a green candidate, a red record gate",
             candidate: Some((&[], vec![])),
-            record: (&["tier1"], vec![a]),
-            new: vec!["step tier1".into(), format!("test {a}")],
+            record: (&["test"], vec![a]),
+            new: vec!["step test".into(), format!("test {a}")],
         },
         Row {
             why: "a red candidate, the same red",
-            candidate: Some((&["tier1"], vec![a, b])),
-            record: (&["tier1"], vec![a, b]),
+            candidate: Some((&["test"], vec![a, b])),
+            record: (&["test"], vec![a, b]),
             new: vec![],
         },
         Row {
             why: "a red candidate, less red",
-            candidate: Some((&["tier1"], vec![a, b])),
-            record: (&["tier1"], vec![b]),
+            candidate: Some((&["test"], vec![a, b])),
+            record: (&["test"], vec![b]),
             new: vec![],
         },
         Row {
             why: "a red candidate, and a test red only with the records",
-            candidate: Some((&["tier1"], vec![a])),
-            record: (&["tier1"], vec![a, c]),
+            candidate: Some((&["test"], vec![a])),
+            record: (&["test"], vec![a, c]),
             new: vec![format!("test {c}")],
         },
         Row {
-            why: "a candidate red in the second tier, a record gate red in the first",
-            candidate: Some((&["tier2"], vec![a])),
-            record: (&["tier1"], vec![a]),
-            new: vec!["step tier1".into()],
+            why: "a candidate red in the doctests, a record gate red in the suite",
+            candidate: Some((&["doctest"], vec![a])),
+            record: (&["test"], vec![a]),
+            new: vec!["step test".into()],
         },
         Row {
-            why: "a candidate whose lint is red, and no test ran on either",
-            candidate: Some((&["clippy"], vec![])),
-            record: (&["clippy"], vec![]),
+            why: "a candidate whose build is red, and no test ran on either",
+            candidate: Some((&["build"], vec![])),
+            record: (&["build"], vec![]),
             new: vec![],
         },
         Row {
             why: "a red candidate, and a lint red only with the records",
-            candidate: Some((&["tier1"], vec![a])),
+            candidate: Some((&["test"], vec![a])),
             record: (&["fmt", "clippy"], vec![]),
             new: vec!["step fmt".into(), "step clippy".into()],
         },
         Row {
             why: "a test step that failed and names no test",
-            candidate: Some((&["tier1"], vec![a])),
-            record: (&["tier1"], vec![]),
-            new: vec!["step tier1 (it names no failing test)".into()],
+            candidate: Some((&["test"], vec![a])),
+            record: (&["test"], vec![]),
+            new: vec!["step test (it names no failing test)".into()],
         },
         Row {
             why: "no candidate's gate on record: nothing may be red",
             candidate: None,
-            record: (&["tier1"], vec![a]),
-            new: vec!["step tier1".into(), format!("test {a}")],
+            record: (&["test"], vec![a]),
+            new: vec!["step test".into(), format!("test {a}")],
         },
         Row {
             why: "no candidate's gate on record, and a green gate",
@@ -9886,7 +9891,7 @@ fn a_record_commits_gate_is_held_to_what_the_candidates_gate_showed_red() {
             RUN,
             "1",
             &sha('b'),
-            &rig.summary("candidate", &["tier1", "doctest"], &[a, hostile]),
+            &rig.summary("candidate", &["test", "doctest"], &[a, hostile]),
         ),
         "",
     )
@@ -9901,21 +9906,21 @@ fn a_record_commits_gate_is_held_to_what_the_candidates_gate_showed_red() {
             "`tests   passed=4700 failed=2  (over 15 test binaries)`"
         ]
     );
-    assert_eq!(rows[3..5], [["step", "`tier1`"], ["step", "`doctest`"]]);
+    assert_eq!(rows[3..5], [["step", "`test`"], ["step", "`doctest`"]]);
     assert_eq!(rows.len(), 7, "{rows:?}");
     // A name no cell could hold as it is still compares as itself.
     rig.run(
         &gate_check(
             RUN,
             Some("1"),
-            &rig.summary("record", &["tier1"], &[hostile]),
+            &rig.summary("record", &["test"], &[hostile]),
         ),
         "",
     )
     .must(OK, "a hostile test name, red on both");
     // Without a round, nothing may be red — whatever a round holds.
     rig.run(
-        &gate_check(RUN, None, &rig.summary("record", &["tier1"], &[a])),
+        &gate_check(RUN, None, &rig.summary("record", &["test"], &[a])),
         "",
     )
     .must(GATE_MISMATCH, "a record commit that names no round");
@@ -9943,6 +9948,10 @@ fn a_record_commits_gate_is_held_to_what_the_candidates_gate_showed_red() {
         (green.replace("GATE: PASS", "  GATE: PASS"), "a verdict that is quoted, not printed"),
         (green.replace("failed=0", "failed=2"), "a green verdict over failed tests"),
         (green.replace("\nGATE: PASS\n", "\n"), "a gate cut off before its verdict"),
+        // A RED gate is evidence only whole: a gate that stops at its first red stage
+        // names the first red, and a failing set that is not all of it compares with none.
+        (gate_output(&["tier1"], &[a]).replace(KEEPS_GOING, "gate: mode   full"), "a red gate that stopped at its first red stage"),
+        (gate_output(&["test"], &[a]).replace(&format!("{KEEPS_GOING}\n"), ""), "a red gate that does not say how it was run"),
         (String::new(), "nothing"),
     ] {
         let file = rig.summary_of("bad", &text);
@@ -9962,6 +9971,17 @@ fn a_record_commits_gate_is_held_to_what_the_candidates_gate_showed_red() {
     )
     .refused(BAD_VALUE, "a candidate named by a short sha");
     assert_eq!(rig.snapshot(), before, "no refusal wrote anything");
+    // A GREEN gate ran every test however it was run: a plain one is taken.
+    let plain = rig.summary_of("plain", &green.replace(KEEPS_GOING, "gate: mode   full"));
+    rig.run(&gate_check(RUN, Some("1"), &plain), "").must(
+        OK,
+        "a green plain gate is read, and held to the round's gate",
+    );
+    assert_eq!(
+        rig.run(&gate_check(RUN, None, &plain), "").json()["ok"],
+        true,
+        "a green plain gate, with no round to hold it to"
+    );
 
     // A gate somebody wrote by hand is not compared against on a guess.
     fs::write(

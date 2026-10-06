@@ -13,7 +13,8 @@
 # profiles `gate-tier1` and `gate-tier2` of a tool config it hands nextest
 # (`--tool-config-file`): each is a `default-filter` derived from the last run's timings
 # plus a JUnit report. Both inherit `[profile.default]` below, so what is set there is
-# what the gate runs under.
+# what the gate runs under. A gate that keeps going (`dev/gate --keep-going`) has no tiers:
+# it writes one profile, `gate-all`, whose filter is every test, and makes one run.
 #
 # **Why it is the gate now, when this file used to say it must not be.** Until M54 about
 # thirty suites shelled out to cargo to build the detached `doc-code` probe workspace, all

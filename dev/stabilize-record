@@ -659,7 +659,10 @@
 #       the verdict, the totals line, and a row per step and per test the gate showed
 #       red. FILE must hold ONE full gate's `GATE:` verdict line and its `tests   passed=`
 #       totals line; a pre-check (`--fast`, `--quick`) prints not both and is refused
-#       (bad-value). A round tests one candidate: another commit is refused (exists).
+#       (bad-value). A RED gate must be the output of `dev/gate --keep-going`, which its
+#       mode line says: a gate that stops at its first red stage names the first red and
+#       not all of it, and is refused (bad-value). A green gate ran every test however it
+#       was run. A round tests one candidate: another commit is refused (exists).
 #       Prints {"gate", "commit", "verdict", "red"}.
 #
 #   dev/stabilize-record gate-check [--round N] --summary FILE [--scratch DIR]...
@@ -671,10 +674,12 @@
 #       candidate this is the rule that a commit follows a green gate, unchanged. A test
 #       step that failed and names no failing test never holds. Prints {"check": "gate",
 #       "ok", "verdict", "totals", "red", "candidate", "known", "new"} — `new` names what
-#       is red only with the records. THE GATE STOPS AT ITS FIRST RED STAGE, so under a
-#       candidate that is red in the fast tier, neither gate ran the tiers after it: what
-#       the records would turn red there is seen by neither, and by the first gate of a
-#       candidate on which that tier is green again.
+#       is red only with the records. BOTH GATES ARE RUN AS `dev/gate --keep-going`, and a
+#       red one that was not is refused (bad-value, as under gate-set): no red step stops
+#       such a gate but a red build, and its suite is ONE step, so what each names red is
+#       all that is red, and the two are held against each other test by test. Where the
+#       candidate's BUILD is red no test ran on either tree: what the records would turn
+#       red is seen by the first gate of a candidate that builds.
 #
 #   dev/stabilize-record apply --run R [--round N] --subject TEXT [--scratch DIR]...
 #                        <batch.json
@@ -1142,6 +1147,8 @@ RUN_TAKES = {
 GATE_VERDICT = re.compile(r"GATE: (PASS|FAIL \(step:((?: [A-Za-z0-9_-]+)+)\))")
 GATE_TOTALS = re.compile(r"tests   passed=([0-9]+) failed=([0-9]+)  \(over ([0-9]+) test binaries\)")
 GATE_NAMES = "failing tests:"
+# The mode line of a gate no red step stopped (dev/gate --keep-going).
+GATE_KEEPS_GOING = re.compile(r"gate: mode   full, keep-going\b.*")
 GATE_TEST_STEPS = ("tier1", "tier2", "doctest", "test")
 GATE_COLUMNS = ("what", "value")
 
@@ -3301,8 +3308,9 @@ def check_ledger(args):
 def gate_read(path, what):
     """What ONE full `dev/gate` printed, read from the file its output was kept in: its
     verdict, its totals, the steps it names as failed and the tests it names as failing.
-    Anything else — a pre-check, two runs in one file, a file cut off before the verdict —
-    is refused: it is not evidence about a tree."""
+    Anything else — a pre-check, two runs in one file, a file cut off before the verdict,
+    a red gate that stopped at its first red stage — is refused: it is not evidence about a
+    tree."""
     try:
         lines = open(path, encoding="utf-8").read().split("\n")
     except (OSError, ValueError) as err:
@@ -3318,6 +3326,8 @@ def gate_read(path, what):
                 break
             names.append(line.strip())
     steps = (verdicts[0].group(2) or "").split()
+    if steps and not any(map(GATE_KEEPS_GOING.fullmatch, lines)):
+        refuse("bad-value", "%s %s says `GATE: FAIL` and is not the output of `dev/gate --keep-going`: a gate that stops at its first red stage names the first red and not all of it, and a red gate is evidence here only whole" % (what, shown(path)))
     failed = int(totals[0].group(2))
     if not steps and (failed or names):
         refuse("bad-value", "%s %s says `GATE: PASS` and names %d failed test(s): it is not a gate's output as the gate prints it" % (what, shown(path), max(failed, len(names))))

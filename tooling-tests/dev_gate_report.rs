@@ -477,8 +477,9 @@ fn nextest_failures_are_named_by_binary_and_test_once_each() {
 /// run's tool config names — and, when
 /// `FAKE_CARGO_SKIP` holds a line, appends it to the file the gate names in
 /// `JIGC_GATE_SKIPS`, as a test of that run does when it passes without running what it
-/// tests. It exits 1 for a step named in `FAKE_CARGO_RED` — by its first word (`clippy`)
-/// or by its nextest profile (`gate-tier1`).
+/// tests. It exits 1 for a step named in `FAKE_CARGO_RED` — by its first word (`clippy`),
+/// by its nextest profile (`gate-tier1`), or by a flag of its own without the dashes
+/// (`no-run`: the build of the tests, and no other `cargo test`).
 ///
 /// **And it refuses what nextest refuses.** A `nextest` call whose tool config names
 /// `binary_id(=<FAKE_CARGO_GONE>)` in any profile exits 96 with nextest's own words and
@@ -572,6 +573,7 @@ impl FakeCargo {
                  fi\n\
                  for red in $FAKE_CARGO_RED; do\n\
                  \x20 if [ \"$red\" = \"$1\" ] || [ \"$red\" = \"$profile\" ]; then exit 1; fi\n\
+                 \x20 case \" $* \" in *\" --$red \"*) exit 1 ;; esac\n\
                  done\n\
                  exit 0\n",
                 here = dir.display(),
@@ -811,6 +813,209 @@ fn a_red_second_tier_still_runs_the_doctests() {
         "{}",
         run.text,
     );
+}
+
+// ---------------------------------------------------------------------------
+// `--keep-going`: the full gate, and no red step stops it.
+// ---------------------------------------------------------------------------
+//
+// A plain gate stops at its first red stage, which is what a builder wants of a red and
+// the wrong thing for a reader who holds one run's red against another's: a stabilization
+// run accepts a record commit when its gate shows nothing red that the candidate's own
+// gate did not, and under a candidate that is red early neither gate ran what lies behind
+// the stop. So the gate can be asked to keep going. Three properties, each pinned below:
+//
+// * nothing red stops it — but a red build, after which there is no test to run: the
+//   binary's, or the tests', which this mode builds as a step of its own (`test-build`),
+//   so that tests that do not compile are a red build and never a red suite that names
+//   no test;
+// * the suite is ONE nextest run, the step `test`, never two tiers: a test's tier is this
+//   machine's last measurement of it, so a failing test that took two seconds is in the
+//   second tier on the next run, and the step it is red in would differ between two runs
+//   that are red in the same test. It reads no timing record, so none can touch it;
+// * green, it is a full gate like any other — the same tests, the same two lines — and
+//   a plain `dev/gate` is exactly what it was.
+
+/// The build of the tests, which a run that keeps going makes a step of its own.
+const TEST_BUILD: &str = "test --workspace --no-run";
+/// The whole suite, as a run that keeps going launches it.
+const WHOLE_SUITE: &str = "nextest run --workspace --no-fail-fast --tool-config-file \
+                           jigc-gate:<tiers> --profile gate-all";
+
+#[test]
+fn a_gate_that_keeps_going_runs_the_suite_as_one_step_and_green_is_a_full_gate() {
+    let fake = FakeCargo::new("gate-keep-going", true);
+    // A record nextest would refuse the tiers of: this mode reads none.
+    fake.record("12.500\tjigc::g_gone\tslow_suite::drives_the_binary_a_lot\n");
+    fake.junit(
+        "gate-all",
+        &[
+            ("jigc::g_doc", "quick_suite::reads_a_registry", "0.020"),
+            (
+                "jigc::g_doc",
+                "slow_suite::drives_the_binary_a_lot",
+                "12.500",
+            ),
+        ],
+    );
+    let run = fake.run_without(&["--keep-going"], &[], "jigc::g_gone");
+    let text = &run.text;
+    let mut expected = LINT_AND_BUILD.to_vec();
+    expected.extend([TEST_BUILD, WHOLE_SUITE, "test --workspace --doc"]);
+    assert_eq!(
+        launched(&run),
+        expected,
+        "the tests built, the suite as ONE nextest run, then the doctests — no tier, and \
+         no question to ask nextest about one.\n{text}",
+    );
+    assert_eq!(
+        run.filter("gate-all"),
+        "all()",
+        "the one run is every test: the filter names no test and no binary.\n{}",
+        run.tiers,
+    );
+    assert!(
+        !run.tiers.contains("gate-tier") && !run.tiers.contains("binary_id"),
+        "its config holds nothing a timing record gave.\n{}",
+        run.tiers,
+    );
+    assert!(
+        run.ok
+            && text
+                .lines()
+                .any(|l| l == "tests   passed=3 failed=0  (over 2 test binaries)")
+            && text.lines().any(|l| l == "GATE: PASS"),
+        "green, it prints the two lines of a full gate — it ran every test.\n{text}",
+    );
+    assert!(
+        text.lines()
+            .any(|l| l.starts_with("gate: mode   full, keep-going (")),
+        "and its mode line says which full gate it is — the line `dev/stabilize-record` \
+         reads before it takes a red gate as evidence.\n{text}",
+    );
+    assert_eq!(
+        fake.recorded(),
+        vec![
+            "0.020\tjigc::g_doc\tquick_suite::reads_a_registry",
+            "12.500\tjigc::g_doc\tslow_suite::drives_the_binary_a_lot",
+        ],
+        "one green run of every test measured every test: its rows are the record.",
+    );
+
+    // A plain gate is what it was: its mode line, and (the arms above) its commands.
+    let plain = FakeCargo::new("gate-keep-going-plain", true).run(&[], &[]);
+    assert!(
+        plain.text.lines().any(|l| l == "gate: mode   full"),
+        "{}",
+        plain.text
+    );
+}
+
+#[test]
+fn a_gate_that_keeps_going_is_stopped_by_no_red_step_but_a_red_build() {
+    let mut whole = LINT_AND_BUILD.to_vec();
+    whole.extend([TEST_BUILD, WHOLE_SUITE, "test --workspace --doc"]);
+
+    // A red format check and a red lint: every test still runs.
+    let run =
+        FakeCargo::new("gate-keep-going-lint", true).run(&["--keep-going"], &["fmt", "clippy"]);
+    assert_eq!(launched(&run), whole, "{}", run.text);
+    assert!(
+        !run.ok
+            && run
+                .text
+                .lines()
+                .any(|l| l == "GATE: FAIL (step: fmt clippy)"),
+        "{}",
+        run.text,
+    );
+
+    // A red suite: the doctests still run, and the verdict names every red step.
+    let run = FakeCargo::new("gate-keep-going-suite", true)
+        .run(&["--keep-going"], &["clippy", "gate-all"]);
+    assert_eq!(launched(&run), whole, "{}", run.text);
+    assert!(
+        !run.ok
+            && run
+                .text
+                .lines()
+                .any(|l| l == "GATE: FAIL (step: clippy test)"),
+        "{}",
+        run.text,
+    );
+    assert!(
+        !run.text.contains("not run") && !run.text.contains("GATE: PASS"),
+        "a run that kept going left nothing unmeasured to warn of, and a red one is no \
+         passed gate.\n{}",
+        run.text,
+    );
+
+    // Tests that do not build: a red build like the other, and no test is launched.
+    let run = FakeCargo::new("gate-keep-going-test-build", true)
+        .run(&["--keep-going"], &["clippy", "no-run"]);
+    let mut expected = LINT_AND_BUILD.to_vec();
+    expected.push(TEST_BUILD);
+    assert_eq!(launched(&run), expected, "{}", run.text);
+    assert!(
+        run.text
+            .lines()
+            .any(|l| l == "GATE: FAIL (step: clippy test-build)")
+            && run.text.contains("the tests do not build: none was run"),
+        "tests that do not compile are a red BUILD step — never a red suite that names no \
+         failing test, which says nothing about which tests are red.\n{}",
+        run.text,
+    );
+
+    // A red build: there is nothing to run a test from, in any mode — and the run says so.
+    let run = FakeCargo::new("gate-keep-going-build", true).run(&["--keep-going"], &["build"]);
+    assert_eq!(run.argvs, LINT_AND_BUILD, "{}", run.text);
+    assert!(
+        run.text.lines().any(|l| l == "GATE: FAIL (step: build)")
+            && run
+                .text
+                .contains("the build is red: no test can be built, so none was run"),
+        "{}",
+        run.text,
+    );
+}
+
+#[test]
+fn keeping_going_is_a_mode_of_the_full_gate_and_of_nothing_else() {
+    for pre_check in ["--fast", "--quick"] {
+        let fake = FakeCargo::new("gate-keep-going-pre-check", true);
+        let out = gate_in(&fake.scratch)
+            .args(["--keep-going", pre_check])
+            .env(
+                "PATH",
+                format!("{}:/usr/bin:/bin", fake.dir().join("bin").display()),
+            )
+            .env("CARGO_TARGET_DIR", fake.dir())
+            .output()
+            .expect("spawn dev/gate");
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "`--keep-going {pre_check}`: a pre-check that kept going is neither a gate nor \
+             a quick answer.",
+        );
+        assert!(
+            String::from_utf8_lossy(&out.stderr)
+                .contains("--keep-going is the full gate with no stop"),
+            "{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert!(
+            !fake.dir().join("argv.log").exists(),
+            "a usage error launches nothing.",
+        );
+    }
+
+    // Without nextest the suite is one step already — `cargo test`, doctests included.
+    let run = FakeCargo::new("gate-keep-going-fallback", false).run(&["--keep-going"], &[]);
+    let mut expected = LINT_AND_BUILD.to_vec();
+    expected.extend([TEST_BUILD, "test --workspace --no-fail-fast"]);
+    assert_eq!(run.argvs, expected, "{}", run.text);
+    assert!(run.ok && run.text.contains("GATE: PASS"), "{}", run.text);
 }
 
 /// `--fast` is the fast tier as a pre-check, and it must never read as a gate.

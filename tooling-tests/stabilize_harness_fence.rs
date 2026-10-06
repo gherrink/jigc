@@ -1326,6 +1326,19 @@ fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_
         "what a record is held to is counted off the calls the script composed"
     );
 
+    // BOTH GATES OF A ROUND KEEP GOING — the candidate's, which the preflight runs, and a
+    // record step's — so that what each names red is all that is red and the two are held
+    // against each other test by test. One constant spells the command, and nothing else
+    // in the harness spells a gate that is run.
+    assert!(
+        source.contains("\nconst GATE = 'dev/gate --keep-going'\n")
+            && function(&full, "preflightPrompt")
+                .contains("`' + GATE + ' > ' + plan.gate + ' 2>&1`")
+            && function(&full, "gateStep").contains("`' + GATE + ' > ' + file + ' 2>&1`")
+            && !source.contains("`dev/gate > "),
+        "the candidate's gate and a record step's gate are not both `dev/gate --keep-going`"
+    );
+
     // The executor's prompt spells no commit: it applies the batch and runs the gate.
     for name in ["recordPrompt", "pendingRecordPrompt", "gateStep"] {
         let body = function(&full, name);

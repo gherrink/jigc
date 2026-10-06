@@ -113,7 +113,8 @@
 #       has an applied batch (`dev/stabilize-record apply`), of N calls and M checks
 #       each of which holds — no-batch — and the tree holds exactly the run's pending
 #       writes — dirty. FILE holds the whole output of the
-#       full `dev/gate` that ran on this tree, and `dev/stabilize-record gate-check` holds
+#       full gate that ran on this tree — as `dev/gate --keep-going`, so that what it names
+#       red is all that is red — and `dev/stabilize-record gate-check` holds
 #       it to the candidate's gate as the batch's round has it on record: red that the
 #       candidate's gate did not show is refused — gate-red — naming it, and NOTHING IS
 #       COMMITTED OR UNDONE: the batch stays applied, for this act to be asked for again
