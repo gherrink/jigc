@@ -9,8 +9,7 @@ The workflow's one home is [implementation/stabilization-workflow.md](../../../.
 - **The workflow is built, and it is not fit for a real run.** Two independent reviews of the build came back **red**. **No stage of it is used on a real run until that stage's repair and re-review are recorded in `DECISIONS.md`** — the `test` half first, by the human's ruling on the order.
 - **The repair is designed and not started** ([repair-plan.md](repair-plan.md)). Its order is ruled; two questions about it are open with the human, and six readings the orchestrator took are reported to him and not yet confirmed (→ *Open with the human*).
 - **No run is opened, and no stage has been driven by the Workflow runtime.** The self-test under the runtime and the canary run — the build's own verification, `DECISIONS.md` → the rulings entry → *The build* → *Verification*, items 1 and 3 — have not run; the plan puts the canary in the repair's last task.
-- **`CLAUDE.md` → *Project state* still gives the order the stabilization rulings replaced**, and its list of the workflow docs names five of six. Neither is corrected by this record's commit: its builder is a subagent and does not edit that file on an agent's brief. Both are handed back to the orchestrator (`DECISIONS.md` → the entry of 2026-10-06, *Not done by this commit*).
-- **The fix pass this workflow was built for stands where its own record left it**: un-landed, its last round unaudited ([the pass's record](../fix-pass-rc25/README.md)).
+- **`CLAUDE.md` → *Project state* still gives the order the stabilization rulings replaced**, and its list of the workflow docs names five of six. Neither is corrected by this record's commit: its builder is a subagent and does not edit that file on an agent's brief. Both are handed back to the orchestrator (`DECISIONS.md` → the entry of 2026-10-06, *Not done by this commit*).- **The fix pass this workflow was built for stands where its own record left it**: un-landed, its last round unaudited ([the pass's record](../fix-pass-rc25/README.md)).
 
 ## What was built
 
@@ -64,7 +63,7 @@ What was decided about the repair since the plan was returned — the human's ru
 
 `DECISIONS.md` → the entry of 2026-10-06 named above is the home of both lists; in one line each:
 
-- **Two questions:** what becomes of the *land a part* exit · how a record commit is gated when the candidate's own gate is red. A third, the order of the repair, was ruled while this record was written.
+- **Two questions:** what becomes of the *land a part* exit · how a record commit is gated when the candidate's own gate is red. A third, the order of the repair, was ruled while this record was written. **[The second was ruled 2026-10-06, after this record: a record commit is accepted if its gate turns nothing red that the candidate's own gate did not already show red — `DECISIONS.md` → *2026-10-06 — A stabilization run's record commit under a red candidate*. Not built. *Land a part* is the one question left.]**
 - **Six readings of the orchestrator's, reported on 2026-10-06 and not yet confirmed** — each stands until the human overturns it.
 
 ## Files

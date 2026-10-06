@@ -2,6 +2,22 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-06 — A stabilization run's record commit under a red candidate: accepted if its gate turns nothing red that the candidate's own gate did not already show red (the human's ruling, option A of three, relayed by the orchestrator; a record only — nothing built)
+
+**The ruling.** His words: *"Question 19 I agree on A"*. **The standing rule is unchanged in what it demands**: the full `dev/gate` runs before every commit, and no path is exempt ([dev-workflow.md](implementation/dev-workflow.md) → Gate). What changes is the acceptance of one kind of commit: **a stabilization run's record commit is accepted if its gate turns nothing red that the candidate's own gate did not already show red.** Preflight runs the full gate on the candidate and records which tests fail; the record step runs the full gate on the tree with the records and compares its failing set against that list. On a green candidate this is exactly today's rule.
+
+*Why:* the `test` stage ends in a record commit, and a candidate that fails the gate is the most important thing a round can find — as built, it was the one thing the round could not write down: the round was unrecordable and the tree left dirty (the harness review's `M4`, [harness-agents-gate.md](completions/artifacts/M55/stabilization-build/harness-agents-gate.md); the repair plan's §8, item 2).
+
+**Over** keeping the rule absolute — a red candidate halts the stage unrecorded, its reports on disk and unpushed until someone makes the gate green — and over gating a record commit on the fast tier only, which is the path exemption the human left for the first stop, taken early.
+
+*Its stated price:* a flaky test shows as newly red and halts the record step. That halt is intended.
+
+***Not built.*** The repair task that rebuilds the record step implements it and corrects `implementation/dev-workflow.md` → Gate, the rule's home, in the same commit; until then that doc states the rule as it stands. **What this closes:** of the two questions the entry below lists as open with the human (its item 5), this one is ruled; *what becomes of the land a part exit* is the one left.
+
+**Corrected in the same commit:** [stabilization-workflow.md](implementation/stabilization-workflow.md) said that the whole workflow waits for the repair and its re-review. It now states the entry below's ruling 3, as ruled and not built: no stage is used until its half is repaired and re-reviewed, the `test` half first, and the `fix` stage is to refuse to start until its own repair and re-review are recorded — a refusal that does not exist yet.
+
+**Still not done: `CLAUDE.md`.** The two edits the entry below names as owed — the dated bracket on the order in *Project state*, and the stabilization workflow in the sentence that lists the workflow docs — were in this commit's brief too, relayed as approved by the human with the build's plan. They are not made here, for the reason that entry gives: the builder is a subagent, an agent's relay of an approval is not the approval, and that file is not edited on an agent's brief. They stay with the orchestrator's own session.
+
 ## 2026-10-06 — The stabilization workflow's build, reviewed red: no stage is used until its half is repaired and re-reviewed, the `test` half first; its own test suites move out of `crates/`; and the repair is structural (the human's two rulings, on the tests and on the order; the orchestrator's readings, reported and not yet confirmed; two questions open with the human — this entry closes the build's record and opens the repair)
 
 **What this entry is.** The record commit between the build and its repair. The build is ten commits on `fix/rc24-tier1`, `fa2ac313` … `00825df3`; each task's choices are in its own entry, between this one and the rulings entry (*2026-10-05 — The stabilization workflow, as ruled*), and none is repeated here. What was built, by commit and with the gate total each builder reported; the two reviews of the build; and the design of its repair are committed with this entry, at [completions/artifacts/M55/stabilization-build/](completions/artifacts/M55/stabilization-build/README.md). Until this commit the two review reports and the repair plan existed only in a session scratch directory. **Nothing is built, repaired or run by this entry.**
