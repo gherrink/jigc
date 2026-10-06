@@ -51,6 +51,7 @@
 //! and every push the branch model allows (`milestone/*`, `fix/*`, `work/*`, named,
 //! unforced) is not.
 
+use crate::placed_executable;
 use crate::support::ci_workflow::repo_root;
 use crate::support::root_walk;
 use crate::support::run_then_parse::stdout_json;
@@ -810,12 +811,7 @@ fn run_against_stub(
     fs::create_dir_all(&bin).expect("create the stub's bin");
     let argv_file = dir.path().join("argv");
     let stub = bin.join("release-plz");
-    fs::write(&stub, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$STUB_ARGV\"\n").expect("write stub");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).expect("chmod stub");
-    }
+    placed_executable::write(&stub, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$STUB_ARGV\"\n");
     let script = dir.path().join("step.sh");
     fs::write(&script, body).expect("write the step body");
     let path = format!(

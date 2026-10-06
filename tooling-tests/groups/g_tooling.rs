@@ -40,6 +40,8 @@ mod ledger_entry_seven_discharged;
 mod ledger_record_truth;
 #[path = "../merge_logs_fence.rs"]
 mod merge_logs_fence;
+#[path = "../placed_executable.rs"]
+mod placed_executable;
 #[path = "../record_foreign_arm.rs"]
 mod record_foreign_arm;
 #[path = "../release_pipeline_fence.rs"]

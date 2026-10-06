@@ -214,6 +214,8 @@ use crate::support::child_stdin;
 use crate::support::install_line::{INSTALL_COMMAND, install_line_carriers};
 use crate::support::scratch::ScratchDir;
 
+use super::placed_executable;
+
 /// The script under test, and the scanner it runs, repository-relative.
 const SCRIPT: &str = "dev/stabilize-record";
 const SCANNER: &str = "dev/hygiene-scan";
@@ -404,10 +406,13 @@ impl Rig {
         let dir = ScratchDir::new(&format!("stabilize-{label}"));
         let root = dir.path().join(HOSTILE_ROOT);
         fs::create_dir_all(root.join("dev")).expect("create the rig's dev/");
-        for file in [SCRIPT, SCANNER, GITLEAKS_CONFIG] {
-            fs::copy(repo_root().join(file), root.join(file))
-                .unwrap_or_else(|e| panic!("copy `{file}` into the rig: {e}"));
+        // The two that are executed are placed by a child, never written in this process
+        // (`placed_executable`); the scanner's configuration is read and written.
+        for file in [SCRIPT, SCANNER] {
+            placed_executable::copy(&repo_root().join(file), &root.join(file));
         }
+        let config = fs::read(repo_root().join(GITLEAKS_CONFIG)).expect("read the gitleaks config");
+        fs::write(root.join(GITLEAKS_CONFIG), config).expect("write the rig's gitleaks config");
         let run_dir = root.join("completions/artifacts").join(RUN);
         fs::create_dir_all(&run_dir).expect("create the opened run's directory");
         fs::write(run_dir.join("opening.md"), "# the opening record\n")
@@ -419,9 +424,7 @@ impl Rig {
         for made in [&home, &tmp, &bin] {
             fs::create_dir_all(made).expect("create a rig directory");
         }
-        let stub = bin.join("gitleaks");
-        fs::write(&stub, gitleaks_stub()).expect("write the stub gitleaks");
-        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).expect("chmod the stub");
+        placed_executable::write(&bin.join("gitleaks"), gitleaks_stub());
         let denylist = dir.path().join("denylist");
         fs::write(&denylist, format!("# a private term\n\n{DENY_TERM}\n"))
             .expect("write the denylist");
@@ -2182,9 +2185,10 @@ const SCAN_BREAKS: &[ScanBreak] = &[
             .expect("chmod the scanner");
     }),
     ("git cannot build the repository the scan reads", |rig| {
-        let git = rig.bin.join("git");
-        fs::write(&git, "#!/bin/sh\necho 'stub git: no' >&2\nexit 128\n").expect("stub git");
-        fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).expect("chmod stub git");
+        placed_executable::write(
+            &rig.bin.join("git"),
+            "#!/bin/sh\necho 'stub git: no' >&2\nexit 128\n",
+        );
     }),
 ];
 

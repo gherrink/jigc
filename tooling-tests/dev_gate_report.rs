@@ -70,6 +70,8 @@ use std::process::Command;
 
 use crate::support::scratch::ScratchDir;
 
+use super::placed_executable;
+
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -525,14 +527,12 @@ impl FakeRun {
 
 impl FakeCargo {
     fn new(label: &str, nextest: bool) -> Self {
-        use std::os::unix::fs::PermissionsExt;
         let scratch = ScratchDir::new(label);
         let dir = scratch.path();
         let bin = dir.join("bin");
         std::fs::create_dir_all(&bin).expect("create the fake cargo's dir");
-        let fake = bin.join("cargo");
-        std::fs::write(
-            &fake,
+        placed_executable::write(
+            &bin.join("cargo"),
             format!(
                 "#!/bin/sh\n\
                  here='{here}'\n\
@@ -579,10 +579,7 @@ impl FakeCargo {
                 here = dir.display(),
                 nextest = u8::from(nextest),
             ),
-        )
-        .expect("write the fake cargo");
-        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755))
-            .expect("make the fake cargo executable");
+        );
         FakeCargo { scratch }
     }
 
@@ -2127,11 +2124,10 @@ impl ScanRepo {
         let aux = ScratchDir::new(&format!("{label}-aux"));
         let dir = root.path().to_path_buf();
         std::fs::create_dir_all(dir.join("dev")).expect("create the fixture repo");
-        std::fs::copy(
-            repo_root().join("dev/hygiene-scan"),
-            dir.join("dev/hygiene-scan"),
-        )
-        .expect("copy dev/hygiene-scan into the fixture repo");
+        placed_executable::copy(
+            &repo_root().join("dev/hygiene-scan"),
+            &dir.join("dev/hygiene-scan"),
+        );
         let repo = ScanRepo {
             dir,
             _root: root,

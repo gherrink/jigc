@@ -56,7 +56,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write as _;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -64,6 +63,8 @@ use serde_json::{Value, json};
 
 use crate::support::child_stdin;
 use crate::support::scratch::ScratchDir;
+
+use super::placed_executable;
 
 const TOOL: &str = "dev/stabilize-step";
 const RECORD: &str = "dev/stabilize-record";
@@ -343,8 +344,7 @@ impl StepRig {
         // The base: the tool and what it runs, a product path, the two logs, a file that
         // is neither.
         for script in [TOOL, RECORD, MERGE_LOGS] {
-            fs::copy(repo_root().join(script), rig.root.join(script))
-                .unwrap_or_else(|e| panic!("copy `{script}` into the rig: {e}"));
+            placed_executable::copy(&repo_root().join(script), &rig.root.join(script));
         }
         rig.write("Cargo.toml", "[workspace]\n");
         rig.write("crates/a.txt", "a\n");
@@ -380,10 +380,7 @@ impl StepRig {
 
     /// An executable placed first on the `PATH` of every child of the rig.
     pub(crate) fn on_path(&self, name: &str, script: &str) {
-        let tool = self.dir.path().join("bin").join(name);
-        fs::write(&tool, script).unwrap_or_else(|e| panic!("write the rig's `{name}`: {e}"));
-        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755))
-            .unwrap_or_else(|e| panic!("chmod the rig's `{name}`: {e}"));
+        placed_executable::write(&self.dir.path().join("bin").join(name), script);
     }
 
     /// The environment every child of the rig runs in: its own home, no git configuration
@@ -532,8 +529,7 @@ impl StepRig {
     fn remote_hook(&self, name: &str, body: &str) {
         let hook = self.origin.join("hooks").join(name);
         fs::create_dir_all(hook.parent().expect("the hooks directory")).expect("create hooks/");
-        fs::write(&hook, format!("#!/bin/sh\n{body}\n")).expect("write the remote's hook");
-        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("chmod the hook");
+        placed_executable::write(&hook, format!("#!/bin/sh\n{body}\n"));
     }
 
     fn ran(&self, command: Command) -> Stepped {

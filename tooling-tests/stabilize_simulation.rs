@@ -107,6 +107,7 @@ use crate::support::scratch::ScratchDir;
 
 use super::dev_stabilize_record::gitleaks_stub;
 use super::dev_stabilize_step::{LOOP, RUN, RUN_DIR, StepRig, node_or_skip};
+use super::placed_executable;
 
 const HARNESS: &str = ".claude/workflows/stabilize.js";
 const RUNTIME: &str = "tooling-tests/fixtures/stabilize-runtime.mjs";
@@ -243,10 +244,9 @@ impl Sim {
     /// the loop branch of a run nobody has opened yet checked out.
     fn new(label: &str) -> Self {
         let rig = StepRig::unopened(&format!("sim-{label}"));
-        for file in [SCANNER, GITLEAKS_CONFIG] {
-            fs::copy(repo_root().join(file), rig.root.join(file))
-                .unwrap_or_else(|e| panic!("copy `{file}` into the rig: {e}"));
-        }
+        placed_executable::copy(&repo_root().join(SCANNER), &rig.root.join(SCANNER));
+        let config = fs::read(repo_root().join(GITLEAKS_CONFIG)).expect("read the gitleaks config");
+        fs::write(rig.root.join(GITLEAKS_CONFIG), config).expect("write the rig's gitleaks config");
         rig.commit("chore: the hygiene scan");
         rig.git(&["push", "-q", "origin", "main"]);
         rig.on_path("gitleaks", &gitleaks_stub());

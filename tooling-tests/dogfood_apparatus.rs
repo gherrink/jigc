@@ -35,6 +35,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use super::placed_executable;
+
 /// The interpreter every apparatus script runs under — the suite's one declared
 /// external dependency (see the module doc).
 const PYTHON: &str = "python3";
@@ -578,19 +580,12 @@ fn jrun_captures_real_exit_into_the_log() {
     // A stub standing in for the real pinned jigc: a `finalize` that blocks —
     // prints an agent-text finding line on stdout and exits 3.
     let stub = tmp.path().join("jigc.real");
-    fs::write(
+    placed_executable::write(
         &stub,
         "#!/usr/bin/env bash\n\
          echo \"blocking · schema-conformance.required-field-present — required field case missing\"\n\
          exit 3\n",
-    )
-    .expect("write stub jigc");
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&stub).expect("stub metadata").permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&stub, perms).expect("chmod stub");
-    }
+    );
 
     let jrun = apparatus_dir().join("jrun");
     assert!(jrun.is_file(), "jrun ships: {}", jrun.display());
@@ -685,20 +680,13 @@ fn jrun_logs_before_passthrough_survives_a_closed_pipe() {
     let stub = tmp.path().join("jigc.real");
     // A stub that prints a finding line then far more than a pipe buffer of
     // output (so `head -1` closing forces a BrokenPipe on jrun's write), exit 3.
-    fs::write(
+    placed_executable::write(
         &stub,
         "#!/usr/bin/env bash\n\
          echo \"blocking · schema-conformance.required-field-present — required field case missing\"\n\
          seq 1 200000\n\
          exit 3\n",
-    )
-    .expect("write stub");
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&stub).expect("stub metadata").permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&stub, perms).expect("chmod stub");
-    }
+    );
 
     let jrun = apparatus_dir().join("jrun");
     let cmd = format!("{PYTHON} {jrun:?} task finalize t1 | head -1");
