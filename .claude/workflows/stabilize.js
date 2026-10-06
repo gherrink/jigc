@@ -1,7 +1,8 @@
 // stabilize — the harness of the stabilization workflow: one script, two stages, each a
 // fresh invocation (DECISIONS.md -> 2026-10-05, "The stabilization workflow, as ruled";
 // what this script settles inside those rulings is the entry of 2026-10-06, "The
-// stabilization harness, as built"). It takes a run that the human opened — a build and a
+// stabilization harness, as built", and what the entry "The decision table's holes,
+// closed" changed in it). It takes a run that the human opened — a build and a
 // closing condition — and works one round of it: `test` finds and grades, `fix` fixes,
 // audits the fix diff and lands. Every point where the human may rule lies BETWEEN two
 // invocations, so a stop is a return, never an agent waiting.
@@ -20,8 +21,22 @@
 // THE BOUND ACROSS ROUNDS AND THE STOP MODE (ruling 6) are the record script's too: the
 // run's opening writes them (`dev/stabilize-record run-set`), `next` is `stop` where the
 // human is asked before the step that follows, and the position refuses a stage of a run
-// whose opening is not done (`not-ready`) and a round past the bound (`round-bound`). This
-// script holds neither number and starts no stage the position refuses.
+// whose opening is not done (`not-ready`), a round after a stop the human has not lifted
+// (`stopped`) and one more fix round once the bound is spent (`round-bound`). This script
+// holds neither number and starts no stage the position refuses.
+//
+// WHAT THE HUMAN RULES ABOUT THE RUN is recorded like every ruling: by the one step that
+// records `args.rulings`. A go after a stop, one more re-run of a clause that is still not
+// green, and a raised bound are facts of the record (`round-set`, `run-set`) — an invocation
+// that carries them records them on the loop branch, starts nothing, and returns the state's
+// `next`, which then names the step the stop was holding.
+//
+// AN UNFINISHED TRIAGE (`next: 'triage'`) is finished by the stage that left it: the position
+// marks that stage `triage: true`, and its next invocation grades, verifies and records the
+// rows the state lists as untriaged and runs NO instrument — every report of the round is on
+// record already. And every stage's triage is handed those rows beside its own reporters'
+// findings (`ledgerSource`): a row seeded at the opening, and an entry an earlier stage left
+// without a verdict, never wait for a stage of their own.
 //
 // THE STAGES (ruling 9).
 //   test   git state (the path-class assert) -> state -> preflight ∥ scope -> state ->
@@ -88,7 +103,7 @@
 //               the invocation works under and passes to the record script as --scratch.
 //   scope     — OPTIONAL, `test` only: the scope the round is started with — 'delta',
 //               'everything', { range: '<sha>..<sha>' } or { doors: [ … ] }. Absent: the
-//               default the opening record names. A round's scope is written once.
+//               run's default scope, a fact of its record. A round's scope is written once.
 //   clause    — OPTIONAL, `test` only: run ONE clause's instrument alone — every item of the
 //               test set that judges that clause and no other, on the same candidate, over
 //               the doors of the latest round's scope, named again. It is what the
@@ -107,11 +122,16 @@
 //               human's rulings of 2026-10-06; a cross-model second opinion is a human-
 //               approved suggestion, never auto-run — implementation/milestone-planning-
 //               workflow.md -> Review — and naming the item is the approval.)
-//   rulings   — OPTIONAL, `fix` only: the human's rulings, recorded by ONE step before
-//               anything is fixed. [{ key, ruling: 'admitted' | 'later', note? } |
-//               { key, ruling: 'bound', bound, reach, where, pin } | { bound, reach, where,
-//               pin }] — `where` is where the human ruled it, `pin` the test that pins the
-//               bound or the word `unpinned`.
+//   rulings   — OPTIONAL: the human's rulings, recorded by ONE step.
+//               On a finding or a bound, `fix` only, before anything is fixed:
+//               [{ key, ruling: 'admitted' | 'later', note? } | { key, ruling: 'bound',
+//               bound, reach, where, pin } | { bound, reach, where, pin }] — `where` is where
+//               the human ruled it, `pin` the test that pins the bound or the word `unpinned`.
+//               About the run, either stage — the invocation records them and starts nothing:
+//               [{ go: true } | { rerun: '<clause>' } | { rounds: N }] — the go after the
+//               stop the state names (`stop.why: 'every-round'`); one more re-run of a clause
+//               the state lists in `human_clauses`; the bound across rounds, raised (the go
+//               after `stop.why: 'round-bound'`). The two kinds are two invocations.
 //   raise     — OPTIONAL, `fix` only: { cycles: N }, the human's raise of the cycle bound.
 //   exit      — OPTIONAL, `fix` only: 'drop' or { part: [ … ] }, the human's exit at a bound.
 //   stopAfter — OPTIONAL: return after a named step (STOPS), for tuning. Nothing is recorded.
@@ -148,6 +168,7 @@ const MODEL_RE = /^[a-z][a-z0-9.-]*$/
 // Ruling 6: at most three fix -> audit cycles in a round. Only the human raises it, per run.
 const DEFAULT_CYCLES = 3
 const MAX_CYCLES = 99
+const MAX_ROUNDS = 99
 // The values of the state document's `next` this script knows what to say about. Any other
 // value — the script's own `unsettled` among them — goes back to the orchestrator with the
 // state attached. The set grows in dev/stabilize-record, never here first.
@@ -169,6 +190,9 @@ const LABELS = { report: 'REPORT:', binary: 'BINARY:', area: 'AREA:', record: 'R
 // Ruling 4's three: the dispositions that are the human's to give.
 const HUMAN_RULINGS = ['admitted', 'bound', 'later']
 const PAYLOAD_ENDS = 'STABILIZE_PAYLOAD'
+// The name under which a triage is handed the rows of the ledger that still await it. No
+// reporter can carry it: an item's reporters are `<item>-<step>`.
+const LEDGER_SOURCE = 'ledger'
 
 // ---- the roles: who is launched, and which labelled lines its definition binds on ----
 // `drives` is a role that is handed the binary and returns the hash it asserted.
@@ -308,11 +332,26 @@ function distinct(list) {
 
 // validateRulings — the `rulings` argument, or why it is refused. A ruling is one of the
 // human's three dispositions on a finding, or a declared bound; nothing else is one.
+// runRuling — whether a ruling is about the RUN and not about a finding or a bound: the go
+// after a stop, one more re-run of a clause, the bound across rounds raised.
+function runRuling(r) {
+  return plain(r) && (r.go != null || r.rerun != null || r.rounds != null)
+}
 function validateRulings(rulings) {
   if (!Array.isArray(rulings) || rulings.length === 0) return 'args.rulings must be a non-empty list of rulings'
   const keys = []
+  const about = []
   for (const r of rulings) {
     if (!plain(r)) return 'a ruling must be an object, not ' + JSON.stringify(r)
+    if (runRuling(r)) {
+      const named = Object.keys(r)
+      if (named.length !== 1) return 'a ruling about the run names one thing — `go`, `rerun` or `rounds` — and nothing beside it: ' + JSON.stringify(r)
+      if (r.go != null && r.go !== true) return 'the human\'s go is `go` as true, or is not passed at all: ' + JSON.stringify(r)
+      if (r.rerun != null && !isSlug(r.rerun)) return '`rerun` names the clause that is granted one more re-run, a slug as the clause table spells it: ' + JSON.stringify(r)
+      if (r.rounds != null && !(Number.isInteger(r.rounds) && r.rounds >= 1 && r.rounds <= MAX_ROUNDS)) return '`rounds` is the bound across rounds, raised: a whole number from 1 to ' + MAX_ROUNDS + ', not ' + JSON.stringify(r.rounds)
+      about.push(named[0] + ':' + (r.rerun || ''))
+      continue
+    }
     const declares = r.bound != null
     if (r.key == null && !declares) return 'a ruling names a finding by `key`, or declares a bound by `bound`: ' + JSON.stringify(r)
     if (r.key != null) {
@@ -333,6 +372,8 @@ function validateRulings(rulings) {
     if (unknown.length) return 'a ruling has no field ' + unknown.join(', ') + ': ' + JSON.stringify(r)
   }
   if (!distinct(keys)) return 'args.rulings rules on a finding more than once'
+  if (!distinct(about)) return 'args.rulings says the same thing about the run more than once'
+  if (about.length && about.length !== rulings.length) return 'args.rulings mixes rulings about the run (`go`, `rerun`, `rounds`) with rulings on a finding or a bound: the first are recorded on the loop branch by an invocation that starts nothing, the others ride the round — two invocations'
   return null
 }
 
@@ -350,7 +391,7 @@ function validateArgs(a) {
   if (a.model != null && (typeof a.model !== 'string' || !MODEL_RE.test(a.model))) return 'args.model ' + JSON.stringify(a.model) + ' is not a model name'
   if (a.stopAfter != null && !STOPS[a.stage].includes(a.stopAfter)) return 'args.stopAfter ' + JSON.stringify(a.stopAfter) + ' is not a step of `' + a.stage + '`: ' + STOPS[a.stage].join(', ')
   const only = (name, stage) => (a[name] != null && a.stage !== stage ? 'args.' + name + ' belongs to the `' + stage + '` stage' : null)
-  const misplaced = only('scope', 'test') || only('clause', 'test') || only('crossModel', 'test') || only('rulings', 'fix') || only('raise', 'fix') || only('exit', 'fix')
+  const misplaced = only('scope', 'test') || only('clause', 'test') || only('crossModel', 'test') || only('raise', 'fix') || only('exit', 'fix')
   if (misplaced) return misplaced
   if (a.crossModel != null && !(Array.isArray(a.crossModel) && a.crossModel.length > 0 && a.crossModel.every(isSlug) && distinct(a.crossModel))) return 'args.crossModel names the items of the test set that get a cross-model source pass, one by one: [ \'<item>\', … ] — not ' + JSON.stringify(a.crossModel) + '. There is no value that turns it on for every item'
   if (a.clause != null) {
@@ -368,6 +409,9 @@ function validateArgs(a) {
   if (a.rulings != null) {
     const why = validateRulings(a.rulings)
     if (why) return why
+    const run = a.rulings.every(runRuling)
+    if (a.stage === 'test' && !run) return 'args.rulings on the `test` stage takes the rulings about the run — `go`, `rerun`, `rounds` — and no other: a ruling on a finding, and a declared bound, belong to the `fix` stage'
+    if (run && ['scope', 'clause', 'crossModel', 'raise', 'exit', 'stopAfter'].some((name) => a[name] != null)) return 'an invocation that carries rulings about the run records them and starts nothing: it takes no scope, clause, crossModel, raise, exit or stopAfter — invoke the step the returned `next` names afterwards'
   }
   if (a.raise != null) {
     const named = plain(a.raise) ? Object.keys(a.raise) : []
@@ -448,15 +492,55 @@ function outcomeOf(state) {
 // does about it. The words are dev/stabilize-record's (its header: THE POSITION), and
 // crates/cli/tests/stabilize_harness_fence.rs holds this table to them.
 const REFUSALS = {
-  'not-ready': 'the run\'s opening is not done, and no stage starts before it is — the state\'s `not_ready` names what it owes: a row per clause of the closing condition (`dev/stabilize-record clause-set`), the stop mode and the bound across rounds (`dev/stabilize-record run-set`)',
+  'not-ready': 'the run\'s opening is not done, and no stage starts before it is — the state\'s `not_ready` names what it owes: a row per clause of the closing condition (`dev/stabilize-record clause-set`), and the run\'s facts — the stop mode, the bound across rounds, the previous release and the default scope (`dev/stabilize-record run-set`)',
   'no-round': 'there is no tested round to fix — the `test` stage comes first, and records its triage',
   'not-tested': 'the round\'s `test` stage has not reached its record — it is run again first, as the next attempt',
-  'round-open': 'the round is tested and a finding of it is still open — run `fix`, record the human\'s rulings with it, or drop the round (args.exit = \'drop\')',
+  'round-open': 'the round is tested and a finding of it is still open — run `fix`, record the human\'s rulings with it, or drop the round (args.exit = \'drop\'); where the state\'s `next` is `triage`, the stage whose position says `triage` finishes the round\'s triage first',
   'round-over': 'the round is over — the next stage is `test`',
-  'round-bound': 'the round is over and the run is at its bound across rounds — a further round is the human\'s to allow, by raising the bound (`dev/stabilize-record run-set`)',
+  'round-bound': 'the bound across rounds is spent — as many rounds have a fix stage on record as it allows — and one more fix round is the human\'s to allow: pass the raised bound as a ruling about the run (args.rulings, `rounds`), which records it (`dev/stabilize-record run-set`) and starts nothing',
+  'stopped': 'the run stops after every round, and the round is over: the next one waits for the human\'s go — pass it as a ruling about the run (args.rulings, `go`), which records it and starts nothing; the state\'s `stop.then` names the step that follows',
 }
 function refusalOf(at) {
   return REFUSALS[at.refused] || 'the record script refuses it with a word this script has no sentence for'
+}
+
+// runRulingsFault — why the state does not ask the human for what the rulings about the run
+// say, or null. The record script refuses the same (its `round-set`: go, granted); asked
+// here first, so that a ruling nobody was asked for costs no record step.
+function runRulingsFault(rulings, state) {
+  const facts = state.facts || {}
+  for (const r of rulings) {
+    if (r.go != null && !(state.next === 'stop' && state.stop && state.stop.why === 'every-round')) return 'the run is not stopped after a round for the human\'s go — its `next` is `' + state.next + '`' + (state.stop ? ' (' + state.stop.why + ')' : '') + ': a go is recorded for that stop and for no other state'
+    if (r.rerun != null && !(state.human_clauses || []).some((c) => c.clause === r.rerun)) return 'the clause `' + r.rerun + '` is not the human\'s: one more re-run is granted to a clause that is still not green after its re-run — the state\'s `human_clauses` names ' + ((state.human_clauses || []).map((c) => c.clause).join(', ') || 'none')
+    if (r.rounds != null && facts.rounds != null && r.rounds <= facts.rounds) return 'the bound across rounds is ' + facts.rounds + ': `rounds` raises it, and ' + r.rounds + ' does not'
+  }
+  return null
+}
+
+// ledgerSource — the rows of the ledger whose triage is not finished (the state's
+// `untriaged`: nobody graded them, or nobody verified them), as one more source EVERY stage's
+// triage is handed beside its own reporters' findings. A row seeded at the opening, and an
+// entry an earlier stage left without a verdict, are graded and verified by the next triage
+// that runs — never left for a stage of their own, and never for the human as if verified.
+function ledgerSource(run, state) {
+  const rows = (state.untriaged || []).map((u) => Object.assign({ why: u.why }, (state.ledger || []).find((row) => row.key === u.key))).filter((row) => row.key)
+  if (!rows.length) return []
+  return [{ reporter: LEDGER_SOURCE, report: runDir(run) + '/ledger.md', findings: rows.map((row) => row.key + ' — a row the ledger holds under this key, ' + (row.why === 'ungraded' ? 'never graded' : 'graded ' + row.grade + ' and never verified') + ' · door: ' + row.door + ' · clause: ' + row.clause + ' · repro: ' + row.repro) }]
+}
+
+// previousOf — the release the run measures against, as its record names it: what the
+// second binary is built from, and what "a regression of the run" is green on.
+function previousOf(state) {
+  const facts = state.facts || {}
+  return { version: facts.previous, commit: facts['previous-commit'] }
+}
+
+// evidenceOf — per clause, what its row is worth on the current candidate, as the state
+// computed it: the round and the commit its instrument last ran on, how many fix rounds
+// behind the candidate that is, and why a green row does not count. It goes back with
+// `close`, so that the human closes with that number in front of them.
+function evidenceOf(state) {
+  return (state.clauses || []).map((c) => ({ clause: c.clause, status: c.status, round: c.round, commit: c.commit, behind: c.behind, stale: c.stale }))
 }
 
 // readRelay — the state document out of a git step's return: the line must hash to what
@@ -1006,7 +1090,7 @@ function preflightPrompt(ctx, launch, name, plan) {
   const asked = plan.crossModel ? crossModelAssert() : null
   if (plan.build) {
     steps.push('the build: the candidate\'s binary, from `git archive ' + plan.sha + '`, copied to `' + plan.binary + '`')
-    steps.push('the previous release\'s binary: the version the opening record names as the previous release, built from that release\'s tag (`jigc-v<version>`, which `git rev-parse --verify` must resolve) with `git archive`, exactly as the candidate is built, at `' + ctx.scratch + '/bin/previous/jigc` — one that is there already, read-only, is kept once its `--version` prints that version')
+    steps.push('the previous release\'s binary: version `' + plan.previous.version + '`, built from commit ' + plan.previous.commit + ' (`git rev-parse --verify ' + plan.previous.commit + '^{commit}` must resolve it) with `git archive`, exactly as the candidate is built, at `' + ctx.scratch + '/bin/previous/jigc` — one that is there already, read-only, is kept once its `--version` prints that version. Both are facts of the run\'s record (`facts.previous`, `facts.previous-commit` of its state), and neither is read from prose')
   }
   if (plan.image) steps.push('the trial image, built and verified from the candidate\'s commit')
   if (asked) steps.push(asked)
@@ -1014,20 +1098,20 @@ function preflightPrompt(ctx, launch, name, plan) {
   return [
     'PREFLIGHT — stabilization run `' + ctx.run + '`, round ' + ctx.round + ', the `' + ctx.stage + '` stage. ' + opening(ctx),
     launch.line(name),
-    'Candidate: label ' + plan.label + ', commit ' + plan.sha + ' — the tip of `' + plan.branch + '`, which is checked out. Scratch root: `' + ctx.scratch + '`.',
+    'Candidate: label ' + plan.label + ', commit ' + plan.sha + ' — ' + (plan.tested ? 'the commit round ' + ctx.round + ' tested, an ancestor of' : 'the tip of') + ' `' + plan.branch + '`, which is checked out. Scratch root: `' + ctx.scratch + '`.',
     'The steps this call covers, in this order, and nothing else:',
   ].concat(steps.map((s, i) => (i + 1) + '. ' + s)).join('\n')
 }
-function scopeText(scope, clause) {
+function scopeText(scope, clause, fallback) {
   if (clause != null) return 'the doors of the latest round\'s test set, named again — this round runs the instrument of clause `' + clause + '` alone, over the scope of its last run: ' + (scope.doors.map((d) => '`' + d + '`').join(' · ') || '(none)')
-  if (scope == null) return 'the default scope the opening record names'
+  if (scope == null) return 'the run\'s default scope, a fact of its record: ' + (fallback === 'everything' ? 'everything — every door of every registry is inside' : 'the derived delta')
   if (typeof scope === 'string') return scope === 'everything' ? 'everything — set by the human: every door of every registry is inside' : 'the derived delta'
   return scope.range ? 'the commit range ' + scope.range + ' — set by the human' : 'the named doors, set by the human: ' + scope.doors.map((d) => '`' + d + '`').join(' · ')
 }
 // The scope a clause row says its instrument ran over: a few plain words, for a table cell.
-function scopeLabel(scope, clause) {
+function scopeLabel(scope, clause, fallback) {
   if (clause != null) return 'the scope of the round before, again'
-  if (scope == null) return 'the default scope of the opening record'
+  if (scope == null) return 'the run\'s default scope, ' + (fallback === 'everything' ? 'everything' : 'the derived delta')
   if (typeof scope === 'string') return scope === 'everything' ? 'everything' : 'the derived delta'
   return scope.range ? 'the range ' + scope.range : scope.doors.length + ' named door(s)'
 }
@@ -1035,8 +1119,8 @@ function scopePrompt(ctx, launch, name, plan) {
   return [
     'SCOPE — stabilization run `' + ctx.run + '`, round ' + ctx.round + '. ' + opening(ctx),
     launch.line(name),
-    'The round\'s change lies between: base = ' + (plan.base ? plan.base + ' (the candidate round ' + (ctx.round - 1) + ' tested)' : 'the previous release\'s commit, as the opening record names it') + '; tip = ' + plan.sha + ' (label ' + plan.label + ').',
-    'The scope this stage was started with: ' + scopeText(plan.scope, plan.clause) + '.',
+    'The round\'s change lies between: base = ' + (plan.base ? plan.base + ' (the candidate round ' + (ctx.round - 1) + ' tested)' : plan.previous.commit + ' (the previous release, ' + plan.previous.version + ', as the run\'s record names it)') + '; tip = ' + plan.sha + ' (label ' + plan.label + ').',
+    'The scope this stage was started with: ' + scopeText(plan.scope, plan.clause, plan.fallback) + '.',
     plan.earlier ? 'The door lists of round ' + (ctx.round - 1) + '\'s fixers and fix-diff auditors — inputs, never the result: the `doors_affected` of every report under `' + runDir(ctx.run) + '/r' + (ctx.round - 1) + '/reports/fix/`, which this prompt hands you.' : 'There is no earlier round whose door lists could be an input.',
     'The units of the test set are the rows of `' + runDir(ctx.run) + '/test-set.md` (the state document\'s `items`).',
     'Write the round\'s scope with `dev/stabilize-record scope-set --run ' + ctx.run + ' --round ' + ctx.round + ' --scratch ' + ctx.scratch + '`, once.',
@@ -1089,7 +1173,7 @@ function triagePrompt(ctx, launch, name, sources, pass) {
     'TRIAGE — stabilization run `' + ctx.run + '`, round ' + ctx.round + ', the `' + ctx.stage + '` stage, pass ' + pass + '. ' + opening(ctx),
     launch.line(name),
     'The reporters this stage has launched so far, each with one report of attempt ' + ctx.attempt + ' — a report of the stage beside these is the partial stage you halt on: ' + (others.join(' · ') || '(none)') + '.' + (pass > 1 ? ' This is pass ' + pass + ': it grades only what the agents of the pass before left open; every other finding of the stage was graded then, and is not handed to you again.' : ''),
-    'Grade every finding below — ' + sources.reduce((n, s) => n + s.findings.length, 0) + ' in all, from ' + sources.length + ' reporter(s). The reports are the files named; each list is that reporter\'s structured return, and an entry marked `left open` is what an agent left open, triaged like any finding.',
+    'Grade every finding below — ' + sources.reduce((n, s) => n + s.findings.length, 0) + ' in all, from ' + sources.length + ' reporter(s). The reports are the files named; each list is that reporter\'s structured return, and an entry marked `left open` is what an agent left open, triaged like any finding.' + (sources.some((s) => s.reporter === LEDGER_SOURCE) ? ' The source `' + LEDGER_SOURCE + '` is no reporter of this stage: its entries are rows the ledger already holds, whose triage nobody finished. Grade each under its own key, found again — from the report its repro names, which this prompt hands you with it — and count the source in `findings_in` like any other.' : ''),
   ].concat(sources.map((s) => '- ' + s.reporter + ' — report: ' + (s.report ? '`' + s.report + '`' : '(none)') + ' — ' + s.findings.length + ' finding(s):\n' + s.findings.map((f) => '   - ' + f).join('\n'))).join('\n')
 }
 function verifyPrompt(ctx, launch, name, entry, redrive, built) {
@@ -1197,10 +1281,23 @@ function stageRecordCommands(ctx, dir, rec) {
 // rulingsRecordPrompt — THE one step through which the human's rulings reach the record
 // (ruling 4): the three dispositions that are the human's, and the rows of the declared-
 // bounds list. No other prompt of this script carries either command with those values.
-function rulingsRecordPrompt(v, round, branch, rulings) {
+function rulingsRecordPrompt(v, round, branch, rulings, ran) {
   const record = 'dev/stabilize-record'
   const dir = v.scratch + '/record/rulings-r' + round
   const commands = []
+  // What the human ruled about the run: the go after the stop that follows `round`, one
+  // more re-run of a clause — a fact of the round its instrument last ran in — and the
+  // bound across rounds, raised. The record script takes the first two only while the
+  // state asks for them.
+  const about = rulings.filter((r) => runRuling(r))
+  for (const r of about) {
+    const fact = r.go != null ? { name: 'go.json', value: { go: true }, call: 'round-set --run ' + v.run + ' --round ' + round }
+      : r.rerun != null ? { name: 'granted-' + r.rerun + '.json', value: { granted: r.rerun }, call: 'round-set --run ' + v.run + ' --round ' + ran[r.rerun] }
+        : { name: 'rounds.json', value: { rounds: r.rounds }, call: 'run-set --run ' + v.run }
+    const p = payload(dir, fact.name, fact.value)
+    commands.push(p.write)
+    commands.push('`' + record + ' ' + fact.call + ' < ' + p.file + '`')
+  }
   const bounds = rulings.filter((r) => r.bound != null)
   if (bounds.length) {
     const p = payload(dir, 'bounds.sh', bounds.map((r) => record + ' bound-set --run ' + v.run + ' --bound ' + r.bound + ' --reach ' + shq(r.reach) + ' --ruling ' + shq(r.where) + ' --pin ' + shq(r.pin) + ' --scratch ' + v.scratch), true)
@@ -1219,7 +1316,7 @@ function rulingsRecordPrompt(v, round, branch, rulings) {
     commands.push('`' + record + ' ledger-set --run ' + v.run + ' --scratch ' + v.scratch + ' < ' + p.file + '`')
     commands.push('`' + record + ' check-ledger --run ' + v.run + ' -- ' + patches.map((p2) => p2.key).join(' ') + '`')
   }
-  return recordPrompt(v, 'the human\'s rulings — ' + patches.length + ' on a finding, ' + bounds.length + ' declared bound(s). They are the human\'s, relayed: record them as given, and judge none of them', branch, commands, v.run + ' r' + round + ' — the human\'s rulings')
+  return recordPrompt(v, 'the human\'s rulings — ' + patches.length + ' on a finding, ' + bounds.length + ' declared bound(s), ' + about.length + ' about the run. They are the human\'s, relayed: record them as given, and judge none of them', branch, commands, v.run + ' r' + round + ' — the human\'s rulings')
 }
 
 // ---- self-test: this script's own logic, with no agent ----
@@ -1249,7 +1346,12 @@ function selfTest() {
     ['a scope on fix', Object.assign({}, fix, { scope: 'everything' })], ['a scope nobody defined', Object.assign({}, base, { scope: 'all' })],
     ['a range that is no range', Object.assign({}, base, { scope: { range: 'main..HEAD' } })], ['doors that are no list', Object.assign({}, base, { scope: { doors: 'jigc setup' } })],
     ['no door at all', Object.assign({}, base, { scope: { doors: [] } })], ['a door of two lines', Object.assign({}, base, { scope: { doors: ['a\nb'] } })],
-    ['rulings on test', Object.assign({}, base, { rulings: [{ key: 'f-1', ruling: later }] })], ['a raise on test', Object.assign({}, base, { raise: { cycles: 5 } })],
+    ['a finding\'s ruling on test', Object.assign({}, base, { rulings: [{ key: 'f-1', ruling: later }] })], ['a declared bound on test', Object.assign({}, base, { rulings: [{ bound: 'b', reach: 'x', where: 'y', pin: 'unpinned' }] })], ['a raise on test', Object.assign({}, base, { raise: { cycles: 5 } })],
+    ['a go that is no truth', Object.assign({}, base, { rulings: [{ go: 'yes' }] })], ['a go taken back', Object.assign({}, fix, { rulings: [{ go: false }] })], ['a go said twice', Object.assign({}, base, { rulings: [{ go: true }, { go: true }] })],
+    ['a go beside a finding\'s ruling', Object.assign({}, fix, { rulings: [{ go: true }, { key: 'f-1', ruling: later }] })], ['a go with a note', Object.assign({}, base, { rulings: [{ go: true, note: 'on' }] })], ['a go and a re-run in one entry', Object.assign({}, base, { rulings: [{ go: true, rerun: 'no-lost-files' }] })],
+    ['a re-run of no clause', Object.assign({}, base, { rulings: [{ rerun: 'No lost files' }] })], ['a re-run granted twice', Object.assign({}, fix, { rulings: [{ rerun: 'no-lost-files' }, { rerun: 'no-lost-files' }] })],
+    ['a bound that is no number', Object.assign({}, fix, { rulings: [{ rounds: '4' }] })], ['a bound of no round', Object.assign({}, base, { rulings: [{ rounds: 0 }] })], ['half a round', Object.assign({}, base, { rulings: [{ rounds: 3.5 }] })],
+    ['a go beside a scope', Object.assign({}, base, { scope: 'everything', rulings: [{ go: true }] })], ['a go beside a clause', Object.assign({}, base, { clause: 'no-lost-files', rulings: [{ go: true }] })], ['a raised bound beside an exit', Object.assign({}, fix, { exit: 'drop', rulings: [{ rounds: 4 }] })], ['a go beside a tuning stop', Object.assign({}, fix, { stopAfter: 'rulings', rulings: [{ go: true }] })],
     ['an exit on test', Object.assign({}, base, { exit: 'drop' })], ['no ruling at all', Object.assign({}, fix, { rulings: [] })],
     ['a ruling that is not the human\'s', Object.assign({}, fix, { rulings: [{ key: 'f-1', ruling: 'fixed' }] })],
     ['a ruling that reopens', Object.assign({}, fix, { rulings: [{ key: 'f-1', ruling: 'open' }] })],
@@ -1277,6 +1379,7 @@ function selfTest() {
     Object.assign({}, base, { scope: { doors: ['jigc setup', 'jigc doc show'] } }), Object.assign({}, base, { stopAfter: 'preflight', model: 'sonnet' }),
     Object.assign({}, base, { clause: 'no-lost-files' }), Object.assign({}, base, { crossModel: ['row-3'] }), Object.assign({}, base, { crossModel: ['row-3', 'row-7'], clause: 'no-lost-files' }),
     Object.assign({}, fix, { raise: { cycles: DEFAULT_CYCLES + 1 } }), Object.assign({}, fix, { exit: 'drop' }), Object.assign({}, fix, { exit: { part: ['abcdef1', '0123456789abcdef0123456789abcdef01234567'] } }),
+    Object.assign({}, base, { rulings: [{ go: true }] }), Object.assign({}, fix, { rulings: [{ go: true }, { rerun: 'no-lost-files' }, { rerun: 'no-regression' }] }), Object.assign({}, fix, { rulings: [{ rounds: 4 }] }), Object.assign({}, base, { rulings: [{ rounds: 4 }, { rerun: 'no-lost-files' }] }),
     Object.assign({}, fix, { rulings: [{ key: 'f-1', ruling: admitted, note: 'build the robust path' }, { key: 'f-2', ruling: later }, { key: 'f-3', ruling: bound, bound: 'non-jigc-writer', reach: 'races against a writer that is not jigc', where: 'the stop after round 1, item 3', pin: 'unpinned' }, { bound: 'planted-state', reach: 'a state nobody reaches', where: 'the stop after round 1', pin: 'flow12::planted' }] }),
   ]
   for (const given of taken) check('taken: ' + JSON.stringify(given), validateArgs(given) === null)
@@ -1312,8 +1415,31 @@ function selfTest() {
   }
   const ruled = outcomeOf({ next: 'rule', human_list: [{ key: 'f-1', why: 'outside' }], human_clauses: [{ clause: 'no-lost-files', why: 'not-green-after-its-rerun' }] })
   check('`rule` goes back with both of the human\'s lists', JSON.stringify(ruled.rule) === JSON.stringify({ findings: [{ key: 'f-1', why: 'outside' }], clauses: [{ clause: 'no-lost-files', why: 'not-green-after-its-rerun' }] }) && JSON.stringify(outcomeOf({ next: 'rule' }).rule) === JSON.stringify({ findings: [], clauses: [] }) && outcomeOf({ next: 'fix', human_list: [{ key: 'f-1' }] }).rule === undefined)
-  for (const word of ['not-ready', 'no-round', 'not-tested', 'round-open', 'round-over', 'round-bound']) check('a refusal the orchestrator can act on: ' + word, isText(refusalOf({ refused: word, round: 1 })) && !refusalOf({ refused: word, round: 1 }).includes('no sentence'))
+  for (const word of ['not-ready', 'no-round', 'not-tested', 'round-open', 'round-over', 'round-bound', 'stopped']) check('a refusal the orchestrator can act on: ' + word, isText(refusalOf({ refused: word, round: 1 })) && !refusalOf({ refused: word, round: 1 }).includes('no sentence'))
   check('a refusal nobody defined is said to be one', refusalOf({ refused: 'round-closed', round: 1 }).includes('no sentence') && refusalOf({ refused: 'not-ready', round: null }).includes('run-set') && refusalOf({ refused: 'round-bound', round: 3 }).includes('run-set'))
+  check('a refusal the human lifts names the ruling that lifts it', refusalOf({ refused: 'stopped', round: 1 }).includes('args.rulings') && refusalOf({ refused: 'round-bound', round: 3 }).includes('args.rulings') && refusalOf({ refused: 'round-open', round: 1 }).includes('`triage`'))
+
+  // What the human rules about the run is taken only where the state asks for it.
+  const stoppedState = { next: 'stop', stop: { why: 'every-round', round: 2, then: 'test' }, human_clauses: [{ clause: 'no-lost-files', why: 'not-green-after-its-rerun' }], facts: { stop: 'every-round', rounds: 3 } }
+  const boundState = { next: 'stop', stop: { why: 'round-bound', round: 4, then: 'fix' }, human_clauses: [], facts: { stop: 'at-the-bound', rounds: 3 } }
+  check('a go is taken at the stop after a round', runRulingsFault([{ go: true }], stoppedState) === null && runRulingsFault([{ go: true }, { rerun: 'no-lost-files' }, { rounds: 4 }], stoppedState) === null)
+  check('a go is taken at no other state', [boundState, { next: 'close', stop: null }, { next: 'fix', stop: null }, { next: 'stop', stop: null }, {}].every((state) => typeof runRulingsFault([{ go: true }], state) === 'string'))
+  check('one more re-run is granted to a clause that is the human\'s, and to no other', typeof runRulingsFault([{ rerun: 'no-regression' }], stoppedState) === 'string' && typeof runRulingsFault([{ rerun: 'no-lost-files' }], boundState) === 'string' && typeof runRulingsFault([{ rerun: 'no-lost-files' }], {}) === 'string')
+  check('the bound is raised, never lowered or said again', runRulingsFault([{ rounds: 4 }], boundState) === null && typeof runRulingsFault([{ rounds: 3 }], boundState) === 'string' && typeof runRulingsFault([{ rounds: 2 }], boundState) === 'string' && runRulingsFault([{ rounds: 1 }], { facts: { stop: 'every-round', rounds: null } }) === null)
+  check('which rulings are about the run', runRuling({ go: true }) && runRuling({ rerun: 'x' }) && runRuling({ rounds: 4 }) && !runRuling({ key: 'f-1', ruling: later }) && !runRuling({ bound: 'b', reach: 'x', where: 'y', pin: 'z' }) && !runRuling(null) && !runRuling('go'))
+
+  // Every triage is handed the rows of the ledger whose triage nobody finished.
+  const awaiting = { untriaged: [{ key: 'seeded-1', why: 'ungraded' }, { key: 'f-9', why: 'unverified' }], ledger: [{ key: 'f-1', grade: 'confirmed', door: 'd', clause: 'c', repro: 'r' }, { key: 'seeded-1', grade: 'ungraded', door: 'jigc setup', clause: 'no-lost-files', repro: 'the opening record, row 3' }, { key: 'f-9', grade: 'unclear', door: 'jigc rename', clause: 'no-regression', repro: 'r1/reports/fix/c1/fix-area-1.a1.md, left open 2' }] }
+  const handed = ledgerSource('rc24-tier1', awaiting)
+  check('the rows whose triage is unfinished are one source, named for the ledger', handed.length === 1 && handed[0].reporter === LEDGER_SOURCE && handed[0].report === 'completions/artifacts/rc24-tier1/ledger.md' && handed[0].findings.length === 2)
+  check('a row nobody graded and a row nobody verified are both handed over, by their keys', handed[0].findings[0].startsWith('seeded-1 — ') && handed[0].findings[0].includes('never graded') && handed[0].findings[0].includes('door: jigc setup') && handed[0].findings[1].startsWith('f-9 — ') && handed[0].findings[1].includes('graded unclear and never verified') && !handed[0].findings.join('\n').includes('f-1 '))
+  check('nothing awaits triage: no source', ledgerSource('x', { untriaged: [], ledger: awaiting.ledger }).length === 0 && ledgerSource('x', {}).length === 0 && ledgerSource('x', { untriaged: [{ key: 'gone', why: 'ungraded' }], ledger: [] }).length === 0)
+  check('no reporter can be named as the ledger is', !Object.keys(CHAINS).some((kind) => CHAINS[kind].some((stepList) => stepList.some((step) => reporterName(['x', step.as]) === LEDGER_SOURCE))) && !LEDGER_SOURCE.includes('-'))
+
+  // The release a run measures against, and what a clause's row is worth, are read off the state.
+  const facts = { stop: 'every-round', rounds: null, previous: '1.0.0-rc.24', 'previous-commit': 'e'.repeat(40), scope: 'delta' }
+  check('the previous release is the record\'s', JSON.stringify(previousOf({ facts })) === JSON.stringify({ version: '1.0.0-rc.24', commit: 'e'.repeat(40) }))
+  check('the evidence that goes back with close', JSON.stringify(evidenceOf({ clauses: [{ clause: 'no-lost-files', instrument: 'i', commit: 'c'.repeat(40), scope: 's', status: 'green', round: 1, behind: 2, stale: null, retry: null }] })) === JSON.stringify([{ clause: 'no-lost-files', status: 'green', round: 1, commit: 'c'.repeat(40), behind: 2, stale: null }]) && evidenceOf({}).length === 0)
 
   // Every prompt carries the labels its definition binds on, spelled as LABELS spells them.
   const ctx = { run: 'rc24-tier1', round: 2, stage: 'fix', cycle: 3, attempt: 4, scratch: '/tmp/scratch-1' }
@@ -1324,8 +1450,8 @@ function selfTest() {
   const entry = { key: 'f-1', door: 'jigc setup', clause: 'no-lost-files', grade: 'breaks', repro: 'r2/reports/test/row-3-driver.a1.md, block 2' }
   const fork = { key: 'f-1', kind: 'contested', door: 'jigc setup', clause: 'no-lost-files', repro: 'x', statement: 'the verifier' }
   const prompts = {
-    preflight: preflightPrompt(ctx, launch, launch.add(['preflight']), { build: true, image: true, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', binary: '/tmp/scratch-1/bin/c2/jigc', checks: [{ item: 'the-gate', brief: 'the full gate' }], crossModel: false }),
-    scope: scopePrompt(ctx, launch, launch.add(['scope']), { sha: 'c'.repeat(40), label: 'c2', base: 'd'.repeat(40), earlier: true, scope: { doors: ['jigc setup'] } }),
+    preflight: preflightPrompt(ctx, launch, launch.add(['preflight']), { build: true, image: true, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', binary: '/tmp/scratch-1/bin/c2/jigc', checks: [{ item: 'the-gate', brief: 'the full gate' }], crossModel: false, previous: previousOf({ facts }) }),
+    scope: scopePrompt(ctx, launch, launch.add(['scope']), { sha: 'c'.repeat(40), label: 'c2', base: 'd'.repeat(40), earlier: true, scope: { doors: ['jigc setup'] }, previous: previousOf({ facts }), fallback: facts.scope }),
     review: unitPrompt(ctx, launch, launch.add(['row-3', 'source']), CHAINS['review-row'][0][0], unit, built, []),
     drive: unitPrompt(ctx, launch, launch.add(['row-3', 'reconciler']), CHAINS['review-row'][1][0], unit, built, [{ as: 'source', report: 'a.md' }]),
     triage: triagePrompt(ctx, launch, launch.add(['triage', 'p1']), [{ reporter: 'row-3-source', report: 'a.md', findings: ['1 — x'] }], 1),
@@ -1340,7 +1466,11 @@ function selfTest() {
   for (const role of Object.keys(ROLES)) {
     for (const label of Object.keys(LABELS)) check('the ' + role + ' prompt and ' + LABELS[label], carries(prompts[role], label) === ROLES[role].labels.includes(label))
   }
-  check('a record step opens with its label', prompts.record.startsWith(LABELS.record) && rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings).startsWith(LABELS.record))
+  check('a record step opens with its label', prompts.record.startsWith(LABELS.record) && rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).startsWith(LABELS.record))
+  check('the preflight is handed the previous release as data', prompts.preflight.includes('version `1.0.0-rc.24`') && prompts.preflight.includes('built from commit ' + 'e'.repeat(40)) && prompts.preflight.includes('the tip of `fix/rc24-tier1`'))
+  check('a round\'s base is the earlier candidate, or the previous release\'s commit', prompts.scope.includes('base = ' + 'd'.repeat(40)) && scopePrompt(ctx, launcher(ctx), 'scope', { sha: 'c'.repeat(40), label: 'c1', base: null, earlier: false, scope: null, previous: previousOf({ facts }), fallback: 'everything' }).includes('base = ' + 'e'.repeat(40) + ' (the previous release, 1.0.0-rc.24'))
+  check('a triage is told what the ledger\'s rows are', triagePrompt(ctx, launcher(ctx), 'triage-p1', handed, 1).includes('The source `' + LEDGER_SOURCE + '` is no reporter') && !prompts.triage.includes('is no reporter'))
+  check('a finishing preflight builds the commit the round tested', preflightPrompt(ctx, launcher(ctx), 'preflight', { build: true, image: false, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', binary: 'x', checks: [], crossModel: false, previous: previousOf({ facts }), tested: true }).includes('the commit round 2 tested, an ancestor of `fix/rc24-tier1`'))
   check('a report line gives the flags', launch.line('scope') === reportLine(ctx, 'scope') && reportLine(ctx, 'scope').startsWith('REPORT: --run rc24-tier1 --round 2 --stage fix --cycle 3 --reporter scope --attempt 4 ') && reportLine(Object.assign({}, ctx, { stage: 'test' }), 'x').startsWith('REPORT: --run rc24-tier1 --round 2 --stage test --reporter x --attempt 4 '))
   check('a binary line gives the path and the hash', binaryLine(built, true).startsWith('BINARY: candidate `/tmp/scratch-1/bin/c2/jigc` sha256 ' + 'b'.repeat(64)) && binaryLine(built, true).includes('jigc-trial:c2') && !binaryLine(built, false).includes('jigc-trial:c2'))
   check('every chain is staffed from the roles', Object.keys(CHAINS).concat(['fix-diff']).every((kind) => (CHAINS[kind] || FIX_AUDIT).every((stepList) => stepList.every((s) => ROLES[s.role] && isSlug(s.as) && !s.as.includes('-') && (s.hands || []).every((h) => (CHAINS[kind] || FIX_AUDIT).some((earlier) => earlier.some((e) => e.as === h)))))))
@@ -1355,14 +1485,15 @@ function selfTest() {
   }
   check('the review row without the opt-in, and with it', asOf(chainOf('review-row', false)) === 'source driver reconciler<source+driver' && asOf(chainOf('review-row', true)) === 'source driver crossmodel reconciler<source+driver+crossmodel' && chainOf('no-such-kind', true).length === 0)
   const gitPrompts = [gitStatePrompt(base), statePrompt(base, 't'), findRoundPrompt(fix, 1), openRoundPrompt(fix, 1, 'fix/rc24-tier1-r1'), pushPrompt(fix, 'fix/rc24-tier1-r1'), landPrompt(fix, 1, 'fix/rc24-tier1-r1'), roundCommitsPrompt(fix, 1, 'fix/rc24-tier1-r1'), carryPrompt(fix, 1, ['a'.repeat(40)], null), carryPrompt(fix, 1, ['a'.repeat(40)], 'fix/rc24-tier1-r1-part1'), syncMainPrompt('rc24-tier1'), checkReportsPrompt(ctx, ['x'])]
-  check('no prompt names the tool without the opt-in', Object.keys(prompts).filter((role) => names.test(prompts[role])).join(' ') === 'crossModel' && !names.test(rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings)) && !names.test(gitPrompts.join('\n')))
+  check('no prompt names the tool without the opt-in', Object.keys(prompts).filter((role) => names.test(prompts[role])).join(' ') === 'crossModel' && !names.test(rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {})) && !names.test(gitPrompts.join('\n')))
   const asserts = (crossModel) => preflightPrompt(ctx, launcher(ctx), 'preflight', { build: false, image: false, sha: 'c'.repeat(40), label: 'c2', branch: 'b', binary: 'x', checks: [], crossModel })
   check('the preflight is asked about the tool only when an item is named', names.test(asserts(true)) && asserts(true).includes('`' + CROSS_CHECK + '`') && !names.test(asserts(false)) && !names.test(asserts(undefined)) && !asserts(false).includes(CROSS_CHECK))
   const dropping = launcher(ctx)
   dropping.add(['row-3', 'source'])
   dropping.drop(dropping.add(['row-3', 'crossmodel']))
   check('a cross-model reporter that left no report is not held to one', dropping.names.join(' ') === 'row-3-source')
-  check('a clause\'s re-run names the doors of its last run', scopeText({ doors: ['jigc setup', 'jigc doc show'] }, 'no-lost-files').includes('`jigc setup` · `jigc doc show`') && scopeText({ doors: ['jigc setup'] }, 'no-lost-files').includes('`no-lost-files` alone') && scopeText(undefined, null) === 'the default scope the opening record names')
+  check('a clause\'s re-run names the doors of its last run', scopeText({ doors: ['jigc setup', 'jigc doc show'] }, 'no-lost-files').includes('`jigc setup` · `jigc doc show`') && scopeText({ doors: ['jigc setup'] }, 'no-lost-files').includes('`no-lost-files` alone'))
+  check('a round with no scope of its own takes the run\'s default, as its record names it', scopeText(undefined, null, 'delta').endsWith('the derived delta') && scopeText(null, null, 'everything').includes('everything') && scopeText('delta', null, 'everything') === 'the derived delta' && scopeLabel(undefined, null, 'everything').endsWith('everything') && scopeLabel(undefined, null, 'delta').endsWith('the derived delta') && scopeLabel('everything', null, 'delta') === 'everything')
   check('a driving chain role is handed the binary', unitPrompt(ctx, launcher(ctx), 'x', CHAINS['trial-arm'][1][0], unit, built, []).includes('jigc-trial:c2'))
 
   // The reporters: every name once, and the check names every one of them.
@@ -1385,7 +1516,10 @@ function selfTest() {
   check('a hash that differs, and one never returned', JSON.stringify(hashMismatch('b'.repeat(64), [{ name: 'a', drives: true, result: { status: 'reported', asserted_sha256: 'c'.repeat(64) } }, { name: 'b', drives: true, result: { status: 'reported' } }, { name: 'c', drives: true, result: good }])) === JSON.stringify([{ reporter: 'a', asserted: 'c'.repeat(64) }, { reporter: 'b', asserted: null }]))
 
   // The human's rulings enter in one step.
-  const rulingsPrompt = rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings)
+  const rulingsPrompt = rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {})
+  const aboutTheRun = rulingsRecordPrompt(base, 2, 'fix/rc24-tier1', [{ go: true }, { rerun: 'no-lost-files' }, { rounds: 4 }], { 'no-lost-files': 1 })
+  check('the rulings step writes the go, the granted re-run and the raised bound', aboutTheRun.includes('round-set --run rc24-tier1 --round 2 < /tmp/scratch-1/record/rulings-r2/go.json') && aboutTheRun.includes(sha256('{"go":true}\n')) && aboutTheRun.includes('round-set --run rc24-tier1 --round 1 < /tmp/scratch-1/record/rulings-r2/granted-no-lost-files.json') && aboutTheRun.includes(sha256('{"granted":"no-lost-files"}\n')) && aboutTheRun.includes('run-set --run rc24-tier1 < /tmp/scratch-1/record/rulings-r2/rounds.json') && aboutTheRun.includes(sha256('{"rounds":4}\n')))
+  check('a ruling about the run writes no bound and no disposition', !aboutTheRun.includes('bound-set') && !aboutTheRun.includes('ledger-set') && aboutTheRun.includes('3 about the run') && rulingsPrompt.includes('0 about the run') && !rulingsPrompt.includes('round-set') && !rulingsPrompt.includes('run-set'))
   check('the rulings step writes the bounds and the dispositions', rulingsPrompt.includes('bound-set --run rc24-tier1 --bound non-jigc-writer --reach \'races against a writer that is not jigc\' --ruling \'the stop after round 1, item 3\' --pin \'unpinned\'') && rulingsPrompt.includes('bound-set --run rc24-tier1 --bound planted-state') && rulingsPrompt.includes(JSON.stringify([{ key: 'f-1', disposition: admitted, detail: 'build the robust path' }, { key: 'f-2', disposition: later }, { key: 'f-3', disposition: bound, detail: 'races against a writer that is not jigc' }])) && rulingsPrompt.includes('check-ledger --run rc24-tier1 -- f-1 f-2 f-3'))
   check('a quote in a ruling cannot leave its argument', shq('it\'s a "bound" $(x) `y`') === '\'it\'\\\'\'s a "bound" $(x) `y`\'')
 
@@ -1704,21 +1838,82 @@ async function preflightOf(ctx, launch, parts, plan, phaseTitle) {
     const c = r.candidate || {}
     if (c.sha !== plan.sha || !SHA256_RE.test(String(c.sha256 || '')) || c.binary !== plan.binary) return { fault: 'the preflight did not return the candidate it was asked for: ' + JSON.stringify(c) }
     if (!r.previous || !SHA256_RE.test(String(r.previous.sha256 || '')) || !r.previous.binary) return { fault: 'the preflight returned no previous release\'s binary: ' + JSON.stringify(r.previous || null) }
+    if (r.previous.version !== plan.previous.version) return { fault: 'the preflight returned the binary of ' + JSON.stringify(r.previous.version) + ', and the previous release the run\'s record names is ' + plan.previous.version + ': every regression fact would be measured against the wrong release' }
   }
   if (plan.image && !(r.image && r.image.verified && r.image.tag)) return { fault: 'the trial image is not verified: ' + JSON.stringify(r.image || null) }
   return { result: r }
 }
 
 function attached(state) {
-  return { next: state.next, stop: state.stop, not_ready: state.not_ready, blockers: state.blockers, human_list: state.human_list, untriaged: state.untriaged, retest: state.retest, human_clauses: state.human_clauses, unsettled: state.unsettled, forbids_close: state.forbids_close, position: state.position }
+  return { next: state.next, stop: state.stop, not_ready: state.not_ready, candidate: state.candidate, fix_rounds: state.fix_rounds, evidence: evidenceOf(state), blockers: state.blockers, human_list: state.human_list, untriaged: state.untriaged, retest: state.retest, human_clauses: state.human_clauses, unsettled: state.unsettled, forbids_close: state.forbids_close, position: state.position }
 }
 // What a stage returns of `next`: the value itself, always; the whole state beside it when
-// this script does not know the value; and with `close` the step the close owes first.
+// this script does not know the value; and with `close` the step the close owes first, and
+// per clause how far behind the candidate its last evidence is.
 function nextOf(state) {
   const o = outcomeOf(state)
   if (!o.known) return { next: o.next, returned_to_orchestrator: true, state }
   if (o.rule) return { next: o.next, rule: o.rule }
-  return o.next === 'close' ? { next: o.next, close: closeOf() } : { next: o.next }
+  return o.next === 'close' ? { next: o.next, close: closeOf(), evidence: evidenceOf(state) } : { next: o.next }
+}
+
+// rulingsStep — the ONE call of the step that records what the human ruled: its record, the
+// push of the branch it is on, and the state read back.
+async function rulingsStep(round, branch, ran) {
+  phase('Record')
+  const ruled = await recordStep('rulings:r' + round, rulingsRecordPrompt(v, round, branch, v.rulings, ran))
+  if (ruled.fault) return { halted: halt('rulings', ruled.fault, { transient: !ruled.result, halt: ruled.result ? ruled.result.halt : null }) }
+  const pushed = await gitStep('push:rulings', 'Record', pushPrompt(v, branch), BRANCH_SCHEMA)
+  if (!onIt(pushed, branch, true)) return { halted: gitHalt('push', pushed, 'the rulings are recorded on ' + branch + ' (' + ruled.result.commit + ') and the branch was not pushed') }
+  const read = await readState()
+  if (!read.state) return { halted: halt('state', 'the rulings are recorded (' + ruled.result.commit + '), and the state could not be read back: ' + read.error, { transient: !!read.transient }) }
+  return { state: read.state, record: ruled.result.commit }
+}
+
+// ruleTheRun — an invocation that carries what the human ruled ABOUT THE RUN (a go after a
+// stop, one more re-run of a clause, the bound raised): they are recorded on the loop branch,
+// NOTHING is started, and the state's `next` goes back — which now names the step the human
+// was asked about. Either stage takes them, and does the same with them.
+async function ruleTheRun(state, checkedOut) {
+  const told = { status: 'refused', stage: v.stage, run: v.run, next: state.next, stop: state.stop, human_clauses: state.human_clauses }
+  if (checkedOut !== loopBranch) return Object.assign(told, { message: 'a ruling about the run is recorded on the loop branch ' + loopBranch + ', and `' + checkedOut + '` is checked out. Nothing was run beyond the two reads.' })
+  const why = runRulingsFault(v.rulings, state)
+  if (why) return Object.assign(told, { message: why + '. Nothing was recorded.' })
+  const ran = {}
+  for (const c of state.clauses || []) ran[c.clause] = c.round
+  const ruled = await rulingsStep((state.stop ? state.stop.round : state.round) || 0, loopBranch, ran)
+  if (ruled.halted) return ruled.halted
+  return Object.assign({ status: 'ruled', stage: v.stage, run: v.run, rulings: v.rulings, record: ruled.record, message: 'the human\'s rulings about the run are recorded, and nothing was started: `next` names the step.' }, nextOf(ruled.state))
+}
+
+// finishTriage — a round's triage that a stage left unfinished (`next: 'triage'`), finished
+// by that stage's next invocation: the rows the state lists as untriaged are graded, verified
+// and recorded, and NO INSTRUMENT RUNS — every report of the round is on record already.
+// Which stage, which round and which attempt is the position's (`triage: true`), read from
+// committed state; nothing here is an argument. `tip` is the commit the verifiers drive.
+async function finishTriage(ctx, state, tip, branch) {
+  phase('Triage')
+  const launch = launcher(ctx)
+  const sources = ledgerSource(v.run, state)
+  const binary = v.scratch + '/bin/' + tip.label + '.a' + ctx.attempt + '/jigc'
+  log('round ' + ctx.round + ': the ' + ctx.stage + ' stage left its triage unfinished — ' + (state.untriaged || []).length + ' row(s) are graded and verified now, attempt ' + ctx.attempt + '; no instrument runs')
+  const pre = await preflightOf(ctx, launch, ['preflight'], { build: true, image: false, sha: tip.sha, label: tip.label, branch, binary, checks: [], crossModel: false, previous: previousOf(state), tested: tip.tested }, 'Triage')
+  if (pre.fault) return { halted: halt('preflight', pre.fault, { transient: !!pre.transient, halt: pre.halt || null, branch }) }
+  const built = { candidate: { label: tip.label, sha: tip.sha, binary, sha256: pre.result.candidate.sha256 }, previous: pre.result.previous, image: null }
+  const tri = await triagePasses(ctx, launch, built, sources, [])
+  if (tri.fault) return { halted: halt('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null, branch }) }
+  if (tri.faults.length) return { halted: halt('binary', tri.faults.join('; '), { branch }) }
+  phase('Record')
+  const rec = triageRecord(ctx, tri.entries)
+  const dir = v.scratch + '/record/triage-r' + ctx.round + (ctx.stage === 'fix' ? '-c' + ctx.cycle : '') + '-a' + ctx.attempt
+  const commands = stageRecordCommands(ctx, dir, { reporters: launch.names, rows: rec.rows, triage: rec.triage, patches: [], clauses: [], facts: null, keys: tri.entries.map((e) => e.key) })
+  const recorded = await recordStep('triage:r' + ctx.round, recordPrompt(v, 'round ' + ctx.round + '\'s triage, finished — ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s) graded; no instrument ran', branch, commands, v.run + ' r' + ctx.round + ' — the round\'s triage, finished'))
+  if (recorded.fault) return { halted: halt('record', recorded.fault, { transient: !recorded.result, halt: recorded.result ? recorded.result.halt : null, launched: launch.names, branch }) }
+  const pushed = await gitStep('push:triage', 'Record', pushPrompt(v, branch), BRANCH_SCHEMA)
+  if (!onIt(pushed, branch, true)) return { halted: gitHalt('push', pushed, 'the triage is recorded on ' + branch + ' (' + recorded.result.commit + ') and the branch was not pushed') }
+  const after = await readState()
+  if (!after.state) return { halted: halt('state', 'the triage is recorded and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + after.error, { transient: !!after.transient, branch }) }
+  return { state: after.state, entries: tri.entries, forks: tri.forks, handed: tri.handed, record: recorded.result.commit, reporters: launch.names, candidate: built.candidate }
 }
 function closeOf() {
   return {
@@ -1736,11 +1931,19 @@ async function runTest() {
   if (!first.state) return halt('state', 'the run\'s state could not be read: ' + first.error, { transient: !!first.transient, halt: first.halt || null })
   let state = first.state
   if (!state.opened) return halt('state', 'the run `' + v.run + '` has no opening record (' + runDir(v.run) + '/opening.md): a run opens with the human-led step, and `test` does not start before it')
+  if (v.rulings && v.rulings.every(runRuling)) return await ruleTheRun(state, gs.branch)
   const at = state.position.test
   if (at.refused) return { status: 'refused', stage: 'test', run: v.run, refused: at, message: 'the `test` stage is refused (' + at.refused + ', round ' + at.round + '): ' + refusalOf(at) + '. Nothing was run beyond the two reads.', next: state.next, not_ready: state.not_ready, stop: state.stop }
-  const sha = String(gs.head)
   const ctx = { run: v.run, round: at.round, stage: 'test', attempt: at.attempt, scratch: v.scratch }
   const label = 'c' + ctx.round
+  // The round's triage is not finished, and this stage left it: finish it, and run nothing.
+  if (at.triage) {
+    if (v.scope != null || v.clause != null || v.crossModel != null) return { status: 'refused', stage: 'test', run: v.run, message: 'round ' + at.round + '\'s triage is not finished (`next` is `' + state.next + '`): this invocation finishes it and runs no instrument, so it takes no scope, clause or crossModel. Nothing was run beyond the two reads.', next: state.next, untriaged: state.untriaged }
+    const done = await finishTriage(ctx, state, { sha: String(state.rounds.find((r) => r.round === at.round).facts.candidate), label, tested: true }, loopBranch)
+    if (done.halted) return done.halted
+    return Object.assign({ status: 'triaged', stage: 'test', run: v.run, round: ctx.round, triage_only: true, candidate: done.candidate, record: done.record, counts: { reporters: done.reporters.length, findings_in: done.handed, entries: done.entries.length, blockers: done.state.blockers.length, for_the_human: done.state.human_list.length }, human_list: done.state.human_list, forks: done.forks, blockers: done.state.blockers, forbids_close: done.state.forbids_close }, nextOf(done.state))
+  }
+  const sha = String(gs.head)
   const launch = launcher(ctx)
   const items = state.items || []
   // One clause's instrument alone (args.clause): every item that judges it, over the doors
@@ -1765,8 +1968,8 @@ async function runTest() {
   const always = items.filter((i) => i.kind === CHECK_KIND && runs(i))
   const scopeName = launch.add(['scope'])
   const both = await parallel([
-    () => preflightOf(ctx, launch, ['preflight'], { build: true, image: false, sha, label, branch: loopBranch, binary, checks: always, crossModel: crossNamed.length > 0 }, 'Preflight and scope'),
-    () => roleStep('scope', 'scope', 'Preflight and scope', scopePrompt(ctx, launch, scopeName, { sha, label, base: earlier && earlier.facts ? earlier.facts.candidate : null, earlier: !!earlier, scope: roundScope, clause: rerun ? v.clause : null }), SCOPE_SCHEMA),
+    () => preflightOf(ctx, launch, ['preflight'], { build: true, image: false, sha, label, branch: loopBranch, binary, checks: always, crossModel: crossNamed.length > 0, previous: previousOf(state) }, 'Preflight and scope'),
+    () => roleStep('scope', 'scope', 'Preflight and scope', scopePrompt(ctx, launch, scopeName, { sha, label, base: earlier && earlier.facts ? earlier.facts.candidate : null, earlier: !!earlier, scope: roundScope, clause: rerun ? v.clause : null, previous: previousOf(state), fallback: state.facts.scope }), SCOPE_SCHEMA),
   ])
   const pre = both[0] || { fault: 'the preflight returned no result', transient: true }
   const sc = both[1]
@@ -1785,7 +1988,7 @@ async function runTest() {
   const needsImage = hunting.some((i) => chainOf(i.kind, false).some((stepList) => stepList.some((s) => s.image)))
   let checks = pre.result.checks || []
   if (needsImage || late.length) {
-    const more = await preflightOf(ctx, launch, ['preflight', 'second'], { build: false, image: needsImage, sha, label, branch: loopBranch, binary, checks: late, crossModel: false }, 'Preflight and scope')
+    const more = await preflightOf(ctx, launch, ['preflight', 'second'], { build: false, image: needsImage, sha, label, branch: loopBranch, binary, checks: late, crossModel: false, previous: previousOf(state) }, 'Preflight and scope')
     if (more.fault) return halt('preflight', more.fault, { transient: !!more.transient, halt: more.halt || null })
     built.image = needsImage ? more.result.image : null
     checks = checks.concat(more.result.checks || [])
@@ -1818,6 +2021,9 @@ async function runTest() {
   phase('Triage')
   const sources = reporters.filter((r) => r.result && r.result.findings).map((r) => ({ reporter: r.name, report: r.report, findings: findingLines(r.result.findings) }))
   if (sc.left_open && sc.left_open.length) sources.push(leftOpenSource(scopeName, sc.report, sc.left_open))
+  // And the rows whose triage nobody finished — seeded at the opening, or left without a
+  // verdict by an earlier stage: this triage is the next one that runs.
+  for (const source of ledgerSource(v.run, state)) sources.push(source)
   const tri = await triagePasses(ctx, launch, built, sources, [])
   if (tri.fault) return halt('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null })
   if (tri.faults.length) return halt('binary', tri.faults.join('; '))
@@ -1837,7 +2043,7 @@ async function runTest() {
   if (crossNamed.length) Object.assign(facts, { 'cross-model': crossRan, 'cross-model-void': crossVoid.map((x) => x.item) })
   if (sc.base && SHORT_SHA_RE.test(sc.base)) facts.base = sc.base
   const dir = v.scratch + '/record/test-r' + ctx.round + '-a' + ctx.attempt
-  const commands = stageRecordCommands(ctx, dir, { reporters: launch.names, rows: rec.rows, triage: rec.triage, patches: [], clauses: clauseRows(unitStatus, sha, 'round ' + ctx.round + ': ' + scopeLabel(v.scope, rerun ? v.clause : null) + ' — ' + state.doors.included.length + ' door(s) inside'), facts, keys: tri.entries.map((e) => e.key) })
+  const commands = stageRecordCommands(ctx, dir, { reporters: launch.names, rows: rec.rows, triage: rec.triage, patches: [], clauses: clauseRows(unitStatus, sha, 'round ' + ctx.round + ': ' + scopeLabel(v.scope, rerun ? v.clause : null, state.facts.scope) + ' — ' + state.doors.included.length + ' door(s) inside'), facts, keys: tri.entries.map((e) => e.key) })
   const recorded = await recordStep('test:r' + ctx.round, recordPrompt(v, 'the record of round ' + ctx.round + '\'s test stage — ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s)', loopBranch, commands, v.run + ' r' + ctx.round + ' — the test stage\'s record'))
   if (recorded.fault) return halt('record', recorded.fault, { transient: !recorded.result, halt: recorded.result ? recorded.result.halt : null, launched: launch.names })
   const pushed = await gitStep('push', 'Record', pushPrompt(v, loopBranch), BRANCH_SCHEMA)
@@ -1876,6 +2082,7 @@ async function runFix() {
   if (!read.state) return halt('state', 'the run\'s state could not be read: ' + read.error, { transient: !!read.transient, halt: read.halt || null })
   let state = read.state
   if (!state.opened) return halt('state', 'the run `' + v.run + '` has no opening record (' + runDir(v.run) + '/opening.md)')
+  if (v.rulings && v.rulings.every(runRuling)) return await ruleTheRun(state, gs.branch)
   if (state.position.fix.refused) return { status: 'refused', stage: 'fix', run: v.run, refused: state.position.fix, message: 'the `fix` stage is refused (' + state.position.fix.refused + ', round ' + state.position.fix.round + '): ' + refusalOf(state.position.fix) + '. Nothing was run beyond the two reads.', next: state.next, not_ready: state.not_ready }
   const round = state.position.fix.round
 
@@ -1888,12 +2095,14 @@ async function runFix() {
   let cut = currentCut(v.run, round, local)
   let branch = cut ? branchName(v.run, round, cut) : loopBranch
   let checkedOut = found.branch
+  let tipSha = String(found.head || '')
   // onBranch — the round's branch checked out: switched to, or opened from the loop branch.
   async function onBranch(target) {
     if (checkedOut === target) return null
     const ob = await gitStep('open:' + target, 'State', openRoundPrompt(v, round, target), BRANCH_SCHEMA)
     if (!onIt(ob, target, false)) return gitHalt('git', ob, 'the branch ' + target + ' could not be checked out')
     checkedOut = target
+    tipSha = String(ob.head)
     return null
   }
   if (checkedOut !== branch) {
@@ -1909,14 +2118,9 @@ async function runFix() {
 
   // The human's rulings: ONE step, before anything is fixed.
   if (v.rulings) {
-    phase('Record')
-    const ruled = await recordStep('rulings:r' + round, rulingsRecordPrompt(v, round, branch, v.rulings))
-    if (ruled.fault) return halt('rulings', ruled.fault, { transient: !ruled.result, halt: ruled.result ? ruled.result.halt : null })
-    const pushed = await gitStep('push:rulings', 'Record', pushPrompt(v, branch), BRANCH_SCHEMA)
-    if (!onIt(pushed, branch, true)) return gitHalt('push', pushed, 'the rulings are recorded on ' + branch + ' (' + ruled.result.commit + ') and the branch was not pushed')
-    read = await readState()
-    if (!read.state) return halt('state', 'the rulings are recorded (' + ruled.result.commit + '), and the state could not be read back: ' + read.error, { transient: !!read.transient })
-    state = read.state
+    const ruled = await rulingsStep(round, branch, {})
+    if (ruled.halted) return ruled.halted
+    state = ruled.state
   }
   if (v.stopAfter === 'rulings') return { status: 'stopped', after: 'rulings', stage: 'fix', run: v.run, round, branch, state: attached(state) }
 
@@ -1971,7 +2175,8 @@ async function runFix() {
     phase('Fix')
     const head = await gitStep('push:' + branch + ':c' + ctx.cycle, 'Fix', pushPrompt(v, branch), BRANCH_SCHEMA)
     if (!onIt(head, branch, true)) return { halted: gitHalt('push', head, 'the round\'s branch ' + branch + ' was not pushed') }
-    const sources = fixerSources.slice()
+    // The fixers' own, and the rows whose triage nobody finished: this triage is the next.
+    const sources = fixerSources.concat(ledgerSource(v.run, state))
     const driven = []
     const range = loopBranch + '..' + branch
     const audited = !fixerForks.length && (isPart || patches.length > 0)
@@ -1979,7 +2184,7 @@ async function runFix() {
     if (audited || fixerForks.length || sources.length) {
       const label = 'r' + round + 'c' + ctx.cycle
       const binary = v.scratch + '/bin/' + label + '.a' + ctx.attempt + '/jigc'
-      const pre = await preflightOf(ctx, launch, ['preflight'], { build: true, image: false, sha: head.head, label, branch, binary, checks: [], crossModel: false }, 'Fix')
+      const pre = await preflightOf(ctx, launch, ['preflight'], { build: true, image: false, sha: head.head, label, branch, binary, checks: [], crossModel: false, previous: previousOf(state) }, 'Fix')
       if (pre.fault) return { halted: halt('preflight', pre.fault, { transient: !!pre.transient, halt: pre.halt || null, branch }) }
       built = { candidate: { label, sha: head.head, binary, sha256: pre.result.candidate.sha256 }, previous: pre.result.previous, image: null }
     }
@@ -2082,10 +2287,25 @@ async function runFix() {
   }
 
   // The cycles.
+  let finished = false
   for (;;) {
     const at = state.position.fix
-    if (at.refused) return Object.assign({ status: 'refused', refused: at }, report, nextOf(state))
+    if (at.refused) return Object.assign({ status: 'refused', refused: at, message: 'the `fix` stage is refused (' + at.refused + ', round ' + at.round + '): ' + refusalOf(at) + '.' }, report, nextOf(state))
     const open = { branch: cut ? branch : null, cycles: cyclesDone(), blockers: state.blockers, human_list: state.human_list, untriaged: state.untriaged, forks }
+    // The round's triage is not finished, and this stage left it: finish it — once — and
+    // go on from the state that leaves. No fixer and no auditor runs for it.
+    if (at.triage) {
+      if (finished) return Object.assign({ status: 'cycle', message: 'round ' + round + '\'s triage was finished in this invocation and the state still names findings without a grade or a verdict: it is not run again on a guess — `next` says what is owed.' }, open, report, nextOf(state))
+      if (!cut) return halt('git', 'the state says that the `fix` stage left round ' + round + '\'s triage unfinished, and the round has no branch: there is no tip a verifier could drive')
+      const stopped = await onBranch(branch)
+      if (stopped) return stopped
+      const done = await finishTriage({ run: v.run, round, stage: 'fix', cycle: at.cycle, attempt: at.attempt, scratch: v.scratch }, state, { sha: tipSha, label: 'r' + round + 'c' + at.cycle, tested: false }, branch)
+      if (done.halted) return done.halted
+      state = done.state
+      for (const fork of done.forks) forks.push(fork)
+      finished = true
+      continue
+    }
     if (at.land) {
       if (!cut) return Object.assign({ status: 'nothing-to-fix', message: 'round ' + round + ' has nothing open and no branch: nothing is fixed and nothing lands.' }, open, report, nextOf(state))
       const stopped = await onBranch(branch)

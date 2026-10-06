@@ -1,6 +1,7 @@
 //! **The stabilization harness, held to what its rulings ask of it by a scan of its own
 //! source** ([DECISIONS.md](../../../DECISIONS.md) → *2026-10-05 — The stabilization
-//! workflow, as ruled*, and the entry of 2026-10-06, *The stabilization harness, as built*).
+//! workflow, as ruled*, and the entries of 2026-10-06, *The stabilization harness, as built*
+//! and *The decision table's holes, closed*).
 //!
 //! `.claude/workflows/stabilize.js` runs under a runtime this suite does not have: it cannot
 //! launch an agent. What it can do is read the script, and — where `node` is installed —
@@ -34,6 +35,14 @@
 //!   stage's dispositions are written before its triage, so that a finding found again
 //!   after its fix is found *with* that fix; the script has a sentence for every word the
 //!   record script refuses a stage with; and `next` is relayed, never recomputed.
+//! - **(k)** what the decisions of 2026-10-06 on the table's holes gave this script to do
+//!   has one road each: the human's go, one more re-run of a clause and the raised bound
+//!   are written by the rulings step and by nothing else, and an invocation that carries
+//!   them starts nothing; an unfinished triage is finished where the position says so, by
+//!   a function that runs no instrument, and every triage is handed the ledger's rows that
+//!   still await one; the previous release and the default scope reach a prompt from the
+//!   run's recorded facts, never from prose; `close` goes back with each clause's evidence;
+//!   and the verifier's definition says what an unverified finding means.
 //!
 //! **Driven, where `node` is on `PATH`** (it is on this project's development machines and
 //! on GitHub's hosted runners; where it is not, the arm says so on stderr and passes — the
@@ -859,6 +868,213 @@ fn j_what_the_record_script_decides_from_reaches_it_and_what_it_decides_is_passe
 }
 
 // ---------------------------------------------------------------------------
+// (k) the table's holes, closed: one road each
+// ---------------------------------------------------------------------------
+
+#[test]
+fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_facts_each_have_one_road()
+ {
+    let full = harness();
+    let source = code(&full);
+    let test_stage = function(&full, "runTest");
+    let fix_stage = function(&full, "runFix");
+
+    // The human's go after a stop, one more re-run of a clause, and the raised bound are
+    // facts of the record — and the rulings step writes them, and nothing else does.
+    let step = function(&full, "rulingsRecordPrompt");
+    for written in [
+        "value: { go: true }",
+        "value: { granted: r.rerun }",
+        "value: { rounds: r.rounds }",
+        "'round-set --run '",
+        "'run-set --run '",
+    ] {
+        assert!(
+            step.contains(written),
+            "the rulings step writes `{written}`"
+        );
+    }
+    let elsewhere = without(&full, &["rulingsRecordPrompt", "selfTest"]);
+    for fact in ["go: true", "granted:", "run-set --run"] {
+        assert!(
+            !elsewhere.contains(fact),
+            "`{fact}` stands outside the rulings step: a go, a granted re-run or a raised bound has a second writer"
+        );
+    }
+
+    // An invocation that carries them records them and starts nothing: each stage hands
+    // over before it reads its position, and what it hands over to launches no instrument,
+    // no fixer and no landing.
+    let hand_over = "\n  if (v.rulings && v.rulings.every(runRuling)) return await ruleTheRun(state, gs.branch)\n";
+    for (name, stage) in [("runTest", test_stage), ("runFix", fix_stage)] {
+        let at = stage.find(hand_over).unwrap_or_else(|| {
+            panic!("`{name}` hands a ruling about the run over, and returns what comes back")
+        });
+        let position = stage
+            .find("state.position")
+            .expect("a stage reads its position");
+        assert!(
+            at < position,
+            "`{name}` hands a ruling about the run over before it reads its position"
+        );
+    }
+    let rule = function(&full, "ruleTheRun");
+    assert!(
+        rule.contains("runRulingsFault(v.rulings, state)")
+            && rule.contains("checkedOut !== loopBranch")
+            && rule.contains("await rulingsStep("),
+        "a ruling about the run is asked of the state, on the loop branch, then recorded"
+    );
+    for launching in [
+        "runUnits(",
+        "preflightOf(",
+        "triagePasses(",
+        "fixerPrompt(",
+        "landPrompt(",
+        "finishTriage(",
+    ] {
+        assert!(
+            !rule.contains(launching),
+            "`ruleTheRun` starts something: `{launching}`"
+        );
+    }
+
+    // An unfinished triage is finished where the record script's position says so — and
+    // by a function that grades, verifies and records, and runs no instrument.
+    let finish = function(&full, "finishTriage");
+    assert!(
+        finish.contains("ledgerSource(v.run, state)")
+            && finish.contains("await triagePasses(")
+            && finish.contains("stageRecordCommands(")
+            && finish.contains("await readState()"),
+        "`finishTriage` hands the rows that await triage to the triage passes, records them, and reads the state back"
+    );
+    for running in [
+        "runUnits(",
+        "scopePrompt(",
+        "fixerPrompt(",
+        "clauseRows(",
+        "unitPrompt(",
+    ] {
+        assert!(
+            !finish.contains(running),
+            "`finishTriage` runs an instrument, a scope or a fixer: `{running}`"
+        );
+    }
+    assert!(
+        test_stage.contains("\n  if (at.triage) {\n")
+            && fix_stage.contains("\n    if (at.triage) {\n"),
+        "each stage finishes a triage exactly where its position says `triage`"
+    );
+    assert_eq!(
+        source.matches("await finishTriage(").count(),
+        2,
+        "one call in each stage"
+    );
+    for stage in [test_stage, fix_stage] {
+        let asked = stage.find("at.triage").expect("as above");
+        let called = stage.find("await finishTriage(").expect("as above");
+        assert!(
+            asked < called && !stage[asked..called].contains("runUnits("),
+            "between the position's word and the call no instrument runs"
+        );
+    }
+    // And every triage — a stage's own, and a finishing one — is handed the rows of the
+    // ledger whose triage nobody finished: seeded at the opening, or left without a verdict.
+    assert_eq!(
+        source.matches("await triagePasses(").count(),
+        3,
+        "the test stage's triage, a fix cycle's, and the finishing one"
+    );
+    assert_eq!(
+        source.matches("ledgerSource(v.run, state)").count(),
+        3,
+        "and each of the three is handed the ledger's rows"
+    );
+    assert!(
+        test_stage.contains("for (const source of ledgerSource(v.run, state)) sources.push(source)\n  const tri = await triagePasses(ctx, launch, built, sources, [])"),
+        "the test stage's triage"
+    );
+    assert!(
+        fix_stage.contains("const sources = fixerSources.concat(ledgerSource(v.run, state))"),
+        "a fix cycle's triage"
+    );
+    let ledger = function(&full, "ledgerSource");
+    assert!(
+        ledger.contains("(state.untriaged || []).map(") && !ledger.contains(".round"),
+        "the rows are the state's `untriaged`, whatever round or stage they came from"
+    );
+
+    // The previous release and the default scope are the run's recorded facts: no prompt
+    // sends an agent to read either out of the opening record's prose.
+    assert!(
+        !without(&full, &["selfTest"]).contains("opening record names"),
+        "a prompt still says that the opening record names something"
+    );
+    let previous = function(&full, "previousOf");
+    assert!(
+        previous.contains("facts.previous") && previous.contains("facts['previous-commit']"),
+        "the previous release is read off the state's facts"
+    );
+    let preflight = function(&full, "preflightPrompt");
+    assert!(
+        preflight.contains("plan.previous.version") && preflight.contains("plan.previous.commit"),
+        "the preflight is told the previous release's version and commit"
+    );
+    let scope = function(&full, "scopePrompt");
+    assert!(
+        scope.contains("plan.previous.commit") && scope.contains("plan.fallback"),
+        "the scope step is told the previous release's commit and the default scope"
+    );
+    let mut preflights = 0;
+    for line in source
+        .lines()
+        .filter(|line| line.contains("preflightOf(ctx") && !line.starts_with("async function "))
+    {
+        preflights += 1;
+        assert!(
+            line.contains("previous: previousOf(state)"),
+            "a preflight is not handed the run's previous release: {line}"
+        );
+    }
+    assert!(preflights >= 4, "the scan found the preflight calls");
+    assert!(
+        function(&full, "preflightOf").contains("r.previous.version !== plan.previous.version"),
+        "and the binary it returns is held to that release"
+    );
+    assert!(
+        source.contains("fallback: state.facts.scope")
+            && source.contains("scopeLabel(v.scope, rerun ? v.clause : null, state.facts.scope)"),
+        "the default scope is the state's fact"
+    );
+
+    // Closing is the human's to confirm with the evidence in front of them: per clause,
+    // how far behind the candidate its last evidence is.
+    assert!(
+        function(&full, "nextOf").contains("close: closeOf(), evidence: evidenceOf(state)"),
+        "`close` goes back with each clause's evidence"
+    );
+    let evidence = function(&full, "evidenceOf");
+    for field in ["behind: c.behind", "stale: c.stale", "round: c.round"] {
+        assert!(evidence.contains(field), "the evidence carries `{field}`");
+    }
+
+    // And the verifier's definition says what the record script computes: a finding it
+    // left without a verdict leaves the round's triage unfinished.
+    let verifier = &definitions()["finding-verifier"];
+    assert!(
+        verifier.contains("the round's triage is not finished")
+            && !verifier.contains("hands to the human"),
+        "finding-verifier.md still says that an unverified finding goes to the human"
+    );
+    let triage = &definitions()["finding-triage"];
+    assert!(
+        triage.contains("`ledger`"),
+        "finding-triage.md says what the source `ledger` is"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // (i) driven under node, where there is one
 // ---------------------------------------------------------------------------
 
@@ -926,7 +1142,7 @@ fn i_where_node_is_installed_the_script_parses_and_its_self_test_passes() {
         "the script's self-test: {seen}"
     );
     assert!(
-        seen["checks"].as_u64().is_some_and(|n| n >= 200),
+        seen["checks"].as_u64().is_some_and(|n| n >= 280),
         "the self-test ran its checks: {seen}"
     );
 
@@ -947,6 +1163,15 @@ fn i_where_node_is_installed_the_script_parses_and_its_self_test_passes() {
         format!(r#"{{"stage": "fix", {run}, "raise": {{"cycles": 3}}}}"#),
         format!(r#"{{"stage": "test", {run}, "stopAfer": "state"}}"#),
         format!(r#"{{"stage": "test", {run}, "clause": "no-lost-files", "scope": "everything"}}"#),
+        format!(r#"{{"stage": "test", {run}, "rulings": [{{"go": false}}]}}"#),
+        format!(
+            r#"{{"stage": "test", {run}, "rulings": [{{"go": true}}], "scope": "everything"}}"#
+        ),
+        format!(
+            r#"{{"stage": "fix", {run}, "rulings": [{{"go": true}}, {{"key": "f-1", "ruling": "later"}}]}}"#
+        ),
+        format!(r#"{{"stage": "fix", {run}, "rulings": [{{"rounds": 0}}]}}"#),
+        format!(r#"{{"stage": "fix", {run}, "rulings": [{{"rerun": "No lost files"}}]}}"#),
     ];
     for args in &malformed {
         let seen = invoke(&driver, args);
