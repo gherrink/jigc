@@ -100,7 +100,9 @@
 //! must-not-refuse cell in the layouts this door is reachable in.
 //!
 //! **And where git cannot answer, nothing is installed** (cells 41–42; the completion
-//! audit's install-teardown F2). The pre-write ask had a third outcome — git did not answer
+//! audit's install-teardown F2) — **under a code of its own, `setup.unverified-install-path`**
+//! (2026-10-06, the human's ruling on the fix pass's item 17; it rode the dirty-install code
+//! until then). The pre-write ask had a third outcome — git did not answer
 //! — under which the install ran and only its commit was skipped. Cell 41 iterates how git
 //! stops answering (a corrupt index, a submodule whose gitdir is gone, no `git` on `PATH`,
 //! an ownership refusal, an unreadable `HEAD`) crossed with `--force`: exit 1 before the
@@ -139,6 +141,12 @@ use std::process::Command;
 /// The blocking code the door refuses with — `CarryoverBoundary::Setup`'s own identity
 /// (`crates/engine/src/finalize.rs` → `setup_dirty_install_finding`).
 const DIRTY_CODE: &str = "setup.dirty-install-path";
+
+/// The blocking code the door refuses with where git **could not answer** its pre-write
+/// question (`crates/engine/src/finalize.rs` → `setup_unasked_install_finding`) — a code of
+/// its own since 2026-10-06 (the human's ruling on the fix pass's item 17): under
+/// [`DIRTY_CODE`] the usual remedy is `--force`, which this refusal does not honour.
+const UNVERIFIED_CODE: &str = "setup.unverified-install-path";
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -3209,7 +3217,10 @@ impl Muted {
 /// ask had no answer, and it installed without one.
 ///
 /// So the axis is *how git stops answering* ([`GitMute`]), crossed with the consent. In
-/// every cell: exit 1 under the guard's own code, the file at the replaced path
+/// every cell: exit 1 under **this refusal's own code** — never the dirty-install code,
+/// whose route ends at a `--force` this refusal does not honour (the human's ruling of
+/// 2026-10-06 on item 17; it rode [`DIRTY_CODE`] until then) — on the text surface and as
+/// the finding's key under `--format json`, the file at the replaced path
 /// byte-identical, the file at a merged-into path byte-identical, `HEAD` unmoved. The
 /// route's printed `git` command is then run as printed and fails the way the refusal said
 /// git failed. Then the repair, and the door behaves as it does in any healthy repository:
@@ -3240,7 +3251,15 @@ fn where_git_cannot_answer_setup_refuses_before_its_first_write() {
                         Some(1),
                         "{what} {args:?}: git cannot answer, so nothing is installed: {said_out}"
                     );
-                    assert!(said_out.contains(DIRTY_CODE), "{what} {args:?}: {said_out}");
+                    assert!(
+                        said_out.contains(UNVERIFIED_CODE) && !said_out.contains(DIRTY_CODE),
+                        "{what} {args:?}: under its own code, and not the one whose remedy is \
+                         `--force`: {said_out}"
+                    );
+                    assert!(
+                        !route(&out).contains("jigc setup --force"),
+                        "{what} {args:?}: the route offers no consent: {said_out}"
+                    );
                     assert!(
                         said_out.contains("git could not tell"),
                         "{what} {args:?}: the refusal says what it could not ask: {said_out}"
@@ -3271,11 +3290,42 @@ fn where_git_cannot_answer_setup_refuses_before_its_first_write() {
                     );
                 }
 
+                // A driver reads the same identity: one finding, keyed at the new code.
+                let json = muted.jigc(repo, home, &["setup", "--format", "json"]);
+                assert_eq!(json.status.code(), Some(1), "{what}: {}", said(&json));
+                let envelope: serde_json::Value = serde_json::from_slice(&json.stderr)
+                    .unwrap_or_else(|err| {
+                        panic!("{what}: the envelope parses ({err}): {}", said(&json))
+                    });
+                let codes: Vec<&str> = envelope["findings"]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("{what}: a findings array: {envelope}"))
+                    .iter()
+                    .filter_map(|finding| finding["code"].as_str())
+                    .collect();
+                assert_eq!(codes, [UNVERIFIED_CODE], "{what}: {envelope}");
+                assert_eq!(
+                    envelope["findings"][0]["key"]["code"], UNVERIFIED_CODE,
+                    "{what}: and it is the key's code: {envelope}"
+                );
+                assert_eq!(
+                    read(repo, ".jigc/AGENT.md"),
+                    notes,
+                    "{what}: still untouched"
+                );
+
                 // The repair, then the door as it is in a healthy repository.
                 mute.repair(repo, aside);
                 assert_eq!(head_of(repo), before, "{what}: `HEAD` never moved");
                 let out = jigc(repo, home, &["setup"]);
                 assert_eq!(out.status.code(), Some(1), "{what}: {}", said(&out));
+                assert!(
+                    said(&out).contains(DIRTY_CODE) && !said(&out).contains(UNVERIFIED_CODE),
+                    "{what}: git answers again, so this is the dirty-install refusal, whose \
+                     route does end at `--force`: {}",
+                    said(&out)
+                );
+                assert!(route(&out).contains("jigc setup --force"), "{what}");
                 assert_eq!(
                     refused_paths(&out),
                     vec![".jigc/AGENT.md".to_string()],
@@ -3335,7 +3385,11 @@ fn git_that_answers_is_never_refused_as_git_that_does_not() {
         "superproject: {}",
         said(&rerun)
     );
-    assert!(!said(&rerun).contains(DIRTY_CODE), "{}", said(&rerun));
+    assert!(
+        !said(&rerun).contains(DIRTY_CODE) && !said(&rerun).contains(UNVERIFIED_CODE),
+        "{}",
+        said(&rerun)
+    );
     assert_eq!(git(superproject.path(), &["status", "--porcelain"]), "");
 
     let identify = |repo: &Path| {
@@ -3367,7 +3421,7 @@ fn git_that_answers_is_never_refused_as_git_that_does_not() {
             let out = jigc(repo, home, &["setup"]);
             assert_eq!(out.status.code(), Some(0), "{what}, {run}: {}", said(&out));
             assert!(
-                !said(&out).contains(DIRTY_CODE),
+                !said(&out).contains(DIRTY_CODE) && !said(&out).contains(UNVERIFIED_CODE),
                 "{what}, {run}: {}",
                 said(&out)
             );
@@ -3428,7 +3482,7 @@ fn git_that_answers_is_never_refused_as_git_that_does_not() {
             let out = jigc(&repo, home, &["setup"]);
             let said_out = said(&out);
             assert!(
-                !said_out.contains(DIRTY_CODE),
+                !said_out.contains(DIRTY_CODE) && !said_out.contains(UNVERIFIED_CODE),
                 "{what}, {run}: the guard has nothing to say where there is no work tree: \
                  {said_out}"
             );

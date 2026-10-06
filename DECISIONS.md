@@ -2,6 +2,24 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-06 — Where git cannot answer, `jigc setup` refuses under a code of its own: `setup.unverified-install-path` (the build of the human's ruling on the fix pass's item 17; the name and the registrations are the builder's)
+
+**The ruling** is the entry *Ahead of the run's opening*, below, 5b, 2: *where git itself cannot answer, `setup`'s refusal gets a finding code of its own; that `--force` does not pass it is confirmed* — and 5b's preamble: *the two new codes have no identifier yet; the commit that builds each mints its name.* **Minted here: `setup.unverified-install-path`.** Nothing else about the refusal moves — when it fires, what it lists, its message, its route, its exit code and that `--force` changes nothing are byte for byte what `f0b1120a` built.
+
+**The name.** The family's grammar for this door's guard is `setup.<state>-install-path`: `setup.dirty-install-path` (a path holds bytes no commit holds — blocking) and `setup.forced-install-path` (the consent was spent on these — advisory). The new state is the same paths where nobody could say: *unverified*. **Over** `setup.unasked-install-path` — the constructor's own word, and one that reads as *jigc did not ask*, when it asked and got no answer — and over a name about git (`setup.git-unanswered`), which would name the cause where the family names the state of the install paths, and the causes are unbounded.
+
+**Where a code has to be registered, as found by reading every reader of the code it left** (`command grep` for `setup.dirty-install-path` over `crates/`, `tooling-tests/`, `dev/`, the trial tooling and the docs — a list was not trusted):
+
+- **The mint**: `engine::finalize::SETUP_UNVERIFIED_INSTALL_CODE`, the constructor's one use of it, and a unit test that holds the code, the absent consent and the aimed question.
+- **The key's target form**: none to add. `engine::finding::is_declared_singleton` admits the `setup.` family by prefix — one finding per invocation, no address — and the new code is inside it by spelling, which the unit test asserts.
+- **`cli::pack::AMBUSH_CONTRACTS` — not a member, by the table's own rule.** A row is a blocking code that is *a rule about what the door will refuse to do with the user's own work*; this is a state fault the door reports, the kind the table's doc names as outside it (`finalize.base-mismatch`). The dirty-install row stays the door's one row, and the fence that names the exempt rows by code is unmoved.
+- **`cli::rollback::ROLLBACK_POPULATIONS`** — the `setup-install-path` row's guard is `setup.dirty-install-path`, the guard itself. Unmoved: the new code is that guard unable to ask, and a population has one guard.
+- **`git_span_aim`'s census row** for the constructor's `git status` span named the old code in its reason; it names the new one.
+- **The un-keyed inventory**, `design/validation.md` → *The M51 registrations — Increment 3*: a row of its own, beside the dirty-install row, which now points at it.
+- **No row in** `CHECK_INVENTORY` (un-keyed, like its sibling), `ERROR_CODE_REGISTRY` (door-outcome identities; a blocking `Finding` is not one), the invocation log (M50's declared bound: no `setup.*` finding reaches it) or any pinned `--format json` key set — the envelope is the findings arm every `setup.*` refusal already takes.
+
+**What moves for a driver:** the three cells that printed `setup.dirty-install-path` over a git that could not answer — plain, `--force`, and under `--format json` — print `setup.unverified-install-path`. A driver that keyed *run `--force`* on the old code no longer meets it there. Once git answers again, an uncommitted edit is the dirty-install refusal as before, and the cell drives that hand-over.
+
 ## 2026-10-06 — `jigc setup` follows a `CLAUDE.md` or settings link to an ignored file inside the repository, and treats the file as an ignored ordinary one: merged into, in no commit (the build of the human's ruling on the fix pass's item 18; the builder's choices inside it)
 
 **The ruling** is the entry *Ahead of the run's opening*, below, 5b, 5: *`setup` follows a `CLAUDE.md` or settings link to a file inside the repository that git ignores, and treats the target as it treats an ignored ordinary file — jigc's section is merged in, and the file joins no commit. This reverses the pass's refusal.* **Built as a third outcome of `setup::link_end` (`MergeableIgnored`) and one flag on what the install merged through; no finding code, flag, stored format or registry moves.** `1.0.0-rc.24` followed this link and merged; the pass refused it under `setup.inject-reference` / `setup.inject-allowlist`.

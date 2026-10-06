@@ -115,10 +115,10 @@ track them yet) and re-run, or pass `jigc setup --force`, the single consent —
 lets the install run and commit those paths as it leaves them, and *says* which paths
 it was spent on, since at a regenerated path what it leaves is jigc's content and not
 yours. And where git cannot answer the comparison at all — a corrupt index, a broken
-submodule, no `git` on `PATH` — `setup` stops under the same code before writing
-anything, quotes what git said, and prints the one `git` command to run to see it;
-`--force` does not pass that, since there is nothing git named to consent over. Fix
-what git reports and re-run. This is the same rule as the carryover gate at `jigc task
+submodule, no `git` on `PATH` — `setup` stops before writing anything under a code of
+its own, `setup.unverified-install-path`: it quotes what git said and prints the one
+`git` command to run to see it. `--force` does not pass that one, since there is
+nothing git named to consent over. Fix what git reports and re-run. This is the same rule as the carryover gate at `jigc task
 finalize` below — a door committing paths it does not own says so instead of
 sweeping them in — at its other door.
 

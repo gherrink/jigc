@@ -288,7 +288,10 @@ pub enum Command {
     /// jigc's own generated content, which keeps re-installing cleanly), and a change
     /// hidden by an assume-unchanged or skip-worktree index flag. A footprint file you
     /// deleted and did not commit is not such work: `setup` writes it again and commits
-    /// it. In a repository with no commit yet, an untracked file it
+    /// it. Where git itself cannot answer the question (a corrupt index, no `git` on
+    /// `PATH`), it refuses before writing anything under a code of its own,
+    /// `setup.unverified-install-path`, and `--force` does not pass that. In a repository
+    /// with no commit yet, an untracked file it
     /// merges into (`CLAUDE.md`, `.gitignore`, the settings file) rides the first commit
     /// instead; one it would replace still refuses. A file it replaces whole
     /// (`.jigc/AGENT.md`, `.jigc/version`, `.jigc/config/.gitkeep`,

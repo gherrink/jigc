@@ -2620,16 +2620,32 @@ pub fn setup_dirty_install_finding(
     )
 }
 
-/// **The [`CarryoverBoundary::Setup`] door's refusal when git cannot be asked its
-/// pre-write question** — one blocking finding under the guard's own code, raised before
-/// the install's first write (the rc.24 fix pass's completion audit, install-teardown F2).
+/// The finding code of [`setup_unasked_install_finding`] — `jigc setup`'s refusal where
+/// git could not answer the question the door asks before its first write.
 ///
-/// **The guard's code, because it is the guard refusing.** `setup.dirty-install-path` is
-/// *a path in the install's pathspec holds bytes no commit holds*; this is the same door
-/// unable to rule that out, over the same paths, and the reader's next act is the same
-/// kind — make git able to vouch for them. A driver keyed on the code stops the same way.
-/// [`setup_dirty_install_finding`] is not reused because every sentence it writes is about
-/// a set git named, and here git named none.
+/// **A code of its own** (the human's ruling of 2026-10-06 on the rc.24 fix pass's item
+/// 17). It rode [`CarryoverBoundary::Setup`]'s `setup.dirty-install-path` from the day it
+/// was built, on the reasoning that it is the same guard unable to rule the same state
+/// out. But a code is what a driver keys its next act on, and under the dirty-install code
+/// the usual next act is `jigc setup --force` — which this refusal does not honour, since
+/// the consent is spent on paths git names and here git named none. One code whose remedy
+/// works in one of its two states is two states. The name sits in the family's own
+/// grammar, beside `setup.dirty-install-path` and `setup.forced-install-path`: the same
+/// install paths, in the state where nobody could verify them.
+const SETUP_UNVERIFIED_INSTALL_CODE: &str = "setup.unverified-install-path";
+
+/// **The [`CarryoverBoundary::Setup`] door's refusal when git cannot be asked its
+/// pre-write question** — one blocking finding under a code of its own
+/// ([`SETUP_UNVERIFIED_INSTALL_CODE`]), raised before the install's first write (the rc.24
+/// fix pass's completion audit, install-teardown F2).
+///
+/// **Not the guard's code, though it is the guard refusing.** `setup.dirty-install-path`
+/// is *a path in the install's pathspec holds bytes no commit holds*; this is the same
+/// door unable to rule that out, over the same paths. The two were one code until
+/// 2026-10-06 and are two because their remedies differ: the first ends at `--force`, and
+/// this one says `--force` changes nothing. [`setup_dirty_install_finding`] is not reused
+/// either, because every sentence it writes is about a set git named, and here git named
+/// none.
 ///
 /// **What it says, and may not say.** `said` is git's own output, quoted rather than
 /// interpreted, because the causes are unbounded — a corrupt index, a submodule whose
@@ -2666,7 +2682,7 @@ pub fn setup_unasked_install_finding(
     };
     let asked = crate::finding::git_at(home, asked);
     Finding::block(
-        CarryoverBoundary::Setup.code(),
+        SETUP_UNVERIFIED_INSTALL_CODE,
         format!(
             "git could not tell `jigc setup` which of its install paths hold work that is in \
              no commit — the question it asks before its first write — so nothing was \
@@ -7369,6 +7385,47 @@ sections:
                     .is_some_and(|r| r.contains("re-run the finalize with `--carry-staged`")),
                 "the committing door keeps its own route: {:?}",
                 finding.route
+            );
+        }
+    }
+
+    /// **Where git could not be asked, the refusal has a code of its own** (the human's
+    /// ruling of 2026-10-06 on the rc.24 fix pass's item 17). It rode the boundary's
+    /// `setup.dirty-install-path`, whose route ends at `jigc setup --force`; this one's
+    /// route names `--force` only to say it changes nothing, so a driver keyed on the
+    /// shared code was sent at a remedy the door does not honour.
+    #[test]
+    fn the_unasked_setup_refusal_has_a_code_of_its_own_and_offers_no_consent() {
+        let present = vec![".jigc/AGENT.md".to_string(), "CLAUDE.md".to_string()];
+        let finding = setup_unasked_install_finding(
+            Path::new("/work/repo"),
+            "status",
+            "fatal: index file corrupt",
+            &present,
+        );
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(finding.code, "setup.unverified-install-path");
+        assert_eq!(finding.code, SETUP_UNVERIFIED_INSTALL_CODE);
+        assert_ne!(
+            finding.code,
+            CarryoverBoundary::Setup.code(),
+            "not the dirty-install code: that one's remedy is `--force`",
+        );
+        assert!(
+            crate::finding::is_declared_singleton(&finding.code) && finding.location.is_none(),
+            "one finding over the whole set, in the `setup.` family — no location to key it",
+        );
+        let route = finding.route.as_ref().expect("blocking ⇒ routed");
+        assert!(
+            route.as_str().contains("`git -C /work/repo status`")
+                && !route.as_str().contains("jigc setup --force"),
+            "the route is the question that failed, and no consent: {route}"
+        );
+        for path in &present {
+            assert!(
+                finding.message.contains(path.as_str()),
+                "{:?}",
+                finding.message
             );
         }
     }
