@@ -277,10 +277,6 @@ pub enum MilestoneCommand {
     /// sub-task that minted the doc dropped (`jigc task discard <task-id> --force`).
     /// Two sub-tasks' docs that promote to one path — two mints of one such doctype —
     /// are refused together, under the same code, and the route keeps one.
-    /// And no doc — created or edited — is promoted onto a destination whose
-    /// entry is not a regular file (a symbolic link, a directory): a doc lands as a
-    /// regular file at exactly its home and is never written through a link, so the
-    /// boundary blocks with the same code and names the exit that sub-task's doc has.
     /// A home with nothing on disk is occupied all the same when git still holds a file
     /// there — a committed doc deleted from the worktree, a file staged and taken out of
     /// it: a newly created doc is not promoted over it either, under the same code.
@@ -288,6 +284,12 @@ pub enum MilestoneCommand {
     /// boundary commits the staged code and the docs together, one file per path, so it
     /// blocks with the same code and routes at renaming the doc or at taking the staged
     /// file into git's stash (`git -C <worktree> stash push -- <path>`).
+    /// And no doc — created or edited — is promoted onto a destination whose
+    /// entry is not a regular file (a symbolic link, a directory): a doc lands as a
+    /// regular file at exactly its home and is never written through a link, so the
+    /// boundary blocks with `store.home-not-regular-file`, the code every command
+    /// answers that state with, and names the exit that sub-task's doc has. The
+    /// milestone's own record is held to the same rule, under the same code.
     /// The code half lands what a sub-task has **staged in a live worktree** and nothing
     /// else, and a landed boundary then removes the worktrees — so it refuses first,
     /// with `milestone.unlanded-work`, committing nothing and leaving the milestone
@@ -1589,36 +1591,37 @@ fn record_conflict_block(
     }
 }
 
-/// The conflict presentation for a record whose **home is not a regular file** — the shape
-/// sibling of [`record_conflict_block`], raised by [`reconcile_record_preflight`] before it
-/// reads a byte (the rc.24 fix pass, the record doors' half of `(R6, D-7)`).
+/// The refusal for a record whose **home is not a regular file** — raised by
+/// [`reconcile_record_preflight`] before it reads a byte (the rc.24 fix pass, the record
+/// doors' half of `(R6, D-7)`).
 ///
-/// It is the same refusal as an out-of-band edit, so it is the same identity: a
-/// machine-maintained record that is not as jigc left it is never merged, never clobbered —
-/// and never written *through*. What the route can say depends on where the entry came from,
-/// and it names both: where `HEAD` still holds the record as a file, the restore is the
-/// `HEAD`-sourced checkout [`record_conflict_block`]'s `Head` arm emits (git replaces the
-/// entry with the file; it does not write through it); where the entry itself was committed,
-/// nothing in `HEAD` can restore it, so the exit is the regular file put back by hand and
-/// committed. It teaches no removal: the entry is the reader's, and so is whatever a link
-/// points at.
+/// **It is the store's refusal, under the store's code** (`store.home-not-regular-file`,
+/// through its one constructor; the human's ruling of 2026-10-06 on the fix pass's items 7
+/// and 8). It was built as this door's standing `reconciliation.conflict-block` — *a
+/// machine-maintained record that is not as jigc left it* — and that code's meaning is an
+/// edit: two sets of bytes, one of which has to give. Here there are no second bytes to
+/// reconcile, only an entry that is not a file. The key is unchanged — the record's path.
+///
+/// What the route can say depends on where the entry came from, and it names both: where
+/// `HEAD` still holds the record as a file, the restore is the `HEAD`-sourced checkout
+/// [`record_conflict_block`]'s `Head` arm emits (git replaces the entry with the file; it
+/// does not write through it); where the entry itself was committed, nothing in `HEAD` can
+/// restore it, so the exit is the regular file put back by hand and committed. It teaches
+/// no removal: the entry is the reader's, and so is whatever a link points at.
 fn record_shape_block(
     jigc_home: &Path,
     key: &str,
     shape: engine::store::ForeignEntry,
-) -> engine::file_state::ConflictBlock {
+) -> engine::finding::Finding {
     let restore = engine::finding::git_at(
         jigc_home,
         &format!("checkout HEAD -- {}", crate::task::shell_token(key)),
     );
     let bare = shape.bare();
-    engine::file_state::ConflictBlock::new(
-        format!(
-            "the milestone record is machine-maintained and its home is now {}, not the \
-             regular file jigc wrote — jigc writes the record as a regular file at exactly \
-             that path and never through a link",
-            shape.noun()
-        ),
+    engine::store::home_shape_refusal(
+        key,
+        shape,
+        "the milestone record, which is jigc's to write, is not rewritten",
         engine::finding::Route::human(format!(
             "nothing was written. Put the record back at `{key}` as a regular file and re-run \
              this command: `{restore}` restores it where `HEAD` still holds the record as a \
@@ -1693,13 +1696,10 @@ fn reconcile_record_preflight(
     // to a byte-identical copy read as in sync, and the door then wrote the record *through*
     // the link: `jigc milestone add-task` exited 0 over a record commit that held the link,
     // with the record's new body in the link's untracked target. The home's own entry is
-    // asked first, without following a link, and one that is not a regular file is this
-    // door's conflict-block whatever it points at: the record is jigc's to write, and it is
-    // not as jigc left it.
+    // asked first, without following a link, and one that is not a regular file refuses
+    // here whatever it points at: the record is jigc's to write, as a regular file.
     if let engine::store::HomeEntry::Foreign(shape) = engine::store::home_entry(&record_path) {
-        return Err(finding_to_err(
-            record_shape_block(jigc_home, &key, shape).finding_at(&key),
-        ));
+        return Err(finding_to_err(record_shape_block(jigc_home, &key, shape)));
     }
     let Ok(bytes) = std::fs::read(&record_path) else {
         return Ok(()); // no committed record yet → nothing to overwrite, nothing to guard.

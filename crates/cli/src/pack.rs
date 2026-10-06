@@ -993,6 +993,27 @@ pub const AMBUSH_CONTRACTS: &[AmbushContract] = &[
         site: "crates/engine/src/finalize.rs::clobber_finding",
         disposition: AmbushDisposition::Owed,
     },
+    // The sibling of the row above for the one state that row no longer covers (the
+    // human's ruling of 2026-10-06 on the rc.24 fix pass's items 7 and 8). A doc's home that
+    // is not a regular file was `finalize.promote-clobber`'s second arm, so it rode that
+    // row's `Owed` — while the step that declares the code states the file arm alone, and
+    // never said a word about a link. Under its own code the state gets its own decision,
+    // on the record: it satisfies the source-set rule exactly — blocking, minted at the
+    // named production function, reached through `jigc task finalize` — and it is held out.
+    AmbushContract {
+        code: engine::store::HOME_NOT_REGULAR_FILE,
+        door: &["task", "finalize"],
+        site: "crates/engine/src/store.rs::home_shape_refusal",
+        disposition: AmbushDisposition::Exempt(
+            "it binds on what somebody put at one path of the checkout — a link, a \
+             directory — which a pack step, composing identically from every checkout, \
+             cannot know; and the rule it enforces is the store's, at every command that \
+             meets a doc's home, most of which no step of either pack solicits, so a declarer on \
+             `step:finalize` would state it to every reader for a state almost none is in \
+             and would have to buy tokens under `CONSTRAINT_REQUIRED_TOKENS` besides. The \
+             refusal states the rule itself, at the command that met the entry",
+        ),
+    },
     AmbushContract {
         code: "finalize.nothing-staged",
         door: &["task", "finalize"],

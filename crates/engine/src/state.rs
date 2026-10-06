@@ -3185,35 +3185,50 @@ fn instance_collision_finding(address: &str) -> Finding {
 /// route is the caller's, because the correction differs by verb — `doc create` takes a
 /// `--slug`, `doc author` does not.
 ///
-/// `foreign` is the occupant's shape when it is **not a regular file** (the rc.24 fix pass,
-/// `(R6, D-7)`): a link, a directory or a special file at the home is an occupant like any
-/// other — same code, same key, same route — but *"already exists … never copied in for
-/// update"* would be a sentence about a doc that is not there, so the message says what is.
-pub fn already_exists_finding(
-    address: &str,
-    foreign: Option<crate::store::ForeignEntry>,
-    route: crate::finding::Route,
-) -> Finding {
+/// **A home taken by an entry that is not a regular file is not this refusal** (the human's
+/// ruling of 2026-10-06 on the rc.24 fix pass's items 7 and 8). It was, from `(R6, D-7)`
+/// until then — same code, a different sentence — and *already exists* was a statement
+/// about a doc that is not there. That state is [`create_only_home_refusal`].
+pub fn already_exists_finding(address: &str, route: crate::finding::Route) -> Finding {
     let ty = address.split_once(':').map_or(address, |(ty, _)| ty);
-    let message = match foreign {
-        None => format!(
+    Finding::graded(
+        Severity::Blocking,
+        "create.already-exists",
+        format!(
             "`{address}` already exists on disk at its home, and this workflow's \
              `allows-create` entry for `{ty}` carries `new: true` — it creates a new doc \
              only, so the existing one is never copied in for update"
         ),
-        Some(shape) => format!(
-            "the home of `{address}` is already taken on disk — by {}, which jigc did not \
-             put there and does not follow — and this workflow's `allows-create` entry for \
-             `{ty}` carries `new: true`: it creates a new doc only, at a home nothing holds",
-            shape.noun()
-        ),
-    };
-    Finding::graded(
-        Severity::Blocking,
-        "create.already-exists",
-        message,
         Some(Location::addressed(address, 1, 1)),
         Some(route),
+    )
+}
+
+/// **The create-only gate's refusal over a home that is not a regular file** — a link
+/// (dangling or live), a directory, a special file at the home of the identity a `new: true`
+/// entry would mint (the rc.24 fix pass, `(R6, D-7)`). An occupant like any other for the
+/// gate's purpose — nothing is copied in, staged or bound — but not a doc, so it is the
+/// store's refusal for that state, through its one constructor
+/// ([`crate::store::home_shape_refusal`]) and keyed at the entry's path, where
+/// [`already_exists_finding`] keys at the doc that exists.
+///
+/// `home` is the repo-relative path of the entry, `address` the identity the create would
+/// have minted. The route is the caller's, as its sibling's is.
+pub fn create_only_home_refusal(
+    home: &str,
+    address: &str,
+    shape: crate::store::ForeignEntry,
+    route: crate::finding::Route,
+) -> Finding {
+    let ty = address.split_once(':').map_or(address, |(ty, _)| ty);
+    crate::store::home_shape_refusal(
+        home,
+        shape,
+        &format!(
+            "`{address}` is not created there — this workflow's `allows-create` entry for \
+             `{ty}` carries `new: true`: it creates a new doc only, at a home nothing holds"
+        ),
+        route,
     )
 }
 
@@ -5208,7 +5223,6 @@ sections:
     fn already_exists_finding_is_a_blocking_instance_scoped_create_member() {
         let finding = already_exists_finding(
             "idea:a-parked-thought",
-            None,
             Route::human("choose a distinct `--title`"),
         );
         assert_eq!(finding.code, "create.already-exists");
@@ -5229,22 +5243,27 @@ sections:
             "the route is the caller's, unchanged",
         );
 
-        // An occupant that is not a regular file is the same refusal — code, key, route —
-        // saying what is there instead of claiming a doc exists (`(R6, D-7)`).
-        let over_a_link = already_exists_finding(
+        // An occupant that is not a regular file is **not** this refusal: no doc exists
+        // there. It is the store's, under the one code every door answers that state with,
+        // keyed at the entry's path — and it still says what the gate would not do.
+        let over_a_link = create_only_home_refusal(
+            "docs/ideas/a-parked-thought.md",
             "idea:a-parked-thought",
-            Some(crate::store::ForeignEntry::Symlink),
+            crate::store::ForeignEntry::Symlink,
             Route::human("choose a distinct `--title`"),
         );
+        assert_eq!(over_a_link.code, crate::store::HOME_NOT_REGULAR_FILE);
+        assert_eq!(over_a_link.severity, Severity::Blocking);
         assert_eq!(
-            over_a_link.key(),
-            finding.key(),
-            "one key for every occupant"
+            over_a_link.key().target.as_deref(),
+            Some("docs/ideas/a-parked-thought.md"),
+            "keyed at the entry's path: {over_a_link:?}",
         );
         assert_eq!(over_a_link.route, finding.route);
         assert!(
             over_a_link.message.contains("a symbolic link")
                 && over_a_link.message.contains("new: true")
+                && over_a_link.message.contains("`idea:a-parked-thought`")
                 && !over_a_link.message.contains("copied in"),
             "the message names the entry and never a doc that is not there: {}",
             over_a_link.message,

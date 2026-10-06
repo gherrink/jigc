@@ -33,6 +33,8 @@ mod gitignore_amend_union;
 mod gitignore_writer_acks;
 #[path = "../golden_harness.rs"]
 mod golden_harness;
+#[path = "../home_shape_one_code.rs"]
+mod home_shape_one_code;
 #[path = "../home_vacated.rs"]
 mod home_vacated;
 #[path = "../install_line.rs"]

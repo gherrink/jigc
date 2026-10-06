@@ -1483,12 +1483,14 @@ fn the_reslug_destination_guard_answers_over_both_homes() {
 /// **The committed home is asked what its entry is, not what it points at** (the rc.24 fix
 /// pass, `(R6, D-7)`). The guard's parity is with the committing door, and that door now
 /// refuses to promote onto any entry that is not a regular file
-/// (`finalize.promote-clobber`). A destination whose home is a **dangling link** or a
+/// (`store.home-not-regular-file`). A destination whose home is a **dangling link** or a
 /// **directory** has no doc body for the committed-arm probe to report, so the re-slug onto
 /// it acked at exit 0 — the write ack over a state the task cannot complete that this guard
-/// exists to make unreachable. It blocks at the write now: `write.already-present` keyed at
-/// the destination identity, the source byte-untouched, nothing staged there, the entry
-/// standing — and the emitted rename, run with a free slug, lands.
+/// exists to make unreachable. It blocks at the write now, under that door's own code for
+/// the state and keyed where that door keys it — at the entry's path (it was built under
+/// `write.already-present`, keyed at the destination identity, which says a doc is there;
+/// 2026-10-06) — the source byte-untouched, nothing staged there, the entry standing — and
+/// the emitted rename, run with a free slug, lands.
 #[cfg(unix)]
 #[test]
 fn the_reslug_destination_guard_refuses_a_home_that_is_not_a_regular_file() {
@@ -1525,12 +1527,14 @@ fn the_reslug_destination_guard_refuses_a_home_that_is_not_a_regular_file() {
         );
         let finding = blocking_finding(&stderr, "a home that is not a regular file");
         assert_eq!(
-            finding["code"], "write.already-present",
-            "{shape}:\n{stderr}"
+            finding["code"],
+            engine::store::HOME_NOT_REGULAR_FILE,
+            "{shape}: the store's code for the state — never `write.already-present`, \
+             which says a doc is there:\n{stderr}"
         );
         assert_eq!(
-            finding["key"]["target"], "adr:taken-home",
-            "{shape}:\n{stderr}"
+            finding["key"]["target"], "docs/decisions/taken-home.md",
+            "{shape}: keyed at the entry:\n{stderr}"
         );
         let message = finding["message"].as_str().unwrap_or_default();
         assert!(

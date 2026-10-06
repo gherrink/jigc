@@ -2163,10 +2163,32 @@ fn destination_occupant(repo_root: &Path, target: &str, v2: &[u8]) -> Option<Occ
 /// migration, and no deterministic merge of two documents exists — so the doc is blocked and
 /// the operator reconciles the two homes by hand (`design/corpus-migration.md` → the union).
 ///
-/// One code for every occupant: the state is the same — the destination is not free — and
-/// the message and the route say which it is, so each tells the reader the act that fits.
+/// **Two codes, by what stands there** (the human's ruling of 2026-10-06 on the rc.24 fix
+/// pass's items 7 and 8). A regular file — another document, or one that could not be
+/// read — is this door's `migrate-corpus.destination-collision`, keyed at the doc that
+/// could not move: two documents contest one home. An entry that is **not a regular file**
+/// is no document at all, and it is the store's refusal for that state at every command
+/// (`store.home-not-regular-file`, through its one constructor), keyed at the entry's own
+/// path. Until that ruling all three rode the collision code. Neither stops the run: like
+/// every refusal of one doc outside the transform's fold, the others still migrate.
 fn destination_collision_finding(rel_key: &str, target: &str, occupant: Occupant) -> Finding {
     let (message, route) = match occupant {
+        Occupant::Foreign(entry) => {
+            return engine::store::home_shape_refusal(
+                target,
+                entry,
+                &format!(
+                    "`{rel_key}`, which relocates there, was left where it is: the \
+                     migration lands a regular file at a doc's home and never writes \
+                     through or over anything else (no data loss)"
+                ),
+                format!(
+                    "move the {} at `{target}` out of the way — it is not a document jigc \
+                     can land on — then re-run `jigc migrate-corpus`",
+                    entry.bare(),
+                ),
+            );
+        }
         Occupant::AnotherDocument => (
             format!(
                 "`{rel_key}` relocates to `{target}`, which already holds a *different* \
@@ -2187,19 +2209,6 @@ fn destination_collision_finding(rel_key: &str, target: &str, occupant: Occupant
             format!(
                 "make `{target}` readable (or move it out of the way if it is not this \
                  document), then re-run `jigc migrate-corpus`"
-            ),
-        ),
-        Occupant::Foreign(entry) => (
-            format!(
-                "`{rel_key}` relocates to `{target}`, where {} stands; the migration lands a \
-                 regular file at a doc's home and never writes through or over anything \
-                 else (no data loss), so `{rel_key}` was left where it is",
-                entry.noun(),
-            ),
-            format!(
-                "move the {} at `{target}` out of the way — it is not a document jigc can \
-                 land on — then re-run `jigc migrate-corpus`",
-                entry.bare(),
             ),
         ),
     };

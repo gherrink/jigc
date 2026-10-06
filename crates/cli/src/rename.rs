@@ -220,15 +220,15 @@ impl RefusalKind {
             RefusalKind::OccupiedDestination => "write.already-present",
             RefusalKind::MalformedSlug => "write.malformed-slug",
             RefusalKind::UntrackableDestination => "write.untrackable-destination",
-            // **The committing doors' code, not a door-private one** — one fault owes one
-            // code. A managed doc's home that is not a regular file is `finalize.promote-
-            // clobber` at `jigc task finalize` and at the milestone boundary, keyed at that
-            // home's path (`(R6, D-7)`); it is the same state of the same doc here, so a
-            // driver reads the same identity at whichever door meets it. Minted by
-            // `engine::finalize` ([`foreign_home`] → `store_home_refusal`), named here so the
-            // axis is total; `the_foreign_home_row_reads_the_shipped_code` holds the two
-            // together.
-            RefusalKind::ForeignHome => "finalize.promote-clobber",
+            // **The store's code, not a door-private one** — one fault owes one code. A
+            // managed doc's home that is not a regular file is `store.home-not-regular-file`
+            // at every command that meets it, keyed at that home's path (the human's ruling
+            // of 2026-10-06; until then this row read `finalize.promote-clobber`, the
+            // committing doors' borrowed code for it). Minted by the one constructor
+            // (`engine::store::home_shape_refusal`, reached through [`foreign_home`] and
+            // [`foreign_destination`]), named here so the axis is total;
+            // `the_foreign_home_row_reads_the_shipped_code` holds the two together.
+            RefusalKind::ForeignHome => engine::store::HOME_NOT_REGULAR_FILE,
         }
     }
 
@@ -345,36 +345,69 @@ fn rerun_command(old_id: &str, title: &str, slug_override: Option<&str>) -> Stri
 /// **Refuse over a home this transaction would rewrite that is not a regular file** —
 /// [`RefusalKind::ForeignHome`], for the renamed doc's own home and for a referrer's.
 ///
-/// The finding is the committing doors' own, minted by its one constructor
-/// ([`engine::finalize::store_home_refusal`]) rather than through [`refuse`]: its key is the
+/// The finding is the store's own, minted by its one constructor
+/// ([`engine::store::home_shape_refusal`], worded for a store door by
+/// [`engine::finalize::store_home_refusal`]) rather than through [`refuse`]: its key is the
 /// **path** (the entry is the subject, and an entry that is not a doc has no `<type>:<slug>`
 /// to be addressed at), and a second mint here would be a second spelling of an identity
 /// that already has a home. `withheld` says what the door did not do; `rerun` is this
 /// door's own command ([`rerun_command`]), which the route ends at.
 ///
 /// **It projects its key** (the rc.24 fix pass, the completion audit's CPL-7). The contract
-/// lists `finalize.promote-clobber` under a declared target form — the file path — and
-/// says of this arm that it is *keyed at that home*
-/// (`design/command-output-contract.md` → The `finalize.*` family). Raised through the
+/// lists the code under a declared target form — the file path
+/// (`design/command-output-contract.md` → the form table, the file row). Raised through the
 /// flattening carrier, as every other member of this door's axis is, it reached a
-/// `--format json` driver as `{"error": "blocking · finalize.promote-clobber — …"}`: the
-/// code inside a message, and no key to read — while the committing doors answer the same
-/// code in the findings envelope. One fault owes one identity *on the wire* too, so this
-/// refusal takes [`crate::render::envelope_finding_error`]. The printed surface, the exit
-/// code and the invocation-log record are the same either way.
+/// `--format json` driver as `{"error": "blocking · <code> — …"}`: the code inside a
+/// message, and no key to read — while the committing doors answer the same state in the
+/// findings envelope. One fault owes one identity *on the wire* too, so this refusal takes
+/// [`crate::render::envelope_finding_error`] — and since the code is a member of
+/// `render::ENVELOPE_OWED_CODES`, would reach the envelope through either carrier. The
+/// printed surface, the exit code and the invocation-log record are the same either way.
 fn foreign_home(
-    repo_root: &Path,
     home: &str,
     shape: engine::store::ForeignEntry,
     withheld: &str,
     rerun: &str,
 ) -> anyhow::Error {
     crate::render::envelope_finding_error(&engine::finalize::store_home_refusal(
-        repo_root,
         home,
         shape,
         withheld,
         &format!("re-run `{rerun}`"),
+    ))
+}
+
+/// **Refuse over a destination home that is not a regular file** — the third home this
+/// transaction touches, and [`RefusalKind::ForeignHome`] like the other two.
+///
+/// It answered `write.already-present` until 2026-10-06 — the collision arm's code, keyed
+/// at the destination *identity* — with a message that had to say there was no doc there.
+/// The entry is the subject, so it is the store's refusal, keyed at the entry's path
+/// through the one constructor. Both exits land, and neither is a removal: the first leaves
+/// the entry exactly where it is; the second is the reader's own act on it — and a commit
+/// where git tracks the entry, because this door refuses over any tracked change in the
+/// tree.
+fn foreign_destination(
+    new_rel: &str,
+    shape: engine::store::ForeignEntry,
+    old_id: &str,
+    new_id: &str,
+    title: &str,
+    rerun: &str,
+) -> anyhow::Error {
+    let bare = shape.bare();
+    crate::render::envelope_finding_error(&engine::store::home_shape_refusal(
+        new_rel,
+        shape,
+        &format!("`{old_id}` is not renamed to `{new_id}`, whose home that is"),
+        Route::human(format!(
+            "give this doc an id whose home is free — re-run `jigc rename {old_id} --to {} \
+             --slug <other-slug>`; or move the {bare} out of the doc's home, so that \
+             `{new_rel}` is free (commit that where git tracks the {bare}), and re-run \
+             `{rerun}`. jigc writes regular files only, so the {bare} is not one it put \
+             there, and what becomes of it is yours to decide",
+            crate::task::shell_token(title),
+        )),
     ))
 }
 
@@ -504,7 +537,6 @@ pub(crate) fn run(
         }
         engine::store::HomeEntry::Foreign(shape) => {
             return Err(foreign_home(
-                &repo_root,
                 &old_rel,
                 shape,
                 &format!("`{old_id}` is not renamed"),
@@ -696,8 +728,9 @@ pub(crate) fn run(
     //     git's own `fatal: destination exists` from inside the transaction, a directory by
     //     the pre-image capture's bare `Is a directory (os error 21)` — both code-less and
     //     route-less — and a live link was called *a different doc*. Any entry at the new
-    //     home is an occupant, so every shape refuses here under this arm's one code, and
-    //     the message says what is there.
+    //     home is an occupant, so every shape refuses here: a regular file under this
+    //     arm's own code — a different doc already exists — and an entry that is no file
+    //     under the store's code for that state ([`foreign_destination`]).
     if !is_retitle {
         match engine::store::home_entry(&new_abs) {
             engine::store::HomeEntry::Free => {}
@@ -718,29 +751,8 @@ pub(crate) fn run(
                 ));
             }
             engine::store::HomeEntry::Foreign(shape) => {
-                let bare = shape.bare();
-                return Err(refuse(
-                    RefusalKind::OccupiedDestination,
-                    &new_id,
-                    format!(
-                        "cannot rename to `{new_id}` — its home, `{new_rel}`, is {}, not a \
-                         regular file: jigc lands a doc as a regular file at exactly its home \
-                         and never writes through a link",
-                        shape.noun(),
-                    ),
-                    // Both exits land, and neither is a removal: the entry is the reader's.
-                    // The first leaves it exactly where it is. The second is the reader's
-                    // own act on it — and a commit where git tracks the entry, because this
-                    // door refuses over any tracked change in the tree.
-                    Route::human(format!(
-                        "give this doc an id whose home is free — re-run `jigc rename \
-                         {old_id} --to {} --slug <other-slug>`; or move the {bare} out of the \
-                         doc's home, so that `{new_rel}` is free (commit that where git tracks \
-                         the {bare}), and re-run `{rerun}`. jigc writes regular files only, \
-                         so the {bare} is not one it put there, and what becomes of it is \
-                         yours to decide",
-                        crate::task::shell_token(title),
-                    )),
+                return Err(foreign_destination(
+                    &new_rel, shape, &old_id, &new_id, title, &rerun,
                 ));
             }
         }
@@ -824,7 +836,6 @@ pub(crate) fn run(
             // anything moves: a rename that cannot repoint every referrer does not run.
             if let engine::store::HomeEntry::Foreign(shape) = engine::store::home_entry(&fabs) {
                 return Err(foreign_home(
-                    &repo_root,
                     &frel,
                     shape,
                     &format!(

@@ -1387,18 +1387,23 @@ pub fn record_exists_finding(milestone_id: &str, status: Option<&str>) -> Findin
     )
 }
 
-/// [`record_exists_finding`]'s sibling for a record home that is taken by an entry which is
-/// **not a regular file** — a symbolic link (dangling or live), a directory, a special file
-/// (the rc.24 fix pass, `(R6, D-7)`; `design/team-ready-state.md` → The lifecycle).
+/// **A record home taken by an entry which is not a regular file** — a symbolic link
+/// (dangling or live), a directory, a special file (the rc.24 fix pass, `(R6, D-7)`;
+/// `design/team-ready-state.md` → The lifecycle).
 ///
 /// `milestone create`'s id-is-taken guard asked `exists()`, which follows links, so a
 /// **dangling** link at the record's home read as a free id: the record was then written
 /// *through* the link and the record-only commit took the **link** — exit 0, a record commit
 /// holding no record, the body in an untracked file nobody named. It is the record-side twin
 /// of the promote's write-through, at the one other door that mints a managed doc at its
-/// home. The same refusal as an occupied id — same code, same key — because it is the same
-/// fact: that home is not free. The message says what is there instead of claiming a record
-/// exists, and the route names no `add-task`: there is no milestone to continue.
+/// home.
+///
+/// **It is the store's refusal, not `milestone.record-exists`** (the human's ruling of
+/// 2026-10-06 on the fix pass's items 7 and 8): it rode that code from the day it was built,
+/// as *that home is not free*, but the code says a record exists and routes at continuing
+/// the milestone, and here there is neither. So it goes through the one constructor every
+/// door uses for this state ([`crate::store::home_shape_refusal`]), keyed at the entry's
+/// path. The route names no `add-task`: there is no milestone to continue.
 ///
 /// `home` is the record's repo-relative path.
 pub fn record_home_taken_finding(
@@ -1406,14 +1411,10 @@ pub fn record_home_taken_finding(
     home: &str,
     shape: crate::store::ForeignEntry,
 ) -> Finding {
-    record_home_refusal(
-        milestone_id,
-        format!(
-            "the home of milestone `{milestone_id}`'s record, `{home}`, is {}, not a regular \
-             file — jigc writes the record as a regular file at exactly that path and never \
-             through a link",
-            shape.noun()
-        ),
+    crate::store::home_shape_refusal(
+        home,
+        shape,
+        &format!("the record of milestone `{milestone_id}` is not created there"),
         format!(
             "nothing was written. jigc writes regular files only, so the {bare} at `{home}` \
              is not one it put there, and what becomes of it is yours to decide: create this \

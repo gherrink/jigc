@@ -1745,8 +1745,8 @@ impl Scene {
 /// arm and no other. The match is **exhaustive**, so a further refusal cannot compile
 /// without a scene that provokes it; [`RefusalKind::InFlight`] yields **two** scenes,
 /// because the guard keys on two markers (a task working area and a milestone) and one
-/// green marker would leave the other unswept — and [`RefusalKind::ForeignHome`] two, for
-/// the two kinds of home the door rewrites.
+/// green marker would leave the other unswept — and [`RefusalKind::ForeignHome`] three, for
+/// the three homes the door touches.
 fn drive_refusal(kind: RefusalKind) -> Vec<Scene> {
     let plain = |tag: &str, argv: Vec<&'static str>, prepare: &dyn Fn(&Path)| {
         let repo = TempDir::new(tag);
@@ -1899,10 +1899,13 @@ fn drive_refusal(kind: RefusalKind) -> Vec<Scene> {
                 out,
             }]
         }
-        // Two scenes, because the door rewrites two kinds of home and one green would
-        // leave the other unswept: the renamed doc's own, and a referrer's
-        // (`revisit-caching` supersedes `single-node-cache`). Each is a **committed** link
-        // to the doc's own bytes — a clean tree, so the dirty-tree arm cannot answer first.
+        // Three scenes, because the door touches three homes and one green would leave
+        // the others unswept: the renamed doc's own, a referrer's (`revisit-caching`
+        // supersedes `single-node-cache`), and the destination's. The first two are a
+        // **committed** link to the doc's own bytes, the third a committed link at the
+        // home the new id would take — a clean tree each time, so the dirty-tree arm
+        // cannot answer first. The destination answered `write.already-present` until
+        // 2026-10-06; it is the same state as the other two, under the same code.
         // The route-follow and the nothing-written halves are
         // `store_door_home_shape.rs`'s; this is the member's seat in the identity sweep.
         RefusalKind::ForeignHome => vec![
@@ -1915,6 +1918,17 @@ fn drive_refusal(kind: RefusalKind) -> Vec<Scene> {
                 "axis-foreign-home-referrer",
                 vec!["rename", "adr:single-node-cache", "--to", "Distributed"],
                 &|repo: &Path| link_out_committed(repo, "docs/decisions/revisit-caching.md"),
+            ),
+            plain(
+                "axis-foreign-home-destination",
+                vec!["rename", "adr:single-node-cache", "--to", "Distributed"],
+                &|repo: &Path| {
+                    let rel = "docs/decisions/distributed.md";
+                    std::os::unix::fs::symlink("nowhere.md", repo.join(rel))
+                        .expect("plant a link at the destination's home");
+                    git(repo, &["add", "--", rel]);
+                    git(repo, &["commit", "-q", "-m", "a link at a free id's home"]);
+                },
             ),
         ],
     }
@@ -2106,16 +2120,16 @@ fn the_unknown_doctype_row_reads_the_shipped_code() {
     );
 }
 
-/// The foreign-home row's code is not a second spelling either: it is the committing doors'
-/// own, minted by `engine::finalize`'s one constructor for a store door, and this row only
-/// names it so the axis is total. A door-private copy that drifted would fork one fault —
-/// *this doc's home is not a regular file* — across the doors that meet it.
+/// The foreign-home row's code is not a second spelling either: it is the store's own,
+/// minted by `engine::store`'s one constructor and worded for a store door by
+/// `engine::finalize`, and this row only names it so the axis is total. A door-private copy
+/// that drifted would fork one fault — *this doc's home is not a regular file* — across the
+/// doors that meet it.
 #[test]
 fn the_foreign_home_row_reads_the_shipped_code() {
     assert_eq!(
         RefusalKind::ForeignHome.code(),
         engine::finalize::store_home_refusal(
-            Path::new("/repo"),
             "docs/decisions/a.md",
             engine::store::ForeignEntry::Symlink,
             "it is not renamed",
@@ -2123,6 +2137,11 @@ fn the_foreign_home_row_reads_the_shipped_code() {
         )
         .code,
         "the declared code must be the shipped constructor's",
+    );
+    assert_eq!(
+        RefusalKind::ForeignHome.code(),
+        engine::store::HOME_NOT_REGULAR_FILE,
+        "…which is the store's one code for the state",
     );
 }
 

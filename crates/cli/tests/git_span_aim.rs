@@ -345,8 +345,9 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
         "crates/cli/src/milestone.rs",
         "record_shape_block",
         Aim::Aimed,
-        "the same conflict block's shape sibling — a record whose home has become a link — \
-         and the same `git checkout HEAD --` restore, which puts the regular file back where \
+        "the record doors' refusal over a record whose home has become a link \
+         (`store.home-not-regular-file`; the conflict block's shape sibling until \
+         2026-10-06) — and the same `git checkout HEAD --` restore, which puts the regular file back where \
          `HEAD` still holds the record as one (git replaces the entry, it does not write \
          through it). Aimed for the reason its sibling is: a record door runs from any \
          directory of the checkout",

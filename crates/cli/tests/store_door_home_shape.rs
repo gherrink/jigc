@@ -27,9 +27,16 @@
 //!
 //! One contract, three seams. Each door asks the home's own directory entry, without
 //! following a link, **before** `git mv` and before any write; an entry that is not a
-//! regular file refuses under the code the door already has for it, nothing is written or
-//! moved, and the printed route — the regular file put back at the home — lands the same
-//! command. The corpus migration is the one in-place writer left as it was, and the last
+//! regular file refuses, nothing is written or moved, and the printed route — the regular
+//! file put back at the home — lands the same command.
+//!
+//! **One code, at every seam** (the human's ruling of 2026-10-06 on the fix pass's items 7
+//! and 8). As built, each door answered under the code it already had for *something is in
+//! the way* — three codes in this suite alone: `finalize.promote-clobber` at the doc's own
+//! home, a referrer's and the movers, `write.already-present` at a rename's destination,
+//! `reconciliation.conflict-block` at the record doors. They all answer
+//! `store.home-not-regular-file` now, keyed at the entry's path;
+//! `home_shape_one_code.rs` iterates the commands. The corpus migration is the one in-place writer left as it was, and the last
 //! test pins why: it writes a temp file and renames it over the home, which never writes
 //! through whatever stood there.
 
@@ -43,13 +50,17 @@ use std::process::Output;
 
 use support::trial_corpus::{State, TrialCorpus};
 
-/// The code a door that writes or moves a committed doc raises over a home that is not a
-/// regular file — the committing doors' own (`design/command-output-contract.md`).
-const SHAPE: &str = "finalize.promote-clobber";
-/// The destination-occupancy code `jigc rename` and its in-task sibling share.
-const OCCUPIED: &str = "write.already-present";
-/// The record doors' own refusal over a record that is not as jigc left it.
-const RECORD_CONFLICT: &str = "reconciliation.conflict-block";
+/// The code every door raises over a home that is not a regular file — the store's own,
+/// through its one constructor (`design/command-output-contract.md` → the file row).
+const SHAPE: &str = engine::store::HOME_NOT_REGULAR_FILE;
+/// The codes this suite's doors answered that state with until 2026-10-06, each of which
+/// has gone back to its own meaning: a rename's destination that holds *a doc*, and a
+/// record that was *edited*. No cell here may answer either.
+const RETIRED_HERE: [&str; 3] = [
+    "finalize.promote-clobber",
+    "write.already-present",
+    "reconciliation.conflict-block",
+];
 
 const ADR: &str = "adr:cache-strategy";
 const ADR_HOME: &str = "docs/decisions/cache-strategy.md";
@@ -232,14 +243,13 @@ fn commit_all(corpus: &TrialCorpus, message: &str) {
 /// raises for the same state of the same doc. The route's exit — the regular file put where
 /// the link was, committed — then lands the command the refusal printed, as printed.
 /// **The refusal reaches a `--format json` driver with its key** (the rc.24 fix pass, the
-/// completion audit's CPL-7). `design/command-output-contract.md` lists
-/// `finalize.promote-clobber` under the file-path target form and says of this door's arm
-/// that it is *keyed at that home* — and until this cell the door answered
-/// `{"error": "blocking · finalize.promote-clobber — …"}`: the code inside a message, no
-/// `findings`, no `key`. Re-run with `--format json`, the same refusal must be the reject
-/// arm every committing door gives the code: stdout empty, exit 1, and on stderr the
-/// findings envelope holding one blocking finding keyed `(finalize.promote-clobber, home)`,
-/// with its route beside it and nothing written.
+/// completion audit's CPL-7). `design/command-output-contract.md` lists the code under the
+/// file-path target form — and until this cell the door answered
+/// `{"error": "blocking · <code> — …"}`: the code inside a message, no `findings`, no
+/// `key`. Re-run with `--format json`, the same refusal must be the reject arm every
+/// committing door gives the state: stdout empty, exit 1, and on stderr the findings
+/// envelope holding one blocking finding keyed `(store.home-not-regular-file, home)`, with
+/// its route beside it and nothing written.
 fn assert_keyed_on_the_wire(corpus: &TrialCorpus, argv: &[&str], home: &str, what: &str) {
     let mut json: Vec<&str> = argv.to_vec();
     json.extend(["--format", "json"]);
@@ -487,8 +497,8 @@ impl Occupant {
 /// code-less and route-less, rolled back — where a regular-file occupant gets
 /// `write.already-present`. A directory answered a bare `Is a directory (os error 21)`, and
 /// a live link was called *"a different doc"*. All four now refuse at the gate, before the
-/// transaction, under the door's own occupancy code and naming what is there; both exits the
-/// route names land.
+/// transaction, naming what is there — under the store's code for the state, since
+/// 2026-10-06, where they first rode the occupancy code; both exits the route names land.
 #[test]
 fn a_rename_refuses_a_destination_that_is_not_a_regular_file() {
     let taken = "docs/decisions/taken.md";
@@ -506,10 +516,16 @@ fn a_rename_refuses_a_destination_that_is_not_a_regular_file() {
         let said = text(&out);
         assert_eq!(out.status.code(), Some(1), "{what}: refused; {said}");
         assert!(
-            said.contains(&format!("· {OCCUPIED} — ")),
-            "{what}: under the door's own occupancy code — never git's `fatal`, never a \
-             bare OS error; {said}",
+            said.contains(&format!("· {SHAPE} — ")) && said.contains(&format!("at: {taken}")),
+            "{what}: under the store's code for an entry that is no file, keyed at the \
+             entry — never git's `fatal`, never a bare OS error; {said}",
         );
+        for retired in RETIRED_HERE {
+            assert!(
+                !said.contains(retired),
+                "{what}: `{retired}` says a doc is there, and none is; {said}",
+            );
+        }
         assert!(
             said.contains(occupant.noun()) && said.contains(taken),
             "{what}: the refusal names the entry and the home it holds; {said}",
@@ -822,10 +838,10 @@ enum RecordLink {
 /// its own commit for holding nothing and reported *a hook's complaint*.
 ///
 /// The record's home is asked for its own entry, without following a link, at the one
-/// preflight every one of those doors runs; an entry that is not a regular file is the
-/// door's existing conflict-block — the record is jigc's to write, and it is not as jigc
-/// left it. Nothing is written, minted or committed, and the route's restore lands the same
-/// command.
+/// preflight every one of those doors runs; an entry that is not a regular file refuses
+/// there — the record is jigc's to write, as a regular file — under the store's code for
+/// that state (the door's own conflict-block until 2026-10-06, which is an edit's code).
+/// Nothing is written, minted or committed, and the route's restore lands the same command.
 #[test]
 fn a_milestone_record_is_never_rewritten_through_a_link_at_its_home() {
     for door in RecordDoor::ALL {
@@ -881,12 +897,18 @@ fn a_milestone_record_is_never_rewritten_through_a_link_at_its_home() {
                 "{what}: the door refuses — it never writes the record through a link; {said}",
             );
             assert!(
-                said.contains(RECORD_CONFLICT)
+                said.contains(&format!("· {SHAPE} — "))
                     && said.contains("a symbolic link")
                     && said.contains(RECORD_HOME),
-                "{what}: the record door's own conflict-block, naming the entry and the \
-                 record's home; {said}",
+                "{what}: the store's refusal, naming the entry and the record's home; {said}",
             );
+            for retired in RETIRED_HERE {
+                assert!(
+                    !said.contains(retired),
+                    "{what}: `{retired}` is an edit's code, and nobody edited the record; \
+                     {said}",
+                );
+            }
             assert!(
                 !said.contains("hook"),
                 "{what}: nobody's hook complained — the door refused before it wrote; {said}",

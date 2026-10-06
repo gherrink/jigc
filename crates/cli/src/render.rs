@@ -1524,9 +1524,9 @@ impl FinalizeSubject {
 /// producing module, and the target form it keys at.
 ///
 /// **A member's producer is where it is minted, not the only door that raises it.**
-/// `finalize.promote-clobber`'s shape arm is raised by the store doors too (`jigc rename`, the
-/// relocation primitive; the rc.24 fix pass) — through `engine::finalize`'s own constructor
-/// (`store_home_refusal`), so the mint stays one and this table's producer column stays true.
+/// *(`finalize.promote-clobber` carried a second arm from the rc.24 fix pass until
+/// 2026-10-06 — a home that is not a regular file, raised by the store doors too. That state
+/// is `store.home-not-regular-file` now, minted in `engine::store` and outside this family.)*
 ///
 /// **It read *"a blocked-finalize finding code"* until M53**, and the family gained a member
 /// that is neither blocked nor a refusal: `finalize.foreign-bytes` is an **advisory raised on
@@ -1684,10 +1684,8 @@ pub const FINALIZE_FAMILY: &[FinalizeCode] = &[
         producer: "engine::finalize",
         subject: FinalizeSubject::FilePath,
         subject_note: "the destination path it refused to write at — a file it would have \
-                       overwritten, which may be foreign and carry no URI identity, or an \
-                       entry that is not a regular file; that second arm is also raised by \
-                       the doors that rewrite or move a committed doc where it stands (`jigc \
-                       rename`, the relocation primitive), keyed at the home in question",
+                       overwritten, which may be foreign and carry no URI identity, or a \
+                       path git still holds though nothing is on disk there",
     },
     FinalizeCode {
         code: "finalize.promote-io",
@@ -6448,6 +6446,12 @@ pub const ENVELOPE_OWED_CODES: &[&str] = &[
     engine::store::NO_SUCH_LEAF,
     engine::store::UNKNOWN_TYPE,
     crate::task::FIXED_IDENTITY,
+    // A managed doc's home that is not a regular file — listed under the file-path target
+    // form, and answered by every command that meets the shape, through one constructor
+    // (2026-10-06). Six of them — the milestone-record doors and `milestone create` — raise
+    // it through a seam that flattens by default; membership here is what keys it on the
+    // wire at those too.
+    engine::store::HOME_NOT_REGULAR_FILE,
 ];
 
 /// Flatten a blocking [`Finding`] into an `anyhow::Error` carrying the **whole** finding
