@@ -7,9 +7,17 @@
 //   node stabilize-runtime.mjs <the harness script> <a scenario file>
 //
 // run from the root of the repository the stage works on. The scenario is the suite's:
-// { args, checks, gate, scope, agents, record, wrongBinary } — the invocation's arguments,
-// and what the scripted agents say (below). `wrongBinary` names the reporters that return
-// another hash than the one they were handed: a driver that drove something else.
+// { args, checks, gate, scope, agents, record, wrongBinary, wrongPrevious, endings } — the
+// invocation's arguments, and what the scripted agents say (below). `wrongBinary` names the
+// reporters that return another hash than the one they were handed: a driver that drove
+// something else; `wrongPrevious` the verifiers that return another hash for the previous
+// release's binary. `endings` says how an agent ENDS where that is not "it returns its
+// result and has written its report", by its label:
+//   dies               it returns nothing, every time it is tried, and wrote no report
+//   dies-after-report  it wrote its report — once — and returns nothing
+//   halts-unreported   it returns the halt the scenario scripts, and wrote no report
+//   unreported         it returns the result the scenario scripts, and wrote no report
+// (A halt WITH its report needs no ending: it is a scripted return like any other.)
 //
 // WHAT AN AGENT IS HERE. A function chosen by the call's label. Four kinds do what their
 // definition gives the role to do in the repository, by running the commands their prompt
@@ -17,7 +25,10 @@
 //
 //   git:*      build-git           the ONE command of the step, run; its one line relayed
 //   preflight  stabilize-preflight the two environment asserts a test can run, held as
-//                                  the definition words them; each binary a FILE at the
+//                                  the definition words them — the candidate is `HEAD`,
+//                                  or, where the prompt says it is not, a commit `HEAD`
+//                                  holds, and then no step that reads the working tree
+//                                  may be listed; each binary a FILE at the
 //                                  path the prompt names (no build), its sha256 measured;
 //                                  each check answered as the scenario scripts it; and
 //                                  the candidate's gate NOT RUN — what a full gate prints,
@@ -44,7 +55,8 @@
 //   - an agent's return is checked against the call's schema by a small validator
 //     (type, required, properties, items, enum); the runtime's own validation, and a
 //     model's retry on a mismatch, are not modelled.
-//   - no agent dies, is skipped or is retried unless a scenario scripts it; there is no
+//   - an agent dies only where a scenario scripts it (`endings`), and then on every try
+//     the harness makes of it; nothing dies half-way through a command, there is no
 //     journal and no resume.
 //   - the script's top-level `return` works here because the script is the body of an
 //     async function; how the runtime runs it is its own.
@@ -60,6 +72,7 @@ import vm from 'node:vm'
 const [script, scenarioFile] = process.argv.slice(2)
 const scenario = JSON.parse(readFileSync(scenarioFile, 'utf8'))
 const scripted = scenario.agents || {}
+const endings = scenario.endings || {}
 
 const trace = []
 const logs = []
@@ -67,6 +80,7 @@ const reporters = []
 const swallowed = []
 const fatal = []
 const used = new Set()
+const tried = new Set()
 let depth = 0
 
 function note(line) {
@@ -123,9 +137,15 @@ function reportCommand(prompt) {
 function writeReport(label, prompt, said) {
   const command = reportCommand(prompt)
   if (!command) fail('the prompt of `' + label + '` names no report to write')
+  const name = / --reporter (\S+)/.exec(command)[1]
+  // An agent that ends with no report wrote none — whichever kind it is.
+  if (endings[label] === 'unreported' || endings[label] === 'halts-unreported') return null
+  // A try after a transient failure writes no report that stands already — as the retry's
+  // prompt has it.
+  if (prompt.includes('RETRY after a transient failure') && reporters.includes(name)) return null
   const out = sh(command, '# ' + label + '\n\nScripted by the simulation: no agent wrote this.\n\n' + said + '\n\n<!-- end of report -->\n')
   if (out.code !== 0) fail('the report of `' + label + '` was refused: ' + out.stderr)
-  reporters.push(/ --reporter (\S+)/.exec(command)[1])
+  reporters.push(name)
   return out.stdout.trim()
 }
 
@@ -136,6 +156,9 @@ function gitStep(label, prompt) {
   if (!command.startsWith('dev/stabilize-step ')) fail('the git step `' + label + '` is not ONE command of dev/stabilize-step: ' + first)
   const out = sh(command)
   if (!out.stdout) return { status: 'halted', halt: { root_cause: 'the command printed no line', evidence: command + '\n' + out.stderr, tree_state: treeState(), recommendation: 'read the tree before the step is asked for again' } }
+  // The step that begins an attempt writes the attempt's marker: a report the harness
+  // launched, under the reporter the command names.
+  if (command.startsWith('dev/stabilize-step begin ') && out.code === 0) reporters.push(/ --reporter (\S+)/.exec(command)[1])
   return { status: 'ran', line: out.stdout }
 }
 
@@ -148,11 +171,18 @@ function preflight(label, prompt) {
   // candidate's sha, and `git status --porcelain` shows what the prompt says to expect and
   // no more. What it prints for an untracked directory is the directory, so this does not
   // tell a report from another untracked file under the run's directory.
+  // The candidate is `HEAD` — or, where the prompt says that it is not, a commit `HEAD`
+  // holds: then both builds are from the commit, and a step that reads the working tree
+  // (the gate, a check) is not one the definition lets this call list.
   const head = git('rev-parse', 'HEAD').stdout
   const status = git('status', '--porcelain').stdout
   const stray = status.split('\n').filter((line) => line && !line.startsWith('?? ' + runDir[1] + '/'))
-  const failed = head !== sha ? '`git rev-parse HEAD` is ' + head + ', and the candidate is ' + sha + ': the tree is not the candidate'
-    : stray.length ? '`git status --porcelain` shows more than untracked files under ' + runDir[1] + '/: ' + stray.join(' · ') : null
+  const notHead = prompt.includes('THE CANDIDATE IS NOT `HEAD` HERE') && new RegExp('`git merge-base --is-ancestor ' + sha + ' HEAD` must hold').test(prompt)
+  const readsTheTree = prompt.includes('dev/gate > ') || /^ {3}- [a-z0-9-]+: /m.test(prompt)
+  const failed = notHead && git('merge-base', '--is-ancestor', sha, 'HEAD').code !== 0 ? 'the candidate ' + sha + ' is no commit that `HEAD` (' + head + ') holds'
+    : notHead && readsTheTree ? 'the candidate ' + sha + ' is not `HEAD`, and this call lists a step that reads the working tree'
+      : !notHead && head !== sha ? '`git rev-parse HEAD` is ' + head + ', and the candidate is ' + sha + ': the tree is not the candidate'
+        : stray.length ? '`git status --porcelain` shows more than untracked files under ' + runDir[1] + '/: ' + stray.join(' · ') : null
   if (failed) {
     return { status: 'halted', halt: { root_cause: 'an environment assert failed: ' + failed, evidence: 'git rev-parse HEAD: ' + head + '\ngit status --porcelain:\n' + status, tree_state: treeState(), recommendation: 'nothing built on an unasserted environment is evidence' }, report: writeReport(label, prompt, 'Halted: ' + failed) }
   }
@@ -165,19 +195,27 @@ function preflight(label, prompt) {
     return sha256Of(path)
   }
   const built = /the build: the candidate's binary, from `git archive ([0-9a-f]{40})`, copied to `([^`]+)`/.exec(prompt)
-  if (built) back.candidate = { label: candidate, sha: built[1], binary: built[2], sha256: standIn(built[2], 'commit ' + built[1]), version_string: '(no build: a stand-in)', path_check: built[2] }
+  if (built) back.candidate = { label: candidate, sha: built[1], binary: built[2], sha256: standIn(built[2], 'commit ' + built[1]), path_check: scenario.pathCheck || built[2] }
   const previous = /the previous release's binary: version `([^`]+)`, built from commit [0-9a-f]{40} .*? at `([^`]+)`/.exec(prompt)
   if (previous) back.previous = { version: previous[1], binary: previous[2], sha256: standIn(previous[2], 'release ' + previous[1]) }
   if (/\d+\. the trial image, built and verified/.test(prompt)) back.image = { tag: 'jigc-trial:' + candidate, verified: true, failed: [] }
   const gate = span(prompt, 'dev/gate > ')
   if (gate) keepGate(gate, scenario.gate)
-  if (prompt.includes('whether the cross-model pass\'s tool answers')) fail('the cross-model pass is not scripted')
+  // Whether the cross-model pass's tool answers: one more entry of `checks`, under the id
+  // the prompt names — an answer, never an assert.
+  const tool = /returned in `checks` under `check` = `([a-z0-9-]+)`/.exec(prompt)
+  if (tool) {
+    const answers = (scenario.checks || {})[tool[1]]
+    if (!answers) fail('the scenario does not say whether the cross-model pass\'s tool answers (`checks.' + tool[1] + '`)')
+    back.checks.push({ check: tool[1], status: answers, evidence: 'scripted by the simulation' })
+  }
   for (const [, item] of prompt.matchAll(/^ {3}- ([a-z0-9-]+): /gm)) {
     const status = (scenario.checks || {})[item]
     if (!status) fail('no result is scripted for the deterministic check `' + item + '`')
-    back.checks.push({ check: item, status, commit: sha, evidence: 'scripted by the simulation' })
+    back.checks.push(Object.assign({ check: item, status, evidence: 'scripted by the simulation' }, (scenario.checkCommits || {})[item] === 'none' ? {} : { commit: (scenario.checkCommits || {})[item] || sha }))
   }
-  back.report = writeReport(label, prompt, 'Ready.')
+  const report = writeReport(label, prompt, 'Ready.')
+  if (report) back.report = report
   return back
 }
 
@@ -245,8 +283,10 @@ function reporter(label, prompt, opts) {
   const binary = /^BINARY: candidate `([^`]+)` sha256 [0-9a-f]{64} \(commit [0-9a-f]{40}, label [^)]+\)(?:; previous release `([^`]+)`)?/m.exec(prompt)
   const spelled = span(prompt, 'shasum -a 256 ')
   if (binary || spelled) back.asserted_sha256 = (scenario.wrongBinary || []).includes(label) ? '0'.repeat(64) : sha256Of(binary ? binary[1] : spelled.slice('shasum -a 256 '.length))
-  if (binary && opts.agentType === 'finding-verifier') back.ran_on = { candidate: back.asserted_sha256, previous: sha256Of(binary[2]) }
-  back.report = writeReport(label, prompt, 'Returned: ' + JSON.stringify(scripted[label]))
+  if (binary && opts.agentType === 'finding-verifier') back.ran_on = { candidate: back.asserted_sha256, previous: (scenario.wrongPrevious || []).includes(label) ? '0'.repeat(64) : sha256Of(binary[2]) }
+  // It ends with its report written and its result returned — or as the scenario says.
+  const report = writeReport(label, prompt, 'Returned: ' + JSON.stringify(scripted[label]))
+  if (report) back.report = report
   return back
 }
 
@@ -295,6 +335,12 @@ async function agent(prompt, opts) {
   const kind = KINDS.find((k) => k.labels.test(String(o.label)))
   if (kind && kind.agentType !== o.agentType) fail('`' + o.label + '` was launched as ' + o.agentType + ', not as ' + kind.agentType)
   if (!kind && !(o.label in scripted)) fail('no agent is scripted for the label `' + o.label + '`')
+  // An agent that dies returns nothing — whichever kind it is, and however often it is
+  // tried. One that dies after its report did its work once, and returns nothing of it.
+  const ends = endings[o.label]
+  if (ends) used.add(o.label)
+  if (ends === 'dies' || (ends === 'dies-after-report' && tried.has(o.label))) return null
+  tried.add(o.label)
   let back
   try {
     back = (kind ? kind.play : reporter)(o.label, prompt, o)
@@ -302,6 +348,7 @@ async function agent(prompt, opts) {
     if (!fatal.length) fatal.push('the stand-in for `' + o.label + '` threw: ' + ((e && e.stack) || e))
     throw e
   }
+  if (ends === 'dies-after-report') return null
   const why = conforms(o.schema, back, 'the return of `' + o.label + '`')
   if (why) fail(why + ': the runtime would not hand the script this return')
   return into(back)
@@ -333,7 +380,7 @@ try {
 } catch (e) {
   fatal.push('the script threw: ' + ((e && e.stack) || e))
 }
-const unused = Object.keys(scripted).filter((label) => !used.has(label))
+const unused = Object.keys(scripted).concat(Object.keys(endings)).filter((label) => !used.has(label))
 process.stdout.write(JSON.stringify({ result: result === undefined ? null : result, trace, logs, reporters, swallowed, unused, fatal }) + '\n')
 if (fatal.length) {
   process.stderr.write(fatal.join('\n') + '\n')

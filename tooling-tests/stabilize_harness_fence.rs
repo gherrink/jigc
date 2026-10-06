@@ -30,7 +30,8 @@
 //!   the run.
 //! - **(d)** each label the definitions' contracts bind on is spelled once in the script,
 //!   and identically in every definition that binds on it; and a role is sent only labels
-//!   its definition binds on.
+//!   its definition binds on — and the binary line reaches EXACTLY the roles whose
+//!   definition binds on it, each of which returns the hash it asserted (`M7`).
 //! - **(e)** a paragraph the definitions repeat for a stabilization run is byte-identical
 //!   wherever it stands — the set derived from the definitions, never listed.
 //! - **(f)** the human's rulings enter in one place: the declared-bounds list and the three
@@ -65,6 +66,15 @@
 //!   line to the commit, the gate check and one result per check the script composed; and
 //!   an invocation that finds a batch applied and not committed finishes it before it reads
 //!   the run's state, and starts nothing.
+//!
+//! - **(o)** the two roles that have no definition carry the paragraph every definition
+//!   carries — *Never push to or merge into `main`…* — byte for byte as the definitions
+//!   have it (`L7`).
+//! - **(p)** what an agent's ending decides has one road each (`M5`, `M9`, `M6`): an attempt
+//!   of the `test` stage is begun on record before any agent of it is launched; a reporter
+//!   leaves the launched list only on the word of the report check; and the preflight's
+//!   definition takes the candidate the finishing lap asks it for. What a stage then DOES is
+//!   held where it is run ([`stabilize_simulation`](super::stabilize_simulation)).
 //!
 //! **Driven, where `node` is on `PATH`** (it is on this project's development machines and
 //! on GitHub's hosted runners; where it is not, the arm fails under CI and passes anywhere
@@ -381,8 +391,14 @@ fn c_a_branch_name_is_minted_in_exactly_one_function() {
         "`branchName` spells the branch prefix, once"
     );
     // Everywhere else — the self-test's expected values apart — no string opens with a
-    // branch prefix of the branch model, and none is assembled from a round's suffix.
-    let elsewhere = without(&full, &["branchName", "selfTest"]);
+    // branch prefix of the branch model, and none is assembled from a round's suffix. (The
+    // paragraph every definition carries names the branch types an agent may push, as
+    // prose: arm (o) holds that line to the definitions' own bytes.)
+    let elsewhere: String = without(&full, &["branchName", "selfTest"])
+        .lines()
+        .filter(|line| !line.starts_with("const NEVER = \""))
+        .map(|line| format!("{line}\n"))
+        .collect();
     for prefix in ["fix/", "work/", "milestone/", "stabilize/"] {
         for quote in ['\'', '"', '`'] {
             let opening = format!("{quote}{prefix}");
@@ -522,6 +538,52 @@ fn d_each_label_is_spelled_as_every_definition_that_binds_on_it_spells_it() {
                 role.agent_type
             );
         }
+    }
+
+    // THE BINARY LINE REACHES EXACTLY THE ROLES WHOSE DEFINITION BINDS ON IT (the harness
+    // review's `M7`: the reviewers' definition carried the binary paragraph and the role was
+    // never sent the line, so a reviewer verified its findings on a build of the working
+    // tree). Both sets are derived, and they are equal.
+    let binary = &labels["binary"];
+    let binding: BTreeSet<&str> = roles
+        .iter()
+        .filter(|role| {
+            definitions
+                .get(&role.agent_type)
+                .is_some_and(|text| text.contains(&format!("`{binary}`")))
+        })
+        .map(|role| role.name.as_str())
+        .collect();
+    let handed: BTreeSet<&str> = roles
+        .iter()
+        .filter(|role| role.labels.iter().any(|key| key == "binary"))
+        .map(|role| role.name.as_str())
+        .collect();
+    assert!(
+        binding.len() >= 4,
+        "the scan found the roles whose definition binds on `{binary}`: {binding:?}"
+    );
+    assert_eq!(
+        binding, handed,
+        "the roles whose definition binds on `{binary}` (left) are the roles the script sends it to (right)"
+    );
+    // And a role that is handed the binary returns the hash it asserted: `drives` says so
+    // for exactly those roles — and for the one prompt-only role whose prompt spells the
+    // hash check out.
+    let table = &full[full.find("\nconst ROLES = {\n").expect("the roles table")..];
+    let table = &table[..table.find("\n}\n").expect("the table closes")];
+    for role in &roles {
+        let line = table
+            .lines()
+            .find(|line| line.trim_start().starts_with(&format!("{}: ", role.name)))
+            .expect("the role's row");
+        let drives = line.contains("drives: true");
+        let should = handed.contains(role.name.as_str()) || role.name == "proposal";
+        assert_eq!(
+            drives, should,
+            "`{}` is handed the binary, and is held to the hash it asserts, or neither: {line}",
+            role.name
+        );
     }
 }
 
@@ -1325,6 +1387,165 @@ fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_
             "`finishRecord` starts something: `{launching}`"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// (o) the roles that have no definition carry the Never paragraph
+// ---------------------------------------------------------------------------
+
+#[test]
+fn o_the_roles_with_no_definition_carry_the_never_paragraph_as_every_definition_has_it() {
+    let full = harness();
+    // The paragraph, as the definitions have it: one line, the same bytes in every one
+    // (`release_pipeline_fence` holds that) — read from them, never spelled here.
+    let opening = "**Never push to or merge into `main`";
+    let paragraphs: BTreeSet<String> = definitions()
+        .values()
+        .map(|text| {
+            text.lines()
+                .find(|line| line.starts_with(opening))
+                .expect("every definition carries the paragraph")
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(
+        paragraphs.len(),
+        1,
+        "the paragraph is one text across the definitions"
+    );
+    let paragraph = paragraphs.into_iter().next().expect("one");
+    assert_eq!(
+        full.lines()
+            .find(|line| line.starts_with("const NEVER = "))
+            .expect("the script holds the paragraph"),
+        format!("const NEVER = \"{paragraph}\""),
+        "the script's copy of the paragraph is the definitions', byte for byte"
+    );
+    // The roles with no definition are derived from the roles table; each one's prompt
+    // function hands the paragraph over, as a line of its own.
+    let prompt_only: Vec<String> = roles(&full)
+        .into_iter()
+        .filter(|role| role.agent_type == "general-purpose")
+        .map(|role| role.name)
+        .collect();
+    assert_eq!(
+        prompt_only,
+        ["proposal", "crossModel"],
+        "the roles whose prompt is their whole contract"
+    );
+    for role in &prompt_only {
+        let prompt = function(&full, &format!("{role}Prompt"));
+        assert!(
+            prompt.contains("\n    NEVER,\n  ].join('\\n')"),
+            "`{role}Prompt` does not end with the paragraph"
+        );
+    }
+    assert_eq!(
+        without(&full, &["selfTest"]).matches("NEVER").count(),
+        3,
+        "the paragraph is declared once and handed to those two prompts"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// (p) what an agent's ending decides has one road each
+// ---------------------------------------------------------------------------
+
+#[test]
+fn p_an_attempt_begins_on_record_and_a_reporter_leaves_the_list_only_on_the_checks_word() {
+    let full = harness();
+    let source = code(&full);
+    let tested = function(&full, "runTest");
+
+    // AN ATTEMPT OF THE `test` STAGE IS BEGUN ON RECORD BEFORE ANY AGENT OF IT IS LAUNCHED:
+    // once where the stage finishes a triage, once where it runs — a re-run included — and
+    // each before the first agent of that road.
+    assert_eq!(
+        tested.matches("await beginAttempt(").count(),
+        2,
+        "the finishing lap, and the stage itself"
+    );
+    let lap = tested
+        .find("\n  if (at.triage) {\n")
+        .expect("the finishing lap");
+    let begun = tested[lap..]
+        .find("await beginAttempt(ctx, lap, tested)")
+        .expect("the lap begins its attempt");
+    let finishes = tested[lap..]
+        .find("await finishTriage(")
+        .expect("the lap's triage");
+    assert!(begun < finishes, "the lap is begun before its triage");
+    let main = tested
+        .find("await beginAttempt(ctx, launch, sha)")
+        .expect("the stage begins its attempt");
+    for launching in [
+        "preflightOf(ctx",
+        "roleStep(",
+        "runUnits(",
+        "triagePasses(ctx, launch, built, sources",
+    ] {
+        let first = tested[lap + finishes..]
+            .find(launching)
+            .unwrap_or_else(|| panic!("the stage launches `{launching}`"));
+        assert!(
+            main < lap + finishes + first,
+            "`{launching}` is launched before the attempt is on record"
+        );
+    }
+    let begin = function(&full, "beginAttempt");
+    assert!(
+        begin.contains("launch.add([ATTEMPT])")
+            && begin.contains("toolStep('begin', 'State', 'begin', beginPrompt(ctx, sha))")
+            && begin.contains("begun.status !== 'begun'"),
+        "the marker is a launched reporter, written by the tool's `begin` act, and a step that did not begin it halts"
+    );
+
+    // A REPORTER LEAVES THE LAUNCHED LIST ONLY ON THE WORD OF THE REPORT CHECK: one function
+    // asks, and takes off exactly what the check names as missing.
+    let settle = function(&full, "settleReports");
+    assert!(
+        settle.contains("checkReportsPrompt(ctx, launch.names)")
+            && settle.contains("for (const name of read.missing || []) launch.drop(name)"),
+        "`settleReports` asks the check over every name handed out, and drops what it names"
+    );
+    assert_eq!(
+        without(&full, &["selfTest", "launcher"])
+            .matches(".drop(")
+            .count(),
+        1,
+        "nothing else takes a reporter off the list"
+    );
+    assert_eq!(
+        source.matches("checkReportsPrompt(").count()
+            - function(&full, "selfTest")
+                .matches("checkReportsPrompt(")
+                .count(),
+        2,
+        "the report check is asked for in one place"
+    );
+    // After the instruments, and after every triage pass.
+    assert!(
+        tested.contains("await settleReports(ctx, launch, 'check-reports', 'Instruments')")
+            && function(&full, "triagePasses")
+                .contains("await settleReports(ctx, launch, 'check-reports:p' + pass, 'Triage')"),
+        "the reports are checked after the instruments and after every triage pass"
+    );
+
+    // THE CANDIDATE A FINISHING LAP ASKS THE PREFLIGHT FOR IS THE ONE THE ROUND TESTED, and
+    // the preflight's definition takes it (`M6`).
+    assert!(
+        tested.contains(
+            "await finishTriage(ctx, lap, state, { sha: tested, label, tested: true }, loopBranch)"
+        ) && function(&full, "preflightPrompt").contains("THE CANDIDATE IS NOT `HEAD` HERE"),
+        "the finishing lap asks for the commit the round tested, and its prompt says that it is not HEAD"
+    );
+    let preflight = &definitions()["stabilize-preflight"];
+    assert!(
+        preflight.contains("`git merge-base --is-ancestor <sha> HEAD` exits 0")
+            && preflight.contains("no step that reads the working tree may be listed beside it")
+            && !preflight.contains("the tree is not the candidate"),
+        "stabilize-preflight.md still asserts that every candidate is HEAD"
+    );
 }
 
 // ---------------------------------------------------------------------------

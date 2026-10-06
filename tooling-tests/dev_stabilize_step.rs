@@ -102,6 +102,7 @@ const REFUSALS: &[(&str, i32)] = &[
     ("git", 18),
     ("gate-red", 19),
     ("no-batch", 20),
+    ("position", 21),
 ];
 
 fn repo_root() -> PathBuf {
@@ -1982,6 +1983,8 @@ fn valid(flag: &str, scratch: &str) -> String {
         "scratch" => scratch.to_owned(),
         "stage" => "test".to_owned(),
         "round" | "attempt" | "calls" | "checks" => "1".to_owned(),
+        "reporter" => "attempt".to_owned(),
+        "commit" => "c".repeat(40),
         "gate" => format!("{scratch}/gate.txt"),
         other => panic!("the suite has no value for the flag `--{other}`: give it one"),
     }
@@ -2530,7 +2533,13 @@ fn offences(source: &str) -> Vec<String> {
             || program.starts_with("[RECORD, \"check-reports\"] + ")
             || program.starts_with("[RECORD, \"pending\", ")
             || program.starts_with("[RECORD, \"gate-check\", ")
-            || program.starts_with("[RECORD, \"settle\", ");
+            || program.starts_with("[RECORD, \"settle\", ")
+            // The one write the tool makes through the record script: an attempt's marker,
+            // by the act that begins the attempt, under the reporter it was handed.
+            || (call.within == "begin"
+                && program.starts_with(
+                    "[RECORD, \"report\"] + stage_flags(args) + [\"--reporter\", args.reporter, ",
+                ));
         if !known {
             found.push(format!(
                 "`run({program})` in `{}`: a program the tool does not run",
@@ -2871,6 +2880,17 @@ fn every_command_the_harness_composes_is_taken_by_the_tool_and_read_back() {
     let read = step("state", "statePrompt", json!([v("test"), "test-1"]));
     assert_eq!(read["status"], "read", "{read}");
     assert_eq!(read["state"]["opened"], true);
+    // The step that begins an attempt: the tool takes the command as composed, and its
+    // answer is read back — here its refusal, because this rig's run has an opening record
+    // and no fact, and no stage begins before the opening is done. (The act writes through
+    // the record script, whose scanners this rig lacks: it is driven to its end in
+    // [`stabilize_simulation`](super::stabilize_simulation).)
+    let begun = step("begin", "beginPrompt", json!([ctx, rig.rev("HEAD")]));
+    assert_eq!(
+        json!([begun["status"], begun["refused"]]),
+        json!(["halted", "position"]),
+        "{begun}"
+    );
     let check = step(
         "check-reports",
         "checkReportsPrompt",

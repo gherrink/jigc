@@ -45,6 +45,20 @@
 #       The run's record, read: `dev/stabilize-record state --run R`, kept as
 #       DIR/state/T.json. Prints {status: read, branch, file, state}.
 #
+#   dev/stabilize-step begin --run R --round N --stage test|fix [--cycle K] --attempt A
+#                      --reporter S --commit SHA --scratch DIR
+#       AN ATTEMPT OF A STAGE, BEGUN ON RECORD — the first write of every attempt, before
+#       any agent of it is launched. The run's state hands the stage exactly this round
+#       and this attempt (`dev/stabilize-record state`: its `position`, and for `fix` this
+#       cycle) — else position: a stage begins where the state says so and nowhere else,
+#       so not on a run whose opening is not done, not past a stop nobody lifted, and not
+#       as an attempt another invocation holds. Then the attempt's marker is written —
+#       a report under the reporter S, through `dev/stabilize-record report`, saying that
+#       the attempt began and on which commit — so that an attempt whose agents all died
+#       before one of them wrote is still an attempt the record script counts. A marker
+#       that is there already is that script's refusal (record). Prints {status: begun,
+#       round, attempt, report}.
+#
 #   dev/stabilize-step check-reports --run R --round N --stage test|fix [--cycle K]
 #                      --attempt A [--] [REPORTER...]
 #       `dev/stabilize-record check-reports` with these arguments. A missing or an extra
@@ -158,6 +172,8 @@
 #   19  gate-red       the gate on the tree with the records shows red that the
 #                      candidate's own gate did not; nothing is committed or undone
 #   20  no-batch       the run has no applied batch, or nothing pending: nothing to record
+#   21  position       the run's state does not hand the stage the round and the attempt
+#                      it would begin; nothing was written
 #
 # Needs python3 and git, which the gate needs already. It finds its repository from
 # where it lies, never from where it was called.
@@ -193,6 +209,7 @@ STATUS = {
     "git": 18,
     "gate-red": 19,
     "no-batch": 20,
+    "position": 21,
 }
 # What `git ls-remote --exit-code` exits with when no ref matches.
 NO_SUCH_REF = 2
@@ -254,9 +271,10 @@ class Ran:
         return "`%s` exited %d%s" % (" ".join(self.argv), self.code, ": " + said if said else "")
 
 
-def run(argv):
-    """One command, from the repository's root: its exit status and what it printed."""
-    done = subprocess.run(argv, cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace")
+def run(argv, fed=None):
+    """One command, from the repository's root: its exit status and what it printed. It
+    reads nothing, unless it is `fed` a text."""
+    done = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", **({"stdin": subprocess.DEVNULL} if fed is None else {"input": fed}))
     return Ran([os.path.relpath(argv[0], ROOT) if os.path.isabs(argv[0]) else argv[0]] + list(argv[1:]), done.returncode, done.stdout, done.stderr)
 
 
@@ -447,10 +465,38 @@ def state(args, facts):
     facts.update(status="read", branch=said("branch", "--show-current"), file=path, state=document)
 
 
-def check_reports(args, facts):
+def stage_flags(args):
     flags = ["--run", args.run, "--round", args.round, "--stage", args.stage]
     if args.cycle is not None:
         flags += ["--cycle", args.cycle]
+    return flags
+
+
+def begin(args, facts):
+    # 1. Where the state hands the stage: this round, this attempt — and no refusal.
+    reading = run([RECORD, "state", "--run", args.run])
+    try:
+        document = json.loads(reading.out) if reading.code == 0 else None
+    except ValueError:
+        document = None
+    if not isinstance(document, dict):
+        refuse("record", "dev/stabilize-record could not read the run's state", reading.shown())
+    at = (document.get("position") or {}).get(args.stage)
+    wanted = {"round": args.round, "attempt": args.attempt}
+    if args.stage == "fix":
+        wanted["cycle"] = args.cycle
+    if not isinstance(at, dict) or "refused" in at or any(str(at.get(name)) != value for name, value in wanted.items()):
+        refuse("position", "the run's state does not hand the `%s` stage %s: its position is %s%s" % (args.stage, ", ".join("%s %s" % pair for pair in wanted.items()), json.dumps(at), " — the opening still owes %s" % ", ".join(document["not_ready"]) if document.get("not_ready") else ""), reading.shown()[:400], "nothing was written; the stage is invoked again and reads the state as it stands")
+    # 2. The marker: the attempt is on record before any agent of it is launched.
+    text = "# attempt %s of the `%s` stage, round %s\n\nThe harness began this attempt on the commit %s, before it launched an agent. What the attempt's agents wrote lies beside this file under the same attempt number; an attempt that reached its record is named in the round's record, and one that did not is counted from this file.\n\n<!-- end of report -->\n" % (args.attempt, args.stage if args.cycle is None else "%s (cycle %s)" % (args.stage, args.cycle), args.round, args.commit)
+    writing = run([RECORD, "report"] + stage_flags(args) + ["--reporter", args.reporter, "--attempt", args.attempt, "--scratch", args.scratch], fed=text)
+    if writing.code != 0 or len(lines(writing.out)) != 1:
+        refuse("record", "the attempt could not be put on record", writing.shown(), "an attempt whose marker is there already was begun — by an earlier try of this step, or by another invocation: the stage is invoked again, and the state gives the next attempt")
+    facts.update(status="begun", round=args.round, attempt=args.attempt, report=writing.out.strip())
+
+
+def check_reports(args, facts):
+    flags = stage_flags(args)
     checking = run([RECORD, "check-reports"] + flags + ["--attempt", args.attempt, "--"] + args.names)
     try:
         check = json.loads(checking.out) if checking.code in (0, REPORTS_MISMATCH) else None
@@ -693,6 +739,8 @@ FLAGS = {
     "gate": file_outside,
     "calls": count,
     "checks": count,
+    "reporter": slug,
+    "commit": full_sha,
 }
 LISTS = {"product": path_in_repository, "log": path_in_repository}
 
@@ -715,6 +763,7 @@ def arguments(argv):
 
     act("git-state", git_state, ["stage", "loop", "rounds", "run-dir"], lists=["product"])
     act("state", state, ["run", "scratch", "tag"])
+    act("begin", begin, ["run", "round", "stage", "attempt", "reporter", "commit", "scratch"], optional=["cycle"])
     act("check-reports", check_reports, ["run", "round", "stage", "attempt"], optional=["cycle"], names=("names", argparse.ZERO_OR_MORE, str))
     act("find-round", find_round, ["prefix"])
     act("open-round", open_round, ["loop", "branch", "run-dir"])

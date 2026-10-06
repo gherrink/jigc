@@ -1,6 +1,7 @@
 phase State
 agent git:state · build-git · sonnet · State
 agent git:state:test-1 · build-git · sonnet · State
+agent git:begin · build-git · sonnet · State
 phase Preflight and scope
 parallel 2 {
   agent preflight · stabilize-preflight · opus · Preflight and scope
@@ -46,6 +47,7 @@ parallel 3 {
 }
 agent advocate:doc-set-drops-a-slot · robust-advocate · opus · Triage
 agent proposal:doc-set-drops-a-slot · general-purpose · opus · Triage
+agent git:check-reports:p1 · build-git · sonnet · Triage
 phase Record
 agent record:test:r1 · build-executor · opus · Record
 agent git:record:test:r1 · build-git · sonnet · Record

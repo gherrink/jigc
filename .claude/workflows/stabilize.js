@@ -47,11 +47,12 @@
 // stage: one that only records what the human ruled about the run (below).
 //
 // THE STAGES (ruling 9).
-//   test   git state (the path-class assert) -> state -> preflight ∥ scope -> state ->
-//          the round's instruments, in parallel -> the reports checked -> triage ->
-//          verify-real -> per fork an advocate and an independent drive -> the record
-//          step (its batch applied, the full gate) -> the record's one commit on the loop
-//          branch, held to the candidate's gate -> push -> state.
+//   test   git state (the path-class assert) -> state -> THE ATTEMPT BEGUN ON RECORD ->
+//          preflight ∥ scope -> state -> the round's instruments, in parallel -> the
+//          reports checked -> per pass: triage -> verify-real -> per fork an advocate and
+//          an independent drive -> the reports checked -> the record step (its batch
+//          applied, the full gate) -> the record's one commit on the loop branch, held to
+//          the candidate's gate -> push -> state.
 //          Returns {status: 'triaged', round, candidate, counts, human_list, forks, next}.
 //   fix    git state -> state -> the round's branch found -> [the human's rulings
 //          recorded] -> per cycle: the round branch opened -> fixers, one area at a time,
@@ -96,8 +97,54 @@
 //
 // REPORTS (ruling 12). Every reporter writes its report through `dev/stabilize-record`,
 // under the name this script hands it on its `REPORT:` line. The script keeps the list of
-// every reporter it launched, has `check-reports` run on that list before a record commit,
-// and halts on a missing or an extra one.
+// every reporter it launched and has `check-reports` run on that list — after the
+// instruments, after every triage pass, and inside the record's batch. A file nobody
+// launched stops the stage. A LAUNCHED REPORTER WITH NO REPORT DOES NOT: it is taken off
+// the list, and what it was launched for is recorded as not done (below).
+//
+// AN ATTEMPT BEGINS ON RECORD. The first step of an attempt that will launch an agent is
+// `dev/stabilize-step begin`: it holds the round and the attempt to the state's position
+// once more, and writes the attempt's marker — a report of this script's own, under the
+// reporter ATTEMPT. So an attempt whose agents all died before one of them wrote is still an
+// attempt the record script counts, and after two that reached no record the next one is
+// the human's to grant. An invocation that is refused, or returns before that step, began
+// no attempt.
+//
+// HOW AN AGENT CAN END, AND WHAT FOLLOWS (the harness review's M5 and M9). An agent returns
+// a result, halts with a report, halts without one, returns nothing after its retries, or
+// writes its report and dies. WHETHER A REPORT IS THERE is never taken from a return: it is
+// what `check-reports` says. A result counts only with its report on disk; a report with no
+// result stays on the list and is committed, and counts for nothing. Per reporter:
+//   preflight (first), scope    no result, or no report: the stage halts — nothing can be
+//                               driven or selected without them. The attempt is counted.
+//   preflight (second)          no result, or no verified image: the trial arms and the
+//                               checks it was asked for are VOID with that reason, and the
+//                               stage goes on.
+//   a step of an item's chain   no result, or no report: the item is VOID with the step and
+//                               the reason, the rest of its chain is not launched, and
+//                               every other item goes on. The state then asks for the
+//                               item's re-run. A finding it did return, with its report, is
+//                               triaged all the same.
+//   the cross-model pass        ANY of these: that pass is void FOR THAT PASS, recorded as
+//                               not run, and its item's own passes go on. It never halts
+//                               the stage and never voids its item (the human's rulings of
+//                               2026-10-06: limited and rare, never required).
+//   triage                      no result, or no report: the stage halts — a finding nobody
+//                               graded has no row a later stage could read. Counted.
+//   a verifier                  no verdict, a verdict for another finding, or no report:
+//                               the finding stays UNVERIFIED; the record script counts the
+//                               passes that left it so, and after one more it is the human's.
+//   an advocate, the            no case, no drive, or a report missing: THE FORK IS NOT ON
+//   independent drive           RECORD and its finding stays unverified, as above — the next
+//                               triage verifies it and drives the fork again.
+// A returned hash that is not the binary's is none of these: it halts the stage.
+//
+// A FORK IS ON RECORD (the harness review's M3). A verdict the verifier found to contest a
+// settled decision is recorded with that verdict, in the round's triage record: its kind,
+// the verdict of the advocate's case, and whether the independent drive holds. The record
+// script routes such a finding to the human until the human rules it, so `next` is `rule`
+// and never `fix` or `close`; the ruling is one of the three dispositions, written by the
+// one step that records `args.rulings`.
 //
 // ONE BINARY PER CANDIDATE (ruling 11). Preflight builds it; every driving agent is handed
 // its path and hash on a `BINARY:` line and returns the hash it asserted; this script
@@ -179,7 +226,15 @@
 //               The two kinds are two invocations.
 //   raise     — OPTIONAL, `fix` only: { cycles: N }, the human's raise of the cycle bound.
 //   exit      — OPTIONAL, `fix` only: 'drop' or { part: [ … ] }, the human's exit at a bound.
-//   stopAfter — OPTIONAL: return after a named step (STOPS), for tuning. Nothing is recorded.
+//   stopAfter — OPTIONAL: return after a named step (STOPS), for tuning. NO RECORD STEP RUNS
+//               and nothing is committed — but what the stopped stage wrote through the
+//               record script is on disk and stays: after `state`, nothing at all; after a
+//               later step of `test`, the attempt's marker, every report written so far
+//               and the round's scope, which is written once and stands. Such an attempt
+//               counts as one that reached no record, and after two in a row the next is
+//               the human's to grant. On `fix`: after `rulings` the rulings ARE recorded,
+//               committed and pushed; after `fixers` the fixers' commits are on the round
+//               branch; after `audit` the round branch is pushed as well.
 //   selfTest  — OPTIONAL: true runs zero agents and checks this script's own logic.
 //   model     — OPTIONAL: the model every agent call but the git steps is pinned to ('opus').
 
@@ -242,9 +297,19 @@ const PAYLOAD_ENDS = 'STABILIZE_PAYLOAD'
 // The name under which a triage is handed the rows of the ledger that still await it. No
 // reporter can carry it: an item's reporters are `<item>-<step>`.
 const LEDGER_SOURCE = 'ledger'
+// The reporter an attempt's marker is written under (`dev/stabilize-step begin`). No agent
+// can carry it: an item's reporters are `<item>-<step>`, and no role is named so.
+const ATTEMPT = 'attempt'
+// The paragraph every agent definition carries, verbatim (tooling-tests/
+// release_pipeline_fence.rs holds it there) — for the two roles that have no definition and
+// so no paragraph of their own. The fence holds this copy to the definitions' bytes.
+const NEVER = "**Never push to or merge into `main`, force-push any branch, merge a pull request, push a tag, approve or reject a deployment, or yank a crate.** Those acts are the human's ([release.md](../../implementation/release.md) → *What agents may not do*). You may merge an increment branch into its milestone branch locally, and push `milestone/*`, `fix/*` and `work/*` branches — always by name (`git push origin <branch>`), never a bare `git push`, and never forced (no `--force`, `--force-with-lease`, `-f` or `+` refspec). `.claude/settings.json` denies the commands that perform the human's acts; a denial is the answer, never something to route around."
 
 // ---- the roles: who is launched, and which labelled lines its definition binds on ----
-// `drives` is a role that is handed the binary and returns the hash it asserted.
+// `drives` is a role that is handed the binary and returns the hash it asserted — every
+// role whose definition binds on the binary line (the fence holds the two sets equal), and
+// the one prompt-only role that drives: a reviewer verifies its findings on the candidate's
+// own binary too, never on a build of the working tree (the harness review's M7).
 // `proposal` drives an advocate's proposal independently of the advocate. No definition
 // fits that role (the entry of 2026-10-06 says what each lacks), so it has none, and its
 // prompt is its whole contract. `crossModel` is the source pass by a model of another
@@ -252,7 +317,7 @@ const LEDGER_SOURCE = 'ledger'
 const ROLES = {
   preflight: { agentType: 'stabilize-preflight', labels: ['report'], drives: false },
   scope: { agentType: 'stabilize-scope', labels: ['report'], drives: false },
-  review: { agentType: 'milestone-code-reviewer', labels: ['report'], drives: false },
+  review: { agentType: 'milestone-code-reviewer', labels: ['report', 'binary'], drives: true },
   drive: { agentType: 'milestone-e2e-tester', labels: ['report', 'binary'], drives: true },
   triage: { agentType: 'finding-triage', labels: ['report'], drives: false },
   verify: { agentType: 'finding-verifier', labels: ['report', 'binary'], drives: true },
@@ -524,10 +589,10 @@ function launcher(ctx) {
       names.push(name)
       return name
     },
-    // A reporter that was launched and is known to have left no report, where that is
-    // an answer and not a halt: the record is not held to it.
+    // A reporter that was launched and left no report — `check-reports` said so: the
+    // record is not held to a report that does not exist.
     drop(name) {
-      names.splice(names.indexOf(name), 1)
+      if (names.includes(name)) names.splice(names.indexOf(name), 1)
     },
     line(name) {
       return reportLine(ctx, name)
@@ -555,6 +620,36 @@ function branchLine(branch, loop) {
 // drove something and did not return the candidate's hash as the one they asserted.
 function hashMismatch(expected, returns) {
   return returns.filter((r) => r.drives && r.result && r.result.status !== 'halted' && r.result.asserted_sha256 !== expected).map((r) => ({ reporter: r.name, asserted: r.result.asserted_sha256 == null ? null : String(r.result.asserted_sha256) }))
+}
+
+// reportsRead — what a `check-reports` step established, or why it established nothing:
+// the launched reporters that left NO REPORT (`missing` — each is then taken off the list,
+// and what it was launched for is recorded as not done), or the files nobody launched
+// (`extra`), which stop the stage: a report nobody asked for, a stray file, the temporary of
+// a killed write.
+function reportsRead(step) {
+  const seen = step && step.status === 'checked' && plain(step.check) ? step.check : null
+  if (!seen || !Array.isArray(seen.missing) || !Array.isArray(seen.extra)) return { fault: 'the report check could not be read', transient: !step }
+  if (seen.extra.length) return { fault: 'the stage\'s report directory holds what no launched reporter wrote: ' + JSON.stringify(seen.extra) + ' — a file nobody launched is nobody\'s report', check: seen }
+  return { missing: seen.missing }
+}
+// endingOf — how a reporter that did not report ended, in words a void's reason carries.
+function endingOf(result) {
+  return result ? 'halted' + (result.halt && result.halt.root_cause ? ' (' + result.halt.root_cause + ')' : '') : 'returned nothing'
+}
+
+// unreported — a unit's reporters whose report is NOT THERE, taken out of what the unit
+// established: a result nobody can read a report for is no result. A step of the unit's own
+// chain voids the unit; the cross-model pass voids that pass, and nothing else.
+function unreported(ran, missing) {
+  for (const unit of ran) {
+    for (const r of unit.reporters.filter((x) => missing.includes(x.name))) {
+      if (r.crossModel) unit.crossModel = 'void'
+      else if (unit.status !== 'void') Object.assign(unit, { status: 'void', reason: 'its `' + r.as + '` step ' + (r.result && r.result.status === 'reported' ? 'returned and left no report' : endingOf(r.result) + ', and left no report') })
+      r.result = null
+      r.report = null
+    }
+  }
 }
 
 // outcomeOf — `next` exactly as the state document gives it, and whether this script knows
@@ -738,6 +833,22 @@ function currentCut(run, round, local) {
   return cut
 }
 
+// What a stage's triage becomes in the record: the new rows, and the round's triage entries.
+function triageRecord(ctx, entries) {
+  return {
+    rows: entries.filter((e) => e.new).map((e) => ({ key: e.key, doctype: e.doctype, round: ctx.round, source: e.source, door: e.door, clause: e.clause, repro: e.repro })),
+    triage: entries.map((e) => {
+      const t = { key: e.key, grade: e.grade }
+      if (e.grade === 'out-of-scope') t.bound = e.bound
+      if (e.verdict) t.verdict = e.verdict
+      if (e.verdict === 'confirmed') t.regression = e.regression
+      // A fork rides on the verdict that raised it, and is a row a later invocation reads.
+      if (e.verdict && e.fork) t.fork = e.fork
+      return t
+    }),
+  }
+}
+
 // ---- structured-output schemas ----
 const HALT = {
   type: 'object',
@@ -780,10 +891,10 @@ const PREFLIGHT_SCHEMA = {
   properties: {
     status: { type: 'string', enum: ['ready', 'halted'] },
     halt: HALT,
-    candidate: { type: 'object', properties: { label: { type: 'string' }, sha: { type: 'string' }, binary: { type: 'string' }, sha256: { type: 'string' }, version_string: { type: 'string' }, path_check: { type: 'string' } } },
+    candidate: { type: 'object', properties: { label: { type: 'string' }, sha: { type: 'string' }, binary: { type: 'string' }, sha256: { type: 'string' }, path_check: { type: 'string', description: 'what `command -v jigc` printed with the binary\'s directory first on PATH' } } },
     previous: { type: 'object', properties: { version: { type: 'string' }, binary: { type: 'string' }, sha256: { type: 'string' } } },
     image: { type: 'object', properties: { tag: { type: 'string' }, verified: { type: 'boolean' }, failed: STRINGS } },
-    checks: { type: 'array', items: { type: 'object', required: ['check', 'status'], properties: { check: { type: 'string', description: 'the id of the item the prompt listed the check under' }, status: { type: 'string', enum: ['green', 'red', 'void'] }, commit: { type: 'string' }, evidence: { type: 'string' } } } },
+    checks: { type: 'array', items: { type: 'object', required: ['check', 'status'], properties: { check: { type: 'string', description: 'the id of the item the prompt listed the check under' }, status: { type: 'string', enum: ['green', 'red', 'void'] }, commit: { type: 'string', description: 'the full sha the check ran on: a green or a red is evidence about that commit and no other' }, evidence: { type: 'string' } } } },
     report: { type: 'string', description: 'the path `dev/stabilize-record report` printed' },
   },
 }
@@ -985,6 +1096,10 @@ function gitStatePrompt(v) {
 function statePrompt(v, tag) {
   return stepPrompt('read the record of the stabilization run `' + v.run + '` (read ' + tag + ')', 'state', '--run ' + v.run + ' --scratch ' + v.scratch + ' --tag ' + tag)
 }
+// The BEGIN step: an attempt of a stage put on record before any agent of it is launched.
+function beginPrompt(ctx, sha) {
+  return stepPrompt('attempt ' + ctx.attempt + ' of the `' + ctx.stage + '` stage of `' + ctx.run + '`, round ' + ctx.round + ', begun on record: the state must hand the stage exactly this round and attempt, and the attempt\'s marker is written', 'begin', stageFlags(ctx) + ' --attempt ' + ctx.attempt + ' --reporter ' + ATTEMPT + ' --commit ' + sha + ' --scratch ' + ctx.scratch)
+}
 function checkReportsPrompt(ctx, names) {
   return stepPrompt('the reports of the `' + ctx.stage + '` stage of `' + ctx.run + '`, round ' + ctx.round + ', held to the reporters that were launched', 'check-reports', stageFlags(ctx) + ' --attempt ' + ctx.attempt + ' -- ' + names.join(' '))
 }
@@ -1045,7 +1160,7 @@ function opening(v) {
   return 'The run\'s opening record is `' + runDir(v.run) + '/opening.md`; its state is `dev/stabilize-record state --run ' + v.run + '`.'
 }
 function preflightPrompt(ctx, launch, name, plan) {
-  const steps = ['the environment asserts — `git status --porcelain` may show untracked files under `' + runDir(ctx.run) + '/` and nothing else: what the record script wrote and no record step has committed yet — reports, the round\'s scope, its journal']
+  const steps = ['the environment asserts — `git status --porcelain` may show untracked files under `' + runDir(ctx.run) + '/` and nothing else: what the record script wrote and no record step has committed yet — reports, the round\'s scope, its journal' + (plan.tested ? '. THE CANDIDATE IS NOT `HEAD` HERE: it is the commit the round tested, and the round\'s record commits lie on top of it — `git merge-base --is-ancestor ' + plan.sha + ' HEAD` must hold, and nothing this call covers reads the working tree: both binaries are built from `git archive`' : '')]
   const asked = plan.crossModel ? crossModelAssert() : null
   if (plan.build) {
     steps.push('the build: the candidate\'s binary, from `git archive ' + plan.sha + '`, copied to `' + plan.binary + '`')
@@ -1159,6 +1274,7 @@ function proposalPrompt(ctx, name, fork, advocate, built) {
     'HOW. In a directory of your own, minted with `mktemp -d` under `' + ctx.scratch + '`: clone commit ' + built.candidate.sha + ' (`git clone` this repository there and check that commit out, detached — never the working tree, never a branch of this repository), apply the proposal as written, build it there (`cargo build --release --locked`, a target directory of its own), and run every next step the proposal names, each as printed, each exit status read bare. Where the proposal names a step you cannot run, say so in `undriven`, with why. For the BEFORE of each step drive the candidate itself: `shasum -a 256 ' + built.candidate.binary + '` must print ' + built.candidate.sha256 + ', and you return that hash as `asserted_sha256`.',
     'WHAT YOU RETURN. One entry of `steps` per next step: the command, what it printed and exited, and `agrees` — whether that is what the advocate reported. `holds` is true only when every step ran as the proposal says. What you hit that is not this proposal goes in `left_open`.',
     'WHAT YOU MAY TOUCH. Nothing in this repository: no edit, no commit, no branch, no push, no install. One file reaches it — your report, written with `dev/stabilize-record report ' + stageFlags(ctx) + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + '` as a single here-document whose last line is `<!-- end of report -->`; return the path it prints as `report`. A refusal about your text you repair in the text; any other refusal you return as your halt, verbatim. Never `rm -rf` a path built from variables, and never pipe a command whose exit status you read.',
+    NEVER,
   ].join('\n')
 }
 // The cross-model pass — everything this script says about it is in these three functions,
@@ -1178,6 +1294,7 @@ function crossModelPrompt(ctx, name, unit) {
     'WHAT ITS CLAIMS ARE. Leads, never findings: a claim one model makes that nobody reproduced is a lead, and the row\'s reconciler drives every one. Return each as a finding with `lead: true`, its door in the exact words of the list below (or named plainly and marked unlisted), the clause it would break as the claim reads, and `repro` = the heading you give the claim in your report. A pass that returned nothing usable is a halt, with its output as the evidence.',
     'The door list:\n' + doorList(unit.doors),
     'WHAT YOU MAY TOUCH. Nothing in this repository: no edit, no commit, no branch, no push, no install. One file reaches it — your report, the pass\'s output whole and your list of leads, written with `dev/stabilize-record report ' + stageFlags(ctx) + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + '` as a single here-document whose last line is `<!-- end of report -->`; return the path it prints as `report`. A refusal about your text you repair in the text; any other refusal you return as your halt, verbatim. Never `rm -rf` a path built from variables, and never pipe a command whose exit status you read.',
+    NEVER,
   ].join('\n')
 }
 function fixerPrompt(ctx, launch, name, area, branch) {
@@ -1483,7 +1600,9 @@ function selfTest() {
   check('the preflight is handed the previous release as data', prompts.preflight.includes('version `1.0.0-rc.24`') && prompts.preflight.includes('built from commit ' + 'e'.repeat(40)) && prompts.preflight.includes('the tip of `fix/rc24-tier1`'))
   check('a round\'s base is the earlier candidate, or the previous release\'s commit', prompts.scope.includes('base = ' + 'd'.repeat(40)) && scopePrompt(ctx, launcher(ctx), 'scope', { sha: 'c'.repeat(40), label: 'c1', base: null, earlier: false, scope: null, previous: previousOf({ facts }), fallback: 'everything' }).includes('base = ' + 'e'.repeat(40) + ' (the previous release, 1.0.0-rc.24'))
   check('a triage is told what the ledger\'s rows are', triagePrompt(ctx, launcher(ctx), 'triage-p1', handed, 1).includes('The source `' + LEDGER_SOURCE + '` is no reporter') && !prompts.triage.includes('is no reporter'))
-  check('a finishing preflight builds the commit the round tested', preflightPrompt(ctx, launcher(ctx), 'preflight', { build: true, image: false, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', binary: 'x', checks: [], crossModel: false, previous: previousOf({ facts }), tested: true }).includes('the commit round 2 tested, an ancestor of `fix/rc24-tier1`'))
+  const finishing = preflightPrompt(ctx, launcher(ctx), 'preflight', { build: true, image: false, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', binary: 'x', checks: [], crossModel: false, previous: previousOf({ facts }), tested: true })
+  check('a finishing preflight builds the commit the round tested, and is told that it is not HEAD', finishing.includes('the commit round 2 tested, an ancestor of `fix/rc24-tier1`') && finishing.includes('THE CANDIDATE IS NOT `HEAD` HERE') && finishing.includes('`git merge-base --is-ancestor ' + 'c'.repeat(40) + ' HEAD` must hold') && !prompts.preflight.includes('NOT `HEAD`'))
+  check('a fork is recorded with the verdict it rides on, and with no other entry', JSON.stringify(triageRecord(ctx, [{ key: 'f-1', new: false, grade: 'breaks', verdict: 'confirmed', regression: false, fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }, { key: 'f-2', new: false, grade: 'breaks', fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }]).triage) === JSON.stringify([{ key: 'f-1', grade: 'breaks', verdict: 'confirmed', regression: false, fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }, { key: 'f-2', grade: 'breaks' }]))
   check('a report line gives the flags', launch.line('scope') === reportLine(ctx, 'scope') && reportLine(ctx, 'scope').startsWith('REPORT: --run rc24-tier1 --round 2 --stage fix --cycle 3 --reporter scope --attempt 4 ') && reportLine(Object.assign({}, ctx, { stage: 'test' }), 'x').startsWith('REPORT: --run rc24-tier1 --round 2 --stage test --reporter x --attempt 4 '))
   check('a binary line gives the path and the hash', binaryLine(built, true).startsWith('BINARY: candidate `/tmp/scratch-1/bin/c2/jigc` sha256 ' + 'b'.repeat(64)) && binaryLine(built, true).includes('jigc-trial:c2') && !binaryLine(built, false).includes('jigc-trial:c2'))
   check('every chain is staffed from the roles', Object.keys(CHAINS).concat(['fix-diff']).every((kind) => (CHAINS[kind] || FIX_AUDIT).every((stepList) => stepList.every((s) => ROLES[s.role] && isSlug(s.as) && !s.as.includes('-') && (s.hands || []).every((h) => (CHAINS[kind] || FIX_AUDIT).some((earlier) => earlier.some((e) => e.as === h)))))))
@@ -1499,13 +1618,15 @@ function selfTest() {
   check('the review row without the opt-in, and with it', asOf(chainOf('review-row', false)) === 'source driver reconciler<source+driver' && asOf(chainOf('review-row', true)) === 'source driver crossmodel reconciler<source+driver+crossmodel' && chainOf('no-such-kind', true).length === 0)
   // Every git step is ONE command of the tool, and its prompt is that command and "relay
   // its line" — all but the re-cut of a part, which is the list of commands it was.
-  const steps = { 'git-state': gitStatePrompt(base), state: statePrompt(base, 't'), 'find-round': findRoundPrompt(fix, 1), 'open-round': openRoundPrompt(fix, 1, 'fix/rc24-tier1-r1'), push: pushPrompt(fix, 'fix/rc24-tier1-r1'), land: landPrompt(fix, 1, 'fix/rc24-tier1-r1'), 'round-commits': roundCommitsPrompt(fix, 1, 'fix/rc24-tier1-r1'), carry: carryPrompt(fix, 1, ['a'.repeat(40)], null), 'sync-main': syncMainPrompt('rc24-tier1'), 'check-reports': checkReportsPrompt(ctx, ['x']), record: recordCommitPrompt(fix, 'fix/rc24-tier1', '/tmp/scratch-1/record/x/gate.txt', { calls: 3, checks: 2 }) }
+  const steps = { begin: beginPrompt(Object.assign({}, ctx, { stage: 'test' }), 'c'.repeat(40)), 'git-state': gitStatePrompt(base), state: statePrompt(base, 't'), 'find-round': findRoundPrompt(fix, 1), 'open-round': openRoundPrompt(fix, 1, 'fix/rc24-tier1-r1'), push: pushPrompt(fix, 'fix/rc24-tier1-r1'), land: landPrompt(fix, 1, 'fix/rc24-tier1-r1'), 'round-commits': roundCommitsPrompt(fix, 1, 'fix/rc24-tier1-r1'), carry: carryPrompt(fix, 1, ['a'.repeat(40)], null), 'sync-main': syncMainPrompt('rc24-tier1'), 'check-reports': checkReportsPrompt(ctx, ['x']), record: recordCommitPrompt(fix, 'fix/rc24-tier1', '/tmp/scratch-1/record/x/gate.txt', { calls: 3, checks: 2 }) }
   const recut = carryPrompt(fix, 1, ['a'.repeat(40)], 'fix/rc24-tier1-r1-part1')
   for (const act of Object.keys(steps)) {
     const numbered = steps[act].split('\n')
     check('the `' + act + '` step is one command of the tool, and its line relayed', numbered.length === 3 && numbered[0].startsWith('GIT STEP — ') && numbered[0].endsWith(STEP_RULES) && numbered[1].startsWith('1. `' + STEP_TOOL + ' ' + act + ' ') && numbered[1].endsWith('`') && numbered[2].startsWith('2. Report status = ran and line = ') && !/`git (?!stash|status|branch --show-current)/.test(steps[act]))
   }
   check('the names a step hands the tool are the harness\'s', steps['git-state'].includes('`' + STEP_TOOL + ' git-state --stage test --loop fix/rc24-tier1 --rounds fix/rc24-tier1-r --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates`') && steps.land.includes(' land --loop fix/rc24-tier1 --branch fix/rc24-tier1-r1 --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates --log DECISIONS.md --log implementation/project-history.md`') && steps.carry.endsWith(STEP_RULES + '\n1. `' + STEP_TOOL + ' carry --loop fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates -- ' + 'a'.repeat(40) + '`\n' + steps.carry.split('\n')[2]) && steps['sync-main'].includes(' sync-main --loop fix/rc24-tier1 --log DECISIONS.md --log implementation/project-history.md`') && steps.state.includes(' state --run rc24-tier1 --scratch /tmp/scratch-1 --tag t`') && steps['find-round'].includes(' find-round --prefix fix/rc24-tier1-r1`') && steps.push.includes(' push --branch fix/rc24-tier1-r1`') && steps.record.includes(' record --branch fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --gate /tmp/scratch-1/record/x/gate.txt --calls 3 --checks 2`'))
+  check('an attempt is begun under the script\'s own reporter, on the commit it runs on', steps.begin.includes('`' + STEP_TOOL + ' begin --run rc24-tier1 --round 2 --stage test --attempt 4 --reporter ' + ATTEMPT + ' --commit ' + 'c'.repeat(40) + ' --scratch /tmp/scratch-1`') && beginPrompt(ctx, 'c'.repeat(40)).includes(' begin --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 --reporter '))
+  check('no agent can be named as the attempt\'s marker is', isSlug(ATTEMPT) && !ATTEMPT.includes('-') && ATTEMPT !== LEDGER_SOURCE && !Object.keys(CHAINS).some((kind) => CHAINS[kind].some((stepList) => stepList.some((step) => reporterName(['x', step.as]) === ATTEMPT))) && !['preflight', 'scope'].includes(ATTEMPT))
   check('the re-cut of a part is still the list of commands it was', recut.startsWith('GIT STEP — re-cut a part of round 1 of `rc24-tier1` as a branch of its own, `fix/rc24-tier1-r1-part1`') && recut.includes(CARRY_RULES) && recut.includes('`git cherry-pick -x <sha>`') && recut.includes('`git push origin fix/rc24-tier1-r1-part1`') && !recut.includes(STEP_TOOL) && recut.split('\n').length === 8)
   const gitPrompts = Object.keys(steps).map((act) => steps[act]).concat([recut])
   check('no prompt names the tool without the opt-in', Object.keys(prompts).filter((role) => names.test(prompts[role])).join(' ') === 'crossModel' && !names.test(rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).text) && !names.test(gitPrompts.join('\n')))
@@ -1517,6 +1638,29 @@ function selfTest() {
   check('a cross-model reporter that left no report is not held to one', dropping.names.join(' ') === 'row-3-source')
   check('a round with no scope of its own takes the run\'s default, as its record names it', scopeText(undefined, 'delta').endsWith('the derived delta') && scopeText(null, 'everything').includes('everything') && scopeText('delta', 'everything') === 'the derived delta')
   check('a driving chain role is handed the binary', unitPrompt(ctx, launcher(ctx), 'x', CHAINS['trial-arm'][1][0], unit, built, []).includes('jigc-trial:c2'))
+
+  // How an agent can end: what the report check says decides, never what a return claims.
+  const checked = (check) => reportsRead({ status: 'checked', check })
+  check('a report check that holds names nothing missing', JSON.stringify(checked({ ok: true, missing: [], extra: [] })) === '{"missing":[]}')
+  check('a launched reporter with no report is named, and is no fault', JSON.stringify(checked({ ok: false, missing: ['verify-p1-f-1'], extra: [] })) === '{"missing":["verify-p1-f-1"]}')
+  check('a file nobody launched is a fault that names it', isText(checked({ ok: false, missing: [], extra: ['notes.md'] }).fault) && checked({ ok: false, missing: ['a'], extra: ['notes.md'] }).fault.includes('notes.md') && checked({ ok: false, missing: ['a'], extra: ['x'] }).missing === undefined)
+  check('a report check that cannot be read is a fault, and transient only when nothing came back', reportsRead(null).transient === true && isText(reportsRead(null).fault) && reportsRead({ status: 'halted' }).transient === false && isText(reportsRead({ status: 'checked', check: { ok: true } }).fault) && isText(reportsRead({ status: 'checked', check: 'ok' }).fault))
+  check('how a reporter that did not report ended', endingOf(null) === 'returned nothing' && endingOf({ status: 'halted', halt: { root_cause: 'no rig' } }) === 'halted (no rig)' && endingOf({ status: 'halted' }) === 'halted')
+  const twoUnits = () => [
+    { item: 'a', status: 'green', reason: null, crossModel: 'ran', reporters: [{ as: 'source', name: 'a-source', crossModel: false, result: { status: 'reported', findings: [1] }, report: 'a.md' }, { as: 'crossmodel', name: 'a-crossmodel', crossModel: true, result: { status: 'reported', findings: [2] }, report: null }] },
+    { item: 'b', status: 'void', reason: 'its `drive` step returned nothing', crossModel: null, reporters: [{ as: 'drive', name: 'b-drive', crossModel: false, result: null, report: null }] },
+  ]
+  const lostCross = twoUnits()
+  unreported(lostCross, ['a-crossmodel', 'b-drive'])
+  check('a cross-model pass with no report is void for that pass, and never voids its item', lostCross[0].status === 'green' && lostCross[0].crossModel === 'void' && lostCross[0].reporters[1].result === null && lostCross[0].reporters[0].result.findings.length === 1 && lostCross[1].reason === 'its `drive` step returned nothing')
+  const lostSource = twoUnits()
+  unreported(lostSource, ['a-source'])
+  check('a step of an item\'s own chain with no report voids the item, and its result counts for nothing', lostSource[0].status === 'void' && lostSource[0].reason === 'its `source` step returned and left no report' && lostSource[0].reporters[0].result === null && lostSource[0].crossModel === 'ran')
+  const kept = twoUnits()
+  unreported(kept, [])
+  check('a reporter whose report is there keeps what it returned', JSON.stringify(kept) === JSON.stringify(twoUnits()))
+  check('the roles with no definition are handed the paragraph every definition carries', prompts.proposal.endsWith('\n' + NEVER) && prompts.crossModel.endsWith('\n' + NEVER) && NEVER.startsWith('**Never push to or merge into `main`') && Object.keys(prompts).filter((role) => prompts[role].includes(NEVER)).join(' ') === 'proposal crossModel')
+  check('a role is handed the binary exactly when it is held to the hash it asserts', Object.keys(ROLES).every((role) => ROLES[role].drives === (ROLES[role].labels.includes('binary') || role === 'proposal')) && ROLES.review.drives && carries(prompts.review, 'binary'))
 
   // The reporters: every name once, and the check names every one of them.
   check('the reporter list', launch.names.join(' ') === 'preflight scope row-3-source row-3-reconciler triage-p1 verify-p1-f-1 advocate-f-1 proposal-f-1 row-3-crossmodel fix-area-1')
@@ -1719,6 +1863,16 @@ async function readState() {
   return { error: why }
 }
 
+// settleReports — the stage's reports, held to every reporter launched so far, by the one
+// check that can see a file. A launched reporter with no report is TAKEN OFF THE LIST and
+// named in `missing`: the record is not held to a report that does not exist, and the
+// caller says what follows for that reporter. A file nobody launched is a fault.
+async function settleReports(ctx, launch, label, phaseTitle) {
+  const read = reportsRead(await toolStep(label, phaseTitle, 'check-reports', checkReportsPrompt(ctx, launch.names)))
+  for (const name of read.missing || []) launch.drop(name)
+  return read
+}
+
 // recordFault — why a record is NOT accepted as recorded, or null. What is accepted is the
 // commit step's own line — held to its hash by `readStep` — and nothing an agent says of
 // it: the commit, the gate check that holds, and ONE RESULT PER CHECK THIS SCRIPT COMPOSED,
@@ -1762,6 +1916,16 @@ async function finishRecord(gs) {
   return Object.assign({ status: 'recorded', stage: v.stage, run: v.run, pending, record: recorded.result.commit, gate: recorded.result.gate, message: 'a record step of an earlier invocation had applied its batch and not committed it: this invocation ran the gate on it, committed and pushed it, and did nothing else — `next` names the step.' }, nextOf(read.state))
 }
 
+// beginAttempt — AN ATTEMPT BEGINS ON RECORD: before any agent of it is launched, one step
+// holds its round and its number to the state's position once more and writes the
+// attempt's marker, under a reporter of this script's own. Returns the halt, or null.
+async function beginAttempt(ctx, launch, sha) {
+  launch.add([ATTEMPT])
+  const begun = await toolStep('begin', 'State', 'begin', beginPrompt(ctx, sha))
+  if (!begun || begun.status !== 'begun' || String(begun.attempt) !== String(ctx.attempt)) return gitHalt('begin', begun, 'attempt ' + ctx.attempt + ' of the `' + ctx.stage + '` stage, round ' + ctx.round + ', was not put on record, and no agent of it was launched')
+  return null
+}
+
 // findingLines — a reporter's structured findings as the lines triage is handed.
 function findingLines(findings) {
   return findings.map((f) => f.id + ' — ' + f.title + ' · door: ' + f.door + ' · clause: ' + f.clause + (f.severity ? ' · severity: ' + f.severity : '') + (f.lead ? ' · a lead' : '') + ' · repro: ' + f.repro)
@@ -1771,48 +1935,45 @@ function leftOpenSource(reporter, report, leftOpen) {
 }
 
 // runUnits — the chains of a list of units, in parallel under the runtime's cap. Returns,
-// per unit, its status (`green` once every step of its chain reported; `void` when one did
-// not) and every reporter it launched with what that reporter returned.
+// per unit, its status (`green` once every step of its chain reported; `void`, with the
+// step and how it ended, when one did not) and every reporter it launched with what that
+// reporter returned. Whether a reporter's REPORT is there is not known here: the caller
+// has it checked (`settleReports`), and a result with no report counts for nothing.
 async function runUnits(ctx, launch, built, units, phaseTitle) {
   const out = await parallel(units.map((unit) => async () => {
     const done = []
-    let status = 'green'
+    let reason = null
     let crossModel = null
     for (const stepList of unit.chain) {
       const named = stepList.map((step) => ({ step, name: launch.add([unit.item, step.as]) }))
       const promptOf = (step, name) => (step.crossModel ? crossModelPrompt(ctx, name, unit) : unitPrompt(ctx, launch, name, step, unit, built, (step.hands || []).map((h) => ({ as: h, report: (done.find((d) => d.as === h) || {}).report }))))
       const results = await parallel(named.map(({ step, name }) => () => roleStep(step.role, unit.item + ':' + step.as, phaseTitle, promptOf(step, name), UNIT_SCHEMA)))
-      let stops = false
       named.forEach(({ step, name }, i) => {
         const r = results[i]
         const reported = !!r && r.status === 'reported'
-        if (step.crossModel) {
-          // The cross-model pass that did not run is void FOR THAT PASS: the unit goes on,
-          // and a reporter that left no report is not one the record is held to.
-          crossModel = reported ? 'ran' : 'void'
-          if (!r || !r.report) return launch.drop(name)
-        } else if (!reported) {
-          stops = true
-        }
-        done.push({ as: step.as, name, drives: ROLES[step.role].drives, result: reported || !step.crossModel ? r : null, report: r ? r.report : null })
+        // The cross-model pass that did not run is void FOR THAT PASS, however it ended:
+        // the unit goes on with its own passes, and nothing of the stage waits for it.
+        if (step.crossModel) crossModel = reported ? 'ran' : 'void'
+        else if (!reported && !reason) reason = 'its `' + step.as + '` step ' + endingOf(r)
+        done.push({ as: step.as, name, drives: ROLES[step.role].drives, crossModel: !!step.crossModel, result: reported || !step.crossModel ? r : null, report: r && r.report ? r.report : null })
       })
-      if (stops) {
-        status = 'void'
-        break
-      }
+      if (reason) break
     }
-    return { item: unit.item, clause: unit.clause, status, crossModel, reporters: done }
+    return { item: unit.item, clause: unit.clause, status: reason ? 'void' : 'green', reason, crossModel, reporters: done }
   }))
-  return units.map((unit, i) => out[i] || { item: unit.item, clause: unit.clause, status: 'void', crossModel: null, reporters: [] })
+  return units.map((unit, i) => out[i] || { item: unit.item, clause: unit.clause, status: 'void', reason: 'its chain did not run', crossModel: null, reporters: [] })
 }
-
 // triagePasses — triage of every finding, verify-real on everything graded breaks or
 // unclear, and per contested finding an advocate and an independent drive; then again over
 // what those agents left open. Returns the entries by key, with the verdicts beside them.
+// AFTER EVERY PASS THE REPORTS ARE CHECKED, and a verdict, a case or a drive counts only
+// with its report: the next pass's triage is handed the reporters that have one.
 async function triagePasses(ctx, launch, built, sources, forksIn) {
   const entries = []
   const forks = forksIn.slice()
   const faults = []
+  const unverified = []
+  const unreportedBy = []
   let pending = sources.filter((s) => s.findings.length)
   let handed = 0
   for (let pass = 1; pending.length; pass++) {
@@ -1824,107 +1985,128 @@ async function triagePasses(ctx, launch, built, sources, forksIn) {
     if (!t || t.status !== 'graded') return { fault: t ? 'triage halted: ' + ((t.halt && t.halt.root_cause) || 'no reason given') : 'triage returned no result', transient: !t, halt: t ? t.halt : null }
     const counted = (t.counts.findings_in || []).reduce((n, c) => n + c.count, 0)
     if (counted !== count || t.entries.length + t.counts.merged !== count) return { fault: 'triage pass ' + pass + ' was handed ' + count + ' finding(s) and accounts for ' + counted + ' in, ' + t.entries.length + ' entries and ' + t.counts.merged + ' merged: a finding in no entry and in no named merge is lost, and nothing is recorded on that' }
+    const strangers = t.entries.filter((e) => !isSlug(e.key)).map((e) => JSON.stringify(e.key))
+    if (strangers.length) return { fault: 'triage returned the key ' + strangers.join(', ') + ', which is not a ledger key' }
+    // One finding, one key, one entry: two entries under one key are two findings merged
+    // without a word, or one finding graded twice — and nothing says which.
+    const twice = t.entries.map((e) => e.key).filter((key, i, all) => all.indexOf(key) !== i)
+    if (twice.length) return { fault: 'triage pass ' + pass + ' returned more than one entry under the key ' + twice.filter((key, i) => twice.indexOf(key) === i).join(', ') + ': one finding has one entry, and a merge is named — nothing is recorded on that' }
     for (const e of t.entries) {
-      if (!isSlug(e.key)) return { fault: 'triage returned the key ' + JSON.stringify(e.key) + ', which is not a ledger key' }
       const held = entries.find((x) => x.key === e.key)
       if (held) Object.assign(held, e, { new: held.new })
       else entries.push(Object.assign({}, e))
     }
     pending = []
-    if (pass > VERIFY_PASSES) {
-      log('NOT VERIFIED: pass ' + pass + ' is past the ' + VERIFY_PASSES + ' passes that are verified — its entries get their rows, and those graded breaks or unclear stay unverified: the state\'s `next` then says that the round\'s triage is not finished (`triage`), and names them')
-      break
+    const verified = []
+    const driven = []
+    const toVerify = pass > VERIFY_PASSES ? [] : t.entries.filter((e) => e.grade === 'breaks' || e.grade === 'unclear')
+    if (pass > VERIFY_PASSES) log('NOT VERIFIED: pass ' + pass + ' is past the ' + VERIFY_PASSES + ' passes that are verified — its entries get their rows, and those graded breaks or unclear stay unverified: the state\'s `next` then says that the round\'s triage is not finished (`triage`), and names them')
+    if (toVerify.length) {
+      const hints = {}
+      for (const h of t.to_verify || []) hints[h.key] = h.redrive
+      const unnamed = toVerify.filter((e) => !forkNames('p' + pass, e.key)).map((e) => e.key)
+      if (unnamed.length) return { fault: 'no reporter name can be made for the verifier of ' + unnamed.join(', ') + ': the key is too long to carry a prefix inside ' + SLUG_MAX + ' characters' }
+      const named = toVerify.map((e) => ({ e, name: launch.add(['verify', 'p' + pass, e.key]) }))
+      log('verify-real, pass ' + pass + ': ' + named.length + ' finding(s)')
+      const verdicts = await parallel(named.map(({ e, name }) => () => roleStep('verify', 'verify:' + e.key, 'Triage', verifyPrompt(ctx, launch, name, e, hints[e.key], built), VERIFY_SCHEMA)))
+      named.forEach(({ e, name }, i) => {
+        const r = verdicts[i]
+        if (!r || r.status !== 'verified' || !r.verdict || r.key !== e.key) {
+          unverified.push({ key: e.key, why: 'its verifier ' + (!r || r.status !== 'verified' ? endingOf(r) : !r.verdict ? 'returned no verdict' : 'returned a verdict for `' + r.key + '`, another finding') })
+          return
+        }
+        const ran = r.ran_on || {}
+        // The previous release's binary is driven with every confirmed verdict — that is
+        // where the regression fact comes from, true or false — so its hash is held there.
+        if (r.asserted_sha256 !== built.candidate.sha256 || (r.verdict === 'confirmed' && ran.previous !== built.previous.sha256)) {
+          faults.push('the verifier of `' + e.key + '` asserted ' + JSON.stringify({ candidate: r.asserted_sha256 == null ? null : r.asserted_sha256, previous: ran.previous == null ? null : ran.previous }) + ', not the binaries it was handed')
+          return
+        }
+        if (r.verdict === 'confirmed' && typeof r.regression !== 'boolean') {
+          faults.push('the verifier of `' + e.key + '` confirmed it and did not say whether it is a regression')
+          return
+        }
+        verified.push({ e, name, r })
+      })
+      for (const { e, r } of verified.filter((v) => v.r.contested)) driven.push(await driveFork(ctx, launch, built, { key: e.key, kind: 'contested', door: e.door, clause: e.clause, repro: e.repro, statement: 'the verifier found the finding to contest a settled decision — ' + (r.basis || '(no basis returned)') }, 'p' + pass))
     }
-    const hints = {}
-    for (const h of t.to_verify || []) hints[h.key] = h.redrive
-    const toVerify = t.entries.filter((e) => e.grade === 'breaks' || e.grade === 'unclear')
-    if (!toVerify.length) continue
-    const unnamed = toVerify.filter((e) => !forkNames('p' + pass, e.key)).map((e) => e.key)
-    if (unnamed.length) return { fault: 'no reporter name can be made for the verifier of ' + unnamed.join(', ') + ': the key is too long to carry a prefix inside ' + SLUG_MAX + ' characters' }
-    const named = toVerify.map((e) => ({ e, name: launch.add(['verify', 'p' + pass, e.key]) }))
-    log('verify-real, pass ' + pass + ': ' + named.length + ' finding(s)')
-    const verdicts = await parallel(named.map(({ e, name }) => () => roleStep('verify', 'verify:' + e.key, 'Triage', verifyPrompt(ctx, launch, name, e, hints[e.key], built), VERIFY_SCHEMA)))
-    const contested = []
-    named.forEach(({ e, name }, i) => {
-      const r = verdicts[i]
+    // THE REPORTS OF THIS PASS, CHECKED — before anything it established is taken.
+    const settled = await settleReports(ctx, launch, 'check-reports:p' + pass, 'Triage')
+    if (settled.fault) return { fault: settled.fault, transient: !!settled.transient, check: settled.check || null }
+    for (const name of settled.missing) unreportedBy.push(name)
+    if (settled.missing.includes(tName)) return { fault: 'triage pass ' + pass + ' returned its grades and left no report: nothing is recorded on a grader\'s word with no report behind it' }
+    for (const { e, name, r } of verified) {
+      const fork = driven.find((d) => d.fork.key === e.key)
+      // A fork is whole or it is none: the advocate's case, the independent drive, and
+      // both reports. Where one is missing the finding stays unverified, and the next
+      // triage verifies it and drives the fork again.
+      const lacking = settled.missing.includes(name) ? 'its verifier returned a verdict and left no report'
+        : !fork ? null
+          : !fork.argued || settled.missing.includes(fork.aName) ? 'it is contested, and its advocate ' + (fork.argued ? 'left no report' : endingOf(fork.fork.advocate))
+            : !fork.drove || settled.missing.includes(fork.pName) ? 'it is contested, and the independent drive of the advocate\'s proposal ' + (fork.drove ? 'left no report' : endingOf(fork.fork.independent_drive))
+              : null
+      if (fork && fork.fault) faults.push(fork.fault)
+      // What an agent left open is triaged whatever became of the verdict beside it.
+      if (!settled.missing.includes(name) && r.left_open && r.left_open.length) pending.push(leftOpenSource(name, r.report, r.left_open))
+      for (const source of fork ? fork.leftOpen.filter((x) => !settled.missing.includes(x.reporter)) : []) pending.push(source)
+      if (lacking) {
+        unverified.push({ key: e.key, why: lacking })
+        continue
+      }
       const entry = entries.find((x) => x.key === e.key)
-      if (!r || r.status !== 'verified' || !r.verdict) {
-        log('verify-real left `' + e.key + '` without a verdict' + (r && r.halt ? ': ' + r.halt.root_cause : '') + ' — it stays unverified')
-        return
-      }
-      const ran = r.ran_on || {}
-      if (r.asserted_sha256 !== built.candidate.sha256 || (r.verdict === 'confirmed' && r.regression === true && ran.previous !== built.previous.sha256)) {
-        faults.push('the verifier of `' + e.key + '` asserted ' + JSON.stringify({ candidate: r.asserted_sha256 == null ? null : r.asserted_sha256, previous: ran.previous == null ? null : ran.previous }) + ', not the binaries it was handed')
-        return
-      }
-      if (r.verdict === 'confirmed' && typeof r.regression !== 'boolean') {
-        faults.push('the verifier of `' + e.key + '` confirmed it and did not say whether it is a regression')
-        return
-      }
       entry.verdict = r.verdict
       if (r.verdict === 'confirmed') entry.regression = r.regression
       entry.basis = r.basis
-      if (r.left_open && r.left_open.length) pending.push(leftOpenSource(name, r.report, r.left_open))
-      if (r.contested) contested.push({ key: e.key, kind: 'contested', door: e.door, clause: e.clause, repro: e.repro, statement: 'the verifier found the finding to contest a settled decision — ' + (r.basis || '(no basis returned)') })
-    })
-    for (const fork of contested) {
-      const driven = await driveFork(ctx, launch, built, fork, 'p' + pass)
-      forks.push(driven.fork)
-      pending = pending.concat(driven.leftOpen)
-      if (driven.fault) faults.push(driven.fault)
+      if (fork) {
+        entry.fork = { kind: fork.fork.kind, case: fork.fork.advocate.verdict, drive: fork.fork.independent_drive.holds ? 'holds' : 'differs' }
+        forks.push(fork.fork)
+      }
     }
+    if (pass > VERIFY_PASSES) break
   }
-  return { entries, forks, faults, handed }
+  for (const left of unverified) log('NOT VERIFIED: `' + left.key + '` — ' + left.why + '. It stays unverified: the state counts the pass, and after one more the finding is the human\'s')
+  return { entries, forks, faults, handed, unverified, unreportedBy }
 }
 
 // driveFork — ruling 5: a contested fix, or one that needs a new mechanism, goes to the
 // human with a robust-advocate's case, and the proposal is driven before the human sees it —
 // by the advocate, as its definition has it, and then by an agent that is not the advocate.
+// `argued` and `drove` say whether each of the two returned what a fork is made of.
 async function driveFork(ctx, launch, built, fork, tag) {
   const aName = launch.add(['advocate', tag, fork.key])
   const adv = await roleStep('advocate', 'advocate:' + fork.key, 'Triage', advocatePrompt(ctx, launch, aName, fork, built), ADVOCATE_SCHEMA)
-  const out = { fork: Object.assign({}, fork, { advocate: adv, independent_drive: null, driven_by: null }), leftOpen: [], fault: null }
-  if (!adv || adv.status !== 'argued') return out
+  const out = { fork: Object.assign({}, fork, { advocate: adv, independent_drive: null, driven_by: null }), aName, pName: null, argued: !!adv && adv.status === 'argued', drove: false, leftOpen: [], fault: null }
+  if (!out.argued) return out
   if (adv.asserted_sha256 !== built.candidate.sha256) out.fault = 'the advocate of `' + fork.key + '` asserted ' + JSON.stringify(adv.asserted_sha256) + ', not the candidate\'s hash'
   if (adv.left_open && adv.left_open.length) out.leftOpen.push(leftOpenSource(aName, adv.report, adv.left_open))
-  const pName = launch.add(['proposal', tag, fork.key])
-  const drive = await roleStep('proposal', 'proposal:' + fork.key, 'Triage', proposalPrompt(ctx, pName, fork, adv, built), PROPOSAL_SCHEMA)
+  out.pName = launch.add(['proposal', tag, fork.key])
+  const drive = await roleStep('proposal', 'proposal:' + fork.key, 'Triage', proposalPrompt(ctx, out.pName, fork, adv, built), PROPOSAL_SCHEMA)
   out.fork.independent_drive = drive
   out.fork.driven_by = ROLES.proposal.agentType
-  if (drive && drive.status === 'driven') {
+  out.drove = !!drive && drive.status === 'driven'
+  if (out.drove) {
     if (drive.asserted_sha256 !== built.candidate.sha256) out.fault = 'the independent drive of `' + fork.key + '` asserted ' + JSON.stringify(drive.asserted_sha256) + ', not the candidate\'s hash'
-    if (drive.left_open && drive.left_open.length) out.leftOpen.push(leftOpenSource(pName, drive.report, drive.left_open))
+    if (drive.left_open && drive.left_open.length) out.leftOpen.push(leftOpenSource(out.pName, drive.report, drive.left_open))
   }
   return out
-}
-
-// What a stage's triage becomes in the record: the new rows, and the round's triage entries.
-function triageRecord(ctx, entries) {
-  return {
-    rows: entries.filter((e) => e.new).map((e) => ({ key: e.key, doctype: e.doctype, round: ctx.round, source: e.source, door: e.door, clause: e.clause, repro: e.repro })),
-    triage: entries.map((e) => {
-      const t = { key: e.key, grade: e.grade }
-      if (e.grade === 'out-of-scope') t.bound = e.bound
-      if (e.verdict) t.verdict = e.verdict
-      if (e.verdict === 'confirmed') t.regression = e.regression
-      return t
-    }),
-  }
 }
 
 // preflightOf — one preflight call, and what must hold of its return before anything drives it.
 async function preflightOf(ctx, launch, parts, plan, phaseTitle) {
   const name = launch.add(parts)
   const r = await roleStep('preflight', name, phaseTitle, preflightPrompt(ctx, launch, name, plan), PREFLIGHT_SCHEMA)
-  if (!r || r.status !== 'ready') return { fault: r ? 'the preflight halted: ' + ((r.halt && r.halt.root_cause) || 'no reason given') : 'the preflight returned no result', transient: !r, halt: r ? r.halt : null }
+  if (!r || r.status !== 'ready') return { name, fault: r ? 'the preflight halted: ' + ((r.halt && r.halt.root_cause) || 'no reason given') : 'the preflight returned no result', transient: !r, halt: r ? r.halt : null }
   if (plan.build) {
     const c = r.candidate || {}
     if (c.sha !== plan.sha || !SHA256_RE.test(String(c.sha256 || '')) || c.binary !== plan.binary) return { fault: 'the preflight did not return the candidate it was asked for: ' + JSON.stringify(c) }
+    // The posture every driving agent relies on: with the binary's directory first on
+    // PATH, a bare `jigc` IS that binary — else a route the binary prints runs another.
+    if (c.path_check !== plan.binary) return { fault: 'the preflight did not show that a bare `jigc` resolves to the candidate\'s binary: `command -v jigc` printed ' + JSON.stringify(c.path_check == null ? null : c.path_check) + ', and the binary is ' + plan.binary }
     if (!r.previous || !SHA256_RE.test(String(r.previous.sha256 || '')) || !r.previous.binary) return { fault: 'the preflight returned no previous release\'s binary: ' + JSON.stringify(r.previous || null) }
     if (r.previous.version !== plan.previous.version) return { fault: 'the preflight returned the binary of ' + JSON.stringify(r.previous.version) + ', and the previous release the run\'s record names is ' + plan.previous.version + ': every regression fact would be measured against the wrong release' }
   }
-  if (plan.image && !(r.image && r.image.verified && r.image.tag)) return { fault: 'the trial image is not verified: ' + JSON.stringify(r.image || null) }
-  return { result: r }
+  if (plan.image && !(r.image && r.image.verified && r.image.tag)) return { name, fault: 'the trial image is not verified: ' + JSON.stringify(r.image || null) }
+  return { name, result: r }
 }
 
 function attached(state) {
@@ -1980,9 +2162,8 @@ async function ruleTheRun(state, checkedOut) {
 // and recorded, and NO INSTRUMENT RUNS — every report of the round is on record already.
 // Which stage, which round and which attempt is the position's (`triage: true`), read from
 // committed state; nothing here is an argument. `tip` is the commit the verifiers drive.
-async function finishTriage(ctx, state, tip, branch) {
+async function finishTriage(ctx, launch, state, tip, branch) {
   phase('Triage')
-  const launch = launcher(ctx)
   const sources = ledgerSource(v.run, state)
   const binary = v.scratch + '/bin/' + tip.label + '.a' + ctx.attempt + '/jigc'
   log('round ' + ctx.round + ': the ' + ctx.stage + ' stage left its triage unfinished — ' + (state.untriaged || []).length + ' row(s) are graded and verified now, attempt ' + ctx.attempt + '; no instrument runs')
@@ -1992,6 +2173,9 @@ async function finishTriage(ctx, state, tip, branch) {
   const tri = await triagePasses(ctx, launch, built, sources, [])
   if (tri.fault) return { halted: halt('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null, branch }) }
   if (tri.faults.length) return { halted: halt('binary', tri.faults.join('; '), { branch }) }
+  // The lap stands on its preflight as a stage does: binaries with no report behind them
+  // are no evidence, whatever was verified on them.
+  if (tri.unreportedBy.includes(pre.name)) return { halted: halt('reports', 'the preflight of this lap returned and left no report: what was driven on its binaries has nothing on record behind it', { branch, launched: launch.names }) }
   phase('Record')
   const rec = triageRecord(ctx, tri.entries)
   const dir = v.scratch + '/record/triage-r' + ctx.round + (ctx.stage === 'fix' ? '-c' + ctx.cycle : '') + '-a' + ctx.attempt
@@ -2002,7 +2186,7 @@ async function finishTriage(ctx, state, tip, branch) {
   if (!onIt(pushed, branch, true)) return { halted: gitHalt('push', pushed, 'the triage is recorded on ' + branch + ' (' + recorded.result.commit + ') and the branch was not pushed') }
   const after = await readState()
   if (!after.state) return { halted: halt('state', 'the triage is recorded and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + after.error, { transient: !!after.transient, branch }) }
-  return { state: after.state, entries: tri.entries, forks: tri.forks, handed: tri.handed, record: recorded.result.commit, reporters: launch.names, candidate: built.candidate }
+  return { state: after.state, entries: tri.entries, forks: tri.forks, unverified: tri.unverified, handed: tri.handed, record: recorded.result.commit, reporters: launch.names, candidate: built.candidate }
 }
 function closeOf() {
   return {
@@ -2029,9 +2213,15 @@ async function runTest() {
   // The round's triage is not finished, and this stage left it: finish it, and run nothing.
   if (at.triage) {
     if (v.scope != null || v.clause != null || v.crossModel != null) return { status: 'refused', stage: 'test', run: v.run, message: 'round ' + at.round + '\'s triage is not finished (`next` is `' + state.next + '`): this invocation finishes it and runs no instrument, so it takes no scope, clause or crossModel. Nothing was run beyond the two reads.', next: state.next, untriaged: state.untriaged }
-    const done = await finishTriage(ctx, state, { sha: String(state.rounds.find((r) => r.round === at.round).facts.candidate), label, tested: true }, loopBranch)
+    // The verifiers drive THE CANDIDATE THE ROUND TESTED: its findings are about that
+    // commit, and the round's record commits have moved the branch on since.
+    const tested = String(state.rounds.find((r) => r.round === at.round).facts.candidate)
+    const lap = launcher(ctx)
+    const unbegun = await beginAttempt(ctx, lap, tested)
+    if (unbegun) return unbegun
+    const done = await finishTriage(ctx, lap, state, { sha: tested, label, tested: true }, loopBranch)
     if (done.halted) return done.halted
-    return Object.assign({ status: 'triaged', stage: 'test', run: v.run, round: ctx.round, triage_only: true, candidate: done.candidate, record: done.record, counts: { reporters: done.reporters.length, findings_in: done.handed, entries: done.entries.length, blockers: done.state.blockers.length, for_the_human: done.state.human_list.length }, human_list: done.state.human_list, forks: done.forks, blockers: done.state.blockers, forbids_close: done.state.forbids_close }, nextOf(done.state))
+    return Object.assign({ status: 'triaged', stage: 'test', run: v.run, round: ctx.round, triage_only: true, candidate: done.candidate, record: done.record, counts: { reporters: done.reporters.length, findings_in: done.handed, entries: done.entries.length, blockers: done.state.blockers.length, for_the_human: done.state.human_list.length }, human_list: done.state.human_list, forks: done.forks, unverified: done.unverified, blockers: done.state.blockers, forbids_close: done.state.forbids_close }, nextOf(done.state))
   }
   // A RE-RUN is the position's, never the invocation's to decide: the state asks for it
   // (`rerun`) and names the clause, the round that selected its due items, and the attempt
@@ -2049,6 +2239,8 @@ async function runTest() {
   const runs = (i) => (rerun ? rerun.items.some((x) => x.item === i.item) : i.selected === true)
   log('round ' + ctx.round + ', attempt ' + ctx.attempt + ' of the test stage: ' + (rerun ? 'A RE-RUN inside it, on ' + sha + ' — ' + rerun.items.map((i) => i.item + ' (its attempt ' + i.attempt + ')').join(', ') + ' of clause `' + rerun.clause + '`, and nothing else' : 'candidate ' + label + ' = ' + sha + '; ' + items.length + ' item(s) in the test set'))
   if (v.stopAfter === 'state') return { status: 'stopped', after: 'state', stage: 'test', run: v.run, round: ctx.round, attempt: ctx.attempt, candidate: { label, sha }, state: attached(state) }
+  const unbegun = await beginAttempt(ctx, launch, sha)
+  if (unbegun) return unbegun
 
   // Preflight (the asserts, the one build, the checks that run on every candidate) beside
   // the scope step: neither reads what the other writes. A RE-RUN has no scope step — the
@@ -2085,12 +2277,23 @@ async function runTest() {
   if (unknownKinds.length) return halt('state', 'this round runs item(s) of a kind the harness has no chain for: ' + unknownKinds.join(', ') + ' — a kind is added by adding its chain to CHAINS, never by guessing one', { launched: launch.names })
   const needsImage = hunting.some((i) => chainOf(i.kind, false).some((stepList) => stepList.some((s) => s.image)))
   let checks = pre.result.checks || []
+  // The second preflight: the trial image, and the checks the scope selected. One that did
+  // not provide them halts nothing — what it was asked for is VOID with that reason: a
+  // trial arm is not launched without an image, and every other item goes on.
+  let secondName = null
+  let unprovided = null
   if (needsImage || late.length) {
     const more = await preflightOf(ctx, launch, ['preflight', 'second'], { build: false, image: needsImage, sha, label, branch: loopBranch, binary, checks: late, crossModel: false, previous: previousOf(state) }, 'Preflight and scope')
-    if (more.fault) return halt('preflight', more.fault, { transient: !!more.transient, halt: more.halt || null })
-    built.image = needsImage ? more.result.image : null
-    checks = checks.concat(more.result.checks || [])
+    secondName = more.name
+    if (more.fault) {
+      unprovided = 'the second preflight did not provide it — ' + more.fault
+      log('NOT PROVIDED by the second preflight (' + more.fault + '): ' + (needsImage ? 'no trial arm runs, and ' : '') + late.length + ' check(s) are void — every other item goes on')
+    } else {
+      built.image = needsImage ? more.result.image : null
+      checks = checks.concat(more.result.checks || [])
+    }
   }
+  const imageless = (i) => !!unprovided && chainOf(i.kind, false).some((stepList) => stepList.some((s) => s.image))
   log('scope ' + sc.status + ': ' + inside.length + ' door(s) inside; ' + hunting.length + ' of ' + state.items.filter((i) => i.kind !== CHECK_KIND).length + ' hunting item(s) run ' + (rerun ? 'again' : 'this round') + ', and ' + (always.length + late.length) + ' check(s)')
   if (sc.uncovered && sc.uncovered.length) log('NOT COVERED: ' + sc.uncovered.length + ' door(s) of the round\'s test set are reached by no item — ' + sc.uncovered.join(' · '))
   if (v.stopAfter === 'preflight') return { status: 'stopped', after: 'preflight', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, previous: built.previous, checks, scope: { status: sc.status, uncovered: sc.uncovered || [], reached_but_excluded: sc.reached_but_excluded || [] }, reporters: launch.names }
@@ -2100,18 +2303,27 @@ async function runTest() {
   const crossTool = crossNamed.length > 0 && (pre.result.checks || []).some((c) => c.check === CROSS_CHECK && c.status === 'green')
   const crossVoid = crossNamed.filter((id) => !crossTool || !hunting.some((i) => i.item === id)).map((id) => ({ item: id, why: crossTool ? 'the item does not run in this round' : 'the tool of the cross-model pass did not answer on this machine' }))
   for (const lost of crossVoid) log('CROSS-MODEL PASS VOID for `' + lost.item + '`: ' + lost.why + ' — its other passes run regardless')
-  const units = hunting.map((i) => ({ item: i.item, kind: i.kind, clause: i.clause, brief: i.brief, chain: chainOf(i.kind, crossTool && crossNamed.includes(i.item)), doors: unitDoors(i, inside), range: null }))
+  const units = hunting.filter((i) => !imageless(i)).map((i) => ({ item: i.item, kind: i.kind, clause: i.clause, brief: i.brief, chain: chainOf(i.kind, crossTool && crossNamed.includes(i.item)), doors: unitDoors(i, inside), range: null }))
   const nameable = unitNames(units, launch.names)
   if (nameable.fault) return halt('state', nameable.fault)
   const ran = await runUnits(ctx, launch, built, units, 'Instruments')
   const reporters = ran.reduce((all, u) => all.concat(u.reporters), [])
-  for (const u of ran) if (u.crossModel === 'void') crossVoid.push({ item: u.item, why: 'the pass was launched and did not report' })
-  const crossRan = ran.filter((u) => u.crossModel === 'ran').map((u) => u.item)
   const wrong = hashMismatch(built.candidate.sha256, reporters)
   if (wrong.length) return halt('binary', 'a driving agent did not assert the candidate\'s binary (' + built.candidate.sha256 + '): ' + wrong.map((w) => w.reporter + ' asserted ' + JSON.stringify(w.asserted)).join('; ') + ' — nothing it drove is evidence about this candidate', { mismatched: wrong })
-  const cr = await toolStep('check-reports', 'Instruments', 'check-reports', checkReportsPrompt(ctx, launch.names))
-  const seen = cr && cr.status === 'checked' && plain(cr.check) ? cr.check : null
-  if (!seen || seen.ok !== true) return halt('reports', seen ? 'not every launched reporter left exactly one report — missing: ' + JSON.stringify(seen.missing) + '; extra: ' + JSON.stringify(seen.extra) : 'the report check could not be read', { transient: !cr, check: seen, launched: launch.names })
+  // THE REPORTS, CHECKED: what is on disk decides, never what an agent returned. The
+  // reporters the stage stands on — its marker, the preflight, the scope step — left one, or
+  // it halts; an instrument's step that left none voids its item, and the stage goes on.
+  const launchedSoFar = launch.names.slice()
+  const settled = await settleReports(ctx, launch, 'check-reports', 'Instruments')
+  if (settled.fault) return halt('reports', settled.fault, { transient: !!settled.transient, check: settled.check || null, launched: launchedSoFar })
+  const stoodOn = [ATTEMPT, pre.name, scopeName].concat(secondName && !unprovided ? [secondName] : []).filter((name) => settled.missing.includes(name))
+  if (stoodOn.length) return halt('reports', 'a reporter this stage stands on returned and left no report: ' + stoodOn.join(', ') + ' — what it established has nothing on record behind it', { launched: launchedSoFar })
+  unreported(ran, settled.missing)
+  for (const u of ran) {
+    if (u.status === 'void') log('VOID: `' + u.item + '` — ' + u.reason + '. Its result is recorded as void, and the state asks for its re-run')
+    if (u.crossModel === 'void') crossVoid.push({ item: u.item, why: 'the pass was launched and did not report' })
+  }
+  const crossRan = ran.filter((u) => u.crossModel === 'ran').map((u) => u.item)
   if (v.stopAfter === 'instruments') return { status: 'stopped', after: 'instruments', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, units: ran.map((u) => ({ item: u.item, status: u.status, findings: u.reporters.reduce((n, r) => n + (r.result && r.result.findings ? r.result.findings.length : 0), 0) })), reporters: launch.names }
 
   // Triage of every finding; verify-real; the forks.
@@ -2130,10 +2342,13 @@ async function runTest() {
   // ONE RESULT PER ITEM THIS INVOCATION RAN — the record script derives every clause's
   // status from them, and files a red check as a finding in the same call.
   phase('Record')
-  const unitStatus = ran.map((u) => ({ item: u.item, status: u.status, reason: 'a step of its chain did not report' }))
+  const unitStatus = ran.map((u) => ({ item: u.item, status: u.status, reason: u.reason })).concat(hunting.filter(imageless).map((i) => ({ item: i.item, status: 'void', reason: 'no trial image: ' + unprovided })))
   for (const item of always.concat(late)) {
     const c = checks.find((x) => x.check === item.item)
-    unitStatus.push({ item: item.item, status: c ? c.status : 'void', reason: c ? c.evidence || 'the check could not run, and the preflight returned no reason' : 'the preflight returned nothing for it', door: item.doors[0], evidence: c && c.evidence ? c.evidence + ' — the preflight\'s report: ' + pre.result.report : null })
+    // A green or a red is evidence about exactly the commit the check ran on: one that
+    // ran on another commit, or does not say which, did not run on the candidate.
+    const elsewhere = c && c.status !== 'void' && c.commit !== sha ? 'the check ran on ' + (c.commit ? 'the commit ' + c.commit : 'a commit the preflight did not name') + ', not on the candidate' : null
+    unitStatus.push({ item: item.item, status: !c || elsewhere ? 'void' : c.status, reason: elsewhere || (c ? c.evidence || 'the check could not run, and the preflight returned no reason' : late.includes(item) && unprovided ? unprovided : 'the preflight returned nothing for it'), door: item.doors[0], evidence: c && c.evidence ? c.evidence + ' — the preflight\'s report: ' + pre.result.report : null })
   }
   const rec = triageRecord(ctx, tri.entries)
   // A re-run writes no fact of the round: the round is tested, and its record stands.
@@ -2162,9 +2377,10 @@ async function runTest() {
     cross_model: { named: crossNamed, ran: crossRan, void: crossVoid },
     candidate: built.candidate,
     record: recorded.result.commit,
-    counts: { items: state.items.length, items_run: units.length + always.length + late.length, reporters: launch.names.length, findings_in: tri.handed, entries: tri.entries.length, by_grade: byGrade, blockers: state.blockers.length, for_the_human: state.human_list.length, voided: unitStatus.filter((u) => u.status === 'void').map((u) => u.item) },
+    counts: { items: state.items.length, items_run: hunting.length + always.length + late.length, reporters: launch.names.length, findings_in: tri.handed, entries: tri.entries.length, by_grade: byGrade, blockers: state.blockers.length, for_the_human: state.human_list.length, voided: unitStatus.filter((u) => u.status === 'void').map((u) => u.item) },
     human_list: state.human_list,
     forks: tri.forks,
+    unverified: tri.unverified,
     scope: { status: sc.status, uncovered: sc.uncovered || [], reached_but_excluded: sc.reached_but_excluded || [] },
     blockers: state.blockers,
     forbids_close: state.forbids_close,
@@ -2398,7 +2614,8 @@ async function runFix() {
       if (!cut) return halt('git', 'the state says that the `fix` stage left round ' + round + '\'s triage unfinished, and the round has no branch: there is no tip a verifier could drive')
       const stopped = await onBranch(branch)
       if (stopped) return stopped
-      const done = await finishTriage({ run: v.run, round, stage: 'fix', cycle: at.cycle, attempt: at.attempt, scratch: v.scratch }, state, { sha: tipSha, label: 'r' + round + 'c' + at.cycle, tested: false }, branch)
+      const lap = { run: v.run, round, stage: 'fix', cycle: at.cycle, attempt: at.attempt, scratch: v.scratch }
+      const done = await finishTriage(lap, launcher(lap), state, { sha: tipSha, label: 'r' + round + 'c' + at.cycle, tested: false }, branch)
       if (done.halted) return done.halted
       state = done.state
       for (const fork of done.forks) forks.push(fork)
