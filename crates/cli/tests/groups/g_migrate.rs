@@ -135,6 +135,8 @@ mod step_source_rules;
 mod test_target_registration;
 #[path = "../unclaimed_file_family.rs"]
 mod unclaimed_file_family;
+#[path = "../uninstall_settings_record.rs"]
+mod uninstall_settings_record;
 #[path = "../verb_suite_coverage.rs"]
 mod verb_suite_coverage;
 #[path = "../version_mismatch_break.rs"]

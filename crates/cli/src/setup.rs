@@ -1380,6 +1380,201 @@ fn seed_secrets_gitignore(jigc_home: &Path) -> std::io::Result<bool> {
     Ok(true)
 }
 
+/// **Where `jigc setup` records the settings entries it added** — one small committed
+/// file, repo-relative, a member of the install commit ([`install_tracked_paths`]; the
+/// human's ruling of 2026-10-06 on the rc.24 fix pass's item 21, `DECISIONS.md` → *Ahead
+/// of the run's opening*, 5b, 10, and the entry that built it).
+///
+/// **What it is for.** `setup` merges three kinds of entry into a file it does not own —
+/// `permissions.allow` permits, the `permissions.deny` floor and a session hook command —
+/// and each merge adds an entry only where none stands. So an entry the adopter already
+/// had is, afterwards, indistinguishable from one jigc added, and `jigc uninstall` removed
+/// both: driven on `1.0.0-rc.24`, an adopter's own `Bash(rm -rf:*)` deny rule, their
+/// `Bash(git add:*)` permit and their own `jigc start` hook were gone at exit 0 — from a
+/// file git held no copy of, where the settings file is ignored. Which entries a run
+/// added is known only to that run, so the run writes it down.
+///
+/// **It is consulted only where git tracks the settings file** ([`SettingsClaim`]) — the
+/// record and the file it describes then travel together, clone by clone. A record trusted
+/// wherever it is found would be read against a settings file that is private to each
+/// clone, and say of one clone's own entries that jigc added them. For the same reason it
+/// is **written** only where the install commit can carry the settings file
+/// ([`settings_file_is_committable`]) and removed where it cannot: it is absent wherever
+/// there is nothing to record.
+///
+/// **The form** is JSON — the settings file's own — in one object: `format` (a number a
+/// later build can branch on; this build reads [`SETTINGS_RECORD_FORMAT`] and treats any
+/// other as no record), `file` (the settings file it describes, so a record written for
+/// another assistant's file claims nothing in this one) and `added`
+/// ([`adapter::SettingsEntries`]: `allow`, `deny`, `hooks`).
+///
+/// Under `.jigc/` and outside every gitignored prefix, beside `.jigc/version`: it goes with
+/// the tree `jigc uninstall` removes whole, which is why the teardown reads it first.
+pub const SETTINGS_RECORD_PATH: &str = ".jigc/settings-entries.json";
+
+/// The one settings-record format this build writes and reads ([`SETTINGS_RECORD_PATH`]).
+const SETTINGS_RECORD_FORMAT: u64 = 1;
+
+/// The settings record's on-disk body ([`SETTINGS_RECORD_PATH`]). Unknown keys are
+/// tolerated on read, so a later build may add one without a new format number.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct SettingsRecord {
+    /// [`SETTINGS_RECORD_FORMAT`].
+    format: u64,
+    /// The repo-relative settings file the entries were added to.
+    file: String,
+    /// The entries `jigc setup` added to it and that are still jigc's to take back.
+    added: adapter::SettingsEntries,
+}
+
+/// The entries the settings record claims for `file` — or `None` where no record this
+/// build can read describes that file: absent, not a regular file (read without following
+/// a link), not a record, another format, or written for another settings file.
+///
+/// Fails closed, and closed is the safe direction here: no claim means `jigc uninstall`
+/// removes nothing and names what it left.
+fn read_settings_record(jigc_home: &Path, file: &str) -> Option<adapter::SettingsEntries> {
+    let path = jigc_home.join(SETTINGS_RECORD_PATH);
+    if engine::store::home_entry(&path) != engine::store::HomeEntry::RegularFile {
+        return None;
+    }
+    parse_settings_record(&std::fs::read(path).ok()?, file)
+}
+
+/// The claims of a settings record's bytes for `file`, where this build can read them.
+fn parse_settings_record(bytes: &[u8], file: &str) -> Option<adapter::SettingsEntries> {
+    let record: SettingsRecord = serde_json::from_slice(bytes).ok()?;
+    (record.format == SETTINGS_RECORD_FORMAT && record.file == file).then_some(record.added)
+}
+
+/// **The record an earlier run left, as `jigc setup` reads it** — the file at
+/// [`SETTINGS_RECORD_PATH`], or, where nothing is at that path, the copy `HEAD` holds.
+///
+/// The second half is the rule every install file already follows (the human's ruling of
+/// 2026-10-06 on the fix pass's item 1): a tracked install file deleted from the working
+/// tree is restored by the next `setup`, the deletion staged or not. The other members are
+/// restored by being written again; this one cannot be, because what it says is known only
+/// to the runs that added the entries — so it is read back from the commit that holds it,
+/// and written again from there. A deletion somebody **committed** is not undone: `HEAD`
+/// then holds no record, and the install is one without a record.
+///
+/// Only *nothing at the path* asks git. A link, a directory or an unreadable file there is
+/// not an absent record, and is answered by the guards that own those shapes.
+fn earlier_settings_record(jigc_home: &Path, file: &str) -> Option<adapter::SettingsEntries> {
+    let absent = std::fs::symlink_metadata(jigc_home.join(SETTINGS_RECORD_PATH))
+        .is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound);
+    if !absent {
+        return read_settings_record(jigc_home, file);
+    }
+    let held = git_output(jigc_home, ["show", &format!("HEAD:{SETTINGS_RECORD_PATH}")])?;
+    held.status
+        .success()
+        .then(|| parse_settings_record(&held.stdout, file))
+        .flatten()
+}
+
+/// Whether `bytes` are a settings record in jigc's own shape — an object carrying a
+/// numeric `format` and a string `file`, **whichever format it is** ([`OwnContent`]'s
+/// oracle for this member). A record a later build wrote is jigc's too; this build cannot
+/// read its claims ([`read_settings_record`]) and can still tell it from a file somebody
+/// authored at the path.
+fn settings_record_is_jigcs(bytes: &[u8]) -> bool {
+    serde_json::from_slice::<serde_json::Value>(bytes).is_ok_and(|value| {
+        value.get("format").is_some_and(serde_json::Value::is_u64)
+            && value.get("file").is_some_and(serde_json::Value::is_string)
+    })
+}
+
+/// **What the settings record says once this run's three merges have run** — asked
+/// *before* them, because afterwards an entry the run added and one it found are the same
+/// entry.
+///
+/// Two sets, and their union: the profile's entries the settings file does **not** hold
+/// yet, which are exactly the ones the merges are about to add
+/// ([`adapter::settings_entries_present`] is the merges' own presence test); and the
+/// entries an earlier record claims ([`earlier_settings_record`]) that the file **still**
+/// holds. An earlier claim whose entry has left the file is dropped — if the entry is
+/// merged back in by this run it is claimed again as added, and if somebody else writes it
+/// later it is theirs.
+///
+/// **So the record never claims an entry no run of `setup` added.** That is the whole
+/// rule for an install that predates the record: its entries are in the settings file, no
+/// record lists them, and a later `setup` finds them present and adds nothing — so it
+/// records nothing for them, and `jigc uninstall` leaves them and names them. The
+/// alternative, reading an older install's entries back out of git history or assuming
+/// that whatever equals jigc's is jigc's, is the inference the record exists to replace.
+fn settings_record_entries(
+    jigc_home: &Path,
+    profile: &AdapterProfile,
+) -> std::io::Result<adapter::SettingsEntries> {
+    let installs = adapter::SettingsEntries::installed_by(profile);
+    let adding = installs.without(&adapter::settings_entries_present(
+        jigc_home, profile, &installs,
+    )?);
+    let kept = match earlier_settings_record(jigc_home, &profile.allowlist.file) {
+        Some(earlier) => adapter::settings_entries_present(jigc_home, profile, &earlier)?,
+        None => adapter::SettingsEntries::default(),
+    };
+    Ok(kept.with(&adding))
+}
+
+/// Write the settings record for `file`, as a regular file at exactly its path
+/// ([`crate::regular_file::replace`]) — or, where `added` names nothing, **remove** a
+/// record that stands there. `Ok(true)` iff a record was removed.
+///
+/// *Absent where there is nothing to record* holds in both directions: a run that added
+/// nothing writes no file, and a run that finds a record it can no longer stand behind —
+/// the settings file left git, so the two no longer travel together — takes it away rather
+/// than leave a claim to be read against some later settings file. The removal reaches the
+/// install commit like any other change to a member ([`commit_install`]).
+fn write_settings_record(
+    jigc_home: &Path,
+    file: &str,
+    added: &adapter::SettingsEntries,
+) -> std::io::Result<bool> {
+    if added.is_empty() {
+        return match std::fs::remove_file(jigc_home.join(SETTINGS_RECORD_PATH)) {
+            Ok(()) => Ok(true),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(err) => Err(err),
+        };
+    }
+    let record = SettingsRecord {
+        format: SETTINGS_RECORD_FORMAT,
+        file: file.to_string(),
+        added: added.clone(),
+    };
+    let mut body = serde_json::to_string_pretty(&record)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+    body.push('\n');
+    crate::regular_file::replace(jigc_home, SETTINGS_RECORD_PATH, body.as_bytes()).map(|()| false)
+}
+
+/// **Whether the install commit can carry the settings file** — the condition the settings
+/// record is written under ([`SETTINGS_RECORD_PATH`]).
+///
+/// The record is only ever read where git tracks the settings file, so it is only worth
+/// writing where this run's commit will hold that file: the install home is a work tree,
+/// and git does not ignore the file the three merges land in — the settings path itself,
+/// or the file its link leads to ([`merged_through_links`]). `git check-ignore` reports a
+/// tracked file as not ignored whatever the ignore rules say, so a file git already holds
+/// answers `true` here.
+///
+/// A git that cannot answer is `false`: no record, and a teardown that names what it left.
+fn settings_file_is_committable(
+    jigc_home: &Path,
+    allowlist_file: &str,
+    through: &[MergedThrough],
+) -> bool {
+    if !home_is_a_work_tree(jigc_home).unwrap_or(false) {
+        return false;
+    }
+    match through.iter().find(|link| link.link == allowlist_file) {
+        Some(link) => !link.ignored,
+        None => !git_path_ignored(jigc_home, allowlist_file),
+    }
+}
+
 /// The assistant whose embedded profile MVP `setup` installs. Single-assistant in
 /// the MVP (Claude Code); a `--assistant` selector is post-MVP
 /// (`design/assistant-adapter.md` → Generated, minimal, regenerated).
@@ -1816,10 +2011,15 @@ fn install(
     // 1–5. **The write span**, behind one seam (M54 Increment 4 / T1; S22): every error
     //      it returns reaches [`record_failed_install`] before it propagates, so a failed
     //      first run leaves a repository a plain re-run completes.
+    //
+    //      **Whether this run keeps the settings record is settled here too**, from what
+    //      git says before the first write ([`settings_file_is_committable`]).
+    let record_settings = settings_file_is_committable(jigc_home, &allowlist_file, &through);
     let InstallWrites {
         ignore,
         seeded_gitignore,
         hook_path,
+        dropped_settings_record,
     } = write_install_span(
         jigc_home,
         profile,
@@ -1827,6 +2027,7 @@ fn install(
         &bootstrap_file,
         &allowlist_file,
         declared_guide.filter(|_| guide_file.is_some()),
+        record_settings,
     )
     .inspect_err(|_| {
         record_failed_install(
@@ -1883,6 +2084,23 @@ fn install(
             );
         }
     }
+    // The ack for a settings record this run took away ([`write_settings_record`]): a file
+    // jigc removed from the repository is said, on the channel the link ack above uses.
+    if dropped_settings_record {
+        if record_settings {
+            eprintln!(
+                "note: removed `{SETTINGS_RECORD_PATH}` — it listed no entry `jigc setup` \
+                 added that is still in `{allowlist_file}`, and this run added none.",
+            );
+        } else {
+            eprintln!(
+                "note: removed `{SETTINGS_RECORD_PATH}`, the record of the entries `jigc \
+                 setup` added to `{allowlist_file}` — git does not hold that file here, so \
+                 the record no longer describes a file that travels with it. `jigc \
+                 uninstall` will leave the entries in `{allowlist_file}` and name them.",
+            );
+        }
+    }
     // 6b. **Keep the provenance of what this run wrote where no commit will hold it** (the
     //     rc.24 fix pass, the ignored sibling of `(R1, F1)`). Asked after the commit step
     //     whatever it answered, and under any subject: the write span completed, so every
@@ -1930,6 +2148,9 @@ struct InstallWrites {
     ignore: crate::gitignore::Ensured,
     seeded_gitignore: bool,
     hook_path: PathBuf,
+    /// Whether the span removed a settings record that stood at [`SETTINGS_RECORD_PATH`]
+    /// ([`write_settings_record`]) — the install says so.
+    dropped_settings_record: bool,
 }
 
 /// **Every write [`install`] makes before its install commit, as one fallible span** (M54
@@ -1941,10 +2162,11 @@ struct InstallWrites {
 /// gate refused them as the adopter's work with `setup.dirty-install-path`, recoverable
 /// only by `--force`. A return added to this span later is covered by construction.
 ///
-/// **The enumeration, by grep over this span: 12 error returns**, all `.map_err(…)?` —
+/// **The enumeration, by grep over this span: 14 error returns**, all `.map_err(…)?` —
 /// `setup.write-bootstrap`, `setup.inject-reference`, `setup.init-project-layer`,
 /// `setup.compose-marker`, `setup.version-stamp`, `setup.secrets-gitignore`,
-/// `setup.inject-allowlist`, `setup.inject-hook`, `setup.inject-deny`,
+/// `setup.inject-allowlist` three times (the read the settings record is computed from,
+/// the allowlist merge, the record's own write), `setup.inject-hook`, `setup.inject-deny`,
 /// `setup.write-guide`, and `setup.install-hook` twice (`current_exe`, the hook write).
 /// **What that grep misses:** (a) a `?` **inside a callee** — `init_project_layer`, the
 /// `inject_*` merges and `install_precommit_hook` can fail after a partial write of their
@@ -1954,7 +2176,8 @@ struct InstallWrites {
 /// not be used, not error returns; (d) a panic, which returns nothing.
 ///
 /// `guide` is the guide artifact to write: `None` when the profile declares none, or when
-/// [`install`]'s step 0d decided the file on disk is the adopter's.
+/// [`install`]'s step 0d decided the file on disk is the adopter's. `record_settings` is
+/// whether this run keeps the settings record ([`settings_file_is_committable`]).
 fn write_install_span(
     jigc_home: &Path,
     profile: &AdapterProfile,
@@ -1962,6 +2185,7 @@ fn write_install_span(
     bootstrap_file: &str,
     allowlist_file: &str,
     guide: Option<&adapter::GuideTarget>,
+    record_settings: bool,
 ) -> Result<InstallWrites, Finding> {
     // 1. Reference floor: write the managed bootstrap file, then point the
     //    always-loaded file at it with a bare import line.
@@ -2039,6 +2263,24 @@ fn write_install_span(
         )
     })?;
 
+    // 3 (before). **What the settings record will say once steps 3, 4 and 4b have run** —
+    //    asked now, because after them an entry this run added and one it found are the
+    //    same entry ([`settings_record_entries`]). Nothing where the run keeps no record.
+    let recorded = if record_settings {
+        settings_record_entries(jigc_home, profile).map_err(|err| {
+            Finding::block(
+                "setup.inject-allowlist",
+                format!(
+                    "cannot read `{allowlist_file}` to record which entries `jigc setup` \
+                     adds to it: {err}"
+                ),
+                format!("ensure `{allowlist_file}` is readable, then re-run `jigc setup`"),
+            )
+        })?
+    } else {
+        adapter::SettingsEntries::default()
+    };
+
     // 3. Allowlist `jigc` so the agent runs it without friction.
     adapter::inject_allowlist(jigc_home, profile).map_err(|err| {
         Finding::block(
@@ -2071,6 +2313,28 @@ fn write_install_span(
             format!("ensure `{allowlist_file}` is writable, then re-run `jigc setup`"),
         )
     })?;
+
+    // 4b′. Write down which of those entries are jigc's — the **settings record**
+    //      ([`SETTINGS_RECORD_PATH`]; the human's ruling of 2026-10-06, item 21), the one
+    //      thing that lets `jigc uninstall` take back what steps 3, 4 and 4b added and
+    //      leave an identical entry the adopter already had. Directly behind the merges it
+    //      describes: a run that fails between them and here leaves entries no record
+    //      claims, which the teardown leaves in place and names — never the reverse, a
+    //      claim over an entry no run added. It rides the settings merge's own code; the
+    //      record is that merge's, and a code of its own would be a new finding code.
+    //      Where this run keeps no record, `recorded` is empty and a record that stands
+    //      there is removed.
+    let dropped_settings_record = write_settings_record(jigc_home, allowlist_file, &recorded)
+        .map_err(|err| {
+            Finding::block(
+                "setup.inject-allowlist",
+                format!(
+                    "cannot write `{SETTINGS_RECORD_PATH}`, the record of the entries `jigc \
+                     setup` added to `{allowlist_file}`: {err}"
+                ),
+                format!("ensure `{SETTINGS_RECORD_PATH}` is writable, then re-run `jigc setup`"),
+            )
+        })?;
 
     // 4c. Write the adapter's own **owned artifact** — jigc's shipped guides at the
     //     profile-declared path, stamped with this build's version and the `blake3` of
@@ -2135,6 +2399,7 @@ fn write_install_span(
         ignore,
         seeded_gitignore,
         hook_path,
+        dropped_settings_record,
     })
 }
 
@@ -2275,6 +2540,16 @@ fn install_tracked_paths(
             Refuses,
             replaces("setup.compose-marker", OwnContent::SettledComposeMarker),
         ),
+        // [`write_settings_record`] — the record of the settings entries jigc added,
+        // written whole from what the run computed; nothing an adopter put at the path is
+        // carried over. It rides the code of the settings merge it belongs to. Unlike its
+        // neighbours it is not written by every run: the file is absent where there is
+        // nothing to record, and each filter over this table already drops an absent path.
+        member(
+            SETTINGS_RECORD_PATH,
+            Refuses,
+            replaces("setup.inject-allowlist", OwnContent::SettingsRecord),
+        ),
     ];
     // The root `.gitignore` is committed **only** when setup itself seeded it on the
     // fresh-repo path — never an established repo's pre-existing `.gitignore` (which setup
@@ -2394,12 +2669,12 @@ pub enum InstallWriter {
 /// reasoning that an ignored path cannot be swept into the install commit, which is true of
 /// a file the install merges into and beside the point for one it replaces.
 ///
-/// **Two kinds of answer, and the difference is what an upgrade does to each.** Three
+/// **Two kinds of answer, and the difference is what an upgrade does to each.** Four
 /// oracles read a property that no build of jigc changes — the stamp's one-line shape, the
-/// marker's emptiness, the guide's digest of its own body — so a copy an older build wrote
-/// is recognised by a newer one. Two ask whether this run's write would leave the file
-/// byte-identical, which is true of an older build's copy only while the generated content
-/// has not moved between the builds. Where it has, the bytes are still jigc's and nothing
+/// marker's emptiness, the guide's digest of its own body, the settings record's two
+/// keys — so a copy an older build wrote is recognised by a newer one. Two ask whether
+/// this run's write would leave the file byte-identical, which is true of an older build's
+/// copy only while the generated content has not moved between the builds. Where it has, the bytes are still jigc's and nothing
 /// in them says so; that provenance is the install footprint record's
 /// ([`INSTALL_FOOTPRINT_PATH`]), which keeps the hash of every ignored file a run replaced
 /// and is subtracted before this question is reached. So an upgrade over an ignored,
@@ -2431,6 +2706,9 @@ pub enum OwnContent {
     /// `jigc-body-blake3:` ([`guide_text_is_jigcs`], the test [`guide_ownership`] decides
     /// by), whichever build wrote it.
     GuideDigest,
+    /// `.jigc/settings-entries.json` — a settings record in jigc's own shape
+    /// ([`settings_record_is_jigcs`]), whichever build wrote it and whatever it lists.
+    SettingsRecord,
 }
 
 impl OwnContent {
@@ -2447,6 +2725,7 @@ impl OwnContent {
             Self::BootstrapBody => bytes == adapter::bootstrap_file().as_bytes(),
             Self::VersionStamp => version_stamp_is_jigcs(jigc_home),
             Self::EmptyMarker => bytes.is_empty(),
+            Self::SettingsRecord => settings_record_is_jigcs(&bytes),
             Self::SettledComposeMarker => String::from_utf8(bytes).is_ok_and(|text| {
                 compose_marker_rendering(Some(&text), &file).is_ok_and(|after| after == text)
             }),
@@ -3997,7 +4276,14 @@ fn commit_install(
         through,
     )
     .into_iter()
-    .filter(|member| jigc_home.join(&member.path).exists())
+    // Present — or the one member a run can take **away**: a settings record this run
+    // removed ([`write_settings_record`]) while git still tracks it. `git add -- <path>`
+    // stages that removal and the pathspec commit carries it, so the record leaves the
+    // repository in the install commit and not as a deletion left lying in the tree.
+    .filter(|member| {
+        jigc_home.join(&member.path).exists()
+            || (member.path == SETTINGS_RECORD_PATH && git_tracks(jigc_home, &member.path))
+    })
     .filter(|member| !git_path_ignored(jigc_home, &member.path))
     .collect();
     let mut paths: Vec<String> = members.iter().map(|member| member.path.clone()).collect();
@@ -4330,6 +4616,15 @@ fn git_path_ignored(jigc_home: &Path, path: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether git **tracks** `path` (repo-relative) in `jigc_home` — it has an index entry
+/// (`git ls-files --error-unmatch`). A git that cannot answer tracks nothing: both readers
+/// of this fail towards doing less.
+fn git_tracks(jigc_home: &Path, path: &str) -> bool {
+    git_output(jigc_home, ["ls-files", "--error-unmatch", "--", path])
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// Run `git -C <jigc_home> <args>`, returning the captured output if git ran (whatever
 /// its exit), or `None` if git could not be spawned. The install-commit path is
 /// best-effort: a git hiccup degrades to [`InstallCommit::Skipped`], never a setup
@@ -4408,11 +4703,12 @@ pub struct RemovedArtifacts {
     pub jigc_dir: bool,
     /// A jigc-injected bootstrap reference was unwired from the always-loaded file.
     pub reference: bool,
-    /// The `Bash(jigc:*)` allowlist permit was dropped from the settings file.
+    /// An allowlist permit was dropped from the settings file — one `setup` recorded as
+    /// added, or under `--force` any identical to one jigc installs.
     pub allowlist: bool,
-    /// jigc's `SessionStart` hook command was dropped from the settings file.
+    /// A `SessionStart` hook command was dropped from the settings file, on the same rule.
     pub hook: bool,
-    /// The `deny` safety floor was dropped from the settings file.
+    /// A `deny` safety-floor pattern was dropped from the settings file, on the same rule.
     pub deny: bool,
     /// The jigc-managed `pre-commit` hook was removed or unwrapped.
     pub precommit: bool,
@@ -4451,6 +4747,15 @@ impl RemovedArtifacts {
 /// seventh member, because the set is what `setup` writes rather than a fixed list (M48
 /// Increment 10). Every settings removal is **surgical**: a foreign permit / hook / deny
 /// entry sharing the file survives.
+///
+/// **And so does an entry that merely equals one of jigc's** (the human's ruling of
+/// 2026-10-06 on the rc.24 fix pass's item 21). The three settings removals take the
+/// entries `setup` recorded as added ([`SETTINGS_RECORD_PATH`]) and no others, and the
+/// record is read only where git tracks the settings file ([`SettingsClaim`]). Where it is
+/// not — the file is ignored or untracked, or the install has no record — none of the three
+/// kinds is removed, and every entry left that is identical to one jigc installs is named
+/// ([`narrate_left_settings_entries`]). `force` takes them all, as it takes everything
+/// else this door otherwise refuses to destroy.
 ///
 /// **The guide artifact comes out only while it is still jigc's** ([`guide_ownership`]): a
 /// copy the user has edited is left byte-identical and reported as the
@@ -4518,9 +4823,10 @@ impl RemovedArtifacts {
 /// file under `.jigc/` is refused over, named itself, or named through the work unit
 /// whose bookkeeping it is.
 ///
-/// `force` is the operator's consent to delete. It skips the four guards, and — the one
-/// other thing this teardown refuses on its own — takes the adapter's owned guide artifact
-/// even when the user has edited it.
+/// `force` is the operator's consent to delete. It skips the four guards, and takes the
+/// three things this teardown otherwise leaves in place: the adapter's owned guide
+/// artifact once the user has edited it, a `pre-commit` hook jigc cannot find its own
+/// block in, and every settings entry identical to one jigc installs.
 ///
 /// **Idempotent:** each step is independently a clean no-op when its artifact is already
 /// absent — an already-removed `.jigc/`, a `CLAUDE.md` without the section, an
@@ -4621,6 +4927,21 @@ fn uninstall(
         }
     }
 
+    // 0b. **Which settings entries are jigc's to take back** ([`SettingsClaim`]) — read
+    //     now, because the record that says so lives in the tree step 1 removes.
+    let allowlist_file = profile.allowlist.file.clone();
+    let installs = adapter::SettingsEntries::installed_by(profile);
+    let claim = SettingsClaim::read(jigc_home, &allowlist_file);
+    // `--force` is the operator's consent to delete, here as at the guards above: every
+    // entry identical to one jigc installs or recorded goes, each occurrence of it — what
+    // this door did for every caller before it kept a record.
+    let (take, every) = match (&claim, force) {
+        (SettingsClaim::Recorded(added), true) => (installs.with(added), true),
+        (_, true) => (installs.clone(), true),
+        (SettingsClaim::Recorded(added), false) => (added.clone(), false),
+        (_, false) => (adapter::SettingsEntries::default(), false),
+    };
+
     // 1. Remove the whole `.jigc/` tree — the bootstrap `AGENT.md`, the cascade config
     //    layer, the compose marker, and the transient index/state working area, all at
     //    once. An already-absent tree is a clean no-op.
@@ -4673,21 +4994,24 @@ fn uninstall(
         )
     })?;
 
-    // 3. Remove the `Bash(jigc:*)` permit from the allowlist — leaving unrelated permits and
-    //    keys intact and the file valid JSON.
-    let allowlist_file = profile.allowlist.file.clone();
-    removed.allowlist = adapter::remove_allowlist(jigc_home, profile).map_err(|err| {
-        Finding::block(
-            "uninstall.remove-allowlist",
-            format!("cannot remove the allowlist permit from `{allowlist_file}`: {err}"),
-            format!("ensure `{allowlist_file}` is writable, then re-run `jigc uninstall`"),
-        )
-    })?;
+    // 3. Remove the permits `jigc setup` added from the allowlist — leaving every other
+    //    permit and key intact and the file valid JSON. **The ones the settings record
+    //    lists, not the ones that equal jigc's** (step 0b; the human's ruling of
+    //    2026-10-06, item 21): an identical permit the adopter already had stays, here and
+    //    at steps 4 and 5.
+    removed.allowlist =
+        adapter::remove_allowlist(jigc_home, profile, &take.allow, every).map_err(|err| {
+            Finding::block(
+                "uninstall.remove-allowlist",
+                format!("cannot remove the allowlist permit from `{allowlist_file}`: {err}"),
+                format!("ensure `{allowlist_file}` is writable, then re-run `jigc uninstall`"),
+            )
+        })?;
 
     // 4. Remove the `SessionStart` hook from the same settings file — surgically, so a
     //    foreign hook sharing the `hooks` object survives (the M36 symmetry fix: both
     //    hooks must come out, or they fire against a removed install).
-    removed.hook = adapter::remove_hook(jigc_home, profile).map_err(|err| {
+    removed.hook = adapter::remove_hook(jigc_home, profile, &take.hooks, every).map_err(|err| {
         Finding::block(
             "uninstall.remove-hook",
             format!("cannot remove the session hook from `{allowlist_file}`: {err}"),
@@ -4696,14 +5020,24 @@ fn uninstall(
     })?;
 
     // 5. Remove the `deny` safety floor from the same settings file — dropping only the
-    //    profile's floor patterns, preserving any user `deny` entry.
-    removed.deny = adapter::remove_deny(jigc_home, profile).map_err(|err| {
+    //    floor patterns `jigc setup` added, preserving any user `deny` entry.
+    removed.deny = adapter::remove_deny(jigc_home, profile, &take.deny, every).map_err(|err| {
         Finding::block(
             "uninstall.remove-deny",
             format!("cannot remove the deny safety floor from `{allowlist_file}`: {err}"),
             format!("ensure `{allowlist_file}` is writable, then re-run `jigc uninstall`"),
         )
     })?;
+
+    // 5b. **Name what steps 3–5 left** — every entry still in the settings file that is
+    //     identical to one jigc installs. Left is the rule wherever jigc cannot say the
+    //     entry is its own, and a thing left in place is said, never silently skipped: the
+    //     reader may have to remove jigc's entries by hand. The file parsed for the three
+    //     steps above, so a read that fails now has nothing to add.
+    let left = adapter::settings_entries_present(jigc_home, profile, &installs).unwrap_or_default();
+    if !left.is_empty() {
+        narrate_left_settings_entries(&allowlist_file, &left, &claim);
+    }
 
     // 6. Remove the `pre-commit` hook — a standalone jigc hook is deleted; one that holds
     //    anything else as well (a foreign hook setup wrapped, a standalone one the adopter
@@ -4780,6 +5114,119 @@ fn uninstall(
         site: None,
         pruned_worktrees,
     })
+}
+
+/// **What `jigc uninstall` may say of the settings entries that equal jigc's** — read
+/// before the teardown removes `.jigc/`, and the whole of the human's ruling of 2026-10-06
+/// on the fix pass's item 21: *the record is used only where git tracks the settings file*.
+///
+/// The teardown removes an entry only under [`Self::Recorded`], and then only the entries
+/// the record lists. In both other states it removes none of the three kinds and names
+/// what it left ([`narrate_left_settings_entries`]) — `--force` aside, which is the
+/// operator's consent and takes every entry identical to one jigc installs.
+#[derive(Debug)]
+enum SettingsClaim {
+    /// git tracks the settings file **and** the record beside it: these are the entries
+    /// `jigc setup` added. Both, because a record git does not track is one clone's own
+    /// note about a file every clone shares — it did not travel with what it describes.
+    Recorded(adapter::SettingsEntries),
+    /// git does not track the file the settings path leads to — it is ignored, untracked,
+    /// absent, outside the checkout, or git could not say. Whatever a record says, it is
+    /// not read against a file that is private to this clone.
+    SettingsUntracked,
+    /// git tracks the settings file and no record it tracks describes it: an install made
+    /// by a jigc that kept none, a record that was never committed, or one this build
+    /// cannot read ([`read_settings_record`]).
+    NoRecord,
+}
+
+impl SettingsClaim {
+    /// Ask git, and then the record. **Tracked is asked of the file the settings path
+    /// leads to**, resolved the way the merges and the removals open it: a committed link
+    /// to a file git ignores is a tracked *link* and an untracked *file*, and the entries
+    /// are in the file.
+    fn read(jigc_home: &Path, allowlist_file: &str) -> Self {
+        let settings = std::fs::canonicalize(jigc_home.join(allowlist_file))
+            .ok()
+            .zip(std::fs::canonicalize(jigc_home).ok())
+            .and_then(|(real, root)| real.strip_prefix(root).ok().map(Path::to_path_buf))
+            .and_then(|relative| relative.to_str().map(str::to_string));
+        if !settings.is_some_and(|path| git_tracks(jigc_home, &path)) {
+            return Self::SettingsUntracked;
+        }
+        if !git_tracks(jigc_home, SETTINGS_RECORD_PATH) {
+            return Self::NoRecord;
+        }
+        read_settings_record(jigc_home, allowlist_file).map_or(Self::NoRecord, Self::Recorded)
+    }
+}
+
+/// Say which entries identical to jigc's the teardown **left** in the settings file, and
+/// why — on stderr, beside the summary, the channel this door's other narrations use
+/// ([`narrate_kept_precommit`]). Not a finding: nothing is wrong and nothing blocks, and
+/// the `removed` flags already say what went.
+///
+/// Every entry is listed, by the key it sits under, because the sentence's whole use is
+/// that the reader can remove jigc's entries by hand. And it says what `--force` does
+/// *exactly*: it does not tell jigc's entries from the reader's either — it takes both.
+fn narrate_left_settings_entries(
+    allowlist_file: &str,
+    left: &adapter::SettingsEntries,
+    claim: &SettingsClaim,
+) {
+    let count = left.len();
+    let (opens, why) = match claim {
+        SettingsClaim::Recorded(_) => (
+            "note",
+            format!(
+                "the install's record (`{SETTINGS_RECORD_PATH}`) does not say `jigc setup` \
+                 added what is listed here: it was there before, or an earlier jigc that \
+                 kept no record added it"
+            ),
+        ),
+        SettingsClaim::SettingsUntracked => (
+            "warning",
+            format!(
+                "git does not track `{allowlist_file}` in this checkout, and the record of \
+                 what `jigc setup` added is used only where it does, so jigc cannot tell its \
+                 entries from yours and removed none"
+            ),
+        ),
+        SettingsClaim::NoRecord => (
+            "warning",
+            format!(
+                "no record git tracks (`{SETTINGS_RECORD_PATH}`) lists what `jigc setup` \
+                 added — an install made by a jigc that kept none, or a record that was \
+                 never committed — so jigc cannot tell its entries from yours and removed \
+                 none"
+            ),
+        ),
+    };
+    let quoted = |entries: &[String]| -> String {
+        entries
+            .iter()
+            .map(|entry| format!("`{entry}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let mut listing = String::new();
+    if !left.allow.is_empty() {
+        listing.push_str(&format!("\n  permissions.allow: {}", quoted(&left.allow)));
+    }
+    if !left.deny.is_empty() {
+        listing.push_str(&format!("\n  permissions.deny: {}", quoted(&left.deny)));
+    }
+    for hook in &left.hooks {
+        listing.push_str(&format!("\n  hooks.{}: `{}`", hook.event, hook.command));
+    }
+    eprintln!(
+        "{opens}: left {count} entr{} in `{allowlist_file}` identical to one{} `jigc setup` \
+         installs — {why}:{listing}\n  note: remove by hand any you do not want to keep. \
+         `jigc uninstall --force` removes every entry identical to one jigc installs, yours \
+         included.",
+        if count == 1 { "y" } else { "ies" },
+        if count == 1 { "" } else { "s" },
+    );
 }
 
 /// The registrations in git's worktree registry that **jigc made** under this workbench —

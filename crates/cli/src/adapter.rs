@@ -1040,22 +1040,34 @@ pub fn unwire_reference(repo_root: &Path) -> std::io::Result<bool> {
     }
 }
 
-/// Idempotently **remove** the profile's allowlist permits from the host project's
-/// assistant settings file (`<repo_root>/<profile.allowlist.file>`) — the
-/// structure-aware-JSON inverse of [`inject_allowlist`] for `jigc uninstall`
-/// (`design/project-setup.md` → Flow 2 hardening → Teardown / cleanup (G5), bullet
-/// (b)).
+/// Idempotently **remove** allowlist permits from the host project's assistant settings
+/// file (`<repo_root>/<profile.allowlist.file>`) — the structure-aware-JSON inverse of
+/// [`inject_allowlist`] for `jigc uninstall` (`design/project-setup.md` → Flow 2 hardening →
+/// Teardown / cleanup (G5), bullet (b)).
 ///
-/// Parses the settings object, drops each profile permit pattern from the
-/// `permissions.allow` array, and writes back pretty JSON — leaving every unrelated
-/// permit, the `permissions` object, and unrelated top-level keys intact, and the
-/// file valid JSON. **Idempotent + non-destructive:** an absent file, an absent
-/// `permissions`/`allow`, or an array that no longer carries the permit is a clean
-/// no-op (nothing is written, so a second `uninstall` is a no-op).
+/// **It removes the entries it is handed, never the ones it recognises** (`take`; the
+/// human's ruling of 2026-10-06 on the fix pass's item 21). It used to drop every entry of
+/// `permissions.allow` equal to one the profile installs, and an entry the adopter had
+/// before `jigc setup` is equal to jigc's by construction — so the teardown took their own
+/// permit with jigc's. Which entries are jigc's is the caller's to establish
+/// ([`crate::setup`]'s settings record); `every` says whether one occurrence of each goes —
+/// the one `setup` added — or all of them, which is what `--force` consents to.
+///
+/// Parses the settings object, drops the entries from the `permissions.allow` array, and
+/// writes back pretty JSON — leaving every other permit, the `permissions` object, and
+/// unrelated top-level keys intact, and the file valid JSON. **Idempotent +
+/// non-destructive:** an absent file, an absent `permissions`/`allow`, or an array that
+/// carries none of `take` is a clean no-op (nothing is written, so a second `uninstall`
+/// is a no-op).
 ///
 /// Returns `Ok(true)` when a permit was actually dropped, `Ok(false)` on the no-op —
 /// the honest signal the teardown summary reports on.
-pub fn remove_allowlist(repo_root: &Path, profile: &AdapterProfile) -> std::io::Result<bool> {
+pub fn remove_allowlist(
+    repo_root: &Path,
+    profile: &AdapterProfile,
+    take: &[String],
+    every: bool,
+) -> std::io::Result<bool> {
     let target = repo_root.join(&profile.allowlist.file);
 
     // Absent settings file: nothing to remove.
@@ -1075,17 +1087,35 @@ pub fn remove_allowlist(repo_root: &Path, profile: &AdapterProfile) -> std::io::
         return Ok(false);
     };
 
-    let before = allow.len();
-    allow.retain(|v| {
-        v.as_str()
-            .is_none_or(|s| !profile.allowlist.permit.iter().any(|p| p == s))
-    });
     // No permit was present: leave the file byte-untouched (idempotent no-op).
-    if allow.len() == before {
+    if !drop_entries(allow, take, every) {
         return Ok(false);
     }
 
     write_settings(&target, &settings).map(|()| true)
+}
+
+/// Drop the strings of `take` from a settings array: the **first** occurrence of each, or
+/// `every` one. Whether anything went.
+///
+/// One occurrence is the exact inverse of the merge, which adds an entry only where none
+/// stands ([`merge_allowlist`], [`merge_deny`]) — so jigc added at most one, and an
+/// identical entry the adopter wrote beside it afterwards is theirs and stays.
+fn drop_entries(array: &mut Vec<serde_json::Value>, take: &[String], every: bool) -> bool {
+    let before = array.len();
+    if every {
+        array.retain(|v| v.as_str().is_none_or(|s| !take.iter().any(|t| t == s)));
+    } else {
+        for entry in take {
+            if let Some(at) = array
+                .iter()
+                .position(|v| v.as_str() == Some(entry.as_str()))
+            {
+                array.remove(at);
+            }
+        }
+    }
+    array.len() != before
 }
 
 /// Idempotently install the profile's session-event **hook** into the host
@@ -1164,27 +1194,33 @@ fn merge_hook(settings: &mut serde_json::Value, hook: &HookTarget) -> std::io::R
     Ok(())
 }
 
-/// Idempotently **remove** the profile's session-event hook from the host project's
-/// assistant settings file — the structure-aware inverse of [`inject_hook`] for
-/// `jigc uninstall` (`design/project-setup.md` → Flow 2 hardening → Teardown, the M36
-/// symmetry fix: "both hooks must come out").
+/// Idempotently **remove** session-event hook commands from the host project's assistant
+/// settings file — the structure-aware inverse of [`inject_hook`] for `jigc uninstall`
+/// (`design/project-setup.md` → Flow 2 hardening → Teardown, the M36 symmetry fix: "both
+/// hooks must come out").
 ///
-/// **Surgical, not a clobber.** Under `hooks.<event>`, drops every inner-`hooks`
-/// command entry whose `command == <profile hook.run>` and prunes any matcher whose
-/// inner array is thereby emptied — so a matcher jigc added (a lone `jigc start`
-/// command) disappears entirely, while a **foreign** `SessionStart` hook sharing the
-/// same event array is preserved verbatim, exactly as `remove_allowlist` drops one
-/// permit from a possibly-shared `allow` array. **Idempotent + non-destructive:** an
-/// absent file, an absent `hooks`/`<event>`, or an event carrying no matching command
-/// is a clean no-op (nothing written, so a second `uninstall` is a no-op). A no-op for
-/// a profile that declares no hook.
+/// **It removes the commands it is handed** (`take`, each an event and the command bound to
+/// it), for the reason [`remove_allowlist`] gives: a `SessionStart` command the adopter
+/// wired to `jigc start` before `jigc setup` ran is equal to jigc's, and the merge left it
+/// as it found it. With `every` unset, one command entry goes per `take` — from the first
+/// matcher that runs it, the one [`merge_hook`] would have found or added; with `every`
+/// set, all of them, under every matcher.
 ///
-/// Returns `Ok(true)` when jigc's hook command was actually dropped, `Ok(false)` on the
+/// **Surgical, not a clobber.** A matcher the drop leaves with an empty inner `hooks` array
+/// is pruned — so a matcher jigc added (a lone `jigc start` command) disappears entirely,
+/// while a **foreign** hook sharing the same event array is preserved verbatim, exactly as
+/// `remove_allowlist` drops one permit from a possibly-shared `allow` array. **Idempotent +
+/// non-destructive:** an absent file, an absent `hooks`/`<event>`, or an event carrying no
+/// matching command is a clean no-op (nothing written, so a second `uninstall` is a no-op).
+///
+/// Returns `Ok(true)` when a hook command was actually dropped, `Ok(false)` on the
 /// no-op — the honest signal the teardown summary reports on.
-pub fn remove_hook(repo_root: &Path, profile: &AdapterProfile) -> std::io::Result<bool> {
-    let Some(hook) = profile.hook() else {
-        return Ok(false);
-    };
+pub fn remove_hook(
+    repo_root: &Path,
+    profile: &AdapterProfile,
+    take: &[HookEntry],
+    every: bool,
+) -> std::io::Result<bool> {
     let target = repo_root.join(&profile.allowlist.file);
 
     // Absent settings file: nothing to remove.
@@ -1193,67 +1229,90 @@ pub fn remove_hook(repo_root: &Path, profile: &AdapterProfile) -> std::io::Resul
     }
     let mut settings = read_settings(&target)?;
 
-    // Navigate to `hooks.<event>` if present; absent → a clean no-op.
-    let Some(event_matchers) = settings
-        .as_object_mut()
-        .and_then(|root| root.get_mut("hooks"))
-        .and_then(|hooks| hooks.as_object_mut())
-        .and_then(|hooks| hooks.get_mut(&hook.event))
-        .and_then(|arr| arr.as_array_mut())
-    else {
-        return Ok(false);
-    };
+    let mut dropped = false;
+    for hook in take {
+        // Navigate to `hooks.<event>` if present; absent → nothing of this entry's.
+        let Some(event_matchers) = settings
+            .as_object_mut()
+            .and_then(|root| root.get_mut("hooks"))
+            .and_then(|hooks| hooks.as_object_mut())
+            .and_then(|hooks| hooks.get_mut(&hook.event))
+            .and_then(|arr| arr.as_array_mut())
+        else {
+            continue;
+        };
+        let runs = |cmd: &serde_json::Value| {
+            cmd.get("command").and_then(|c| c.as_str()) == Some(hook.command.as_str())
+        };
 
-    // Nothing to remove: no matcher under the event runs our command → byte-untouched.
-    let present = event_matchers.iter().any(|matcher| {
-        matcher
-            .get("hooks")
-            .and_then(|h| h.as_array())
-            .is_some_and(|inner| {
-                inner
-                    .iter()
-                    .any(|cmd| cmd.get("command").and_then(|c| c.as_str()) == Some(&hook.run))
-            })
-    });
-    if !present {
-        return Ok(false);
-    }
-
-    // Drop our command from every matcher, then prune matchers emptied by that drop
-    // (a matcher jigc added). Foreign matchers and foreign commands stay verbatim.
-    for matcher in event_matchers.iter_mut() {
-        if let Some(inner) = matcher.get_mut("hooks").and_then(|h| h.as_array_mut()) {
-            inner.retain(|cmd| cmd.get("command").and_then(|c| c.as_str()) != Some(&hook.run));
+        // Drop the command — from the first matcher that runs it, or from every one — and
+        // remember which matchers the drop touched: only those are pruned when emptied, so
+        // a matcher that was already empty stays as the adopter left it.
+        let mut touched: Vec<usize> = Vec::new();
+        for (at, matcher) in event_matchers.iter_mut().enumerate() {
+            let Some(inner) = matcher.get_mut("hooks").and_then(|h| h.as_array_mut()) else {
+                continue;
+            };
+            if every {
+                let before = inner.len();
+                inner.retain(|cmd| !runs(cmd));
+                if inner.len() != before {
+                    touched.push(at);
+                }
+            } else if let Some(found) = inner.iter().position(runs) {
+                inner.remove(found);
+                touched.push(at);
+                break;
+            }
         }
+        if touched.is_empty() {
+            continue;
+        }
+        dropped = true;
+        let mut at = 0;
+        event_matchers.retain(|matcher| {
+            let emptied = touched.contains(&at)
+                && matcher
+                    .get("hooks")
+                    .and_then(|h| h.as_array())
+                    .is_some_and(|inner| inner.is_empty());
+            at += 1;
+            !emptied
+        });
     }
-    event_matchers.retain(|matcher| {
-        matcher
-            .get("hooks")
-            .and_then(|h| h.as_array())
-            .is_none_or(|inner| !inner.is_empty())
-    });
+    // Nothing to remove: no matcher runs any of the commands → byte-untouched.
+    if !dropped {
+        return Ok(false);
+    }
 
     write_settings(&target, &settings).map(|()| true)
 }
 
-/// Idempotently **remove** the profile's `deny` safety floor from the host project's
-/// assistant settings file — the structure-aware inverse of the install-side deny
-/// injection for `jigc uninstall` (`design/assistant-adapter.md` → the `deny` safety
-/// floor: "merged, never clobbered — mirror `inject_allowlist`"; the teardown mirror
-/// of [`remove_allowlist`]).
+/// Idempotently **remove** `deny` safety-floor entries from the host project's assistant
+/// settings file — the structure-aware inverse of the install-side deny injection for
+/// `jigc uninstall` (`design/assistant-adapter.md` → the `deny` safety floor: "merged,
+/// never clobbered — mirror `inject_allowlist`"; the teardown mirror of
+/// [`remove_allowlist`]).
 ///
-/// Drops each profile deny pattern from `permissions.deny`, preserving every user
-/// deny entry, the `permissions` object, and unrelated keys, and leaving the file
-/// valid JSON. **Idempotent + non-destructive:** an empty profile deny set, an absent
-/// file, an absent `permissions`/`deny`, or an array carrying none of the floor
-/// patterns is a clean no-op (nothing written, so a second `uninstall` is a no-op).
+/// **It removes the entries it is handed** (`take`, with `every` as at
+/// [`remove_allowlist`]). This is the removal the finding was reported on: the floor is a
+/// list of ordinary safety rules — `Bash(rm -rf:*)`, `Read(./.env)` — that an adopter may
+/// well have written for themselves, and dropping every entry equal to one of them took
+/// the adopter's own rule out of a file git may hold no copy of.
+///
+/// Preserves every other deny entry, the `permissions` object, and unrelated keys, and
+/// leaves the file valid JSON. **Idempotent + non-destructive:** an absent file, an absent
+/// `permissions`/`deny`, or an array carrying none of `take` is a clean no-op (nothing
+/// written, so a second `uninstall` is a no-op).
 ///
 /// Returns `Ok(true)` when a floor pattern was actually dropped, `Ok(false)` on the
 /// no-op — the honest signal the teardown summary reports on.
-pub fn remove_deny(repo_root: &Path, profile: &AdapterProfile) -> std::io::Result<bool> {
-    if profile.allowlist.deny.is_empty() {
-        return Ok(false);
-    }
+pub fn remove_deny(
+    repo_root: &Path,
+    profile: &AdapterProfile,
+    take: &[String],
+    every: bool,
+) -> std::io::Result<bool> {
     let target = repo_root.join(&profile.allowlist.file);
 
     // Absent settings file: nothing to remove.
@@ -1273,17 +1332,176 @@ pub fn remove_deny(repo_root: &Path, profile: &AdapterProfile) -> std::io::Resul
         return Ok(false);
     };
 
-    let before = deny.len();
-    deny.retain(|v| {
-        v.as_str()
-            .is_none_or(|s| !profile.allowlist.deny.iter().any(|p| p == s))
-    });
     // No floor pattern was present: leave the file byte-untouched (idempotent no-op).
-    if deny.len() == before {
+    if !drop_entries(deny, take, every) {
         return Ok(false);
     }
 
     write_settings(&target, &settings).map(|()| true)
+}
+
+/// **Entries of the assistant settings file, by the three kinds `jigc setup` merges in** —
+/// `permissions.allow` permits, `permissions.deny` floor patterns, and session-event hook
+/// commands. The unit the settings record is kept in ([`crate::setup`]) and the teardown's
+/// removals are handed ([`remove_allowlist`], [`remove_hook`], [`remove_deny`]).
+///
+/// It is also the record's serialized body, so the field names are a stored format: a
+/// kind a later build adds is a new key, absent — and read as empty — in a record an
+/// earlier one wrote.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsEntries {
+    /// `permissions.allow` entries.
+    #[serde(default)]
+    pub allow: Vec<String>,
+    /// `permissions.deny` entries.
+    #[serde(default)]
+    pub deny: Vec<String>,
+    /// Hook commands, each with the session event it is bound to.
+    #[serde(default)]
+    pub hooks: Vec<HookEntry>,
+}
+
+/// One hook command in the settings file: the session `event` it is grouped under and the
+/// `command` it runs — a [`HookTarget`] as the settings file spells it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HookEntry {
+    /// The session event (`hooks.<event>`).
+    pub event: String,
+    /// The command a matcher under that event runs.
+    pub command: String,
+}
+
+impl SettingsEntries {
+    /// Every entry `profile` has `jigc setup` merge into the settings file.
+    pub fn installed_by(profile: &AdapterProfile) -> Self {
+        Self {
+            allow: profile.allowlist.permit.clone(),
+            deny: profile.allowlist.deny.clone(),
+            hooks: profile
+                .hook()
+                .map(|hook| HookEntry {
+                    event: hook.event.clone(),
+                    command: hook.run.clone(),
+                })
+                .into_iter()
+                .collect(),
+        }
+    }
+
+    /// Whether it names no entry of any kind.
+    pub fn is_empty(&self) -> bool {
+        self.allow.is_empty() && self.deny.is_empty() && self.hooks.is_empty()
+    }
+
+    /// How many entries it names, over the three kinds.
+    pub fn len(&self) -> usize {
+        self.allow.len() + self.deny.len() + self.hooks.len()
+    }
+
+    /// These entries less the ones `other` names.
+    pub fn without(&self, other: &Self) -> Self {
+        Self {
+            allow: less(&self.allow, &other.allow),
+            deny: less(&self.deny, &other.deny),
+            hooks: less(&self.hooks, &other.hooks),
+        }
+    }
+
+    /// These entries, then the ones `other` names that these do not — each entry once.
+    pub fn with(&self, other: &Self) -> Self {
+        Self {
+            allow: joined(&self.allow, &other.allow),
+            deny: joined(&self.deny, &other.deny),
+            hooks: joined(&self.hooks, &other.hooks),
+        }
+    }
+
+    /// The entries among these that `settings` holds — by the presence test each merge
+    /// decides on, so *present* here is exactly *the merge adds nothing*.
+    fn present_in(&self, settings: &serde_json::Value) -> Self {
+        let listed = |key: &str, entry: &String| {
+            settings
+                .get("permissions")
+                .and_then(|perms| perms.get(key))
+                .and_then(|list| list.as_array())
+                .is_some_and(|list| list.iter().any(|v| v.as_str() == Some(entry.as_str())))
+        };
+        let bound = |hook: &HookEntry| {
+            settings
+                .get("hooks")
+                .and_then(|hooks| hooks.get(&hook.event))
+                .and_then(|matchers| matchers.as_array())
+                .is_some_and(|matchers| {
+                    matchers.iter().any(|matcher| {
+                        matcher
+                            .get("hooks")
+                            .and_then(|h| h.as_array())
+                            .is_some_and(|inner| {
+                                inner.iter().any(|cmd| {
+                                    cmd.get("command").and_then(|c| c.as_str())
+                                        == Some(hook.command.as_str())
+                                })
+                            })
+                    })
+                })
+        };
+        Self {
+            allow: self
+                .allow
+                .iter()
+                .filter(|entry| listed("allow", entry))
+                .cloned()
+                .collect(),
+            deny: self
+                .deny
+                .iter()
+                .filter(|entry| listed("deny", entry))
+                .cloned()
+                .collect(),
+            hooks: self
+                .hooks
+                .iter()
+                .filter(|hook| bound(hook))
+                .cloned()
+                .collect(),
+        }
+    }
+}
+
+/// `list` without the members of `drop`, in `list`'s order.
+fn less<T: Clone + PartialEq>(list: &[T], drop: &[T]) -> Vec<T> {
+    list.iter()
+        .filter(|entry| !drop.contains(entry))
+        .cloned()
+        .collect()
+}
+
+/// `first`, then the members of `second` it does not hold — no entry twice.
+fn joined<T: Clone + PartialEq>(first: &[T], second: &[T]) -> Vec<T> {
+    let mut out: Vec<T> = Vec::new();
+    for entry in first.iter().chain(second) {
+        if !out.contains(entry) {
+            out.push(entry.clone());
+        }
+    }
+    out
+}
+
+/// **Which of `entries` the settings file holds right now** — read, never written
+/// (`<repo_root>/<profile.allowlist.file>`; an absent file holds none).
+///
+/// Asked by `jigc setup` before its three merges, of the profile's own entries — the ones
+/// already there are the ones this run does not add — and of an earlier record's, to drop
+/// what has since left the file; and by `jigc uninstall` after its removals, to name what
+/// it left. A file that does not parse is the error the merges and the removals return for
+/// it.
+pub fn settings_entries_present(
+    repo_root: &Path,
+    profile: &AdapterProfile,
+    entries: &SettingsEntries,
+) -> std::io::Result<SettingsEntries> {
+    let settings = read_settings(&repo_root.join(&profile.allowlist.file))?;
+    Ok(entries.present_in(&settings))
 }
 
 /// Read the assistant settings file as a JSON value, treating an absent file as
@@ -2639,6 +2857,173 @@ mod tests {
         );
     }
 
+    /// The hook commands the shipped profile installs, as the removals take them.
+    fn jigcs_hooks(profile: &AdapterProfile) -> Vec<HookEntry> {
+        SettingsEntries::installed_by(profile).hooks
+    }
+
+    /// **The three removals take what they are handed, and nothing they merely recognise**
+    /// (the human's ruling of 2026-10-06 on the fix pass's item 21). Seeded with entries
+    /// identical to ones the profile installs, written twice where a kind allows it:
+    ///
+    /// - handed nothing ⇒ the file is byte-identical — the entries are the adopter's;
+    /// - handed an entry without `every` ⇒ exactly one occurrence goes, so an identical
+    ///   entry written beside jigc's stays;
+    /// - handed it with `every` ⇒ all of them go, which is `--force`.
+    #[test]
+    fn the_settings_removals_take_only_what_they_are_handed() {
+        let profile = load_profile("claude-code").expect("the shipped profile loads");
+        let seeded = serde_json::json!({
+            "permissions": {
+                "allow": ["Bash(jigc:*)", "Bash(make:*)", "Bash(jigc:*)"],
+                "deny": ["Bash(rm -rf:*)", "Bash(sudo:*)", "Bash(rm -rf:*)"],
+            },
+            "hooks": {
+                "SessionStart": [
+                    { "hooks": [] },
+                    { "hooks": [
+                        { "type": "command", "command": "jigc start" },
+                        { "type": "command", "command": "my-own-tool --greet" }
+                    ] },
+                    { "hooks": [ { "type": "command", "command": "jigc start" } ] }
+                ]
+            }
+        });
+        let seed = |dir: &TempDir| {
+            let settings = dir.path().join(".claude/settings.json");
+            std::fs::create_dir_all(settings.parent().unwrap()).expect("create .claude");
+            std::fs::write(
+                &settings,
+                format!("{}\n", serde_json::to_string_pretty(&seeded).unwrap()),
+            )
+            .expect("seed the settings");
+            settings
+        };
+        let parsed = |settings: &Path| -> serde_json::Value {
+            serde_json::from_str(&std::fs::read_to_string(settings).unwrap()).unwrap()
+        };
+        let allow = vec!["Bash(jigc:*)".to_string()];
+        let deny = vec!["Bash(rm -rf:*)".to_string()];
+        let hooks = jigcs_hooks(&profile);
+        assert_eq!(hooks.len(), 1, "the profile binds one hook");
+
+        // Handed nothing: nothing is jigc's, whatever it looks like.
+        let dir = TempDir::new();
+        let settings = seed(&dir);
+        let before = std::fs::read_to_string(&settings).unwrap();
+        for every in [false, true] {
+            assert!(!remove_allowlist(dir.path(), &profile, &[], every).unwrap());
+            assert!(!remove_hook(dir.path(), &profile, &[], every).unwrap());
+            assert!(!remove_deny(dir.path(), &profile, &[], every).unwrap());
+        }
+        assert_eq!(
+            std::fs::read_to_string(&settings).unwrap(),
+            before,
+            "handed no entry, the removals leave the file byte-identical",
+        );
+
+        // One occurrence each: the one the merge added.
+        assert!(remove_allowlist(dir.path(), &profile, &allow, false).unwrap());
+        assert!(remove_hook(dir.path(), &profile, &hooks, false).unwrap());
+        assert!(remove_deny(dir.path(), &profile, &deny, false).unwrap());
+        assert_eq!(
+            parsed(&settings),
+            serde_json::json!({
+                "permissions": {
+                    "allow": ["Bash(make:*)", "Bash(jigc:*)"],
+                    "deny": ["Bash(sudo:*)", "Bash(rm -rf:*)"],
+                },
+                "hooks": {
+                    "SessionStart": [
+                        { "hooks": [] },
+                        { "hooks": [
+                            { "type": "command", "command": "my-own-tool --greet" }
+                        ] },
+                        { "hooks": [ { "type": "command", "command": "jigc start" } ] }
+                    ]
+                }
+            }),
+            "one occurrence of each handed entry went; its twin and every other entry stay, \
+             and a matcher that was empty before is not pruned",
+        );
+
+        // Every occurrence: the consent.
+        let dir = TempDir::new();
+        let settings = seed(&dir);
+        assert!(remove_allowlist(dir.path(), &profile, &allow, true).unwrap());
+        assert!(remove_hook(dir.path(), &profile, &hooks, true).unwrap());
+        assert!(remove_deny(dir.path(), &profile, &deny, true).unwrap());
+        assert_eq!(
+            parsed(&settings),
+            serde_json::json!({
+                "permissions": { "allow": ["Bash(make:*)"], "deny": ["Bash(sudo:*)"] },
+                "hooks": {
+                    "SessionStart": [
+                        { "hooks": [] },
+                        { "hooks": [
+                            { "type": "command", "command": "my-own-tool --greet" }
+                        ] }
+                    ]
+                }
+            }),
+            "with `every`, each occurrence of a handed entry goes and a matcher the drop \
+             emptied is pruned",
+        );
+    }
+
+    /// [`settings_entries_present`] answers with the presence test the merges decide on:
+    /// what it calls present is what a merge would not add, and an entry differing by one
+    /// character is another entry.
+    #[test]
+    fn settings_entries_present_is_the_merges_own_presence_test() {
+        let dir = TempDir::new();
+        let profile = load_profile("claude-code").expect("the shipped profile loads");
+        let installs = SettingsEntries::installed_by(&profile);
+        assert_eq!(
+            settings_entries_present(dir.path(), &profile, &installs).unwrap(),
+            SettingsEntries::default(),
+            "an absent settings file holds none of them",
+        );
+
+        let settings = dir.path().join(".claude/settings.json");
+        std::fs::create_dir_all(settings.parent().unwrap()).expect("create .claude");
+        std::fs::write(
+            &settings,
+            r#"{ "permissions": { "allow": ["Bash(git add:*)"], "deny": ["Bash(rm -rf :*)"] } }"#,
+        )
+        .expect("seed the settings");
+        let present = settings_entries_present(dir.path(), &profile, &installs).unwrap();
+        assert_eq!(
+            present,
+            SettingsEntries {
+                allow: vec!["Bash(git add:*)".to_string()],
+                ..SettingsEntries::default()
+            },
+            "the one identical entry, and not the deny rule that differs by a space",
+        );
+
+        // What is not present is exactly what the merges add.
+        let adds = installs.without(&present);
+        inject_allowlist(dir.path(), &profile).unwrap();
+        inject_hook(dir.path(), &profile).unwrap();
+        inject_deny(dir.path(), &profile).unwrap();
+        let after: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        assert_eq!(
+            after["permissions"]["allow"],
+            serde_json::json!(["Bash(git add:*)", "Bash(jigc:*)"]),
+        );
+        assert_eq!(adds.allow, vec!["Bash(jigc:*)".to_string()]);
+        assert_eq!(adds.deny, profile.allowlist.deny);
+        assert_eq!(adds.hooks, installs.hooks);
+        assert_eq!(
+            settings_entries_present(dir.path(), &profile, &installs).unwrap(),
+            installs,
+            "after the merges every entry the profile installs is present",
+        );
+        assert_eq!(adds.with(&present).len(), installs.len());
+    }
+
     /// [`remove_allowlist`] drops the profile's permit from `permissions.allow`,
     /// leaving unrelated permits + unrelated top-level keys intact and the file valid
     /// JSON; a second remove (permit already gone) is a clean byte-identical no-op.
@@ -2666,7 +3051,8 @@ mod tests {
         )
         .unwrap();
 
-        remove_allowlist(dir.path(), &profile).expect("remove allowlist");
+        remove_allowlist(dir.path(), &profile, &profile.allowlist.permit, false)
+            .expect("remove allowlist");
         let after = std::fs::read_to_string(&settings).expect("read after remove");
         let parsed: serde_json::Value =
             serde_json::from_str(&after).expect("settings stays valid JSON");
@@ -2685,7 +3071,8 @@ mod tests {
         );
 
         // Idempotent: a second remove (permit already gone) is byte-identical.
-        remove_allowlist(dir.path(), &profile).expect("second remove");
+        remove_allowlist(dir.path(), &profile, &profile.allowlist.permit, false)
+            .expect("second remove");
         assert_eq!(
             std::fs::read_to_string(&settings).expect("present"),
             after,
@@ -2699,7 +3086,8 @@ mod tests {
     fn remove_allowlist_over_absent_settings_is_a_no_op() {
         let dir = TempDir::new();
         let profile = load_profile("claude-code").expect("the shipped profile loads");
-        remove_allowlist(dir.path(), &profile).expect("remove over absent settings");
+        remove_allowlist(dir.path(), &profile, &profile.allowlist.permit, false)
+            .expect("remove over absent settings");
         assert!(
             !dir.path().join(".claude/settings.json").exists(),
             "remove over an absent settings file must not create one",
@@ -2738,7 +3126,7 @@ mod tests {
         .unwrap();
         inject_hook(dir.path(), &profile).expect("inject jigc hook alongside the foreign one");
 
-        remove_hook(dir.path(), &profile).expect("remove jigc hook");
+        remove_hook(dir.path(), &profile, &jigcs_hooks(&profile), false).expect("remove jigc hook");
         let after = std::fs::read_to_string(&settings).expect("read after remove");
         let parsed: serde_json::Value =
             serde_json::from_str(&after).expect("settings stays valid JSON");
@@ -2769,7 +3157,7 @@ mod tests {
         );
 
         // Idempotent: a second remove (jigc command already gone) is byte-identical.
-        remove_hook(dir.path(), &profile).expect("second remove");
+        remove_hook(dir.path(), &profile, &jigcs_hooks(&profile), false).expect("second remove");
         assert_eq!(
             std::fs::read_to_string(&settings).expect("present"),
             after,
@@ -2783,7 +3171,8 @@ mod tests {
     fn remove_hook_over_absent_settings_is_a_no_op() {
         let dir = TempDir::new();
         let profile = load_profile("claude-code").expect("the shipped profile loads");
-        remove_hook(dir.path(), &profile).expect("remove over absent settings");
+        remove_hook(dir.path(), &profile, &jigcs_hooks(&profile), false)
+            .expect("remove over absent settings");
         assert!(
             !dir.path().join(".claude/settings.json").exists(),
             "remove over an absent settings file must not create one",
@@ -2825,7 +3214,8 @@ mod tests {
         )
         .unwrap();
 
-        remove_deny(dir.path(), &profile).expect("remove deny floor");
+        remove_deny(dir.path(), &profile, &profile.allowlist.deny, false)
+            .expect("remove deny floor");
         let after = std::fs::read_to_string(&settings).expect("read after remove");
         let parsed: serde_json::Value =
             serde_json::from_str(&after).expect("settings stays valid JSON");
@@ -2846,7 +3236,7 @@ mod tests {
         );
 
         // Idempotent: a second remove (floor already gone) is byte-identical.
-        remove_deny(dir.path(), &profile).expect("second remove");
+        remove_deny(dir.path(), &profile, &profile.allowlist.deny, false).expect("second remove");
         assert_eq!(
             std::fs::read_to_string(&settings).expect("present"),
             after,
@@ -2860,7 +3250,8 @@ mod tests {
     fn remove_deny_over_absent_settings_is_a_no_op() {
         let dir = TempDir::new();
         let profile = load_profile("claude-code").expect("the shipped profile loads");
-        remove_deny(dir.path(), &profile).expect("remove over absent settings");
+        remove_deny(dir.path(), &profile, &profile.allowlist.deny, false)
+            .expect("remove over absent settings");
         assert!(
             !dir.path().join(".claude/settings.json").exists(),
             "remove over an absent settings file must not create one",

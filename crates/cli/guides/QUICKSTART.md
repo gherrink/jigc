@@ -61,7 +61,15 @@ It does these things:
   `jigc` is its interface to the project — a plain import line, no marker fence);
 - allowlists `Bash(jigc:*)` in `.claude/settings.json` and adds a `SessionStart` hook
   that runs `jigc start` (so each session opens with orientation), so the agent
-  can call the CLI without a permission prompt;
+  can call the CLI without a permission prompt — and writes down which entries it
+  added, in `.jigc/settings-entries.json`, committed with the install. An entry you
+  already had is left as it was and is not on that list, so `jigc uninstall` takes
+  back exactly what `setup` added and leaves yours, identical ones included. That
+  list is used only where git tracks the settings file. Where git ignores the file
+  `setup` writes no list; and wherever git does not track the file, or the install
+  has no list, `jigc uninstall` leaves every entry identical to one of jigc's in
+  place and names them, for you to remove by hand — or with `jigc uninstall
+  --force`, which removes them all, yours included;
 - writes jigc's own guides — this file and the migration field notes — to the path
   your assistant reads skills from (`.claude/skills/jigc/SKILL.md` for Claude Code),
   as **one file jigc owns**: it opens with a `jigc-version:` stamp naming the build
@@ -141,7 +149,8 @@ refusal prints the two commands that clear the flag.
 so an untracked `CLAUDE.md`, `.gitignore` or `.claude/settings.json` is not a refusal:
 `setup` merges into it, and it rides the repository's first commit with your lines
 intact. A file at a path jigc *replaces* — `.jigc/AGENT.md`, `.jigc/config/.gitkeep`,
-`.jigc/config/packs.yaml` (the round-trip drops your comments), a `.jigc/version` that
+`.jigc/config/packs.yaml` (the round-trip drops your comments),
+`.jigc/settings-entries.json`, a `.jigc/version` that
 is not jigc's own one-line stamp — refuses there as anywhere else, and the refusal
 names what works without a commit, since `git stash` has nothing to stand on yet: move
 the file out of the way, or commit it first.

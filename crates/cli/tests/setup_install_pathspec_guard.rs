@@ -1157,12 +1157,15 @@ fn force_over_a_whole_rewrite_path_says_what_it_replaced() {
 /// pathspec, so it reddens here until somebody decides both — and it cannot join the
 /// pathspec without stating both either, because `InstallMember` has no default.
 ///
-/// The count is **ten paths**, not the eleven a reading of the writer *occurrences* gives:
-/// `.claude/settings.json` is one path with three writers (allowlist, SessionStart hook,
-/// deny floor). Two of the ten are exempt, and each exemption is a content oracle rather
-/// than a name: the guide's recorded body digest, the version stamp's one-line shape.
+/// The count is **eleven paths**, not the twelve a reading of the writer *occurrences*
+/// gives: `.claude/settings.json` is one path with three writers (allowlist, SessionStart
+/// hook, deny floor). Two of the eleven are exempt, and each exemption is a content oracle
+/// rather than a name: the guide's recorded body digest, the version stamp's one-line shape.
+/// **The eleventh is the settings record** (2026-10-06, the human's ruling on the fix
+/// pass's item 21): what those three writers added, kept so the teardown can take back
+/// exactly that.
 ///
-/// **Five preserve and five replace** (the rc.24 fix pass, `(R1, F1)`). The writer column
+/// **Five preserve and six replace** (the rc.24 fix pass, `(R1, F1)`). The writer column
 /// is what the unborn-`HEAD` exemption reads, and cell (23) holds each row of it to what
 /// the real writer does — this cell pins the declaration, that one pins that it is true.
 ///
@@ -1230,6 +1233,17 @@ fn the_install_path_class_is_dispositioned_member_by_member() {
                     own: O::SettledComposeMarker,
                 },
             ),
+            // The record of the settings entries jigc added, written whole from what the
+            // run computed. It rides the settings merge's own code — no code was minted
+            // for it — and its oracle is the record's shape, whichever build wrote it.
+            (
+                ".jigc/settings-entries.json",
+                D::Refuses,
+                W::Replaces {
+                    refusal: "setup.inject-allowlist",
+                    own: O::SettingsRecord,
+                },
+            ),
             // Merge-never-clobber, fresh-repo seed only.
             (".gitignore", D::Refuses, W::Preserves),
             // M48's refuse-to-clobber already dropped a user-modified copy from the
@@ -1285,6 +1299,8 @@ fn plant_for(path: &str) -> &'static str {
         ".jigc/version" => "USERMARK: we pin jigc here\nsee the team wiki\n",
         ".jigc/config/.gitkeep" => "USERMARK\n",
         ".jigc/config/packs.yaml" => "# USERMARK why we pin dev only\npacks:\n- dev\n",
+        // JSON an adopter might keep there, and no record: neither of the record's keys.
+        ".jigc/settings-entries.json" => "{\n  \"USERMARK\": \"our own notes\"\n}\n",
         ".gitignore" => "USERMARK.log\n",
         GUIDE => "# my own skill notes\n\nUSERMARK\n",
         HOOK => "#!/bin/sh\n# USERMARK our own policy hook\nexit 0\n",
@@ -1456,9 +1472,10 @@ fn every_install_member_keeps_its_declared_promise_on_an_unborn_head() {
             ".jigc/version",
             ".jigc/config/.gitkeep",
             ".jigc/config/packs.yaml",
+            ".jigc/settings-entries.json",
         ],
-        "the four members the verification found destroyed on `1.0.0-rc.24` are exactly the \
-         ones that refuse now"
+        "the four members the verification found destroyed on `1.0.0-rc.24` refuse now, and \
+         so does the settings record, a replacing member that build did not have"
     );
 }
 
@@ -2068,6 +2085,7 @@ fn an_ignored_file_at_a_replaced_install_path_refuses_at_either_head() {
         ".jigc/version",
         ".jigc/config/.gitkeep",
         ".jigc/config/packs.yaml",
+        ".jigc/settings-entries.json",
     ]
     .into_iter()
     .collect();
@@ -2077,7 +2095,7 @@ fn an_ignored_file_at_a_replaced_install_path_refuses_at_either_head() {
         .collect();
     assert_eq!(
         refused, expected,
-        "the four members whose writer replaces what it finds refuse at both HEADs, and no \
+        "the five members whose writer replaces what it finds refuse at both HEADs, and no \
          member whose writer preserves does"
     );
 }
@@ -2453,6 +2471,7 @@ fn a_change_hidden_by_an_index_flag_refuses_at_every_tracked_member() {
         ".jigc/version",
         ".jigc/config/.gitkeep",
         ".jigc/config/packs.yaml",
+        ".jigc/settings-entries.json",
     ];
     let expected: Vec<String> = members
         .iter()

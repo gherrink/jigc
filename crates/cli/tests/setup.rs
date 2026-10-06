@@ -1074,7 +1074,7 @@ enum HooksDirShape {
     SparseCheckoutExcluded,
 }
 
-/// The install commit's footprint apart from the `pre-commit` hook: the eight paths
+/// The install commit's footprint apart from the `pre-commit` hook: the nine paths
 /// `install_tracked_paths` names on a repo with a born HEAD (the root `.gitignore`
 /// secrets floor is seeded, and committed, only on a zero-commit repo). Sorted-set
 /// compared, so the assertion is *exactly* this set — a path that silently joins the
@@ -1083,13 +1083,18 @@ enum HooksDirShape {
 /// The eighth is the adapter's owned **guide artifact** (M48 Increment 10), at the path
 /// the shipped Claude Code profile declares: it is committed for the same reason the
 /// bootstrap file is — a clone must get the guides that match the binary that wrote them.
-const INSTALL_COMMIT_BASE_PATHS: [&str; 8] = [
+///
+/// The ninth is the **settings record** (2026-10-06, the human's ruling on the rc.24 fix
+/// pass's item 21): which entries this install added to the settings file, committed
+/// beside that file so `jigc uninstall` in any clone takes back exactly those.
+const INSTALL_COMMIT_BASE_PATHS: [&str; 9] = [
     ".claude/settings.json",
     ".claude/skills/jigc/SKILL.md",
     ".jigc/.gitignore",
     ".jigc/AGENT.md",
     ".jigc/config/.gitkeep",
     ".jigc/config/packs.yaml",
+    ".jigc/settings-entries.json",
     ".jigc/version",
     "CLAUDE.md",
 ];

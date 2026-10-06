@@ -5,7 +5,9 @@
 //!
 //! `jigc setup` puts its own content at five paths — `.jigc/AGENT.md`, `.jigc/version`,
 //! `.jigc/config/.gitkeep`, `.jigc/config/packs.yaml` and the adapter's guide artifact — and
-//! every one of those writers opened its destination through whatever was there. Driven on
+//! every one of those writers opened its destination through whatever was there. (A sixth
+//! joined them on 2026-10-06, the settings record `.jigc/settings-entries.json`; it was
+//! written through the no-follow writer from its first day and is driven with the rest.) Driven on
 //! `1.0.0-rc.24`, on a repository **with commits**: a committed symlink at any of the first
 //! four, whose target no git object holds (untracked, gitignored, or outside the
 //! repository), had that target overwritten at exit 0 with `findings: []`. `--force` did the
@@ -229,6 +231,7 @@ fn target_plant(path: &str) -> &'static str {
         ".jigc/version" => "USERMARK: we pin jigc here\nsee the team wiki\n",
         ".jigc/config/.gitkeep" => "USERMARK\n",
         ".jigc/config/packs.yaml" => "# USERMARK why we pin dev only\npacks:\n- dev\n",
+        ".jigc/settings-entries.json" => "{\n  \"USERMARK\": \"our own notes\"\n}\n",
         GUIDE => "# my own skill notes\n\nUSERMARK\n",
         other => panic!(
             "`{other}` is a replacing install member with no plant: give it bytes an adopter \
@@ -245,6 +248,8 @@ fn refusal_code(path: &str) -> &'static str {
         ".jigc/version" => STAMP_CODE,
         ".jigc/config/.gitkeep" => "setup.init-project-layer",
         ".jigc/config/packs.yaml" => "setup.compose-marker",
+        // The settings record rides the code of the settings merge it belongs to.
+        ".jigc/settings-entries.json" => "setup.inject-allowlist",
         GUIDE => "setup.write-guide",
         other => panic!("`{other}` is a replacing install member with no pinned refusal code"),
     }
@@ -395,9 +400,11 @@ fn every_replacing_member_refuses_a_committed_link_and_its_target_is_untouched()
             ".jigc/version",
             ".jigc/config/.gitkeep",
             ".jigc/config/packs.yaml",
+            ".jigc/settings-entries.json",
             GUIDE,
         ],
-        "the replacing members of the install — a sixth is driven here the day it is declared"
+        "the replacing members of the install — a seventh is driven here the day it is \
+         declared"
     );
 }
 
@@ -1524,7 +1531,10 @@ fn git_holds(repo: &Path, path: &str) -> bool {
 /// In each: exit 0, no refusal code, the adopter's bytes and jigc's merge both in the file
 /// behind the link, that file in no commit and no index entry, the ack saying so, the
 /// repository clean, a re-run moving nothing — and the teardown going back through the same
-/// link. The control beside it is the ordinary file the ruling compares it to.
+/// link: jigc's section out of the file behind a `CLAUDE.md` link, and, behind a settings
+/// link, every entry left and named, because git does not track the file the entries are in
+/// (the ruling on item 21). The control beside it is the ordinary file the ruling compares
+/// it to.
 #[test]
 fn a_link_to_an_ignored_file_is_followed_and_its_target_joins_no_commit() {
     std::thread::scope(|scope| {
@@ -1595,10 +1605,30 @@ fn a_link_to_an_ignored_file_is_followed_and_its_target_joins_no_commit() {
                         assert_eq!(out.status.code(), Some(0), "{what}: {}", said(&out));
                         assert!(is_link(repo, path), "{what}: the link survives");
                         let after = read(repo, "local/mine");
-                        assert!(
-                            after.contains(MARK) && !after.contains(merged_in(path)),
-                            "{what}: jigc's merge is out, the adopter's bytes are in: {after}"
-                        );
+                        if path == ".claude/settings.json" {
+                            // The settings entries are left where git does not track the
+                            // file they are in (2026-10-06, the human's ruling on item
+                            // 21) — and tracked is asked of the file behind the link,
+                            // where the entries are, not of the committed link.
+                            assert_eq!(
+                                after, merged,
+                                "{what}: an ignored settings file keeps every entry"
+                            );
+                            let said_out = said(&out);
+                            assert!(
+                                said_out.contains("warning: left ")
+                                    && said_out
+                                        .contains("git does not track `.claude/settings.json`")
+                                    && said_out.contains("`Bash(jigc:*)`"),
+                                "{what}: and the teardown names what it left: {said_out}"
+                            );
+                        } else {
+                            assert!(
+                                after.contains(MARK) && !after.contains(merged_in(path)),
+                                "{what}: jigc's merge is out, the adopter's bytes are in: \
+                                 {after}"
+                            );
+                        }
                     });
                 }
             }
