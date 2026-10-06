@@ -1491,11 +1491,13 @@ fn a_refused_teardown_is_recorded_in_a_log_that_is_already_there() {
 /// *removed pre-commit hook* and the file is gone. `.git/hooks/` is in no git object, so
 /// neither was the line.
 ///
-/// Two cells through the binary (the unit suite in `setup.rs` iterates where the line
+/// Three cells through the binary (the unit suite in `setup.rs` iterates where the line
 /// sits): the reported one, where jigc's block comes out and the adopter's line stays in a
-/// hook that still runs; and the one that cannot be separated — an edit *inside* jigc's
-/// block — where nothing is removed, the teardown says so, and the printed `--force`
-/// re-run takes the file.
+/// hook that still runs; an edit *inside* jigc's block, which the block's two markers now
+/// answer — it is jigc's block, and it goes (the human's ruling of 2026-10-06 on item 19);
+/// and the same edit in a hook **without** the end marker, the one every earlier build
+/// wrote, which is treated as it was — nothing is removed, the teardown says so, and the
+/// printed `--force` re-run takes the file.
 #[test]
 fn the_teardown_takes_only_jigcs_lines_out_of_an_extended_hook() {
     const LINT: &str = "npm run lint || exit 1   # USERMARK\n";
@@ -1521,10 +1523,44 @@ fn the_teardown_takes_only_jigcs_lines_out_of_an_extended_hook() {
     );
     assert!(!site.repo().join(".jigc").exists(), "`.jigc/` is gone");
 
-    // An edit inside jigc's own block: no line can be called jigc's, so none is taken.
-    let site = Installed::new("hook-edited");
+    // An edit inside jigc's own block, in the hook `setup` writes now: the block is what
+    // stands between its two markers, so it is taken — and nothing stood around it.
+    let site = Installed::new("hook-edited-delimited");
     let hook = site.repo().join(".git/hooks/pre-commit");
     let installed = fs::read_to_string(&hook).expect("`setup` installed the hook");
+    assert_eq!(
+        installed.matches(HOOK_END).count(),
+        1,
+        "the premise: the installed hook carries the end marker: {installed}"
+    );
+    let edited = installed.replacen(
+        "# Warn-only doc<->code drift backstop",
+        "# USERMARK our own note on the backstop",
+        1,
+    );
+    assert_ne!(
+        edited, installed,
+        "the premise: the edit landed inside the block"
+    );
+    fs::write(&hook, &edited).expect("edit the hook");
+    let out = site.run(&["uninstall"]);
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(out.status.success(), "the teardown lands: {stderr}");
+    assert!(
+        !hook.exists(),
+        "the delimited block was the whole hook: {stderr}"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("removed pre-commit hook")
+            && !stderr.contains("left the `pre-commit` hook"),
+        "and the teardown says it removed it: {stderr}"
+    );
+
+    // The same edit in a hook with NO end marker — what every build before the marker
+    // wrote: no line can be called jigc's, so none is taken.
+    let site = Installed::new("hook-edited");
+    let hook = site.repo().join(".git/hooks/pre-commit");
+    let installed = without_the_end_marker(&fs::read_to_string(&hook).expect("the hook"));
     let edited = installed.replacen(
         "# Warn-only doc<->code drift backstop",
         "# USERMARK our own note on the backstop",
@@ -1556,6 +1592,87 @@ fn the_teardown_takes_only_jigcs_lines_out_of_an_extended_hook() {
     let forced = site.run(&["uninstall", "--force"]);
     assert!(forced.status.success(), "the forced re-run lands");
     assert!(!hook.exists(), "and takes the file");
+}
+
+/// The line that closes jigc's block in the `pre-commit` hook (`cli::setup`'s
+/// `PRECOMMIT_SENTINEL_END`).
+const HOOK_END: &str = "# jigc-managed pre-commit hook — end";
+
+/// `hook` as a build before 2026-10-06 wrote it: the same text with no end marker (held to
+/// the bytes `1.0.0-rc.24` wrote by `setup.rs`'s `precommit_hook_body_golden`).
+fn without_the_end_marker(hook: &str) -> String {
+    let legacy = hook.replacen(&format!("{HOOK_END}\n"), "", 1);
+    assert_ne!(legacy, hook, "the premise: the hook carried the end marker");
+    legacy
+}
+
+/// **(u)** **The upgrade from a hook without the end marker, through the binary** (the
+/// human's ruling of 2026-10-06 on item 19). A repository installed by an earlier build
+/// holds the marker-less hook; `jigc setup` by this build replaces its block with the
+/// delimited one — one block, never the new spliced in ahead of the old — and the
+/// teardown then removes exactly what stands between the two markers. With the adopter's
+/// own line in the old hook, that line survives both.
+#[test]
+fn a_hook_without_the_end_marker_is_upgraded_by_setup_and_removed_by_its_markers() {
+    const LINT: &str = "npm run lint || exit 1   # USERMARK\n";
+    for extended in [false, true] {
+        let what = if extended { "extended" } else { "as installed" };
+        let site = Installed::new(&format!("hook-upgrade-{extended}"));
+        let hook = site.repo().join(".git/hooks/pre-commit");
+        let fresh = fs::read_to_string(&hook).expect("`setup` installed the hook");
+        let mut legacy = without_the_end_marker(&fresh);
+        if extended {
+            legacy = legacy.replacen("\nexit 0\n", &format!("\n{LINT}exit 0\n"), 1);
+        }
+        fs::write(&hook, &legacy).expect("the hook an earlier build left");
+
+        let setup = site.run(&["setup"]);
+        assert!(
+            setup.status.success(),
+            "[{what}] the upgrade's `jigc setup`: {}",
+            String::from_utf8_lossy(&setup.stderr)
+        );
+        let upgraded = fs::read_to_string(&hook).expect("the hook");
+        assert_eq!(
+            (
+                upgraded.matches("jigc-managed pre-commit hook (").count(),
+                upgraded.matches(HOOK_END).count(),
+                upgraded.matches("jigc='").count(),
+                upgraded.matches(LINT).count(),
+            ),
+            (1, 1, 1, usize::from(extended)),
+            "[{what}] one delimited block, and the adopter's line where there was one:\n{upgraded}"
+        );
+        if !extended {
+            assert_eq!(
+                upgraded, fresh,
+                "[{what}] exactly the hook a fresh install writes"
+            );
+        }
+
+        let out = site.run(&["uninstall"]);
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert!(
+            out.status.success(),
+            "[{what}] the teardown lands: {stderr}"
+        );
+        assert!(
+            !stderr.contains("left the `pre-commit` hook"),
+            "[{what}] nothing is left behind unrecognised: {stderr}"
+        );
+        if extended {
+            let left = fs::read_to_string(&hook).expect("the adopter's hook stays");
+            assert!(
+                left.starts_with("#!/bin/sh\n") && left.contains(LINT) && !left.contains("jigc"),
+                "[{what}] the block is out and the line is in:\n{left}"
+            );
+        } else {
+            assert!(
+                !hook.exists(),
+                "[{what}] the hook was jigc's whole, and is gone"
+            );
+        }
+    }
 }
 
 /// **(r)** *The teardown never starts the log* is a rule about one verb, and the bound on

@@ -698,14 +698,38 @@ pub const PRECOMMIT_SENTINEL: &str =
 /// a stale binary, and with it a stale `doc-code` probe, which runs inside `jigc`; the
 /// absolute path pins the one binary that is both). A pure CLI-side renderer — the engine stays
 /// filesystem-/shell-free. Disk placement + idempotency land in T2.
+///
+/// **The block is closed by its end marker here too** ([`PRECOMMIT_SENTINEL_END`]; the
+/// human's ruling of 2026-10-06 on the rc.24 fix pass's item 19). The standalone hook is
+/// the shebang, jigc's block **between its two markers**, and the final `exit 0` — the
+/// same bracketed block the wrap case splices into a foreign hook
+/// ([`wrapped_managed_block`]). Until then only the wrapped block carried the end marker,
+/// and the standalone one was recognised by being this build's body byte for byte: so a
+/// hook another build wrote, or one edited inside jigc's lines, could not be told from
+/// anybody else's, and the teardown had to leave it. Delimited, the block is found by its
+/// markers whatever is between them and whatever stands around them.
 pub fn precommit_hook_body(jigc_path: &Path) -> String {
+    format!("#!/bin/sh\n{}\nexit 0\n", wrapped_managed_block(jigc_path))
+}
+
+/// **jigc's block of the `pre-commit` hook** — from the start sentinel through the rename
+/// backstop, newline-terminated: no shebang, no end marker, no final `exit`. The one
+/// rendering both hook forms are built from, and the text a hook **without** an end marker
+/// is searched for ([`standalone_remainder`]) — every build before 2026-10-06 wrote the
+/// standalone hook as the shebang, exactly these bytes, a blank line and `exit 0`.
+///
+/// **So this text is also the legacy form's, and a unit test pins it as that.** An edit
+/// here changes what the hook does *and* stops this build recognising the marker-less hook
+/// earlier builds wrote, which then falls to the leave-it-and-say-so arm. The day the
+/// block's text has to change, the pre-marker text is kept as its own frozen constant
+/// first (`precommit_hook_body_golden` reddens to say so).
+fn managed_block(jigc_path: &Path) -> String {
     // The committed-in jigc path. `display()` is the install-time, single-machine
     // path (a non-UTF-8 path would render lossily, but a git hook on such a path is
     // not a target we support); quoted in the script so a path with spaces survives.
     let jigc = jigc_path.display();
     format!(
-        "#!/bin/sh\n\
-         {PRECOMMIT_SENTINEL}\n\
+        "{PRECOMMIT_SENTINEL}\n\
          #\n\
          # Warn-only doc<->code drift backstop: runs `jigc validate` over the\n\
          # committed store and prints a warning ONLY when a doc-code check raised a\n\
@@ -736,9 +760,7 @@ pub fn precommit_hook_body(jigc_path: &Path) -> String {
          if printf '%s' \"$report\" | tr -d '\\n' | grep -Eq '\"blocking_probes\"[[:space:]]*:[[:space:]]*\\[[^]]*\"doc-code\"'; then\n\
          \techo 'jigc: doc<->code drift detected in committed docs — run `jigc validate` for details (commit not blocked).' >&2\n\
          fi\n\
-         {PRECOMMIT_RENAME_BLOCK}\
-         \n\
-         exit 0\n"
+         {PRECOMMIT_RENAME_BLOCK}"
     )
 }
 
@@ -842,12 +864,14 @@ if [ -n \"$moves\" ]; then\n\
 \tfi\n\
 fi\n";
 
-/// The sentinel that closes the jigc-managed block when it is **wrapped** around a
-/// pre-existing foreign `pre-commit` hook. A fresh (jigc-only) hook is exactly the
-/// rendered [`precommit_hook_body`] and carries no end marker; a wrapped hook
-/// brackets the appended jigc block between [`PRECOMMIT_SENTINEL`] and this line so a
-/// re-install can strip-and-regenerate **only** the jigc block, leaving the foreign
-/// hook verbatim (non-destructive + idempotent).
+/// The sentinel that closes the jigc-managed block — in **every** hook `setup` writes
+/// since 2026-10-06 (the human's ruling on the rc.24 fix pass's item 19): the block sits
+/// between [`PRECOMMIT_SENTINEL`] and this line whether it is spliced into a pre-existing
+/// foreign hook or stands in the hook jigc writes whole, so a re-install can
+/// strip-and-regenerate **only** the jigc block and the teardown can remove exactly it,
+/// leaving everything around it verbatim (non-destructive + idempotent). Until then a
+/// fresh (jigc-only) hook carried no end marker; such a hook is still met in the field and
+/// is the legacy arm of both readers ([`standalone_remainder`]).
 const PRECOMMIT_SENTINEL_END: &str = "# jigc-managed pre-commit hook — end";
 
 /// Install the assistant-neutral warn-only `pre-commit` hook for the repo at
@@ -861,7 +885,11 @@ const PRECOMMIT_SENTINEL_END: &str = "# jigc-managed pre-commit hook — end";
 /// naive `.git/hooks` join. Then writes the rendered [`precommit_hook_body`]
 /// idempotently and non-destructively:
 ///   - no existing hook (or one that is *only* a prior jigc block) → the file becomes
-///     exactly the freshly rendered body (regenerated each `setup`);
+///     exactly the freshly rendered body (regenerated each `setup`). **A prior block is
+///     found by its two markers, whichever build wrote what is between them** — and, for
+///     the hook a build before 2026-10-06 wrote with no end marker, by being there
+///     exactly as jigc wrote it ([`strip_managed_block`]): that is the upgrade, and it
+///     leaves a hook that carries both markers;
 ///   - a pre-existing **foreign** hook → its content is preserved **verbatim** and a
 ///     jigc block (bracketed by [`PRECOMMIT_SENTINEL`]/[`PRECOMMIT_SENTINEL_END`]) is
 ///     spliced in just after the foreign shebang and **before** the foreign body, so
@@ -887,9 +915,10 @@ pub fn install_precommit_hook(jigc_home: &Path, jigc_path: &Path) -> std::io::Re
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => rendered,
         Err(e) => return Err(e),
         Ok(existing) => {
-            let foreign = strip_managed_block(&existing, &rendered);
-            if foreign.trim().is_empty() {
-                // Empty, or only a prior jigc block: regenerate the standalone hook.
+            let foreign = strip_managed_block(&existing);
+            if foreign.trim().is_empty() || is_standalone_frame(&foreign) {
+                // Empty, or only a prior jigc block inside the frame the standalone hook
+                // puts around it: regenerate the standalone hook.
                 rendered
             } else {
                 // Preserve the foreign hook verbatim; run the wrapped jigc block
@@ -942,48 +971,47 @@ fn display_hook_path(jigc_home: &Path, hook: &Path) -> String {
     }
 }
 
-/// The jigc-managed block for the **wrap** case: the rendered body with its shebang
-/// line dropped (the foreign hook owns the shebang) and its trailing `exit 0` dropped
-/// (the block is warn-only — it must fall through to the foreign hook that follows it,
-/// which owns the final exit), with an end-sentinel appended so the block is
-/// self-delimited for strip-and-regenerate. The block runs **before** the foreign hook
-/// so the backstop fires even when the foreign hook ends in an explicit `exit`.
+/// The jigc-managed block **between its two markers** — [`managed_block`] closed by
+/// [`PRECOMMIT_SENTINEL_END`], self-delimited for strip-and-regenerate and for the
+/// teardown. Both hook forms carry exactly these bytes: the standalone hook between its
+/// shebang and its final `exit 0` ([`precommit_hook_body`]), and a foreign hook just after
+/// its own shebang, where the block runs **before** the foreign body so the backstop fires
+/// even when the foreign hook ends in an explicit `exit` (it is warn-only and never exits,
+/// so control falls through).
 fn wrapped_managed_block(jigc_path: &Path) -> String {
-    let body = precommit_hook_body(jigc_path);
-    // Drop the leading `#!/bin/sh\n` shebang — the wrapped block runs inside the
-    // foreign hook's interpreter.
-    let without_shebang = body
-        .strip_prefix("#!/bin/sh\n")
-        .expect("the rendered body always begins with the sh shebang");
-    // Drop the trailing `exit 0\n` — the wrapped block must not terminate the script;
-    // control falls through to the foreign hook spliced in after it.
-    let without_exit = without_shebang
-        .strip_suffix("exit 0\n")
-        .expect("the rendered body always ends with `exit 0`")
-        .trim_end_matches('\n');
-    format!("{without_exit}\n{PRECOMMIT_SENTINEL_END}\n")
+    // No shebang (the hook it sits in owns one) and no `exit` (the block must not
+    // terminate the script: control falls through to whatever follows it).
+    format!("{}{PRECOMMIT_SENTINEL_END}\n", managed_block(jigc_path))
 }
 
 /// Remove the jigc-managed block from a pre-existing hook, returning the foreign
 /// remainder. A block counts as jigc-managed in exactly two forms:
-///   - a **wrapped** block bracketed by BOTH [`PRECOMMIT_SENTINEL`] (start) and
-///     [`PRECOMMIT_SENTINEL_END`] (end) — cut out inclusive of both markers and the
-///     trailing newline, the foreign remainder returned;
-///   - a **standalone** jigc hook — `content` byte-identical to `rendered` (the freshly
-///     rendered standalone body, which carries the start sentinel but no end marker) —
-///     wholly ours, so the remainder is empty.
+///   - **bracketed** by BOTH [`PRECOMMIT_SENTINEL`] (start) and [`PRECOMMIT_SENTINEL_END`]
+///     (end) — cut out inclusive of both markers and the end marker's newline, **whatever
+///     is between them and whichever build wrote it**. Every hook `setup` writes since
+///     2026-10-06 has this form, standalone or wrapped;
+///   - **the legacy standalone block**, with no end marker — the hook builds before that
+///     day wrote whole. It is jigc's only where it is in the file **exactly as jigc wrote
+///     it**, rendered again from the hook's own `jigc='…'` line ([`standalone_remainder`]);
+///     then it comes out and what is left is returned.
 ///
-/// Anything else is **foreign** and returned unchanged — including a foreign hook that
-/// merely *contains* the start-sentinel string on a line but has no matching end marker
-/// and is not our rendered body. Treating a start-sentinel-without-end-marker as wholly
-/// jigc-managed would overwrite that foreign hook (synthetic data-loss); a complete
-/// bracketed block (or the exact standalone body) is the only thing we own.
-fn strip_managed_block<'a>(content: &'a str, rendered: &str) -> std::borrow::Cow<'a, str> {
+/// Anything else is **foreign** and returned unchanged — including a hook that merely
+/// *contains* the start-sentinel string on a line, and a marker-less hook whose jigc lines
+/// were edited or were written from a text this build does not know. Treating a
+/// start-sentinel-without-end-marker as wholly jigc-managed would overwrite that hook
+/// (synthetic data-loss); a delimited block, or the exact legacy one, is all we own.
+///
+/// **The legacy arm used to be a whole-file comparison with the body this build renders
+/// for *its own* path**, so a marker-less hook installed by a `jigc` at another path, or
+/// one the adopter had added a line to, was called foreign and wrapped — the new block
+/// spliced in ahead of the old one, both running. It is found by its own recorded path
+/// now, wherever it sits, which is what makes the upgrade leave one block.
+fn strip_managed_block(content: &str) -> std::borrow::Cow<'_, str> {
     let Some(start) = content.find(PRECOMMIT_SENTINEL) else {
         return std::borrow::Cow::Borrowed(content);
     };
     match content[start..].find(PRECOMMIT_SENTINEL_END) {
-        // Wrapped block: cut from the start-sentinel's line through the end marker.
+        // A delimited block: cut from the start-sentinel's line through the end marker.
         Some(rel_end) => {
             // Back up to the beginning of the start-sentinel's line.
             let block_start = content[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
@@ -997,12 +1025,30 @@ fn strip_managed_block<'a>(content: &'a str, rendered: &str) -> std::borrow::Cow
             out.push_str(&content[block_end..]);
             std::borrow::Cow::Owned(out)
         }
-        // No end marker: ours only if the file is byte-identical to a freshly rendered
-        // standalone hook. A foreign hook that merely references the start sentinel is
-        // preserved verbatim (wrapped, not stripped).
-        None if content == rendered => std::borrow::Cow::Borrowed(""),
-        None => std::borrow::Cow::Borrowed(content),
+        // No end marker: ours only where the legacy block is there verbatim.
+        None => match standalone_remainder(content) {
+            Some(rest) => std::borrow::Cow::Owned(rest),
+            None => std::borrow::Cow::Borrowed(content),
+        },
     }
+}
+
+/// Whether `rest` — a hook with jigc's block cut out of it — is exactly the frame the
+/// **standalone** hook puts around that block ([`precommit_hook_body`]): jigc's own
+/// `#!/bin/sh` on the first line, a bare `exit 0`, and blank lines. Then the file was
+/// jigc's whole, and `setup` regenerates it and the teardown removes it.
+///
+/// **jigc's shebang, not any shebang.** A foreign hook that is nothing but
+/// `#!/bin/bash` and `exit 0` is somebody's file and is kept; one that is nothing but
+/// `#!/bin/sh` and `exit 0` is, with jigc's block in it, byte for byte the hook jigc writes
+/// whole — the two cannot be told apart, and nothing a hook does is in either.
+fn is_standalone_frame(rest: &str) -> bool {
+    let mut lines = rest.lines();
+    lines.next() == Some("#!/bin/sh")
+        && lines.all(|line| {
+            let line = line.trim();
+            line.is_empty() || line == "exit 0"
+        })
 }
 
 /// The teardown verdict for an existing `pre-commit` hook — what [`remove_precommit_hook`]
@@ -1039,14 +1085,18 @@ pub enum PrecommitRemoval {
 /// inverse of [`install_precommit_hook`]'s splice (`uninstall` does not know which
 /// absolute `jigc` path the hook was installed with, so it keys on the sentinels'
 /// **structure**, never on a rendered-body byte match):
-///   - a **wrapped** block bracketed by BOTH [`PRECOMMIT_SENTINEL`] and
-///     [`PRECOMMIT_SENTINEL_END`] → cut inclusive of both markers and restore the
-///     foreign remainder verbatim (empty remainder → remove the file);
-///   - a **standalone** jigc hook — one that opens with the rendered body's fixed prefix
-///     `#!/bin/sh\n{PRECOMMIT_SENTINEL}\n` → **exactly the block jigc wrote is cut out**
-///     ([`standalone_remainder`]), and what is left decides: nothing but the shebang and
-///     the final `exit 0` → remove the file; anything else → it is the adopter's, restore
-///     it;
+///   - a block **bracketed by BOTH** [`PRECOMMIT_SENTINEL`] and
+///     [`PRECOMMIT_SENTINEL_END`] → cut inclusive of both markers, **whatever is between
+///     them and whichever build wrote it**, and what is left decides: nothing, or nothing
+///     but the frame the standalone hook puts around its block ([`is_standalone_frame`]) →
+///     remove the file; anything else → it is somebody's, restore it verbatim. Every hook
+///     `setup` writes since 2026-10-06 is this form (the human's ruling on the rc.24 fix
+///     pass's item 19), so for those the teardown never has to recognise a text;
+///   - **no end marker** — a standalone hook from a build before that day. One that opens
+///     with the rendered body's fixed prefix `#!/bin/sh\n{PRECOMMIT_SENTINEL}\n` →
+///     **exactly the block jigc wrote is cut out** ([`standalone_remainder`]), and what is
+///     left decides: nothing but the shebang and the final `exit 0` → remove the file;
+///     anything else → it is the adopter's, restore it;
 ///   - anything else — including a foreign hook that merely *contains* the start
 ///     sentinel string but has no matching end marker and is not our standalone shape
 ///     — is foreign and left untouched (mirrors [`strip_managed_block`]'s data-loss
@@ -1061,16 +1111,19 @@ pub enum PrecommitRemoval {
 /// teardown now asks the same question the same way, and removes the bytes jigc wrote —
 /// the wrapped path's rule, applied where there is no end marker to find them by.
 ///
-/// **Where the block is not there as jigc writes it** — the adopter edited *inside* jigc's
-/// own lines, or another build of jigc wrote a different body — its lines cannot be told
+/// **Where a marker-less block is not there as jigc writes it** — the adopter edited
+/// *inside* jigc's own lines, or a build wrote a different body — its lines cannot be told
 /// from theirs, so the file is left byte-identical and the teardown says so
 /// ([`PrecommitTeardown::Kept`]). `force` is the operator's consent to delete, the flag
-/// that already takes an edited guide artifact, and it removes the file.
+/// that already takes an edited guide artifact, and it removes the file. **This arm is
+/// reached only by a hook with no end marker**: a delimited block is jigc's by its markers,
+/// edited inside or not, and comes out.
 fn classify_precommit_for_teardown(content: &str, force: bool) -> PrecommitTeardown {
     let Some(start) = content.find(PRECOMMIT_SENTINEL) else {
         return PrecommitTeardown::NotOurs;
     };
-    // Wrapped block: bracketed by both sentinels — cut it out, restore the foreign body.
+    // A delimited block: bracketed by both sentinels — cut it out, whatever it holds, and
+    // restore what stands around it.
     if let Some(rel_end) = content[start..].find(PRECOMMIT_SENTINEL_END) {
         // Back up to the beginning of the start-sentinel's line (keeps a preceding
         // foreign shebang), and advance past the end-marker's own line.
@@ -1085,7 +1138,9 @@ fn classify_precommit_for_teardown(content: &str, force: bool) -> PrecommitTeard
         // foreign hook's normalized pre-wrap bytes.
         let mut foreign = String::from(&content[..block_start]);
         foreign.push_str(after.trim_start_matches('\n'));
-        if foreign.trim().is_empty() {
+        // Nothing left, or nothing but the standalone hook's own frame: the file was
+        // jigc's whole.
+        if foreign.trim().is_empty() || is_standalone_frame(&foreign) {
             return PrecommitTeardown::RemoveFile;
         }
         return PrecommitTeardown::RestoreForeign(foreign);
@@ -1110,17 +1165,15 @@ fn classify_precommit_for_teardown(content: &str, force: bool) -> PrecommitTeard
 /// `uninstall` does not know which `jigc` installed the hook, and does not need to: the
 /// rendering takes one input, the installing binary's path, and the hook records it on its
 /// own `jigc='…'` line. So the block is rendered again from that line
-/// ([`wrapped_managed_block`], the same bytes the wrap case brackets, less its end marker)
-/// and looked for verbatim. Found, it is jigc's and it comes out; what remains is whatever
+/// ([`managed_block`], the bytes both hook forms bracket) and looked for verbatim. Found, it is jigc's and it comes out; what remains is whatever
 /// else the file held — lines above it, below it, after the final `exit 0`. Not found, and
 /// nothing here can say which lines are whose.
 fn standalone_remainder(content: &str) -> Option<String> {
     let jigc_path = content
         .lines()
         .find_map(|line| line.strip_prefix("jigc='")?.strip_suffix('\''))?;
-    let wrapped = wrapped_managed_block(Path::new(jigc_path));
-    let block = wrapped.strip_suffix(&format!("{PRECOMMIT_SENTINEL_END}\n"))?;
-    let at = content.find(block)?;
+    let block = managed_block(Path::new(jigc_path));
+    let at = content.find(&block)?;
     let mut rest = String::from(&content[..at]);
     // The blank line the rendered body keeps between its block and the final `exit 0`.
     rest.push_str(content[at + block.len()..].trim_start_matches('\n'));
@@ -1187,11 +1240,12 @@ fn narrate_kept_precommit(jigc_home: &Path) {
         .map(|dir| display_hook_path(jigc_home, &precommit_hook_in(&dir)))
         .unwrap_or_else(|_| "pre-commit".to_string());
     eprintln!(
-        "warning: left the `pre-commit` hook `{hook}` in place — it opens as the hook jigc \
-         writes and is not that hook byte for byte: it was edited inside jigc's own lines, or \
-         written by another build of jigc, so jigc cannot tell its lines from yours and \
-         removed none.\n  note: jigc's lines in it print nothing once the install is gone. \
-         Delete the file yourself, or re-run `jigc uninstall --force` to remove it whole."
+        "warning: left the `pre-commit` hook `{hook}` in place — it opens as a hook jigc \
+         wrote before its block carried an end marker, and is not that hook byte for byte: \
+         it was edited inside jigc's own lines, or written from another text, so jigc \
+         cannot tell its lines from yours and removed none.\n  note: jigc's lines in it \
+         print nothing once the install is gone. Delete the file yourself, or re-run `jigc \
+         uninstall --force` to remove it whole."
     );
 }
 
@@ -6715,9 +6769,279 @@ mod tests {
              \t\techo 'jigc: an out-of-band managed-doc rename exists in the committed tree — run `jigc validate` for details (not staged in this commit; commit not blocked).' >&2\n\
              \tfi\n\
              fi\n\
+             # jigc-managed pre-commit hook — end\n\
              \n\
              exit 0\n",
         );
+
+        // **And the hook every build before the end marker wrote is this text less that one
+        // line** — pinned from the literal above, never from the renderer, because the
+        // upgrade and the teardown find such a hook by rendering this block again
+        // ([`standalone_remainder`]). A change to the block's text reddens here first:
+        // freeze the pre-marker text as a constant of its own before making it, or every
+        // hook an earlier build installed stops being recognised.
+        let legacy = body.replacen("# jigc-managed pre-commit hook — end\n", "", 1);
+        assert_eq!(legacy.len() + PRECOMMIT_SENTINEL_END.len() + 1, body.len());
+        assert_eq!(
+            legacy_standalone_body(Path::new("/abs/install/bin/jigc")),
+            legacy,
+            "the pre-marker standalone hook: shebang, the block, a blank line, `exit 0`",
+        );
+        assert_eq!(
+            standalone_remainder(&legacy).as_deref(),
+            Some("#!/bin/sh\nexit 0\n"),
+            "and this build still finds its block, leaving the frame",
+        );
+    }
+
+    /// The standalone hook as every build before 2026-10-06 wrote it: the shebang, jigc's
+    /// block with **no end marker**, a blank line and `exit 0`.
+    fn legacy_standalone_body(jigc_path: &Path) -> String {
+        format!("#!/bin/sh\n{}\nexit 0\n", managed_block(jigc_path))
+    }
+
+    /// A hook file under a fresh `git init`, holding `content` — or absent for `None`.
+    fn hook_holding(content: Option<&str>) -> (TempDir, PathBuf) {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+        let hook = dir.path().join(".git/hooks/pre-commit");
+        std::fs::create_dir_all(hook.parent().expect("hooks dir")).expect("create hooks dir");
+        if let Some(content) = content {
+            std::fs::write(&hook, content).expect("seed the hook");
+        }
+        (dir, hook)
+    }
+
+    /// **The hook `setup` writes carries both markers, and that is what a re-install and
+    /// the teardown key on** (the human's ruling of 2026-10-06 on the rc.24 fix pass's item
+    /// 19): once each, the end marker ahead of the final `exit 0`; a re-install is
+    /// byte-identical; and an install by a `jigc` at another path replaces the block rather
+    /// than stacking a second one — which the marker-less hook could not promise, since it
+    /// was recognised only as *this* path's body.
+    #[test]
+    fn the_standalone_hook_is_delimited_by_both_markers() {
+        let (dir, hook) = hook_holding(None);
+        let here = Path::new("/abs/bin/jigc");
+        install_precommit_hook(dir.path(), here).expect("install");
+        let once = std::fs::read_to_string(&hook).expect("read");
+        assert_eq!(once, precommit_hook_body(here));
+        assert_eq!(once.matches(PRECOMMIT_SENTINEL).count(), 1);
+        assert_eq!(once.matches(PRECOMMIT_SENTINEL_END).count(), 1);
+        assert!(
+            once.find(PRECOMMIT_SENTINEL_END).expect("end marker")
+                < once.rfind("\nexit 0\n").expect("the final exit"),
+            "the block ends before the frame's `exit 0`:\n{once}"
+        );
+        install_precommit_hook(dir.path(), here).expect("re-install");
+        assert_eq!(std::fs::read_to_string(&hook).expect("read"), once);
+
+        let moved = Path::new("/opt/elsewhere/bin/jigc");
+        install_precommit_hook(dir.path(), moved).expect("install from another path");
+        assert_eq!(
+            std::fs::read_to_string(&hook).expect("read"),
+            precommit_hook_body(moved),
+            "one block, the new binary's — found by its markers, not by its text",
+        );
+    }
+
+    /// **The upgrade from a hook without the end marker.** A build before 2026-10-06
+    /// wrote the standalone hook with no end marker; `setup` by this build meets it.
+    ///
+    /// - exactly as that build wrote it, for this `jigc` path or another → replaced by
+    ///   the delimited hook: one block, both markers;
+    /// - with the adopter's line beside jigc's block (below it, after the final `exit 0`,
+    ///   above it) → the block is found verbatim and replaced by the delimited one, the
+    ///   adopter's line kept, a re-install byte-identical, and the teardown then takes
+    ///   the block and leaves the line;
+    /// - edited *inside* jigc's lines → **treated as before**: nothing in the file can be
+    ///   called jigc's, so it is kept verbatim as a foreign hook and wrapped.
+    #[test]
+    fn an_install_over_a_hook_without_the_end_marker_upgrades_it() {
+        const LINT: &str = "npm run lint || exit 1   # USERMARK\n";
+        let here = Path::new("/abs/bin/jigc");
+        for wrote in [here, Path::new("/opt/a place/bin/jigc")] {
+            let legacy = legacy_standalone_body(wrote);
+            assert!(!legacy.contains(PRECOMMIT_SENTINEL_END), "premise");
+            let (dir, hook) = hook_holding(Some(&legacy));
+            install_precommit_hook(dir.path(), here).expect("upgrade");
+            assert_eq!(
+                std::fs::read_to_string(&hook).expect("read"),
+                precommit_hook_body(here),
+                "a hook `{}` installed with no end marker becomes the delimited hook",
+                wrote.display()
+            );
+        }
+
+        let legacy = legacy_standalone_body(here);
+        let (head, tail) = legacy
+            .split_once(&format!("{PRECOMMIT_SENTINEL}\n"))
+            .expect("the legacy body opens with the shebang and the sentinel");
+        for (place, content) in [
+            (
+                "below jigc's block, above the final `exit 0`",
+                legacy.replacen("\nexit 0\n", &format!("\n{LINT}exit 0\n"), 1),
+            ),
+            ("after the final `exit 0`", format!("{legacy}{LINT}")),
+            (
+                "between the shebang and jigc's block",
+                format!("{head}{LINT}{PRECOMMIT_SENTINEL}\n{tail}"),
+            ),
+        ] {
+            let (dir, hook) = hook_holding(Some(&content));
+            install_precommit_hook(dir.path(), here).expect("upgrade");
+            let upgraded = std::fs::read_to_string(&hook).expect("read");
+            assert!(upgraded.starts_with("#!/bin/sh\n"), "{place}:\n{upgraded}");
+            assert_eq!(upgraded.matches(LINT).count(), 1, "{place}:\n{upgraded}");
+            assert_eq!(
+                (
+                    upgraded.matches(PRECOMMIT_SENTINEL).count(),
+                    upgraded.matches(PRECOMMIT_SENTINEL_END).count(),
+                    upgraded.matches("jigc='").count(),
+                ),
+                (1, 1, 1),
+                "{place}: one block, delimited — the old one is not left running beside it:\n\
+                 {upgraded}"
+            );
+            install_precommit_hook(dir.path(), here).expect("re-install");
+            assert_eq!(
+                std::fs::read_to_string(&hook).expect("read"),
+                upgraded,
+                "{place}: byte-identical on a re-install"
+            );
+            assert_eq!(
+                remove_precommit_hook(dir.path(), false).expect("teardown"),
+                PrecommitRemoval::Removed,
+                "{place}"
+            );
+            let left = std::fs::read_to_string(&hook).expect("the adopter's hook stays");
+            assert!(
+                left.contains(LINT) && !left.contains("jigc"),
+                "{place}: the block is out and the line is in:\n{left}"
+            );
+        }
+
+        // Edited inside jigc's lines: as before — foreign, kept verbatim, wrapped.
+        let inside = legacy.replacen(
+            "# Warn-only doc<->code drift backstop",
+            "# USERMARK our own note on the backstop",
+            1,
+        );
+        assert_ne!(inside, legacy, "premise: the edit landed inside the block");
+        let (dir, hook) = hook_holding(Some(&inside));
+        install_precommit_hook(dir.path(), here).expect("install");
+        let wrapped = std::fs::read_to_string(&hook).expect("read");
+        assert!(
+            wrapped.contains("# USERMARK our own note on the backstop")
+                && wrapped.contains(PRECOMMIT_SENTINEL_END),
+            "an edited marker-less hook is somebody's file: kept, and wrapped:\n{wrapped}"
+        );
+    }
+
+    /// **The teardown removes exactly the lines between jigc's two markers — whatever
+    /// build wrote them, whatever stands around them** (the same ruling). The block here is
+    /// one *this* build would never render: another `jigc` path, a comment line of its text
+    /// changed, a line added inside it. It comes out by its markers all the same:
+    ///
+    /// - nothing around it but the standalone frame → the file is removed;
+    /// - the adopter's line above it, below it, or after the final `exit 0` → the block is
+    ///   out, every other byte stays, and a second teardown changes nothing;
+    /// - spliced into a foreign hook → that hook is restored byte for byte.
+    ///
+    /// And the frame is jigc's own shebang only: what is left of a foreign
+    /// `#!/bin/bash` hook that held nothing but `exit 0` is that hook, kept.
+    #[test]
+    fn the_teardown_cuts_between_the_two_markers_whatever_is_between_them() {
+        const LINT: &str = "npm run lint || exit 1   # USERMARK\n";
+        // A block no rendering of this build's produces.
+        let other_build = |body: String| {
+            let edited = body
+                .replacen(
+                    "# Warn-only doc<->code drift backstop",
+                    "# Warn-only backstop (as some other build worded it)",
+                    1,
+                )
+                .replacen("\nreport=", "\n# a line this build never wrote\nreport=", 1);
+            assert_ne!(edited, body, "premise: the block's text differs");
+            edited
+        };
+        let standalone = other_build(precommit_hook_body(Path::new("/some/other/bin/jigc")));
+        assert!(
+            standalone_remainder(&standalone).is_none(),
+            "premise: this build cannot find the block by its text"
+        );
+
+        let (dir, hook) = hook_holding(Some(&standalone));
+        assert_eq!(
+            remove_precommit_hook(dir.path(), false).expect("teardown"),
+            PrecommitRemoval::Removed
+        );
+        assert!(
+            !hook.exists(),
+            "nothing but the frame was around it: the file goes"
+        );
+
+        let (head, tail) = standalone
+            .split_once(&format!("{PRECOMMIT_SENTINEL}\n"))
+            .expect("shebang, then the sentinel");
+        for (place, content) in [
+            (
+                "below the block, above the final `exit 0`",
+                standalone.replacen("\nexit 0\n", &format!("\n{LINT}exit 0\n"), 1),
+            ),
+            ("after the final `exit 0`", format!("{standalone}{LINT}")),
+            (
+                "between the shebang and the block",
+                format!("{head}{LINT}{PRECOMMIT_SENTINEL}\n{tail}"),
+            ),
+        ] {
+            let (dir, hook) = hook_holding(Some(&content));
+            assert_eq!(
+                remove_precommit_hook(dir.path(), false).expect("teardown"),
+                PrecommitRemoval::Removed,
+                "{place}"
+            );
+            let left = std::fs::read_to_string(&hook)
+                .unwrap_or_else(|err| panic!("{place}: the adopter's hook is still there: {err}"));
+            assert!(
+                left.starts_with("#!/bin/sh\n") && left.contains(LINT),
+                "{place}: still a script, with the adopter's line:\n{left}"
+            );
+            assert!(
+                !left.contains("jigc") && !left.contains("blocking_probes"),
+                "{place}: and nothing that stood between the markers:\n{left}"
+            );
+            assert_eq!(
+                remove_precommit_hook(dir.path(), false).expect("second teardown"),
+                PrecommitRemoval::Nothing,
+                "{place}"
+            );
+            assert_eq!(
+                std::fs::read_to_string(&hook).expect("read"),
+                left,
+                "{place}"
+            );
+        }
+
+        // Spliced into a foreign hook by `setup`, then the block's text changed.
+        for foreign in [
+            "#!/bin/sh\n# someone's hand-rolled hook\necho hello\nexit 0\n",
+            // Nothing but another interpreter's shebang and an exit: still somebody's file.
+            "#!/bin/bash\nexit 0\n",
+        ] {
+            let (dir, hook) = hook_holding(Some(foreign));
+            install_precommit_hook(dir.path(), Path::new("/abs/bin/jigc")).expect("wrap");
+            let wrapped = other_build(std::fs::read_to_string(&hook).expect("read"));
+            std::fs::write(&hook, &wrapped).expect("as another build left it");
+            assert_eq!(
+                remove_precommit_hook(dir.path(), false).expect("teardown"),
+                PrecommitRemoval::Removed
+            );
+            assert_eq!(
+                std::fs::read_to_string(&hook).expect("the foreign hook is restored"),
+                foreign,
+                "byte for byte"
+            );
+        }
     }
 
     /// Run `git -C <dir> <args...>`, asserting success — the test driver for the
@@ -7703,11 +8027,22 @@ mod tests {
     /// no-op over what is left. In the fourth nothing is removed at all, and only `force`
     /// takes the file. Beside them, the must-not-keep cell: a hook nobody extended is
     /// removed whole, whichever `jigc` path installed it.
+    ///
+    /// **This is the hook with no end marker — the one every build before 2026-10-06
+    /// wrote — and it is treated as it was** (the human's ruling on item 19). The hook
+    /// `setup` writes now is delimited, and its cells are
+    /// `the_teardown_cuts_between_the_two_markers_whatever_is_between_them`: there an edit
+    /// inside the block does not keep the file, because the markers say whose the lines
+    /// are.
     #[test]
     fn remove_precommit_takes_only_jigcs_block_out_of_an_extended_standalone_hook() {
         const LINT: &str = "npm run lint || exit 1   # USERMARK\n";
         let jigc_path = Path::new("/opt/a place/bin/jigc");
-        let installed = precommit_hook_body(jigc_path);
+        let installed = legacy_standalone_body(jigc_path);
+        assert!(
+            !installed.contains(PRECOMMIT_SENTINEL_END),
+            "premise: no end marker"
+        );
         let (head, tail) = installed
             .split_once(&format!("{PRECOMMIT_SENTINEL}\n"))
             .expect("the standalone body opens with the shebang and the sentinel");
@@ -7723,16 +8058,7 @@ mod tests {
             ),
         ];
         for (place, content) in extended {
-            let dir = TempDir::new();
-            git(dir.path(), &["init", "-q"]);
-            let hook = dir.path().join(".git/hooks/pre-commit");
-            install_precommit_hook(dir.path(), jigc_path).expect("install a standalone hook");
-            assert_eq!(
-                std::fs::read_to_string(&hook).expect("read"),
-                installed,
-                "{place}: the premise — a standalone hook"
-            );
-            std::fs::write(&hook, &content).expect("extend the hook");
+            let (dir, hook) = hook_holding(Some(&content));
 
             assert_eq!(
                 remove_precommit_hook(dir.path(), false).expect("teardown"),
@@ -7800,10 +8126,7 @@ mod tests {
         assert!(!hook.exists(), "and it does");
 
         // The must-not-keep cell: unextended, it goes whole.
-        let dir = TempDir::new();
-        git(dir.path(), &["init", "-q"]);
-        let hook = dir.path().join(".git/hooks/pre-commit");
-        install_precommit_hook(dir.path(), jigc_path).expect("install");
+        let (dir, hook) = hook_holding(Some(&installed));
         assert_eq!(
             remove_precommit_hook(dir.path(), false).expect("teardown"),
             PrecommitRemoval::Removed
