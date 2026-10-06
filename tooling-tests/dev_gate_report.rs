@@ -52,7 +52,7 @@
 //! step failed, `GATE: PASS` after every step exited 0 — and reaching the PASS branch
 //! means running the real gate, which is the five minutes this suite exists to avoid.
 //! A source scan is the honest fence for a single-source literal here, on the
-//! [`dev_rig_parity`](dev_rig_parity) precedent (which scans `dev/` for a removal shape
+//! [`dev_rig_parity`](../crates/cli/tests/dev_rig_parity.rs) precedent (which scans `dev/` for a removal shape
 //! it must never contain). The same scan carries the totals line's *other* producer:
 //! `gate_report` and the live tail each render that line today, and only the live one is
 //! what the harness ever reads, so pinning the report layer's rendering alone would leave

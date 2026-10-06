@@ -33,7 +33,7 @@
 #   dev/gate --report <log>      # re-print the report for an existing log and stop.
 #                                #   Runs no cargo: the report layer is pure text over
 #                                #   a log, so this is also how it is TESTED
-#                                #   (crates/cli/tests/dev_gate_report.rs), in
+#                                #   (tooling-tests/dev_gate_report.rs), in
 #                                #   milliseconds instead of a five-minute gate run.
 #
 # A run stops at the first red stage, so a red costs what it takes to see it: a red fmt,
@@ -398,7 +398,7 @@ fi
 # is one readdir -- ~3s over 530 k entries, and imperceptible under 100 k.
 #
 # The threshold is overridable so the warning branch is reachable by a fixture the
-# size of three files (crates/cli/tests/dev_gate_report.rs), and so a machine with a
+# size of three files (tooling-tests/dev_gate_report.rs), and so a machine with a
 # different tolerance can say so without editing the tool.
 deps_warn=${JIGC_GATE_DEPS_WARN:-100000}
 deps_dir=${CARGO_TARGET_DIR:-$repo_root/target}/debug/deps

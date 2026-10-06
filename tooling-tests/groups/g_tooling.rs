@@ -20,6 +20,8 @@ mod support;
 
 #[path = "../ci_matrix_fence.rs"]
 mod ci_matrix_fence;
+#[path = "../dev_gate_report.rs"]
+mod dev_gate_report;
 #[path = "../dev_stabilize_record.rs"]
 mod dev_stabilize_record;
 #[path = "../doc_link_fence.rs"]

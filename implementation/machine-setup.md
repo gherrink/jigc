@@ -12,7 +12,7 @@ Then enable your terminal under **System Settings → Privacy & Security → Dev
 
 **Why, and why it is worth the two minutes.** macOS assesses every **freshly created** executable on its first run. The test suite creates a lot of them, and each assessment cost a **measured ~44 s** of `/usr/libexec/syspolicyd` — during which the test process sits at 0% CPU doing nothing. Confirmed by re-running an already-assessed binary with no code change: **64.1 s → 19.1 s**.
 
-Before the test targets were consolidated this was catastrophic — 252 binaries × ~44 s ≈ **3 hours per gate run**, against 8 minutes of actual test execution. It was misdiagnosed for a long time as a slow suite ([DECISIONS.md](../DECISIONS.md) → 2026-08-05). The consolidation to twelve `[[test]]` group targets removed most of it; this setting removes the rest.
+Before the test targets were consolidated this was catastrophic — 252 binaries × ~44 s ≈ **3 hours per gate run**, against 8 minutes of actual test execution. It was misdiagnosed for a long time as a slow suite ([DECISIONS.md](../DECISIONS.md) → 2026-08-05). The consolidation to twelve `[[test]]` group targets — thirteen today, with the one the repository's own tooling suites got on 2026-10-06 — removed most of it; this setting removes the rest.
 
 The trade-off is real and it is yours to make: binaries launched from that terminal are no longer Gatekeeper-assessed. That is normal for a development machine, but it is a genuine reduction in local malware checking, so it is a per-machine choice rather than something the repo can do for you.
 
