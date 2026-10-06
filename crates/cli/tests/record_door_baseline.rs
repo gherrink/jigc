@@ -760,6 +760,253 @@ fn a_converting_clone_serves_the_record_door_twice() {
     }
 }
 
+/// A way git itself rewrites the record's working file while jigc holds its hash.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Rewrite {
+    /// A switch to a branch that does not carry the record, and back.
+    SwitchAndBack,
+    /// An edit to the record, stashed: git checks the record out again.
+    Stash,
+}
+
+impl Rewrite {
+    /// The branch `SwitchAndBack` visits — made before the milestone is minted.
+    const ELSEWHERE: &'static str = "before-the-milestone";
+
+    fn apply(self, corpus: &TrialCorpus) {
+        match self {
+            Rewrite::SwitchAndBack => {
+                corpus.git(&["switch", "-q", Self::ELSEWHERE]);
+                corpus.git(&["switch", "-q", "-"]);
+            }
+            Rewrite::Stash => {
+                Edit::Note.apply(corpus);
+                corpus.git(&["stash", "push", "-q", "--", RECORD]);
+                corpus.git(&["stash", "drop", "-q"]);
+            }
+        }
+    }
+}
+
+/// [`live_milestone`], with a line-ending conversion in force from before the spec's commit
+/// and a branch left behind at the commit before the milestone was minted.
+fn live_milestone_under(conversion: Option<Conversion>) -> (TrialCorpus, String) {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    match conversion {
+        Some(conversion) => conversion.apply(&corpus),
+        None => {
+            corpus.git(&["config", "core.autocrlf", "false"]);
+        }
+    }
+    let specs = corpus.repo().join("docs").join("specs");
+    fs::create_dir_all(&specs).expect("mk docs/specs");
+    fs::write(specs.join("rate-limit.md"), SPEC).expect("write the spec");
+    corpus.git(&["add", "--", "docs/specs/rate-limit.md"]);
+    corpus.git(&["commit", "-q", "-m", "docs: add the rate-limit spec"]);
+    corpus.git(&["branch", Rewrite::ELSEWHERE]);
+
+    corpus.jigc_ok(&["milestone", "create", MILESTONE_TITLE]);
+    let ack = corpus.jigc_ok(&["milestone", "add-task", MILESTONE, "alpha sharpens a doc"]);
+    let (_, rest) = ack
+        .split_once("added task:")
+        .unwrap_or_else(|| panic!("`milestone add-task` names its task; got:\n{ack}"));
+    let sub = rest
+        .split_whitespace()
+        .next()
+        .expect("the sub-task id")
+        .to_owned();
+    corpus.set_slot(
+        "vision:vision#open-questions",
+        &sub,
+        "Which domains earn a pack, and when.",
+    );
+    (corpus, sub)
+}
+
+/// The one backticked `jigc unmanage …` span a route carries, as emitted.
+fn unmanage_span<'a>(route: &'a str, what: &str) -> &'a str {
+    let spans: Vec<&str> = route
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .filter(|span| span.starts_with("jigc unmanage "))
+        .collect();
+    assert_eq!(
+        spans.len(),
+        1,
+        "{what}: the held-hash refusal names the exit that works where there is no edit to \
+         restore — one `jigc unmanage <record>`; got: {route}",
+    );
+    spans[0]
+}
+
+/// Run an emitted `jigc …` span as printed: a real `sh` word split, then this tree's binary.
+fn run_emitted_jigc(corpus: &TrialCorpus, span: &str, what: &str) -> Output {
+    let argv = support::shell_words(span, &corpus.repo(), &corpus.home());
+    assert_eq!(
+        argv[0], "jigc",
+        "{what}: the span is a jigc command: {span}"
+    );
+    let args: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
+    corpus.jigc(&args)
+}
+
+/// **The held-hash refusal names the exit that works where git has no edit to restore**
+/// (the human's ruling of 2026-10-06 on the fix pass's item 12).
+///
+/// While jigc holds the record's hash, the record door compares bytes and never asks git —
+/// that is `design/reconciliation.md`'s declared open bound, and it stands. In a checkout
+/// that converts line endings git rewrites the record's working file in its converted form
+/// whenever it checks the record out (a branch switch and back, a stash), so the door
+/// refuses as *edited out of band* over a record git calls unmodified, and the restore the
+/// route printed, `git checkout -- <record>`, has nothing to restore. The route now also
+/// names `jigc unmanage <record>`: it drops the held hash, the next run compares the record
+/// with `HEAD` through git, and lands.
+///
+/// Every conversion × every door that rewrites the record after a switch and back; a stash
+/// under every conversion; each printed command run as printed.
+#[test]
+fn the_held_hash_refusal_in_a_converting_checkout_names_the_exit_that_works() {
+    std::thread::scope(|scope| {
+        for conversion in Conversion::ALL {
+            scope.spawn(move || {
+                let (base, sub) = live_milestone_under(Some(conversion));
+                let cells = Door::ALL
+                    .into_iter()
+                    .map(|door| (door, Rewrite::SwitchAndBack))
+                    .chain([(Door::AddTask, Rewrite::Stash)]);
+                for (door, rewrite) in cells {
+                    let what = format!("{conversion:?}/{door:?}/{rewrite:?}");
+                    let corpus = base.copy_state();
+                    let repo = corpus.repo();
+                    assert!(
+                        !read(&repo, RECORD).contains("\r\n"),
+                        "{what}: the premise — jigc wrote the record with `\\n` endings",
+                    );
+                    rewrite.apply(&corpus);
+                    let rewritten = read(&repo, RECORD);
+                    assert!(
+                        rewritten.contains("\r\n") && recorded(&corpus).is_some(),
+                        "{what}: the premise — git rewrote the record in its converted form \
+                         while jigc held its hash",
+                    );
+                    assert_eq!(
+                        git(&repo, &["status", "--porcelain", "--", RECORD]),
+                        "",
+                        "{what}: the premise — git calls the record unmodified",
+                    );
+                    let head_before = head(&repo);
+
+                    let out = door.run(&corpus, &sub);
+                    let route = assert_blocked(&repo, &out, &head_before, &rewritten, &what);
+                    assert!(
+                        String::from_utf8_lossy(&out.stderr).contains("since jigc last wrote it"),
+                        "{what}: the held-hash presentation; {}",
+                        text(&out),
+                    );
+
+                    // The restore the route has always printed: it runs, and there is
+                    // nothing for it to restore.
+                    let restore = route
+                        .split('`')
+                        .skip(1)
+                        .step_by(2)
+                        .find(|span| span.starts_with("git ") && span.contains(" checkout "))
+                        .unwrap_or_else(|| panic!("{what}: the route's restore; got: {route}"));
+                    let restored = run_emitted(restore, &corpus.home(), &corpus.home());
+                    assert!(restored.status.success(), "{what}: {}", text(&restored));
+                    assert_eq!(
+                        read(&repo, RECORD),
+                        rewritten,
+                        "{what}: the premise — git has no edit to restore",
+                    );
+
+                    // The check the route names for telling the two cases apart, as printed.
+                    let status = route
+                        .split('`')
+                        .skip(1)
+                        .step_by(2)
+                        .find(|span| span.starts_with("git ") && span.contains(" status "))
+                        .unwrap_or_else(|| panic!("{what}: the route's check; got: {route}"));
+                    let asked = run_emitted(status, &corpus.home(), &corpus.home());
+                    assert!(
+                        asked.status.success() && asked.stdout.is_empty(),
+                        "{what}: `{status}` prints nothing here; {}",
+                        text(&asked),
+                    );
+
+                    // The exit, as printed — and the same door, re-run, lands.
+                    let exit = unmanage_span(&route, &what);
+                    let dropped = run_emitted_jigc(&corpus, exit, &what);
+                    assert!(
+                        dropped.status.success(),
+                        "{what}: `{exit}`; {}",
+                        text(&dropped)
+                    );
+                    assert_eq!(recorded(&corpus), None, "{what}: the held hash is dropped");
+                    let rerun = door.run(&corpus, &sub);
+                    assert!(
+                        rerun.status.success(),
+                        "{what}: the re-run lands; {}",
+                        text(&rerun),
+                    );
+                    assert!(
+                        record_at_head(&repo).contains(door.mark()),
+                        "{what}: the door's own write is in the committed record",
+                    );
+                    assert_ne!(head(&repo), head_before, "{what}: the re-run committed");
+                }
+            });
+        }
+    });
+}
+
+/// **Beside it, what must not change.** Without a conversion git's rewrite leaves the bytes
+/// jigc wrote, so a switch and back or a stash refuses nothing. And the exit the route now
+/// names is no way past a real edit: with the held hash dropped, the door asks git, git
+/// calls the record modified, and the door refuses again over the same untouched bytes.
+#[test]
+fn the_unmanage_exit_neither_fires_without_a_conversion_nor_passes_a_real_edit() {
+    let (base, sub) = live_milestone_under(None);
+    for rewrite in [Rewrite::SwitchAndBack, Rewrite::Stash] {
+        for door in Door::ALL {
+            let what = format!("no conversion/{door:?}/{rewrite:?}");
+            let corpus = base.copy_state();
+            rewrite.apply(&corpus);
+            let out = door.run(&corpus, &sub);
+            assert!(
+                out.status.success(),
+                "{what}: git rewrote the bytes jigc wrote — no refusal; {}",
+                text(&out),
+            );
+        }
+    }
+
+    for conversion in [None, Some(Conversion::AutocrlfTrue)] {
+        let what = format!("{conversion:?}: a real edit");
+        let (corpus, sub) = live_milestone_under(conversion);
+        let repo = corpus.repo();
+        Edit::Note.apply(&corpus);
+        let edited = read(&repo, RECORD);
+        let head_before = head(&repo);
+        let out = Door::AddTask.run(&corpus, &sub);
+        let route = assert_blocked(&repo, &out, &head_before, &edited, &what);
+        let exit = unmanage_span(&route, &what);
+        let dropped = run_emitted_jigc(&corpus, exit, &what);
+        assert!(dropped.status.success(), "{what}: {}", text(&dropped));
+
+        let rerun = Door::AddTask.run(&corpus, &sub);
+        let route = assert_blocked(&repo, &rerun, &head_before, &edited, &what);
+        assert!(
+            String::from_utf8_lossy(&rerun.stderr).contains("differs from what `HEAD` holds")
+                && route.contains("checkout HEAD -- "),
+            "{what}: with the hash dropped the door asks git, and git calls the record \
+             modified; {}",
+            text(&rerun),
+        );
+    }
+}
+
 /// **The statement, where the rule is described.** The design sentences this fix makes
 /// true name what the code now does, and the open question it leaves is stated as open.
 #[test]
@@ -774,6 +1021,7 @@ fn the_design_states_the_record_doors_witness() {
         "git checkout HEAD -- <record>",
         "The witness answers only where there is no key",
         "A home git holds and the disk does not, with no baseline",
+        "The route names that exit itself",
     ] {
         assert!(
             reconciliation.contains(needle),

@@ -1530,17 +1530,28 @@ enum RecordWitness {
 /// the bare `git checkout -- <record>`, which restores from the **index** and so puts a
 /// `git add`ed edit straight back; after it the bytes on disk equal the witness, so the
 /// re-run is the first encounter of an untouched record and cannot block again.
+///
+/// **The `LastWrite` route also names the exit for a record nobody edited** (the human's
+/// ruling of 2026-10-06 on the fix pass's item 12). The held hash is a hash of bytes, and
+/// this door does not ask git while it holds one (`design/reconciliation.md` → Open
+/// questions, *a recorded baseline in a converting checkout* — the cause, which stands). So
+/// in a checkout that converts line endings, a record git checked out again — a branch
+/// switch and back, a stash — differs from the hash while git calls it unmodified, and the
+/// restore above has nothing to restore: run as printed it exits 0 and the door refuses
+/// again. The exit that works is `jigc unmanage <record>`: it drops the hash, and the next
+/// run takes the [`RecordWitness::Head`] arm, where the comparison is git's. The route
+/// cannot know which case it is printed in — knowing would be asking git — so it prints the
+/// one git question that tells them apart and says what its answer means. It is no way
+/// past a real edit: with the hash dropped, an uncommitted edit is the `Head` arm's
+/// refusal, over the same untouched bytes.
 fn record_conflict_block(
     jigc_home: &Path,
     key: &str,
     witness: RecordWitness,
 ) -> engine::file_state::ConflictBlock {
-    let restore = |source: &str| {
-        engine::finding::git_at(
-            jigc_home,
-            &format!("checkout {source}-- {}", crate::task::shell_token(key)),
-        )
-    };
+    let token = crate::task::shell_token(key);
+    let restore =
+        |source: &str| engine::finding::git_at(jigc_home, &format!("checkout {source}-- {token}"));
     match witness {
         RecordWitness::LastWrite => engine::file_state::ConflictBlock::new(
             "the milestone record is machine-maintained and was edited out of band since jigc \
@@ -1548,8 +1559,15 @@ fn record_conflict_block(
             engine::finding::Route::human(format!(
                 "restore `{key}` to what jigc last wrote (`{restore}` for an uncommitted edit, \
                  else revert the commit that changed it) and re-run this command — an external \
-                 edit to a machine-maintained record is never merged and never clobbered",
+                 edit to a machine-maintained record is never merged and never clobbered. \
+                 Where nobody edited it — `{status}` prints nothing and no commit changed the \
+                 record, as after a branch switch or a stash in a checkout that converts line \
+                 endings — there is nothing to restore: run `jigc unmanage {token}` and re-run \
+                 this command. That drops the hash jigc holds for the record, and the record \
+                 is then compared with `HEAD`",
                 restore = restore(""),
+                status =
+                    engine::finding::git_at(jigc_home, &format!("status --porcelain -- {token}")),
             )),
         ),
         RecordWitness::Head => engine::file_state::ConflictBlock::new(
