@@ -17,6 +17,12 @@
 // with the state attached — never a guess and never a loop. Nothing a previous invocation
 // knew is used: an invocation starts from the state document and from git.
 //
+// THE BOUND ACROSS ROUNDS AND THE STOP MODE (ruling 6) are the record script's too: the
+// run's opening writes them (`dev/stabilize-record run-set`), `next` is `stop` where the
+// human is asked before the step that follows, and the position refuses a stage of a run
+// whose opening is not done (`not-ready`) and a round past the bound (`round-bound`). This
+// script holds neither number and starts no stage the position refuses.
+//
 // THE STAGES (ruling 9).
 //   test   git state (the path-class assert) -> state -> preflight ∥ scope -> state ->
 //          the round's instruments, in parallel -> the reports checked -> triage ->
@@ -86,9 +92,11 @@
 //   clause    — OPTIONAL, `test` only: run ONE clause's instrument alone — every item of the
 //               test set that judges that clause and no other, on the same candidate, over
 //               the doors of the latest round's scope, named again. It is what the
-//               orchestrator starts when nothing is open and a clause has no green row (the
-//               human's ruling of 2026-10-06: that instrument is run again once, and the
-//               record script says when). Never together with `scope`.
+//               orchestrator starts when the state's `next` is `retest` — nothing is open
+//               and a clause has no green row — for the first clause its `retest` names
+//               (the human's ruling of 2026-10-06: that instrument is run again once). The
+//               round's record says which clause it ran alone, and that fact is what the
+//               record script computes "once" from. Never together with `scope`.
 //   crossModel — OPTIONAL, `test` only: [ '<item>', … ] — the items of the test set whose
 //               source pass is ALSO read by a model of another family, named one by one.
 //               There is no value that means every item: heavy use is a deliberate act,
@@ -427,9 +435,28 @@ function hashMismatch(expected, returns) {
 }
 
 // outcomeOf — `next` exactly as the state document gives it, and whether this script knows
-// the value. It knows nothing else about it.
+// the value. It knows nothing else about it — but `rule` is the human's step for a finding
+// on the human's list and for a clause that is still not green after its one re-run, so
+// both lists go back with it.
 function outcomeOf(state) {
-  return { next: state.next, known: KNOWN_NEXT.includes(state.next) }
+  const out = { next: state.next, known: KNOWN_NEXT.includes(state.next) }
+  if (out.next === 'rule') out.rule = { findings: state.human_list || [], clauses: state.human_clauses || [] }
+  return out
+}
+
+// refusalOf — the word the state's position refuses a stage with, as what the orchestrator
+// does about it. The words are dev/stabilize-record's (its header: THE POSITION), and
+// crates/cli/tests/stabilize_harness_fence.rs holds this table to them.
+const REFUSALS = {
+  'not-ready': 'the run\'s opening is not done, and no stage starts before it is — the state\'s `not_ready` names what it owes: a row per clause of the closing condition (`dev/stabilize-record clause-set`), the stop mode and the bound across rounds (`dev/stabilize-record run-set`)',
+  'no-round': 'there is no tested round to fix — the `test` stage comes first, and records its triage',
+  'not-tested': 'the round\'s `test` stage has not reached its record — it is run again first, as the next attempt',
+  'round-open': 'the round is tested and a finding of it is still open — run `fix`, record the human\'s rulings with it, or drop the round (args.exit = \'drop\')',
+  'round-over': 'the round is over — the next stage is `test`',
+  'round-bound': 'the round is over and the run is at its bound across rounds — a further round is the human\'s to allow, by raising the bound (`dev/stabilize-record run-set`)',
+}
+function refusalOf(at) {
+  return REFUSALS[at.refused] || 'the record script refuses it with a word this script has no sentence for'
 }
 
 // readRelay — the state document out of a git step's return: the line must hash to what
@@ -1146,7 +1173,10 @@ function recordPrompt(v, what, branch, commands, subject) {
   ]).join('\n')
 }
 // stageRecordCommands — a stage's record: the reports checked first, then the rows, then
-// the ledger checked. Every row is composed here, from structured returns.
+// the ledger checked. Every row is composed here, from structured returns. THE DISPOSITIONS
+// ARE WRITTEN BEFORE THE TRIAGE: a round's triage records the disposition a row carried when
+// it was found, and a fix cycle's audit finds a finding AFTER that cycle's fix — written the
+// other way round, a fix that did not hold would be read as a finding followed by its fix.
 function stageRecordCommands(ctx, dir, rec) {
   const record = 'dev/stabilize-record'
   const commands = []
@@ -1157,8 +1187,8 @@ function stageRecordCommands(ctx, dir, rec) {
     commands.push('`' + record + ' ' + call + ' < ' + p.file + '`')
   }
   if (rec.rows.length) feed('rows.json', rec.rows, 'ledger-add --run ' + ctx.run + ' --scratch ' + ctx.scratch)
-  if (rec.triage.length) feed('triage.json', rec.triage, 'triage-set --run ' + ctx.run + ' --round ' + ctx.round)
   if (rec.patches.length) feed('patches.json', rec.patches, 'ledger-set --run ' + ctx.run + ' --scratch ' + ctx.scratch)
+  if (rec.triage.length) feed('triage.json', rec.triage, 'triage-set --run ' + ctx.run + ' --round ' + ctx.round)
   for (const row of rec.clauses) commands.push('`' + record + ' clause-set --run ' + ctx.run + ' --clause ' + row.clause + ' --instrument ' + shq(row.instrument) + ' --commit ' + row.commit + ' --scope ' + shq(row.scope) + ' --status ' + row.status + ' --scratch ' + ctx.scratch + '`')
   if (rec.facts) feed('round.json', rec.facts, 'round-set --run ' + ctx.run + ' --round ' + ctx.round)
   if (rec.keys.length) commands.push('`' + record + ' check-ledger --run ' + ctx.run + ' -- ' + rec.keys.join(' ') + '`')
@@ -1276,10 +1306,14 @@ function selfTest() {
   check('a relay that is no JSON', !!relay('not json', sha256('not json\n')).error)
   check('a relay that is no state', !!relay('[1]', sha256('[1]\n')).error)
   check('no relay', !!readRelay(null).error && !!readRelay({ status: 'read' }).error)
-  for (const next of ['fix', 'rule', 'close', 'unsettled', 'retest', '', null, 7]) {
+  for (const next of ['fix', 'rule', 'close', 'unsettled', 'retest', 'stop', 'test', 'triage', 'not-ready', '', null, 7]) {
     const out = outcomeOf({ next })
     check('next relayed verbatim: ' + JSON.stringify(next), out.next === next && out.known === ['fix', 'rule', 'close'].includes(next))
   }
+  const ruled = outcomeOf({ next: 'rule', human_list: [{ key: 'f-1', why: 'outside' }], human_clauses: [{ clause: 'no-lost-files', why: 'not-green-after-its-rerun' }] })
+  check('`rule` goes back with both of the human\'s lists', JSON.stringify(ruled.rule) === JSON.stringify({ findings: [{ key: 'f-1', why: 'outside' }], clauses: [{ clause: 'no-lost-files', why: 'not-green-after-its-rerun' }] }) && JSON.stringify(outcomeOf({ next: 'rule' }).rule) === JSON.stringify({ findings: [], clauses: [] }) && outcomeOf({ next: 'fix', human_list: [{ key: 'f-1' }] }).rule === undefined)
+  for (const word of ['not-ready', 'no-round', 'not-tested', 'round-open', 'round-over', 'round-bound']) check('a refusal the orchestrator can act on: ' + word, isText(refusalOf({ refused: word, round: 1 })) && !refusalOf({ refused: word, round: 1 }).includes('no sentence'))
+  check('a refusal nobody defined is said to be one', refusalOf({ refused: 'round-closed', round: 1 }).includes('no sentence') && refusalOf({ refused: 'not-ready', round: null }).includes('run-set') && refusalOf({ refused: 'round-bound', round: 3 }).includes('run-set'))
 
   // Every prompt carries the labels its definition binds on, spelled as LABELS spells them.
   const ctx = { run: 'rc24-tier1', round: 2, stage: 'fix', cycle: 3, attempt: 4, scratch: '/tmp/scratch-1' }
@@ -1341,6 +1375,9 @@ function selfTest() {
   check('the check names every reporter launched', launch.names.every((n) => checkReportsPrompt(ctx, launch.names).includes(' ' + n)) && prompts.record.includes('check-reports --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 -- ' + launch.names.join(' ')))
   check('the ledger check names every key', prompts.record.includes('check-ledger --run rc24-tier1 -- f-1'))
   check('a payload is held to its hash', prompts.record.includes(sha256('{"cycles":3}\n')) && prompts.record.includes('round-set --run rc24-tier1 --round 2 < /tmp/scratch-1/record/x/round.json'))
+  const cycleRecord = stageRecordCommands(ctx, '/tmp/scratch-1/record/y', { reporters: [], rows: [{ key: 'f-2' }], triage: [{ key: 'f-1', grade: 'breaks' }], patches: [{ key: 'f-1', disposition: 'fixed', detail: 'c'.repeat(40) }], clauses: [], facts: null, keys: ['f-1', 'f-2'] }).join('\n')
+  const at = (call) => cycleRecord.indexOf('dev/stabilize-record ' + call + ' ')
+  check('a cycle\'s fixes are on the rows before its audit\'s triage reads them', at('ledger-add') >= 0 && at('ledger-add') < at('ledger-set') && at('ledger-set') < at('triage-set') && at('triage-set') < at('check-ledger'))
 
   // Ruling 11's comparison.
   const good = { status: 'reported', asserted_sha256: 'b'.repeat(64) }
@@ -1578,7 +1615,7 @@ async function triagePasses(ctx, launch, built, sources, forksIn) {
     }
     pending = []
     if (pass > VERIFY_PASSES) {
-      log('NOT VERIFIED: pass ' + pass + ' is past the ' + VERIFY_PASSES + ' passes that are verified — its entries get their rows, and those graded breaks or unclear stay unverified, which the state hands to the human')
+      log('NOT VERIFIED: pass ' + pass + ' is past the ' + VERIFY_PASSES + ' passes that are verified — its entries get their rows, and those graded breaks or unclear stay unverified: the state\'s `next` then says that the round\'s triage is not finished (`triage`), and names them')
       break
     }
     const hints = {}
@@ -1673,13 +1710,14 @@ async function preflightOf(ctx, launch, parts, plan, phaseTitle) {
 }
 
 function attached(state) {
-  return { next: state.next, blockers: state.blockers, human_list: state.human_list, unsettled: state.unsettled, forbids_close: state.forbids_close, position: state.position }
+  return { next: state.next, stop: state.stop, not_ready: state.not_ready, blockers: state.blockers, human_list: state.human_list, untriaged: state.untriaged, retest: state.retest, human_clauses: state.human_clauses, unsettled: state.unsettled, forbids_close: state.forbids_close, position: state.position }
 }
 // What a stage returns of `next`: the value itself, always; the whole state beside it when
 // this script does not know the value; and with `close` the step the close owes first.
 function nextOf(state) {
   const o = outcomeOf(state)
   if (!o.known) return { next: o.next, returned_to_orchestrator: true, state }
+  if (o.rule) return { next: o.next, rule: o.rule }
   return o.next === 'close' ? { next: o.next, close: closeOf() } : { next: o.next }
 }
 function closeOf() {
@@ -1699,7 +1737,7 @@ async function runTest() {
   let state = first.state
   if (!state.opened) return halt('state', 'the run `' + v.run + '` has no opening record (' + runDir(v.run) + '/opening.md): a run opens with the human-led step, and `test` does not start before it')
   const at = state.position.test
-  if (at.refused) return { status: 'refused', stage: 'test', run: v.run, refused: at, message: 'the `test` stage is refused (' + at.refused + ', round ' + at.round + '): round ' + at.round + ' is tested and a finding of it is still open — run `fix`, record the human\'s rulings with it, or drop the round (args.exit = \'drop\'). Nothing was run beyond the two reads.', next: state.next }
+  if (at.refused) return { status: 'refused', stage: 'test', run: v.run, refused: at, message: 'the `test` stage is refused (' + at.refused + ', round ' + at.round + '): ' + refusalOf(at) + '. Nothing was run beyond the two reads.', next: state.next, not_ready: state.not_ready, stop: state.stop }
   const sha = String(gs.head)
   const ctx = { run: v.run, round: at.round, stage: 'test', attempt: at.attempt, scratch: v.scratch }
   const label = 'c' + ctx.round
@@ -1794,6 +1832,8 @@ async function runTest() {
   }
   const rec = triageRecord(ctx, tri.entries)
   const facts = { candidate: sha, binary: built.candidate.sha256 }
+  // A round that ran one clause's instrument alone says so: it is that clause's one re-run.
+  if (rerun) facts.alone = v.clause
   if (crossNamed.length) Object.assign(facts, { 'cross-model': crossRan, 'cross-model-void': crossVoid.map((x) => x.item) })
   if (sc.base && SHORT_SHA_RE.test(sc.base)) facts.base = sc.base
   const dir = v.scratch + '/record/test-r' + ctx.round + '-a' + ctx.attempt
@@ -1836,7 +1876,7 @@ async function runFix() {
   if (!read.state) return halt('state', 'the run\'s state could not be read: ' + read.error, { transient: !!read.transient, halt: read.halt || null })
   let state = read.state
   if (!state.opened) return halt('state', 'the run `' + v.run + '` has no opening record (' + runDir(v.run) + '/opening.md)')
-  if (state.position.fix.refused) return { status: 'refused', stage: 'fix', run: v.run, refused: state.position.fix, message: 'the `fix` stage is refused (' + state.position.fix.refused + '): ' + (state.position.fix.refused === 'round-over' ? 'round ' + state.position.fix.round + ' is over — the next stage is `test`' : 'there is no tested round to fix — the `test` stage comes first, and records its triage') + '. Nothing was run beyond the two reads.', next: state.next }
+  if (state.position.fix.refused) return { status: 'refused', stage: 'fix', run: v.run, refused: state.position.fix, message: 'the `fix` stage is refused (' + state.position.fix.refused + ', round ' + state.position.fix.round + '): ' + refusalOf(state.position.fix) + '. Nothing was run beyond the two reads.', next: state.next, not_ready: state.not_ready }
   const round = state.position.fix.round
 
   // The round's branch: the highest cut that exists, or none yet.
@@ -2045,7 +2085,7 @@ async function runFix() {
   for (;;) {
     const at = state.position.fix
     if (at.refused) return Object.assign({ status: 'refused', refused: at }, report, nextOf(state))
-    const open = { branch: cut ? branch : null, cycles: cyclesDone(), blockers: state.blockers, human_list: state.human_list, unsettled: state.unsettled, forks }
+    const open = { branch: cut ? branch : null, cycles: cyclesDone(), blockers: state.blockers, human_list: state.human_list, untriaged: state.untriaged, forks }
     if (at.land) {
       if (!cut) return Object.assign({ status: 'nothing-to-fix', message: 'round ' + round + ' has nothing open and no branch: nothing is fixed and nothing lands.' }, open, report, nextOf(state))
       const stopped = await onBranch(branch)

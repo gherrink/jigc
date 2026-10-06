@@ -29,6 +29,11 @@
 //!   assumes the tool.
 //! - **(h)** the script's self-test and everything it calls launch no agent, and the script
 //!   uses nothing the runtime forbids.
+//! - **(j)** what `dev/stabilize-record` decides from reaches it, and what it decides is
+//!   passed on: a round that ran one clause's instrument alone says so in its record; a
+//!   stage's dispositions are written before its triage, so that a finding found again
+//!   after its fix is found *with* that fix; the script has a sentence for every word the
+//!   record script refuses a stage with; and `next` is relayed, never recomputed.
 //!
 //! **Driven, where `node` is on `PATH`** (it is on this project's development machines and
 //! on GitHub's hosted runners; where it is not, the arm says so on stderr and passes — the
@@ -52,6 +57,7 @@ use crate::support::root_walk;
 use crate::support::scratch::ScratchDir;
 
 const HARNESS: &str = ".claude/workflows/stabilize.js";
+const RECORD_SCRIPT: &str = "dev/stabilize-record";
 const DEFINITIONS: &str = ".claude/agents";
 
 /// The four lines the definitions task named as what its contracts bind on. The script may
@@ -760,6 +766,95 @@ fn h_the_self_test_launches_no_agent_and_the_script_keeps_the_runtimes_limits() 
     assert!(
         !meta.contains('+') && !meta.contains('`') && !meta.contains("${"),
         "`meta` is a pure literal"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// (j) what the record script decides from, and what it decides
+// ---------------------------------------------------------------------------
+
+#[test]
+fn j_what_the_record_script_decides_from_reaches_it_and_what_it_decides_is_passed_on() {
+    let full = harness();
+    let source = code(&full);
+
+    // A clause without a green row is owed ONE re-run of its instrument, and the record
+    // script computes "once" from a fact of the round's record. The `test` stage writes
+    // it exactly when it ran one clause's instrument alone.
+    assert!(
+        function(&full, "runTest").contains("\n  if (rerun) facts.alone = v.clause\n"),
+        "a round that ran one clause's instrument alone says so in its record"
+    );
+    assert_eq!(
+        source.matches("facts.alone").count(),
+        1,
+        "and nothing else of the script writes that fact"
+    );
+    assert!(
+        source.contains("\n  const rerun = v.clause != null\n"),
+        "`rerun` is the invocation's `clause` argument, and nothing else"
+    );
+
+    // A round's triage records the disposition a row carried when the finding was found.
+    // A fix cycle's audit finds it after the cycle's fix, so the fix is on the row first.
+    let record = function(&full, "stageRecordCommands");
+    let at = |payload: &str| {
+        record
+            .find(payload)
+            .unwrap_or_else(|| panic!("a stage's record feeds `{payload}`"))
+    };
+    assert!(
+        at("'rows.json'") < at("'patches.json'") && at("'patches.json'") < at("'triage.json'"),
+        "a stage's record writes its rows, then its dispositions, then its triage"
+    );
+
+    // Every word the record script refuses a stage with has its sentence here — and the
+    // script has a sentence for no word that script lacks.
+    let script =
+        fs::read_to_string(repo_root().join(RECORD_SCRIPT)).expect("read the record script");
+    let position = &script[script
+        .find("\ndef position_of(")
+        .expect("the record script computes the position")..];
+    let position = &position[1..];
+    let position = &position[..position.find("\ndef ").expect("the function ends")];
+    let refused: BTreeSet<String> = position
+        .split("refused(\"")
+        .skip(1)
+        .map(|rest| rest[..rest.find('"').expect("the word closes")].to_owned())
+        .collect();
+    assert!(
+        refused.len() >= 6,
+        "the scan found the words a stage is refused with: {refused:?}"
+    );
+    let table = &full[full
+        .find("\nconst REFUSALS = {\n")
+        .expect("the script's sentences for a refusal")..];
+    let table = &table[..table.find("\n}\n").expect("the table closes")];
+    let sentences: BTreeSet<String> = table
+        .lines()
+        .filter_map(|line| line.strip_prefix("  '"))
+        .map(|rest| rest[..rest.find('\'').expect("the word closes")].to_owned())
+        .collect();
+    assert_eq!(
+        sentences, refused,
+        "the words {HARNESS} has a sentence for (left) are the words {RECORD_SCRIPT} refuses a stage with (right)"
+    );
+    assert!(
+        function(&full, "refusalOf").contains("REFUSALS[at.refused]"),
+        "and a refusal is said in the sentence of its own word"
+    );
+
+    // `next` is relayed as the state document gives it. The values this script acts on
+    // are the three it was built with; every other value goes back with the state.
+    assert_eq!(
+        quoted_in(&full, "const KNOWN_NEXT = "),
+        ["fix", "rule", "close"],
+        "the values of `next` the script acts on"
+    );
+    assert_eq!(
+        without(&full, &["selfTest"]).matches("next: '").count(),
+        0,
+        "no code of the script composes a value of `next`"
     );
 }
 

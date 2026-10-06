@@ -1,10 +1,10 @@
 //! **`dev/stabilize-record` — the one script through which a stabilization run's records
 //! reach the repository, and the one place its state is read back and decided**
 //! ([DECISIONS.md](../../../DECISIONS.md) → *2026-10-05 — The stabilization workflow, as
-//! ruled*, rulings 4, 5, 9, 10, 12, 13 and 16; the builders' choices are the two entries of
-//! the same date, *The record script, as built* and *The record script reads the run
-//! back*, and the entry of 2026-10-06, *The record script holds what the harness reads its
-//! work from*).
+//! ruled*, rulings 4, 5, 6, 9, 10, 12, 13 and 16; the builders' choices are the two entries
+//! of the same date, *The record script, as built* and *The record script reads the run
+//! back*, and the two entries of 2026-10-06, *The record script holds what the harness reads
+//! its work from* and *The run's decision table, settled*).
 //!
 //! A reporter of a stage has a shell and no write tool, and what it writes is public on the
 //! next push and read by fences on the next gate. So one script decides where a report
@@ -17,11 +17,14 @@
 //! inside the round's test set, where it is routed, what the round does next — is computed
 //! by the script. **Two truth tables hold those decisions** ([`findings`], [`ROUNDS`]):
 //! each cell is stood up through the script's own writers, never as a table this suite
-//! wrote by hand, and read off the state document. A cell the rulings do not settle is in
-//! the tables too, as `unsettled` — the script's word for *not decided here*. **Two more
-//! hold what the harness reads its work from** ([`SELECTIONS`], [`POSITIONS`]): which items
-//! of the test set the latest round runs, and the round, the cycle and the attempt an
-//! invocation of each stage works on — or the word it is refused with.
+//! wrote by hand, and read off the state document. The six cells the rulings left open were
+//! decided on 2026-10-06, and each is a row under its number; the one state the decisions
+//! still do not cover is a row too, as `unsettled` — the script's word for *not decided
+//! here*. **Two more hold what the harness reads its work from** ([`SELECTIONS`], and
+//! [`POSITIONS`] with [`BOUND_POSITIONS`]): which items of the test set the latest round
+//! runs, and the round, the cycle and the attempt an invocation of each stage works on — or
+//! the word it is refused with, which for a run whose opening is not done, and for a round
+//! past the run's bound, is the human's to lift.
 //!
 //! **Every arm runs under a shell-hostile root** (a space, a `'`, a `"` and a `#` in the
 //! repository's path — [dev-workflow.md](../../../implementation/dev-workflow.md), the rule
@@ -34,11 +37,11 @@
 //!   a cycle, a reporter, an attempt, a ledger key, a cited bound, a clause, each name a
 //!   check is handed — is driven with every hostile value ([`HOSTILE_IDS`]): each is
 //!   refused as `bad-id` and leaves the tree as it was.
-//! - *The writers.* Nine subcommands write a file ([`WRITERS`]), and seven of them put a
+//! - *The writers.* Ten subcommands write a file ([`WRITERS`]), and seven of them put a
 //!   caller's free text into it: a report's body, a ledger row's cells as it is added and
 //!   as it is set, a clause row's cells, a bound's, a door's derivation, a test-set item's
 //!   brief. The scanner that could not run and the killed write are driven through all
-//!   nine; the host-path replacement and the hygiene stop through the seven. The list is
+//!   ten; the host-path replacement and the hygiene stop through the seven. The list is
 //!   held to the script's
 //!   own parser — every subcommand it names is a writer on the list or one of the three
 //!   that write nothing ([`every_subcommand_is_a_listed_writer_or_a_check`]) — so a writer
@@ -85,6 +88,29 @@
 //! taken, and its last line taken from anywhere. *The state:* a run never opened refused;
 //! a write in flight not waited for; a cell returned escaped; a grade, a status, a
 //! disposition, a side written by hand each read, and a triage record with no scope.
+//!
+//! And on sixty-three more, for the cells decided on 2026-10-06 and the two bounds. *Cell 1:* an
+//! ungraded finding recorded; an unverified one sent to a fixer, or put on the human's
+//! list; the step called `unsettled` again; the human's list, or a fixer, taken before the
+//! triage; the findings not named. *Cell 2:* `fixed` inherited; a finding re-opened by any
+//! fix, or by a round that refuted it; a finding that needs a bound, or one sent on, not
+//! standing; the round counting a refuted one, or nothing; the finding not saying so.
+//! *Cells 5 and 6:* the first round that triaged a finding placing it; `no-action` a ruling.
+//! *Cell 4:* an empty table, a missing stop mode and a missing bound each ready; the step,
+//! the position, and the `fix` stage alone each ignoring it. *Cell 3:* the step called
+//! `unsettled` again; a retry never spent, always spent, spent by any clause's re-run, by
+//! the latest round's; the first round a clause ran in taken for its last, and its commit
+//! matched whole; a due retry, or a clause no item judges, taken before a spent one; a
+//! clause no item judges run again; a re-run while something is open, and before round 1;
+//! a red row no re-run; the clauses, the human's clauses and the unsettled one each left
+//! unnamed. *The first stage:* an untested round skipped; a round that is over handed to a
+//! fixer. *The stops:* no stop after a round; a stop inside one; the bound stopping a
+//! close; the bound one round late and one early, in the step and in the position; no
+//! stop at the bound, and no refusal; what follows a stop, its round and the word `stop`
+//! each wrong; the bound applied in the mode that stops after every round; the bound's
+//! word said before the round's own. *The writers:* a bound that goes down; a mode, a fact
+//! and a bound of any kind; the run's facts read though written by hand; the clause a
+//! round ran alone written twice, of any shape, and read though written by hand.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -620,6 +646,10 @@ fn round_set(run: &str, round: &str) -> Vec<String> {
     ]
 }
 
+fn run_set(run: &str) -> Vec<String> {
+    vec!["run-set".to_owned(), format!("--run={run}")]
+}
+
 /// A well-formed item of the test set: one review row, run where the round reaches it.
 fn item(id: &str) -> Value {
     json!({
@@ -748,6 +778,10 @@ fn test_set_path() -> String {
 
 fn round_path(round: &str) -> String {
     format!("completions/artifacts/{RUN}/r{round}/round.md")
+}
+
+fn run_path() -> String {
+    format!("completions/artifacts/{RUN}/run.md")
 }
 
 fn report_path(round: &str, reporter: &str, attempt: &str) -> String {
@@ -885,6 +919,19 @@ const WRITERS: &[Writer] = &[
             (
                 rig.run(&args, &json!({"candidate": sha('a')}).to_string()),
                 round_path("1"),
+            )
+        },
+    },
+    Writer {
+        name: "run-set (no free text)",
+        free_text: false,
+        prepare: |_| {},
+        call: |rig, _, extra| {
+            let mut args = run_set(RUN);
+            args.extend_from_slice(extra);
+            (
+                rig.run(&args, &json!({"stop": "every-round"}).to_string()),
+                run_path(),
             )
         },
     },
@@ -1323,6 +1370,16 @@ const ID_SITES: &[IdSite] = &[
         numeric: true,
         call: |rig, v| rig.run(&round_set(RUN, v), &json!({"cycles": 1}).to_string()),
     },
+    IdSite {
+        name: "round-set, the clause whose instrument ran alone",
+        numeric: false,
+        call: |rig, v| rig.run(&round_set(RUN, "1"), &json!({"alone": v}).to_string()),
+    },
+    IdSite {
+        name: "run-set --run",
+        numeric: false,
+        call: |rig, v| rig.run(&run_set(v), &json!({"rounds": 3}).to_string()),
+    },
 ];
 
 #[test]
@@ -1362,7 +1419,7 @@ fn a_hostile_identifier_is_refused_at_every_site_and_nothing_is_written() {
             .map(|worker| worker.join().expect("a worker thread"))
             .sum()
     });
-    assert!(driven > 740, "the axis collapsed to {driven} cells");
+    assert!(driven > 780, "the axis collapsed to {driven} cells");
 }
 
 /// A slug has a length the file system can carry: a name of a thousand letters is not one.
@@ -1433,6 +1490,10 @@ fn every_subcommand(rig: &Rig, run: &str) -> Vec<(&'static str, Seen)> {
         (
             "round-set",
             rig.run(&round_set(run, "1"), &json!({"cycles": 1}).to_string()),
+        ),
+        (
+            "run-set",
+            rig.run(&run_set(run), &json!({"rounds": 3}).to_string()),
         ),
     ]
 }
@@ -1523,6 +1584,7 @@ fn a_link_inside_the_run_directory_never_carries_a_write_outside_it() {
     symlink(&outside, rig.run_dir().join("ledger.md")).expect("link the ledger");
     symlink(&outside, rig.run_dir().join("clauses.md")).expect("link the clause table");
     symlink(&outside, rig.run_dir().join("bounds.md")).expect("link the bounds list");
+    symlink(&outside, rig.run_dir().join("run.md")).expect("link the run's facts");
     fs::create_dir_all(rig.run_dir().join("r1")).expect("a round directory");
     symlink(&outside, rig.run_dir().join("r1/scope.md")).expect("link a round's scope");
     let before = rig.snapshot();
@@ -1534,6 +1596,8 @@ fn a_link_inside_the_run_directory_never_carries_a_write_outside_it() {
         .refused(OUTSIDE, "a clause table that is a link");
     rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "")
         .refused(OUTSIDE, "a bounds list that is a link");
+    rig.run(&run_set(RUN), &json!({"rounds": 3}).to_string())
+        .refused(OUTSIDE, "the run's facts, a link");
     rig.run(
         &scope_set(RUN, "1"),
         &scope(&["jigc setup"], &[]).to_string(),
@@ -2902,7 +2966,7 @@ fn help_is_the_header_and_states_every_subcommand_and_every_exit_status() {
     let seen = rig.run(&strings(&["--help"]), "");
     seen.must(OK, "--help");
     let subcommands = subcommands(&rig);
-    assert!(subcommands.len() >= 12, "the parser names its subcommands");
+    assert!(subcommands.len() >= 13, "the parser names its subcommands");
     for subcommand in subcommands {
         assert!(
             seen.stdout
@@ -3614,13 +3678,16 @@ fn a_rounds_triage_is_recorded_with_inside_computed_from_the_rounds_doors() {
 fn state_is_the_runs_committed_state_as_one_json_document() {
     let rig = Rig::new("state");
 
-    // An opened run with nothing in it — and reading it writes nothing.
+    // An opened run with nothing in it — and reading it writes nothing. Its opening owes
+    // the clause rows and the stop mode, so the run is not ready and no stage starts.
     let before = rig.snapshot();
     assert_eq!(
         rig.state(),
         json!({
             "run": RUN,
             "opened": true,
+            "facts": {"stop": null, "rounds": null},
+            "not_ready": ["no-clause-row", "no-stop-mode"],
             "rounds": [],
             "round": null,
             "doors": null,
@@ -3630,12 +3697,16 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
             "ledger": [],
             "blockers": [],
             "human_list": [],
-            "unsettled": [{"cell": "nothing-open-and-no-close", "keys": []}],
+            "untriaged": [],
+            "retest": [],
+            "human_clauses": [],
+            "unsettled": [],
             "forbids_close": [{"clauses": "no row"}],
-            "next": "unsettled",
+            "next": "not-ready",
+            "stop": null,
             "position": {
-                "test": {"round": 1, "attempt": 1},
-                "fix": {"refused": "no-round", "round": null},
+                "test": {"refused": "not-ready", "round": null},
+                "fix": {"refused": "not-ready", "round": null},
             },
         })
     );
@@ -3678,10 +3749,16 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
     rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "")
         .must(OK, "a declared bound");
     rig.run(
+        &run_set(RUN),
+        &json!({"stop": "at-the-bound", "rounds": 3}).to_string(),
+    )
+    .must(OK, "the run's facts");
+    rig.run(
         &scope_set(RUN, "1"),
         &scope(&[INSIDE], &[EXCLUDED]).to_string(),
     )
     .must(OK, "round 1's scope");
+    // The commit its row names is round 1's candidate, cut short as a row may cut it.
     rig.run(
         &clause_set(
             RUN,
@@ -3689,7 +3766,7 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
             &[
                 "--instrument=the audit | of the fix diff",
                 "--scope=the delta",
-                "--commit=0f34d8f0",
+                "--commit=cccccccc",
                 "--status=green",
             ],
         ),
@@ -3734,6 +3811,8 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
         json!({
             "run": RUN,
             "opened": true,
+            "facts": {"stop": "at-the-bound", "rounds": 3},
+            "not_ready": [],
             "rounds": [
                 {
                     "round": 1,
@@ -3746,9 +3825,11 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                         "binary": sha256('b'),
                         "cycles": 2,
                         "outcome": null,
+                        "alone": null,
                         "cross-model": [],
                         "cross-model-void": [],
                     },
+                    "reopened": [],
                     "test_reports": 3,
                     "test_attempt": 2,
                     "fix_cycles": [
@@ -3767,9 +3848,11 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                         "binary": null,
                         "cycles": 0,
                         "outcome": null,
+                        "alone": null,
                         "cross-model": [],
                         "cross-model-void": [],
                     },
+                    "reopened": [],
                     "test_reports": 1,
                     "test_attempt": 1,
                     "fix_cycles": [],
@@ -3783,13 +3866,17 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                 "ruling": "the opening record, declared bounds",
                 "pin": "unpinned",
             }],
+            // The first clause's instrument last ran in round 1; the second never ran,
+            // and no item of the test set judges it.
             "clauses": [
                 {
                     "clause": "no-lost-files",
                     "instrument": "the audit | of the fix diff",
-                    "commit": "0f34d8f0",
+                    "commit": "cccccccc",
                     "scope": "the delta",
                     "status": "green",
+                    "round": 1,
+                    "retry": null,
                 },
                 {
                     "clause": "no-regression",
@@ -3797,6 +3884,8 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                     "commit": null,
                     "scope": "everything",
                     "status": "void",
+                    "round": null,
+                    "retry": "no-instrument",
                 },
             ],
             // Round 2 is the latest and has no scope yet: nobody can say whether it
@@ -3847,6 +3936,7 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                         "regression": false,
                         "found_with": "open",
                     },
+                    "reopened": false,
                     "route": "fix",
                     "why": "inside",
                 },
@@ -3864,20 +3954,26 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                     "detail": "the 1.x fix pass",
                     "repro": "r1/reports/test/audit-install.a1.md, the third block",
                     "triage": null,
+                    "reopened": false,
                     "route": "recorded",
                     "why": "ruled",
                 },
             ],
             "blockers": ["audit-f3"],
             "human_list": [],
+            "untriaged": [],
+            "retest": [],
+            "human_clauses": [],
             "unsettled": [],
             "forbids_close": [
                 {"clause": "no-regression", "status": "void"},
                 {"finding": "audit-f3", "route": "fix"},
             ],
-            "next": "fix",
             // Round 2 has a report and no record of its test stage: that stage is run
-            // again, as the next attempt, and nothing of round 2 can be fixed yet.
+            // again, as the next attempt, and nothing of round 2 can be fixed yet — so
+            // the step is `test`, whatever stands open.
+            "next": "test",
+            "stop": null,
             "position": {
                 "test": {"round": 2, "attempt": 2},
                 "fix": {"refused": "not-tested", "round": 2},
@@ -3934,7 +4030,7 @@ fn state_waits_for_a_write_in_flight_and_reads_what_it_wrote() {
     assert!(status.success(), "the writer wrote: {status:?}");
 }
 
-/// The state is read from seven tables, and none of them is read on a guess: a table that
+/// The state is read from eight tables, and none of them is read on a guess: a table that
 /// is not the script's, a cell outside its vocabulary, and a triage record that disagrees
 /// with the doors it was computed from are each refused.
 #[test]
@@ -4000,6 +4096,20 @@ fn state_refuses_a_record_it_cannot_read_as_the_scripts_own() {
             || round_path("1"),
             |text| text.replacen("| `row-setup` |", "| `Row Setup, row-setup` |", 1),
         ),
+        (
+            "a clause nobody could have named",
+            || round_path("1"),
+            |text| text.replacen("| `no-lost-files` |", "| `No lost files` |", 1),
+        ),
+        ("a stop mode somebody wrote by hand", run_path, |text| {
+            text.replacen("| `at-the-bound` |", "| `whenever` |", 1)
+        }),
+        ("a bound that is no number", run_path, |text| {
+            text.replacen("| `3` |", "| `three` |", 1)
+        }),
+        ("a fact of the run nobody defined", run_path, |text| {
+            text.replacen("| `rounds` |", "| `cycles` |", 1)
+        }),
         ("an item that runs on a whim", test_set_path, |text| {
             text.replacen("| in-scope |", "| sometimes |", 1)
         }),
@@ -4037,10 +4147,20 @@ fn state_refuses_a_record_it_cannot_read_as_the_scripts_own() {
                     .must(OK, "round 1's triage");
                 rig.run(
                     &round_set(RUN, "1"),
-                    &json!({"cycles": 1, "outcome": "dropped", "cross-model": ["row-setup"]})
-                        .to_string(),
+                    &json!({
+                        "cycles": 1,
+                        "outcome": "dropped",
+                        "alone": "no-lost-files",
+                        "cross-model": ["row-setup"],
+                    })
+                    .to_string(),
                 )
                 .must(OK, "round 1's record");
+                rig.run(
+                    &run_set(RUN),
+                    &json!({"stop": "at-the-bound", "rounds": 3}).to_string(),
+                )
+                .must(OK, "the run's facts");
                 rig.run(&item_set(RUN), &item("row-setup").to_string())
                     .must(OK, "the test set");
                 rig.run(&state(RUN), "")
@@ -4092,6 +4212,8 @@ struct Finding {
     then: Option<Value>,
     route: &'static str,
     why: &'static str,
+    /// Whether the row's fix did not hold: the finding is open again.
+    reopened: bool,
 }
 
 impl Finding {
@@ -4104,7 +4226,13 @@ impl Finding {
             then: None,
             route: routed.0,
             why: routed.1,
+            reopened: false,
         }
+    }
+
+    fn reopened(mut self) -> Self {
+        self.reopened = true;
+        self
     }
 
     fn said(mut self, said: Value) -> Self {
@@ -4147,8 +4275,13 @@ fn disposed(disposition: &str) -> Value {
     }
 }
 
-/// **The per-finding truth table.** Every cell the rulings settle, and the three they do
-/// not — routed `unsettled`, to the human, and never guessed.
+/// **The per-finding truth table.** Every cell the rulings settle — and they settle every
+/// one: no finding is routed `unsettled`. Three cells of it were, and are marked with the
+/// number the decision of 2026-10-06 gave them: a finding nobody graded or verified goes
+/// back to the round's triage (cell 1), a finding found again after its fix is open again
+/// and routed by its door (cell 2), and a verified break under `no-action` is still open
+/// (cell 6). Cell 5 — the latest round that triaged a finding places it — is the second
+/// half of [`every_finding_is_routed_by_its_grade_its_disposition_and_the_rounds_doors`].
 fn findings() -> Vec<Finding> {
     const FIX_INSIDE: (&str, &str) = ("fix", "inside");
     const FIX_REGRESSION: (&str, &str) = ("fix", "regression");
@@ -4157,8 +4290,7 @@ fn findings() -> Vec<Finding> {
     const NOT_A_BREAK: (&str, &str) = ("recorded", "not-a-break");
     const RULED: (&str, &str) = ("recorded", "ruled");
     const FIXED: (&str, &str) = ("recorded", "fixed");
-    const UNVERIFIED: (&str, &str) = ("unsettled", "unverified");
-    const FOUND_AGAIN: (&str, &str) = ("unsettled", "found-again-after-its-fix");
+    const UNVERIFIED: (&str, &str) = ("triage", "unverified");
     let f = Finding::new;
     vec![
         // A verified break nobody has disposed of: by its door, unless it is a regression.
@@ -4174,10 +4306,11 @@ fn findings() -> Vec<Finding> {
         f("oos-listed", INSIDE, ("recorded", "out-of-scope"))
             .triaged(json!({"grade": "out-of-scope", "bound": "non-jigc-writer"})),
         f("needs-bound", INSIDE, ("human", "needs-bound")).triaged(graded("needs-bound")),
-        // Triage that is not finished.
+        // Cell 1 — triage that is not finished: back to the round's triage, never to a
+        // fixer and never to the human's list.
         f("in-unverified", INSIDE, UNVERIFIED).triaged(graded("breaks")),
         f("in-unclear", EXCLUDED, UNVERIFIED).triaged(graded("unclear")),
-        f("never-triaged", INSIDE, ("unsettled", "ungraded")),
+        f("never-triaged", INSIDE, ("triage", "ungraded")),
         // A break the human graded, which no round's triage placed.
         f("human-confirmed", INSIDE, ("human", "untriaged"))
             .said(json!({"grade": "confirmed", "graded_by": "human"})),
@@ -4199,7 +4332,8 @@ fn findings() -> Vec<Finding> {
         f("needs-bound-later", INSIDE, RULED)
             .triaged(graded("needs-bound"))
             .then(disposed("later")),
-        // `no-action` is neither a fix nor a ruling: a verified break under it is open.
+        // Cell 6 — `no-action` is neither a fix nor a ruling: a verified break under it
+        // is open.
         f("in-no-action", INSIDE, FIX_INSIDE)
             .triaged(confirmed())
             .then(disposed("no-action")),
@@ -4219,16 +4353,28 @@ fn findings() -> Vec<Finding> {
         f("again-no-action", EXCLUDED, HUMAN_OUTSIDE)
             .said(disposed("no-action"))
             .triaged(confirmed()),
-        // …and of `fixed` the rulings do not say whether it is inherited.
-        f("again-fixed", INSIDE, FOUND_AGAIN)
+        // Cell 2 — …and `fixed` is not inherited: a fix that did not hold leaves the
+        // finding open again, routed by its grade and its door like any other.
+        f("again-fixed", INSIDE, FIX_INSIDE)
             .said(disposed("fixed"))
-            .triaged(confirmed()),
-        f("again-fixed-unverified", INSIDE, FOUND_AGAIN)
+            .triaged(confirmed())
+            .reopened(),
+        f("again-fixed-out", EXCLUDED, HUMAN_OUTSIDE)
             .said(disposed("fixed"))
-            .triaged(graded("breaks")),
-        f("again-fixed-needs-bound", INSIDE, FOUND_AGAIN)
+            .triaged(confirmed())
+            .reopened(),
+        f("again-fixed-regression", EXCLUDED, FIX_REGRESSION)
             .said(disposed("fixed"))
-            .triaged(graded("needs-bound")),
+            .triaged(regression())
+            .reopened(),
+        f("again-fixed-unverified", INSIDE, UNVERIFIED)
+            .said(disposed("fixed"))
+            .triaged(graded("breaks"))
+            .reopened(),
+        f("again-fixed-needs-bound", INSIDE, ("human", "needs-bound"))
+            .said(disposed("fixed"))
+            .triaged(graded("needs-bound"))
+            .reopened(),
         f("again-fixed-refuted", INSIDE, FIXED)
             .said(disposed("fixed"))
             .triaged(refuted()),
@@ -4316,9 +4462,41 @@ fn every_finding_is_routed_by_its_grade_its_disposition_and_the_rounds_doors() {
         );
     }
     assert!(
-        truth.len() >= 30,
+        truth.len() >= 32,
         "the table collapsed to {} cells",
         truth.len()
+    );
+    assert!(
+        truth.iter().all(|finding| finding.route != "unsettled"),
+        "no finding is routed `unsettled`: every cell of this table is settled"
+    );
+
+    // A fix that did not hold: the finding says so, and so does the round that found it
+    // again — there even after a later fix, because it counts what the round found.
+    for finding in &truth {
+        let entry = &read["ledger"]
+            .as_array()
+            .expect("the ledger's rows")
+            .iter()
+            .find(|entry| entry["key"] == finding.key)
+            .expect("the finding's row")["reopened"];
+        assert_eq!(
+            entry,
+            &json!(finding.reopened),
+            "whether `{}` is open again",
+            finding.key
+        );
+    }
+    let mut found_again: Vec<&str> = truth
+        .iter()
+        .filter(|finding| finding.reopened)
+        .map(|finding| finding.key)
+        .collect();
+    found_again.push("again-refixed");
+    assert_eq!(
+        read["rounds"][0]["reopened"],
+        json!(found_again),
+        "the fixes round 1 found not to have held: {read}"
     );
 
     // The three lists a stage acts on are the routes, and nothing an agent compiled.
@@ -4341,22 +4519,16 @@ fn every_finding_is_routed_by_its_grade_its_disposition_and_the_rounds_doors() {
                 .collect::<Vec<_>>()
         )
     );
-    let cell = |why: &str| -> Value {
-        let keys: Vec<&str> = routed_as("unsettled")
-            .iter()
-            .filter(|f| f.why == why)
-            .map(|f| f.key)
-            .collect();
-        json!({"cell": why, "keys": keys})
-    };
     assert_eq!(
-        read["unsettled"],
-        json!([
-            cell("ungraded"),
-            cell("unverified"),
-            cell("found-again-after-its-fix"),
-        ])
+        read["untriaged"],
+        json!(
+            routed_as("triage")
+                .iter()
+                .map(|f| json!({"key": f.key, "why": f.why}))
+                .collect::<Vec<_>>()
+        )
     );
+    assert_eq!(read["unsettled"], json!([]));
 
     // A later round has doors of its own, and the latest round that triaged a finding is
     // the one that places it; a finding it did not triage stays where its round put it.
@@ -4429,158 +4601,596 @@ fn every_finding_is_routed_by_its_grade_its_disposition_and_the_rounds_doors() {
     );
 }
 
-/// One state of a round: its clause table and the findings standing in its ledger, by
-/// their keys in [`findings`] — and the step that must follow.
+/// One state of a run — its opening's facts, its clause table, its rounds and the findings
+/// standing in its ledger, by their keys in [`findings`] — and the step that must follow.
+#[derive(Clone, Copy)]
 struct Round {
     name: &'static str,
-    clauses: &'static [(&'static str, &'static str)],
+    /// The run's facts as the opening wrote them — the inside of a JSON object; empty
+    /// for an opening that wrote none.
+    run: &'static str,
+    /// The clause table: a clause, its status, and the round its instrument last ran in
+    /// — its row names that round's candidate. Round 0 is no round: a row that is void
+    /// names no commit (not yet run), any other a commit no round tested.
+    clauses: &'static [(&'static str, &'static str, usize)],
+    /// The clauses an item of the test set judges.
+    instruments: &'static [&'static str],
+    /// The rounds, in order: what each one's record holds beside its candidate, as the
+    /// inside of a JSON object — or `None` for a round that has a scope and no record.
+    rounds: &'static [Option<&'static str>],
     findings: &'static [&'static str],
     next: &'static str,
+    /// What the document says beside `next`, as the inside of a JSON object.
+    says: &'static str,
 }
 
-/// The run's two clauses, both green, and one of them not.
-const GREEN: &[(&str, &str)] = &[("clause-a", "green"), ("clause-b", "green")];
-const ONE_VOID: &[(&str, &str)] = &[("clause-a", "green"), ("clause-b", "void")];
+/// The run's two clauses, both green on round 1's candidate, and one of them not.
+const GREEN: &[(&str, &str, usize)] = &[("clause-a", "green", 1), ("clause-b", "green", 1)];
+const ONE_VOID: &[(&str, &str, usize)] = &[("clause-a", "green", 1), ("clause-b", "void", 1)];
+/// A run that stops at its bound of three rounds, and one that stops after every round.
+const BOUNDED: &str = r#""stop": "at-the-bound", "rounds": 3"#;
+const EVERY_ROUND: &str = r#""stop": "every-round""#;
+/// One round, tested; and what its record says when it also ran a fix cycle.
+const TESTED_ONCE: &[Option<&str>] = &[Some("")];
+const LANDED: &[Option<&str>] = &[Some(r#""cycles": 1"#)];
+const DROPPED: &[Option<&str>] = &[Some(r#""cycles": 3, "outcome": "dropped""#)];
+/// Round 2 ran the instrument of `clause-b` alone.
+const RERUN_B: &[Option<&str>] = &[Some(""), Some(r#""alone": "clause-b""#)];
 
-/// **The round's truth table.**
+/// The state every cell is a variation of: a ready run that stops at its bound, both
+/// clauses judged by an item and green, one round tested, nothing found.
+const ROUND: Round = Round {
+    name: "",
+    run: BOUNDED,
+    clauses: GREEN,
+    instruments: &["clause-a", "clause-b"],
+    rounds: TESTED_ONCE,
+    findings: &[],
+    next: "",
+    says: "{}",
+};
+
+/// **The run's truth table.** The cells the decision of 2026-10-06 settled carry its
+/// numbers; the stops are the two bounds of ruling 6.
 const ROUNDS: &[Round] = &[
     Round {
         name: "every clause green, and no finding",
-        clauses: GREEN,
-        findings: &[],
         next: "close",
+        says: r#"{"stop": null, "retest": [], "human_clauses": [], "unsettled": [], "not_ready": []}"#,
+        ..ROUND
     },
     Round {
         name: "every clause green, and nothing that breaks one",
-        clauses: GREEN,
         findings: &["in-refuted", "in-no-break", "oos-listed"],
         next: "close",
+        ..ROUND
     },
     Round {
         name: "every blocker fixed, every item ruled, one found again",
-        clauses: GREEN,
         findings: &["in-fixed", "out-later", "out-bound", "again-later"],
         next: "close",
+        ..ROUND
     },
-    // A clause row that is void, red or missing forbids close — and with nothing open the
-    // rulings name no step.
-    Round {
-        name: "a void clause row",
-        clauses: ONE_VOID,
-        findings: &[],
-        next: "unsettled",
-    },
-    Round {
-        name: "a void clause row, every finding fixed",
-        clauses: &[("clause-a", "void"), ("clause-b", "green")],
-        findings: &["in-fixed"],
-        next: "unsettled",
-    },
-    Round {
-        name: "a red clause row",
-        clauses: &[("clause-a", "green"), ("clause-b", "red")],
-        findings: &[],
-        next: "unsettled",
-    },
+    // Cell 4 — the opening writes a row per clause, and a run without one is not ready:
+    // an empty table is never "nothing forbids close", and no stage starts over it. The
+    // same holds of the facts the stops are computed from.
     Round {
         name: "no clause row at all",
         clauses: &[],
-        findings: &[],
-        next: "unsettled",
+        next: "not-ready",
+        says: r#"{"not_ready": ["no-clause-row"], "stop": null}"#,
+        ..ROUND
+    },
+    Round {
+        name: "no clause row, and an open blocker: nothing is fixed past an opening that is not done",
+        clauses: &[],
+        findings: &["in-confirmed"],
+        next: "not-ready",
+        says: r#"{"not_ready": ["no-clause-row"], "blockers": ["in-confirmed"]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "no stop mode",
+        run: "",
+        next: "not-ready",
+        says: r#"{"not_ready": ["no-stop-mode"]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a run that stops at its bound, and no bound",
+        run: r#""stop": "at-the-bound""#,
+        next: "not-ready",
+        says: r#"{"not_ready": ["no-round-bound"]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a bound, and no stop mode",
+        run: r#""rounds": 3"#,
+        next: "not-ready",
+        says: r#"{"not_ready": ["no-stop-mode"]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "an opening that wrote nothing",
+        run: "",
+        clauses: &[],
+        rounds: &[],
+        next: "not-ready",
+        says: r#"{"not_ready": ["no-clause-row", "no-stop-mode"]}"#,
+        ..ROUND
+    },
+    // The `test` stage comes first: before round 1, while a round's own is not recorded,
+    // and after a round that is over with something still open.
+    Round {
+        name: "a ready run and no round yet: a row not yet run is no re-run",
+        clauses: &[("clause-a", "void", 0), ("clause-b", "void", 0)],
+        rounds: &[],
+        next: "test",
+        says: r#"{"retest": [], "stop": null}"#,
+        ..ROUND
+    },
+    Round {
+        name: "no round yet, and a clause no item judges: nothing is asked of the table yet",
+        clauses: &[("clause-a", "void", 0), ("clause-b", "void", 0)],
+        instruments: &["clause-a"],
+        rounds: &[],
+        next: "test",
+        says: r#"{"unsettled": [], "retest": [], "human_clauses": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a round begun and not recorded",
+        clauses: &[("clause-a", "void", 0), ("clause-b", "void", 0)],
+        rounds: &[None],
+        next: "test",
+        ..ROUND
+    },
+    Round {
+        name: "round 1 landed, round 2 begun and not recorded: every row green closes nothing",
+        rounds: &[Some(r#""cycles": 1"#), None],
+        findings: &["in-fixed"],
+        next: "test",
+        ..ROUND
+    },
+    Round {
+        name: "a dropped round, its blocker open again: the next round's test, not a fixer",
+        rounds: DROPPED,
+        findings: &["in-confirmed"],
+        next: "test",
+        says: r#"{"blockers": ["in-confirmed"], "stop": null}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a part landed, an item left for the human",
+        rounds: &[Some(r#""cycles": 2, "outcome": "part""#)],
+        findings: &["out-confirmed"],
+        next: "test",
+        ..ROUND
+    },
+    // Cell 1 — a finding with no grade, or a break nobody verified: the round's triage
+    // is not finished. It forbids close, and it comes before the human's list and before
+    // any fixer.
+    Round {
+        name: "a finding nobody verified",
+        findings: &["in-unverified"],
+        next: "triage",
+        says: r#"{"untriaged": [{"key": "in-unverified", "why": "unverified"}], "blockers": [], "human_list": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a finding nobody graded",
+        findings: &["never-triaged"],
+        next: "triage",
+        says: r#"{"untriaged": [{"key": "never-triaged", "why": "ungraded"}], "blockers": [], "human_list": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a finding nobody verified beside an open blocker",
+        findings: &["in-unverified", "in-confirmed"],
+        next: "triage",
+        ..ROUND
+    },
+    Round {
+        name: "a finding nobody verified beside an unruled item: the list is ruled when it is whole",
+        findings: &["in-unverified", "out-confirmed"],
+        next: "triage",
+        ..ROUND
+    },
+    Round {
+        name: "found again after its fix, and nobody verified it",
+        findings: &["again-fixed-unverified"],
+        next: "triage",
+        ..ROUND
     },
     // The human's list.
     Round {
         name: "an unruled item on the human's list",
-        clauses: GREEN,
         findings: &["out-confirmed"],
         next: "rule",
+        ..ROUND
     },
     Round {
         name: "a finding that needs a bound nobody declared",
-        clauses: GREEN,
         findings: &["needs-bound"],
         next: "rule",
+        ..ROUND
     },
     Round {
         name: "an unruled item beside an open blocker: the ruling comes first",
-        clauses: GREEN,
         findings: &["in-confirmed", "out-confirmed"],
         next: "rule",
+        ..ROUND
     },
     Round {
         name: "an unruled item under a void clause",
         clauses: ONE_VOID,
         findings: &["out-confirmed"],
         next: "rule",
-    },
-    Round {
-        name: "an unruled item beside a finding nobody verified",
-        clauses: GREEN,
-        findings: &["in-unverified", "out-confirmed"],
-        next: "rule",
+        says: r#"{"retest": [], "human_clauses": []}"#,
+        ..ROUND
     },
     // Fixed without asking.
     Round {
         name: "an open blocker inside the test set",
-        clauses: GREEN,
         findings: &["in-confirmed"],
         next: "fix",
+        ..ROUND
     },
     Round {
         name: "a regression found outside the test set",
-        clauses: GREEN,
         findings: &["out-regression"],
         next: "fix",
+        ..ROUND
     },
     Round {
         name: "an item the human admitted to the run",
-        clauses: GREEN,
         findings: &["out-admitted"],
         next: "fix",
+        ..ROUND
     },
     Round {
-        name: "an open blocker under a void clause",
+        name: "an open blocker under a void clause: the clause's re-run waits",
         clauses: ONE_VOID,
         findings: &["in-confirmed", "in-fixed"],
         next: "fix",
+        says: r#"{"retest": []}"#,
+        ..ROUND
     },
-    // What the rulings do not settle is never fixed past, and never closed over.
+    // Cell 2 — a finding found again after its fix is open again, and routed by its door.
     Round {
-        name: "a finding nobody verified",
-        clauses: GREEN,
-        findings: &["in-unverified"],
-        next: "unsettled",
-    },
-    Round {
-        name: "a finding nobody graded",
-        clauses: GREEN,
-        findings: &["never-triaged"],
-        next: "unsettled",
-    },
-    Round {
-        name: "a finding nobody verified beside an open blocker",
-        clauses: GREEN,
-        findings: &["in-unverified", "in-confirmed"],
-        next: "unsettled",
-    },
-    Round {
-        name: "a finding found again after its fix",
-        clauses: GREEN,
+        name: "a finding found again after its fix, inside the test set",
         findings: &["again-fixed", "in-fixed"],
+        next: "fix",
+        says: r#"{"blockers": ["again-fixed"]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a finding found again after its fix, outside the test set",
+        findings: &["again-fixed-out"],
+        next: "rule",
+        says: r#"{"human_list": [{"key": "again-fixed-out", "why": "outside"}]}"#,
+        ..ROUND
+    },
+    // Cell 3 — nothing open, and a clause without a green row: its instrument is run
+    // again once, alone; still not green after that, the clause is the human's.
+    Round {
+        name: "a void clause row",
+        clauses: ONE_VOID,
+        next: "retest",
+        says: r#"{"retest": ["clause-b"], "human_clauses": [], "unsettled": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a void clause row, every finding fixed",
+        clauses: &[("clause-a", "void", 1), ("clause-b", "green", 1)],
+        findings: &["in-fixed"],
+        next: "retest",
+        says: r#"{"retest": ["clause-a"]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a red clause row, and no finding",
+        clauses: &[("clause-a", "green", 1), ("clause-b", "red", 1)],
+        next: "retest",
+        says: r#"{"retest": ["clause-b"]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a row never run, once round 1 is tested",
+        clauses: &[("clause-a", "green", 1), ("clause-b", "void", 0)],
+        next: "retest",
+        says: r#"{"retest": ["clause-b"]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a red row whose commit no round tested",
+        clauses: &[("clause-a", "green", 1), ("clause-b", "red", 0)],
+        next: "retest",
+        says: r#"{"retest": ["clause-b"]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "two clauses without a green row: both are named",
+        clauses: &[("clause-a", "void", 1), ("clause-b", "red", 1)],
+        next: "retest",
+        says: r#"{"retest": ["clause-a", "clause-b"]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "the one re-run turned the row green",
+        clauses: &[("clause-a", "green", 1), ("clause-b", "green", 2)],
+        rounds: RERUN_B,
+        next: "close",
+        ..ROUND
+    },
+    Round {
+        name: "still void after its one re-run: the human's",
+        clauses: &[("clause-a", "green", 1), ("clause-b", "void", 2)],
+        rounds: RERUN_B,
+        next: "rule",
+        says: r#"{"human_clauses": [{"clause": "clause-b", "why": "not-green-after-its-rerun"}], "retest": [], "human_list": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "still red after its one re-run",
+        clauses: &[("clause-a", "green", 1), ("clause-b", "red", 2)],
+        rounds: RERUN_B,
+        next: "rule",
+        ..ROUND
+    },
+    Round {
+        name: "the re-run was another clause's: the retry is per clause",
+        clauses: &[("clause-a", "void", 1), ("clause-b", "green", 2)],
+        rounds: RERUN_B,
+        next: "retest",
+        says: r#"{"retest": ["clause-a"], "human_clauses": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a row that names a round which ran another clause alone: not its own re-run",
+        clauses: &[("clause-a", "void", 2), ("clause-b", "green", 2)],
+        rounds: RERUN_B,
+        next: "retest",
+        says: r#"{"retest": ["clause-a"]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "one clause's retry spent, another's due: the human's comes first",
+        clauses: &[("clause-a", "void", 1), ("clause-b", "void", 2)],
+        rounds: RERUN_B,
+        next: "rule",
+        says: r#"{"human_clauses": [{"clause": "clause-b", "why": "not-green-after-its-rerun"}], "retest": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a spent retry beside an open blocker: the clause is the human's once nothing is open",
+        clauses: &[("clause-a", "green", 1), ("clause-b", "void", 2)],
+        rounds: RERUN_B,
+        findings: &["in-confirmed"],
+        next: "fix",
+        says: r#"{"human_clauses": [], "retest": [], "unsettled": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a spent retry stays spent though a later round ran another clause alone",
+        clauses: &[("clause-a", "green", 3), ("clause-b", "void", 2)],
+        rounds: &[
+            Some(""),
+            Some(r#""alone": "clause-b""#),
+            Some(r#""alone": "clause-a""#),
+        ],
+        run: r#""stop": "at-the-bound", "rounds": 9"#,
+        next: "rule",
+        says: r#"{"human_clauses": [{"clause": "clause-b", "why": "not-green-after-its-rerun"}]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a round that ran more than the one instrument earns the clause a new re-run",
+        clauses: &[("clause-a", "green", 1), ("clause-b", "void", 3)],
+        rounds: &[Some(""), Some(r#""alone": "clause-b""#), Some("")],
+        run: r#""stop": "at-the-bound", "rounds": 9"#,
+        next: "retest",
+        says: r#"{"retest": ["clause-b"], "human_clauses": []}"#,
+        ..ROUND
+    },
+    // What the rulings still do not settle: a clause without a green row that no item of
+    // the test set judges. There is no instrument to run again.
+    Round {
+        name: "a void clause that no item judges",
+        clauses: ONE_VOID,
+        instruments: &["clause-a"],
         next: "unsettled",
+        says: r#"{"unsettled": [{"cell": "not-green-and-no-instrument", "clauses": ["clause-b"]}], "retest": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a clause no item judges beside one whose retry is due: nothing is run on a guess",
+        clauses: &[("clause-a", "void", 1), ("clause-b", "red", 1)],
+        instruments: &["clause-a"],
+        next: "unsettled",
+        says: r#"{"unsettled": [{"cell": "not-green-and-no-instrument", "clauses": ["clause-b"]}], "retest": []}"#,
+        ..ROUND
+    },
+    Round {
+        name: "a clause no item judges beside one whose retry is spent: the human's comes first",
+        clauses: &[("clause-a", "void", 1), ("clause-b", "void", 2)],
+        instruments: &["clause-b"],
+        rounds: RERUN_B,
+        next: "rule",
+        says: r#"{"unsettled": [{"cell": "not-green-and-no-instrument", "clauses": ["clause-a"]}]}"#,
+        ..ROUND
+    },
+    // The stops (ruling 6). A run that stops after every round stops once its latest
+    // round is over, whatever follows — and says what follows.
+    Round {
+        name: "every round a stop: a round that left nothing open, every clause green",
+        run: EVERY_ROUND,
+        next: "stop",
+        says: r#"{"stop": {"why": "every-round", "round": 1, "then": "close"}}"#,
+        ..ROUND
+    },
+    Round {
+        name: "every round a stop: a round that landed",
+        run: EVERY_ROUND,
+        rounds: LANDED,
+        findings: &["in-fixed"],
+        next: "stop",
+        says: r#"{"stop": {"why": "every-round", "round": 1, "then": "close"}}"#,
+        ..ROUND
+    },
+    Round {
+        name: "every round a stop: the re-run of a void clause waits for the human's go",
+        run: EVERY_ROUND,
+        clauses: ONE_VOID,
+        next: "stop",
+        says: r#"{"stop": {"why": "every-round", "round": 1, "then": "retest"}, "retest": ["clause-b"]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "every round a stop: a dropped round",
+        run: EVERY_ROUND,
+        rounds: DROPPED,
+        findings: &["in-confirmed"],
+        next: "stop",
+        says: r#"{"stop": {"why": "every-round", "round": 1, "then": "test"}}"#,
+        ..ROUND
+    },
+    Round {
+        name: "every round a stop, and the round is not over: a blocker is fixed first",
+        run: EVERY_ROUND,
+        findings: &["in-confirmed"],
+        next: "fix",
+        says: r#"{"stop": null}"#,
+        ..ROUND
+    },
+    Round {
+        name: "every round a stop, and the next round is begun: no stop inside a round",
+        run: EVERY_ROUND,
+        rounds: &[Some(""), None],
+        next: "test",
+        says: r#"{"stop": null}"#,
+        ..ROUND
+    },
+    Round {
+        name: "every round a stop, and a bound beside it: the bound is the other mode's",
+        run: r#""stop": "every-round", "rounds": 1"#,
+        clauses: ONE_VOID,
+        next: "stop",
+        says: r#"{"stop": {"why": "every-round", "round": 1, "then": "retest"}}"#,
+        ..ROUND
+    },
+    // A run that stops at its bound stops when the latest round has reached it, is over,
+    // and work remains.
+    Round {
+        name: "at the bound, a clause without a green row",
+        clauses: &[("clause-a", "green", 1), ("clause-b", "void", 3)],
+        rounds: &[Some(""), Some(""), Some("")],
+        next: "stop",
+        says: r#"{"stop": {"why": "round-bound", "round": 3, "then": "retest"}, "retest": ["clause-b"]}"#,
+        ..ROUND
+    },
+    Round {
+        name: "at the bound, a dropped round with its blocker open again",
+        rounds: &[
+            Some(""),
+            Some(""),
+            Some(r#""cycles": 3, "outcome": "dropped""#),
+        ],
+        findings: &["in-confirmed"],
+        next: "stop",
+        says: r#"{"stop": {"why": "round-bound", "round": 3, "then": "test"}}"#,
+        ..ROUND
+    },
+    Round {
+        name: "at the bound, a clause that is the human's already",
+        clauses: &[("clause-a", "green", 1), ("clause-b", "void", 3)],
+        rounds: &[Some(""), Some(""), Some(r#""alone": "clause-b""#)],
+        next: "stop",
+        says: r#"{"stop": {"why": "round-bound", "round": 3, "then": "rule"}}"#,
+        ..ROUND
+    },
+    Round {
+        name: "at the bound, and no work remains: the run closes",
+        rounds: &[Some(""), Some(""), Some("")],
+        next: "close",
+        says: r#"{"stop": null}"#,
+        ..ROUND
+    },
+    Round {
+        name: "at the bound, and the round is not over: its blocker is fixed",
+        rounds: &[Some(""), Some(""), Some("")],
+        findings: &["in-confirmed"],
+        next: "fix",
+        says: r#"{"stop": null}"#,
+        ..ROUND
+    },
+    Round {
+        name: "under the bound, a clause without a green row",
+        clauses: &[("clause-a", "green", 1), ("clause-b", "void", 2)],
+        rounds: &[Some(""), Some("")],
+        next: "retest",
+        says: r#"{"stop": null}"#,
+        ..ROUND
+    },
+    Round {
+        name: "the bound raised by the human: the step is taken",
+        run: r#""stop": "at-the-bound", "rounds": 4"#,
+        clauses: &[("clause-a", "green", 1), ("clause-b", "void", 3)],
+        rounds: &[Some(""), Some(""), Some("")],
+        next: "retest",
+        says: r#"{"stop": null, "retest": ["clause-b"]}"#,
+        ..ROUND
     },
 ];
+
+/// The candidate round `n` of a [`Round`] tested: its digit, forty times.
+fn candidate(n: usize) -> String {
+    let digit = u32::try_from(n).expect("a round's number");
+    sha(char::from_digit(digit, 10).expect("a round below ten"))
+}
 
 /// Stand `round` up in a rig of its own and hold the state document to it.
 fn drive_round(label: &str, round: &Round, truth: &[Finding]) {
     let rig = Rig::new(label);
-    ground(&rig);
-    for (clause, status) in round.clauses {
+    let what = round.name;
+    if !round.run.is_empty() {
+        rig.run(&run_set(RUN), &format!("{{{}}}", round.run))
+            .must(OK, "the run's facts");
+    }
+    let items: Vec<Value> = round
+        .instruments
+        .iter()
+        .map(|clause| {
+            let mut judged = item(&format!("row-{clause}"));
+            judged["clause"] = json!(clause);
+            judged
+        })
+        .collect();
+    rig.run(&item_set(RUN), &json!(items).to_string())
+        .must(OK, "the test set");
+    for (n, record) in round.rounds.iter().enumerate() {
+        let number = (n + 1).to_string();
+        rig.run(
+            &scope_set(RUN, &number),
+            &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+        )
+        .must(OK, "a round's scope");
+        if let Some(facts) = record {
+            let mut given: Value =
+                serde_json::from_str(&format!("{{{facts}}}")).expect("a round's facts");
+            given["candidate"] = json!(candidate(n + 1));
+            rig.run(&round_set(RUN, &number), &given.to_string())
+                .must(OK, "a round's record");
+        }
+    }
+    for (clause, status, ran) in round.clauses {
         let rest = ["--instrument=its instrument", "--scope=the delta"];
         let mut args = clause_set(RUN, clause, &rest);
         args.push(format!("--status={status}"));
-        if *status != "void" {
-            args.push("--commit=0f34d8f0".to_owned());
+        match (*ran, *status) {
+            (0, "void") => {}
+            (0, _) => args.push("--commit=0f34d8f0".to_owned()),
+            (n, _) => args.push(format!("--commit={}", candidate(n))),
         }
         rig.run(&args, "").must(OK, "a clause row");
     }
@@ -4594,19 +5204,33 @@ fn drive_round(label: &str, round: &Round, truth: &[Finding]) {
                 .unwrap_or_else(|| panic!("no finding `{key}` in the table"))
         })
         .collect();
+    if standing.iter().any(|finding| finding.key == "oos-listed") {
+        rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "")
+            .must(OK, "the declared bound");
+    }
     plant(&rig, &standing);
 
     let read = rig.state();
-    let what = round.name;
     assert_eq!(read["next"], json!(round.next), "{what}: {read}");
+    let says: Value = serde_json::from_str(round.says).expect("what the document says");
+    for (field, value) in says.as_object().expect("an object") {
+        assert_eq!(&read[field], value, "{what}: `{field}` in {read}");
+    }
+    // `stop` is the step exactly when the document says why, and then it names the step
+    // that follows.
+    assert_eq!(
+        round.next == "stop",
+        !read["stop"].is_null(),
+        "{what}: {read}"
+    );
 
-    // What forbids closing, by the clause table and by the ledger — and `close` exactly
-    // when nothing does.
+    // What forbids closing, by the clause table and by the ledger — and `close`, now or
+    // after a stop, only when nothing does.
     let mut forbids: Vec<Value> = round
         .clauses
         .iter()
-        .filter(|(_, status)| *status != "green")
-        .map(|(clause, status)| json!({"clause": clause, "status": status}))
+        .filter(|(_, status, _)| *status != "green")
+        .map(|(clause, status, _)| json!({"clause": clause, "status": status}))
         .collect();
     if round.clauses.is_empty() {
         forbids.push(json!({"clauses": "no row"}));
@@ -4620,34 +5244,40 @@ fn drive_round(label: &str, round: &Round, truth: &[Finding]) {
             .map(|finding| json!({"finding": finding.key, "route": finding.route})),
     );
     assert_eq!(read["forbids_close"], json!(forbids), "{what}: {read}");
-    assert_eq!(
-        round.next == "close",
-        forbids.is_empty(),
-        "{what}: close, exactly when nothing forbids it"
-    );
-    let no_step = json!({"cell": "nothing-open-and-no-close", "keys": []});
-    assert_eq!(
-        read["unsettled"]
-            .as_array()
-            .expect("the unsettled cells")
-            .contains(&no_step),
-        open.is_empty() && round.next != "close",
-        "{what}: the state the rulings name no step for is named: {read}"
-    );
+    if round.next == "close" || read["stop"]["then"] == "close" {
+        assert!(
+            forbids.is_empty(),
+            "{what}: close, only when nothing forbids it"
+        );
+    }
+    // A stage `next` names is one its position does not refuse.
+    for (step, stage) in [("fix", "fix"), ("test", "test"), ("retest", "test")] {
+        if round.next == step {
+            assert!(
+                read["position"][stage]["refused"].is_null(),
+                "{what}: `{step}` names a stage that is refused: {read}"
+            );
+        }
+    }
 }
 
-#[test]
-fn the_next_step_is_computed_from_the_clause_table_and_the_ledger() {
+/// The table is driven in three parts, so that no one test is a hundred rigs long.
+fn drive_rounds(part: usize) {
+    const PARTS: usize = 3;
     let truth = findings();
     let truth = &truth;
+    let cells: Vec<(usize, &Round)> = ROUNDS
+        .iter()
+        .enumerate()
+        .filter(|(n, _)| n % PARTS == part)
+        .collect();
     let driven: usize = std::thread::scope(|threads| {
-        let workers: Vec<_> = ROUNDS
-            .chunks(4)
-            .enumerate()
-            .map(|(n, rounds)| {
+        let workers: Vec<_> = cells
+            .chunks(2)
+            .map(|rounds| {
                 threads.spawn(move || {
-                    for (m, round) in rounds.iter().enumerate() {
-                        drive_round(&format!("next-{n}-{m}"), round, truth);
+                    for (n, round) in rounds {
+                        drive_round(&format!("next-{n}"), round, truth);
                     }
                     rounds.len()
                 })
@@ -4658,7 +5288,64 @@ fn the_next_step_is_computed_from_the_clause_table_and_the_ledger() {
             .map(|worker| worker.join().expect("a worker thread"))
             .sum()
     });
-    assert!(driven >= 20, "the table collapsed to {driven} cells");
+    assert!(
+        driven >= 20 && ROUNDS.len() >= 62,
+        "the table collapsed to {driven} cells of {}",
+        ROUNDS.len()
+    );
+}
+
+#[test]
+fn the_next_step_is_computed_from_the_runs_recorded_state_part_1_of_3() {
+    drive_rounds(0);
+}
+
+#[test]
+fn the_next_step_is_computed_from_the_runs_recorded_state_part_2_of_3() {
+    drive_rounds(1);
+}
+
+#[test]
+fn the_next_step_is_computed_from_the_runs_recorded_state_part_3_of_3() {
+    drive_rounds(2);
+}
+
+/// A clause's instrument last ran in the HIGHEST round that tested the commit its row
+/// names. Two rounds name one candidate only when a record never moved the tip between
+/// them — and then it is the later one's record that says whether the clause ran alone.
+#[test]
+fn a_clauses_instrument_last_ran_in_the_highest_round_that_tested_its_commit() {
+    let rig = Rig::new("last-round");
+    rig.run(&run_set(RUN), &format!("{{{BOUNDED}}}"))
+        .must(OK, "the run's facts");
+    let mut judged = item("row-clause-b");
+    judged["clause"] = json!("clause-b");
+    rig.run(&item_set(RUN), &judged.to_string())
+        .must(OK, "the test set");
+    for (round, facts) in [
+        ("1", json!({"candidate": sha('a')})),
+        ("2", json!({"candidate": sha('a'), "alone": "clause-b"})),
+    ] {
+        rig.run(&scope_set(RUN, round), &scope(&[INSIDE], &[]).to_string())
+            .must(OK, "a round's scope");
+        rig.run(&round_set(RUN, round), &facts.to_string())
+            .must(OK, "a round's record");
+    }
+    let mut row = clause_set(
+        RUN,
+        "clause-b",
+        &["--instrument=its instrument", "--scope=the delta"],
+    );
+    row.extend([format!("--commit={}", sha('a')), "--status=void".to_owned()]);
+    rig.run(&row, "").must(OK, "a clause row");
+
+    let read = rig.state();
+    assert_eq!(
+        (&read["clauses"][0]["round"], &read["clauses"][0]["retry"]),
+        (&json!(2), &json!("spent")),
+        "the later of the two rounds, and its record: {read}"
+    );
+    assert_eq!(read["next"], json!("rule"), "{read}");
 }
 
 // ---------------------------------------------------------------------------
@@ -5039,6 +5726,7 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
                 "binary": sha256('b'),
                 "cycles": 0,
                 "outcome": null,
+                "alone": null,
                 "cross-model": [],
                 "cross-model-void": [],
             },
@@ -5051,9 +5739,12 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
     // A fact written once may be said again, as it stands.
     rig.run(
         &round_set(RUN, "1"),
-        &json!({"candidate": sha('c'), "outcome": "part"}).to_string(),
+        &json!({"candidate": sha('c'), "outcome": "part", "alone": "no-lost-files"}).to_string(),
     )
-    .must(OK, "the candidate again, and the round's outcome");
+    .must(
+        OK,
+        "the candidate again, the round's outcome, and the clause it ran alone",
+    );
     assert_eq!(
         table(&rig.read(&round_path("1")), &ROUND_COLUMNS),
         vec![
@@ -5062,6 +5753,7 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
             vec!["`binary`".to_owned(), format!("`{}`", sha256('b'))],
             vec!["`cycles`".to_owned(), "`2`".to_owned()],
             vec!["`outcome`".to_owned(), "`part`".to_owned()],
+            vec!["`alone`".to_owned(), "`no-lost-files`".to_owned()],
         ],
         "the facts, in the record's own order whatever order they came in"
     );
@@ -5073,6 +5765,7 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
             "binary": sha256('b'),
             "cycles": 2,
             "outcome": "part",
+            "alone": "no-lost-files",
             "cross-model": [],
             "cross-model-void": [],
         })
@@ -5084,6 +5777,10 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
         (json!({"base": "0f34d8f1"}), "another base"),
         (json!({"binary": sha256('d')}), "another binary"),
         (json!({"outcome": "dropped"}), "another outcome"),
+        (
+            json!({"alone": "no-regression"}),
+            "another clause run alone",
+        ),
         (
             json!({"cycles": 3, "outcome": "dropped"}),
             "another outcome beside a fact that would be taken",
@@ -5183,6 +5880,16 @@ fn a_round_record_holds_its_facts_and_what_is_written_once_stands() {
             json!({"cross-model": [3]}),
             BAD_ID,
             "an item that is a number",
+        ),
+        (
+            json!({"alone": "No lost files"}),
+            BAD_ID,
+            "a clause that is no slug",
+        ),
+        (
+            json!({"alone": ["no-lost-files"]}),
+            BAD_ID,
+            "a list of clauses",
         ),
     ];
     for (given, status, why) in lists {
@@ -5381,8 +6088,164 @@ const POSITIONS: &[Position] = &[
     },
 ];
 
-fn drive_position(label: &str, position: &Position, truth: &[Finding]) {
+/// What a run's opening wrote, for a [`Position`]: its facts, as the inside of a JSON
+/// object (empty: none), and whether its clause table has a row.
+type Opening = (&'static str, bool);
+
+/// An opening that is done, with a bound no cell of [`POSITIONS`] reaches.
+const OPENED: Opening = (r#""stop": "at-the-bound", "rounds": 9"#, true);
+
+/// **The position under the run's facts.** A run that is not ready starts no stage, and
+/// round R+1 of a run that stops at its bound is the human's to allow once R is at it.
+const BOUND_POSITIONS: &[(Opening, Position)] = &[
+    (
+        ("", false),
+        Position {
+            name: "an opening that wrote nothing, and no round",
+            rounds: &[],
+            finding: None,
+            test: r#"{"refused": "not-ready", "round": null}"#,
+            fix: r#"{"refused": "not-ready", "round": null}"#,
+        },
+    ),
+    (
+        (r#""stop": "every-round""#, false),
+        Position {
+            name: "no clause row, though a round is tested and a blocker stands",
+            rounds: &[(Some(TESTED), &[("test", "1")])],
+            finding: Some("in-confirmed"),
+            test: r#"{"refused": "not-ready", "round": 1}"#,
+            fix: r#"{"refused": "not-ready", "round": 1}"#,
+        },
+    ),
+    (
+        ("", true),
+        Position {
+            name: "no stop mode, though a round is tested and left nothing open",
+            rounds: &[(Some(TESTED), &[("test", "1")])],
+            finding: Some("in-refuted"),
+            test: r#"{"refused": "not-ready", "round": 1}"#,
+            fix: r#"{"refused": "not-ready", "round": 1}"#,
+        },
+    ),
+    (
+        (r#""stop": "at-the-bound""#, true),
+        Position {
+            name: "a run that stops at its bound, and no bound",
+            rounds: &[],
+            finding: None,
+            test: r#"{"refused": "not-ready", "round": null}"#,
+            fix: r#"{"refused": "not-ready", "round": null}"#,
+        },
+    ),
+    (
+        (r#""stop": "at-the-bound", "rounds": 1"#, true),
+        Position {
+            name: "a bound of one round, and no round yet",
+            rounds: &[],
+            finding: None,
+            test: r#"{"round": 1, "attempt": 1}"#,
+            fix: r#"{"refused": "no-round", "round": null}"#,
+        },
+    ),
+    (
+        (r#""stop": "at-the-bound", "rounds": 1"#, true),
+        Position {
+            name: "at the bound, the round's own test stage not recorded: it is run again",
+            rounds: &[(None, &[("test", "1")])],
+            finding: None,
+            test: r#"{"round": 1, "attempt": 2}"#,
+            fix: r#"{"refused": "not-tested", "round": 1}"#,
+        },
+    ),
+    (
+        (r#""stop": "at-the-bound", "rounds": 1"#, true),
+        Position {
+            name: "at the bound, a round that left nothing open: the next is the human's",
+            rounds: &[(Some(TESTED), &[("test", "1")])],
+            finding: Some("in-refuted"),
+            test: r#"{"refused": "round-bound", "round": 1}"#,
+            fix: r#"{"round": 1, "cycle": 1, "attempt": 1, "land": false}"#,
+        },
+    ),
+    (
+        (r#""stop": "at-the-bound", "rounds": 1"#, true),
+        Position {
+            name: "at the bound, a dropped round",
+            rounds: &[(
+                Some(
+                    r#""candidate": "cccccccccccccccccccccccccccccccccccccccc", "cycles": 3, "outcome": "dropped""#,
+                ),
+                &[],
+            )],
+            finding: Some("in-confirmed"),
+            test: r#"{"refused": "round-bound", "round": 1}"#,
+            fix: r#"{"refused": "round-over", "round": 1}"#,
+        },
+    ),
+    (
+        (r#""stop": "at-the-bound", "rounds": 1"#, true),
+        Position {
+            name: "at the bound, a blocker open: the round's own word comes first",
+            rounds: &[(Some(TESTED), &[("test", "1")])],
+            finding: Some("in-confirmed"),
+            test: r#"{"refused": "round-open", "round": 1}"#,
+            fix: r#"{"round": 1, "cycle": 1, "attempt": 1, "land": false}"#,
+        },
+    ),
+    (
+        (r#""stop": "at-the-bound", "rounds": 2"#, true),
+        Position {
+            name: "under the bound, a round that left nothing open",
+            rounds: &[(Some(TESTED), &[("test", "1")])],
+            finding: Some("in-refuted"),
+            test: r#"{"round": 2, "attempt": 1}"#,
+            fix: r#"{"round": 1, "cycle": 1, "attempt": 1, "land": false}"#,
+        },
+    ),
+    (
+        (r#""stop": "every-round", "rounds": 1"#, true),
+        Position {
+            name: "every round a stop, and a bound beside it: the bound is the other mode's",
+            rounds: &[(Some(TESTED), &[("test", "1")])],
+            finding: Some("in-refuted"),
+            test: r#"{"round": 2, "attempt": 1}"#,
+            fix: r#"{"round": 1, "cycle": 1, "attempt": 1, "land": false}"#,
+        },
+    ),
+    (
+        (r#""stop": "every-round""#, true),
+        Position {
+            name: "every round a stop: the human's go is the next invocation",
+            rounds: &[(
+                Some(
+                    r#""candidate": "cccccccccccccccccccccccccccccccccccccccc", "cycles": 3, "outcome": "dropped""#,
+                ),
+                &[],
+            )],
+            finding: Some("in-confirmed"),
+            test: r#"{"round": 2, "attempt": 1}"#,
+            fix: r#"{"refused": "round-over", "round": 1}"#,
+        },
+    ),
+];
+
+fn drive_position(label: &str, opening: Opening, position: &Position, truth: &[Finding]) {
     let rig = Rig::new(label);
+    let (facts, clause_row) = opening;
+    if !facts.is_empty() {
+        rig.run(&run_set(RUN), &format!("{{{facts}}}"))
+            .must(OK, "the run's facts");
+    }
+    if clause_row {
+        let rest = [
+            "--instrument=the audit",
+            "--scope=the delta",
+            "--status=void",
+        ];
+        rig.run(&clause_set(RUN, "no-lost-files", &rest), "")
+            .must(OK, "a clause row, not yet run");
+    }
     match position.finding {
         // Before any round nothing was triaged: the finding is a row of the opening's.
         Some(key) if position.rounds.is_empty() => rig.seed_rows(&[key]),
@@ -5421,6 +6284,12 @@ fn drive_position(label: &str, position: &Position, truth: &[Finding]) {
     let read = rig.state();
     let what = format!("`{}`", position.name);
     let parsed = |text: &str| -> Value { serde_json::from_str(text).expect("a JSON cell") };
+    let ready = !facts.contains("at-the-bound") || facts.contains("rounds");
+    assert_eq!(
+        read["not_ready"] == json!([]),
+        clause_row && !facts.is_empty() && ready,
+        "{what}: {read}"
+    );
     assert_eq!(
         read["position"],
         json!({"test": parsed(position.test), "fix": parsed(position.fix)}),
@@ -5428,18 +6297,18 @@ fn drive_position(label: &str, position: &Position, truth: &[Finding]) {
     );
 }
 
-#[test]
-fn the_position_of_each_stage_is_computed_from_the_rounds_records_and_the_routes() {
+/// Drive `cells` — each an opening and a position — a few rigs to a thread.
+fn drive_positions(label: &str, cells: &[(Opening, &Position)]) -> usize {
     let truth = findings();
     let truth = &truth;
-    let driven: usize = std::thread::scope(|threads| {
-        let workers: Vec<_> = POSITIONS
-            .chunks(4)
+    std::thread::scope(|threads| {
+        let workers: Vec<_> = cells
+            .chunks(2)
             .enumerate()
             .map(|(n, positions)| {
                 threads.spawn(move || {
-                    for (m, position) in positions.iter().enumerate() {
-                        drive_position(&format!("position-{n}-{m}"), position, truth);
+                    for (m, (opening, position)) in positions.iter().enumerate() {
+                        drive_position(&format!("{label}-{n}-{m}"), *opening, position, truth);
                     }
                     positions.len()
                 })
@@ -5449,6 +6318,118 @@ fn the_position_of_each_stage_is_computed_from_the_rounds_records_and_the_routes
             .into_iter()
             .map(|worker| worker.join().expect("a worker thread"))
             .sum()
-    });
+    })
+}
+
+#[test]
+fn the_position_of_each_stage_is_computed_from_the_rounds_records_and_the_routes() {
+    let cells: Vec<(Opening, &Position)> = POSITIONS
+        .iter()
+        .map(|position| (OPENED, position))
+        .collect();
+    let driven = drive_positions("position", &cells);
     assert!(driven >= 17, "the table collapsed to {driven} cells");
+}
+
+#[test]
+fn a_run_that_is_not_ready_starts_no_stage_and_a_round_past_the_bound_is_the_humans() {
+    let cells: Vec<(Opening, &Position)> = BOUND_POSITIONS
+        .iter()
+        .map(|(opening, position)| (*opening, position))
+        .collect();
+    let driven = drive_positions("bound-position", &cells);
+    assert!(driven >= 12, "the table collapsed to {driven} cells");
+}
+
+// ---------------------------------------------------------------------------
+// 22 · The run's facts: what the opening settled for every stage to read
+// ---------------------------------------------------------------------------
+
+/// The opening record is the human-led step's prose, which the script neither writes nor
+/// reads. What a stage must read of it — when the run stops of its own accord, and the
+/// bound across rounds — gets in through `run-set`, and the bound is only ever raised.
+#[test]
+fn the_runs_facts_are_written_through_the_script_and_the_bound_is_only_raised() {
+    let rig = Rig::new("run-facts");
+    assert_eq!(
+        rig.state()["facts"],
+        json!({"stop": null, "rounds": null}),
+        "an opening that wrote none"
+    );
+    let seen = rig.run(&run_set(RUN), &json!({"rounds": 3}).to_string());
+    seen.must(OK, "the bound across rounds");
+    assert_eq!(
+        seen.json(),
+        json!({"run": run_path(), "facts": {"stop": null, "rounds": 3}})
+    );
+    rig.run(&run_set(RUN), &json!({"stop": "at-the-bound"}).to_string())
+        .must(OK, "the stop mode");
+    assert_eq!(
+        table(&rig.read(&run_path()), &ROUND_COLUMNS),
+        vec![vec!["`stop`", "`at-the-bound`"], vec!["`rounds`", "`3`"]],
+        "the facts, in the table's own order whatever order they came in"
+    );
+    assert_eq!(
+        rig.state()["facts"],
+        json!({"stop": "at-the-bound", "rounds": 3})
+    );
+
+    // The human raises the bound, and a raise is the same call; a bound said again
+    // stands, and the mode may change — the first run stops after every round.
+    for rounds in [5, 5] {
+        rig.run(&run_set(RUN), &json!({"rounds": rounds}).to_string())
+            .must(OK, "the bound, raised and said again");
+    }
+    rig.run(
+        &run_set(RUN),
+        &json!({"stop": "every-round", "rounds": 12}).to_string(),
+    )
+    .must(OK, "the other mode, and a higher bound");
+    assert_eq!(
+        rig.state()["facts"],
+        json!({"stop": "every-round", "rounds": 12})
+    );
+
+    let before = rig.snapshot();
+    let bad: &[(Value, &str)] = &[
+        (json!({"rounds": 11}), "a bound that goes down"),
+        (
+            json!({"stop": "at-the-bound", "rounds": 3}),
+            "a bound that goes down beside a fact that would be taken",
+        ),
+        (json!({"rounds": 0}), "no round at all"),
+        (json!({"rounds": "13"}), "a bound that is text"),
+        (json!({"rounds": 12.5}), "half a round"),
+        (json!({"rounds": true}), "a bound that is a truth value"),
+        (json!({"stop": "sometimes"}), "a mode nobody defined"),
+        (json!({"stop": true}), "a mode that is a truth value"),
+        (json!({"cycles": 3}), "a fact nobody defined"),
+        (
+            json!({"stop": "every-round", "previous": "1.0.0"}),
+            "a fact nobody defined beside one that would be taken",
+        ),
+        (json!({}), "facts that say nothing"),
+        (json!([{"rounds": 13}]), "a list of facts"),
+    ];
+    for (given, why) in bad {
+        rig.run(&run_set(RUN), &given.to_string())
+            .refused(BAD_VALUE, why);
+    }
+    assert_eq!(rig.snapshot(), before, "a refused fact writes nothing");
+
+    // Facts somebody wrote by hand are not rewritten on a guess.
+    let other = Rig::new("run-facts-by-hand");
+    fs::write(
+        other.root.join(run_path()),
+        "# the run\n\nThree rounds, then stop.\n",
+    )
+    .expect("a note");
+    let before = other.snapshot();
+    other
+        .run(&run_set(RUN), &json!({"rounds": 3}).to_string())
+        .refused(CORRUPT, "facts that are not the script's");
+    other
+        .run(&state(RUN), "")
+        .refused(CORRUPT, "the state over facts that are not the script's");
+    assert_eq!(other.snapshot(), before);
 }
