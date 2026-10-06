@@ -9,14 +9,15 @@
 //
 // WHAT THIS SCRIPT DECIDES, AND WHAT IT DOES NOT. It has no shell, no file system and no
 // clock: it sees what an agent returns to it. The run's committed state is read by
-// `dev/stabilize-record state`, relayed by a git step as ONE line and checked here against
-// the hash the step printed for it — and whether a finding is inside the round's test set,
-// where it is routed, which items a round runs, which round, cycle and attempt an invocation
-// works on, and what happens next are computed THERE, where a suite holds them to truth
-// tables on every gate. This script computes none of them again. `next` is returned to the
-// orchestrator verbatim; `unsettled`, and any value this script does not know, is a return
-// with the state attached — never a guess and never a loop. Nothing a previous invocation
-// knew is used: an invocation starts from the state document and from git.
+// `dev/stabilize-record state`, relayed by a git step inside the ONE line its command prints
+// and checked here against the hash that line ends with — and whether a finding is inside
+// the round's test set, where it is routed, which items a round runs, which round, cycle and
+// attempt an invocation works on, and what happens next are computed THERE, where a suite
+// holds them to truth tables on every gate. This script computes none of them again. `next`
+// is returned to the orchestrator verbatim; `unsettled`, and any value this script does not
+// know, is a return with the state attached — never a guess and never a loop. Nothing a
+// previous invocation knew is used: an invocation starts from the state document and from
+// git.
 //
 // THE BOUND ACROSS ROUNDS AND THE STOP MODE (ruling 6) are the record script's too: the
 // run's opening writes them (`dev/stabilize-record run-set`), `next` is `stop` where the
@@ -68,6 +69,15 @@
 //                                                as a branch tip of their own, gated and
 //                                                audited once more as exactly that diff,
 //                                                and landed if that audit finds no new blocker
+//
+// THE GIT ACTS. Every git act of a run — and every read of its record — is ONE command of
+// `dev/stabilize-step`, which does the act, checks it and prints ONE line: a git step's
+// prompt is that command and "relay its line", and `readStep` holds the relayed line to the
+// hash it ends with before anything here reads it. What an act runs and what it refuses is
+// that tool's (its header); which act a stage asks for, in which order and with which names,
+// is this script's. ONE step is still a list of commands the agent follows: the re-cut of a
+// part (`carryPrompt` with a part), because that exit is ruled to be rebuilt as a revert
+// (DECISIONS.md -> 2026-10-06) and a mechanism about to go is not ported.
 //
 // BRANCHES (ruling 7). Every branch name is minted in ONE function, `branchName`. A round's
 // branch is opened from the loop branch, pushed by name and landed `--no-ff`; product paths
@@ -178,12 +188,16 @@ const KNOWN_NEXT = ['fix', 'rule', 'close']
 // verification, then once more to give every entry its row.
 const VERIFY_PASSES = 3
 const GIT_MODEL = 'sonnet'
+// The one tool a git step runs a command of, and relays the line of.
+const STEP_TOOL = 'dev/stabilize-step'
 const RUNS_ROOT = 'completions/artifacts'
 // Adjustment (ii): the paths the published crates carry, and their tests. They move only
-// through an audited round's merge; every other path commits directly behind the gate.
+// through an audited round's merge; every other path commits directly behind the gate. The
+// acts that assert it are handed the list.
 const PRODUCT_PATHS = ['Cargo.toml', 'Cargo.lock', 'crates']
 // The append-only logs a merge may conflict in — milestone-build.js's list, held equal by
-// tooling-tests/merge_logs_fence.rs. `dev/merge-logs` resolves exactly these.
+// tooling-tests/merge_logs_fence.rs. `dev/merge-logs` resolves exactly these; the two acts
+// that merge are handed the list.
 const SYNC_LOGS = ['DECISIONS.md', 'implementation/project-history.md']
 // The lines the agent definitions' contracts bind on, spelled as they spell them.
 const LABELS = { report: 'REPORT:', binary: 'BINARY:', area: 'AREA:', record: 'RECORD STEP', branch: 'BRANCH:' }
@@ -543,18 +557,29 @@ function evidenceOf(state) {
   return (state.clauses || []).map((c) => ({ clause: c.clause, status: c.status, round: c.round, commit: c.commit, behind: c.behind, stale: c.stale }))
 }
 
-// readRelay — the state document out of a git step's return: the line must hash to what
-// `shasum` printed for it and parse as JSON, or there is no state.
-function readRelay(r) {
-  if (!r || typeof r.line !== 'string' || typeof r.sha256 !== 'string') return { error: 'the step returned no line' }
+// readStep — a git step's return as the object its command printed. The relayed line must
+// end with the sha256 of itself without that field, as the tool writes it (dev/stabilize-step:
+// "The line"), parse as JSON and be the line of the act that was asked for; then it is what
+// the step says, a refusal included (`status: 'halted'`, with the tool's halt report). A line
+// that is not the command's is a halted step too, and `relay` says why. A step whose agent
+// halted without a line is passed on as that halt.
+const STEP_SHA_RE = /, "sha256": "([0-9a-f]{64})"\}$/
+function readStep(r, act) {
+  if (!r) return null
+  if (r.status !== 'ran') return { status: 'halted', halt: r.halt || null }
+  const lost = (why) => ({ status: 'halted', relay: why, halt: { root_cause: why, evidence: typeof r.line === 'string' ? r.line : '(the step returned no line)', tree_state: '(not read: the step\'s line was not the command\'s)', recommendation: 'read the tree and the branches before the step is asked for again: its command may have run' } })
+  if (typeof r.line !== 'string') return lost('the step returned no line')
   const line = r.line.replace(/\n$/, '')
-  if (sha256(line + '\n') !== r.sha256.trim()) return { error: 'the relayed line does not hash to the sha256 the step printed for the file (' + r.sha256.trim() + '): it was altered on its way' }
+  const tail = STEP_SHA_RE.exec(line)
+  if (!tail || sha256(line.slice(0, tail.index) + '}') !== tail[1]) return lost('the relayed line does not end with the sha256 of itself, as `' + STEP_TOOL + '` prints it: it was altered on its way, or is not the command\'s')
+  let said = null
   try {
-    const state = JSON.parse(line)
-    return plain(state) && typeof state.opened === 'boolean' ? { state } : { error: 'the relayed line is not a state document' }
+    said = JSON.parse(line)
   } catch (e) {
-    return { error: 'the relayed line is not JSON: ' + ((e && e.message) || e) }
+    return lost('the relayed line is not JSON: ' + ((e && e.message) || e))
   }
+  if (!plain(said) || said.act !== act || typeof said.status !== 'string') return lost('the relayed line is not the line of `' + STEP_TOOL + ' ' + act + '`')
+  return said
 }
 
 // clauseRows — the clause rows a `test` stage writes: one per clause that has an item this
@@ -642,78 +667,18 @@ const HALT = {
   },
 }
 const STRINGS = { type: 'array', items: { type: 'string' } }
-const GIT_STATE_SCHEMA = {
+// What a git step returns: the ONE line its command printed. What the line holds is the
+// tool's to say (dev/stabilize-step: its header); `readStep` reads it.
+const STEP_SCHEMA = {
   type: 'object',
   required: ['status'],
   properties: {
-    status: { type: 'string', enum: ['ready', 'halted'] },
+    status: { type: 'string', enum: ['ran', 'halted'] },
     halt: HALT,
-    branch: { type: 'string', description: 'the output of `git branch --show-current`' },
-    head: { type: 'string', description: 'the full sha `git rev-parse HEAD` prints' },
-    loop_head: { type: 'string', description: 'the full sha of the loop branch' },
-    opening: { type: 'string', description: 'the full sha of the commit that added the run\'s opening record, or empty' },
-    untracked: Object.assign({ description: 'the untracked report paths `git status` listed' }, STRINGS),
+    line: { type: 'string', description: 'the ONE line the command printed on stdout, whole and as printed: every character copied, nothing re-ordered, summarised, re-indented or re-escaped' },
   },
 }
-const RELAY_SCHEMA = {
-  type: 'object',
-  required: ['status'],
-  properties: {
-    status: { type: 'string', enum: ['read', 'halted'] },
-    halt: HALT,
-    branch: { type: 'string', description: 'the output of `git branch --show-current`' },
-    sha256: { type: 'string', description: 'the first field `shasum -a 256` printed for the file' },
-    line: { type: 'string', description: 'the one line the file holds, whole and as printed: every character copied, nothing re-ordered, summarised, re-indented or re-escaped' },
-  },
-}
-const CHECK_SCHEMA = {
-  type: 'object',
-  required: ['status'],
-  properties: {
-    status: { type: 'string', enum: ['checked', 'halted'] },
-    halt: HALT,
-    line: { type: 'string', description: 'the one JSON line the check printed, as printed' },
-  },
-}
-const BRANCH_SCHEMA = {
-  type: 'object',
-  required: ['status'],
-  properties: {
-    status: { type: 'string', enum: ['ready', 'halted'] },
-    halt: HALT,
-    branch: { type: 'string', description: 'the output of `git branch --show-current` after the step' },
-    head: { type: 'string', description: 'the full sha of HEAD after the step' },
-    created: { type: 'boolean' },
-    remote_head: { type: 'string', description: 'push steps: the full sha `git ls-remote` reports for the pushed branch' },
-    local: Object.assign({ description: 'find steps: the local branches the listing printed' }, STRINGS),
-    remote: Object.assign({ description: 'find steps: the branches `git ls-remote` printed, without `refs/heads/`' }, STRINGS),
-  },
-}
-const LAND_SCHEMA = {
-  type: 'object',
-  required: ['status'],
-  properties: {
-    status: { type: 'string', enum: ['merged', 'landed-before', 'halted'] },
-    halt: HALT,
-    merge_commit: { type: 'string', description: 'the full sha of the --no-ff merge commit — set whenever that commit exists, a halt after it included' },
-    head: { type: 'string', description: 'the full sha of the loop branch after the step' },
-    remote_head: { type: 'string', description: 'the full sha `git ls-remote` reports for the pushed loop branch' },
-    tip_moved: { type: 'boolean' },
-    resolved_logs: STRINGS,
-    moved_outside: Object.assign({ description: 'the paths outside the run directory the loop branch changed while the round was out (empty when none)' }, STRINGS),
-  },
-}
-const COMMITS_SCHEMA = {
-  type: 'object',
-  required: ['status'],
-  properties: {
-    status: { type: 'string', enum: ['listed', 'halted'] },
-    halt: HALT,
-    all: Object.assign({ description: 'step 2\'s output: every commit, oldest first, full shas' }, STRINGS),
-    inside: Object.assign({ description: 'step 3\'s output: the commits that touch a path under the run directory' }, STRINGS),
-    outside: Object.assign({ description: 'step 4\'s output: the commits that touch a path outside it' }, STRINGS),
-  },
-}
+// The one step that is still a list of commands: the re-cut of a part.
 const CARRY_SCHEMA = {
   type: 'object',
   required: ['status'],
@@ -724,17 +689,6 @@ const CARRY_SCHEMA = {
     head: { type: 'string' },
     remote_head: { type: 'string' },
     picked: { type: 'array', description: 'one entry per commit carried, in order', items: { type: 'object', required: ['from', 'to'], properties: { from: { type: 'string', description: 'the full sha the step named' }, to: { type: 'string', description: 'the full sha of the commit the cherry-pick made' } } } },
-  },
-}
-const SYNC_SCHEMA = {
-  type: 'object',
-  required: ['status'],
-  properties: {
-    status: { type: 'string', enum: ['merged', 'up-to-date', 'halted'] },
-    halt: HALT,
-    head: { type: 'string' },
-    origin_main: { type: 'string' },
-    resolved_logs: STRINGS,
   },
 }
 const PREFLIGHT_SCHEMA = {
@@ -929,156 +883,71 @@ const RECORD_SCHEMA = {
   },
 }
 
-// ---- the git steps (build-git) — exact command sequences, nothing improvised ----
-const GIT_RULES = 'Run exactly the commands below, in order, and nothing else: no other branch, no commit a step does not name, no file edit, no `git stash`, no reset, no rebase, no pull, never `--force`, and `main` is never checked out, merged into or pushed. Any check that fails, or any command that fails, is a HALT: stop, leave everything as it is, and fill the halt report (root_cause = which check, evidence = the command and its output, tree_state = `git status` and `git branch --show-current`).'
-const READ_RULES = 'This step READS: it changes no branch, no commit and no file of the repository. Run exactly the commands below, in order, each exit status read bare — never through a pipe. A command that exits non-zero is a HALT, its one line the evidence.'
-const UNTRACKED_RULE = 'every line must begin `?? ` and name a path under `' + RUNS_ROOT + '/<run>/` with `/reports/` in it — a report a stage wrote that no record step has committed yet. Any other line (a tracked file modified, staged or deleted; an untracked file anywhere else) is a HALT'
-
-function gitStatePrompt(v) {
-  const loop = branchName(v.run)
-  const dir = runDir(v.run)
-  const paths = PRODUCT_PATHS.join(' ')
-  const where = v.stage === 'test'
-    ? 'must print `' + loop + '` — the `test` stage works on the loop branch'
-    : 'must print `' + loop + '` or a name that begins `' + branchName(v.run, '') + '` — the loop branch, or a round\'s branch of this run'
+// ---- the git steps (build-git) — each ONE command of dev/stabilize-step, its line relayed ----
+const STEP_RULES = 'Run exactly the ONE command below, from the repository\'s root, and nothing else: no command before it or after it, no branch, no commit, no file edit, no `git stash`, no reset, no rebase, no pull, never `--force`, and `main` is never checked out, merged into or pushed. The command does the whole step and checks it. It prints ONE line of JSON on stdout — also when it refuses, which it says with an exit status that is not 0 and one line on stderr. A refusal is the step\'s answer: you never repair what it names, never run the command a second time, and never do by hand what it did not do.'
+function stepPrompt(what, act, flags) {
   return [
-    'GIT STEP — the state of the stabilization run `' + v.run + '` before its `' + v.stage + '` stage. ' + GIT_RULES,
-    '1. `git branch --show-current` ' + where + '.',
-    '2. `git status --porcelain --untracked-files=all`: ' + UNTRACKED_RULE.replace('<run>', v.run) + '. untracked = the paths listed.',
-    '3. If `git ls-remote --exit-code --heads origin ' + loop + '` exits 0 (exit 2 means it is not pushed — skip to step 4): `git fetch origin ' + loop + '`, then `git merge-base --is-ancestor origin/' + loop + ' ' + loop + '` must succeed — else the pushed loop branch has commits the local one lacks: HALT.',
-    '4. opening = the one line `git log --diff-filter=A --format=%H -n 1 ' + loop + ' -- ' + dir + '/opening.md` prints. If it prints nothing the run has no committed opening record: report opening as empty and skip step 5.',
-    '5. THE PATH-CLASS ASSERT — product paths move only through a round\'s merge. `git log --first-parent --no-merges --format=%H <opening>..' + loop + ' -- ' + paths + '` must print NOTHING: a commit it prints changed a product path directly on the loop branch — HALT, the evidence being each sha with `git show --stat --format=%s <sha> -- ' + paths + '`. And every line `git log --first-parent --merges --format=%s <opening>..' + loop + '` prints must begin `Merge branch \'' + branchName(v.run, '') + '` — any other merge is a HALT. Which paths are product paths is this list and nothing else; it is not yours to judge.',
-    '6. Report status = ready, branch, head = `git rev-parse HEAD`, loop_head = `git rev-parse ' + loop + '`, opening, untracked.',
+    'GIT STEP — ' + what + '. ' + STEP_RULES,
+    '1. `' + STEP_TOOL + ' ' + act + ' ' + flags + '`',
+    '2. Report status = ran and line = the ONE line the command printed on stdout, WHOLE and AS PRINTED, whatever it exited with: every character copied, no key re-ordered or dropped, nothing summarised, no `\\u…` escape rewritten into its character. The harness holds the line to the hash it ends with, so a line that is not the command\'s is caught. Only when the command printed no such line: status = halted, and the halt report (root_cause, evidence = the command and everything it printed, tree_state = `git status` and `git branch --show-current`).',
   ].join('\n')
+}
+// A list the harness owns, as the flags that hand it to an act.
+function listFlags(flag, values) {
+  return values.map((value) => '--' + flag + ' ' + value).join(' ')
+}
+function gitStatePrompt(v) {
+  return stepPrompt('the state of the stabilization run `' + v.run + '` before its `' + v.stage + '` stage: the branch, the tree, the pushed loop branch, and the path-class assert', 'git-state', '--stage ' + v.stage + ' --loop ' + branchName(v.run) + ' --rounds ' + branchName(v.run, '') + ' --run-dir ' + runDir(v.run) + ' ' + listFlags('product', PRODUCT_PATHS))
 }
 function statePrompt(v, tag) {
-  const file = v.scratch + '/state/' + tag + '.json'
-  return [
-    'GIT STEP — read the record of the stabilization run `' + v.run + '` (read ' + tag + '). ' + READ_RULES,
-    '1. `mkdir -p ' + v.scratch + '/state`.',
-    '2. `dev/stabilize-record state --run ' + v.run + ' > ' + file + '`.',
-    '3. `shasum -a 256 ' + file + '` — sha256 = the first field it prints.',
-    '4. `cat ' + file + '` — it prints ONE line of JSON. Return it as `line`, WHOLE and AS PRINTED: every character copied, no key re-ordered or dropped, nothing summarised, no `\\u…` escape rewritten into its character. The harness hashes what you return against step 3, so a line that is not the file\'s is caught.',
-    '5. Report status = read, branch = `git branch --show-current`, sha256, line.',
-  ].join('\n')
+  return stepPrompt('read the record of the stabilization run `' + v.run + '` (read ' + tag + ')', 'state', '--run ' + v.run + ' --scratch ' + v.scratch + ' --tag ' + tag)
 }
 function checkReportsPrompt(ctx, names) {
-  return [
-    'GIT STEP — the reports of the `' + ctx.stage + '` stage of `' + ctx.run + '`, round ' + ctx.round + ', held to the reporters that were launched. ' + READ_RULES + ' EXCEPT this one command: it prints its one JSON line and exits 20 when a report is missing or extra — that is its answer, not a halt: return the line either way.',
-    '1. `dev/stabilize-record check-reports ' + stageFlags(ctx) + ' --attempt ' + ctx.attempt + ' -- ' + names.join(' ') + '`.',
-    '2. Report status = checked, line = the one JSON line it printed, as printed.',
-  ].join('\n')
+  return stepPrompt('the reports of the `' + ctx.stage + '` stage of `' + ctx.run + '`, round ' + ctx.round + ', held to the reporters that were launched', 'check-reports', stageFlags(ctx) + ' --attempt ' + ctx.attempt + ' -- ' + names.join(' '))
 }
 function findRoundPrompt(v, round) {
-  const prefix = branchName(v.run, round)
-  return [
-    'GIT STEP — find the branch of round ' + round + ' of `' + v.run + '`. ' + READ_RULES,
-    '1. `git branch --list \'' + prefix + '*\' --format=\'%(refname:short)\'` — local = the names it prints (none is an answer).',
-    '2. `git ls-remote --heads origin \'' + prefix + '*\'` — remote = the names it prints, each without its `refs/heads/` (none is an answer).',
-    '3. Report status = ready, branch = `git branch --show-current`, head = `git rev-parse HEAD`, local, remote.',
-  ].join('\n')
+  return stepPrompt('find the branch of round ' + round + ' of `' + v.run + '`', 'find-round', '--prefix ' + branchName(v.run, round))
 }
 function openRoundPrompt(v, round, branch) {
-  const loop = branchName(v.run)
-  return [
-    'GIT STEP — the branch `' + branch + '` of round ' + round + ' of `' + v.run + '`: switch to it, or open it from `' + loop + '`. ' + GIT_RULES,
-    '1. `git status --porcelain --untracked-files=all`: ' + UNTRACKED_RULE.replace('<run>', v.run) + '.',
-    '2. If `git rev-parse --verify --quiet refs/heads/' + branch + '` succeeds: `git switch ' + branch + '`; created = false. Otherwise: `git switch ' + loop + '`, then `git switch --no-track -c ' + branch + ' ' + loop + '`; created = true.',
-    '3. `git branch --show-current` must print `' + branch + '`.',
-    '4. Report status = ready, branch, head = `git rev-parse HEAD`, created.',
-  ].join('\n')
+  return stepPrompt('the branch `' + branch + '` of round ' + round + ' of `' + v.run + '`: switch to it, or open it from `' + branchName(v.run) + '`', 'open-round', '--loop ' + branchName(v.run) + ' --branch ' + branch + ' --run-dir ' + runDir(v.run))
 }
 function pushPrompt(v, branch) {
-  return [
-    'GIT STEP — push `' + branch + '` of the stabilization run `' + v.run + '` by name. ' + GIT_RULES,
-    '1. `git branch --show-current` must print `' + branch + '`.',
-    '2. If `git ls-remote --exit-code --heads origin ' + branch + '` exits 0 (exit 2 means it is not pushed yet — skip to step 3): `git fetch origin ' + branch + '`, then `git merge-base --is-ancestor origin/' + branch + ' ' + branch + '` must succeed — else the pushed branch has commits the local one lacks: HALT; never pull, merge or rebase it.',
-    '3. `git push origin ' + branch + '` — the branch named in full, exactly so. A rejected push is a HALT: never force.',
-    '4. `git ls-remote --exit-code --heads origin ' + branch + '` must report the sha `git rev-parse ' + branch + '` prints.',
-    '5. Report status = ready, branch, head = `git rev-parse HEAD`, remote_head = the sha step 4 reported.',
-  ].join('\n')
+  return stepPrompt('push `' + branch + '` of the stabilization run `' + v.run + '` by name', 'push', '--branch ' + branch)
 }
 // The LAND step: a round's branch merged `--no-ff` into the loop branch and the loop branch
-// pushed, as one act. Its own rules line, because it may run `dev/merge-logs`.
-const LAND_RULES = 'Run exactly the commands below, in order, and nothing else: no other branch, no commit beyond the merge this step names, no file edit (`dev/merge-logs` is the only thing that writes a file), no `git stash`, no reset, no rebase, no pull, never `--force`, and `main` is never checked out, merged into or pushed. Any check that fails, or any command that fails, is a HALT: stop, leave everything as the step says, and fill the halt report (root_cause = which check, evidence = the command and its output, tree_state = `git status` and `git branch --show-current`) — and report merge_commit whenever the merge commit exists.'
+// pushed, as one act.
 function landPrompt(v, round, branch) {
   const loop = branchName(v.run)
-  const dir = runDir(v.run)
-  const logs = SYNC_LOGS.map((p) => '`' + p + '`').join(' or ')
-  const paths = PRODUCT_PATHS.join(' ')
-  return [
-    'GIT STEP — land round ' + round + ' of `' + v.run + '`, ONE act: merge `' + branch + '` into `' + loop + '` with a merge commit, then push `' + loop + '` by name. The audit of its fix diff left nothing open. ' + LAND_RULES,
-    '1. `git status --porcelain --untracked-files=all` must print nothing.',
-    '2. round_head = `git rev-parse ' + branch + '`. `git switch ' + loop + '`; pre = `git rev-parse HEAD`.',
-    '3. If `git ls-remote --exit-code --heads origin ' + loop + '` exits 0 (exit 2: not pushed yet — skip to step 4): `git fetch origin ' + loop + '`, then `git merge-base --is-ancestor origin/' + loop + ' ' + loop + '` must succeed — else HALT.',
-    '4. If `git merge-base --is-ancestor ' + branch + ' ' + loop + '` succeeds, the round landed before: status = landed-before, head = pre, and stop — nothing below runs.',
-    '5. tip_moved = false if `git merge-base --is-ancestor ' + loop + ' ' + branch + '` succeeds, true if it exits 1. moved_outside = the paths `git diff --name-only $(git merge-base ' + loop + ' ' + branch + ') ' + loop + ' -- . \':(exclude)' + dir + '\'` prints (none is expected: while a round is out the loop branch takes records only).',
-    '6. `git merge --no-ff --no-edit ' + branch + '`. If it exits 0, go to step 9.',
-    '7. It stopped. `git diff --name-only --diff-filter=U` lists the conflicted paths. If that list is empty, or names any path other than ' + logs + ': `git merge --abort`, then HALT — a conflict outside the append-only logs is the human\'s.',
-    '8. `dev/merge-logs` — it keeps both sides\' entries whole, in the file\'s date order, and stages the file; it refuses, writing nothing, anything else. If it exits non-zero: `git merge --abort`, then HALT with its stderr. If it exits 0: `git diff --name-only --diff-filter=U` must print nothing, then `git commit --no-edit`; resolved_logs = the paths step 7 listed.',
-    '9. Check the merge; merge_commit = `git rev-parse HEAD`. `git rev-list --parents -n 1 HEAD` must list exactly two parents, the first equal to pre and the second to round_head; `git status --porcelain` must print nothing. `git diff --quiet HEAD ' + branch + ' -- ' + paths + '` must exit 0 — what lands on the product paths is exactly what was audited. And when moved_outside is empty and resolved_logs is empty: `git diff --quiet HEAD ' + branch + ' -- . \':(exclude)' + dir + '\'` must exit 0 — the merged tree equals the round\'s outside the run directory. On a mismatch HALT and undo nothing.',
-    '10. `git push origin ' + loop + '` — the branch named in full. A rejected push is a HALT — never force; the merge stays on the local branch, and merge_commit says so.',
-    '11. `git ls-remote --exit-code --heads origin ' + loop + '` must report the sha `git rev-parse ' + loop + '` prints.',
-    '12. Report status = merged, merge_commit, head = merge_commit, remote_head = the sha step 11 reported, tip_moved, resolved_logs, moved_outside.',
-  ].join('\n')
+  return stepPrompt('land round ' + round + ' of `' + v.run + '`, ONE act: merge `' + branch + '` into `' + loop + '` with a merge commit, then push `' + loop + '` by name. The audit of its fix diff left nothing open', 'land', '--loop ' + loop + ' --branch ' + branch + ' --run-dir ' + runDir(v.run) + ' ' + listFlags('product', PRODUCT_PATHS) + ' ' + listFlags('log', SYNC_LOGS))
 }
 function roundCommitsPrompt(v, round, branch) {
-  const loop = branchName(v.run)
-  const dir = runDir(v.run)
-  return [
-    'GIT STEP — the commits of round ' + round + ' of `' + v.run + '` (`' + branch + '`), and which of them touch the run\'s directory. ' + READ_RULES,
-    '1. `git rev-list --merges --count ' + loop + '..' + branch + '` must print 0.',
-    '2. `git log --reverse --format=%H ' + loop + '..' + branch + '` — all = the shas it prints, in its order.',
-    '3. `git log --reverse --format=%H ' + loop + '..' + branch + ' -- ' + dir + '` — inside = the shas it prints.',
-    '4. `git log --reverse --format=%H ' + loop + '..' + branch + ' -- . \':(exclude)' + dir + '\'` — outside = the shas it prints.',
-    '5. Report status = listed, all, inside, outside — each list as printed, none of it sorted or judged.',
-  ].join('\n')
+  return stepPrompt('the commits of round ' + round + ' of `' + v.run + '` (`' + branch + '`), and which of them touch the run\'s directory', 'round-commits', '--loop ' + branchName(v.run) + ' --branch ' + branch + ' --run-dir ' + runDir(v.run))
 }
-// The CARRY step: named commits cherry-picked, one by one — onto the loop branch (a dropped
-// round keeps its record, adjustment iv) or onto a part's own branch (ruling 6).
+// The CARRY step: named commits cherry-picked, one by one. Onto the loop branch — a dropped
+// round keeps its record, adjustment iv — it is the tool's act. Onto a part's own branch
+// (ruling 6) it is NOT: that exit is ruled to be rebuilt as a revert, so its re-cut stays the
+// list of commands it was, to the byte, until that rebuild deletes it.
 const CARRY_RULES = 'Run exactly the commands below, in order, and nothing else: the only commits you make are the cherry-picks this step names, one by one. No other branch, no file edit, no `git stash`, no reset, no rebase, no pull, never `--force`, and `main` is never checked out, merged into or pushed. Any check that fails, or any command that fails, is a HALT: stop, leave everything as the step says, and fill the halt report (root_cause = which check, evidence = the command and its output, tree_state = `git status` and `git branch --show-current`).'
 function carryPrompt(v, round, shas, part) {
   const loop = branchName(v.run)
-  const dir = runDir(v.run)
-  const target = part || loop
-  const head = part
-    ? 'GIT STEP — re-cut a part of round ' + round + ' of `' + v.run + '` as a branch of its own, `' + part + '`, from the tip of `' + loop + '`: the fix commits the human keeps, and the round\'s record commits. '
-    : 'GIT STEP — round ' + round + ' of `' + v.run + '` is dropped: carry exactly its record commits over to `' + loop + '`, so that the round keeps its record. '
-  const open = part
-    ? '2. `git rev-parse --verify --quiet refs/heads/' + part + '` must FAIL and `git ls-remote --exit-code --heads origin ' + part + '` must exit 2 — the part\'s branch does not exist yet. `git switch ' + loop + '`, then `git switch --no-track -c ' + part + ' ' + loop + '`; pre = `git rev-parse HEAD`.'
-    : '2. `git switch ' + loop + '`; pre = `git rev-parse HEAD`. If `git ls-remote --exit-code --heads origin ' + loop + '` exits 0: `git fetch origin ' + loop + '`, then `git merge-base --is-ancestor origin/' + loop + ' ' + loop + '` must succeed — else HALT.'
-  const confined = part
-    ? '4. `git rev-list --count pre..HEAD` must print ' + shas.length + '.'
-    : '4. `git rev-list --count pre..HEAD` must print ' + shas.length + '; every path `git diff --name-only pre HEAD` prints must begin `' + dir + '/`; and `git diff --quiet pre HEAD -- ' + PRODUCT_PATHS.join(' ') + '` must exit 0 — a record commit changes nothing outside the run\'s directory. On a mismatch HALT and undo nothing.'
+  if (!part) return stepPrompt('round ' + round + ' of `' + v.run + '` is dropped: carry exactly its record commits over to `' + loop + '`, so that the round keeps its record', 'carry', '--loop ' + loop + ' --run-dir ' + runDir(v.run) + ' ' + listFlags('product', PRODUCT_PATHS) + ' -- ' + shas.join(' '))
   return [
-    head + CARRY_RULES,
+    'GIT STEP — re-cut a part of round ' + round + ' of `' + v.run + '` as a branch of its own, `' + part + '`, from the tip of `' + loop + '`: the fix commits the human keeps, and the round\'s record commits. ' + CARRY_RULES,
     '1. `git status --porcelain --untracked-files=all` must print nothing.',
-    open,
+    '2. `git rev-parse --verify --quiet refs/heads/' + part + '` must FAIL and `git ls-remote --exit-code --heads origin ' + part + '` must exit 2 — the part\'s branch does not exist yet. `git switch ' + loop + '`, then `git switch --no-track -c ' + part + ' ' + loop + '`; pre = `git rev-parse HEAD`.',
     '3. Each of these ' + shas.length + ' commit(s), in this order, with `git cherry-pick -x <sha>` — each must exit 0; one that stops is `git cherry-pick --abort`, then HALT:',
   ].concat(shas.map((sha) => '   - ' + sha)).concat([
-    confined,
-    '5. `git push origin ' + target + '` — the branch named in full; a rejected push is a HALT, never forced. Then `git ls-remote --exit-code --heads origin ' + target + '` must report the sha `git rev-parse ' + target + '` prints.',
+    '4. `git rev-list --count pre..HEAD` must print ' + shas.length + '.',
+    '5. `git push origin ' + part + '` — the branch named in full; a rejected push is a HALT, never forced. Then `git ls-remote --exit-code --heads origin ' + part + '` must report the sha `git rev-parse ' + part + '` prints.',
     '6. Report status = carried, branch = `git branch --show-current`, head = `git rev-parse HEAD`, remote_head, and picked: for each commit named in step 3, in order, `from` = that sha and `to` = the sha of the commit its cherry-pick made (`git log --reverse --format=%H pre..HEAD` prints them in the same order).',
   ]).join('\n')
 }
 // The close's SYNC step — the fixed step before any pull request to main
 // (implementation/dev-workflow.md -> Before a pull request to main). Returned to the
 // orchestrator with `next: 'close'`, never run here: the close's own acts come first.
-const SYNC_RULES = 'Run exactly the commands below, in order, and nothing else: no other branch, no commit beyond the merge this step names, no file edit (step 6\'s `dev/merge-logs` is the only thing that writes a file), no `git stash`, no reset, no rebase, never `--force`, and `main` is never checked out, merged into or pushed — `origin/main` is merged INTO the branch, which is all this step does with it. Any check that fails, or any command that fails, is a HALT: stop, leave everything as the step says, and fill the halt report (root_cause = which check, evidence = the command and its output, tree_state = `git status` and `git branch --show-current`).'
 function syncMainPrompt(run) {
   const m = branchName(run)
-  const logs = SYNC_LOGS.map((p) => '`' + p + '`').join(' or ')
-  return [
-    'GIT STEP — merge `origin/main` into `' + m + '` before its pull request to `main` is opened (the close of the stabilization run `' + run + '`). ' + SYNC_RULES,
-    '1. `git branch --show-current` must print `' + m + '` and `git status --porcelain` must print nothing; pre = `git rev-parse HEAD`.',
-    '2. `git fetch origin main`, then origin_main = `git rev-parse origin/main`.',
-    '3. If `git merge-base --is-ancestor origin/main ' + m + '` succeeds, `main` has nothing the branch lacks: status = up-to-date, head = `git rev-parse HEAD`, and stop — steps 4–8 do not run.',
-    '4. `git merge --no-ff --no-edit origin/main` — a merge commit, never a rebase. If it exits 0, go to step 7.',
-    '5. It stopped. `git diff --name-only --diff-filter=U` lists the conflicted paths. If that list is empty, or names any path other than ' + logs + ': `git merge --abort`, then HALT — a conflict outside the append-only logs is the human\'s, never resolved here.',
-    '6. `dev/merge-logs` — it resolves each conflicted log by keeping both sides\' entries whole in the file\'s date order, and stages it; it refuses, writing nothing, a hunk where either side changed text that was already there. If it exits non-zero: `git merge --abort`, then HALT with its stderr as evidence. If it exits 0: `git diff --name-only --diff-filter=U` must print nothing, then `git commit --no-edit`; resolved_logs = the paths step 5 listed.',
-    '7. Check the merge: `git rev-list --parents -n 1 HEAD` must list exactly two parents, the first equal to pre and the second equal to `git rev-parse origin/main`; `git status --porcelain` must print nothing. On a mismatch HALT and undo nothing.',
-    '8. Report status = merged, head = `git rev-parse HEAD`, origin_main, resolved_logs (empty after a clean merge). Do NOT push and do NOT open the pull request: the gate runs on the merged tree first.',
-  ].join('\n')
+  return stepPrompt('merge `origin/main` into `' + m + '` before its pull request to `main` is opened (the close of the stabilization run `' + run + '`). Nothing is pushed and no pull request is opened: the gate runs on the merged tree first', 'sync-main', '--loop ' + m + ' ' + listFlags('log', SYNC_LOGS))
 }
 
 // ---- the agents' prompts — thin: the role and its contract live in the definition ----
@@ -1399,16 +1268,21 @@ function selfTest() {
   check('sha256 of a million a', sha256('a'.repeat(1000000)) === 'cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0')
   check('sha256 outside ASCII', sha256('\u00e9') === '4a99557e4033c3539de2eb65472017cad5f9557f7a0625a09f1c3f6e2ba69c4c' && sha256('\u2014 \u00e9 \ud83d\ude00') === 'ce9b24e5ffe38e22059636aef28334557e630cf2206d2af214d779e63f7b0b51')
 
-  // The relay of the state document, and of `next`.
+  // The relay of a git step's line — the state document inside it — and of `next`.
   const doc = { run: 'rc24-tier1', opened: true, next: 'fix', position: { test: { round: 1, attempt: 1 } } }
-  const line = JSON.stringify(doc)
-  const relay = (text, hash) => readRelay({ status: 'read', line: text, sha256: hash })
-  check('a relay that hashes', !!relay(line, sha256(line + '\n')).state && relay(line + '\n', sha256(line + '\n')).state.next === 'fix')
-  check('a relay with one character changed', !!relay(line.replace('fix', 'fox'), sha256(line + '\n')).error)
-  check('a relay with a key re-ordered', !!relay(JSON.stringify({ opened: true, run: 'rc24-tier1', next: 'fix' }), sha256(line + '\n')).error)
-  check('a relay that is no JSON', !!relay('not json', sha256('not json\n')).error)
-  check('a relay that is no state', !!relay('[1]', sha256('[1]\n')).error)
-  check('no relay', !!readRelay(null).error && !!readRelay({ status: 'read' }).error)
+  // A line as the tool prints it: the object, and last the sha256 of the object's own text.
+  const printed = (said) => JSON.stringify(said).slice(0, -1) + ', "sha256": "' + sha256(JSON.stringify(said)) + '"}'
+  const line = printed({ act: 'state', status: 'read', branch: 'fix/rc24-tier1', state: doc })
+  const relay = (text, act) => readStep({ status: 'ran', line: text }, act || 'state')
+  check('a relay that hashes', relay(line).status === 'read' && relay(line + '\n').state.next === 'fix' && relay(line).branch === 'fix/rc24-tier1' && !relay(line).relay)
+  check('a relay with one character changed', relay(line.replace('"fix"', '"fox"')).status === 'halted' && isText(relay(line.replace('"fix"', '"fox"')).relay) && !!relay(line.replace('rc24-tier1', 'rc24-tier2')).relay)
+  check('a relay with a key re-ordered', !!relay(printed({ status: 'read', act: 'state' }).replace('"status":"read","act":"state"', '"act":"state","status":"read"')).relay && !!relay(line.replace(/, "sha256": "[0-9a-f]{64}"\}$/, '}')).relay)
+  check('a relay that is no JSON', !!relay('not json').relay && !!relay('not json, "sha256": "' + sha256('not json}') + '"}').relay)
+  check('a relay that is another act\'s line, or no act\'s', !!relay(line, 'push').relay && !!relay(printed([1])).relay && !!relay(printed({ status: 'read' })).relay && !!relay(printed({ act: 'state' })).relay)
+  check('no relay', readStep(null, 'state') === null && !!readStep({ status: 'ran' }, 'state').relay && readStep({ status: 'ran' }, 'state').status === 'halted')
+  check('a step that halted without a line is passed on as its halt', readStep({ status: 'halted', halt: { root_cause: 'x' } }, 'state').halt.root_cause === 'x' && !readStep({ status: 'halted' }, 'state').relay && readStep({ status: 'halted' }, 'state').halt === null)
+  const refusedLine = printed({ act: 'land', status: 'halted', refused: 'merge-differs', merge_commit: 'a'.repeat(40), halt: { root_cause: 'merge-differs: x', evidence: 'e', tree_state: 't', recommendation: 'r' } })
+  check('a refusal is read as a halted step that says why, with what the act had established', relay(refusedLine, 'land').status === 'halted' && relay(refusedLine, 'land').halt.root_cause === 'merge-differs: x' && relay(refusedLine, 'land').merge_commit === 'a'.repeat(40) && !relay(refusedLine, 'land').relay)
   for (const next of ['fix', 'rule', 'close', 'unsettled', 'retest', 'stop', 'test', 'triage', 'not-ready', '', null, 7]) {
     const out = outcomeOf({ next })
     check('next relayed verbatim: ' + JSON.stringify(next), out.next === next && out.known === ['fix', 'rule', 'close'].includes(next))
@@ -1484,7 +1358,17 @@ function selfTest() {
     for (const given of [undefined, null, false, 'true', 1, [], ['row-3'], 'all']) check('no cross-model step in ' + kind + ' under ' + JSON.stringify(given), chainOf(kind, given).every((stepList) => stepList.every((s) => !s.crossModel && ROLES[s.role] !== ROLES.crossModel && !(s.hands || []).includes('crossmodel'))))
   }
   check('the review row without the opt-in, and with it', asOf(chainOf('review-row', false)) === 'source driver reconciler<source+driver' && asOf(chainOf('review-row', true)) === 'source driver crossmodel reconciler<source+driver+crossmodel' && chainOf('no-such-kind', true).length === 0)
-  const gitPrompts = [gitStatePrompt(base), statePrompt(base, 't'), findRoundPrompt(fix, 1), openRoundPrompt(fix, 1, 'fix/rc24-tier1-r1'), pushPrompt(fix, 'fix/rc24-tier1-r1'), landPrompt(fix, 1, 'fix/rc24-tier1-r1'), roundCommitsPrompt(fix, 1, 'fix/rc24-tier1-r1'), carryPrompt(fix, 1, ['a'.repeat(40)], null), carryPrompt(fix, 1, ['a'.repeat(40)], 'fix/rc24-tier1-r1-part1'), syncMainPrompt('rc24-tier1'), checkReportsPrompt(ctx, ['x'])]
+  // Every git step is ONE command of the tool, and its prompt is that command and "relay
+  // its line" — all but the re-cut of a part, which is the list of commands it was.
+  const steps = { 'git-state': gitStatePrompt(base), state: statePrompt(base, 't'), 'find-round': findRoundPrompt(fix, 1), 'open-round': openRoundPrompt(fix, 1, 'fix/rc24-tier1-r1'), push: pushPrompt(fix, 'fix/rc24-tier1-r1'), land: landPrompt(fix, 1, 'fix/rc24-tier1-r1'), 'round-commits': roundCommitsPrompt(fix, 1, 'fix/rc24-tier1-r1'), carry: carryPrompt(fix, 1, ['a'.repeat(40)], null), 'sync-main': syncMainPrompt('rc24-tier1'), 'check-reports': checkReportsPrompt(ctx, ['x']) }
+  const recut = carryPrompt(fix, 1, ['a'.repeat(40)], 'fix/rc24-tier1-r1-part1')
+  for (const act of Object.keys(steps)) {
+    const numbered = steps[act].split('\n')
+    check('the `' + act + '` step is one command of the tool, and its line relayed', numbered.length === 3 && numbered[0].startsWith('GIT STEP — ') && numbered[0].endsWith(STEP_RULES) && numbered[1].startsWith('1. `' + STEP_TOOL + ' ' + act + ' ') && numbered[1].endsWith('`') && numbered[2].startsWith('2. Report status = ran and line = ') && !/`git (?!stash|status|branch --show-current)/.test(steps[act]))
+  }
+  check('the names a step hands the tool are the harness\'s', steps['git-state'].includes('`' + STEP_TOOL + ' git-state --stage test --loop fix/rc24-tier1 --rounds fix/rc24-tier1-r --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates`') && steps.land.includes(' land --loop fix/rc24-tier1 --branch fix/rc24-tier1-r1 --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates --log DECISIONS.md --log implementation/project-history.md`') && steps.carry.endsWith(STEP_RULES + '\n1. `' + STEP_TOOL + ' carry --loop fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates -- ' + 'a'.repeat(40) + '`\n' + steps.carry.split('\n')[2]) && steps['sync-main'].includes(' sync-main --loop fix/rc24-tier1 --log DECISIONS.md --log implementation/project-history.md`') && steps.state.includes(' state --run rc24-tier1 --scratch /tmp/scratch-1 --tag t`') && steps['find-round'].includes(' find-round --prefix fix/rc24-tier1-r1`') && steps.push.includes(' push --branch fix/rc24-tier1-r1`'))
+  check('the re-cut of a part is still the list of commands it was', recut.startsWith('GIT STEP — re-cut a part of round 1 of `rc24-tier1` as a branch of its own, `fix/rc24-tier1-r1-part1`') && recut.includes(CARRY_RULES) && recut.includes('`git cherry-pick -x <sha>`') && recut.includes('`git push origin fix/rc24-tier1-r1-part1`') && !recut.includes(STEP_TOOL) && recut.split('\n').length === 8)
+  const gitPrompts = Object.keys(steps).map((act) => steps[act]).concat([recut])
   check('no prompt names the tool without the opt-in', Object.keys(prompts).filter((role) => names.test(prompts[role])).join(' ') === 'crossModel' && !names.test(rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {})) && !names.test(gitPrompts.join('\n')))
   const asserts = (crossModel) => preflightPrompt(ctx, launcher(ctx), 'preflight', { build: false, image: false, sha: 'c'.repeat(40), label: 'c2', branch: 'b', binary: 'x', checks: [], crossModel })
   check('the preflight is asked about the tool only when an item is named', names.test(asserts(true)) && asserts(true).includes('`' + CROSS_CHECK + '`') && !names.test(asserts(false)) && !names.test(asserts(undefined)) && !asserts(false).includes(CROSS_CHECK))
@@ -1503,7 +1387,7 @@ function selfTest() {
   let tooLong = false
   try { launch.add(['verify', 'p1', 'k'.repeat(100)]) } catch (e) { tooLong = true }
   check('a reporter launched twice, or with no name', twice && tooLong && launch.names.length === 10 && reporterName(['a', 'B']) === null)
-  check('the check names every reporter launched', launch.names.every((n) => checkReportsPrompt(ctx, launch.names).includes(' ' + n)) && prompts.record.includes('check-reports --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 -- ' + launch.names.join(' ')))
+  check('the check names every reporter launched', launch.names.every((n) => checkReportsPrompt(ctx, launch.names).includes(' ' + n)) && checkReportsPrompt(ctx, launch.names).includes('`' + STEP_TOOL + ' check-reports --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 -- ' + launch.names.join(' ') + '`') && prompts.record.includes('check-reports --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 -- ' + launch.names.join(' ')))
   check('the ledger check names every key', prompts.record.includes('check-ledger --run rc24-tier1 -- f-1'))
   check('a payload is held to its hash', prompts.record.includes(sha256('{"cycles":3}\n')) && prompts.record.includes('round-set --run rc24-tier1 --round 2 < /tmp/scratch-1/record/x/round.json'))
   const cycleRecord = stageRecordCommands(ctx, '/tmp/scratch-1/record/y', { reporters: [], rows: [{ key: 'f-2' }], triage: [{ key: 'f-1', grade: 'breaks' }], patches: [{ key: 'f-1', disposition: 'fixed', detail: 'c'.repeat(40) }], clauses: [], facts: null, keys: ['f-1', 'f-2'] }).join('\n')
@@ -1608,6 +1492,11 @@ async function agentR(prompt, opts) {
 function gitStep(label, phaseTitle, prompt, schema) {
   return agentR(prompt, { label: 'git:' + label, phase: phaseTitle, agentType: 'build-git', schema, model: GIT_MODEL })
 }
+// toolStep — a git step that is ONE command of the tool: what the command `act` printed,
+// read off the relayed line. Null when the agent returned nothing.
+async function toolStep(label, phaseTitle, act, prompt) {
+  return readStep(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA), act)
+}
 function roleStep(role, label, phaseTitle, prompt, schema) {
   return agentR(prompt, { label, phase: phaseTitle, agentType: ROLES[role].agentType, schema })
 }
@@ -1636,20 +1525,22 @@ function onIt(r, branch, pushed) {
   return !!r && r.status === 'ready' && r.branch === branch && SHA_RE.test(String(r.head || '')) && (!pushed || r.remote_head === r.head)
 }
 
-// readState — the state document, relayed by a git step and held to its hash. A relay that
-// does not hash is asked for again, twice; then there is no state, and the stage halts.
+// readState — the state document, relayed by a git step inside its command's line and held
+// to that line's hash. A relay that does not hash, or holds no state document, is asked for
+// again, twice; then there is no state, and the stage halts.
 let stateReads = 0
 async function readState() {
   const tag = v.stage + '-' + (++stateReads)
   let why = 'the step returned no result'
   for (let n = 0; n < 3; n++) {
-    const again = n === 0 ? '' : '\n\nAGAIN (' + n + '): the line an earlier attempt returned did not hash to the file\'s sha256. Copy the line from step 4\'s output character for character.'
-    const r = await gitStep('state:' + tag + (n ? ':again' + n : ''), 'State', statePrompt(v, tag) + again, RELAY_SCHEMA)
+    const again = n === 0 ? '' : '\n\nAGAIN (' + n + '): the line an earlier attempt returned was not the line the command printed. Copy the line from the command\'s output character for character.'
+    const r = await toolStep('state:' + tag + (n ? ':again' + n : ''), 'State', 'state', statePrompt(v, tag) + again)
     if (!r) return { error: why, transient: true }
-    if (r.status !== 'read') return { error: (r.halt && r.halt.root_cause) || 'the step halted', halt: r.halt }
-    const read = readRelay(r)
-    if (read.state) return { state: read.state, branch: r.branch }
-    why = read.error
+    if (!r.relay) {
+      if (r.status !== 'read') return { error: (r.halt && r.halt.root_cause) || 'the step halted', halt: r.halt }
+      if (plain(r.state) && typeof r.state.opened === 'boolean') return { state: r.state, branch: r.branch }
+    }
+    why = r.relay || 'the relayed line holds no state document'
     log('state relay rejected (' + why + ') — asking again')
   }
   return { error: why }
@@ -1863,7 +1754,7 @@ async function rulingsStep(round, branch, ran) {
   phase('Record')
   const ruled = await recordStep('rulings:r' + round, rulingsRecordPrompt(v, round, branch, v.rulings, ran))
   if (ruled.fault) return { halted: halt('rulings', ruled.fault, { transient: !ruled.result, halt: ruled.result ? ruled.result.halt : null }) }
-  const pushed = await gitStep('push:rulings', 'Record', pushPrompt(v, branch), BRANCH_SCHEMA)
+  const pushed = await toolStep('push:rulings', 'Record', 'push', pushPrompt(v, branch))
   if (!onIt(pushed, branch, true)) return { halted: gitHalt('push', pushed, 'the rulings are recorded on ' + branch + ' (' + ruled.result.commit + ') and the branch was not pushed') }
   const read = await readState()
   if (!read.state) return { halted: halt('state', 'the rulings are recorded (' + ruled.result.commit + '), and the state could not be read back: ' + read.error, { transient: !!read.transient }) }
@@ -1909,7 +1800,7 @@ async function finishTriage(ctx, state, tip, branch) {
   const commands = stageRecordCommands(ctx, dir, { reporters: launch.names, rows: rec.rows, triage: rec.triage, patches: [], clauses: [], facts: null, keys: tri.entries.map((e) => e.key) })
   const recorded = await recordStep('triage:r' + ctx.round, recordPrompt(v, 'round ' + ctx.round + '\'s triage, finished — ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s) graded; no instrument ran', branch, commands, v.run + ' r' + ctx.round + ' — the round\'s triage, finished'))
   if (recorded.fault) return { halted: halt('record', recorded.fault, { transient: !recorded.result, halt: recorded.result ? recorded.result.halt : null, launched: launch.names, branch }) }
-  const pushed = await gitStep('push:triage', 'Record', pushPrompt(v, branch), BRANCH_SCHEMA)
+  const pushed = await toolStep('push:triage', 'Record', 'push', pushPrompt(v, branch))
   if (!onIt(pushed, branch, true)) return { halted: gitHalt('push', pushed, 'the triage is recorded on ' + branch + ' (' + recorded.result.commit + ') and the branch was not pushed') }
   const after = await readState()
   if (!after.state) return { halted: halt('state', 'the triage is recorded and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + after.error, { transient: !!after.transient, branch }) }
@@ -1918,14 +1809,14 @@ async function finishTriage(ctx, state, tip, branch) {
 function closeOf() {
   return {
     order: ['the close of the run, as the workflow\'s doc has it', 'sync: close.sync, spawned verbatim on model close.sync.model', 'dev/gate green on the merged tree', 'git push origin ' + loopBranch, 'gh pr create --base main --head ' + loopBranch],
-    sync: { agentType: 'build-git', model: GIT_MODEL, label: 'git:sync-main', prompt: syncMainPrompt(v.run), schema: SYNC_SCHEMA },
+    sync: { agentType: 'build-git', model: GIT_MODEL, label: 'git:sync-main', prompt: syncMainPrompt(v.run), schema: STEP_SCHEMA, reads: 'its `line` is the ONE line `' + STEP_TOOL + ' sync-main` printed — JSON: status `merged` or `up-to-date` with head, origin_main and resolved_logs, or `halted` with the word it refused with and its halt report' },
   }
 }
 
 // ---- the `test` stage ----
 async function runTest() {
   phase('State')
-  const gs = await gitStep('state', 'State', gitStatePrompt(v), GIT_STATE_SCHEMA)
+  const gs = await toolStep('state', 'State', 'git-state', gitStatePrompt(v))
   if (!onIt(gs, loopBranch, false)) return gitHalt('git', gs, 'the tree and the branches are not in the state the `test` stage starts from — the loop branch ' + loopBranch + ' checked out, clean, and holding no product change outside a round\'s merge')
   const first = await readState()
   if (!first.state) return halt('state', 'the run\'s state could not be read: ' + first.error, { transient: !!first.transient, halt: first.halt || null })
@@ -2011,9 +1902,8 @@ async function runTest() {
   const crossRan = ran.filter((u) => u.crossModel === 'ran').map((u) => u.item)
   const wrong = hashMismatch(built.candidate.sha256, reporters)
   if (wrong.length) return halt('binary', 'a driving agent did not assert the candidate\'s binary (' + built.candidate.sha256 + '): ' + wrong.map((w) => w.reporter + ' asserted ' + JSON.stringify(w.asserted)).join('; ') + ' — nothing it drove is evidence about this candidate', { mismatched: wrong })
-  const cr = await gitStep('check-reports', 'Instruments', checkReportsPrompt(ctx, launch.names), CHECK_SCHEMA)
-  let seen = null
-  try { seen = cr && cr.status === 'checked' ? JSON.parse(cr.line) : null } catch (e) { seen = null }
+  const cr = await toolStep('check-reports', 'Instruments', 'check-reports', checkReportsPrompt(ctx, launch.names))
+  const seen = cr && cr.status === 'checked' && plain(cr.check) ? cr.check : null
   if (!seen || seen.ok !== true) return halt('reports', seen ? 'not every launched reporter left exactly one report — missing: ' + JSON.stringify(seen.missing) + '; extra: ' + JSON.stringify(seen.extra) : 'the report check could not be read', { transient: !cr, check: seen, launched: launch.names })
   if (v.stopAfter === 'instruments') return { status: 'stopped', after: 'instruments', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, units: ran.map((u) => ({ item: u.item, status: u.status, findings: u.reporters.reduce((n, r) => n + (r.result && r.result.findings ? r.result.findings.length : 0), 0) })), reporters: launch.names }
 
@@ -2046,7 +1936,7 @@ async function runTest() {
   const commands = stageRecordCommands(ctx, dir, { reporters: launch.names, rows: rec.rows, triage: rec.triage, patches: [], clauses: clauseRows(unitStatus, sha, 'round ' + ctx.round + ': ' + scopeLabel(v.scope, rerun ? v.clause : null, state.facts.scope) + ' — ' + state.doors.included.length + ' door(s) inside'), facts, keys: tri.entries.map((e) => e.key) })
   const recorded = await recordStep('test:r' + ctx.round, recordPrompt(v, 'the record of round ' + ctx.round + '\'s test stage — ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s)', loopBranch, commands, v.run + ' r' + ctx.round + ' — the test stage\'s record'))
   if (recorded.fault) return halt('record', recorded.fault, { transient: !recorded.result, halt: recorded.result ? recorded.result.halt : null, launched: launch.names })
-  const pushed = await gitStep('push', 'Record', pushPrompt(v, loopBranch), BRANCH_SCHEMA)
+  const pushed = await toolStep('push', 'Record', 'push', pushPrompt(v, loopBranch))
   if (!onIt(pushed, loopBranch, true)) return gitHalt('push', pushed, 'the record is committed on ' + loopBranch + ' (' + recorded.result.commit + ') and the branch was not pushed')
   const last = await readState()
   if (!last.state) return halt('state', 'the record is committed and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + last.error, { transient: !!last.transient })
@@ -2076,7 +1966,7 @@ async function runTest() {
 // ---- the `fix` stage ----
 async function runFix() {
   phase('State')
-  const gs = await gitStep('state', 'State', gitStatePrompt(v), GIT_STATE_SCHEMA)
+  const gs = await toolStep('state', 'State', 'git-state', gitStatePrompt(v))
   if (!gs || gs.status !== 'ready') return gitHalt('git', gs, 'the tree or the branches are not in the state the `fix` stage starts from')
   let read = await readState()
   if (!read.state) return halt('state', 'the run\'s state could not be read: ' + read.error, { transient: !!read.transient, halt: read.halt || null })
@@ -2087,7 +1977,7 @@ async function runFix() {
   const round = state.position.fix.round
 
   // The round's branch: the highest cut that exists, or none yet.
-  const found = await gitStep('find:r' + round, 'State', findRoundPrompt(v, round), BRANCH_SCHEMA)
+  const found = await toolStep('find:r' + round, 'State', 'find-round', findRoundPrompt(v, round))
   if (!found || found.status !== 'ready') return gitHalt('git', found, 'the round\'s branches could not be listed')
   const local = found.local || []
   const stray = (found.remote || []).filter((b) => currentCut(v.run, round, [b]) && !local.includes(b))
@@ -2099,7 +1989,7 @@ async function runFix() {
   // onBranch — the round's branch checked out: switched to, or opened from the loop branch.
   async function onBranch(target) {
     if (checkedOut === target) return null
-    const ob = await gitStep('open:' + target, 'State', openRoundPrompt(v, round, target), BRANCH_SCHEMA)
+    const ob = await toolStep('open:' + target, 'State', 'open-round', openRoundPrompt(v, round, target))
     if (!onIt(ob, target, false)) return gitHalt('git', ob, 'the branch ' + target + ' could not be checked out')
     checkedOut = target
     tipSha = String(ob.head)
@@ -2137,7 +2027,7 @@ async function runFix() {
     phase('Record')
     let commits = { records: [], fixes: [], mixed: [] }
     if (cut) {
-      const listed = await gitStep('commits:r' + round, 'Record', roundCommitsPrompt(v, round, branch), COMMITS_SCHEMA)
+      const listed = await toolStep('commits:r' + round, 'Record', 'round-commits', roundCommitsPrompt(v, round, branch))
       if (!listed || listed.status !== 'listed') return gitHalt('git', listed, 'the round\'s commits could not be listed')
       commits = classifyCommits(listed.all || [], listed.inside || [], listed.outside || [])
       if (commits.mixed.length) return halt('git', 'commit(s) of the round touch the run\'s directory and other paths at once, or nothing: ' + commits.mixed.join(', ') + ' — no carry-over can take them, and none is guessed')
@@ -2150,14 +2040,14 @@ async function runFix() {
     phase('Land')
     let carried = []
     if (cut) {
-      const pushedRound = await gitStep('push:' + branch, 'Land', pushPrompt(v, branch), BRANCH_SCHEMA)
+      const pushedRound = await toolStep('push:' + branch, 'Land', 'push', pushPrompt(v, branch))
       if (!onIt(pushedRound, branch, true)) return gitHalt('push', pushedRound, 'the dropped round\'s branch was not pushed')
       const take = commits.records.concat([recorded.result.commit])
-      const carry = await gitStep('carry:r' + round, 'Land', carryPrompt(v, round, take, null), CARRY_SCHEMA)
+      const carry = await toolStep('carry:r' + round, 'Land', 'carry', carryPrompt(v, round, take, null))
       if (!carry || carry.status !== 'carried' || carry.branch !== loopBranch || carry.remote_head !== carry.head || (carry.picked || []).length !== take.length) return gitHalt('carry', carry, 'the dropped round\'s record commits were not carried over to ' + loopBranch)
       carried = carry.picked
     } else {
-      const pushed = await gitStep('push', 'Land', pushPrompt(v, loopBranch), BRANCH_SCHEMA)
+      const pushed = await toolStep('push', 'Land', 'push', pushPrompt(v, loopBranch))
       if (!onIt(pushed, loopBranch, true)) return gitHalt('push', pushed, 'the drop is recorded on ' + loopBranch + ' and the branch was not pushed')
     }
     const after = await readState()
@@ -2173,7 +2063,7 @@ async function runFix() {
   // nothing, is not audited in this invocation and is not counted: there is no new diff.
   async function secondHalf(ctx, launch, fixerSources, patches, fixerForks, doors, isPart) {
     phase('Fix')
-    const head = await gitStep('push:' + branch + ':c' + ctx.cycle, 'Fix', pushPrompt(v, branch), BRANCH_SCHEMA)
+    const head = await toolStep('push:' + branch + ':c' + ctx.cycle, 'Fix', 'push', pushPrompt(v, branch))
     if (!onIt(head, branch, true)) return { halted: gitHalt('push', head, 'the round\'s branch ' + branch + ' was not pushed') }
     // The fixers' own, and the rows whose triage nobody finished: this triage is the next.
     const sources = fixerSources.concat(ledgerSource(v.run, state))
@@ -2221,7 +2111,7 @@ async function runFix() {
     const commands = stageRecordCommands(ctx, v.scratch + '/record/fix-r' + round + '-c' + ctx.cycle + '-a' + ctx.attempt, { reporters: launch.names, rows: rec.rows, triage: rec.triage, patches, clauses: [], facts: audited ? { cycles: ctx.cycle } : null, keys })
     const recorded = await recordStep('fix:r' + round + ':c' + ctx.cycle, recordPrompt(v, 'the record of round ' + round + '\'s fix cycle ' + ctx.cycle + ' — ' + launch.names.length + ' report(s), ' + patches.length + ' ledger patch(es), ' + tri.entries.length + ' finding(s) triaged' + (audited ? '' : '; the fix diff was not audited, and the cycle is not counted'), branch, commands, v.run + ' r' + round + ' c' + ctx.cycle + ' — the fix cycle\'s record'))
     if (recorded.fault) return { halted: halt('record', recorded.fault, { transient: !recorded.result, halt: recorded.result ? recorded.result.halt : null, launched: launch.names, branch }) }
-    const pushed = await gitStep('push:' + branch + ':c' + ctx.cycle + ':record', 'Record', pushPrompt(v, branch), BRANCH_SCHEMA)
+    const pushed = await toolStep('push:' + branch + ':c' + ctx.cycle + ':record', 'Record', 'push', pushPrompt(v, branch))
     if (!onIt(pushed, branch, true)) return { halted: gitHalt('push', pushed, 'cycle ' + ctx.cycle + ' is recorded on ' + branch + ' (' + recorded.result.commit + ') and the branch was not pushed') }
     const after = await readState()
     if (!after.state) return { halted: halt('state', 'cycle ' + ctx.cycle + ' is recorded (' + recorded.result.commit + '), and the state could not be read back: ' + after.error, { transient: !!after.transient, branch }) }
@@ -2233,7 +2123,7 @@ async function runFix() {
   // land — the round's branch merged into the loop branch `--no-ff`, and the loop branch pushed.
   async function land(extra) {
     phase('Land')
-    const landed = await gitStep('land:r' + round, 'Land', landPrompt(v, round, branch), LAND_SCHEMA)
+    const landed = await toolStep('land:r' + round, 'Land', 'land', landPrompt(v, round, branch))
     const merged = !!landed && landed.status === 'merged' && SHA_RE.test(String(landed.merge_commit || '')) && landed.remote_head === landed.merge_commit
     const before = !!landed && landed.status === 'landed-before' && SHA_RE.test(String(landed.head || ''))
     if (!merged && !before) return gitHalt('land', landed, landed && landed.merge_commit ? 'round ' + round + ' IS merged into ' + loopBranch + ' locally (' + landed.merge_commit + '), and what followed the merge stopped' : 'round ' + round + ' was not landed; it is unlanded on ' + branch)
@@ -2252,7 +2142,7 @@ async function runFix() {
   if (v.exit) {
     if (!cut) return halt('git', 'round ' + round + ' has no branch: there is nothing a part could be cut from')
     phase('Fix')
-    const listed = await gitStep('commits:r' + round, 'Fix', roundCommitsPrompt(v, round, branch), COMMITS_SCHEMA)
+    const listed = await toolStep('commits:r' + round, 'Fix', 'round-commits', roundCommitsPrompt(v, round, branch))
     if (!listed || listed.status !== 'listed') return gitHalt('git', listed, 'the round\'s commits could not be listed')
     const commits = classifyCommits(listed.all || [], listed.inside || [], listed.outside || [])
     if (commits.mixed.length) return halt('git', 'commit(s) of the round touch the run\'s directory and other paths at once, or nothing: ' + commits.mixed.join(', ') + ' — no part can be cut around them, and none is guessed')

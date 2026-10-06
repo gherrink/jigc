@@ -1,0 +1,663 @@
+#!/usr/bin/env python3
+#
+# dev/stabilize-step — every git act of a stabilization run's harness, each as ONE
+# command (DECISIONS.md -> 2026-10-06, "Every git act of the stabilization harness is one
+# command"; the repair plan's change C0,
+# completions/artifacts/M55/stabilization-build/repair-plan.md).
+#
+# The harness (.claude/workflows/stabilize.js) has no shell: every branch act of a run is
+# a step it hands to a `build-git` agent. Until this script those steps were numbered
+# lists of shell commands the agent followed — which nothing could execute in a test. An
+# act is now a thing that can be called: the agent runs ONE command of this script and
+# relays the ONE line it prints; the harness reads that line.
+#
+# WHAT AN ACT IS. Exactly the commands its numbered list had, in that order, with the
+# checks that list had and no other — each act's comment below names them. The repair
+# that follows this script changes what the acts check; this script changed nothing.
+#
+# WHAT IT NEVER DOES. No force of any spelling, no rebase, no reset, no pull, no stash,
+# no branch or tag deletion; `main` is never switched to, merged into or pushed — the one
+# thing done with it is `sync-main`, which fetches it and merges `origin/main` INTO the
+# run's branch. A branch name it is handed has a prefix (`fix/<run>…`), so `main` is no
+# argument of any act. tooling-tests/dev_stabilize_step.rs reads this out of every git
+# call of this source, and drives each act against real git.
+#
+# IT NAMES NOTHING. Every branch name, the run's directory, the product paths and the
+# append-only logs are the harness's (`branchName`, `runDir`, `PRODUCT_PATHS`,
+# `SYNC_LOGS`) and arrive as arguments.
+#
+# Usage — every act prints ONE line of JSON on stdout, whatever it exits with:
+#
+#   dev/stabilize-step git-state --stage test|fix --loop L --rounds P --run-dir D
+#                      [--product PATH]...
+#       The state a stage starts from. The branch checked out is L (`test`), or L or a
+#       name that begins P (`fix`) — wrong-branch. The tree holds nothing but untracked
+#       reports under D (a path with `/reports/` in it) — dirty. The pushed L has no
+#       commit the local one lacks — remote-ahead. And THE PATH-CLASS ASSERT, from the
+#       commit that added D/opening.md on: no commit on L's first-parent line changed a
+#       product path outside a merge — product-path — and every merge there is a round's,
+#       its subject beginning `Merge branch 'P` — foreign-merge. Without an opening the
+#       assert does not run. Prints {status: ready, branch, head, loop_head, opening,
+#       untracked}.
+#
+#   dev/stabilize-step state --run R --scratch DIR --tag T
+#       The run's record, read: `dev/stabilize-record state --run R`, kept as
+#       DIR/state/T.json. Prints {status: read, branch, file, state}.
+#
+#   dev/stabilize-step check-reports --run R --round N --stage test|fix [--cycle K]
+#                      --attempt A [--] [REPORTER...]
+#       `dev/stabilize-record check-reports` with these arguments. A missing or an extra
+#       report is its answer, not a refusal. Prints {status: checked, check}.
+#
+#   dev/stabilize-step find-round --prefix P
+#       The branches named P*, here and on origin. Prints {status: ready, branch, head,
+#       local, remote}.
+#
+#   dev/stabilize-step open-round --loop L --branch B --run-dir D
+#       B checked out: switched to, or opened from L without an upstream. The tree as
+#       for git-state — dirty. Prints {status: ready, branch, head, created}.
+#
+#   dev/stabilize-step push --branch B
+#       B pushed by name. B is checked out — wrong-branch; the pushed B has no commit
+#       the local one lacks — remote-ahead; the remote takes it — push-rejected — and
+#       then stands at the local head — remote-differs. Prints {status: ready, branch,
+#       head, remote_head}.
+#
+#   dev/stabilize-step land --loop L --branch B --run-dir D [--product PATH]...
+#                      [--log PATH]...
+#       B merged into L with a merge commit, and L pushed: one act. The tree is clean,
+#       untracked files included — dirty; the pushed L is not ahead — remote-ahead. A B
+#       that is an ancestor of L landed before: {status: landed-before, head}, and
+#       nothing else runs. A merge that stops is resolved only when every conflicted
+#       path is a --log, by dev/merge-logs — else it is aborted (conflict, merge-logs;
+#       unresolved when that script left a path conflicted, which is not aborted). The
+#       merge commit has L's old tip and B as its parents, the tree is clean, the
+#       product paths equal B's, and — when L took nothing outside D while B was out and
+#       no log was resolved — so does everything outside D: else merge-differs, and
+#       nothing is undone. Then the push, as `push` has it. Prints {status: merged,
+#       merge_commit, head, remote_head, tip_moved, resolved_logs, moved_outside}; a
+#       refusal after the merge commit exists carries merge_commit too.
+#
+#   dev/stabilize-step round-commits --loop L --branch B --run-dir D
+#       The commits of L..B, oldest first, and which of them touch D and which a path
+#       outside it. A merge among them is refused (merge-in-round). Prints {status:
+#       listed, all, inside, outside}.
+#
+#   dev/stabilize-step carry --loop L --run-dir D [--product PATH]... [--] SHA...
+#       A dropped round keeps its record: the named commits cherry-picked onto L, in
+#       this order, and L pushed. The tree is clean — dirty; the pushed L is not ahead —
+#       remote-ahead; a pick that stops is aborted — pick-stopped; what was carried is as
+#       many commits as were named, touches only D and no product path — else
+#       carry-differs, and nothing is undone. Prints {status: carried, branch, head,
+#       remote_head, picked: [{from, to}]}.
+#
+#   dev/stabilize-step sync-main --loop L [--log PATH]...
+#       `origin/main` merged INTO L before its pull request, as the build harness's close
+#       step has it (.claude/workflows/milestone-build.js, syncMainPrompt). L is checked
+#       out — wrong-branch — and clean — dirty. An L that holds origin/main already:
+#       {status: up-to-date, head, origin_main}. Conflicts as for `land`. The merge
+#       commit has L's old tip and origin/main as its parents and the tree is clean —
+#       else merge-differs. Nothing is pushed. Prints {status: merged, head,
+#       origin_main, resolved_logs}.
+#
+# The line. One JSON object, `act` first, and LAST a `sha256` of the line as it stands
+# without that field — `…, "sha256": "<64 hex>"}` over `…}` — so that the harness can
+# tell a line an agent retyped from the one this script printed. A refusal prints its
+# line too: {act, status: halted, refused: WORD, halt: {root_cause, evidence,
+# tree_state, recommendation}}, with every fact the act had established.
+#
+# Exit status, and the word a refusal opens with — `stabilize-step: refused <word>: …`,
+# one line on stderr:
+#
+#    0  the act is done, or the read is printed
+#    2  usage          an unknown act or flag, a missing argument, a name outside its
+#                      grammar — a branch name without a prefix, `main` among them
+#    3  wrong-branch   the branch checked out is not the one the act names
+#    4  dirty          the tree holds what the act does not admit
+#    5  remote-ahead   the pushed branch has commits the local one lacks
+#    6  product-path   a commit changed a product path directly on the loop branch
+#    7  foreign-merge  a merge on the loop branch that is not a round's
+#    8  merge-in-round a merge commit among a round's commits
+#    9  conflict       a merge stopped outside the append-only logs; it is aborted
+#   10  merge-logs     dev/merge-logs refused the conflict; the merge is aborted
+#   11  unresolved     dev/merge-logs left a path conflicted; the merge is NOT aborted
+#   12  merge-differs  the merge commit is not the one the act names; nothing is undone
+#   13  pick-stopped   a cherry-pick stopped; it is aborted
+#   14  carry-differs  what was carried is not what the act names; nothing is undone
+#   15  push-rejected  the remote did not take the push
+#   16  remote-differs after the push the remote does not stand at the local head
+#   17  record         dev/stabilize-record refused, failed or printed no JSON
+#   18  git            a git command failed where the act expects none to
+#
+# Needs python3 and git, which the gate needs already. It finds its repository from
+# where it lies, never from where it was called.
+# tooling-tests/dev_stabilize_step.rs drives it.
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+
+PROG = "stabilize-step"
+
+STATUS = {
+    "usage": 2,
+    "wrong-branch": 3,
+    "dirty": 4,
+    "remote-ahead": 5,
+    "product-path": 6,
+    "foreign-merge": 7,
+    "merge-in-round": 8,
+    "conflict": 9,
+    "merge-logs": 10,
+    "unresolved": 11,
+    "merge-differs": 12,
+    "pick-stopped": 13,
+    "carry-differs": 14,
+    "push-rejected": 15,
+    "remote-differs": 16,
+    "record": 17,
+    "git": 18,
+}
+# What `git ls-remote --exit-code` exits with when no ref matches.
+NO_SUCH_REF = 2
+# What `dev/stabilize-record check-reports` exits with for a missing or an extra report.
+REPORTS_MISMATCH = 20
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+ROOT = os.path.dirname(SCRIPT_DIR)
+RECORD = os.path.join(SCRIPT_DIR, "stabilize-record")
+MERGE_LOGS = os.path.join(SCRIPT_DIR, "merge-logs")
+
+# A branch of the branch model: a prefix, a slash, a name. A name without a prefix —
+# `main` — is no argument of any act.
+BRANCH = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)+")
+SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+FULL_SHA = re.compile(r"[0-9a-f]{40}")
+# A path inside the repository, of plain segments: it reaches git as a pathspec.
+SEGMENT = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*")
+# A segment of the scratch directory, as the harness takes it (its SCRATCH_RE).
+PLAIN = re.compile(r"[A-Za-z0-9._-]+")
+STAGES = ("test", "fix")
+
+
+class Refusal(Exception):
+    def __init__(self, kind, detail, evidence, recommendation):
+        super().__init__(detail)
+        self.kind = kind
+        self.detail = detail
+        self.evidence = evidence
+        self.recommendation = recommendation
+
+
+def refuse(kind, detail, evidence="", recommendation="the human reconciles it; the step is not repeated on a guess"):
+    raise Refusal(kind, detail, evidence, recommendation)
+
+
+def usage_help():
+    for line in open(__file__, encoding="utf-8").read().split("\n")[1:]:
+        if not line.startswith("#"):
+            break
+        print(re.sub(r"^# ?", "", line))
+
+
+# --- running a command --------------------------------------------------------
+
+
+class Ran:
+    def __init__(self, argv, code, out, err):
+        self.argv = argv
+        self.code = code
+        self.out = out
+        self.err = err
+
+    def shown(self):
+        """The command and everything it printed, for a halt's evidence."""
+        said = (self.out + self.err).strip()
+        return "`%s` exited %d%s" % (" ".join(self.argv), self.code, ": " + said if said else "")
+
+
+def run(argv):
+    """One command, from the repository's root: its exit status and what it printed."""
+    done = subprocess.run(argv, cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    return Ran([os.path.relpath(argv[0], ROOT) if os.path.isabs(argv[0]) else argv[0]] + list(argv[1:]), done.returncode, done.stdout, done.stderr)
+
+
+def git(*argv):
+    """A git command whose exit status is an answer the act reads."""
+    return run(["git"] + list(argv))
+
+
+def said(*argv):
+    """A git command that must succeed: what it printed, without its last line break."""
+    ran = git(*argv)
+    if ran.code != 0:
+        refuse("git", "a git command the step runs failed", ran.shown())
+    return ran.out.rstrip("\n")
+
+
+def lines(text):
+    return [line for line in text.split("\n") if line]
+
+
+def answers(ran, yes=0, no=1):
+    """A git command that answers yes or no by its exit status; any other status is a
+    command that failed."""
+    if ran.code not in (yes, no):
+        refuse("git", "a git command the step runs failed", ran.shown())
+    return ran.code == yes
+
+
+# --- the checks several acts share --------------------------------------------
+
+
+def checked_out(branch):
+    current = said("branch", "--show-current")
+    if current != branch:
+        refuse("wrong-branch", "`%s` is checked out, and the step works on `%s`" % (current, branch), "`git branch --show-current` printed `%s`" % current)
+    return current
+
+
+def pushed_is_not_ahead(branch):
+    """A branch that is pushed has no commit the local one lacks. One that is not pushed
+    yet has nothing to compare."""
+    if not answers(git("ls-remote", "--exit-code", "--heads", "origin", branch), no=NO_SUCH_REF):
+        return
+    said("fetch", "origin", branch)
+    behind = git("merge-base", "--is-ancestor", "origin/" + branch, branch)
+    if not answers(behind):
+        refuse("remote-ahead", "the pushed `%s` has commits the local one lacks" % branch, behind.shown(), "the human reconciles the two; the branch is never pulled, merged or rebased by a step")
+
+
+def push(branch, facts):
+    """The branch pushed by name, and the remote read back: the sha it stands at."""
+    pushing = git("push", "origin", branch)
+    if pushing.code != 0:
+        refuse("push-rejected", "the remote did not take `%s`" % branch, pushing.shown(), "the human looks at the remote; a push is never forced")
+    listed = said("ls-remote", "--exit-code", "--heads", "origin", branch)
+    local = said("rev-parse", branch)
+    remote = [line.split("\t")[0] for line in lines(listed) if line.split("\t")[1:] == ["refs/heads/" + branch]]
+    if remote != [local]:
+        refuse("remote-differs", "after the push origin's `%s` does not stand at the local head %s" % (branch, local), "`git ls-remote` printed: %s" % (listed or "(nothing)"))
+    facts["remote_head"] = local
+
+
+def only_reports(status, run_dir):
+    """The untracked reports a tree may hold: every line of `git status --porcelain` an
+    untracked path under the run's directory with `/reports/` in it. Any other line — a
+    tracked file modified, staged or deleted, an untracked file anywhere else — is a
+    tree the step does not start from."""
+    untracked, other = [], []
+    for line in lines(status):
+        path = line[3:]
+        if line.startswith("?? ") and path.startswith(run_dir + "/") and "/reports/" in path:
+            untracked.append(path)
+        else:
+            other.append(line)
+    if other:
+        refuse("dirty", "the tree holds more than reports no record step has committed yet: %s" % "; ".join(other), "`git status --porcelain --untracked-files=all` printed: %s" % " | ".join(lines(status)))
+    return untracked
+
+
+def clean(status, command):
+    if status:
+        refuse("dirty", "the tree is not clean: %s" % "; ".join(lines(status)), "`%s` printed: %s" % (command, " | ".join(lines(status))))
+
+
+def merge(target, logs, facts):
+    """`target` merged into the branch checked out, with a merge commit. A merge that
+    stops is resolved by dev/merge-logs when every conflicted path is one of `logs`, and
+    is aborted otherwise. Returns the logs it resolved."""
+    merging = git("merge", "--no-ff", "--no-edit", target)
+    if merging.code == 0:
+        return []
+    conflicted = lines(said("diff", "--name-only", "--diff-filter=U"))
+    if not conflicted or any(path not in logs for path in conflicted):
+        aborted = git("merge", "--abort")
+        refuse("conflict", "the merge of `%s` stopped, and not on the append-only logs alone: %s" % (target, ", ".join(conflicted) or "no conflicted path"), "%s; %s" % (merging.shown(), aborted.shown()), "a conflict outside the append-only logs is the human's")
+    resolving = run([MERGE_LOGS])
+    if resolving.code != 0:
+        aborted = git("merge", "--abort")
+        refuse("merge-logs", "dev/merge-logs refused the conflict in %s" % ", ".join(conflicted), "%s; %s" % (resolving.shown(), aborted.shown()), "a hunk that is not a pure append is the human's")
+    left = lines(said("diff", "--name-only", "--diff-filter=U"))
+    if left:
+        refuse("unresolved", "dev/merge-logs exited 0 and left conflicted: %s" % ", ".join(left), resolving.shown(), "the merge is still in progress, as the step left it")
+    said("commit", "--no-edit")
+    facts["resolved_logs"] = conflicted
+    return conflicted
+
+
+def two_parents(parents, first, second):
+    """A merge commit's parents, as `git rev-list --parents -n 1 HEAD` listed them."""
+    if parents.split()[1:] != [first, second]:
+        refuse("merge-differs", "the merge commit's parents are not %s and %s" % (first, second), "`git rev-list --parents -n 1 HEAD` printed: %s" % parents, "nothing was undone: the merge is on the local branch")
+
+
+def same(ran, what):
+    """`git diff --quiet`: 0 the same, 1 different — which the step refuses."""
+    if not answers(ran):
+        refuse("merge-differs", what, ran.shown(), "nothing was undone: the merge is on the local branch")
+
+
+# --- the acts -----------------------------------------------------------------
+
+
+def git_state(args, facts):
+    # 1. The branch checked out.
+    current = said("branch", "--show-current")
+    if current != args.loop and not (args.stage == "fix" and current.startswith(args.rounds)):
+        refuse("wrong-branch", "`%s` is checked out: the `%s` stage starts from %s" % (current, args.stage, "the loop branch `%s`" % args.loop if args.stage == "test" else "`%s` or a round's branch, `%s…`" % (args.loop, args.rounds)), "`git branch --show-current` printed `%s`" % current)
+    # 2. The tree.
+    untracked = only_reports(said("status", "--porcelain", "--untracked-files=all"), args.run_dir)
+    # 3. The pushed loop branch.
+    pushed_is_not_ahead(args.loop)
+    # 4. The commit that added the run's opening record.
+    opening = said("log", "--diff-filter=A", "--format=%H", "-n", "1", args.loop, "--", args.run_dir + "/opening.md")
+    if opening:
+        # 5. The path-class assert: product paths move only through a round's merge.
+        since = opening + ".." + args.loop
+        direct = lines(said("log", "--first-parent", "--no-merges", "--format=%H", since, "--", *args.product))
+        if direct:
+            shown = [said("show", "--stat", "--format=%s", sha, "--", *args.product) for sha in direct]
+            refuse("product-path", "commit(s) changed a product path directly on `%s`: %s" % (args.loop, ", ".join(direct)), " | ".join(" ".join(text.split()) for text in shown), "a product path moves only through an audited round's merge")
+        foreign = [subject for subject in lines(said("log", "--first-parent", "--merges", "--format=%s", since)) if not subject.startswith("Merge branch '" + args.rounds)]
+        if foreign:
+            refuse("foreign-merge", "a merge on `%s` is not a round's: %s" % (args.loop, "; ".join(foreign)), "`git log --first-parent --merges --format=%%s %s`" % since)
+    # 6. The report.
+    facts.update(status="ready", branch=current, head=said("rev-parse", "HEAD"), loop_head=said("rev-parse", args.loop), opening=opening, untracked=untracked)
+
+
+def state(args, facts):
+    directory = os.path.join(args.scratch, "state")
+    os.makedirs(directory, exist_ok=True)
+    reading = run([RECORD, "state", "--run", args.run])
+    if reading.code != 0:
+        refuse("record", "dev/stabilize-record could not read the run's state", reading.shown())
+    try:
+        document = json.loads(reading.out)
+    except ValueError:
+        document = None
+    if not isinstance(document, dict) or len(lines(reading.out)) != 1:
+        refuse("record", "dev/stabilize-record state did not print one line of JSON", reading.shown())
+    path = os.path.join(directory, args.tag + ".json")
+    with open(path, "w", encoding="utf-8") as file:
+        file.write(reading.out)
+    facts.update(status="read", branch=said("branch", "--show-current"), file=path, state=document)
+
+
+def check_reports(args, facts):
+    flags = ["--run", args.run, "--round", args.round, "--stage", args.stage]
+    if args.cycle is not None:
+        flags += ["--cycle", args.cycle]
+    checking = run([RECORD, "check-reports"] + flags + ["--attempt", args.attempt, "--"] + args.names)
+    try:
+        check = json.loads(checking.out) if checking.code in (0, REPORTS_MISMATCH) else None
+    except ValueError:
+        check = None
+    if not isinstance(check, dict):
+        refuse("record", "dev/stabilize-record could not check the stage's reports", checking.shown())
+    facts.update(status="checked", check=check)
+
+
+def find_round(args, facts):
+    local = lines(said("branch", "--list", args.prefix + "*", "--format=%(refname:short)"))
+    listed = lines(said("ls-remote", "--heads", "origin", args.prefix + "*"))
+    remote = [line.split("\t")[1][len("refs/heads/"):] for line in listed]
+    facts.update(status="ready", branch=said("branch", "--show-current"), head=said("rev-parse", "HEAD"), local=local, remote=remote)
+
+
+def open_round(args, facts):
+    only_reports(said("status", "--porcelain", "--untracked-files=all"), args.run_dir)
+    created = not answers(git("rev-parse", "--verify", "--quiet", "refs/heads/" + args.branch))
+    if created:
+        said("switch", args.loop)
+        said("switch", "--no-track", "-c", args.branch, args.loop)
+    else:
+        said("switch", args.branch)
+    facts.update(status="ready", branch=checked_out(args.branch), head=said("rev-parse", "HEAD"), created=created)
+
+
+def push_branch(args, facts):
+    current = checked_out(args.branch)
+    pushed_is_not_ahead(args.branch)
+    push(args.branch, facts)
+    facts.update(status="ready", branch=current, head=said("rev-parse", "HEAD"))
+
+
+def land(args, facts):
+    outside = ":(exclude)" + args.run_dir
+    # 1. The tree, untracked files included.
+    clean(said("status", "--porcelain", "--untracked-files=all"), "git status --porcelain --untracked-files=all")
+    # 2. The round's tip, and the loop branch.
+    round_head = said("rev-parse", args.branch)
+    said("switch", args.loop)
+    pre = said("rev-parse", "HEAD")
+    # 3. The pushed loop branch.
+    pushed_is_not_ahead(args.loop)
+    # 4. A round that landed before.
+    if answers(git("merge-base", "--is-ancestor", args.branch, args.loop)):
+        facts.update(status="landed-before", head=pre)
+        return
+    # 5. Whether the loop branch moved while the round was out, and where.
+    tip_moved = not answers(git("merge-base", "--is-ancestor", args.loop, args.branch))
+    fork = said("merge-base", args.loop, args.branch)
+    moved_outside = lines(said("diff", "--name-only", fork, args.loop, "--", ".", outside))
+    facts.update(tip_moved=tip_moved, moved_outside=moved_outside, resolved_logs=[])
+    # 6-8. The merge.
+    resolved = merge(args.branch, args.log, facts)
+    # 9. The merge commit: its parents, the tree, and what it holds against the round's.
+    merge_commit = said("rev-parse", "HEAD")
+    facts.update(merge_commit=merge_commit)
+    two_parents(said("rev-list", "--parents", "-n", "1", "HEAD"), pre, round_head)
+    clean_after_merge = said("status", "--porcelain")
+    if clean_after_merge:
+        refuse("merge-differs", "the tree is not clean after the merge: %s" % "; ".join(lines(clean_after_merge)), "`git status --porcelain`", "nothing was undone: the merge is on the local branch")
+    same(git("diff", "--quiet", "HEAD", args.branch, "--", *args.product), "what the merge holds on the product paths is not what `%s` holds: what lands is not exactly what was audited" % args.branch)
+    if not moved_outside and not resolved:
+        same(git("diff", "--quiet", "HEAD", args.branch, "--", ".", outside), "the merged tree differs from `%s` outside the run's directory" % args.branch)
+    # 10-11. The push.
+    push(args.loop, facts)
+    # 12. The report.
+    facts.update(status="merged", head=merge_commit)
+
+
+def round_commits(args, facts):
+    between = args.loop + ".." + args.branch
+    merges = said("rev-list", "--merges", "--count", between)
+    if merges != "0":
+        refuse("merge-in-round", "`%s` holds %s merge commit(s)" % (between, merges), "`git rev-list --merges --count %s` printed %s" % (between, merges))
+    everything = lines(said("log", "--reverse", "--format=%H", between))
+    inside = lines(said("log", "--reverse", "--format=%H", between, "--", args.run_dir))
+    outside = lines(said("log", "--reverse", "--format=%H", between, "--", ".", ":(exclude)" + args.run_dir))
+    facts.update(status="listed", all=everything, inside=inside, outside=outside)
+
+
+def carry(args, facts):
+    # 1. The tree, untracked files included.
+    clean(said("status", "--porcelain", "--untracked-files=all"), "git status --porcelain --untracked-files=all")
+    # 2. The loop branch, and its pushed tip.
+    said("switch", args.loop)
+    pre = said("rev-parse", "HEAD")
+    pushed_is_not_ahead(args.loop)
+    # 3. The commits, one by one.
+    for sha in args.shas:
+        picking = git("cherry-pick", "-x", sha)
+        if picking.code != 0:
+            aborted = git("cherry-pick", "--abort")
+            refuse("pick-stopped", "the cherry-pick of %s stopped" % sha, "%s; %s" % (picking.shown(), aborted.shown()), "the commits carried before it stay on the local branch, unpushed")
+    # 4. Exactly those, and nothing outside the run's directory.
+    carried = pre + "..HEAD"
+    count = said("rev-list", "--count", carried)
+    if count != str(len(args.shas)):
+        refuse("carry-differs", "%s commit(s) were carried, and %d were named" % (count, len(args.shas)), "`git rev-list --count %s` printed %s" % (carried, count), "nothing was undone")
+    strays = [path for path in lines(said("diff", "--name-only", pre, "HEAD")) if not path.startswith(args.run_dir + "/")]
+    if strays:
+        refuse("carry-differs", "a carried commit changed a path outside the run's directory: %s" % ", ".join(strays), "`git diff --name-only %s HEAD`" % pre, "nothing was undone")
+    touched = git("diff", "--quiet", pre, "HEAD", "--", *args.product)
+    if not answers(touched):
+        refuse("carry-differs", "a carried commit changed a product path", touched.shown(), "nothing was undone")
+    # 5. The push.
+    push(args.loop, facts)
+    # 6. The report.
+    facts.update(status="carried", branch=said("branch", "--show-current"), head=said("rev-parse", "HEAD"))
+    made = lines(said("log", "--reverse", "--format=%H", carried))
+    facts.update(picked=[{"from": sha, "to": to} for sha, to in zip(args.shas, made)])
+
+
+def sync_main(args, facts):
+    # 1. The branch and the tree.
+    checked_out(args.loop)
+    clean(said("status", "--porcelain"), "git status --porcelain")
+    pre = said("rev-parse", "HEAD")
+    # 2. main, fetched.
+    said("fetch", "origin", "main")
+    origin_main = said("rev-parse", "origin/main")
+    facts.update(origin_main=origin_main)
+    # 3. A branch that holds it already.
+    if answers(git("merge-base", "--is-ancestor", "origin/main", args.loop)):
+        facts.update(status="up-to-date", head=said("rev-parse", "HEAD"))
+        return
+    # 4-6. The merge.
+    facts.update(resolved_logs=[])
+    merge("origin/main", args.log, facts)
+    # 7. The merge commit.
+    parents = said("rev-list", "--parents", "-n", "1", "HEAD")
+    two_parents(parents, pre, said("rev-parse", "origin/main"))
+    clean_after_merge = said("status", "--porcelain")
+    if clean_after_merge:
+        refuse("merge-differs", "the tree is not clean after the merge: %s" % "; ".join(lines(clean_after_merge)), "`git status --porcelain`", "nothing was undone: the merge is on the local branch")
+    # 8. The report. Nothing is pushed: the gate runs on the merged tree first.
+    facts.update(status="merged", head=said("rev-parse", "HEAD"))
+
+
+# --- arguments ------------------------------------------------------------------
+
+
+class Arguments(argparse.ArgumentParser):
+    def error(self, message):
+        refuse("usage", "%s — see dev/stabilize-step --help" % message)
+
+
+def grammar(pattern, what):
+    def taken(value):
+        if not pattern.fullmatch(value):
+            raise argparse.ArgumentTypeError("%s is not %s" % (json.dumps(value), what))
+        return value
+
+    return taken
+
+
+def path_in_repository(value):
+    if not value or not all(SEGMENT.fullmatch(part) for part in value.split("/")):
+        raise argparse.ArgumentTypeError("%s is not a path inside the repository, of plain segments" % json.dumps(value))
+    return value
+
+
+def directory_outside(value):
+    parts = value[1:].split("/")
+    if not value.startswith("/") or not all(PLAIN.fullmatch(part) for part in parts) or "." in parts or ".." in parts:
+        raise argparse.ArgumentTypeError("%s is not an absolute directory of plain segments" % json.dumps(value))
+    return value
+
+
+branch_name = grammar(BRANCH, "a branch name with a prefix (`fix/<run>…`): `main` is no argument of a step")
+slug = grammar(SLUG, "a slug (a-z0-9 words joined by single `-`)")
+full_sha = grammar(FULL_SHA, "a full sha")
+
+FLAGS = {
+    "loop": branch_name,
+    "branch": branch_name,
+    "rounds": branch_name,
+    "prefix": branch_name,
+    "run-dir": path_in_repository,
+    "run": slug,
+    "tag": slug,
+    "scratch": directory_outside,
+    "stage": grammar(re.compile("|".join(STAGES)), "one of " + ", ".join(STAGES)),
+    "round": str,
+    "attempt": str,
+}
+LISTS = {"product": path_in_repository, "log": path_in_repository}
+
+
+def arguments(argv):
+    parser = Arguments(prog="dev/" + PROG, add_help=False, allow_abbrev=False)
+    acts = parser.add_subparsers(dest="act", required=True, parser_class=Arguments)
+
+    def act(name, does, flags, lists=(), optional=(), names=None):
+        sub = acts.add_parser(name, add_help=False, allow_abbrev=False)
+        sub.set_defaults(does=does)
+        for flag in flags:
+            sub.add_argument("--" + flag, required=True, type=FLAGS[flag])
+        for flag in optional:
+            sub.add_argument("--" + flag)
+        for flag in lists:
+            sub.add_argument("--" + flag, action="append", default=[], type=LISTS[flag])
+        if names:
+            sub.add_argument(names[0], nargs=names[1], type=names[2])
+
+    act("git-state", git_state, ["stage", "loop", "rounds", "run-dir"], lists=["product"])
+    act("state", state, ["run", "scratch", "tag"])
+    act("check-reports", check_reports, ["run", "round", "stage", "attempt"], optional=["cycle"], names=("names", argparse.ZERO_OR_MORE, str))
+    act("find-round", find_round, ["prefix"])
+    act("open-round", open_round, ["loop", "branch", "run-dir"])
+    act("push", push_branch, ["branch"])
+    act("land", land, ["loop", "branch", "run-dir"], lists=["product", "log"])
+    act("round-commits", round_commits, ["loop", "branch", "run-dir"])
+    act("carry", carry, ["loop", "run-dir"], lists=["product"], names=("shas", argparse.ONE_OR_MORE, full_sha))
+    act("sync-main", sync_main, ["loop"], lists=["log"])
+    if not argv or argv[0] not in acts.choices:
+        refuse("usage", "%s is not an act: the acts are %s — see dev/stabilize-step --help" % (json.dumps(argv[0]) if argv else "nothing", ", ".join(acts.choices)))
+    return parser.parse_args(argv)
+
+
+# --- the line -------------------------------------------------------------------
+
+
+def line_of(facts):
+    """The one line an act prints: its facts as JSON, and last the sha256 of that JSON —
+    so that a line retyped on its way is told from the line printed here."""
+    body = json.dumps({"act": facts["act"], "status": facts["status"], **facts})
+    return '%s, "sha256": "%s"}' % (body[:-1], hashlib.sha256(body.encode("utf-8")).hexdigest())
+
+
+def tree_state():
+    """What a halt report says of the tree, read without changing it."""
+    branch = git("branch", "--show-current")
+    status = git("status", "--porcelain")
+    return "on `%s`; `git status --porcelain`: %s" % (branch.out.strip() or "(no branch)", " | ".join(lines(status.out)) or "(clean)")
+
+
+def main(argv):
+    # UTF-8 out, whatever the caller's locale claims: the line is read by a script.
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+    flags = argv[: argv.index("--")] if "--" in argv else argv
+    if any(arg in ("-h", "--help") for arg in flags):
+        usage_help()
+        return 0
+    facts = {"act": argv[0] if argv else None}
+    try:
+        args = arguments(argv)
+        args.does(args, facts)
+        print(line_of(facts))
+        return 0
+    except Refusal as refusal:
+        detail = " ".join(refusal.detail.split())
+        halt = {
+            "root_cause": "%s: %s" % (refusal.kind, detail),
+            "evidence": " ".join(refusal.evidence.split()),
+            "tree_state": "" if refusal.kind == "usage" else tree_state(),
+            "recommendation": refusal.recommendation,
+        }
+        facts.update(status="halted", refused=refusal.kind, halt=halt)
+        print(line_of(facts))
+        sys.stderr.write("%s: refused %s: %s\n" % (PROG, refusal.kind, detail))
+        return STATUS[refusal.kind]
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

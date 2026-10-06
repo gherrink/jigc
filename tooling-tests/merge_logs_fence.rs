@@ -37,9 +37,13 @@
 //!   which is Sonnet.
 //! - **(k)** the stabilization harness (`.claude/workflows/stabilize.js`) merges too — a
 //!   round into its loop branch, and at the close `origin/main` into the loop branch — and
-//!   lets the same logs conflict: its `SYNC_LOGS` is this harness's and the script's, its
-//!   sync step is the same step, and its land step resolves with the script and aborts
-//!   every other conflict.
+//!   lets the same logs conflict: its `SYNC_LOGS` is this harness's and the script's, and it
+//!   hands that list to the two acts of `dev/stabilize-step` that merge, and to no other.
+//!   Since 2026-10-06 those steps are one command each, so what this arm read off two
+//!   prompts is read where the acts are **run**: that the sync act is the build harness's
+//!   sync step, that the land act resolves with the script and aborts every other conflict,
+//!   and that neither can force, rebase, pull or reset —
+//!   [`dev_stabilize_step`](super::dev_stabilize_step).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -458,58 +462,35 @@ fn k_the_stabilization_harness_lets_the_same_logs_conflict_and_no_other() {
     );
     assert_eq!(logs, vec![DECISIONS.to_string(), HISTORY.to_string()]);
 
-    let step_of = |harness: &str, name: &str| -> String {
-        let step = &harness[harness
-            .find(&format!("function {name}("))
+    // Both acts that merge are handed that list as the tool's `--log` flags — and no other
+    // step is: a conflict a step may resolve is one of these two logs, in a merge.
+    let step_of = |name: &str| -> String {
+        let step = &stabilize[stabilize
+            .find(&format!("\nfunction {name}("))
             .unwrap_or_else(|| panic!("the step `{name}`"))..];
         step[..step.find("\n}\n").expect("its end")].to_owned()
     };
-    // The close's sync step is one step, whichever harness returns it: the same numbered
-    // commands, to the byte — each harness's own branch and its own list standing where
-    // the text says `m` and `logs`.
-    let commands = |step: &str| -> Vec<String> {
-        step.lines()
-            .map(str::trim)
-            .filter(|line| {
-                let mut chars = line.chars();
-                chars.next() == Some('\'')
-                    && chars.next().is_some_and(|c| c.is_ascii_digit())
-                    && chars.next() == Some('.')
-            })
-            .map(str::to_owned)
-            .collect()
-    };
-    let ours = commands(&step_of(&stabilize, "syncMainPrompt"));
-    assert_eq!(ours.len(), 8, "the sync step's eight commands: {ours:#?}");
-    assert_eq!(
-        ours,
-        commands(&step_of(&build, "syncMainPrompt")),
-        "the stabilization harness's sync step is the build harness's"
-    );
-
-    let land = step_of(&stabilize, "landPrompt");
-    for needle in [
-        "SYNC_LOGS",
-        "`git merge --no-ff --no-edit ' + branch + '`",
-        "`dev/merge-logs`",
-        "`git merge --abort`, then HALT",
-        "`git commit --no-edit`",
-        "`git push origin ' + loop + '`",
-        "tip_moved",
-    ] {
+    let hands_over = "listFlags('log', SYNC_LOGS)";
+    for (step, act) in [("syncMainPrompt", "'sync-main'"), ("landPrompt", "'land'")] {
+        let step = step_of(step);
         assert!(
-            land.contains(needle),
-            "the round's land step lists {needle}"
+            step.contains(hands_over) && step.contains(act) && step.contains("stepPrompt("),
+            "the stabilization harness's `{act}` step is one command of the tool, handed the logs"
         );
     }
-    for forbidden in ["--force", "rebase", "git pull", "git reset"] {
-        let listed = land
-            .lines()
-            .filter(|line| line.trim_start().starts_with('\''))
-            .any(|line| {
-                line.contains(&format!("`git {forbidden}"))
-                    || line.contains(&format!(" {forbidden} "))
-            });
-        assert!(!listed, "the round's land step runs `{forbidden}`");
-    }
+    assert_eq!(
+        stabilize.matches(hands_over).count(),
+        2,
+        "the logs are handed to the two acts that merge, and to no other step"
+    );
+    assert!(
+        step_of("listFlags").contains("'--' + flag + ' ' + value"),
+        "a list is handed over as one flag per entry"
+    );
+    // What the acts DO with it — the sync act runs the build harness's sync step, command
+    // for command; the land act resolves with `dev/merge-logs` and aborts every other
+    // conflict; neither can force, rebase, pull or reset — is held where the acts are run:
+    // tooling-tests/dev_stabilize_step.rs (`the_sync_act_runs_the_build_harnesss_sync_step`,
+    // `land_resolves_a_conflict_in_the_append_only_logs_and_no_other`,
+    // `the_tool_runs_no_git_command_an_agent_may_not`).
 }

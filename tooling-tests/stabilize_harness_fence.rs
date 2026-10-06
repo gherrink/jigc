@@ -15,7 +15,13 @@
 //! - **(b)** every `build-git` call — the one the git steps go through, and the close's sync
 //!   step the script returns — carries `model: GIT_MODEL`, which is Sonnet.
 //! - **(c)** a branch name is minted in exactly one function: no other code of the script
-//!   spells a branch prefix.
+//!   spells a branch prefix — and neither does `dev/stabilize-step`, which is handed every
+//!   name it works on.
+//! - **(l)** every git step is ONE command of `dev/stabilize-step`, composed by one function
+//!   and read back by one: each act the tool has is asked for by exactly one prompt
+//!   function, and each call names the act its prompt composes. The one step that is still
+//!   a list of commands is the re-cut of a part. What an act does is held where it is run
+//!   ([`dev_stabilize_step`](super::dev_stabilize_step)).
 //! - **(d)** each label the definitions' contracts bind on is spelled once in the script,
 //!   and identically in every definition that binds on it; and a role is sent only labels
 //!   its definition binds on.
@@ -67,6 +73,7 @@ use crate::support::scratch::ScratchDir;
 
 const HARNESS: &str = ".claude/workflows/stabilize.js";
 const RECORD_SCRIPT: &str = "dev/stabilize-record";
+const STEP_TOOL: &str = "dev/stabilize-step";
 const DEFINITIONS: &str = ".claude/agents";
 
 /// The four lines the definitions task named as what its contracts bind on. The script may
@@ -293,12 +300,9 @@ fn b_every_build_git_call_runs_on_sonnet() {
     }
     // Every git step goes through that one call: no prompt of a git step reaches an agent
     // by another road.
-    let git_prompts: Vec<String> = functions(&full)
-        .into_iter()
-        .filter(|name| function(&full, name).contains("'GIT STEP — "))
-        .collect();
+    let git_prompts = git_prompts(&full);
     assert!(
-        git_prompts.len() >= 9,
+        git_prompts.len() >= 10,
         "the scan found the git steps' prompts: {git_prompts:?}"
     );
     for name in &git_prompts {
@@ -306,12 +310,19 @@ fn b_every_build_git_call_runs_on_sonnet() {
         for line in without(&full, &["selfTest", name]).lines() {
             if line.contains(&call) {
                 assert!(
-                    line.contains("gitStep(") || line.contains("sync: {"),
+                    line.contains("toolStep(")
+                        || line.contains("gitStep(")
+                        || line.contains("sync: {"),
                     "`{name}` is a git step's prompt, and this line sends it another way: {line}"
                 );
             }
         }
     }
+    assert!(
+        function(&full, "toolStep")
+            .contains("readStep(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA), act)"),
+        "a step that is one command of the tool goes through `gitStep`, and so through that call"
+    );
     assert_eq!(
         source.matches("agentR(").count(),
         3,
@@ -322,6 +333,19 @@ fn b_every_build_git_call_runs_on_sonnet() {
         1,
         "the runtime's `agent` is called in one place, `agentR`"
     );
+}
+
+/// The functions that compose a git step's prompt: through `stepPrompt`, or as a list that
+/// opens `GIT STEP — `.
+fn git_prompts(full: &str) -> Vec<String> {
+    functions(full)
+        .into_iter()
+        .filter(|name| name != "stepPrompt" && name != "selfTest")
+        .filter(|name| {
+            let body = function(full, name);
+            body.contains("stepPrompt(") || body.contains("'GIT STEP — ")
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -356,6 +380,28 @@ fn c_a_branch_name_is_minted_in_exactly_one_function() {
             "the suffix {suffix} is spelled once, in `branchName`"
         );
         assert!(minting.contains(suffix), "and `branchName` is where");
+    }
+
+    // The tool that does the git acts mints none either: every branch it works on is an
+    // argument the script composed. No string of its code opens with a prefix of the branch
+    // model, or is a round's or a part's suffix.
+    let tool = fs::read_to_string(repo_root().join(STEP_TOOL)).expect("read the step tool");
+    let tool: String = tool
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    assert!(
+        tool.contains("\ndef push(branch, facts):\n"),
+        "the scan reads the tool's code"
+    );
+    for prefix in ["fix/", "work/", "milestone/", "stabilize/", "-r", "-part"] {
+        for quote in ['\'', '"'] {
+            assert!(
+                !tool.contains(&format!("{quote}{prefix}")),
+                "a string of {STEP_TOOL} opens with `{prefix}`: a branch name is the harness's to mint"
+            );
+        }
     }
 }
 
@@ -1071,6 +1117,145 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
     assert!(
         triage.contains("`ledger`"),
         "finding-triage.md says what the source `ledger` is"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// (l) every git step is one command of the tool
+// ---------------------------------------------------------------------------
+
+/// The acts `dev/stabilize-step` has, read from its own parser.
+fn tool_acts() -> BTreeSet<String> {
+    let tool = fs::read_to_string(repo_root().join(STEP_TOOL)).expect("read the step tool");
+    tool.lines()
+        .filter_map(|line| line.strip_prefix("    act(\""))
+        .map(|rest| rest[..rest.find('"').expect("the act's name closes")].to_owned())
+        .collect()
+}
+
+#[test]
+fn l_every_git_step_is_one_command_of_the_tool_but_the_recut_of_a_part() {
+    let full = harness();
+    assert!(
+        code(&full).contains(&format!("\nconst STEP_TOOL = '{STEP_TOOL}'\n")),
+        "the script names the tool once"
+    );
+    let acts = tool_acts();
+    assert!(acts.len() >= 10, "the scan found the tool's acts: {acts:?}");
+
+    // One function composes every such prompt: the command, and "relay its line".
+    let composer = function(&full, "stepPrompt");
+    assert!(
+        composer.contains("'1. `' + STEP_TOOL + ' ' + act + ' ' + flags + '`',")
+            && composer.contains("'GIT STEP — ' + what + '. ' + STEP_RULES,")
+            && composer.matches("\n    '").count() == 3,
+        "`stepPrompt` is the step's opening, ONE command and its report: {composer}"
+    );
+
+    // Each act is asked for by exactly one prompt function, and each prompt function asks
+    // for exactly one act.
+    let prompts = git_prompts(&full);
+    let mut asked: BTreeMap<String, String> = BTreeMap::new();
+    for name in &prompts {
+        let body = function(&full, name);
+        let composed: Vec<&String> = acts
+            .iter()
+            .filter(|act| body.contains(&format!("', '{act}', ")))
+            .collect();
+        assert_eq!(
+            composed.len(),
+            1,
+            "`{name}` composes one command of the tool: {composed:?}"
+        );
+        assert_eq!(
+            body.matches("stepPrompt(").count(),
+            1,
+            "`{name}` calls `stepPrompt` once"
+        );
+        let taken = asked.insert(composed[0].clone(), name.clone());
+        assert!(
+            taken.is_none(),
+            "the act `{}` is composed by `{name}` and by `{}`",
+            composed[0],
+            taken.unwrap_or_default()
+        );
+    }
+    assert_eq!(
+        asked.keys().cloned().collect::<BTreeSet<_>>(),
+        acts,
+        "the acts the script asks for (left) are the acts {STEP_TOOL} has (right)"
+    );
+
+    // A step that is one command lists no git command of its own. The one function that
+    // still does is the re-cut of a part — ruled to be rebuilt as a revert, so its list is
+    // kept as it was and not ported.
+    let listing: Vec<&String> = prompts
+        .iter()
+        .filter(|name| function(&full, name).contains("`git "))
+        .collect();
+    assert_eq!(
+        listing,
+        ["carryPrompt"],
+        "the prompt functions that still list git commands"
+    );
+    let recut = function(&full, "carryPrompt");
+    assert!(
+        recut.contains("\n  if (!part) return stepPrompt(")
+            && recut.contains("'GIT STEP — re-cut a part of round '"),
+        "`carryPrompt` is the tool's act for a dropped round, and the list for a part"
+    );
+    assert_eq!(
+        code(&full).matches("'GIT STEP — ").count()
+            - function(&full, "selfTest").matches("'GIT STEP — ").count(),
+        2,
+        "a git step's opening is spelled by `stepPrompt` and by the part's re-cut, and by no other"
+    );
+
+    // And each call names the act its prompt composes, so the line it reads back is that
+    // act's: a call that named another would halt on every line.
+    let mut calls = 0;
+    for line in without(&full, &["selfTest", "toolStep"]).lines() {
+        let Some(rest) = line.split("await toolStep(").nth(1) else {
+            continue;
+        };
+        calls += 1;
+        let prompt = prompts
+            .iter()
+            .find(|name| rest.contains(&format!("{name}(")))
+            .unwrap_or_else(|| panic!("a tool step sends a git step's prompt: {line}"));
+        let act = asked
+            .iter()
+            .find(|(_, name)| *name == prompt)
+            .map(|(act, _)| act)
+            .expect("every prompt function composes an act");
+        assert!(
+            rest.contains(&format!(", '{act}', {prompt}(")),
+            "this call sends `{prompt}`, which composes `{act}`, and reads another act's line: {line}"
+        );
+    }
+    assert!(calls >= 15, "the scan found the tool steps: {calls}");
+    // The part's re-cut is the one step that is not read through the tool.
+    let direct: Vec<&str> = code(&full)
+        .lines()
+        .filter(|line| line.contains("await gitStep("))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .map(|line| {
+            if line.contains("carryPrompt(v, round, take, part), CARRY_SCHEMA)") {
+                "the part's re-cut"
+            } else if line
+                .contains("readStep(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA), act)")
+            {
+                "toolStep"
+            } else {
+                "another"
+            }
+        })
+        .collect();
+    assert_eq!(
+        direct,
+        ["toolStep", "the part's re-cut"],
+        "who calls `gitStep`"
     );
 }
 

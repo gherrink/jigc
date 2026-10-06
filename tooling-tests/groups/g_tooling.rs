@@ -24,6 +24,8 @@ mod ci_matrix_fence;
 mod dev_gate_report;
 #[path = "../dev_stabilize_record.rs"]
 mod dev_stabilize_record;
+#[path = "../dev_stabilize_step.rs"]
+mod dev_stabilize_step;
 #[path = "../doc_link_fence.rs"]
 mod doc_link_fence;
 #[path = "../dogfood_apparatus.rs"]
