@@ -735,7 +735,7 @@ function landPrompt(inc) {
 // cache key — moves with it. A conflict confined to the append-only logs is resolved by
 // `dev/merge-logs`, deterministically (both sides kept, in the file's date order; anything
 // but a pure append refused), never by the agent's own edit. SYNC_LOGS mirrors that tool's
-// LOGS, and crates/cli/tests/merge_logs_fence.rs holds the two equal; the land step (above)
+// LOGS, and tooling-tests/merge_logs_fence.rs holds the two equal; the land step (above)
 // lets the same two logs conflict, so it reads this list too.
 const SYNC_LOGS = ['DECISIONS.md', 'implementation/project-history.md']
 const SYNC_RULES = 'Run exactly the commands below, in order, and nothing else: no other branch, no commit beyond the merge this step names, no file edit (step 6\'s `dev/merge-logs` is the only thing that writes a file), no `git stash`, no reset, no rebase, never `--force`, and `main` is never checked out, merged into or pushed — `origin/main` is merged INTO the branch, which is all this step does with it. Any check that fails, or any command that fails, is a HALT: stop, leave everything as the step says, and fill the halt report (root_cause = which check, evidence = the command and its output, tree_state = `git status` and `git branch --show-current`).'

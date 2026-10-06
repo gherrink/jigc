@@ -87,7 +87,7 @@
 //
 // THE LABELS. The contracts of the agent definitions bind on lines of the prompt — LABELS,
 // below. Each is spelled here exactly as the definitions spell it, and
-// crates/cli/tests/stabilize_harness_fence.rs holds the two together.
+// tooling-tests/stabilize_harness_fence.rs holds the two together.
 //
 // RESUMING. A stage that returned — halted, stopped at a bound, or finished — is not
 // resumed: the next invocation is a fresh one and reads the state as it stands. A report a
@@ -183,7 +183,7 @@ const RUNS_ROOT = 'completions/artifacts'
 // through an audited round's merge; every other path commits directly behind the gate.
 const PRODUCT_PATHS = ['Cargo.toml', 'Cargo.lock', 'crates']
 // The append-only logs a merge may conflict in — milestone-build.js's list, held equal by
-// crates/cli/tests/merge_logs_fence.rs. `dev/merge-logs` resolves exactly these.
+// tooling-tests/merge_logs_fence.rs. `dev/merge-logs` resolves exactly these.
 const SYNC_LOGS = ['DECISIONS.md', 'implementation/project-history.md']
 // The lines the agent definitions' contracts bind on, spelled as they spell them.
 const LABELS = { report: 'REPORT:', binary: 'BINARY:', area: 'AREA:', record: 'RECORD STEP', branch: 'BRANCH:' }
@@ -490,7 +490,7 @@ function outcomeOf(state) {
 
 // refusalOf — the word the state's position refuses a stage with, as what the orchestrator
 // does about it. The words are dev/stabilize-record's (its header: THE POSITION), and
-// crates/cli/tests/stabilize_harness_fence.rs holds this table to them.
+// tooling-tests/stabilize_harness_fence.rs holds this table to them.
 const REFUSALS = {
   'not-ready': 'the run\'s opening is not done, and no stage starts before it is — the state\'s `not_ready` names what it owes: a row per clause of the closing condition (`dev/stabilize-record clause-set`), and the run\'s facts — the stop mode, the bound across rounds, the previous release and the default scope (`dev/stabilize-record run-set`)',
   'no-round': 'there is no tested round to fix — the `test` stage comes first, and records its triage',
@@ -1211,7 +1211,7 @@ function proposalPrompt(ctx, name, fork, advocate, built) {
 }
 // The cross-model pass — everything this script says about it is in these three functions,
 // and each is called only where the invocation's opt-in is tested
-// (crates/cli/tests/stabilize_harness_fence.rs holds both).
+// (tooling-tests/stabilize_harness_fence.rs holds both).
 function crossModelTool() {
   return 'codex'
 }
