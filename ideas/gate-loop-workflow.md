@@ -1,6 +1,17 @@
 # The gate loop — test, fix and re-test a release candidate until the exit rule holds
 
-**Status: parked 2026-10-05.** Written at the close of the session that ran the gate before 1.0.0 on
+**Status: de-parked 2026-10-06 — taken up as the stabilization workflow, which is built, reviewed red
+and under repair, and not yet fit for use.** The human ruled its shape on 2026-10-05, under another
+name ([DECISIONS.md](../DECISIONS.md) → *2026-10-05 — The stabilization workflow, as ruled*). The
+workflow's home is [implementation/stabilization-workflow.md](../implementation/stabilization-workflow.md)
+— a workflow de-parks into `implementation/`, beside the other five workflow docs, not into `design/`.
+Where its build stands is
+[the build's record](../completions/artifacts/M55/stabilization-build/README.md). **The body below is
+kept as the parking record it was; it is not the workflow.** Where the two differ, the rulings and the
+workflow's doc hold — among other things the rulings replaced the order this file ends on: no
+candidate is published between rounds.
+
+**(Historical) Status: parked 2026-10-05.** Written at the close of the session that ran the gate before 1.0.0 on
 `1.0.0-rc.24` by hand ([DECISIONS.md](../DECISIONS.md) → *2026-10-05 — The session closes without a
 testing round and without the call*). Indexed from [VISION.md](../VISION.md) → Open questions; the
 trigger row is [decisions-pending.md](../implementation/decisions-pending.md) → *Before the next
