@@ -1852,7 +1852,25 @@ fn fixed_clobber_text(
 ///
 /// The file git holds is never jigc's to decide about: the route names the one command that
 /// brings it back into the worktree ([`crate::finding::git_at`], so it runs from any
-/// directory) and says it is left as it is. It teaches no removal and no commit.
+/// directory) and says it is left as it is. It teaches no removal.
+///
+/// **And where the doc was meant to replace the committed one, the route says the order that
+/// lands** (the rc.24 fix pass's item 15; the human's ruling of 2026-10-06). The state is the
+/// one jigc's own route produces: a committed doc deleted from the worktree, the deletion
+/// confirmed with `jigc unmanage` (`reconciliation.rename`'s weak signal) and not committed,
+/// and a task that then mints a doc under the same id. Neither exit above replaces the
+/// committed doc under its id, which is what that reader set out to do. The exit first ruled
+/// for it — *commit the deletion first, then finalize* — is not one: driven, the finalize
+/// then refuses on `finalize.base-mismatch`, because the task was started before that commit
+/// and the commit touches its doc's own path. What lands, driven as printed: **commit the
+/// deletion, drop the task, start the work again** — the create then finds a free home. So
+/// the task arm under `HEAD` names those three in that order, says why the commit alone does
+/// not land the task, and prints no command for the commit: it is the reader's own act on a
+/// deletion they already made, and a route teaches no removal. It is said of
+/// [`ShapeUnit::Task`] alone — the unit it was driven for. A doc under a fixed identity is
+/// outside it (a committed deletion at a singleton's home is its own blocking finding), a
+/// file held only by the index has no deletion to commit, and at the milestone boundary a
+/// commit made first is the base move the paragraph above rules out.
 fn held_clobber_text(
     repo_root: &Path,
     destination: &str,
@@ -1890,8 +1908,21 @@ fn held_clobber_text(
          it back into the worktree, and that is no commit"
     );
     let route = match (exit, unit.rename(), unit.drop_the_mint()) {
-        (ShapeExit::RenameOrMoveOut, Some(rename), _) => {
-            format!("{intact}: {rename}, then {rerun}. {left}")
+        (ShapeExit::RenameOrMoveOut, Some(rename), drop) => {
+            // The exit that puts this doc in the committed one's place — see the doc
+            // comment's last paragraph for why it is these three steps, in this order.
+            let replace = match (holder, unit, drop) {
+                (Holder::Head, ShapeUnit::Task { .. }, Some(drop)) => format!(
+                    ". To put this doc in the committed one's place instead — where that \
+                     file is gone on purpose — commit the deletion of `{destination}`, \
+                     {drop}, and start the work again: the create then finds the home free. \
+                     Committing the deletion does not by itself land this task — it was \
+                     started before that commit, which touches its doc's path, so its \
+                     finalize then refuses on `finalize.base-mismatch`"
+                ),
+                _ => String::new(),
+            };
+            format!("{intact}: {rename}, then {rerun}. {left}{replace}")
         }
         (_, _, Some(drop)) => {
             let again = match unit {
@@ -5957,6 +5988,23 @@ sections:
                     "the refusal never teaches a removal: {surface}",
                 );
             }
+            // The exit that replaces the committed doc (the fix pass's item 15) is said
+            // where there is a deletion to commit — under `HEAD` — and nowhere else, in the
+            // order that lands, with the reason the commit alone does not.
+            let replace = "commit the deletion of `decisions/single-node-cache.md`, drop this \
+                           task (`jigc task discard record-decision --force`";
+            assert_eq!(
+                route.contains(replace),
+                in_head,
+                "the replace exit is the `HEAD` arm's alone (in_head={in_head}): {route}",
+            );
+            assert_eq!(
+                route.contains("start the work again")
+                    && route.contains("`finalize.base-mismatch`"),
+                in_head,
+                "it ends at the work started again and says why the commit alone does not \
+                 land the task (in_head={in_head}): {route}",
+            );
             assert!(
                 !root.path().join(destination).exists(),
                 "the planner writes nothing",

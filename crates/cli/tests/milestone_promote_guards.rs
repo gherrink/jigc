@@ -1019,6 +1019,144 @@ fn a_home_git_holds_and_the_disk_does_not_is_occupied_at_the_task_door() {
     }
 }
 
+/// **A deletion confirmed with `jigc unmanage`, and a new doc under the same id** — the rc.24
+/// fix pass's item 15, as the human ruled it on 2026-10-06. The sequence jigc's own route
+/// produces: a committed doc's file is deleted and not committed; `jigc validate` reports it
+/// missing and offers `jigc unmanage <path>`; the reader confirms; a task then creates a doc
+/// under that id and its finalize refuses, because `HEAD` still holds the doc.
+///
+/// The exit first ruled for it — *commit the deletion first, then finalize* — is not one:
+/// the task was started before that commit, and the commit touches its doc's path, so the
+/// finalize then refuses on `finalize.base-mismatch`. What lands is **commit the deletion,
+/// drop the task, start the work again**, and both places now say it: `jigc unmanage`'s ack
+/// over a file that is not there says to commit the deletion before a task reuses the name,
+/// and the refusal's route names the three steps in the order that works. Every span is run
+/// as printed; the commit is the reader's own act and the route prints no command for it.
+#[test]
+fn a_confirmed_deletion_is_replaced_by_committing_it_dropping_the_task_and_starting_again() {
+    let kind = Kind::Adr;
+    let what = "task door · a deletion confirmed with `jigc unmanage`";
+    let destination = format!("{}/{SHARED_SLUG}.md", kind.home());
+    let corpus = TrialCorpus::build(State::Fresh);
+    land_standalone(&corpus, kind, SHARED_TITLE, OCCUPANT_MARKER);
+    fs::remove_file(corpus.repo().join(&destination)).expect("delete the committed doc");
+
+    // ── jigc reports the doc missing, and the reader confirms the deletion ──
+    let validate = corpus.jigc(&["validate", "--format", "json"]);
+    let envelope: serde_json::Value =
+        serde_json::from_slice(&validate.stdout).unwrap_or_else(|e| {
+            panic!(
+                "{what}: the store sweep's envelope ({e}); {}",
+                text(&validate)
+            )
+        });
+    let offered = envelope["findings"]
+        .as_array()
+        .expect("a findings array")
+        .iter()
+        .find(|f| f["code"] == "reconciliation.rename")
+        .and_then(|f| f["route"].as_str())
+        .unwrap_or_else(|| panic!("{what}: the missing doc is reported; {}", text(&validate)))
+        .to_owned();
+    let confirmed = run_the_span(&corpus, &offered, "jigc unmanage", what);
+    let ack = String::from_utf8_lossy(&confirmed.stdout).into_owned();
+    assert!(
+        ack.contains(&format!(
+            "there was no file at {destination} to leave on disk"
+        )),
+        "{what}: the premise — the ack is the absent-file one; got: {ack}",
+    );
+    assert!(
+        ack.contains("commit its deletion before") && ack.contains(CLOBBER),
+        "{what}: the confirmation says to commit the deletion before a task reuses the name, \
+         and names the refusal that otherwise follows; got: {ack}",
+    );
+
+    // ── a task creates a doc under the same id, and its finalize refuses ──
+    let task = corpus.start_workflow("record-decision", "file it again");
+    let minted = create(&corpus, kind, SHARED_TITLE, &task);
+    assert_eq!(
+        minted,
+        format!("adr:{SHARED_SLUG}"),
+        "{what}: the premise — the create saw a free home and minted",
+    );
+    kind.fill(&corpus, &minted, &task, &body_of(&task));
+    fill_commit(&corpus, &task, "adr");
+    let findings = task_blocked(&corpus, &task, what);
+    let route = clobber_at(&findings, &destination, what)["route"]
+        .as_str()
+        .expect("a route")
+        .to_owned();
+
+    // ── the route names the three steps, in the order that works ──
+    let at = |needle: &str| {
+        route
+            .find(needle)
+            .unwrap_or_else(|| panic!("{what}: the route says `{needle}`; got: {route}"))
+    };
+    let (commit, discard, again) = (
+        at("commit the deletion"),
+        at("jigc task discard"),
+        at("start the work again"),
+    );
+    assert!(
+        commit < discard && discard < again,
+        "{what}: commit the deletion, drop the task, start again — in that order; got: {route}",
+    );
+    assert!(
+        route.contains("finalize.base-mismatch"),
+        "{what}: the route says committing the deletion does not by itself land this task; \
+         got: {route}",
+    );
+
+    // ── step 1, the reader's own act — and the control: it is not an exit by itself ──
+    corpus.git(&[
+        "commit",
+        "-q",
+        "-m",
+        "docs: retire the shared finding",
+        "--",
+        &destination,
+    ]);
+    assert!(
+        corpus.git(&["status", "--porcelain"]).is_empty(),
+        "{what}: the deletion is committed",
+    );
+    let after_commit = task_blocked(&corpus, &task, what);
+    assert!(
+        after_commit
+            .iter()
+            .any(|f| f["key"]["code"] == "finalize.base-mismatch"),
+        "{what}: with the deletion committed the same task still does not land — the exit \
+         the first ruling named is not one; {after_commit:#?}",
+    );
+
+    // ── steps 2 and 3, as printed ──
+    let shown = run_the_span(&corpus, &route, "jigc doc show", what);
+    assert!(
+        String::from_utf8_lossy(&shown.stdout).contains(&body_of(&task)),
+        "{what}: the read the route prints shows what the drop takes",
+    );
+    run_the_span(&corpus, &route, "jigc task discard", what);
+    let again = corpus.start_workflow("record-decision", "file it once more");
+    assert_eq!(
+        create(&corpus, kind, SHARED_TITLE, &again),
+        format!("adr:{SHARED_SLUG}"),
+        "{what}: started again, the create finds the home free and mints",
+    );
+    kind.fill(&corpus, &minted, &again, &body_of(&again));
+    corpus.finalize(&again, "adr", "file it once more", false);
+    let landed = at_head(&corpus, &destination);
+    assert!(
+        landed.contains(&body_of(&again)) && !landed.contains(OCCUPANT_MARKER),
+        "{what}: the new doc is the committed doc under that id; got: {landed}",
+    );
+    assert!(
+        corpus.git(&["status", "--porcelain"]).is_empty(),
+        "{what}: nothing is left over",
+    );
+}
+
 /// **A fixed identity has no other id**, so the route prints no rename — it would refuse —
 /// and hands back the drop of the mint: the task is read, discarded by consent, the committed
 /// doc restored, and the next create copies it in for update.
