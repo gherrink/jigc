@@ -473,9 +473,11 @@ fn nextest_failures_are_named_by_binary_and_test_once_each() {
 ///
 /// The fake appends each argv to `argv.log`. For `nextest run` it also prints a green
 /// three-test summary over two binaries and, when [`FakeCargo::junit`] staged a report for
-/// the profile it was handed, writes that report where nextest would. It exits 1 for a
-/// step named in `FAKE_CARGO_RED` — by its first word (`clippy`) or by its nextest
-/// profile (`gate-tier1`).
+/// the profile it was handed, writes that report where nextest would — and, when
+/// `FAKE_CARGO_SKIP` holds a line, appends it to the file the gate names in
+/// `JIGC_GATE_SKIPS`, as a test of that run does when it passes without running what it
+/// tests. It exits 1 for a step named in `FAKE_CARGO_RED` — by its first word (`clippy`)
+/// or by its nextest profile (`gate-tier1`).
 struct FakeCargo {
     scratch: ScratchDir,
 }
@@ -540,6 +542,9 @@ impl FakeCargo {
                  \x20   mkdir -p \"$CARGO_TARGET_DIR/nextest/$profile\"\n\
                  \x20   cp \"$here/junit-$profile.xml\" \"$CARGO_TARGET_DIR/nextest/$profile/junit.xml\"\n\
                  \x20 fi\n\
+                 \x20 if [ -n \"$FAKE_CARGO_SKIP\" ]; then\n\
+                 \x20   printf '%s\\n' \"$FAKE_CARGO_SKIP\" >> \"$JIGC_GATE_SKIPS\"\n\
+                 \x20 fi\n\
                  fi\n\
                  for red in $FAKE_CARGO_RED; do\n\
                  \x20 if [ \"$red\" = \"$1\" ] || [ \"$red\" = \"$profile\" ]; then exit 1; fi\n\
@@ -578,6 +583,12 @@ impl FakeCargo {
 
     /// Run `dev/gate <flags>` with the steps in `red` exiting 1.
     fn run(&self, flags: &[&str], red: &[&str]) -> FakeRun {
+        self.run_where(flags, red, "")
+    }
+
+    /// [`FakeCargo::run`], with every test step of the run leaving `skip` as the line of a
+    /// test that passed without running what it tests (none when empty).
+    fn run_where(&self, flags: &[&str], red: &[&str], skip: &str) -> FakeRun {
         let dir = self.dir();
         let argv_log = dir.join("argv.log");
         std::fs::write(&argv_log, "").expect("start the run with an empty argv log");
@@ -590,6 +601,7 @@ impl FakeCargo {
             .env("CARGO_TARGET_DIR", dir)
             .env("JIGC_GATE_HYGIENE", "off")
             .env("FAKE_CARGO_RED", red.join(" "))
+            .env("FAKE_CARGO_SKIP", skip)
             .output()
             .expect("spawn dev/gate");
         let mut tiers = String::new();
@@ -1046,6 +1058,78 @@ fn the_report_names_the_heaviest_suites_and_tests_of_a_log_that_carries_them() {
     assert!(
         !bare.contains("heaviest"),
         "a log with no timings prints no empty block.\nreport:\n{bare}",
+    );
+}
+
+/// A test that passes without running what it tests is named by the gate itself.
+///
+/// The suites that run the stabilization harness need `node`; without it they fail under
+/// CI and pass anywhere else, saying so on stderr — which nextest shows nobody for a test
+/// that passed. So the gate names a file, such a test appends its line to it, and the
+/// summary carries each line under a NOTE, beside the verdict it does not change.
+#[test]
+fn a_test_that_passed_without_running_is_named_beside_the_verdict() {
+    let skip = "SKIPPED: `node` is not on PATH, so no stage was run";
+    let fake = FakeCargo::new("gate-skips", true);
+    let run = fake.run_where(&[], &[], skip);
+    let text = &run.text;
+    let note: Vec<&str> = text
+        .lines()
+        .skip_while(|l| !l.starts_with("==> NOTE    2 test(s) PASSED WITHOUT RUNNING"))
+        .take(2)
+        .collect();
+    assert_eq!(
+        note,
+        vec![
+            "==> NOTE    2 test(s) PASSED WITHOUT RUNNING what they test on this machine:",
+            "               2  SKIPPED: `node` is not on PATH, so no stage was run",
+        ],
+        "each tier's test left the line: two tests, and the line once with its count.\n{text}",
+    );
+    assert!(
+        run.ok && reads_as_a_passed_gate(text),
+        "the NOTE is no step: the gate is as green as its steps, and its two lines stand.\n{text}",
+    );
+    assert!(
+        text.find("==> NOTE    2 test(s)") < text.find("\nGATE: PASS"),
+        "it stands above the verdict, in the lines a reader of the gate's end reads.\n{text}",
+    );
+
+    // A run in which no test said so prints no NOTE — and the pre-check prints one too.
+    let quiet = fake.run(&[], &[]);
+    assert!(
+        !quiet.text.contains("PASSED WITHOUT RUNNING"),
+        "{}",
+        quiet.text
+    );
+    let fast = fake.run_where(&["--fast"], &[], skip);
+    assert!(
+        fast.text.contains("PASSED WITHOUT RUNNING"),
+        "{}",
+        fast.text
+    );
+
+    // The log keeps each line, so `--report` prints the same NOTE: every test counted,
+    // each distinct line once, and a copy a failing test's output echoed — indented — is
+    // not one.
+    let log = format!(
+        "{}test-skipped\tSKIPPED: one\ntest-skipped\tSKIPPED: one\n\
+         test-skipped\tSKIPPED: two\twith a tab\n\x20   test-skipped\tSKIPPED: echoed\n",
+        summary_line(3, 0)
+    );
+    let report = report_over("gate-report-skips", &log);
+    let block: Vec<&str> = report
+        .lines()
+        .skip_while(|l| !l.starts_with("==> NOTE"))
+        .collect();
+    assert_eq!(
+        block,
+        vec![
+            "==> NOTE    3 test(s) PASSED WITHOUT RUNNING what they test on this machine:",
+            "               2  SKIPPED: one",
+            "               1  SKIPPED: two\twith a tab",
+        ],
+        "report:\n{report}",
     );
 }
 

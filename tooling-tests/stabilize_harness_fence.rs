@@ -57,8 +57,9 @@
 //!   and the verifier's definition says what an unverified finding means.
 //!
 //! **Driven, where `node` is on `PATH`** (it is on this project's development machines and
-//! on GitHub's hosted runners; where it is not, the arm says so on stderr and passes — the
-//! gate gains no dependency):
+//! on GitHub's hosted runners; where it is not, the arm fails under CI and passes anywhere
+//! else — the gate gains no dependency — and the gate's own summary names it as a test
+//! that passed without running: [`node_or_skip`]):
 //!
 //! - **(i)** the script parses; its self-test passes without launching an agent; every
 //!   malformed invocation is refused before one is launched; and no value of `crossModel`
@@ -76,6 +77,8 @@ use serde_json::Value;
 
 use crate::support::root_walk;
 use crate::support::scratch::ScratchDir;
+
+use super::dev_stabilize_step::node_or_skip;
 
 const HARNESS: &str = ".claude/workflows/stabilize.js";
 const RECORD_SCRIPT: &str = "dev/stabilize-record";
@@ -1370,11 +1373,9 @@ fn m_a_stage_that_is_not_fit_for_use_refuses_to_start() {
 
     // Driven, where `node` is installed: every invocation of a stage that is not fit is
     // refused with that word, and no agent is launched for it.
-    if node().is_none() {
-        eprintln!(
-            "SKIPPED: `node` is not on PATH, so the refusal of a stage that is not fit for \
-             use was read off {HARNESS} and not run on this machine"
-        );
+    if !node_or_skip(&format!(
+        "the refusal of a stage that is not fit for use was read off {HARNESS} and not run"
+    )) {
         return;
     }
     let scratch = ScratchDir::new("stabilize-not-fit");
@@ -1446,17 +1447,8 @@ const result = await body(launch, launch, launch, () => {}, () => {}, args, { to
 console.log(JSON.stringify({ result, launched }))
 "#;
 
-fn node() -> Option<Command> {
-    let answers = Command::new("node")
-        .arg("--version")
-        .output()
-        .is_ok_and(|out| out.status.success());
-    answers.then(|| Command::new("node"))
-}
-
 fn invoke(driver: &Path, args: &str) -> Value {
-    let out = node()
-        .expect("checked by the caller")
+    let out = Command::new("node")
         .arg(driver)
         .arg(repo_root().join(HARNESS))
         .arg(args)
@@ -1478,11 +1470,9 @@ fn invoke(driver: &Path, args: &str) -> Value {
 
 #[test]
 fn i_where_node_is_installed_the_script_parses_and_its_self_test_passes() {
-    if node().is_none() {
-        eprintln!(
-            "SKIPPED: `node` is not on PATH, so {HARNESS} was scanned and not run — its \
-             self-test and its refusals are unchecked on this machine"
-        );
+    if !node_or_skip(&format!(
+        "{HARNESS} was scanned and not run: its self-test and its refusals are unchecked"
+    )) {
         return;
     }
     let scratch = ScratchDir::new("stabilize-harness");

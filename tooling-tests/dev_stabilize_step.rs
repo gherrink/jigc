@@ -37,10 +37,14 @@
 //! **Every arm runs under a shell-hostile root** — a space, a `'`, a `"` and a `#` in the
 //! repository's path — because the rig has no other kind.
 //!
-//! **The rig is the bed the simulation of both stages is built on.** [`StepRig`],
-//! [`harness_pure`] (the harness's pure functions, called under `node`) and [`git_agent`]
-//! (a `build-git` agent as a function: the one command of a step's prompt, run, and its
-//! line relayed) are `pub(crate)` for that suite.
+//! **The rig is the bed the simulation of a stage is built on**
+//! ([`stabilize_simulation`](super::stabilize_simulation)). [`StepRig`] is built in two
+//! steps — [`StepRig::unopened`], then the opening — so that a suite can open the run
+//! itself, and lends its environment; [`node_or_skip`] is what every test that runs the
+//! harness under `node` asks first. That suite's agents are functions of its runtime's
+//! stand-in, so [`harness_pure`] (the harness's pure functions, called under `node`) and
+//! [`git_agent`] (a `build-git` agent as a function: the one command of a step's prompt,
+//! run, and its line relayed) serve this suite's own contract arm.
 //!
 //! **Preserved on purpose, and marked where it is driven.** The tool repairs nothing. A
 //! landing that halted after its merge is still answered `landed-before` by the next call,
@@ -51,6 +55,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::Write as _;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -282,7 +287,20 @@ fn line_of(stdout: &str) -> Value {
 }
 
 impl StepRig {
+    /// The rig with its one run opened: the loop branch checked out and pushed, its tip the
+    /// commit that added the opening record.
     pub(crate) fn new(label: &str) -> Self {
+        let rig = Self::unopened(label);
+        rig.git(&["switch", "-q", "-c", LOOP]);
+        rig.write(&format!("{RUN_DIR}/opening.md"), "# the opening record\n");
+        rig.commit("docs(record): the run is opened");
+        rig.git(&["push", "-q", "origin", LOOP]);
+        rig
+    }
+
+    /// The rig before any run is opened: `main` checked out and pushed, and nothing else —
+    /// for a suite that opens the run itself.
+    pub(crate) fn unopened(label: &str) -> Self {
         let dir = ScratchDir::new(&format!("stabilize-step-{label}"));
         let root = dir.path().join(HOSTILE_ROOT);
         let origin = dir.path().join("origin.git");
@@ -292,13 +310,6 @@ impl StepRig {
         for made in [&root.join("dev"), &scratch, &home, &bin] {
             fs::create_dir_all(made).expect("create a rig directory");
         }
-        let shim = bin.join("git");
-        fs::write(
-            &shim,
-            GIT_SHIM.replace("@GIT@", &real_git().display().to_string()),
-        )
-        .expect("write the git shim");
-        fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).expect("chmod the shim");
         let rig = StepRig {
             trace: dir.path().join("trace"),
             path: format!(
@@ -312,6 +323,10 @@ impl StepRig {
             scratch,
             home,
         };
+        rig.on_path(
+            "git",
+            &GIT_SHIM.replace("@GIT@", &real_git().display().to_string()),
+        );
 
         // The base: the tool and what it runs, a product path, the two logs, a file that
         // is neither.
@@ -342,18 +357,26 @@ impl StepRig {
         assert!(bare.status.success(), "init the bare remote: {bare:?}");
         rig.git(&["remote", "add", "origin", &rig.origin.display().to_string()]);
         rig.git(&["push", "-q", "origin", "main"]);
-
-        // The run, opened on its loop branch.
-        rig.git(&["switch", "-q", "-c", LOOP]);
-        rig.write(&format!("{RUN_DIR}/opening.md"), "# the opening record\n");
-        rig.commit("docs(record): the run is opened");
-        rig.git(&["push", "-q", "origin", LOOP]);
         rig
+    }
+
+    /// The directory the rig lies in — the repository, its remote and the scratch root are
+    /// its children — for what a suite keeps beside them.
+    pub(crate) fn dir(&self) -> &Path {
+        self.dir.path()
+    }
+
+    /// An executable placed first on the `PATH` of every child of the rig.
+    pub(crate) fn on_path(&self, name: &str, script: &str) {
+        let tool = self.dir.path().join("bin").join(name);
+        fs::write(&tool, script).unwrap_or_else(|e| panic!("write the rig's `{name}`: {e}"));
+        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755))
+            .unwrap_or_else(|e| panic!("chmod the rig's `{name}`: {e}"));
     }
 
     /// The environment every child of the rig runs in: its own home, no git configuration
     /// of the machine's, a fixed identity and fixed dates.
-    fn hermetic(&self, mut command: Command) -> Command {
+    pub(crate) fn hermetic(&self, mut command: Command) -> Command {
         command
             .env("PATH", &self.path)
             .env("HOME", &self.home)
@@ -2702,11 +2725,45 @@ const made = new Function(pure + '\nreturn { ' + names.join(', ') + ' }')()
 console.log(JSON.stringify(calls.map(([name, args]) => made[name](...args))))
 "#;
 
-pub(crate) fn node_answers() -> bool {
-    Command::new("node")
+/// The file the gate names for the tests that pass without running what they test
+/// (`dev/gate`'s header: *PASSED WITHOUT RUNNING*): one line per test, which the gate
+/// counts and prints above its verdict.
+const GATE_SKIPS: &str = "JIGC_GATE_SKIPS";
+
+/// Whether `node` is there to run the harness under — and, where it is not, what a test
+/// that needs it does: `unrun` says what was not run on this machine.
+///
+/// **Under CI it fails.** GitHub's hosted runners ship `node`, so a runner without it is a
+/// job that changed, and a suite that passed there by running nothing would be the gap the
+/// suite exists to close. **Anywhere else it returns false, and the caller passes** — the
+/// gate gains no dependency — **but not silently**: a test runner shows a passing test's
+/// stderr to nobody, so beside the line on stderr the skip is written to the file the gate
+/// names, and the gate prints it in its own summary.
+pub(crate) fn node_or_skip(unrun: &str) -> bool {
+    let answers = Command::new("node")
         .arg("--version")
         .output()
-        .is_ok_and(|out| out.status.success())
+        .is_ok_and(|out| out.status.success());
+    if answers {
+        return true;
+    }
+    assert!(
+        std::env::var_os("CI").is_none_or(|ci| ci.is_empty()),
+        "`node` is not on PATH, and the environment says this is CI: {unrun}. A hosted \
+         runner ships `node`; a job that lacks it installs it (`actions/setup-node`) — \
+         the suite is never left to pass there without running"
+    );
+    let skipped = format!("SKIPPED: `node` is not on PATH, so {unrun}");
+    eprintln!("{skipped}");
+    if let Some(skips) = std::env::var_os(GATE_SKIPS) {
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&skips)
+            .unwrap_or_else(|e| panic!("open the gate's skip file: {e}"));
+        writeln!(file, "{skipped}").expect("write the skip to the gate's file");
+    }
+    false
 }
 
 /// The harness's own pure functions, called under `node`: one result per `[name, args]`.
@@ -2746,11 +2803,9 @@ pub(crate) fn git_agent(rig: &StepRig, prompt: &str) -> Value {
 
 #[test]
 fn every_command_the_harness_composes_is_taken_by_the_tool_and_read_back() {
-    if !node_answers() {
-        eprintln!(
-            "SKIPPED: `node` is not on PATH, so the commands {HARNESS} composes were not run \
-             against {TOOL} on this machine"
-        );
+    if !node_or_skip(&format!(
+        "the commands {HARNESS} composes were not run against {TOOL}"
+    )) {
         return;
     }
     let rig = StepRig::new("harness");

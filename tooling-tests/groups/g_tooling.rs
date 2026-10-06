@@ -48,5 +48,7 @@ mod release_pipeline_fence;
 mod seed_ledger;
 #[path = "../stabilize_harness_fence.rs"]
 mod stabilize_harness_fence;
+#[path = "../stabilize_simulation.rs"]
+mod stabilize_simulation;
 #[path = "../workflow_action_runtime_fence.rs"]
 mod workflow_action_runtime_fence;

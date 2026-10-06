@@ -75,6 +75,14 @@
 # that rather than as a failure, because the two are indistinguishable otherwise and
 # only one of them is a verdict about this repo.
 #
+# A test that PASSED WITHOUT RUNNING what it tests is named beside the verdict. Such a
+# test -- one that needs a tool this machine lacks, and is required only in CI -- says so
+# on stderr, which a test runner shows nobody for a test that passed. So the run names a
+# file in JIGC_GATE_SKIPS, the test appends its one line to it, and the summary counts
+# them under a NOTE and prints each distinct line. It is never a step and never changes
+# the verdict or the totals; the log keeps each as a `test-skipped` line, so --report
+# prints the same NOTE.
+#
 # Exit status: 0 iff every step it ran exited 0.
 
 set -u
@@ -200,6 +208,26 @@ gate_heaviest() {
         | sort -k1,1rn -k2 | head -5
 }
 
+# The tests that passed without running what they test: the `test-skipped` lines of a log,
+# as the NOTE a summary carries. A test writes its line to the file a run names in
+# JIGC_GATE_SKIPS, and the run folds that file into the log: one line per test, so the
+# NOTE counts them, and prints each distinct line once with how many tests said it.
+gate_skipped() {
+    awk -F'\t' '
+        $1 == "test-skipped" {
+            said = substr($0, length($1) + 2)
+            if (!(said in tests)) order[++distinct] = said
+            tests[said]++
+            total++
+        }
+        END {
+            if (!total) exit
+            printf "==> NOTE    %d test(s) PASSED WITHOUT RUNNING what they test on this machine:\n", total
+            for (i = 1; i <= distinct; i++) printf "%16d  %s\n", tests[order[i]], order[i]
+        }
+    ' "$1"
+}
+
 gate_report() {
     report_log=$1
     totals=$(gate_totals "$report_log")
@@ -213,6 +241,11 @@ gate_report() {
     heaviest=$(gate_heaviest "$report_log")
     if [ -n "$heaviest" ]; then
         printf '\n%s\n' "$heaviest"
+    fi
+
+    skipped_note=$(gate_skipped "$report_log")
+    if [ -n "$skipped_note" ]; then
+        printf '\n%s\n' "$skipped_note"
     fi
 
     names=$(gate_failing_names "$report_log")
@@ -542,6 +575,11 @@ target_dir=${CARGO_TARGET_DIR:-$repo_root/target}
 record=$target_dir/jigc-gate/test-seconds.tsv
 run_seconds=$(mktemp "$tmp_root/jigc-gate-seconds-XXXXXX") || exit 2
 
+# Where a test that passes without running what it tests says so (the header: PASSED
+# WITHOUT RUNNING). Every test step of this run inherits the name.
+JIGC_GATE_SKIPS=$(mktemp "$tmp_root/jigc-gate-skips-XXXXXX") || exit 2
+export JIGC_GATE_SKIPS
+
 # Run one tier under its profile and collect the seconds its JUnit report holds. The
 # report of an earlier run is emptied first, so a tier that dies before it writes one
 # leaves no rows rather than the last run's.
@@ -650,6 +688,10 @@ else
     fi
 fi
 
+if [ -s "$JIGC_GATE_SKIPS" ]; then
+    sort "$JIGC_GATE_SKIPS" | sed "s/^/test-skipped$tab/" >>"$log"
+fi
+
 # --- what the run actually measured ----------------------------------------
 printf '\n--- summary ---\n'
 while read -r sname scode; do
@@ -680,6 +722,11 @@ fi
 heaviest=$(gate_heaviest "$log")
 if [ -n "$heaviest" ]; then
     printf '\n%s\n' "$heaviest"
+fi
+
+skipped_note=$(gate_skipped "$log")
+if [ -n "$skipped_note" ]; then
+    printf '\n%s\n' "$skipped_note"
 fi
 
 # --- failure detail: named, never a blind tail ------------------------------

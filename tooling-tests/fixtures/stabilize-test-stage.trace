@@ -1,0 +1,52 @@
+phase State
+agent git:state · build-git · sonnet · State
+agent git:state:test-1 · build-git · sonnet · State
+phase Preflight and scope
+parallel 2 {
+  agent preflight · stabilize-preflight · opus · Preflight and scope
+  agent scope · stabilize-scope · opus · Preflight and scope
+}
+agent git:state:test-2 · build-git · sonnet · State
+agent preflight-second · stabilize-preflight · opus · Preflight and scope
+phase Instruments
+parallel 5 {
+  parallel 2 {
+    agent row-a:source · milestone-code-reviewer · opus · Instruments
+    agent row-a:driver · milestone-e2e-tester · opus · Instruments
+  }
+  parallel 1 {
+    agent row-a:reconciler · milestone-e2e-tester · opus · Instruments
+  }
+  parallel 1 {
+    agent arm-a:rehearse · milestone-e2e-tester · opus · Instruments
+  }
+  parallel 1 {
+    agent arm-a:run · milestone-e2e-tester · opus · Instruments
+  }
+  parallel 1 {
+    agent arm-a:score · milestone-e2e-tester · opus · Instruments
+  }
+  parallel 1 {
+    agent area-a:review · milestone-code-reviewer · opus · Instruments
+  }
+  parallel 1 {
+    agent cross:review · milestone-code-reviewer · opus · Instruments
+  }
+  parallel 1 {
+    agent drive-a:drive · milestone-e2e-tester · opus · Instruments
+  }
+}
+agent git:check-reports · build-git · sonnet · Instruments
+phase Triage
+agent triage:p1 · finding-triage · opus · Triage
+parallel 3 {
+  agent verify:doc-set-drops-a-slot · finding-verifier · opus · Triage
+  agent verify:rename-loses-a-referrer · finding-verifier · opus · Triage
+  agent verify:doc-set-exit-code · finding-verifier · opus · Triage
+}
+agent advocate:doc-set-drops-a-slot · robust-advocate · opus · Triage
+agent proposal:doc-set-drops-a-slot · general-purpose · opus · Triage
+phase Record
+agent record:test:r1 · build-executor · opus · Record
+agent git:push · build-git · sonnet · Record
+agent git:state:test-3 · build-git · sonnet · State

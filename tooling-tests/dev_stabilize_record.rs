@@ -307,6 +307,13 @@ if [ -n "$report" ]; then printf '[]' >"$report"; fi
 exit 0
 "#;
 
+/// The stand-in for gitleaks, as an executable's text — this suite's, and the simulation's
+/// of a stage ([`stabilize_simulation`](super::stabilize_simulation)), whose every record is
+/// written through the script.
+pub(crate) fn gitleaks_stub() -> String {
+    GITLEAKS_STUB.replace("@SECRET@", STUB_SECRET)
+}
+
 /// A throwaway repository holding the script's own bytes, one opened run, and the
 /// environment a call runs in: its own home, its own temp directory, a denylist, and a
 /// `PATH` on which the stub is the first `gitleaks`.
@@ -343,8 +350,7 @@ impl Rig {
             fs::create_dir_all(made).expect("create a rig directory");
         }
         let stub = bin.join("gitleaks");
-        fs::write(&stub, GITLEAKS_STUB.replace("@SECRET@", STUB_SECRET))
-            .expect("write the stub gitleaks");
+        fs::write(&stub, gitleaks_stub()).expect("write the stub gitleaks");
         fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).expect("chmod the stub");
         let denylist = dir.path().join("denylist");
         fs::write(&denylist, format!("# a private term\n\n{DENY_TERM}\n"))
