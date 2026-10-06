@@ -2207,6 +2207,30 @@ $ jigc milestone finalize cache-rework
 
 The disjoint case is the data-loss fix: both sub-agents' code rides the one commit because the combine reads it from the worktrees, not from a sweep of the (empty) main checkout. The collision case is the never-blind-merge discipline ([storage.md](storage.md) → the by-task-id join) applied to the code substrate — a shared file is routed to a human, never text-merged, and the rename-aware block-set catches the case where one sub-agent *moves* the contended path. Because the combine builds off-line in a temp index, a blocked finalize is non-destructive: the main checkout's index, working tree, and unrelated WIP are byte-identical afterward.
 
+**The boundary also refuses to land *without* work a worktree still holds — `milestone.unlanded-work` (the rc.24 fix pass; widened on 2026-10-06 by the human's ruling on its item 6).** It lands the paths staged in a live worktree of a sub-task it lands and nothing else, and then removes every sub-task worktree. So a commit made inside a worktree, the staged paths of a worktree whose directory is gone, and — for a sub-task dropped with `jigc task discard` — whatever its worktree holds that is in no git object are refused over before anything is committed ([finalize.md](finalize.md) → the unlanded-work refusal; the suite is `crates/cli/tests/worktree_registration_anchor.rs`):
+
+```text
+# area-low is dropped mid-way; its worktree still holds a staged file, an unstaged edit
+# and a note nobody added, beside build output git ignores
+$ jigc task discard area-low                           # settles one item; the worktree stays
+$ jigc milestone finalize cache-rework                 # exit 3 — nothing committed, still active
+  ✗ milestone.unlanded-work · blocking
+    `jigc milestone finalize` would land without work a sub-task worktree still holds …
+      .jigc/worktrees/area-low: README.md (never staged), notes.md (never staged); and its
+      index holds 1 staged path in no commit (src/low.rs) — … the boundary lands nothing
+      from a sub-task settled as discarded … `git -C <repo>/.jigc/worktrees/area-low stash
+      --include-untracked` keeps the staged paths, the unstaged edits and the untracked
+      files as a stash, which outlives the worktree
+    route: run the command on that line …, then re-run `jigc milestone finalize cache-rework`
+           — or abandon the milestone with `jigc milestone discard cache-rework`
+$ git -C <repo>/.jigc/worktrees/area-low stash --include-untracked
+$ jigc milestone finalize cache-rework                 # lands area-zed
+  warning: removing the fan-out worktree .jigc/worktrees/area-low discards work that is not in git:
+      target/ (ignored by git)                         # build output: named, never refused over
+```
+
+A worktree of a dropped sub-task that holds *only* ignored output lands without a refusal, and so does a sub-task that did land and left unstaged or untracked files behind: the teardown names those as it goes.
+
 ### What it asserts (the M31 acceptance bar)
 
 1. **Disjoint code + docs, one commit, drops none.** A `squash: true` fan-out with two sub-agents on disjoint files commits **both** sub-agents' staged code (`src/low.rs`, `src/zed.rs`) **and** the merged docs in **one** commit — the data-loss repro (RED before the combine: the `git add --all` sweep committed zero sub-agent code).

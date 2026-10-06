@@ -295,11 +295,15 @@ pub enum MilestoneCommand {
     /// land without: a commit made inside the worktree that no ref reaches, paths
     /// still staged in the index of a worktree whose directory is gone (or whose
     /// `.git` link is), or anything staged or committed in the worktree of a sub-task
-    /// settled by `jigc task discard`. The refusal prints, per path, the command that
-    /// keeps the commit under a branch, the one that turns it into staged paths so it
-    /// lands, the one that brings the checkout back or re-links it, or the stash that
-    /// keeps a settled sub-task's staged paths. There is no `--force` here: the other
-    /// exit is `jigc milestone discard`.
+    /// settled by `jigc task discard` — and, in that sub-task's worktree, an unstaged
+    /// edit or an untracked file git does not ignore, since nothing lands from it and
+    /// the worktree goes with the milestone. Files git ignores (build output) are
+    /// named as they go and never refused over. The refusal prints, per path, the
+    /// command that keeps the commit under a branch, the one that turns it into staged
+    /// paths so it lands, the one that brings the checkout back or re-links it, or the
+    /// stash that keeps a settled sub-task's work (`git -C <worktree> stash
+    /// --include-untracked` where it holds unstaged or untracked files). There is no
+    /// `--force` here: the other exit is `jigc milestone discard`.
     Finalize {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
@@ -5153,7 +5157,8 @@ fn leftover_at(path: &Path) -> LeftoverAt {
 /// phase earlier, leg by leg — the second by [`fan_out_posture_findings`], the third by
 /// [`unlanded_work`]; the first (bytes) it narrates, on M46's measured warrant, because this
 /// probe's bytes leg would refuse every worktree that staged the code the boundary exists
-/// to land. The callers are the **three refusing**
+/// to land — save in the worktree of a sub-task settled as discarded, from which nothing
+/// lands, where [`unlanded_work`] asks a bytes leg of its own ([`loose_work`]). The callers are the **three refusing**
 /// worktree doors — [`PROVISION_DOOR`] (phase 1), [`DISCARD_DOOR`]
 /// ([`held_subtask_worktrees`]) and [`UNINSTALL_DOOR`] (`crate::setup::dirty_fanout_worktrees`)
 /// — and they ask one probe rather than growing three that drift, which is what made the
@@ -7903,7 +7908,13 @@ struct UnlandedWork {
 /// * a commit no ref reaches, **stale or live**, whatever the sub-task's state;
 /// * the paths staged in its index **where the boundary does not carry them** — no live
 ///   checkout stands there, or the sub-task is settled. A landed sub-task's live index is
-///   the boundary's input and is not a hold: that is the ordinary fan-out.
+///   the boundary's input and is not a hold: that is the ordinary fan-out;
+/// * **in the live worktree of a settled sub-task, its unstaged edits and its untracked
+///   files that git does not ignore** ([`loose_work`]; the human's ruling of 2026-10-06
+///   on the fix pass's item 6). Nothing lands from that sub-task and its worktree stays
+///   until this teardown, so those bytes — in no git object — were removed at exit 0
+///   and named afterwards as *not recoverable*. Files git ignores stay named, not
+///   refused.
 ///
 /// **The subject is what the boundary would leave out or drop, and nothing wider.** A
 /// landed sub-task is asked at its path whether or not this repository registered it (a
@@ -7930,10 +7941,13 @@ struct UnlandedWork {
 /// where **no live checkout** stands at the sub-task's path: once `jigc milestone provision`
 /// has put a fresh worktree there (git registers it under a new name beside the old
 /// record), that checkout answers for the sub-task and the older record — still intact,
-/// never dropped — is superseded with whatever it held. (1) The bytes leg is not asked here, by the M46 ruling
-/// this guard does not reopen: a live worktree's unstaged, untracked and ignored bytes are
-/// still narrated by the teardown rather than refused over, for a landed sub-task *and*
-/// for a settled one. (2) An operation git has left un-concluded in a **settled**
+/// never dropped — is superseded with whatever it held. (1) The bytes leg is asked of one
+/// cell only. For a **landed** sub-task the M46 ruling stands and this guard does not
+/// reopen it: its live worktree's unstaged, untracked and ignored bytes are narrated by
+/// the teardown rather than refused over, since the boundary took its staged set. For a
+/// **settled** one the ignored bytes alone are still narrated. And a settled sub-task's
+/// path where **no live checkout** stands is asked no bytes at all: git removes no
+/// directory it does not read as a worktree, so the teardown takes nothing there. (2) An operation git has left un-concluded in a **settled**
 /// sub-task's worktree is likewise narrated: [`fan_out_posture_findings`] asks the
 /// worktrees the boundary commits from. (3) `jigc task validate <sub-task-id>` does not
 /// preview this refusal — it is a milestone-boundary gate, like `milestone.zero-contribution`,
@@ -7968,7 +7982,7 @@ fn unlanded_work(
         // The boundary carries a staged path only out of a live checkout of a sub-task it
         // lands; everywhere else the index is work it would leave behind.
         let staged_is_held = !(checkout && landed);
-        let (shape, anchored) = match anchored_reading(
+        let anchored = anchored_reading(
             jigc_home,
             &path,
             checkout,
@@ -7976,24 +7990,44 @@ fn unlanded_work(
             // A moved repository's records name its old path: looked for here, because
             // settling the milestone without what one holds needs no record to be dropped.
             Lookup::OrMadeBeforeAMove,
-        ) {
-            Ok(None) => continue,
-            Ok(Some(anchored)) => (
+        );
+        // The bytes leg, asked of exactly one cell: the live checkout of a sub-task settled
+        // as discarded ([`loose_work`]). A landed sub-task's loose bytes stay narrated.
+        let loose = if checkout && !landed {
+            loose_work(&path)
+        } else {
+            Ok(Vec::new())
+        };
+        let (shape, entries, anchored) = match (anchored, loose) {
+            (Ok(None), Ok(loose)) if loose.is_empty() => continue,
+            (Ok(anchored), Ok(loose)) => (
                 match at {
                     LeftoverAt::Absent => LeftoverShape::Registration,
                     LeftoverAt::Leaf => LeftoverShape::File,
                     LeftoverAt::Directory | LeftoverAt::Unreadable(_) => LeftoverShape::Directory,
                 },
-                Some(anchored),
+                loose,
+                anchored,
             ),
-            Err(err) => (LeftoverShape::Unreadable(format!("{err:#}")), None),
+            // Either read failing is the probe not knowing, and that is a hold. What the
+            // other read established still rides the line.
+            (Ok(anchored), Err(err)) => (
+                LeftoverShape::Unreadable(format!("{err:#}")),
+                Vec::new(),
+                anchored,
+            ),
+            (Err(err), _) => (
+                LeftoverShape::Unreadable(format!("{err:#}")),
+                Vec::new(),
+                None,
+            ),
         };
         held.push(UnlandedWork {
             path,
             hold: LeftoverHold {
                 verdict,
                 shape,
-                entries: Vec::new(),
+                entries,
                 operation: None,
                 anchored,
             },
@@ -8002,6 +8036,37 @@ fn unlanded_work(
         });
     }
     held
+}
+
+/// **What a live worktree holds that is in no git object and that git does not ignore** —
+/// its unstaged edits and its untracked files, each in the words the teardown's narration
+/// would have named it by after the fact (`<path> (never staged)`, `<path> (staged only in
+/// part)`; [`render::DiscardState::label`]). [`unlanded_work`]'s bytes leg, asked of a
+/// sub-task settled as discarded (the human's ruling of 2026-10-06 on the fix pass's
+/// item 6).
+///
+/// It reads [`worktree_work`], the narration's own probe, and leaves two of its cells out:
+///
+/// * **a wholly staged path** — the registration leg's already ([`Anchored::staged`]), so
+///   it is named once;
+/// * **a path git ignores** — build output. The ruling keeps it *named, not refused*: a
+///   provisioned worktree arrives tracked-only while the sub-task walk tells the agent to
+///   build and test, so refusing on the ignored axis would fire on most *discard one, land
+///   the rest* runs. The teardown still names it as it goes ([`discarded_work`]).
+///
+/// The listing is asked for by its own flags ([`crate::task::status_argv`], every
+/// untracked file by its own path), so `status.showUntrackedFiles=no` hides nothing from
+/// it: that setting says what a `git status` prints, never what a removal destroys.
+fn loose_work(worktree: &Path) -> Result<Vec<String>> {
+    Ok(worktree_work(worktree)?
+        .into_iter()
+        .filter_map(|(path, state)| match state? {
+            state @ (render::DiscardState::NeverStaged | render::DiscardState::PartlyStaged) => {
+                Some(format!("{path} ({})", state.label()))
+            }
+            render::DiscardState::Ignored => None,
+        })
+        .collect())
 }
 
 /// [`FINALIZE_DOOR`]'s refusal over one path of [`unlanded_work`]: a blocking finding that
@@ -8026,7 +8091,10 @@ fn unlanded_work(
 /// * a path staged in a live worktree of a **settled** sub-task — `git stash` puts it
 ///   under `refs/stash`, a ref of the repository rather than of the worktree, so it
 ///   outlives the teardown. Nothing lands from a settled sub-task, so there is no landing
-///   exit to offer.
+///   exit to offer. Where that worktree also holds loose work ([`loose_work`]) the stash
+///   is `git stash --include-untracked`, one command for the staged paths, the unstaged
+///   edits and the untracked files: a plain stash leaves an untracked file where it is,
+///   and the re-run would refuse again.
 ///
 /// **No consent is offered, because this door has none**: `jigc milestone finalize` takes
 /// no `--force`. The two exits are the commands above followed by the same `finalize`, or
@@ -8057,9 +8125,15 @@ fn unlanded_work_finding(
             .to_owned(),
     };
     let unreadable = matches!(held.hold.shape, LeftoverShape::Unreadable(_));
+    // What the worktree itself holds loose ([`loose_work`]) — only ever a live checkout
+    // of a settled sub-task, where the teardown reaches.
+    let loose = !held.hold.entries.is_empty();
     let fate = if unreadable {
         "the teardown behind a landed boundary would then drop the registration, with \
          whatever it holds"
+    } else if loose {
+        "the teardown behind a landed boundary would then remove the worktree, and that \
+         work with it"
     } else if held.registered {
         "the teardown behind a landed boundary would then drop the registration, and that \
          work with it"
@@ -8089,7 +8163,7 @@ fn unlanded_work_finding(
                 aimed(&format!("reset --soft {base}")),
             ));
         }
-        if !anchored.staged.is_empty() && live {
+        if !anchored.staged.is_empty() && live && !loose {
             exits.push(format!(
                 "`{}` keeps the staged paths as a stash, which outlives the worktree",
                 aimed("stash"),
@@ -8111,6 +8185,22 @@ fn unlanded_work_finding(
             ));
         }
     }
+    // The settled sub-task's loose work: the same kind of exit as its staged paths, widened
+    // to what a plain `git stash` leaves behind — an untracked file. One stash takes all
+    // three, so where staged paths stand beside the loose work the line prints this one.
+    if loose {
+        let staged = anchored.is_some_and(|anchored| !anchored.staged.is_empty());
+        exits.push(format!(
+            "`{}` keeps {} as a stash, which outlives the worktree — what git ignores is \
+             not stashed and goes with the worktree, named as it goes",
+            aimed("stash --include-untracked"),
+            if staged {
+                "the staged paths, the unstaged edits and the untracked files"
+            } else {
+                "the unstaged edits and the untracked files"
+            },
+        ));
+    }
     let exits = if exits.is_empty() {
         String::new()
     } else {
@@ -8131,15 +8221,16 @@ fn unlanded_work_finding(
     // re-link a directory with no `.git` entry ([`unlinked_checkout`]), and this door's
     // own stash a live index. A `.git` entry git cannot read through, and a file in the
     // way, each leave a step that is the reader's and no line to paste.
-    let carries_command = anchored.is_some_and(|anchored| {
-        anchored.commit.is_some()
-            || matches!(held.hold.shape, LeftoverShape::Registration)
-            || matches!(
-                unlinked_checkout(&held.path, anchored),
-                Some(Unlinked::NoEntry(_))
-            )
-            || (!anchored.staged.is_empty() && live)
-    });
+    let carries_command = loose
+        || anchored.is_some_and(|anchored| {
+            anchored.commit.is_some()
+                || matches!(held.hold.shape, LeftoverShape::Registration)
+                || matches!(
+                    unlinked_checkout(&held.path, anchored),
+                    Some(Unlinked::NoEntry(_))
+                )
+                || (!anchored.staged.is_empty() && live)
+        });
     // The first move differs by what the line carries: a command to run, a step to take
     // by hand, or — where the registration could not even be read — git's own message and
     // nothing to paste.

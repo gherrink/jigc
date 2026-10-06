@@ -2068,6 +2068,379 @@ fn a_settled_sub_tasks_staged_path_is_kept_by_the_stash_the_refusal_prints() {
 }
 
 // ---------------------------------------------------------------------------
+// A settled sub-task's worktree: what is in no git object.
+// ---------------------------------------------------------------------------
+
+/// A tracked file of the base commit, edited in a worktree and never `git add`-ed.
+const EDITED: (&str, &str) = ("README.md", "hello\nan edit the sub-agent never staged\n");
+/// Untracked files git does not ignore — one at the top, one inside an untracked directory.
+const UNTRACKED: [(&str, &str); 2] = [
+    ("notes-by-the-sub-agent.md", "a note in no index\n"),
+    ("scratch/deep.txt", "a file in an untracked directory\n"),
+];
+/// Build output: a path under a directory git ignores.
+const IGNORED: (&str, &str) = ("build-output/artifact.bin", "built\n");
+
+/// What a worktree holds that no git object does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Loose {
+    /// An edit to a tracked file, unstaged.
+    Unstaged,
+    /// Untracked files git does not ignore.
+    Untracked,
+    /// Both — and a staged path beside them, which the registration leg already holds.
+    AllBesideStaged,
+}
+
+const LOOSE: [Loose; 3] = [Loose::Unstaged, Loose::Untracked, Loose::AllBesideStaged];
+
+impl Loose {
+    fn unstaged(self) -> bool {
+        matches!(self, Loose::Unstaged | Loose::AllBesideStaged)
+    }
+
+    fn untracked(self) -> bool {
+        matches!(self, Loose::Untracked | Loose::AllBesideStaged)
+    }
+
+    /// Every loose path this cell plants, with its bytes.
+    fn files(self) -> Vec<(&'static str, &'static str)> {
+        let mut files = Vec::new();
+        if self.unstaged() {
+            files.push(EDITED);
+        }
+        if self.untracked() {
+            files.extend(UNTRACKED);
+        }
+        files
+    }
+
+    fn plant(self, worktree: &Path) {
+        for (rel, bytes) in self.files() {
+            let path = worktree.join(rel);
+            fs::create_dir_all(path.parent().expect("a parent")).expect("mk the parent");
+            fs::write(path, bytes).expect("write a loose file");
+        }
+        if self == Loose::AllBesideStaged {
+            fs::write(worktree.join(STAGED.0), STAGED.1).expect("write");
+            git_ok(worktree, &["add", STAGED.0]);
+        }
+    }
+}
+
+/// How the user has told `git status` to treat untracked files.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShowUntracked {
+    /// git's default.
+    Default,
+    /// `status.showUntrackedFiles=no` — what a large or a home-directory repository sets. It
+    /// changes what a bare `git status` lists, and nothing about what a removal destroys.
+    No,
+}
+
+const SHOW_UNTRACKED: [ShowUntracked; 2] = [ShowUntracked::Default, ShowUntracked::No];
+
+impl ShowUntracked {
+    fn apply(self, fx: &Fixture) {
+        if self == ShowUntracked::No {
+            git_ok(&fx.repo, &["config", "status.showUntrackedFiles", "no"]);
+        }
+    }
+}
+
+/// Make git ignore [`IGNORED`]'s directory in every worktree of the fixture, and put build
+/// output there in `worktree`.
+fn build_into(fx: &Fixture, worktree: &Path) {
+    let exclude = fx.repo.join(".git").join("info").join("exclude");
+    fs::create_dir_all(exclude.parent().expect("a parent")).expect("mk .git/info");
+    fs::write(&exclude, "build-output/\n").expect("write the exclude file");
+    let path = worktree.join(IGNORED.0);
+    fs::create_dir_all(path.parent().expect("a parent")).expect("mk the build dir");
+    fs::write(path, IGNORED.1).expect("write build output");
+    assert_eq!(
+        git_ok(
+            worktree,
+            &["status", "--porcelain", "--untracked-files=all"]
+        )
+        .lines()
+        .filter(|line| line.contains("build-output"))
+        .count(),
+        0,
+        "fixture: git ignores the build output",
+    );
+}
+
+/// **A settled sub-task's unstaged edits and untracked files are work the boundary would
+/// destroy, so it refuses before it lands** (the human's ruling of 2026-10-06 on the fix
+/// pass's item 6). Nothing lands from a sub-task settled by `jigc task discard`, its
+/// worktree stays until the milestone's teardown, and that teardown removes the checkout:
+/// until this ruling the boundary landed at exit 0 and named those files afterwards as not
+/// recoverable.
+///
+/// Every loose shape × `status.showUntrackedFiles`: the refusal is the boundary's own code,
+/// names every loose path, commits nothing and touches no byte of the worktree; the stash it
+/// prints, run as printed, keeps the work in the repository's stash; and the boundary then
+/// lands the rest of the milestone.
+#[test]
+fn the_boundary_refuses_over_a_settled_sub_tasks_unstaged_and_untracked_files() {
+    for loose in LOOSE {
+        for show in SHOW_UNTRACKED {
+            let cell = format!(
+                "{} × a settled sub-task × {loose:?} × showUntrackedFiles {show:?}",
+                FINALIZE_DOOR.verb
+            );
+            let fx = Fixture::mint_recorded("settled-loose");
+            show.apply(&fx);
+            fx.stage_code(SIBLING);
+            let worktree = fx.worktree(SUB);
+            loose.plant(&worktree);
+            build_into(&fx, &worktree);
+            fx.jigc_ok(&["task", "discard", SUB]);
+            let before = fx.main_checkout();
+            let admin = bytes_under(&fx.admin(SUB));
+
+            let stderr = refusal_of(&fx, &FINALIZE_DOOR, &cell);
+            for (rel, bytes) in loose.files() {
+                assert!(
+                    stderr.contains(rel),
+                    "{cell}: the refusal names `{rel}`; stderr:\n{stderr}",
+                );
+                assert_eq!(
+                    fs::read_to_string(worktree.join(rel)).expect("still there"),
+                    bytes,
+                    "{cell}: a refusal touches no byte of the worktree (`{rel}`)",
+                );
+            }
+            assert!(
+                stderr.contains("settled") && !stderr.contains(" reset --soft "),
+                "{cell}: the refusal says why — the sub-task is settled — and offers no \
+                 landing exit; stderr:\n{stderr}",
+            );
+            assert!(
+                !stderr.contains("build-output"),
+                "{cell}: what git ignores is no part of the refusal; stderr:\n{stderr}",
+            );
+            assert_eq!(
+                fx.main_checkout(),
+                before,
+                "{cell}: a refusal commits nothing"
+            );
+            assert_eq!(
+                fx.record_status().as_deref(),
+                Some("active"),
+                "{cell}: the milestone stays active",
+            );
+            assert_eq!(
+                bytes_under(&fx.admin(SUB)),
+                admin,
+                "{cell}: git's registration is byte-identical",
+            );
+
+            // The exit, as printed, from outside the repository.
+            let stash = span_where(
+                &stderr,
+                &fx.printed(),
+                "the command that keeps the loose work",
+                &cell,
+                |span| span.contains(" stash"),
+            );
+            run_as_printed(&fx, &stash, &cell);
+            let out = fx.run(&["milestone", "finalize", MILESTONE]);
+            let landed = String::from_utf8_lossy(&out.stderr).into_owned();
+            assert!(
+                out.status.success(),
+                "{cell}: with the work stashed the boundary lands; got {:?}\n{landed}",
+                out.status,
+            );
+            assert!(
+                !fx.admin(SUB).exists() && !worktree.exists(),
+                "{cell}: …and tore the settled sub-task's worktree down",
+            );
+            assert!(
+                landed.contains("build-output/"),
+                "{cell}: the ignored build output is still named as it goes; stderr:\n{landed}",
+            );
+            if loose.unstaged() {
+                assert_eq!(
+                    git_ok(&fx.repo, &["show", &format!("stash@{{0}}:{}", EDITED.0)]),
+                    EDITED.1.trim_end(),
+                    "{cell}: the unstaged edit outlives the worktree, in the stash",
+                );
+            }
+            if loose.untracked() {
+                for (rel, bytes) in UNTRACKED {
+                    assert_eq!(
+                        git_ok(&fx.repo, &["show", &format!("stash@{{0}}^3:{rel}")]),
+                        bytes.trim_end(),
+                        "{cell}: the untracked `{rel}` outlives the worktree, in the stash",
+                    );
+                }
+            }
+            if loose == Loose::AllBesideStaged {
+                assert_eq!(
+                    git_ok(&fx.repo, &["show", &format!("stash@{{0}}:{}", STAGED.0)]),
+                    STAGED.1.trim_end(),
+                    "{cell}: …and so does the staged path beside them",
+                );
+            }
+            let tree = git_ok(&fx.repo, &["ls-tree", "-r", "--name-only", "HEAD"]);
+            assert!(
+                tree.lines().any(|path| path == format!("{SIBLING}.txt"))
+                    && !tree
+                        .lines()
+                        .any(|path| UNTRACKED.iter().any(|(rel, _)| path == *rel)),
+                "{cell}: the milestone landed the sibling and nothing from the settled \
+                 sub-task; tree:\n{tree}",
+            );
+        }
+    }
+}
+
+/// **Beside it, what the ruling keeps out of the refusal** — each under both settings of
+/// `status.showUntrackedFiles`:
+///
+///   * a settled sub-task whose worktree holds **only files git ignores** — build output —
+///     lands, and the teardown names what it takes;
+///   * a **landed** sub-task's unstaged and untracked leftovers are named, not refused (the
+///     M46 ruling this one does not reopen): the boundary took its staged set;
+///   * a settled sub-task's worktree with nothing in it lands.
+#[test]
+fn the_boundary_still_lands_over_ignored_output_and_a_landed_sub_tasks_leftovers() {
+    for show in SHOW_UNTRACKED {
+        // Only ignored output, in a settled sub-task's worktree.
+        let cell = format!("settled × only ignored output × showUntrackedFiles {show:?}");
+        let fx = Fixture::mint_recorded("settled-ignored");
+        show.apply(&fx);
+        fx.stage_code(SIBLING);
+        build_into(&fx, &fx.worktree(SUB));
+        fx.jigc_ok(&["task", "discard", SUB]);
+        let out = fx.run(&["milestone", "finalize", MILESTONE]);
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert!(
+            out.status.success(),
+            "{cell}: build output is not work — the boundary lands; got {:?}\n{stderr}",
+            out.status,
+        );
+        assert!(
+            stderr.contains("build-output/") && !fx.worktree(SUB).exists(),
+            "{cell}: …and the teardown names the ignored output it took; stderr:\n{stderr}",
+        );
+
+        // A landed sub-task's leftovers: every loose shape beside its staged code.
+        let cell = format!("landed × leftovers × showUntrackedFiles {show:?}");
+        let fx = Fixture::mint_recorded("landed-leftovers");
+        show.apply(&fx);
+        fx.stage_code(SIBLING);
+        fx.stage_code(SUB);
+        for sub in [SUB, SIBLING] {
+            let worktree = fx.worktree(sub);
+            for (rel, bytes) in [EDITED].into_iter().chain(UNTRACKED) {
+                let path = worktree.join(rel);
+                fs::create_dir_all(path.parent().expect("a parent")).expect("mk the parent");
+                fs::write(path, bytes).expect("write a leftover");
+            }
+            build_into(&fx, &worktree);
+        }
+        let out = fx.run(&["milestone", "finalize", MILESTONE]);
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert!(
+            out.status.success(),
+            "{cell}: a landed sub-task's leftovers are named, not refused; got {:?}\n{stderr}",
+            out.status,
+        );
+        for (rel, _) in [EDITED].into_iter().chain(UNTRACKED) {
+            assert!(
+                stderr.contains(rel),
+                "{cell}: the teardown names `{rel}` as it goes; stderr:\n{stderr}",
+            );
+        }
+
+        // Nothing at all in a settled sub-task's worktree.
+        let cell = format!("settled × a clean worktree × showUntrackedFiles {show:?}");
+        let fx = Fixture::mint_recorded("settled-clean");
+        show.apply(&fx);
+        fx.stage_code(SIBLING);
+        fx.jigc_ok(&["task", "discard", SUB]);
+        let out = fx.run(&["milestone", "finalize", MILESTONE]);
+        assert!(
+            out.status.success(),
+            "{cell}: got {:?}\n{}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr),
+        );
+    }
+}
+
+/// **A settled sub-task is asked only where the teardown reaches.** In a `cp -R` copy the
+/// worktrees are registered at the *source's* paths, so the copy's teardown leaves a settled
+/// sub-task's worktree standing: nothing there is destroyed, and the boundary lands.
+#[test]
+fn a_copied_repositorys_boundary_lands_past_a_settled_worktree_it_would_not_remove() {
+    let cell = format!(
+        "{} × a settled sub-task × loose × a `cp -R` copy",
+        FINALIZE_DOOR.verb
+    );
+    let fx = Fixture::mint_recorded("settled-copy");
+    fx.jigc_ok(&["task", "discard", SUB]);
+    let copy = fx.repo.parent().expect("the fixture root").join("copy");
+    let copied = Command::new("cp")
+        .arg("-R")
+        .arg(&fx.repo)
+        .arg(&copy)
+        .status()
+        .expect("run cp -R");
+    assert!(copied.success(), "{cell}: fixture — the copy is made");
+    let worktree = copy.join(".jigc").join("worktrees").join(SUB);
+    let sibling = copy.join(".jigc").join("worktrees").join(SIBLING);
+    fs::write(sibling.join("copied.txt"), "code\n").expect("write");
+    git_ok(&sibling, &["add", "copied.txt"]);
+    Loose::Untracked.plant(&worktree);
+    assert!(
+        !git_ok(&copy, &["worktree", "list", "--porcelain"])
+            .contains(&format!("worktree {}", worktree.display())),
+        "{cell}: fixture — the copy has no registration at its own worktree path",
+    );
+
+    let out = fx.run_in(&copy, &["milestone", "finalize", MILESTONE]);
+    assert!(
+        out.status.success(),
+        "{cell}: the teardown does not reach that worktree, so nothing there is at stake; \
+         got {:?}\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    for (rel, bytes) in UNTRACKED {
+        assert_eq!(
+            fs::read_to_string(worktree.join(rel)).expect("still standing"),
+            bytes,
+            "{cell}: …and `{rel}` is where it was",
+        );
+    }
+}
+
+/// **The code is named where an adopter and a reader of the flows look for it** (the
+/// ledger's `4F-4`, owed with the ruling on items 10 and 4): the migration guide, the
+/// worked examples, and the two design docs that own the door.
+#[test]
+fn the_guides_and_the_design_name_the_unlanded_work_refusal() {
+    let root = format!("{}/../..", env!("CARGO_MANIFEST_DIR"));
+    let code = worktree_code(&FINALIZE_DOOR);
+    for rel in [
+        "crates/cli/guides/MIGRATING.md",
+        "design/worked-examples.md",
+        "design/finalize.md",
+        "design/team-ready-state.md",
+    ] {
+        let doc = fs::read_to_string(format!("{root}/{rel}"))
+            .unwrap_or_else(|e| panic!("read {rel}: {e}"));
+        assert!(
+            doc.contains(code) && doc.contains("stash --include-untracked"),
+            "{rel} names `{code}` and the stash that keeps a settled sub-task's loose work",
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The boundary in a copied repository.
 // ---------------------------------------------------------------------------
 
