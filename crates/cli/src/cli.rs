@@ -347,7 +347,9 @@ pub enum Command {
     /// starts the log while the knob is on, and that includes the installed
     /// `pre-commit` hook's `jigc validate` on each `git commit` — so turn the knob
     /// off (`jigc config set invocation-log false`, then `git add` the config
-    /// change) before you move the log out.
+    /// change) before you move the log out. While the knob is on, the refusal
+    /// over the log says that order itself: switch the log off, move the log,
+    /// then uninstall.
     Uninstall {
         /// Remove `.jigc/` even when it holds a fan-out worktree with content, an
         /// open task's staged docs, a file jigc did not write, or a workbench file

@@ -558,6 +558,15 @@ pub fn enabled_logs_dir() -> Option<PathBuf> {
     Some(ctx.jigc_home.join(".jigc").join(LOGS_DIR))
 }
 
+/// Whether the knob is ON for the install at `jigc_home` — [`enabled_logs_dir`]'s answer,
+/// asked by a door that already holds its own resolved home (the teardown's log refusal,
+/// whose route says *switch it off first* only while that is still to do). `false` wherever
+/// [`enabled_logs_dir`] answers `None`, and for a home other than the one this process
+/// stands in.
+pub(crate) fn enabled_at(jigc_home: &Path) -> bool {
+    enabled_logs_dir().is_some_and(|dir| dir == jigc_home.join(".jigc").join(LOGS_DIR))
+}
+
 /// The one JSONL record shape (`design/measurement.md` → record shape). `duration_ms` and
 /// the ISO-8601 UTC `timestamp` are the CLI-side clock's; `finding_codes` is empty on a run
 /// that surfaced none. The surface is **declared unversioned and additive-only** (M51): it

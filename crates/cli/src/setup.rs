@@ -5429,6 +5429,27 @@ fn untracked_workbench_finding(jigc_home: &Path, untracked: &[String]) -> Findin
                  `jigc uninstall`; `jigc uninstall --force` deletes them with the install"
             .to_string(),
     };
+    // **The order, where it is true** (the human's ruling of 2026-10-06, the fix pass's
+    // item 3). The route above ends the refusal once; with the knob still on, the next jigc
+    // run of any other verb — the installed `pre-commit` hook's among them — writes the log
+    // again and the teardown refuses once more. So the route says the order that ends it in
+    // one pass, and leads with it: off, then the paths, then the re-run. Keyed on both
+    // halves, never on the file alone: with the knob off the move is the whole truth, and a
+    // listing without the log holds nothing a later run rewrites.
+    let log = crate::invocation_log::log_path(&jigc_home.join(".jigc"));
+    let log_listed = untracked.iter().any(|path| jigc_home.join(path) == log);
+    let route = if log_listed && crate::invocation_log::enabled_at(jigc_home) {
+        let keep = engine::finding::git_at(jigc_home, "add -- .jigc/config");
+        format!(
+            "the invocation log is still switched on, and until it is off every other jigc \
+             run writes it again (the installed pre-commit hook runs one on each commit), so \
+             in this order — first switch it off: `jigc config set invocation-log false`, \
+             then `{keep}` for the config change that makes; then, for the paths above: \
+             {route}"
+        )
+    } else {
+        route
+    };
     Finding::block(
         "uninstall.untracked-workbench-file",
         format!(

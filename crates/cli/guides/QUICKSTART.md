@@ -186,7 +186,9 @@ out of `.jigc/` or delete it, then re-run, or pass `--force`. Every *other* jigc
 run starts the log again while the knob is on, and the installed `pre-commit` hook
 is one: a plain `git commit` between two attempts brings it back. So turn the knob
 off first (`jigc config set invocation-log false`, and `git add` the config file
-that changes), then move the log out.
+that changes), then move the log out. While the knob is on, the refusal itself
+says that order — switch the log off, move the log, then uninstall — and prints
+both commands.
 
 ### Reading while the task is open
 

@@ -1019,13 +1019,16 @@ fn the_invocation_log_blocks_the_teardown_and_its_route_clears_it() {
         "the refusal names the log; got:\n{stderr}"
     );
     let route = route_line(&stderr);
+    // `add -- <path>` is the spelling of the *keep these paths* exit. Since the route says
+    // the order (item 3, arms (s) and (t) below) it does print one `git add` here — for the
+    // config change the knob-off makes, never for a listed path.
     assert!(
-        !route.contains("add --")
+        !route.contains("add -- <path>")
             && route.contains("git ignores")
             && route.contains("move")
             && route.contains("--force"),
-        "the log is gitignored, so the route is move-or-delete (never a `git add` to run), \
-         or the consent; got: {route}",
+        "the log is gitignored, so the route is move-or-delete (never a `git add` of a \
+         listed path), or the consent; got: {route}",
     );
     let after = fs::read_to_string(&log).expect("the refused teardown leaves the log");
     assert!(
@@ -1624,4 +1627,175 @@ fn a_plain_commit_restarts_the_log_and_the_documented_order_ends_it() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(!site.repo().join(".jigc").exists(), "`.jigc/` is gone");
+}
+
+// --- The log refusal says the order itself (the human's ruling of 2026-10-06, item 3) ----
+//
+// The order that ends the loop above in one pass stood in the help and the guides only; the
+// refusal an operator is actually reading said *move the log out* and nothing about the
+// knob. The ruling: **the refusal's route says the order — switch the log off, then move the
+// log, then uninstall.** It says it exactly where it is true: the listing holds the log
+// **and** the knob is still on. With the knob off the move alone ends it, and a listing
+// without the log has nothing a later jigc run writes again.
+
+/// The backticked spans of a route line, in the order printed.
+fn spans(route: &str) -> Vec<String> {
+    route
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Run one printed `git …` span through a shell, exactly as printed.
+fn run_span(site: &Installed, span: &str) {
+    let out = Command::new("sh")
+        .args(["-c", span])
+        // Deliberately not the repository: a printed `git` span names its own checkout.
+        .current_dir(site.home.path())
+        .env("HOME", site.home.path())
+        .output()
+        .expect("run the printed span");
+    assert!(
+        out.status.success(),
+        "the printed `{span}` must run as printed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// The one refusal the teardown gives here: its `route:` line, the install left intact.
+fn refused_route(site: &Installed, when: &str) -> String {
+    let out = site.run(&["uninstall"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success() && stderr.contains(CODE),
+        "[{when}] the teardown must refuse under `{CODE}`; stderr:\n{stderr}",
+    );
+    route_line(&stderr)
+}
+
+/// The span that switches the log off, as the route prints it.
+const KNOB_OFF: &str = "jigc config set invocation-log false";
+
+/// **(s)** With the knob on and the log listed, the route names the knob-off **first**, the
+/// move second and the re-run last — and followed in that order, every printed command run
+/// as printed, the teardown lands in one pass with a plain commit (the installed hook's
+/// `jigc validate`) in between. Under a root with a space in it, because the route prints a
+/// `git -C <root>` span.
+#[test]
+fn the_log_refusal_says_the_order_and_followed_as_printed_it_ends_in_one_pass() {
+    let site = Installed::new("log order");
+    turn_the_log_on(&site);
+    assert!(site.run(&["doc", "list"]).status.success());
+    let log = site.repo().join(LOG);
+    assert!(log.is_file(), "the before-control: the log is there");
+
+    let route = refused_route(&site, "knob on, log listed");
+    let at = |needle: &str| {
+        route
+            .find(needle)
+            .unwrap_or_else(|| panic!("the route must carry `{needle}`; got: {route}"))
+    };
+    assert!(
+        at(KNOB_OFF) < at("move what you need") && at("move what you need") < at("re-run"),
+        "the order is: switch the log off, move the log, uninstall; got: {route}",
+    );
+
+    // The route, as printed: the knob-off, then the `git add` it names for the config change.
+    let printed = spans(&route);
+    assert!(
+        printed.iter().any(|span| span == KNOB_OFF),
+        "the knob-off is a command to run; spans: {printed:?}",
+    );
+    let off: Vec<&str> = KNOB_OFF.split(' ').skip(1).collect();
+    assert!(site.run(&off).status.success(), "`{KNOB_OFF}` must exit 0");
+    let keep = printed
+        .iter()
+        .find(|span| span.starts_with("git -C ") && span.ends_with("add -- .jigc/config"))
+        .unwrap_or_else(|| panic!("the route names the `git add` for the config; got: {route}"));
+    run_span(&site, keep);
+    // …then the move…
+    fs::rename(&log, site.home.path().join("invocations.jsonl")).expect("move the log out");
+    // …and what used to bring the log back no longer does: a plain commit runs the hook.
+    fs::write(site.repo().join("scratch.txt"), "s\n").expect("write");
+    git_ok(site.repo(), &["add", "--", "scratch.txt"]);
+    let commit = Command::new("git")
+        .args(["commit", "-q", "-m", "an ordinary commit"])
+        .current_dir(site.repo())
+        .env("HOME", site.home.path())
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("run git commit");
+    assert!(
+        commit.status.success(),
+        "git commit: {}",
+        String::from_utf8_lossy(&commit.stderr)
+    );
+    assert!(
+        !log.exists(),
+        "the knob is off, so the hook's run starts no log"
+    );
+    // …then the re-run.
+    let out = site.run(&["uninstall"]);
+    assert!(
+        out.status.success(),
+        "one pass: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!site.repo().join(".jigc").exists(), "`.jigc/` is gone");
+}
+
+/// **(t)** The order is printed only where it is true, and wherever it is: not with the knob
+/// off (the move alone ends it), not over a listing without the log (nothing there is
+/// written again) — and it is there beside the `git add` exit when the log is listed with a
+/// path git does take.
+#[test]
+fn the_log_order_is_printed_where_the_knob_is_on_and_the_log_is_listed_and_nowhere_else() {
+    // Knob off, the log still there: the move is the whole route, as before.
+    let site = Installed::new("log-order-off");
+    turn_the_log_on(&site);
+    assert!(site.run(&["doc", "list"]).status.success());
+    assert!(
+        site.run(&["config", "set", "invocation-log", "false"])
+            .status
+            .success()
+    );
+    git_ok(site.repo(), &["add", "--", ".jigc/config"]);
+    assert!(site.repo().join(LOG).is_file(), "the log outlives the knob");
+    let route = refused_route(&site, "knob off, log listed");
+    assert!(
+        !route.contains("invocation-log") && route.contains("move what you need"),
+        "with the knob off nothing writes the log again — no knob in the route; got: {route}",
+    );
+    fs::rename(
+        site.repo().join(LOG),
+        site.home.path().join("invocations.jsonl"),
+    )
+    .expect("move the log out");
+    assert!(
+        site.run(&["uninstall"]).status.success(),
+        "and the move alone ends it"
+    );
+
+    // Knob on, the log gone, another file listed: nothing in the listing is rewritten.
+    let site = Installed::new("log-order-unlisted");
+    turn_the_log_on(&site);
+    plant(&site, ".jigc/notes.md", "scratch\n");
+    let _ = fs::remove_dir_all(site.repo().join(".jigc/logs"));
+    let route = refused_route(&site, "knob on, log not listed");
+    assert!(
+        !route.contains("invocation-log") && route.contains("add -- <path>"),
+        "the log is not among the paths, so its order is not this route's; got: {route}",
+    );
+
+    // Knob on, the log listed beside a path git takes: the order, and that path's exit.
+    assert!(site.run(&["doc", "list"]).status.success());
+    let route = refused_route(&site, "knob on, mixed listing");
+    assert!(
+        route.contains(KNOB_OFF)
+            && route.find(KNOB_OFF) < route.find("add -- <path>")
+            && route.contains(&format!("`{LOG}`")),
+        "the order leads, and the mixed listing's own two exits follow; got: {route}",
+    );
 }
