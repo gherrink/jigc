@@ -473,11 +473,22 @@ fn nextest_failures_are_named_by_binary_and_test_once_each() {
 ///
 /// The fake appends each argv to `argv.log`. For `nextest run` it also prints a green
 /// three-test summary over two binaries and, when [`FakeCargo::junit`] staged a report for
-/// the profile it was handed, writes that report where nextest would — and, when
+/// the profile it was handed, writes that report where nextest would — under the store the
+/// run's tool config names — and, when
 /// `FAKE_CARGO_SKIP` holds a line, appends it to the file the gate names in
 /// `JIGC_GATE_SKIPS`, as a test of that run does when it passes without running what it
 /// tests. It exits 1 for a step named in `FAKE_CARGO_RED` — by its first word (`clippy`)
 /// or by its nextest profile (`gate-tier1`).
+///
+/// **And it refuses what nextest refuses.** A `nextest` call whose tool config names
+/// `binary_id(=<FAKE_CARGO_GONE>)` in any profile exits 96 with nextest's own words and
+/// does nothing else — `list` and `run` alike, as nextest 0.9.143 was probed to: every
+/// profile of the config is compiled before anything is listed or run.
+///
+/// **And another gate may be running.** When [`FakeCargo::junit_of_another_gate`] staged
+/// a report for the profile, a `nextest run` also leaves it at
+/// `<target>/nextest/<profile>/junit.xml` — where a gate building into the same target
+/// directory wrote its own until each run had a store of its own.
 struct FakeCargo {
     scratch: ScratchDir,
 }
@@ -530,17 +541,30 @@ impl FakeCargo {
                  fi\n\
                  printf '%s\\n' \"$*\" >> \"$here/argv.log\"\n\
                  profile=\n\
+                 config=\n\
                  prev=\n\
                  for a in \"$@\"; do\n\
                  \x20 if [ \"$prev\" = --profile ]; then profile=$a; fi\n\
+                 \x20 if [ \"$prev\" = --tool-config-file ]; then config=${{a#jigc-gate:}}; fi\n\
                  \x20 prev=$a\n\
                  done\n\
+                 if [ \"$1\" = nextest ] && [ -n \"$FAKE_CARGO_GONE\" ] && [ -n \"$config\" ] \\\n\
+                 \x20   && grep -q \"binary_id(=$FAKE_CARGO_GONE)\" \"$config\"; then\n\
+                 \x20 echo \"error: for config file \\`$config\\` provided by tool \\`jigc-gate\\`, failed to parse profile.gate-tier1.default-filter\" >&2\n\
+                 \x20 echo \"  error: operator didn't match any binary IDs\" >&2\n\
+                 \x20 exit 96\n\
+                 fi\n\
                  if [ \"$1 $2\" = 'nextest run' ]; then\n\
                  \x20 echo '    Starting 3 tests across 2 binaries'\n\
                  \x20 echo '     Summary [   0.100s] 3 tests run: 3 passed, 0 skipped'\n\
+                 \x20 store=$(sed -n 's/^dir = \"\\(.*\\)\"$/\\1/p' \"$config\")\n\
                  \x20 if [ -f \"$here/junit-$profile.xml\" ]; then\n\
+                 \x20   mkdir -p \"$store/$profile\"\n\
+                 \x20   cp \"$here/junit-$profile.xml\" \"$store/$profile/junit.xml\"\n\
+                 \x20 fi\n\
+                 \x20 if [ -f \"$here/other-junit-$profile.xml\" ]; then\n\
                  \x20   mkdir -p \"$CARGO_TARGET_DIR/nextest/$profile\"\n\
-                 \x20   cp \"$here/junit-$profile.xml\" \"$CARGO_TARGET_DIR/nextest/$profile/junit.xml\"\n\
+                 \x20   cp \"$here/other-junit-$profile.xml\" \"$CARGO_TARGET_DIR/nextest/$profile/junit.xml\"\n\
                  \x20 fi\n\
                  \x20 if [ -n \"$FAKE_CARGO_SKIP\" ]; then\n\
                  \x20   printf '%s\\n' \"$FAKE_CARGO_SKIP\" >> \"$JIGC_GATE_SKIPS\"\n\
@@ -567,6 +591,16 @@ impl FakeCargo {
     /// Stage the JUnit report the fake writes for a `nextest run` under `profile`: one
     /// `(binary, test, seconds)` per test case, in nextest's own one-tag-per-line shape.
     fn junit(&self, profile: &str, cases: &[(&str, &str, &str)]) {
+        self.stage_junit(&format!("junit-{profile}.xml"), cases);
+    }
+
+    /// Stage the report ANOTHER gate, running in the same target directory at the same
+    /// time, leaves for `profile` while this run's tier runs.
+    fn junit_of_another_gate(&self, profile: &str, cases: &[(&str, &str, &str)]) {
+        self.stage_junit(&format!("other-junit-{profile}.xml"), cases);
+    }
+
+    fn stage_junit(&self, file: &str, cases: &[(&str, &str, &str)]) {
         let mut xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites>\n");
         for (binary, test, seconds) in cases {
             xml.push_str(&format!(
@@ -577,8 +611,30 @@ impl FakeCargo {
             ));
         }
         xml.push_str("</testsuites>\n");
-        std::fs::write(self.dir().join(format!("junit-{profile}.xml")), xml)
-            .expect("stage the fixture JUnit report");
+        std::fs::write(self.dir().join(file), xml).expect("stage the fixture JUnit report");
+    }
+
+    /// The timing record of the target directory the fake's runs build into.
+    fn record_path(&self) -> PathBuf {
+        self.dir().join("jigc-gate/test-seconds.tsv")
+    }
+
+    /// Leave `text` as the timing record, as an earlier run — or whatever made it stale —
+    /// left it.
+    fn record(&self, text: &str) {
+        let path = self.record_path();
+        std::fs::create_dir_all(path.parent().expect("the record has a directory"))
+            .expect("create the record's directory");
+        std::fs::write(path, text).expect("write the fixture record");
+    }
+
+    /// The record as it now stands, row by row.
+    fn recorded(&self) -> Vec<String> {
+        std::fs::read_to_string(self.record_path())
+            .expect("read the record")
+            .lines()
+            .map(str::to_owned)
+            .collect()
     }
 
     /// Run `dev/gate <flags>` with the steps in `red` exiting 1.
@@ -589,6 +645,16 @@ impl FakeCargo {
     /// [`FakeCargo::run`], with every test step of the run leaving `skip` as the line of a
     /// test that passed without running what it tests (none when empty).
     fn run_where(&self, flags: &[&str], red: &[&str], skip: &str) -> FakeRun {
+        self.run_env(flags, red, &[("FAKE_CARGO_SKIP", skip)])
+    }
+
+    /// [`FakeCargo::run`], with the test binary `gone` no longer among those nextest has:
+    /// a filter that names it is refused, as nextest refuses it.
+    fn run_without(&self, flags: &[&str], red: &[&str], gone: &str) -> FakeRun {
+        self.run_env(flags, red, &[("FAKE_CARGO_GONE", gone)])
+    }
+
+    fn run_env(&self, flags: &[&str], red: &[&str], more: &[(&str, &str)]) -> FakeRun {
         let dir = self.dir();
         let argv_log = dir.join("argv.log");
         std::fs::write(&argv_log, "").expect("start the run with an empty argv log");
@@ -601,7 +667,9 @@ impl FakeCargo {
             .env("CARGO_TARGET_DIR", dir)
             .env("JIGC_GATE_HYGIENE", "off")
             .env("FAKE_CARGO_RED", red.join(" "))
-            .env("FAKE_CARGO_SKIP", skip)
+            .env_remove("FAKE_CARGO_SKIP")
+            .env_remove("FAKE_CARGO_GONE")
+            .envs(more.iter().copied())
             .output()
             .expect("spawn dev/gate");
         let mut tiers = String::new();
@@ -640,6 +708,10 @@ const TIER_1: &str = "nextest run --workspace --no-fail-fast --tool-config-file 
                       jigc-gate:<tiers> --profile gate-tier1";
 const TIER_2: &str = "nextest run --workspace --no-fail-fast --no-tests=pass \
                       --tool-config-file jigc-gate:<tiers> --profile gate-tier2";
+/// The question a run asks nextest before any tier, where a record gives it tiers to ask
+/// about: does it take them? It lists the test binaries and executes none.
+const PROBE: &str = "nextest list --workspace --list-type binaries-only --tool-config-file \
+                     jigc-gate:<tiers> --profile gate-tier1";
 
 /// The cargo argvs a run launched, without the `nextest --version` probe.
 fn launched(run: &FakeRun) -> Vec<&str> {
@@ -682,8 +754,9 @@ fn the_full_gate_runs_the_fast_tier_then_its_complement_then_the_doctests() {
     assert!(
         text.lines()
             .any(|l| l == "tests   passed=6 failed=0  (over 2 test binaries)"),
-        "two tier runs sum their passed counts, and count the workspace's test binaries \
-         once: each run prints every binary whatever its filter selected.\n{text}",
+        "two tier runs sum their passed counts, and their binaries are the largest count \
+         either run printed, never the sum: a binary with a test in each tier is in both \
+         runs' counts.\n{text}",
     );
     assert!(text.lines().any(|l| l == "GATE: PASS"), "{text}");
 }
@@ -889,6 +962,290 @@ fn the_fast_tier_is_every_test_the_last_run_did_not_measure_as_slow() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// The timing record, stale against the tree: it costs time, never a red gate.
+// ---------------------------------------------------------------------------
+//
+// The record is this machine's last measurement, and nothing keeps it true of the tree.
+// The review of the stabilization build probed one way that bites (its M11): a row for a
+// test binary that no longer exists puts `binary_id(=<gone>)` in the fast tier's filter,
+// nextest refuses the filter before it runs a test (exit 96), a tier that never runs
+// writes no row, and the gate is red until somebody deletes the record. That is one member
+// of a class — every way the record can be stale against the tree — and each is decided:
+//
+// | the record…                                   | what the gate does |
+// |---|---|
+// | names a binary the tree no longer has (removed, renamed, another branch or checkout built into this target directory) | asks nextest before any tier; refused, the run goes on with no record — the fast tier is the whole suite — and its timings replace the record |
+// | names a test the tree no longer has           | the name matches nothing; the row leaves when a run whose tiers are all green rewrites the record |
+// | holds a line that is no row (cut short, two run together) | read by nobody; a line shaped like a row is one of the two above |
+// | holds seconds that are no longer true         | a test moves between the tiers: time |
+// | was written by another target directory       | not read: the record lives in the target directory it measures (pinned above) |
+// | is being written by another gate              | replaced by a rename: a reader has the old one or the new one, whole |
+// | — and that gate's JUnit reports               | each run has a store of its own |
+
+/// The review's M11, and the member of the class that reddens a gate.
+///
+/// Whatever makes nextest refuse the tiers a record gives — here a binary that is gone —
+/// the run goes on as if there were no record, says so, and heals the record: the next
+/// run is tiered again. The question it asks nextest is no step: it is in no verdict.
+#[test]
+fn a_record_that_names_a_binary_the_tree_no_longer_has_never_reddens_the_gate() {
+    let stale = "12.500\tjigc::g_gone\tslow_suite::drives_the_binary_a_lot\n\
+                 9.000\tjigc::g_doc\tslow_suite::still_here\n";
+    let measured = [
+        ("jigc::g_doc", "slow_suite::still_here", "9.100"),
+        ("jigc::g_doc", "quick_suite::reads_a_registry", "0.020"),
+    ];
+    let rows = vec![
+        "9.100\tjigc::g_doc\tslow_suite::still_here".to_owned(),
+        "0.020\tjigc::g_doc\tquick_suite::reads_a_registry".to_owned(),
+    ];
+
+    let fake = FakeCargo::new("gate-stale-binary", true);
+    fake.record(stale);
+    fake.junit("gate-tier1", &measured);
+    let run = fake.run_without(&[], &[], "jigc::g_gone");
+    let text = &run.text;
+    assert!(
+        run.ok && text.lines().any(|l| l == "GATE: PASS"),
+        "a row for a test binary that is gone is a stale measurement, never a verdict \
+         about the tree: the gate is as green as its steps.\n{text}",
+    );
+    let mut expected = LINT_AND_BUILD.to_vec();
+    expected.extend([PROBE, TIER_1, TIER_2, "test --workspace --doc"]);
+    assert_eq!(
+        launched(&run),
+        expected,
+        "the run asks nextest whether it takes the record's tiers before any tier, and \
+         then runs every step of a full gate.\n{text}",
+    );
+    assert_eq!(
+        (run.filter("gate-tier1"), run.filter("gate-tier2")),
+        ("not (none())", "not (not (none()))"),
+        "refused, the run goes on as if there were no record: the fast tier is the whole \
+         suite, and the second tier is still its complement.\n{}",
+        run.tiers,
+    );
+    assert!(
+        text.contains("nextest does not take the tiers the timing record gives (exit 96")
+            && text.contains("the fast tier is the WHOLE suite this run")
+            && text.contains("replace the record"),
+        "a run that sets its record aside says so, and why.\n{text}",
+    );
+    assert_eq!(
+        fake.recorded(),
+        rows,
+        "its timings ARE the record afterwards — the row for the binary that is gone went \
+         with the record it was in.",
+    );
+
+    let healed = fake.run_without(&[], &[], "jigc::g_gone");
+    assert_eq!(
+        healed.filter("gate-tier1"),
+        "not ((binary_id(=jigc::g_doc) & test(/^(slow_suite::still_here)$/)))",
+        "and the run after it is tiered again: one slow run, nothing to delete by hand.\n{}",
+        healed.text,
+    );
+    assert!(
+        healed.ok && !healed.text.contains("does not take"),
+        "{}",
+        healed.text
+    );
+
+    // The pre-check heals the same record the same way — a red tier that ran nothing
+    // would otherwise be all `--fast` could ever print on this target directory.
+    let fake = FakeCargo::new("gate-stale-binary-fast", true);
+    fake.record(stale);
+    fake.junit("gate-tier1", &measured);
+    let fast = fake.run_without(&["--fast"], &[], "jigc::g_gone");
+    let mut expected = LINT_AND_BUILD.to_vec();
+    expected.extend([PROBE, TIER_1]);
+    assert_eq!(launched(&fast), expected, "{}", fast.text);
+    assert!(
+        fast.ok && fast.text.lines().any(|l| l.starts_with("PRE-CHECK: PASS")),
+        "{}",
+        fast.text,
+    );
+    assert_eq!(fake.recorded(), rows);
+
+    // Whatever else makes nextest refuse the question — here the tier's own step is red
+    // too — the question is in no verdict: the run names the step that is red.
+    let fake = FakeCargo::new("gate-stale-probe-red", true);
+    fake.record(stale);
+    let red = fake.run(&[], &["gate-tier1"]);
+    assert!(
+        !red.ok && red.text.lines().any(|l| l == "GATE: FAIL (step: tier1)"),
+        "the probe is no step: a red gate names the steps that are red, and only \
+         those.\n{}",
+        red.text,
+    );
+    assert_eq!(
+        fake.recorded(),
+        stale.lines().collect::<Vec<_>>(),
+        "a run that measured nothing leaves the record as it found it.",
+    );
+}
+
+/// A line that is no row is read by nobody.
+///
+/// A record cut short, or two writers' rows run together, leaves lines no run wrote
+/// whole. Each is skipped by every reader of the record — the filter, the count the
+/// header prints, the merge — so its test is a test without a row, which runs in the
+/// fast tier; and a row whose test is gone names nothing. The run after rewrites the
+/// record from what it ran.
+#[test]
+fn a_line_of_the_record_that_is_no_row_is_read_by_nobody() {
+    let fake = FakeCargo::new("gate-record-garbled", true);
+    fake.record(
+        "12.500\tjigc::g_doc\tslow_suite::whole\n\
+         9.000\tjigc::g_d\n\
+         soon\tjigc::g_doc\tslow_suite::not_a_number\n\
+         7.000\tjigc::g_doc\tslow_suite::run\t3.000\tjigc::g_doc\tslow_suite::together\n\
+         \n\
+         8.000\tjigc::g_doc\tslow_suite::a_test_that_is_go\n",
+    );
+    fake.junit(
+        "gate-tier1",
+        &[("jigc::g_doc", "quick_suite::reads_a_registry", "0.020")],
+    );
+    fake.junit(
+        "gate-tier2",
+        &[("jigc::g_doc", "slow_suite::whole", "12.700")],
+    );
+    let run = fake.run(&[], &[]);
+    assert_eq!(
+        run.filter("gate-tier1"),
+        "not ((binary_id(=jigc::g_doc) & \
+         test(/^(slow_suite::a_test_that_is_go|slow_suite::whole)$/)))",
+        "only a line of exactly three fields whose first is a number of seconds is a \
+         row. The name that was cut is a row and names no test, which is harmless.\n{}",
+        run.text,
+    );
+    assert!(
+        run.text
+            .contains("2 of 2 recorded tests wait for the second tier"),
+        "the header counts rows, not lines.\n{}",
+        run.text,
+    );
+    assert!(run.ok, "{}", run.text);
+    assert_eq!(
+        fake.recorded(),
+        vec![
+            "0.020\tjigc::g_doc\tquick_suite::reads_a_registry",
+            "12.700\tjigc::g_doc\tslow_suite::whole",
+        ],
+        "two green tiers measured every test there is, so their rows are the record: \
+         what was no row is gone, and so is the row of the test that is gone.",
+    );
+
+    // A run that did not measure every test keeps the rows it did not measure — the
+    // rows, never the lines that are none.
+    let fake = FakeCargo::new("gate-record-garbled-fast", true);
+    fake.record("12.500\tjigc::g_doc\tslow_suite::whole\n9.000\tjigc::g_d\n");
+    fake.junit(
+        "gate-tier1",
+        &[("jigc::g_doc", "quick_suite::reads_a_registry", "0.020")],
+    );
+    let fast = fake.run(&["--fast"], &[]);
+    assert!(fast.ok, "{}", fast.text);
+    assert_eq!(
+        fake.recorded(),
+        vec![
+            "0.020\tjigc::g_doc\tquick_suite::reads_a_registry",
+            "12.500\tjigc::g_doc\tslow_suite::whole",
+        ],
+    );
+}
+
+/// Two gates on one target directory: a gate reading the record while another replaces
+/// it reads one record, whole.
+///
+/// The record is replaced by a rename, never rewritten in place — so a reader that has it
+/// open keeps the record it opened. Held here by exactly that: the file this test opened
+/// before the run still reads as the old record after it.
+#[test]
+fn a_run_replaces_the_record_by_a_rename_so_a_reader_has_one_record_whole() {
+    use std::io::Read;
+    let before = "12.500\tjigc::g_doc\tslow_suite::before\n";
+    for flags in [&[][..], &["--fast"][..]] {
+        let fake = FakeCargo::new("gate-record-rename", true);
+        fake.record(before);
+        fake.junit(
+            "gate-tier1",
+            &[("jigc::g_doc", "quick_suite::after", "0.020")],
+        );
+        let mut reader = std::fs::File::open(fake.record_path()).expect("open the record");
+        let run = fake.run(flags, &[]);
+        assert!(run.ok, "{}", run.text);
+        let mut seen = String::new();
+        reader
+            .read_to_string(&mut seen)
+            .expect("read the record that was opened before the run");
+        assert_eq!(
+            seen, before,
+            "{flags:?}: a gate that opened the record before this run replaced it reads \
+             the record it opened — rewritten in place, it would read whatever part of \
+             the new one was there.",
+        );
+        assert!(
+            fake.recorded()
+                .contains(&"0.020\tjigc::g_doc\tquick_suite::after".to_owned()),
+            "{flags:?}: and the record is the new one: {:?}",
+            fake.recorded(),
+        );
+        let litter: Vec<_> = std::fs::read_dir(fake.dir().join("jigc-gate"))
+            .expect("list the record's directory")
+            .map(|entry| entry.expect("a directory entry").file_name())
+            .collect();
+        assert_eq!(
+            litter,
+            ["test-seconds.tsv"],
+            "{flags:?}: the file the new record was written to is the record now.",
+        );
+    }
+}
+
+/// Two gates on one target directory: neither reads the other's JUnit report.
+///
+/// nextest writes a profile's report at one path of its store, so two gates with one store
+/// — the target directory's, as it was — are two writers of one file: a run folded the
+/// other's seconds into its log and into the record. Each run's store is its own.
+#[test]
+fn each_run_keeps_its_junit_reports_in_a_store_of_its_own() {
+    let fake = FakeCargo::new("gate-store-per-run", true);
+    fake.junit(
+        "gate-tier1",
+        &[("jigc::g_doc", "quick_suite::this_runs_own", "0.020")],
+    );
+    fake.junit_of_another_gate(
+        "gate-tier1",
+        &[("jigc::g_other", "elsewhere::another_gates_test", "44.000")],
+    );
+    let run = fake.run(&[], &[]);
+    assert!(run.ok, "{}", run.text);
+    assert_eq!(
+        fake.recorded(),
+        vec!["0.020\tjigc::g_doc\tquick_suite::this_runs_own"],
+        "the report a gate running beside this one left in the target directory is not \
+         this run's, and none of its rows is.\n{}",
+        run.text,
+    );
+    let store_of = |run: &FakeRun| -> String {
+        run.tiers
+            .lines()
+            .skip_while(|l| *l != "[store]")
+            .nth(1)
+            .unwrap_or_else(|| panic!("the tier config names a store:\n{}", run.tiers))
+            .to_owned()
+    };
+    let again = fake.run(&[], &[]);
+    assert_ne!(
+        store_of(&run),
+        store_of(&again),
+        "two runs, two stores — whatever target directory they share.",
+    );
+}
+
 #[test]
 fn a_threshold_that_is_not_a_number_is_refused_before_anything_runs() {
     let fake = FakeCargo::new("gate-bad-threshold", true);
@@ -940,17 +1297,20 @@ fn the_log_carries_each_steps_seconds_and_each_tests_seconds() {
     );
     let run = fake.run(&[], &[]);
     let text = &run.text;
-    let store = format!("dir = \"{}/nextest\"", fake.dir().display());
+    let store = run
+        .tiers
+        .lines()
+        .skip_while(|l| *l != "[store]")
+        .nth(1)
+        .and_then(|l| l.strip_prefix("dir = \""))
+        .and_then(|l| l.strip_suffix('"'))
+        .unwrap_or_else(|| panic!("the run tells nextest where its store is.\n{}", run.tiers));
     assert!(
-        run.tiers
-            .lines()
-            .skip_while(|l| *l != "[store]")
-            .nth(1)
-            .is_some_and(|l| l == store),
-        "the run tells nextest where its store is — the target directory the run builds \
-         into. Left to itself nextest writes its JUnit report under the workspace's own \
-         `target/` whatever `CARGO_TARGET_DIR` says, where this run would not find it and \
-         a gate running there would lose its own.\nwant: {store}\n{}",
+        Path::new(store).starts_with(fake.dir()) && Path::new(store).is_dir(),
+        "the run tells nextest where its store is — a directory of the run's own under \
+         `$TMPDIR` (this rig's scratch directory). Left to itself nextest writes its JUnit \
+         report under the workspace's own `target/` whatever `CARGO_TARGET_DIR` says, where \
+         this run would not find it and a gate running there would lose its own.\n{}",
         run.tiers,
     );
     let log_path = text
@@ -992,7 +1352,8 @@ fn the_log_carries_each_steps_seconds_and_each_tests_seconds() {
 #[test]
 fn a_green_two_tier_log_totals_what_one_run_over_the_same_tests_did() {
     // The same 4222 tests over the same 15 binaries as the one-run fixture above, cut in
-    // two: each tier's `Starting` line counts every binary of the workspace.
+    // two. A tier's `Starting` line counts the binaries that hold a test it selected; here
+    // every binary holds a test of each tier, so both lines say fifteen.
     let one = nextest_log("4222", 4222, &[]).replace(
         "Starting 4 tests across 2 binaries (1 test skipped)",
         "Starting 4222 tests across 15 binaries",
@@ -1021,6 +1382,23 @@ fn a_green_two_tier_log_totals_what_one_run_over_the_same_tests_did() {
         "a green gate's totals line reads as it did before the suite ran in two tiers: the \
          passed counts sum, and the fifteen binaries both runs print are fifteen, not \
          thirty.\nreport:\n{report}",
+    );
+
+    // The count is the LARGEST any run printed, so it can understate and never inflate:
+    // with one binary all slow and another all fast, no run reaches all fifteen.
+    let log = format!(
+        "{}{}{doctests}",
+        tier(3100, 1122).replace("across 15 binaries", "across 14 binaries"),
+        tier(1122, 3100).replace("across 15 binaries", "across 9 binaries"),
+    );
+    let report = report_over("gate-report-two-tiers-apart", &log);
+    assert!(
+        report
+            .lines()
+            .any(|l| l == "tests   passed=4222 failed=0  (over 16 test binaries)"),
+        "fourteen and nine are at least fourteen binaries and at most twenty-three; the \
+         count says fourteen (and the doctest step's two), because a sum would count a \
+         binary with a test in each tier twice.\nreport:\n{report}",
     );
 }
 

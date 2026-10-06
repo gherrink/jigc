@@ -378,9 +378,9 @@ The union of what the rulings deferred, what each builder left open, what an ind
 - ~~**A record step under a red gate.** The step writes its tables, then gates, then commits. A red gate leaves the tables modified in the tree, and the step that opens every later invocation halts on a tree that is not clean — so a candidate whose gate is red cannot have its `test` stage recorded at all.~~ **[Repaired 2026-10-06 (→ The record step): the tables are one batch the record script holds as pending, the commit is held to the candidate's own gate, and the next invocation commits a batch that is pending. Not re-reviewed yet.]**
 
 - **The path rule** (→ Branches): a merge that is not a round's by its subject halts every later stage — the close's sync merge among them — a run slug ending `-r<N>` reads as a round's branch, and two files that shape the candidate's binary are outside the product paths.
-- **The gate's timing record** ([dev-workflow.md](dev-workflow.md) → Gate): a row for a test binary that no longer exists can redden the fast tier before it runs.
+- ~~**The gate's timing record** ([dev-workflow.md](dev-workflow.md) → Gate): a row for a test binary that no longer exists can redden the fast tier before it runs.~~ **[Repaired 2026-10-06 (→ [dev-workflow.md](dev-workflow.md) → Gate, *A record that is stale against the tree*): before any tier the gate asks nextest whether it takes the tiers the record gives, and where it does not, the fast tier is the whole suite for that run, which replaces the record. Not re-reviewed yet.]**
 
-**What is left on this list** is the `fix` half's — the landing and its audit, *land a part*, the triage finished inside a running `fix` invocation, and the records around a halted git step — the path rule, and the gate. Nothing on it is the `test` stage's own.
+**What is left on this list** is the `fix` half's — the landing and its audit, *land a part*, the triage finished inside a running `fix` invocation, and the records around a halted git step — and the path rule. Nothing on it is the `test` stage's own, and nothing on it is the gate's.
 
 The review's further findings are the closing records' to list, with its reports. The repair's commits correct this doc as they go.
 
