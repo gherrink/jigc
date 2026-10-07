@@ -3367,7 +3367,15 @@ fn an_instrument_that_never_ran_to_its_end_is_not_turned_green_by_a_later_round_
     );
 
     // The hunt runs to its end on the candidate, as attempt 2 of round 1: now it closes.
-    rerun(&rig, 1, 2, "review-setup", "green").must(OK, "the hunt's re-run");
+    // A re-run is an attempt of the round that selected the item, ON THAT ROUND'S CANDIDATE:
+    // on the candidate a later round tested it is refused, and nothing is written.
+    let before = rig.snapshot();
+    rerun(&rig, 1, 2, "review-setup", "green").refused(
+        BAD_VALUE,
+        "a re-run of round 1's item on the candidate round 2 tested",
+    );
+    assert_eq!(rig.snapshot(), before);
+    rerun(&rig, 1, 1, "review-setup", "green").must(OK, "the hunt's re-run");
     let read = rig.state();
     assert_eq!(
         (&read["next"], &read["forbids_close"], &read["round"]),

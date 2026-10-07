@@ -119,7 +119,11 @@
 #   dev/stabilize-record result-set --run R --round N --commit SHA [--scratch DIR]...
 #                        <results.json
 #       WHAT AN ITEM OF THE TEST SET DID, in the round whose scope selected it — one JSON
-#       object per item, or an array of them, all of runs on the commit SHA (a full sha):
+#       object per item, or an array of them, all of runs on the commit SHA (a full sha).
+#       A ROUND TESTS ONE CANDIDATE: once round N has its candidate, SHA is that candidate
+#       or the call is refused (bad-value) — a re-run runs on the round's candidate,
+#       wherever the round's record commits have moved the branch's tip since; before
+#       that, the candidate is held to the results where it is written (round-set).
 #         item         a row of the test set (no-such-row), which round N's scope selects
 #                      (state: WHETHER THE LATEST ROUND RUNS AN ITEM — the same rule, of
 #                      round N's doors). An item no scope selected owes nothing and has
@@ -2573,7 +2577,14 @@ def result_set(args):
     items_rel, _, item_rows = read_test_set(run_dir)
     items = unique_rows(items_rel, item_rows)
     rel, above, rows = read_results(run_dir, round_number)
-    tested = any(held["round"] == int(round_number) and held["facts"]["candidate"] is not None for held in read["rounds"])
+    candidate = next((held["facts"]["candidate"] for held in read["rounds"] if held["round"] == int(round_number)), None)
+    tested = candidate is not None
+    # A ROUND TESTS ONE CANDIDATE, and a result is the run of an item ON IT: once the round
+    # has its candidate, a result of another commit is no evidence of that round — whatever
+    # the branch's tip is by then (the review of the core for three dangers, F3). Before
+    # that, the candidate is held to the results where it is written (tested_on).
+    if tested and args.commit != candidate:
+        refuse("bad-value", "%s tests the candidate %s, and a result is the run of an item on it — not on %s: a round tests one candidate, and a re-run runs on the round's candidate, wherever its record commits have moved the branch's tip since; nothing was written" % (what, candidate, args.commit))
     due = [(entry["item"], entry["round"]) for clause in read["clauses"] for entry in clause["items"] if entry["rerun"] == "due"] if read["next"] == "retest" else []
     ledger, ledger_above, ledger_rows = read_ledger(run_dir)
     keys = unique_rows(ledger, ledger_rows)
