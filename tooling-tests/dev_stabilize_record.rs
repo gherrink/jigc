@@ -10282,6 +10282,100 @@ fn a_record_commits_gate_is_held_to_what_the_candidates_gate_showed_red() {
     .refused(CORRUPT, "a candidate's gate that is not the script's");
 }
 
+/// **The gate on record as the candidate's is the gate of the round's candidate** (the
+/// review of the core for three dangers, `F3` — the cell the pass derived from it: *every
+/// writer that takes a commit for a round's evidence*). `gate-set` takes a commit while the
+/// round is not tested, and held it only to an earlier gate of the round; the candidate was
+/// held to the round's results and to nothing else. So a round could hold the gate of one
+/// commit and the candidate of another — and a record commit's gate is then held to what
+/// another tree showed red (`gate-check` named that commit as `candidate`). The candidate
+/// is held to the gate where it is written, as it is to the results: alone, and in a batch.
+#[test]
+fn the_gate_on_record_as_the_candidates_is_the_gate_of_the_rounds_candidate() {
+    let a = "jigc::g_a suite::one";
+    let rig = Rig::new("gate-candidate");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "the round's scope");
+    let red = rig.summary("candidate", &["test"], &[a]);
+    rig.run(&gate_set(RUN, "1", &sha('a'), &red), "")
+        .must(OK, "the gate of a commit");
+    let before = rig.snapshot();
+    let refused = rig.run(
+        &round_set(RUN, "1"),
+        &json!({"candidate": sha('b')}).to_string(),
+    );
+    refused.refused(
+        BAD_VALUE,
+        "a candidate that is not the commit the gate on record is of",
+    );
+    assert!(
+        refused.stderr.contains(&sha('a'))
+            && refused.stderr.contains(&sha('b'))
+            && refused.stderr.contains(&gate_path("1")),
+        "it names both commits, and the gate's file: {}",
+        refused.stderr
+    );
+    assert_eq!(rig.snapshot(), before, "nothing was written");
+
+    // MUST NOT REFUSE: the candidate the gate is of — and a record commit's gate is then
+    // held to the candidate's own.
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"candidate": sha('a')}).to_string(),
+    )
+    .must(OK, "the candidate the gate is of");
+    let held = rig.run(&gate_check(RUN, Some("1"), &red), "");
+    held.must(OK, "the same red, on the tree with the records");
+    assert_eq!(held.json()["candidate"], json!(sha('a')));
+
+    // IN ONE BATCH, as a stage's record writes them: the gate of one commit and the
+    // candidate of another are refused together, and nothing is written.
+    let rig = Rig::new("gate-candidate-batch");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "the round's scope");
+    let green = rig.summary("candidate", &[], &[]);
+    let before = rig.snapshot();
+    let batch = |candidate: char| {
+        json!([
+            call(gate_set(RUN, "1", &sha('a'), &green), ""),
+            call(
+                round_set(RUN, "1"),
+                &json!({"candidate": sha(candidate)}).to_string()
+            ),
+        ])
+    };
+    let refused = rig.run(&apply(RUN, Some("1")), &batch('b').to_string());
+    refused.refused(BAD_VALUE, "a batch whose gate and candidate differ");
+    assert!(
+        refused.stderr.contains("call 2 of the batch (`round-set`)"),
+        "{}",
+        refused.stderr
+    );
+    assert_eq!(rig.snapshot(), before, "a refused batch writes nothing");
+    // MUST NOT REFUSE: the batch whose gate is the candidate's.
+    rig.run(&apply(RUN, Some("1")), &batch('a').to_string())
+        .must(OK, "a batch whose gate is the candidate's");
+
+    // MUST NOT REFUSE: a round that holds no gate — a candidate needs none on record.
+    let rig = Rig::new("gate-candidate-none");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "the round's scope");
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"candidate": sha('b')}).to_string(),
+    )
+    .must(OK, "a candidate of a round with no gate on record");
+}
+
 // ---------------------------------------------------------------------------
 // Nothing the script is handed ends in a traceback
 // ---------------------------------------------------------------------------

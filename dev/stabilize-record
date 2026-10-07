@@ -342,8 +342,10 @@
 #                      the use of that pass, and how much of it, shows at every stop
 #       candidate, base, binary and outcome are written ONCE: a second, different
 #       value is refused (exists). A candidate is taken for a round that has a scope
-#       (no-scope) and whose results are of runs on that commit (bad-value): a round is
-#       tested over the doors its scope resolved, on one candidate. EVERY FACT IS TAKEN
+#       (no-scope), whose results are of runs on that commit, and whose gate on record —
+#       where it holds one (gate-set) — is the gate of that commit (bad-value, each): a
+#       round is tested over the doors its scope resolved, on one candidate, and THE
+#       CANDIDATE'S GATE IS THE GATE OF THE CANDIDATE. EVERY FACT IS TAKEN
 #       ONLY WHERE THE STATE ASKS FOR IT (WHERE THE STATE TAKES A WRITE, below) — and a fact
 #       said again as it stands changes nothing and is taken anywhere. What the record
 #       holds beside these — ran, awaiting, recorded — this script counts, and no caller
@@ -753,7 +755,10 @@
 #       (bad-value). A RED gate must be the output of `dev/gate --keep-going`, which its
 #       mode line says: a gate that stops at its first red stage names the first red and
 #       not all of it, and is refused (bad-value). A green gate ran every test however it
-#       was run. A round tests one candidate: another commit is refused (exists).
+#       was run. A round tests one candidate: another commit is refused (exists) — and
+#       the candidate, where it is written, is held to this gate's commit (round-set):
+#       the gate is written while the round is not tested, so before the candidate or
+#       with it, and a record commit's gate is held to it as the candidate's (gate-check).
 #       Prints {"gate", "commit", "verdict", "red"}.
 #
 #   dev/stabilize-record gate-check [--round N] --summary FILE [--scratch DIR]...
@@ -958,6 +963,8 @@
 #   untested    gate-set, and the facts candidate, base, binary, cross-model and
 #               cross-model-void: as a round, and only while that round is not tested —
 #               they are its test stage's record, written with or before the candidate.
+#               (The candidate is held, where it is written, to the two writers that
+#               take a commit for the round's evidence: the results' and the gate's.)
 #   fix         the fact cycles: in the latest round, once it is tested, where the
 #               position refuses no fix stage — not past either bound, not after the
 #               round's outcome.
@@ -2842,6 +2849,11 @@ def tested_on(run_dir, round_number, candidate):
     elsewhere = sorted({untick(row[2]) for row in rows} - {candidate})
     if elsewhere:
         refuse("bad-value", "round %s: its results (%s) are of runs on %s, and a round tests one candidate — not %s; nothing was written" % (round_number, rel, ", ".join(elsewhere), candidate))
+    # And the gate on record as the candidate's is the candidate's: a record commit's gate
+    # is held to it (gate-check), and the gate of another tree is no baseline for that.
+    gate = read_gate(run_dir, round_number)
+    if gate is not None and gate[1]["commit"] != candidate:
+        refuse("bad-value", "round %s: %s holds the gate of %s, and a round tests one candidate — not %s: the candidate's gate is the gate of the candidate; nothing was written" % (round_number, gate[0], gate[1]["commit"], candidate))
 
 
 def run_set(args):
