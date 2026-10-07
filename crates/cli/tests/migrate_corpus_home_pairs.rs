@@ -973,6 +973,96 @@ fn a_destination_that_is_not_a_regular_file_blocks_and_is_left_as_it_is() {
     );
 }
 
+/// **A relocating doc whose *source* is a link is refused, and nothing moves** (the rc.24 fix
+/// pass's item 9; the human's ruling of 2026-10-07). The destination is asked what stands
+/// there (above); the source is the same question from the other end. The walk enumerates a
+/// live link at a prior home and the read follows it, so the bytes behind the link were the
+/// doc the run would have landed at the new home — and the entry it would then have removed
+/// from the old one is the link. The doc's own home is asked for its entry before the run
+/// queues it: refused under the store's one code, keyed at the source, with the link, the
+/// file it points at and the destination all as they were. Both modes agree.
+#[test]
+#[cfg(unix)]
+fn a_relocating_doc_behind_a_link_is_refused_and_nothing_moves() {
+    let (pack, from_version) = bumped_pack(
+        "linked-source",
+        "changelog",
+        |shipped| shipped.to_string(),
+        |shipped| {
+            swap(
+                shipped,
+                CHANGELOG_PLACEMENT,
+                "placement: { file: HISTORY.md }\n",
+            )
+        },
+    );
+    let home = TempDir::new("home-linked-source");
+    let repo = set_up_repo("linked-source", home.path(), pack.path());
+    let stranded = changelog_body(from_version);
+    fs::create_dir_all(repo.path().join("elsewhere")).expect("mk elsewhere/");
+    fs::write(repo.path().join("elsewhere/changelog.md"), &stranded).expect("the doc's bytes");
+    std::os::unix::fs::symlink("elsewhere/changelog.md", repo.path().join("CHANGELOG.md"))
+        .expect("the prior home is a link to them");
+    git(repo.path(), &["add", "-A"]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "a changelog behind a link"],
+    );
+
+    for mode in [
+        &["migrate-corpus", "--dry-run", "--format", "json"][..],
+        &["migrate-corpus", "--format", "json"][..],
+    ] {
+        let cell = format!("`jigc {}`", mode.join(" "));
+        let (report, ok) = report(repo.path(), home.path(), pack.path(), mode);
+        assert!(
+            !ok,
+            "{cell}: a refused doc holds the exit non-zero; {report:#}"
+        );
+        let blocked = report["blocked"].as_array().expect("a `blocked[]` array");
+        assert_eq!(blocked.len(), 1, "{cell}: one doc is refused; {report:#}");
+        assert_eq!(
+            (
+                blocked[0]["key"]["code"].as_str(),
+                blocked[0]["key"]["target"].as_str()
+            ),
+            (
+                Some(engine::store::HOME_NOT_REGULAR_FILE),
+                Some("CHANGELOG.md")
+            ),
+            "{cell}: the store's code, keyed at the source the run would have moved; {:#}",
+            blocked[0],
+        );
+        let message = blocked[0]["message"].as_str().unwrap_or_default();
+        assert!(
+            message.contains("a symbolic link") && message.contains("HISTORY.md"),
+            "{cell}: the refusal says what stands there and where the doc was not moved; \
+             {message}",
+        );
+        assert_eq!(
+            report["migrated"],
+            serde_json::json!([]),
+            "{cell}: nothing migrated; {report:#}",
+        );
+        assert!(
+            fs::symlink_metadata(repo.path().join("CHANGELOG.md"))
+                .is_ok_and(|meta| meta.file_type().is_symlink()),
+            "{cell}: the link stands",
+        );
+        assert_eq!(
+            fs::read_to_string(repo.path().join("elsewhere/changelog.md"))
+                .ok()
+                .as_deref(),
+            Some(stranded.as_str()),
+            "{cell}: the file it points at is byte-untouched",
+        );
+        assert!(
+            fs::symlink_metadata(repo.path().join("HISTORY.md")).is_err(),
+            "{cell}: nothing landed at the destination",
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // The walk's other half: what it refuses to enumerate over (M52 Increment 7 / T2).
 // ---------------------------------------------------------------------------------------------

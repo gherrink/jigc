@@ -46,10 +46,11 @@
 //! **The must-not-refuse cells** sit in the last test: an ordinary file at the home, a doc
 //! legitimately absent, and a placement home — none of which may meet this code.
 //!
-//! **One command is out of the class and says so:** `jigc migrate-corpus` rewriting a doc
-//! *in place* over a linked home does not refuse at all — it replaces the link, at exit 0
-//! (`store_door_home_shape::the_corpus_migration_lands_a_regular_file_and_writes_through_nothing`;
-//! the fix pass's item 9, whose ruling is with the human).
+//! **`jigc migrate-corpus` meets the shape at two homes** — a relocation's destination, and
+//! the home of a doc it would rewrite in place or move (the fix pass's item 9, ruled on
+//! 2026-10-07: until then the second replaced the link at exit 0). Each refuses that one
+//! doc; the run's other docs still migrate
+//! (`store_door_home_shape::the_corpus_migration_refuses_a_linked_doc_and_migrates_the_rest`).
 
 #![cfg(unix)]
 
@@ -89,7 +90,8 @@ const SITES: &[(&str, &str, &[&str])] = &[
         // The committing doors' planner at both boundaries, the promote sink behind them,
         // and the store doors that rewrite or move a committed doc where it stands
         // (`store_home_refusal`: `jigc rename` at the doc's own home and at a referrer's,
-        // and the relocation primitive behind `relocate` and both root knobs).
+        // the relocation primitive behind `relocate` and both root knobs, and
+        // `jigc migrate-corpus` at the home of a doc it would rewrite or move).
         "crates/engine/src/finalize.rs",
         "shape_refusal",
         &[
@@ -99,6 +101,7 @@ const SITES: &[(&str, &str, &[&str])] = &[
             "relocate",
             "config set docs-root",
             "config set placement-root",
+            "migrate-corpus",
         ],
     ),
     (
@@ -218,6 +221,22 @@ const OBSERVERS: &[(&str, &str, Observed)] = &[
         "crates/cli/src/migrate_corpus.rs",
         "destination_occupant",
         Observed::Refuses("destination_collision_finding"),
+    ),
+    (
+        // The one seam through which a doc becomes a doc the run will write.
+        "crates/cli/src/migrate_corpus.rs",
+        "queue_or_refuse",
+        Observed::Refuses("shape_refusal"),
+    ),
+    (
+        "crates/cli/src/migrate_corpus.rs",
+        "unlanded_paths",
+        Observed::Out(
+            "the recovery audit: it asks whether the worktree holds an earlier run's \
+             migrated result, and an entry that is not a regular file is not one — it is \
+             left out of the run's commit, and nothing is refused, because nothing of the \
+             doc's is written",
+        ),
     ),
     (
         "crates/cli/src/doc.rs",
@@ -917,6 +936,26 @@ fn migrate_corpus_destination() -> Answered {
     )
 }
 
+/// `jigc migrate-corpus` over a doc it would rewrite **in place** whose home is a link: the
+/// v0 corpus state — a committed doc with its `schema-version:` stamp taken off — behind a
+/// committed link.
+fn migrate_corpus_in_place() -> Answered {
+    let corpus = TrialCorpus::build(State::Fresh);
+    land_adr(&corpus, "Cache Strategy", None);
+    let home = corpus.repo().join(ADR_HOME);
+    let unstamped: String = fs::read_to_string(&home)
+        .expect("read the adr")
+        .lines()
+        .filter(|line| !line.starts_with("schema-version:"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    fs::write(&home, unstamped).expect("strip the stamp");
+    let planted = link_out(&corpus.repo(), ADR_HOME);
+    commit_all(&corpus, "chore: an unstamped adr whose home is a link");
+    let out = corpus.jigc(&["migrate-corpus"]);
+    answers_the_one_code("migrate-corpus · a doc's own home", &out, &planted, CARRIED)
+}
+
 /// One cell: a corpus in which a command meets a link at a managed home, driven to its
 /// refusal.
 type Cell = fn() -> Answered;
@@ -942,6 +981,7 @@ const CELLS: &[(&str, Cell)] = &[
     ("task discard", sub_task_discard),
     ("milestone create", milestone_create),
     ("migrate-corpus", migrate_corpus_destination),
+    ("migrate-corpus", migrate_corpus_in_place),
 ];
 
 /// **Arm 2.** Every command a [`SITES`] row names is driven, and every one answers the one

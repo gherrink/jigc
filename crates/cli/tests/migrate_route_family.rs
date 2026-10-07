@@ -267,6 +267,20 @@ const MIGRATE_ROUTE_SITES: &[RouteSite] = &[
     },
     RouteSite {
         file: "crates/cli/src/migrate_corpus.rs",
+        func: "queue_or_refuse",
+        sites: 1,
+        state: "a doc the run would rewrite in place or move whose own home is not a regular \
+                file — a symbolic link, a directory (the rc.24 fix pass's item 9, ruled \
+                2026-10-07): the re-run clause of the store's refusal for that state",
+        disposition: Disposition::Answered(
+            "a `migrate-corpus` re-run instruction behind the reader's own act — the doc \
+             itself put at its home as a regular file, and committed — emitted by the run \
+             that repeats; driven through that route to the landed migration by \
+             `store_door_home_shape::the_corpus_migration_refuses_a_linked_doc_and_migrates_the_rest`",
+        ),
+    },
+    RouteSite {
+        file: "crates/cli/src/migrate_corpus.rs",
         func: "destination_collision_finding",
         // One route per occupant since the rc.24 fix pass's completion audit (CPL-6): a
         // different document, a file that cannot be read, and an entry that is no regular
