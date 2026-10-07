@@ -1,14 +1,19 @@
 # Intended changes since jigc 1.0.0-rc.24 (tag jigc-v1.0.0-rc.24, commit 91834b5e) — the list
-# dev/regression-set reads: every test of that release's own suite that passes on its binary
-# and fails on the candidate's must be a row here, or the check is red.
+# dev/regression-set reads, out of the candidate's commit: every test of that release's own
+# suite that passes on its binary and fails on the candidate's must be a row here, or the
+# check is red; and every test that fails on its own binary must be an exclusion row here,
+# or the check is not green.
 #
 # One row per test, FOUR fields with ONE TAB between each, and no space around a field:
 #
 #     <binary>  <test>  <what changed, in one line>  <pointer>
 #
 # A pointer is `commit:<full sha>` — a commit the candidate holds and the release does not —
-# or `ruling:<path>#<the opening words of exactly one heading of that file>`. A row that
-# points at nothing is refused, and the whole list with it (`dev/regression-set --help`).
+# or `ruling:<path>#<the opening words of exactly one heading of that file>`. An EXCLUSION
+# ROW has the same four fields: its third says why the test fails on its own binary, and
+# its pointer is `excluded:<path>` — a committed line of this tool, of a run against the
+# same release, that names the test among those that failed there. A row that points at
+# nothing is refused, and the whole list with it (`dev/regression-set --help`).
 #
 # Seeded 2026-10-06 from the measurement of the same day (the 21 tests of its table), each
 # row checked against the record of the fix pass before it was copied: DECISIONS.md, and
@@ -34,3 +39,23 @@ jigc::g_milestone	milestone_landed_attribution::a_path_landed_by_two_chain_commi
 jigc::g_milestone	milestone_record_stale_base::stale_base_routes_finalize_without_committing	a record door with no baseline compares the record against `HEAD`: the old fixture's uncommitted rewrite of the record blocks under `reconciliation.conflict-block`, where the old test expects the stale-base finding — a refusal either way	commit:8d9c3afba71d8707554643c2e26162fff4697fc3
 jigc::g_doc	clap_error_kind_axis::every_producible_kind_is_reached_by_driving_its_probe	not a behaviour difference: the test compares the binary's `--help` with the render of the previous release's own `cli` library, linked into the test, and the fix pass reworded the `setup` and `uninstall` help paragraphs — first at this commit	commit:12398ddccccbe75810a087a0ff6e8d108fcd831a
 jigc::g_doc	clap_error_kind_axis::every_producible_kind_holds_with_the_invocation_log_on	not a behaviour difference: the test compares the binary's `--help` with the render of the previous release's own `cli` library, linked into the test, and the fix pass reworded the `setup` and `uninstall` help paragraphs — first at this commit	commit:12398ddccccbe75810a087a0ff6e8d108fcd831a
+#
+# Added 2026-10-07, after the eleven pre-opening fixes were merged (b33bf39b): the one test
+# the run on that tree named off the list (run 2 of the record beside this file), checked
+# against its fix's commit and the human's ruling for the item.
+jigc::g_migrate	setup::setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file	`setup` records the settings entries it added in one committed file, `.jigc/settings-entries.json`, so the install commit carries nine paths where the old test pins exactly eight — the human's ruling on the fix pass's item 21 (option B), built at 1c7d391c	ruling:DECISIONS.md#2026-10-06 — `jigc setup` records the settings entries it adds
+#
+# EXCLUSION ROWS, added 2026-10-07: the eleven tests that fail on their own binary, each as
+# run 2's baseline report says it fails (run-2.md beside this file). Whether a test reaches
+# the binary is the calibration of run 1's record (README.md), taken as recorded.
+jigc::g_config	set_kind_vocabulary::no_schema_hash_moved_and_the_pinned_projection_is_byte_identical	the previous release is built from `git archive`, and an archive is no repository: the test asks `git ls-tree -r HEAD` in its own source tree — and it REACHES THE BINARY (the calibration of run 1's record), so this row is coverage the check does not have	excluded:completions/artifacts/M55/stabilization-build/regression-set/run-2-result.json
+jigc::g_config	stated_at_fence::every_declared_where_reachable_row_is_declared_by_the_step_it_names	the previous release is built from `git archive`, and an archive is no repository: the test asks `git ls-files` in its own source tree; it does not reach the binary	excluded:completions/artifacts/M55/stabilization-build/regression-set/run-2-result.json
+jigc::g_finalize	manifest_freeze_fence::historical::the_fixture_commits_are_reachable_and_a_whole_push_apart	the previous release is built from `git archive`, and an archive is no repository: the test needs the commit 2c5eee5 of this repository's history, unreachable there; it does not reach the binary	excluded:completions/artifacts/M55/stabilization-build/regression-set/run-2-result.json
+jigc::g_finalize	manifest_freeze_fence::historical::the_head_tilde_one_window_at_the_push_tip_is_clean	the previous release is built from `git archive`, and an archive is no repository: the test needs the commit 7ada302 of this repository's history, unreachable there; it does not reach the binary	excluded:completions/artifacts/M55/stabilization-build/regression-set/run-2-result.json
+jigc::g_finalize	manifest_freeze_fence::historical::the_repin_of_all_sixteen_is_flagged_over_the_pushed_range	the previous release is built from `git archive`, and an archive is no repository: the test needs the commit 2c5eee5~1 of this repository's history, unreachable there; it does not reach the binary	excluded:completions/artifacts/M55/stabilization-build/regression-set/run-2-result.json
+jigc::g_finalize	manifest_freeze_fence::record::every_home_states_what_is_now_fenced	the previous release is built from `git archive`, and an archive is no repository: the test asks `git ls-files` in its own source tree; it does not reach the binary	excluded:completions/artifacts/M55/stabilization-build/regression-set/run-2-result.json
+jigc::g_finalize	manifest_freeze_fence::record::no_home_still_says_the_rule_is_unfenced	the previous release is built from `git archive`, and an archive is no repository: the test asks `git ls-files` in its own source tree; it does not reach the binary	excluded:completions/artifacts/M55/stabilization-build/regression-set/run-2-result.json
+jigc::g_migrate	dev_gate_report::a_clean_denylist_says_clean	the previous release is built from `git archive`, and an archive is no repository: the test runs the old `dev/gate`, whose hygiene scan reads git's range and tree and so does not say it ran; it does not reach the binary	excluded:completions/artifacts/M55/stabilization-build/regression-set/run-2-result.json
+jigc::g_migrate	dev_gate_report::a_denylist_hit_is_named_by_location_and_never_by_content	the previous release is built from `git archive`, and an archive is no repository: the test runs the old `dev/gate`, whose hygiene scan reads git's range and tree and so reports no hit; it does not reach the binary	excluded:completions/artifacts/M55/stabilization-build/regression-set/run-2-result.json
+jigc::g_migrate	install_line::the_install_line_has_one_owner_one_copy_and_one_derived_file	the previous release is built from `git archive`, and an archive is no repository: the test asks `git ls-files`; it does not reach the binary	excluded:completions/artifacts/M55/stabilization-build/regression-set/run-2-result.json
+jigc::g_migrate	package_contents::every_tracked_file_under_the_published_dirs_is_published	the previous release is built from `git archive`, and an archive is no repository: the test asks `git ls-files` under the published directories; it does not reach the binary	excluded:completions/artifacts/M55/stabilization-build/regression-set/run-2-result.json

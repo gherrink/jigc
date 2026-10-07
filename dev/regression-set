@@ -12,7 +12,9 @@
 # the candidate's binary where those tests look for theirs, and runs the same test
 # binaries again. A test that passed on the release's binary and fails on the candidate's
 # is a difference; a difference is intended only when a row of a committed list says so
-# and points at the commit or the ruling that made it. Any other difference is red.
+# and points at the commit or the ruling that made it. Any other difference is red. And a
+# test that fails on its own binary drops out of the comparison only by a row of the same
+# list, which says why and points at the record of a run that showed it.
 #
 # IT IS NOT A TEST FRAMEWORK. It defines no test and runs none itself: the tests are the
 # previous release's, built by cargo and run by cargo-nextest, the runner the gate uses
@@ -89,18 +91,32 @@
 #              ruling:<path>#<heading>  a file of the candidate's commit, by its path in
 #                                       the repository, and the opening words of exactly
 #                                       one of its markdown headings
+#
+# AN EXCLUSION ROW is a row of the same list and of the same four fields, for a test that
+# FAILS ON ITS OWN BINARY — the previous release's test, on the previous release's binary.
+# Its third field says why it fails there, and its pointer is of a kind of its own:
+#
+#              excluded:<path>          a file of the candidate's commit that is the line
+#                                       of a run of this tool — against the same previous
+#                                       release — in which the test failed on its own
+#                                       binary: named there under `excluded` or
+#                                       `excluded_by_no_row`
+#
 # No field is empty or has space around it, and no test is listed twice. A ROW THAT
 # POINTS AT NOTHING IS REFUSED, and with it the whole list: a sha that is no commit, a
 # commit outside `previous..candidate`, a file the candidate does not have, a heading no
-# line or more than one line opens with. The tool reads the list; no agent does.
+# line or more than one line opens with, a record that is no line of this tool, is of a
+# run against another release, or does not name the test. The tool reads the list; no
+# agent does.
 #
 # THE VERDICT. Per test, by binary and name, from the two reports. Both runs are made
 # with one retry: a test counts as failed only when it failed twice in one run, and one
 # that passed on its retry is named under `flaky`.
 #
 #   green   every test that passed on the previous release's binary and fails on the
-#           candidate's is on the list — none at all included
-#   red     at least one is not on the list: each is named under `not_on_list`
+#           candidate's is on the list — none at all included — and every test that
+#           failed on its own binary is on an exclusion row
+#   red     at least one difference is not on the list: each is named under `not_on_list`
 #   void    the check did not establish either. `reason` is one word, `detail` a sentence:
 #             did-not-run      a tool it needs is not on PATH
 #             build-previous   the previous release could not be unpacked, its tests did
@@ -108,8 +124,10 @@
 #             build-candidate  the candidate could not be unpacked or did not build
 #             baseline         the baseline cannot be compared against: the file at the
 #                              path was not the previous release's binary around it, it
-#                              left no readable report, it ran no test, or more than one
-#                              test in a hundred failed on its own binary
+#                              left no readable report or it ran no test — or, with every
+#                              difference on the list, a test failed on its own binary
+#                              that no exclusion row names: each is named under
+#                              `excluded_by_no_row`
 #             swap             the swap did not hold: the two binaries are the same
 #                              bytes, no test binary names the path, or the file at the
 #                              path was not the candidate's binary before or after the run
@@ -120,21 +138,29 @@
 #                              list it says the run read is not, by its hash, the one the
 #                              verdict is asked over
 #
-# A TEST THAT FAILS ON ITS OWN BINARY is no evidence about the candidate: it is excluded
-# from the comparison and named under `excluded`. A ROW THAT MATCHES NO DIFFERENCE is
-# stale and is named under `stale` with why — `no-such-test`, `failed-on-its-own-binary`,
-# `passed-on-the-candidate`. Stale rows do not change the verdict; they are reported so
-# that a list cannot quietly outlive what it excuses.
+# A TEST THAT FAILS ON ITS OWN BINARY is no evidence about the candidate, and it is
+# coverage the check does not have. It drops out of the comparison ONLY BY AN EXCLUSION
+# ROW: with its row it is named under `excluded`, with the row; with none it is named
+# under `excluded_by_no_row`, and the run is not green — red where a difference is off the
+# list too, since that much is established whatever the baseline lacks, and void
+# otherwise. No number of such tests is tolerated unnamed, and none is too many once each
+# has its row. So in a green line `excluded` is exactly the exclusion rows that matched.
+#
+# A ROW THAT MATCHES NOTHING is stale and is named under `stale` with why. A row for a
+# change: `no-such-test`, `failed-on-its-own-binary`, `passed-on-the-candidate`. An
+# exclusion row: `no-such-test`, `passed-on-its-own-binary`. Stale rows do not change the
+# verdict; they are reported so that a list cannot quietly outlive what it excuses.
 #
 # The line: {tool, status, reason, detail, previous: {commit, sha256}, candidate:
 # {commit, sha256}, list: {path, commit, sha256, rows}, counts: {tests, baseline_passed,
 # baseline_failed, candidate_passed, candidate_failed, differences, on_list, not_on_list,
-# excluded, stale, fixed}, not_on_list: [{binary, test}], on_list: [{binary, test,
-# change, pointer}], excluded: [{binary, test}], stale: [{binary, test, pointer, why}],
-# flaky: {baseline: [...], candidate: [...]}, proof: {baked_path, named_by,
-# baseline_before, baseline_after, candidate_before, candidate_after}, seconds, evidence,
-# work}. A void line carries what was established before it; a refusal prints {tool,
-# status: refused, refused: WORD, detail}.
+# excluded, excluded_by_no_row, stale, fixed}, not_on_list: [{binary, test}], on_list:
+# [{binary, test, change, pointer}], excluded: [{binary, test, change, pointer}],
+# excluded_by_no_row: [{binary, test}], stale: [{binary, test, pointer, why}], flaky:
+# {baseline: [...], candidate: [...]}, proof: {baked_path, named_by, baseline_before,
+# baseline_after, candidate_before, candidate_after}, seconds, evidence, work}. A void
+# line carries what was established before it — and `excluded_by_no_row`, where that is
+# what voided it; a refusal prints {tool, status: refused, refused: WORD, detail}.
 #
 # WHAT A GREEN RESULT ESTABLISHES, AND WHAT IT CANNOT SEE. Green says: nothing the
 # previous release's suite pinned THROUGH THE BINARY moved, but for the listed rows. It
@@ -201,9 +227,6 @@ VOIDS = {
     "incomplete": 15,
     "evidence": 16,
 }
-# A baseline is compared against while at most one test in this many failed on its own
-# binary.
-BASELINE_TOLERANCE = 100
 # The package whose binary the tests drive, and that binary's name.
 PACKAGE = "jigc"
 BINARY = "jigc"
@@ -216,6 +239,8 @@ FULL_SHA = re.compile(r"[0-9a-f]{40}")
 SEGMENT = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*")
 HEADING = re.compile(r"#{1,6} +(.*)")
 FIELDS = ("binary", "test", "change", "pointer")
+# The kind of pointer that makes a row an exclusion row.
+EXCLUDED = "excluded"
 
 
 class Refusal(Exception):
@@ -292,7 +317,7 @@ def holds(descendant, ancestor, where):
 # --- the list of intended changes -----------------------------------------------
 
 
-def resolve(pointer, where, previous, candidate):
+def resolve(pointer, where, previous, candidate, test):
     kind, _, rest = pointer.partition(":")
     if kind == "commit":
         if not FULL_SHA.fullmatch(rest):
@@ -328,8 +353,38 @@ def resolve(pointer, where, previous, candidate):
                    " names exactly one" % (where, "nothing" if opened == 0 else "more than one",
                                            opened, path, heading))
         return
-    refuse("list", "%s: a pointer is `commit:<sha>` or `ruling:<path>#<heading>`, not `%s`"
-           % (where, pointer))
+    if kind == EXCLUDED:
+        if not all(SEGMENT.fullmatch(segment) for segment in rest.split("/")):
+            refuse("list", "%s: an exclusion pointer is `excluded:<path in the repository>`,"
+                   " not `%s`" % (where, pointer))
+        held = git("cat-file", "blob", "%s:%s" % (candidate, rest))
+        if held.returncode != 0:
+            refuse("list", "%s points at nothing: the candidate has no file `%s`" % (where, rest))
+        try:
+            record = json.loads(held.stdout.decode("utf-8"))
+            if not isinstance(record, dict) or record.get("tool") != PROG:
+                raise ValueError("it does not say `tool: %s`" % PROG)
+            against = record["previous"]["commit"]
+            failed = [(entry["binary"], entry["test"])
+                      for field in ("excluded", "excluded_by_no_row")
+                      for entry in record.get(field, [])]
+        except (ValueError, KeyError, TypeError) as error:
+            refuse("list", "%s points at nothing: `%s` is not the line of a run of this tool:"
+                   " %s" % (where, rest, one_line(error)))
+        if against != previous:
+            refuse("list", "%s points at nothing: `%s` is the line of a run against `%s`, not"
+                   " against the previous release" % (where, rest, against))
+        if test not in failed:
+            refuse("list", "%s points at nothing: `%s` does not name `%s` `%s` among the tests"
+                   " that failed on their own binary" % ((where, rest) + test))
+        return
+    refuse("list", "%s: a pointer is `commit:<sha>`, `ruling:<path>#<heading>` or"
+           " `excluded:<path>`, not `%s`" % (where, pointer))
+
+
+def excludes(row):
+    """Whether `row` is an exclusion row: the kind of its pointer says so."""
+    return row["pointer"].partition(":")[0] == EXCLUDED
 
 
 def read_list(path, previous, candidate):
@@ -366,7 +421,7 @@ def read_list(path, previous, candidate):
             refuse("list", "%s lists a test that line %d lists already: `%s` `%s`"
                    % (where, lines[key], key[0], key[1]))
         lines[key] = number
-        resolve(row["pointer"], where, previous, candidate)
+        resolve(row["pointer"], where, previous, candidate, key)
         rows.append(row)
     return {"path": path, "commit": candidate, "sha256": hashlib.sha256(raw).hexdigest(),
             "rows": rows}
@@ -451,13 +506,8 @@ def hold_baseline(facts, evidence):
                        " %s the baseline: sha256 %s, where that binary's is %s"
                        % (moment.split("_")[1], found, previous))
     baseline = report(evidence, "baseline-junit.xml", "baseline")
-    failed = sum(1 for outcome in baseline.values() if outcome == "fail")
     if not baseline:
         raise Void("baseline", "the baseline ran no test")
-    if failed * BASELINE_TOLERANCE > len(baseline):
-        raise Void("baseline", "%d of the %d tests failed on their own binary — more than one"
-                   " in %d: a baseline that red is not one to compare against"
-                   % (failed, len(baseline), BASELINE_TOLERANCE))
     return baseline
 
 
@@ -518,39 +568,51 @@ def judge(evidence, the_list):
         line["evidence"] = evidence
         return line
 
-    excluded = {key for key, outcome in baseline.items() if outcome == "fail"}
-    differences = {
-        key for key in baseline if key not in excluded and candidate[key] == "fail"
-    }
+    failed = {key for key, outcome in baseline.items() if outcome == "fail"}
+    differences = {key for key in baseline if key not in failed and candidate[key] == "fail"}
     rows = {(row["binary"], row["test"]): row for row in the_list["rows"]}
+    exclusions = {key for key, row in rows.items() if excludes(row)}
+    changes = set(rows) - exclusions
     stale = []
     for key, row in sorted(rows.items()):
-        if key in differences:
+        if key in (failed if key in exclusions else differences):
             continue
         why = (
             "no-such-test" if key not in baseline
-            else "failed-on-its-own-binary" if key in excluded
+            else "passed-on-its-own-binary" if key in exclusions
+            else "failed-on-its-own-binary" if key in failed
             else "passed-on-the-candidate"
         )
         stale.append({"binary": key[0], "test": key[1], "pointer": row["pointer"], "why": why})
-    unlisted = differences - set(rows)
+    unlisted = differences - changes
+    unnamed = failed - exclusions
+    line["excluded_by_no_row"] = named(unnamed)
+    if unnamed and not unlisted:
+        # Nothing is red, and a test is out of the comparison that no row says may be.
+        line.update(status="void", reason="baseline", detail=(
+            "%d of the %d tests failed on their own binary and no exclusion row of the list"
+            " names them, `%s` `%s` among them: a test drops out of the comparison only by a"
+            " row that says why" % ((len(unnamed), len(baseline)) + min(unnamed))))
+        line["evidence"] = evidence
+        return line
     line["status"] = "red" if unlisted else "green"
     line["counts"] = {
         "tests": len(baseline),
-        "baseline_passed": len(baseline) - len(excluded),
-        "baseline_failed": len(excluded),
+        "baseline_passed": len(baseline) - len(failed),
+        "baseline_failed": len(failed),
         "candidate_passed": sum(1 for outcome in candidate.values() if outcome != "fail"),
         "candidate_failed": sum(1 for outcome in candidate.values() if outcome == "fail"),
         "differences": len(differences),
         "on_list": len(differences) - len(unlisted),
         "not_on_list": len(unlisted),
-        "excluded": len(excluded),
+        "excluded": len(failed) - len(unnamed),
+        "excluded_by_no_row": len(unnamed),
         "stale": len(stale),
-        "fixed": sum(1 for key in excluded if candidate[key] != "fail"),
+        "fixed": sum(1 for key in failed if candidate[key] != "fail"),
     }
     line["not_on_list"] = named(unlisted)
-    line["on_list"] = [rows[key] for key in sorted(differences & set(rows))]
-    line["excluded"] = named(excluded)
+    line["on_list"] = [rows[key] for key in sorted(differences & changes)]
+    line["excluded"] = [rows[key] for key in sorted(failed & exclusions)]
     line["stale"] = stale
     line["flaky"] = {
         "baseline": named(key for key, outcome in baseline.items() if outcome == "flaky"),
