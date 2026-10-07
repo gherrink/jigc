@@ -18,6 +18,19 @@
 //! - *The list's form*, and that a row pointing at nothing refuses the whole list — against
 //!   a throwaway repository with a commit before the release, the release, an intended
 //!   change, the candidate, and a commit after it.
+//! - *Which list a verdict rests on.* The list is a path **in the candidate's commit**, so
+//!   every arm's candidate is a commit that holds its list ([`Rig::candidate_with`]); a file
+//!   the commit does not hold is refused, whatever the working tree has at the path
+//!   ([`a_list_that_is_not_in_the_candidates_commit_is_refused`]); a run records the list
+//!   it read, and a verdict over another one is void
+//!   ([`a_verdict_over_another_list_than_the_run_read_is_void_and_never_green`]).
+//! - *What drops out of the comparison.* A test that fails on its own binary is excluded
+//!   only by a row of the list that names it and points at the committed line of a run
+//!   that showed it ([`an_exclusion_row_points_at_the_line_of_a_run_that_showed_the_test_failing`]);
+//!   on no row it voids the run and is named
+//!   ([`a_test_that_fails_on_its_own_binary_and_is_on_no_row_is_void_and_named`]), however
+//!   few such tests there are
+//!   ([`no_number_of_tests_drops_out_unnamed_and_none_is_too_many_with_its_row`]).
 //! - *The run's own order*, with a stand-in for cargo ([`FAKE_CARGO`]) that builds nothing
 //!   and is **faithful where the trap is**: asked for a run that is not made from the
 //!   recorded build, it copies the previous release's binary back over the path, as cargo
@@ -47,6 +60,12 @@ use crate::support::scratch::ScratchDir;
 use super::placed_executable;
 
 const TOOL: &str = "dev/regression-set";
+
+/// The list's path in the rig's repository, as a call names it.
+const LIST: &str = "record/intended-changes.tsv";
+
+/// Where the rig's exclusion rows point: the committed line of an earlier run of the tool.
+const RECORD: &str = "record/first-run.json";
 
 /// A space, both quotes and a `#`: a path that breaks any command that is not quoted, and
 /// any TOML string that is not escaped.
@@ -98,6 +117,10 @@ fn repo_root() -> PathBuf {
 /// [`previous`](Rig::previous) release, an [`intended`](Rig::intended) change, the
 /// [`candidate`](Rig::candidate) — whose `DECISIONS.md` has one heading that opens *The
 /// cap is ruled* and two that open *Twice* — and a commit [`later`](Rig::later) than it.
+///
+/// **The candidate a call names is never that commit itself**: the list is read out of the
+/// candidate's commit, so each arm's candidate is one commit on top of it that holds the
+/// arm's list at [`LIST`] ([`candidate_with`](Rig::candidate_with)).
 struct Rig {
     dir: ScratchDir,
     root: PathBuf,
@@ -290,10 +313,57 @@ impl Rig {
 
     /// One file written and committed; the commit's sha.
     fn change(&self, rel: &str, text: &str, subject: &str) -> String {
-        fs::write(self.root.join(rel), text).unwrap_or_else(|e| panic!("write `{rel}`: {e}"));
-        self.git(&["add", "--", rel]);
+        self.commit(&[(rel, text.as_bytes())], subject)
+    }
+
+    /// These files written and committed as one commit on the commit checked out; its sha.
+    fn commit(&self, files: &[(&str, &[u8])], subject: &str) -> String {
+        for (rel, bytes) in files {
+            let path = self.root.join(rel);
+            fs::create_dir_all(path.parent().expect("a file has a directory"))
+                .unwrap_or_else(|e| panic!("create the directory of `{rel}`: {e}"));
+            fs::write(path, bytes).unwrap_or_else(|e| panic!("write `{rel}`: {e}"));
+            self.git(&["add", "--", rel]);
+        }
         self.git(&["commit", "-q", "-m", subject]);
         self.git(&["rev-parse", "HEAD"])
+    }
+
+    /// A candidate that holds these files: one commit on top of the rig's
+    /// [`candidate`](Rig::candidate). The rig's dates and identity are fixed, so the same
+    /// files give the same commit however often it is asked for.
+    fn candidate_holding(&self, files: &[(&str, &[u8])]) -> String {
+        self.git(&["checkout", "-q", "--detach", &self.candidate]);
+        self.commit(files, "docs: the list of intended changes")
+    }
+
+    /// The candidate whose commit holds a list of this text at [`LIST`] — and, at
+    /// [`RECORD`], the line of the run its exclusion rows point at.
+    fn candidate_with(&self, list: impl AsRef<[u8]>) -> String {
+        let record = self.record_of(&String::from_utf8_lossy(list.as_ref()));
+        self.candidate_holding(&[(LIST, list.as_ref()), (RECORD, record.as_bytes())])
+    }
+
+    /// The line of a run against the rig's release in which every test failed on its own
+    /// binary that a row of `list` excludes by pointing at [`RECORD`]: the first of them
+    /// named as a line names a test that had its row, the others as tests that had none.
+    fn record_of(&self, list: &str) -> String {
+        let pointer = format!("excluded:{RECORD}");
+        let failed: Vec<Value> = list
+            .lines()
+            .map(|line| line.split('\t').collect::<Vec<_>>())
+            .filter(|fields| fields.len() == 4 && fields[3] == pointer)
+            .map(|fields| json!({"binary": fields[0], "test": fields[1]}))
+            .collect();
+        let (with_a_row, with_none) = failed.split_at(failed.len().min(1));
+        json!({
+            "tool": "regression-set",
+            "status": "red",
+            "previous": {"commit": self.previous, "sha256": OLD_HASH},
+            "excluded": with_a_row,
+            "excluded_by_no_row": with_none,
+        })
+        .to_string()
     }
 
     /// The tool, called from outside its repository — it finds that from where it lies.
@@ -326,10 +396,10 @@ impl Rig {
         self.tool_as(args, |_| {})
     }
 
-    /// A list of intended changes with this text, as a file outside the repository.
-    fn list(&self, text: impl AsRef<[u8]>) -> String {
+    /// A file with this text outside the repository — what no commit holds.
+    fn file_outside(&self, text: impl AsRef<[u8]>) -> String {
         let path = self.dir.path().join("intended-changes.tsv");
-        fs::write(&path, text).expect("write the list");
+        fs::write(&path, text).expect("write the file");
         path.to_str().expect("a UTF-8 path").to_owned()
     }
 
@@ -341,26 +411,40 @@ impl Rig {
         )
     }
 
-    /// `check-list` over a list with this text, between the rig's release and candidate.
+    /// An exclusion row of the list: the test, and a pointer at [`RECORD`].
+    fn excluding(&self, binary: &str, test: &str) -> String {
+        format!("{binary}\t{test}\t{NO_REPOSITORY}\texcluded:{RECORD}\n")
+    }
+
+    /// `check-list` over a list with this text, between the rig's release and the
+    /// candidate that holds it.
     fn check_list(&self, text: impl AsRef<[u8]>) -> Called {
-        let list = self.list(text);
+        let candidate = self.candidate_with(text);
         self.tool(&[
             "check-list",
             "--previous",
             &self.previous,
             "--candidate",
-            &self.candidate,
+            &candidate,
             "--list",
-            &list,
+            LIST,
         ])
     }
 
-    /// The facts of a run that held: two binaries, a path a test binary names, the
-    /// previous release's hash around the baseline and the candidate's around its run.
+    /// The facts of a run that held, over an empty list.
     fn facts(&self) -> Value {
+        self.facts_over("")
+    }
+
+    /// The facts of a run that held, over a list of this text: two binaries, a path a test
+    /// binary names, the previous release's hash around the baseline and the candidate's
+    /// around its run — and the list the run read, by its path and its hash, in the
+    /// candidate that holds it.
+    fn facts_over(&self, list: &str) -> Value {
         json!({
             "previous": {"commit": self.previous, "sha256": OLD_HASH},
-            "candidate": {"commit": self.candidate, "sha256": NEW_HASH},
+            "candidate": {"commit": self.candidate_with(list), "sha256": NEW_HASH},
+            "list": {"path": LIST, "sha256": sha256_of(list.as_bytes())},
             "baked_path": "/work/target-previous/debug/jigc",
             "named_by": 12,
             "at_baked_path": {
@@ -396,22 +480,26 @@ impl Rig {
         at.to_str().expect("a UTF-8 path").to_owned()
     }
 
-    /// `verdict` over the run `suite` describes, with `facts`, against a list of this text.
-    fn verdict_with(&self, facts: &Value, suite: &[Ran], list: &str) -> Called {
+    /// `verdict` over the run `suite` describes, with `facts` — against the list at
+    /// [`LIST`] in the candidate the facts name.
+    fn verdict_with(&self, facts: &Value, suite: &[Ran]) -> Called {
         let (baseline, candidate) = reports(suite);
         let evidence = self.evidence(Some(&facts.to_string()), Some(&baseline), Some(&candidate));
-        self.verdict_over(&evidence, list)
+        self.verdict_over(&evidence)
     }
 
+    /// `verdict` over the run `suite` describes, made over a list of this text.
     fn verdict(&self, suite: &[Ran], list: &str) -> Called {
-        self.verdict_with(&self.facts(), suite, list)
+        self.verdict_with(&self.facts_over(list), suite)
     }
 
-    fn verdict_over(&self, evidence: &str, list: &str) -> Called {
-        let list = self.list(list);
-        self.tool(&["verdict", "--evidence", evidence, "--list", &list])
+    fn verdict_over(&self, evidence: &str) -> Called {
+        self.tool(&["verdict", "--evidence", evidence, "--list", LIST])
     }
 }
+
+/// Why the rig's excluded tests fail on their own binary.
+const NO_REPOSITORY: &str = "it asks git about a tree that is no repository";
 
 const OLD_HASH: &str = "a906cd49003ebedd95f0cb96f3fd06d591b7561150e01a042909b0da2fc9835f";
 const NEW_HASH: &str = "7fdc1355e52a5be2e5a489c4535cac0239d3eeda08d91f8c1fca9c6afeb737da";
@@ -532,8 +620,10 @@ fn a_suite() -> Vec<Ran> {
 fn every_difference_on_the_list_is_green() {
     let rig = Rig::new();
     let list = format!(
-        "# intended changes since 1.0.0\n\n{}jigc::g_migrate\tuninstall::says_dropped\tthe ack says dropped\truling:DECISIONS.md#2026-10-06 — The cap is ruled\n",
+        "# intended changes since 1.0.0\n\n{}jigc::g_migrate\tuninstall::says_dropped\tthe ack says dropped\truling:DECISIONS.md#2026-10-06 — The cap is ruled\n\n# what fails on its own binary\n{}{}",
         rig.row("jigc::g_flow", "setup::refuses_a_seeded_file"),
+        rig.excluding("jigc::g_flow", "fences::reads_the_git_history"),
+        rig.excluding("jigc::g_flow", "discard::names_its_commit"),
     );
     let called = rig.verdict(&a_suite(), &list);
     let line = called.verdict("green");
@@ -550,6 +640,7 @@ fn every_difference_on_the_list_is_green() {
             "on_list": 2,
             "not_on_list": 0,
             "excluded": 2,
+            "excluded_by_no_row": 0,
             "stale": 0,
             "fixed": 1,
         }),
@@ -575,15 +666,47 @@ fn every_difference_on_the_list_is_green() {
         ]),
         "each difference with the row that lists it"
     );
+    let excluded = format!("excluded:{RECORD}");
+    assert_eq!(
+        line["excluded"],
+        json!([
+            {
+                "binary": "jigc::g_flow",
+                "test": "discard::names_its_commit",
+                "change": NO_REPOSITORY,
+                "pointer": excluded,
+            },
+            {
+                "binary": "jigc::g_flow",
+                "test": "fences::reads_the_git_history",
+                "change": NO_REPOSITORY,
+                "pointer": excluded,
+            },
+        ]),
+        "each test that failed on its own binary with the row that excludes it — exactly \
+         the exclusion rows"
+    );
+    assert_eq!(line["excluded_by_no_row"], json!([]));
     assert_eq!(line["stale"], json!([]));
-    assert_eq!(line["list"]["rows"], 2);
+    let candidate = rig.candidate_with(&list);
+    assert_eq!(
+        line["list"],
+        json!({
+            "path": LIST,
+            "commit": candidate,
+            "sha256": sha256_of(list.as_bytes()),
+            "rows": 4,
+        }),
+        "the line says which list the verdict rests on: its path, the commit it was read \
+         out of, and its hash"
+    );
     assert_eq!(
         line["previous"],
         json!({"commit": rig.previous, "sha256": OLD_HASH})
     );
     assert_eq!(
         line["candidate"],
-        json!({"commit": rig.candidate, "sha256": NEW_HASH})
+        json!({"commit": candidate, "sha256": NEW_HASH})
     );
     assert_eq!(
         line["proof"],
@@ -648,16 +771,52 @@ fn a_row_for_the_same_name_in_another_binary_lists_nothing() {
     assert_eq!(line["stale"][0]["why"], "passed-on-the-candidate");
 }
 
+/// **A test drops out of the comparison only by a row that names it** (the re-review's
+/// `R-M7`: up to one test in a hundred dropped out with the verdict green, and no list
+/// said which may). A test that fails on its own binary and is on no exclusion row voids
+/// the run, and the line names it. With a difference off the list as well the run is red —
+/// that much is established whatever the baseline lacks — and the line names both.
 #[test]
-fn a_test_that_fails_on_its_own_binary_is_excluded_and_named() {
+fn a_test_that_fails_on_its_own_binary_and_is_on_no_row_is_void_and_named() {
     let rig = Rig::new();
-    // Neither excluded test is on the list, and one of them fails on the candidate too.
-    let list = format!(
+    let changes = format!(
         "{}{}",
         rig.row("jigc::g_flow", "setup::refuses_a_seeded_file"),
         rig.row("jigc::g_migrate", "uninstall::says_dropped"),
     );
-    let called = rig.verdict(&a_suite(), &list);
+    let one_row = rig.excluding("jigc::g_flow", "fences::reads_the_git_history");
+    let both_rows = format!(
+        "{one_row}{}",
+        rig.excluding("jigc::g_flow", "discard::names_its_commit")
+    );
+
+    // Neither has a row: void, and both are named.
+    let called = rig.verdict(&a_suite(), &changes);
+    let line = called.void("baseline", "2 of the 407 tests failed on their own binary");
+    assert_eq!(
+        pairs(&line["excluded_by_no_row"]),
+        [
+            "jigc::g_flow discard::names_its_commit",
+            "jigc::g_flow fences::reads_the_git_history",
+        ]
+    );
+
+    // One has none — the one that passes on the candidate's binary, so nothing else moved.
+    let called = rig.verdict(&a_suite(), &format!("{changes}{one_row}"));
+    let line = called.void(
+        "baseline",
+        "1 of the 407 tests failed on their own binary and no exclusion row of the list names \
+         them, `jigc::g_flow` `discard::names_its_commit` among them",
+    );
+    assert_eq!(
+        pairs(&line["excluded_by_no_row"]),
+        ["jigc::g_flow discard::names_its_commit"],
+        "the void line names the test no row excludes: {}",
+        called.raw
+    );
+
+    // Each of the two has its row: green, and what is excluded is exactly the rows.
+    let called = rig.verdict(&a_suite(), &format!("{changes}{both_rows}"));
     let line = called.verdict("green");
     assert_eq!(
         pairs(&line["excluded"]),
@@ -668,6 +827,37 @@ fn a_test_that_fails_on_its_own_binary_is_excluded_and_named() {
         "a test that failed on the previous release's binary is no difference, whatever it \
          did on the candidate's — and is named: {}",
         called.raw
+    );
+    assert_eq!(line["excluded_by_no_row"], json!([]));
+
+    // And a difference off the list beside it: red, with both named.
+    let list = format!(
+        "{}{one_row}",
+        rig.row("jigc::g_flow", "setup::refuses_a_seeded_file")
+    );
+    let called = rig.verdict(&a_suite(), &list);
+    let line = called.verdict("red");
+    assert_eq!(
+        pairs(&line["not_on_list"]),
+        ["jigc::g_migrate uninstall::says_dropped"]
+    );
+    assert_eq!(
+        pairs(&line["excluded"]),
+        ["jigc::g_flow fences::reads_the_git_history"]
+    );
+    assert_eq!(
+        pairs(&line["excluded_by_no_row"]),
+        ["jigc::g_flow discard::names_its_commit"],
+        "a red line names what no row excludes too: {}",
+        called.raw
+    );
+    assert_eq!(
+        (
+            &line["counts"]["baseline_failed"],
+            &line["counts"]["excluded"],
+            &line["counts"]["excluded_by_no_row"],
+        ),
+        (&json!(2), &json!(1), &json!(1))
     );
 }
 
@@ -699,35 +889,79 @@ fn a_test_that_passed_on_its_retry_passed_and_is_named_flaky() {
 }
 
 #[test]
-fn a_row_that_matches_no_difference_is_stale_and_says_why() {
+fn a_row_that_matches_nothing_is_stale_and_says_why() {
     let rig = Rig::new();
-    let list = format!(
-        "{}{}{}{}{}",
+    let held = format!(
+        "{}{}{}{}",
         rig.row("jigc::g_flow", "setup::refuses_a_seeded_file"),
         rig.row("jigc::g_migrate", "uninstall::says_dropped"),
+        rig.excluding("jigc::g_flow", "fences::reads_the_git_history"),
+        rig.excluding("jigc::g_flow", "discard::names_its_commit"),
+    );
+    let list = format!(
+        "{held}{}{}{}{}",
         rig.row("jigc::g_flow", "setup::a_test_nobody_wrote"),
-        rig.row("jigc::g_flow", "fences::reads_the_git_history"),
         rig.row("jigc::g_item", "task::finalizes"),
+        rig.excluding("jigc::g_flow", "fences::a_test_nobody_wrote"),
+        // Flaky on its own binary is a pass there.
+        rig.excluding("jigc::g_flow", "corpus::copies_a_tree"),
     );
     let called = rig.verdict(&a_suite(), &list);
-    // Stale rows are reported and change no verdict: every difference is still listed.
+    // Stale rows are reported and change no verdict: every difference is still listed,
+    // and every test that failed on its own binary still has its row.
     let line = called.verdict("green");
-    let pointer = format!("commit:{}", rig.intended);
+    let commit = format!("commit:{}", rig.intended);
+    let excluded = format!("excluded:{RECORD}");
     assert_eq!(
         line["stale"],
         json!([
-            {"binary": "jigc::g_flow", "test": "fences::reads_the_git_history",
-             "pointer": pointer, "why": "failed-on-its-own-binary"},
+            {"binary": "jigc::g_flow", "test": "corpus::copies_a_tree",
+             "pointer": excluded, "why": "passed-on-its-own-binary"},
+            {"binary": "jigc::g_flow", "test": "fences::a_test_nobody_wrote",
+             "pointer": excluded, "why": "no-such-test"},
             {"binary": "jigc::g_flow", "test": "setup::a_test_nobody_wrote",
-             "pointer": pointer, "why": "no-such-test"},
+             "pointer": commit, "why": "no-such-test"},
             {"binary": "jigc::g_item", "test": "task::finalizes",
-             "pointer": pointer, "why": "passed-on-the-candidate"},
+             "pointer": commit, "why": "passed-on-the-candidate"},
         ]),
         "each stale row with why: {}",
         called.raw
     );
-    assert_eq!(line["counts"]["stale"], 3);
+    assert_eq!(line["counts"]["stale"], 4);
     assert_eq!(line["counts"]["on_list"], 2);
+    assert_eq!(line["counts"]["excluded"], 2);
+
+    // The two kinds of row do not stand in for each other. A difference under an
+    // exclusion row is not listed, and a test that failed on its own binary under a row
+    // for a change is not excluded: each row is stale, and each test is still owed its own.
+    let crossed = format!(
+        "{}{}{}{}",
+        rig.row("jigc::g_flow", "setup::refuses_a_seeded_file"),
+        rig.excluding("jigc::g_migrate", "uninstall::says_dropped"),
+        rig.row("jigc::g_flow", "fences::reads_the_git_history"),
+        rig.excluding("jigc::g_flow", "discard::names_its_commit"),
+    );
+    let called = rig.verdict(&a_suite(), &crossed);
+    let line = called.verdict("red");
+    assert_eq!(
+        pairs(&line["not_on_list"]),
+        ["jigc::g_migrate uninstall::says_dropped"],
+        "{}",
+        called.raw
+    );
+    assert_eq!(
+        pairs(&line["excluded_by_no_row"]),
+        ["jigc::g_flow fences::reads_the_git_history"]
+    );
+    assert_eq!(
+        line["stale"],
+        json!([
+            {"binary": "jigc::g_flow", "test": "fences::reads_the_git_history",
+             "pointer": commit, "why": "failed-on-its-own-binary"},
+            {"binary": "jigc::g_migrate", "test": "uninstall::says_dropped",
+             "pointer": excluded, "why": "passed-on-its-own-binary"},
+        ])
+    );
 }
 
 /// **The arm the tool exists for.** Every report is green — the candidate's run shows no
@@ -738,7 +972,7 @@ fn a_binary_that_was_put_back_is_void_and_never_green() {
     let rig = Rig::new();
     let mut facts = rig.facts();
     facts["at_baked_path"]["candidate_after"] = json!(OLD_HASH);
-    let called = rig.verdict_with(&facts, &quiet(40), "");
+    let called = rig.verdict_with(&facts, &quiet(40));
     let line = called.void("swap", "the previous release's binary, put back");
     assert_eq!(
         line["proof"]["candidate_after"], OLD_HASH,
@@ -749,24 +983,47 @@ fn a_binary_that_was_put_back_is_void_and_never_green() {
     rig.verdict(&quiet(40), "").verdict("green");
 }
 
-/// The baseline is compared against while at most one test in a hundred failed on its own
-/// binary: 2 of 200 is, 2 of 199 is not.
+/// **No number of tests drops out unnamed, and none is too many once each has its row.**
+/// The tool compared against a baseline while at most one test in a hundred failed on its
+/// own binary; 2 of 200, on no row, were green (the re-review's `R-M7`, whose block this
+/// is).
 #[test]
-fn a_baseline_is_compared_against_up_to_one_failure_in_a_hundred() {
+fn no_number_of_tests_drops_out_unnamed_and_none_is_too_many_with_its_row() {
     let rig = Rig::new();
-    let with_two_red = |quiet_tests: usize| {
-        let mut suite = quiet(quiet_tests);
-        suite.extend([
-            ran("jigc::g_flow", "fences::one", Fail, Fail),
-            ran("jigc::g_flow", "fences::two", Fail, Fail),
-        ]);
-        suite
-    };
-    let called = rig.verdict(&with_two_red(198), "");
-    assert_eq!(called.verdict("green")["counts"]["excluded"], 2);
+    let mut suite = quiet(198);
+    suite.extend([
+        ran("jigc::g_flow", "fences::one", Fail, Fail),
+        ran("jigc::g_flow", "fences::two", Fail, Fail),
+    ]);
+    let called = rig.verdict(&suite, "");
+    let line = called.void(
+        "baseline",
+        "2 of the 200 tests failed on their own binary and no exclusion row",
+    );
+    assert_eq!(
+        pairs(&line["excluded_by_no_row"]),
+        ["jigc::g_flow fences::one", "jigc::g_flow fences::two"]
+    );
 
-    rig.verdict(&with_two_red(197), "")
-        .void("baseline", "2 of the 199 tests failed on their own binary");
+    // Most of a suite failing on its own binary, each test on its row: nothing is capped.
+    let mut suite = quiet(10);
+    let mut list = String::new();
+    for n in 0..60 {
+        let test = format!("fences::asks_git_{n:02}");
+        suite.push(ran("jigc::g_flow", &test, Fail, Fail));
+        list.push_str(&rig.excluding("jigc::g_flow", &test));
+    }
+    let called = rig.verdict(&suite, &list);
+    let line = called.verdict("green");
+    assert_eq!(
+        (
+            &line["counts"]["excluded"],
+            &line["counts"]["excluded_by_no_row"]
+        ),
+        (&json!(60), &json!(0)),
+        "{}",
+        called.raw
+    );
 }
 
 /// One row per way a run fails to establish a verdict: what is changed in evidence that
@@ -1023,7 +1280,7 @@ fn each_way_a_run_establishes_nothing_is_void_with_its_reason() {
     for (what, facts, baseline, candidate, reason, saying) in rows {
         // A cut-off or non-object `run.json` names no commits, so no list is read at all.
         let evidence = rig.evidence(facts.as_deref(), baseline, candidate);
-        let called = rig.verdict_over(&evidence, "");
+        let called = rig.verdict_over(&evidence);
         assert_eq!(
             (called.code, called.line["reason"].as_str()),
             (status_of(reason), Some(reason)),
@@ -1065,7 +1322,7 @@ test flow19_planning_encode::flow19_warm_append_over_an_oob_drifted_singleton_co
         .to_owned()
         + "</testcase>\n    </testsuite>\n    <testsuite name=\"jigc-engine\">\n        <testcase name=\"write::splice_prop_tests::set_slot_into_decision_is_byte_stable\" classname=\"jigc-engine\" time=\"0.308\"/>\n    </testsuite>\n</testsuites>\n";
     let evidence = rig.evidence(Some(&rig.facts().to_string()), Some(&baseline), Some(REAL));
-    let called = rig.verdict_over(&evidence, "");
+    let called = rig.verdict_over(&evidence);
     let line = called.verdict("red");
     assert_eq!(line["counts"]["tests"], 3, "{}", called.raw);
     assert_eq!(
@@ -1115,9 +1372,15 @@ fn a_list_in_its_form_is_read() {
             },
         ])
     );
-    // The candidate's own commit is a change since the release, and the newest one.
-    let own = format!("jigc\tt::a\tx\tcommit:{}\n", rig.candidate);
-    assert_eq!(rig.check_list(&own).code, 0);
+    assert_eq!(
+        (&called.line["list"]["path"], &called.line["list"]["commit"]),
+        (&json!(LIST), &json!(rig.candidate_with(&text))),
+        "and the line says where it was read: the path, in the candidate's commit"
+    );
+    assert_eq!(called.line["list"]["sha256"], sha256_of(text.as_bytes()));
+    // The newest commit a row can point at is the one the list's own was made on.
+    let newest = format!("jigc\tt::a\tx\tcommit:{}\n", rig.candidate);
+    assert_eq!(rig.check_list(&newest).code, 0);
 }
 
 /// One row per way a list is not in its form or points at nothing: each refuses the whole
@@ -1185,12 +1448,12 @@ fn a_list_out_of_its_form_or_pointing_at_nothing_is_refused() {
         (
             "a bare sha",
             pointing(&rig.intended),
-            "a pointer is `commit:<sha>` or `ruling:<path>#<heading>`",
+            "a pointer is `commit:<sha>`, `ruling:<path>#<heading>` or `excluded:<path>`",
         ),
         (
             "another kind of pointer",
             pointing("ticket:TKT-1"),
-            "a pointer is `commit:<sha>` or `ruling:<path>#<heading>`",
+            "a pointer is `commit:<sha>`, `ruling:<path>#<heading>` or `excluded:<path>`",
         ),
         (
             "a short sha",
@@ -1283,17 +1546,356 @@ fn a_list_out_of_its_form_or_pointing_at_nothing_is_refused() {
 
     let called = rig.check_list([b'j', 0xff, b'\n']);
     called.refused("list", "is not UTF-8");
+}
 
-    let called = rig.tool(&[
-        "check-list",
-        "--previous",
-        &rig.previous,
-        "--candidate",
-        &rig.candidate,
-        "--list",
-        "no/such/list.tsv",
-    ]);
-    called.refused("list", "cannot read the list");
+/// **An exclusion row points at the record of a run that showed the test failing on its
+/// own binary**: a file of the candidate's commit that is a line of this tool, of a run
+/// against the same previous release, which names the test among those that failed there.
+/// Anything less is a row that points at nothing, and the whole list is refused.
+#[test]
+fn an_exclusion_row_points_at_the_line_of_a_run_that_showed_the_test_failing() {
+    let rig = Rig::new();
+    // In its form it is read, as a row of the same list. The record names the first test
+    // as a line names one that had its row, the second as one that had none.
+    let text = format!(
+        "{}{}{}",
+        rig.row("jigc::g_flow", "setup::refuses_a_seeded_file"),
+        rig.excluding("jigc::g_flow", "fences::reads_the_git_history"),
+        rig.excluding("jigc::g_flow", "discard::names_its_commit"),
+    );
+    let called = rig.check_list(&text);
+    assert_eq!(
+        (called.code, called.line["status"].as_str()),
+        (0, Some("listed")),
+        "{}",
+        called.raw
+    );
+    assert_eq!(
+        called.line["list"]["rows"][1],
+        json!({
+            "binary": "jigc::g_flow",
+            "test": "fences::reads_the_git_history",
+            "change": NO_REPOSITORY,
+            "pointer": format!("excluded:{RECORD}"),
+        })
+    );
+    assert_eq!(
+        called.line["list"]["rows"][2]["test"],
+        "discard::names_its_commit"
+    );
+
+    const RUN: &str = "record/run.json";
+    let pointing = |pointer: &str| {
+        format!("jigc::g_flow\tfences::reads_the_git_history\t{NO_REPOSITORY}\t{pointer}\n")
+    };
+    let check = |record: Option<&str>, pointer: &str| {
+        let list = pointing(pointer);
+        let mut files = vec![(LIST, list.as_bytes())];
+        files.extend(record.map(|record| (RUN, record.as_bytes())));
+        let candidate = rig.candidate_holding(&files);
+        rig.tool(&[
+            "check-list",
+            "--previous",
+            &rig.previous,
+            "--candidate",
+            &candidate,
+            "--list",
+            LIST,
+        ])
+    };
+    let naming = |binary: &str, test: &str| {
+        json!({
+            "tool": "regression-set",
+            "status": "green",
+            "previous": {"commit": rig.previous, "sha256": OLD_HASH},
+            "excluded": [{"binary": binary, "test": test}],
+        })
+        .to_string()
+    };
+    let good = naming("jigc::g_flow", "fences::reads_the_git_history");
+    let at_run = format!("excluded:{RUN}");
+    let at_run = at_run.as_str();
+    assert_eq!(check(Some(&good), at_run).code, 0, "the control: read");
+
+    let rows: Vec<(&str, Option<String>, &str, &str)> = vec![
+        // A pointer that is none.
+        (
+            "no path",
+            Some(good.clone()),
+            "excluded:",
+            "an exclusion pointer is `excluded:<path in the repository>`",
+        ),
+        (
+            "a path that leaves the repository",
+            Some(good.clone()),
+            "excluded:../record/run.json",
+            "an exclusion pointer is",
+        ),
+        (
+            "an absolute path",
+            Some(good.clone()),
+            "excluded:/etc/hosts",
+            "an exclusion pointer is",
+        ),
+        // A pointer at nothing.
+        (
+            "a file the candidate lacks",
+            None,
+            at_run,
+            "line 1 points at nothing: the candidate has no file `record/run.json`",
+        ),
+        (
+            "a file that is no JSON",
+            Some("# The record of a run\n".to_owned()),
+            at_run,
+            "is not the line of a run of this tool",
+        ),
+        (
+            "JSON that is no object",
+            Some("[]".to_owned()),
+            at_run,
+            "is not the line of a run of this tool",
+        ),
+        (
+            "the line of another tool",
+            Some(good.replace("regression-set", "gate")),
+            at_run,
+            "is not the line of a run of this tool",
+        ),
+        (
+            "a line that names no previous release",
+            Some(json!({"tool": "regression-set", "excluded": []}).to_string()),
+            at_run,
+            "is not the line of a run of this tool",
+        ),
+        (
+            "a line whose tests are bare names",
+            Some(
+                json!({
+                    "tool": "regression-set",
+                    "previous": {"commit": rig.previous},
+                    "excluded": ["fences::reads_the_git_history"],
+                })
+                .to_string(),
+            ),
+            at_run,
+            "is not the line of a run of this tool",
+        ),
+        (
+            "a run against another release",
+            Some(good.replace(&rig.previous, &rig.before)),
+            at_run,
+            "is the line of a run against",
+        ),
+        (
+            "a line that names another test",
+            Some(naming("jigc::g_flow", "fences::another")),
+            at_run,
+            "does not name `jigc::g_flow` `fences::reads_the_git_history`",
+        ),
+        (
+            "the same name in another binary",
+            Some(naming("jigc::g_item", "fences::reads_the_git_history")),
+            at_run,
+            "does not name `jigc::g_flow` `fences::reads_the_git_history`",
+        ),
+        (
+            "a line in which no test failed on its own binary",
+            Some(
+                json!({"tool": "regression-set", "previous": {"commit": rig.previous}}).to_string(),
+            ),
+            at_run,
+            "does not name",
+        ),
+    ];
+    for (what, record, pointer, saying) in rows {
+        let called = check(record.as_deref(), pointer);
+        assert_eq!(
+            called.code,
+            status_of("list"),
+            "{what}: refused\nline: {}",
+            called.raw
+        );
+        called.refused("list", saying);
+    }
+}
+
+/// **What a green rests on is a fact of the candidate's commit** (the re-review's `R-M6`:
+/// the first green on record was given over a file no commit held). The list is named by
+/// its path in the repository and read out of the candidate's commit — never from the
+/// working tree, and never from a file somewhere else.
+#[test]
+fn a_list_that_is_not_in_the_candidates_commit_is_refused() {
+    let rig = Rig::new();
+    let unruled = rig.row("jigc::g_flow", "some_suite::a_test_a_fixer_broke");
+    let check = |candidate: &str, list: &str| {
+        // Called from the repository's root, where a path in the repository names the
+        // working tree's file too: what a caller's shell would hand a tool that opens it.
+        rig.tool_as(
+            &[
+                "check-list",
+                "--previous",
+                &rig.previous,
+                "--candidate",
+                candidate,
+                "--list",
+                list,
+            ],
+            |command| {
+                command.current_dir(&rig.root);
+            },
+        )
+    };
+
+    // The candidate holds an empty list. The working tree's file at the same path is then
+    // given a row nobody committed: the list that is read is the commit's.
+    let candidate = rig.candidate_with("");
+    fs::write(rig.root.join(LIST), &unruled).expect("write the working tree's file");
+    let called = check(&candidate, LIST);
+    assert_eq!(
+        (called.code, called.line["status"].as_str()),
+        (0, Some("listed")),
+        "{}",
+        called.raw
+    );
+    assert_eq!(
+        (&called.line["list"]["rows"], &called.line["list"]["sha256"]),
+        (&json!([]), &json!(sha256_of(b""))),
+        "the list is the candidate's commit's, whatever the working tree has at the path: {}",
+        called.raw
+    );
+
+    // A candidate that has no file at the path, while the working tree still has one.
+    let called = check(&rig.candidate, LIST);
+    called.refused("list", "the candidate's commit holds no file");
+
+    // A file no commit holds, named as a caller's shell would name it.
+    let outside = rig.file_outside(&unruled);
+    for (what, named) in [
+        ("an absolute path", outside.as_str()),
+        (
+            "a path that leaves the repository",
+            "../intended-changes.tsv",
+        ),
+        (
+            "a path with an empty segment",
+            "record//intended-changes.tsv",
+        ),
+    ] {
+        let called = check(&candidate, named);
+        assert_eq!(called.code, status_of("list"), "{what}: {}", called.raw);
+        called.refused("list", "is named by its path in the repository");
+    }
+
+    // A directory of the commit is no list, and neither is a path the commit lacks.
+    check(&candidate, "record").refused("list", "the candidate's commit holds no file");
+    check(&candidate, "no/such/list.tsv").refused("list", "the candidate's commit holds no file");
+}
+
+/// **A verdict is given over the list its run read, or it is void — never green.** A run
+/// records the list's path and hash; evidence that names another list than the one the
+/// verdict is asked over establishes nothing about it.
+#[test]
+fn a_verdict_over_another_list_than_the_run_read_is_void_and_never_green() {
+    let rig = Rig::new();
+    let suite = [
+        ran("jigc-engine", "unit::holds", Pass, Pass),
+        ran("jigc::g_flow", "setup::refuses_a_seeded_file", Pass, Fail),
+    ];
+    let row = rig.row("jigc::g_flow", "setup::refuses_a_seeded_file");
+    const OTHER: &str = "record/another-list.tsv";
+    let held = rig.facts();
+    // The candidate holds two lists: an empty one, and one with the row that would make
+    // the run green. It is the commit checked out, so the working tree has both too.
+    let candidate = rig.candidate_holding(&[(LIST, b""), (OTHER, row.as_bytes())]);
+    let facts_naming = |path: &str, sha256: String| {
+        let mut facts = held.clone();
+        facts["candidate"]["commit"] = json!(candidate);
+        facts["list"] = json!({"path": path, "sha256": sha256});
+        facts
+    };
+    let verdict = |facts: &Value, list: &str| {
+        let (baseline, candidate) = reports(&suite);
+        let evidence = rig.evidence(Some(&facts.to_string()), Some(&baseline), Some(&candidate));
+        // From the repository's root, as in the arm above.
+        rig.tool_as(
+            &["verdict", "--evidence", &evidence, "--list", list],
+            |command| {
+                command.current_dir(&rig.root);
+            },
+        )
+    };
+
+    // The run read the empty list; the verdict is asked over the one with the row.
+    let read_the_empty_one = facts_naming(LIST, sha256_of(b""));
+    let line = verdict(&read_the_empty_one, OTHER)
+        .void(
+            "evidence",
+            "the run read the list `record/intended-changes.tsv`",
+        )
+        .clone();
+    assert_eq!(
+        line["list"],
+        json!({
+            "path": OTHER,
+            "commit": candidate,
+            "sha256": sha256_of(row.as_bytes()),
+            "rows": 1,
+        }),
+        "the void line names the list it was asked over"
+    );
+    // The control: over the list the run read, the difference is unlisted — red.
+    verdict(&read_the_empty_one, LIST).verdict("red");
+
+    // The path is the same and the bytes are not: the evidence names a hash the commit's
+    // file does not have.
+    let another_hash = facts_naming(OTHER, sha256_of(b"another list\n"));
+    verdict(&another_hash, OTHER).void("evidence", "the run read the list");
+    // The control: the same evidence naming the hash of the file is green.
+    verdict(&facts_naming(OTHER, sha256_of(row.as_bytes())), OTHER).verdict("green");
+
+    // Evidence that does not say which list its run read — a run of the tool before it
+    // recorded one — cannot be told from either.
+    let mut silent = read_the_empty_one.clone();
+    silent.as_object_mut().expect("an object").remove("list");
+    verdict(&silent, LIST).void("evidence", "`run.json` has no `list.path`");
+}
+
+/// Two builds of one commit differ in bytes wherever a build embeds its path, so no hash
+/// refuses them (the re-review's `R-M6`): the two commits are held apart before anything
+/// is read or built.
+#[test]
+fn two_commits_that_are_one_are_refused() {
+    let rig = Rig::new();
+    // A list no row of which can be wrong, at a path every form of the call can open.
+    let outside = rig.file_outside("");
+    let candidate = rig.candidate_with("");
+    let scratch = rig.scratch.to_str().expect("a UTF-8 path");
+    let saying = "the candidate's commit is the previous release's";
+    for list in [outside.as_str(), LIST] {
+        for commit in [rig.previous.as_str(), candidate.as_str()] {
+            let named = ["--previous", commit, "--candidate", commit, "--list", list];
+            let called = rig.tool(&[&["check-list"], &named[..]].concat());
+            assert_eq!(called.code, status_of("commit"), "{}", called.raw);
+            called.refused("commit", saying);
+            let called = rig.tool(&[&["run"], &named[..], &["--scratch", scratch]].concat());
+            assert_eq!(called.code, status_of("commit"), "{}", called.raw);
+            called.refused("commit", saying);
+        }
+    }
+    assert_eq!(
+        fs::read_dir(&rig.scratch)
+            .expect("read the scratch directory")
+            .count(),
+        0,
+        "a refused run mints nothing"
+    );
+
+    // Evidence of such a run is refused the same way.
+    let mut facts = rig.facts();
+    facts["previous"]["commit"] = facts["candidate"]["commit"].clone();
+    rig.verdict_with(&facts, &quiet(3))
+        .refused("commit", saying);
 }
 
 /// The list is held to the commits the evidence names: a row that points outside them is
@@ -1316,12 +1918,12 @@ fn a_verdict_is_given_over_no_list_that_is_refused() {
 #[test]
 fn what_a_call_names_wrongly_is_refused_with_its_word() {
     let rig = Rig::new();
-    let list = rig.list("");
+    let candidate = rig.candidate_with("");
+    let list = LIST;
     let scratch = rig.scratch.to_str().expect("a UTF-8 path");
     let inside = rig.root.join("dev");
     fs::create_dir_all(&inside).expect("a directory inside the repository");
-    let (previous, candidate) = (rig.previous.as_str(), rig.candidate.as_str());
-    let list = list.as_str();
+    let (previous, candidate) = (rig.previous.as_str(), candidate.as_str());
     let short = &rig.previous[..12];
     let nowhere = "f".repeat(40);
     let absent = format!("{scratch}/absent");
@@ -1546,7 +2148,8 @@ struct Driven {
 
 impl Rig {
     /// `run`, with the stand-in first on `PATH`, over a suite whose reports the stand-in
-    /// hands out by the binary it finds at the path.
+    /// hands out by the binary it finds at the path — the candidate the one that holds a
+    /// list of this text.
     fn run(&self, suite: &[Ran], list: &str, mode: &str, more: &[&str]) -> Driven {
         let bin = self.dir.path().join("bin");
         placed_executable::write(&bin.join("cargo"), FAKE_CARGO);
@@ -1557,15 +2160,15 @@ impl Rig {
         let (on_previous, on_candidate) = reports(suite);
         fs::write(state.join("on-previous.xml"), on_previous).expect("write a report");
         fs::write(state.join("on-candidate.xml"), on_candidate).expect("write a report");
-        let list = self.list(list);
+        let candidate = self.candidate_with(list);
         let mut args = vec![
             "run",
             "--previous",
             &self.previous,
             "--candidate",
-            &self.candidate,
+            &candidate,
             "--list",
-            &list,
+            LIST,
             "--scratch",
             self.scratch.to_str().expect("a UTF-8 path"),
         ];
@@ -1665,9 +2268,10 @@ fn a_run_builds_once_records_the_build_and_makes_both_runs_from_the_record() {
         line["previous"],
         json!({"commit": rig.previous, "sha256": old})
     );
+    let candidate = rig.candidate_with(both_rows(&rig));
     assert_eq!(
         line["candidate"],
-        json!({"commit": rig.candidate, "sha256": new})
+        json!({"commit": candidate, "sha256": new})
     );
     assert_eq!(
         line["proof"],
@@ -1703,7 +2307,7 @@ fn a_run_builds_once_records_the_build_and_makes_both_runs_from_the_record() {
             "`{built}` is removed at the end of a run"
         );
     }
-    let again = rig.verdict_over(evidence.to_str().expect("a UTF-8 path"), &both_rows(&rig));
+    let again = rig.verdict_over(evidence.to_str().expect("a UTF-8 path"));
     assert_eq!(again.verdict("green")["counts"], line["counts"]);
 
     // And what the runner exited with, each time: the baseline green, the second run not.
@@ -1712,6 +2316,15 @@ fn a_run_builds_once_records_the_build_and_makes_both_runs_from_the_record() {
     )
     .expect("run.json is JSON");
     assert_eq!(facts["exits"], json!({"baseline": 0, "candidate": 100}));
+
+    // Which list the run read is a fact of its evidence and of its line: the path, the
+    // candidate's commit it was read out of, and the hash of its bytes.
+    let hash = sha256_of(both_rows(&rig).as_bytes());
+    assert_eq!(facts["list"], json!({"path": LIST, "sha256": hash}));
+    assert_eq!(
+        line["list"],
+        json!({"path": LIST, "commit": candidate, "sha256": hash, "rows": 2})
+    );
 }
 
 #[test]
@@ -1804,32 +2417,51 @@ fn a_step_that_cannot_be_done_ends_the_run_there_void() {
     }
 }
 
+/// A test that fails on its own binary and is on no row does not end the run where the
+/// baseline ends: the second run is made, so that ONE run names every difference and every
+/// such test — which is what the rows are then written from.
 #[test]
-fn a_baseline_that_cannot_be_compared_against_ends_the_run_before_the_swap() {
+fn a_run_names_what_no_row_excludes_after_both_runs_are_made() {
     let rig = Rig::new();
-    let mut suite = quiet(20);
+    let mut suite = a_run();
     suite.push(ran(
         "jigc::g_flow",
         "fences::reads_the_git_history",
         Fail,
         Fail,
     ));
-    let run = rig.run(&suite, "", "", &["--keep"]);
-    let line = run
-        .called
-        .void("baseline", "1 of the 21 tests failed on their own binary");
+    let asks_git = ["jigc::g_flow fences::reads_the_git_history"];
+
+    // A difference is off the list too: red, and both are named.
+    let one_row = rig.row("jigc::g_flow", "setup::refuses_a_seeded_file");
+    let run = rig.run(&suite, &one_row, "", &[]);
+    let line = run.called.verdict("red");
     assert_eq!(
-        run.calls.len(),
-        5,
-        "the candidate's run is not made: {:?}",
-        run.calls
+        pairs(&line["not_on_list"]),
+        ["jigc::g_migrate uninstall::says_dropped"]
     );
-    let work = PathBuf::from(line["work"].as_str().expect("the line names its directory"));
-    assert_eq!(
-        fs::read(work.join("target-previous/debug/jigc")).expect("the file at the path"),
-        b"the previous release's binary\n",
-        "and nothing was swapped"
+    assert_eq!(pairs(&line["excluded_by_no_row"]), asks_git);
+    assert_eq!(run.calls.len(), 6, "both runs were made: {:?}", run.calls);
+
+    // Every difference is listed: void, and the test is named.
+    let run = rig.run(&suite, &both_rows(&rig), "", &[]);
+    let line = run.called.void(
+        "baseline",
+        "1 of the 23 tests failed on their own binary and no exclusion row",
     );
+    assert_eq!(pairs(&line["excluded_by_no_row"]), asks_git);
+    assert_eq!(run.calls.len(), 6, "both runs were made: {:?}", run.calls);
+
+    // With its row: green, and what is excluded is the row.
+    let listed = format!(
+        "{}{}",
+        both_rows(&rig),
+        rig.excluding("jigc::g_flow", "fences::reads_the_git_history")
+    );
+    let run = rig.run(&suite, &listed, "", &[]);
+    let line = run.called.verdict("green");
+    assert_eq!(pairs(&line["excluded"]), asks_git, "{}", run.called.raw);
+    assert_eq!(line["excluded_by_no_row"], json!([]));
 }
 
 #[test]
@@ -1847,16 +2479,16 @@ fn a_run_without_cargo_did_not_run() {
             .unwrap_or_else(|| panic!("`{needed}` is on PATH"));
         std::os::unix::fs::symlink(real, bin.join(needed)).expect("link the tool");
     }
-    let list = rig.list("");
+    let candidate = rig.candidate_with("");
     let called = rig.tool_as(
         &[
             "run",
             "--previous",
             &rig.previous,
             "--candidate",
-            &rig.candidate,
+            &candidate,
             "--list",
-            &list,
+            LIST,
             "--scratch",
             rig.scratch.to_str().expect("a UTF-8 path"),
         ],
