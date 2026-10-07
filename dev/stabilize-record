@@ -8,7 +8,9 @@
 # entries of 2026-10-06, "The record script holds what the harness reads its work from",
 # "The run's decision table, settled" and "The decision table's holes, closed" — and, for
 # what a clause's status is, "Evidence belongs to a test-set item"; for the counters, the
-# exits and where a write is taken, "Every loop has a counter on record").
+# exits and where a write is taken, "Every loop has a counter on record"; and, for what
+# that status is computed FROM, the entry of 2026-10-07, "The derivation's inputs are held
+# where they are written").
 #
 # A stage's reporters have a shell and no write tool, and what they write is public on
 # the next push and read by fences on the next gate. So neither an agent nor the harness
@@ -151,7 +153,9 @@
 #       a status a hand changed, a row or the file deleted, a row added — is refused
 #       (corrupt) by `state` and by each of those writers, naming what differs: it is
 #       never read, and never quietly rendered over.
-#       NOTHING REMOVES A CLAUSE, and nothing removes an item of the test set (item-set).
+#       NOTHING REMOVES A CLAUSE, and nothing removes an item of the test set (item-set) —
+#       nor what a round has run of one, or owes it: its row stands in the four cells the
+#       derivation reads.
 #       Dropping or replacing either is no ruling inside a round: it changes the closing
 #       condition or the test set, and both are fixed by the run's human-led opening
 #       before round 1 — a run whose condition changes is opened again. The one ruling a
@@ -226,7 +230,11 @@
 #                      audit area, a deterministic check. A slug, and NOT a vocabulary of
 #                      this script's: the harness has a chain of agents per kind, and a
 #                      kind it has none for is its halt, never a guess of either's.
-#         clause       the clause of the closing condition it judges   — a slug
+#         clause       the clause of the closing condition it judges   — a slug, AND A
+#                      CLAUSE OF THE CENSUS (run-set: clauses) once that is written: the
+#                      derivation walks the census, so an item of a clause it does not
+#                      name would judge nothing, and is refused (bad-value). While there is
+#                      no census the row is taken, and the census is held to it instead.
 #         runs         every-candidate | in-scope — on every candidate, or only in a
 #                      round whose test set reaches it ("hunt once per change, check
 #                      always")
@@ -235,9 +243,17 @@
 #         registries   texts; and the registries it covers whole. Optional, but an
 #                      in-scope item names at least one of either, or no round could
 #                      ever reach it. An entry is one line, without `<br>`.
-#       An item the test set holds is replaced whole: that is how a brief is corrected
-#       and how an instrument that was built later takes its row. Prints {"test_set",
-#       "written"}.
+#       An item the test set holds is replaced whole — UNTIL A ROUND HAS RUN IT OR OWES IT
+#       A RUN. From the first round whose results hold a run of it, or the first TESTED
+#       round whose scope selects it, ITS CLAUSE, RUNS, DOORS AND REGISTRIES STAND: they
+#       are the four cells the derivation reads (a list is the set it names, in any order),
+#       and a row that would change one is refused (exists) — it would take a void run, or
+#       what a round owes, out of every clause's status, and turn `retest` into `close`.
+#       What is taken says what the legitimate ways are: the brief and the kind are
+#       corrected at any time, by a row that names the four as they stand; an instrument
+#       that covers something else is A NEW ITEM, under its own id, which the rounds that
+#       reach it then owe a run; and what a round owes is removed by no write — a run whose
+#       test set changes is opened again. Prints {"test_set", "written"}.
 #
 #   dev/stabilize-record round-set --run R --round N <facts.json
 #       The round record's facts — one JSON object naming at least one of:
@@ -317,7 +333,11 @@
 #         clauses      THE CENSUS: the clauses of the closing condition, a non-empty
 #                      array of slugs. Written ONCE (exists) — it is what the run must
 #                      satisfy, and what the clause table is held against: a clause the
-#                      census names has a row, whoever deleted it.
+#                      census names has a row, whoever deleted it. AND IT NAMES EVERY
+#                      CLAUSE AN ITEM OF THE TEST SET ALREADY JUDGES, or the call is
+#                      refused whole (bad-value): the clause is typed twice at an opening
+#                      — here, and in every item's row — and the two are held to each
+#                      other in both orders of writing (item-set).
 #       THIS IS HOW THE OPENING'S MACHINE-READ FACTS GET IN. opening.md stays the
 #       human-led step's prose, which this script neither writes nor reads; the step
 #       that writes it calls run-set before its one commit. A run that lacks them is NOT
@@ -368,6 +388,12 @@
 #                      — the test set, and whether the latest round runs each item
 #                      (below); selected is null for an in-scope item while that round
 #                      has no scope
+#         never_selected  the ids of the items that run in-scope and that no TESTED round's
+#                      scope has selected — before any round is tested, every such item
+#         uncovered    [{door, registry, rounds}] — every door a round's scope INCLUDED
+#                      that no item of the test set names, by the door or by the registry
+#                      it comes from, with the rounds whose test set holds it
+#                      (both: WHAT CANNOT BE HELD IS NAMED, below)
 #         ledger       per row: key, doctype, round, source, door, clause, grade,
 #                      bound, graded_by, disposition, detail, repro — and
 #                        triage  the row's entry in the latest round that triaged it:
@@ -407,7 +433,8 @@
 #       where the cell is not free text. A table that is not this script's, a cell
 #       outside its vocabulary, a triage record that disagrees with the doors it was
 #       computed from, a clause table that is not the one the results give, a tested round
-#       without a scope, a result whose earlier attempt is gone, or a red result whose
+#       without a scope, a result whose earlier attempt is gone, a test set with an item
+#       of a clause the census does not name, or a red result whose
 #       finding the ledger lacks is refused (corrupt) — the state is never read on a guess.
 #       AND WHAT IS DELETED IS MISSED, by the same refusal, naming what is gone: a ledger
 #       row that the census, a triage record or a round's count of what its triage left
@@ -595,6 +622,26 @@
 #       item is selected when one of the round's INCLUDED doors is one of its doors, or
 #       comes from one of its registries — matched by the cell's text, exactly, as a
 #       finding's door is.
+#
+#       WHAT CANNOT BE HELD IS NAMED. Of the four cells of an item's row that the
+#       derivation reads, the clause is held to the census, and all four stand once a
+#       round has run the item or owes it a run (item-set). ONE THING IS HELD BY NOTHING:
+#       that an item's door is a door. A round's doors are derived afresh by its scope
+#       step, so there is no list a door's text could be held to — and a door mistyped by
+#       one letter reads exactly as a door the round's change did not reach. The item is
+#       never selected, it owes nothing, and where another item of its clause is green the
+#       clause is green and `next` can be `close` WITHOUT IT. That is A DECLARED BOUND of
+#       this script, and no decision of it: nothing here can tell a mistyped door from one
+#       the scoped design leaves out. What can be computed, is: `never_selected` and
+#       `uncovered` name that silence from its two sides — the item no tested round
+#       selected, and the door no item names — AND FORBID NOTHING, because an item a later
+#       round leaves out was selected once and is not named, and an item the run's changes
+#       never reach, a check that names no door and a door no instrument was built for
+#       are the design ("hunt once per change, check always"). The names are for whoever
+#       reads a stage's return, and for the human at every stop and at the close. A door
+#       that turns out mistyped has its exit: the item has no run and no round owes it,
+#       so item-set corrects its row — and the tested round that included the door then
+#       owes it a run, which `next` asks for.
 #
 #       THE POSITION, a pure function of the rounds' records, the routes, what the
 #       opening owes and the stop — the round, the cycle and the attempt are read here
@@ -843,6 +890,8 @@
 #               human for; a bound is the human's at the opening and at every list;
 #               an instrument that is built later takes its row when it is built. What
 #               such a write CAN do is add work or record a ruling — it lifts no stop.
+#               (No POSITION holds item-set; what the run holds does: the census, and
+#               what a round has run of an item or owes it — item-set.)
 #
 # EVERY LOOP HAS A COUNTER ON RECORD AND AN EXIT TO THE HUMAN. Of the nine values of `next`
 # five hand over — not-ready, rule, unsettled, close, stop — and four are steps a stage
@@ -946,12 +995,16 @@
 #    6  exists        the report's path is taken — pass the next attempt; or a round's
 #                     scope, a fact of its record, the run's stop mode, previous
 #                     release, default scope or clauses are written once and stand; or
-#                     an item has its result in a round that is not tested yet
+#                     an item has its result in a round that is not tested yet; or an
+#                     item a round has run or owes a run keeps its clause, runs, doors
+#                     and registries
 #    7  bad-value     a value outside its vocabulary, a malformed row, a report that is
 #                     not text — or A WRITE THE STATE DOES NOT ASK FOR: a round that is not
 #                     begun and not handed out, a fact outside its position, a go, a
 #                     grant, a raised bound or the re-run of an item nobody is asked
-#                     for; a result for an item the round's scope does not select
+#                     for; a result for an item the round's scope does not select; an
+#                     item of a clause the census does not name, or a census that does
+#                     not name a clause an item judges
 #    8  no-such-row   ledger-set names a key the ledger lacks, or result-set an item the
 #                     test set lacks
 #    9  fence         the file would redden a standing fence, which is named
@@ -1105,6 +1158,9 @@ FORK = re.compile(r"(%s): (%s), (%s)" % tuple("|".join(FORK_FIELDS[name]) for na
 ITEM_COLUMNS = ("item", "kind", "clause", "runs", "doors", "registries", "brief")
 # When an item runs: on every candidate, or only in a round whose test set reaches it.
 ITEM_RUNS = ("every-candidate", "in-scope")
+# The cells of an item's row that the derivation reads: they stand once a round has run
+# the item, or owes it a run.
+ITEM_READ = ("clause", "runs", "doors", "registries")
 # How the entries of a list share one cell. An entry never holds it, nor a line break.
 LIST_BREAK = "<br>"
 ROUND_COLUMNS = ("fact", "value")
@@ -2486,10 +2542,23 @@ def item_set(args):
     distinct([key for key, _ in given], "item")
     one_writer(run_dir)
     hold_view(run_dir)
+    facts, _, rounds = grounds(run_dir)
     rel, above, rows = read_test_set(run_dir)
     keys = unique_rows(rel, rows)
+    # AN ITEM JUDGES A CLAUSE OF THE CENSUS: the derivation walks the census, so the runs of
+    # an item whose clause it does not name would be asked about by nothing.
+    for name, clause in off_the_census(facts["clauses"], [cells for _, cells in given]):
+        refuse("bad-value", "item %s: it judges the clause %s, and the run's census (run-set: clauses) names %s — an item judges a clause of the closing condition, or nothing asks about its runs. Name a clause of the census: the census is written once, and a run whose condition changes is opened again. Nothing was written" % (name, clause, ITEMS_BREAK.join(facts["clauses"])))
     for key, cells in given:
         if key in keys:
+            # WHAT THE DERIVATION READS OF AN ITEM STANDS once a round has run it or owes it
+            # a run: a row that changed one of the four would take that run, or what the
+            # round owes, out of every clause's status.
+            held = rows[keys.index(key)]
+            since = counted_since(held, rounds)
+            differs = [name for at, name in enumerate(ITEM_COLUMNS) if name in ITEM_READ and read_of(held, at) != read_of(cells, at)]
+            if since and differs:
+                refuse("exists", "item %s: %s, and from then on its clause, when it runs, its doors and its registries stand — the derivation reads them, and no row takes a run or what a round owes back: this row would change its %s (%s holds the row). Its brief and its kind are corrected by a row that names those four as they stand; an instrument that covers something else is a new item, under its own id; and what a round owes is removed by no write — a run whose test set changes is opened again. Nothing was written" % (key, since, " and ".join(differs), rel))
             rows[keys.index(key)] = cells
         else:
             keys.append(key)
@@ -2605,6 +2674,12 @@ def run_set(args):
     for name in RUN_ONCE:
         if name in given and facts[name] not in (None, given[name]):
             refuse("exists", "%s holds %s %s — when a run stops, the release it measures against, its default scope and the clauses it must satisfy are written once, at its opening; nothing was written" % (rel, name, ITEMS_BREAK.join(facts[name]) if name == "clauses" else facts[name]))
+    if "clauses" in given:
+        # The other order of writing: the test set first. A census is written once, so one
+        # that leaves an item judging nothing is not written at all.
+        items_rel, _, item_rows = read_test_set(run_dir)
+        for name, clause in off_the_census(given["clauses"], item_rows):
+            refuse("bad-value", "clauses: the test set (%s) holds the item %s, which judges the clause %s, and this census does not name it — an item judges a clause of the closing condition, or nothing asks about its runs. Correct the item's row first (item-set: a row no round has run or owes a run of is replaced whole), or name its clause here: the census is written once. Nothing was written" % (items_rel, name, clause))
     for name, stop in RUN_BOUNDS.items():
         # A bound only goes up. It is written at the opening — before any round is begun,
         # or while the run is not ready — and after that RAISED only at the stop that names
@@ -2923,6 +2998,8 @@ def grounds(run_dir):
     for row in item_rows:
         if row[3] not in ITEM_RUNS:
             spoiled(items_rel, "says that %s runs %s, which this script does not write" % (row[0], shown(row[3])))
+    for name, clause in off_the_census(facts["clauses"], item_rows):
+        spoiled(items_rel, "says that %s judges the clause %s, which the run's census (%s) does not name — no writer of this script leaves that, and the derivation would pass over the item in silence" % (name, clause, facts_rel))
     rounds = []
     for number_ in numbered(run_dir, [], "r"):
         scope = read_scope(run_dir, number_)
@@ -3101,6 +3178,11 @@ def reports_in(run_dir, parts):
     return len(attempts), max(attempts, default=0)
 
 
+def covered_by(item):
+    """(the doors, the registries) an item's row names, each as a list of cells."""
+    return [[] if text == "-" else text.split(LIST_BREAK) for text in item[4:6]]
+
+
 def selected_by(item, scope_rows):
     """Whether the latest round runs an item: always, for one that runs on every
     candidate; else when one of the round's included doors is one of the item's, or comes
@@ -3109,8 +3191,54 @@ def selected_by(item, scope_rows):
         return True
     if scope_rows is None:
         return None
-    doors, registries = [[] if text == "-" else text.split(LIST_BREAK) for text in item[4:6]]
+    doors, registries = covered_by(item)
     return any(row[1] == "included" and (row[0] in doors or row[2] in registries) for row in scope_rows)
+
+
+def off_the_census(census, item_rows):
+    """The items among `item_rows` that judge no clause of `census`, as (item, clause) —
+    none while there is no census: nothing holds a clause to anything yet, and a run
+    without one is not ready."""
+    return [(untick(row[0]), untick(row[2])) for row in item_rows if census and untick(row[2]) not in census]
+
+
+def read_of(item, at):
+    """One cell of an item's row as the derivation reads it: a list of doors or of
+    registries is the set it names, in whatever order."""
+    return sorted(covered_by(item)[at - 4]) if at in (4, 5) else item[at]
+
+
+def counted_since(item, rounds):
+    """Since when the derivation counts an item, in words — the first round that holds a run
+    of it, or the first tested round whose scope selects it and so owes it one — or None:
+    nothing has run it and nothing owes it a run, and its row is replaced whole."""
+    name = untick(item[0])
+    for held in rounds:
+        if any(ran["item"] == name for ran in held["results"]):
+            return "round %d holds a run of it" % held["round"]
+        if held["facts"]["candidate"] is not None and selected_by(item, held["doors"]):
+            return "round %d is tested, and its scope selects the item: the round owes it a run" % held["round"]
+    return None
+
+
+def unreached(item_rows, rounds):
+    """WHAT CANNOT BE HELD, NAMED: (the in-scope items no TESTED round's scope has selected,
+    the doors a round's scope included that no item of the test set names — by the door,
+    or by the registry it comes from — each with the rounds whose test set holds it). A
+    door has no list it could be held to: a round's doors are derived afresh by its scope
+    step. So an item's door mistyped by one letter reads as a door the round did not
+    reach, the item owes nothing, and nothing here can tell the two apart — these two
+    lists are where it shows, from both sides."""
+    tested = [held for held in rounds if held["facts"]["candidate"] is not None]
+    never = [untick(item[0]) for item in item_rows if item[3] == "in-scope" and not any(selected_by(item, held["doors"]) for held in tested)]
+    doors = {door for item in item_rows for door in covered_by(item)[0]}
+    registries = {registry for item in item_rows for registry in covered_by(item)[1]}
+    bare = {}
+    for held in rounds:
+        for row in held["doors"] or []:
+            if row[1] == "included" and row[0] not in doors and row[2] not in registries:
+                bare.setdefault((row[0], row[2]), []).append(held["round"])
+    return never, [{"door": as_data(door), "registry": as_data(registry), "rounds": within} for (door, registry), within in bare.items()]
 
 
 def position_of(rounds, findings, owed, stop, rerun):
@@ -3345,6 +3473,7 @@ def document(run_dir, run):
         row["instrument"] = as_data(row["instrument"])
         for entry in row["items"]:
             entry["reason"] = entry["reason"] and as_data(entry["reason"])
+    never_selected, uncovered = unreached(item_rows, grounded)
     owed = owed_by(facts)
     following = next_of(findings, clauses, rounds, facts, owed)
     # A re-run, when it is the step: the first clause that is due, and of its items that
@@ -3385,6 +3514,8 @@ def document(run_dir, run):
         "bounds": [dict(zip(BOUND_COLUMNS, [untick(row[0])] + [as_data(text) for text in row[1:]])) for row in bound_rows],
         "clauses": clauses,
         "items": items,
+        "never_selected": never_selected,
+        "uncovered": uncovered,
         "ledger": findings,
         "blockers": [finding["key"] for finding in findings if finding["route"] == "fix"],
         "human_list": [{"key": finding["key"], "why": finding["why"]} for finding in findings if finding["route"] == "human"],

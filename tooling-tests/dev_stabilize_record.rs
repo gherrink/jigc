@@ -211,6 +211,25 @@
 //! followed; a file beside the reports under any name; a range's arguments not held to a
 //! grammar; a scanner that could not run read as clean. Each turned red an arm here or
 //! the arm of [`dev_stabilize_step`](super::dev_stabilize_step) that names it.
+//!
+//! **And on nineteen more, for the derivation's inputs** (the second repair plan's `K4`: a
+//! status is computed from the census, the test set and each tested round's scope and
+//! results, and an input nobody held is a wrong `close` — the re-review's `R5` and `R6`,
+//! the plan review's `B10`; section 30, two rows of [`ROUNDS`], and [`HELD`], the cells of
+//! `item-set` at every place of [`PLACES`]). *The census:* an item of a clause it does not
+//! name taken; a census that strands an item taken; a test set bent by hand read. *What
+//! stands:* an item replaced whole whatever was run; held by a run on record alone, and by
+//! what a tested round owes alone; each of the four cells — the clause, when it runs, the
+//! doors, the registries — not held; a list held by its text, so that the same doors in
+//! another order are refused. *What is named:* an item never selected asked of every round
+//! with a scope, of the latest tested round alone, and of a check; an excluded door named,
+//! a registry covering no door, the latest round's doors alone; no item named, no door
+//! named. Each turned red the arm that names it. One was red for the wrong reason as first
+//! written — the bent test set was still refused, by the clause table's own check and
+//! under another name — and its arm got the hand that bends both tables alike. **What these arms PIN and do not close:
+//! `close` over an item whose door is mistyped** — a declared bound, which
+//! [`an_in_scope_item_no_tested_round_selected_is_named_and_so_is_a_door_no_item_names`]
+//! and a row of [`ROUNDS`] hold as the answer `close`, with the item and the door named.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -4667,6 +4686,8 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
             "bounds": [],
             "clauses": [],
             "items": [],
+            "never_selected": [],
+            "uncovered": [],
             "ledger": [],
             "blockers": [],
             "human_list": [],
@@ -4933,6 +4954,10 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                     "selected": null,
                 },
             ],
+            // Round 1, which is tested, selected the review row, and that row names the
+            // one door round 1 included.
+            "never_selected": [],
+            "uncovered": [],
             "ledger": [
                 {
                     "key": "audit-f3",
@@ -5878,7 +5903,7 @@ const ROUNDS: &[Round] = &[
     Round {
         name: "every clause green, and no finding",
         next: "close",
-        says: r#"{"stop": null, "retest": [], "human_clauses": [], "unsettled": [], "not_ready": []}"#,
+        says: r#"{"stop": null, "retest": [], "human_clauses": [], "unsettled": [], "not_ready": [], "never_selected": [], "uncovered": []}"#,
         ..ROUND
     },
     Round {
@@ -6250,7 +6275,31 @@ const ROUNDS: &[Round] = &[
         instruments: &["clause-a"],
         beyond: &["clause-b"],
         next: "unsettled",
-        says: r#"{"unsettled": [{"cell": "judged-and-never-selected", "clauses": ["clause-b"]}], "retest": [], "human_clauses": []}"#,
+        says: r#"{"unsettled": [{"cell": "judged-and-never-selected", "clauses": ["clause-b"]}], "retest": [], "human_clauses": [], "never_selected": ["row-clause-b"]}"#,
+        ..ROUND
+    },
+    // WHAT CANNOT BE HELD IS NAMED, AND FORBIDS NOTHING (the second repair plan's `P5`; the
+    // plan review's `B10`) — a declared bound, pinned here as the answer `close`. A hunt
+    // whose door no round's scope names — a door the change did not reach, or a door
+    // mistyped by one letter: nothing tells the two apart — owes nothing, and where a
+    // check of its clause is green the run closes without it. The state names the item.
+    Round {
+        name: "a hunt no scope has selected beside a green check of its clause: close, and the hunt is named",
+        instruments: &["clause-a"],
+        checks: &["clause-b"],
+        beyond: &["clause-b"],
+        next: "close",
+        says: r#"{"never_selected": ["row-clause-b"], "uncovered": [], "unsettled": []}"#,
+        ..ROUND
+    },
+    // And the same silence from the other side: a door of a round's test set that no item
+    // of the test set names. Nobody hunted behind it; the state names the door.
+    Round {
+        name: "a door of the round's test set that no item names: close, and the door is named",
+        instruments: &[],
+        checks: &["clause-a", "clause-b"],
+        next: "close",
+        says: r#"{"never_selected": [], "uncovered": [{"door": "jigc setup", "registry": "the verb table", "rounds": [1]}]}"#,
         ..ROUND
     },
     Round {
@@ -6469,6 +6518,9 @@ const ROUNDS: &[Round] = &[
         checks: &["clause-a"],
         away: &[2],
         next: "close",
+        // The hunt was selected once, so it is not named; round 2's one door is, and
+        // neither forbids closing: the scope shrinks by design.
+        says: r#"{"never_selected": [], "uncovered": [{"door": "jigc doc show", "registry": "the verb table", "rounds": [2]}]}"#,
         ..ROUND
     },
     Round {
@@ -11408,9 +11460,14 @@ const HERE: &[Taken] = &[
         call: |rig, _, _| rig.run(&bound_set(RUN, "prop-bound", &BOUND), ""),
     },
     Taken {
+        // A new item, of a clause the census names: an instrument that was built later.
         name: "item-set",
         takes: ANYWHERE,
-        call: |rig, _, _| rig.run(&item_set(RUN), &item("prop-item").to_string()),
+        call: |rig, _, _| {
+            let mut new = item("prop-item");
+            new["clause"] = json!("clause-a");
+            rig.run(&item_set(RUN), &new.to_string())
+        },
     },
     Taken {
         name: "apply",
@@ -11596,6 +11653,57 @@ const NEXT: &[Taken] = &[
     },
 ];
 
+/// **What the test set is held to, at every place** — the cells of `item-set` beside its
+/// row in [`HERE`]. The script takes that writer at every POSITION of a run, and holds
+/// what it writes to two things the run holds: the census, and what a round has run or
+/// owes. The items are [`two_clause_run`]'s — a check of `clause-a` that runs on every
+/// candidate, and a hunt of `clause-b` behind [`INSIDE`]; at the opening the run holds
+/// neither them nor a census, and each row there is a new item.
+const HELD: &[Taken] = &[
+    Taken {
+        // An item judges a clause of the census: taken only while there is none.
+        name: "item-set, a new item of a clause the census does not name",
+        takes: AT_THE_OPENING,
+        call: |rig, _, _| rig.run(&item_set(RUN), &item("prop-item").to_string()),
+    },
+    Taken {
+        // The brief is no cell the derivation reads: corrected anywhere.
+        name: "item-set, the hunt's brief corrected",
+        takes: ANYWHERE,
+        call: |rig, _, _| {
+            let mut hunt = item("row-clause-b");
+            hunt["clause"] = json!("clause-b");
+            hunt["brief"] = json!("the brief, corrected");
+            rig.run(&item_set(RUN), &hunt.to_string())
+        },
+    },
+    Taken {
+        // What the derivation reads stands from the hunt's first run on, and from the
+        // first tested round that owes it one: until then the row is replaced whole.
+        name: "item-set, the hunt's door changed",
+        takes: WHILE_NOT_TESTED,
+        call: |rig, _, _| {
+            let mut hunt = item("row-clause-b");
+            hunt["clause"] = json!("clause-b");
+            hunt["doors"] = json!([EXCLUDED]);
+            rig.run(&item_set(RUN), &hunt.to_string())
+        },
+    },
+    Taken {
+        // A check is owed by every tested round: the same, from the first one on.
+        name: "item-set, the check's clause changed",
+        takes: WHILE_NOT_TESTED,
+        call: |rig, _, _| {
+            let mut check = item("check-clause-a");
+            check["clause"] = json!("clause-b");
+            check["kind"] = json!("check");
+            check["runs"] = json!("every-candidate");
+            check["doors"] = json!([]);
+            rig.run(&item_set(RUN), &check.to_string())
+        },
+    },
+];
+
 /// What a refusal of the script lists after `opens`, up to the next ` —` or the line's end.
 fn listed_in(seen: &Seen, opens: &str) -> BTreeSet<String> {
     let (_, rest) = seen
@@ -11665,7 +11773,7 @@ fn every_writer_and_every_fact_is_taken_only_where_the_state_asks_for_it() {
         "the table's rows (left) are every writer and every fact the script names (right)"
     );
     assert_eq!(HERE.len(), rows.len(), "and no row stands twice");
-    for write in HERE.iter().chain(NEXT) {
+    for write in HERE.iter().chain(NEXT).chain(HELD) {
         assert!(
             write.takes.len() == PLACES.len()
                 && write.takes.chars().all(|cell| "ars".contains(cell)),
@@ -11694,7 +11802,7 @@ fn every_writer_and_every_fact_is_taken_only_where_the_state_asks_for_it() {
                     let here = usize::try_from(read["round"].as_u64().unwrap_or(1))
                         .expect("a round");
                     let mut driven = 0;
-                    for (writes, round) in [(HERE, here), (NEXT, here + 1)] {
+                    for (writes, round) in [(HERE, here), (NEXT, here + 1), (HELD, here)] {
                         for write in writes {
                             fs::remove_dir_all(rig.run_dir()).expect("clear the run");
                             copy_tree(&pristine, &rig.run_dir());
@@ -11731,7 +11839,7 @@ fn every_writer_and_every_fact_is_taken_only_where_the_state_asks_for_it() {
             .map(|worker| worker.join().expect("a place's thread"))
             .sum()
     });
-    assert_eq!(cells, (HERE.len() + NEXT.len()) * PLACES.len());
+    assert_eq!(cells, (HERE.len() + NEXT.len() + HELD.len()) * PLACES.len());
 
     // COVERED BY CONSTRUCTION: a fact or a subcommand added to the script without its row
     // in the script's own table is no call the script takes — every call says so.
@@ -12139,4 +12247,508 @@ fn set_aside_moves_what_is_no_report_out_of_the_repository_and_nothing_else() {
         to.display()
     );
     assert_eq!(rig.read(&kept), BODY, "and what it pointed at is untouched");
+}
+
+// ---------------------------------------------------------------------------
+// 30 · The derivation's inputs are held where they are written
+// ---------------------------------------------------------------------------
+
+/// A run that is ready — it stops at its bound, and its census is `clauses` — with no item
+/// of the test set yet.
+fn census_run(label: &str, clauses: &[&str]) -> Rig {
+    let rig = Rig::new(label);
+    rig.run(
+        &run_set(RUN),
+        &format!(r#"{{{BOUNDED}, {RELEASE}, "clauses": {}}}"#, json!(clauses)),
+    )
+    .must(OK, "the run's facts, and its census");
+    rig
+}
+
+/// The candidate's gate as an item: a deterministic check of `no-lost-files`, run on every
+/// candidate, that names no door.
+fn gate_item() -> Value {
+    let mut gate = item("gate");
+    gate["kind"] = json!("check");
+    gate["runs"] = json!("every-candidate");
+    gate["doors"] = json!([]);
+    gate
+}
+
+/// [`item`] under the id `review-setup`, with one cell of its row changed.
+fn review_setup(cell: &str, value: Value) -> Value {
+    let mut review = item("review-setup");
+    review[cell] = value;
+    review
+}
+
+/// `(next, forbids_close)` of a state document.
+fn asks(read: &Value) -> Value {
+    json!([read["next"], read["forbids_close"]])
+}
+
+/// **An item judges a clause of the census** (the re-review's `R5`; the second repair
+/// plan's `P5`). The clause is typed twice at an opening — in the census, and in every row
+/// of the test set — and the derivation walks the census: an item whose clause the census
+/// does not name judged nothing, its void run was ignored, and the run answered `close`
+/// over an instrument that never ran to its end. So the two are held to each other WHERE
+/// EITHER IS WRITTEN, in both orders of writing — and a test set a hand bent afterwards is
+/// not read.
+#[test]
+fn an_item_judges_a_clause_of_the_census_in_both_orders_of_writing() {
+    let void = json!([{"clause": "no-lost-files", "status": "void"}]);
+    let misspelt = review_setup("clause", json!("no-lost-file"));
+
+    // The census first, and one letter missing in the second item's clause: `R5`'s block.
+    let rig = census_run("census-first", &["no-lost-files"]);
+    let before = rig.snapshot();
+    let seen = rig.run(
+        &item_set(RUN),
+        &json!([gate_item(), misspelt.clone()]).to_string(),
+    );
+    seen.refused(BAD_VALUE, "an item of a clause the census does not name");
+    assert!(
+        seen.stderr.contains("review-setup")
+            && seen.stderr.contains("no-lost-file,")
+            && seen.stderr.contains("census"),
+        "it names the item, its clause and the census: {}",
+        seen.stderr
+    );
+    assert_eq!(
+        rig.snapshot(),
+        before,
+        "nothing of the call is written — the gate's row neither"
+    );
+    // The control: the same two rows, the clause spelled as the census has it — and the
+    // round of `R5`, which closed, asks for the void item's re-run.
+    rig.run(
+        &item_set(RUN),
+        &json!([gate_item(), item("review-setup")]).to_string(),
+    )
+    .must(OK, "the same rows, each of a clause of the census");
+    stage(
+        &rig,
+        1,
+        &scope(&[INSIDE], &[EXCLUDED]),
+        &[("gate", "green"), ("review-setup", "void")],
+    );
+    let read = rig.state();
+    assert_eq!(asks(&read), json!(["retest", void]), "{read}");
+
+    // The test set first: there is no census to hold a clause to yet, so the row is taken —
+    // and the census that does not name its clause is what is refused, whole.
+    let rig = Rig::new("items-first");
+    rig.run(
+        &item_set(RUN),
+        &json!([gate_item(), misspelt.clone()]).to_string(),
+    )
+    .must(OK, "the test set, before any census");
+    let census = format!(r#"{{{BOUNDED}, {RELEASE}, "clauses": ["no-lost-files"]}}"#);
+    let before = rig.snapshot();
+    let seen = rig.run(&run_set(RUN), &census);
+    seen.refused(
+        BAD_VALUE,
+        "a census that does not name a clause an item judges",
+    );
+    assert!(
+        seen.stderr.contains("review-setup") && seen.stderr.contains("no-lost-file,"),
+        "it names the item and its clause: {}",
+        seen.stderr
+    );
+    assert_eq!(
+        rig.snapshot(),
+        before,
+        "none of the call's facts is written: a census is written once"
+    );
+    // The same two writes as the calls of one batch, in that order.
+    let batched = Rig::new("items-first-batch");
+    let batch = json!([
+        call(
+            item_set(RUN),
+            &json!([gate_item(), misspelt.clone()]).to_string()
+        ),
+        call(run_set(RUN), &census),
+    ]);
+    let before = batched.snapshot();
+    batched
+        .run(&apply(RUN, None), &batch.to_string())
+        .refused(BAD_VALUE, "the two writes as one batch");
+    assert_eq!(
+        batched.snapshot(),
+        before,
+        "nothing of the batch is written"
+    );
+    // The way out, which exists: the row has no run and no round owes it, so it is
+    // replaced whole — and then the census is taken, and the run is ready.
+    rig.run(&item_set(RUN), &item("review-setup").to_string())
+        .must(OK, "the row, its clause corrected");
+    rig.run(&run_set(RUN), &census)
+        .must(OK, "the census, once every item judges a clause of it");
+    let read = rig.state();
+    assert_eq!(
+        json!([read["not_ready"], read["next"]]),
+        json!([[], "test"]),
+        "{read}"
+    );
+
+    // A test set a hand bent afterwards is not read — by the state, or by a writer that
+    // asks it: the derivation never passes over a row in silence. The hand is a consistent
+    // one — it takes the item out of the clause table too, so the view is exactly what a
+    // derivation that skipped the row would give, and the view's own check has nothing
+    // to say.
+    let bend = |rel: String, from: &str, to: &str| {
+        let path = rig.root.join(rel);
+        let text = fs::read_to_string(&path).expect("a table of the run");
+        let bent = text.replacen(from, to, 1);
+        assert_ne!(bent, text, "`{from}` is there to bend");
+        fs::write(&path, bent).expect("bend a table by hand");
+    };
+    bend(
+        test_set_path(),
+        "| `review-row` | `no-lost-files` |",
+        "| `review-row` | `no-lost-file` |",
+    );
+    bend(
+        clauses_path(),
+        "<br>`review-setup` — not selected by any tested round: it owes nothing",
+        "",
+    );
+    for (what, seen) in [
+        ("the state", rig.run(&state(RUN), "")),
+        (
+            "a writer of the test set",
+            rig.run(&item_set(RUN), &item("review-show").to_string()),
+        ),
+    ] {
+        seen.refused(CORRUPT, what);
+        assert!(
+            seen.stderr.contains("review-setup") && seen.stderr.contains("no-lost-file,"),
+            "{what}: it names the item and its clause: {}",
+            seen.stderr
+        );
+    }
+}
+
+/// **An item a round has run, or owes a run of, keeps what the derivation reads** (the
+/// re-review's `R6`; the plan's `P5`). `item-set` replaced a row whole at any time: a
+/// corrected brief whose door gained one space left the item selected by no round, its
+/// void run stopped judging, and `retest` became `close`. Of an item's row the derivation
+/// reads four cells — its clause, when it runs, its doors, its registries — and from the
+/// first run on record, or the first tested round whose scope selects the item, those
+/// four stand. What is still taken says what the legitimate ways are: the brief and the
+/// kind are corrected at any time; an item nothing has run and nothing owes is replaced
+/// whole; and an instrument that covers something else is a new item under its own id.
+#[test]
+fn an_item_a_round_has_run_or_owes_keeps_what_the_derivation_reads() {
+    let void = json!([{"clause": "no-lost-files", "status": "void"}]);
+    let rig = census_run("kept", &["no-lost-files", "no-regression"]);
+    let mut regression = gate_item();
+    regression["item"] = json!("regression-set");
+    regression["clause"] = json!("no-regression");
+    let mut show = item("review-show");
+    show["doors"] = json!([EXCLUDED]);
+    rig.run(
+        &item_set(RUN),
+        &json!([gate_item(), regression, item("review-setup"), show]).to_string(),
+    )
+    .must(OK, "the test set");
+    stage(
+        &rig,
+        1,
+        &scope(&[INSIDE], &[EXCLUDED]),
+        &[
+            ("gate", "green"),
+            ("regression-set", "green"),
+            ("review-setup", "void"),
+        ],
+    );
+    let read = rig.state();
+    assert_eq!(asks(&read), json!(["retest", void]), "{read}");
+
+    // `R6`'s own write: the brief corrected, and the door's text with one space more.
+    type Bend = (&'static str, &'static str, fn() -> Value);
+    let bends: &[Bend] = &[
+        ("doors", "the door's text, one space more", || {
+            let mut bent = review_setup("doors", json!(["jigc  setup"]));
+            bent["brief"] = json!("a corrected brief");
+            bent
+        }),
+        ("doors", "one door more", || {
+            review_setup("doors", json!([INSIDE, EXCLUDED]))
+        }),
+        ("clause", "another clause of the census", || {
+            review_setup("clause", json!("no-regression"))
+        }),
+        ("runs", "on every candidate", || {
+            review_setup("runs", json!("every-candidate"))
+        }),
+        ("registries", "a registry beside its door", || {
+            review_setup("registries", json!(["the verb table"]))
+        }),
+    ];
+    let before = rig.snapshot();
+    for (cell, what, bent) in bends {
+        let seen = rig.run(&item_set(RUN), &bent().to_string());
+        seen.refused(EXISTS, what);
+        assert!(
+            seen.stderr.contains("review-setup")
+                && seen.stderr.contains(&format!("would change its {cell} ")),
+            "{what}: it names the item and the cell that differs: {}",
+            seen.stderr
+        );
+        assert_eq!(rig.snapshot(), before, "{what}: nothing is written");
+    }
+    assert_eq!(asks(&rig.state()), json!(["retest", void]));
+
+    // WHAT IS TAKEN. The brief and the kind, with the four cells as they stand: the item
+    // judges as before, and its re-run is still what is asked.
+    let mut corrected = review_setup("brief", json!("a corrected brief"));
+    corrected["kind"] = json!("trial-arm");
+    rig.run(&item_set(RUN), &corrected.to_string())
+        .must(OK, "a brief and a kind, corrected");
+    let read = rig.state();
+    assert_eq!(asks(&read), json!(["retest", void]), "{read}");
+    assert_eq!(
+        json!([read["items"][2]["brief"], read["items"][2]["kind"]]),
+        json!(["a corrected brief", "trial-arm"]),
+        "{read}"
+    );
+    // An instrument that covers something else is a new item, under its own id.
+    let mut wider = item("review-setup-and-show");
+    wider["doors"] = json!([INSIDE, EXCLUDED]);
+    rig.run(&item_set(RUN), &wider.to_string())
+        .must(OK, "a new item that covers more");
+    // Round 1 owes that item a run from its first row on — and a list is the set it names:
+    // its doors said again in another order, beside a corrected brief, change nothing the
+    // derivation reads.
+    wider["doors"] = json!([EXCLUDED, INSIDE]);
+    wider["brief"] = json!("the same two doors, in another order");
+    rig.run(&item_set(RUN), &wider.to_string())
+        .must(OK, "the same doors in another order");
+    // An item nothing has run and nothing owes is replaced whole — `review-show`, whose one
+    // door round 1 left out. Given the door round 1 included, round 1 owes it a run: from
+    // then on its four cells stand too, though it has no result at all.
+    let mut reached = item("review-show");
+    reached["clause"] = json!("no-regression");
+    rig.run(&item_set(RUN), &reached.to_string())
+        .must(OK, "an item no round has run and none owes, replaced whole");
+    let read = rig.state();
+    let owed = &read["clauses"][1]["items"][1];
+    assert_eq!(
+        json!([owed["item"], owed["round"], owed["why"]]),
+        json!(["review-show", 1, "not-run"]),
+        "round 1 owes the replaced item a run: {read}"
+    );
+    let before = rig.snapshot();
+    let mut back = item("review-show");
+    back["doors"] = json!([EXCLUDED]);
+    back["clause"] = json!("no-regression");
+    rig.run(&item_set(RUN), &back.to_string()).refused(
+        EXISTS,
+        "an item a tested round owes a run of, taken out of that round's reach",
+    );
+    assert_eq!(rig.snapshot(), before, "nothing is written");
+
+    // And a run on record holds the item before its round is tested: the result is of the
+    // item as its row stood.
+    let early = census_run("kept-early", &["no-lost-files"]);
+    early
+        .run(
+            &item_set(RUN),
+            &json!([gate_item(), item("review-setup")]).to_string(),
+        )
+        .must(OK, "the test set");
+    early
+        .run(
+            &scope_set(RUN, "1"),
+            &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+        )
+        .must(OK, "round 1's scope");
+    let unrun = review_setup("doors", json!([EXCLUDED]));
+    early
+        .run(&item_set(RUN), &unrun.to_string())
+        .must(OK, "a round that is not tested owes nothing yet");
+    early
+        .run(&item_set(RUN), &item("review-setup").to_string())
+        .must(OK, "and the row is put back");
+    early
+        .run(
+            &result_set(RUN, "1", &candidate(1)),
+            &ran("review-setup", "void").to_string(),
+        )
+        .must(OK, "its run, in a round that is not tested yet");
+    early
+        .run(&item_set(RUN), &unrun.to_string())
+        .refused(EXISTS, "an item with a run on record");
+    early
+        .run(
+            &round_set(RUN, "1"),
+            &json!({"candidate": candidate(1)}).to_string(),
+        )
+        .must(OK, "round 1's candidate");
+    assert_eq!(asks(&early.state()), json!(["retest", void]));
+}
+
+/// The plan review's `B10`, as it was driven: a run of one clause, judged by the gate and
+/// by a hunt whose one door is `door`; round 1's scope includes [`INSIDE`], and the gate
+/// ran green.
+fn one_door_run(label: &str, door: &str) -> Rig {
+    let rig = census_run(label, &["no-lost-files"]);
+    rig.run(
+        &item_set(RUN),
+        &json!([gate_item(), review_setup("doors", json!([door]))]).to_string(),
+    )
+    .must(OK, "the test set");
+    stage(
+        &rig,
+        1,
+        &scope(&[INSIDE], &[EXCLUDED]),
+        &[("gate", "green")],
+    );
+    rig
+}
+
+/// **What cannot be held is named** (the plan review's `B10`; the plan's `P5`, *Where the
+/// class ends*). A round's doors are derived afresh by its scope step, so there is no list
+/// an item's door could be held to — and a door mistyped by one letter reads exactly as a
+/// door the round's change did not reach: the item is never selected, owes nothing, and
+/// its clause is green without it. THAT IS A DECLARED BOUND, and this arm pins it: the
+/// state answers `close`. What the script can do, it does: it computes, and the state
+/// names, every in-scope item that no tested round's scope has selected, and every door a
+/// round's scope included that no item of the test set names — so the bound's reach is
+/// read at every stop, and at the close. And the names forbid nothing: an item a later
+/// round leaves out, a check that runs on every candidate and a round that runs no item of
+/// a clause are the scoped design, and close.
+#[test]
+fn an_in_scope_item_no_tested_round_selected_is_named_and_so_is_a_door_no_item_names() {
+    let unnamed = |rounds: &[usize]| json!([{"door": INSIDE, "registry": "the verb table", "rounds": rounds}]);
+
+    // `B10`'s block: one letter wrong in the hunt's door.
+    let rig = one_door_run("mistyped", "jigc setpu");
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            read["items"][1]["selected"],
+            read["clauses"][0]["status"],
+            read["next"],
+            read["forbids_close"]
+        ]),
+        json!([false, "green", "close", []]),
+        "THE BOUND: a door nothing can hold reads as a door the round did not reach: {read}"
+    );
+    assert_eq!(
+        json!([read["never_selected"], read["uncovered"]]),
+        json!([["review-setup"], unnamed(&[1])]),
+        "and the state names the item nobody selected, and the door no item names: {read}"
+    );
+    // Its control, the door spelled as the scope has it: the hunt is owed a run.
+    let control = one_door_run("spelled", INSIDE);
+    let read = control.state();
+    assert_eq!(
+        json!([
+            read["items"][1]["selected"],
+            read["clauses"][0]["status"],
+            read["next"],
+            read["never_selected"],
+            read["uncovered"]
+        ]),
+        json!([true, "void", "retest", [], []]),
+        "{read}"
+    );
+    // The bound has its exit once somebody reads the name: the item has no run and no
+    // round owes it, so its door is corrected — and round 1 then owes it a run.
+    rig.run(&item_set(RUN), &item("review-setup").to_string())
+        .must(OK, "the door, corrected");
+    let read = rig.state();
+    assert_eq!(
+        json!([read["next"], read["never_selected"], read["uncovered"]]),
+        json!(["retest", [], []]),
+        "{read}"
+    );
+
+    // WHAT IS NAMED, AND WHEN. Before any round is tested no scope has selected anything:
+    // every in-scope item is named, a check that runs on every candidate never is, and
+    // there is no door to name.
+    let rig = three_item_run("named");
+    let read = rig.state();
+    assert_eq!(
+        json!([read["never_selected"], read["uncovered"]]),
+        json!([["review-setup", "review-show"], []]),
+        "{read}"
+    );
+    // A round that is begun and not tested has selected nothing yet — but its doors are
+    // the round's, and one no item names is named from the scope on.
+    rig.run(
+        &scope_set(RUN, "1"),
+        &json!({
+            "included": [door(INSIDE), door(UNLISTED)],
+            "excluded": [door(EXCLUDED)],
+        })
+        .to_string(),
+    )
+    .must(OK, "round 1's scope");
+    let read = rig.state();
+    assert_eq!(
+        json!([read["never_selected"], read["uncovered"]]),
+        json!([
+            ["review-setup", "review-show"],
+            [{"door": UNLISTED, "registry": "the verb table", "rounds": [1]}]
+        ]),
+        "an excluded door is no door of the test set, and is never named: {read}"
+    );
+    // A registry an item covers whole covers every door of it.
+    let mut verbs = item("review-verbs");
+    verbs["doors"] = json!([]);
+    verbs["registries"] = json!(["the verb table"]);
+    rig.run(&item_set(RUN), &verbs.to_string())
+        .must(OK, "an item that covers a registry");
+    assert_eq!(rig.state()["uncovered"], json!([]));
+
+    // WHAT THE NAMES DO NOT FORBID — the scoped design, "hunt once per change, check
+    // always". Round 1 selects the hunt and it runs green; its fixes land; round 2's scope
+    // leaves the hunt's door out, and runs no item of `clause-b` at all.
+    let rig = two_clause_run("scoped", BOUNDED);
+    let both = [("check-clause-a", "green"), ("row-clause-b", "green")];
+    tested_round(&rig, 1, true, &both, json!({}));
+    rig.run(&round_set(RUN, "1"), r#"{"cycles": 1}"#)
+        .must(OK, "round 1's fix cycle");
+    tested_round(&rig, 2, false, &[("check-clause-a", "green")], json!({}));
+    let read = rig.state();
+    assert_eq!(
+        asks(&read),
+        json!(["close", []]),
+        "the hunt's green of round 1 stands, and the check ran on this candidate: {read}"
+    );
+    assert_eq!(
+        read["never_selected"],
+        json!([]),
+        "an item a later round leaves out was selected: it is not named: {read}"
+    );
+    assert_eq!(
+        read["uncovered"],
+        json!([{"door": EXCLUDED, "registry": "the verb table", "rounds": [2]}]),
+        "round 2's one door, which no item names, is — and forbids nothing: {read}"
+    );
+
+    // A door nobody hunted behind is still that at the close: it is named for every round
+    // whose test set held it, not for the latest alone.
+    let rig = census_run("unhunted", &["no-lost-files"]);
+    rig.run(&item_set(RUN), &gate_item().to_string())
+        .must(OK, "a test set of one check");
+    let inside = scope(&[INSIDE], &[EXCLUDED]);
+    stage(&rig, 1, &inside, &[("gate", "green")]);
+    assert_eq!(rig.state()["uncovered"], unnamed(&[1]));
+    rig.run(&round_set(RUN, "1"), r#"{"cycles": 1}"#)
+        .must(OK, "round 1's fix cycle");
+    stage(&rig, 2, &scope(&[], &[INSIDE]), &[("gate", "green")]);
+    let read = rig.state();
+    assert_eq!(
+        json!([read["next"], read["uncovered"]]),
+        json!(["close", unnamed(&[1])]),
+        "round 2 includes no door, and round 1's is named still: {read}"
+    );
+    rig.run(&round_set(RUN, "2"), r#"{"cycles": 1}"#)
+        .must(OK, "round 2's fix cycle");
+    stage(&rig, 3, &inside, &[("gate", "green")]);
+    assert_eq!(rig.state()["uncovered"], unnamed(&[1, 3]));
 }
