@@ -96,8 +96,9 @@
 //!
 //! **Defects the reviews recorded are pinned where a stage meets them, and repaired by
 //! nothing here.** Each such assertion says what the stage does *today* and names the
-//! finding by its id; the task that repairs it turns the assertion. **No pin of the `test`
-//! stage is left.** *Turned by the repair's last task of that stage's harness, and asserted
+//! finding by its id; the task that repairs it turns the assertion. **Of the first
+//! review's, no pin of the `test` stage is left** (the one the second repair left is named
+//! below, at `X1`). *Turned by the repair's last task of that stage's harness, and asserted
 //! as repaired:* `M3` — a contested fix is a row of the round's triage record, and the
 //! human's until ruled; `M6` — the invocation that finishes a round's triage reaches its
 //! record, on the candidate the round tested; `M5` and `M9` — an agent that dies, halts,
@@ -116,6 +117,15 @@
 //! a finding. And that task's own path is driven beside them: a check that could not run,
 //! the re-run the state then asks for — an attempt inside the round, with no scope step and
 //! no fact of the round — and the invocations the state asks no re-run of.
+//!
+//! **A return that lacks a field the stage needs of its role** (the second repair plan's
+//! `X1`; the re-review's `R-H2`) is driven per cell of the harness's `NEEDS` that voids
+//! ([`ABSENT_ARMS`], which the fence holds to that table): the field left out — and, for a
+//! hash, returned wrong — voids the item, leaves the finding unverified or the fork off the
+//! record, and the stage reaches its record. **One pin is left by that task, and named:**
+//! a confirmed verdict whose hash of the previous release's binary is not the one handed
+//! over still halts the stage (`L11`, below) — the cell the plan's `X1b` turns, once the
+//! record script takes a confirmed verdict with its regression fact unknown.
 //!
 //! **The `fix` stage refuses to start**, and that is all that is asserted of it; the rig,
 //! the scenario and the stand-in are shaped so that its half's tasks add its agents here.
@@ -2001,11 +2011,16 @@ fn a_report_overwritten_by_hand_voids_its_item_and_reaches_neither_the_commit_no
 }
 
 /// The hash comparison of ruling 11, driven: a driver that asserts another binary than the
-/// one the preflight built drove something else, and nothing it found is evidence about
-/// the candidate. (The whole-stage test could not see this comparison removed: every
-/// driver there measures the file it was handed.)
+/// one the stage built drove something else, and nothing it drove is evidence about the
+/// candidate. (The whole-stage test could not see this comparison removed: every driver
+/// there measures the file it was handed.) TURNED BY THE SECOND REPAIR PLAN'S `X1`: until
+/// then the stage halted here, with nothing recorded and every instrument to run again —
+/// where a driver that NOTICED the mismatch and halted, as its definition tells it to,
+/// voided its item and nothing else. The comparison the harness makes is that halt, made
+/// for the agent: the item is void, with the reporter and both hashes in the reason, and
+/// the stage reaches its record.
 #[test]
-fn a_driver_that_drove_another_binary_halts_the_stage_before_anything_is_recorded() {
+fn a_driver_that_drove_another_binary_voids_its_item_and_the_stage_records() {
     if !can_run() {
         return;
     }
@@ -2024,21 +2039,30 @@ fn a_driver_that_drove_another_binary_halts_the_stage_before_anything_is_recorde
         json!({"scope": one_door(), "agents": {"drive-a:drive": nothing()},
                "wrongBinary": ["drive-a:drive"]}),
     );
-    let halted = &ran.result;
-    assert_eq!(halted["status"], "halted", "{halted}");
-    assert_eq!(halted["halted"]["phase"], "binary", "{halted}");
+    let result = &ran.result;
+    assert_eq!(result["status"], "triaged", "{result}");
     assert_eq!(
-        halted["halted"]["mismatched"],
-        json!([{"reporter": "drive-a-drive", "asserted": "0".repeat(64)}])
+        json!([result["counts"]["voided"], result["unasserted"]]),
+        json!([["drive-a"], [{"reporter": "drive-a-drive", "asserted": "0".repeat(64)}]]),
+        "{result}"
     );
+    let state = sim.state();
+    let rows = results(&state, 1);
+    assert_eq!(json!([rows[0][0], rows[0][2]]), json!(["drive-a", "void"]));
     assert!(
-        !ran.agents()
-            .iter()
-            .any(|label| label.starts_with("record:") || label.starts_with("triage:")),
-        "nothing is graded and nothing recorded: {:?}",
-        ran.agents()
+        rows[0][3].as_str().is_some_and(|reason| reason.starts_with(&format!(
+            "its `drive` step (drive-a-drive) returned the `asserted_sha256` {}, which is not the candidate's binary (",
+            "0".repeat(64)
+        ))),
+        "the void's reason names the reporter, the field and both hashes: {rows:?}"
     );
-    assert_eq!(sim.rig.rev("HEAD"), opened);
+    assert_ne!(
+        sim.rig.rev("HEAD"),
+        opened,
+        "the stage's record is committed"
+    );
+    assert_eq!(sim.rig.status(), "");
+    assert_eq!(state["retest"], json!(["audit-clean"]), "{state}");
 }
 
 /// The commit step of a record, driven as an act (`dev/stabilize-step record`): it commits
@@ -3685,7 +3709,9 @@ fn a_return_is_held_to_its_keys_its_binaries_and_its_commit_before_it_is_taken()
         ran.result
     );
 
-    // M7 — a reviewer is handed the candidate's binary and returns the hash it asserted.
+    // M7 — a reviewer is handed the candidate's binary and returns the hash it asserted:
+    // another hash voids its item, as a driver's does (turned by the second repair plan's
+    // `X1`: it halted the stage).
     let sim = Sim::opened("reviewer-binary", &one_area());
     let ran = sim.invoke(
         sim.args("test", json!({})),
@@ -3693,14 +3719,14 @@ fn a_return_is_held_to_its_keys_its_binaries_and_its_commit_before_it_is_taken()
                "wrongBinary": ["area-a:review"]}),
     );
     assert_eq!(
-        ran.result["halted"]["phase"], "binary",
-        "M7: {}",
+        json!([
+            ran.result["status"],
+            ran.result["counts"]["voided"],
+            ran.result["unasserted"]
+        ]),
+        json!(["triaged", ["area-a"], [{"reporter": "area-a-review", "asserted": "0".repeat(64)}]]),
+        "M7: the reviewer's hash is compared like every driver's: {}",
         ran.result
-    );
-    assert_eq!(
-        ran.result["halted"]["mismatched"],
-        json!([{"reporter": "area-a-review", "asserted": "0".repeat(64)}]),
-        "M7: the reviewer's hash is compared like every driver's"
     );
 
     // L1 — the posture every driving agent relies on, that a bare `jigc` IS the binary, is
@@ -3741,6 +3767,438 @@ fn a_return_is_held_to_its_keys_its_binaries_and_its_commit_before_it_is_taken()
             "void",
             format!("the check ran on the commit {other}, not on the candidate")
         ])
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A return that lacks a field the stage needs of it (the second repair plan's `X1`)
+// ---------------------------------------------------------------------------
+
+/// The `(role, field)` pairs this suite drives with the field ABSENT: every cell of the
+/// harness's `NEEDS` whose word is not `halts`. `stabilize_harness_fence`, arm (t), holds
+/// this list to that table in both directions — so a field a stage comes to need of a
+/// role has its arm here, or is named there as owed to a task.
+pub(crate) const ABSENT_ARMS: &[(&str, &str)] = &[
+    ("review", "asserted_sha256"),
+    ("drive", "asserted_sha256"),
+    ("verify", "verdict"),
+    ("verify", "asserted_sha256"),
+    ("advocate", "asserted_sha256"),
+    ("proposal", "asserted_sha256"),
+];
+
+/// **A return that lacks a field the stage needs of that role is that item's fact, and
+/// never the stage's** (the re-review's `R-H2`; the second repair plan's `X1`). No schema of
+/// a stage requires such a field — a return that omits a required one is a call that
+/// failed, three whole runs of its agent (the `required` probe) — so the harness is handed
+/// the return without it. Per pair of [`ABSENT_ARMS`]: the field left out voids what that
+/// reporter was launched for — an instrument's item, a finding's verification, a fork —
+/// WITH A REASON THAT NAMES THE FIELD AND THE REPORTER; every other item is untouched; what
+/// the reporter found is triaged all the same; and the stage reaches its record, with
+/// `next` as the state computes it. Beside each, the control with the field there. AND A
+/// HASH THAT CAME BACK WRONG IS THE SAME CELL as one that did not come back: what that one
+/// agent drove is no evidence about the candidate, and nothing of the stage waits on it.
+///
+/// The arms of `roles`, and the control they stand beside: three tests share this, so
+/// that no one test is a dozen stages long.
+fn a_needed_field_left_out_voids_what_its_reporter_was_launched_for(roles: &[&str], fork: bool) {
+    if !can_run() {
+        return;
+    }
+    let key = "doc-set-drops-a-slot";
+    let kept = "doc-set-exit-code";
+    let two = || Opening {
+        clauses: vec!["audit-clean"],
+        items: json!([
+            item("area-a", "audit-area", "audit-clean"),
+            item("drive-a", "audit-drive", "audit-clean")
+        ]),
+        bounds: vec![],
+        rows: json!([]),
+    };
+    let mut contested = verdict(key, "confirmed");
+    contested["contested"] = json!(true);
+    // What the scripted agents say, as far down the fork's road as `upto` goes: 0 — the
+    // two instruments, and a finding graded no break; 1 — the finding graded a break, and
+    // its verifier; 2 — the advocate of the contested verdict; 3 — the independent drive.
+    let stage = |upto: u8| {
+        let (grade, name) = if upto == 0 {
+            ("no-break", kept)
+        } else {
+            ("breaks", key)
+        };
+        let mut script = json!({
+            "scope": one_door(),
+            "agents": {
+                "area-a:review": found(&[finding("a-1", "a slot is dropped", "jigc doc set", "audit-clean")]),
+                "drive-a:drive": nothing(),
+                "triage:p1": graded(
+                    &[entry(name, "area-a-review a-1", "jigc doc set", "audit-clean", grade)],
+                    &["area-a-review"],
+                ),
+            },
+        });
+        if upto >= 1 {
+            script["agents"][format!("verify:{key}")] = contested.clone();
+        }
+        if upto >= 2 {
+            script["agents"][format!("advocate:{key}")] = json!({"status": "argued", "verdict": "robust-now",
+                "case": "The robust case.", "proposal": "A change.", "driven": [], "undriven": [], "left_open": []});
+        }
+        if upto >= 3 {
+            script["agents"][format!("proposal:{key}")] = json!({"status": "driven", "holds": true, "steps": [], "undriven": [], "left_open": []});
+        }
+        script
+    };
+    let zeros = "0".repeat(64);
+    // (the pair's role, its field, the agent's label, the reporter's name, how far the road
+    //  is scripted, what the reason opens with)
+    let arms = [
+        (
+            "review",
+            "asserted_sha256",
+            "area-a:review".to_owned(),
+            "area-a-review".to_owned(),
+            0,
+            "its `review` step",
+        ),
+        (
+            "drive",
+            "asserted_sha256",
+            "drive-a:drive".to_owned(),
+            "drive-a-drive".to_owned(),
+            0,
+            "its `drive` step",
+        ),
+        (
+            "verify",
+            "verdict",
+            format!("verify:{key}"),
+            format!("verify-p1-{key}"),
+            1,
+            "its verifier",
+        ),
+        (
+            "verify",
+            "asserted_sha256",
+            format!("verify:{key}"),
+            format!("verify-p1-{key}"),
+            1,
+            "its verifier",
+        ),
+        (
+            "advocate",
+            "asserted_sha256",
+            format!("advocate:{key}"),
+            format!("advocate-p1-{key}"),
+            2,
+            "it is contested, and its advocate",
+        ),
+        (
+            "proposal",
+            "asserted_sha256",
+            format!("proposal:{key}"),
+            format!("proposal-p1-{key}"),
+            3,
+            "it is contested, and the independent drive of the advocate's proposal",
+        ),
+    ];
+    assert_eq!(
+        arms.iter().map(|arm| (arm.0, arm.1)).collect::<Vec<_>>(),
+        ABSENT_ARMS,
+        "one arm per pair the fence holds this suite to"
+    );
+    assert!(
+        roles
+            .iter()
+            .all(|role| ABSENT_ARMS.iter().any(|(of, _)| of == role)),
+        "{roles:?} are roles the fence holds an arm for"
+    );
+
+    // EVERY ARM IS RUN AND EVERY ARM'S FAULT IS SAID — never the first one alone: an arm that
+    // is red says what the stage did instead, by its pair.
+    let mut faults: Vec<String> = Vec::new();
+    let run = |label: &str, script: Value| -> Option<(Sim, Ran)> {
+        let sim = Sim::opened(label, &two());
+        let args = sim.args("test", json!({}));
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| sim.invoke(args, script)))
+            .ok()
+            .map(|ran| (sim, ran))
+    };
+    let unsound =
+        "the invocation is not one the simulation stands behind (its own message is above)";
+
+    // THE CONTROL: every field there. Both items green, the finding a row, nothing owed
+    // again — or, for the roles of a fork's road, a fork that is whole, on record with
+    // the verdict it rides on.
+    if fork {
+        match run("needs-control-fork", stage(3)) {
+            None => faults.push(format!("the control of the fork: {unsound}")),
+            Some((sim, ran)) => {
+                let state = sim.state();
+                let seen = json!([
+                    ran.result["status"],
+                    ran.result["unverified"],
+                    ran.result["forks"].as_array().map(Vec::len),
+                    state["ledger"][0]["triage"]["verdict"],
+                    state["ledger"][0]["triage"]["fork"]
+                ]);
+                if seen
+                    != json!(["triaged", [], 1, "confirmed", {"kind": "contested", "case": "robust-now", "drive": "holds"}])
+                {
+                    faults.push(format!("the control of the fork: {seen}"));
+                }
+            }
+        }
+    } else {
+        match run("needs-control-hunt", stage(0)) {
+            None => faults.push(format!("the control of the instruments: {unsound}")),
+            Some((sim, ran)) => {
+                let state = sim.state();
+                let seen = json!([
+                    ran.result["status"],
+                    ran.result["counts"]["voided"],
+                    ran.result["unasserted"],
+                    results(&state, 1),
+                    state["retest"]
+                ]);
+                if seen
+                    != json!([
+                        "triaged",
+                        [],
+                        [],
+                        [["area-a", 1, "green", null], ["drive-a", 1, "green", null]],
+                        []
+                    ])
+                {
+                    faults.push(format!("the control of the instruments: {seen}"));
+                }
+            }
+        }
+    }
+
+    // THE REST OF A CHAIN WHOSE STEP DID NOT ASSERT THE BINARY IS NOT LAUNCHED — as after a
+    // step that did not report: a reconciler handed the reports of a source pass that is
+    // evidence about nothing would reconcile nothing. (The stand-in fails an invocation
+    // that launches an agent nobody scripted: the reconciler is not scripted here.)
+    if !fork {
+        let sim = Sim::opened(
+            "needs-chain",
+            &Opening {
+                clauses: vec!["no-lost-files"],
+                items: json!([item("row-a", "review-row", "no-lost-files")]),
+                bounds: vec![],
+                rows: json!([]),
+            },
+        );
+        let args = sim.args("test", json!({}));
+        let script = json!({"scope": one_door(),
+                            "agents": {"row-a:source": nothing(), "row-a:driver": nothing()},
+                            "omits": {"row-a:source": ["asserted_sha256"]}});
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| sim.invoke(args, script))) {
+            Err(_) => faults.push(format!("the rest of a chain: {unsound}")),
+            Ok(ran) => {
+                let rows = if ran.result["status"] == "triaged" {
+                    results(&sim.state(), 1)
+                } else {
+                    vec![]
+                };
+                if !(rows.len() == 1
+                    && rows[0][2] == "void"
+                    && rows[0][3].as_str().is_some_and(|reason| {
+                        reason.starts_with(
+                            "its `source` step (row-a-source) returned no `asserted_sha256` — ",
+                        )
+                    })
+                    && ran.agents().contains(&"row-a:driver")
+                    && !ran.agents().contains(&"row-a:reconciler"))
+                {
+                    faults.push(format!(
+                        "the rest of a chain: the item is not void by its `source` step with the reconciler not launched — {} · {rows:?} · {:?}",
+                        ran.result["status"],
+                        ran.agents()
+                    ));
+                }
+            }
+        }
+    }
+
+    for (role, field, label, reporter, upto, opens) in
+        arms.iter().filter(|arm| roles.contains(&arm.0))
+    {
+        // The field ABSENT — and, where it is the hash, RETURNED AND WRONG: the same cell.
+        // (A driver's and a reviewer's wrong hash are the two tests that halted on one.)
+        let mut modes = vec!["absent"];
+        if *field == "asserted_sha256" && *upto > 0 {
+            modes.push("wrong");
+        }
+        for mode in modes {
+            let at = format!("({role}, {field}) {mode}");
+            let mut script = stage(*upto);
+            if mode == "absent" {
+                script["omits"] = json!({label.as_str(): [field]});
+            } else {
+                script["wrongBinary"] = json!([label]);
+            }
+            let Some((sim, ran)) = run(&format!("needs-{role}-{}-{mode}", &field[..4]), script)
+            else {
+                faults.push(format!("{at}: {unsound}"));
+                continue;
+            };
+            let result = &ran.result;
+            // THE STAGE REACHES ITS RECORD, committed and pushed, and returns what the state
+            // computes — never a halt.
+            if result["status"] != "triaged" {
+                faults.push(format!(
+                    "{at}: the stage did not reach its record — {} at `{}`: {}",
+                    text(&result["status"]),
+                    text(&result["halted"]["phase"]),
+                    text(&result["halted"]["reason"])
+                ));
+                continue;
+            }
+            let state = sim.state();
+            let mut hold = |holds: bool, what: String| {
+                if !holds {
+                    faults.push(format!("{at}: {what}"));
+                }
+            };
+            hold(
+                sim.rig.status().is_empty(),
+                "the record is not committed whole".to_owned(),
+            );
+            hold(
+                result["next"] == state["next"] && state["next"] != "close",
+                format!(
+                    "`next` is {} where the state says {}",
+                    result["next"], state["next"]
+                ),
+            );
+            let said = if mode == "absent" {
+                format!("{opens} ({reporter}) returned no `{field}` — ")
+            } else {
+                format!(
+                    "{opens} ({reporter}) returned the `asserted_sha256` {zeros}, which is not the candidate's binary ("
+                )
+            };
+            if *upto == 0 {
+                // AN INSTRUMENT'S STEP: its item is void, with the reason; the other item
+                // is green; and what the unasserted reporter found is a row all the same.
+                let (void, other) = if *role == "review" {
+                    ("area-a", "drive-a")
+                } else {
+                    ("drive-a", "area-a")
+                };
+                let rows = results(&state, 1);
+                let of = |item: &str| {
+                    rows.iter()
+                        .find(|row| row[0] == item)
+                        .cloned()
+                        .unwrap_or(Value::Null)
+                };
+                hold(
+                    result["counts"]["voided"] == json!([void])
+                        && of(void)[2] == "void"
+                        && of(void)[3]
+                            .as_str()
+                            .is_some_and(|reason| reason.starts_with(&said)),
+                    format!(
+                        "`{void}` is not void with a reason that names the field and the reporter: {rows:?}"
+                    ),
+                );
+                hold(
+                    json!([of(other)[2], of(other)[3]]) == json!(["green", null]),
+                    format!("the other item is touched: {rows:?}"),
+                );
+                hold(
+                    json!([
+                        state["ledger"][0]["key"],
+                        state["ledger"][0]["grade"],
+                        result["counts"]["entries"]
+                    ]) == json!([kept, "no-break", 1]),
+                    format!(
+                        "what the reporter found is not triaged all the same: {}",
+                        state["ledger"]
+                    ),
+                );
+                hold(
+                    result["unasserted"] == json!([{"reporter": reporter, "asserted": null}]),
+                    format!(
+                        "the return does not name who did not assert the binary: {}",
+                        result["unasserted"]
+                    ),
+                );
+                // The void forbids closing: the state asks for the item again.
+                hold(
+                    json!([state["retest"], result["state"]["stop"]["then"]])
+                        == json!([["audit-clean"], "retest"]),
+                    format!(
+                        "the state does not ask for the void item again: {}",
+                        state["retest"]
+                    ),
+                );
+            } else {
+                // A VERIFIER, AN ADVOCATE, THE INDEPENDENT DRIVE: the finding stays
+                // unverified — no verdict and no fork on record — both items are green, and
+                // the round's triage is not finished.
+                let left = result["unverified"].as_array().cloned().unwrap_or_default();
+                hold(
+                    left.len() == 1
+                        && left[0]["key"] == key
+                        && left[0]["why"]
+                            .as_str()
+                            .is_some_and(|why| why.starts_with(&said)),
+                    format!(
+                        "the finding is not unverified with a reason that names the field and the reporter: {}",
+                        result["unverified"]
+                    ),
+                );
+                hold(
+                    json!([result["counts"]["voided"], result["forks"]]) == json!([[], []]),
+                    format!(
+                        "an item is void, or a fork is returned: {} · {}",
+                        result["counts"]["voided"], result["forks"]
+                    ),
+                );
+                let seen = json!([
+                    state["next"],
+                    state["untriaged"],
+                    state["ledger"][0]["triage"]["verdict"],
+                    state["ledger"][0]["triage"]["fork"],
+                    state["blockers"]
+                ]);
+                hold(
+                    seen == json!(["triage", [{"key": key, "why": "unverified"}], null, null, []]),
+                    format!(
+                        "the record holds a verdict or a fork, or the triage reads as finished: {seen}"
+                    ),
+                );
+            }
+        }
+    }
+    assert!(
+        faults.is_empty(),
+        "what a stage did with a return that lacks a field it needs — one line per arm that is red:\n{}",
+        faults.join("\n")
+    );
+}
+
+#[test]
+fn a_reviewer_or_a_driver_that_returns_no_hash_voids_its_item_and_the_stage_records() {
+    a_needed_field_left_out_voids_what_its_reporter_was_launched_for(&["review", "drive"], false);
+}
+
+#[test]
+fn a_verifier_that_returns_no_verdict_or_no_hash_leaves_the_finding_unverified_and_the_stage_records()
+ {
+    a_needed_field_left_out_voids_what_its_reporter_was_launched_for(&["verify"], true);
+}
+
+#[test]
+fn an_advocate_or_an_independent_drive_that_returns_no_hash_is_no_fork_and_the_stage_records() {
+    a_needed_field_left_out_voids_what_its_reporter_was_launched_for(
+        &["advocate", "proposal"],
+        true,
     );
 }
 

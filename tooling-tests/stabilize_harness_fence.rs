@@ -107,6 +107,16 @@
 //!   its shape; and each shape, put back into each prompt, is red. The simulation holds
 //!   every prompt of every invocation it runs to the same function.
 //!
+//! - **(t)** what a stage needs of a return has its cell, and what still halts once an
+//!   instrument is launched is a stated list (the second repair plan's task `X1`): from the
+//!   stage's first held check on, and in a finishing lap from its triage on, every halt
+//!   goes through `haltAfter` and names a row of the script's `HALTS_AFTER`, every row is
+//!   met, no helper of that stretch halts by itself, and the workflow doc states the same
+//!   rows; and — under `node` — every field a driving role's schema describes and does not
+//!   require is a row of the script's `NEEDS` or of this suite's [`NOT_NEEDED`], no needed
+//!   field is one a schema requires, every cell that voids is an arm of the simulation, and
+//!   every cell that still halts is owed to a task by name ([`OWED`]).
+//!
 //! **Driven, where `node` is on `PATH`** (it is on this project's development machines and
 //! on GitHub's hosted runners; where it is not, the arm fails under CI and passes anywhere
 //! else — the gate gains no dependency — and the gate's own summary names it as a test
@@ -3634,4 +3644,545 @@ fn s_every_command_a_prompt_names_is_one_plain_invocation_of_a_tool() {
             );
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// (t) what a stage needs of a return, and what still halts once an instrument is launched
+// ---------------------------------------------------------------------------
+
+/// What a `test` stage does NOT need of a driving role's return, by the schema the role is
+/// launched under: every field that schema describes and does not require, and that the
+/// harness's `NEEDS` has no row for — each with why its absence costs nothing. A field that
+/// is in neither table is red: a stage that comes to need a field says what its absence
+/// does (a row of `NEEDS`), or this table says why it needs none.
+const NOT_NEEDED: &[(&str, &str, &str)] = &[
+    (
+        "UNIT_SCHEMA",
+        "halt",
+        "read only where the status is `halted`, for the words a void's reason carries: absent, the reason says `halted` and no more",
+    ),
+    (
+        "UNIT_SCHEMA",
+        "doors_affected",
+        "the `fix` stage's: the doors a fix diff can change, read from the audit of one and by no `test` stage",
+    ),
+    (
+        "UNIT_SCHEMA",
+        "report",
+        "a path handed on as text: whether a report is there is the report check's word, never a return's",
+    ),
+    (
+        "UNIT_SCHEMA",
+        "summary",
+        "prose for a reader: no code reads it",
+    ),
+    (
+        "VERIFY_SCHEMA",
+        "halt",
+        "read only where the status is `halted`, for the words an unverified finding's reason carries",
+    ),
+    (
+        "VERIFY_SCHEMA",
+        "basis",
+        "the verdict's one line, passed on into a fork's statement as it came: absent, the statement says that none was returned",
+    ),
+    (
+        "VERIFY_SCHEMA",
+        "contested",
+        "A DEFAULT, AND DECLARED: absent reads as not contested, which is what most verdicts are — an omission cannot be told from it, so no fork is driven and the verdict is recorded without one",
+    ),
+    (
+        "VERIFY_SCHEMA",
+        "ran_on",
+        "the container of the two hashes: what is needed of it is its `previous`, which has its own row",
+    ),
+    (
+        "VERIFY_SCHEMA",
+        "ran_on.candidate",
+        "a second copy of the candidate's hash: the one the stage compares is `asserted_sha256`, and no code reads this one",
+    ),
+    (
+        "VERIFY_SCHEMA",
+        "repro",
+        "the heading of the block in the verifier's report: no code reads it, the report holds the block",
+    ),
+    (
+        "VERIFY_SCHEMA",
+        "pinnable",
+        "the verifier's word to a reader: no code reads it",
+    ),
+    (
+        "VERIFY_SCHEMA",
+        "left_open",
+        "absent reads as nothing left open: what an agent leaves open is a list, and an empty one is the usual one",
+    ),
+    (
+        "VERIFY_SCHEMA",
+        "report",
+        "a path handed on as text: whether a report is there is the report check's word, never a return's",
+    ),
+    (
+        "ADVOCATE_SCHEMA",
+        "halt",
+        "read only where the status is `halted`, for the words an unverified finding's reason carries",
+    ),
+    (
+        "ADVOCATE_SCHEMA",
+        "proposal",
+        "handed on to the independent drive as text: absent, that prompt says that none was returned and to read it from the advocate's report",
+    ),
+    (
+        "ADVOCATE_SCHEMA",
+        "driven",
+        "handed on to the independent drive as lines: absent, that prompt lists none, and the drive works from the report",
+    ),
+    (
+        "ADVOCATE_SCHEMA",
+        "undriven",
+        "the advocate's word to a reader: no code reads it",
+    ),
+    (
+        "ADVOCATE_SCHEMA",
+        "left_open",
+        "absent reads as nothing left open: what an agent leaves open is a list, and an empty one is the usual one",
+    ),
+    (
+        "ADVOCATE_SCHEMA",
+        "report",
+        "a path handed on as text: whether a report is there is the report check's word, never a return's",
+    ),
+    (
+        "PROPOSAL_SCHEMA",
+        "halt",
+        "read only where the status is `halted`, for the words an unverified finding's reason carries",
+    ),
+    (
+        "PROPOSAL_SCHEMA",
+        "undriven",
+        "the driver's word to a reader: no code reads it",
+    ),
+    (
+        "PROPOSAL_SCHEMA",
+        "left_open",
+        "absent reads as nothing left open: what an agent leaves open is a list, and an empty one is the usual one",
+    ),
+    (
+        "PROPOSAL_SCHEMA",
+        "report",
+        "a path handed on as text: whether a report is there is the report check's word, never a return's",
+    ),
+];
+
+/// The cells of `NEEDS` whose word is still `halts`: a field whose absence halts the stage
+/// after its instruments ran — each with the task it is owed to, and why this commit could
+/// not turn it. A `halts` cell that is not here is red, and so is a row here whose cell is
+/// gone or turned: the task that turns it adds its arm to the simulation's `ABSENT_ARMS`
+/// and takes its row out of this list in the same commit.
+const OWED: &[(&str, &str, &str, &str)] = &[
+    (
+        "verify",
+        "regression",
+        "X1b",
+        "a confirmed verdict with no regression fact is recorded as confirmed with that fact unknown — a cell `dev/stabilize-record triage-set` does not take yet: it refuses `confirmed` without a boolean `regression`, and its change is on another branch",
+    ),
+    (
+        "verify",
+        "ran_on.previous",
+        "X1b",
+        "the hash of the previous release's binary is what backs a regression fact: without it the fact is unknown, the verdict stands — the same cell of the record script, owed with the row above",
+    ),
+];
+
+/// The words a cell of `NEEDS` may hold: what the absence of the field does.
+const CELLS: [&str; 4] = ["void", "unverified", "no-fork", "halts"];
+
+/// The row of the stage's stated halts that exists only while a cell is owed.
+const OWED_HALT: &str = "regression-fact";
+
+/// Reads the harness's two tables, its roles, and — per schema named — every field the
+/// schema describes and does not require: by its dotted path through objects, the halt
+/// report as one field, a list's elements not descended into.
+const CENSUS: &str = r#"
+import { readFileSync } from 'node:fs'
+const [script, namesJson] = process.argv.slice(2)
+const source = readFileSync(script, 'utf8').replace(/^export const meta = /m, 'const meta = ')
+const pure = source.slice(0, source.indexOf('\n// ---- args: parsed, and refused before any agent ----\n'))
+const names = JSON.parse(namesJson)
+const read = `
+function optionalOf(schema, at) {
+  const out = []
+  for (const [name, inner] of Object.entries(schema.properties || {})) {
+    const path = at ? at + '.' + name : name
+    if (!(schema.required || []).includes(name)) out.push(path)
+    if (inner !== HALT && inner.type === 'object') out.push(...optionalOf(inner, path))
+  }
+  return out
+}
+return { needs: NEEDS, halts: HALTS_AFTER, roles: ROLES, optional: { ${names.map((n) => n + ': optionalOf(' + n + ', \'\')').join(', ')} } }
+`
+console.log(JSON.stringify(new Function(pure + read)()))
+"#;
+
+fn census(schemas: &BTreeSet<String>) -> Value {
+    let scratch = ScratchDir::new("stabilize-census");
+    let driver = scratch.path().join("census.mjs");
+    fs::write(&driver, CENSUS).expect("write the census");
+    let out = Command::new("node")
+        .arg(&driver)
+        .arg(repo_root().join(HARNESS))
+        .arg(serde_json::to_string(schemas).expect("the names as JSON"))
+        .output()
+        .expect("run node");
+    assert!(
+        out.status.success(),
+        "the script's tables of what a stage needs of a return, and of what still halts, under node: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).expect("one JSON object")
+}
+
+/// The schema each role is launched under, read off the script's `roleStep` calls outside
+/// the probes: a role named by a literal, or — `step.role` — every role a chain names.
+fn role_schemas(full: &str) -> BTreeMap<String, BTreeSet<String>> {
+    let stages = without(full, &["selfTest", "runProbe"]);
+    let chained: BTreeSet<String> = full
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .flat_map(|line| line.split("role: '").skip(1))
+        .map(|rest| rest[..rest.find('\'').expect("a role closes")].to_owned())
+        .collect();
+    let mut found: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for line in stages
+        .lines()
+        .filter(|line| !line.starts_with("function roleStep("))
+    {
+        for call in line.split("roleStep(").skip(1) {
+            let schema = call
+                .split(|c: char| !(c.is_ascii_uppercase() || c == '_'))
+                .find(|word| word.ends_with("_SCHEMA"))
+                .unwrap_or_else(|| panic!("a `roleStep` call names its schema on its line: {call}"))
+                .to_owned();
+            let roles: Vec<String> = match call.strip_prefix('\'') {
+                Some(named) => vec![named[..named.find('\'').expect("a role closes")].to_owned()],
+                None => {
+                    assert!(
+                        call.starts_with("step.role,"),
+                        "a role is a literal or a chain's step: {call}"
+                    );
+                    chained.iter().cloned().collect()
+                }
+            };
+            for role in roles {
+                found.entry(role).or_default().insert(schema.clone());
+            }
+        }
+    }
+    found
+}
+
+/// Every call that halts a stage in `region`, as the row of the stated list it names — or
+/// as a fault: a halt that names no row.
+fn halts_in(region: &str, rows: &BTreeSet<String>, faults: &mut Vec<String>) -> BTreeSet<String> {
+    let mut named = BTreeSet::new();
+    let code = code(region);
+    for (at, _) in code.match_indices("alt(") {
+        let opens = code[..at]
+            .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .map_or(0, |i| i + 1);
+        let name = &code[opens..at + 3];
+        let line = code[..at].lines().count();
+        match name {
+            "recordHalt" => {
+                named.insert("record".to_owned());
+            }
+            "pushHalt" => {
+                named.insert("push".to_owned());
+            }
+            _ => faults.push(format!(
+                "`{name}(` (line {line} of the region): once an instrument is launched a stage halts only through `haltAfter`, on a row of HALTS_AFTER"
+            )),
+        }
+    }
+    for call in code.split("haltAfter('").skip(1) {
+        let row = &call[..call.find('\'').expect("a row closes")];
+        if !rows.contains(row) {
+            faults.push(format!("`haltAfter('{row}'`: HALTS_AFTER has no such row"));
+        }
+        named.insert(row.to_owned());
+    }
+    named
+}
+
+/// The two stretches of the script in which an instrument, or a verifier, is launched and
+/// the record is not yet read back: `runTest` from its held checks on, and the lap that
+/// finishes a triage from its triage on.
+fn after_launch(full: &str) -> (String, String) {
+    let tested = function(full, "runTest");
+    let stage = &tested[tested
+        .find("\n  const heldRan = []\n")
+        .expect("the stage's first instrument: its held checks")..];
+    let lap = function(full, "finishTriage");
+    let lap = &lap[lap.find("await triagePasses(").expect("the lap's triage")..];
+    (stage.to_owned(), lap.to_owned())
+}
+
+#[test]
+fn t_a_field_a_stage_needs_has_its_cell_and_what_halts_after_an_instrument_is_a_stated_list() {
+    let full = harness();
+
+    // NO SCHEMA OF A STAGE GAINED A REQUIRED FIELD FOR THIS, read off the source everywhere:
+    // a return that omits a required field is a call that failed (the `required` probe).
+    assert!(
+        full.contains("\nconst NEEDS = {\n") && full.contains("\nconst HALTS_AFTER = {\n"),
+        "the script holds what a stage needs of a return (NEEDS) and what still halts once an instrument is launched (HALTS_AFTER), each as one table"
+    );
+    assert_eq!(
+        function(&full, "haltAfter").lines().nth(1).map(str::trim),
+        Some("return halt(HALTS_AFTER[row].phase, why, more)"),
+        "`haltAfter` halts at the phase its row names, and does nothing else"
+    );
+
+    // WHAT STILL HALTS ONCE AN INSTRUMENT IS LAUNCHED IS A STATED LIST, read off the source:
+    // in the two stretches every halt goes through `haltAfter` and names a row — a halt
+    // added later without a row is red — and the helpers they call halt nothing themselves.
+    let table = &full[full.find("\nconst HALTS_AFTER = {\n").expect("the table")..];
+    let table = &table[..table.find("\n}\n").expect("the table closes")];
+    let rows: BTreeSet<String> = table
+        .lines()
+        .filter_map(|line| {
+            let name = line.trim_start().strip_prefix('\'')?.split('\'').next()?;
+            line.contains("': { phase: '").then(|| name.to_owned())
+        })
+        .collect();
+    let (stage, lap) = after_launch(&full);
+    let mut faults = Vec::new();
+    let met = halts_in(&stage, &rows, &mut faults);
+    let met_by_lap = halts_in(&lap, &rows, &mut faults);
+    assert_eq!(faults, Vec::<String>::new());
+    assert_eq!(
+        met, rows,
+        "every row of HALTS_AFTER (right) is a halt the `test` stage can meet after its first instrument (left): a row no halt names is stale"
+    );
+    assert!(
+        met_by_lap.is_subset(&rows)
+            && met_by_lap.contains("triage")
+            && met_by_lap.contains("record"),
+        "the finishing lap halts on rows of the same list: {met_by_lap:?}"
+    );
+    for helper in [
+        "runUnits",
+        "triagePasses",
+        "driveFork",
+        "settleReports",
+        "preflightOf",
+        "hold",
+    ] {
+        let body = code(function(&full, helper));
+        assert!(
+            !body.contains("halt(") && !body.contains("Halt("),
+            "`{helper}` is called once an instrument is launched, and halts nothing itself: what it could not do it returns"
+        );
+    }
+    // A halt put back without a row, and a row nobody wrote, are each red.
+    for (planted, names) in [
+        (
+            "\n  if (ran.length > 99) return halt('binary', 'planted')\n",
+            "`halt(`",
+        ),
+        (
+            "\n  if (ran.length > 99) return gitHalt('git', null, 'planted')\n",
+            "`gitHalt(`",
+        ),
+        (
+            "\n  if (ran.length > 99) return haltAfter('planted', 'planted')\n",
+            "no such row",
+        ),
+    ] {
+        let mut found = Vec::new();
+        halts_in(&format!("{stage}{planted}"), &rows, &mut found);
+        assert!(
+            found.iter().any(|fault| fault.contains(names)),
+            "{planted:?} after the instruments must be named ({names}); found: {found:?}"
+        );
+    }
+
+    // THE WORKFLOW DOC STATES THE SAME LIST, row for row.
+    let doc = fs::read_to_string(repo_root().join("implementation/stabilization-workflow.md"))
+        .expect("read the workflow doc");
+    let stated = doc
+        .split("**What still halts a stage once an instrument is launched**")
+        .nth(1)
+        .expect("the workflow doc states what still halts once an instrument is launched");
+    let stated: BTreeSet<String> = stated
+        .lines()
+        .skip_while(|line| !line.starts_with("| `"))
+        .take_while(|line| line.starts_with("| `"))
+        .map(|line| {
+            line["| `".len()..]
+                .split('`')
+                .next()
+                .expect("a row")
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(
+        stated, rows,
+        "the rows the workflow doc states (left) are the rows of HALTS_AFTER (right)"
+    );
+
+    if !node_or_skip(&format!(
+        "the fields a stage of {HARNESS} needs of a return were not held to its schemas"
+    )) {
+        return;
+    }
+    // WHAT A STAGE NEEDS OF A RETURN, HELD TO THE SCHEMAS (driven under node). The census is
+    // of THE ROLES THAT DRIVE — the ones handed the binary, whose return is evidence about
+    // the candidate: every other role's endings are rows of the stated list above, or lie
+    // before any instrument (the first preflight, the scope step), or void by a rule of
+    // their own (the second preflight; the cross-model pass).
+    let by_role = role_schemas(&full);
+    let schemas: BTreeSet<String> = by_role.values().flatten().cloned().collect();
+    let read = census(&schemas);
+    let driving: BTreeSet<String> = read["roles"]
+        .as_object()
+        .expect("the roles")
+        .iter()
+        .filter(|(_, role)| role["drives"] == true)
+        .map(|(name, _)| name.clone())
+        .collect();
+    let needs = read["needs"].as_object().expect("NEEDS");
+    assert_eq!(
+        needs.keys().cloned().collect::<BTreeSet<_>>(),
+        driving,
+        "NEEDS has a row for every role that drives (right), and for no other (left)"
+    );
+    let mut pairs: BTreeMap<(String, String), String> = BTreeMap::new();
+    let mut faults = Vec::new();
+    let mut unneeded: BTreeSet<(String, String)> = BTreeSet::new();
+    for role in &driving {
+        let schema = match by_role.get(role).map(|set| set.iter().collect::<Vec<_>>()) {
+            Some(one) if one.len() == 1 => one[0].clone(),
+            other => panic!("the role `{role}` is launched under exactly one schema: {other:?}"),
+        };
+        let optional: BTreeSet<String> = read["optional"][&schema]
+            .as_array()
+            .expect("a schema's optional fields")
+            .iter()
+            .map(|field| field.as_str().expect("a path").to_owned())
+            .collect();
+        let needed: BTreeSet<String> = needs[role]
+            .as_array()
+            .expect("a role's rows")
+            .iter()
+            .map(|row| {
+                let field = row["field"]
+                    .as_str()
+                    .expect("a row names its field")
+                    .to_owned();
+                let cell = row["then"]
+                    .as_str()
+                    .expect("a row names its cell")
+                    .to_owned();
+                if !CELLS.contains(&cell.as_str()) {
+                    faults.push(format!(
+                        "NEEDS.{role}: `{field}` has the cell `{cell}`, which is none of {CELLS:?}"
+                    ));
+                }
+                if row["why"]
+                    .as_str()
+                    .map_or(0, |why| why.split_whitespace().count())
+                    < 6
+                {
+                    faults.push(format!(
+                        "NEEDS.{role}: `{field}` does not say why the stage needs it"
+                    ));
+                }
+                pairs.insert((role.clone(), field.clone()), cell);
+                field
+            })
+            .collect();
+        // NO SCHEMA REQUIRES A NEEDED FIELD — it is one the schema describes and leaves
+        // optional, so that its absence costs one item and never three runs of an agent.
+        for field in &needed {
+            if !optional.contains(field) {
+                faults.push(format!(
+                    "NEEDS.{role}: `{field}` is no optional field of {schema} — a field a stage needs of a role is one its schema describes and does NOT require: a return that omits a required field is a call that failed"
+                ));
+            }
+        }
+        for field in &optional {
+            let listed = NOT_NEEDED
+                .iter()
+                .any(|(of, name, _)| *of == schema && name == field);
+            if listed {
+                unneeded.insert((schema.clone(), field.clone()));
+            }
+            if listed == needed.contains(field) {
+                faults.push(format!(
+                    "{schema}.{field} (the role `{role}`): {}",
+                    if listed {
+                        "it has a row of NEEDS and a row of this suite's NOT_NEEDED: one of them is wrong"
+                    } else {
+                        "an optional field with NO CELL — say what its absence does to what the role was launched for (a row of NEEDS, and its arm in the simulation), or why the stage needs none (a row of NOT_NEEDED)"
+                    }
+                ));
+            }
+        }
+    }
+    for (schema, field, why) in NOT_NEEDED {
+        if !unneeded.contains(&((*schema).to_owned(), (*field).to_owned())) {
+            faults.push(format!("NOT_NEEDED: `{schema}.{field}` is no optional field of a driving role's schema: the row is stale"));
+        }
+        if why.split_whitespace().count() < 6 {
+            faults.push(format!("NOT_NEEDED: `{schema}.{field}` carries no reason"));
+        }
+    }
+    assert_eq!(faults, Vec::<String>::new());
+
+    // EVERY CELL HAS ITS ARM, OR IS OWED BY NAME: a cell that voids is driven absent by the
+    // simulation; a cell that still halts is a row of OWED — and the stated list holds the
+    // row for it exactly as long as one is owed.
+    let arms: BTreeSet<(String, String)> = super::stabilize_simulation::ABSENT_ARMS
+        .iter()
+        .map(|(role, field)| ((*role).to_owned(), (*field).to_owned()))
+        .collect();
+    let owed: BTreeSet<(String, String)> = OWED
+        .iter()
+        .map(|(role, field, _, _)| ((*role).to_owned(), (*field).to_owned()))
+        .collect();
+    let of = |halts: bool| -> BTreeSet<(String, String)> {
+        pairs
+            .iter()
+            .filter(|(_, cell)| (cell.as_str() == "halts") == halts)
+            .map(|(pair, _)| pair.clone())
+            .collect()
+    };
+    assert_eq!(
+        of(false),
+        arms,
+        "every (role, field) whose absence voids what the role was launched for (left) is driven absent by the simulation (right: its ABSENT_ARMS)"
+    );
+    assert_eq!(
+        of(true),
+        owed,
+        "every (role, field) whose absence still halts the stage (left) is owed to a task by name (right: OWED) — a cell that is turned takes its row out, and gains its arm"
+    );
+    for (role, field, task, why) in OWED {
+        assert!(
+            !task.is_empty() && why.split_whitespace().count() >= 12,
+            "OWED: ({role}, {field}) names its task and why this commit could not turn it"
+        );
+    }
+    assert_eq!(
+        rows.contains(OWED_HALT),
+        !OWED.is_empty(),
+        "the row `{OWED_HALT}` of the stated list stands exactly as long as a cell is owed"
+    );
+    assert_eq!(
+        code(function(&full, "triagePasses"))
+            .matches("faults.push(")
+            .count(),
+        OWED.len(),
+        "the verifier's faults — what halts the stage at `{OWED_HALT}` — are the owed cells, and no other"
+    );
 }

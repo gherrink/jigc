@@ -188,7 +188,50 @@
 //   an advocate, the            no case, no drive, or a report missing: THE FORK IS NOT ON
 //   independent drive           RECORD and its finding stays unverified, as above — the next
 //                               triage verifies it and drives the fork again.
-// A returned hash that is not the binary's is none of these: it halts the stage.
+// A RETURN THAT LACKS A FIELD THE STAGE NEEDS OF THAT ROLE (the second repair plan's task
+// X1; DECISIONS.md -> 2026-10-07, "An absent field voids its item"). Observed on 2026-10-07:
+// a return that omits a field its schema REQUIRES does not come back partial — the call
+// fails, three whole runs of the agent. So the fields below stay OPTIONAL in every schema of
+// a stage, the script is handed the return without one, and the absence is THAT REPORTER'S
+// FACT — the row above for that reporter, with a reason that names the field and the
+// reporter — never the stage's (NEEDS, the one table; the fence holds it to the schemas):
+//   a step of an item's chain   no `asserted_sha256`: the item is VOID, the rest of its
+//     (a reviewer, a driver)    chain is not launched, and the state asks for its re-run.
+//                               WHAT IT FOUND IS TRIAGED ALL THE SAME: a finding's text and
+//                               repro do not rest on the hash, and whatever is graded a
+//                               break is driven again by a verifier on the binary it asserts.
+//   a verifier                  no `verdict`, or no `asserted_sha256`: the finding stays
+//                               UNVERIFIED. What it left open is triaged all the same.
+//   an advocate, the            no `asserted_sha256`: THE FORK IS NOT ON RECORD, the finding
+//   independent drive           stays unverified, and the proposal of a case argued on a
+//                               binary nobody asserted is not driven.
+//   a verifier, `confirmed`     no `regression`, or no hash of the previous release's binary
+//                               (`ran_on.previous`): THE STAGE STILL HALTS — the two cells
+//                               this script cannot turn alone. What they are owed is the
+//                               verdict recorded as confirmed with its regression fact
+//                               UNKNOWN, which the record script does not take yet.
+// AND A HASH THAT CAME BACK AND IS NOT THE BINARY'S IS THE SAME CELL as one that did not come
+// back — a step's item void, a finding unverified, a fork not on record — with both hashes in
+// the reason, and the return naming the reporter (`unasserted`). Until this task it halted
+// the stage. THE ARGUMENT: a definition tells a driving agent to HALT where the binary it is
+// handed does not hash to its line, and that halt voids its item and nothing else; the
+// comparison this script makes is that halt, made for an agent that did not make it. So the
+// same fact — this one agent drove something else — costs the same whether the agent
+// noticed. And it is that agent's alone: every other agent's evidence is held to its own
+// assertion, the binary is the tool's and placed read-only, and a binary swapped under a
+// whole stage shows as every later reporter void, on record, by name — where a halt records
+// nothing and runs every instrument again, to meet the same agent.
+//
+// WHAT STILL HALTS A `test` STAGE ONCE AN INSTRUMENT IS LAUNCHED is ONE LIST (HALTS_AFTER),
+// and a halt in that stretch names its row (`haltAfter`): a reporter name that cannot be
+// made (`names`) · the report check, unread or naming a file nobody launched
+// (`report-check`) · the round's scope set aside (`scope-aside`) · a reporter the stage
+// stands on that left no report (`stood-on`) · ANY ending of triage but its grades with its
+// report (`triage`) · a confirmed verdict without its regression fact or the previous
+// binary's hash (`regression-fact`, until the cells above are turned) · the record step
+// (`record`), its push (`push`), and the state read back after it (`read-back`) — these
+// three with the batch applied or the record committed, and nothing lost. Nothing else
+// halts there: a list that grows is a row added, or the fence is red.
 //
 // HOW A STEP CAN END, AND WHAT FOLLOWS (the second repair plan's task K3). A step of the
 // tool ends with its status, or refuses with ONE WORD — and this script has a row for every
@@ -279,8 +322,10 @@
 // from the working tree, as a held command (`buildBoth`), and its path, its hash, the
 // version it prints and that a bare `jigc` resolves to it are the tool's facts, read off
 // its verdict — no agent's reading. Every driving agent is handed the path and the hash on
-// a `BINARY:` line and returns the hash it asserted; this script compares the two itself
-// and halts on a mismatch.
+// a `BINARY:` line and returns the hash it asserted; this script compares the two itself,
+// and what an agent drove on anything else — or on a binary it did not assert — is evidence
+// about nothing: its item is void, its finding unverified, its fork none (above: A RETURN
+// THAT LACKS A FIELD).
 //
 // A ROUND TESTS ONE CANDIDATE, AND EVERY RESULT OF IT NAMES THAT COMMIT (ruling 11; the
 // orchestrator's ruling of 2026-10-07 on the core review's F3: a result recorded on another
@@ -716,6 +761,56 @@ function chainOf(kind, crossModel) {
 // The audit of a round's fix diff — not an item of the test set, the `fix` stage's own.
 const FIX_AUDIT = [[{ as: 'review', role: 'review', task: 'the review of this round\'s FIX DIFF' }, { as: 'drive', role: 'drive', task: 'the drive of this round\'s FIX DIFF: every door it can change' }]]
 
+// ---- what a stage needs of a return, and what the absence of it does ----
+// NEEDS — per ROLE THAT DRIVES, the fields a `test` stage needs of its return THAT ITS
+// SCHEMA DOES NOT REQUIRE, and what follows where one is not there (`then`; the header: HOW
+// AN AGENT CAN END, a return that lacks a field). NO SCHEMA OF A STAGE REQUIRES ONE: a
+// return that omits a required field is a call that FAILED — three whole runs of the agent,
+// and a count toward the breaker (the `required` probe, 2026-10-07) — so the script is
+// handed the return without it, and the absence is THAT REPORTER'S FACT, never the stage's:
+//   void        the item whose chain the step belongs to is VOID, with the reporter and the
+//               field in its reason; the rest of its chain is not launched; what the step
+//               found is triaged all the same — a finding is verified by another agent
+//   unverified  the finding stays UNVERIFIED, as after a verifier that died
+//   no-fork     half a fork is no fork: nothing of it is on record, the finding unverified
+//   halts       THE STAGE STILL HALTS — a cell owed to a task, by name, in
+//               tooling-tests/stabilize_harness_fence.rs (OWED), and a row of HALTS_AFTER
+// `with` is the verdict the need holds under. The fence, arm (t), holds this table to the
+// schemas — every optional field of a driving role's schema has a row here or a reason
+// there — and every cell that is not `halts` to an arm of the simulation.
+const ASSERTED = 'the hash it asserted for the binary it drove: without it nothing it drove is evidence about this candidate'
+const NEEDS = {
+  review: [{ field: 'asserted_sha256', then: 'void', why: ASSERTED }],
+  drive: [{ field: 'asserted_sha256', then: 'void', why: ASSERTED }],
+  verify: [
+    { field: 'verdict', then: 'unverified', why: 'what it found: a verifier that returns none verified nothing' },
+    { field: 'asserted_sha256', then: 'unverified', why: ASSERTED },
+    { field: 'regression', with: 'confirmed', then: 'halts', why: 'whether the finding it confirmed is a regression: the verifier\'s fact, and nobody else\'s' },
+    { field: 'ran_on.previous', with: 'confirmed', then: 'halts', why: 'the hash it asserted for the previous release\'s binary: what a regression fact is backed by' },
+  ],
+  advocate: [{ field: 'asserted_sha256', then: 'no-fork', why: ASSERTED }],
+  proposal: [{ field: 'asserted_sha256', then: 'no-fork', why: ASSERTED }],
+}
+// HALTS_AFTER — WHAT STILL HALTS A `test` STAGE ONCE AN INSTRUMENT IS LAUNCHED: the whole
+// list, each row with the phase its halt names. From the stage's first held check on — and,
+// in the lap that finishes a triage, from its triage on — a halt goes through `haltAfter`
+// and names its row, and the fence, arm (t), is red on one that does not. EVERY OTHER
+// ENDING OF EVERY AGENT VOIDS WHAT THAT AGENT WAS LAUNCHED FOR, AND THE STAGE REACHES ITS
+// RECORD. What a halt here costs is the stage: its instruments ran, nothing is recorded,
+// the attempt is counted. `record`, `push` and `read-back` cost less — the batch is applied,
+// or the record is committed — and each says what the next invocation finishes.
+const HALTS_AFTER = {
+  'names': { phase: 'state', when: 'a reporter name cannot be made for a step of an item the round runs: the item\'s id is too long to carry its step inside a slug' },
+  'report-check': { phase: 'reports', when: 'the report check after the instruments could not be read — its step died, refused, or the breaker is tripped — or it names a file no launched reporter wrote' },
+  'scope-aside': { phase: 'scope', when: 'the round\'s scope was set aside by the report check: the file at its path is not what the record script would have written' },
+  'stood-on': { phase: 'reports', when: 'a reporter the stage stands on left no report: the attempt\'s marker, the first preflight, the scope step, a second preflight that provided, the preflight of a finishing lap' },
+  'triage': { phase: 'triage', when: 'ANY ending of triage but its grades with its report — no result, a halt, counts that do not balance, a key that is none or is given twice, no report — and, inside a pass, a verifier\'s name that cannot be made and a report check that could not be read' },
+  'regression-fact': { phase: 'binary', when: 'a CONFIRMED verdict that does not say whether the finding is a regression, or whose hash of the previous release\'s binary is not there or is another: the two cells of NEEDS that still halt' },
+  'record': { phase: 'record', when: 'the record step: the executor applied nothing or its batch was refused, the record\'s gate left no verdict, or the commit step refused — the batch stays applied where it was, and the next invocation finishes it' },
+  'push': { phase: 'push', when: 'the push of the record\'s commit failed or was refused: the record is committed, the push is owed, and the next invocation\'s first read makes it' },
+  'read-back': { phase: 'state', when: 'the state could not be read back once the record was committed and pushed: nothing is lost, and the next invocation reads it' },
+}
+
 // ---- pure helpers (everything from here to `selfTest` runs no agent) ----
 
 // branchName — THE one place a branch name of a stabilization run is minted (ruling 7).
@@ -1009,6 +1104,32 @@ function branchLine(branch, loop) {
 // drove something and did not return the candidate's hash as the one they asserted.
 function hashMismatch(expected, returns) {
   return returns.filter((r) => r.drives && r.result && r.result.status !== 'halted' && r.result.asserted_sha256 !== expected).map((r) => ({ reporter: r.name, asserted: r.result.asserted_sha256 == null ? null : String(r.result.asserted_sha256) }))
+}
+
+// lacks — the rows of NEEDS that a role's return does not meet: a needed field that is not
+// there, where the verdict the need holds under is the return's.
+function lacks(role, result) {
+  const held = (path) => path.split('.').reduce((at, name) => (at == null ? undefined : at[name]), result)
+  return (NEEDS[role] || []).filter((n) => (!n.with || result.verdict === n.with) && held(n.field) == null)
+}
+// lacksWhy — a needed field that is not there, as the reason its cell is recorded with: THE
+// REPORTER AND THE FIELD, by name, and why the stage needs it.
+function lacksWhy(reporter, need) {
+  return '(' + reporter + ') returned no `' + need.field + '` — ' + need.why
+}
+// unasserted — why a reporter's return is NO EVIDENCE ABOUT THE CANDIDATE, or null: it
+// drove, and the hash it returns as the one it asserted is not there (NEEDS) or IS ANOTHER.
+// THE TWO ARE ONE CELL. A definition tells a driving agent to HALT where the hash of the
+// binary it is handed is not the one on its line, and such a halt voids its item and
+// nothing else; a returned hash that is another is that same fact, found by the comparison
+// this script makes where the agent did not make it — so it is that agent's, and no other
+// agent's evidence, each held to its own assertion, is touched by it. What comes back is
+// printed only where it is a sha256: a return's text is an agent's.
+function unasserted(role, reporter, result, expected) {
+  const gap = lacks(role, result).find((n) => n.field === 'asserted_sha256')
+  if (gap) return lacksWhy(reporter, gap)
+  if (!ROLES[role].drives || result.asserted_sha256 === expected) return null
+  return '(' + reporter + ') returned ' + (SHA256_RE.test(String(result.asserted_sha256)) ? 'the `asserted_sha256` ' + result.asserted_sha256 : 'an `asserted_sha256` that is no sha256') + ', which is not the candidate\'s binary (' + expected + '): nothing it drove is evidence about this candidate'
 }
 
 // reportsRead — what a `check-reports` step established, or why it established nothing:
@@ -2380,6 +2501,9 @@ function selfTest() {
   const good = { status: 'reported', asserted_sha256: 'b'.repeat(64) }
   check('the hash comparison', hashMismatch('b'.repeat(64), [{ name: 'a', drives: true, result: good }, { name: 'b', drives: false, result: { status: 'reported' } }, { name: 'c', drives: true, result: { status: 'halted' } }, { name: 'd', drives: true, result: null }]).length === 0)
   check('a hash that differs, and one never returned', JSON.stringify(hashMismatch('b'.repeat(64), [{ name: 'a', drives: true, result: { status: 'reported', asserted_sha256: 'c'.repeat(64) } }, { name: 'b', drives: true, result: { status: 'reported' } }, { name: 'c', drives: true, result: good }])) === JSON.stringify([{ reporter: 'a', asserted: 'c'.repeat(64) }, { reporter: 'b', asserted: null }]))
+  check('a needed field that is not there is the row of its role, and one that is there is none', JSON.stringify(lacks('review', { status: 'reported', findings: [] }).map((n) => n.field + ':' + n.then)) === JSON.stringify(['asserted_sha256:void']) && lacks('review', good).length === 0 && lacks('crossModel', { status: 'reported' }).length === 0 && JSON.stringify(lacks('verify', { status: 'verified', key: 'k' }).map((n) => n.field)) === JSON.stringify(['verdict', 'asserted_sha256']) && JSON.stringify(lacks('verify', { status: 'verified', key: 'k', verdict: 'confirmed', asserted_sha256: 'b'.repeat(64), ran_on: { candidate: 'b'.repeat(64) } }).map((n) => n.field + ':' + n.then)) === JSON.stringify(['regression:halts', 'ran_on.previous:halts']) && lacks('verify', { status: 'verified', key: 'k', verdict: 'refuted', asserted_sha256: 'b'.repeat(64) }).length === 0)
+  check('why a return is no evidence about the candidate: no hash, another hash, and text that is none', unasserted('drive', 'drive-a-drive', { status: 'reported' }, 'b'.repeat(64)) === '(drive-a-drive) returned no `asserted_sha256` — ' + ASSERTED && unasserted('drive', 'd', { status: 'reported', asserted_sha256: 'c'.repeat(64) }, 'b'.repeat(64)) === '(d) returned the `asserted_sha256` ' + 'c'.repeat(64) + ', which is not the candidate\'s binary (' + 'b'.repeat(64) + '): nothing it drove is evidence about this candidate' && unasserted('drive', 'd', { status: 'reported', asserted_sha256: 'x`; rm -r /' }, 'b'.repeat(64)).includes('an `asserted_sha256` that is no sha256') && !unasserted('drive', 'd', { status: 'reported', asserted_sha256: 'x`; rm -r /' }, 'b'.repeat(64)).includes('rm -r') && unasserted('drive', 'd', good, 'b'.repeat(64)) === null && unasserted('crossModel', 'x', { status: 'reported' }, 'b'.repeat(64)) === null)
+  check('every cell of what a stage needs is one of four words, and every row of what still halts names its phase', Object.values(NEEDS).every((rows) => rows.every((n) => ['void', 'unverified', 'no-fork', 'halts'].includes(n.then) && isText(n.field) && isText(n.why))) && Object.keys(NEEDS).every((role) => ROLES[role] && ROLES[role].drives) && Object.values(HALTS_AFTER).every((row) => isText(row.phase) && isText(row.when)) && Object.values(NEEDS).some((rows) => rows.some((n) => n.then === 'halts')) === ('regression-fact' in HALTS_AFTER))
 
   // The human's rulings enter in one step.
   const rulingsCalls = batchOf(rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).text)
@@ -2658,6 +2782,11 @@ function halt(phaseName, why, more) {
     message: 'stabilize ' + v.stage + ' of `' + v.run + '` HALTED at ' + phaseName + ': ' + why + (breakerTripped ? ' The rate-limit breaker is tripped (' + exhaustedLabels.join(', ') + '): wait for the window before invoking again.' : transient ? ' An agent returned no result after retries: that is infrastructure, not a verdict about the run.' : '') + ((more && more.then) || ' What was committed stands; a report a reporter wrote and no record step committed is still untracked under ' + runDir(v.run) + '/ and stays there. Once the cause is dealt with, invoke the stage again with the same args: it reads the state as it stands and works the next attempt.'),
   }
 }
+// haltAfter — a halt of a `test` stage ONCE AN INSTRUMENT IS LAUNCHED: it names its row of
+// HALTS_AFTER, and that row's phase is the phase the halt carries.
+function haltAfter(row, why, more) {
+  return halt(HALTS_AFTER[row].phase, why, more)
+}
 // gitHalt — a git step that did not do what the stage needs: it returned nothing, it
 // halted, or it reported something else than the step's end state.
 // A REFUSAL OF THE TOOL IS ITS WORD: the digest carries that and no prose, this script says
@@ -2836,10 +2965,15 @@ async function runUnits(ctx, launch, built, units, phaseTitle) {
       named.forEach(({ step, name }, i) => {
         const r = results[i]
         const reported = !!r && r.status === 'reported'
+        // A STEP THAT REPORTED AND DID NOT ASSERT THE CANDIDATE'S BINARY — no hash, or
+        // another — voids its item like a step that did not report (NEEDS): what it drove
+        // is evidence about nothing. What it FOUND stays with it, and is triaged.
+        const unheld = reported ? unasserted(step.role, name, r, built.candidate.sha256) : null
         // The cross-model pass that did not run is void FOR THAT PASS, however it ended:
         // the unit goes on with its own passes, and nothing of the stage waits for it.
         if (step.crossModel) crossModel = reported ? 'ran' : 'void'
         else if (!reported && !reason) reason = 'its `' + step.as + '` step ' + endingOf(r)
+        else if (unheld && !reason) reason = 'its `' + step.as + '` step ' + unheld
         done.push({ as: step.as, name, drives: ROLES[step.role].drives, crossModel: !!step.crossModel, result: reported || !step.crossModel ? r : null, report: r && r.report ? r.report : null })
       })
       if (reason) break
@@ -2896,41 +3030,51 @@ async function triagePasses(ctx, launch, built, sources, forksIn) {
       const verdicts = await parallel(named.map(({ e, name }) => () => roleStep('verify', 'verify:' + e.key, 'Triage', verifyPrompt(ctx, launch, name, e, hints[e.key], built), VERIFY_SCHEMA)))
       named.forEach(({ e, name }, i) => {
         const r = verdicts[i]
-        if (!r || r.status !== 'verified' || !r.verdict || r.key !== e.key) {
-          unverified.push({ key: e.key, why: 'its verifier ' + (!r || r.status !== 'verified' ? endingOf(r) : !r.verdict ? 'returned no verdict' : 'returned a verdict for `' + r.key + '`, another finding') })
+        const noVerdict = r && r.status === 'verified' ? lacks('verify', r).find((n) => n.field === 'verdict') : null
+        if (!r || r.status !== 'verified' || noVerdict || r.key !== e.key) {
+          unverified.push({ key: e.key, why: 'its verifier ' + (!r || r.status !== 'verified' ? endingOf(r) : noVerdict ? lacksWhy(name, noVerdict) : 'returned a verdict for `' + r.key + '`, another finding') })
           return
         }
+        // A VERDICT ON A BINARY NOBODY ASSERTED — no hash of the candidate, or another — is
+        // no verdict about this candidate (NEEDS): the finding stays unverified, with the
+        // reporter and the field in the reason, and nothing of the stage waits on it. Its
+        // report, and what it left open, are taken below as any verifier's are.
+        const unheld = unasserted('verify', name, r, built.candidate.sha256)
         const ran = r.ran_on || {}
         // The previous release's binary is driven with every confirmed verdict — that is
         // where the regression fact comes from, true or false — so its hash is held there.
-        if (r.asserted_sha256 !== built.candidate.sha256 || (r.verdict === 'confirmed' && ran.previous !== built.previous.sha256)) {
+        // THESE TWO STILL HALT THE STAGE (NEEDS: `halts`; HALTS_AFTER: `regression-fact`):
+        // what they are owed is a verdict recorded as confirmed with its regression fact
+        // UNKNOWN, a cell the record script does not take yet.
+        if (!unheld && r.verdict === 'confirmed' && ran.previous !== built.previous.sha256) {
           faults.push('the verifier of `' + e.key + '` asserted ' + JSON.stringify({ candidate: r.asserted_sha256 == null ? null : r.asserted_sha256, previous: ran.previous == null ? null : ran.previous }) + ', not the binaries it was handed')
           return
         }
-        if (r.verdict === 'confirmed' && typeof r.regression !== 'boolean') {
+        if (!unheld && r.verdict === 'confirmed' && typeof r.regression !== 'boolean') {
           faults.push('the verifier of `' + e.key + '` confirmed it and did not say whether it is a regression')
           return
         }
-        verified.push({ e, name, r })
+        verified.push({ e, name, r, unheld })
       })
-      for (const { e, r } of verified.filter((v) => v.r.contested)) driven.push(await driveFork(ctx, launch, built, { key: e.key, kind: 'contested', door: e.door, clause: e.clause, repro: e.repro, statement: 'the verifier found the finding to contest a settled decision — ' + (r.basis || '(no basis returned)') }, 'p' + pass))
+      for (const { e, r } of verified.filter((v) => !v.unheld && v.r.contested)) driven.push(await driveFork(ctx, launch, built, { key: e.key, kind: 'contested', door: e.door, clause: e.clause, repro: e.repro, statement: 'the verifier found the finding to contest a settled decision — ' + (r.basis || '(no basis returned)') }, 'p' + pass))
     }
     // THE REPORTS OF THIS PASS, CHECKED — before anything it established is taken.
     const settled = await settleReports(ctx, launch, 'check-reports:p' + pass, 'Triage')
     if (settled.fault) return { fault: settled.fault, transient: !!settled.transient, step: settled.file ? { file: v.scratch + '/' + settled.file.file, sha256: settled.file.sha256 } : null }
     for (const name of settled.missing) unreportedBy.push(name)
     if (settled.missing.includes(tName)) return { fault: 'triage pass ' + pass + ' returned its grades and left no report: nothing is recorded on a grader\'s word with no report behind it' }
-    for (const { e, name, r } of verified) {
+    for (const { e, name, r, unheld } of verified) {
       const fork = driven.find((d) => d.fork.key === e.key)
-      // A fork is whole or it is none: the advocate's case, the independent drive, and
-      // both reports. Where one is missing the finding stays unverified, and the next
-      // triage verifies it and drives the fork again.
+      // A fork is whole or it is none: the advocate's case, the independent drive, both
+      // reports, and each on the binary it asserted. Where one is missing the finding
+      // stays unverified, and the next triage verifies it and drives the fork again.
       const lacking = settled.missing.includes(name) ? 'its verifier returned a verdict and left no report'
-        : !fork ? null
-          : !fork.argued || settled.missing.includes(fork.aName) ? 'it is contested, and its advocate ' + (fork.argued ? 'left no report' : endingOf(fork.fork.advocate))
-            : !fork.drove || settled.missing.includes(fork.pName) ? 'it is contested, and the independent drive of the advocate\'s proposal ' + (fork.drove ? 'left no report' : endingOf(fork.fork.independent_drive))
-              : null
-      if (fork && fork.fault) faults.push(fork.fault)
+        : unheld ? 'its verifier ' + unheld
+          : !fork ? null
+            : !fork.argued || settled.missing.includes(fork.aName) ? 'it is contested, and its advocate ' + (fork.argued ? 'left no report' : endingOf(fork.fork.advocate))
+              : fork.unheld ? 'it is contested, and ' + fork.unheld
+                : !fork.drove || settled.missing.includes(fork.pName) ? 'it is contested, and the independent drive of the advocate\'s proposal ' + (fork.drove ? 'left no report' : endingOf(fork.fork.independent_drive))
+                  : null
       // What an agent left open is triaged whatever became of the verdict beside it.
       if (!settled.missing.includes(name) && r.left_open && r.left_open.length) pending.push(leftOpenSource(name, r.report, r.left_open))
       for (const source of fork ? fork.leftOpen.filter((x) => !settled.missing.includes(x.reporter)) : []) pending.push(source)
@@ -2956,21 +3100,29 @@ async function triagePasses(ctx, launch, built, sources, forksIn) {
 // driveFork — ruling 5: a contested fix, or one that needs a new mechanism, goes to the
 // human with a robust-advocate's case, and the proposal is driven before the human sees it —
 // by the advocate, as its definition has it, and then by an agent that is not the advocate.
-// `argued` and `drove` say whether each of the two returned what a fork is made of.
+// `argued` and `drove` say whether each of the two returned what a fork is made of, and
+// `unheld` why what one of them drove is no evidence about the candidate (`unasserted`) —
+// then the fork is none. The proposal of a case argued on a binary nobody asserted is not
+// driven: there is no fork it could complete.
 async function driveFork(ctx, launch, built, fork, tag) {
   const aName = launch.add(['advocate', tag, fork.key])
   const adv = await roleStep('advocate', 'advocate:' + fork.key, 'Triage', advocatePrompt(ctx, launch, aName, fork, built), ADVOCATE_SCHEMA)
-  const out = { fork: Object.assign({}, fork, { advocate: adv, independent_drive: null, driven_by: null }), aName, pName: null, argued: !!adv && adv.status === 'argued', drove: false, leftOpen: [], fault: null }
+  const out = { fork: Object.assign({}, fork, { advocate: adv, independent_drive: null, driven_by: null }), aName, pName: null, argued: !!adv && adv.status === 'argued', drove: false, leftOpen: [], unheld: null }
   if (!out.argued) return out
-  if (adv.asserted_sha256 !== built.candidate.sha256) out.fault = 'the advocate of `' + fork.key + '` asserted ' + JSON.stringify(adv.asserted_sha256) + ', not the candidate\'s hash'
   if (adv.left_open && adv.left_open.length) out.leftOpen.push(leftOpenSource(aName, adv.report, adv.left_open))
+  const noCase = unasserted('advocate', aName, adv, built.candidate.sha256)
+  if (noCase) {
+    out.unheld = 'its advocate ' + noCase
+    return out
+  }
   out.pName = launch.add(['proposal', tag, fork.key])
   const drive = await roleStep('proposal', 'proposal:' + fork.key, 'Triage', proposalPrompt(ctx, out.pName, fork, adv, built), PROPOSAL_SCHEMA)
   out.fork.independent_drive = drive
   out.fork.driven_by = ROLES.proposal.agentType
   out.drove = !!drive && drive.status === 'driven'
   if (out.drove) {
-    if (drive.asserted_sha256 !== built.candidate.sha256) out.fault = 'the independent drive of `' + fork.key + '` asserted ' + JSON.stringify(drive.asserted_sha256) + ', not the candidate\'s hash'
+    const noDrive = unasserted('proposal', out.pName, drive, built.candidate.sha256)
+    if (noDrive) out.unheld = 'the independent drive of the advocate\'s proposal ' + noDrive
     if (drive.left_open && drive.left_open.length) out.leftOpen.push(leftOpenSource(out.pName, drive.report, drive.left_open))
   }
   return out
@@ -3061,11 +3213,11 @@ async function finishTriage(ctx, launch, state, tip, branch) {
   const built = await buildBoth(ctx, tip.label, tip.sha, previousOf(state), 'Triage')
   if (built.fault) return { halted: halt(built.phase, built.fault, { transient: !!built.transient, held: built.held || null, branch, then: built.then }) }
   const tri = await triagePasses(ctx, launch, built, sources, [])
-  if (tri.fault) return { halted: halt('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null, step: tri.step || null, branch }) }
-  if (tri.faults.length) return { halted: halt('binary', tri.faults.join('; '), { branch }) }
+  if (tri.fault) return { halted: haltAfter('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null, step: tri.step || null, branch }) }
+  if (tri.faults.length) return { halted: haltAfter('regression-fact', tri.faults.join('; '), { branch }) }
   // The lap stands on its preflight as a stage does: binaries with no report behind them
   // are no evidence, whatever was verified on them.
-  if (tri.unreportedBy.includes(pre.name)) return { halted: halt('reports', 'the preflight of this lap returned and left no report: what was driven on its binaries has nothing on record behind it', { branch, launched: launch.names }) }
+  if (tri.unreportedBy.includes(pre.name)) return { halted: haltAfter('stood-on', 'the preflight of this lap returned and left no report: what was driven on its binaries has nothing on record behind it', { branch, launched: launch.names }) }
   phase('Record')
   const rec = triageRecord(ctx, tri.entries)
   const dir = v.scratch + '/record/triage-r' + ctx.round + (ctx.stage === 'fix' ? '-c' + ctx.cycle : '') + '-a' + ctx.attempt
@@ -3075,7 +3227,7 @@ async function finishTriage(ctx, launch, state, tip, branch) {
   const pushed = await pushRecord('push:triage', branch)
   if (!onIt(pushed, branch, true)) return { halted: pushHalt(pushed, branch, 'the triage is recorded on ' + branch + ' (' + recorded.result.commit + ') and the branch was not pushed') }
   const after = await readState()
-  if (!after.state) return { halted: halt('state', 'the triage is recorded and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + after.error, { transient: !!after.transient, step: after.step || null, branch }) }
+  if (!after.state) return { halted: haltAfter('read-back', 'the triage is recorded and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + after.error, { transient: !!after.transient, step: after.step || null, branch }) }
   return { state: after.state, entries: tri.entries, forks: tri.forks, unverified: tri.unverified, handed: tri.handed, record: recorded.result.commit, reporters: launch.names, candidate: built.candidate }
 }
 function closeOf() {
@@ -3354,25 +3506,27 @@ async function runTest() {
   const covers = (i) => (rerun ? (rerun.items.find((x) => x.item === i.item) || {}).doors : i.doors)
   const units = hunting.filter((i) => !imageless(i)).map((i) => ({ item: i.item, kind: i.kind, clause: i.clause, chain: chainOf(i.kind, crossTool && crossNamed.includes(i.item)), doors: covers(i), round: doorsOf, range: null }))
   const nameable = unitNames(units, launch.names)
-  if (nameable.fault) return halt('state', nameable.fault)
+  if (nameable.fault) return haltAfter('names', nameable.fault)
   const ran = await runUnits(ctx, launch, built, units, 'Instruments')
   const reporters = ran.reduce((all, u) => all.concat(u.reporters), [])
-  const wrong = hashMismatch(built.candidate.sha256, reporters)
-  if (wrong.length) return halt('binary', 'a driving agent did not assert the candidate\'s binary (' + built.candidate.sha256 + '): ' + wrong.map((w) => w.reporter + ' asserted ' + JSON.stringify(w.asserted)).join('; ') + ' — nothing it drove is evidence about this candidate', { mismatched: wrong })
+  // WHO DROVE AND DID NOT ASSERT THE CANDIDATE'S BINARY — no hash returned, or another.
+  // Each one's item is void already, with the reporter and the field in its reason
+  // (`runUnits`, by NEEDS), and nothing of the stage waits on it: the return names them.
+  const unassertedBy = hashMismatch(built.candidate.sha256, reporters)
   // THE REPORTS, CHECKED: what is on disk decides, never what an agent returned. The
   // reporters the stage stands on — its marker, the preflight, the scope step — left one, or
   // it halts; an instrument's step that left none voids its item, and the stage goes on.
   const launchedSoFar = launch.names.slice()
   const settled = await settleReports(ctx, launch, 'check-reports', 'Instruments')
-  if (settled.fault) return halt('reports', settled.fault, { transient: !!settled.transient, step: settled.file ? { file: v.scratch + '/' + settled.file.file, sha256: settled.file.sha256 } : null, launched: launchedSoFar })
+  if (settled.fault) return haltAfter('report-check', settled.fault, { transient: !!settled.transient, step: settled.file ? { file: v.scratch + '/' + settled.file.file, sha256: settled.file.sha256 } : null, launched: launchedSoFar })
   // THE ROUND'S SCOPE, SET ASIDE: a file at its path that the record script would not have
   // written is no scope, and it has left the tree — so the round has none, and nothing an
   // instrument found over its doors can be recorded against one.
   const scopeFile = runDir(v.run) + '/r' + ctx.round + '/scope.md'
   const noScope = settled.aside.find((a) => plain(a) && a.path === scopeFile)
-  if (noScope) return halt('scope', 'the round\'s scope (' + scopeFile + ') was set aside by the report check: the file at its path is not what `dev/stabilize-record` would have written (`' + noScope.why + '`), so round ' + ctx.round + ' has no scope any more, and what this attempt\'s instruments found cannot be recorded against one', { launched: launchedSoFar, aside: settled.aside })
+  if (noScope) return haltAfter('scope-aside', 'the round\'s scope (' + scopeFile + ') was set aside by the report check: the file at its path is not what `dev/stabilize-record` would have written (`' + noScope.why + '`), so round ' + ctx.round + ' has no scope any more, and what this attempt\'s instruments found cannot be recorded against one', { launched: launchedSoFar, aside: settled.aside })
   const stoodOn = [ATTEMPT, pre.name, scopeName].concat(secondName && !unprovided ? [secondName] : []).filter((name) => settled.missing.includes(name))
-  if (stoodOn.length) return halt('reports', 'a reporter this stage stands on ' + (stoodOn.some((name) => setAside(settled.aside, name)) ? 'left a file at its report\'s path that is no report, and it was set aside' : 'returned and left no report') + ': ' + stoodOn.join(', ') + ' — what it established has nothing on record behind it', { launched: launchedSoFar, aside: settled.aside })
+  if (stoodOn.length) return haltAfter('stood-on', 'a reporter this stage stands on ' + (stoodOn.some((name) => setAside(settled.aside, name)) ? 'left a file at its report\'s path that is no report, and it was set aside' : 'returned and left no report') + ': ' + stoodOn.join(', ') + ' — what it established has nothing on record behind it', { launched: launchedSoFar, aside: settled.aside })
   unreported(ran, settled.missing, settled.aside)
   for (const u of ran) {
     if (u.status === 'void') log('VOID: `' + u.item + '` — ' + u.reason + '. Its result is recorded as void, and the state asks for its re-run')
@@ -3389,8 +3543,8 @@ async function runTest() {
   // verdict by an earlier stage: this triage is the next one that runs.
   for (const source of ledgerSource(v.run, state)) sources.push(source)
   const tri = await triagePasses(ctx, launch, built, sources, [])
-  if (tri.fault) return halt('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null, step: tri.step || null })
-  if (tri.faults.length) return halt('binary', tri.faults.join('; '))
+  if (tri.fault) return haltAfter('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null, step: tri.step || null })
+  if (tri.faults.length) return haltAfter('regression-fact', tri.faults.join('; '))
   if (v.stopAfter === 'triage') return { status: 'stopped', after: 'triage', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, entries: tri.entries, forks: tri.forks, reporters: launch.names, named: namedOf(state, doorsOf), arrived }
 
   // The record step: the reports checked, what each item did, the rows, the round's facts.
@@ -3424,7 +3578,7 @@ async function runTest() {
   const pushed = await pushRecord('push', loopBranch)
   if (!onIt(pushed, loopBranch, true)) return pushHalt(pushed, loopBranch, 'the record is committed on ' + loopBranch + ' (' + recorded.result.commit + ') and the branch was not pushed')
   const last = await readState()
-  if (!last.state) return halt('state', 'the record is committed and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + last.error, { transient: !!last.transient, step: last.step || null })
+  if (!last.state) return haltAfter('read-back', 'the record is committed and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + last.error, { transient: !!last.transient, step: last.step || null })
   state = last.state
 
   const out = nextOf(state)
@@ -3442,6 +3596,8 @@ async function runTest() {
     counts: { items: state.items.length, items_run: hunting.length + always.length + late.length + held.length, reporters: launch.names.length, findings_in: tri.handed, entries: tri.entries.length, by_grade: byGrade, blockers: state.blockers, for_the_human: state.human_list, voided: unitStatus.filter((u) => u.status === 'void').map((u) => u.item) },
     forks: tri.forks,
     unverified: tri.unverified,
+    // Who drove and did not assert the candidate's binary: each one's item is void.
+    unasserted: unassertedBy,
     // How each held check ended — the tool's word, the job and the file its output is in.
     held: heldRan.map((h) => Object.assign({ item: h.item }, heldSaid(h))),
     // What the scope step's agent read; what the record script computed is `named`.
@@ -3591,7 +3747,7 @@ async function runFix() {
       log('cycle ' + ctx.cycle + ': ' + fixerForks.length + ' fork(s) of the fixers — the fix diff is NOT audited in this invocation, and the cycle is not counted')
       for (const fork of fixerForks) {
         const d = await driveFork(ctx, launch, built, fork, 'fix')
-        if (d.fault) return { halted: halt('binary', d.fault, { branch }) }
+        if (d.unheld) return { halted: halt('binary', 'the fork of `' + fork.key + '`: ' + d.unheld, { branch }) }
         driven.push(d.fork)
         for (const source of d.leftOpen) sources.push(source)
       }
