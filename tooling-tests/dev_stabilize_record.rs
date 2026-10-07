@@ -13303,6 +13303,151 @@ fn regression_verdict(rig: &Rig, verdict: &str, why: Option<&str>, commit: &str)
     })
 }
 
+/// **A held check that left no verdict is void, and says why in a word** (the coordinator's
+/// sixth group of the pass that followed the core's review; the harness's `K11`, item 8: *the
+/// record script owes a word*). A held check can end with no verdict's file to hand in — its
+/// job is dead, its start was refused, the stage ended while it ran, a gate is not held
+/// again off the candidate's tree — and `result-set` took a held item's result from that
+/// file alone: the item got no row, stayed due, and `next` stayed `retest` for a re-run the
+/// harness had to refuse. A state the stage could not leave. So `void`, and only `void`, is
+/// taken as a word for a held item — with its reason in a DECLARED SHAPE, a word and
+/// optionally a key (`<word>` or `<word>:<key>`): never a sentence. `green` and `red` are
+/// still the tool's verdict or nothing. Such a void is void like any item's: it forbids
+/// `close`, it is owed its re-run, and after two it is the human's.
+#[test]
+fn a_held_check_that_left_no_verdict_is_void_by_a_word_and_nothing_else_is_a_word() {
+    let rig = Rig::new("held-void");
+    fs::create_dir_all(rig.tmp.join("scratch/hold/regression-r1-a1/work"))
+        .expect("the scratch root a stage hands its writers");
+    rig.run(
+        &run_set(RUN),
+        &format!(r#"{{{BOUNDED}, {RELEASE}, "clauses": ["clause-a"]}}"#),
+    )
+    .must(OK, "the run's facts");
+    let held = json!({"item": "regression-set", "kind": "held-regression", "clause": "clause-a",
+                      "runs": "every-candidate",
+                      "brief": "the regression set, held and judged by dev/stabilize-step"});
+    rig.run(&item_set(RUN), &json!([held]).to_string())
+        .must(OK, "a held check");
+    rig.run(&scope_set(RUN, "1"), &scope(&[INSIDE], &[]).to_string())
+        .must(OK, "round 1's scope");
+    let commit = sha('a');
+    let scratch = rig.tmp.join("scratch").display().to_string();
+    let result = |rows: Value| {
+        let mut args = result_set(RUN, "1", &commit);
+        args.push(format!("--scratch={scratch}"));
+        rig.run(&args, &rows.to_string())
+    };
+    let void =
+        |reason: &str| json!([{"item": "regression-set", "outcome": "void", "reason": reason}]);
+
+    // STILL REFUSED, each with nothing written: green and red as words; a void whose reason
+    // is no word of the shape — a sentence, a path, a character outside ASCII, nothing.
+    let before = rig.snapshot();
+    let seen = result(json!([{"item": "regression-set", "outcome": "green"}]));
+    seen.refused(BAD_VALUE, "green, as a word, for a held check");
+    assert!(
+        seen.stderr
+            .contains("No outcome word is taken from a caller"),
+        "{}",
+        seen.stderr
+    );
+    for reason in [
+        "the supervisor was killed",
+        "dead: regression-r1-a1",
+        "Dead",
+        "dead:",
+        ":regression-r1-a1",
+        "dead:a/b",
+        "dead:regression-r1-a1:again",
+        "d\u{e9}ad",
+        "-",
+        &"a".repeat(201),
+    ] {
+        let seen = result(void(reason));
+        seen.refused(BAD_VALUE, &format!("a void whose reason is {reason:?}"));
+        assert!(
+            seen.stderr.contains("says why in a word"),
+            "{reason:?}: {}",
+            seen.stderr
+        );
+    }
+    assert_eq!(rig.snapshot(), before, "a refused result writes nothing");
+
+    // TAKEN: void, with a word and a key.
+    let seen = result(void("dead:regression-r1-a1"));
+    seen.must(OK, "a held check that left no verdict");
+    assert_eq!(
+        seen.json()["recorded"],
+        json!([{"item": "regression-set", "attempt": 1, "outcome": "void"}])
+    );
+    assert_eq!(
+        table(&rig.read(&results_path("1")), &RESULT_COLUMNS),
+        [[
+            "`regression-set`",
+            "1",
+            format!("`{commit}`").as_str(),
+            "void",
+            "without a verdict: dead:regression-r1-a1"
+        ]]
+    );
+    assert!(
+        !rig.run_dir().join("r1/checks").exists(),
+        "no verdict was read, and none is written on record"
+    );
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"candidate": commit}).to_string(),
+    )
+    .must(OK, "the round's candidate");
+
+    // IT IS VOID LIKE ANY ITEM'S: the clause is void, `close` is forbidden by it, and the
+    // item is owed its re-run — which is taken, as a word again or as the tool's verdict.
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            read["next"],
+            read["forbids_close"],
+            read["clauses"][0]["status"],
+            read["retest"]
+        ]),
+        json!(["retest", [{"clause": "clause-a", "status": "void"}], "void", ["clause-a"]]),
+        "{read}"
+    );
+    // A verdict's file planted for the attempt that left none is refused: the result says
+    // there was none.
+    let planted = rig.run_dir().join("r1/checks/regression-set.a1.json");
+    fs::create_dir_all(planted.parent().expect("the checks directory")).expect("create checks/");
+    fs::write(
+        &planted,
+        json!({"item": "regression-set", "attempt": 1, "round": 1, "verdict": "green"}).to_string(),
+    )
+    .expect("plant a verdict");
+    rig.run(&state(RUN), "")
+        .refused(CORRUPT, "a verdict on record for a run that left none");
+    fs::remove_file(&planted).expect("take the planted verdict away");
+    fs::remove_dir(planted.parent().expect("the checks directory")).expect("remove checks/");
+
+    // MUST NOT CHANGE: the re-run's result from the tool's verdict file, as ever.
+    let green = verdict_file(
+        &rig,
+        "green",
+        &regression_verdict(&rig, "green", None, &commit),
+    );
+    let seen = result(json!([{"item": "regression-set", "verdict": green}]));
+    seen.must(OK, "the re-run, judged by the tool");
+    assert_eq!(
+        seen.json()["recorded"],
+        json!([{"item": "regression-set", "attempt": 2, "outcome": "green"}])
+    );
+    let read = rig.state();
+    assert_eq!(
+        json!([read["forbids_close"], read["clauses"][0]["status"]]),
+        json!([[], "green"]),
+        "{read}"
+    );
+}
+
 /// **A scripted check's result is the tool's verdict, and no outcome word is taken from the
 /// caller** (the second repair plan's `K10`; the re-review's `R-M8`). An item of a kind that
 /// begins `held-` is a check whose command `dev/stabilize-step` holds and judges. Its
@@ -13356,9 +13501,15 @@ fn a_scripted_checks_result_is_the_tools_verdict() {
             "No outcome word is taken from a caller",
         ),
         (
-            "a void, with its reason",
-            json!({"item": "regression-set", "outcome": "void", "reason": "it did not run"}),
+            "a red, as a word — with what a red run brings",
+            json!({"item": "regression-set", "outcome": "red", "doctype": "jigc-feedback",
+                   "door": "jigc setup", "repro": "it was red"}),
             "No outcome word is taken from a caller",
+        ),
+        (
+            "a void whose reason is a sentence, and no word",
+            json!({"item": "regression-set", "outcome": "void", "reason": "it did not run"}),
+            "says why in a word",
         ),
         (
             "a verdict's file, and a word beside it",

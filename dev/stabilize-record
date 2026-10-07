@@ -133,7 +133,9 @@
 #                      verdict of the held command in (<scratch>/hold/<name>/verdict.json).
 #                      Such a row names the item and this, AND NOTHING ELSE: its outcome
 #                      is the verdict the tool read out of the command's own output, and
-#                      no word is taken from a caller (A SCRIPTED CHECK'S RESULT, below).
+#                      no word is taken from a caller (A SCRIPTED CHECK'S RESULT, below)
+#                      — BUT `void`, for a held check that left no verdict to name: the
+#                      row is then {item, outcome: void, reason}, its reason a word.
 #         doctype, door, repro   with red and only with it: A RED RUN IS A FINDING. Its row
 #                      is appended to the ledger by this call, under the key `red-<item>`,
 #                      ungraded and open — round N, the item's clause, and these three as a
@@ -167,7 +169,23 @@
 #       and nothing is written. green is green; void is void, its reason the verdict's
 #       `why` and its sentence; RED IS A FINDING like every red run — filed under
 #       `red-<item>`, its door `the held check <item>`, its repro the verdict's own
-#       sentence and where the verdict lies. AND THE VERDICT REACHES THE RECORD AS A FILE
+#       sentence and where the verdict lies.
+#       A HELD CHECK THAT LEFT NO VERDICT IS VOID BY A WORD, AND NOTHING ELSE IS A WORD.
+#       A held command can end with no verdict's file to hand in — its job is dead, its
+#       start was refused, the stage ended while it ran, a gate is not held again off the
+#       candidate's tree — and an item with no result stays due for a re-run nobody can
+#       record: a state no stage leaves. So `void`, and ONLY `void`, is taken as a word
+#       for a held item, and its reason is A WORD OF A DECLARED SHAPE, never a sentence:
+#       `<word>` or `<word>:<key>` — lowercase a-z0-9 words joined by single `-`, and a
+#       key of plain characters (A-Z a-z 0-9 . _ -), which is the held job's name; 200
+#       characters at most (bad-value). A shape and no list of words: the words are the
+#       step tool's and the harness's own (dead, running, taken, no-verdict, ...), and a
+#       list here would be a second copy of theirs. `green` and `red` stay the tool's
+#       verdict or nothing (bad-value, as before). The row's detail is `without a
+#       verdict: <reason>`, no verdict is written on record for that attempt, and `state`
+#       refuses one that lies there (corrupt). IT IS VOID LIKE ANY ITEM'S: its clause is
+#       void, it forbids `close`, it is owed its re-run where the state asks for one, and
+#       after two runs its clause is the human's. AND THE VERDICT REACHES THE RECORD AS A FILE
 #       WRITTEN ONCE, in the same batch as the result: r<N>/checks/<item>.a<attempt>.json
 #       — the item, its attempt, the round and the commit, the kind, the verdict, why,
 #       what was asked, the exit status, the facts and the evidence of the kind (for the
@@ -963,6 +981,9 @@
 #               round, and every stop is computed from the latest round. (While the
 #               run's opening is not done no stage starts and nothing is decided, and the
 #               opening's own order is not held: round 1 may be begun then.)
+#               (result-set for a held check — its verdict's file, or `void` by a word
+#               where it left none — is this row too, taken at the same positions: a
+#               void by a word is the run of the test stage, or a re-run the state asks.)
 #   untested    gate-set, and the facts candidate, base, binary, cross-model and
 #               cross-model-void: as a round, and only while that round is not tested —
 #               they are its test stage's record, written with or before the candidate.
@@ -1097,7 +1118,8 @@
 #                     and registries
 #    7  bad-value     a value outside its vocabulary, a malformed row, a report that is
 #                     not text; a file named by --from that cannot be read, or that is
-#                     not the file --sha256 names; an outcome word for a held check, or a
+#                     not the file --sha256 names; an outcome word for a held check —
+#                     green or red, or a void whose reason is no word of its shape — or a
 #                     verdict's file that is not the tool's verdict of that check on that
 #                     commit — or A WRITE THE STATE DOES NOT ASK FOR: a round that is not
 #                     begun and not handed out, a fact outside its position, a go, a
@@ -1197,6 +1219,13 @@ CHECK_NAME = re.compile(r"(%s)\.a([1-9][0-9]{0,5})\.json" % SLUG.pattern)
 HELD = "held-"
 # The tool whose verdict that is, as its verdict's file names it.
 HOLDER = "stabilize-step"
+# A HELD CHECK THAT LEFT NO VERDICT is void by a word (result-set): why, in a declared shape
+# — a word of the slug grammar and, after a colon, optionally a key of plain characters,
+# which is the held job's name — and never a sentence. And what its row opens with, so that
+# a void that owes no verdict's file is told from one whose file is gone.
+HELD_VOID = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*(?::[A-Za-z0-9._-]+)?")
+HELD_VOID_MAX = 200
+NO_VERDICT = "without a verdict: "
 # A segment of a path below the run's directory, as `vet` is handed one; a round's
 # directory; and an argument of a range, as `git rev-list` takes it — a name, or one of
 # the two flags a range is cut with. Nothing else reaches a git command.
@@ -2541,8 +2570,15 @@ def result_set(args):
         # A SCRIPTED CHECK'S RESULT IS THE TOOL'S VERDICT: an item whose check is a held
         # command takes its result from the verdict's file and from nothing a caller says —
         # and no other item takes one from a file.
+        if kind.startswith(HELD) and verdict is None and outcome != "void":
+            refuse("bad-value", "%s: the item %s is a held check (kind %s) — dev/stabilize-step holds its command and judges it, and its result is written from that tool's verdict: name the file (`verdict`: <scratch>/hold/<name>/verdict.json). No outcome word is taken from a caller but `void`, for a check that left no verdict; nothing was written" % (what, name, kind))
         if kind.startswith(HELD) and verdict is None:
-            refuse("bad-value", "%s: the item %s is a held check (kind %s) — dev/stabilize-step holds its command and judges it, and its result is written from that tool's verdict: name the file (`verdict`: <scratch>/hold/<name>/verdict.json). No outcome word is taken from a caller; nothing was written" % (what, name, kind))
+            # A HELD CHECK THAT LEFT NO VERDICT — its job dead, its start refused, the stage
+            # over while it ran, a gate not held off the candidate's tree: it is void, and
+            # void is the one word taken for it. Its reason is a word of a declared shape.
+            if not HELD_VOID.fullmatch(detail) or len(detail) > HELD_VOID_MAX:
+                refuse("bad-value", "%s: the item %s is a held check (kind %s), and a void that names no verdict's file says why in a word — `<word>` or `<word>:<key>`, lowercase words joined by single `-`, the key the held job's name, %d characters at most — and %s is no such word; nothing was written" % (what, name, kind, HELD_VOID_MAX, shown(detail)))
+            detail = cell(NO_VERDICT + detail)
         if verdict is not None and not kind.startswith(HELD):
             refuse("bad-value", "%s: the item %s is of kind %s, which is no held check (`%s<id>`): its result is what its agents report, as `outcome`, and no verdict's file; nothing was written" % (what, name, kind, HELD))
         if not selected_by(item, scope[1]):
@@ -3238,6 +3274,11 @@ def grounds(run_dir):
         for ran in held["results"]:
             if kinds.get(ran["item"], "").startswith(HELD):
                 kept, word = verdict_on_record(run_dir, number_, ran["item"], ran["attempt"])
+                if ran["outcome"] == "void" and (ran["reason"] or "").startswith(NO_VERDICT):
+                    # A void by a word: the check left NO verdict, and none is on record.
+                    if word is not None:
+                        spoiled(results_rel, "says that the held check %s left no verdict in its attempt %d, and %s holds one, which says %s: a result is the tool's verdict on record, or the word that there was none" % (ran["item"], ran["attempt"], kept, word))
+                    continue
                 if word != ran["outcome"]:
                     spoiled(results_rel, "says that the held check %s was %s in its attempt %d, and %s — the verdict that result was written from — %s: a held check's result is the tool's verdict on record, and what is deleted is missed" % (ran["item"], ran["outcome"], ran["attempt"], kept, "is gone, or is no verdict of that run" if word is None else "says %s" % word))
         rounds.append(held)
