@@ -8,7 +8,7 @@
 //
 // run from the root of the repository the stage works on. The scenario is the suite's:
 // { args, checks, gate, scope, agents, record, wrongBinary, wrongPrevious, endings, omits,
-// violation, garbles } — the
+// violation, garbles, overwrites } — the
 // invocation's arguments, and what the scripted agents say (below). `wrongBinary` names the
 // reporters that return another hash than the one they were handed: a driver that drove
 // something else; `wrongPrevious` the verifiers that return another hash for the previous
@@ -18,6 +18,9 @@
 // scenario's to say, as `violation`: `handed` (the script is handed the return as it is),
 // `nothing` (it is handed nothing, on every try) or `throws` (the call throws, on every
 // try). `garbles` names the git steps that relay their line with one character changed.
+// `overwrites` gives, by an agent's label, a text that agent writes OVER its own report once
+// the record script has written it — by a plain file write, as a shell's redirect does: a
+// reporter has a shell, and a file at a report's path is whatever its last writer left.
 // `endings` says how an agent ENDS where that is not "it returns its
 // result and has written its report", by its label:
 //   dies               it returns nothing, every time it is tried, and wrote no report
@@ -173,6 +176,7 @@ function writeReport(label, prompt, said) {
   const out = sh(command, '# ' + label + '\n\nScripted by the simulation: no agent wrote this.\n\n' + said + '\n\n<!-- end of report -->\n')
   if (out.code !== 0) fail('the report of `' + label + '` was refused: ' + out.stderr)
   reporters.push(name)
+  if ((scenario.overwrites || {})[label] != null) writeFileSync(out.stdout.trim(), scenario.overwrites[label])
   return out.stdout.trim()
 }
 

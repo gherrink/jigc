@@ -198,6 +198,20 @@
 //! red, and none survived — one, as first written, changed nothing (a condition read before
 //! the call it was meant to follow), and was written again.
 
+//!
+//! **And on twenty-one more, for `vet` and `set-aside`** (the second repair plan's `K1`: what
+//! a writer checks at its write, checked again where the content becomes permanent). The
+//! placeholder rule, a report's last line and the fence each not asked; the scan skipped;
+//! a kept check not held to the disk, and one that does not say which bytes it counted;
+//! the scanners not run over a range; a run's file in a commit not held to the rules; a
+//! record commit's message not held, and the placeholder rule held against every commit's;
+//! a merge held to what its parents brought; no directory taken for a run's; a table set
+//! aside; a file set aside into the repository; what passes set aside too; every scanned
+//! file refused for one hit; the subject not vetted; a link below the run's directory
+//! followed; a file beside the reports under any name; a range's arguments not held to a
+//! grammar; a scanner that could not run read as clean. Each turned red an arm here or
+//! the arm of [`dev_stabilize_step`](super::dev_stabilize_step) that names it.
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
@@ -228,10 +242,10 @@ const RUN: &str = "rc24";
 const HOSTILE_ROOT: &str = "it's a \"repo\" #1";
 
 /// The denylist's one synthetic term — a slug, so that it can also arrive as an identifier.
-const DENY_TERM: &str = "zzyzxhost";
+pub(crate) const DENY_TERM: &str = "zzyzxhost";
 
 /// What the stub gitleaks reports as a secret.
-const STUB_SECRET: &str = "STUB-SECRET-SHAPE";
+pub(crate) const STUB_SECRET: &str = "STUB-SECRET-SHAPE";
 
 // The exit statuses, as the script's header states them.
 const OK: i32 = 0;
@@ -257,6 +271,7 @@ const REPORTS_MISMATCH: i32 = 20;
 const LEDGER_MISMATCH: i32 = 21;
 const GATE_MISMATCH: i32 = 22;
 const FAULT: i32 = 23;
+const VET_MISMATCH: i32 = 24;
 
 /// Every refusal class with its status, as `--help` must list them.
 const REFUSALS: &[(i32, &str)] = &[
@@ -872,6 +887,23 @@ fn sha(digit: char) -> String {
     digit.to_string().repeat(40)
 }
 
+/// The sha256 of a text's bytes, measured by a child: what a check says a report held.
+fn sha256_of(text: &str) -> String {
+    let mut child = Command::new("python3")
+        .args([
+            "-c",
+            "import hashlib, sys; sys.stdout.write(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn python3");
+    child_stdin::feed(&mut child, text);
+    let out = child.wait_with_output().expect("python3 exits");
+    assert!(out.status.success(), "python3 hashes the text");
+    String::from_utf8(out.stdout).expect("a hex digest")
+}
+
 fn sha256(digit: char) -> String {
     digit.to_string().repeat(64)
 }
@@ -1184,17 +1216,19 @@ const WRITERS: &[Writer] = &[
 ];
 
 /// The subcommands that write nothing.
-const READERS: [&str; 5] = [
+const READERS: [&str; 6] = [
     "check-reports",
     "check-ledger",
     "state",
     "gate-check",
     "pending",
+    "vet",
 ];
 
 /// The subcommands that settle a batch and take no text of a caller's: they finish a write
-/// that was killed, take an applied batch back, or forget it once it is committed.
-const KEEPERS: [&str; 3] = ["discard", "settle", "recover"];
+/// that was killed, take an applied batch back, or forget it once it is committed — and
+/// the one that takes a file that is no report out of the run's directory.
+const KEEPERS: [&str; 4] = ["discard", "settle", "recover", "set-aside"];
 
 /// The subcommands, as the script's own parser names them when it is handed none of them.
 fn subcommands(rig: &Rig) -> Vec<String> {
@@ -3624,6 +3658,16 @@ fn check_reports_holds_a_stage_to_one_report_per_launched_reporter() {
             "missing": [],
             "extra": [],
             "other_attempts": [],
+            "reports": seen.json()["reports"],
+        })
+    );
+    // The check says WHICH bytes it was a check of: each launched report, by its sha256.
+    assert_eq!(
+        seen.json()["reports"],
+        json!({
+            "audit-install.a1.md": sha256_of(BODY),
+            "audit-worktree.a1.md": sha256_of(BODY),
+            "review-source.a1.md": sha256_of(BODY),
         })
     );
 
@@ -3760,6 +3804,7 @@ fn help_is_the_header_and_states_every_subcommand_and_every_exit_status() {
     statuses.push((REPORTS_MISMATCH, "check-reports"));
     statuses.push((LEDGER_MISMATCH, "check-ledger"));
     statuses.push((GATE_MISMATCH, "gate-check"));
+    statuses.push((VET_MISMATCH, "vet"));
     for (status, class) in statuses {
         assert!(
             seen.stdout
@@ -11564,4 +11609,376 @@ fn every_writer_and_every_fact_is_taken_only_where_the_state_asks_for_it() {
             );
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// 29 · vet: what a writer checks, checked again where the content becomes permanent
+// ---------------------------------------------------------------------------
+
+fn vet(run: &str, subject: Option<&str>, paths: &[&str]) -> Vec<String> {
+    let mut args = vec!["vet".to_owned(), format!("--run={run}")];
+    args.extend(subject.map(|subject| format!("--subject={subject}")));
+    args.push("--".to_owned());
+    args.extend(strings(paths));
+    args
+}
+
+fn set_aside(run: &str, to: Option<&Path>, paths: &[&str]) -> Vec<String> {
+    let mut args = vec!["set-aside".to_owned(), format!("--run={run}")];
+    args.extend(to.map(|to| format!("--to={}", to.display())));
+    args.push("--".to_owned());
+    args.extend(strings(paths));
+    args
+}
+
+/// What a hand can leave at a file's path that no writer of the script would have: the
+/// word the writer refuses it with, the text, the needle the text carries, and whether
+/// only a report is refused for it.
+fn unwritable(rig: &Rig) -> Vec<(&'static str, String, String, bool)> {
+    let home = format!("{}/probe", rig.home.display());
+    vec![
+        (
+            "hygiene",
+            format!("# a report\n\nIt met {DENY_TERM} there.\n{ENDS}\n"),
+            DENY_TERM.to_owned(),
+            false,
+        ),
+        (
+            "hygiene",
+            format!("# a report\n\nThe environment held {STUB_SECRET}.\n{ENDS}\n"),
+            STUB_SECRET.to_owned(),
+            false,
+        ),
+        (
+            "host-path",
+            format!("# a report\n\nIt ran in {home}.\n{ENDS}\n"),
+            home,
+            false,
+        ),
+        // The fence's refusal names the command it reads; what it does not name is the rest.
+        (
+            "fence",
+            format!("# a report\n\n{INSTALL_COMMAND} --locked\n{ENDS}\n"),
+            "--locked".to_owned(),
+            false,
+        ),
+        (
+            "truncated",
+            "# a report\n\nIt was cut off here\n".to_owned(),
+            "cut off here".to_owned(),
+            true,
+        ),
+        ("bad-value", " \n\n".to_owned(), " \n\n".to_owned(), false),
+    ]
+}
+
+/// **`vet` holds a file to what a writer of the script would have left at its path** — the
+/// second repair plan's `P2`: a reporter has a shell, so a file at a report's path is
+/// whatever its last writer left, and what a writer checks at its write is checked again by
+/// one read, with the writers' own functions. Every refusal a writer has, at a report's
+/// path and at a scope's; the one file of several that is refused, and no other; the
+/// subject; the path; and a scanner that cannot run, which is never an answer.
+#[test]
+fn vet_holds_a_file_to_what_a_writer_of_the_script_would_have_left() {
+    let rig = Rig::new("vet");
+    rig.run(&report(RUN, "1", "audit-install", "1"), BODY)
+        .must(OK, "a report");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&["jigc setup"], &[]).to_string(),
+    )
+    .must(OK, "the round's scope");
+    let (written, by_hand, the_scope) = (
+        report_path("1", "audit-install", "1"),
+        report_path("1", "review-source", "1"),
+        scope_path("1"),
+    );
+    // MUST NOT REFUSE: what the script wrote — and a report a hand wrote that is what the
+    // script would have written, the public placeholders themselves among its text.
+    let placeholders = format!(
+        "# a report\n\nIt ran in <scratch>/probe, in <tmp>/x and in ~/y, from `.`.\n{ENDS}\n"
+    );
+    fs::write(rig.root.join(&by_hand), &placeholders).expect("a report by hand");
+    let all = [written.as_str(), by_hand.as_str(), the_scope.as_str()];
+    let before = rig.snapshot();
+    let seen = rig.run(&vet(RUN, Some("docs(record): a record"), &all), "");
+    seen.must(OK, "what the script would have written");
+    assert_eq!(
+        seen.json(),
+        json!({
+            "check": "vet", "ok": true, "refused": [], "subject": null, "stale": [],
+            "vetted": {
+                &written: sha256_of(BODY),
+                &by_hand: sha256_of(&placeholders),
+                &the_scope: sha256_of(&rig.read(&the_scope)),
+            },
+        })
+    );
+    assert_eq!(rig.snapshot(), before, "a read: nothing written");
+
+    // EVERY REFUSAL A WRITER HAS, at a report's path and at a scope's — and of the three
+    // files the one that is refused, by where and never by what.
+    let scope_text = rig.read(&the_scope);
+    for (word, text, needle, reports_only) in unwritable(&rig) {
+        for target in [&by_hand, &the_scope] {
+            if reports_only && target == &the_scope {
+                continue;
+            }
+            fs::write(rig.root.join(target), &text).expect("a hand's text");
+            let seen = rig.run(&vet(RUN, None, &all), "");
+            let what = format!("`{word}` at {target}");
+            seen.must(VET_MISMATCH, &what);
+            let said = seen.json();
+            assert_eq!(
+                json!([
+                    said["ok"],
+                    said["refused"][0]["path"],
+                    said["refused"][0]["why"],
+                    said["refused"].as_array().map(Vec::len)
+                ]),
+                json!([false, target, word, 1]),
+                "{what}: {said}"
+            );
+            assert!(
+                said["vetted"].get(target.as_str()).is_none()
+                    && said["vetted"]
+                        .as_object()
+                        .is_some_and(|vetted| vetted.len() == 2),
+                "{what}: the other two are vetted, and it is not: {said}"
+            );
+            assert!(
+                needle.trim().is_empty() || !seen.stdout.contains(&needle),
+                "{what}: named by where, never by what: {}",
+                seen.stdout
+            );
+            fs::write(rig.root.join(&by_hand), &placeholders).expect("the report again");
+            fs::write(rig.root.join(&the_scope), &scope_text).expect("the scope again");
+        }
+    }
+
+    // THE SUBJECT: one line, no host path, scanned with the files — and a hit in it is
+    // the subject's, never a file's.
+    for (word, subject) in [
+        ("hygiene", format!("docs(record): {DENY_TERM} is on record")),
+        ("hygiene", format!("docs(record): {STUB_SECRET}")),
+        (
+            "host-path",
+            format!("docs(record): written in {}", rig.home.display()),
+        ),
+        ("bad-value", "docs(record): two\nlines".to_owned()),
+    ] {
+        let seen = rig.run(&vet(RUN, Some(&subject), &all), "");
+        seen.must(VET_MISMATCH, word);
+        let said = seen.json();
+        assert_eq!(
+            json!([said["subject"]["why"], said["refused"]]),
+            json!([word, []]),
+            "a subject refused as `{word}`: {said}"
+        );
+    }
+
+    // THE PATH: a file of the run, below its directory, behind no link — and beside the
+    // reports, under a report's name.
+    let stray = format!("completions/artifacts/{RUN}/r1/reports/test/notes.txt");
+    let linked = report_path("1", "linked", "1");
+    fs::write(rig.root.join(&stray), BODY).expect("a stray file");
+    symlink(rig.root.join(&written), rig.root.join(&linked)).expect("a link");
+    for (word, path) in [
+        ("outside", "README.md"),
+        ("outside", "completions/artifacts/rc24/../rc24/opening.md"),
+        ("bad-id", stray.as_str()),
+        ("outside", linked.as_str()),
+        ("gone", report_path("1", "nobody", "1").as_str()),
+    ] {
+        let seen = rig.run(&vet(RUN, None, &[path]), "");
+        seen.must(VET_MISMATCH, path);
+        assert_eq!(
+            seen.json()["refused"],
+            json!([{"path": path, "why": word, "detail": seen.json()["refused"][0]["detail"]}]),
+            "`{path}` is refused as `{word}`"
+        );
+    }
+
+    // A SCANNER THAT CANNOT RUN IS NEVER AN ANSWER: no result on stdout, and its own status.
+    std::thread::scope(|scope| {
+        for (n, (why, breaker)) in SCAN_BREAKS.iter().enumerate() {
+            scope.spawn(move || {
+                let mut rig = Rig::new(&format!("vet-did-not-run-{n}"));
+                let path = report_path("1", "audit-install", "1");
+                fs::create_dir_all(rig.root.join(&path).parent().expect("a directory"))
+                    .expect("the reports' directory");
+                fs::write(rig.root.join(&path), BODY).expect("a report");
+                breaker(&mut rig);
+                let before = rig.snapshot();
+                rig.run(&vet(RUN, None, &[&path]), "")
+                    .refused(DID_NOT_RUN, why);
+                rig.run(&set_aside(RUN, None, &[&path]), "")
+                    .refused(DID_NOT_RUN, why);
+                assert_eq!(rig.snapshot(), before, "{why}: nothing was moved");
+            });
+        }
+    });
+
+    // And `vet --range` takes a range, and nothing that could be a flag of git's.
+    for (status, args) in [
+        (BAD_VALUE, vec!["vet", "--range", "--", "--output=x"]),
+        (BAD_VALUE, vec!["vet", "--range", "--", "fix/x", "--all"]),
+        (USAGE, vec!["vet", "--range", "--run=rc24", "--", "fix/x"]),
+        (USAGE, vec!["vet", "--range"]),
+        (USAGE, vec!["vet", "--", "README.md"]),
+    ] {
+        rig.run(&strings(&args), "")
+            .refused(status, &args.join(" "));
+    }
+}
+
+/// **A check kept in an applied batch never outlives the report it was a check of** (the
+/// plan review's `B3`): a batch holds the result of its report check, and the commit step
+/// reads that result. `check-reports` says which bytes it counted, and `vet` holds the
+/// batch's checks to the disk again — a report that is gone, or that holds other bytes.
+#[test]
+fn a_report_check_kept_in_a_batch_is_held_to_the_disk_again() {
+    let rig = Rig::new("vet-stale");
+    for reporter in ["preflight", "audit-install"] {
+        rig.run(&report(RUN, "1", reporter, "1"), BODY)
+            .must(OK, reporter);
+    }
+    let batch = json!([
+        call(
+            check_reports(RUN, "1", "1", &["preflight", "audit-install"]),
+            ""
+        ),
+        call(ledger_add(RUN), &row("audit-f3").to_string()),
+    ]);
+    rig.run(&apply(RUN, None), &batch.to_string())
+        .must(OK, "the batch");
+    let paths = [
+        report_path("1", "preflight", "1"),
+        report_path("1", "audit-install", "1"),
+        ledger_path(),
+    ];
+    let paths: Vec<&str> = paths.iter().map(String::as_str).collect();
+    let seen = rig.run(&vet(RUN, None, &paths), "");
+    seen.must(OK, "a batch whose reports stand");
+    assert_eq!(seen.json()["stale"], json!([]));
+
+    let dir = format!("completions/artifacts/{RUN}/r1/reports/test");
+    // Other bytes — a text a writer would have left, so nothing but the check refuses it.
+    fs::write(
+        rig.root.join(paths[1]),
+        format!("# a report\n\nRewritten.\n{ENDS}\n"),
+    )
+    .expect("rewrite a report");
+    let seen = rig.run(&vet(RUN, None, &paths), "");
+    seen.must(VET_MISMATCH, "a report changed since its check");
+    assert_eq!(
+        json!([seen.json()["stale"], seen.json()["refused"]]),
+        json!([[{"dir": dir, "attempt": 1, "gone": [], "changed": ["audit-install.a1.md"]}], []])
+    );
+    // Gone.
+    fs::remove_file(rig.root.join(paths[1])).expect("delete a report");
+    let seen = rig.run(&vet(RUN, None, &paths[..1]), "");
+    seen.must(VET_MISMATCH, "a report gone since its check");
+    assert_eq!(
+        seen.json()["stale"],
+        json!([{"dir": dir, "attempt": 1, "gone": ["audit-install.a1.md"], "changed": []}])
+    );
+    // Once the batch is taken back there is no check left to be stale.
+    rig.run(&keeper("discard", RUN), "").must(OK, "discard");
+    rig.run(&vet(RUN, None, &paths[..1]), "")
+        .must(OK, "no batch, no check");
+}
+
+/// **A file that is no report leaves the tree — and nothing else does**: `set-aside` vets
+/// the written-once files it is handed and moves each that `vet` refuses out of the
+/// repository. What passes stays; a table is never set aside; and where it goes is outside
+/// the repository, or the call is refused.
+#[test]
+fn set_aside_moves_what_is_no_report_out_of_the_repository_and_nothing_else() {
+    let rig = Rig::new("set-aside");
+    rig.run(&report(RUN, "1", "audit-install", "1"), BODY)
+        .must(OK, "a report");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&["jigc setup"], &[]).to_string(),
+    )
+    .must(OK, "the round's scope");
+    rig.seed_rows(&["audit-f3"]);
+    let (kept, bad, the_scope) = (
+        report_path("1", "audit-install", "1"),
+        report_path("1", "review-source", "1"),
+        scope_path("1"),
+    );
+    let text = format!("# a report\n\nIt met {DENY_TERM} there.\n{ENDS}\n");
+    let aside = rig.dir.path().join("aside");
+
+    // Only a file that is written once; only to a directory outside the repository.
+    fs::write(rig.root.join(&bad), &text).expect("a hand's report");
+    let before = rig.snapshot();
+    for (what, args) in [
+        ("a table", set_aside(RUN, Some(&aside), &[&ledger_path()])),
+        (
+            "a directory inside the repository",
+            set_aside(RUN, Some(&rig.root.join("aside")), &[&bad]),
+        ),
+        (
+            "a relative directory",
+            set_aside(RUN, Some(Path::new("aside")), &[&bad]),
+        ),
+    ] {
+        rig.run(&args, "").refused(BAD_VALUE, what);
+        assert_eq!(rig.snapshot(), before, "{what}: nothing was moved");
+    }
+
+    // What `vet` refuses is moved, under its path; what it takes stays where it is.
+    let seen = rig.run(
+        &set_aside(RUN, Some(&aside), &[&kept, &bad, &the_scope]),
+        "",
+    );
+    seen.must(OK, "one of three is no report");
+    let moved = aside.join("r1__reports__test__review-source.a1.md");
+    assert_eq!(
+        seen.json(),
+        json!({
+            "aside": [{"path": bad, "why": "hygiene", "detail": seen.json()["aside"][0]["detail"],
+                       "to": moved.display().to_string()}],
+            "vetted": {&kept: sha256_of(BODY), &the_scope: sha256_of(&rig.read(&the_scope))},
+        })
+    );
+    assert!(
+        !seen.stdout.contains(DENY_TERM),
+        "by where: {}",
+        seen.stdout
+    );
+    assert_eq!(fs::read_to_string(&moved).expect("the moved file"), text);
+    assert!(!rig.root.join(&bad).exists() && rig.root.join(&kept).is_file());
+    // A second file of that name does not replace the first.
+    fs::write(rig.root.join(&bad), "cut off\n").expect("a hand's report, again");
+    let seen = rig.run(&set_aside(RUN, Some(&aside), &[&bad]), "");
+    assert_eq!(
+        json!([
+            seen.json()["aside"][0]["why"],
+            seen.json()["aside"][0]["to"]
+        ]),
+        json!(["truncated", format!("{}.1", moved.display())])
+    );
+    assert_eq!(fs::read_to_string(&moved).expect("the first stays"), text);
+
+    // With no directory named one is minted — outside the repository, under the temp
+    // directory — and a link at a report's path leaves as the link it is.
+    symlink(rig.root.join(&kept), rig.root.join(&bad)).expect("a link at a report's path");
+    let seen = rig.run(&set_aside(RUN, None, &[&bad]), "");
+    seen.must(OK, "a link");
+    let to = PathBuf::from(
+        seen.json()["aside"][0]["to"]
+            .as_str()
+            .expect("where it went"),
+    );
+    assert_eq!(seen.json()["aside"][0]["why"], "outside");
+    assert!(
+        to.starts_with(&rig.tmp) && to.is_symlink() && !rig.root.join(&bad).is_symlink(),
+        "the link was moved to a minted directory: {}",
+        to.display()
+    );
+    assert_eq!(rig.read(&kept), BODY, "and what it pointed at is untouched");
 }

@@ -9,7 +9,7 @@
 //! one line it prints — and this suite is where an act is executed: **against real git**,
 //! in a throwaway clone with a bare remote, a fixed identity and fixed dates, hooks off.
 //!
-//! **Three things are held here.**
+//! **Four things are held here.**
 //!
 //! - *Each act does what its list did.* Every act is driven once to its end, and each
 //!   refusal its list had is driven too — a tree that is not clean, a pushed branch that is
@@ -33,6 +33,21 @@
 //!   ([`the_sync_act_runs_the_build_harnesss_sync_step`]) — the half of
 //!   [`merge_logs_fence`](super::merge_logs_fence)'s arm (k) that can no longer be read off
 //!   two prompts.
+//!
+//! - *Nothing is committed or pushed by a step that the record script would not have
+//!   written* (the second repair plan's `K1`; [DECISIONS.md](../DECISIONS.md) → *2026-10-07 —
+//!   What a step publishes is vetted where it becomes permanent*). A reporter has a shell,
+//!   and a commit is whoever made it; so what a writer checks at its write is checked again
+//!   at the report check, at the record's commit and at every push — and **every refusal
+//!   has its exit, driven here and not described**: the file that is no report leaves the
+//!   tree, the batch is taken back and the next attempt begins, and the read a refused
+//!   push names is run as the refusal spells it ([`Stage`] stands a stage at its record
+//!   through the two scripts; the tests are the section *What is vetted, and where*).
+//!   **The scanners there**: the denylist half is the real `dev/hygiene-scan`, over a
+//!   denylist of one term the rig writes; gitleaks is the record suite's stand-in, which
+//!   keeps gitleaks' exit contract, reads the tree and never a range, and names no file —
+//!   so [`the_machines_own_gitleaks_reads_the_range_a_push_would_publish`] runs whatever
+//!   the machine has over a real range.
 //!
 //! **Every arm runs under a shell-hostile root** — a space, a `'`, a `"` and a `#` in the
 //! repository's path — because the rig has no other kind.
@@ -62,13 +77,20 @@ use std::process::{Command, Stdio};
 use serde_json::{Value, json};
 
 use crate::support::child_stdin;
+use crate::support::install_line::INSTALL_COMMAND;
 use crate::support::scratch::ScratchDir;
 
+use super::dev_stabilize_record::{DENY_TERM, STUB_SECRET, gitleaks_stub};
 use super::placed_executable;
 
 const TOOL: &str = "dev/stabilize-step";
 const RECORD: &str = "dev/stabilize-record";
 const MERGE_LOGS: &str = "dev/merge-logs";
+/// The denylist half of the public-hygiene scan, and gitleaks' configuration: what the
+/// record script runs wherever it vets what a step would commit or push. The denylist's
+/// one term and what the stand-in for gitleaks reports are the record suite's.
+const SCANNER: &str = "dev/hygiene-scan";
+const GITLEAKS_CONFIG: &str = ".gitleaks.toml";
 const HARNESS: &str = ".claude/workflows/stabilize.js";
 const BUILD_HARNESS: &str = ".claude/workflows/milestone-build.js";
 const GIT_DEFINITION: &str = ".claude/agents/build-git.md";
@@ -104,6 +126,8 @@ const REFUSALS: &[(&str, i32)] = &[
     ("gate-red", 19),
     ("no-batch", 20),
     ("position", 21),
+    ("unvetted", 22),
+    ("did-not-run", 23),
 ];
 
 fn repo_root() -> PathBuf {
@@ -343,9 +367,16 @@ impl StepRig {
 
         // The base: the tool and what it runs, a product path, the two logs, a file that
         // is neither.
-        for script in [TOOL, RECORD, MERGE_LOGS] {
+        for script in [TOOL, RECORD, MERGE_LOGS, SCANNER] {
             placed_executable::copy(&repo_root().join(script), &rig.root.join(script));
         }
+        // What a vet needs: gitleaks' configuration, as committed; the stand-in for
+        // gitleaks the record suite keeps, first on the `PATH`; and a denylist of one term.
+        let config = fs::read(repo_root().join(GITLEAKS_CONFIG)).expect("read the gitleaks config");
+        fs::write(rig.root.join(GITLEAKS_CONFIG), config).expect("write the rig's gitleaks config");
+        rig.on_path("gitleaks", &gitleaks_stub());
+        fs::write(rig.denylist(), format!("# a private term\n\n{DENY_TERM}\n"))
+            .expect("write the denylist");
         rig.write("Cargo.toml", "[workspace]\n");
         rig.write("crates/a.txt", "a\n");
         rig.write("README.md", "a readme\n");
@@ -378,6 +409,11 @@ impl StepRig {
         self.dir.path()
     }
 
+    /// The rig's denylist: every child of the rig is pointed at it.
+    pub(crate) fn denylist(&self) -> PathBuf {
+        self.dir.path().join("denylist")
+    }
+
     /// An executable placed first on the `PATH` of every child of the rig.
     pub(crate) fn on_path(&self, name: &str, script: &str) {
         placed_executable::write(&self.dir.path().join("bin").join(name), script);
@@ -389,6 +425,7 @@ impl StepRig {
         command
             .env("PATH", &self.path)
             .env("HOME", &self.home)
+            .env("JIGC_DENYLIST_FILE", self.denylist())
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_TERMINAL_PROMPT", "0")
@@ -533,9 +570,15 @@ impl StepRig {
     }
 
     fn ran(&self, command: Command) -> Stepped {
+        self.ran_in(&[], command)
+    }
+
+    /// As [`StepRig::ran`], with `env` over the rig's own environment.
+    fn ran_in(&self, env: &[(&str, &str)], command: Command) -> Stepped {
         fs::write(&self.trace, "").expect("empty the trace");
         let out = self
             .hermetic(command)
+            .envs(env.iter().copied())
             .env("STEP_TRACE", &self.trace)
             .stdin(Stdio::null())
             .output()
@@ -560,6 +603,42 @@ impl StepRig {
         let mut command = Command::new(self.root.join(TOOL));
         command.args(args).current_dir(self.dir.path());
         self.ran(command)
+    }
+
+    /// The tool, with `env` over the rig's own environment: a scanner that is not there.
+    fn step_in(&self, env: &[(&str, &str)], args: &[&str]) -> Stepped {
+        let mut command = Command::new(self.root.join(TOOL));
+        command.args(args).current_dir(self.dir.path());
+        self.ran_in(env, command)
+    }
+
+    /// A command line of the record script's — a call of it, or a line a refusal of the
+    /// tool names — run by a shell from the repository's root, fed `stdin`: its exit
+    /// status, what it printed, and its stderr.
+    fn record_script(&self, command_line: &str, stdin: &str) -> (i32, String, String) {
+        let mut child = self
+            .hermetic(Command::new("sh"))
+            .args(["-c", command_line])
+            .current_dir(&self.root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn a shell");
+        child_stdin::feed(&mut child, stdin);
+        let out = child.wait_with_output().expect("the shell exits");
+        (
+            out.status.code().expect("the record script exits"),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    }
+
+    /// A call of the record script that must succeed: what it printed.
+    fn wrote(&self, call: &str, stdin: &str) -> String {
+        let (code, out, err) = self.record_script(&format!("{RECORD} {call}"), stdin);
+        assert_eq!(code, 0, "`{RECORD} {call}`: {err}");
+        out
     }
 
     /// A command line exactly as a step's prompt gives it, run as an agent runs it: by a
@@ -593,6 +672,9 @@ fn with<'a>(head: &[&'a str], lists: &[(&'a str, &'a [String])]) -> Vec<&'a str>
 fn lines(list: &[&str]) -> Vec<String> {
     list.iter().map(|line| (*line).to_owned()).collect()
 }
+
+/// A report as `dev/stabilize-record report` leaves one: text, and its last line.
+const REPORT: &str = "# a report\n\nNothing found.\n\n<!-- end of report -->\n";
 
 // ---------------------------------------------------------------------------
 // git-state
@@ -920,19 +1002,21 @@ fn check_reports_relays_the_check_and_a_failed_check_is_its_answer() {
     let line = seen.done("check-reports", "checked");
     assert_eq!(line["check"]["ok"], false);
     assert_eq!(line["check"]["missing"], json!(["scope"]));
-    assert!(
-        seen.trace.is_empty(),
-        "the check runs no git: {:?}",
-        seen.trace
+    assert_eq!(line["aside"], json!([]));
+    assert_eq!(
+        seen.trace,
+        lines(&["status --porcelain --untracked-files=all"]),
+        "the one thing the check asks git: which files of the run no commit holds"
     );
 
-    rig.write(
-        &format!("{RUN_DIR}/r1/reports/test/scope.a1.md"),
-        "a report\n",
-    );
+    // A file at a report's path that is what the record script would have written — text,
+    // no host path, its last line — is a report, whoever wrote it.
+    rig.write(&format!("{RUN_DIR}/r1/reports/test/scope.a1.md"), REPORT);
+    let line = rig.step(&check);
+    let line = line.done("check-reports", "checked");
     assert_eq!(
-        rig.step(&check).done("check-reports", "checked")["check"]["ok"],
-        true
+        json!([line["check"]["ok"], line["aside"]]),
+        json!([true, []])
     );
 
     // The fix stage's flags reach the record script too.
@@ -1105,8 +1189,8 @@ fn push_pushes_the_branch_by_name_and_reads_the_remote_back() {
     assert_eq!(
         *line,
         json!({
-            "act": "push", "status": "ready", "remote_head": first, "branch": branch,
-            "head": first, "sha256": line["sha256"],
+            "act": "push", "status": "ready", "vetted": [first], "remote_head": first,
+            "branch": branch, "head": first, "sha256": line["sha256"],
         })
     );
     assert_eq!(rig.remote(&branch), Some(first));
@@ -1115,6 +1199,7 @@ fn push_pushes_the_branch_by_name_and_reads_the_remote_back() {
         lines(&[
             "branch --show-current",
             &format!("ls-remote --exit-code --heads origin {branch}"),
+            &format!("rev-list --reverse {branch} --not --remotes=origin"),
             &format!("push origin {branch}"),
             &format!("ls-remote --exit-code --heads origin {branch}"),
             &format!("rev-parse {branch}"),
@@ -1126,7 +1211,13 @@ fn push_pushes_the_branch_by_name_and_reads_the_remote_back() {
     // A branch that is pushed is first held to its pushed tip.
     let second = rig.change("crates/a.txt", "fixed again\n", "fix: the same finding");
     let seen = rig.step(&push);
-    assert_eq!(seen.done("push", "ready")["remote_head"], second.as_str());
+    let line = seen.done("push", "ready");
+    assert_eq!(line["remote_head"], second.as_str());
+    assert_eq!(
+        line["vetted"],
+        json!([second]),
+        "what is vetted is what the remote does not hold yet, and no more"
+    );
     assert_eq!(
         seen.trace[1..4],
         lines(&[
@@ -1245,9 +1336,14 @@ fn land_merges_the_round_with_a_merge_commit_and_pushes_the_loop_branch() {
         *line,
         json!({
             "act": "land", "status": "merged", "tip_moved": false, "moved_outside": [],
-            "resolved_logs": [], "merge_commit": merge, "remote_head": merge, "head": merge,
-            "sha256": line["sha256"],
+            "resolved_logs": [], "merge_commit": merge, "vetted": line["vetted"],
+            "remote_head": merge, "head": merge, "sha256": line["sha256"],
         })
+    );
+    assert_eq!(
+        line["vetted"].as_array().and_then(|vetted| vetted.last()),
+        Some(&json!(merge)),
+        "the landing's push vets what it publishes — the merge commit, last: {line}"
     );
     assert_eq!(rig.branch(), LOOP);
     assert_eq!(rig.remote(LOOP), Some(merge.clone()));
@@ -1281,6 +1377,7 @@ fn land_merges_the_round_with_a_merge_commit_and_pushes_the_loop_branch() {
             "status --porcelain",
             &format!("diff --quiet HEAD {branch} -- {}", product.join(" ")),
             &format!("diff --quiet HEAD {branch} -- . {outside}"),
+            &format!("rev-list --reverse {LOOP} --not --remotes=origin"),
             &format!("push origin {LOOP}"),
             &format!("ls-remote --exit-code --heads origin {LOOP}"),
             &format!("rev-parse {LOOP}"),
@@ -1691,6 +1788,7 @@ fn carry_takes_a_dropped_rounds_record_commits_over_to_the_loop_branch() {
             &format!("rev-list --count {pre}..HEAD"),
             &format!("diff --name-only {pre} HEAD"),
             &format!("diff --quiet {pre} HEAD -- {}", product.join(" ")),
+            &format!("rev-list --reverse {LOOP} --not --remotes=origin"),
             &format!("push origin {LOOP}"),
             &format!("ls-remote --exit-code --heads origin {LOOP}"),
             &format!("rev-parse {LOOP}"),
@@ -1948,6 +2046,1080 @@ fn the_sync_act_runs_the_build_harnesss_sync_step() {
 }
 
 // ---------------------------------------------------------------------------
+// What is vetted, and where: the report check, the commit, every push
+// ---------------------------------------------------------------------------
+
+/// The reporters of the stage a [`Stage`] stands at its record: the attempt's marker, the
+/// scope step, and one reviewer.
+const LAUNCHED: [&str; 3] = ["attempt", "scope", "review-setup"];
+const SUBJECT: &str = "docs(record): rc24 r1 — the test stage's record";
+
+/// A `test` stage of the rig's run, stood where its record step begins — through the two
+/// scripts, as a stage stands there: the opening's facts committed and pushed, attempt 1 of
+/// round 1 begun, the round's scope and two reports written, the candidate's gate in a
+/// file, and the batch of the record composed and not applied.
+struct Stage {
+    rig: StepRig,
+    gate: String,
+    batch: Value,
+}
+
+impl Stage {
+    fn new(label: &str) -> Self {
+        let rig = StepRig::new(label);
+        let scratch = rig.scratch.display().to_string();
+        rig.wrote(
+            &format!("run-set --run {RUN}"),
+            &json!({"stop": "at-the-bound", "rounds": 3, "previous": "1.0.0-rc.24",
+                    "previous-commit": "9".repeat(40), "scope": "delta",
+                    "clauses": ["clause-a"]})
+            .to_string(),
+        );
+        rig.wrote(
+            &format!("item-set --run {RUN}"),
+            &json!([
+                {"item": "gate", "kind": "check", "clause": "clause-a",
+                 "runs": "every-candidate", "brief": "the candidate's gate"},
+                {"item": "review-setup", "kind": "review-row", "clause": "clause-a",
+                 "runs": "in-scope", "doors": ["jigc setup"], "brief": "the setup door"},
+            ])
+            .to_string(),
+        );
+        rig.commit("docs(record): the opening's facts");
+        rig.git(&["push", "-q", "origin", LOOP]);
+        let candidate = rig.rev("HEAD");
+        rig.step(&[
+            "begin",
+            "--run",
+            RUN,
+            "--round",
+            "1",
+            "--stage",
+            "test",
+            "--attempt",
+            "1",
+            "--reporter",
+            "attempt",
+            "--commit",
+            &candidate,
+            "--scratch",
+            &scratch,
+        ])
+        .done("begin", "begun");
+        rig.wrote(
+            &format!("scope-set --run {RUN} --round 1"),
+            &json!({"included": [{"door": "jigc setup", "registry": "verbs",
+                                  "derivation": "the change reaches it"}],
+                    "excluded": []})
+            .to_string(),
+        );
+        for reporter in &LAUNCHED[1..] {
+            rig.wrote(
+                &format!(
+                    "report --run {RUN} --round 1 --stage test --reporter {reporter} --attempt 1"
+                ),
+                REPORT,
+            );
+        }
+        let gate = format!("{scratch}/gate.txt");
+        fs::write(
+            &gate,
+            "gate: mode   full, keep-going\ntests   passed=10 failed=0  (over 3 test binaries)\nGATE: PASS\n",
+        )
+        .expect("write the gate's output");
+        let call = |argv: &[&str], stdin: Value| json!({"argv": argv, "stdin": stdin.to_string()});
+        let mut check = vec![
+            "check-reports",
+            "--run",
+            RUN,
+            "--round",
+            "1",
+            "--stage",
+            "test",
+            "--attempt",
+            "1",
+            "--",
+        ];
+        check.extend(LAUNCHED);
+        let batch = json!([
+            {"argv": check},
+            {"argv": ["gate-set", "--run", RUN, "--round", "1", "--commit", candidate,
+                      "--summary", gate]},
+            call(
+                &["result-set", "--run", RUN, "--round", "1", "--commit", &candidate],
+                json!([{"item": "gate", "outcome": "green"},
+                       {"item": "review-setup", "outcome": "green"}]),
+            ),
+            call(
+                &["ledger-add", "--run", RUN],
+                json!([{"key": "f-1", "doctype": "jigc-feedback", "round": 1,
+                        "source": "review-setup", "door": "jigc setup",
+                        "clause": "clause-a", "repro": "the report"}]),
+            ),
+            call(
+                &["triage-set", "--run", RUN, "--round", "1"],
+                json!([{"key": "f-1", "grade": "breaks", "verdict": "refuted"}]),
+            ),
+            call(
+                &["round-set", "--run", RUN, "--round", "1"],
+                json!({"candidate": candidate, "binary": "b".repeat(64)}),
+            ),
+            {"argv": ["check-ledger", "--run", RUN, "--", "f-1"]},
+        ]);
+        Stage { rig, gate, batch }
+    }
+
+    /// The report of one of the stage's reporters, repository-relative.
+    fn report(reporter: &str) -> String {
+        format!("{RUN_DIR}/r1/reports/test/{reporter}.a1.md")
+    }
+
+    /// The record's batch, applied under `subject`: the tables written, and no commit.
+    fn apply(&self, subject: &str) {
+        let kept = self.rig.scratch.join("subject");
+        fs::write(&kept, subject).expect("keep the subject");
+        self.rig.wrote(
+            &format!(
+                "apply --run {RUN} --round 1 --subject \"$(cat '{}')\"",
+                kept.display()
+            ),
+            &self.batch.to_string(),
+        );
+    }
+
+    /// The record's commit step, as the harness asks for it — and, where it moves a file,
+    /// under the rig's scratch root.
+    fn record(&self) -> Stepped {
+        self.record_in(&[])
+    }
+
+    fn record_in(&self, env: &[(&str, &str)]) -> Stepped {
+        let scratch = self.rig.scratch.display().to_string();
+        self.rig.step_in(
+            env,
+            &[
+                "record",
+                "--branch",
+                LOOP,
+                "--run-dir",
+                RUN_DIR,
+                "--gate",
+                &self.gate,
+                "--calls",
+                "7",
+                "--checks",
+                "2",
+                "--scratch",
+                &scratch,
+            ],
+        )
+    }
+
+    fn check_in(&self, env: &[(&str, &str)], scratch: bool) -> Stepped {
+        let root = self.rig.scratch.display().to_string();
+        let mut args = vec![
+            "check-reports",
+            "--run",
+            RUN,
+            "--round",
+            "1",
+            "--stage",
+            "test",
+            "--attempt",
+            "1",
+        ];
+        if scratch {
+            args.extend(["--scratch", root.as_str()]);
+        }
+        args.push("--");
+        args.extend(LAUNCHED);
+        self.rig.step_in(env, &args)
+    }
+
+    /// The report check, as the harness asks for it today: with no scratch root.
+    fn check(&self) -> Stepped {
+        self.check_in(&[], false)
+    }
+
+    /// What a stage would start from: the git state's line.
+    fn git_state(&self) -> Stepped {
+        self.rig.step(&git_state("test", &product()))
+    }
+
+    /// What the run's state hands the `test` stage.
+    fn position(&self) -> Value {
+        let state: Value = serde_json::from_str(&self.rig.wrote(&format!("state --run {RUN}"), ""))
+            .expect("the state document");
+        state["position"]["test"].clone()
+    }
+
+    /// The tree is one a stage starts from, with no batch pending, and the state hands the
+    /// stage `attempt`.
+    fn starts_again_as(&self, attempt: u32, what: &str) {
+        let state = self.git_state();
+        assert_eq!(
+            state.done("git-state", "ready")["pending"],
+            Value::Null,
+            "{what}: a tree a stage starts from, and no batch: {}",
+            state.raw
+        );
+        assert_eq!(
+            self.position(),
+            json!({"round": 1, "attempt": attempt}),
+            "{what}: the state hands out the next attempt"
+        );
+    }
+}
+
+/// What a hand can leave in a file of the run that no writer of the record script would
+/// have: the word the writer refuses it with, a line that carries it, and the needle.
+fn unwritable(rig: &StepRig) -> Vec<(&'static str, String, String)> {
+    let home = format!("{}/probe", rig.home.display());
+    vec![
+        (
+            "hygiene",
+            format!("It met {DENY_TERM} there."),
+            DENY_TERM.to_owned(),
+        ),
+        (
+            "hygiene",
+            format!("The environment held {STUB_SECRET}."),
+            STUB_SECRET.to_owned(),
+        ),
+        ("host-path", format!("It ran in {home}."), home),
+        // The fence's refusal names the command it reads; what it does not name is the rest.
+        (
+            "fence",
+            format!("{INSTALL_COMMAND} --locked"),
+            "--locked".to_owned(),
+        ),
+    ]
+}
+
+/// A report whose body is `line`.
+fn report_saying(line: &str) -> String {
+    format!("# a report\n\n{line}\n\n<!-- end of report -->\n")
+}
+
+/// **A file at a report's path that the record script would not have written is no
+/// report** (the re-review's `R1`, at the first boundary; the plan review's `B3`): the
+/// report check vets every pending written-once file first, the file leaves the tree, the
+/// check names it, and its reporter has left none — which a stage has a row for, so the
+/// stage goes on. It is an answer, never a refusal.
+#[test]
+fn a_report_the_script_would_not_have_written_is_no_report() {
+    let stage = Stage::new("vet-check");
+    let rig = &stage.rig;
+    let path = Stage::report("review-setup");
+
+    // MUST NOT REFUSE: an ordinary stage's reports; and a report a hand wrote that is what
+    // the script would have written — the public placeholders themselves among its text.
+    let line = stage.check();
+    let line = line.done("check-reports", "checked");
+    assert_eq!(
+        json!([line["check"]["ok"], line["aside"]]),
+        json!([true, []])
+    );
+    rig.write(
+        &path,
+        &report_saying("It ran in <scratch>/probe, in <tmp>/x and in ~/y, from `.`."),
+    );
+    let line = stage.check();
+    let line = line.done("check-reports", "checked");
+    assert_eq!(
+        json!([line["check"]["ok"], line["aside"]]),
+        json!([true, []])
+    );
+
+    let mut cases: Vec<(&str, String, String)> = unwritable(rig)
+        .into_iter()
+        .map(|(word, line, needle)| (word, report_saying(&line), needle))
+        .collect();
+    cases.push(("truncated", "a report\n".to_owned(), String::new()));
+    for (n, (word, text, needle)) in cases.into_iter().enumerate() {
+        rig.write(&path, &text);
+        // The harness names no scratch root yet (the second repair's `K3`): the record
+        // script mints a directory. With one named, the file lies under it.
+        let named = n % 2 == 0;
+        let seen = stage.check_in(&[], named);
+        let line = seen.done("check-reports", "checked");
+        let what = format!("`{word}`");
+        assert_eq!(
+            json!([
+                line["check"]["ok"],
+                line["check"]["missing"],
+                line["check"]["extra"]
+            ]),
+            json!([false, ["review-setup"], []]),
+            "{what}: its reporter has left no report: {}",
+            seen.raw
+        );
+        assert_eq!(
+            json!([
+                line["aside"][0]["path"],
+                line["aside"][0]["why"],
+                line["aside"].as_array().map(Vec::len)
+            ]),
+            json!([path, word, 1]),
+            "{what}: the check names the file, and no other: {}",
+            seen.raw
+        );
+        let to = PathBuf::from(line["aside"][0]["to"].as_str().expect("where it went"));
+        assert_eq!(
+            fs::read_to_string(&to).expect("the file, where it was moved"),
+            text,
+            "{what}: the file is kept, outside the tree"
+        );
+        assert!(
+            !to.starts_with(&rig.root)
+                && (!named || to.starts_with(rig.scratch.join("refused")))
+                && !rig.root.join(&path).exists(),
+            "{what}: the tree does not hold it: {}",
+            to.display()
+        );
+        assert!(
+            needle.is_empty() || !seen.raw.contains(&needle),
+            "{what}: named by where, never by what: {}",
+            seen.raw
+        );
+        stage.git_state().done("git-state", "ready");
+    }
+
+    // A file of AN EARLIER ATTEMPT that no commit holds is vetted too — it would ride the
+    // next record's commit — and so is the round's scope.
+    rig.write(&path, REPORT);
+    let earlier = format!("{RUN_DIR}/r1/reports/test/review-setup.a7.md");
+    let scope = format!("{RUN_DIR}/r1/scope.md");
+    rig.write(&earlier, &report_saying(&format!("It met {DENY_TERM}.")));
+    rig.write(
+        &scope,
+        &format!("{}\nIt met {DENY_TERM}.\n", rig.read(&scope)),
+    );
+    let seen = stage.check();
+    let line = seen.done("check-reports", "checked");
+    let mut moved: Vec<&str> = line["aside"]
+        .as_array()
+        .expect("what was moved")
+        .iter()
+        .map(|found| found["path"].as_str().expect("a path"))
+        .collect();
+    moved.sort_unstable();
+    assert_eq!(
+        (line["check"]["ok"].clone(), moved),
+        (json!(true), vec![earlier.as_str(), scope.as_str()]),
+        "{}",
+        seen.raw
+    );
+    assert!(!rig.root.join(&earlier).exists() && !rig.root.join(&scope).exists());
+}
+
+/// What the commit step is handed something no writer would have written in.
+#[derive(Clone, Copy, PartialEq)]
+enum Unwritten {
+    Report,
+    FixReport,
+    Scope,
+    Subject,
+}
+
+/// **Nothing is committed that the record script would not have written** (`R1` and `R13`,
+/// at the second boundary): each refusal a writer has × a `test` report, a fix cycle's
+/// report, a round's scope, and the subject. The commit step stages the pending paths,
+/// vets what it staged, and on a hit commits nothing.
+#[test]
+fn nothing_is_committed_that_the_record_script_would_not_have_written() {
+    std::thread::scope(|threads| {
+        for (n, target) in [
+            Unwritten::Report,
+            Unwritten::FixReport,
+            Unwritten::Scope,
+            Unwritten::Subject,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            threads.spawn(move || {
+                let stage = Stage::new(&format!("vet-commit-{n}"));
+                let rig = &stage.rig;
+                let path = match target {
+                    Unwritten::Report => Stage::report("review-setup"),
+                    Unwritten::FixReport => {
+                        format!("{RUN_DIR}/r1/reports/fix/c1/audit-review.a1.md")
+                    }
+                    Unwritten::Scope => format!("{RUN_DIR}/r1/scope.md"),
+                    Unwritten::Subject => String::new(),
+                };
+                let scope = rig.read(&format!("{RUN_DIR}/r1/scope.md"));
+                let head = rig.rev("HEAD");
+                // What is written: a line of the subject, or a file's whole text — and a
+                // report may also lack its last line.
+                let mut cases: Vec<(&str, String, String)> = unwritable(rig)
+                    .into_iter()
+                    .map(|(word, line, needle)| {
+                        let text = if target == Unwritten::Subject {
+                            line
+                        } else {
+                            report_saying(&line)
+                        };
+                        (word, text, needle)
+                    })
+                    .collect();
+                if matches!(target, Unwritten::Report | Unwritten::FixReport) {
+                    cases.push((
+                        "truncated",
+                        "# a report\n\nIt was cut off here\n".to_owned(),
+                        "cut off here".to_owned(),
+                    ));
+                }
+                for (word, text, needle) in cases {
+                    let what = format!(
+                        "`{word}` in {}",
+                        if path.is_empty() {
+                            "the subject"
+                        } else {
+                            path.as_str()
+                        }
+                    );
+                    if target == Unwritten::Subject {
+                        if word == "fence" {
+                            continue;
+                        }
+                        stage.apply(&format!("docs(record): {text}"));
+                    } else {
+                        stage.apply(SUBJECT);
+                        // Written by a hand, AFTER the batch's own check counted the file.
+                        rig.write(&path, &text);
+                    }
+                    let seen = stage.record();
+                    let said = seen.refused("unvetted");
+                    assert_eq!(rig.rev("HEAD"), head, "{what}: nothing was committed");
+                    assert!(
+                        !rig.status().lines().any(|line| !line.starts_with("?? ")),
+                        "{what}: nothing is left staged, and no table is left changed: {}",
+                        rig.status()
+                    );
+                    assert!(
+                        !seen.raw.contains(&needle),
+                        "{what}: named by where, never by what: {}",
+                        seen.raw
+                    );
+                    if target == Unwritten::Subject {
+                        assert_eq!(
+                            json!([said["vet"]["subject"]["why"], said["vet"]["refused"]]),
+                            json!([word, []]),
+                            "{what}: {}",
+                            seen.raw
+                        );
+                    } else {
+                        assert_eq!(
+                            json!([
+                                said["vet"]["refused"][0]["path"],
+                                said["vet"]["refused"][0]["why"],
+                                said["aside"][0]["path"]
+                            ]),
+                            json!([path, word, path]),
+                            "{what}: {}",
+                            seen.raw
+                        );
+                        assert!(
+                            !rig.root.join(&path).exists(),
+                            "{what}: the file left the tree"
+                        );
+                    }
+                    assert_eq!(said["discarded"], true, "{what}: the batch is taken back");
+                    stage.git_state().done("git-state", "ready");
+                    // What the next case stands on again.
+                    match target {
+                        Unwritten::Report => rig.write(&path, REPORT),
+                        Unwritten::Scope => rig.write(&path, &scope),
+                        Unwritten::FixReport | Unwritten::Subject => {}
+                    }
+                }
+                // MUST NOT REFUSE: the same stage, with nothing a writer would refuse — the
+                // record is one commit of exactly the pending paths.
+                stage.apply(SUBJECT);
+                let line = stage.record();
+                let line = line.done("record", "recorded");
+                assert_eq!(rig.git(&["log", "-1", "--format=%s"]), SUBJECT);
+                assert_eq!(line["commit"], rig.rev("HEAD").as_str());
+                assert_eq!(rig.status(), "");
+            });
+        }
+    });
+}
+
+/// **A vet hit at the commit leaves a tree the next attempt starts from** (the plan
+/// review's `B3`): a report is written once, so a refusal that left the file and the batch
+/// where they were would be met again by every later invocation. The step takes back what
+/// it staged, the batch is discarded, the file leaves the tree — and the refusal's own
+/// text names the read that answers for the tree. Driven: that read answers `ready`, the
+/// state hands out the next attempt, and that attempt begins.
+#[test]
+fn a_vet_hit_at_the_commit_leaves_a_tree_the_next_attempt_starts_from() {
+    let stage = Stage::new("vet-exit");
+    let rig = &stage.rig;
+    let path = Stage::report("review-setup");
+    let tables = rig.read(&format!("{RUN_DIR}/run.md"));
+    stage.apply(SUBJECT);
+    // The re-review's own block: the text the script refused, written by a redirect.
+    let text = report_saying(&format!(
+        "ran in {}/probe and met {DENY_TERM}",
+        rig.home.display()
+    ));
+    let (code, _, err) = rig.record_script(
+        &format!(
+            "{RECORD} report --run {RUN} --round 1 --stage test --reporter review-rename --attempt 1"
+        ),
+        &text,
+    );
+    assert!(
+        code != 0 && err.starts_with("stabilize-record: refused "),
+        "{err}"
+    );
+    rig.write(&path, &text);
+
+    let seen = stage.record();
+    let said = seen.refused("unvetted");
+    let then = said["halt"]["recommendation"]
+        .as_str()
+        .expect("what is done about it");
+    assert!(
+        then.contains("`dev/stabilize-step git-state`") && then.contains("the next attempt"),
+        "the refusal names the read that answers for the tree, and what follows: {then}"
+    );
+    let to = said["aside"][0]["to"]
+        .as_str()
+        .expect("where the file went");
+    assert!(
+        then.contains(to) && Path::new(to).starts_with(rig.scratch.join("refused")),
+        "and where the file is: {then}"
+    );
+    assert_eq!(fs::read_to_string(to).expect("the moved file"), text);
+    assert_eq!(
+        rig.read(&format!("{RUN_DIR}/run.md")),
+        tables,
+        "the tables are as before the batch"
+    );
+    assert_eq!(
+        rig.status().lines().collect::<Vec<_>>(),
+        [
+            format!("?? {}", Stage::report("attempt")),
+            format!("?? {}", Stage::report("scope")),
+            format!("?? {RUN_DIR}/r1/scope.md"),
+        ],
+        "what the attempt wrote and the script would have written is still pending"
+    );
+    stage.starts_again_as(2, "after the refusal");
+    let scratch = rig.scratch.display().to_string();
+    let head = rig.rev("HEAD");
+    rig.step(&[
+        "begin",
+        "--run",
+        RUN,
+        "--round",
+        "1",
+        "--stage",
+        "test",
+        "--attempt",
+        "2",
+        "--reporter",
+        "attempt",
+        "--commit",
+        &head,
+        "--scratch",
+        &scratch,
+    ])
+    .done("begin", "begun");
+    // And nothing of it is on the way to the remote.
+    let pushed = rig.step(&["push", "--branch", LOOP]);
+    assert_eq!(pushed.done("push", "ready")["vetted"], json!([]));
+}
+
+/// **A batch whose report is gone is not committed** (`B3`): the batch keeps the result of
+/// its report check, and the commit step is held to that result. So the check is held to
+/// the disk again where the commit is made — a report it counted that is gone, or that
+/// holds other bytes, is no record of that attempt.
+#[test]
+fn a_batch_whose_report_is_gone_is_not_committed() {
+    for (n, (what, change)) in [
+        ("gone", None),
+        ("changed", Some(report_saying("Rewritten after the check."))),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let stage = Stage::new(&format!("vet-stale-{n}"));
+        let rig = &stage.rig;
+        let path = Stage::report("review-setup");
+        let head = rig.rev("HEAD");
+        stage.apply(SUBJECT);
+        match &change {
+            None => fs::remove_file(rig.root.join(&path)).expect("delete a report"),
+            Some(text) => rig.write(&path, text),
+        }
+        let seen = stage.record();
+        let said = seen.refused("unvetted");
+        assert_eq!(
+            json!([
+                said["vet"]["stale"][0][what],
+                said["vet"]["stale"][0]["attempt"],
+                said["discarded"]
+            ]),
+            json!([["review-setup.a1.md"], 1, true]),
+            "a report {what} since the batch's check: {}",
+            seen.raw
+        );
+        assert_eq!(rig.rev("HEAD"), head, "{what}: nothing was committed");
+        // A report that changed into what a writer would have left is a report still: it
+        // stays, and the next attempt's record holds it.
+        assert_eq!(rig.root.join(&path).exists(), change.is_some());
+        stage.starts_again_as(2, what);
+    }
+}
+
+/// **What is committed is what was vetted**: the commit step stages the pending paths
+/// before it vets them, and holds the tree to the index once more when the vet is back. A
+/// path that changed under the step — here by a `git` that rewrites the round's scope the
+/// moment it is staged, into another text a writer could have left, so that nothing but
+/// this look can tell — is not committed, whatever it changed into.
+#[test]
+fn a_path_that_changes_under_the_commit_step_is_not_committed() {
+    let stage = Stage::new("vet-moved");
+    let rig = &stage.rig;
+    let path = format!("{RUN_DIR}/r1/scope.md");
+    let head = rig.rev("HEAD");
+    stage.apply(SUBJECT);
+    let later = rig.dir().join("later.md");
+    let rewritten = rig.read(&path).replace(
+        "the change reaches it",
+        "the change reaches it, as said later",
+    );
+    assert_ne!(rewritten, rig.read(&path));
+    fs::write(&later, &rewritten).expect("the later text");
+    let quoted = |path: &Path| path.display().to_string().replace('\'', "'\\''");
+    rig.on_path(
+        "git",
+        &format!(
+            "#!/bin/sh\n'{git}' \"$@\"\ncode=$?\nif [ \"$1\" = add ]; then cat '{later}' >'{report}'; fi\nexit $code\n",
+            git = quoted(&real_git()),
+            later = quoted(&later),
+            report = quoted(&rig.root.join(&path)),
+        ),
+    );
+    let seen = stage.record();
+    let said = seen.refused("unvetted");
+    assert!(
+        said["halt"]["root_cause"]
+            .as_str()
+            .is_some_and(|cause| cause.contains(&format!("changed while the step ran: {path}"))),
+        "the path that changed is named: {}",
+        seen.raw
+    );
+    assert_eq!(rig.rev("HEAD"), head, "nothing was committed");
+    assert!(
+        !rig.status().lines().any(|line| !line.starts_with("?? ")),
+        "and nothing is left staged: {}",
+        rig.status()
+    );
+    assert_eq!(
+        json!([said["vet"]["ok"], said["aside"]]),
+        json!([true, []]),
+        "the vet found nothing: only the second look did: {}",
+        seen.raw
+    );
+    stage.starts_again_as(2, "a path that changed under the step");
+}
+
+/// **A scanner that cannot run is a refusal at every boundary, never a pass** — and it has
+/// its exit: the step left everything as it found it, and the same step, asked again once
+/// the scanner runs, does what it was asked.
+#[test]
+fn a_scanner_that_cannot_run_is_a_refusal_at_every_boundary() {
+    let stage = Stage::new("vet-did-not-run");
+    let rig = &stage.rig;
+    let nowhere = rig.dir().join("no-denylist").display().to_string();
+    let breaks: [(&str, [(&str, &str); 1]); 2] = [
+        ("no denylist", [("JIGC_DENYLIST_FILE", nowhere.as_str())]),
+        (
+            "gitleaks fails on an error of its own",
+            [("STUB_GITLEAKS", "crash")],
+        ),
+    ];
+
+    // The report check: what is pending is what a writer left, and nothing says so.
+    let pending = rig.status();
+    for (why, env) in &breaks {
+        let seen = stage.check_in(env, true);
+        let said = seen.refused("did-not-run");
+        assert!(
+            rig.status() == pending && !rig.scratch.join("refused").exists(),
+            "{why}: no report was vetted, and none was moved: {}",
+            seen.raw
+        );
+        assert!(
+            said["halt"]["recommendation"]
+                .as_str()
+                .is_some_and(|then| then.contains("the same step is asked for again")),
+            "{why}: the refusal says what leaves it: {}",
+            seen.raw
+        );
+    }
+    assert_eq!(
+        stage.check_in(&[], true).done("check-reports", "checked")["check"]["ok"],
+        true,
+        "with the scanner back, the same step vets and checks"
+    );
+
+    // The commit.
+    stage.apply(SUBJECT);
+    let head = rig.rev("HEAD");
+    for (why, env) in &breaks {
+        stage.record_in(env).refused("did-not-run");
+        assert_eq!(rig.rev("HEAD"), head, "{why}: nothing was committed");
+        let state = stage.git_state();
+        assert_eq!(
+            state.done("git-state", "ready")["pending"]["subject"],
+            SUBJECT,
+            "{why}: the batch stays applied, and nothing is left staged: {}",
+            state.raw
+        );
+    }
+    stage.record().done("record", "recorded");
+
+    // The push.
+    let recorded = rig.rev("HEAD");
+    for (why, env) in &breaks {
+        rig.step_in(env, &["push", "--branch", LOOP])
+            .refused("did-not-run");
+        assert_eq!(
+            rig.remote(LOOP),
+            Some(head.clone()),
+            "{why}: nothing was pushed"
+        );
+    }
+    assert_eq!(
+        rig.step(&["push", "--branch", LOOP]).done("push", "ready")["vetted"],
+        json!([recorded])
+    );
+    // MUST NOT REFUSE: a push that publishes nothing needs no scanner.
+    rig.step_in(&breaks[0].1, &["push", "--branch", LOOP])
+        .done("push", "ready");
+}
+
+/// A place a vet of a range refuses: the path — none for the commit's message — and the
+/// word a writer would have refused it with.
+type Place<'a> = (Option<&'a str>, &'a str);
+
+/// The command a refusal's text names, taken out of that text: the code span that opens
+/// with `opens`.
+fn named_command<'a>(text: &'a str, opens: &str) -> &'a str {
+    let at = text
+        .find(&format!("`{opens}"))
+        .unwrap_or_else(|| panic!("the text names `{opens} …`: {text}"));
+    let command = &text[at + 1..];
+    &command[..command.find('`').expect("the code span closes")]
+}
+
+/// **Nothing is published that was not vetted** (the plan review's `B2`): the step tool
+/// makes every push of a run, and a commit is whoever made it. So every push — of `push`,
+/// of a landing, of a carried record — is preceded by the vet of every commit the remote
+/// does not hold yet: the two scanners CI runs over a push, and, for a commit that changes
+/// a file of the run, what a writer of the record script holds its text to. A hit is not
+/// pushed, and it is the human's; the refusal names the read that names every commit and
+/// place again, which is driven here as the refusal spells it.
+#[test]
+fn nothing_is_published_that_was_not_vetted() {
+    let stage = Stage::new("vet-push");
+    let rig = &stage.rig;
+    let home = format!("{}/probe", rig.home.display());
+
+    // MUST NOT REFUSE: a tuning commit outside the run's directory that the remote lacks —
+    // source code names `/tmp`, and so may its message: the placeholder rule is the
+    // record's, and what a file outside the run is held to is the two scanners.
+    rig.write(
+        "README.md",
+        &format!("a scratch file under /tmp/x, and {home}\n"),
+    );
+    rig.git(&["add", "--", "README.md"]);
+    rig.git(&[
+        "commit",
+        "-q",
+        "-m",
+        &format!("build(dev): a tuning commit\n\nIt reads /tmp/x and {home}."),
+    ]);
+    let tuning = rig.rev("HEAD");
+    let line = rig.step(&["push", "--branch", LOOP]);
+    assert_eq!(line.done("push", "ready")["vetted"], json!([tuning]));
+    assert_eq!(rig.remote(LOOP), Some(tuning.clone()));
+    // MUST NOT REFUSE: a push of what is already there.
+    let again = rig.step(&["push", "--branch", LOOP]);
+    assert_eq!(again.done("push", "ready")["vetted"], json!([]));
+    // MUST NOT REFUSE: an ordinary round's record.
+    stage.apply(SUBJECT);
+    stage.record().done("record", "recorded");
+    let recorded = rig.rev("HEAD");
+    let line = rig.step(&["push", "--branch", LOOP]);
+    assert_eq!(line.done("push", "ready")["vetted"], json!([recorded]));
+
+    // THE PLAN REVIEW'S BLOCK: a report with the denylisted term and a host path,
+    // committed under the run's directory by plain git — and each alone, in each place a
+    // commit publishes: a file of the run, the subject, the body.
+    let by_hand = format!("{RUN_DIR}/r1/reports/test/handmade.a1.md");
+    let clean = report_saying("Nothing found.");
+    let file = Some(by_hand.as_str());
+    let cases: Vec<(&str, String, String, Vec<Place>)> = vec![
+        (
+            "the block: the term and a host path, in the report and in the subject",
+            report_saying(&format!("ran in {home} and met {DENY_TERM}")),
+            format!("docs(record): {DENY_TERM} by hand"),
+            vec![(None, "hygiene"), (file, "hygiene"), (file, "host-path")],
+        ),
+        (
+            "a host path alone, in a file of the run",
+            report_saying(&format!("ran in {home}")),
+            "docs(record): by hand".to_owned(),
+            vec![(file, "host-path")],
+        ),
+        (
+            "a report that does not end as one",
+            "# a report\n\ncut off\n".to_owned(),
+            "docs(record): by hand".to_owned(),
+            vec![(file, "truncated")],
+        ),
+        (
+            "the term in the body of the message alone",
+            clean.clone(),
+            format!("docs(record): by hand\n\nIt met {DENY_TERM}."),
+            vec![(None, "hygiene")],
+        ),
+        (
+            "a host path in the message of a commit that changes the run's record",
+            clean.clone(),
+            format!("docs(record): by hand\n\nWritten in {home}."),
+            vec![(None, "host-path")],
+        ),
+    ];
+    for (what, text, message, expected) in cases {
+        rig.write(&by_hand, &text);
+        rig.git(&["add", "--", &by_hand]);
+        rig.git(&["commit", "-q", "-m", &message]);
+        let commit = rig.rev("HEAD");
+        // The states before the push say nothing of it — which is why the push must.
+        stage.git_state().done("git-state", "ready");
+
+        let seen = rig.step(&["push", "--branch", LOOP]);
+        let said = seen.refused("unvetted");
+        assert_eq!(
+            rig.remote(LOOP),
+            Some(recorded.clone()),
+            "{what}: NOTHING REACHED THE REMOTE"
+        );
+        assert!(
+            !rig.git_at(&rig.origin, &["cat-file", "-e", &commit])
+                .status
+                .success(),
+            "{what}: the bare remote does not hold the commit"
+        );
+        assert!(
+            !seen.trace.iter().any(|call| call.starts_with("push ")),
+            "{what}: no push was tried: {:?}",
+            seen.trace
+        );
+        let named: Vec<Place> = said["vet"]["refused"]
+            .as_array()
+            .expect("what the vet refused")
+            .iter()
+            .map(|found| {
+                assert_eq!(
+                    found["commit"],
+                    commit.as_str(),
+                    "{what}: the commit is named"
+                );
+                (
+                    found["path"].as_str(),
+                    found["why"].as_str().expect("a word"),
+                )
+            })
+            .collect();
+        assert_eq!(
+            named, expected,
+            "{what}: each place, by its word: {}",
+            seen.raw
+        );
+        assert!(
+            !seen.raw.contains(DENY_TERM) && !seen.raw.contains(&home),
+            "{what}: named by where, never by what: {}",
+            seen.raw
+        );
+
+        // THE EXIT. The state is one a read names: the refusal's text spells it, and it is
+        // run as spelled. It names the commit again, pushes nothing — and answers ok once
+        // the human has taken the commit back, after which the push is made.
+        let then = said["halt"]["recommendation"]
+            .as_str()
+            .expect("what is done about it");
+        assert!(then.contains("the human's"), "{what}: {then}");
+        let read = named_command(then, "dev/stabilize-record vet --range ");
+        assert_eq!(
+            read,
+            format!("dev/stabilize-record vet --range -- {LOOP} --not --remotes=origin")
+        );
+        let (code, out, _) = rig.record_script(read, "");
+        let answer: Value = serde_json::from_str(&out).expect("the read prints its result");
+        assert_eq!(
+            json!([code, answer["ok"], answer["commits"], answer["refused"]]),
+            json!([24, false, [commit], said["vet"]["refused"]]),
+            "{what}: the read names what the refusal named"
+        );
+        assert!(
+            answer["then"]
+                .as_str()
+                .is_some_and(|then| then.contains("the human's"))
+        );
+        assert_eq!(
+            rig.remote(LOOP),
+            Some(recorded.clone()),
+            "{what}: a read pushes nothing"
+        );
+        // The human's act — plain git, never the tool's: the commit is taken back.
+        rig.git(&["reset", "-q", "--hard", &recorded]);
+        let (code, out, _) = rig.record_script(read, "");
+        let answer: Value = serde_json::from_str(&out).expect("the read prints its result");
+        assert_eq!(
+            json!([code, answer["ok"], answer["commits"]]),
+            json!([0, true, []]),
+            "{what}"
+        );
+        rig.step(&["push", "--branch", LOOP]).done("push", "ready");
+    }
+
+    // MUST NOT REFUSE: what the remote holds already. A file of the run that a hand pushed
+    // with plain git — outside the tool — is not held against the merge that later carries
+    // it: a merge is vetted for what it changes itself, and no commit can be rewritten to
+    // un-publish what is public.
+    let product = product();
+    let logs = logs();
+    let earlier = rig.round(9);
+    rig.change("crates/a.txt", "fixed early\n", "fix: an earlier finding");
+    rig.step(&["push", "--branch", &earlier])
+        .done("push", "ready");
+    rig.git(&["switch", "-q", LOOP]);
+    rig.change(
+        &format!("{RUN_DIR}/r1/notes.md"),
+        &format!("It ran in {home}.\n"),
+        "docs(record): a note, pushed by hand",
+    );
+    rig.git(&["push", "-q", "origin", LOOP]);
+    rig.git(&["switch", "-q", &earlier]);
+    let landed = rig.step(&land(&earlier, &product, &logs));
+    let recorded = landed.done("land", "merged")["merge_commit"]
+        .as_str()
+        .expect("the merge")
+        .to_owned();
+    assert_eq!(landed.line["vetted"], json!([recorded]));
+    assert_eq!(rig.remote(LOOP), Some(recorded.clone()));
+
+    // EVERY PUSH THE TOOL MAKES: a landing's, and a carried record's.
+    let round = rig.round(1);
+    rig.change(
+        "crates/a.txt",
+        "fixed\n",
+        &format!("fix: a finding of {DENY_TERM}"),
+    );
+    let seen = rig.step(&land(&round, &product, &logs));
+    let said = seen.refused("unvetted");
+    assert!(
+        said["merge_commit"].is_string(),
+        "the merge is made, and says so: {}",
+        seen.raw
+    );
+    assert_eq!(
+        rig.remote(LOOP),
+        Some(recorded.clone()),
+        "a landing's push is vetted"
+    );
+    rig.git(&["reset", "-q", "--hard", &recorded]);
+    let dropped = rig.round(2);
+    let record = rig.change(
+        &format!("{RUN_DIR}/r1/dropped.md"),
+        &format!("It ran in {home}.\n"),
+        "docs(record): the round is dropped",
+    );
+    let seen = rig.step(&carry(&product, &[record.as_str()]));
+    seen.refused("unvetted");
+    assert_eq!(
+        rig.remote(LOOP),
+        Some(recorded),
+        "a carried record's push is vetted"
+    );
+    assert_eq!(rig.remote(&dropped), None);
+}
+
+/// The stub stands in for gitleaks' exit contract, reads the tree and not the range, and
+/// says nothing about gitleaks' rules. This arm runs whatever the machine has over the
+/// range a push would publish: with gitleaks installed, a credential-shaped string in an
+/// unpushed commit is a hit that names the commit and the file, and a clean commit is
+/// pushed; without it, the scan did not run. On no machine is the credential pushed.
+#[test]
+fn the_machines_own_gitleaks_reads_the_range_a_push_would_publish() {
+    let rig = StepRig::new("vet-real-gitleaks");
+    fs::remove_file(rig.dir().join("bin/gitleaks")).expect("remove the stub");
+    let installed = std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join("gitleaks").is_file()));
+    let pushed = rig.rev("HEAD");
+
+    let clean = rig.change("crates/a.txt", "tuned\n", "build(dev): a tuning commit");
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    if !installed {
+        seen.refused("did-not-run");
+        assert_eq!(rig.remote(LOOP), Some(pushed));
+        return;
+    }
+    assert_eq!(seen.done("push", "ready")["vetted"], json!([clean]));
+
+    // Built here, never spelled: a literal of this shape in a tracked file is a finding of
+    // the very scan this arm drives.
+    let mut state = 0x2545_f491_4f6c_dd1d_u64;
+    let tail: String = (0..36)
+        .map(|_| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            let alphabet = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            alphabet[(state >> 33) as usize % alphabet.len()] as char
+        })
+        .collect();
+    let token = format!("{}{}_{tail}", "gh", 'p');
+    let leaked = rig.change(
+        "crates/a.txt",
+        &format!("tuned\nthe environment held {token}\n"),
+        "build(dev): another tuning commit",
+    );
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    let said = seen.refused("unvetted");
+    assert_eq!(
+        json!([
+            said["vet"]["refused"][0]["commit"],
+            said["vet"]["refused"][0]["path"],
+            said["vet"]["refused"][0]["why"]
+        ]),
+        json!([leaked, "crates/a.txt", "hygiene"]),
+        "gitleaks names the commit and the file: {}",
+        seen.raw
+    );
+    assert!(
+        !seen.raw.contains(&token),
+        "and never the string: {}",
+        seen.raw
+    );
+    assert_eq!(
+        rig.remote(LOOP),
+        Some(clean),
+        "the credential was not pushed"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // The names an act takes
 // ---------------------------------------------------------------------------
 
@@ -2133,13 +3305,25 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ),
     ("show", &["--stat", "--format=%s", "--"]),
     ("rev-parse", &["--verify", "--quiet"]),
-    ("rev-list", &["--merges", "--count", "--parents", "-n"]),
+    (
+        "rev-list",
+        &[
+            "--merges",
+            "--count",
+            "--parents",
+            "-n",
+            "--reverse",
+            "--not",
+            "--remotes=origin",
+        ],
+    ),
     ("diff", &["--name-only", "--diff-filter=U", "--quiet", "--"]),
     ("switch", &["--no-track", "-c"]),
     ("push", &[]),
     ("merge", &["--no-ff", "--no-edit", "--abort"]),
     ("commit", &["--no-edit", "-q", "-m"]),
     ("add", &["--"]),
+    ("restore", &["--staged", "--"]),
     ("cherry-pick", &["-x", "--abort"]),
 ];
 
@@ -2158,6 +3342,9 @@ const CHANGING: &[(&str, &[&str])] = &[
     ),
     ("commit", &["commit --no-edit", "commit -q -m <subject>"]),
     ("add", &["add -- <paths>"]),
+    // What the record's commit step staged and does not commit, taken out of the index
+    // again: the index, never the tree, and those paths only.
+    ("restore", &["restore --staged -- <paths>"]),
     (
         "cherry-pick",
         &["cherry-pick -x <sha>", "cherry-pick --abort"],
@@ -2539,6 +3726,11 @@ fn offences(source: &str) -> Vec<String> {
             || program.starts_with("[RECORD, \"pending\", ")
             || program.starts_with("[RECORD, \"gate-check\", ")
             || program.starts_with("[RECORD, \"settle\", ")
+            // The vet of what a step would commit or push, and its two exits: a file that
+            // is no report set aside, and a batch that is not committed taken back.
+            || program.starts_with("[RECORD, \"vet\", ")
+            || program.starts_with("[RECORD, \"set-aside\", ")
+            || (call.within == "record" && program.starts_with("[RECORD, \"discard\", "))
             // The one write the tool makes through the record script: an attempt's marker,
             // by the act that begins the attempt, under the reporter it was handed.
             || (call.within == "begin"

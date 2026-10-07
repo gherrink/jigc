@@ -27,8 +27,9 @@
 //!   commit step that holds one to the other.
 //! - *gitleaks, of the two hygiene scanners.* A test runner has none; the stand-in is the
 //!   record suite's, which keeps gitleaks' exit contract
-//!   ([`gitleaks_stub`]). The denylist half is the real `dev/hygiene-scan`, over a denylist
-//!   this suite writes.
+//!   ([`gitleaks_stub`](super::dev_stabilize_record::gitleaks_stub)), which every
+//!   [`StepRig`] carries since a step vets what it would commit or push. The denylist half
+//!   is the real `dev/hygiene-scan`, over the rig's denylist of one term.
 //! - *The builds of a binary and of a trial image.* A "binary" is a file the preflight's
 //!   stand-in writes at the path its prompt names. Its sha256 is real — measured by the
 //!   preflight, and measured again by every stand-in that "drives" it — so the comparison
@@ -115,7 +116,7 @@ use crate::support::child_stdin;
 use crate::support::goldens::update_mode;
 use crate::support::scratch::ScratchDir;
 
-use super::dev_stabilize_record::gitleaks_stub;
+use super::dev_stabilize_record::DENY_TERM;
 use super::dev_stabilize_step::{LOOP, RUN, RUN_DIR, StepRig, node_or_skip};
 use super::placed_executable;
 
@@ -123,8 +124,6 @@ const HARNESS: &str = ".claude/workflows/stabilize.js";
 const RUNTIME: &str = "tooling-tests/fixtures/stabilize-runtime.mjs";
 const TRACE: &str = "tooling-tests/fixtures/stabilize-test-stage.trace";
 const RECORD: &str = "dev/stabilize-record";
-const SCANNER: &str = "dev/hygiene-scan";
-const GITLEAKS_CONFIG: &str = ".gitleaks.toml";
 
 /// The previous release every simulated run measures against.
 const PREVIOUS: &str = "1.0.0-rc.24";
@@ -256,17 +255,6 @@ impl Sim {
     /// the loop branch of a run nobody has opened yet checked out.
     fn new(label: &str) -> Self {
         let rig = StepRig::unopened(&format!("sim-{label}"));
-        placed_executable::copy(&repo_root().join(SCANNER), &rig.root.join(SCANNER));
-        let config = fs::read(repo_root().join(GITLEAKS_CONFIG)).expect("read the gitleaks config");
-        fs::write(rig.root.join(GITLEAKS_CONFIG), config).expect("write the rig's gitleaks config");
-        rig.commit("chore: the hygiene scan");
-        rig.git(&["push", "-q", "origin", "main"]);
-        rig.on_path("gitleaks", &gitleaks_stub());
-        fs::write(
-            rig.dir().join("denylist"),
-            "# a private term\n\nzzyzxhost\n",
-        )
-        .expect("write the denylist");
         fs::create_dir_all(rig.dir().join("tmp")).expect("create the rig's temp directory");
         rig.git(&["switch", "-q", "-c", LOOP]);
         Sim {
@@ -287,7 +275,6 @@ impl Sim {
     fn command(&self, program: &Path) -> Command {
         let mut command = self.rig.hermetic(Command::new(program));
         command
-            .env("JIGC_DENYLIST_FILE", self.rig.dir().join("denylist"))
             .env(
                 "TMPDIR",
                 format!("{}/", self.rig.dir().join("tmp").display()),
@@ -1583,6 +1570,82 @@ fn a_record_step_that_returns_no_evidence_of_its_checks_is_not_taken_as_recorded
     );
 }
 
+/// REPAIRED — the re-review's `R1` (records-state.md; the second repair plan's `K1`): a
+/// reporter whose text the record script refused has a shell, and writes the file itself.
+/// Until the repair the file was admitted by its name, committed and pushed unscanned. Now
+/// the stage's first report check vets what is pending: the file is no report and leaves
+/// the tree, its reviewer has left none — so its item is void, by the row a stage has for
+/// that — and THE STAGE REACHES ITS RECORD. Neither the commit nor the remote holds the
+/// text; the file is kept, outside the repository.
+#[test]
+fn a_report_overwritten_by_hand_voids_its_item_and_reaches_neither_the_commit_nor_the_remote() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::opened("vet-overwritten", &one_area());
+    let text = format!(
+        "# a review\n\nIt ran in {}/probe and met {DENY_TERM}.\n\n<!-- end of report -->\n",
+        sim.rig.dir().join("home").display()
+    );
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"overwrites": {"area-a:review": text}})),
+    );
+    let result = &ran.result;
+    assert_eq!(
+        result["status"], "triaged",
+        "the stage reached its record: {result}"
+    );
+    assert_eq!(result["counts"]["voided"], json!(["area-a"]), "{result}");
+    let state = sim.state();
+    assert_eq!(
+        results(&state, 1),
+        [json!([
+            "area-a",
+            1,
+            "void",
+            "its `review` step returned and left no report"
+        ])],
+        "the item is void, and says why: {state}"
+    );
+    // WHAT WAS COMMITTED AND PUSHED: the reports the script wrote, and not that file.
+    assert_eq!(
+        sim.reports(1),
+        lines(&["attempt.a1.md", "preflight.a1.md", "scope.a1.md"])
+    );
+    assert_eq!(sim.rig.status(), "");
+    assert_eq!(
+        sim.rig.remote(LOOP),
+        Some(sim.rig.rev("HEAD")),
+        "the record is pushed"
+    );
+    assert_eq!(
+        sim.rig
+            .git(&["log", "--all", "--format=%H", &format!("-S{DENY_TERM}")]),
+        "",
+        "and no commit of the repository — so none of the remote — holds the text"
+    );
+    // THE FILE IS KEPT, OUTSIDE THE REPOSITORY: where the record script set it aside. (The
+    // harness names no scratch root for it yet — the second repair's `K3` — so the
+    // directory is one the script minted under the temp directory.)
+    let aside: Vec<PathBuf> = fs::read_dir(sim.rig.dir().join("tmp"))
+        .expect("the rig's temp directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| {
+            path.file_name().is_some_and(|name| {
+                name.to_string_lossy()
+                    .starts_with("jigc-stabilize-refused-")
+            })
+        })
+        .collect();
+    assert_eq!(aside.len(), 1, "one file was set aside, once: {aside:?}");
+    assert_eq!(
+        fs::read_to_string(aside[0].join("r1__reports__test__area-a-review.a1.md"))
+            .expect("the file that was set aside"),
+        text
+    );
+}
+
 /// The hash comparison of ruling 11, driven: a driver that asserts another binary than the
 /// one the preflight built drove something else, and nothing it found is evidence about
 /// the candidate. (The whole-stage test could not see this comparison removed: every
@@ -1785,11 +1848,12 @@ fn the_records_commit_step_commits_exactly_the_applied_batch_or_nothing() {
             "branch --show-current",
             "status --porcelain --untracked-files=all",
             &format!("add -- {facts}"),
+            &format!("diff --name-only -- {facts}"),
             "commit -q -m docs(record): a record",
             "rev-parse HEAD",
             "status --porcelain --untracked-files=all",
         ]),
-        "the commands of the act, in order: nothing is pushed, and no path is added by a directory"
+        "the commands of the act, in order: what is staged is held to the tree once it is vetted, nothing is pushed, and no path is added by a directory"
     );
     record(&green, "2", LOOP).refused("no-batch");
 
@@ -1838,7 +1902,10 @@ fn an_attempt_is_begun_on_record_by_one_act_and_only_where_the_state_hands_it_ou
                 sim.rig.dir().join("tmp").display()
             )
         } else {
-            String::new()
+            format!(
+                "JIGC_DENYLIST_FILE='{}' ",
+                sim.rig.dir().join("no-denylist").display()
+            )
         };
         sim.rig.shell(&format!(
             "{environment}dev/stabilize-step begin --run {RUN} --round {round} --stage {stage} --attempt {attempt} --reporter attempt --commit {} --scratch {}",

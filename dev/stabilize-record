@@ -643,10 +643,12 @@
 #                        --attempt A [--] [REPORTER...]
 #       Exactly one report of that attempt per launched reporter. Prints
 #       {"check": "reports", "ok", "dir", "attempt", "missing", "extra",
-#       "other_attempts"}: a launched reporter with no report is missing; anything else
-#       in the stage's directory is extra, by file name — a report nobody launched, a
-#       stray file, the temporary of a killed write. Both fail. Reports of other
-#       attempts are listed and decide nothing.
+#       "other_attempts", "reports"}: a launched reporter with no report is missing;
+#       anything else in the stage's directory is extra, by file name — a report nobody
+#       launched, a stray file, the temporary of a killed write. Both fail. Reports of
+#       other attempts are listed and decide nothing. `reports` is each launched report
+#       that is there, with the sha256 of its bytes: a check kept in an applied batch
+#       says WHICH bytes it was a check of, and `vet` holds it to the disk again.
 #
 #   dev/stabilize-record check-ledger --run R [--] [KEY...]
 #       Exactly one ledger row per finding id. Prints {"check": "ledger", "ok",
@@ -722,6 +724,53 @@
 #   dev/stabilize-record recover --run R
 #       Settles a write that was killed, as every writer does before it writes (below).
 #       Prints {"recovered"} — the files it put in place.
+#
+#   dev/stabilize-record vet --run R [--subject TEXT] [--] [PATH...]
+#       WHAT IS ABOUT TO BE COMMITTED, HELD TO WHAT THIS SCRIPT WOULD HAVE WRITTEN; writes
+#       nothing. Every PATH is a file of the run, repository-relative as `pending` names
+#       it, read from the disk and held to the rules a writer holds its text to (WHAT A
+#       WRITER DOES TO ITS TEXT, below) by the writers' own functions: it lies below the
+#       run's directory behind no link, and a file beside the reports has a report's
+#       name; it is text; a report ends with its last line; NO HOST PATH IS LEFT IN IT —
+#       the text is what the placeholder replacement leaves, so the public placeholders
+#       themselves pass; no line reddens a standing fence; and the public-hygiene scan,
+#       ONE scan over all of them and the subject. --subject is the subject of the commit
+#       that would record them: one line, no host path, scanned with the files. And THE
+#       APPLIED BATCH'S REPORT CHECKS ARE HELD TO THE DISK AGAIN: a report such a check
+#       counted (check-reports: `reports`) is there, with the bytes it had — a check on
+#       record never outlives the file it was a check of.
+#       Prints {"check": "vet", "ok", "vetted": {path: sha256}, "refused": [{path, why,
+#       detail}], "subject": null | {why, detail}, "stale": [{dir, attempt, gone,
+#       changed}]} — `why` is the word a writer would have refused the text with (gone: no
+#       such file), and a hit is named by where it is, never by what matched.
+#
+#   dev/stabilize-record vet --range [--] REV...
+#       WHAT A PUSH WOULD PUBLISH, VETTED; writes nothing. REV... are the arguments of the
+#       range as `git rev-list` takes them — a branch, `--not`, `--remotes=<remote>` — and
+#       this is THE ONE CALL OF THIS SCRIPT THAT ASKS GIT ABOUT THE REPOSITORY, of the
+#       commits of that range and of nothing else. Over the range: the two scanners CI
+#       runs over a push, as CI runs them (.github/workflows/ci.yml, `hygiene`) — every
+#       commit message and every added line, of every path. And for every commit that
+#       changes a file of AN OPENED RUN (a path below completions/artifacts/<run>/ in a
+#       commit that holds that run's opening.md), the rules above on each such file as
+#       the commit holds it, and no host path in the commit's message. (What a commit
+#       changes is, for a merge, what differs from every parent: what its parents
+#       brought is vetted at their commits, or the remote holds it already.) A file outside a
+#       run's directory is held to the two scanners and to nothing else: the placeholder
+#       rule is the record's, and source code names /tmp.
+#       Prints {"check": "vet", "ok", "range", "commits", "refused": [{commit, path, why,
+#       detail}], "then"} — `path` is null for a commit's message, `then` what is done
+#       about a commit that is refused: it is local, and rewriting it is the human's.
+#
+#   dev/stabilize-record set-aside --run R [--to DIR] [--] PATH...
+#       A FILE THAT IS NO REPORT LEAVES THE TREE. Every PATH is one of the run's files
+#       that are written once — a report, a round's scope — and is vetted as `vet` does;
+#       each that is refused is MOVED to DIR, a directory outside the repository (one is
+#       minted under the system temp directory where none is named), under its path with
+#       `/` as `__`. A file that passes stays. The launched reporter whose file left has
+#       then left no report, which `check-reports` says and a stage has a row for. A
+#       table is never set aside: a batch is taken back whole (discard). Prints {"aside":
+#       [{path, why, detail, to}], "vetted": {path: sha256}}.
 #
 # THE ONE WRITE, AND THE JOURNAL. Everything a call writes is ONE BATCH — one file for
 # most calls, two for triage-set, every table of a record step for apply — and a batch is
@@ -817,7 +866,16 @@
 # other code of it spells them (tooling-tests/stabilize_harness_fence.rs, arms f and k).
 # Outside the harness the confinement is the orchestrator's discipline, and nothing's
 # enforcement. Nor does it know git: `settle` trusts that the commit was made, and
-# whether a pending file is committed is dev/stabilize-step's to read.
+# whether a pending file is committed is dev/stabilize-step's to read. (ONE read asks
+# git, and only about the commits it is handed: `vet --range`.)
+#
+# AND IT CANNOT KNOW WHO WROTE A FILE. A reporter has a shell, so a file at a report's
+# path is whatever its last writer left — the text this script refused, written there by
+# a redirect, has a report's name. So what a writer checks at its write is checked AGAIN
+# WHERE THE CONTENT BECOMES PERMANENT, by `vet`, which dev/stabilize-step asks at three
+# boundaries: every report check (the file is no report, and leaves the tree: set-aside),
+# the record's commit (nothing is committed, and the batch is taken back), and every push
+# it makes (nothing is pushed). A push made by hand with plain git is outside this.
 #
 # What a writer does to its text, in order — every writer alike, because every write
 # goes through one function:
@@ -896,6 +954,8 @@
 #   22  gate-check    failed: the gate shows something red that the candidate's gate
 #                     did not (the result is on stdout)
 #   23  fault         an input no refusal names, or a defect of this script: one line
+#   24  vet           failed: a file, a subject or a commit is not what this script would
+#                     have written, or a report check is stale (the result is on stdout)
 #
 # Needs python3, git and bash (dev/hygiene-scan), which the gate needs already, and
 # gitleaks and a denylist to write anything at all.
@@ -939,6 +999,7 @@ STATUS = {
 REPORTS_MISMATCH = 20
 LEDGER_MISMATCH = 21
 GATE_MISMATCH = 22
+VET_MISMATCH = 24
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
@@ -951,6 +1012,12 @@ SHA = re.compile(r"[0-9a-f]{7,40}")
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 REPORT_NAME = re.compile(r"(%s)\.a([1-9][0-9]{0,5})\.md" % SLUG.pattern)
+# A segment of a path below the run's directory, as `vet` is handed one; a round's
+# directory; and an argument of a range, as `git rev-list` takes it — a name, or one of
+# the two flags a range is cut with. Nothing else reaches a git command.
+SEGMENT = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*")
+ROUND_DIR = re.compile(r"r[1-9][0-9]{0,5}")
+REV = re.compile(r"--not|--remotes=[A-Za-z0-9._/-]+|[A-Za-z0-9_][A-Za-z0-9._/^~-]*")
 STAGES = ("test", "fix")
 # The last line of a report. A text without it was cut off, or never finished.
 REPORT_ENDS = "<!-- end of report -->"
@@ -1115,8 +1182,8 @@ WRITERS = {
     "item-set": "anywhere",
     "apply": "by-call",
 }
-READERS = ("state", "pending", "check-reports", "check-ledger", "gate-check")
-KEEPERS = ("discard", "settle", "recover")
+READERS = ("state", "pending", "check-reports", "check-ledger", "gate-check", "vet")
+KEEPERS = ("discard", "settle", "recover", "set-aside")
 ROUND_TAKES = {
     "candidate": "untested",
     "base": "untested",
@@ -1158,10 +1225,12 @@ GITLEAKS_FOUND = 97
 
 
 class Refusal(Exception):
-    def __init__(self, kind, detail):
+    def __init__(self, kind, detail, where=()):
         super().__init__(detail)
         self.kind = kind
         self.detail = detail
+        # For a hit of the scan: the files a scanner named, where it named any.
+        self.where = set(where)
 
 
 def refuse(kind, detail):
@@ -1357,12 +1426,8 @@ def did_not_run(why):
     refuse("did-not-run", "the public-hygiene scan did not run, so nothing was written: %s" % why)
 
 
-def hygiene_scan(files):
-    """The two scanners CI runs over a push, over `files` — every (path, text) of ONE
-    batch — committed, each at its own path, into one throwaway repository. Returns only
-    when both ran and found nothing: a batch is scanned whole before any of it is written,
-    and once, however many files it holds."""
-    rels = ", ".join(rel for rel, _ in files)
+def scan_tools():
+    """(the denylist, the scanner, the programs a scan runs) — or the scan DID NOT RUN."""
     denylist = os.environ.get("JIGC_DENYLIST_FILE") or os.path.join(os.path.expanduser("~"), ".config", "jigc", "denylist")
     if not os.path.isfile(denylist):
         did_not_run("no denylist at %s (implementation/public-hygiene.md)" % denylist)
@@ -1374,6 +1439,16 @@ def hygiene_scan(files):
         tools[tool] = shutil.which(tool)
         if tools[tool] is None:
             did_not_run("%s is not on PATH" % tool)
+    return denylist, scanner, tools
+
+
+def hygiene_scan(files):
+    """The two scanners CI runs over a push, over `files` — every (path, text) of ONE
+    batch — committed, each at its own path, into one throwaway repository. Returns only
+    when both ran and found nothing: a batch is scanned whole before any of it is written,
+    and once, however many files it holds."""
+    rels = ", ".join(rel for rel, _ in files)
+    denylist, scanner, tools = scan_tools()
 
     env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     env.update(
@@ -1422,7 +1497,7 @@ def hygiene_scan(files):
                 found = re.fullmatch(r"  (?:tree|path|added +[0-9a-f]+) +(\S.*)", line)
                 if found and found.group(1) not in places:
                     places.append(found.group(1))
-            refuse("hygiene", "the denylist matches at %s — by where, never by what; reword it (implementation/public-hygiene.md)" % (", ".join(places) or rels))
+            raise Refusal("hygiene", "the denylist matches at %s — by where, never by what; reword it (implementation/public-hygiene.md)" % (", ".join(places) or rels), {re.sub(r":[0-9]+$", "", place) for place in places})
         if out.returncode != 0:
             did_not_run("dev/hygiene-scan exited %d: %s" % (out.returncode, last_line(out)))
 
@@ -1434,10 +1509,12 @@ def hygiene_scan(files):
         out = ran(argv + [repo], "gitleaks")
         if out.returncode == GITLEAKS_FOUND:
             try:
-                found = ["rule %s at line %s%s" % (leak["RuleID"], leak["StartLine"], " of %s" % leak["File"] if len(files) > 1 and leak.get("File") else "") for leak in json.load(open(report, encoding="utf-8"))]
-            except (OSError, ValueError, KeyError, TypeError):
-                found = []
-            refuse("hygiene", "gitleaks found a secret-shaped string in %s: %s — a credential is never committed, even a revoked one" % (rels, "; ".join(found) or "no location reported"))
+                leaks = json.load(open(report, encoding="utf-8"))
+                found = ["rule %s at line %s%s" % (leak["RuleID"], leak["StartLine"], " of %s" % leak["File"] if len(files) > 1 and leak.get("File") else "") for leak in leaks]
+                where = {leak["File"] for leak in leaks if isinstance(leak.get("File"), str)}
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                found, where = [], set()
+            raise Refusal("hygiene", "gitleaks found a secret-shaped string in %s: %s — a credential is never committed, even a revoked one" % (rels, "; ".join(found) or "no location reported"), where)
         if out.returncode != 0:
             did_not_run("gitleaks exited %d: %s" % (out.returncode, last_line(out)))
 
@@ -3268,7 +3345,7 @@ def check_reports(args):
     attempt = int(number(args.attempt, "attempt"))
     launched = distinct([slug(name, "reporter") for name in args.names], "reporter")
     directory = below(run_dir, parts)
-    seen, extra, other = set(), [], []
+    seen, extra, other = {}, [], []
     for name in sorted(os.listdir(directory)) if os.path.isdir(directory) else []:
         path = os.path.join(directory, name)
         parsed = REPORT_NAME.fullmatch(name)
@@ -3277,7 +3354,7 @@ def check_reports(args):
         elif int(parsed.group(2)) != attempt:
             other.append(name)
         elif parsed.group(1) in launched:
-            seen.add(parsed.group(1))
+            seen[parsed.group(1)] = (name, hashlib.sha256(open(path, "rb").read()).hexdigest())
         else:
             extra.append(name)
     missing = [name for name in launched if name not in seen]
@@ -3290,6 +3367,7 @@ def check_reports(args):
         "missing": missing,
         "extra": extra,
         "other_attempts": other,
+        "reports": dict(seen[name] for name in launched if name in seen),
     }))
     return 0 if ok else REPORTS_MISMATCH
 
@@ -3545,6 +3623,305 @@ def recover_(args):
     say(json.dumps({"recovered": ["/".join(ARTIFACTS + (args.run, entry["path"])) for entry in held]}))
 
 
+# --- vet: what a writer checks, again, where the content becomes permanent ---------------
+
+
+def run_file(prefix, rel):
+    """The segments of a file of the run below its directory, and whether a writer would
+    have written it as a report, as a round's scope, or as neither."""
+    parts = rel[len(prefix):].split("/") if isinstance(rel, str) and rel.startswith(prefix) else []
+    if not parts or not all(SEGMENT.fullmatch(part) for part in parts):
+        refuse("outside", "%s is not a path below the run's directory, of plain segments" % shown(rel))
+    report = len(parts) > 2 and bool(ROUND_DIR.fullmatch(parts[0])) and parts[1] == "reports"
+    if report and not REPORT_NAME.fullmatch(parts[-1]):
+        refuse("bad-id", "%s lies beside the reports and has no report's name" % rel)
+    return parts, report, len(parts) == 2 and bool(ROUND_DIR.fullmatch(parts[0])) and parts[1] == "scope.md"
+
+
+def held_to_the_rules(text, report):
+    """Hold a text to what a writer holds its own to before the scan, by the writers' own
+    functions: it is text; a report ends with its last line; no host path is left in it —
+    it is what the placeholder replacement leaves; no line reddens a standing fence. The
+    refusal is the writer's own."""
+    if "\0" in text or not text.strip():
+        refuse("bad-value", "it is empty, or is not text")
+    if report and text.rstrip().rsplit("\n", 1)[-1].strip() != REPORT_ENDS:
+        refuse("truncated", "it does not end with the line `%s`: no report as this script writes one" % REPORT_ENDS)
+    replaced = public(text, [])
+    if replaced != text:
+        lines = [str(n) for n, (was, now) in enumerate(zip(text.split("\n"), replaced.split("\n")), 1) if was != now]
+        refuse("host-path", "line %s names a host path, which a writer of this script replaces by its public placeholder" % ", ".join(lines))
+    fence_check(text)
+
+
+def scan_hits(files):
+    """{path: the scan's refusal} for the files of `files` the public-hygiene scan refuses:
+    ONE scan where it finds nothing. Where it finds something the files the scanner names
+    are the ones — and the rest is scanned again, because the scan stops at its first
+    scanner that finds anything; a scanner that names no file is asked file by file. A
+    scanner that could not run is that refusal, never an answer."""
+    def alone(some):
+        try:
+            hygiene_scan(some)
+        except Refusal as refusal:
+            if refusal.kind != "hygiene":
+                raise
+            return refusal
+        return None
+
+    together = alone(files) if files else None
+    if together is None:
+        return {}
+    named = [rel for rel, _ in files if rel in together.where]
+    if named:
+        hits = {rel: together.detail for rel in named}
+        hits.update(scan_hits([file for file in files if file[0] not in named]))
+        return hits
+    if len(files) == 1:
+        return {files[0][0]: together.detail}
+    hits = {file[0]: found.detail for file, found in ((file, alone([file])) for file in files) if found}
+    return hits or {rel: together.detail for rel, _ in files}
+
+
+SUBJECT = "the-subject-of-the-commit"
+
+
+def vet_files(run_dir, run, names, subject):
+    """(vetted, refused, the subject's refusal) of files of the run, read from the disk:
+    {path: sha256} of each that is what a writer of this script would have left, and
+    [{path, why, detail}] of each that is not."""
+    prefix = "/".join(ARTIFACTS + (run,)) + "/"
+    vetted, refused, clean = {}, [], []
+    for rel in distinct(names, "path"):
+        try:
+            parts, report, _ = run_file(prefix, rel)
+            path = below(run_dir, parts)
+            if not os.path.isfile(path):
+                refused.append({"path": rel, "why": "gone", "detail": "no such file"})
+                continue
+            data = open(path, "rb").read()
+            try:
+                text = data.decode("utf-8")
+            except ValueError:
+                refuse("bad-value", "it is not UTF-8 text")
+            held_to_the_rules(text, report)
+        except Refusal as refusal:
+            if refusal.kind in ("did-not-run", "usage"):
+                raise
+            refused.append({"path": rel, "why": refusal.kind, "detail": refusal.detail})
+            continue
+        vetted[rel] = hashlib.sha256(data).hexdigest()
+        clean.append((rel, text))
+    said = None
+    if subject is not None:
+        try:
+            if not subject.strip() or "\n" in subject or "\r" in subject:
+                refuse("bad-value", "it is not one line that says something")
+            held_to_the_rules(subject, False)
+            clean.append((SUBJECT, subject + "\n"))
+        except Refusal as refusal:
+            said = {"why": refusal.kind, "detail": refusal.detail}
+    for rel, found in scan_hits(clean).items():
+        if rel == SUBJECT:
+            said = {"why": "hygiene", "detail": found}
+        else:
+            del vetted[rel]
+            refused.append({"path": rel, "why": "hygiene", "detail": found})
+    return vetted, refused, said
+
+
+def stale_checks(run_dir):
+    """The report checks of the applied batch that the disk no longer bears out: a report
+    such a check counted is gone, or holds other bytes than it had."""
+    batch = read_journal(run_dir)["batch"]
+    stale = []
+    for check in batch["checks"] if batch else []:
+        if not (isinstance(check, dict) and check.get("check") == "reports" and isinstance(check.get("reports"), dict) and isinstance(check.get("dir"), str)):
+            continue
+        gone, changed = [], []
+        for name, digest in check["reports"].items():
+            path = os.path.join(ROOT, check["dir"], name) if REPORT_NAME.fullmatch(name) else ""
+            if not os.path.isfile(path) or os.path.islink(path):
+                gone.append(name)
+            elif hashlib.sha256(open(path, "rb").read()).hexdigest() != digest:
+                changed.append(name)
+        if gone or changed:
+            stale.append({"dir": check["dir"], "attempt": check.get("attempt"), "gone": gone, "changed": changed})
+    return stale
+
+
+def asked_of_git(argv, what):
+    """A read of this repository's commits, for `vet --range` and nothing else: what git
+    printed, as bytes. A git that cannot answer is a vet that DID NOT RUN."""
+    try:
+        out = subprocess.run(["git"] + argv, cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True)
+    except OSError as err:
+        did_not_run("git could not be started (%s)" % err.strerror)
+    if out.returncode != 0:
+        did_not_run("git could not %s: %s" % (what, out.stderr.decode("utf-8", "replace").strip().split("\n")[-1] or "no message"))
+    return out.stdout
+
+
+def range_scan(revs):
+    """The two scanners CI runs over a push, as CI runs them (.github/workflows/ci.yml,
+    `hygiene`), over the range `revs` of THIS repository: every commit message and every
+    added line. The hits, each by where it is and never by what matched; a scanner that
+    could not run DID NOT RUN."""
+    denylist, scanner, tools = scan_tools()
+
+    def ran(argv, what):
+        try:
+            return subprocess.run(argv, cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True)
+        except OSError as err:
+            did_not_run("%s could not be started (%s)" % (what, err.strerror))
+
+    def last_line(out):
+        return out.stderr.decode("utf-8", "replace").strip().split("\n")[-1] or "no message"
+
+    hits = []
+    out = ran([scanner, denylist] + revs, "dev/hygiene-scan")
+    if out.returncode == 1:
+        for line in out.stdout.decode("utf-8", "replace").split("\n"):
+            message = re.fullmatch(r"  message  ([0-9a-f]+)", line)
+            added = re.fullmatch(r"  added    ([0-9a-f]+)  (\S.*):([0-9]+)", line)
+            if message:
+                hits.append({"commit": message.group(1), "path": None, "why": "hygiene", "detail": "the denylist matches its message"})
+            elif added:
+                hits.append({"commit": added.group(1), "path": added.group(2), "why": "hygiene", "detail": "the denylist matches at line %s" % added.group(3)})
+        if not hits:
+            hits.append({"commit": None, "path": None, "why": "hygiene", "detail": "the denylist matches in the range"})
+    elif out.returncode != 0:
+        did_not_run("dev/hygiene-scan exited %d: %s" % (out.returncode, last_line(out)))
+    with tempfile.TemporaryDirectory(prefix="jigc-stabilize-scan-") as work:
+        report = os.path.join(work, "gitleaks.json")
+        argv = [tools["gitleaks"], "git", "--redact", "--no-banner", "--no-color", "--exit-code", str(GITLEAKS_FOUND), "--report-format", "json", "--report-path", report, "--log-opts", " ".join(revs)]
+        config = os.path.join(ROOT, ".gitleaks.toml")
+        if os.path.isfile(config):
+            argv += ["--config", config]
+        out = ran(argv + [ROOT], "gitleaks")
+        if out.returncode == GITLEAKS_FOUND:
+            try:
+                leaks = [{"commit": leak.get("Commit") or None, "path": leak.get("File") or None, "why": "hygiene", "detail": "gitleaks rule %s at line %s" % (leak["RuleID"], leak["StartLine"])} for leak in json.load(open(report, encoding="utf-8"))]
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                leaks = []
+            hits += leaks or [{"commit": None, "path": None, "why": "hygiene", "detail": "gitleaks found a secret-shaped string in the range"}]
+        elif out.returncode != 0:
+            did_not_run("gitleaks exited %d: %s" % (out.returncode, last_line(out)))
+    return hits
+
+
+RANGE_THEN = "nothing of the range is on the remote, and a commit that is refused is LOCAL: rewriting it or taking it back is the human's to confirm (implementation/public-hygiene.md — a hit is fixed before the push, not after). This read is asked again afterwards; it answers ok once nothing unvetted is left, and only then is the branch pushed"
+
+
+def vet_range(revs):
+    """What a push of the range would publish, vetted: the two scanners over the range, and
+    — for every commit that changes a file of an opened run — the rules a writer holds its
+    text to, on each such file as the commit holds it, and no host path in its message."""
+    for rev in revs:
+        if not REV.fullmatch(rev):
+            refuse("bad-value", "%s is no argument of a range: a name, `--not`, or `--remotes=<remote>`" % shown(rev))
+    if not revs:
+        refuse("usage", "vet --range needs the range, as `git rev-list` takes it")
+    commits = asked_of_git(["rev-list", "--reverse"] + revs + ["--"], "list the range").decode("ascii", "replace").split()
+    refused = range_scan(revs) if commits else []
+    for hit in refused:
+        whole = [commit for commit in commits if hit["commit"] and commit.startswith(hit["commit"])]
+        hit["commit"] = whole[0] if len(whole) == 1 else hit["commit"]
+    prefix = "/".join(ARTIFACTS) + "/"
+    for commit in commits:
+        # What the commit ITSELF changes: for a merge, what differs from every parent —
+        # what its parents brought is vetted at their own commits, or was pushed before,
+        # and a file the remote already holds is not held against a later rule.
+        changed = asked_of_git(["diff-tree", "-r", "-c", "--root", "--no-renames", "--no-commit-id", "--name-only", "-z", commit], "list what %s changes" % commit).decode("utf-8", "surrogateescape").split("\0")
+        runs, touched = {}, False
+        for name in sorted({name for name in changed if name.startswith(prefix)}):
+            run = name[len(prefix):].split("/")[0]
+            if run not in runs:
+                runs[run] = bool(SLUG.fullmatch(run)) and bool(asked_of_git(["ls-tree", "-z", commit, "--", prefix + run + "/opening.md"], "read %s" % commit))
+            listed = asked_of_git(["ls-tree", "-z", commit, "--", name], "read %s" % commit).decode("utf-8", "surrogateescape") if runs[run] else ""
+            if not listed:
+                # A file of no opened run, or one the commit removed: nothing it publishes.
+                continue
+            touched = True
+            mode, kind, blob = listed.split("\t")[0].split(" ")
+            try:
+                _, report, _ = run_file(prefix + run + "/", name)
+                if mode == "120000" or kind != "blob":
+                    refuse("outside", "it is a link, or no file: a write there would land outside the run directory")
+                try:
+                    text = asked_of_git(["cat-file", "blob", blob], "read %s" % commit).decode("utf-8")
+                except ValueError:
+                    refuse("bad-value", "it is not UTF-8 text")
+                held_to_the_rules(text, report)
+            except Refusal as refusal:
+                if refusal.kind in ("did-not-run", "usage"):
+                    raise
+                refused.append({"commit": commit, "path": name, "why": refusal.kind, "detail": refusal.detail})
+        if touched:
+            try:
+                message = asked_of_git(["log", "-1", "--format=%B", commit, "--"], "read %s" % commit).decode("utf-8", "replace")
+                replaced = public(message, [])
+                if replaced != message:
+                    refuse("host-path", "its message names a host path, which no record of a run does")
+            except Refusal as refusal:
+                if refusal.kind in ("did-not-run", "usage"):
+                    raise
+                refused.append({"commit": commit, "path": None, "why": refusal.kind, "detail": refusal.detail})
+    ok = not refused
+    say(json.dumps({"check": "vet", "ok": ok, "range": revs, "commits": commits, "refused": refused, "then": None if ok else RANGE_THEN}))
+    return 0 if ok else VET_MISMATCH
+
+
+def vet(args):
+    """What a writer checks at its write, checked again where the content becomes
+    permanent: the files of a run that are about to be committed, with the subject of
+    their commit — or the commits a push would publish. It writes nothing."""
+    if args.range:
+        if args.run is not None or args.subject is not None:
+            refuse("usage", "vet --range takes the range and nothing of a run: a push publishes commits, whatever run they are of")
+        return vet_range(args.names)
+    if args.run is None:
+        refuse("usage", "vet takes --run and the run's files, or --range and a range")
+    run_dir = open_run(args.run)
+    fcntl.flock(os.open(run_dir, os.O_RDONLY), fcntl.LOCK_SH)
+    vetted, refused, subject = vet_files(run_dir, args.run, args.names, args.subject)
+    stale = stale_checks(run_dir)
+    ok = not refused and subject is None and not stale
+    say(json.dumps({"check": "vet", "ok": ok, "vetted": vetted, "refused": refused, "subject": subject, "stale": stale}))
+    return 0 if ok else VET_MISMATCH
+
+
+def set_aside(args):
+    """A file that is no report leaves the tree: each of the named written-once files that
+    `vet` refuses is moved out of the repository, and its reporter has then left none."""
+    run_dir = open_run(args.run)
+    prefix = "/".join(ARTIFACTS + (args.run,)) + "/"
+    to = args.to
+    if to is not None and (not os.path.isabs(to) or (os.path.realpath(to) + "/").startswith(os.path.realpath(ROOT) + "/")):
+        refuse("bad-value", "--to %s is not an absolute directory outside the repository: what is set aside leaves the tree" % shown(to))
+    for rel in args.names:
+        _, report, scope = run_file(prefix, rel)
+        if not report and not scope:
+            refuse("bad-value", "%s is no report and no round's scope: only a file that is written once is set aside — a table of a batch is taken back whole (`discard`)" % rel)
+    one_writer(run_dir)
+    vetted, refused, _ = vet_files(run_dir, args.run, args.names, None)
+    aside = []
+    for entry in refused:
+        source = os.path.join(ROOT, entry["path"])
+        if not os.path.lexists(source):
+            continue
+        if to is None:
+            to = tempfile.mkdtemp(prefix="jigc-stabilize-refused-")
+        os.makedirs(to, exist_ok=True)
+        name, n = entry["path"][len(prefix):].replace("/", "__"), 0
+        while os.path.lexists(os.path.join(to, name + (".%d" % n if n else ""))):
+            n += 1
+        target = os.path.join(to, name + (".%d" % n if n else ""))
+        shutil.move(source, target)
+        aside.append(dict(entry, to=target))
+    say(json.dumps({"aside": aside, "vetted": vetted}))
+
+
 class Arguments(argparse.ArgumentParser):
     def error(self, message):
         refuse("usage", "%s — see dev/stabilize-record --help" % message)
@@ -3554,16 +3931,17 @@ def arguments(argv):
     parser = Arguments(prog="dev/" + PROG, add_help=False, allow_abbrev=False)
     commands = parser.add_subparsers(dest="command", required=True, parser_class=Arguments)
 
-    def command(name, act, flags, writes=False, names=False):
+    def command(name, act, flags, writes=False, names=False, run=True):
         sub = commands.add_parser(name, add_help=False, allow_abbrev=False)
         sub.set_defaults(act=act)
-        sub.add_argument("--run", required=True)
+        sub.add_argument("--run", required=run)
         for flag, required in flags:
             sub.add_argument("--" + flag, required=required)
         if writes:
             sub.add_argument("--scratch", action="append", default=[])
         if names:
             sub.add_argument("names", nargs="*")
+        return sub
 
     stage = [("round", True), ("stage", True), ("cycle", False), ("attempt", True)]
     command("report", report, stage + [("reporter", True)], writes=True)
@@ -3586,6 +3964,8 @@ def arguments(argv):
     command("discard", discard, [])
     command("settle", settle, [])
     command("recover", recover_, [])
+    command("vet", vet, [("subject", False)], names=True, run=False).add_argument("--range", action="store_true")
+    command("set-aside", set_aside, [("to", False)], names=True)
     # THE WRITER x STATE TABLE has a row for every subcommand and for every fact: one added
     # without its row is no call this script takes.
     rows = [(set(commands.choices), set(WRITERS) | set(READERS) | set(KEEPERS), "subcommand"), (set(ROUND_FACTS), set(ROUND_TAKES), "fact of a round's record"), (set(RUN_FACTS), set(RUN_TAKES), "fact of the run")]
