@@ -1,4 +1,15 @@
-# The regression set's first part — the record of its first run
+# The regression set's first part — the records of its runs
+
+## The runs, and which is the current evidence
+
+| run | candidate | the list the verdict was given over | verdict | record |
+|---|---|---|---|---|
+| 1 | `fix/rc24-tier1` at `d423f09b` — the product **before** the eleven pre-opening fixes | a file of the working tree, untracked when the run read it; 21 rows, sha256 `191d0a00…` | green: 21 differences, all 21 listed | this file, below; [result.json](result.json) |
+| 2 | `fix/rc24-regression` at `8f13ea7b` — the product as merged at `b33bf39b`, with the eleven fixes | the candidate's commit's; the same 21 rows, sha256 `191d0a00…` | **red: 22 differences, 1 not on the list** | [run-2.md](run-2.md); [run-2-result.json](run-2-result.json) |
+
+**The current evidence is run 2, for the candidate `8f13ea7b`: red.** The one unlisted difference belongs to a ruled fix — item 21, `1c7d391c` — and has no row yet; [run-2.md](run-2.md) has the test and the checks. **Run 1's green is no evidence for the tree as it stands**, for two reasons: its candidate is the product before the eleven fixes, and its list was read from a file no commit held — the call it was made with is refused by the tool as it now is (`DECISIONS.md` → *2026-10-07 — The regression tool's green rests on facts of the two commits*).
+
+**Everything below this line is the record of run 1, as it was written.**
 
 **Run 2026-10-07 on macOS (aarch64, 10 cores) — rustc 1.95.0, cargo-nextest 0.9.143, git 2.54.0 — by [`dev/regression-set`](../../../../../dev/regression-set) as commit `d423f09b` holds it.** `<repo>` is the main checkout, `<scratch>` the scratch root of the run; nothing else of the host is named here. The check, what it establishes and what it cannot see: [implementation/stabilization-workflow.md](../../../../../implementation/stabilization-workflow.md) → The regression set. The choices inside the tool: `DECISIONS.md` → *2026-10-06 — The regression set's first part, as a tool*. This record restates neither.
 
