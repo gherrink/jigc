@@ -123,8 +123,7 @@
 #
 # THE SYNTHETIC OPENING — never the human-led opening of a run: the smallest test set
 # that has one item of each kind a real round 1 has. Everything in it is this tool's
-# table (ITEMS, CLAUSES, DOOR, SEEDED), and its text is printable ASCII: until the harness
-# reads a digest, a line that carries it is relayed by an agent.
+# table (ITEMS, CLAUSES, DOOR, SEEDED), and its text is printable ASCII.
 #
 #   the census   no-lost-files, working-product, usable-by-agents, migration-works — the
 #                exit rule's four clauses (DECISIONS.md -> 2026-10-04). The fourth has no
@@ -136,17 +135,20 @@
 #                * cross-cutting   audit-cross-cutting  no-lost-files     every candidate
 #                * arm-control     trial-arm            usable-by-agents  every candidate
 #                  drive-doc-list  audit-drive          usable-by-agents  every candidate
-#                * gate            check                working-product   every candidate
+#                * gate            held-gate            working-product   every candidate
 #                * regression-set  held-regression      working-product   every candidate
 #                (*: run where --items names none.) `arm-control` is walk arm 00 of the trial
 #                protocol, the positive control: it is scripted, so it needs the trial
 #                image and a container runtime and no credential. `drive-doc-list` is ITS
-#                STAND-IN for a machine without one. `gate` is answered from the
-#                candidate's own gate; `regression-set` is the long scripted check,
-#                about thirty-five minutes — A HELD CHECK: its kind names the command
-#                the step tool holds (its `hold-start --kind regression`); that tool
-#                starts it, waits for it and judges it, and the item's result is
-#                written from the tool's verdict file and from no agent's word.
+#                STAND-IN for a machine without one. `gate` and `regression-set` are
+#                HELD CHECKS: the kind of each names the command the step tool holds
+#                (its `hold-start --kind gate`, `--kind regression`); that tool starts
+#                it, a step of the stage asks after it, the tool judges it, and the
+#                item's result is written from the tool's verdict file and from no
+#                agent's word. `gate` is answered from the candidate's own gate, which
+#                every stage holds once and does not run twice; `regression-set` is the
+#                long scripted check, about thirty-five minutes, started after that gate
+#                and never beside it.
 #   the finding  ONE ledger row of round 0, `canary-seeded-claim`, ungraded: a CLAIM
 #                about the door that would break the first clause if it were true — that
 #                `jigc doc list`, at exit 0, removes an untracked file — with its block
@@ -177,19 +179,20 @@
 # `args.scope` names it leaves the review row unselected and the seeded finding outside
 # the round's test set — the state's `never_selected` and `check`'s `selected` say so.
 #
-# WHAT IT STANDS ON TODAY, and what changes it. The opening is written for the scripts
-# as they stand: `gate` is an item of kind `check`, whose BRIEF the preflight reads, and
-# `regression-set` is a held check, `held-regression` — a kind the record script reads
-# (its result is the verdict file of dev/stabilize-step's held command) AND THE HARNESS
-# DOES NOT RUN YET: until it starts held commands by tool steps (the second repair plan's
-# K11) a stage over an opening that holds the item begins its attempt, runs its preflight
-# and its scope step, and halts at the state, naming the item and its kind — an attempt
-# counted, no instrument run, no record made. So a canary is run with the default items
-# only once that task has landed; the suite drives its simulated stage without the item
-# until then, and pins the halt. `args` is the stage's argument object, and
-# `expect` counts the agents of the harness as it is — no step of a held command, and no
-# digest: a harness that reads a digest, held commands as tool steps and reports written
-# from files change the count, and the suite's simulated stage goes red where they do.
+# WHAT IT STANDS ON. The opening is written for the scripts and the harness as they
+# stand since the second repair plan's K11: NO AGENT OF A STAGE COMPOSES A SHELL. The two
+# binaries, the candidate's gate, the regression set and the record's gate are each ONE
+# long command dev/stabilize-step holds — started by one plain call of a step, asked
+# after by one plain call of another, which its agent runs again while the tool says
+# `running`, and judged by the tool. Every report, the round's scope and the record's
+# batch reach their writer from a file. So `expect` counts, beside the agents of the
+# chains, TWO STEPS PER HELD COMMAND — and the suite's simulated stage goes red where the
+# harness launches another number. `args` is the stage's argument object. WHAT THE
+# SESSION NEEDS, beside this line: an allow rule for each of the three tools a prompt of
+# the harness names a command of — dev/stabilize-step, dev/stabilize-record and, for a
+# probe, dev/stabilize-probe — which the committed settings carry into the clone; what
+# a role runs of its own craft (a reviewer's rig, a driver's commands on the binary, the
+# trial image) is under the session's permission mode, and a prompt can appear there.
 #
 # TO DISPOSE OF IT. Nothing is to be removed inside this repository: the tool writes no
 # file of it. The canary is ROOT, a directory under a temp or scratch directory, and goes
@@ -290,10 +293,12 @@ CLAUSES = ("no-lost-files", "working-product", "usable-by-agents", "migration-wo
 DOOR = "jigc doc list"
 # Where the regression set's list lies in this repository.
 LIST = "completions/artifacts/M55/stabilization-build/regression-set/intended-changes.tsv"
-# The items, in the test set's order. `agents` is how many agents the item's chain
-# launches in a stage where every one of them ends well (the harness's CHAINS; a check
-# has no chain: the preflight runs it); `image` that its chain needs the trial image,
-# which is one more preflight.
+# The items, in the test set's order. `agents` is how many agents the item launches in a
+# stage where every one of them ends well: the steps of its chain (the harness's CHAINS)
+# — or, for a held check, the two steps of its command, its start and the step that asks
+# after it, which are one-command steps of dev/stabilize-step (`steps`). A held gate
+# launches none: it is answered from the candidate's own gate. `image`: its chain needs
+# the trial image, which is one more preflight.
 ITEMS = (
     {
         "item": "row-doc-list",
@@ -335,12 +340,12 @@ ITEMS = (
     },
     {
         "item": "gate",
-        "kind": "check",
+        "kind": "held-gate",
         "clause": "working-product",
         "runs": "every-candidate",
         "default": True,
         "agents": 0,
-        "brief": "The full gate, `dev/gate`, on the candidate: answered from the candidate's own gate of this stage - it is not run twice.",
+        "brief": "The full gate on the candidate, AS A HELD COMMAND of dev/stabilize-step (`hold-start --kind gate`): answered from the candidate's own gate, which every stage holds once - it is not run twice. This item's result is written from that verdict's file. No agent runs a command off this brief.",
     },
     {
         "item": "regression-set",
@@ -348,17 +353,21 @@ ITEMS = (
         "clause": "working-product",
         "runs": "every-candidate",
         "default": True,
-        "agents": 0,
+        "agents": 2,
+        "steps": 2,
         "brief": "The regression set, first part - a long scripted check, about thirty-five minutes, AS A HELD COMMAND of dev/stabilize-step (`hold-start --kind regression`): the previous release's commit %(previous)s against the candidate's, over the list " + LIST + " as the candidate holds it. The tool starts it, waits for it and reads the verdict out of the ONE line dev/regression-set prints; this item's result is written from that verdict's file. No agent runs a command off this brief.",
     },
 )
-# The agents of a `test` stage beside the items' chains, where every agent ends well and
-# leaves nothing open and the ONE seeded finding is sent to a verifier: the git state,
-# the state, the attempt's marker, the preflight beside the scope step, the state, the
-# report check, triage, the verifier, the report check, the record's executor, its
-# commit, the push, the state — nine of them one-command steps of dev/stabilize-step.
-STAGE_AGENTS = 14
-STAGE_TOOL_STEPS = 9
+# The agents of a `test` stage beside the items', where every agent ends well and leaves
+# nothing open and the ONE seeded finding is sent to a verifier: the git state, the
+# state, the attempt's marker, the preflight, THREE HELD COMMANDS — the candidate's
+# binary, the previous release's, the candidate's gate: a start and a step that asks
+# after it each — beside the scope step, the state, the report check, triage, the
+# verifier, the report check, the record's executor, THE RECORD'S GATE, held — two steps
+# more — its commit, the push, the state. Seventeen of them are one-command steps of
+# dev/stabilize-step: the nine of the acts, and the eight of the four held commands.
+STAGE_AGENTS = 22
+STAGE_TOOL_STEPS = 17
 # The plan's estimate for the five default items, in minutes; measured by nobody.
 WALL_MINUTES = {"from": 120, "to": 150}
 # The seeded finding: its key, and the heading of its block in the opening record.
@@ -628,7 +637,7 @@ def expected(items):
     of them are one-command steps of the step tool."""
     second = 1 if any(row.get("image") for row in items) else 0
     default = [row["item"] for row in items] == [row["item"] for row in ITEMS if row["default"]]
-    return {"agents": STAGE_AGENTS + second + sum(row["agents"] for row in items), "tool_steps": STAGE_TOOL_STEPS, "wall_minutes": WALL_MINUTES if default else None}
+    return {"agents": STAGE_AGENTS + second + sum(row["agents"] for row in items), "tool_steps": STAGE_TOOL_STEPS + sum(row.get("steps", 0) for row in items), "wall_minutes": WALL_MINUTES if default else None}
 
 
 # --- setup ----------------------------------------------------------------------
