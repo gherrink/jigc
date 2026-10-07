@@ -18,6 +18,12 @@
 //! - *The list's form*, and that a row pointing at nothing refuses the whole list — against
 //!   a throwaway repository with a commit before the release, the release, an intended
 //!   change, the candidate, and a commit after it.
+//! - *Which list a verdict rests on.* The list is a path **in the candidate's commit**, so
+//!   every arm's candidate is a commit that holds its list ([`Rig::candidate_with`]); a file
+//!   the commit does not hold is refused, whatever the working tree has at the path
+//!   ([`a_list_that_is_not_in_the_candidates_commit_is_refused`]); a run records the list
+//!   it read, and a verdict over another one is void
+//!   ([`a_verdict_over_another_list_than_the_run_read_is_void_and_never_green`]).
 //! - *The run's own order*, with a stand-in for cargo ([`FAKE_CARGO`]) that builds nothing
 //!   and is **faithful where the trap is**: asked for a run that is not made from the
 //!   recorded build, it copies the previous release's binary back over the path, as cargo
@@ -47,6 +53,9 @@ use crate::support::scratch::ScratchDir;
 use super::placed_executable;
 
 const TOOL: &str = "dev/regression-set";
+
+/// The list's path in the rig's repository, as a call names it.
+const LIST: &str = "record/intended-changes.tsv";
 
 /// A space, both quotes and a `#`: a path that breaks any command that is not quoted, and
 /// any TOML string that is not escaped.
@@ -98,6 +107,10 @@ fn repo_root() -> PathBuf {
 /// [`previous`](Rig::previous) release, an [`intended`](Rig::intended) change, the
 /// [`candidate`](Rig::candidate) — whose `DECISIONS.md` has one heading that opens *The
 /// cap is ruled* and two that open *Twice* — and a commit [`later`](Rig::later) than it.
+///
+/// **The candidate a call names is never that commit itself**: the list is read out of the
+/// candidate's commit, so each arm's candidate is one commit on top of it that holds the
+/// arm's list at [`LIST`] ([`candidate_with`](Rig::candidate_with)).
 struct Rig {
     dir: ScratchDir,
     root: PathBuf,
@@ -290,10 +303,33 @@ impl Rig {
 
     /// One file written and committed; the commit's sha.
     fn change(&self, rel: &str, text: &str, subject: &str) -> String {
-        fs::write(self.root.join(rel), text).unwrap_or_else(|e| panic!("write `{rel}`: {e}"));
-        self.git(&["add", "--", rel]);
+        self.commit(&[(rel, text.as_bytes())], subject)
+    }
+
+    /// These files written and committed as one commit on the commit checked out; its sha.
+    fn commit(&self, files: &[(&str, &[u8])], subject: &str) -> String {
+        for (rel, bytes) in files {
+            let path = self.root.join(rel);
+            fs::create_dir_all(path.parent().expect("a file has a directory"))
+                .unwrap_or_else(|e| panic!("create the directory of `{rel}`: {e}"));
+            fs::write(path, bytes).unwrap_or_else(|e| panic!("write `{rel}`: {e}"));
+            self.git(&["add", "--", rel]);
+        }
         self.git(&["commit", "-q", "-m", subject]);
         self.git(&["rev-parse", "HEAD"])
+    }
+
+    /// A candidate that holds these files: one commit on top of the rig's
+    /// [`candidate`](Rig::candidate). The rig's dates and identity are fixed, so the same
+    /// files give the same commit however often it is asked for.
+    fn candidate_holding(&self, files: &[(&str, &[u8])]) -> String {
+        self.git(&["checkout", "-q", "--detach", &self.candidate]);
+        self.commit(files, "docs: the list of intended changes")
+    }
+
+    /// The candidate whose commit holds a list of this text at [`LIST`].
+    fn candidate_with(&self, list: impl AsRef<[u8]>) -> String {
+        self.candidate_holding(&[(LIST, list.as_ref())])
     }
 
     /// The tool, called from outside its repository — it finds that from where it lies.
@@ -326,10 +362,10 @@ impl Rig {
         self.tool_as(args, |_| {})
     }
 
-    /// A list of intended changes with this text, as a file outside the repository.
-    fn list(&self, text: impl AsRef<[u8]>) -> String {
+    /// A file with this text outside the repository — what no commit holds.
+    fn file_outside(&self, text: impl AsRef<[u8]>) -> String {
         let path = self.dir.path().join("intended-changes.tsv");
-        fs::write(&path, text).expect("write the list");
+        fs::write(&path, text).expect("write the file");
         path.to_str().expect("a UTF-8 path").to_owned()
     }
 
@@ -341,26 +377,35 @@ impl Rig {
         )
     }
 
-    /// `check-list` over a list with this text, between the rig's release and candidate.
+    /// `check-list` over a list with this text, between the rig's release and the
+    /// candidate that holds it.
     fn check_list(&self, text: impl AsRef<[u8]>) -> Called {
-        let list = self.list(text);
+        let candidate = self.candidate_with(text);
         self.tool(&[
             "check-list",
             "--previous",
             &self.previous,
             "--candidate",
-            &self.candidate,
+            &candidate,
             "--list",
-            &list,
+            LIST,
         ])
     }
 
-    /// The facts of a run that held: two binaries, a path a test binary names, the
-    /// previous release's hash around the baseline and the candidate's around its run.
+    /// The facts of a run that held, over an empty list.
     fn facts(&self) -> Value {
+        self.facts_over("")
+    }
+
+    /// The facts of a run that held, over a list of this text: two binaries, a path a test
+    /// binary names, the previous release's hash around the baseline and the candidate's
+    /// around its run — and the list the run read, by its path and its hash, in the
+    /// candidate that holds it.
+    fn facts_over(&self, list: &str) -> Value {
         json!({
             "previous": {"commit": self.previous, "sha256": OLD_HASH},
-            "candidate": {"commit": self.candidate, "sha256": NEW_HASH},
+            "candidate": {"commit": self.candidate_with(list), "sha256": NEW_HASH},
+            "list": {"path": LIST, "sha256": sha256_of(list.as_bytes())},
             "baked_path": "/work/target-previous/debug/jigc",
             "named_by": 12,
             "at_baked_path": {
@@ -396,20 +441,21 @@ impl Rig {
         at.to_str().expect("a UTF-8 path").to_owned()
     }
 
-    /// `verdict` over the run `suite` describes, with `facts`, against a list of this text.
-    fn verdict_with(&self, facts: &Value, suite: &[Ran], list: &str) -> Called {
+    /// `verdict` over the run `suite` describes, with `facts` — against the list at
+    /// [`LIST`] in the candidate the facts name.
+    fn verdict_with(&self, facts: &Value, suite: &[Ran]) -> Called {
         let (baseline, candidate) = reports(suite);
         let evidence = self.evidence(Some(&facts.to_string()), Some(&baseline), Some(&candidate));
-        self.verdict_over(&evidence, list)
+        self.verdict_over(&evidence)
     }
 
+    /// `verdict` over the run `suite` describes, made over a list of this text.
     fn verdict(&self, suite: &[Ran], list: &str) -> Called {
-        self.verdict_with(&self.facts(), suite, list)
+        self.verdict_with(&self.facts_over(list), suite)
     }
 
-    fn verdict_over(&self, evidence: &str, list: &str) -> Called {
-        let list = self.list(list);
-        self.tool(&["verdict", "--evidence", evidence, "--list", &list])
+    fn verdict_over(&self, evidence: &str) -> Called {
+        self.tool(&["verdict", "--evidence", evidence, "--list", LIST])
     }
 }
 
@@ -576,14 +622,25 @@ fn every_difference_on_the_list_is_green() {
         "each difference with the row that lists it"
     );
     assert_eq!(line["stale"], json!([]));
-    assert_eq!(line["list"]["rows"], 2);
+    let candidate = rig.candidate_with(&list);
+    assert_eq!(
+        line["list"],
+        json!({
+            "path": LIST,
+            "commit": candidate,
+            "sha256": sha256_of(list.as_bytes()),
+            "rows": 2,
+        }),
+        "the line says which list the verdict rests on: its path, the commit it was read \
+         out of, and its hash"
+    );
     assert_eq!(
         line["previous"],
         json!({"commit": rig.previous, "sha256": OLD_HASH})
     );
     assert_eq!(
         line["candidate"],
-        json!({"commit": rig.candidate, "sha256": NEW_HASH})
+        json!({"commit": candidate, "sha256": NEW_HASH})
     );
     assert_eq!(
         line["proof"],
@@ -738,7 +795,7 @@ fn a_binary_that_was_put_back_is_void_and_never_green() {
     let rig = Rig::new();
     let mut facts = rig.facts();
     facts["at_baked_path"]["candidate_after"] = json!(OLD_HASH);
-    let called = rig.verdict_with(&facts, &quiet(40), "");
+    let called = rig.verdict_with(&facts, &quiet(40));
     let line = called.void("swap", "the previous release's binary, put back");
     assert_eq!(
         line["proof"]["candidate_after"], OLD_HASH,
@@ -1023,7 +1080,7 @@ fn each_way_a_run_establishes_nothing_is_void_with_its_reason() {
     for (what, facts, baseline, candidate, reason, saying) in rows {
         // A cut-off or non-object `run.json` names no commits, so no list is read at all.
         let evidence = rig.evidence(facts.as_deref(), baseline, candidate);
-        let called = rig.verdict_over(&evidence, "");
+        let called = rig.verdict_over(&evidence);
         assert_eq!(
             (called.code, called.line["reason"].as_str()),
             (status_of(reason), Some(reason)),
@@ -1065,7 +1122,7 @@ test flow19_planning_encode::flow19_warm_append_over_an_oob_drifted_singleton_co
         .to_owned()
         + "</testcase>\n    </testsuite>\n    <testsuite name=\"jigc-engine\">\n        <testcase name=\"write::splice_prop_tests::set_slot_into_decision_is_byte_stable\" classname=\"jigc-engine\" time=\"0.308\"/>\n    </testsuite>\n</testsuites>\n";
     let evidence = rig.evidence(Some(&rig.facts().to_string()), Some(&baseline), Some(REAL));
-    let called = rig.verdict_over(&evidence, "");
+    let called = rig.verdict_over(&evidence);
     let line = called.verdict("red");
     assert_eq!(line["counts"]["tests"], 3, "{}", called.raw);
     assert_eq!(
@@ -1115,9 +1172,15 @@ fn a_list_in_its_form_is_read() {
             },
         ])
     );
-    // The candidate's own commit is a change since the release, and the newest one.
-    let own = format!("jigc\tt::a\tx\tcommit:{}\n", rig.candidate);
-    assert_eq!(rig.check_list(&own).code, 0);
+    assert_eq!(
+        (&called.line["list"]["path"], &called.line["list"]["commit"]),
+        (&json!(LIST), &json!(rig.candidate_with(&text))),
+        "and the line says where it was read: the path, in the candidate's commit"
+    );
+    assert_eq!(called.line["list"]["sha256"], sha256_of(text.as_bytes()));
+    // The newest commit a row can point at is the one the list's own was made on.
+    let newest = format!("jigc\tt::a\tx\tcommit:{}\n", rig.candidate);
+    assert_eq!(rig.check_list(&newest).code, 0);
 }
 
 /// One row per way a list is not in its form or points at nothing: each refuses the whole
@@ -1283,17 +1346,184 @@ fn a_list_out_of_its_form_or_pointing_at_nothing_is_refused() {
 
     let called = rig.check_list([b'j', 0xff, b'\n']);
     called.refused("list", "is not UTF-8");
+}
 
-    let called = rig.tool(&[
-        "check-list",
-        "--previous",
-        &rig.previous,
-        "--candidate",
-        &rig.candidate,
-        "--list",
-        "no/such/list.tsv",
-    ]);
-    called.refused("list", "cannot read the list");
+/// **What a green rests on is a fact of the candidate's commit** (the re-review's `R-M6`:
+/// the first green on record was given over a file no commit held). The list is named by
+/// its path in the repository and read out of the candidate's commit — never from the
+/// working tree, and never from a file somewhere else.
+#[test]
+fn a_list_that_is_not_in_the_candidates_commit_is_refused() {
+    let rig = Rig::new();
+    let unruled = rig.row("jigc::g_flow", "some_suite::a_test_a_fixer_broke");
+    let check = |candidate: &str, list: &str| {
+        // Called from the repository's root, where a path in the repository names the
+        // working tree's file too: what a caller's shell would hand a tool that opens it.
+        rig.tool_as(
+            &[
+                "check-list",
+                "--previous",
+                &rig.previous,
+                "--candidate",
+                candidate,
+                "--list",
+                list,
+            ],
+            |command| {
+                command.current_dir(&rig.root);
+            },
+        )
+    };
+
+    // The candidate holds an empty list. The working tree's file at the same path is then
+    // given a row nobody committed: the list that is read is the commit's.
+    let candidate = rig.candidate_with("");
+    fs::write(rig.root.join(LIST), &unruled).expect("write the working tree's file");
+    let called = check(&candidate, LIST);
+    assert_eq!(
+        (called.code, called.line["status"].as_str()),
+        (0, Some("listed")),
+        "{}",
+        called.raw
+    );
+    assert_eq!(
+        (&called.line["list"]["rows"], &called.line["list"]["sha256"]),
+        (&json!([]), &json!(sha256_of(b""))),
+        "the list is the candidate's commit's, whatever the working tree has at the path: {}",
+        called.raw
+    );
+
+    // A candidate that has no file at the path, while the working tree still has one.
+    let called = check(&rig.candidate, LIST);
+    called.refused("list", "the candidate's commit holds no file");
+
+    // A file no commit holds, named as a caller's shell would name it.
+    let outside = rig.file_outside(&unruled);
+    for (what, named) in [
+        ("an absolute path", outside.as_str()),
+        (
+            "a path that leaves the repository",
+            "../intended-changes.tsv",
+        ),
+        (
+            "a path with an empty segment",
+            "record//intended-changes.tsv",
+        ),
+    ] {
+        let called = check(&candidate, named);
+        assert_eq!(called.code, status_of("list"), "{what}: {}", called.raw);
+        called.refused("list", "is named by its path in the repository");
+    }
+
+    // A directory of the commit is no list, and neither is a path the commit lacks.
+    check(&candidate, "record").refused("list", "the candidate's commit holds no file");
+    check(&candidate, "no/such/list.tsv").refused("list", "the candidate's commit holds no file");
+}
+
+/// **A verdict is given over the list its run read, or it is void — never green.** A run
+/// records the list's path and hash; evidence that names another list than the one the
+/// verdict is asked over establishes nothing about it.
+#[test]
+fn a_verdict_over_another_list_than_the_run_read_is_void_and_never_green() {
+    let rig = Rig::new();
+    let suite = [
+        ran("jigc-engine", "unit::holds", Pass, Pass),
+        ran("jigc::g_flow", "setup::refuses_a_seeded_file", Pass, Fail),
+    ];
+    let row = rig.row("jigc::g_flow", "setup::refuses_a_seeded_file");
+    const OTHER: &str = "record/another-list.tsv";
+    let held = rig.facts();
+    // The candidate holds two lists: an empty one, and one with the row that would make
+    // the run green. It is the commit checked out, so the working tree has both too.
+    let candidate = rig.candidate_holding(&[(LIST, b""), (OTHER, row.as_bytes())]);
+    let facts_naming = |path: &str, sha256: String| {
+        let mut facts = held.clone();
+        facts["candidate"]["commit"] = json!(candidate);
+        facts["list"] = json!({"path": path, "sha256": sha256});
+        facts
+    };
+    let verdict = |facts: &Value, list: &str| {
+        let (baseline, candidate) = reports(&suite);
+        let evidence = rig.evidence(Some(&facts.to_string()), Some(&baseline), Some(&candidate));
+        // From the repository's root, as in the arm above.
+        rig.tool_as(
+            &["verdict", "--evidence", &evidence, "--list", list],
+            |command| {
+                command.current_dir(&rig.root);
+            },
+        )
+    };
+
+    // The run read the empty list; the verdict is asked over the one with the row.
+    let read_the_empty_one = facts_naming(LIST, sha256_of(b""));
+    let line = verdict(&read_the_empty_one, OTHER)
+        .void(
+            "evidence",
+            "the run read the list `record/intended-changes.tsv`",
+        )
+        .clone();
+    assert_eq!(
+        line["list"],
+        json!({
+            "path": OTHER,
+            "commit": candidate,
+            "sha256": sha256_of(row.as_bytes()),
+            "rows": 1,
+        }),
+        "the void line names the list it was asked over"
+    );
+    // The control: over the list the run read, the difference is unlisted — red.
+    verdict(&read_the_empty_one, LIST).verdict("red");
+
+    // The path is the same and the bytes are not: the evidence names a hash the commit's
+    // file does not have.
+    let another_hash = facts_naming(OTHER, sha256_of(b"another list\n"));
+    verdict(&another_hash, OTHER).void("evidence", "the run read the list");
+    // The control: the same evidence naming the hash of the file is green.
+    verdict(&facts_naming(OTHER, sha256_of(row.as_bytes())), OTHER).verdict("green");
+
+    // Evidence that does not say which list its run read — a run of the tool before it
+    // recorded one — cannot be told from either.
+    let mut silent = read_the_empty_one.clone();
+    silent.as_object_mut().expect("an object").remove("list");
+    verdict(&silent, LIST).void("evidence", "`run.json` has no `list.path`");
+}
+
+/// Two builds of one commit differ in bytes wherever a build embeds its path, so no hash
+/// refuses them (the re-review's `R-M6`): the two commits are held apart before anything
+/// is read or built.
+#[test]
+fn two_commits_that_are_one_are_refused() {
+    let rig = Rig::new();
+    // A list no row of which can be wrong, at a path every form of the call can open.
+    let outside = rig.file_outside("");
+    let candidate = rig.candidate_with("");
+    let scratch = rig.scratch.to_str().expect("a UTF-8 path");
+    let saying = "the candidate's commit is the previous release's";
+    for list in [outside.as_str(), LIST] {
+        for commit in [rig.previous.as_str(), candidate.as_str()] {
+            let named = ["--previous", commit, "--candidate", commit, "--list", list];
+            let called = rig.tool(&[&["check-list"], &named[..]].concat());
+            assert_eq!(called.code, status_of("commit"), "{}", called.raw);
+            called.refused("commit", saying);
+            let called = rig.tool(&[&["run"], &named[..], &["--scratch", scratch]].concat());
+            assert_eq!(called.code, status_of("commit"), "{}", called.raw);
+            called.refused("commit", saying);
+        }
+    }
+    assert_eq!(
+        fs::read_dir(&rig.scratch)
+            .expect("read the scratch directory")
+            .count(),
+        0,
+        "a refused run mints nothing"
+    );
+
+    // Evidence of such a run is refused the same way.
+    let mut facts = rig.facts();
+    facts["previous"]["commit"] = facts["candidate"]["commit"].clone();
+    rig.verdict_with(&facts, &quiet(3))
+        .refused("commit", saying);
 }
 
 /// The list is held to the commits the evidence names: a row that points outside them is
@@ -1316,12 +1546,12 @@ fn a_verdict_is_given_over_no_list_that_is_refused() {
 #[test]
 fn what_a_call_names_wrongly_is_refused_with_its_word() {
     let rig = Rig::new();
-    let list = rig.list("");
+    let candidate = rig.candidate_with("");
+    let list = LIST;
     let scratch = rig.scratch.to_str().expect("a UTF-8 path");
     let inside = rig.root.join("dev");
     fs::create_dir_all(&inside).expect("a directory inside the repository");
-    let (previous, candidate) = (rig.previous.as_str(), rig.candidate.as_str());
-    let list = list.as_str();
+    let (previous, candidate) = (rig.previous.as_str(), candidate.as_str());
     let short = &rig.previous[..12];
     let nowhere = "f".repeat(40);
     let absent = format!("{scratch}/absent");
@@ -1546,7 +1776,8 @@ struct Driven {
 
 impl Rig {
     /// `run`, with the stand-in first on `PATH`, over a suite whose reports the stand-in
-    /// hands out by the binary it finds at the path.
+    /// hands out by the binary it finds at the path — the candidate the one that holds a
+    /// list of this text.
     fn run(&self, suite: &[Ran], list: &str, mode: &str, more: &[&str]) -> Driven {
         let bin = self.dir.path().join("bin");
         placed_executable::write(&bin.join("cargo"), FAKE_CARGO);
@@ -1557,15 +1788,15 @@ impl Rig {
         let (on_previous, on_candidate) = reports(suite);
         fs::write(state.join("on-previous.xml"), on_previous).expect("write a report");
         fs::write(state.join("on-candidate.xml"), on_candidate).expect("write a report");
-        let list = self.list(list);
+        let candidate = self.candidate_with(list);
         let mut args = vec![
             "run",
             "--previous",
             &self.previous,
             "--candidate",
-            &self.candidate,
+            &candidate,
             "--list",
-            &list,
+            LIST,
             "--scratch",
             self.scratch.to_str().expect("a UTF-8 path"),
         ];
@@ -1665,9 +1896,10 @@ fn a_run_builds_once_records_the_build_and_makes_both_runs_from_the_record() {
         line["previous"],
         json!({"commit": rig.previous, "sha256": old})
     );
+    let candidate = rig.candidate_with(both_rows(&rig));
     assert_eq!(
         line["candidate"],
-        json!({"commit": rig.candidate, "sha256": new})
+        json!({"commit": candidate, "sha256": new})
     );
     assert_eq!(
         line["proof"],
@@ -1703,7 +1935,7 @@ fn a_run_builds_once_records_the_build_and_makes_both_runs_from_the_record() {
             "`{built}` is removed at the end of a run"
         );
     }
-    let again = rig.verdict_over(evidence.to_str().expect("a UTF-8 path"), &both_rows(&rig));
+    let again = rig.verdict_over(evidence.to_str().expect("a UTF-8 path"));
     assert_eq!(again.verdict("green")["counts"], line["counts"]);
 
     // And what the runner exited with, each time: the baseline green, the second run not.
@@ -1712,6 +1944,15 @@ fn a_run_builds_once_records_the_build_and_makes_both_runs_from_the_record() {
     )
     .expect("run.json is JSON");
     assert_eq!(facts["exits"], json!({"baseline": 0, "candidate": 100}));
+
+    // Which list the run read is a fact of its evidence and of its line: the path, the
+    // candidate's commit it was read out of, and the hash of its bytes.
+    let hash = sha256_of(both_rows(&rig).as_bytes());
+    assert_eq!(facts["list"], json!({"path": LIST, "sha256": hash}));
+    assert_eq!(
+        line["list"],
+        json!({"path": LIST, "commit": candidate, "sha256": hash, "rows": 2})
+    );
 }
 
 #[test]
@@ -1847,16 +2088,16 @@ fn a_run_without_cargo_did_not_run() {
             .unwrap_or_else(|| panic!("`{needed}` is on PATH"));
         std::os::unix::fs::symlink(real, bin.join(needed)).expect("link the tool");
     }
-    let list = rig.list("");
+    let candidate = rig.candidate_with("");
     let called = rig.tool_as(
         &[
             "run",
             "--previous",
             &rig.previous,
             "--candidate",
-            &rig.candidate,
+            &candidate,
             "--list",
-            &list,
+            LIST,
             "--scratch",
             rig.scratch.to_str().expect("a UTF-8 path"),
         ],

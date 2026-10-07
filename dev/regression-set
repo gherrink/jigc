@@ -39,13 +39,16 @@
 #
 # Usage — every call prints ONE line of JSON on stdout, whatever it exits with:
 #
-#   dev/regression-set run --previous SHA --candidate SHA --list FILE --scratch DIR
+#   dev/regression-set run --previous SHA --candidate SHA --list PATH --scratch DIR
 #                      [--keep]
-#       The whole check. SHA is a full commit sha; the candidate and the previous release
-#       are built from `git archive` of their commits, never from the working tree. DIR
-#       exists and lies outside the repository; everything is done in one directory minted
-#       there. In order:
-#         1. the list is read (below) — a list that is refused costs no build;
+#       The whole check. SHA is a full commit sha, and the two are two commits; the
+#       candidate and the previous release are built from `git archive` of their commits,
+#       never from the working tree. PATH is the list's path in the repository: it is read
+#       out of the candidate's commit, never from the working tree either. DIR exists and
+#       lies outside the repository; everything is done in one directory minted there. In
+#       order:
+#         1. the list is read (below) and recorded, by its path and its hash — a list that
+#            is refused costs no build;
 #         2. the previous release is unpacked and its tests built, `--locked`, in the dev
 #            profile, into a target directory of its own; the build is recorded;
 #         3. the candidate is unpacked and its binary built, `--locked`, the same profile,
@@ -58,17 +61,23 @@
 #       two source trees and the two target directories are removed at the end; the
 #       evidence stays.
 #
-#   dev/regression-set verdict --evidence DIR --list FILE
+#   dev/regression-set verdict --evidence DIR --list PATH
 #       The verdict over the evidence a run left, and no build and no test: the same
-#       function `run` ends with. DIR holds `run.json` — the two commits, the two
-#       binaries' hashes, the path, the four hashes taken at it, and a step that failed —
-#       and the runner's two reports, `baseline-junit.xml` and `candidate-junit.xml`.
+#       function `run` ends with. DIR holds `run.json` — the two commits, the list the run
+#       read, the two binaries' hashes, the path, the four hashes taken at it, and a step
+#       that failed — and the runner's two reports, `baseline-junit.xml` and
+#       `candidate-junit.xml`. PATH is read out of the candidate's commit the evidence
+#       names, and must be the list the run read: a verdict over another list is void.
 #
-#   dev/regression-set check-list --previous SHA --candidate SHA --list FILE
+#   dev/regression-set check-list --previous SHA --candidate SHA --list PATH
 #       The list alone, read as `run` reads it. Prints {status: listed, list}.
 #
-# THE LIST OF INTENDED CHANGES. A text file, UTF-8, one row per line; a line that is
-# empty or begins `#` is no row. A row is FOUR fields separated by ONE TAB each:
+# THE LIST OF INTENDED CHANGES. A file OF THE CANDIDATE'S COMMIT, named by its path in the
+# repository — plain segments, no `..`, not absolute — and read out of that commit: what
+# the working tree has at the path, and any file no commit holds, is never read. So a
+# green rests on a list the candidate itself carries, and the line says which: its path,
+# the commit, and the sha256 of its bytes. It is text, UTF-8, one row per line; a line that
+# is empty or begins `#` is no row. A row is FOUR fields separated by ONE TAB each:
 #
 #     <binary>  <test>  <what changed, in one line>  <pointer>
 #
@@ -107,7 +116,9 @@
 #                              — the previous release's put back among them
 #             incomplete       the second run left no readable report, or did not run
 #                              exactly the tests the baseline ran
-#             evidence         `run.json` is missing, unreadable or lacks a fact
+#             evidence         `run.json` is missing, unreadable or lacks a fact, or the
+#                              list it says the run read is not, by its hash, the one the
+#                              verdict is asked over
 #
 # A TEST THAT FAILS ON ITS OWN BINARY is no evidence about the candidate: it is excluded
 # from the comparison and named under `excluded`. A ROW THAT MATCHES NO DIFFERENCE is
@@ -116,7 +127,7 @@
 # that a list cannot quietly outlive what it excuses.
 #
 # The line: {tool, status, reason, detail, previous: {commit, sha256}, candidate:
-# {commit, sha256}, list: {path, sha256, rows}, counts: {tests, baseline_passed,
+# {commit, sha256}, list: {path, commit, sha256, rows}, counts: {tests, baseline_passed,
 # baseline_failed, candidate_passed, candidate_failed, differences, on_list, not_on_list,
 # excluded, stale, fixed}, not_on_list: [{binary, test}], on_list: [{binary, test,
 # change, pointer}], excluded: [{binary, test}], stale: [{binary, test, pointer, why}],
@@ -146,9 +157,10 @@
 #    0  green
 #    1  red
 #    2  usage            an unknown act or flag, or a missing argument
-#    3  list             the list is not in its form, or a row points at nothing
+#    3  list             the list is not a file of the candidate's commit or not in its
+#                        form, or a row points at nothing
 #    4  commit           a commit named is not the full sha of a commit this repository
-#                        holds
+#                        holds, or the two commits are one
 #    5  scratch          the scratch directory does not exist, or lies inside the
 #                        repository
 #   10  did-not-run      void, as above — and so each of the next six
@@ -256,6 +268,18 @@ def commit_of(sha, what):
     return sha
 
 
+def two_commits(previous, candidate, whose=("the previous release's commit",
+                                            "the candidate's commit")):
+    """The two commits a check compares, each resolved — and two."""
+    previous = commit_of(previous, whose[0])
+    candidate = commit_of(candidate, whose[1])
+    if previous == candidate:
+        refuse("commit", "the candidate's commit is the previous release's, `%s`: two builds"
+               " of one commit can differ in their bytes, so no hash would tell, and a commit"
+               " checked against itself establishes nothing" % candidate)
+    return previous, candidate
+
+
 def holds(descendant, ancestor, where):
     """Whether `descendant` holds the commit `ancestor`."""
     asked = git("merge-base", "--is-ancestor", ancestor, descendant)
@@ -309,10 +333,16 @@ def resolve(pointer, where, previous, candidate):
 
 
 def read_list(path, previous, candidate):
-    try:
-        raw = open(path, "rb").read()
-    except OSError as error:
-        refuse("list", "cannot read the list `%s`: %s" % (path, error.strerror))
+    """The list at `path` in the candidate's commit — never the working tree's file."""
+    if not all(SEGMENT.fullmatch(segment) for segment in path.split("/")):
+        refuse("list", "the list is named by its path in the repository, as the candidate's"
+               " commit holds it — not `%s`: it is read out of that commit, never from a"
+               " file" % path)
+    held = git("cat-file", "blob", "%s:%s" % (candidate, path))
+    if held.returncode != 0:
+        refuse("list", "the candidate's commit holds no file `%s`: the list is read out of"
+               " the commit `%s`, never from the working tree" % (path, candidate))
+    raw = held.stdout
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -338,7 +368,8 @@ def read_list(path, previous, candidate):
         lines[key] = number
         resolve(row["pointer"], where, previous, candidate)
         rows.append(row)
-    return {"path": path, "sha256": hashlib.sha256(raw).hexdigest(), "rows": rows}
+    return {"path": path, "commit": candidate, "sha256": hashlib.sha256(raw).hexdigest(),
+            "rows": rows}
 
 
 # --- the evidence, and the verdict over it ---------------------------------------
@@ -384,6 +415,15 @@ def report(evidence, name, reason):
         return outcomes(path)
     except (OSError, ValueError, ElementTree.ParseError) as error:
         raise Void(reason, "no readable report `%s`: %s" % (name, one_line(error)))
+
+
+def hold_list(facts, the_list):
+    """The verdict is asked over the list the run read: the same bytes, by their hash."""
+    path, sha256 = fact(facts, "list", "path"), fact(facts, "list", "sha256")
+    if sha256 != the_list["sha256"]:
+        raise Void("evidence", "the run read the list `%s` (sha256 %s), and the verdict is"
+                   " asked over `%s` (sha256 %s): a verdict is given over the list its run"
+                   " read" % (path, sha256, the_list["path"], the_list["sha256"]))
 
 
 def hold_path(facts):
@@ -441,11 +481,7 @@ def named(keys):
 def judge(evidence, the_list):
     """The line a run ends with: the verdict over `evidence` against `the_list`."""
     line = {"tool": PROG, "status": None, "reason": None, "detail": None}
-    line["list"] = {
-        "path": the_list["path"],
-        "sha256": the_list["sha256"],
-        "rows": len(the_list["rows"]),
-    }
+    line["list"] = dict(the_list, rows=len(the_list["rows"]))
     try:
         try:
             facts = json.load(open(os.path.join(evidence, "run.json"), encoding="utf-8"))
@@ -464,6 +500,7 @@ def judge(evidence, the_list):
             )
         if facts.get("failed") is not None:
             raise Void(fact(facts, "failed", "reason"), fact(facts, "failed", "detail"))
+        hold_list(facts, the_list)
         hold_path(facts)
         hold_binaries(facts)
         baseline = hold_baseline(facts, evidence)
@@ -547,7 +584,7 @@ def build_environment():
 class Run:
     """One run's directory, its facts as `run.json` holds them, and its commands."""
 
-    def __init__(self, work, previous, candidate):
+    def __init__(self, work, previous, candidate, the_list):
         self.work = work
         self.evidence = os.path.join(work, "evidence")
         os.mkdir(self.evidence)
@@ -555,6 +592,7 @@ class Run:
         self.facts = {
             "previous": {"commit": previous},
             "candidate": {"commit": candidate},
+            "list": {"path": the_list["path"], "sha256": the_list["sha256"]},
             "at_baked_path": {},
             "exits": {},
             "seconds": {},
@@ -719,8 +757,7 @@ def drive(run, previous, candidate):
 
 
 def act_run(args):
-    previous = commit_of(args.previous, "the previous release's commit")
-    candidate = commit_of(args.candidate, "the candidate's commit")
+    previous, candidate = two_commits(args.previous, args.candidate)
     the_list = read_list(args.list, previous, candidate)
     scratch = os.path.realpath(args.scratch)
     if not os.path.isdir(scratch):
@@ -728,7 +765,7 @@ def act_run(args):
     if os.path.commonpath([scratch, os.path.realpath(ROOT)]) == os.path.realpath(ROOT):
         refuse("scratch", "the scratch directory `%s` lies inside the repository" % args.scratch)
     work = tempfile.mkdtemp(prefix=PROG + ".", dir=scratch)
-    run = Run(work, previous, candidate)
+    run = Run(work, previous, candidate, the_list)
     try:
         drive(run, previous, candidate)
     except Void as void:
@@ -748,19 +785,17 @@ def act_verdict(args):
         previous = facts["previous"]["commit"]
         candidate = facts["candidate"]["commit"]
     except (OSError, ValueError, KeyError, TypeError):
-        # No list can be held to commits the evidence does not name: void, as `judge` says.
-        return judge(args.evidence, {"path": args.list, "sha256": None, "rows": []})
-    the_list = read_list(
-        args.list,
-        commit_of(previous, "the evidence's previous release"),
-        commit_of(candidate, "the evidence's candidate"),
-    )
-    return judge(args.evidence, the_list)
+        # No list can be read out of a commit the evidence does not name: void, as `judge`
+        # says.
+        return judge(args.evidence,
+                     {"path": args.list, "commit": None, "sha256": None, "rows": []})
+    previous, candidate = two_commits(
+        previous, candidate, ("the evidence's previous release", "the evidence's candidate"))
+    return judge(args.evidence, read_list(args.list, previous, candidate))
 
 
 def act_check_list(args):
-    previous = commit_of(args.previous, "the previous release's commit")
-    candidate = commit_of(args.candidate, "the candidate's commit")
+    previous, candidate = two_commits(args.previous, args.candidate)
     return {"tool": PROG, "status": "listed", "list": read_list(args.list, previous, candidate)}
 
 
