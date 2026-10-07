@@ -122,3 +122,16 @@ Two of these add a finding code (2, 3), one a stored record (10), one changes th
 - *Why, as put to him:* the clause is about whether agents can use the product; whether one agent notices something unprompted depends on the model and the task's framing at least as much as on jigc, and each arm is a single session — making one sample decisive invites the hunt-by-sampling loop he ruled against.
 - **Under every option:** an arm whose occasion did not fire (the evidence shows the agent never read both sides) is **void, not failed** — it runs once more automatically and then comes to the human (his ruling on a clause with no green result); and in the fan-out arm "told to file after landing" is the expected outcome (his ruling on ledger item 14).
 - The outcome classes of the three arms are those of the rc.24 record (`completions/artifacts/RC-rc24/README.md`), fixed before the run; the inconsistency arm's table gains the split by turn.
+
+## The port rehearsal's shape — ruled 2026-10-06 (question 27, option B; his words: "Agree on B")
+
+**A scripted walk on a clone, plus one real migration by an agent.**
+- **The copy:** a plain `git clone` of this repository with its remote removed, an isolated `$HOME`, the candidate's binary — never a linked worktree (doc writes there are refused).
+- **The scripted walk (deterministic):** `jigc setup`; ingest of the 92 seed docs; one doc task with fixed text; a simulated fan-out (each `Spawn:` line run verbatim, a one-commit assertion). "Works" = the expected exit codes, commit counts and findings set. `jigc validate` reports findings after `setup` on this repository **by design**, so "validate is clean" is not the bar.
+- **The real migration:** an agent migrates one of this repository's real documents — **the deferral ledger** (`implementation/decisions-pending.md --as deferral-ledger`), the first document the port itself (M56) will migrate — to the hold, then through `--approve`.
+- **Classing a finding:** either *the product fails its documented path* (can block) or *this project would have to change* (never blocks; the rehearsal is never a requirements source).
+- **Stated with the facts:** the guides document neither a pack-choice step nor an on-ramp to a fan-out, so those two steps are rehearsed as what the product does, not as "the documented path"; `DECISIONS.md` is beyond `jigc migrate` by the project's own record and is not migrated.
+- **Over** the scripted walk alone (it shows nothing about a real migration or a real agent) and a blind agent in the container following the guides alone (tests the guides; costliest; not deterministic).
+- Facts: `port-rehearsal-facts.md` beside this file (not yet committed). Built while round 1 runs; first run on the next candidate; the loop cannot close before it has run once.
+
+**With this, every decision for the run's opening has been taken.** Left for the opening itself: writing the opening record, the clause rows and the test set through the record script; the briefs of the seven rows; the trial's corpus with its planted contradiction and the three-step rehearsal; the declared-bounds list (four of the human's, plus the exit rule's two).
