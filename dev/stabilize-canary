@@ -1,0 +1,877 @@
+#!/usr/bin/env python3
+#
+# dev/stabilize-canary — the setup of THE SMALL CANARY of the stabilization workflow's
+# `test` stage (DECISIONS.md -> 2026-10-07, "The small canary's setup"; the second repair
+# plan's task K7 and its section 6, "The small canary",
+# completions/artifacts/M55/stabilization-build/re-review-test-half/plan.md).
+#
+# No `test` stage has run under the Workflow runtime with real agents. The small canary
+# is that run, once, before the real run is opened: ONE invocation of the stage, from its
+# first step to its pushed record, and then one more to see what an invocation answers
+# that has nothing to do. This tool builds the place it runs in, where NOTHING OF IT CAN
+# REACH THIS REPOSITORY OR ITS REMOTE, and prints — as one line — what is then invoked.
+#
+# WHAT A SETUP MAKES, all of it under ONE root outside the repository:
+#
+#   ROOT/origin.git    a bare repository: THE CLONE'S ONE REMOTE
+#   ROOT/clone         a repository of its own that holds the commit named and the
+#                      previous release's commit, fetched from this one BY PATH — so no
+#                      remote of it ever named this repository, and none names this
+#                      repository's remote. Checked out: the loop branch `fix/RUN`, which
+#                      exists there and nowhere else, with ONE commit on the commit named:
+#   ROOT/clone/completions/artifacts/RUN/
+#                      THE SYNTHETIC OPENING (below), written through the clone's own
+#                      dev/stabilize-record, committed, and pushed to ROOT/origin.git by
+#                      the clone's own dev/stabilize-step — vetted, as every push of a
+#                      run is
+#   ROOT/scratch       the scratch root the invocation is handed
+#   ROOT/results       where the session that invokes the stage writes what each
+#                      invocation returned (`returns`, below) — whoever starts it
+#   ROOT/canary.json   the line this setup printed, kept: what `check` reads the run from
+#
+# Usage — every act prints ONE line of JSON on stdout, whatever it exits with:
+#
+#   dev/stabilize-canary setup --root ROOT --commit REV --run RUN --previous VERSION
+#                        --previous-commit SHA [--items ID,ID]
+#       ROOT is an ABSOLUTE path of plain segments (the harness takes no other scratch
+#       root) — never a relative one, which would be read from wherever the caller
+#       stands. It is not there yet and its parent is, or it is an empty directory, as
+#       `mktemp -d` mints one: a root that holds anything is refused (exists), a link
+#       planted in it too, so a root is used once. It lies OUTSIDE THE REPOSITORY, judged
+#       on its real path: in no working tree of it, the main one's git directory
+#       included (inside). REV is the candidate: any name this repository resolves to a
+#       commit (no-commit) that holds the two scripts of a run and the harness (unfit) —
+#       the COMMITTED bytes, never the working tree. RUN is a slug that this repository does
+#       not hold: no completions/artifacts/RUN in the tree or in the commit, and no
+#       branch `fix/RUN` here or on a remote (taken) — so a stage launched from the wrong
+#       directory finds no such run and halts at its first step with nothing written.
+#       VERSION and SHA are the previous release and the commit it was released from (a
+#       full sha this repository holds): what the preflight builds the second binary
+#       from. --items names the opening's items (THE SYNTHETIC OPENING); without it, the
+#       five that are marked there.
+#       Everything is checked before anything is made; a setup that fails after that
+#       leaves a root that holds no canary.json, which no act takes for a canary. It ends
+#       with `check`, and with the state a fresh run has — `next` is `test`, round 1,
+#       attempt 1, the opening owing nothing — or it refuses (not-fresh).
+#       Prints {status: ready, root, clone, origin, scratch, results, run, loop, run_dir,
+#       candidate, head, remote_head, previous: {version, commit}, door, items: [{item,
+#       kind}], seeded, state: {next, round, attempt}, session_cwd, script_path, args,
+#       args_then, returns: {first, then}, check, expect: {agents, tool_steps,
+#       wall_minutes}} — WHAT THE ORCHESTRATOR INVOKES, below.
+#
+#   dev/stabilize-canary check --root ROOT
+#       THE CLONE CAN REACH NOTHING BUT ITS BARE REMOTE — asserted, before the session
+#       starts and whenever it is asked — and what the run holds, read. ROOT holds a
+#       canary (missing), and each of its directories is that directory and no link
+#       (link). The clone has ONE remote, `origin`; what git answers that it fetches from
+#       and pushes to — under the configuration THE CALLER runs with, so a rewrite in the
+#       session's own configuration is seen — is ROOT/origin.git; and the clone's own
+#       configuration holds no `url.*` rewrite and names, anywhere in it, no remote of
+#       this repository and not this repository (not-isolated). It writes nothing but what
+#       `git status` writes in the CLONE.
+#       Prints {status: checked, root, run, loop, branch, remotes, fetch_url, push_url,
+#       head, remote_head, pushed, records, pending, state: {next, round, attempt [,
+#       refused]}, not_ready, items: [{item, kind, selected}], ledger: [{key, grade,
+#       disposition, route}], returned: {first, then}} — `records` is how many commits
+#       lie on the opening, `pending` how many lines `git status --porcelain` has,
+#       `pushed` whether the bare repository stands at the clone's head, `state` what
+#       the run's own state says a `test` stage would work on, `returned` whether each
+#       file of `returns` is there.
+#
+# WHAT THE ORCHESTRATOR INVOKES — the line of `setup`, with nothing to interpret:
+#
+#   session_cwd   THE DIRECTORY THE INVOKING SESSION STANDS IN: the clone. A stage runs
+#                 in whatever repository its session stands in, and every agent's shell
+#                 starts there.
+#   script_path   the harness, BY ITS PATH INSIDE THE CLONE. The Workflow is invoked by
+#                 `scriptPath` and never by its name: a workflow invoked by name runs the
+#                 copy the session loaded first, which goes stale without a word.
+#   args          the `args` object of the FIRST invocation, as it is: the `test` stage,
+#                 the run, the scratch root, and a `scope` that names the round's one door.
+#   args_then     the `args` object of EVERY LATER invocation: the same without `scope`.
+#                 A round's scope is written once, and an invocation that finishes a
+#                 triage takes none — the first arguments, sent again, are refused there.
+#   returns       the two files under ROOT/results the session writes what each
+#                 invocation returned to, as JSON: `first`, and `then`.
+#   check         the one command that reads the result: one plain invocation of this
+#                 tool, run from this repository's root.
+#   expect        how many agents the first invocation launches where every agent ends
+#                 well and leaves nothing open, and how many of those are one-command
+#                 steps of dev/stabilize-step — counted, and held to a simulated stage by
+#                 this tool's suite; and the plan's estimate of the wall time in minutes
+#                 for the five default items, which nobody has measured (null for any
+#                 other set).
+#
+# THE STEPS OF THE SMALL CANARY, each one plain invocation:
+#
+#   1. A root, outside the repository:
+#        mktemp -d /ABSOLUTE/SCRATCH/canary.XXXXXX
+#   2. The setup, from this repository's root, with the path step 1 printed:
+#        dev/stabilize-canary setup --root ROOT --commit HEAD --run canary-small --previous VERSION --previous-commit SHA
+#   3. The session, STANDING IN `session_cwd`, invokes the Workflow with `scriptPath` =
+#      `script_path` and `args` = `args`, and writes what it returned to `returns.first`.
+#      WHO STARTS THAT SESSION IS NOT DECIDED HERE (the plan leaves it to the human): he
+#      starts one in the clone with a prompt the orchestrator hands him — the only kind
+#      of session that can stop a subagent from outside — or the orchestrator launches a
+#      headless one there. Both need exactly these fields, and nothing else of this tool.
+#   4. The same session invokes it once more with `args` = `args_then`, and writes what
+#      that returned to `returns.then`.
+#   5. The result, read from this repository's root:
+#        dev/stabilize-canary check --root ROOT
+#      and the two files of `returns`. What it showed is the orchestrator's record,
+#      aggregated; nothing of the clone's tree comes back.
+#
+# THE SYNTHETIC OPENING — never the human-led opening of a run: the smallest test set
+# that has one item of each kind a real round 1 has. Everything in it is this tool's
+# table (ITEMS, CLAUSES, DOOR, SEEDED), and its text is printable ASCII: until the harness
+# reads a digest, a line that carries it is relayed by an agent.
+#
+#   the census   no-lost-files, working-product, usable-by-agents, migration-works — the
+#                exit rule's four clauses (DECISIONS.md -> 2026-10-04). The fourth has no
+#                item, as the port rehearsal has no instrument.
+#   the stop     every-round, the default scope `delta`, no declared bound
+#   the door     ONE: `jigc doc list`. `args.scope` names it, the review row covers it,
+#                and the seeded finding stands at it — one text, from one constant.
+#   the items    * row-doc-list    review-row           no-lost-files     in scope, by the door
+#                * cross-cutting   audit-cross-cutting  no-lost-files     every candidate
+#                * arm-control     trial-arm            usable-by-agents  every candidate
+#                  drive-doc-list  audit-drive          usable-by-agents  every candidate
+#                * gate            check                working-product   every candidate
+#                * regression-set  check                working-product   every candidate
+#                (*: run where --items names none.) `arm-control` is walk arm 00 of the trial
+#                protocol, the positive control: it is scripted, so it needs the trial
+#                image and a container runtime and no credential. `drive-doc-list` is ITS
+#                STAND-IN for a machine without one. `gate` is answered from the
+#                candidate's own gate; `regression-set` is the long scripted check,
+#                about thirty-five minutes.
+#   the finding  ONE ledger row of round 0, `canary-seeded-claim`, ungraded: a CLAIM
+#                about the door that would break the first clause if it were true — that
+#                `jigc doc list`, at exit 0, removes an untracked file — with its block
+#                in the opening record. Nobody is told the answer; triage is handed the
+#                row, and whatever it grades `breaks` or `unclear` a verifier re-drives.
+#                (Driven once when this tool was built, on 1.0.0-rc.24: the file stood.
+#                So `refuted` is what a verifier should return, and `confirmed` would be
+#                a real finding about the product.)
+#
+# WHAT IT SHOWS (the plan's list): that a stage reaches its record and pushes it with
+# real agents — the attempt's marker, the scope, the instruments, triage, a verifier, the
+# record's own gate, the one commit, the vetted push, the state read back — and what the
+# next invocation answers; the preflight building a commit that is not checked out, the
+# previous release's; a reviewer asserting the binary's hash on a pass that drives
+# nothing; the long commands held by real agents, and whether a permission prompt
+# appears; and, IF the session can stop a subagent, HOW AN AGENT REALLY ENDS: the seeded
+# row's verifier is stopped from outside each time it is tried — the canary's ONE plant,
+# which is an act of whoever runs the session and nothing this tool seeds — the finding
+# stays unverified, `next` is `triage`, and the invocation with `args_then` is the lap
+# that builds the commit the round tested.
+#
+# WHAT IT DOES NOT SHOW, deliberately: a state or a payload at a real run's size; a push
+# that fails, a red candidate, a report the script refuses, a second triage pass, two
+# agents that die, a stage killed as a whole; a ruling, a go, a re-run; the check that
+# reads CI, which is void in a clone; a cross-model pass; the real remote's rules, the
+# real denylist's reach, the real checkout's permission state; any round after the first.
+# AND WHAT CAN MAKE IT SHOW LESS: a scope step that writes the door in other words than
+# `args.scope` names it leaves the review row unselected and the seeded finding outside
+# the round's test set — the state's `never_selected` and `check`'s `selected` say so.
+#
+# WHAT IT STANDS ON TODAY, and what changes it. The opening is written for the scripts
+# as they stood when this tool was built: a check is an item of kind `check` whose BRIEF
+# the preflight reads (`regression-set` names its command there, and how it is held is
+# the preflight's); `args` is the stage's argument object; `expect` counts the agents of
+# the harness as it was. A scripted check that is a held command of dev/stabilize-step,
+# a harness that reads a digest, and reports written from files change the items' rows
+# and the count — the suite's simulated stage goes red where they do.
+#
+# TO DISPOSE OF IT. Nothing is to be removed inside this repository: the tool writes no
+# file of it. The canary is ROOT, a directory under a temp or scratch directory, and goes
+# when that does; a root is never reused.
+#
+# The line. One JSON object, printable ASCII, `act` first, and LAST a `sha256` of the
+# line as it stands without that field — as dev/stabilize-step prints its line. A refusal
+# prints its line too: {act, status: halted, refused: WORD, halt: {root_cause, evidence,
+# tree_state, recommendation}}.
+#
+# Exit status, and the word a refusal opens with — `stabilize-canary: refused <word>: …`,
+# one line on stderr:
+#
+#    0  the act is done
+#    2  usage         an unknown act or flag, a missing argument, a value outside its
+#                     grammar — a root that is not absolute or not of plain segments, an
+#                     item this tool has no row for
+#    3  inside        the root lies inside the repository
+#    4  no-root       the root's parent is not there, or the root is no directory
+#    5  exists        the root holds something already: a root is used once
+#    6  taken         the repository holds the run, or its loop branch
+#    7  no-commit     the candidate, or the previous release's commit, is no commit of
+#                     the repository
+#    8  unfit         the commit named lacks a script of a run, or the harness
+#    9  tool          a command the setup runs failed: git, or the clone's own
+#                     dev/stabilize-record or dev/stabilize-step — a scanner that could
+#                     not run among them — or the file system refused a directory or a
+#                     file; the root then holds no canary
+#   10  not-isolated  the clone could reach something that is not its bare remote
+#   11  not-fresh     the run the setup opened is not in the state a fresh run has
+#   12  missing       the root holds no canary
+#   13  link          a directory of the canary is a link, or is not where it should be
+#
+# Needs python3 and git, and — in the clone, for every write of the opening — what
+# dev/stabilize-record needs: gitleaks and a denylist. It finds its repository from where
+# it lies, never from where it was called, and it writes nothing inside it.
+# tooling-tests/dev_stabilize_canary.rs drives it.
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+
+PROG = "stabilize-canary"
+
+STATUS = {
+    "usage": 2,
+    "inside": 3,
+    "no-root": 4,
+    "exists": 5,
+    "taken": 6,
+    "no-commit": 7,
+    "unfit": 8,
+    "tool": 9,
+    "not-isolated": 10,
+    "not-fresh": 11,
+    "missing": 12,
+    "link": 13,
+}
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+ROOT = os.path.dirname(SCRIPT_DIR)
+
+# What the commit named must hold: the two scripts every write and every git act of a run
+# goes through, and the harness the session invokes by its path.
+RECORD = "dev/stabilize-record"
+STEP = "dev/stabilize-step"
+HARNESS = ".claude/workflows/stabilize.js"
+NEEDS = (RECORD, STEP, HARNESS)
+# Where a run lies, and how its loop branch is named: the harness's `runDir` and
+# `branchName`. The suite runs the clone's own harness on what this tool made, so a name
+# that is not the harness's is a stage that refuses its branch there.
+RUNS = "completions/artifacts"
+LOOP = "fix/%s"
+# The canary's directories under its root, and the line a setup keeps.
+DIRS = ("origin.git", "clone", "scratch", "results")
+KEPT = "canary.json"
+RETURNS = ("first", "then")
+
+SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+SLUG_MAX = 100
+FULL_SHA = re.compile(r"[0-9a-f]{40}")
+VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?")
+# A segment of a scratch root as the harness takes one (its SCRATCH_RE).
+PLAIN = re.compile(r"[A-Za-z0-9._-]+")
+
+# --- the synthetic opening: this table, and nothing else ------------------------
+#
+# Every text below is printable ASCII (the suite holds what reaches the state to it).
+
+# The clauses of the closing condition, as slugs: the exit rule's four.
+CLAUSES = ("no-lost-files", "working-product", "usable-by-agents", "migration-works")
+# The round's ONE door: `args.scope` names it, the review row covers it, the seeded
+# finding stands at it.
+DOOR = "jigc doc list"
+# Where the regression set's list lies in this repository.
+LIST = "completions/artifacts/M55/stabilization-build/regression-set/intended-changes.tsv"
+# The items, in the test set's order. `agents` is how many agents the item's chain
+# launches in a stage where every one of them ends well (the harness's CHAINS; a check
+# has no chain: the preflight runs it); `image` that its chain needs the trial image,
+# which is one more preflight.
+ITEMS = (
+    {
+        "item": "row-doc-list",
+        "kind": "review-row",
+        "clause": "no-lost-files",
+        "runs": "in-scope",
+        "doors": [DOOR],
+        "default": True,
+        "agents": 3,
+        "brief": "The review row of ONE door, `jigc doc list`, kept small on purpose. The source pass: the path from the verb's dispatch in crates/cli/src/cli.rs to everything it reads - does a verb that only reads write, remove or commit anything at exit 0? The driver's table, on the binary of the BINARY line, in throwaway repositories under the scratch root: the verb in a repository `jigc setup` never ran in, and in one it ran in that holds an untracked file - per row the exit status, what it printed, and `git status --porcelain` before and after.",
+    },
+    {
+        "item": "cross-cutting",
+        "kind": "audit-cross-cutting",
+        "clause": "no-lost-files",
+        "runs": "every-candidate",
+        "default": True,
+        "agents": 1,
+        "brief": "The cross-cutting pass of the audit, bounded for a canary to ONE question over the round's doors: does any code path a door reaches write to the working tree or to git at exit 0 without the user having asked for it? Read the source; drive no more than a finding needs.",
+    },
+    {
+        "item": "arm-control",
+        "kind": "trial-arm",
+        "clause": "usable-by-agents",
+        "runs": "every-candidate",
+        "default": True,
+        "agents": 3,
+        "image": True,
+        "brief": "Walk arm 00 of the trial protocol, the positive control (completions/artifacts/RC-rc24/protocol.md, section 2, Instruments): the script completions/trial-driver/arms/walk/00-positive-control.sh, run INSIDE the trial image through completions/trial-harness/run-session.sh with --exec, on a corpus instantiated from completions/trial-corpus-template/. It is scripted: it needs no blind session and no credential. Rehearse: the image answers and the script starts. Run: the arm. Score: its pass condition, from the evidence copied out of the container.",
+    },
+    {
+        "item": "drive-doc-list",
+        "kind": "audit-drive",
+        "clause": "usable-by-agents",
+        "runs": "every-candidate",
+        "default": False,
+        "agents": 1,
+        "brief": "The trial arm's stand-in, for a machine with no container runtime: drive the round's doors through the binary of the BINARY line as an agent that meets the verb for the first time would - `jigc doc list --help`, the verb in a repository that is not set up, and the verb after `jigc setup` - and report where what it printed did not say what to do next.",
+    },
+    {
+        "item": "gate",
+        "kind": "check",
+        "clause": "working-product",
+        "runs": "every-candidate",
+        "default": True,
+        "agents": 0,
+        "brief": "The full gate, `dev/gate`, on the candidate: answered from the candidate's own gate of this stage - it is not run twice.",
+    },
+    {
+        "item": "regression-set",
+        "kind": "check",
+        "clause": "working-product",
+        "runs": "every-candidate",
+        "default": True,
+        "agents": 0,
+        "brief": "The regression set, first part - a long scripted check, about thirty-five minutes: `dev/regression-set run --previous %(previous)s --candidate SHA --list " + LIST + " --scratch DIR`, SHA the candidate's commit and DIR a directory minted under the scratch root, held as the gate is held. Green, red or void is the `status` of the ONE line it prints, and that line is the evidence.",
+    },
+)
+# The agents of a `test` stage beside the items' chains, where every agent ends well and
+# leaves nothing open and the ONE seeded finding is sent to a verifier: the git state,
+# the state, the attempt's marker, the preflight beside the scope step, the state, the
+# report check, triage, the verifier, the report check, the record's executor, its
+# commit, the push, the state — nine of them one-command steps of dev/stabilize-step.
+STAGE_AGENTS = 14
+STAGE_TOOL_STEPS = 9
+# The plan's estimate for the five default items, in minutes; measured by nobody.
+WALL_MINUTES = {"from": 120, "to": 150}
+# The seeded finding: its key, and the heading of its block in the opening record.
+SEEDED = "canary-seeded-claim"
+BLOCK = "The seeded finding"
+SUBJECT = "docs(record): %s - the small canary's synthetic opening"
+
+OPENING = """# %(run)s - the opening record of a small canary
+
+This is a SYNTHETIC opening. dev/stabilize-canary wrote it, in a throwaway clone whose
+one remote is a bare repository beside it, so that ONE `test` stage of the stabilization
+workflow can run from its first step to its pushed record with real agents. It is not
+the human-led opening of any run, it closes nothing, and nothing of it leaves this clone.
+
+## The closing condition
+
+By reference: DECISIONS.md, the entry of 2026-10-04, "The exit rule, revised" - four
+clauses, each with its scope and one instrument. The run's census names them as:
+
+- `no-lost-files` - its first clause: no file is lost and nothing incorrect is written
+  or updated, in the scope that entry's first sharpening gives it. Instrument: the
+  review rows and the audit.
+- `working-product` - its second: a working product others can rely on. Instrument: the
+  regression set, and here the gate.
+- `usable-by-agents` - its third: it is usable by the agents. Instrument: the trial arms.
+- `migration-works` - its fourth: the planned migration of this project will work.
+  Instrument: a port rehearsal, which is not built - no item judges this clause.
+
+## The candidate, and the previous release
+
+The candidate is the tip of `%(loop)s`: this record's commit, on %(candidate)s. The
+previous release is %(previous)s, released from %(previous_commit)s.
+
+## The test set
+
+One item of each kind a round's `test` stage runs, and no more: %(items)s. The table is
+`test-set.md`, beside this file. The round's ONE door is `%(door)s`: the invocation's
+`scope` names it.
+
+## The declared bounds, the stop mode, the scope
+
+No bound is declared. The run stops after every round. The default scope is the delta.
+
+## The ledger's opening row
+
+One row, `%(seeded)s`, ungraded: a claim seeded by the setup tool so that this stage's
+triage has a row to grade and a verifier a block to drive. Nobody has driven it for this
+run, and nothing here says whether it holds.
+
+### %(block)s
+
+The claim: in a repository that `jigc setup` has run in, `jigc doc list` exits 0 and an
+untracked file in the repository's root is gone afterwards - bytes no git object holds,
+destroyed at exit 0 by a verb that only reads. If it holds, it breaks `no-lost-files`.
+
+The block, with BINARY the binary under test and a home directory that is not the
+machine's, every step in a fresh directory under the scratch root:
+
+    git init -q repo
+    git -C repo commit -q --allow-empty -m base
+    (in repo)  BINARY setup
+    (in repo)  write a file notes.md, one line, and do not add it
+    (in repo)  BINARY doc list        - the claim: this exits 0 ...
+    (in repo)  read notes.md          - ... and the file is gone
+
+Confirmed: the verb exits 0 and notes.md is gone. Refuted: it stands, as written.
+"""
+
+
+class Refusal(Exception):
+    def __init__(self, kind, detail, evidence, recommendation):
+        super().__init__(detail)
+        self.kind = kind
+        self.detail = detail
+        self.evidence = evidence
+        self.recommendation = recommendation
+
+
+def refuse(kind, detail, evidence="", recommendation="nothing of the repository was written; a setup is asked for again under a root that is not there yet"):
+    raise Refusal(kind, detail, evidence, recommendation)
+
+
+def usage_help():
+    for line in open(__file__, encoding="utf-8").read().split("\n")[1:]:
+        if not line.startswith("#"):
+            break
+        print(re.sub(r"^# ?", "", line))
+
+
+# --- running a command --------------------------------------------------------
+
+# What names a repository from outside a command's own directory: no child inherits it.
+GIT_NAMES = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY")
+
+
+def callers_env():
+    """The environment a READ runs in: the caller's own configuration — what the session
+    that then runs the stage has too — and no repository named from outside."""
+    env = dict(os.environ)
+    for name in GIT_NAMES:
+        env.pop(name, None)
+    env.update(GIT_TERMINAL_PROMPT="0")
+    return env
+
+
+def makers_env():
+    """The environment everything a setup MAKES is made in: no git configuration of the
+    machine's — no signing, no hook, no rewrite — and an identity of the tool's own."""
+    env = callers_env()
+    env.update(
+        GIT_CONFIG_NOSYSTEM="1",
+        GIT_CONFIG_GLOBAL=os.devnull,
+        GIT_AUTHOR_NAME="The Canary",
+        GIT_AUTHOR_EMAIL="canary@example.invalid",
+        GIT_COMMITTER_NAME="The Canary",
+        GIT_COMMITTER_EMAIL="canary@example.invalid",
+    )
+    return env
+
+
+class Ran:
+    def __init__(self, argv, code, out, err):
+        self.argv = argv
+        self.code = code
+        self.out = out
+        self.err = err
+
+    def shown(self):
+        """The command and everything it printed, for a halt's evidence."""
+        said = (self.out + self.err).strip()
+        return "`%s` exited %d%s" % (" ".join(self.argv), self.code, ": " + said[:2000] if said else "")
+
+
+def run(argv, at, env, fed=None):
+    """One command, run in `at`: its exit status and what it printed. It reads nothing,
+    unless it is `fed` a text."""
+    done = subprocess.run(argv, cwd=at, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", **({"stdin": subprocess.DEVNULL} if fed is None else {"input": fed}))
+    return Ran(list(argv), done.returncode, done.stdout, done.stderr)
+
+
+def source(*argv):
+    """A git command in THIS repository — a read, every one of them: nothing here may
+    write a file of it, and `git status`, which writes the index, is not among them."""
+    return run(["git"] + list(argv), ROOT, callers_env())
+
+
+def made(argv, at, fed=None, env=None):
+    """A command of the setup's that must succeed: what it printed, without its last line
+    break."""
+    ran = run(argv, at, env or makers_env(), fed)
+    if ran.code != 0:
+        refuse("tool", "a command the setup runs failed: `%s` exited %d" % (" ".join(ran.argv[:3]), ran.code), ran.shown(), "read what it printed — a write of dev/stabilize-record needs gitleaks and a denylist, as every write of a run does. The root holds no canary: a setup is asked for again under another root")
+    return ran.out.rstrip("\n")
+
+
+def lines(text):
+    return [line for line in text.split("\n") if line]
+
+
+def parsed(text, what):
+    try:
+        answer = json.loads(text)
+    except ValueError:
+        answer = None
+    if not isinstance(answer, dict):
+        refuse("tool", "%s did not print one JSON object" % what, text[:2000])
+    return answer
+
+
+# --- the root, and what is asked of this repository -----------------------------
+
+
+def repository():
+    """Where this repository lies, by real paths: this working tree, and every other one
+    git lists for it — the main one holds its git directory. A root in any of them would
+    be a write inside it."""
+    listed = source("worktree", "list", "--porcelain")
+    return sorted({os.path.realpath(ROOT)} | {os.path.realpath(line[len("worktree "):]) for line in lines(listed.out) if line.startswith("worktree ")})
+
+
+def within(real, places):
+    """Whether a real path is one of `places`, or lies below one."""
+    return any(real == place or real.startswith(place + os.sep) for place in places)
+
+
+def outside(value):
+    """A canary's root, as its real path: absolute, of plain segments, and no part of this
+    repository."""
+    if not os.path.isabs(value):
+        refuse("usage", "the root `%s` is not an absolute path: a relative one would be read from wherever the caller stands — see dev/stabilize-canary --help" % value)
+    real = os.path.realpath(value)
+    if within(real, repository()):
+        refuse("inside", "the root `%s` lies inside the repository (`%s`): the canary is built outside it, and writes no file of it" % (value, real), "the repository's working trees are %s" % ", ".join("`%s`" % place for place in repository()), "hand the setup a root outside the repository — `mktemp -d` under the session's scratch root")
+    parts = real[1:].split("/")
+    if not all(PLAIN.fullmatch(part) for part in parts):
+        refuse("usage", "the root `%s` is not a path of plain segments (letters, digits, `.`, `_`, `-`): the harness takes no other scratch root — see dev/stabilize-canary --help" % real)
+    return real
+
+
+def unused(value):
+    """A root a setup may build in: not there yet, below a directory that is — or there,
+    a directory, and empty."""
+    real = outside(value)
+    if os.path.lexists(real):
+        if not os.path.isdir(real):
+            refuse("no-root", "the root `%s` is there and is no directory" % real)
+        if os.listdir(real):
+            refuse("exists", "the root `%s` holds something already: a root is used once, and nothing in it is read, replaced or written through" % real, "it holds: %s" % ", ".join(sorted(os.listdir(real))[:10]))
+    elif not os.path.isdir(os.path.dirname(real)):
+        refuse("no-root", "the root `%s` is not there, and neither is the directory it would be made in: the setup makes the root and nothing above it" % real)
+    return real
+
+
+def commit_of(rev, what):
+    """The commit of THIS repository that `rev` names."""
+    asked = source("rev-parse", "--verify", "--quiet", "--end-of-options", rev + "^{commit}")
+    if asked.code != 0 or not FULL_SHA.fullmatch(asked.out.strip()):
+        refuse("no-commit", "%s, `%s`, is no commit of the repository" % (what, rev), asked.shown())
+    return asked.out.strip()
+
+
+def holds(commit, path):
+    return source("cat-file", "-e", "%s:%s" % (commit, path)).code == 0
+
+
+def chosen(value):
+    """The opening's items: the ones named, in the table's order — or the default ones."""
+    known = [row["item"] for row in ITEMS]
+    if value is None:
+        return [row for row in ITEMS if row["default"]]
+    named = value.split(",")
+    if len(set(named)) != len(named) or not all(name in known for name in named):
+        refuse("usage", "--items %s names an item twice, or one this tool has no row for: the items are %s — see dev/stabilize-canary --help" % (json.dumps(value), ", ".join(known)))
+    return [row for row in ITEMS if row["item"] in named]
+
+
+# --- the opening ----------------------------------------------------------------
+
+
+def test_set(items, previous_commit):
+    """The rows `item-set` is handed."""
+    rows = []
+    for row in items:
+        written = {name: row[name] for name in ("item", "kind", "clause", "runs")}
+        written["brief"] = row["brief"] % {"previous": previous_commit} if "%(" in row["brief"] else row["brief"]
+        if row.get("doors"):
+            written["doors"] = row["doors"]
+        rows.append(written)
+    return rows
+
+
+def seeded_row(run_dir):
+    """The ONE row of the ledger's opening: round 0, ungraded, at the round's one door."""
+    return {
+        "key": SEEDED,
+        "doctype": "jigc-feedback",
+        "round": 0,
+        "source": "seeded at the opening by dev/stabilize-canary - a claim, driven by nobody",
+        "door": DOOR,
+        "clause": CLAUSES[0],
+        "repro": "%s/opening.md - the block under the heading `%s`" % (run_dir, BLOCK),
+    }
+
+
+def expected(items):
+    """How many agents the first invocation launches where each ends well, and how many
+    of them are one-command steps of the step tool."""
+    second = 1 if any(row.get("image") for row in items) else 0
+    default = [row["item"] for row in items] == [row["item"] for row in ITEMS if row["default"]]
+    return {"agents": STAGE_AGENTS + second + sum(row["agents"] for row in items), "tool_steps": STAGE_TOOL_STEPS, "wall_minutes": WALL_MINUTES if default else None}
+
+
+# --- setup ----------------------------------------------------------------------
+
+
+def setup(args, facts):
+    # EVERYTHING IS ASKED BEFORE ANYTHING IS MADE.
+    root = unused(args.root)
+    run_name, items = args.run, chosen(args.items)
+    loop, run_dir = LOOP % run_name, "%s/%s" % (RUNS, run_name)
+    candidate = commit_of(args.commit, "the candidate")
+    previous = commit_of(args.previous_commit, "the previous release's commit")
+    lacks = [path for path in NEEDS if not holds(candidate, path)]
+    if lacks:
+        refuse("unfit", "the commit named, %s, lacks %s: a stage has nothing to run there" % (candidate, ", ".join(lacks)), "", "name a commit that holds the two scripts of a run and the harness")
+    if os.path.lexists(os.path.join(ROOT, run_dir)) or holds(candidate, run_dir):
+        refuse("taken", "the repository holds `%s`: the canary's run exists in its clone only, so that a stage launched from the wrong directory finds no such run" % run_dir, "", "name a run the repository does not hold")
+    branches = lines(source("for-each-ref", "--format=%(refname)", "refs/heads/" + loop, "refs/remotes/*/" + loop).out)
+    if branches:
+        refuse("taken", "the repository holds the branch `%s` (%s): the canary's loop branch exists in its clone only" % (loop, ", ".join(branches)), "", "name a run whose loop branch the repository does not hold")
+
+    # THE ROOT, AND ITS FOUR DIRECTORIES — made here, each once.
+    if not os.path.isdir(root):
+        os.mkdir(root)
+    origin, clone, scratch, results = (os.path.join(root, name) for name in DIRS)
+    for path in (origin, clone, scratch, results):
+        os.mkdir(path)
+
+    # THE BARE REMOTE, AND THE CLONE — a repository of its own, which fetches the two
+    # commits from this one BY PATH: no remote of it names this repository.
+    made(["git", "init", "-q", "--bare", origin], root)
+    made(["git", "init", "-q", clone], root)
+    made(["git", "fetch", "-q", "--no-tags", ROOT, candidate, previous], clone)
+    made(["git", "switch", "-q", "-c", loop, candidate], clone)
+    made(["git", "remote", "add", "origin", origin], clone)
+    # What the bare remote holds before the opening: the loop branch at the commit named,
+    # as a real remote holds a run's branch before the run is opened. Pushed by name.
+    made(["git", "push", "-q", "origin", loop], clone)
+
+    # THE OPENING: the record's prose, which no script writes; then every fact, row and
+    # item through the CLONE'S OWN record script; then one commit, of the run's directory.
+    os.makedirs(os.path.join(clone, run_dir))
+    told = {"run": run_name, "loop": loop, "candidate": candidate, "previous": args.previous, "previous_commit": previous, "door": DOOR, "seeded": SEEDED, "block": BLOCK, "items": ", ".join("`%s` (%s)" % (row["item"], row["kind"]) for row in items)}
+    with open(os.path.join(clone, run_dir, "opening.md"), "x", encoding="ascii") as file:
+        file.write(OPENING % told)
+    record = os.path.join(clone, RECORD)
+    made([record, "run-set", "--run", run_name], clone, json.dumps({"stop": "every-round", "previous": args.previous, "previous-commit": previous, "scope": "delta", "clauses": list(CLAUSES)}))
+    made([record, "item-set", "--run", run_name], clone, json.dumps(test_set(items, previous)))
+    made([record, "ledger-add", "--run", run_name], clone, json.dumps([seeded_row(run_dir)]))
+    made(["git", "add", "--", run_dir], clone)
+    made(["git", "commit", "-q", "-m", SUBJECT % run_name], clone)
+    # THE PUSH IS THE STEP TOOL'S: a record's push, every commit of it vetted first.
+    made([os.path.join(clone, STEP), "push", "--branch", loop, "--run-dir", run_dir], clone)
+
+    facts.update(
+        root=root,
+        clone=clone,
+        origin=origin,
+        scratch=scratch,
+        results=results,
+        run=run_name,
+        loop=loop,
+        run_dir=run_dir,
+        candidate=candidate,
+        head=made(["git", "rev-parse", "HEAD"], clone),
+        previous={"version": args.previous, "commit": previous},
+        door=DOOR,
+        items=[{"item": row["item"], "kind": row["kind"]} for row in items],
+        seeded=SEEDED,
+    )
+    found = examined(root, facts)
+    # THE RUN IS IN THE STATE A FRESH RUN HAS, as the clone's own record script reads it.
+    fresh = {"next": "test", "round": 1, "attempt": 1}
+    if found["state"] != fresh or found["not_ready"]:
+        refuse("not-fresh", "the run `%s` is not in the state a fresh run has — `next` is `test`, round 1, attempt 1, and the opening owes nothing" % run_name, json.dumps({"state": found["state"], "not_ready": found["not_ready"]}))
+    facts.update(
+        remote_head=found["remote_head"],
+        state=fresh,
+        session_cwd=clone,
+        script_path=os.path.join(clone, HARNESS),
+        args={"stage": "test", "run": run_name, "scratch": scratch, "scope": {"doors": [DOOR]}},
+        args_then={"stage": "test", "run": run_name, "scratch": scratch},
+        returns={name: os.path.join(results, name + ".json") for name in RETURNS},
+        check="dev/%s check --root %s" % (PROG, root),
+        expect=expected(items),
+        status="ready",
+    )
+    kept = os.path.join(root, KEPT)
+    with open(kept, "x", encoding="ascii") as file:
+        file.write(json.dumps(facts, indent=1) + "\n")
+
+
+# --- check ----------------------------------------------------------------------
+
+
+def not_isolated(detail, evidence=""):
+    refuse("not-isolated", detail, evidence, "NO STAGE IS INVOKED ON THIS CLONE: something in it, or in the caller's git configuration, could carry a push somewhere else. A canary is set up again under another root")
+
+
+def examined(root, kept):
+    """THE CLONE CAN REACH NOTHING BUT ITS BARE REMOTE — or a refusal — and what the run
+    holds, read. Every answer is git's own, asked under the caller's configuration."""
+    origin, clone, scratch, results = (os.path.join(root, name) for name in DIRS)
+    for path in (origin, clone, scratch, results):
+        if os.path.islink(path) or os.path.realpath(path) != path or not os.path.isdir(path):
+            refuse("link", "`%s` is not the canary's own directory: it is a link, is not there, or is no directory — nothing is read or written through it" % path)
+    env, run_name, loop = callers_env(), kept["run"], kept["loop"]
+
+    def said(*argv):
+        return made(["git"] + list(argv), clone, env=env)
+
+    remotes = lines(said("remote"))
+    if remotes != ["origin"]:
+        not_isolated("the clone has the remotes %s, and a canary's clone has ONE: `origin`" % json.dumps(remotes))
+    fetch_url, push_url = lines(said("remote", "get-url", "--all", "origin")), lines(said("remote", "get-url", "--push", "--all", "origin"))
+    if fetch_url != [origin] or push_url != [origin]:
+        not_isolated("`origin` is not the bare repository beside the clone, as git itself answers under the caller's configuration", "it fetches from %s and pushes to %s; the bare repository is `%s`" % (json.dumps(fetch_url), json.dumps(push_url), origin))
+    rewrites = run(["git", "config", "--local", "--get-regexp", r"^url\..*\.(insteadof|pushinsteadof)$"], clone, env)
+    if rewrites.code != 1 or rewrites.out.strip():
+        not_isolated("the clone's own configuration holds a `url.*` rewrite", rewrites.shown())
+    # Every value of the clone's own configuration, as git reads it — in the file itself a
+    # path may be quoted — held against what is this repository's: a URL of one of its
+    # remotes, and a path that leads, by its real path, into one of its working trees.
+    urls = [line.split(" ", 1)[1] for line in lines(source("config", "--get-regexp", r"^remote\..*\.(url|pushurl)$").out) if " " in line]
+    named = []
+    for entry in said("config", "--local", "--null", "--list").split("\0"):
+        key, _, value = entry.partition("\n")
+        if any(url in value for url in urls if url) or (os.path.isabs(value) and within(os.path.realpath(value), repository())):
+            named.append(key)
+    if named:
+        not_isolated("the clone's own configuration names what is this repository's — a remote of it, or the repository itself — under %s" % ", ".join(sorted(set(named))), "`git config --local --list` in the clone")
+
+    head = said("rev-parse", "HEAD")
+    listed = run(["git", "rev-parse", "--verify", "--quiet", "refs/heads/" + loop], origin, env)
+    remote_head = listed.out.strip() if listed.code == 0 else None
+    state = parsed(made([os.path.join(clone, RECORD), "state", "--run", run_name], clone, env=env), "the clone's `%s state`" % RECORD)
+    at = (state.get("position") or {}).get("test") or {}
+    position = {"next": state.get("next"), "round": at.get("round"), "attempt": at.get("attempt")}
+    if at.get("refused"):
+        position["refused"] = at["refused"]
+    return {
+        "root": root,
+        "run": run_name,
+        "loop": loop,
+        "branch": said("branch", "--show-current"),
+        "remotes": remotes,
+        "fetch_url": fetch_url[0],
+        "push_url": push_url[0],
+        "head": head,
+        "remote_head": remote_head,
+        "pushed": remote_head == head,
+        "records": int(said("rev-list", "--count", "%s..HEAD" % kept["head"])),
+        "pending": len(lines(said("status", "--porcelain", "--untracked-files=all"))),
+        "state": position,
+        "not_ready": state.get("not_ready"),
+        "items": [{"item": row.get("item"), "kind": row.get("kind"), "selected": row.get("selected")} for row in state.get("items") or []],
+        "ledger": [{name: row.get(name) for name in ("key", "grade", "disposition", "route")} for row in state.get("ledger") or []],
+        "returned": {name: os.path.isfile(os.path.join(results, name + ".json")) for name in RETURNS},
+    }
+
+
+def check(args, facts):
+    root = outside(args.root)
+    kept = os.path.join(root, KEPT)
+    if not os.path.isfile(kept):
+        refuse("missing", "the root `%s` holds no canary: no `%s` is there — a setup that failed leaves none" % (root, KEPT), "", "`dev/stabilize-canary setup` builds one, under a root that is not there yet")
+    with open(kept, encoding="ascii") as file:
+        facts.update(examined(root, parsed(file.read(), "`%s`" % kept)), status="checked")
+
+
+# --- arguments ------------------------------------------------------------------
+
+
+class Arguments(argparse.ArgumentParser):
+    def error(self, message):
+        refuse("usage", "%s — see dev/stabilize-canary --help" % message)
+
+
+def grammar(pattern, what, longest=None):
+    def taken(value):
+        if not pattern.fullmatch(value) or (longest and len(value) > longest):
+            raise argparse.ArgumentTypeError("%s is not %s" % (json.dumps(value), what))
+        return value
+
+    return taken
+
+
+FLAGS = {
+    "run": grammar(SLUG, "a slug (a-z0-9 words joined by single `-`, at most %d characters)" % SLUG_MAX, SLUG_MAX),
+    "previous": grammar(VERSION, "a version (`1.2.3`, `1.2.3-rc.4`)"),
+    "previous-commit": grammar(FULL_SHA, "a full commit sha"),
+}
+
+
+def arguments(argv):
+    parser = Arguments(prog="dev/" + PROG, add_help=False, allow_abbrev=False)
+    acts = parser.add_subparsers(dest="act", required=True, parser_class=Arguments)
+
+    def act(name, does, flags):
+        sub = acts.add_parser(name, add_help=False, allow_abbrev=False)
+        sub.set_defaults(does=does)
+        for flag in flags:
+            sub.add_argument("--" + flag, required=True, **({"type": FLAGS[flag]} if flag in FLAGS else {}))
+        return sub
+
+    act("setup", setup, ["root", "commit", "run", "previous", "previous-commit"]).add_argument("--items")
+    act("check", check, ["root"])
+    if not argv or argv[0] not in acts.choices:
+        refuse("usage", "%s is not an act: the acts are %s — see dev/stabilize-canary --help" % (json.dumps(argv[0]) if argv else "nothing", ", ".join(acts.choices)))
+    return parser.parse_args(argv)
+
+
+# --- the line -------------------------------------------------------------------
+
+
+def line_of(facts):
+    """The one line an act prints: its facts as JSON, and last the sha256 of that JSON —
+    as dev/stabilize-step prints its line."""
+    body = json.dumps({"act": facts["act"], "status": facts["status"], **facts})
+    return '%s, "sha256": "%s"}' % (body[:-1], hashlib.sha256(body.encode("utf-8")).hexdigest())
+
+
+def main(argv):
+    # UTF-8 out, whatever the caller's locale claims: the line is read by a script.
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+    if any(arg in ("-h", "--help") for arg in argv):
+        usage_help()
+        return 0
+    facts = {"act": argv[0] if argv else None}
+    try:
+        args = arguments(argv)
+        try:
+            args.does(args, facts)
+        except OSError as error:
+            # What the file system refused is a refusal too: one line, never a traceback.
+            refuse("tool", "the file system refused what the act would make or read: %s" % error.strerror, str(error), "read what it says; a setup that stopped here left a root that holds no canary, and is asked for again under another root")
+        print(line_of(facts))
+        return 0
+    except Refusal as refusal:
+        detail = " ".join(refusal.detail.split())
+        halt = {
+            "root_cause": "%s: %s" % (refusal.kind, detail),
+            "evidence": " ".join(refusal.evidence.split()),
+            "tree_state": "(the tool writes nothing inside the repository it is run from: no tree was read)",
+            "recommendation": refusal.recommendation,
+        }
+        facts.update(status="halted", refused=refusal.kind, halt=halt)
+        print(line_of(facts))
+        sys.stderr.write("%s: refused %s: %s\n" % (PROG, refusal.kind, detail))
+        return STATUS[refusal.kind]
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
