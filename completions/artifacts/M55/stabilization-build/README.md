@@ -87,6 +87,39 @@ What was decided about the repair since the plan was returned — the human's ru
 
 **The copies are sanitized by the rule this record states under *Files*.** Review A's report is byte-identical to its source (`cmp`). Review B's differs in one place: its one relative link to the first review's report, which lies one directory up from its new home, was retargeted (`harness-agents-gate.md` → `../harness-agents-gate.md`). The plan's review is byte-identical to the transcription the orchestrator handed over (`cmp`). Neither holds an absolute host path, a login name, a session or agent id, or a credential; the one term that looks like a denylist entry (`zzqprivatetermzz`, in review A's blocks) is the synthetic denylist of its rigs. Their rigs, scenario scripts and outputs stayed in the session scratch directory: a repro that matters is rebuilt from its block, and review A's appendix holds its helpers whole.
 
+## The core's script-side tasks, reviewed for three dangers — and the pass that followed
+
+**Recorded 2026-10-07, on `fix/rc24-core-review`, forked from `fix/rc24-tier1` at `bbe873eb`.** Once the six script-side tasks of the core had landed (`K1` `e76ef470`, `K2` `b34fb073`, `K4` `3c6a889d`, `K5`/`K6` `8f13ea7b` `b36b8c93`, `K9` `c2169e19`, `K10` `bbe873eb`), one independent, read-only reviewer read them for three dangers and for nothing else — *publish something unscanned, record or compute something false, strand state on the shared branch*: the narrow path the human ruled for what is repaired before the run's opening, as the orchestrator relayed it. Its report is [re-review-test-half/core-review.md](re-review-test-half/core-review.md), as the reviewer wrote it: byte-identical to its source (`cmp`); it holds no absolute host path — its blocks name `<scratch>` and `<this repository>` — and the one term that looks like a denylist entry (`zzqforbidden`) is the synthetic denylist of its rig. **Verdict: no finding blocks the small canary; eight rows (`F1`–`F8`), nine leads, seven appendix lines; of the fences the tasks turned, one is weakened.**
+
+**A fix pass followed on the same branch, one commit per group, each finding driven again before it was fixed** (`DECISIONS.md` → *2026-10-07 — The core's script-side tasks, reviewed for three dangers*). The table is the pass's ledger: every finding, lead and appendix line of the report, and what became of it. *Driven* is this pass's own run of the report's block, at `bbe873eb`, with the machine's own gitleaks.
+
+| | what the report says | driven again | disposition |
+|---|---|---|---|
+| `F1` | a commit that lands between the vet and the push is published unvetted | — | **this pass, commit 1** — not yet built |
+| `F2` | a remote-tracking ref the remote does not bear out switches off the vet and the foreign-commit refusal | — | **this pass, commit 1** — not yet built |
+| `F6` | a secret-shaped string in a commit's message passes every push | — | **this pass, commit 1** — not yet built |
+| `F3` | a result's commit is held to nothing once the round has its candidate, and `close` is computed over it | — | **this pass, commit 2** — not yet built; ruled by the orchestrator (the same entry) |
+| `F4` | `discard` takes back a batch whose commit is pushed, on the tool's own advice | — | **this pass, commit 3** — not yet built |
+| `F5` | an added line that opens `++ ` is read by no denylist scan of a range | — | **this pass, commit 4** — not yet built |
+| `F7` | the fence on the files the tool opens no longer reddens for a file opened through `whole` or `kept_once` | — | **this pass, commit 5** — not yet built |
+| `F8` | two of the four conditions the commit step's kept answer is believed by are pinned by no test | — | **this pass, commit 5** — not yet built |
+| lead 1 | a held gate names no tree | — | not yet dispositioned |
+| lead 2 | a held regression verdict is not held to the run's previous release | — | not yet dispositioned |
+| lead 3 | an item's entry in the state's digest drops its five standing fields where they are null | — | not yet dispositioned |
+| lead 4 | `unfit` is not a refusal | — | not yet dispositioned |
+| lead 5 | `forbids_close.candidate` is a flag in the digest | — | not yet dispositioned |
+| lead 6 | gitleaks reads no merge's own lines | — | not yet dispositioned |
+| lead 7 | attributes kept outside the tree blind both scanners over a range | — | not yet dispositioned |
+| lead 8 | `git-state` making the owed push while a batch is applied: the guard removed, four tests stay green | — | not yet dispositioned |
+| lead 9 | `dev/hygiene-scan` prints twelve characters of a message line that opens with the byte 0x01 | — | not yet dispositioned |
+| appendix 1 | a link at a report's path makes `pending` refuse `outside`, and every act that reads the pending writes halts | — | not yet dispositioned |
+| appendix 2 | an empty `verdict.json` is refused `missing` by every later read | — | not yet dispositioned |
+| appendix 3 | a start killed between its fork and its `job.json` leaves a command running under a name every act answers `missing` for | — | not yet dispositioned |
+| appendix 4 | two commit steps at once over one batch: one records, one halts | — | not yet dispositioned |
+| appendix 5 | a kept verdict is believed by a hash of itself, and an item's kind can be corrected at any time | — | not yet dispositioned |
+| appendix 6 | the probe's kind, held without the probe begun, is `void` | — | not yet dispositioned |
+| appendix 7 | a supervisor killed: `dead`, and a start under the same name answers `dead` again | — | not yet dispositioned |
+
 ## Files
 
 | path | what |
