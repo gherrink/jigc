@@ -4315,6 +4315,153 @@ fn row_at(key: &str, door: &str) -> Value {
     entry
 }
 
+/// **A confirmed finding whose regression fact is unknown is recorded so, routed as a
+/// confirmed one, and named** (the coordinator's eighth group of the pass that followed the
+/// core's review, ruled by the orchestrator: *record more, trust less*). A verifier can
+/// confirm a finding and not know whether it is a regression — the previous release's
+/// binary was not handed to it, the door is one that release does not have, its return
+/// lacks that binary's hash. `triage-set` refused such an entry, and with it the whole
+/// batch: the stage halted at its record after every instrument ran — or the harness wrote
+/// `no`, a false fact. Now `regression` absent, or null, is taken with `confirmed`, the
+/// cell is `-`, and the state NAMES the finding (`regression_unknown`) for as long as it is
+/// not recorded: it is never read as *not a regression*. It is routed by its grade and its
+/// door exactly as a confirmed non-regression is, and it forbids `close` as that one does
+/// and no longer: the missing fact is an attribute of a finding, not a missing verdict.
+#[test]
+fn a_confirmed_finding_whose_regression_fact_is_unknown_is_recorded_so_and_named() {
+    let rig = Rig::new("regression-unknown");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "round 1's scope");
+    let rows = json!([
+        row_at("f-absent", INSIDE),
+        row_at("f-out", EXCLUDED),
+        row_at("f-known", INSIDE),
+        row_at("f-null", INSIDE),
+        row_at("f-yes", EXCLUDED),
+    ]);
+    rig.run(&ledger_add(RUN), &rows.to_string())
+        .must(OK, "the round's findings");
+
+    // STILL REFUSED, and nothing written: a regression that is neither a boolean nor
+    // nothing — a word, a number, a list.
+    let before = rig.snapshot();
+    for wrong in [json!("unknown"), json!("no"), json!(0), json!([])] {
+        let entry = json!([{"key": "f-absent", "grade": "breaks", "verdict": "confirmed", "regression": wrong}]);
+        rig.run(&triage_set(RUN, "1"), &entry.to_string()).refused(
+            BAD_VALUE,
+            "a regression that is neither a boolean nor nothing",
+        );
+    }
+    assert_eq!(rig.snapshot(), before);
+
+    let entries = json!([
+        {"key": "f-absent", "grade": "breaks", "verdict": "confirmed"},
+        {"key": "f-out", "grade": "breaks", "verdict": "confirmed"},
+        {"key": "f-known", "grade": "breaks", "verdict": "confirmed", "regression": false},
+        {"key": "f-null", "grade": "unclear", "verdict": "confirmed", "regression": null},
+        {"key": "f-yes", "grade": "breaks", "verdict": "confirmed", "regression": true},
+    ]);
+    rig.run(&triage_set(RUN, "1"), &entries.to_string()).must(
+        OK,
+        "three confirmed findings whose regression fact is unknown, beside two known",
+    );
+    let cells: BTreeMap<String, (String, String)> =
+        table(&rig.read(&triage_path("1")), &TRIAGE_COLUMNS)
+            .into_iter()
+            .map(|row| {
+                (
+                    row[0].trim_matches('`').to_owned(),
+                    (row[3].clone(), row[4].clone()),
+                )
+            })
+            .collect();
+    let cell = |key: &str| (cells[key].0.as_str(), cells[key].1.as_str());
+    assert_eq!(
+        [
+            cell("f-absent"),
+            cell("f-out"),
+            cell("f-null"),
+            cell("f-known"),
+            cell("f-yes")
+        ],
+        [
+            ("confirmed", "-"),
+            ("confirmed", "-"),
+            ("confirmed", "-"),
+            ("confirmed", "no"),
+            ("confirmed", "yes")
+        ],
+        "the cell that means unknown, and the two that are facts"
+    );
+
+    // THE STATE: routed by its grade and its door as a confirmed non-regression is — fixed
+    // unasked inside the test set, the human's outside it — its fact read as null, never as
+    // false; and NAMED, in the ledger's order.
+    let read = rig.state();
+    let of = |key: &str| -> Value {
+        let finding = read["ledger"]
+            .as_array()
+            .expect("the ledger")
+            .iter()
+            .find(|finding| finding["key"] == key)
+            .unwrap_or_else(|| panic!("the finding {key}"));
+        json!([
+            finding["grade"],
+            finding["route"],
+            finding["why"],
+            finding["triage"]["regression"]
+        ])
+    };
+    assert_eq!(of("f-known"), json!(["confirmed", "fix", "inside", false]));
+    assert_eq!(of("f-absent"), json!(["confirmed", "fix", "inside", null]));
+    assert_eq!(of("f-null"), json!(["confirmed", "fix", "inside", null]));
+    assert_eq!(of("f-out"), json!(["confirmed", "human", "outside", null]));
+    assert_eq!(
+        of("f-yes"),
+        json!(["regression", "fix", "regression", true])
+    );
+    assert_eq!(
+        read["regression_unknown"],
+        json!(["f-absent", "f-out", "f-null"]),
+        "{read}"
+    );
+
+    // IT FORBIDS `close` AS ANY OPEN FINDING DOES, AND NO LONGER: once the human has ruled
+    // the findings, nothing of the missing fact stands in the way, and nothing is named.
+    let forbidding = |read: &Value| -> Vec<String> {
+        read["forbids_close"]
+            .as_array()
+            .expect("what forbids closing")
+            .iter()
+            .filter_map(|entry| entry["finding"].as_str().map(str::to_owned))
+            .collect()
+    };
+    assert!(
+        ["f-absent", "f-out", "f-null"]
+            .iter()
+            .all(|key| forbidding(&read).contains(&(*key).to_owned())),
+        "{read}"
+    );
+    let ruled = json!([
+        {"key": "f-absent", "disposition": "later"},
+        {"key": "f-out", "disposition": "later"},
+        {"key": "f-null", "disposition": "later"},
+    ]);
+    rig.run(&ledger_set(RUN), &ruled.to_string())
+        .must(OK, "the human's ruling on the three");
+    let read = rig.state();
+    assert_eq!(read["regression_unknown"], json!([]), "{read}");
+    assert!(
+        !["f-absent", "f-out", "f-null"]
+            .iter()
+            .any(|key| forbidding(&read).contains(&(*key).to_owned())),
+        "{read}"
+    );
+}
+
 #[test]
 fn a_rounds_triage_is_recorded_with_inside_computed_from_the_rounds_doors() {
     let rig = Rig::new("triage");
@@ -4597,12 +4744,16 @@ fn a_rounds_triage_is_recorded_with_inside_computed_from_the_rounds_doors() {
             "a grade outside the vocabulary",
         ),
         (
-            entry(json!({"verdict": "confirmed"})),
-            "confirmed, with no word on regression",
-        ),
-        (
             entry(json!({"verdict": "confirmed", "regression": "yes"})),
             "a regression that is not a boolean",
+        ),
+        (
+            entry(json!({"verdict": "confirmed", "regression": "unknown"})),
+            "a regression that is a word, where not knowing is saying nothing",
+        ),
+        (
+            entry(json!({"verdict": "refuted", "regression": null})),
+            "a regression, even an unknown one, of a refuted finding",
         ),
         (
             entry(json!({"verdict": "refuted", "regression": false})),
@@ -4717,6 +4868,7 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
             "uncovered": [],
             "ledger": [],
             "blockers": [],
+            "regression_unknown": [],
             "human_list": [],
             "human_stages": [],
             "candidate": {"round": null, "commit": null, "current": false},
@@ -5036,6 +5188,7 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                 },
             ],
             "blockers": ["audit-f3"],
+            "regression_unknown": [],
             "human_list": [],
             "human_stages": [],
             // Round 1 is the latest that tested a candidate, and round 2 is begun.

@@ -8245,6 +8245,7 @@ fn the_state_digest_at_the_real_runs_shape_is_a_few_kilobytes() {
     assert_eq!(state["facts"]["previous-commit"], "9".repeat(40).as_str());
     assert_eq!(state["blockers"], 0);
     assert_eq!(state["reverify"], json!([]));
+    assert_eq!(state["regression_unknown"], json!([]));
     // What forbids closing, by kind: the clauses that are not green by name, the findings
     // that are not recorded as a count, and whether the candidate is untested.
     assert_eq!(
@@ -8268,6 +8269,8 @@ fn the_state_digest_at_the_real_runs_shape_is_a_few_kilobytes() {
         "doors": [document["doors"]["included"][0], document["doors"]["included"][1], document["doors"]["included"][2]],
     }});
     document["human_list"][3]["why"] = json!("ungraded-after-retry");
+    // And the findings a verifier confirmed without knowing whether each is a regression.
+    document["regression_unknown"] = json!(["row-002", "row-007"]);
     let forged = json!({"act": "state", "status": "read", "branch": LOOP, "state": document});
     let digest = rig.projected(&forged.to_string());
     assert_eq!(digest["unfit"], json!([]), "{digest}");
@@ -8278,6 +8281,11 @@ fn the_state_digest_at_the_real_runs_shape_is_a_few_kilobytes() {
         "{digest}"
     );
     assert_eq!(digest["state"]["reverify"], json!(["row-004"]));
+    assert_eq!(
+        digest["state"]["regression_unknown"],
+        json!(["row-002", "row-007"]),
+        "the keys, as the document names them: {digest}"
+    );
     assert_eq!(digest["state"]["human_list"], 20);
 }
 

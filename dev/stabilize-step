@@ -476,6 +476,8 @@
 #       clauses [{clause, status, round, commit, behind, retry}], never_selected,
 #       untriaged {count, why: [{why, count}]}, ledger, blockers, human_list (each how
 #       many), reverify (the keys of the human's list that stand there after a retry),
+#       regression_unknown (the keys of the findings confirmed without anybody knowing
+#       whether each is a regression),
 #       human_clauses, human_stages, retest, unsettled, forbids_close {clauses: [{clause,
 #       status}], no_clauses, findings: how many, candidate}. It grows with the test set
 #       and with nothing else: no brief, no door, no derivation, no ledger row is in it.
@@ -2011,6 +2013,7 @@ STATE = {
     "blockers": "count",
     "human_list": "count",
     "reverify": ["id", 200],
+    "regression_unknown": ["id", 200],
     "human_clauses": [{"clause": "id", "why": "word"}, 50],
     "human_stages": [{"stage": "word", "round": "count", "cycle": "count?", "at": "word", "attempt": "count", "attempts": "count", "why": "word"}, 10],
     "retest": ["id", 50],
@@ -2086,7 +2089,7 @@ def state_brief(document):
             bare[within] = bare.get(within, 0) + 1
     whys = [entry["why"] for entry in document["untriaged"]]
     forbids = document["forbids_close"]
-    brief = {name: document[name] for name in ("run", "opened", "next", "not_ready", "stop", "round", "fix_rounds", "candidate", "facts", "never_selected", "human_clauses", "human_stages", "retest", "unsettled")}
+    brief = {name: document[name] for name in ("run", "opened", "next", "not_ready", "stop", "round", "fix_rounds", "candidate", "facts", "never_selected", "human_clauses", "human_stages", "retest", "unsettled", "regression_unknown")}
     brief.update(
         position={stage: placed(at) for stage, at in document["position"].items()},
         rounds=[{"round": held["round"], "candidate": held["facts"]["candidate"], "cycles": held["facts"]["cycles"]} for held in document["rounds"]],

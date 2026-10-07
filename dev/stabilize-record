@@ -243,7 +243,14 @@
 #         verdict      the verifier's, of a finding graded breaks or unclear:
 #                      confirmed | refuted. Without one, the finding awaits it.
 #         regression   with confirmed and only with it: true when the repro is green on
-#                      the previous release's binary — the verifier's fact
+#                      the previous release's binary, false when it is red there too —
+#                      the verifier's fact. ABSENT, OR null, WHERE THE VERIFIER DOES NOT
+#                      KNOW: it was handed no binary of the previous release, the door is
+#                      one that release does not have, its return does not back the
+#                      claim. The cell is then `-` beside `confirmed`, the finding is
+#                      graded confirmed and routed as one, and `state` names it
+#                      (regression_unknown): an unknown fact is never written as `no`.
+#                      Anything else — a word, a number — is refused (bad-value).
 #         fork         with a verdict and only with one: A FORK — the verifier found the
 #                      finding to contest a settled decision, so what is done about it is
 #                      the human's to rule and no fixer's. One object, all three named:
@@ -469,6 +476,15 @@
 #                                triage records of the latest round in a row left it so,
 #                                retry: due | spent}
 #         blockers     the keys routed fix
+#         regression_unknown  the keys of the findings a verifier CONFIRMED WITHOUT
+#                      KNOWING WHETHER EACH IS A REGRESSION (triage-set: regression absent
+#                      or null), for as long as the finding is not routed recorded. Such
+#                      a finding is routed by its grade and its door exactly as a
+#                      confirmed non-regression is — fix inside the test set, the human's
+#                      outside it — and is never fixed unasked as "a regression", which
+#                      nobody established. The missing fact forbids `close` no longer
+#                      than the finding itself does: it is an attribute of a finding,
+#                      not a missing verdict.
 #         human_list   [{key, why}] — the findings routed human
 #         human_stages [{stage, round, cycle, at, attempt, attempts, why}] — the stage
 #                      whose attempts are spent, when the step is that stage's: `attempt`
@@ -2974,9 +2990,16 @@ def triage_entry(entry):
         if "regression" in entry:
             refuse("bad-value", "%s: a regression is the verifier's fact about a finding it confirmed" % what)
         return key, [grade, "refuted", "-", fork], ("refuted", "verify-real")
-    if not isinstance(entry.get("regression"), bool):
-        refuse("bad-value", "%s: confirmed says whether the finding is a regression — `regression` is true when the repro is green on the previous release, else false" % what)
-    if entry["regression"]:
+    regression = entry.get("regression")
+    if regression is not None and not isinstance(regression, bool):
+        refuse("bad-value", "%s: confirmed says whether the finding is a regression where its verifier knows — `regression` is true when the repro is green on the previous release, false when it is red there too — and says nothing (the field absent, or null) where it does not: %s is none of the three" % (what, shown(regression)))
+    if regression is None:
+        # THE VERIFIER DOES NOT KNOW — it was handed no binary of the previous release, the
+        # door is one that release does not have, its return does not back the claim. The
+        # cell says so (`-` beside `confirmed`), the finding is confirmed, and the state
+        # names it: never `no`, which would be a fact nobody established.
+        return key, [grade, "confirmed", "-", fork], ("confirmed", "verify-real")
+    if regression:
         return key, [grade, "confirmed", "yes", fork], ("regression", "verify-real")
     return key, [grade, "confirmed", "no", fork], ("confirmed", "verify-real")
 
@@ -3824,6 +3847,9 @@ def document(run_dir, run):
         "uncovered": uncovered,
         "ledger": findings,
         "blockers": [finding["key"] for finding in findings if finding["route"] == "fix"],
+        # Confirmed, and nobody knows whether it is a regression: named for as long as the
+        # finding is not recorded, so that the missing fact is never read as `no`.
+        "regression_unknown": [finding["key"] for finding in findings if finding["route"] != "recorded" and finding["triage"] is not None and finding["triage"]["verdict"] == "confirmed" and finding["triage"]["regression"] is None],
         "human_list": [{"key": finding["key"], "why": finding["why"]} for finding in findings if finding["route"] == "human"],
         "human_stages": human_stages,
         **following,
