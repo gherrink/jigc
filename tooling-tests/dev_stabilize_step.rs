@@ -3442,6 +3442,34 @@ fn what_a_commit_says_is_held_to_what_its_files_are_held_to() {
     assert_eq!(seen.done("push", "ready")["vetted"], json!([clean]));
 }
 
+/// **The secret scan of a range reads a merge's own lines** (the core review's sixth lead,
+/// driven: a credential typed while a conflict was resolved was pushed by the tool).
+/// gitleaks reads what `git log -p` prints, and that prints no diff for a merge unless it
+/// is asked; the denylist scan asks (`--remerge-diff`), and the push's secret scan now asks
+/// the same. Held here on every machine by what the scanner is ASKED — the stand-in reads
+/// no range — and by the machine's own gitleaks over a real merge in the arm below.
+#[test]
+fn the_secret_scan_of_a_range_is_asked_for_a_merges_own_lines() {
+    let rig = StepRig::new("vet-merge-asked");
+    let note = rig.change(
+        &format!("{RUN_DIR}/note.md"),
+        "a note\n",
+        "docs(record): a note",
+    );
+    let held = rig.remote_heads().join(" ");
+    let asked = rig.dir().join("asked");
+    while_the_range_is_scanned(
+        &rig,
+        &format!("printf '%s\\n' \"$*\" >'{}'", sh_quoted(&asked)),
+    );
+    rig.step(&["push", "--branch", LOOP]).done("push", "ready");
+    let asked = fs::read_to_string(&asked).expect("what the range's secret scan was asked");
+    assert!(
+        asked.contains(&format!("--log-opts --remerge-diff {note} --not {held} ")),
+        "the range, and a merge's own lines with it: {asked}"
+    );
+}
+
 /// The stub stands in for gitleaks' exit contract, reads the tree and not the range, and
 /// says nothing about gitleaks' rules. This arm runs whatever the machine has over the
 /// range a push would publish: with gitleaks installed, a credential-shaped string in an
@@ -3532,8 +3560,48 @@ fn the_machines_own_gitleaks_reads_the_range_a_push_would_publish() {
     );
     assert_eq!(
         rig.remote(LOOP),
-        Some(clean),
+        Some(clean.clone()),
         "the credential in the message was not pushed"
+    );
+
+    // AND A MERGE'S OWN LINES (the core review's sixth lead): neither parent holds the
+    // string — only the hand that resolved the conflict typed it.
+    rig.git(&["reset", "-q", "--hard", &clean]);
+    rig.git(&["switch", "-q", "-c", "fix/side"]);
+    rig.change("crates/a.txt", "theirs\n", "fix: theirs");
+    rig.git(&["switch", "-q", LOOP]);
+    rig.change("crates/a.txt", "ours\n", "fix: ours");
+    assert!(
+        !rig.git_ok(&["merge", "-q", "fix/side"]),
+        "the fixture needs a conflict, so that the resolution is the merge's own"
+    );
+    rig.write(
+        "crates/a.txt",
+        &format!("resolved, and the environment held {token}\n"),
+    );
+    let merge = rig.commit("Merge branch 'fix/side'");
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    let said = seen.refused("unvetted");
+    assert!(
+        said["vet"]["refused"]
+            .as_array()
+            .expect("what was refused")
+            .iter()
+            .any(|found| found["commit"] == merge.as_str()
+                && found["path"] == "crates/a.txt"
+                && found["why"] == "hygiene"),
+        "gitleaks names the merge and the file: {}",
+        seen.raw
+    );
+    assert!(
+        !seen.raw.contains(&token),
+        "and never the string: {}",
+        seen.raw
+    );
+    assert_eq!(
+        rig.remote(LOOP),
+        Some(clean),
+        "the credential in the merge was not pushed"
     );
 }
 
@@ -5060,6 +5128,111 @@ fn a_second_identical_call_finds_what_is_done() {
     );
 }
 
+/// **A kept answer is believed only for the commit and the batch it names** (the core
+/// review's `F8`). A commit step asked again answers `recorded` from the answer it kept
+/// beside its gate's file where four things hold: it is handed the commit the stage began
+/// on, the calls and checks are the ones asked, the branch and THE COMMIT are the ones the
+/// file names, and HEAD's one parent is that commit. The code was right; but with the
+/// commit's equality dropped, and with the calls and checks' dropped, the whole suite stayed
+/// green — two of four conditions were held by no test. Each is driven here: every other
+/// condition holds, and the step still answers `no-batch`.
+#[test]
+fn a_kept_answer_is_believed_only_for_the_commit_and_the_batch_it_names() {
+    let stage = Stage::new("again-kept");
+    let rig = &stage.rig;
+    let began = rig.rev("HEAD");
+    stage.apply(SUBJECT);
+    stage
+        .record_with(&["--head", &began])
+        .done("record", "recorded");
+    let commit = rig.rev("HEAD");
+    // The control: the same step, asked again, is believed.
+    let again = stage.record_with(&["--head", &began]);
+    assert_eq!(
+        again.done("record", "recorded")["found"],
+        json!(["recorded"])
+    );
+
+    // THE CALLS AND THE CHECKS: the answer of a batch of seven calls and two checks is
+    // none for a step that names another batch — fewer, more, or other checks.
+    let scratch = rig.scratch.display().to_string();
+    for (calls, checks) in [("6", "2"), ("8", "2"), ("7", "1"), ("7", "3")] {
+        let seen = rig.step(&[
+            "record",
+            "--branch",
+            LOOP,
+            "--run-dir",
+            RUN_DIR,
+            "--gate",
+            stage.gate.as_str(),
+            "--calls",
+            calls,
+            "--checks",
+            checks,
+            "--scratch",
+            scratch.as_str(),
+            "--head",
+            &began,
+        ]);
+        seen.refused("no-batch");
+        assert_eq!(rig.rev("HEAD"), commit, "nothing was committed");
+    }
+
+    // THE COMMIT: another commit on the commit the stage began on — one parent, that one,
+    // the tree clean, the same branch — is not the commit the kept answer names.
+    rig.git(&["reset", "-q", "--hard", &began]);
+    let note = format!("{RUN_DIR}/another.md");
+    rig.write(&note, "another record\n");
+    rig.git(&["add", "--", &note]);
+    rig.git(&[
+        "commit",
+        "-q",
+        "-m",
+        "docs(record): another commit on the same parent",
+    ]);
+    let other = rig.rev("HEAD");
+    assert_ne!(other, commit);
+    assert_eq!(rig.rev("HEAD^"), began);
+    let seen = stage.record_with(&["--head", &began]);
+    let said = seen.refused("no-batch");
+    assert!(
+        said["commit"].is_null() && said["found"] == json!([]),
+        "nothing of the kept answer is said for another commit: {}",
+        seen.raw
+    );
+    assert_eq!(rig.rev("HEAD"), other, "nothing was committed");
+}
+
+/// **The push a record is owed is left while a batch is applied** (the core review's eighth
+/// lead: the guard removed, four tests stayed green). An earlier record that is committed
+/// and not pushed is `unpushed`; with a batch applied on top the push is that record's own
+/// — its commit step's, after the gate — and the read a stage starts from leaves it owed.
+#[test]
+fn the_push_a_record_is_owed_is_left_while_a_batch_is_applied() {
+    let stage = Stage::new("owed-applied");
+    let rig = &stage.rig;
+    let pushed = rig.remote(LOOP);
+    let note = format!("{RUN_DIR}/earlier.md");
+    rig.write(&note, "an earlier record\n");
+    rig.git(&["add", "--", &note]);
+    rig.git(&["commit", "-q", "-m", "docs(record): an earlier record"]);
+    stage.apply(SUBJECT);
+    let seen = stage.git_state();
+    let line = seen.done("git-state", "ready");
+    assert_eq!(
+        json!([line["found"], line["owed"], line["finished"]]),
+        json!([["applied", "unpushed"], ["applied", "unpushed"], []]),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(rig.remote(LOOP), pushed, "nothing was pushed");
+    assert!(
+        !seen.trace.iter().any(|call| call.starts_with("push ")),
+        "no push was tried: {:?}",
+        seen.trace
+    );
+}
+
 /// Every arrival state of the tool's table, and the test of this suite that drives it.
 const DRIVEN: &[(&str, &str)] = &[
     (
@@ -5529,6 +5702,41 @@ const OPENS: &[(&str, usize)] = &[
         "with os.fdopen(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o555), \"wb\") as file:",
         1,
     ),
+];
+
+/// **Every file the tool opens THROUGH ITS OWN TWO HELPERS** (the core review's `F7`):
+/// `whole` reads the path it is handed and `kept_once` writes the one it is handed, so
+/// [`OPENS`] — which lists each helper's own line, once — says nothing about WHICH files
+/// they open. This does: every call of either, by the function it stands in and the path
+/// as written. A caller that is not here is a file the tool opens somewhere else, and a
+/// row whose call is gone is a file it no longer reads or writes; both are red.
+const THROUGH: &[(&str, &str, &str)] = &[
+    // What a held command leaves, written once each: the job, how it ended, its verdict.
+    (
+        "kept_once",
+        "hold_start",
+        "os.path.join(home, \"job.json\")",
+    ),
+    (
+        "kept_once",
+        "supervise",
+        "os.path.join(home, \"exit.json\")",
+    ),
+    ("kept_once", "stands", "kept"),
+    // And read back: the job, how it ended, the verdict; the command's output, by the
+    // reader of its kind; the binary a build made, and the one a verdict hashes again;
+    // a file whose hash is asked of the tool.
+    ("whole", "read_job", "os.path.join(home, \"job.json\")"),
+    ("whole", "stands", "os.path.join(home, \"exit.json\")"),
+    ("whole", "stands", "kept"),
+    // The command's output once more, hashed into the verdict that is kept of it.
+    ("whole", "stands", "output"),
+    ("whole", "judged_regression", "output"),
+    ("whole", "judged_build", "output"),
+    ("whole", "judged_build", "path"),
+    ("whole", "judged_probe", "output"),
+    ("whole", "build", "made"),
+    ("whole", "hash_file", "path"),
 ];
 
 /// The commands a held kind may run, as `held_command` returns them: each opens with one of
@@ -6065,6 +6273,41 @@ fn offences(source: &str) -> Vec<String> {
             "the tool opens a file somewhere else than its help, the kept state, a commit step's kept answer, the file a digest names and a held command's own files: {strange:#?}; not as often as listed: {miscounted:#?}"
         ));
     }
+    // AND THROUGH ITS TWO HELPERS that open a path handed to them: every call of either
+    // is a row of [`THROUGH`], and every row a call — held as two sorted lists, so a new
+    // caller and a site that is gone are each named.
+    let mut through: Vec<(String, String, String)> = calls(&code, &["whole", "kept_once"])
+        .iter()
+        .map(|call| {
+            let path = match call.args.first() {
+                Some(Arg::Literal(text) | Arg::Expression(text)) => text.clone(),
+                None => String::new(),
+            };
+            (call.name.clone(), call.within.clone(), path)
+        })
+        .collect();
+    through.sort();
+    let mut listed: Vec<(String, String, String)> = THROUGH
+        .iter()
+        .map(|(helper, within, path)| {
+            (
+                (*helper).to_owned(),
+                (*within).to_owned(),
+                (*path).to_owned(),
+            )
+        })
+        .collect();
+    listed.sort();
+    if through != listed {
+        let unlisted: Vec<_> = through
+            .iter()
+            .filter(|call| !listed.contains(call))
+            .collect();
+        let gone: Vec<_> = listed.iter().filter(|row| !through.contains(row)).collect();
+        found.push(format!(
+            "the tool opens a file through `whole` or `kept_once` somewhere else than listed — {unlisted:?} — or a listed site is gone — {gone:?} — or one stands more often than it is listed"
+        ));
+    }
     found
 }
 
@@ -6267,6 +6510,14 @@ fn a_planted_offender_reddens_the_scan() {
             "git(\"archive\", \"--remote=origin\", args.branch)",
             "`--remote=origin`",
         ),
+        // A FILE OPENED IN THE TOOL'S OWN WAY (the core review's `F7`): the two helpers
+        // open whatever path they are handed, so a new caller of either is a file the
+        // tool opens — one written inside the repository, one read from anywhere.
+        (
+            "kept_once(os.path.join(ROOT, \"planted.txt\"), \"x\")",
+            "through `whole` or `kept_once`",
+        ),
+        ("whole(args.branch)", "through `whole` or `kept_once`"),
     ];
     for (line, names) in planted {
         let mutant = source.replacen(anchor, &format!("{anchor}    {line}\n"), 1);
@@ -6274,6 +6525,24 @@ fn a_planted_offender_reddens_the_scan() {
         assert!(
             found.iter().any(|offence| offence.contains(names)),
             "the scan must name `{line}` ({names}); it found: {found:#?}"
+        );
+    }
+    // AND THE OTHER DIRECTION: a listed site of the two helpers that is gone — the
+    // supervisor no longer writing how the command ended, a build no longer hashed.
+    for (site, instead) in [
+        (
+            "        kept_once(os.path.join(home, \"exit.json\"), ",
+            "        print(os.path.join(home, \"exit.json\"), ",
+        ),
+        ("    data = whole(made)\n", "    data = bytes(made)\n"),
+    ] {
+        assert_eq!(source.matches(site).count(), 1, "`{site}` stands once");
+        let found = offences(&source.replacen(site, instead, 1));
+        assert!(
+            found
+                .iter()
+                .any(|offence| offence.contains("through `whole` or `kept_once`")),
+            "the scan must miss the site `{site}`; it found: {found:#?}"
         );
     }
     // And the grammar a name is checked against: a branch without a prefix, or a name

@@ -894,7 +894,10 @@
 #       never a message, so the messages of the range are scanned as the files of a
 #       batch are (WHAT A WRITER DOES TO ITS TEXT, 4) — each a file of one throwaway
 #       repository, under both scanners; a hit is the commit's, its `path` null (the
-#       review of the core for three dangers, F6). And for every commit that
+#       review of the core for three dangers, F6). AND A MERGE'S OWN LINES ARE READ BY
+#       BOTH: the denylist scan asks git for what a merge itself introduced
+#       (`--remerge-diff`), and here gitleaks is asked the same — one flag more than CI
+#       passes it, which reads no merge's resolution. And for every commit that
 #       changes a file of AN OPENED RUN (a path below completions/artifacts/<run>/ in a
 #       commit that holds that run's opening.md), the rules above on each such file as
 #       the commit holds it, and no host path in the commit's message. (What a commit
@@ -4264,7 +4267,11 @@ def range_scan(revs):
         did_not_run("dev/hygiene-scan exited %d: %s" % (out.returncode, last_line(out)))
     with tempfile.TemporaryDirectory(prefix="jigc-stabilize-scan-") as work:
         report = os.path.join(work, "gitleaks.json")
-        argv = [tools["gitleaks"], "git", "--redact", "--no-banner", "--no-color", "--exit-code", str(GITLEAKS_FOUND), "--report-format", "json", "--report-path", report, "--log-opts", " ".join(revs)]
+        # A MERGE'S OWN LINES TOO: gitleaks reads what `git log -p` prints, and that prints
+        # no diff for a merge unless it is asked. `--remerge-diff` shows what the merge
+        # itself introduced — a line typed while a conflict was resolved — as the denylist
+        # scan asks for it (dev/hygiene-scan); CI's own gitleaks step does not ask.
+        argv = [tools["gitleaks"], "git", "--redact", "--no-banner", "--no-color", "--exit-code", str(GITLEAKS_FOUND), "--report-format", "json", "--report-path", report, "--log-opts", " ".join(["--remerge-diff"] + revs)]
         config = os.path.join(ROOT, ".gitleaks.toml")
         if os.path.isfile(config):
             argv += ["--config", config]
@@ -4274,6 +4281,12 @@ def range_scan(revs):
                 leaks = [{"commit": leak.get("Commit") or None, "path": leak.get("File") or None, "why": "hygiene", "detail": "gitleaks rule %s at line %s" % (leak["RuleID"], leak["StartLine"])} for leak in json.load(open(report, encoding="utf-8"))]
             except (OSError, ValueError, KeyError, TypeError, AttributeError):
                 leaks = []
+            for leak in leaks:
+                # A file of a merge's own diff is named with the diff's `b/` before it:
+                # where the commit holds no such path and holds the one after it, that one.
+                commit, path = leak["commit"], leak["path"]
+                if commit and FULL_SHA.fullmatch(commit) and path and path.startswith("b/") and not asked_of_git(["ls-tree", "-z", commit, "--", path], "read %s" % commit) and asked_of_git(["ls-tree", "-z", commit, "--", path[2:]], "read %s" % commit):
+                    leak["path"] = path[2:]
             hits += leaks or [{"commit": None, "path": None, "why": "hygiene", "detail": "gitleaks found a secret-shaped string in the range"}]
         elif out.returncode != 0:
             did_not_run("gitleaks exited %d: %s" % (out.returncode, last_line(out)))
