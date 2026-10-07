@@ -8,6 +8,12 @@
 # not new exposure, and a history rewrite is the only fix for an old one). With
 # --tree it also scans the tracked working-tree files and their paths.
 #
+# What `git log` prints is read BY WHERE A LINE STANDS, never by what it opens with:
+# where a commit begins is a byte git wrote and no commit can hold, and inside a hunk
+# the hunk's own header says how many lines are added. A message or an added line can
+# therefore say anything -- `++ `, `@@ `, the marker byte itself -- and is still read
+# as what it is (tooling-tests/dev_gate_report.rs drives each).
+#
 # The denylist never lives in this repository -- naming the terms is the leak. CI
 # reads it from the JIGC_DENYLIST secret, dev/gate from ~/.config/jigc/denylist.
 # One POSIX extended regex per line; blank lines and `#` lines are ignored.
@@ -102,16 +108,32 @@ matched() {
 hits="$work/hits"
 : >"$hits"
 
+# WHERE A COMMIT BEGINS IS SAID BY GIT, AND BY NOTHING A COMMIT HOLDS. `git log` opens
+# each commit with a NUL byte, which no message and no line of a diff can hold, and the
+# byte the readers below split on (\001) is put in its place only after every \001 that
+# was already there is gone. Until this, the marker was \001 itself: a message line that
+# opened with that byte was taken for a commit, and the twelve characters after it were
+# printed as its id -- a hit named by WHAT it held.
+marked() {
+    tr '\001\000' '?\001' <"$1" >"$2"
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        printf 'dev/hygiene-scan: the %s scan could not read what git printed (tr exited %s) -- the scan did not complete\n' "$3" "$rc" >&2
+        exit 2
+    fi
+}
+
 # --- commit messages ---------------------------------------------------------
 # One record per message line, prefixed with its commit, so a hit can be named by
 # commit without printing the line.
-git log --no-color --format='%x01%H%n%B' "$@" >"$work/msgs" 2>"$work/git.err"
+git log --no-color --format='%x00%H%n%B' "$@" >"$work/msgs.raw" 2>"$work/git.err"
 rc=$?
 if [ "$rc" -ne 0 ]; then
     printf 'dev/hygiene-scan: git log failed (%s):\n' "$rc" >&2
     cat "$work/git.err" >&2
     exit 2
 fi
+marked "$work/msgs.raw" "$work/msgs" "commit-message"
 awk '/^\001/ { sha = substr($0, 2); next } { print sha "\t" $0 }' "$work/msgs" >"$work/msg-lines"
 grep -i -E -f "$pats" "$work/msg-lines" >"$work/msg-hits" 2>/dev/null
 matched "$?" "commit-message"
@@ -132,17 +154,39 @@ awk -F'\t' '{ print "message  " substr($1, 1, 12) }' "$work/msg-hits" | sort -u 
 # `commit <sha>` / `+++ b/<path>` / `@@ … +<start>[,<n>] @@` / `+<line>`, flattened to
 # `<sha> TAB <path> TAB <lineno> TAB <line>`. The path is part of the scanned record,
 # because a path can leak a name as surely as a line can.
-git log --no-color --no-ext-diff --no-renames --remerge-diff --unified=0 --format='%x01%H' -p "$@" >"$work/diff" 2>"$work/git.err"
+git log --no-color --no-ext-diff --no-renames --remerge-diff --unified=0 --format='%x00%H' -p "$@" >"$work/diff.raw" 2>"$work/git.err"
 rc=$?
 if [ "$rc" -ne 0 ]; then
     printf 'dev/hygiene-scan: git log -p failed (%s):\n' "$rc" >&2
     cat "$work/git.err" >&2
     exit 2
 fi
+marked "$work/diff.raw" "$work/diff" "added-line"
+# A LINE IS READ BY WHERE IT STANDS, NEVER BY WHAT IT OPENS WITH. A hunk header says how
+# many lines the hunk removes and how many it adds, and with --unified=0 a hunk holds
+# nothing else: so inside a hunk every line that opens with `+` is an added line — one
+# whose own text opens `++ ` (a shell trace does), `@@ ` or anything else included. Read by
+# its opening alone, such a line is `+++ …` and was taken for a file header: it was
+# scanned by nothing, and the lines after it were filed under a path that does not exist.
 awk '
-    /^\001/                { sha = substr($0, 2); path = ""; next }
+    /^\001/                { sha = substr($0, 2); path = ""; minus = 0; plus = 0; next }
+    minus + plus > 0 {
+        opens = substr($0, 1, 1)
+        if (opens == "+") {
+            if (path != "") print sha "\t" path "\t" ln "\t" substr($0, 2)
+            ln++; plus--
+        } else if (opens == "-") {
+            minus--
+        }
+        next
+    }
     /^\+\+\+ /             { path = substr($0, 5); sub(/^b\//, "", path); next }
-    /^@@ /                 { split($3, a, ","); ln = substr(a[1], 2) + 0; next }
+    /^@@ /                 {
+        n = split($2, was, ","); minus = (n > 1) ? was[2] + 0 : 1
+        n = split($3, now, ","); plus = (n > 1) ? now[2] + 0 : 1
+        ln = substr(now[1], 2) + 0
+        next
+    }
     /^\+/ && path != ""    { print sha "\t" path "\t" ln "\t" substr($0, 2); ln++ }
 ' "$work/diff" >"$work/added"
 grep -i -E -f "$pats" "$work/added" >"$work/added-hits" 2>/dev/null
