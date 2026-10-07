@@ -100,8 +100,9 @@ const DEFAULT_ITEMS: [(&str, &str); 5] = [
 ];
 
 /// The default items the harness AS COMMITTED runs: all of them but the held check, whose
-/// kind the record script reads and the harness has no row for until it starts held
-/// commands by tool steps (the second repair plan's `K11`). A stage is driven over these
+/// kind the record script reads and the harness reads too (the second repair plan's `K3`:
+/// its kind, what its command's step says, its verdict's file) — and which no step of a
+/// stage starts until the harness starts held commands by tool steps (`K11`). A stage is driven over these
 /// until then; over the default opening it halts, and
 /// [`a_stage_over_the_default_opening_halts_at_the_held_check_until_the_harness_holds_one`]
 /// pins that.
@@ -1221,9 +1222,10 @@ fn a_verifier_that_dies_leaves_the_seeded_finding_unverified_and_the_later_argum
 /// **A stage over the DEFAULT opening halts at the held check — until the harness holds
 /// one** (the second repair plan's `K10` settled the row; `K11` teaches the harness). The
 /// opening's `regression-set` is a held check, `held-regression`: a kind the record script
-/// reads, and one the harness as committed has no row for. So the printed invocation,
+/// reads, and one the harness as committed reads and starts by no step (`K3` built the
+/// reading; the starting and the waiting are `K11`'s). So the printed invocation,
 /// over the default items, begins its attempt, runs its preflight and its scope step, and
-/// halts at the state — naming the item and its kind — with no instrument run and no
+/// halts at the state — naming the item and its kind, in its sentence and as data — with no instrument run and no
 /// record made. **This arm is a pin, and `K11` turns it**: once the harness starts a held
 /// command by tool steps, the whole-stage arm above runs the default items again.
 #[test]
@@ -1258,6 +1260,11 @@ fn a_stage_over_the_default_opening_halts_at_the_held_check_until_the_harness_ho
             .to_string()
             .contains("regression-set (held-regression)"),
         "the halt names the item and its kind: {result}"
+    );
+    assert_eq!(
+        result["halted"]["held"],
+        json!([{"item": "regression-set", "kind": "held-regression"}]),
+        "as a held check, by the kind the tool holds — and no chain is guessed for it: {result}"
     );
     assert!(
         !ran.agents.iter().any(|label| label.starts_with("triage")

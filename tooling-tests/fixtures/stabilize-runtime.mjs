@@ -8,7 +8,7 @@
 //
 // run from the root of the repository the stage works on. The scenario is the suite's:
 // { args, checks, gate, scope, agents, record, wrongBinary, wrongPrevious, endings, omits,
-// violation, garbles, overwrites } — the
+// violation, garbles, relays, overwrites, meanwhile } — the
 // invocation's arguments, and what the scripted agents say (below). `wrongBinary` names the
 // reporters that return another hash than the one they were handed: a driver that drove
 // something else; `wrongPrevious` the verifiers that return another hash for the previous
@@ -18,22 +18,39 @@
 // scenario's to say, as `violation`: `handed` (the script is handed the return as it is),
 // `nothing` (it is handed nothing, on every try) or `throws` (the call throws, on every
 // try). `garbles` names the git steps that relay their line with one character changed.
+// `relays` says, by a git step's label, WHAT ELSE THAN THE LINE ITS COMMAND PRINTED the step
+// hands back: `document` — the line the tool prints UNASKED, the state document or a
+// refusal's prose in it: the prompt's command run without its `--digest` flag, which is what
+// a stage read until 2026-10-07; `byte` — the digest with one character changed;
+// `non-ascii` — the digest with one character replaced by one outside ASCII AND ITS HASH MADE
+// TO FIT, so that nothing but the harness's own look at the line can tell it.
 // `overwrites` gives, by an agent's label, a text that agent writes OVER its own report once
 // the record script has written it — by a plain file write, as a shell's redirect does: a
 // reporter has a shell, and a file at a report's path is whatever its last writer left.
+// `meanwhile` gives, by an agent's label, a shell command that is run from the repository's
+// root once that agent has done its work and before it returns: WHAT SOMEBODY ELSE DID WHILE
+// THE STAGE RAN — a commit on the branch, a file written over.
 // `endings` says how an agent ENDS where that is not "it returns its
 // result and has written its report", by its label:
 //   dies               it returns nothing, every time it is tried, and wrote no report
 //   dies-after-report  it wrote its report — once — and returns nothing
 //   halts-unreported   it returns the halt the scenario scripts, and wrote no report
 //   unreported         it returns the result the scenario scripts, and wrote no report
+//   acts-and-dies-once it did what it was launched for — a git step ran its one command —
+//                      and returns nothing; tried again, it does it again and returns
 // (A halt WITH its report needs no ending: it is a scripted return like any other.)
 //
 // WHAT AN AGENT IS HERE. A function chosen by the call's label. Four kinds do what their
 // definition gives the role to do in the repository, by running the commands their prompt
 // spells — taken out of the prompt, never rebuilt here:
 //
-//   git:*      build-git           the ONE command of the step, run; its one line relayed
+//   git:*      build-git           the ONE command of the step, run; its one line relayed —
+//                                  AS THE RUNTIME RELAYS ONE (observed 2026-10-07, the relay
+//                                  probe): an agent's structured return DECODES the line's
+//                                  `\uXXXX` escapes, so a line that holds one comes back with
+//                                  other bytes than it was printed with. A digest holds none.
+//                                  A retry is the same command run again, and a retry that
+//                                  tells a step's agent to look around the tree fails the run
 //   preflight  stabilize-preflight the two environment asserts a test can run, held as
 //                                  the definition words them — the candidate is `HEAD`,
 //                                  or, where the prompt says it is not, a commit `HEAD`
@@ -65,6 +82,12 @@
 //                                  NOT RUN — its output, green or as scripted
 //                                  (`record.gate`), written to the file the prompt names.
 //                                  It makes no commit: that is a git step (`git:record:*`)
+//
+// AND EVERY AGENT RUNS THE READS ITS PROMPT NAMES — `dev/stabilize-record item`, `item-doors`,
+// `untriaged`, `pending`, each as the prompt spells it: what a brief, a door list, the
+// untriaged rows and a pending batch's subject are, an agent reads from the record by key,
+// and a read that fails fails the run. What each read printed is reported (`reads`), and
+// every prompt an agent was handed (`prompts`): the suite holds both.
 //
 // Every other label is a reporter the scenario scripts by that label: its structured
 // return is the scenario's, its report is written through the real
@@ -99,6 +122,8 @@ const endings = scenario.endings || {}
 
 const omits = scenario.omits || {}
 const trace = []
+const prompts = []
+const reads = []
 const ran = []
 const logs = []
 const reporters = []
@@ -180,14 +205,43 @@ function writeReport(label, prompt, said) {
   return out.stdout.trim()
 }
 
+// ---- what an agent reads by key ----
+// Every read of the record its prompt names, run as spelled: the commands are the prompt's.
+function readByKey(label, prompt) {
+  for (const [, command] of prompt.matchAll(/`(dev\/stabilize-record (?:item|item-doors|untriaged|pending) [^`]+)`/g)) {
+    const out = sh(command)
+    if (out.code !== 0) fail('the read `' + command + '` that the prompt of `' + label + '` names was refused: ' + out.stderr)
+    reads.push({ label, command, printed: out.stdout.trim() })
+  }
+}
+
 // ---- the four kinds that act ----
+// relayed — a line as an agent's structured return hands it back: every `\uXXXX` escape of
+// it decoded into its character. What was observed of the runtime, and all that was.
+function relayed(line) {
+  return line.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+}
 function gitStep(label, prompt) {
   const first = prompt.split('\n').find((line) => line.startsWith('1. `')) || ''
   const command = first.slice(4, first.lastIndexOf('`'))
   // A probe's step is a command of the probe tool, and of no other; a stage's, of the step tool.
   const tool = label.startsWith('git:probe:') ? 'dev/stabilize-probe ' : 'dev/stabilize-step '
   if (!command.startsWith(tool)) fail('the git step `' + label + '` is not ONE command of ' + tool.trim() + ': ' + first)
-  const out = sh(command)
+  // A step's retry is its one command, run again — never a look around the tree.
+  const again = prompt.split('\n\nRETRY')[1]
+  if (again != null && !label.startsWith('git:probe:') && (/git (status|log|clean)/.test(again) || !again.includes('Run the ONE command above again'))) fail('the retry of the git step `' + label + '` is not told to run its one command again: ' + again)
+  const how = (scenario.relays || {})[label]
+  if (how) used.add(label)
+  // The line the tool prints unasked: the command, without the flag that asks for a digest.
+  const out = sh(how === 'document' ? command.replace(/ --digest \S+/, '') : command)
+  if (how === 'document' && out.stdout === sh(command).stdout) fail('the git step `' + label + '` asks for no digest: its line is the same without `--digest`')
+  // Handed back byte for byte: a relay that happened to be faithful is still not a digest.
+  if (how === 'document') return { status: 'ran', line: out.stdout }
+  if (how === 'byte') return { status: 'ran', line: out.stdout.replace('"status":"', '"status":"x') }
+  if (how === 'non-ascii') {
+    const body = out.stdout.replace(/\n$/, '').replace(/, "sha256": "[0-9a-f]{64}"\}$/, '}').replace('"status":"', '"status":"\u2014')
+    return { status: 'ran', line: body.slice(0, -1) + ', "sha256": "' + createHash('sha256').update(body).digest('hex') + '"}\n' }
+  }
   if ((scenario.garbles || []).includes(label)) {
     used.add(label)
     return { status: 'ran', line: out.stdout.replace('"status"', '"Status"') }
@@ -196,7 +250,10 @@ function gitStep(label, prompt) {
   // The step that begins an attempt writes the attempt's marker: a report the harness
   // launched, under the reporter the command names.
   if (command.startsWith('dev/stabilize-step begin ') && out.code === 0) reporters.push(/ --reporter (\S+)/.exec(command)[1])
-  return { status: 'ran', line: out.stdout }
+  // A PROBE'S STEP IS RELAYED BYTE FOR BYTE, as it always was here: its lines are the probe
+  // tool's, which are no digests, and what the runtime does to one is what the probes
+  // themselves went and observed.
+  return { status: 'ran', line: label.startsWith('git:probe:') ? out.stdout : relayed(out.stdout) }
 }
 
 function preflight(label, prompt) {
@@ -296,7 +353,7 @@ function recordStep(label, prompt) {
   const to = lines.findIndex((line) => line.startsWith('YOU MAKE NO COMMIT'))
   if (from < 0 || to < 0 || !/^BRANCH: (\S+?)[ ,]/m.test(prompt)) fail('the record step `' + label + '` is not the prompt a record step is handed')
   const steps = numbered(lines, from, to)
-  const halted = (cause, evidence) => ({ status: 'halted', halt: { root_cause: cause, evidence, tree_state: treeState(), recommendation: 'the record step stopped where it stood: it commits nothing' } })
+  const halted = (cause, evidence, refused) => Object.assign({ status: 'halted', halt: { root_cause: cause, evidence, tree_state: treeState(), recommendation: 'the record step stopped where it stood: it commits nothing' } }, refused ? { refused } : {})
   const ruled = scenario.record || {}
   let gate = null
   for (const step of steps) {
@@ -316,7 +373,8 @@ function recordStep(label, prompt) {
     // A record step that did nothing and says it did: the batch is never applied.
     if (ruled.apply === 'skipped') continue
     const out = sh(command)
-    if (out.code !== 0) return halted('the batch of the record step was refused: ' + out.stderr.trim(), command)
+    // The word of the refusal, read off the one line the script printed on stderr.
+    if (out.code !== 0) return halted('the batch of the record step was refused: ' + out.stderr.trim(), command, (/: refused ([a-z-]+): /.exec(out.stderr) || [])[1])
   }
   if (!gate) fail('the record step `' + label + '` names no gate')
   return { status: 'gated', gate }
@@ -433,6 +491,7 @@ const into = (value) => (value === undefined ? undefined : vm.runInContext('JSON
 async function agent(prompt, opts) {
   const o = opts || {}
   note('agent ' + o.label + ' · ' + o.agentType + ' · ' + o.model + ' · ' + o.phase)
+  prompts.push({ label: String(o.label), prompt: String(prompt) })
   if (fatal.length) throw new Error('the simulation has failed already: ' + fatal[0])
   if (!o.schema) fail('`' + o.label + '` was launched without a schema: the stand-in models no free-text return')
   const kind = KINDS.find((k) => k.labels.test(String(o.label)))
@@ -443,15 +502,23 @@ async function agent(prompt, opts) {
   const ends = endings[o.label]
   if (ends) used.add(o.label)
   if (ends === 'dies' || (ends === 'dies-after-report' && tried.has(o.label))) return null
+  const firstTry = !tried.has(o.label)
   tried.add(o.label)
   let back
   try {
+    readByKey(String(o.label), String(prompt).split('\n\nRETRY')[0])
     back = (kind ? kind.play : reporter)(o.label, prompt, o)
   } catch (e) {
     if (!fatal.length) fatal.push('the stand-in for `' + o.label + '` threw: ' + ((e && e.stack) || e))
     throw e
   }
-  if (ends === 'dies-after-report') return null
+  const others = (scenario.meanwhile || {})[o.label]
+  if (others && firstTry) {
+    used.add(o.label)
+    const did = sh(others)
+    if (did.code !== 0) fail('what the scenario has somebody do while `' + o.label + '` ran failed: ' + did.stderr)
+  }
+  if (ends === 'dies-after-report' || (ends === 'acts-and-dies-once' && firstTry)) return null
   // A field the scenario has this agent leave out — whatever its stand-in put there.
   const left = omits[o.label] || []
   if (left.length) used.add(o.label)
@@ -495,8 +562,8 @@ try {
 } catch (e) {
   fatal.push('the script threw: ' + ((e && e.stack) || e))
 }
-const unused = Object.keys(scripted).concat(Object.keys(endings), Object.keys(omits), scenario.garbles || []).filter((label) => !used.has(label))
-process.stdout.write(JSON.stringify({ result: result === undefined ? null : result, trace, ran, logs, reporters, swallowed, unused, fatal }) + '\n')
+const unused = Object.keys(scripted).concat(Object.keys(endings), Object.keys(omits), Object.keys(scenario.relays || {}), Object.keys(scenario.meanwhile || {}), scenario.garbles || []).filter((label) => !used.has(label))
+process.stdout.write(JSON.stringify({ result: result === undefined ? null : result, trace, prompts, reads, ran, logs, reporters, swallowed, unused, fatal }) + '\n')
 if (fatal.length) {
   process.stderr.write(fatal.join('\n') + '\n')
   process.exitCode = 1

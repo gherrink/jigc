@@ -12784,9 +12784,12 @@ fn an_in_scope_item_no_tested_round_selected_is_named_and_so_is_a_door_no_item_n
 // What an agent reads by key
 // ---------------------------------------------------------------------------
 
-/// The harness's `unitDoors`, word for word: the doors of a round's test set a unit
-/// covers — its own doors, and those of its registries; a unit that runs on every
-/// candidate and names neither covers them all.
+/// The harness's `unitDoors` as it stood until the second repair plan's `K3`, word for
+/// word: the doors of a round's test set a unit covers — its own doors, and those of its
+/// registries; a unit that runs on every candidate and names neither covers them all.
+/// SINCE `K3` THE HARNESS SELECTS NO DOOR — it reads how many a unit covers, and a unit's
+/// prompt names the read below — so this transliteration is what the read is held to, and
+/// the harness's own function is no longer there to be run beside it.
 fn unit_doors(item: &Value, included: &[Value]) -> Vec<Value> {
     let named = |field: &str| item[field].as_array().cloned().unwrap_or_default();
     let (doors, registries) = (named("doors"), named("registries"));
@@ -12808,8 +12811,8 @@ fn unit_doors(item: &Value, included: &[Value]) -> Vec<Value> {
 /// each one line of JSON, each writing nothing, and a prompt names the read:
 /// `item` — a row of the test set, whole, its brief in it; `item-doors` — the doors of a
 /// round's test set the item covers, each with its registry and its derivation, selected
-/// as the harness selects them today (its own `unitDoors`, run here where `node` is
-/// installed, and transliterated where it is not) and from THE ROUND ASKED, which for a
+/// as the harness selected them until `K3` moved the selection here (its `unitDoors`,
+/// transliterated above) and from THE ROUND ASKED, which for a
 /// re-run is not the latest; `untriaged` — the ledger's rows whose triage is not
 /// finished, whole, in the ledger's order.
 #[test]
@@ -12909,34 +12912,6 @@ fn an_agent_reads_its_brief_its_doors_and_the_untriaged_rows_by_key() {
                 "`{id}` in round {round}"
             );
             counts.push(expected.len());
-        }
-        if super::dev_stabilize_step::node_or_skip(
-            "the harness's own `unitDoors` was not held to dev/stabilize-record item-doors",
-        ) {
-            let calls: Vec<Value> = state["items"]
-                .as_array()
-                .expect("the items")
-                .iter()
-                .map(|row| json!(["unitDoors", [row, included]]))
-                .collect();
-            let harness = super::dev_stabilize_step::harness_pure(&json!(calls));
-            for (row, doors) in state["items"]
-                .as_array()
-                .expect("the items")
-                .iter()
-                .zip(harness)
-            {
-                assert_eq!(
-                    rig.run(
-                        &read_doors(RUN, round, row["item"].as_str().expect("an id")),
-                        ""
-                    )
-                    .json()["doors"],
-                    doors,
-                    "the harness's `unitDoors` for {} in round {round}",
-                    row["item"]
-                );
-            }
         }
         counts
     };

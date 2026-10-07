@@ -84,6 +84,16 @@
 //!   round, a branch, the record script, the step tool or a gate; the harness and the tool
 //!   have the same cases; and the one schema that requires the hash is the probe's.
 //!
+//! - **(r)** what a stage reads is a digest, and no text of the record passes through the
+//!   script (the second repair plan's task `K3`): every step's composer asks for the digest
+//!   and the one function that reads a stage's step refuses a line that is none; every field
+//!   of the state the stages' code reads is one the tool's digest DECLARES, and what the
+//!   digest gives as a count is read as one; no prompt and no return is composed from a
+//!   brief, a door's derivation, a ledger row or a pending batch's subject — an agent is
+//!   handed the read, the orchestrator the file; the script has a row for every word the
+//!   step tool refuses with, and for no other; and a held check's kind is a kind the tool
+//!   holds. The functions that are the `fix` half's own are named, each with its reason.
+//!
 //! **Driven, where `node` is on `PATH`** (it is on this project's development machines and
 //! on GitHub's hosted runners; where it is not, the arm fails under CI and passes anywhere
 //! else — the gate gains no dependency — and the gate's own summary names it as a test
@@ -357,9 +367,10 @@ fn b_every_build_git_call_runs_on_sonnet() {
         }
     }
     assert!(
-        function(&full, "toolStep")
-            .contains("readStep(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA), act)"),
-        "a step that is one command of the tool goes through `gitStep`, and so through that call"
+        function(&full, "toolStep").contains(
+            "readDigest(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA, RUN_AGAIN), act)"
+        ),
+        "a step that is one command of the tool goes through `gitStep`, and so through that call — read as a digest, and asked for again as its one command"
     );
     assert_eq!(
         source.matches("agentR(").count(),
@@ -1123,8 +1134,9 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
     }
     let rule = function(&full, "ruleTheRun");
     assert!(
-        rule.contains("runRulingsFault(v.rulings, state)")
-            && rule.contains("findingRulingsFault(v.rulings, state)")
+        rule.contains("const why = about ? runRulingsFault(v.rulings, state) : null")
+            && !source.contains("findingRulingsFault")
+            && !source.contains("state.ledger || []")
             && rule.contains("checkedOut !== loopBranch")
             && rule.matches("await rulingsStep(").count() == 1,
         "a ruling is asked of the state, on the loop branch, then recorded by the one step"
@@ -1205,8 +1217,11 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
     );
     let ledger = function(&full, "ledgerSource");
     assert!(
-        ledger.contains("(state.untriaged || []).map(") && !ledger.contains(".round"),
-        "the rows are the state's `untriaged`, whatever round or stage they came from"
+        ledger.contains("state.untriaged.count")
+            && ledger.contains("read: 'dev/stabilize-record untriaged --run ' + run")
+            && !ledger.contains("state.ledger")
+            && !ledger.contains(".round"),
+        "the rows are the state's `untriaged`, whatever round or stage they came from — as how many there are, and the read that prints them"
     );
 
     // The previous release and the default scope are the run's recorded facts: no prompt
@@ -1261,8 +1276,8 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
     for field in [
         "behind: c.behind",
         "round: c.round",
-        "items: (c.items || [])",
-        "standing: i.standing",
+        "items: (state.items || []).filter((i) => i.clause === c.clause)",
+        "standing: at(i.standing)",
     ] {
         assert!(evidence.contains(field), "the evidence carries `{field}`");
     }
@@ -1298,8 +1313,8 @@ fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_
         .find("await roleStep('record', ")
         .expect("a record step launches its executor");
     let commit = step
-        .find("await toolStep('record:' + label, 'Record', 'record', recordCommitPrompt(v, branch, rec.gate, rec.expect))")
-        .expect("a record step's commit is the tool's `record` act, handed the gate's file and what was composed");
+        .find("await toolStep('record:' + label, 'Record', 'record', recordCommitPrompt(v, branch, rec.gate, rec.expect, stageHead))")
+        .expect("a record step's commit is the tool's `record` act, handed the gate's file, what was composed and the commit the stage began on");
     assert!(
         executor < commit && step.contains("recordFault(r, rec.expect)"),
         "the executor, then the commit, then the line held to what was composed"
@@ -1330,8 +1345,8 @@ fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_
         "SHA_RE.test(String(r.commit || ''))",
         "r.gate.ok !== true",
         "applied.calls !== expect.calls",
-        "applied.checks.length !== expect.checks",
-        "c.ok !== true",
+        "applied.checks !== expect.checks",
+        "applied.failed !== 0",
     ] {
         assert!(fault.contains(held), "`recordFault` holds `{held}`");
     }
@@ -1755,7 +1770,7 @@ fn l_every_git_step_is_one_command_of_the_tool_but_the_recut_of_a_part() {
             if line.contains("carryPrompt(v, round, take, part), CARRY_SCHEMA)") {
                 "the part's re-cut"
             } else if line
-                .contains("readStep(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA), act)")
+                .contains("readDigest(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA, RUN_AGAIN), act)")
             {
                 "toolStep"
             } else if line.contains(
@@ -2343,4 +2358,394 @@ fn i_where_node_is_installed_the_script_parses_and_its_self_test_passes() {
         let seen = invoke(&driver, &args);
         assert_eq!(seen["status"], "refused", "args {args}: {seen}");
     }
+}
+
+// ---------------------------------------------------------------------------
+// (r) a stage reads digests, and no text of the record passes through the script
+// ---------------------------------------------------------------------------
+
+/// The functions that are the `fix` half's own and STILL READ THE STATE DOCUMENT — rows of
+/// the ledger, lists of doors — which no step hands them any more: unreachable behind the
+/// stage's refusal (arm (m)), and converted by that half's repair (the second repair plan,
+/// section 9, row 7). Held in both directions: a function listed here that reads nothing of
+/// the document is red, and so is any other function that does.
+const FIX_HALFS_OWN: &[(&str, &str)] = &[
+    (
+        "runFix",
+        "below its hand-over to `ruleTheRun` it reads the ledger's rows, the blockers and the doors as lists; its repair reads them by key",
+    ),
+    (
+        "fixerPrompt",
+        "a fixer is handed its findings' door, clause and repro: a blocker's row has no read yet",
+    ),
+    (
+        "areasOf",
+        "the areas of a fix cycle are cut from the doors of the round's scope, as a list",
+    ),
+    (
+        "reopenPatches",
+        "a dropped round's fixes are found in the ledger's rows",
+    ),
+    (
+        "repointPatches",
+        "a part's kept fixes are found in the ledger's rows",
+    ),
+];
+
+/// The names a block of the step tool's source declares: the keys of `NAME = {`, one per
+/// line at the block's first indent.
+fn tool_keys(tool: &str, opens: &str) -> BTreeSet<String> {
+    let block = &tool[tool
+        .find(opens)
+        .unwrap_or_else(|| panic!("the step tool declares `{opens}`"))
+        + opens.len()..];
+    let block = &block[..block.find("\n}\n").expect("the block closes")];
+    block
+        .lines()
+        .filter_map(|line| line.strip_prefix("    \""))
+        .map(|rest| rest[..rest.find('"').expect("the key closes")].to_owned())
+        .collect()
+}
+
+#[test]
+fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record() {
+    let full = harness();
+    let source = code(&full);
+    let tool = fs::read_to_string(repo_root().join(STEP_TOOL)).expect("read the step tool");
+    let fix_halfs: Vec<&str> = FIX_HALFS_OWN.iter().map(|(name, _)| *name).collect();
+    let mut cut = vec!["selfTest"];
+    cut.extend(&fix_halfs);
+    let ours = without(&full, &cut);
+
+    // (1) EVERY STEP ASKS FOR ITS DIGEST: each composer of a step of the tool hands it the
+    // flag, once, and one function spells the flag.
+    let composers = git_prompts(&full);
+    assert_eq!(
+        composers.len(),
+        12,
+        "the composers of a step: {composers:?}"
+    );
+    for name in &composers {
+        assert_eq!(
+            function(&full, name).matches("digestFlag(").count(),
+            1,
+            "`{name}` asks for its step's digest, once"
+        );
+    }
+    assert!(
+        function(&full, "digestFlag").contains("return '--digest ' + scratch")
+            && source.matches("'--digest ").count() == 1,
+        "one function spells the flag, with the invocation's scratch root"
+    );
+    assert!(
+        !function(&full, "probeStep").contains("digestFlag("),
+        "a probe's step is the probe tool's, which has no digest"
+    );
+
+    // (2) … AND IS READ AS ONE, OR NOT AT ALL: a stage's step goes through `readDigest`,
+    // which holds the line to `readStep`, then to being printable ASCII with no backslash,
+    // to naming what did not fit and the file with the rest, and to nothing struck out.
+    let digest = function(&full, "readDigest");
+    for held in [
+        "const said = readStep(r, act)",
+        "!DIGEST_RE.test(line) || line.includes('\\\\')",
+        "!Array.isArray(said.unfit) || !('file' in said) || !('file_sha256' in said)",
+        "if (said.unfit.length) return ",
+    ] {
+        assert!(digest.contains(held), "`readDigest` holds `{held}`");
+    }
+    assert!(
+        source.contains("\nconst DIGEST_RE = /^[\\x20-\\x7e]*$/\n"),
+        "a digest is printable ASCII"
+    );
+    assert_eq!(
+        ours.matches("readStep(").count(),
+        5,
+        "`readStep` is declared once and called by `readDigest`, by a probe's step and by the two probes that relay a line of their own — a stage's step never goes around `readDigest`"
+    );
+    assert!(
+        !function(&full, "lostStep").contains("? r.line :")
+            && function(&full, "lostStep").contains("it is not passed on"),
+        "a line that is not read is not passed on either"
+    );
+
+    // (3) EVERY FIELD OF THE STATE THE STAGES' CODE READS IS ONE THE DIGEST DECLARES — the
+    // tool's own table of shapes, read here — or the one thing the script adds to it: where
+    // the document lies.
+    let declared = tool_keys(&tool, "\nSTATE = {\n");
+    assert!(
+        declared.len() >= 20
+            && declared.contains("never_selected")
+            && declared.contains("reverify"),
+        "the scan found the state's digest: {declared:?}"
+    );
+    let mut read: BTreeSet<String> = BTreeSet::new();
+    for (at, _) in ours.match_indices("state.") {
+        let before = ours[..at].chars().next_back();
+        if before.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_') {
+            continue;
+        }
+        let name: String = ours[at + "state.".len()..]
+            .chars()
+            .take_while(|c| c.is_ascii_lowercase() || *c == '_')
+            .collect();
+        // `state.` at the end of a sentence of a message is no read.
+        if !name.is_empty() {
+            read.insert(name);
+        }
+    }
+    assert!(
+        read.len() >= 15,
+        "the scan found the reads of the state: {read:?}"
+    );
+    let strangers: Vec<&String> = read
+        .iter()
+        .filter(|name| !declared.contains(*name) && *name != "document")
+        .collect();
+    assert_eq!(
+        strangers,
+        Vec::<&String>::new(),
+        "the script reads a field of the state that the tool's digest does not declare"
+    );
+    // WHAT THE DIGEST GIVES AS A COUNT IS READ AS A COUNT: no list of rows is walked.
+    for field in [
+        "ledger",
+        "blockers",
+        "human_list",
+        "doors.included",
+        "doors.excluded",
+    ] {
+        for walk in [
+            ".length",
+            ".map(",
+            ".filter(",
+            ".find(",
+            ".some(",
+            ".includes(",
+            ".concat(",
+            ".join(",
+        ] {
+            assert!(
+                !ours.contains(&format!("state.{field}{walk}")),
+                "`state.{field}` is a count in the digest, and `{walk}` walks it as a list"
+            );
+        }
+    }
+    for gone in [
+        ".facts.candidate",
+        ".facts.cycles",
+        "rerun.doors",
+        "state.untriaged || []",
+        "c.items",
+    ] {
+        assert!(
+            !ours.contains(gone),
+            "`{gone}` is a path of the state document, and of no digest"
+        );
+    }
+    // … and the `fix` half's own functions are exactly the ones that still do.
+    let walks = |body: &str| {
+        [
+            "state.ledger.",
+            "s.ledger.",
+            "ledger.filter(",
+            "const row of ledger",
+            "state.blockers.",
+            "doors.included.concat(",
+            "f.detail",
+            ".facts.cycles",
+        ]
+        .iter()
+        .any(|walk| body.contains(walk))
+    };
+    for (name, why) in FIX_HALFS_OWN {
+        assert!(
+            why.len() > 20 && walks(function(&full, name)),
+            "`{name}` is listed as the `fix` half's own and reads nothing of the document"
+        );
+    }
+    for name in functions(&full) {
+        if name != "selfTest" && !fix_halfs.contains(&name.as_str()) {
+            assert!(
+                !walks(function(&full, &name)),
+                "`{name}` walks a list of the state document, and is not listed as the `fix` half's own"
+            );
+        }
+    }
+
+    // (4) NO PROMPT IS COMPOSED FROM TEXT OF THE RECORD: a brief, a door's derivation, a
+    // pending batch's subject and a ledger row's cells are named by no code of the stages
+    // — an agent is handed the read that prints them.
+    assert_eq!(
+        ours.matches(".brief").count(),
+        2,
+        "a brief is printed by `briefLine` alone, and only where it is the script's own sentence"
+    );
+    assert!(
+        function(&full, "briefLine")
+            .contains("unit.brief != null ? 'Your brief: ' + unit.brief : ")
+            && function(&full, "briefLine").contains("itemRead(ctx.run, unit.item)"),
+        "else the prompt names the read of the item's row"
+    );
+    for gone in [
+        ".derivation",
+        ".subject",
+        "row.repro",
+        "row.door",
+        "row.clause",
+        "row.grade",
+        ".registries",
+    ] {
+        assert!(
+            !ours.contains(gone),
+            "`{gone}` is text of the record, and no code of a stage composes with it"
+        );
+    }
+    assert!(
+        function(&full, "itemRead").contains("'dev/stabilize-record item --run ' + run + ' --item ' + item")
+            && function(&full, "doorsRead").contains(
+                "'dev/stabilize-record item-doors --run ' + run + ' --round ' + round + ' --item ' + item"
+            )
+            && function(&full, "doorLines").contains("doorsRead(ctx.run, unit.round, unit.item)")
+            && function(&full, "preflightPrompt").contains("itemRead(ctx.run, c.item)")
+            && function(&full, "crossModelPrompt").contains("itemRead(ctx.run, unit.item)")
+            && function(&full, "crossModelPrompt").contains("doorLines(ctx, unit)")
+            && function(&full, "unitPrompt").contains("briefLine(ctx, unit)")
+            && function(&full, "unitPrompt").contains("doorLines(ctx, unit)")
+            && function(&full, "pendingRecordPrompt").contains("`dev/stabilize-record pending --run ' + v.run + '`"),
+        "a brief, a door list and a pending batch's subject are each handed over as the read that prints them"
+    );
+    assert_eq!(
+        ours.matches("doorList(").count(),
+        3,
+        "a door list is printed for the script's own unit (`doorLines`) and for a probe's reviewer, and by nothing else"
+    );
+    assert!(
+        function(&full, "ledgerSource").contains("findings: []")
+            && function(&full, "triagePrompt")
+                .contains("(s.read ? ' the rows `' + s.read + '` prints"),
+        "triage is handed the read of the untriaged rows, and none of them"
+    );
+
+    // (5) NO RETURN HOLDS THE DOCUMENT: what goes back of the state is what the digest
+    // holds, and the file the document lies in.
+    let next = function(&full, "nextOf");
+    assert!(
+        next.contains("returned_to_orchestrator: true, state: attached(state), named, arrived")
+            && next.matches("named").count() >= 5,
+        "a `next` the script does not know goes back with what the digest holds and the file — and every value of `next` with what nothing can hold"
+    );
+    assert!(
+        !ours.contains("true, state }") && !ours.contains("human_list: state.human_list,\n"),
+        "no return carries the state, or a list of it"
+    );
+    let named = function(&full, "namedOf");
+    assert!(
+        named.contains("never_selected: state.never_selected || []")
+            && named.contains("document: state.document || null")
+            && named.contains("(state.uncovered || []).find((u) => u.round === within)"),
+        "every return names the items no round selected, the doors of the round no item names, and the file"
+    );
+    assert!(
+        function(&full, "halt").contains("named: namedOf(lastState),"),
+        "a halt names them too"
+    );
+    for stopped in [
+        "status: 'stopped', after: 'state', stage: 'test', run: v.run, round:",
+        "status: 'stopped', after: 'preflight'",
+        "status: 'stopped', after: 'triage'",
+    ] {
+        let line = function(&full, "runTest")
+            .lines()
+            .find(|line| line.contains(stopped))
+            .unwrap_or_else(|| panic!("the `test` stage has the stop `{stopped}`"));
+        assert!(
+            line.contains("named: namedOf(state"),
+            "a stop names them: {line}"
+        );
+    }
+    // A step's refusal goes back as its word and the file its own line is in.
+    let git_halt = function(&full, "gitHalt");
+    assert!(
+        git_halt.contains("stepRefusal(word, ")
+            && git_halt.contains("step: stepFile(r)")
+            && git_halt.contains("halt: word || r.relay ? null : r.halt || null"),
+        "a refused step is its word, the script's sentence for it and the file — never the tool's prose"
+    );
+
+    // (6) THE SCRIPT HAS A ROW FOR EVERY WORD THE STEP TOOL REFUSES WITH, and for no other.
+    let words = tool_keys(&tool, "\nSTATUS = {\n");
+    assert!(
+        words.len() >= 25,
+        "the scan found the tool's words: {words:?}"
+    );
+    let table = &full[full
+        .find("\nconst STEP_REFUSALS = {\n")
+        .expect("the script's rows for a step's refusal")..];
+    let table = &table[..table.find("\n}\n").expect("the table closes")];
+    let rows: BTreeSet<String> = table
+        .lines()
+        .filter_map(|line| line.strip_prefix("  '"))
+        .map(|rest| rest[..rest.find('\'').expect("the word closes")].to_owned())
+        .collect();
+    assert_eq!(
+        rows, words,
+        "the words {HARNESS} has a row for (left) are the words {STEP_TOOL} refuses with (right)"
+    );
+    for row in table.lines().filter(|line| line.starts_with("  '")) {
+        assert!(
+            row.contains("': { whose: '") && row.contains(", leaves: '"),
+            "a row says whose the state is, and what leaves it: {row}"
+        );
+    }
+
+    // (8) A ROUND TESTS ONE CANDIDATE, AND NO WRITER IS HANDED THE BRANCH'S TIP (the
+    // orchestrator's ruling of 2026-10-07 on the core review's F3): a re-run's commit is
+    // the candidate the state names for its round; the attempt's marker, the candidate's
+    // gate, the results and the round's facts are all written for that one commit; and a
+    // check that reads the working tree is not asked for where the tree is not the candidate.
+    let tested = function(&full, "runTest");
+    for held in [
+        "const sha = rerun ? String((state.rounds.find((r) => r.round === rerun.round) || {}).candidate || '') : String(gs.head)",
+        "const moved = sha !== String(gs.head)",
+        "checks: moved ? [] : always, crossModel: crossNamed.length > 0, previous: previousOf(state), tested: moved }",
+        "const unbegun = await beginAttempt(ctx, launch, sha)",
+        "gate: rerun ? null : { commit: sha, file: candidateGate }, results: { commit: sha, rows: resultRows(unitStatus) }",
+        "const facts = rerun ? null : { candidate: sha, binary: built.candidate.sha256 }",
+        "const c = offTree ? null : checks.find((x) => x.check === item.item)",
+    ] {
+        assert!(tested.contains(held), "the `test` stage holds `{held}`");
+    }
+    assert_eq!(
+        tested.matches("gs.head").count(),
+        4,
+        "the tip is read for the commit the stage began on, for a round that has no candidate yet, to tell whether the candidate is still the tree, and for what an invocation that only looks returns — and is handed to no writer"
+    );
+
+    // (7) A HELD CHECK'S KIND IS A KIND THE TOOL HOLDS, in the form the record script reads.
+    let holds: BTreeSet<String> = tool
+        .split("\n    {\"kind\": \"")
+        .skip(1)
+        .map(|rest| rest[..rest.find('"').expect("the kind closes")].to_owned())
+        .collect();
+    assert!(
+        holds.len() >= 4,
+        "the scan found the tool's held kinds: {holds:?}"
+    );
+    let checks = quoted_in(&full, "const HELD_CHECKS = ");
+    assert!(
+        !checks.is_empty() && checks.iter().all(|kind| holds.contains(kind)),
+        "a held check `{checks:?}` is a held kind of the tool `{holds:?}`"
+    );
+    let record =
+        fs::read_to_string(repo_root().join(RECORD_SCRIPT)).expect("read the record script");
+    assert!(
+        source.contains("\nconst HELD_PREFIX = 'held-'\n") && record.contains("\"held-\""),
+        "the kind's prefix is the one the record script reads"
+    );
+    assert!(
+        function(&full, "resultRows")
+            .contains("if (unit.verdict) return { item: unit.item, verdict: unit.verdict }"),
+        "a held check's result is the verdict's file, and no word"
+    );
 }

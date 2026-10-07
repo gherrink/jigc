@@ -331,7 +331,7 @@ impl Stepped {
     }
 }
 
-fn sha256(text: &str) -> String {
+pub(crate) fn sha256(text: &str) -> String {
     let mut child = Command::new("python3")
         .args([
             "-c",
@@ -611,7 +611,7 @@ impl StepRig {
     }
 
     /// A hook of the bare remote — the clone's own hooks are off.
-    fn remote_hook(&self, name: &str, body: &str) {
+    pub(crate) fn remote_hook(&self, name: &str, body: &str) {
         let hook = self.origin.join("hooks").join(name);
         fs::create_dir_all(hook.parent().expect("the hooks directory")).expect("create hooks/");
         placed_executable::write(&hook, format!("#!/bin/sh\n{body}\n"));
@@ -4181,7 +4181,7 @@ fn a_record_the_remote_lacks_is_pushed_before_a_stage_starts() {
 
 /// A `git` that fails every `commit` while the file `fail-commit` lies in the rig — a
 /// signing agent that does not answer, a hook that refuses — and is the real git otherwise.
-fn failing_commit(rig: &StepRig) -> PathBuf {
+pub(crate) fn failing_commit(rig: &StepRig) -> PathBuf {
     let quoted = |path: &Path| path.display().to_string().replace('\'', "'\\''");
     let marker = rig.dir().join("fail-commit");
     rig.on_path(
@@ -5955,7 +5955,9 @@ fn every_command_the_harness_composes_is_taken_by_the_tool_and_read_back() {
     let ctx = json!({"run": RUN, "round": 1, "stage": "test", "attempt": 1, "scratch": scratch});
 
     // One step: the harness composes it, the agent runs its one command, the harness
-    // reads the line — each by its own code.
+    // reads the line — each by its own code. EVERY STEP ASKS FOR ITS DIGEST (the second
+    // repair plan's `K3`), and what the harness reads it with is `readDigest`: the line is
+    // a digest, or it is not read.
     let step = |act: &str, function: &str, args: Value| -> Value {
         let prompt = harness_pure(&json!([[function, args]]))
             .remove(0)
@@ -5963,14 +5965,15 @@ fn every_command_the_harness_composes_is_taken_by_the_tool_and_read_back() {
             .unwrap_or_else(|| panic!("`{function}` returns a prompt"))
             .to_owned();
         assert!(
-            command_of(&prompt).starts_with(&format!("{TOOL} {act} ")),
-            "`{function}` composes ONE command of the tool: {prompt}"
+            command_of(&prompt).starts_with(&format!("{TOOL} {act} "))
+                && command_of(&prompt).contains(&format!(" --digest {scratch}")),
+            "`{function}` composes ONE command of the tool, asked for its digest: {prompt}"
         );
         let relayed = git_agent(&rig, &prompt);
-        let read = harness_pure(&json!([["readStep", [relayed, act]]])).remove(0);
+        let read = harness_pure(&json!([["readDigest", [relayed, act]]])).remove(0);
         assert!(
-            read.get("relay").is_none() && read["act"] == act,
-            "`readStep` reads the line `{function}`'s command printed: {read}"
+            read.get("relay").is_none() && read["act"] == act && read["unfit"] == json!([]),
+            "`readDigest` reads the line `{function}`'s command printed: {read}"
         );
         read
     };
@@ -6041,7 +6044,7 @@ fn every_command_the_harness_composes_is_taken_by_the_tool_and_read_back() {
     let carried = step("carry", "carryPrompt", json!([v("fix"), 2, [record], null]));
     assert_eq!(carried["status"], "carried", "{carried}");
     assert_eq!(carried["picked"][0]["from"], record.as_str());
-    let synced = step("sync-main", "syncMainPrompt", json!([RUN]));
+    let synced = step("sync-main", "syncMainPrompt", json!([RUN, scratch]));
     assert_eq!(synced["status"], "up-to-date", "{synced}");
 
     // A refusal is read back as a halted step that says why — and a line that was
@@ -6050,12 +6053,34 @@ fn every_command_the_harness_composes_is_taken_by_the_tool_and_read_back() {
     let refused = step("git-state", "gitStatePrompt", json!([v("test")]));
     assert_eq!(refused["status"], "halted", "{refused}");
     assert_eq!(refused["refused"], "dirty");
+    // The word is in the digest; the tool's halt report is in the file the digest names.
+    assert!(refused.get("halt").is_none(), "{refused}");
+    let kept = fs::read_to_string(
+        rig.scratch
+            .join(refused["file"].as_str().expect("the digest names a file")),
+    )
+    .expect("the file a refusal's digest names");
     assert!(
-        refused["halt"]["root_cause"]
+        line_of(&kept)["halt"]["root_cause"]
             .as_str()
-            .is_some_and(|cause| cause.starts_with("dirty: "))
+            .is_some_and(|cause| cause.starts_with("dirty: ")),
+        "{kept}"
     );
     let line = rig.shell(&format!("{TOOL} push --branch {LOOP}")).raw;
+    // THE LINE THE TOOL PRINTS UNASKED IS NOT WHAT A STAGE READS: it holds to its hash,
+    // `readStep` takes it — and `readDigest` refuses it as no digest.
+    let unasked = harness_pure(&json!([
+        ["readStep", [{"status": "ran", "line": line}, "push"]],
+        ["readDigest", [{"status": "ran", "line": line}, "push"]],
+    ]));
+    assert!(
+        unasked[0].get("relay").is_none()
+            && unasked[1]["status"] == "halted"
+            && unasked[1]["relay"]
+                .as_str()
+                .is_some_and(|why| why.contains("is no digest")),
+        "{unasked:?}"
+    );
     let head = rig.rev("HEAD");
     let retyped = line.replacen(&head, &head.chars().rev().collect::<String>(), 1);
     assert_ne!(retyped, line);
@@ -7624,7 +7649,7 @@ chmod 755 "$dir/release/jigc"
 /// The gate's four are `dev/gate` itself, run on a throwaway crate of two tests on
 /// 2026-10-07 — `--keep-going` green and red, `--fast`, `--quick`; the regression tool's are
 /// its own lines. Host paths are replaced by the public placeholders, and nothing else.
-fn as_recorded(name: &str) -> String {
+pub(crate) fn as_recorded(name: &str) -> String {
     read(&format!("tooling-tests/fixtures/held/{name}"))
 }
 
@@ -7643,15 +7668,15 @@ const REGRESSION_LIST: &str =
     "completions/artifacts/M55/stabilization-build/regression-set/intended-changes.tsv";
 
 /// A rig whose held commands are stand-ins, and what each call tells them.
-struct Held {
-    rig: StepRig,
+pub(crate) struct Held {
+    pub(crate) rig: StepRig,
     scratch: String,
     ran: PathBuf,
     release: PathBuf,
 }
 
 impl Held {
-    fn new(label: &str) -> Self {
+    pub(crate) fn new(label: &str) -> Self {
         let rig = StepRig::new(label);
         for tool in ["dev/gate", "dev/regression-set"] {
             placed_executable::write(&rig.root.join(tool), LONG_COMMAND);
@@ -7668,7 +7693,7 @@ impl Held {
     }
 
     /// The stand-ins run to their end at once, or wait to be released.
-    fn released(&self, yes: bool) {
+    pub(crate) fn released(&self, yes: bool) {
         if yes {
             fs::write(&self.release, "").expect("release the command");
         } else if self.release.exists() {
@@ -7699,6 +7724,53 @@ impl Held {
         )
     }
 
+    /// `hold-start` of `name`, ASKED FOR ITS DIGEST — the ONE line a step of a stage
+    /// relays, as the tool printed it — with a command that prints `prints` and exits `exit`.
+    pub(crate) fn start_digest(
+        &self,
+        name: &str,
+        flags: &[&str],
+        prints: &str,
+        exit: i32,
+    ) -> String {
+        let file = self.rig.dir().join(format!("prints-{name}"));
+        fs::write(&file, prints).expect("what the command prints");
+        let (file, exit) = (file.display().to_string(), exit.to_string());
+        let (ran, release) = (
+            self.ran.display().to_string(),
+            self.release.display().to_string(),
+        );
+        let mut args = vec!["hold-start", "--scratch", &self.scratch, "--name", name];
+        args.extend(flags);
+        self.rig
+            .digest_in(
+                &[
+                    ("HOLD_RAN", ran.as_str()),
+                    ("HOLD_RELEASE", release.as_str()),
+                    ("HOLD_PRINTS", file.as_str()),
+                    ("HOLD_EXIT", exit.as_str()),
+                ],
+                &args,
+            )
+            .raw
+    }
+
+    /// `hold-wait` of `name` within `slice` seconds, asked for its digest: the ONE line.
+    pub(crate) fn wait_digest(&self, name: &str, slice: u32) -> String {
+        let slice = slice.to_string();
+        self.rig
+            .digest(&[
+                "hold-wait",
+                "--scratch",
+                &self.scratch,
+                "--name",
+                name,
+                "--slice",
+                slice.as_str(),
+            ])
+            .raw
+    }
+
     /// `hold-wait` of `name`, within `slice` seconds — or within the tool's own.
     fn wait(&self, name: &str, slice: Option<u32>) -> Stepped {
         let slice = slice.map(|seconds| seconds.to_string());
@@ -7721,7 +7793,7 @@ impl Held {
 
     /// The commands that ran, once `count` of them have: a command is started by a process
     /// of its own, a moment after the start has answered.
-    fn runs_when(&self, count: usize) -> Vec<String> {
+    pub(crate) fn runs_when(&self, count: usize) -> Vec<String> {
         until("the command has started", || self.runs().len() >= count);
         self.runs()
     }
@@ -7786,7 +7858,7 @@ fn until(what: &str, holds: impl Fn() -> bool) {
     }
 }
 
-const GATE_KIND: [&str; 4] = ["--kind", "gate", "--run", RUN];
+pub(crate) const GATE_KIND: [&str; 4] = ["--kind", "gate", "--run", RUN];
 
 fn regression_kind<'a>(previous: &'a str, candidate: &'a str) -> Vec<&'a str> {
     vec![

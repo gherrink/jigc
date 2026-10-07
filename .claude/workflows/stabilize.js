@@ -9,15 +9,37 @@
 //
 // WHAT THIS SCRIPT DECIDES, AND WHAT IT DOES NOT. It has no shell, no file system and no
 // clock: it sees what an agent returns to it. The run's committed state is read by
-// `dev/stabilize-record state`, relayed by a git step inside the ONE line its command prints
-// and checked here against the hash that line ends with — and whether a finding is inside
+// `dev/stabilize-record state`, and what this script ACTS ON of it is relayed by a git step
+// as the DIGEST its command prints (below, WHAT THIS SCRIPT READS) and checked here against
+// the hash that line ends with — and whether a finding is inside
 // the round's test set, where it is routed, which items a round runs, which round, cycle and
 // attempt an invocation works on, and what happens next are computed THERE, where a suite
 // holds them to truth tables on every gate. This script computes none of them again. `next`
 // is returned to the orchestrator verbatim; `unsettled`, and any value this script does not
-// know, is a return with the state attached — never a guess and never a loop. Nothing a
-// previous invocation knew is used: an invocation starts from the state document and from
-// git.
+// know, is a return that names the file the state document lies in — never a guess and never
+// a loop. Nothing a previous invocation knew is used: an invocation starts from the state
+// and from git.
+//
+// WHAT THIS SCRIPT READS (the second repair plan's task K3; DECISIONS.md -> 2026-10-07, "What
+// the harness reads, changed once"). Observed on 2026-10-07: a line relayed through an agent
+// never arrives byte for byte once it holds a character outside ASCII, and from about 80 KB
+// it does not arrive at all. So EVERY LINE OF A STEP THIS SCRIPT HOLDS TO A HASH IS A DIGEST
+// (`dev/stabilize-step <act> --digest <scratch>`; that tool's header: THE DIGEST): ids,
+// words of a fixed list, counts, hashes and paths of plain segments — printable ASCII by
+// construction, a few kilobytes — and `readDigest` refuses a line that is anything else: one
+// that holds a backslash or a character outside ASCII, one that names no file for what it
+// leaves out (the line the tool prints unasked, the state document in it), and one whose
+// `unfit` says that a value did not fit its shape. NO STATE DOCUMENT, NO LEDGER ROW, NO
+// BRIEF, NO DOOR LIST AND NO REFUSAL'S PROSE PASSES THROUGH THIS SCRIPT. Where an agent
+// needs one, its prompt names THE READ and the agent runs it: an item's row with its brief
+// (`dev/stabilize-record item`), the doors of a round an item covers (`item-doors`), the
+// ledger's rows whose triage is not finished (`untriaged`), a pending batch's subject
+// (`pending`). Where the orchestrator needs one, the return names THE FILE: the state
+// document (`named.document`), a refused step's own line with its halt report (`step.file`)
+// — each by its path and its sha256, read by a subagent. What a return holds of the state is
+// what the digest holds: words, ids and counts. What an AGENT returns of its own judgment —
+// a finding, a grade, a verdict, a scope's derivation, its own halt report — is no line of a
+// tool, is held to no hash, and is passed on as it came.
 //
 // THE BOUND ACROSS ROUNDS AND THE STOP MODE (ruling 6) are the record script's too: the
 // run's opening writes them (`dev/stabilize-record run-set`), `next` is `stop` where the
@@ -80,9 +102,12 @@
 //                                                and landed if that audit finds no new blocker
 //
 // THE GIT ACTS. Every git act of a run — and every read of its record — is ONE command of
-// `dev/stabilize-step`, which does the act, checks it and prints ONE line: a git step's
-// prompt is that command and "relay its line", and `readStep` holds the relayed line to the
-// hash it ends with before anything here reads it. What an act runs and what it refuses is
+// `dev/stabilize-step`, which does the act, checks it and prints ONE line — asked for its
+// digest, as every step of a stage asks: a git step's
+// prompt is that command and "relay its line", and `readDigest` holds the relayed line to the
+// hash it ends with, and to being a digest, before anything here reads it. A step whose
+// agent returned nothing is asked for again as THE ONE COMMAND, RUN AGAIN: the tool says
+// itself what an earlier run of it left. What an act runs and what it refuses is
 // that tool's (its header); which act a stage asks for, in which order and with which names,
 // is this script's. ONE step is still a list of commands the agent follows: the re-cut of a
 // part (`carryPrompt` with a part), because that exit is ruled to be rebuilt as a revert
@@ -139,6 +164,63 @@
 //                               triage verifies it and drives the fork again.
 // A returned hash that is not the binary's is none of these: it halts the stage.
 //
+// HOW A STEP CAN END, AND WHAT FOLLOWS (the second repair plan's task K3). A step of the
+// tool ends with its status, or refuses with ONE WORD — and this script has a row for every
+// word (STEP_REFUSALS: whose the state is, and what leaves it; the fence holds the table to
+// the tool's words), so no word falls into a sentence that says nothing. The rows a stage
+// meets, by the step:
+//   the first read (`git-state`)  RECONCILES FIRST: a killed write is finished, a batch whose
+//                               commit is made is settled, and a record that was committed
+//                               and not pushed IS PUSHED — the stage then starts from that
+//                               answer, and its return names what was met (`arrived`).
+//     an applied batch            the invocation gates and commits it, pushes, and starts
+//                               nothing else (`finishRecord`).
+//     under stopAfter: 'state'    THE READ ONLY LOOKS (`--look`): nothing is finished, no
+//                               head moves, and what the next invocation would finish is
+//                               returned as `owed` — a pending batch and an owed push among
+//                               them — with status `stopped`.
+//     locked                      the orchestrator's: git's own lock stands. No git process
+//                               running, the file the step's line names is removed, and
+//                               the stage is invoked again.
+//     foreign-commit              ITS AUTHOR'S, never the human's and never this script's:
+//                               a commit outside the run's directory that the remote lacks
+//                               is pushed by name, `git push origin <branch>`, and the
+//                               stage is invoked again.
+//     unvetted (the owed push)    the human's: a local commit that would not have been
+//                               written is his to take back. Nothing is pushed.
+//   the report check              a file that is no report is SET ASIDE (`aside`), and its
+//                               reporter has left none: the row of that reporter above.
+//                               The round's scope set aside: the round has no scope, and
+//                               the stage halts there.
+//   the record's batch (`apply`)  refused `no-change` — the same ruling, sent twice: the
+//                               invocation returns `refused`, nothing is written, NO BATCH
+//                               IS LEFT and no discard is asked for.
+//   the record's commit (`record`), each a halt that says what the next invocation does:
+//     gate-red                    the batch stays applied: the next invocation gates it
+//                               again and commits it, or `dev/stabilize-step discard`
+//                               takes it back.
+//     unvetted                    THE BATCH IS TAKEN BACK ALREADY, and what was no report
+//                               left the tree: the next invocation works the next attempt.
+//     head-moved                  somebody committed while the stage ran: the batch stays
+//                               applied, and the stage is invoked again.
+//     recorded, asked again       a commit step whose agent died is asked for again — the
+//                               ONE command, run again — and answers what it answered.
+//   a record's push               that failed: THE PUSH IS OWED, and the next invocation's
+//                               first read makes it. Refused `unvetted`: the human's, and
+//                               never the push that is owed — it is refused again until the
+//                               commit is taken back. Refused `foreign-commit`: its author's.
+//   a held command (`hold-start`, `hold-wait` — read here by `heldOf`; what starts and waits
+//   for one is the second repair plan's task K11, and no stage does yet):
+//     running                     the slice is over: the wait is asked again.
+//     done, green | red | void    THE TOOL'S VERDICT, in the file its line names: a held
+//                               check's result row is that file and no word (`resultRows`),
+//                               red is filed as a finding by the record script, and void is
+//                               a void run with the tool's `why`.
+//     dead                        no verdict, whatever its output holds: a held check has NO
+//                               result — the state reads it as not run and asks for it
+//                               again — and a gate that is dead is a halt. Never started
+//                               again under its name.
+//
 // A FORK IS ON RECORD (the harness review's M3). A verdict the verifier found to contest a
 // settled decision is recorded with that verdict, in the round's triage record: its kind,
 // the verdict of the advocate's case, and whether the independent drive holds. The record
@@ -149,6 +231,23 @@
 // ONE BINARY PER CANDIDATE (ruling 11). Preflight builds it; every driving agent is handed
 // its path and hash on a `BINARY:` line and returns the hash it asserted; this script
 // compares the two itself and halts on a mismatch.
+//
+// A ROUND TESTS ONE CANDIDATE, AND EVERY RESULT OF IT NAMES THAT COMMIT (ruling 11; the
+// orchestrator's ruling of 2026-10-07 on the core review's F3: a result recorded on another
+// commit made `close` computable over greens of a tree the round never tested). The round a
+// `test` stage begins has no candidate on record: it is the branch's tip, which the first
+// read returned, and the stage's record names it. A RE-RUN is an attempt inside a round
+// that has one, and by then the round's record commits lie on top of it — so the tip is
+// another commit: a re-run builds the round's candidate from its commit, as the state's
+// digest names it, hands every driving agent that binary, begins its attempt on that
+// commit and names it in every result. The tip is named to ONE step — the record's commit,
+// which is held to the commit the stage began on (`--head`) — and to no writer. AND A CHECK
+// THE PREFLIGHT RUNS READS THE WORKING TREE, which in a re-run is not the candidate: it is
+// not asked for there — its definition halts on such a list — and is recorded VOID with
+// that reason, never run on the tip and recorded as the candidate's. So a check that did
+// not run in its round's `test` stage is not run again inside that round; the clause is
+// the human's after the re-run, and a held check (K11), which names its commits, is where
+// that ends.
 //
 // THE LABELS. The contracts of the agent definitions bind on lines of the prompt — LABELS,
 // below. Each is spelled here exactly as the definitions spell it, and
@@ -216,7 +315,8 @@
 //               `retest`): the first clause its `retest` names. The invocation runs the
 //               items of that clause the state lists as due — its position's `rerun` — and
 //               nothing else, as ONE MORE ATTEMPT INSIDE THE ROUND THAT SELECTED THEM, over
-//               that round's doors: no round is begun, no scope resolved, and the record is
+//               that round's doors AND ON THAT ROUND'S CANDIDATE, never the branch's tip
+//               (above: A ROUND TESTS ONE CANDIDATE): no round is begun, no scope resolved, and the record is
 //               one result per item (the human's ruling of 2026-10-06: that instrument is
 //               run again once; the record script counts the attempts, and takes a re-run
 //               only where its state asks for one). A `clause` the state does not ask for,
@@ -255,7 +355,10 @@
 //   exit      — OPTIONAL, `fix` only: 'drop' or { part: [ … ] }, the human's exit at a bound.
 //   stopAfter — OPTIONAL: return after a named step (STOPS), for tuning. NO RECORD STEP RUNS
 //               and nothing is committed — but what the stopped stage wrote through the
-//               record script is on disk and stays: after `state`, nothing at all; after a
+//               record script is on disk and stays: after `state`, nothing at all — THE
+//               INVOCATION ONLY LOOKS: its first read finishes nothing, no batch is gated or
+//               committed and no push is made, and what the next invocation would finish
+//               is returned as `owed`; after a
 //               later step of `test`, the attempt's marker, every report written so far
 //               and the round's scope, which is written once and stands. Such an attempt
 //               counts as one that reached no record, and after two in a row the next is
@@ -356,6 +459,70 @@ const LEDGER_SOURCE = 'ledger'
 // The reporter an attempt's marker is written under (`dev/stabilize-step begin`). No agent
 // can carry it: an item's reporters are `<item>-<step>`, and no role is named so.
 const ATTEMPT = 'attempt'
+// STEP_REFUSALS — every word `dev/stabilize-step` refuses an act with (its STATUS), as what
+// this script SAYS of it: whose the state is, and what leaves it. A step's digest carries
+// the word and never the prose — the tool's own halt report is in the file the digest names
+// — so the sentence is this script's, and tooling-tests/stabilize_harness_fence.rs holds the
+// table to the tool's words in both directions: a word the tool gains has no row until it is
+// given one here, and no row outlives its word. What the NEXT INVOCATION does after a
+// refusal of a record's commit or of its push is `recordThen` and `pushThen`, below.
+const STEP_REFUSALS = {
+  'usage': { whose: 'the harness\'s', leaves: 'the command this script composed is not one the tool takes, or names a scratch root the tool cannot use: nothing ran. It is a defect of the harness or of the invocation\'s `scratch`, and the step\'s own line says which argument' },
+  'wrong-branch': { whose: 'the orchestrator\'s', leaves: 'the branch the step names is not the one checked out: nothing was read past its name, and nothing was written, fetched or pushed. The branch the step names is checked out, and the stage invoked again' },
+  'dirty': { whose: 'the human\'s', leaves: 'the tree holds what is no pending write of the run — a tracked file changed by hand, a staged path that is no open record\'s, a stray file — or a file of an applied batch that a hand changed: the human reconciles it, and no step is repeated on a guess. For a changed batch `dev/stabilize-step discard` takes the batch back; the step\'s own line names the file' },
+  'remote-ahead': { whose: 'the human\'s', leaves: 'the pushed branch has commits the local one lacks: the human reconciles the two — no step pulls, merges or rebases' },
+  'product-path': { whose: 'the human\'s', leaves: 'a commit changed a product path directly on the loop branch: a product path moves only through an audited round\'s merge' },
+  'foreign-merge': { whose: 'the human\'s', leaves: 'a merge on the loop branch is not a round\'s: only a round\'s branch is merged into it' },
+  'merge-in-round': { whose: 'the human\'s', leaves: 'a round\'s branch holds a merge: its commits are a fixer\'s and a record\'s, one by one' },
+  'conflict': { whose: 'the human\'s', leaves: 'a merge stopped on a path that is no append-only log: it was aborted, and the conflict is the human\'s' },
+  'merge-logs': { whose: 'the human\'s', leaves: '`dev/merge-logs` could not resolve the logs a merge stopped on: the merge was aborted' },
+  'unresolved': { whose: 'the human\'s', leaves: 'a merge is left in progress with a path still conflicted: it was not aborted, and the human finishes or aborts it' },
+  'merge-differs': { whose: 'the human\'s', leaves: 'the merge commit is not the merge that was asked for — its parents, its tree or what it moved: nothing was undone' },
+  'pick-stopped': { whose: 'the human\'s', leaves: 'a cherry-pick stopped, and was aborted' },
+  'carry-differs': { whose: 'the human\'s', leaves: 'what was carried over is not exactly the commits named: nothing was undone' },
+  'push-rejected': { whose: 'the orchestrator\'s', leaves: 'the remote did not take the push: nothing is lost — the commit is local — and the push is owed' },
+  'remote-differs': { whose: 'the orchestrator\'s', leaves: 'after the push the remote does not stand at the local head: the push is owed, and the next first read looks again' },
+  'record': { whose: 'the orchestrator\'s', leaves: '`dev/stabilize-record` refused, or its answer could not be read: the step\'s own line holds that script\'s refusal — the tree is as that script left it, which is whole or untouched' },
+  'git': { whose: 'the orchestrator\'s', leaves: 'a git command of the step failed: the step\'s own line holds the command and what it printed, and nothing after it ran' },
+  'gate-red': { whose: 'the orchestrator\'s', leaves: 'the gate that ran on the tree with the records shows red that the candidate\'s own gate did not: nothing was committed or undone, and the batch stays applied — the step\'s own line names what is new' },
+  'no-batch': { whose: 'the orchestrator\'s', leaves: 'the run has no applied batch of the calls and checks this script composed — none was applied, or the one that is there is another\'s: nothing was committed' },
+  'position': { whose: 'the orchestrator\'s', leaves: 'the run\'s state does not hand the stage this round and this attempt — another invocation holds it, or the state moved since it was read: nothing was written, and the stage invoked again reads the state as it stands' },
+  'unvetted': { whose: 'the human\'s at a push; at a record\'s commit, the next attempt\'s', leaves: 'a file, a subject or a commit is not what `dev/stabilize-record` would have written. At a record\'s commit nothing is committed and the batch is taken back; at a push nothing is pushed, and the commit is local and the human\'s to take back or rewrite — `dev/stabilize-record vet --range -- <branch> --not --remotes=origin` names every commit and place again' },
+  'did-not-run': { whose: 'the orchestrator\'s', leaves: 'a scanner could not run — gitleaks, or the denylist: that is a refusal and never a pass, and everything is as it was. The scanner is provided, and the stage invoked again' },
+  'locked': { whose: 'the orchestrator\'s', leaves: 'git\'s own lock stands in the repository, and the tool never removes one. With no git process running there, the orchestrator removes the file the step\'s own line names and invokes the stage again; while one runs, once it is done' },
+  'head-moved': { whose: 'the orchestrator\'s', leaves: 'the branch is not at the commit the stage began on — somebody committed while it ran: nothing was committed or undone, and the batch stays applied. The stage is invoked again: its first read meets that commit, then gates the batch on the tree as it now stands and commits it there' },
+  'foreign-commit': { whose: 'its author\'s', leaves: 'the loop branch is ahead of its remote by a commit that changes a path outside the run\'s directory, or by a merge: some task\'s commit and no record\'s. It is NEITHER THE HUMAN\'S NOR A STAGE\'S: its author — or the orchestrator, for that task — pushes it by name, `git push origin <branch>`, behind that task\'s own gate, and the stage is invoked again. Nothing was pushed, not the records beside it either' },
+  'committed': { whose: 'the orchestrator\'s', leaves: 'the applied batch is in a commit already and is not taken back: the next first read settles it' },
+  'taken': { whose: 'the harness\'s', leaves: 'a held command of that name was started with other arguments, or its work directory holds a build: a name is minted once per attempt' },
+  'missing': { whose: 'the harness\'s', leaves: 'no held command of that name was started under this scratch root, or the file asked for is not there' },
+  'build': { whose: 'the orchestrator\'s', leaves: 'the commit did not build, or its binary is not of the version asked: no binary was written' },
+}
+// stepRefusal — a step's refusal as this script says it: the word, whose it is, what leaves it.
+function stepRefusal(word, branch) {
+  const row = STEP_REFUSALS[word]
+  return row ? '`' + word + '` — ' + row.whose + ': ' + row.leaves.replace('<branch>', branch || '<branch>') : '`' + word + '`, a word of `' + STEP_TOOL + '` this script has no row for'
+}
+// THE HELD CHECKS. A check that is one long command is an item whose kind says so:
+// `held-<id>`, `<id>` a kind of the step tool's held commands (its HOLDS; dev/stabilize-record
+// reads the same form). The tool starts it, waits for it and JUDGES it; what this script
+// reads of it is `heldOf`. Which step of a stage starts one is the second repair plan's task
+// K11: until then a round that runs such an item halts and names it.
+const HELD_PREFIX = 'held-'
+const HELD_CHECKS = ['gate', 'regression']
+function heldKind(kind) {
+  const id = typeof kind === 'string' && kind.startsWith(HELD_PREFIX) ? kind.slice(HELD_PREFIX.length) : null
+  return id && HELD_CHECKS.includes(id) ? id : null
+}
+// HELD_ENDS — how a held command can stand when it is asked for, and what follows: the
+// header's table (HOW A STEP CAN END), as the words `heldOf` answers with.
+const HELD_ENDS = {
+  running: 'the slice is over and the command still runs: the wait is asked again',
+  green: 'the command ran to its end and the tool read its verdict green: a held check\'s result is the verdict\'s file',
+  red: 'the command ran to its end and the tool read its verdict red: a held check\'s result is the verdict\'s file, and the record script files the finding',
+  void: 'the command ran to its end and its output holds no verdict the tool takes — `why` says which: a held check\'s result is the verdict\'s file, a void run',
+  dead: 'the command\'s process is gone and nothing says how it ended: it has no verdict, whatever its output holds, and is not started again under its name — a held check has no result, and a gate that is dead is a halt',
+  unread: 'the step that asked did not answer with a job of the tool\'s: nothing is known of the command',
+}
 // The paragraph every agent definition carries, verbatim (tooling-tests/
 // release_pipeline_fence.rs holds it there) — for the two roles that have no definition and
 // so no paragraph of their own. The fence holds this copy to the definitions' bytes.
@@ -700,13 +867,28 @@ function hashMismatch(expected, returns) {
 // reportsRead — what a `check-reports` step established, or why it established nothing:
 // the launched reporters that left NO REPORT (`missing` — each is then taken off the list,
 // and what it was launched for is recorded as not done), or the files nobody launched
-// (`extra`), which stop the stage: a report nobody asked for, a stray file, the temporary of
-// a killed write.
+// (`extra` — how many: their names are in the file the step's digest names), which stop the
+// stage: a report nobody asked for, a stray file. And WHAT WAS SET ASIDE (`aside`): a file at
+// a report's path that the record script would not have written is no report — the check
+// moved it out of the tree, its reporter is among the `missing`, and `why` is the word of
+// what refused it.
 function reportsRead(step) {
   const seen = step && step.status === 'checked' && plain(step.check) ? step.check : null
-  if (!seen || !Array.isArray(seen.missing) || !Array.isArray(seen.extra)) return { fault: 'the report check could not be read', transient: !step }
-  if (seen.extra.length) return { fault: 'the stage\'s report directory holds what no launched reporter wrote: ' + JSON.stringify(seen.extra) + ' — a file nobody launched is nobody\'s report', check: seen }
-  return { missing: seen.missing }
+  if (!seen || !Array.isArray(seen.missing) || !Number.isInteger(seen.extra) || !Array.isArray(step.aside)) return { fault: 'the report check could not be read' + (step && step.refused ? ': it refused ' + stepRefusal(step.refused) : ''), transient: !step, file: fileOf(step) }
+  if (seen.extra) return { fault: 'the stage\'s report directory holds ' + seen.extra + ' file(s) no launched reporter wrote — a file nobody launched is nobody\'s report; the step\'s own line names each', file: fileOf(step) }
+  return { missing: seen.missing, aside: step.aside }
+}
+// fileOf — the file a step's digest names for what it leaves out — the line the tool prints
+// unasked: a refusal's halt report, the names behind a count — by its path under the
+// scratch root and its sha256; or null.
+function fileOf(step) {
+  return step && isText(step.file) && SHA256_RE.test(String(step.file_sha256)) ? { file: step.file, sha256: step.file_sha256 } : null
+}
+// setAside — why a reporter's report was set aside, as the word the check gives; or null.
+// A report's file is `<reporter>.a<attempt>.md`.
+function setAside(aside, name) {
+  const moved = (aside || []).find((a) => plain(a) && typeof a.path === 'string' && a.path.slice(a.path.lastIndexOf('/') + 1).replace(/\.a[0-9]+\.md$/, '') === name)
+  return moved ? String(moved.why) : null
 }
 // endingOf — how a reporter that did not report ended, in words a void's reason carries.
 function endingOf(result) {
@@ -716,11 +898,14 @@ function endingOf(result) {
 // unreported — a unit's reporters whose report is NOT THERE, taken out of what the unit
 // established: a result nobody can read a report for is no result. A step of the unit's own
 // chain voids the unit; the cross-model pass voids that pass, and nothing else.
-function unreported(ran, missing) {
+function unreported(ran, missing, aside) {
   for (const unit of ran) {
     for (const r of unit.reporters.filter((x) => missing.includes(x.name))) {
+      // A report that was set aside is a report its reporter did not leave: the file at
+      // its path was not what the record script would have written.
+      const moved = setAside(aside, r.name)
       if (r.crossModel) unit.crossModel = 'void'
-      else if (unit.status !== 'void') Object.assign(unit, { status: 'void', reason: 'its `' + r.as + '` step ' + (r.result && r.result.status === 'reported' ? 'returned and left no report' : endingOf(r.result) + ', and left no report') })
+      else if (unit.status !== 'void') Object.assign(unit, { status: 'void', reason: 'its `' + r.as + '` step ' + (moved ? 'left a file at its report\'s path that is no report (`' + moved + '`): it was set aside, and the step left none' : r.result && r.result.status === 'reported' ? 'returned and left no report' : endingOf(r.result) + ', and left no report') })
       r.result = null
       r.report = null
     }
@@ -731,10 +916,13 @@ function unreported(ran, missing) {
 // the value. It knows nothing else about it — but `rule` is the human's step for a finding
 // on the human's list (one that is still ungraded or unverified after its retry among them:
 // its `why` says so), for a clause that is still not green after its one re-run, and for a
-// stage whose attempts did not reach their record, so all three lists go back with it.
+// stage whose attempts did not reach their record, so all three go back with it: how many
+// findings the human's list holds — the list itself is in the state document's file, which
+// every return names — the keys of it that may be granted one more triage, and the clauses
+// and the stages by name.
 function outcomeOf(state) {
   const out = { next: state.next, known: KNOWN_NEXT.includes(state.next) }
-  if (out.next === 'rule') out.rule = { findings: state.human_list || [], clauses: state.human_clauses || [], stages: state.human_stages || [] }
+  if (out.next === 'rule') out.rule = { findings: state.human_list || 0, reverify: state.reverify || [], clauses: state.human_clauses || [], stages: state.human_stages || [] }
   return out
 }
 
@@ -768,31 +956,35 @@ function runRulingsFault(rulings, state) {
     if (r.rounds != null && (state.rounds || []).length && !(state.not_ready || []).length && !(state.stop && state.stop.why === 'round-bound')) return 'the run is not stopped at its bound across rounds — its `next` is `' + state.next + '`' + (state.stop ? ' (' + state.stop.why + ')' : '') + ': once a round is begun that bound is raised at its own stop, and at no other state'
     if (r.cycles != null && !(state.next === 'stop' && state.stop && state.stop.why === 'cycle-bound')) return 'the run is not stopped at the bound on a round\'s fix cycles — its `next` is `' + state.next + '`' + (state.stop ? ' (' + state.stop.why + ')' : '') + ': that bound is raised at its own stop, and at no other state'
     if (r.cycles != null && facts.cycles != null && r.cycles <= facts.cycles) return 'the bound on a round\'s fix cycles is ' + facts.cycles + ': `cycles` raises it, and ' + r.cycles + ' does not'
-    if (r.reverify != null && !(state.human_list || []).some((f) => f.key === r.reverify && /-after-retry$/.test(String(f.why)))) return 'the finding `' + r.reverify + '` is not the human\'s to grant one more triage: that is granted to a finding the state\'s `human_list` names as still ungraded or unverified after its retry — it names ' + ((state.human_list || []).filter((f) => /-after-retry$/.test(String(f.why))).map((f) => f.key).join(', ') || 'none')
+    if (r.reverify != null && !(state.reverify || []).includes(r.reverify)) return 'the finding `' + r.reverify + '` is not the human\'s to grant one more triage: that is granted to a finding the state\'s `human_list` names as still ungraded or unverified after its retry — its `reverify` names ' + ((state.reverify || []).join(', ') || 'none')
     if (r.again != null && !(state.human_stages || []).some((h) => h.stage === r.again)) return 'the `' + r.again + '` stage is not the human\'s to grant one more attempt: that is granted to a stage the state\'s `human_stages` names — it names ' + ((state.human_stages || []).map((h) => h.stage).join(', ') || 'none')
   }
   return null
 }
 
-// findingRulingsFault — why rulings on findings and bounds cannot be recorded by an
-// invocation that starts nothing, or null: a ruling names a row the ledger holds. Whether a
-// ruling is the right one is the human's; the record script takes the three dispositions on
-// any row (its header: WHAT THIS SCRIPT CANNOT KNOW).
-function findingRulingsFault(rulings, state) {
-  const held = (state.ledger || []).map((row) => row.key)
-  const strangers = rulings.filter((r) => r.key != null && !held.includes(r.key)).map((r) => r.key)
-  return strangers.length ? 'the ledger has no row ' + strangers.join(', ') + ': a ruling is on a finding the run has recorded' : null
-}
+// WHETHER A RULING NAMES A ROW THE LEDGER HOLDS is not asked here: the ledger is no part of
+// what this script reads, and the rulings' own batch holds every key (`check-ledger`, and
+// `ledger-set` itself, which names a key the ledger lacks) — a ruling on no row refuses that
+// batch, whole, and nothing is written. Whether a ruling is the right one is the human's;
+// the record script takes the three dispositions on any row (its header: WHAT THIS SCRIPT
+// CANNOT KNOW).
 
 // ledgerSource — the rows of the ledger whose triage is not finished (the state's
 // `untriaged`: nobody graded them, or nobody verified them), as one more source EVERY stage's
 // triage is handed beside its own reporters' findings. A row seeded at the opening, and an
 // entry an earlier stage left without a verdict, are graded and verified by the next triage
 // that runs — never left for a stage of their own, and never for the human as if verified.
+// THE ROWS THEMSELVES ARE NOT HANDED OVER BY THIS SCRIPT, which reads how many there are and
+// nothing of them: the source names THE READ that prints them whole, and triage runs it.
 function ledgerSource(run, state) {
-  const rows = (state.untriaged || []).map((u) => Object.assign({ why: u.why }, (state.ledger || []).find((row) => row.key === u.key))).filter((row) => row.key)
-  if (!rows.length) return []
-  return [{ reporter: LEDGER_SOURCE, report: runDir(run) + '/ledger.md', findings: rows.map((row) => row.key + ' — a row the ledger holds under this key, ' + (row.why === 'ungraded' ? 'never graded' : 'graded ' + row.grade + ' and never verified') + ' · door: ' + row.door + ' · clause: ' + row.clause + ' · repro: ' + row.repro) }]
+  const awaiting = plain(state.untriaged) && Number.isInteger(state.untriaged.count) ? state.untriaged.count : 0
+  if (!awaiting) return []
+  return [{ reporter: LEDGER_SOURCE, report: runDir(run) + '/ledger.md', count: awaiting, read: 'dev/stabilize-record untriaged --run ' + run, findings: [] }]
+}
+// findingsOf — how many findings a source hands triage: its own lines, or — for the source
+// that names a read — as many rows as the state counts.
+function findingsOf(source) {
+  return source.read ? source.count : source.findings.length
 }
 
 // previousOf — the release the run measures against, as its record names it: what the
@@ -807,20 +999,40 @@ function previousOf(state) {
 // that is, and where each item's own run stands. It goes back with `close`, so that the
 // human closes with that number in front of them.
 function evidenceOf(state) {
-  return (state.clauses || []).map((c) => ({ clause: c.clause, status: c.status, round: c.round, commit: c.commit, behind: c.behind, items: (c.items || []).map((i) => ({ item: i.item, round: i.round, attempt: i.attempt, standing: i.standing, why: i.why })) }))
+  // An item's entry holds, of where its own run stands, what is not null: a digest prints
+  // no null it can leave out.
+  const at = (value) => (value == null ? null : value)
+  return (state.clauses || []).map((c) => ({ clause: c.clause, status: c.status, round: c.round, commit: c.commit, behind: c.behind, items: (state.items || []).filter((i) => i.clause === c.clause).map((i) => ({ item: i.item, round: at(i.round), attempt: at(i.attempt), standing: at(i.standing), why: at(i.why) })) }))
+}
+
+// namedOf — what every return names of the state beside `next`: the in-scope items no tested
+// round's scope has selected, by id; how many doors of the round in hand no item of the test
+// set names; and the file the state document lies in — its path and its sha256 — where the
+// doors are named and everything else this script does not read can be read. Neither list
+// forbids closing: both are a declared bound, and the human reads them at every stop.
+function namedOf(state, round) {
+  if (!state) return null
+  const within = round == null ? state.round : round
+  const bare = (state.uncovered || []).find((u) => u.round === within)
+  return { never_selected: state.never_selected || [], uncovered: { round: within == null ? null : within, doors: bare ? bare.doors : 0 }, document: state.document || null }
 }
 
 // readStep — a git step's return as the object its command printed. The relayed line must
 // end with the sha256 of itself without that field, as the tool writes it (dev/stabilize-step:
 // "The line"), parse as JSON and be the line of the act that was asked for; then it is what
-// the step says, a refusal included (`status: 'halted'`, with the tool's halt report). A line
-// that is not the command's is a halted step too, and `relay` says why. A step whose agent
-// halted without a line is passed on as that halt.
+// the step says, a refusal included (`status: 'halted'`, with the word it refused with). A
+// line that is not the command's is a halted step too, and `relay` says why — and never
+// repeats the line: what came back is not passed on. A step whose agent halted without a
+// line is passed on as that halt.
 const STEP_SHA_RE = /, "sha256": "([0-9a-f]{64})"\}$/
+// lostStep — a step whose line is not one this script reads, as a halted step that says why.
+function lostStep(r, why) {
+  return { status: 'halted', relay: why, halt: { root_cause: why, evidence: typeof r.line === 'string' ? '(a line of ' + r.line.length + ' characters came back; it is not passed on)' : '(the step returned no line)', tree_state: '(not read: the step\'s line was not the command\'s)', recommendation: 'read the tree and the branches before the step is asked for again: its command may have run' } }
+}
 function readStep(r, act) {
   if (!r) return null
   if (r.status !== 'ran') return { status: 'halted', halt: r.halt || null }
-  const lost = (why) => ({ status: 'halted', relay: why, halt: { root_cause: why, evidence: typeof r.line === 'string' ? r.line : '(the step returned no line)', tree_state: '(not read: the step\'s line was not the command\'s)', recommendation: 'read the tree and the branches before the step is asked for again: its command may have run' } })
+  const lost = (why) => lostStep(r, why)
   if (typeof r.line !== 'string') return lost('the step returned no line')
   const line = r.line.replace(/\n$/, '')
   const tail = STEP_SHA_RE.exec(line)
@@ -834,19 +1046,56 @@ function readStep(r, act) {
   if (!plain(said) || said.act !== act || typeof said.status !== 'string') return lost('the relayed line is not the line of `' + STEP_TOOL + ' ' + act + '`')
   return said
 }
+// readDigest — a step of a STAGE, read: `readStep`, and then THE LINE IS A DIGEST or it is
+// not read (the header: WHAT THIS SCRIPT READS). A digest is printable ASCII and holds no
+// backslash — the tool prints it without one escape, so a relay has nothing to decode — and
+// it says what it leaves out: `unfit`, the fields whose value did not fit its shape, and
+// `file`, where the rest lies. So the line the tool prints UNASKED — the state document or a
+// refusal's prose in it — is refused here even where it hashes, as a line that is not the
+// one asked for; and a digest with a field struck out is a step this script does not act
+// on: by then the act may have run, and its own line, in the file, says what it did.
+const DIGEST_RE = /^[\x20-\x7e]*$/
+function readDigest(r, act) {
+  const said = readStep(r, act)
+  if (!said || r.status !== 'ran' || said.relay) return said
+  const line = r.line.replace(/\n$/, '')
+  if (!Array.isArray(said.unfit) || !('file' in said) || !('file_sha256' in said)) return lostStep(r, 'the relayed line is no digest of `' + STEP_TOOL + ' ' + act + '` — it names neither what did not fit nor the file that holds the rest: it is the line the tool prints unasked, or another\'s')
+  if (!DIGEST_RE.test(line) || line.includes('\\')) return lostStep(r, 'the relayed line holds a backslash or a character outside printable ASCII, and a digest of `' + STEP_TOOL + '` holds neither: it was altered on its way, or is not the digest that was asked for')
+  if (said.unfit.length) return Object.assign(lostStep(r, 'the digest of `' + STEP_TOOL + ' ' + act + '` could not print ' + said.unfit.filter((name) => typeof name === 'string' && /^[a-z0-9_.-]+$/.test(name)).join(', ') + ': a value did not fit the shape its field declares, and this script acts on no line with a field struck out. THE ACT MAY HAVE RUN — its own line, whole, is in the file the digest names'), { unfit: true, said: said.status, file: said.file, file_sha256: said.file_sha256 })
+  return said
+}
+// heldOf — what a `hold-start` or a `hold-wait` step's digest says of a held command, as one
+// of HELD_ENDS: `running`; `green`, `red` or `void` — the tool's verdict of a command that
+// ran to its end, with the file the tool kept it in, by its path and its hash, and `why`
+// where it is void; `dead`; or `unread`, where the step did not answer with a job. THE
+// VERDICT IS THE TOOL'S: nothing here judges, and no word of an agent is read.
+function heldOf(step, scratch) {
+  if (!step) return { ends: 'unread', why: 'the step returned no result' }
+  if (step.status === 'halted') return { ends: 'unread', why: step.refused ? stepRefusal(step.refused) : step.relay || 'the step halted', refused: step.refused || null }
+  const job = { name: step.name, kind: step.kind, output: isText(step.output) ? scratch + '/' + step.output : null }
+  if (step.status === 'started' || step.status === 'running') return Object.assign({ ends: 'running' }, job)
+  if (step.status === 'dead') return Object.assign({ ends: 'dead', why: step.why || null }, job)
+  if (step.status === 'done' && ['green', 'red', 'void'].includes(step.verdict) && isText(step.verdict_file) && SHA256_RE.test(String(step.verdict_sha256))) return Object.assign({ ends: step.verdict, why: step.why || null, verdict: scratch + '/' + step.verdict_file, verdict_sha256: step.verdict_sha256 }, job)
+  return Object.assign({ ends: 'unread', why: 'the step said `' + step.status + '` and named no verdict of the tool\'s' }, job)
+}
 
 // resultRows — what a `test` stage records of its items: ONE RESULT PER ITEM it ran, and
 // nothing about a clause — a clause's status is derived by the record script from these
 // rows, and no code of this script composes one. `void` with its reason when the item did
 // not run to its end; `red` for a deterministic check that is red — which the record script
 // files as a finding in the same call, so every red brings what that ledger row needs: a
-// doctype, the door it stands at (the check's own first door, or its name), and where the
+// doctype, the door it stands at — the check's own name: which door of the round a red
+// check stands at is triage's to say, from the item's row, and no text of that row passes
+// through this script — and where the
 // evidence lies; else `green`: the item ran, on this commit, over the round's doors. What a
-// hunting item FOUND is the ledger's, and forbids closing there.
+// hunting item FOUND is the ledger's, and forbids closing there. A HELD CHECK'S ROW IS THE
+// FILE THE TOOL KEPT ITS VERDICT IN, AND NO WORD (`unit.verdict`, from `heldOf`): the record
+// script reads green, red or void out of that file, and refuses an outcome a caller names.
 function resultRows(units) {
   return units.map((unit) => {
+    if (unit.verdict) return { item: unit.item, verdict: unit.verdict }
     if (unit.status === 'void') return { item: unit.item, outcome: 'void', reason: unit.reason || 'it did not run to its end' }
-    if (unit.status === 'red') return { item: unit.item, outcome: 'red', doctype: RED_DOCTYPE, door: unit.door || 'the check `' + unit.item + '`', repro: unit.evidence || 'the check returned red, and no evidence beside it' }
+    if (unit.status === 'red') return { item: unit.item, outcome: 'red', doctype: RED_DOCTYPE, door: 'the check `' + unit.item + '`', repro: unit.evidence || 'the check returned red, and no evidence beside it' }
     return { item: unit.item, outcome: 'green' }
   })
 }
@@ -923,6 +1172,43 @@ function triageRecord(ctx, entries) {
     }),
   }
 }
+
+// recordThen — what a halt of a record step says is to be done, in place of the sentence
+// every other halt ends with: WHAT THE NEXT INVOCATION DOES, by how the step ended. `word`
+// is what the commit step refused with, or null where the step never answered — the
+// executor's, or the commit step's own agent: then nothing is known of the batch, and the
+// sentence is true whether or not it was applied.
+function discardCommand(run, branch) {
+  return '`' + STEP_TOOL + ' discard --branch ' + branch + ' --run-dir ' + runDir(run) + '`'
+}
+function recordThen(run, branch, word, discarded) {
+  const stands = ' What was committed stands.'
+  const takeBack = ' To take the batch back instead — the orchestrator\'s decision, a subagent\'s act — ' + discardCommand(run, branch) + ' asks git first, puts every table back as it was before the record step, and keeps the reports and the round\'s scope.'
+  if (word === 'gate-red') return stands + ' THE BATCH IS STILL APPLIED AND NOT COMMITTED — the tables written, held by the record script as pending, and no dirty tree. Invoke the stage again: that invocation runs the full gate on the batch once more, commits and pushes it, and does nothing else.' + takeBack
+  if (word === 'unvetted') return stands + (discarded === true ? ' THE BATCH IS TAKEN BACK ALREADY, and a report or a scope that was no such file has left the tree: nothing is pending, and no discard is asked for. Invoke the stage again: it reads the state as it stands and works the next attempt.' : ' The batch was NOT taken back — a file of it is in a commit already — and it is the human\'s: the step\'s own line says which file.')
+  if (word === 'head-moved') return stands + ' Nothing was committed or undone: THE BATCH IS STILL APPLIED. Invoke the stage again: its first read meets the commit somebody made while the stage ran — one the remote lacks is its author\'s to push — then gates the batch on the tree as it now stands, and commits it there.' + takeBack
+  if (word === 'did-not-run' || word === 'locked') return stands + ' Everything is as it was: THE BATCH IS STILL APPLIED. Once what the refusal names is dealt with, invoke the stage again: that invocation gates the batch once more, commits and pushes it, and does nothing else.' + takeBack
+  return stands + ' A record step that stopped may have left its batch APPLIED AND NOT COMMITTED — the tables written, held by the record script as pending, and no dirty tree. Invoke the stage again: its first read says what is there. Where a batch is pending, that invocation runs the full gate on it once more, commits and pushes it, and does nothing else; where the commit was made and nothing else, it settles and pushes it; where none is, it reads the state as it stands and works the next attempt.' + takeBack
+}
+// The word the record script refused a batch with that means THE SAME BATCH, SENT TWICE:
+// every file it would write is what the run holds already. Nothing is written, no journal
+// exists, and there is nothing to take back.
+const NO_CHANGE = 'no-change'
+// pushThen — what a halt says after a record's push that failed: the record is committed,
+// and WHO MAKES THE PUSH. It is owed, and the next invocation's first read makes it — but a
+// push the tool refused `unvetted` is the human's and is never made by a later read, and
+// one refused `foreign-commit` waits for a commit that is its author's to push.
+function pushThen(branch, word) {
+  if (word === 'unvetted') return ' What was committed stands, AND THE PUSH IS NOT OWED TO ANY LATER INVOCATION: a commit it would publish is not what `dev/stabilize-record` would have written, so every push of it is refused again — a stage\'s first read included — until the human has taken that commit back or rewritten it. `dev/stabilize-record vet --range -- ' + branch + ' --not --remotes=origin` names every commit and place.'
+  if (word === 'foreign-commit') return ' What was committed stands. The record is not pushed beside a commit that is no record\'s: its author pushes that commit by name — `git push origin ' + branch + '` — and the stage is invoked again; its first read then makes the push that is owed.'
+  return ' What was committed stands, and THE PUSH IS OWED: invoke the stage again with the same args — its first read finds the record the remote lacks, vets it and pushes it, and the stage goes on from the state as it then stands.'
+}
+// What a retry is told. An agent that works in the tree looks at what a dead try left
+// before it goes on. A STEP OF THE TOOL IS ONE COMMAND, AND ITS RETRY IS THAT COMMAND, RUN
+// AGAIN: the tool reconciles — it finishes what an earlier run of it left, answers again
+// what it answered, or refuses and says whose the state is — and the agent looks at nothing.
+const LOOK_AGAIN = 'RETRY after a transient failure of an earlier attempt at this same call. Before anything else look at what that attempt left — `git status --porcelain`, `git log -1`, and whether your report already stands at its path — and go on from it: never `git clean` (the untracked files under the run\'s directory are other agents\' reports), never make a commit or write a report that exists already. If you cannot tell what the dead attempt did, halt and say so.'
+const RUN_AGAIN = 'RETRY: an earlier try of this same step returned nothing. Run the ONE command above again, exactly as it is written, and relay its line: the command says itself what an earlier run of it left — it finishes that, answers again what it answered, or refuses — and you look at nothing else and repair nothing.'
 
 // ---- structured-output schemas ----
 const HALT = {
@@ -1151,6 +1437,7 @@ const RECORD_SCHEMA = {
   properties: {
     status: { type: 'string', enum: ['gated', 'halted'] },
     halt: HALT,
+    refused: { type: 'string', description: 'when the batch of step 2 was refused: the ONE word that follows `refused` on the line `dev/stabilize-record` printed on stderr — `no-change`, `check`, `hygiene`, …' },
     gate: { type: 'string', description: 'the file the gate\'s whole output was kept in, as the prompt names it' },
   },
 }
@@ -1170,43 +1457,54 @@ function stepPrompt(what, act, flags) {
 function listFlags(flag, values) {
   return values.map((value) => '--' + flag + ' ' + value).join(' ')
 }
-function gitStatePrompt(v) {
-  return stepPrompt('the state of the stabilization run `' + v.run + '` before its `' + v.stage + '` stage: the branch, the tree, the pushed loop branch, and the path-class assert', 'git-state', '--stage ' + v.stage + ' --loop ' + branchName(v.run) + ' --rounds ' + branchName(v.run, '') + ' --run-dir ' + runDir(v.run) + ' ' + listFlags('product', PRODUCT_PATHS))
+// digestFlag — what makes a step's ONE line its digest, and names the root the file with the
+// rest is kept under: the invocation's scratch root. Every step of a stage carries it.
+function digestFlag(scratch) {
+  return '--digest ' + scratch
+}
+// `look`: the invocation only looks (`stopAfter: 'state'`) — the read finishes nothing, and
+// says what is owed.
+function gitStatePrompt(v, look) {
+  return stepPrompt((look ? 'LOOKED AT ONLY — nothing is finished, and what is owed is said: ' : '') + 'the state of the stabilization run `' + v.run + '` before its `' + v.stage + '` stage: the branch, the tree, the pushed loop branch, and the path-class assert', 'git-state', '--stage ' + v.stage + ' --loop ' + branchName(v.run) + ' --rounds ' + branchName(v.run, '') + ' --run-dir ' + runDir(v.run) + ' ' + listFlags('product', PRODUCT_PATHS) + (look ? ' --look' : '') + ' ' + digestFlag(v.scratch))
 }
 function statePrompt(v, tag) {
-  return stepPrompt('read the record of the stabilization run `' + v.run + '` (read ' + tag + ')', 'state', '--run ' + v.run + ' --scratch ' + v.scratch + ' --tag ' + tag)
+  return stepPrompt('read the record of the stabilization run `' + v.run + '` (read ' + tag + ')', 'state', '--run ' + v.run + ' --scratch ' + v.scratch + ' --tag ' + tag + ' ' + digestFlag(v.scratch))
 }
 // The BEGIN step: an attempt of a stage put on record before any agent of it is launched.
 function beginPrompt(ctx, sha) {
-  return stepPrompt('attempt ' + ctx.attempt + ' of the `' + ctx.stage + '` stage of `' + ctx.run + '`, round ' + ctx.round + ', begun on record: the state must hand the stage exactly this round and attempt, and the attempt\'s marker is written', 'begin', stageFlags(ctx) + ' --attempt ' + ctx.attempt + ' --reporter ' + ATTEMPT + ' --commit ' + sha + ' --scratch ' + ctx.scratch)
+  return stepPrompt('attempt ' + ctx.attempt + ' of the `' + ctx.stage + '` stage of `' + ctx.run + '`, round ' + ctx.round + ', begun on record: the state must hand the stage exactly this round and attempt, and the attempt\'s marker is written', 'begin', stageFlags(ctx) + ' --attempt ' + ctx.attempt + ' --reporter ' + ATTEMPT + ' --commit ' + sha + ' --scratch ' + ctx.scratch + ' ' + digestFlag(ctx.scratch))
 }
 function checkReportsPrompt(ctx, names) {
-  return stepPrompt('the reports of the `' + ctx.stage + '` stage of `' + ctx.run + '`, round ' + ctx.round + ', held to the reporters that were launched', 'check-reports', stageFlags(ctx) + ' --attempt ' + ctx.attempt + ' -- ' + names.join(' '))
+  return stepPrompt('the reports of the `' + ctx.stage + '` stage of `' + ctx.run + '`, round ' + ctx.round + ', held to the reporters that were launched', 'check-reports', stageFlags(ctx) + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + ' ' + digestFlag(ctx.scratch) + ' -- ' + names.join(' '))
 }
 function findRoundPrompt(v, round) {
-  return stepPrompt('find the branch of round ' + round + ' of `' + v.run + '`', 'find-round', '--prefix ' + branchName(v.run, round))
+  return stepPrompt('find the branch of round ' + round + ' of `' + v.run + '`', 'find-round', '--prefix ' + branchName(v.run, round) + ' ' + digestFlag(v.scratch))
 }
 function openRoundPrompt(v, round, branch) {
-  return stepPrompt('the branch `' + branch + '` of round ' + round + ' of `' + v.run + '`: switch to it, or open it from `' + branchName(v.run) + '`', 'open-round', '--loop ' + branchName(v.run) + ' --branch ' + branch + ' --run-dir ' + runDir(v.run))
+  return stepPrompt('the branch `' + branch + '` of round ' + round + ' of `' + v.run + '`: switch to it, or open it from `' + branchName(v.run) + '`', 'open-round', '--loop ' + branchName(v.run) + ' --branch ' + branch + ' --run-dir ' + runDir(v.run) + ' ' + digestFlag(v.scratch))
 }
-function pushPrompt(v, branch) {
-  return stepPrompt('push `' + branch + '` of the stabilization run `' + v.run + '` by name', 'push', '--branch ' + branch)
+// `record`: the push of a RECORD on the loop branch — held to publishing records and nothing
+// beside them (`--run-dir`): a commit outside the run's directory is its author's to push.
+function pushPrompt(v, branch, record) {
+  return stepPrompt((record ? 'a RECORD\'S push — what it publishes is the run\'s records and nothing beside them: ' : '') + 'push `' + branch + '` of the stabilization run `' + v.run + '` by name', 'push', '--branch ' + branch + (record ? ' --run-dir ' + runDir(v.run) : '') + ' ' + digestFlag(v.scratch))
 }
 // The RECORD step's commit: the applied batch committed as ONE commit, when the gate that
 // ran on the tree with the records shows nothing red that the candidate's own gate did not.
 // The act is handed how many calls and checks the batch was composed of, and refuses a
-// batch that is another's.
-function recordCommitPrompt(v, branch, gate, expect) {
-  return stepPrompt('the ONE commit of a record step of `' + v.run + '` on `' + branch + '`: the applied batch, held to the gate that ran on it', 'record', '--branch ' + branch + ' --run-dir ' + runDir(v.run) + ' --gate ' + gate + ' --calls ' + expect.calls + ' --checks ' + expect.checks)
+// batch that is another's; the scratch root, under which a file that is no report is set
+// aside; and `head`, THE COMMIT THE STAGE BEGAN ON — the record is committed on it or not at
+// all, and it is what lets the step, asked again, answer what it answered.
+function recordCommitPrompt(v, branch, gate, expect, head) {
+  return stepPrompt('the ONE commit of a record step of `' + v.run + '` on `' + branch + '`: the applied batch, held to the gate that ran on it', 'record', '--branch ' + branch + ' --run-dir ' + runDir(v.run) + ' --gate ' + gate + ' --calls ' + expect.calls + ' --checks ' + expect.checks + ' --scratch ' + v.scratch + (head ? ' --head ' + head : '') + ' ' + digestFlag(v.scratch))
 }
 // The LAND step: a round's branch merged `--no-ff` into the loop branch and the loop branch
 // pushed, as one act.
 function landPrompt(v, round, branch) {
   const loop = branchName(v.run)
-  return stepPrompt('land round ' + round + ' of `' + v.run + '`, ONE act: merge `' + branch + '` into `' + loop + '` with a merge commit, then push `' + loop + '` by name. The audit of its fix diff left nothing open', 'land', '--loop ' + loop + ' --branch ' + branch + ' --run-dir ' + runDir(v.run) + ' ' + listFlags('product', PRODUCT_PATHS) + ' ' + listFlags('log', SYNC_LOGS))
+  return stepPrompt('land round ' + round + ' of `' + v.run + '`, ONE act: merge `' + branch + '` into `' + loop + '` with a merge commit, then push `' + loop + '` by name. The audit of its fix diff left nothing open', 'land', '--loop ' + loop + ' --branch ' + branch + ' --run-dir ' + runDir(v.run) + ' ' + listFlags('product', PRODUCT_PATHS) + ' ' + listFlags('log', SYNC_LOGS) + ' ' + digestFlag(v.scratch))
 }
 function roundCommitsPrompt(v, round, branch) {
-  return stepPrompt('the commits of round ' + round + ' of `' + v.run + '` (`' + branch + '`), and which of them touch the run\'s directory', 'round-commits', '--loop ' + branchName(v.run) + ' --branch ' + branch + ' --run-dir ' + runDir(v.run))
+  return stepPrompt('the commits of round ' + round + ' of `' + v.run + '` (`' + branch + '`), and which of them touch the run\'s directory', 'round-commits', '--loop ' + branchName(v.run) + ' --branch ' + branch + ' --run-dir ' + runDir(v.run) + ' ' + digestFlag(v.scratch))
 }
 // The CARRY step: named commits cherry-picked, one by one. Onto the loop branch — a dropped
 // round keeps its record, adjustment iv — it is the tool's act. Onto a part's own branch
@@ -1215,7 +1513,7 @@ function roundCommitsPrompt(v, round, branch) {
 const CARRY_RULES = 'Run exactly the commands below, in order, and nothing else: the only commits you make are the cherry-picks this step names, one by one. No other branch, no file edit, no `git stash`, no reset, no rebase, no pull, never `--force`, and `main` is never checked out, merged into or pushed. Any check that fails, or any command that fails, is a HALT: stop, leave everything as the step says, and fill the halt report (root_cause = which check, evidence = the command and its output, tree_state = `git status` and `git branch --show-current`).'
 function carryPrompt(v, round, shas, part) {
   const loop = branchName(v.run)
-  if (!part) return stepPrompt('round ' + round + ' of `' + v.run + '` is dropped: carry exactly its record commits over to `' + loop + '`, so that the round keeps its record', 'carry', '--loop ' + loop + ' --run-dir ' + runDir(v.run) + ' ' + listFlags('product', PRODUCT_PATHS) + ' -- ' + shas.join(' '))
+  if (!part) return stepPrompt('round ' + round + ' of `' + v.run + '` is dropped: carry exactly its record commits over to `' + loop + '`, so that the round keeps its record', 'carry', '--loop ' + loop + ' --run-dir ' + runDir(v.run) + ' ' + listFlags('product', PRODUCT_PATHS) + ' ' + digestFlag(v.scratch) + ' -- ' + shas.join(' '))
   return [
     'GIT STEP — re-cut a part of round ' + round + ' of `' + v.run + '` as a branch of its own, `' + part + '`, from the tip of `' + loop + '`: the fix commits the human keeps, and the round\'s record commits. ' + CARRY_RULES,
     '1. `git status --porcelain --untracked-files=all` must print nothing.',
@@ -1230,9 +1528,9 @@ function carryPrompt(v, round, shas, part) {
 // The close's SYNC step — the fixed step before any pull request to main
 // (implementation/dev-workflow.md -> Before a pull request to main). Returned to the
 // orchestrator with `next: 'close'`, never run here: the close's own acts come first.
-function syncMainPrompt(run) {
+function syncMainPrompt(run, scratch) {
   const m = branchName(run)
-  return stepPrompt('merge `origin/main` into `' + m + '` before its pull request to `main` is opened (the close of the stabilization run `' + run + '`). Nothing is pushed and no pull request is opened: the gate runs on the merged tree first', 'sync-main', '--loop ' + m + ' ' + listFlags('log', SYNC_LOGS))
+  return stepPrompt('merge `origin/main` into `' + m + '` before its pull request to `main` is opened (the close of the stabilization run `' + run + '`). Nothing is pushed and no pull request is opened: the gate runs on the merged tree first', 'sync-main', '--loop ' + m + ' ' + listFlags('log', SYNC_LOGS) + ' ' + digestFlag(scratch))
 }
 
 // ---- the agents' prompts — thin: the role and its contract live in the definition ----
@@ -1249,7 +1547,7 @@ function preflightPrompt(ctx, launch, name, plan) {
   if (plan.gate) steps.push('the candidate\'s full gate, ONCE: `' + GATE + ' > ' + plan.gate + ' 2>&1` (`mkdir -p` its directory first; `--keep-going` is part of the command: no red step stops this gate, so what it names red is all that is red) — in the background, waited for in this same turn in slices of under five minutes, until that file holds the gate\'s verdict line; never `--fast`, never `--quick`, never piped. It is a FACT about the candidate, not an assert: `GATE: FAIL` is an answer and never your halt. The stage\'s record step reads which steps and tests it shows red out of that file, and a record commit is held to exactly that list — so the file is the gate\'s whole output, unedited. A check below whose brief is the full gate is answered from this same run: the gate is not run twice')
   if (plan.image) steps.push('the trial image, built and verified from the candidate\'s commit')
   if (asked) steps.push(asked)
-  if (plan.checks.length) steps.push('the deterministic checks, one per item below, each returned in `checks` under `check` = the item\'s id; a CI run still in progress is waited for at most 60 minutes:\n' + plan.checks.map((c) => '   - ' + c.item + ': ' + c.brief).join('\n'))
+  if (plan.checks.length) steps.push('the deterministic checks, one per item below, each returned in `checks` under `check` = the item\'s id; a CI run still in progress is waited for at most 60 minutes:\n' + plan.checks.map((c) => '   - ' + c.item + ': its brief is the `brief` of the item\'s row — `' + itemRead(ctx.run, c.item) + '`').join('\n'))
   return [
     'PREFLIGHT — stabilization run `' + ctx.run + '`, round ' + ctx.round + ', the `' + ctx.stage + '` stage. ' + opening(ctx),
     launch.line(name),
@@ -1276,10 +1574,25 @@ function scopePrompt(ctx, launch, name, plan) {
 function doorList(doors) {
   return doors.length ? doors.map((d) => '   - ' + d.door + '   [' + d.registry + ']').join('\n') : '   (none)'
 }
-// The doors of the round's test set a unit covers: its own doors, and those of its registries.
-function unitDoors(item, included) {
-  if (item.runs === 'every-candidate' && !item.doors.length && !item.registries.length) return included
-  return included.filter((d) => item.doors.includes(d.door) || item.registries.includes(d.registry))
+// WHAT AN AGENT READS BY KEY (dev/stabilize-record: `item`, `item-doors`). This script hands
+// an agent no text of the record: a unit's prompt names the read that prints its item's row,
+// brief included, and the read that prints the doors of the round its item covers — the
+// selection this script made itself until 2026-10-07 is that read's (`unitDoors` there),
+// from the round it is asked for, which for a re-run is the round the position gives.
+function itemRead(run, item) {
+  return 'dev/stabilize-record item --run ' + run + ' --item ' + item
+}
+function doorsRead(run, round, item) {
+  return 'dev/stabilize-record item-doors --run ' + run + ' --round ' + round + ' --item ' + item
+}
+// briefLine / doorLines — a unit's brief and its door list, as its prompt says them: by the
+// read, for an item of the test set; as given, for the one unit that is this script's own
+// (the audit of a fix diff, whose brief is this script's sentence).
+function briefLine(ctx, unit) {
+  return unit.brief != null ? 'Your brief: ' + unit.brief : 'Your brief is the `brief` of your item\'s row in the test set — read it: `' + itemRead(ctx.run, unit.item) + '`.'
+}
+function doorLines(ctx, unit) {
+  return Array.isArray(unit.doors) ? 'The door list — a finding names its door in these exact words:\n' + doorList(unit.doors) : 'The door list — a finding names its door in these exact words — is what `' + doorsRead(ctx.run, unit.round, unit.item) + '` prints: ' + (unit.doors == null ? 'the doors' : unit.doors + ' door(s)') + ' of round ' + unit.round + '\'s test set that your item covers, each with its registry and its derivation.'
 }
 // forkNames / unitNames — the reporter names a fork and a list of units will ask for, or
 // why one cannot be made: found before anything is launched, never inside a running chain.
@@ -1307,10 +1620,10 @@ function unitPrompt(ctx, launch, name, step, unit, built, handed) {
     launch.line(name),
   ]
   if (role.drives) lines.push(binaryLine(built, step.image))
-  lines.push('Your brief: ' + unit.brief)
+  lines.push(briefLine(ctx, unit))
   lines.push('Candidate: label ' + built.candidate.label + ', commit ' + built.candidate.sha + '. Scratch root: `' + ctx.scratch + '` — mint your own directory under it.')
   if (unit.range) lines.push('The unit is the diff `' + unit.range + '` over the product paths (' + PRODUCT_PATHS.join(', ') + ').')
-  lines.push('The door list — a finding names its door in these exact words:\n' + doorList(unit.doors))
+  lines.push(doorLines(ctx, unit))
   if (handed.length) lines.push('This prompt hands you these reports of the same item, and no other:\n' + handed.map((h) => '   - ' + h.as + ': ' + (h.report ? '`' + h.report + '`' : '(it left no report)')).join('\n'))
   return lines.join('\n')
 }
@@ -1320,8 +1633,8 @@ function triagePrompt(ctx, launch, name, sources, pass) {
     'TRIAGE — stabilization run `' + ctx.run + '`, round ' + ctx.round + ', the `' + ctx.stage + '` stage, pass ' + pass + '. ' + opening(ctx),
     launch.line(name),
     'The reporters this stage has launched so far, each with one report of attempt ' + ctx.attempt + ' — a report of the stage beside these is the partial stage you halt on: ' + (others.join(' · ') || '(none)') + '.' + (pass > 1 ? ' This is pass ' + pass + ': it grades only what the agents of the pass before left open; every other finding of the stage was graded then, and is not handed to you again.' : ''),
-    'Grade every finding below — ' + sources.reduce((n, s) => n + s.findings.length, 0) + ' in all, from ' + sources.length + ' reporter(s). The reports are the files named; each list is that reporter\'s structured return, and an entry marked `left open` is what an agent left open, triaged like any finding.' + (sources.some((s) => s.reporter === LEDGER_SOURCE) ? ' The source `' + LEDGER_SOURCE + '` is no reporter of this stage: its entries are rows the ledger already holds, whose triage nobody finished. Grade each under its own key, found again — from the report its repro names, which this prompt hands you with it — and count the source in `findings_in` like any other.' : ''),
-  ].concat(sources.map((s) => '- ' + s.reporter + ' — report: ' + (s.report ? '`' + s.report + '`' : '(none)') + ' — ' + s.findings.length + ' finding(s):\n' + s.findings.map((f) => '   - ' + f).join('\n'))).join('\n')
+    'Grade every finding below — ' + sources.reduce((n, s) => n + findingsOf(s), 0) + ' in all, from ' + sources.length + ' reporter(s). The reports are the files named; each list is that reporter\'s structured return, and an entry marked `left open` is what an agent left open, triaged like any finding.' + (sources.some((s) => s.reporter === LEDGER_SOURCE) ? ' The source `' + LEDGER_SOURCE + '` is no reporter of this stage: its entries are rows the ledger already holds, whose triage nobody finished. Grade each under its own key, found again — from the report its repro names, which this prompt hands you with it — and count the source in `findings_in` like any other.' : ''),
+  ].concat(sources.map((s) => '- ' + s.reporter + ' — report: ' + (s.report ? '`' + s.report + '`' : '(none)') + ' — ' + findingsOf(s) + ' finding(s):' + (s.read ? ' the rows `' + s.read + '` prints — each whole, under its key, with why its triage is not finished (`ungraded`: nobody graded it; `unverified`: graded, and nobody verified it). Read them there: this prompt carries none of them.' : '\n' + s.findings.map((f) => '   - ' + f).join('\n')))).join('\n')
 }
 function verifyPrompt(ctx, launch, name, entry, redrive, built) {
   return [
@@ -1370,9 +1683,9 @@ function crossModelPrompt(ctx, name, unit) {
   const tool = crossModelTool()
   return [
     'A CROSS-MODEL SOURCE PASS of review row `' + unit.item + '` — stabilization run `' + ctx.run + '`, round ' + ctx.round + '. This invocation named this item for it (args.crossModel): a cross-model second opinion is a human-approved suggestion, never auto-run (implementation/milestone-planning-workflow.md -> Review), and naming the item was the approval. You relay what a model of another family claims about this row\'s source; you judge none of it and drive none of it.',
-    'HOW. `command -v ' + tool + '` must answer — if it does not, halt and say so: nothing is installed. In a directory of your own, minted with `mktemp -d` under `' + ctx.scratch + '`, write the pass\'s prompt to a file: the row\'s brief (' + unit.brief + ' — read it, and hand over what it says to review), the door list below, and the instruction to return each claim with its `file:line` and the door it stands at. Then run `' + tool + ' review - < <the prompt file> > <an output file> 2>&1`, its exit status read bare, and read the output file.',
+    'HOW. `command -v ' + tool + '` must answer — if it does not, halt and say so: nothing is installed. In a directory of your own, minted with `mktemp -d` under `' + ctx.scratch + '`, write the pass\'s prompt to a file: the row\'s brief (the `brief` of the item\'s row, which `' + itemRead(ctx.run, unit.item) + '` prints — read it, and hand over what it says to review), the door list below, and the instruction to return each claim with its `file:line` and the door it stands at. Then run `' + tool + ' review - < <the prompt file> > <an output file> 2>&1`, its exit status read bare, and read the output file.',
     'WHAT ITS CLAIMS ARE. Leads, never findings: a claim one model makes that nobody reproduced is a lead, and the row\'s reconciler drives every one. Return each as a finding with `lead: true`, its door in the exact words of the list below (or named plainly and marked unlisted), the clause it would break as the claim reads, and `repro` = the heading you give the claim in your report. A pass that returned nothing usable is a halt, with its output as the evidence.',
-    'The door list:\n' + doorList(unit.doors),
+    doorLines(ctx, unit),
     'WHAT YOU MAY TOUCH. Nothing in this repository: no edit, no commit, no branch, no push, no install. One file reaches it — your report, the pass\'s output whole and your list of leads, written with `dev/stabilize-record report ' + stageFlags(ctx) + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + '` as a single here-document whose last line is `<!-- end of report -->`; return the path it prints as `report`. A refusal about your text you repair in the text; any other refusal you return as your halt, verbatim. Never `rm -rf` a path built from variables, and never pipe a command whose exit status you read.',
     NEVER,
   ].join('\n')
@@ -1405,7 +1718,7 @@ function gateStep(file) {
 }
 // RECORD_RUNS — how the executor is told to run a record's steps.
 const RECORD_RUNS = 'Run these from the repository\'s root, in this order, each exactly as written and each exit status read bare. A refusal is a halt — its one line the evidence — and nothing it names is repaired by hand:'
-const RECORD_RETURNS = 'YOU MAKE NO COMMIT, and stage nothing: the harness\'s next step reads the gate\'s output, holds it to the gate of the round\'s candidate, and makes the one commit. So a RED gate is not your halt: return status = gated as soon as the file holds the gate\'s verdict line — `GATE: PASS` or `GATE: FAIL` alike — and gate = the file. A halt is a refusal of step 2, or a gate that printed no verdict line.'
+const RECORD_RETURNS = 'YOU MAKE NO COMMIT, and stage nothing: the harness\'s next step reads the gate\'s output, holds it to the gate of the round\'s candidate, and makes the one commit. So a RED gate is not your halt: return status = gated as soon as the file holds the gate\'s verdict line — `GATE: PASS` or `GATE: FAIL` alike — and gate = the file. A halt is a refusal of step 2, or a gate that printed no verdict line — and with a refusal of step 2 return refused = the ONE word that follows `refused` on the line it printed on stderr.'
 // call — one call of a record's batch: a subcommand of the record script with its flags, as
 // its argument list, and what it reads on stdin.
 function call(flags, more, stdin) {
@@ -1437,13 +1750,13 @@ function recordPrompt(v, what, branch, dir, round, calls, subject) {
 function pendingRecordPrompt(v, branch, dir, pending) {
   const gate = dir + '/gate.txt'
   const text = [
-    LABELS.record + ' — stabilization run `' + v.run + '`: a record step of an earlier invocation applied its batch — ' + pending.calls + ' call(s), `' + pending.subject + '` — and did not commit it. The batch is on disk and pending; you apply NOTHING and write no table.',
+    LABELS.record + ' — stabilization run `' + v.run + '`: a record step of an earlier invocation applied its batch — ' + pending.calls + ' call(s); its subject and its files are what `dev/stabilize-record pending --run ' + v.run + '` prints — and did not commit it. The batch is on disk and pending; you apply NOTHING and write no table.',
     branchLine(branch, branchName(v.run)),
     'Run this from the repository\'s root, exactly as written (`mkdir -p ' + dir + '` first):',
     '1. ' + gateStep(gate),
     RECORD_RETURNS,
   ].join('\n')
-  return { text, gate, expect: { calls: pending.calls, checks: (pending.checks || []).length } }
+  return { text, gate, expect: { calls: pending.calls, checks: pending.checks } }
 }
 // stageRecordCommands — a stage's record, as the calls of its ONE batch: the reports checked
 // first, then the candidate's gate (a `test` stage's), then what each item did, then the
@@ -1717,8 +2030,8 @@ function selfTest() {
     const out = outcomeOf({ next })
     check('next relayed verbatim: ' + JSON.stringify(next), out.next === next && out.known === ['fix', 'rule', 'close'].includes(next))
   }
-  const ruled = outcomeOf({ next: 'rule', human_list: [{ key: 'f-1', why: 'outside' }], human_clauses: [{ clause: 'no-lost-files', why: 'not-green-after-its-rerun' }] })
-  check('`rule` goes back with all three of the human\'s lists', JSON.stringify(ruled.rule) === JSON.stringify({ findings: [{ key: 'f-1', why: 'outside' }], clauses: [{ clause: 'no-lost-files', why: 'not-green-after-its-rerun' }], stages: [] }) && JSON.stringify(outcomeOf({ next: 'rule', human_stages: [{ stage: 'test', round: 1 }] }).rule) === JSON.stringify({ findings: [], clauses: [], stages: [{ stage: 'test', round: 1 }] }) && outcomeOf({ next: 'fix', human_list: [{ key: 'f-1' }] }).rule === undefined)
+  const ruled = outcomeOf({ next: 'rule', human_list: 2, reverify: ['f-1'], human_clauses: [{ clause: 'no-lost-files', why: 'not-green-after-its-rerun' }] })
+  check('`rule` goes back with all three of the human\'s lists', JSON.stringify(ruled.rule) === JSON.stringify({ findings: 2, reverify: ['f-1'], clauses: [{ clause: 'no-lost-files', why: 'not-green-after-its-rerun' }], stages: [] }) && JSON.stringify(outcomeOf({ next: 'rule', human_stages: [{ stage: 'test', round: 1 }] }).rule) === JSON.stringify({ findings: 0, reverify: [], clauses: [], stages: [{ stage: 'test', round: 1 }] }) && outcomeOf({ next: 'fix', human_list: 1 }).rule === undefined)
   for (const word of ['not-ready', 'no-round', 'not-tested', 'round-open', 'round-over', 'round-bound', 'cycle-bound', 'attempts-spent', 'stopped']) check('a refusal the orchestrator can act on: ' + word, isText(refusalOf({ refused: word, round: 1 })) && !refusalOf({ refused: word, round: 1 }).includes('no sentence'))
   check('a refusal nobody defined is said to be one', refusalOf({ refused: 'round-closed', round: 1 }).includes('no sentence') && refusalOf({ refused: 'not-ready', round: null }).includes('run-set') && refusalOf({ refused: 'round-bound', round: 3 }).includes('run-set'))
   check('a refusal the human lifts names the ruling that lifts it', refusalOf({ refused: 'stopped', round: 1 }).includes('args.rulings, `go`') && refusalOf({ refused: 'round-bound', round: 3 }).includes('args.rulings, `rounds`') && refusalOf({ refused: 'cycle-bound', round: 1 }).includes('args.rulings, `cycles`') && refusalOf({ refused: 'attempts-spent', round: 1 }).includes('args.rulings, `again`') && refusalOf({ refused: 'round-open', round: 1 }).includes('`triage`'))
@@ -1730,9 +2043,8 @@ function selfTest() {
   check('a go is taken at no other state', [boundState, { next: 'close', stop: null }, { next: 'fix', stop: null }, { next: 'stop', stop: null }, {}].every((state) => typeof runRulingsFault([{ go: true }], state) === 'string'))
   check('one more re-run is granted to a clause that is the human\'s, and to no other', typeof runRulingsFault([{ rerun: 'no-regression' }], stoppedState) === 'string' && typeof runRulingsFault([{ rerun: 'no-lost-files' }], boundState) === 'string' && typeof runRulingsFault([{ rerun: 'no-lost-files' }], {}) === 'string')
   check('the bound is raised, never lowered or said again', runRulingsFault([{ rounds: 4 }], boundState) === null && typeof runRulingsFault([{ rounds: 3 }], boundState) === 'string' && typeof runRulingsFault([{ rounds: 2 }], boundState) === 'string' && runRulingsFault([{ rounds: 1 }], { facts: { stop: 'every-round', rounds: null } }) === null)
-  check('a ruling on a finding is recorded only on a row the ledger holds', findingRulingsFault([{ key: 'f-1', ruling: later }, { bound: 'b', reach: 'x', where: 'y', pin: 'z' }], { ledger: [{ key: 'f-1' }] }) === null && typeof findingRulingsFault([{ key: 'f-9', ruling: later }], { ledger: [{ key: 'f-1' }] }) === 'string' && typeof findingRulingsFault([{ key: 'f-1', ruling: later }], {}) === 'string')
   const cycleState = { next: 'stop', stop: { why: 'cycle-bound', round: 1, then: 'fix' }, facts: { stop: 'at-the-bound', rounds: 3, cycles: null } }
-  const retriedState = { next: 'rule', stop: null, human_list: [{ key: 'f-1', why: 'unverified-after-retry' }, { key: 'f-2', why: 'outside' }], human_stages: [{ stage: 'test', round: 2 }] }
+  const retriedState = { next: 'rule', stop: null, human_list: 2, reverify: ['f-1'], human_stages: [{ stage: 'test', round: 2 }] }
   const begun = { rounds: [{ round: 1 }], not_ready: [] }
   check('the bound across rounds is raised at its own stop once a round is begun, and written before that', runRulingsFault([{ rounds: 4 }], Object.assign({}, boundState, begun)) === null && typeof runRulingsFault([{ rounds: 4 }], Object.assign({}, stoppedState, begun)) === 'string' && typeof runRulingsFault([{ rounds: 4 }], Object.assign({ next: 'fix', stop: null, facts: { rounds: 3 } }, begun)) === 'string' && runRulingsFault([{ rounds: 4 }], { next: 'test', stop: null, facts: { rounds: 3 }, rounds: [], not_ready: [] }) === null)
   check('the bound on a round\'s cycles is raised at its own stop, and at no other', runRulingsFault([{ cycles: 4 }], cycleState) === null && typeof runRulingsFault([{ cycles: 4 }], boundState) === 'string' && typeof runRulingsFault([{ cycles: 4 }], stoppedState) === 'string' && typeof runRulingsFault([{ cycles: 4 }], Object.assign({}, cycleState, { facts: { cycles: 5 } })) === 'string')
@@ -1741,28 +2053,28 @@ function selfTest() {
   check('which rulings are about the run', runRuling({ reverify: 'f-1' }) && runRuling({ again: 'test' }) && runRuling({ cycles: 4 }) && runRuling({ go: true }) && runRuling({ rerun: 'x' }) && runRuling({ rounds: 4 }) && !runRuling({ key: 'f-1', ruling: later }) && !runRuling({ bound: 'b', reach: 'x', where: 'y', pin: 'z' }) && !runRuling(null) && !runRuling('go'))
 
   // Every triage is handed the rows of the ledger whose triage nobody finished.
-  const awaiting = { untriaged: [{ key: 'seeded-1', why: 'ungraded' }, { key: 'f-9', why: 'unverified' }], ledger: [{ key: 'f-1', grade: 'confirmed', door: 'd', clause: 'c', repro: 'r' }, { key: 'seeded-1', grade: 'ungraded', door: 'jigc setup', clause: 'no-lost-files', repro: 'the opening record, row 3' }, { key: 'f-9', grade: 'unclear', door: 'jigc rename', clause: 'no-regression', repro: 'r1/reports/fix/c1/fix-area-1.a1.md, left open 2' }] }
+  const awaiting = { untriaged: { count: 2, why: [{ why: 'ungraded', count: 1 }, { why: 'unverified', count: 1 }] }, ledger: 3 }
   const handed = ledgerSource('rc24-tier1', awaiting)
-  check('the rows whose triage is unfinished are one source, named for the ledger', handed.length === 1 && handed[0].reporter === LEDGER_SOURCE && handed[0].report === 'completions/artifacts/rc24-tier1/ledger.md' && handed[0].findings.length === 2)
-  check('a row nobody graded and a row nobody verified are both handed over, by their keys', handed[0].findings[0].startsWith('seeded-1 — ') && handed[0].findings[0].includes('never graded') && handed[0].findings[0].includes('door: jigc setup') && handed[0].findings[1].startsWith('f-9 — ') && handed[0].findings[1].includes('graded unclear and never verified') && !handed[0].findings.join('\n').includes('f-1 '))
-  check('nothing awaits triage: no source', ledgerSource('x', { untriaged: [], ledger: awaiting.ledger }).length === 0 && ledgerSource('x', {}).length === 0 && ledgerSource('x', { untriaged: [{ key: 'gone', why: 'ungraded' }], ledger: [] }).length === 0)
+  check('the rows whose triage is unfinished are one source, named for the ledger', handed.length === 1 && handed[0].reporter === LEDGER_SOURCE && handed[0].report === 'completions/artifacts/rc24-tier1/ledger.md' && findingsOf(handed[0]) === 2)
+  check('the rows are handed over by the read that prints them, and none by this script', handed[0].findings.length === 0 && handed[0].read === 'dev/stabilize-record untriaged --run rc24-tier1' && findingsOf({ reporter: 'x', findings: ['1 — a', '2 — b', '3 — c'] }) === 3)
+  check('nothing awaits triage: no source', ledgerSource('x', { untriaged: { count: 0, why: [] } }).length === 0 && ledgerSource('x', {}).length === 0 && ledgerSource('x', { untriaged: [{ key: 'a document\'s list', why: 'ungraded' }] }).length === 0)
   check('no reporter can be named as the ledger is', !Object.keys(CHAINS).some((kind) => CHAINS[kind].some((stepList) => stepList.some((step) => reporterName(['x', step.as]) === LEDGER_SOURCE))) && !LEDGER_SOURCE.includes('-'))
 
   // The release a run measures against, and what a clause's row is worth, are read off the state.
   const facts = { stop: 'every-round', rounds: null, previous: '1.0.0-rc.24', 'previous-commit': 'e'.repeat(40), scope: 'delta' }
   check('the previous release is the record\'s', JSON.stringify(previousOf({ facts })) === JSON.stringify({ version: '1.0.0-rc.24', commit: 'e'.repeat(40) }))
-  check('the evidence that goes back with close', JSON.stringify(evidenceOf({ clauses: [{ clause: 'no-lost-files', instrument: 'i', commit: 'c'.repeat(40), scope: 's', status: 'green', round: 2, behind: 1, retry: null, items: [{ item: 'gate', runs: 'every-candidate', round: 2, attempt: 1, commit: 'c'.repeat(40), outcome: 'green', reason: null, standing: 'green', why: null, rerun: null }, { item: 'row-a', runs: 'in-scope', round: null, attempt: null, commit: null, outcome: null, reason: null, standing: 'not-selected', why: null, rerun: null }] }] })) === JSON.stringify([{ clause: 'no-lost-files', status: 'green', round: 2, commit: 'c'.repeat(40), behind: 1, items: [{ item: 'gate', round: 2, attempt: 1, standing: 'green', why: null }, { item: 'row-a', round: null, attempt: null, standing: 'not-selected', why: null }] }]) && evidenceOf({}).length === 0)
+  check('the evidence that goes back with close', JSON.stringify(evidenceOf({ clauses: [{ clause: 'no-lost-files', commit: 'c'.repeat(40), status: 'green', round: 2, behind: 1, retry: null }], items: [{ item: 'gate', kind: 'check', clause: 'no-lost-files', runs: 'every-candidate', selected: true, doors: 2, round: 2, attempt: 1, standing: 'green' }, { item: 'row-a', kind: 'review-row', clause: 'no-lost-files', runs: 'in-scope', selected: false, doors: 0, standing: 'not-selected' }, { item: 'other', kind: 'check', clause: 'no-regression', runs: 'every-candidate', selected: true, doors: 2, standing: 'green' }] })) === JSON.stringify([{ clause: 'no-lost-files', status: 'green', round: 2, commit: 'c'.repeat(40), behind: 1, items: [{ item: 'gate', round: 2, attempt: 1, standing: 'green', why: null }, { item: 'row-a', round: null, attempt: null, standing: 'not-selected', why: null }] }]) && evidenceOf({}).length === 0)
 
   // Every prompt carries the labels its definition binds on, spelled as LABELS spells them.
   const ctx = { run: 'rc24-tier1', round: 2, stage: 'fix', cycle: 3, attempt: 4, scratch: '/tmp/scratch-1' }
   const built = { candidate: { label: 'c2', sha: 'c'.repeat(40), binary: '/tmp/scratch-1/bin/c2/jigc', sha256: 'b'.repeat(64) }, previous: { version: '1.0.0-rc.24', binary: '/tmp/scratch-1/bin/previous/jigc', sha256: 'a'.repeat(64) }, image: { tag: 'jigc-trial:c2', verified: true } }
   const launch = launcher(ctx)
   const carries = (text, label) => text.split('\n').some((l) => l.startsWith(LABELS[label]))
-  const unit = { item: 'row-3', kind: 'review-row', clause: 'no-lost-files', brief: 'briefs/row-3.md', doors: [{ door: 'jigc setup', registry: 'the verb table' }] }
+  const unit = { item: 'row-3', kind: 'review-row', clause: 'no-lost-files', doors: 1, round: 2 }
   const entry = { key: 'f-1', door: 'jigc setup', clause: 'no-lost-files', grade: 'breaks', repro: 'r2/reports/test/row-3-driver.a1.md, block 2' }
   const fork = { key: 'f-1', kind: 'contested', door: 'jigc setup', clause: 'no-lost-files', repro: 'x', statement: 'the verifier' }
   const prompts = {
-    preflight: preflightPrompt(ctx, launch, launch.add(['preflight']), { build: true, image: true, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', binary: '/tmp/scratch-1/bin/c2/jigc', checks: [{ item: 'the-gate', brief: 'the full gate' }], crossModel: false, previous: previousOf({ facts }) }),
+    preflight: preflightPrompt(ctx, launch, launch.add(['preflight']), { build: true, image: true, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', binary: '/tmp/scratch-1/bin/c2/jigc', checks: [{ item: 'the-gate' }], crossModel: false, previous: previousOf({ facts }) }),
     scope: scopePrompt(ctx, launch, launch.add(['scope']), { sha: 'c'.repeat(40), label: 'c2', base: 'd'.repeat(40), earlier: true, scope: { doors: ['jigc setup'] }, previous: previousOf({ facts }), fallback: facts.scope }),
     review: unitPrompt(ctx, launch, launch.add(['row-3', 'source']), CHAINS['review-row'][0][0], unit, built, []),
     drive: unitPrompt(ctx, launch, launch.add(['row-3', 'reconciler']), CHAINS['review-row'][1][0], unit, built, [{ as: 'source', report: 'a.md' }]),
@@ -1778,7 +2090,7 @@ function selfTest() {
   for (const role of Object.keys(ROLES)) {
     for (const label of Object.keys(LABELS)) check('the ' + role + ' prompt and ' + LABELS[label], carries(prompts[role], label) === ROLES[role].labels.includes(label))
   }
-  check('a record step opens with its label', prompts.record.startsWith(LABELS.record) && rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).text.startsWith(LABELS.record) && pendingRecordPrompt(fix, 'fix/rc24-tier1', '/tmp/scratch-1/record/pending-r1', { calls: 3, checks: [{}], subject: 's', round: 1 }).text.startsWith(LABELS.record))
+  check('a record step opens with its label', prompts.record.startsWith(LABELS.record) && rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).text.startsWith(LABELS.record) && pendingRecordPrompt(fix, 'fix/rc24-tier1', '/tmp/scratch-1/record/pending-r1', { calls: 3, checks: 1, files: 2, round: 1 }).text.startsWith(LABELS.record))
   check('the preflight is handed the previous release as data', prompts.preflight.includes('version `1.0.0-rc.24`') && prompts.preflight.includes('built from commit ' + 'e'.repeat(40)) && prompts.preflight.includes('the tip of `fix/rc24-tier1`'))
   check('a round\'s base is the earlier candidate, or the previous release\'s commit', prompts.scope.includes('base = ' + 'd'.repeat(40)) && scopePrompt(ctx, launcher(ctx), 'scope', { sha: 'c'.repeat(40), label: 'c1', base: null, earlier: false, scope: null, previous: previousOf({ facts }), fallback: 'everything' }).includes('base = ' + 'e'.repeat(40) + ' (the previous release, 1.0.0-rc.24'))
   check('a triage is told what the ledger\'s rows are', triagePrompt(ctx, launcher(ctx), 'triage-p1', handed, 1).includes('The source `' + LEDGER_SOURCE + '` is no reporter') && !prompts.triage.includes('is no reporter'))
@@ -1800,14 +2112,15 @@ function selfTest() {
   check('the review row without the opt-in, and with it', asOf(chainOf('review-row', false)) === 'source driver reconciler<source+driver' && asOf(chainOf('review-row', true)) === 'source driver crossmodel reconciler<source+driver+crossmodel' && chainOf('no-such-kind', true).length === 0)
   // Every git step is ONE command of the tool, and its prompt is that command and "relay
   // its line" — all but the re-cut of a part, which is the list of commands it was.
-  const steps = { begin: beginPrompt(Object.assign({}, ctx, { stage: 'test' }), 'c'.repeat(40)), 'git-state': gitStatePrompt(base), state: statePrompt(base, 't'), 'find-round': findRoundPrompt(fix, 1), 'open-round': openRoundPrompt(fix, 1, 'fix/rc24-tier1-r1'), push: pushPrompt(fix, 'fix/rc24-tier1-r1'), land: landPrompt(fix, 1, 'fix/rc24-tier1-r1'), 'round-commits': roundCommitsPrompt(fix, 1, 'fix/rc24-tier1-r1'), carry: carryPrompt(fix, 1, ['a'.repeat(40)], null), 'sync-main': syncMainPrompt('rc24-tier1'), 'check-reports': checkReportsPrompt(ctx, ['x']), record: recordCommitPrompt(fix, 'fix/rc24-tier1', '/tmp/scratch-1/record/x/gate.txt', { calls: 3, checks: 2 }) }
+  const steps = { begin: beginPrompt(Object.assign({}, ctx, { stage: 'test' }), 'c'.repeat(40)), 'git-state': gitStatePrompt(base), state: statePrompt(base, 't'), 'find-round': findRoundPrompt(fix, 1), 'open-round': openRoundPrompt(fix, 1, 'fix/rc24-tier1-r1'), push: pushPrompt(fix, 'fix/rc24-tier1-r1'), land: landPrompt(fix, 1, 'fix/rc24-tier1-r1'), 'round-commits': roundCommitsPrompt(fix, 1, 'fix/rc24-tier1-r1'), carry: carryPrompt(fix, 1, ['a'.repeat(40)], null), 'sync-main': syncMainPrompt('rc24-tier1', '/tmp/scratch-1'), 'check-reports': checkReportsPrompt(ctx, ['x']), record: recordCommitPrompt(fix, 'fix/rc24-tier1', '/tmp/scratch-1/record/x/gate.txt', { calls: 3, checks: 2 }) }
   const recut = carryPrompt(fix, 1, ['a'.repeat(40)], 'fix/rc24-tier1-r1-part1')
   for (const act of Object.keys(steps)) {
     const numbered = steps[act].split('\n')
     check('the `' + act + '` step is one command of the tool, and its line relayed', numbered.length === 3 && numbered[0].startsWith('GIT STEP — ') && numbered[0].endsWith(STEP_RULES) && numbered[1].startsWith('1. `' + STEP_TOOL + ' ' + act + ' ') && numbered[1].endsWith('`') && numbered[2].startsWith('2. Report status = ran and line = ') && !/`git (?!stash|status|branch --show-current)/.test(steps[act]))
+    check('the `' + act + '` step asks for its digest, once, under the scratch root — and before any list of names', numbered[1].split(' --digest /tmp/scratch-1').length === 2 && (!numbered[1].includes(' -- ') || numbered[1].indexOf(' --digest ') < numbered[1].indexOf(' -- ')))
   }
-  check('the names a step hands the tool are the harness\'s', steps['git-state'].includes('`' + STEP_TOOL + ' git-state --stage test --loop fix/rc24-tier1 --rounds fix/rc24-tier1-r --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates`') && steps.land.includes(' land --loop fix/rc24-tier1 --branch fix/rc24-tier1-r1 --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates --log DECISIONS.md --log implementation/project-history.md`') && steps.carry.endsWith(STEP_RULES + '\n1. `' + STEP_TOOL + ' carry --loop fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates -- ' + 'a'.repeat(40) + '`\n' + steps.carry.split('\n')[2]) && steps['sync-main'].includes(' sync-main --loop fix/rc24-tier1 --log DECISIONS.md --log implementation/project-history.md`') && steps.state.includes(' state --run rc24-tier1 --scratch /tmp/scratch-1 --tag t`') && steps['find-round'].includes(' find-round --prefix fix/rc24-tier1-r1`') && steps.push.includes(' push --branch fix/rc24-tier1-r1`') && steps.record.includes(' record --branch fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --gate /tmp/scratch-1/record/x/gate.txt --calls 3 --checks 2`'))
-  check('an attempt is begun under the script\'s own reporter, on the commit it runs on', steps.begin.includes('`' + STEP_TOOL + ' begin --run rc24-tier1 --round 2 --stage test --attempt 4 --reporter ' + ATTEMPT + ' --commit ' + 'c'.repeat(40) + ' --scratch /tmp/scratch-1`') && beginPrompt(ctx, 'c'.repeat(40)).includes(' begin --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 --reporter '))
+  check('the names a step hands the tool are the harness\'s', steps['git-state'].includes('`' + STEP_TOOL + ' git-state --stage test --loop fix/rc24-tier1 --rounds fix/rc24-tier1-r --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates --digest /tmp/scratch-1`') && steps.land.includes(' land --loop fix/rc24-tier1 --branch fix/rc24-tier1-r1 --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates --log DECISIONS.md --log implementation/project-history.md --digest /tmp/scratch-1`') && steps.carry.endsWith(STEP_RULES + '\n1. `' + STEP_TOOL + ' carry --loop fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates --digest /tmp/scratch-1 -- ' + 'a'.repeat(40) + '`\n' + steps.carry.split('\n')[2]) && steps['sync-main'].includes(' sync-main --loop fix/rc24-tier1 --log DECISIONS.md --log implementation/project-history.md --digest /tmp/scratch-1`') && steps.state.includes(' state --run rc24-tier1 --scratch /tmp/scratch-1 --tag t --digest /tmp/scratch-1`') && steps['find-round'].includes(' find-round --prefix fix/rc24-tier1-r1 --digest /tmp/scratch-1`') && steps.push.includes(' push --branch fix/rc24-tier1-r1 --digest /tmp/scratch-1`') && steps.record.includes(' record --branch fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --gate /tmp/scratch-1/record/x/gate.txt --calls 3 --checks 2 --scratch /tmp/scratch-1 --digest /tmp/scratch-1`'))
+  check('an attempt is begun under the script\'s own reporter, on the commit it runs on', steps.begin.includes('`' + STEP_TOOL + ' begin --run rc24-tier1 --round 2 --stage test --attempt 4 --reporter ' + ATTEMPT + ' --commit ' + 'c'.repeat(40) + ' --scratch /tmp/scratch-1 --digest /tmp/scratch-1`') && beginPrompt(ctx, 'c'.repeat(40)).includes(' begin --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 --reporter '))
   check('no agent can be named as the attempt\'s marker is', isSlug(ATTEMPT) && !ATTEMPT.includes('-') && ATTEMPT !== LEDGER_SOURCE && !Object.keys(CHAINS).some((kind) => CHAINS[kind].some((stepList) => stepList.some((step) => reporterName(['x', step.as]) === ATTEMPT))) && !['preflight', 'scope'].includes(ATTEMPT))
   check('the re-cut of a part is still the list of commands it was', recut.startsWith('GIT STEP — re-cut a part of round 1 of `rc24-tier1` as a branch of its own, `fix/rc24-tier1-r1-part1`') && recut.includes(CARRY_RULES) && recut.includes('`git cherry-pick -x <sha>`') && recut.includes('`git push origin fix/rc24-tier1-r1-part1`') && !recut.includes(STEP_TOOL) && recut.split('\n').length === 8)
   const gitPrompts = Object.keys(steps).map((act) => steps[act]).concat([recut])
@@ -1822,11 +2135,13 @@ function selfTest() {
   check('a driving chain role is handed the binary', unitPrompt(ctx, launcher(ctx), 'x', CHAINS['trial-arm'][1][0], unit, built, []).includes('jigc-trial:c2'))
 
   // How an agent can end: what the report check says decides, never what a return claims.
-  const checked = (check) => reportsRead({ status: 'checked', check })
-  check('a report check that holds names nothing missing', JSON.stringify(checked({ ok: true, missing: [], extra: [] })) === '{"missing":[]}')
-  check('a launched reporter with no report is named, and is no fault', JSON.stringify(checked({ ok: false, missing: ['verify-p1-f-1'], extra: [] })) === '{"missing":["verify-p1-f-1"]}')
-  check('a file nobody launched is a fault that names it', isText(checked({ ok: false, missing: [], extra: ['notes.md'] }).fault) && checked({ ok: false, missing: ['a'], extra: ['notes.md'] }).fault.includes('notes.md') && checked({ ok: false, missing: ['a'], extra: ['x'] }).missing === undefined)
-  check('a report check that cannot be read is a fault, and transient only when nothing came back', reportsRead(null).transient === true && isText(reportsRead(null).fault) && reportsRead({ status: 'halted' }).transient === false && isText(reportsRead({ status: 'checked', check: { ok: true } }).fault) && isText(reportsRead({ status: 'checked', check: 'ok' }).fault))
+  const checked = (check, aside) => reportsRead({ status: 'checked', check, aside: aside || [], file: 'lines/check-reports.0123456789abcdef.json', file_sha256: 'f'.repeat(64) })
+  check('a report check that holds names nothing missing', JSON.stringify(checked({ ok: true, missing: [], extra: 0 })) === '{"missing":[],"aside":[]}')
+  check('a launched reporter with no report is named, and is no fault', JSON.stringify(checked({ ok: false, missing: ['verify-p1-f-1'], extra: 0 })) === '{"missing":["verify-p1-f-1"],"aside":[]}')
+  check('a file nobody launched is a fault that says how many, and names the file that names them — never the names', isText(checked({ ok: false, missing: [], extra: 1 }).fault) && checked({ ok: false, missing: ['a'], extra: 2 }).fault.includes('2 file(s)') && checked({ ok: false, missing: ['a'], extra: 1 }).missing === undefined && checked({ ok: false, missing: [], extra: 1 }).file.file === 'lines/check-reports.0123456789abcdef.json')
+  check('a report check that cannot be read is a fault, and transient only when nothing came back', reportsRead(null).transient === true && isText(reportsRead(null).fault) && reportsRead({ status: 'halted' }).transient === false && isText(reportsRead({ status: 'checked', check: { ok: true }, aside: [] }).fault) && isText(reportsRead({ status: 'checked', check: 'ok', aside: [] }).fault) && isText(reportsRead({ status: 'checked', check: { ok: true, missing: [], extra: [] }, aside: [] }).fault) && isText(reportsRead({ status: 'checked', check: { ok: true, missing: [], extra: 0 } }).fault) && reportsRead({ status: 'halted', refused: 'did-not-run' }).fault.includes('`did-not-run`'))
+  const moved = [{ path: 'completions/artifacts/rc24-tier1/r2/reports/test/a-source.a1.md', why: 'hygiene' }, { path: 'completions/artifacts/rc24-tier1/r2/scope.md', why: 'host-path' }]
+  check('a report that was set aside is its reporter\'s, by the file\'s name, with the word of what refused it', JSON.stringify(checked({ ok: false, missing: ['a-source'], extra: 0 }, moved)) === JSON.stringify({ missing: ['a-source'], aside: moved }) && setAside(moved, 'a-source') === 'hygiene' && setAside(moved, 'a') === null && setAside(moved, 'scope') === null && setAside(undefined, 'a-source') === null)
   check('how a reporter that did not report ended', endingOf(null) === 'returned nothing' && endingOf({ status: 'halted', halt: { root_cause: 'no rig' } }) === 'halted (no rig)' && endingOf({ status: 'halted' }) === 'halted')
   const twoUnits = () => [
     { item: 'a', status: 'green', reason: null, crossModel: 'ran', reporters: [{ as: 'source', name: 'a-source', crossModel: false, result: { status: 'reported', findings: [1] }, report: 'a.md' }, { as: 'crossmodel', name: 'a-crossmodel', crossModel: true, result: { status: 'reported', findings: [2] }, report: null }] },
@@ -1838,6 +2153,9 @@ function selfTest() {
   const lostSource = twoUnits()
   unreported(lostSource, ['a-source'])
   check('a step of an item\'s own chain with no report voids the item, and its result counts for nothing', lostSource[0].status === 'void' && lostSource[0].reason === 'its `source` step returned and left no report' && lostSource[0].reporters[0].result === null && lostSource[0].crossModel === 'ran')
+  const asideSource = twoUnits()
+  unreported(asideSource, ['a-source'], moved)
+  check('a step whose report was set aside voids its item, and the reason says that the file was no report', asideSource[0].status === 'void' && asideSource[0].reason === 'its `source` step left a file at its report\'s path that is no report (`hygiene`): it was set aside, and the step left none' && asideSource[0].reporters[0].result === null)
   const kept = twoUnits()
   unreported(kept, [])
   check('a reporter whose report is there keeps what it returned', JSON.stringify(kept) === JSON.stringify(twoUnits()))
@@ -1855,7 +2173,7 @@ function selfTest() {
   const batchOf = (text) => JSON.parse(text.split('\n').find((l) => l.startsWith('[{"argv"')))
   const spelled = (made) => made.argv.join(' ')
   const recordCalls = batchOf(prompts.record)
-  check('the check names every reporter launched', launch.names.every((n) => checkReportsPrompt(ctx, launch.names).includes(' ' + n)) && checkReportsPrompt(ctx, launch.names).includes('`' + STEP_TOOL + ' check-reports --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 -- ' + launch.names.join(' ') + '`') && spelled(recordCalls[0]) === 'check-reports --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 -- ' + launch.names.join(' '))
+  check('the check names every reporter launched', launch.names.every((n) => checkReportsPrompt(ctx, launch.names).includes(' ' + n)) && checkReportsPrompt(ctx, launch.names).includes('`' + STEP_TOOL + ' check-reports --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 --scratch /tmp/scratch-1 --digest /tmp/scratch-1 -- ' + launch.names.join(' ') + '`') && spelled(recordCalls[0]) === 'check-reports --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 -- ' + launch.names.join(' '))
   check('the ledger check names every key', spelled(recordCalls[recordCalls.length - 1]) === 'check-ledger --run rc24-tier1 -- f-1')
   check('a record\'s calls are one payload, held to its hash', prompts.record.includes(sha256(JSON.stringify(recordCalls) + '\n')) && prompts.record.includes('`cat > /tmp/scratch-1/record/x/batch.json <<\'' + PAYLOAD_ENDS + '\'`') && spelled(recordCalls[1]) === 'round-set --run rc24-tier1 --round 2' && recordCalls[1].stdin === '{"cycles":3}' && recordCalls.length === 3)
   check('a record step applies its calls as one batch, runs the full gate, and makes no commit', prompts.record.includes('\n2. `dev/stabilize-record apply --run rc24-tier1 --round 2 --subject \'docs(record): s\' --scratch /tmp/scratch-1 < /tmp/scratch-1/record/x/batch.json`') && prompts.record.includes('\n3. The FULL gate') && prompts.record.includes('`dev/gate --keep-going > /tmp/scratch-1/record/x/gate.txt 2>&1`') && prompts.record.endsWith(RECORD_RETURNS) && !/`git (add|commit)/.test(prompts.record) && prompts.record.includes('Never `--fast`, never `--quick`'))
@@ -1863,21 +2181,22 @@ function selfTest() {
   check('what the commit step is held to is what was composed', JSON.stringify(stageRecord.expect) === JSON.stringify({ calls: 4, checks: 1 }) && stageRecord.gate === '/tmp/scratch-1/record/z/gate.txt' && !stageRecord.text.includes(' --round 0') && JSON.stringify(recordPrompt(ctx, 'x', 'b', '/d', 2, recordCalls, 's').expect) === JSON.stringify({ calls: 3, checks: 2 }))
   check('a test stage\'s record puts the candidate\'s gate on record, from the file the preflight kept', spelled(batchOf(stageRecord.text)[1]) === 'gate-set --run rc24-tier1 --round 2 --commit ' + 'c'.repeat(40) + ' --summary /tmp/scratch-1/gate/c2.a4.txt --scratch /tmp/scratch-1' && !recordCalls.some((made) => made.argv[0] === 'gate-set'))
   check('what each item did is one call, its rows data whatever they hold', spelled(batchOf(stageRecord.text)[2]) === 'result-set --run rc24-tier1 --round 2 --commit ' + 'c'.repeat(40) + ' --scratch /tmp/scratch-1' && batchOf(stageRecord.text)[2].stdin === JSON.stringify([{ item: 'a', outcome: 'green' }, { item: 'it\'s-b', outcome: 'void', reason: 'it\'s chain died' }]))
-  const resumed = pendingRecordPrompt(fix, 'fix/rc24-tier1', '/tmp/scratch-1/record/pending-r1', { calls: 5, checks: [{ ok: true }, { ok: true }], subject: 'docs(record): x', round: 1 })
-  check('a pending batch is gated again and nothing is applied', !resumed.text.includes('stabilize-record apply') && !resumed.text.includes(PAYLOAD_ENDS) && resumed.text.includes('`dev/gate --keep-going > /tmp/scratch-1/record/pending-r1/gate.txt 2>&1`') && resumed.text.endsWith(RECORD_RETURNS) && JSON.stringify(resumed.expect) === JSON.stringify({ calls: 5, checks: 2 }))
+  const resumed = pendingRecordPrompt(fix, 'fix/rc24-tier1', '/tmp/scratch-1/record/pending-r1', { calls: 5, checks: 2, files: 4, round: 1 })
+  check('a pending batch is gated again and nothing is applied', resumed.text.includes('its subject and its files are what `dev/stabilize-record pending --run rc24-tier1` prints') && !resumed.text.includes('stabilize-record apply') && !resumed.text.includes(PAYLOAD_ENDS) && resumed.text.includes('`dev/gate --keep-going > /tmp/scratch-1/record/pending-r1/gate.txt 2>&1`') && resumed.text.endsWith(RECORD_RETURNS) && JSON.stringify(resumed.expect) === JSON.stringify({ calls: 5, checks: 2 }))
   const cycleRecord = stageRecordCommands(ctx, { reporters: [], rows: [{ key: 'f-2' }], triage: [{ key: 'f-1', grade: 'breaks' }], patches: [{ key: 'f-1', disposition: 'fixed', detail: 'c'.repeat(40) }], clauses: [], facts: null, keys: ['f-1', 'f-2'] }).map((made) => made.argv[0])
   const at = (name) => cycleRecord.indexOf(name)
   check('a cycle\'s fixes are on the rows before its audit\'s triage reads them', at('ledger-add') >= 0 && at('ledger-add') < at('ledger-set') && at('ledger-set') < at('triage-set') && at('triage-set') < at('check-ledger'))
 
   // What is accepted as recorded: the commit step's own line, with one result per check.
-  const held = { status: 'recorded', commit: 'a'.repeat(40), gate: { check: 'gate', ok: true, new: [] }, applied: { calls: 4, checks: [{ check: 'reports', ok: true }, { check: 'ledger', ok: true }] } }
+  const held = { status: 'recorded', commit: 'a'.repeat(40), gate: { ok: true, verdict: 'pass', red: 0, known: 0, new: 0 }, applied: { calls: 4, checks: 2, failed: 0 } }
   const composed = { calls: 4, checks: 2 }
   const lacking = (change) => recordFault(Object.assign({}, held, change), composed)
   check('a record whose line holds is recorded', recordFault(held, composed) === null)
   check('a record step that returns nothing, or halts, is not recorded', isText(recordFault(null, composed)) && recordFault({ status: 'halted', halt: { root_cause: 'gate-red: x' } }, composed) === 'gate-red: x' && isText(recordFault({ status: 'halted' }, composed)))
-  check('a record without a commit, or without a gate check that holds, is not recorded', isText(lacking({ commit: 'abc' })) && isText(lacking({ gate: undefined })) && isText(lacking({ gate: { ok: false, new: ['test x'] } })) && isText(lacking({ gate: 'GATE: PASS' })))
-  check('a record that returns no evidence of its checks is not recorded', isText(lacking({ applied: undefined })) && isText(lacking({ applied: { calls: 4 } })) && isText(lacking({ applied: { calls: 4, checks: [] } })) && isText(lacking({ applied: { calls: 4, checks: [{ check: 'reports', ok: true }] } })) && isText(lacking({ applied: { calls: 3, checks: held.applied.checks } })))
-  check('a record one of whose checks does not hold is not recorded', isText(lacking({ applied: { calls: 4, checks: [{ check: 'reports', ok: true }, { check: 'ledger', ok: false }] } })) && isText(lacking({ applied: { calls: 4, checks: [{ check: 'reports', ok: true }, 'ok'] } })))
+  check('a record without a commit, or without a gate check that holds, is not recorded', isText(lacking({ commit: 'abc' })) && isText(lacking({ gate: undefined })) && isText(lacking({ gate: { ok: false, new: 1 } })) && isText(lacking({ gate: 'GATE: PASS' })))
+  check('a record that returns no evidence of its checks is not recorded', isText(lacking({ applied: undefined })) && isText(lacking({ applied: { calls: 4 } })) && isText(lacking({ applied: { calls: 4, checks: 0, failed: 0 } })) && isText(lacking({ applied: { calls: 4, checks: 1, failed: 0 } })) && isText(lacking({ applied: { calls: 3, checks: 2, failed: 0 } })) && isText(lacking({ applied: { calls: 4, checks: [{ check: 'reports', ok: true }, { check: 'ledger', ok: true }] } })))
+  check('a record one of whose checks does not hold is not recorded', isText(lacking({ applied: { calls: 4, checks: 2, failed: 1 } })) && isText(lacking({ applied: { calls: 4, checks: 2 } })) && isText(lacking({ applied: { calls: 4, checks: 2, failed: null } })))
+  check('a commit step that refused is said in the sentence of its word', recordFault({ status: 'halted', refused: 'gate-red', branch: 'fix/rc24-tier1' }, composed).includes('refused `gate-red` — the orchestrator\'s: ') && recordFault({ status: 'halted', relay: 'the relayed line is no digest' }, composed) === 'the relayed line is no digest')
 
   // The candidate's gate is run by the first preflight of a `test` stage, and by no other.
   const gated = (gate) => preflightPrompt(ctx, launcher(ctx), 'preflight', { build: false, image: false, gate, sha: 'c'.repeat(40), label: 'c2', branch: 'b', binary: 'x', checks: [], crossModel: false })
@@ -1904,7 +2223,7 @@ function selfTest() {
   const results = (units) => JSON.stringify(resultRows(units))
   check('a result per item, as it ran', results([{ item: 'a', status: 'green', reason: 'r' }, { item: 'b', status: 'green' }]) === JSON.stringify([{ item: 'a', outcome: 'green' }, { item: 'b', outcome: 'green' }]) && results([]) === '[]')
   check('a void item says why', results([{ item: 'a', status: 'void', reason: 'a step of its chain did not report' }, { item: 'b', status: 'void' }]) === JSON.stringify([{ item: 'a', outcome: 'void', reason: 'a step of its chain did not report' }, { item: 'b', outcome: 'void', reason: 'it did not run to its end' }]))
-  check('a red check brings what its finding needs', results([{ item: 'gate', status: 'red', reason: 'r', door: 'jigc setup', evidence: 'two tests red' }, { item: 'ci', status: 'red', evidence: null }]) === JSON.stringify([{ item: 'gate', outcome: 'red', doctype: 'jigc-feedback', door: 'jigc setup', repro: 'two tests red' }, { item: 'ci', outcome: 'red', doctype: 'jigc-feedback', door: 'the check `ci`', repro: 'the check returned red, and no evidence beside it' }]))
+  check('a red check brings what its finding needs', results([{ item: 'gate', status: 'red', reason: 'r', door: 'jigc setup', evidence: 'two tests red' }, { item: 'ci', status: 'red', evidence: null }]) === JSON.stringify([{ item: 'gate', outcome: 'red', doctype: 'jigc-feedback', door: 'the check `gate`', repro: 'two tests red' }, { item: 'ci', outcome: 'red', doctype: 'jigc-feedback', door: 'the check `ci`', repro: 'the check returned red, and no evidence beside it' }]))
   check('no result names a clause, and no call sets one', !resultRows([{ item: 'a', clause: 'x', status: 'green' }]).some((row) => 'clause' in row) && !stageRecordCommands(ctx, { reporters: [], results: { commit: 'c'.repeat(40), rows: resultRows([{ item: 'a', status: 'green' }]) }, rows: [], triage: [], patches: [], facts: null, keys: [] }).some((made) => made.argv[0].startsWith('clause')))
   const reRecord = stageRecordCommands(Object.assign({}, ctx, { stage: 'test' }), { reporters: ['a'], gate: null, results: { commit: 'c'.repeat(40), rows: resultRows([{ item: 'a', status: 'green' }]) }, rows: [{ key: 'f-1' }], triage: [{ key: 'f-1', grade: 'breaks' }], patches: [], facts: null, keys: ['f-1'] })
   check('a re-run\'s record is its results before anything of the ledger, and no fact of the round', JSON.stringify(reRecord.map((made) => made.argv[0])) === JSON.stringify(['check-reports', 'result-set', 'ledger-add', 'triage-set', 'check-ledger']))
@@ -1920,10 +2239,57 @@ function selfTest() {
   // The areas of a fix cycle.
   const areas = areasOf([{ key: 'f-1', door: 'jigc setup' }, { key: 'f-2', door: 'nowhere' }, { key: 'f-3', door: 'jigc doc show' }, { key: 'f-4', door: 'finalize.dirty' }], { included: [{ door: 'jigc setup', registry: 'verbs' }, { door: 'finalize.dirty', registry: 'codes' }], excluded: [{ door: 'jigc doc show', registry: 'verbs' }] })
   check('the areas', areas.map((x) => x.n + ':' + x.findings.map((f) => f.key).join('+')).join(' ') === '1:f-1+f-3 2:f-2 3:f-4' && areasOf([], null).length === 0 && areasOf([{ key: 'f', door: 'd' }], null).length === 1)
-  check('a unit\'s doors', unitDoors({ doors: ['jigc setup'], registries: ['codes'] }, [{ door: 'jigc setup', registry: 'verbs' }, { door: 'jigc rename', registry: 'verbs' }, { door: 'finalize.dirty', registry: 'codes' }]).map((d) => d.door).join(',') === 'jigc setup,finalize.dirty')
+  check('a unit is handed its brief and its doors as the reads that print them, and no text of either', prompts.review.includes('\nYour brief is the `brief` of your item\'s row in the test set — read it: `dev/stabilize-record item --run rc24-tier1 --item row-3`.\n') && prompts.review.includes('is what `dev/stabilize-record item-doors --run rc24-tier1 --round 2 --item row-3` prints: 1 door(s) of round 2\'s test set') && !prompts.review.includes('Your brief: ') && !prompts.review.includes('   - ') && prompts.crossModel.includes('`dev/stabilize-record item --run rc24-tier1 --item row-3`') && prompts.crossModel.includes('`dev/stabilize-record item-doors --run rc24-tier1 --round 2 --item row-3`') && doorsRead('rc24-tier1', 1, 'row-3').endsWith(' --round 1 --item row-3'))
+  check('the one unit that is this script\'s own is handed its brief and its doors as given', unitPrompt(ctx, launcher(ctx), 'x', FIX_AUDIT[0][0], { item: 'audit', brief: 'The fix diff.', doors: [{ door: 'jigc setup', registry: 'verbs' }], range: 'a..b' }, built, []).includes('\nYour brief: The fix diff.\n') && briefLine(ctx, { item: 'audit', brief: '' }) === 'Your brief: ' && doorLines(ctx, { item: 'a', doors: [] }).endsWith('\n   (none)') && doorLines(ctx, { item: 'a', doors: null, round: 3 }).includes('prints: the doors of round 3\'s test set'))
+  check('a check is listed for the preflight by its item and the read that prints its brief', prompts.preflight.includes('\n   - the-gate: its brief is the `brief` of the item\'s row — `dev/stabilize-record item --run rc24-tier1 --item the-gate`'))
+  check('triage is handed the ledger\'s rows as the read that prints them, held to their count', triagePrompt(ctx, launcher(ctx), 'triage-p1', handed.concat([{ reporter: 'row-3-source', report: 'a.md', findings: ['1 — x'] }]), 1).includes('Grade every finding below — 3 in all, from 2 reporter(s).') && triagePrompt(ctx, launcher(ctx), 'triage-p1', handed, 1).includes('\n- ledger — report: `completions/artifacts/rc24-tier1/ledger.md` — 2 finding(s): the rows `dev/stabilize-record untriaged --run rc24-tier1` prints') && prompts.triage.includes('\n- row-3-source — report: `a.md` — 1 finding(s):\n   - 1 — x'))
+
+  // WHAT THIS SCRIPT READS: a step's line is a digest, or it is not read.
+  const digest = (said) => {
+    const body = JSON.stringify(Object.assign({}, said, { unfit: said.unfit || [], file: said.file === undefined ? 'lines/' + said.act + '.0123456789abcdef.json' : said.file, file_sha256: 'f'.repeat(64) }))
+    return body.slice(0, -1) + ', "sha256": "' + sha256(body) + '"}'
+  }
+  const asDigest = (text, act) => readDigest({ status: 'ran', line: text }, act || 'state')
+  const stateDigest = digest({ act: 'state', status: 'read', branch: 'fix/rc24-tier1', state: { run: 'rc24-tier1', opened: true, next: 'fix', ledger: 3 }, file: 'state/test-1.json' })
+  check('a digest is read: what the tool printed, and the file that holds the rest', asDigest(stateDigest).status === 'read' && asDigest(stateDigest + '\n').state.ledger === 3 && asDigest(stateDigest).file === 'state/test-1.json' && !asDigest(stateDigest).relay && JSON.stringify(fileOf(asDigest(stateDigest))) === JSON.stringify({ file: 'state/test-1.json', sha256: 'f'.repeat(64) }) && fileOf({ file: null }) === null && fileOf(null) === null)
+  check('the line the tool prints unasked is no digest, though it hashes: the document is not read', relay(line).status === 'read' && asDigest(line).status === 'halted' && asDigest(line).relay.includes('is no digest') && asDigest(refusedLine, 'land').relay.includes('is no digest') && !JSON.stringify(asDigest(line)).includes('rc24-tier1'))
+  const dashed = printed({ act: 'state', status: 'read', state: { run: 'a — b' }, unfit: [], file: 'state/t.json', file_sha256: 'f'.repeat(64) })
+  const escaped = printed({ act: 'state', status: 'read', state: { run: 'a \\ b' }, unfit: [], file: 'state/t.json', file_sha256: 'f'.repeat(64) })
+  check('a line with a character outside ASCII, or a backslash, is no digest, though it hashes', relay(dashed).status === 'read' && asDigest(dashed).relay.includes('outside printable ASCII') && relay(escaped).status === 'read' && asDigest(escaped).relay.includes('a backslash') && !!asDigest(stateDigest.replace('"fix"', '"fox"')).relay && !!asDigest(stateDigest.replace('rc24-tier1', 'rc24—tier1')).relay)
+  const struck = asDigest(digest({ act: 'push', status: 'ready', branch: null, head: null, unfit: ['branch', 'head'] }), 'push')
+  check('a digest with a field struck out is a step that is not acted on, and names the file its own line is in', struck.status === 'halted' && struck.unfit === true && struck.said === 'ready' && struck.relay.includes('could not print branch, head') && struck.relay.includes('THE ACT MAY HAVE RUN') && struck.file === 'lines/push.0123456789abcdef.json')
+  check('what is no line at all, and a step whose agent halted, are read as before', readDigest(null, 'state') === null && !!readDigest({ status: 'ran' }, 'state').relay && readDigest({ status: 'halted', halt: { root_cause: 'x' } }, 'state').halt.root_cause === 'x' && !!asDigest(stateDigest, 'push').relay && !JSON.stringify(relay(line.replace('"fix"', '"fox"'))).includes('fox'))
+
+  // HOW A STEP CAN END: every word has its row, and says whose the state is.
+  check('every refusal of the tool has a row that says whose it is and what leaves it', Object.keys(STEP_REFUSALS).length === 29 && Object.keys(STEP_REFUSALS).every((word) => /^[a-z][a-z-]*$/.test(word) && isText(STEP_REFUSALS[word].whose) && isText(STEP_REFUSALS[word].leaves) && stepRefusal(word).startsWith('`' + word + '` — ' + STEP_REFUSALS[word].whose + ': ')))
+  check('a word the table lacks is said to be one', stepRefusal('no-such-word').includes('has no row') && !stepRefusal('locked').includes('has no row'))
+  check('a commit that is no record\'s is its author\'s, a lock the orchestrator\'s, and what would not have been written the human\'s', STEP_REFUSALS['foreign-commit'].whose === 'its author\'s' && stepRefusal('foreign-commit', 'fix/rc24-tier1').includes('`git push origin fix/rc24-tier1`') && STEP_REFUSALS.locked.whose === 'the orchestrator\'s' && STEP_REFUSALS.locked.leaves.includes('never removes') && STEP_REFUSALS['head-moved'].whose === 'the orchestrator\'s' && STEP_REFUSALS.unvetted.whose.startsWith('the human\'s at a push') && stepRefusal('unvetted', 'fix/rc24-tier1').includes('`dev/stabilize-record vet --range -- fix/rc24-tier1 --not --remotes=origin`'))
+  const discards = '`dev/stabilize-step discard --branch fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1`'
+  check('a record step that stopped says what the next invocation does, and names the act that takes a batch back', [null, 'gate-red', 'head-moved', 'did-not-run', 'locked', 'no-batch'].every((word) => recordThen('rc24-tier1', 'fix/rc24-tier1', word).includes(discards) && !recordThen('rc24-tier1', 'fix/rc24-tier1', word).includes('stabilize-record discard')) && recordThen('rc24-tier1', 'fix/rc24-tier1', 'gate-red').includes('THE BATCH IS STILL APPLIED') && recordThen('rc24-tier1', 'fix/rc24-tier1', 'head-moved').includes('its first read meets the commit') && recordThen('rc24-tier1', 'fix/rc24-tier1', null).includes('may have left its batch APPLIED AND NOT COMMITTED'))
+  check('a commit refused as unvetted has taken its batch back, and asks for no discard', recordThen('rc24-tier1', 'fix/rc24-tier1', 'unvetted', true).includes('THE BATCH IS TAKEN BACK ALREADY') && !recordThen('rc24-tier1', 'fix/rc24-tier1', 'unvetted', true).includes(discards) && !recordThen('rc24-tier1', 'fix/rc24-tier1', 'unvetted', true).includes('pending, and no dirty tree') && recordThen('rc24-tier1', 'fix/rc24-tier1', 'unvetted', false).includes('was NOT taken back') && recordThen('rc24-tier1', 'fix/rc24-tier1', 'unvetted').includes('was NOT taken back'))
+  check('a push that failed is owed to the next first read — but never one refused as unvetted, and not beside a commit that is no record\'s', pushThen('fix/rc24-tier1', null).includes('THE PUSH IS OWED') && pushThen('fix/rc24-tier1', 'push-rejected').includes('its first read finds the record the remote lacks') && pushThen('fix/rc24-tier1', 'unvetted').includes('THE PUSH IS NOT OWED TO ANY LATER INVOCATION') && !pushThen('fix/rc24-tier1', 'unvetted').includes('THE PUSH IS OWED:') && pushThen('fix/rc24-tier1', 'foreign-commit').includes('`git push origin fix/rc24-tier1`') && !pushThen('fix/rc24-tier1', 'foreign-commit').includes('THE PUSH IS OWED:'))
+  check('a step that returned nothing is asked for again as its one command, and no agent of a step is told to look around', RUN_AGAIN.includes('Run the ONE command above again') && !RUN_AGAIN.includes('git status') && !RUN_AGAIN.includes('git log') && LOOK_AGAIN.includes('`git status --porcelain`') && RUN_AGAIN !== LOOK_AGAIN)
+  check('an invocation that only looks says so to its first read, and to no other step', gitStatePrompt(base, true).includes(' --product crates --look --digest /tmp/scratch-1`') && !steps['git-state'].includes('--look') && Object.keys(steps).every((act) => !steps[act].includes('--look')))
+  check('a record\'s push on the loop branch publishes records only, and its commit is held to the commit the stage began on', pushPrompt(base, 'fix/rc24-tier1', true).includes(' push --branch fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --digest /tmp/scratch-1`') && !steps.push.includes('--run-dir') && recordCommitPrompt(base, 'fix/rc24-tier1', '/tmp/scratch-1/record/x/gate.txt', { calls: 3, checks: 2 }, 'c'.repeat(40)).includes(' --calls 3 --checks 2 --scratch /tmp/scratch-1 --head ' + 'c'.repeat(40) + ' --digest /tmp/scratch-1`') && !steps.record.includes('--head'))
+
+  // What every return names of the state: what nothing can hold, and the file.
+  const namedState = { round: 2, never_selected: ['row-b'], uncovered: [{ round: 1, doors: 3 }, { round: 2, doors: 1 }], document: { file: '/tmp/scratch-1/state/test-2.json', sha256: 'f'.repeat(64) }, ledger: 60, blockers: 2, human_list: 5, untriaged: { count: 1, why: [{ why: 'ungraded', count: 1 }] } }
+  check('every return names the items no round selected, the doors of the round no item names, and the file', JSON.stringify(namedOf(namedState)) === JSON.stringify({ never_selected: ['row-b'], uncovered: { round: 2, doors: 1 }, document: namedState.document }) && namedOf(namedState, 1).uncovered.doors === 3 && namedOf(namedState, 3).uncovered.doors === 0 && namedOf(null) === null && JSON.stringify(namedOf({ opened: false })) === JSON.stringify({ never_selected: [], uncovered: { round: null, doors: 0 }, document: null }))
+  check('what a return holds of the state is counts and words, never a list of rows', attached(namedState).ledger === 60 && attached(namedState).blockers === 2 && attached(namedState).human_list === 5 && attached(namedState).untriaged.count === 1 && !('document' in attached(namedState)) && !('items' in attached(namedState)))
+
+  // A held command, as this script reads it: the tool's words, and the tool's verdict.
+  const job = { act: 'hold-wait', name: 'gate-c1-a1', kind: 'gate', output: 'hold/gate-c1-a1/output' }
+  const doneAs = (verdict, why) => heldOf(Object.assign({ status: 'done', verdict, why: why || null, verdict_file: 'hold/gate-c1-a1/verdict.json', verdict_sha256: 'e'.repeat(64) }, job), '/tmp/scratch-1')
+  check('a held check is an item whose kind names a held command of the tool', heldKind('held-regression') === 'regression' && heldKind('held-gate') === 'gate' && heldKind('held-build') === null && heldKind('held-') === null && heldKind('check') === null && heldKind('regression') === null && heldKind(null) === null && HELD_CHECKS.every((id) => !CHAINS[HELD_PREFIX + id] && HELD_PREFIX + id !== CHECK_KIND))
+  check('a held command that still runs is asked for again', heldOf(Object.assign({ status: 'running' }, job), '/tmp/scratch-1').ends === 'running' && heldOf(Object.assign({ status: 'started' }, job, { act: 'hold-start' }), '/tmp/scratch-1').ends === 'running' && heldOf(Object.assign({ status: 'running' }, job), '/tmp/scratch-1').output === '/tmp/scratch-1/hold/gate-c1-a1/output')
+  check('a held command that ran to its end is the tool\'s verdict, by the file the tool kept it in', ['green', 'red', 'void'].every((verdict) => doneAs(verdict).ends === verdict && doneAs(verdict).verdict === '/tmp/scratch-1/hold/gate-c1-a1/verdict.json' && doneAs(verdict).verdict_sha256 === 'e'.repeat(64)) && doneAs('void', 'no-verdict').why === 'no-verdict' && doneAs('green').why === null)
+  check('a held command that is dead has no verdict, and one that is done without the tool\'s verdict is not read', heldOf(Object.assign({ status: 'dead', why: 'no-exit' }, job), '/tmp/scratch-1').ends === 'dead' && heldOf(Object.assign({ status: 'dead', why: 'killed', verdict: 'green', verdict_file: 'hold/x/verdict.json', verdict_sha256: 'e'.repeat(64) }, job), '/tmp/scratch-1').verdict === undefined && doneAs('passed').ends === 'unread' && heldOf(Object.assign({ status: 'done', verdict: 'green' }, job), '/tmp/scratch-1').ends === 'unread' && heldOf(null, '/tmp/scratch-1').ends === 'unread' && heldOf({ status: 'halted', refused: 'missing' }, '/tmp/scratch-1').refused === 'missing' && heldOf({ status: 'halted', relay: 'altered' }, '/tmp/scratch-1').why === 'altered')
+  check('every way a held command can stand has its sentence', JSON.stringify(Object.keys(HELD_ENDS)) === JSON.stringify(['running', 'green', 'red', 'void', 'dead', 'unread']) && Object.keys(HELD_ENDS).every((ends) => isText(HELD_ENDS[ends])))
+  check('a held check\'s result is the file of the tool\'s verdict, and no word', results([{ item: 'regression-set', status: 'green', verdict: '/tmp/scratch-1/hold/regression-c1-a1/verdict.json' }, { item: 'gate', status: 'red', evidence: 'e' }]) === JSON.stringify([{ item: 'regression-set', verdict: '/tmp/scratch-1/hold/regression-c1-a1/verdict.json' }, { item: 'gate', outcome: 'red', doctype: 'jigc-feedback', door: 'the check `gate`', repro: 'e' }]))
+  check('a refusal of a batch as one that changes nothing is the record script\'s word', NO_CHANGE === 'no-change' && RECORD_SCHEMA.properties.refused.type === 'string' && !RECORD_SCHEMA.required.includes('refused') && RECORD_RETURNS.includes('return refused = the ONE word'))
 
   // The runtime probes: what their agents are told, and what is handed to the tool.
-  const probeBegin = probeStep('its first act', 'begin', '--scratch /tmp/scratch-1 --probe relay')
+  const probeBegin =probeStep('its first act', 'begin', '--scratch /tmp/scratch-1 --probe relay')
   check('a probe\'s step is the harness\'s own step prompt, with the probe tool where the step tool stands', probeBegin === stepPrompt('a PROBE of the stabilization harness, of no run — its first act', 'begin', '--scratch /tmp/scratch-1 --probe relay').split(STEP_TOOL).join(PROBE_TOOL) && probeBegin.includes('\n1. `dev/stabilize-probe begin --scratch /tmp/scratch-1 --probe relay`\n') && probeBegin.includes(STEP_RULES) && probeBegin.includes(AS_PRINTED) && !probeBegin.includes(STEP_TOOL))
   check('the field a reviewer came back with, as a cell — and nothing an agent wrote', probeField(null) === 'none' && probeField({ status: 'halted', asserted_sha256: 'a'.repeat(64) }) === 'halted' && probeField({ status: 'reported', findings: [] }) === 'absent' && probeField({ status: 'reported', asserted_sha256: null }) === 'absent' && probeField({ status: 'reported', asserted_sha256: 'a'.repeat(64) }) === 'a'.repeat(64) && probeField({ status: 'reported', asserted_sha256: 'x\'; rm -r /' }) === 'malformed' && probeField({ status: 'reported', asserted_sha256: 'A'.repeat(64) }) === 'malformed' && probeField({ status: 'reported', asserted_sha256: 7 }) === 'malformed')
   check('how the tries of a call ended', triesOf([{ ended: 'nothing' }, { ended: 'threw', message: 'm' }, { ended: 'returned' }]) === 'ntr' && triesOf([{ ended: 'returned' }]) === 'r' && triesOf([{ ended: 'nothing' }, { ended: 'nothing' }, { ended: 'nothing' }]) === 'nnn')
@@ -1990,7 +2356,7 @@ let breakerTripped = false
 // How each try of a call ended, kept only while a probe watches one (`watched`): null in
 // every stage, where nothing reads it.
 let triesSeen = null
-async function agentR(prompt, opts) {
+async function agentR(prompt, opts, again) {
   const lbl = (opts && opts.label) ? opts.label : 'agent'
   if (breakerTripped) {
     log('rate-limit breaker is tripped — NOT spawning ' + lbl)
@@ -1998,7 +2364,7 @@ async function agentR(prompt, opts) {
   }
   let lastErr
   for (let attempt = 0; attempt <= TRANSIENT_RETRIES; attempt++) {
-    const note = attempt === 0 ? '' : '\n\nRETRY after a transient failure of an earlier attempt at this same call. Before anything else look at what that attempt left — `git status --porcelain`, `git log -1`, and whether your report already stands at its path — and go on from it: never `git clean` (the untracked files under the run\'s directory are other agents\' reports), never make a commit or write a report that exists already. If you cannot tell what the dead attempt did, halt and say so.'
+    const note = attempt === 0 ? '' : '\n\n' + (again || LOOK_AGAIN)
     try {
       const result = await agent(prompt + note, Object.assign({ model }, opts))
       if (triesSeen) triesSeen.push({ ended: result != null ? 'returned' : 'nothing' })
@@ -2020,13 +2386,14 @@ async function agentR(prompt, opts) {
   return null
 }
 // Every git step, and every read of the record, is a build-git call on Sonnet.
-function gitStep(label, phaseTitle, prompt, schema) {
-  return agentR(prompt, { label: 'git:' + label, phase: phaseTitle, agentType: 'build-git', schema, model: GIT_MODEL })
+function gitStep(label, phaseTitle, prompt, schema, again) {
+  return agentR(prompt, { label: 'git:' + label, phase: phaseTitle, agentType: 'build-git', schema, model: GIT_MODEL }, again)
 }
 // toolStep — a git step that is ONE command of the tool: what the command `act` printed,
-// read off the relayed line. Null when the agent returned nothing.
+// read off the relayed line — its DIGEST, or it is not read. Null when the agent returned
+// nothing, after the command was asked for again.
 async function toolStep(label, phaseTitle, act, prompt) {
-  return readStep(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA), act)
+  return readDigest(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA, RUN_AGAIN), act)
 }
 function roleStep(role, label, phaseTitle, prompt, schema) {
   return agentR(prompt, { label, phase: phaseTitle, agentType: ROLES[role].agentType, schema })
@@ -2041,14 +2408,28 @@ function halt(phaseName, why, more) {
     stage: v.stage,
     run: v.run,
     halted: Object.assign({ phase: phaseName, reason: why, transient }, more || {}),
+    arrived,
+    named: namedOf(lastState),
     message: 'stabilize ' + v.stage + ' of `' + v.run + '` HALTED at ' + phaseName + ': ' + why + (breakerTripped ? ' The rate-limit breaker is tripped (' + exhaustedLabels.join(', ') + '): wait for the window before invoking again.' : transient ? ' An agent returned no result after retries: that is infrastructure, not a verdict about the run.' : '') + ((more && more.then) || ' What was committed stands; a report a reporter wrote and no record step committed is still untracked under ' + runDir(v.run) + '/ and stays there. Once the cause is dealt with, invoke the stage again with the same args: it reads the state as it stands and works the next attempt.'),
   }
 }
 // gitHalt — a git step that did not do what the stage needs: it returned nothing, it
 // halted, or it reported something else than the step's end state.
-function gitHalt(phaseName, r, what) {
-  if (!r) return halt(phaseName, what + ': the step returned no result', { transient: true })
-  return halt(phaseName, what + ': ' + ((r.halt && r.halt.root_cause) || 'the step reported ' + JSON.stringify({ status: r.status, branch: r.branch, head: r.head, remote_head: r.remote_head, merge_commit: r.merge_commit })), { halt: r.halt || null })
+// A REFUSAL OF THE TOOL IS ITS WORD: the digest carries that and no prose, this script says
+// what the word means from its own table (STEP_REFUSALS), and the tool's halt report — the
+// file, the commit, the command that leaves the state — is in the file the digest names,
+// which the halt returns by its path and its hash (`step`). An agent's own halt report, of
+// a step whose command printed no line, is passed on as it came (`halt`).
+function gitHalt(phaseName, r, what, more) {
+  if (!r) return halt(phaseName, what + ': the step returned no result', Object.assign({ transient: true }, more || {}))
+  const word = typeof r.refused === 'string' ? r.refused : null
+  const said = word ? 'the step refused ' + stepRefusal(word, (more && more.branch) || r.branch || loopBranch) : r.relay || (r.halt && r.halt.root_cause) || 'the step reported ' + JSON.stringify({ status: r.status, branch: r.branch, head: r.head, remote_head: r.remote_head, merge_commit: r.merge_commit })
+  return halt(phaseName, what + ': ' + said, Object.assign({ refused: word, whose: word && STEP_REFUSALS[word] ? STEP_REFUSALS[word].whose : null, step: stepFile(r), halt: word || r.relay ? null : r.halt || null }, more || {}))
+}
+// stepFile — the file a step's digest names, by its path under the invocation's scratch root.
+function stepFile(r) {
+  const kept = fileOf(r)
+  return kept ? { file: v.scratch + '/' + kept.file, sha256: kept.sha256 } : null
 }
 // A branch step ended where the stage needs it: on `branch`, and — for a push — with the
 // remote at the local head.
@@ -2056,10 +2437,16 @@ function onIt(r, branch, pushed) {
   return !!r && r.status === 'ready' && r.branch === branch && SHA_RE.test(String(r.head || '')) && (!pushed || r.remote_head === r.head)
 }
 
-// readState — the state document, relayed by a git step inside its command's line and held
-// to that line's hash. A relay that does not hash, or holds no state document, is asked for
-// again, twice; then there is no state, and the stage halts.
+// readState — the state, as its digest: what this script acts on of the document, relayed
+// by a git step as the ONE line its command prints and held to that line's hash and to
+// being a digest. The document itself stays in the file the digest names, and every return
+// names that file (`namedOf`). A relay that does not hash, is no digest, or holds no state
+// is asked for again, twice; then there is no state, and the stage halts.
 let stateReads = 0
+// The state as it was last read, for what every return names of it; and what the first read
+// of the invocation met on arrival — `found`, `finished`, `owed`, as the tool names them.
+let lastState = null
+let arrived = null
 async function readState() {
   const tag = v.stage + '-' + (++stateReads)
   let why = 'the step returned no result'
@@ -2068,10 +2455,14 @@ async function readState() {
     const r = await toolStep('state:' + tag + (n ? ':again' + n : ''), 'State', 'state', statePrompt(v, tag) + again)
     if (!r) return { error: why, transient: true }
     if (!r.relay) {
-      if (r.status !== 'read') return { error: (r.halt && r.halt.root_cause) || 'the step halted', halt: r.halt }
-      if (plain(r.state) && typeof r.state.opened === 'boolean') return { state: r.state, branch: r.branch }
+      if (r.status !== 'read') return { error: r.refused ? 'the step refused ' + stepRefusal(r.refused) : (r.halt && r.halt.root_cause) || 'the step halted', halt: r.refused ? null : r.halt, step: stepFile(r) }
+      if (plain(r.state) && typeof r.state.opened === 'boolean') {
+        // Where the document lies: the one thing of the state this script adds to it.
+        lastState = Object.assign(r.state, { document: stepFile(r) })
+        return { state: lastState, branch: r.branch }
+      }
     }
-    why = r.relay || 'the relayed line holds no state document'
+    why = r.relay || 'the relayed line holds no state'
     log('state relay rejected (' + why + ') — asking again')
   }
   return { error: why }
@@ -2094,40 +2485,65 @@ async function settleReports(ctx, launch, label, phaseTitle) {
 // such evidence did not record.
 function recordFault(r, expect) {
   if (!r) return 'the record\'s commit step returned no result'
-  if (r.status !== 'recorded') return (r.halt && r.halt.root_cause) || 'the record\'s commit step halted'
+  if (r.status !== 'recorded') return r.refused ? 'the record\'s commit step refused ' + stepRefusal(r.refused, r.branch) : r.relay || (r.halt && r.halt.root_cause) || 'the record\'s commit step halted'
   if (!SHA_RE.test(String(r.commit || ''))) return 'the record\'s commit step returned no commit sha'
   if (!plain(r.gate) || r.gate.ok !== true) return 'the record\'s commit step returned no gate check that holds'
   const applied = r.applied
-  if (!plain(applied) || applied.calls !== expect.calls || !Array.isArray(applied.checks) || applied.checks.length !== expect.checks) return 'the batch that was committed is not the one this stage composed: ' + expect.calls + ' call(s) and ' + expect.checks + ' check(s) were composed, and the commit step read ' + JSON.stringify(applied == null ? null : applied)
-  if (applied.checks.some((c) => !plain(c) || c.ok !== true)) return 'a check of the record does not hold: ' + JSON.stringify(applied.checks)
+  if (!plain(applied) || applied.calls !== expect.calls || applied.checks !== expect.checks) return 'the batch that was committed is not the one this stage composed: ' + expect.calls + ' call(s) and ' + expect.checks + ' check(s) were composed, and the commit step read ' + JSON.stringify(applied == null ? null : { calls: applied.calls, checks: applied.checks })
+  if (applied.failed !== 0) return 'a check of the record does not hold: ' + JSON.stringify(applied.failed == null ? null : applied.failed) + ' of ' + applied.checks + ' — the step\'s own line names each'
   return null
 }
-// RECORD_THEN — what a halt of a record step says is to be done, in place of the sentence
-// every other halt ends with: it is true whether or not the batch was applied.
-const RECORD_THEN = ' What was committed stands. A record step that stopped may have left its batch APPLIED AND NOT COMMITTED — the tables written, held by the record script as pending, and no dirty tree. Invoke the stage again: where a batch is pending, that invocation runs the full gate on it once more, commits and pushes it, and does nothing else; where none is, it reads the state as it stands and works the next attempt. To take a pending batch back instead — the orchestrator\'s decision, a subagent\'s act — `dev/stabilize-record discard --run ' + v.run + '` puts every table back as it was before the record step, and keeps the reports and the round\'s scope.'
+// pushHalt — a record's push that did not end with the remote at the local head.
+function pushHalt(pushed, branch, what) {
+  return gitHalt('push', pushed, what, { branch, then: pushThen(branch, pushed && typeof pushed.refused === 'string' ? pushed.refused : null) })
+}
+// The commit the stage began on, as its first read returned it — and, after a record of
+// this invocation, the head its push returned: what a record's commit step is held to
+// (`--head`). Null in the `fix` stage's own records, which follow its fixers' commits: which
+// head those are held to is that half's repair.
+let stageHead = null
 // recordStep — a record step, whole: the executor applies the batch and runs the gate; then
-// the ONE commit, a git step. `rec` is what `recordPrompt` returned.
+// the ONE commit, a git step. `rec` is what `recordPrompt` returned. Returns the commit
+// step's digest as `result` — or `fault`, with `then`: what the next invocation does, and
+// `unchanged` where the batch was refused as one that changes nothing.
 async function recordStep(label, branch, rec) {
   const gated = await roleStep('record', 'record:' + label, 'Record', rec.text, RECORD_SCHEMA)
-  if (!gated) return { fault: 'the record step returned no result', result: null }
-  if (gated.status !== 'gated') return { fault: (gated.halt && gated.halt.root_cause) || 'the record step halted', result: gated }
-  const r = await toolStep('record:' + label, 'Record', 'record', recordCommitPrompt(v, branch, rec.gate, rec.expect))
-  const fault = recordFault(r, rec.expect)
-  return fault ? { fault, result: r } : { result: r }
+  if (!gated) return { fault: 'the record step returned no result', result: null, transient: true, then: recordThen(v.run, branch, null) }
+  if (gated.status !== 'gated') return { fault: (gated.halt && gated.halt.root_cause) || 'the record step halted', result: null, halt: gated.halt || null, unchanged: gated.refused === NO_CHANGE, then: gated.refused === NO_CHANGE ? ' Nothing was written and NO BATCH IS LEFT: the record script refused the batch as one that changes nothing (`' + NO_CHANGE + '`) — every file it would write is what the run holds already. No discard is asked for.' : recordThen(v.run, branch, null) }
+  const r = await toolStep('record:' + label, 'Record', 'record', recordCommitPrompt(v, branch, rec.gate, rec.expect, stageHead))
+  const found = recordFault(r, rec.expect)
+  if (!found) return { result: r }
+  const fault = found.replace('<branch>', branch)
+  const word = r && typeof r.refused === 'string' ? r.refused : null
+  return { fault, result: r, transient: !r, refused: word, step: stepFile(r), gate: r && plain(r.gate) ? r.gate : null, then: recordThen(v.run, branch, word, r ? r.discarded : null) }
+}
+// recordHalt — a record step that did not record, as the halt of the stage: why, what the
+// tool established (`gate`: the counts of what is red; `step`: the file its own line is in),
+// the executor's own halt report where it halted, and what the next invocation does.
+function recordHalt(phaseName, recorded, more) {
+  return halt(phaseName, recorded.fault, Object.assign({ transient: !!recorded.transient, refused: recorded.refused || null, whose: recorded.refused && STEP_REFUSALS[recorded.refused] ? STEP_REFUSALS[recorded.refused].whose : null, step: recorded.step || null, gate: recorded.gate || null, halt: recorded.halt || null, then: recorded.then }, more || {}))
+}
+// pushRecord — the push of a record this invocation committed on `branch`, and then the
+// head the next record of the invocation is held to. A record on the loop branch is pushed
+// as a record's (`--run-dir`).
+async function pushRecord(label, branch) {
+  const pushed = await toolStep(label, 'Record', 'push', pushPrompt(v, branch, branch === loopBranch))
+  if (onIt(pushed, branch, true) && stageHead) stageHead = String(pushed.head)
+  return pushed
 }
 // finishRecord — an invocation that finds a batch a record step applied and did not commit:
 // the gate on it again, the one commit, the push, the state — and NOTHING ELSE of a stage.
 async function finishRecord(gs) {
   phase('Record')
   const pending = gs.pending
-  log('a record step left its batch applied and not committed on ' + gs.branch + ' — ' + pending.calls + ' call(s), `' + pending.subject + '`: this invocation gates and commits it, and starts nothing')
+  log('a record step left its batch applied and not committed on ' + gs.branch + ' — ' + pending.calls + ' call(s), ' + pending.files + ' file(s): this invocation gates and commits it, and starts nothing')
   const recorded = await recordStep('pending', gs.branch, pendingRecordPrompt(v, gs.branch, v.scratch + '/record/pending', pending))
-  if (recorded.fault) return halt('record', recorded.fault, { transient: !recorded.result, halt: recorded.result ? recorded.result.halt : null, gate: recorded.result ? recorded.result.gate : null, pending, then: RECORD_THEN })
-  const pushed = await toolStep('push:pending', 'Record', 'push', pushPrompt(v, gs.branch))
-  if (!onIt(pushed, gs.branch, true)) return gitHalt('push', pushed, 'the pending record is committed on ' + gs.branch + ' (' + recorded.result.commit + ') and the branch was not pushed')
+  if (recorded.fault) return recordHalt('record', recorded, { pending })
+  const pushed = await pushRecord('push:pending', gs.branch)
+  if (!onIt(pushed, gs.branch, true)) return pushHalt(pushed, gs.branch, 'the pending record is committed on ' + gs.branch + ' (' + recorded.result.commit + ') and the branch was not pushed')
   const read = await readState()
-  if (!read.state) return halt('state', 'the pending record is committed and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + read.error, { transient: !!read.transient })
-  return Object.assign({ status: 'recorded', stage: v.stage, run: v.run, pending, record: recorded.result.commit, gate: recorded.result.gate, message: 'a record step of an earlier invocation had applied its batch and not committed it: this invocation ran the gate on it, committed and pushed it, and did nothing else — `next` names the step.' }, nextOf(read.state))
+  if (!read.state) return halt('state', 'the pending record is committed and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + read.error, { transient: !!read.transient, step: read.step || null })
+  return Object.assign({ status: 'recorded', stage: v.stage, run: v.run, pending, record: recorded.result.commit, gate: recorded.result.gate, arrived, message: 'a record step of an earlier invocation had applied its batch and not committed it: this invocation ran the gate on it, committed and pushed it, and did nothing else — `next` names the step.' }, nextOf(read.state))
 }
 
 // beginAttempt — AN ATTEMPT BEGINS ON RECORD: before any agent of it is launched, one step
@@ -2188,10 +2604,10 @@ async function triagePasses(ctx, launch, built, sources, forksIn) {
   const faults = []
   const unverified = []
   const unreportedBy = []
-  let pending = sources.filter((s) => s.findings.length)
+  let pending = sources.filter((s) => findingsOf(s))
   let handed = 0
   for (let pass = 1; pending.length; pass++) {
-    const count = pending.reduce((n, s) => n + s.findings.length, 0)
+    const count = pending.reduce((n, s) => n + findingsOf(s), 0)
     handed += count
     const tName = launch.add(['triage', 'p' + pass])
     log('triage pass ' + pass + ': ' + count + ' finding(s) from ' + pending.length + ' reporter(s)')
@@ -2246,7 +2662,7 @@ async function triagePasses(ctx, launch, built, sources, forksIn) {
     }
     // THE REPORTS OF THIS PASS, CHECKED — before anything it established is taken.
     const settled = await settleReports(ctx, launch, 'check-reports:p' + pass, 'Triage')
-    if (settled.fault) return { fault: settled.fault, transient: !!settled.transient, check: settled.check || null }
+    if (settled.fault) return { fault: settled.fault, transient: !!settled.transient, step: settled.file ? { file: v.scratch + '/' + settled.file.file, sha256: settled.file.sha256 } : null }
     for (const name of settled.missing) unreportedBy.push(name)
     if (settled.missing.includes(tName)) return { fault: 'triage pass ' + pass + ' returned its grades and left no report: nothing is recorded on a grader\'s word with no report behind it' }
     for (const { e, name, r } of verified) {
@@ -2323,17 +2739,25 @@ async function preflightOf(ctx, launch, parts, plan, phaseTitle) {
   return { name, result: r }
 }
 
+// attached — what a return holds of the state where the orchestrator is handed it: what the
+// digest holds — words, ids and counts — and never the document, which lies in the file
+// `named.document` names. `blockers`, `human_list`, `untriaged` and `ledger` are HOW MANY.
 function attached(state) {
-  return { next: state.next, stop: state.stop, not_ready: state.not_ready, candidate: state.candidate, fix_rounds: state.fix_rounds, evidence: evidenceOf(state), blockers: state.blockers, human_list: state.human_list, untriaged: state.untriaged, retest: state.retest, human_clauses: state.human_clauses, human_stages: state.human_stages, unsettled: state.unsettled, forbids_close: state.forbids_close, position: state.position }
+  return { next: state.next, stop: state.stop, not_ready: state.not_ready, candidate: state.candidate, fix_rounds: state.fix_rounds, evidence: evidenceOf(state), ledger: state.ledger, blockers: state.blockers, human_list: state.human_list, reverify: state.reverify, untriaged: state.untriaged, retest: state.retest, human_clauses: state.human_clauses, human_stages: state.human_stages, unsettled: state.unsettled, forbids_close: state.forbids_close, position: state.position }
 }
-// What a stage returns of `next`: the value itself, always; the whole state beside it when
-// this script does not know the value; and with `close` the step the close owes first, and
-// per clause how far behind the candidate its last evidence is.
+// What a stage returns of `next`: the value itself, always; what the digest holds of the
+// state beside it when this script does not know the value — and the file the document lies
+// in, never the document; and with `close` the step the close owes first, and
+// per clause how far behind the candidate its last evidence is. AND WITH EVERY VALUE, WHAT
+// NOTHING CAN HOLD (`named`): the in-scope items no tested round has selected, and how many
+// doors of the round no item names — at every stop and at the close, where the human reads
+// them (dev/stabilize-record: WHAT CANNOT BE HELD IS NAMED).
 function nextOf(state) {
   const o = outcomeOf(state)
-  if (!o.known) return { next: o.next, returned_to_orchestrator: true, state }
-  if (o.rule) return { next: o.next, rule: o.rule }
-  return o.next === 'close' ? { next: o.next, close: closeOf(), evidence: evidenceOf(state) } : { next: o.next }
+  const named = namedOf(state)
+  if (!o.known) return { next: o.next, returned_to_orchestrator: true, state: attached(state), named, arrived }
+  if (o.rule) return { next: o.next, rule: o.rule, named, arrived }
+  return o.next === 'close' ? { next: o.next, close: closeOf(), evidence: evidenceOf(state), named, arrived } : { next: o.next, named, arrived }
 }
 
 // rulingsStep — the ONE call of the step that records what the human ruled: its record, the
@@ -2341,11 +2765,14 @@ function nextOf(state) {
 async function rulingsStep(round, branch, ran, at) {
   phase('Record')
   const ruled = await recordStep('rulings:r' + round, branch, rulingsRecordPrompt(v, round, branch, v.rulings, ran, at))
-  if (ruled.fault) return { halted: halt('rulings', ruled.fault, { transient: !ruled.result, halt: ruled.result ? ruled.result.halt : null, gate: ruled.result ? ruled.result.gate : null, then: RECORD_THEN }) }
-  const pushed = await toolStep('push:rulings', 'Record', 'push', pushPrompt(v, branch))
-  if (!onIt(pushed, branch, true)) return { halted: gitHalt('push', pushed, 'the rulings are recorded on ' + branch + ' (' + ruled.result.commit + ') and the branch was not pushed') }
+  // The same rulings, sent twice: the record holds them already. A refusal that leaves no
+  // batch — never a halt that asks for a discard.
+  if (ruled.unchanged) return { halted: { status: 'refused', stage: v.stage, run: v.run, refused: { refused: NO_CHANGE }, halt: ruled.halt, arrived, named: namedOf(lastState), message: 'the rulings are on record already: the record script refused their batch as one that changes nothing (`' + NO_CHANGE + '`).' + ruled.then + ' Nothing was recorded, committed or pushed.' } }
+  if (ruled.fault) return { halted: recordHalt('rulings', ruled) }
+  const pushed = await pushRecord('push:rulings', branch)
+  if (!onIt(pushed, branch, true)) return { halted: pushHalt(pushed, branch, 'the rulings are recorded on ' + branch + ' (' + ruled.result.commit + ') and the branch was not pushed') }
   const read = await readState()
-  if (!read.state) return { halted: halt('state', 'the rulings are recorded (' + ruled.result.commit + '), and the state could not be read back: ' + read.error, { transient: !!read.transient }) }
+  if (!read.state) return { halted: halt('state', 'the rulings are recorded (' + ruled.result.commit + '), and the state could not be read back: ' + read.error, { transient: !!read.transient, step: read.step || null }) }
   return { state: read.state, record: ruled.result.commit }
 }
 
@@ -2355,14 +2782,15 @@ async function rulingsStep(round, branch, ran, at) {
 // recorded on the loop branch by the one step that may write them, NOTHING is started, and
 // the state's `next` goes back — which now names the step the human was asked about.
 async function ruleTheRun(state, checkedOut) {
-  const told = { status: 'refused', stage: v.stage, run: v.run, next: state.next, stop: state.stop, human_clauses: state.human_clauses, human_stages: state.human_stages }
+  const told = { status: 'refused', stage: v.stage, run: v.run, next: state.next, stop: state.stop, human_clauses: state.human_clauses, human_stages: state.human_stages, reverify: state.reverify, named: namedOf(state), arrived }
   if (checkedOut !== loopBranch) return Object.assign(told, { message: 'an invocation that only records rulings records them on the loop branch ' + loopBranch + ', and `' + checkedOut + '` is checked out. Nothing was run beyond the two reads.' })
   const about = v.rulings.every(runRuling)
-  const why = about ? runRulingsFault(v.rulings, state) : findingRulingsFault(v.rulings, state)
+  // Whether a ruling on a finding names a row is the batch's own to hold (`check-ledger`).
+  const why = about ? runRulingsFault(v.rulings, state) : null
   if (why) return Object.assign(told, { message: why + '. Nothing was recorded.' })
   // The rounds in which a clause has an item whose re-run is spent: where a grant is a fact.
   const ran = {}
-  for (const c of state.clauses || []) ran[c.clause] = (c.items || []).filter((i) => i.rerun === 'spent').map((i) => i.round).filter((n, at, all) => all.indexOf(n) === at)
+  for (const c of state.clauses || []) ran[c.clause] = (state.items || []).filter((i) => i.clause === c.clause && i.rerun === 'spent').map((i) => i.round).filter((n, at, all) => all.indexOf(n) === at)
   // The round a finding's passes are counted in, and the round each stage is spent in.
   const stages = {}
   for (const h of state.human_stages || []) stages[h.stage] = h.round
@@ -2380,12 +2808,12 @@ async function finishTriage(ctx, launch, state, tip, branch) {
   phase('Triage')
   const sources = ledgerSource(v.run, state)
   const binary = v.scratch + '/bin/' + tip.label + '.a' + ctx.attempt + '/jigc'
-  log('round ' + ctx.round + ': the ' + ctx.stage + ' stage left its triage unfinished — ' + (state.untriaged || []).length + ' row(s) are graded and verified now, attempt ' + ctx.attempt + '; no instrument runs')
+  log('round ' + ctx.round + ': the ' + ctx.stage + ' stage left its triage unfinished — ' + findingsOf(sources[0] || { findings: [] }) + ' row(s) are graded and verified now, attempt ' + ctx.attempt + '; no instrument runs')
   const pre = await preflightOf(ctx, launch, ['preflight'], { build: true, image: false, sha: tip.sha, label: tip.label, branch, binary, checks: [], crossModel: false, previous: previousOf(state), tested: tip.tested }, 'Triage')
   if (pre.fault) return { halted: halt('preflight', pre.fault, { transient: !!pre.transient, halt: pre.halt || null, branch }) }
   const built = { candidate: { label: tip.label, sha: tip.sha, binary, sha256: pre.result.candidate.sha256 }, previous: pre.result.previous, image: null }
   const tri = await triagePasses(ctx, launch, built, sources, [])
-  if (tri.fault) return { halted: halt('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null, branch }) }
+  if (tri.fault) return { halted: halt('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null, step: tri.step || null, branch }) }
   if (tri.faults.length) return { halted: halt('binary', tri.faults.join('; '), { branch }) }
   // The lap stands on its preflight as a stage does: binaries with no report behind them
   // are no evidence, whatever was verified on them.
@@ -2395,17 +2823,17 @@ async function finishTriage(ctx, launch, state, tip, branch) {
   const dir = v.scratch + '/record/triage-r' + ctx.round + (ctx.stage === 'fix' ? '-c' + ctx.cycle : '') + '-a' + ctx.attempt
   const commands = stageRecordCommands(ctx, { reporters: launch.names, rows: rec.rows, triage: rec.triage, patches: [], clauses: [], facts: null, keys: tri.entries.map((e) => e.key) })
   const recorded = await recordStep('triage:r' + ctx.round, branch, recordPrompt(v, 'round ' + ctx.round + '\'s triage, finished — ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s) graded; no instrument ran', branch, dir, ctx.round, commands, v.run + ' r' + ctx.round + ' — the round\'s triage, finished'))
-  if (recorded.fault) return { halted: halt('record', recorded.fault, { transient: !recorded.result, halt: recorded.result ? recorded.result.halt : null, gate: recorded.result ? recorded.result.gate : null, launched: launch.names, branch, forks: tri.forks, then: RECORD_THEN }) }
-  const pushed = await toolStep('push:triage', 'Record', 'push', pushPrompt(v, branch))
-  if (!onIt(pushed, branch, true)) return { halted: gitHalt('push', pushed, 'the triage is recorded on ' + branch + ' (' + recorded.result.commit + ') and the branch was not pushed') }
+  if (recorded.fault) return { halted: recordHalt('record', recorded, { launched: launch.names, branch, forks: tri.forks }) }
+  const pushed = await pushRecord('push:triage', branch)
+  if (!onIt(pushed, branch, true)) return { halted: pushHalt(pushed, branch, 'the triage is recorded on ' + branch + ' (' + recorded.result.commit + ') and the branch was not pushed') }
   const after = await readState()
-  if (!after.state) return { halted: halt('state', 'the triage is recorded and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + after.error, { transient: !!after.transient, branch }) }
+  if (!after.state) return { halted: halt('state', 'the triage is recorded and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + after.error, { transient: !!after.transient, step: after.step || null, branch }) }
   return { state: after.state, entries: tri.entries, forks: tri.forks, unverified: tri.unverified, handed: tri.handed, record: recorded.result.commit, reporters: launch.names, candidate: built.candidate }
 }
 function closeOf() {
   return {
     order: ['the close of the run, as the workflow\'s doc has it', 'sync: close.sync, spawned verbatim on model close.sync.model', 'dev/gate green on the merged tree', 'git push origin ' + loopBranch, 'gh pr create --base main --head ' + loopBranch],
-    sync: { agentType: 'build-git', model: GIT_MODEL, label: 'git:sync-main', prompt: syncMainPrompt(v.run), schema: STEP_SCHEMA, reads: 'its `line` is the ONE line `' + STEP_TOOL + ' sync-main` printed — JSON: status `merged` or `up-to-date` with head, origin_main and resolved_logs, or `halted` with the word it refused with and its halt report' },
+    sync: { agentType: 'build-git', model: GIT_MODEL, label: 'git:sync-main', prompt: syncMainPrompt(v.run, v.scratch), schema: STEP_SCHEMA, reads: 'its `line` is the ONE line `' + STEP_TOOL + ' sync-main` printed, a digest — JSON: status `merged` or `up-to-date` with head, origin_main and resolved_logs, or `halted` with the word it refused with (`refused`); and `file`, the path under ' + v.scratch + ' of the line the tool prints unasked, its halt report in it' },
   }
 }
 
@@ -2509,38 +2937,58 @@ async function runProbe() {
 // ---- the `test` stage ----
 async function runTest() {
   phase('State')
-  const gs = await toolStep('state', 'State', 'git-state', gitStatePrompt(v))
-  if (!onIt(gs, loopBranch, false)) return gitHalt('git', gs, 'the tree and the branches are not in the state the `test` stage starts from — the loop branch ' + loopBranch + ' checked out, holding nothing but what the record script wrote and no commit holds yet, and no product change outside a round\'s merge')
+  // AN INVOCATION THAT ONLY LOOKS finishes nothing: its first read says what is owed.
+  const looks = v.stopAfter === 'state'
+  const gs = await toolStep('state', 'State', 'git-state', gitStatePrompt(v, looks))
+  if (!onIt(gs, loopBranch, false)) return gitHalt('git', gs, 'the tree and the branches are not in the state the `test` stage starts from — the loop branch ' + loopBranch + ' checked out, holding nothing but what the record script wrote and no commit holds yet, no product change outside a round\'s merge, and no commit the remote lacks that is no record\'s')
+  // EVERY INVOCATION RECONCILES FIRST: what the read met, what it finished — a killed write,
+  // a batch whose commit was made, the push that was owed — and what it left.
+  arrived = { found: gs.found || [], finished: gs.finished || [], owed: gs.owed || [] }
+  if (arrived.finished.length) log('the first read finished what an earlier invocation left: ' + arrived.finished.join(', '))
+  stageHead = String(gs.head)
+  if (looks && arrived.owed.length) return { status: 'stopped', after: 'state', stage: 'test', run: v.run, owed: arrived.owed, pending: gs.pending || null, head: gs.head, remote_head: gs.remote_head || null, arrived, message: 'this invocation only looked (stopAfter: \'state\'), and FINISHED NOTHING: no write was finished, no batch gated or committed, nothing pushed, and the state was not read across it. What an invocation without that stop finishes before it does anything else is `owed` — ' + arrived.owed.join(', ') + ' — as `' + STEP_TOOL + ' table` names each.' }
   if (gs.pending) return await finishRecord(gs)
   const first = await readState()
-  if (!first.state) return halt('state', 'the run\'s state could not be read: ' + first.error, { transient: !!first.transient, halt: first.halt || null })
+  if (!first.state) return halt('state', 'the run\'s state could not be read: ' + first.error, { transient: !!first.transient, halt: first.halt || null, step: first.step || null })
   let state = first.state
   if (!state.opened) return halt('state', 'the run `' + v.run + '` has no opening record (' + runDir(v.run) + '/opening.md): a run opens with the human-led step, and `test` does not start before it')
   if (v.rulings) return await ruleTheRun(state, gs.branch)
   const at = state.position.test
-  if (at.refused) return { status: 'refused', stage: 'test', run: v.run, refused: at, message: 'the `test` stage is refused (' + at.refused + ', round ' + at.round + '): ' + refusalOf(at) + '. Nothing was run beyond the two reads.', next: state.next, not_ready: state.not_ready, stop: state.stop }
+  if (at.refused) return { status: 'refused', stage: 'test', run: v.run, refused: at, message: 'the `test` stage is refused (' + at.refused + ', round ' + at.round + '): ' + refusalOf(at) + '. Nothing was run beyond the two reads.', next: state.next, not_ready: state.not_ready, stop: state.stop, named: namedOf(state), arrived }
   const ctx = { run: v.run, round: at.round, stage: 'test', attempt: at.attempt, scratch: v.scratch }
   const label = 'c' + ctx.round
   // The round's triage is not finished, and this stage left it: finish it, and run nothing.
   if (at.triage) {
-    if (v.scope != null || v.clause != null || v.crossModel != null) return { status: 'refused', stage: 'test', run: v.run, message: 'round ' + at.round + '\'s triage is not finished (`next` is `' + state.next + '`): this invocation finishes it and runs no instrument, so it takes no scope, clause or crossModel. Nothing was run beyond the two reads.', next: state.next, untriaged: state.untriaged }
+    if (v.scope != null || v.clause != null || v.crossModel != null) return { status: 'refused', stage: 'test', run: v.run, message: 'round ' + at.round + '\'s triage is not finished (`next` is `' + state.next + '`): this invocation finishes it and runs no instrument, so it takes no scope, clause or crossModel. Nothing was run beyond the two reads.', next: state.next, untriaged: state.untriaged, named: namedOf(state), arrived }
     // The verifiers drive THE CANDIDATE THE ROUND TESTED: its findings are about that
     // commit, and the round's record commits have moved the branch on since.
-    const tested = String(state.rounds.find((r) => r.round === at.round).facts.candidate)
+    const tested = String(state.rounds.find((r) => r.round === at.round).candidate)
     const lap = launcher(ctx)
     const unbegun = await beginAttempt(ctx, lap, tested)
     if (unbegun) return unbegun
     const done = await finishTriage(ctx, lap, state, { sha: tested, label, tested: true }, loopBranch)
     if (done.halted) return done.halted
-    return Object.assign({ status: 'triaged', stage: 'test', run: v.run, round: ctx.round, triage_only: true, candidate: done.candidate, record: done.record, counts: { reporters: done.reporters.length, findings_in: done.handed, entries: done.entries.length, blockers: done.state.blockers.length, for_the_human: done.state.human_list.length }, human_list: done.state.human_list, forks: done.forks, unverified: done.unverified, blockers: done.state.blockers, forbids_close: done.state.forbids_close }, nextOf(done.state))
+    return Object.assign({ status: 'triaged', stage: 'test', run: v.run, round: ctx.round, triage_only: true, candidate: done.candidate, record: done.record, counts: { reporters: done.reporters.length, findings_in: done.handed, entries: done.entries.length, blockers: done.state.blockers, for_the_human: done.state.human_list }, forks: done.forks, unverified: done.unverified, forbids_close: done.state.forbids_close }, nextOf(done.state))
   }
   // A RE-RUN is the position's, never the invocation's to decide: the state asks for it
   // (`rerun`) and names the clause, the round that selected its due items, and the attempt
   // each one's run will be. `args.clause` says that the orchestrator read the same answer.
   const rerun = at.rerun || null
-  if (rerun && v.clause !== rerun.clause) return { status: 'refused', stage: 'test', run: v.run, message: 'the state asks for a re-run (`next` is `' + state.next + '`): the items of clause `' + rerun.clause + '` that are due in round ' + rerun.round + ' — ' + rerun.items.map((i) => i.item + ' (attempt ' + i.attempt + ')').join(', ') + '. Invoke `test` with clause: \'' + rerun.clause + '\'; an invocation without it would begin a round nobody asked for. Nothing was run beyond the two reads.', next: state.next, retest: state.retest, position: at }
-  if (!rerun && v.clause != null) return { status: 'refused', stage: 'test', run: v.run, message: 'args.clause asks for a re-run, and the state does not (`next` is `' + state.next + '`): an item is run again only where the record script lists it as due, as an attempt of the round that selected it. Nothing was run beyond the two reads.', next: state.next, retest: state.retest }
-  const sha = String(gs.head)
+  if (rerun && v.clause !== rerun.clause) return { status: 'refused', stage: 'test', run: v.run, message: 'the state asks for a re-run (`next` is `' + state.next + '`): the items of clause `' + rerun.clause + '` that are due in round ' + rerun.round + ' — ' + rerun.items.map((i) => i.item + ' (attempt ' + i.attempt + ')').join(', ') + '. Invoke `test` with clause: \'' + rerun.clause + '\'; an invocation without it would begin a round nobody asked for. Nothing was run beyond the two reads.', next: state.next, retest: state.retest, position: at, named: namedOf(state, rerun.round), arrived }
+  if (!rerun && v.clause != null) return { status: 'refused', stage: 'test', run: v.run, message: 'args.clause asks for a re-run, and the state does not (`next` is `' + state.next + '`): an item is run again only where the record script lists it as due, as an attempt of the round that selected it. Nothing was run beyond the two reads.', next: state.next, retest: state.retest, named: namedOf(state), arrived }
+  // THE COMMIT THIS INVOCATION TESTS, AND NAMES IN EVERY RESULT — A ROUND TESTS ONE
+  // CANDIDATE (ruling 11; the orchestrator's ruling of 2026-10-07 on the core review's F3).
+  // A round that is begun here has none on record yet: its candidate is the branch's tip,
+  // which the first read returned. A RE-RUN IS AN ATTEMPT INSIDE A ROUND THAT HAS ONE — and
+  // by then the round's record commits lie on top of it, so the tip is another commit: the
+  // re-run builds, drives and records THE ROUND'S CANDIDATE, as the state names it, and
+  // never the tip.
+  const sha = rerun ? String((state.rounds.find((r) => r.round === rerun.round) || {}).candidate || '') : String(gs.head)
+  if (!SHA_RE.test(sha)) return halt('state', 'the state asks for a re-run inside round ' + at.round + ' and names no candidate for that round: a result is of the candidate its round tested, and of no other commit')
+  // Whether the candidate is still the tree checked out. In a re-run it is not: what is
+  // built is built from the commit, and NO CHECK THAT READS THE WORKING TREE IS ASKED FOR —
+  // a tree that is not the candidate is evidence about no commit (stabilize-preflight.md).
+  const moved = sha !== String(gs.head)
   const launch = launcher(ctx)
   const items = state.items || []
   // The items this invocation names for a cross-model source pass — none, unless it names them.
@@ -2549,7 +2997,7 @@ async function runTest() {
   if (crossStrangers.length) return halt('state', 'args.crossModel names ' + crossStrangers.join(', ') + ', which is no item of the test set whose chain has a cross-model pass — the items that have one are ' + (items.filter((i) => chainOf(i.kind, true).some((stepList) => stepList.some((s) => s.crossModel))).map((i) => i.item).join(', ') || '(none)'))
   const runs = (i) => (rerun ? rerun.items.some((x) => x.item === i.item) : i.selected === true)
   log('round ' + ctx.round + ', attempt ' + ctx.attempt + ' of the test stage: ' + (rerun ? 'A RE-RUN inside it, on ' + sha + ' — ' + rerun.items.map((i) => i.item + ' (its attempt ' + i.attempt + ')').join(', ') + ' of clause `' + rerun.clause + '`, and nothing else' : 'candidate ' + label + ' = ' + sha + '; ' + items.length + ' item(s) in the test set'))
-  if (v.stopAfter === 'state') return { status: 'stopped', after: 'state', stage: 'test', run: v.run, round: ctx.round, attempt: ctx.attempt, candidate: { label, sha }, state: attached(state) }
+  if (looks) return { status: 'stopped', after: 'state', stage: 'test', run: v.run, round: ctx.round, attempt: ctx.attempt, candidate: { label, sha }, owed: arrived.owed, state: attached(state), named: namedOf(state, rerun ? rerun.round : null), arrived }
   const unbegun = await beginAttempt(ctx, launch, sha)
   if (unbegun) return unbegun
 
@@ -2566,8 +3014,8 @@ async function runTest() {
   const candidateGate = rerun ? null : v.scratch + '/gate/' + label + '.a' + ctx.attempt + '.txt'
   const always = items.filter((i) => i.kind === CHECK_KIND && runs(i))
   const scopeName = rerun ? null : launch.add(['scope'])
-  const steps = [() => preflightOf(ctx, launch, ['preflight'], { build: true, image: false, gate: candidateGate, sha, label, branch: loopBranch, binary, checks: always, crossModel: crossNamed.length > 0, previous: previousOf(state) }, 'Preflight and scope')]
-  if (!rerun) steps.push(() => roleStep('scope', 'scope', 'Preflight and scope', scopePrompt(ctx, launch, scopeName, { sha, label, base: earlier && earlier.facts ? earlier.facts.candidate : null, earlier: !!earlier, scope: v.scope, previous: previousOf(state), fallback: state.facts.scope }), SCOPE_SCHEMA))
+  const steps = [() => preflightOf(ctx, launch, ['preflight'], { build: true, image: false, gate: candidateGate, sha, label, branch: loopBranch, binary, checks: moved ? [] : always, crossModel: crossNamed.length > 0, previous: previousOf(state), tested: moved }, 'Preflight and scope')]
+  if (!rerun) steps.push(() => roleStep('scope', 'scope', 'Preflight and scope', scopePrompt(ctx, launch, scopeName, { sha, label, base: earlier && earlier.candidate ? earlier.candidate : null, earlier: !!earlier, scope: v.scope, previous: previousOf(state), fallback: state.facts.scope }), SCOPE_SCHEMA))
   const both = await parallel(steps)
   const pre = both[0] || { fault: 'the preflight returned no result', transient: true }
   const sc = rerun ? { status: 'stands' } : both[1]
@@ -2575,17 +3023,21 @@ async function runTest() {
   if (!sc || (sc.status !== 'written' && sc.status !== 'stands')) return halt('scope', sc ? 'the scope step halted: ' + ((sc.halt && sc.halt.root_cause) || 'no reason given') : 'the scope step returned no result', { transient: !sc, halt: sc ? sc.halt : null })
   const built = { candidate: { label, sha, binary, sha256: pre.result.candidate.sha256 }, previous: pre.result.previous, image: null }
   const second = await readState()
-  if (!second.state) return halt('state', 'the run\'s state could not be read after the scope step: ' + second.error, { transient: !!second.transient, halt: second.halt || null })
+  if (!second.state) return halt('state', 'the run\'s state could not be read after the scope step: ' + second.error, { transient: !!second.transient, halt: second.halt || null, step: second.step || null })
   state = second.state
   if (!rerun && (!state.doors || state.round !== ctx.round)) return halt('scope', 'the scope step reported ' + sc.status + ', and the state holds no doors for round ' + ctx.round)
-  // The doors the round's items run over: its own scope's — as the state reads them back, or
-  // as the re-run's position names them again.
-  const inside = rerun ? rerun.doors : state.doors.included
+  // The round whose doors the items run over: this round's own scope — or, for a re-run,
+  // the round its position names. WHICH doors is no read of this script's: a unit's prompt
+  // names the read that prints them, from that round (`doorsRead`).
+  const doorsOf = rerun ? rerun.round : ctx.round
   const selected = state.items.filter(runs)
-  const hunting = selected.filter((i) => i.kind !== CHECK_KIND)
+  // A held check is run by no chain and by no preflight: the tool holds its command.
+  const held = selected.filter((i) => heldKind(i.kind))
+  const hunting = selected.filter((i) => i.kind !== CHECK_KIND && !heldKind(i.kind))
   const late = selected.filter((i) => i.kind === CHECK_KIND && !always.some((x) => x.item === i.item))
   const unknownKinds = hunting.filter((i) => !CHAINS[i.kind]).map((i) => i.item + ' (' + i.kind + ')')
   if (unknownKinds.length) return halt('state', 'this round runs item(s) of a kind the harness has no chain for: ' + unknownKinds.join(', ') + ' — a kind is added by adding its chain to CHAINS, never by guessing one', { launched: launch.names })
+  if (held.length) return halt('state', 'this round runs held check(s) — ' + held.map((i) => i.item + ' (' + i.kind + ')').join(', ') + ' — each ONE long command that `' + STEP_TOOL + '` starts, waits for and judges (`hold-start --kind ' + held.map((i) => heldKind(i.kind)).join(' | ') + '`, `hold-wait`). This script reads what such a command\'s step says (`heldOf`) and records its verdict\'s file, and NO STEP OF A STAGE STARTS ONE YET: that is the second repair plan\'s task K11, and until it has landed a round with a held check does not run', { launched: launch.names, held: held.map((i) => ({ item: i.item, kind: i.kind })) })
   const needsImage = hunting.some((i) => chainOf(i.kind, false).some((stepList) => stepList.some((s) => s.image)))
   let checks = pre.result.checks || []
   // The second preflight: the trial image, and the checks the scope selected. One that did
@@ -2605,16 +3057,18 @@ async function runTest() {
     }
   }
   const imageless = (i) => !!unprovided && chainOf(i.kind, false).some((stepList) => stepList.some((s) => s.image))
-  log('scope ' + sc.status + ': ' + inside.length + ' door(s) inside; ' + hunting.length + ' of ' + state.items.filter((i) => i.kind !== CHECK_KIND).length + ' hunting item(s) run ' + (rerun ? 'again' : 'this round') + ', and ' + (always.length + late.length) + ' check(s)')
+  log('scope ' + sc.status + ': ' + (rerun ? 'the doors of round ' + doorsOf : state.doors.included + ' door(s)') + ' inside; ' + hunting.length + ' of ' + state.items.filter((i) => i.kind !== CHECK_KIND).length + ' hunting item(s) run ' + (rerun ? 'again' : 'this round') + ', and ' + (always.length + late.length) + ' check(s)')
   if (sc.uncovered && sc.uncovered.length) log('NOT COVERED: ' + sc.uncovered.length + ' door(s) of the round\'s test set are reached by no item — ' + sc.uncovered.join(' · '))
-  if (v.stopAfter === 'preflight') return { status: 'stopped', after: 'preflight', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, previous: built.previous, checks, scope: { status: sc.status, uncovered: sc.uncovered || [], reached_but_excluded: sc.reached_but_excluded || [] }, reporters: launch.names }
+  if (v.stopAfter === 'preflight') return { status: 'stopped', after: 'preflight', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, previous: built.previous, checks, scope: { status: sc.status, uncovered: sc.uncovered || [], reached_but_excluded: sc.reached_but_excluded || [] }, reporters: launch.names, named: namedOf(state, doorsOf), arrived }
 
   // The round's instruments.
   phase('Instruments')
   const crossTool = crossNamed.length > 0 && (pre.result.checks || []).some((c) => c.check === CROSS_CHECK && c.status === 'green')
   const crossVoid = crossNamed.filter((id) => !crossTool || !hunting.some((i) => i.item === id)).map((id) => ({ item: id, why: crossTool ? 'the item does not run in this round' : 'the tool of the cross-model pass did not answer on this machine' }))
   for (const lost of crossVoid) log('CROSS-MODEL PASS VOID for `' + lost.item + '`: ' + lost.why + ' — its other passes run regardless')
-  const units = hunting.filter((i) => !imageless(i)).map((i) => ({ item: i.item, kind: i.kind, clause: i.clause, brief: i.brief, chain: chainOf(i.kind, crossTool && crossNamed.includes(i.item)), doors: unitDoors(i, inside), range: null }))
+  // How many doors of that round a unit covers is the digest's; the doors are the read's.
+  const covers = (i) => (rerun ? (rerun.items.find((x) => x.item === i.item) || {}).doors : i.doors)
+  const units = hunting.filter((i) => !imageless(i)).map((i) => ({ item: i.item, kind: i.kind, clause: i.clause, chain: chainOf(i.kind, crossTool && crossNamed.includes(i.item)), doors: covers(i), round: doorsOf, range: null }))
   const nameable = unitNames(units, launch.names)
   if (nameable.fault) return halt('state', nameable.fault)
   const ran = await runUnits(ctx, launch, built, units, 'Instruments')
@@ -2626,10 +3080,16 @@ async function runTest() {
   // it halts; an instrument's step that left none voids its item, and the stage goes on.
   const launchedSoFar = launch.names.slice()
   const settled = await settleReports(ctx, launch, 'check-reports', 'Instruments')
-  if (settled.fault) return halt('reports', settled.fault, { transient: !!settled.transient, check: settled.check || null, launched: launchedSoFar })
+  if (settled.fault) return halt('reports', settled.fault, { transient: !!settled.transient, step: settled.file ? { file: v.scratch + '/' + settled.file.file, sha256: settled.file.sha256 } : null, launched: launchedSoFar })
+  // THE ROUND'S SCOPE, SET ASIDE: a file at its path that the record script would not have
+  // written is no scope, and it has left the tree — so the round has none, and nothing an
+  // instrument found over its doors can be recorded against one.
+  const scopeFile = runDir(v.run) + '/r' + ctx.round + '/scope.md'
+  const noScope = settled.aside.find((a) => plain(a) && a.path === scopeFile)
+  if (noScope) return halt('scope', 'the round\'s scope (' + scopeFile + ') was set aside by the report check: the file at its path is not what `dev/stabilize-record` would have written (`' + noScope.why + '`), so round ' + ctx.round + ' has no scope any more, and what this attempt\'s instruments found cannot be recorded against one', { launched: launchedSoFar, aside: settled.aside })
   const stoodOn = [ATTEMPT, pre.name, scopeName].concat(secondName && !unprovided ? [secondName] : []).filter((name) => settled.missing.includes(name))
-  if (stoodOn.length) return halt('reports', 'a reporter this stage stands on returned and left no report: ' + stoodOn.join(', ') + ' — what it established has nothing on record behind it', { launched: launchedSoFar })
-  unreported(ran, settled.missing)
+  if (stoodOn.length) return halt('reports', 'a reporter this stage stands on ' + (stoodOn.some((name) => setAside(settled.aside, name)) ? 'left a file at its report\'s path that is no report, and it was set aside' : 'returned and left no report') + ': ' + stoodOn.join(', ') + ' — what it established has nothing on record behind it', { launched: launchedSoFar, aside: settled.aside })
+  unreported(ran, settled.missing, settled.aside)
   for (const u of ran) {
     if (u.status === 'void') log('VOID: `' + u.item + '` — ' + u.reason + '. Its result is recorded as void, and the state asks for its re-run')
     if (u.crossModel === 'void') crossVoid.push({ item: u.item, why: 'the pass was launched and did not report' })
@@ -2645,21 +3105,25 @@ async function runTest() {
   // verdict by an earlier stage: this triage is the next one that runs.
   for (const source of ledgerSource(v.run, state)) sources.push(source)
   const tri = await triagePasses(ctx, launch, built, sources, [])
-  if (tri.fault) return halt('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null })
+  if (tri.fault) return halt('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null, step: tri.step || null })
   if (tri.faults.length) return halt('binary', tri.faults.join('; '))
-  if (v.stopAfter === 'triage') return { status: 'stopped', after: 'triage', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, entries: tri.entries, forks: tri.forks, reporters: launch.names }
+  if (v.stopAfter === 'triage') return { status: 'stopped', after: 'triage', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, entries: tri.entries, forks: tri.forks, reporters: launch.names, named: namedOf(state, doorsOf), arrived }
 
   // The record step: the reports checked, what each item did, the rows, the round's facts.
   // ONE RESULT PER ITEM THIS INVOCATION RAN — the record script derives every clause's
   // status from them, and files a red check as a finding in the same call.
   phase('Record')
   const unitStatus = ran.map((u) => ({ item: u.item, status: u.status, reason: u.reason })).concat(hunting.filter(imageless).map((i) => ({ item: i.item, status: 'void', reason: 'no trial image: ' + unprovided })))
+  // A check that is due again once the round's record lies on its candidate was not asked
+  // for (above): it is void, with that reason — never run on the tip and recorded as the
+  // candidate's.
+  const offTree = moved ? 'the round\'s candidate ' + sha + ' is no longer the tree checked out — the round\'s record commits lie on it — and a check reads the working tree: it was not run, because what it would show is evidence about no commit of this round' : null
   for (const item of always.concat(late)) {
-    const c = checks.find((x) => x.check === item.item)
+    const c = offTree ? null : checks.find((x) => x.check === item.item)
     // A green or a red is evidence about exactly the commit the check ran on: one that
     // ran on another commit, or does not say which, did not run on the candidate.
     const elsewhere = c && c.status !== 'void' && c.commit !== sha ? 'the check ran on ' + (c.commit ? 'the commit ' + c.commit : 'a commit the preflight did not name') + ', not on the candidate' : null
-    unitStatus.push({ item: item.item, status: !c || elsewhere ? 'void' : c.status, reason: elsewhere || (c ? c.evidence || 'the check could not run, and the preflight returned no reason' : late.includes(item) && unprovided ? unprovided : 'the preflight returned nothing for it'), door: item.doors[0], evidence: c && c.evidence ? c.evidence + ' — the preflight\'s report: ' + pre.result.report : null })
+    unitStatus.push({ item: item.item, status: !c || elsewhere ? 'void' : c.status, reason: elsewhere || offTree || (c ? c.evidence || 'the check could not run, and the preflight returned no reason' : late.includes(item) && unprovided ? unprovided : 'the preflight returned nothing for it'), evidence: c && c.evidence ? c.evidence + ' — the preflight\'s report: ' + pre.result.report : null })
   }
   const rec = triageRecord(ctx, tri.entries)
   // A re-run writes no fact of the round: the round is tested, and its record stands.
@@ -2669,11 +3133,11 @@ async function runTest() {
   const dir = v.scratch + '/record/test-r' + ctx.round + '-a' + ctx.attempt
   const commands = stageRecordCommands(ctx, { reporters: launch.names, gate: rerun ? null : { commit: sha, file: candidateGate }, results: { commit: sha, rows: resultRows(unitStatus) }, rows: rec.rows, triage: rec.triage, patches: [], facts, keys: tri.entries.map((e) => e.key) })
   const recorded = await recordStep('test:r' + ctx.round, loopBranch, recordPrompt(v, rerun ? 'the record of a re-run inside round ' + ctx.round + ' — ' + rerun.items.length + ' item(s) of clause `' + rerun.clause + '` run again, ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s)' : 'the record of round ' + ctx.round + '\'s test stage — ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s)', loopBranch, dir, rerun ? state.candidate.round : ctx.round, commands, v.run + ' r' + ctx.round + (rerun ? ' — a re-run of ' + rerun.clause : ' — the test stage\'s record')))
-  if (recorded.fault) return halt('record', recorded.fault, { transient: !recorded.result, halt: recorded.result ? recorded.result.halt : null, gate: recorded.result ? recorded.result.gate : null, launched: launch.names, forks: tri.forks, then: RECORD_THEN })
-  const pushed = await toolStep('push', 'Record', 'push', pushPrompt(v, loopBranch))
-  if (!onIt(pushed, loopBranch, true)) return gitHalt('push', pushed, 'the record is committed on ' + loopBranch + ' (' + recorded.result.commit + ') and the branch was not pushed')
+  if (recorded.fault) return recordHalt('record', recorded, { launched: launch.names, forks: tri.forks })
+  const pushed = await pushRecord('push', loopBranch)
+  if (!onIt(pushed, loopBranch, true)) return pushHalt(pushed, loopBranch, 'the record is committed on ' + loopBranch + ' (' + recorded.result.commit + ') and the branch was not pushed')
   const last = await readState()
-  if (!last.state) return halt('state', 'the record is committed and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + last.error, { transient: !!last.transient })
+  if (!last.state) return halt('state', 'the record is committed and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + last.error, { transient: !!last.transient, step: last.step || null })
   state = last.state
 
   const out = nextOf(state)
@@ -2688,27 +3152,44 @@ async function runTest() {
     cross_model: { named: crossNamed, ran: crossRan, void: crossVoid },
     candidate: built.candidate,
     record: recorded.result.commit,
-    counts: { items: state.items.length, items_run: hunting.length + always.length + late.length, reporters: launch.names.length, findings_in: tri.handed, entries: tri.entries.length, by_grade: byGrade, blockers: state.blockers.length, for_the_human: state.human_list.length, voided: unitStatus.filter((u) => u.status === 'void').map((u) => u.item) },
-    human_list: state.human_list,
+    counts: { items: state.items.length, items_run: hunting.length + always.length + late.length, reporters: launch.names.length, findings_in: tri.handed, entries: tri.entries.length, by_grade: byGrade, blockers: state.blockers, for_the_human: state.human_list, voided: unitStatus.filter((u) => u.status === 'void').map((u) => u.item) },
     forks: tri.forks,
     unverified: tri.unverified,
+    // What the scope step's agent read; what the record script computed is `named`.
     scope: { status: sc.status, uncovered: sc.uncovered || [], reached_but_excluded: sc.reached_but_excluded || [] },
-    blockers: state.blockers,
     forbids_close: state.forbids_close,
-  }, out)
+  }, out, rerun ? { named: namedOf(state, rerun.round) } : {})
 }
 
 // ---- the `fix` stage ----
+// WHAT OF IT IS REACHED TODAY is its first lines, down to `ruleTheRun`: the stage refuses to
+// start (NOT_FIT), and the one invocation of it that is let through records what the human
+// ruled about the run. Those lines read digests, as every step does.
+// OWED TO THE `fix` HALF'S REPAIR (the second repair plan, section 9, row 7) — and said here
+// so that nobody reads the rest as converted: BELOW `ruleTheRun` THIS FUNCTION STILL READS
+// THE STATE DOCUMENT IT IS NO LONGER HANDED. Its steps are asked for their digests like
+// every other, so it parses the lines it parsed; but `state.ledger` (the rows of the
+// blockers, of a dropped round, of a part), `state.blockers` and `state.human_list` as
+// lists, `state.doors.included` / `.excluded` as lists, `rounds[].facts.cycles`, a fixer's
+// findings by their door and repro (`fixerPrompt`, `areasOf`), `landed.moved_outside` as a
+// list, and a record's own `--head` are what its repair reads by key or from the digest — a
+// blocker's row has no read yet (DECISIONS.md -> 2026-10-07, "A line holds what the harness
+// acts on", item 6). Nothing below is reachable until that repair lifts the refusal.
 async function runFix() {
   phase('State')
   const gs = await toolStep('state', 'State', 'git-state', gitStatePrompt(v))
   if (!gs || gs.status !== 'ready') return gitHalt('git', gs, 'the tree or the branches are not in the state the `fix` stage starts from')
+  arrived = { found: gs.found || [], finished: gs.finished || [], owed: gs.owed || [] }
+  stageHead = String(gs.head)
   if (gs.pending) return await finishRecord(gs)
   let read = await readState()
-  if (!read.state) return halt('state', 'the run\'s state could not be read: ' + read.error, { transient: !!read.transient, halt: read.halt || null })
+  if (!read.state) return halt('state', 'the run\'s state could not be read: ' + read.error, { transient: !!read.transient, halt: read.halt || null, step: read.step || null })
   let state = read.state
   if (!state.opened) return halt('state', 'the run `' + v.run + '` has no opening record (' + runDir(v.run) + '/opening.md)')
   if (v.rulings && v.rulings.every(runRuling)) return await ruleTheRun(state, gs.branch)
+  // The `fix` stage's own records follow its fixers' commits: which head each is held to is
+  // its repair's, and none is named here.
+  stageHead = null
   if (state.position.fix.refused) return { status: 'refused', stage: 'fix', run: v.run, refused: state.position.fix, message: 'the `fix` stage is refused (' + state.position.fix.refused + ', round ' + state.position.fix.round + '): ' + refusalOf(state.position.fix) + '. Nothing was run beyond the two reads.', next: state.next, not_ready: state.not_ready }
   const round = state.position.fix.round
 

@@ -53,9 +53,23 @@
 //!   there is no resume.
 //! - The script runs as the body of an async function in a context of its own, with the
 //!   language's built-ins and no clock; that the runtime accepts the script is not shown.
-//! - **Scripted agents are not agents.** That a model runs one command and relays a line
-//!   of several kilobytes whole, writes a payload byte for byte, or reads its definition
-//!   as this stand-in does, is shown by nothing here.
+//! - **Scripted agents are not agents.** That a model runs one command, writes a payload
+//!   byte for byte, or reads its definition as this stand-in does, is shown by nothing here.
+//!   **One thing a real relay does is modelled, because it was observed** (the relay probe,
+//!   2026-10-07): an agent's structured return decodes the `\uXXXX` escapes of the line it
+//!   relays. The stand-in's git steps do that to every line of a stage's step — so a line
+//!   that holds one comes back with other bytes, as it did in the runtime, and the harness
+//!   as it was before the second repair plan's `K3` read no state here. A step's digest
+//!   holds none. And a scenario can have a step hand back the line the tool prints unasked,
+//!   a digest with one character changed, or one with a character outside ASCII and its
+//!   hash made to fit (`relays`): each is caught, and nothing of it is passed on. A probe's
+//!   steps are relayed byte for byte, as before: their lines are the probe tool's.
+//!
+//! **What every agent reads by key is read** (`K3`): a prompt names the read — an item's
+//! row with its brief, the doors of a round an item covers, the untriaged rows, a pending
+//! batch — and the stand-in runs each as the prompt spells it, fails the run where one is
+//! refused, and reports what it printed; and every prompt an agent was handed is reported,
+//! so that a test can hold that no text of the record is in one.
 //!
 //! **The trace is a golden** (`tooling-tests/fixtures/stabilize-test-stage.trace`): every
 //! phase, every agent launched — its label, its definition, its model, its phase — and
@@ -117,7 +131,10 @@ use crate::support::goldens::update_mode;
 use crate::support::scratch::ScratchDir;
 
 use super::dev_stabilize_record::DENY_TERM;
-use super::dev_stabilize_step::{LOOP, RUN, RUN_DIR, StepRig, node_or_skip};
+use super::dev_stabilize_step::{
+    GATE_KIND, Held, LOOP, RUN, RUN_DIR, StepRig, as_recorded, failing_commit, harness_pure,
+    node_or_skip, sha256,
+};
 use super::placed_executable;
 
 const HARNESS: &str = ".claude/workflows/stabilize.js";
@@ -233,6 +250,11 @@ struct Ran {
     reporters: Vec<String>,
     /// Every command the stand-in ran on an agent's behalf, by its first line.
     commands: Vec<String>,
+    /// Every prompt an agent was handed: `(its label, the prompt)`, in order.
+    prompts: Vec<(String, String)>,
+    /// Every read of the record an agent's prompt named, and what it printed:
+    /// `(the agent's label, the command, its one line)`.
+    reads: Vec<(String, String, String)>,
 }
 
 impl Ran {
@@ -425,6 +447,18 @@ impl Sim {
             logs: list("logs"),
             reporters: list("reporters"),
             commands: list("ran"),
+            prompts: said["prompts"]
+                .as_array()
+                .expect("the stand-in reports `prompts`")
+                .iter()
+                .map(|p| (text(&p["label"]), text(&p["prompt"])))
+                .collect(),
+            reads: said["reads"]
+                .as_array()
+                .expect("the stand-in reports `reads`")
+                .iter()
+                .map(|r| (text(&r["label"]), text(&r["command"]), text(&r["printed"])))
+                .collect(),
         }
     }
 
@@ -447,6 +481,39 @@ impl Sim {
         names.sort();
         names
     }
+}
+
+fn text(value: &Value) -> String {
+    value.as_str().expect("a text").to_owned()
+}
+
+/// A file a return names, read as whoever is handed the return reads it — by its path, and
+/// held to the sha256 the return names it by: the one line of JSON it holds. **The harness
+/// passes on no document and no prose of the record; it names the file** (the second repair
+/// plan's `K3`).
+fn named_file(named: &Value) -> Value {
+    let path = named["file"]
+        .as_str()
+        .unwrap_or_else(|| panic!("the return names a file by its path: {named}"));
+    let text = fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+    assert_eq!(
+        named["sha256"],
+        sha256(&text).as_str(),
+        "the file at {path} is the one the return names by its hash"
+    );
+    serde_json::from_str(text.trim_end())
+        .unwrap_or_else(|e| panic!("{path} holds one line of JSON ({e})"))
+}
+
+/// The state document a return names (`named.document`): what the harness read a digest of.
+fn document(result: &Value) -> Value {
+    named_file(&result["named"]["document"])
+}
+
+/// The line a refused step printed unasked — its halt report in it — which the halt names
+/// (`halted.step`), and the harness never read.
+fn refused_line(result: &Value) -> Value {
+    named_file(&result["halted"]["step"])
 }
 
 fn lines(list: &[&str]) -> Vec<String> {
@@ -799,18 +866,49 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
         "and the batch the record step applied is settled"
     );
 
+    // EVERY STEP ASKED FOR ITS DIGEST, under the invocation's scratch root (K3) — and the
+    // record's push was a record's: held to publishing the run's records and nothing else.
+    let scratch = sim.rig.scratch.display().to_string();
+    for step in ran
+        .commands
+        .iter()
+        .filter(|ran| ran.starts_with("dev/stabilize-step "))
+    {
+        assert!(
+            step.contains(&format!(" --digest {scratch}")),
+            "a step of the stage asked for the line the tool prints unasked: {step}"
+        );
+    }
+    assert!(
+        ran.commands.contains(&format!(
+            "dev/stabilize-step push --branch {LOOP} --run-dir {RUN_DIR} --digest {scratch}"
+        )),
+        "{:?}",
+        ran.commands
+    );
+
     // (5) THE RETURN THE ORCHESTRATOR READS — `next` as the record script computes it.
     assert_eq!(state["next"], "rule", "{state}");
     assert_eq!(
         result["next"], state["next"],
         "`next` is relayed, never computed: {result}"
     );
+    // THE HUMAN'S LIST IS A COUNT IN THE RETURN, AND A LIST IN THE FILE THE RETURN NAMES
+    // (K3): no row of the record passes through the harness.
+    assert_eq!(result["rule"]["findings"], 2, "{result}");
     assert_eq!(
-        result["rule"]["findings"],
+        document(result)["human_list"],
         json!([{"key": INSIDE, "why": "fork"}, {"key": OUTSIDE, "why": "outside"}])
     );
-    assert_eq!(result["human_list"], state["human_list"]);
-    assert_eq!(result["blockers"], json!([]));
+    assert_eq!(
+        document(result),
+        state,
+        "the file is the state, as the record script reads it"
+    );
+    assert!(
+        result.get("human_list").is_none() && result.get("blockers").is_none(),
+        "{result}"
+    );
     assert_eq!(result["unverified"], json!([]));
     assert_eq!(result["round"], 1);
     assert_eq!(
@@ -932,12 +1030,25 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
         ),
         json!({}),
     );
-    assert_eq!(stranger.result["status"], "refused", "{}", stranger.result);
+    // WHETHER A RULING NAMES A ROW IS ITS OWN BATCH'S TO HOLD (K3): the ledger is no part
+    // of what the harness reads, so the batch is composed, the record script refuses it
+    // whole — the key is no row — and nothing is written, committed or left pending.
+    assert_eq!(stranger.result["status"], "halted", "{}", stranger.result);
     assert_eq!(
-        stranger.trace,
-        lines(&TWO_READS),
-        "a ruling on no row records nothing"
+        stranger.agents(),
+        ["git:state", "git:state:test-1", "record:rulings:r1"],
+        "the batch is refused where it is applied: no commit step, no push"
     );
+    assert_eq!(
+        json!([
+            stranger.result["halted"]["phase"],
+            sim.record(&["pending", "--run", RUN], "")["batch"]
+        ]),
+        json!(["rulings", null]),
+        "a ruling on no row records nothing, and leaves no batch: {}",
+        stranger.result
+    );
+    assert_eq!(sim.rig.rev("HEAD"), head);
     let ruled = sim.invoke(sim.args("test", json!({"rulings": rulings})), json!({}));
     assert_eq!(ruled.result["status"], "ruled", "{}", ruled.result);
     assert_eq!(
@@ -956,9 +1067,14 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
     // though nothing else is left to rule on.
     assert_eq!(
         json!([ruled.result["next"], ruled.result["rule"]["findings"]]),
-        json!(["rule", [{"key": INSIDE, "why": "fork"}]]),
+        json!(["rule", 1]),
         "M3: {}",
         ruled.result
+    );
+    assert_eq!(
+        document(&ruled.result)["human_list"],
+        json!([{"key": INSIDE, "why": "fork"}]),
+        "M3"
     );
     // THE HUMAN'S RULING ON THE FORK is a ruling like the others, written by the same one
     // step: admitted, with the note that reaches the fixer.
@@ -1106,8 +1222,14 @@ fn an_unverified_finding_is_finished_by_the_next_invocation_and_after_one_more_i
     // never a guess, never a loop.
     assert_eq!(result["next"], "triage", "{result}");
     assert_eq!(result["returned_to_orchestrator"], true);
+    // … AS WHAT THE DIGEST HOLDS OF IT, AND THE FILE THE DOCUMENT LIES IN (K3; the plan's X2):
+    // the rows are a count in the return, and a list in the file it names.
     assert_eq!(
         result["state"]["untriaged"],
+        json!({"count": 1, "why": [{"why": "unverified", "count": 1}]})
+    );
+    assert_eq!(
+        document(result)["untriaged"],
         json!([{"key": key, "why": "unverified"}])
     );
     assert_eq!(
@@ -1171,11 +1293,11 @@ fn an_unverified_finding_is_finished_by_the_next_invocation_and_after_one_more_i
         json!([
             state["next"],
             state["human_list"],
-            finished["rule"]["findings"]
+            finished["rule"]["findings"],
+            finished["rule"]["reverify"]
         ]),
-        json!(["rule", [{"key": key, "why": "unverified-after-retry"}],
-               [{"key": key, "why": "unverified-after-retry"}]]),
-        "F3: {state}"
+        json!(["rule", [{"key": key, "why": "unverified-after-retry"}], 1, [key]]),
+        "F3: how many the human's list holds, and the key that may be granted one more triage: {state}"
     );
     assert_eq!(
         json!([
@@ -1363,13 +1485,29 @@ fn a_red_gate_in_a_record_step_leaves_a_pending_batch_that_the_next_invocation_c
     assert_eq!(halted["status"], "halted", "{halted}");
     assert_eq!(halted["halted"]["phase"], "record", "{halted}");
     let reason = halted["halted"]["reason"].as_str().expect("a reason");
+    // THE HALT SAYS THE WORD, WHOSE IT IS AND HOW MANY — AND NAMES THE FILE THAT NAMES WHAT
+    // IS RED (K3): the tool's refusal is its word in the digest, the sentence is the
+    // harness's own, and the names are in the step's own line, which the halt names by its
+    // path and its hash and which no agent relayed.
     assert!(
-        reason.starts_with("gate-red: ") && reason.contains(&format!("test {FLAKY}")),
-        "the halt names what is red only with the records: {reason}"
+        reason.starts_with("the record's commit step refused `gate-red` — the orchestrator's: ")
+            && !reason.contains(FLAKY),
+        "the halt says the word and names no test: {reason}"
     );
     assert_eq!(
-        halted["halted"]["gate"]["new"],
-        json!(["step test", format!("test {FLAKY}")])
+        json!([
+            halted["halted"]["refused"],
+            halted["halted"]["whose"],
+            halted["halted"]["gate"]["new"],
+            halted["halted"]["gate"]["known"]
+        ]),
+        json!(["gate-red", "the orchestrator's", 2, 0]),
+        "{halted}"
+    );
+    assert_eq!(
+        refused_line(halted)["gate"]["new"],
+        json!(["step test", format!("test {FLAKY}")]),
+        "what is red only with the records is named in the file the halt names"
     );
     assert_eq!(sim.rig.rev("HEAD"), opened, "nothing was committed");
     assert_eq!(
@@ -1404,8 +1542,10 @@ fn a_red_gate_in_a_record_step_leaves_a_pending_batch_that_the_next_invocation_c
     // back with the one command it names.
     let message = halted["message"].as_str().expect("a message");
     assert!(
-        message.contains("Invoke the stage again: where a batch is pending, that invocation runs the full gate on it once more, commits and pushes it, and does nothing else")
-            && message.contains("`dev/stabilize-record discard --run rc24`")
+        message.contains("THE BATCH IS STILL APPLIED AND NOT COMMITTED")
+            && message.contains("Invoke the stage again: that invocation runs the full gate on the batch once more, commits and pushes it, and does nothing else")
+            && message.contains(&format!("`dev/stabilize-step discard --branch {LOOP} --run-dir {RUN_DIR}`"))
+            && !message.contains("stabilize-record discard")
             && !message.contains("with the same args"),
         "{message}"
     );
@@ -1504,19 +1644,35 @@ fn a_red_candidate_is_recorded_and_a_test_red_only_with_the_records_halts_by_nam
     let halted = &ran.result;
     assert_eq!(halted["halted"]["phase"], "record", "{halted}");
     assert_eq!(
-        halted["halted"]["gate"]["new"],
+        json!([
+            halted["halted"]["gate"]["new"],
+            halted["halted"]["gate"]["known"]
+        ]),
+        json!([1, 2]),
+        "how many are new, and how many the candidate's gate showed: {halted}"
+    );
+    let line = refused_line(halted);
+    assert_eq!(
+        line["gate"]["new"],
         json!([format!("test {FLAKY}")]),
-        "what the candidate's gate showed red is not named: {halted}"
+        "what the candidate's gate showed red is not named as new: {line}"
     );
     assert_eq!(
-        halted["halted"]["gate"]["known"],
+        line["gate"]["known"],
         json!(["step test", format!("test {KNOWN}")])
     );
     assert_eq!(sim.rig.rev("HEAD"), candidate);
 
     // THE OTHER WAY OUT: the batch is taken back — every table as it was, the reports and
-    // the scope kept — and the stage is run again, as the next attempt.
-    sim.record(&["discard", "--run", RUN], "");
+    // the scope kept — and the stage is run again, as the next attempt. BY THE COMMAND THE
+    // HALT NAMES, taken out of its message and run as it is spelled: the step tool's act,
+    // which asks git first.
+    let message = halted["message"].as_str().expect("a message");
+    let named = message
+        .split('`')
+        .find(|span| span.starts_with("dev/stabilize-step discard "))
+        .unwrap_or_else(|| panic!("the halt names the act that takes the batch back: {message}"));
+    sim.rig.shell(named).done("discard", "discarded");
     let status = sim.rig.status();
     assert!(
         !status.contains(" M ") && !status.contains(".pending.json") && !status.contains("gate.md"),
@@ -1550,9 +1706,9 @@ fn a_record_step_that_returns_no_evidence_of_its_checks_is_not_taken_as_recorded
     assert_eq!(halted["status"], "halted", "M2: {halted}");
     assert_eq!(halted["halted"]["phase"], "record", "M2: {halted}");
     assert!(
-        halted["halted"]["reason"]
-            .as_str()
-            .is_some_and(|reason| reason.starts_with("no-batch: ")),
+        halted["halted"]["reason"].as_str().is_some_and(
+            |reason| reason.starts_with("the record's commit step refused `no-batch` — ")
+        ),
         "M2: {halted}"
     );
     assert_eq!(sim.rig.rev("HEAD"), opened, "nothing was committed");
@@ -1604,9 +1760,9 @@ fn a_report_overwritten_by_hand_voids_its_item_and_reaches_neither_the_commit_no
             "area-a",
             1,
             "void",
-            "its `review` step returned and left no report"
+            "its `review` step left a file at its report's path that is no report (`host-path`): it was set aside, and the step left none"
         ])],
-        "the item is void, and says why: {state}"
+        "the item is void, and says why — the file was set aside (K3): {state}"
     );
     // WHAT WAS COMMITTED AND PUSHED: the reports the script wrote, and not that file.
     assert_eq!(
@@ -1625,24 +1781,39 @@ fn a_report_overwritten_by_hand_voids_its_item_and_reaches_neither_the_commit_no
         "",
         "and no commit of the repository — so none of the remote — holds the text"
     );
-    // THE FILE IS KEPT, OUTSIDE THE REPOSITORY: where the record script set it aside. (The
-    // harness names no scratch root for it yet — the second repair's `K3` — so the
-    // directory is one the script minted under the temp directory.)
-    let aside: Vec<PathBuf> = fs::read_dir(sim.rig.dir().join("tmp"))
-        .expect("the rig's temp directory")
-        .map(|entry| entry.expect("an entry").path())
-        .filter(|path| {
-            path.file_name().is_some_and(|name| {
-                name.to_string_lossy()
-                    .starts_with("jigc-stabilize-refused-")
-            })
-        })
-        .collect();
+    // THE FILE IS KEPT, OUTSIDE THE REPOSITORY, UNDER THE INVOCATION'S SCRATCH ROOT (K3: the
+    // report check is handed it) — and no directory was minted under the temp directory.
+    fn files_below(dir: &Path, found: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display())) {
+            let path = entry.expect("an entry").path();
+            if path.is_dir() {
+                files_below(&path, found);
+            } else {
+                found.push(path);
+            }
+        }
+    }
+    let mut aside = Vec::new();
+    files_below(&sim.rig.scratch.join("refused"), &mut aside);
     assert_eq!(aside.len(), 1, "one file was set aside, once: {aside:?}");
     assert_eq!(
-        fs::read_to_string(aside[0].join("r1__reports__test__area-a-review.a1.md"))
-            .expect("the file that was set aside"),
+        aside[0].file_name().and_then(|name| name.to_str()),
+        Some("r1__reports__test__area-a-review.a1.md"),
+        "{aside:?}"
+    );
+    assert_eq!(
+        fs::read_to_string(&aside[0]).expect("the file that was set aside"),
         text
+    );
+    assert!(
+        !fs::read_dir(sim.rig.dir().join("tmp"))
+            .expect("the rig's temp directory")
+            .any(|entry| entry
+                .expect("an entry")
+                .file_name()
+                .to_string_lossy()
+                .starts_with("jigc-stabilize-refused-")),
+        "the place is the one the harness named, and none the script minted"
     );
 }
 
@@ -2099,7 +2270,12 @@ fn a_red_check_is_filed_as_a_finding_and_a_go_is_recorded_without_starting_anyth
     // own, ungraded and open — so the round's triage is not finished, and the next triage
     // that runs grades it like any other; then it is a fixer's, or the human's. It is no
     // blocker yet, and nobody's re-run: the round is not over, so the run does not stop.
-    let ledger = result["state"]["ledger"].as_array().expect("the ledger");
+    assert_eq!(
+        result["state"]["ledger"], 1,
+        "the ledger is a count in the return: {result}"
+    );
+    let read = document(result);
+    let ledger = read["ledger"].as_array().expect("the ledger");
     assert_eq!(ledger.len(), 1, "{result}");
     assert_eq!(
         json!([
@@ -2113,14 +2289,20 @@ fn a_red_check_is_filed_as_a_finding_and_a_go_is_recorded_without_starting_anyth
         json!(["red-gate", 1, "gate-green", "ungraded", "open", "triage"]),
         "{result}"
     );
-    assert_eq!(result["blockers"], json!([]));
+    assert_eq!(result["counts"]["blockers"], 0);
     assert_eq!(
         result["forbids_close"],
+        json!({"clauses": [{"clause": "gate-green", "status": "red"}], "no_clauses": false,
+               "findings": 1, "candidate": false}),
+        "what forbids closing: the clause by name, and how many findings"
+    );
+    assert_eq!(
+        read["forbids_close"],
         json!([{"clause": "gate-green", "status": "red"},
                {"finding": "red-gate", "route": "triage"}])
     );
     assert_eq!(
-        result["state"]["untriaged"],
+        read["untriaged"],
         json!([{"key": "red-gate", "why": "ungraded"}])
     );
     assert_eq!(result["state"]["retest"], json!([]));
@@ -2308,12 +2490,19 @@ fn a_rerun_is_an_attempt_inside_its_round_begins_no_round_and_is_refused_where_t
     );
     assert_eq!(sim.rig.status(), "");
 
-    // The re-run: the check, on the loop branch's tip, and nothing else — no scope step, no
-    // item beside it. One record commit, pushed.
-    let again = sim.invoke(
-        sim.args("test", json!({"clause": "gate-green"})),
-        json!({"checks": {"gate": "green"}}),
-    );
+    // The re-run: the check, and nothing else — no scope step, no item beside it. One record
+    // commit, pushed. A ROUND TESTS ONE CANDIDATE (the orchestrator's ruling of 2026-10-07 on
+    // the core review's F3): the round's record and the go lie on the candidate by now, so
+    // the tip is another commit — and the re-run builds THE CANDIDATE, from its commit, and
+    // names it in its result. A check reads the working tree, which is no longer the
+    // candidate: it is not asked for, and is void with that reason — never run on the tip
+    // and recorded green for a commit it did not run on.
+    let candidate = ran.result["candidate"]["sha"]
+        .as_str()
+        .expect("the candidate")
+        .to_owned();
+    assert_ne!(asked, candidate, "two record commits moved the tip");
+    let again = sim.invoke(sim.args("test", json!({"clause": "gate-green"})), json!({}));
     let result = &again.result;
     assert_eq!(result["status"], "triaged", "{result}");
     assert_eq!(
@@ -2361,8 +2550,48 @@ fn a_rerun_is_an_attempt_inside_its_round_begins_no_round_and_is_refused_where_t
     );
     assert_eq!(sim.rig.remote(LOOP), Some(sim.rig.rev("HEAD")), "pushed");
 
-    // It began no round, wrote no fact of round 1, and is on record as attempt 2 of it — on
-    // the commit it ran on. The clause is green, and the run closes.
+    // It began no round, wrote no fact of round 1, and is on record as attempt 2 of it — OF
+    // THE ROUND'S CANDIDATE, as every result of the round is. What the re-run built, began
+    // on and recorded is that commit, in the words each agent was handed.
+    let preflight = &again
+        .prompts
+        .iter()
+        .find(|(label, _)| label == "preflight")
+        .expect("the re-run's preflight")
+        .1;
+    assert!(
+        preflight.contains(&format!(
+            "Candidate: label c1, commit {candidate} — the commit round 1 tested, an ancestor of"
+        )) && preflight.contains("THE CANDIDATE IS NOT `HEAD` HERE")
+            && !preflight.contains("the deterministic checks")
+            && !preflight.contains("dev/gate"),
+        "the preflight builds the candidate from its commit, and is asked for nothing that reads the tree: {preflight}"
+    );
+    assert!(
+        again
+            .commands
+            .iter()
+            .any(|ran| ran.starts_with("dev/stabilize-step begin ")
+                && ran.contains(&format!(" --commit {candidate} ")))
+            && !again
+                .commands
+                .iter()
+                .any(|ran| ran.contains(&asked) && !ran.starts_with("dev/stabilize-step record ")),
+        "the attempt begins on the candidate, and the tip is named to nothing but the commit step, which is held to it: {:?}",
+        again.commands
+    );
+    let record = &again
+        .prompts
+        .iter()
+        .find(|(label, _)| label == "record:test:r1")
+        .expect("the re-run's record")
+        .1;
+    assert!(
+        record.contains(&format!(
+            "\"result-set\",\"--run\",\"{RUN}\",\"--round\",\"1\",\"--commit\",\"{candidate}\""
+        )) && !record.contains(&asked),
+        "the result is written for the candidate: {record}"
+    );
     let state = sim.state();
     assert_eq!(state["round"], 1, "{state}");
     assert_eq!(
@@ -2379,14 +2608,23 @@ fn a_rerun_is_an_attempt_inside_its_round_begins_no_round_and_is_refused_where_t
         .collect();
     assert_eq!(
         gate,
-        [
-            json!([1, "void", ran.result["candidate"]["sha"]]),
-            json!([2, "green", asked]),
-        ],
+        [json!([1, "void", candidate]), json!([2, "void", candidate]),],
+        "every result of the round names the round's candidate: {state}"
+    );
+    assert!(
+        results.iter().any(|row| row["attempt"] == 2
+            && row["reason"]
+                .as_str()
+                .is_some_and(|why| why.contains("is no longer the tree checked out")
+                    && why.contains(&candidate))),
         "{state}"
     );
-    assert_eq!(result["next"], "close", "{result}");
-    assert_eq!(result["forbids_close"], json!([]));
+    // The check is still not green after its one re-run: the clause is the human's.
+    assert_eq!(
+        json!([result["next"], result["rule"]["clauses"]]),
+        json!(["rule", [{"clause": "gate-green", "why": "not-green-after-its-rerun"}]]),
+        "{result}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -2622,7 +2860,63 @@ fn an_instruments_reporter_that_does_not_report_voids_its_item_and_the_hunt_is_r
         json!({"agents": {"row-a:source": nothing(), "row-a:driver": nothing(), "row-a:reconciler": nothing()}}),
     );
     assert_eq!(last.result["next"], "close", "{}", last.result);
-    assert_eq!(last.result["forbids_close"], json!([]));
+    assert_eq!(
+        last.result["forbids_close"],
+        json!({"clauses": [], "no_clauses": false, "findings": 0, "candidate": false})
+    );
+
+    // A ROUND TESTS ONE CANDIDATE, AND A RE-RUN IS AN ATTEMPT INSIDE IT (the orchestrator's
+    // ruling of 2026-10-07 on the core review's F3). By the second re-run four record
+    // commits lie on the candidate — the round's record, the go, the first re-run's — so
+    // the tip is another commit each time: and each re-run built the candidate from its
+    // commit, drove that binary, and named the candidate in every result. `close` is
+    // computed over greens that are all of the commit the round tested.
+    let state = sim.state();
+    let candidate = state["rounds"][0]["facts"]["candidate"]
+        .as_str()
+        .expect("the round's candidate")
+        .to_owned();
+    assert_ne!(
+        sim.rig.rev("HEAD"),
+        candidate,
+        "record commits moved the tip"
+    );
+    let rows = state["rounds"][0]["results"]
+        .as_array()
+        .expect("the results");
+    assert!(
+        rows.len() == 9 && rows.iter().all(|row| row["commit"] == candidate.as_str()),
+        "every result of the round, first run and re-run alike, names the round's candidate: {state}"
+    );
+    for (which, ran) in [("the first re-run", &again), ("the second", &last)] {
+        let preflight = &ran
+            .prompts
+            .iter()
+            .find(|(label, _)| label == "preflight")
+            .expect("a re-run's preflight")
+            .1;
+        assert!(
+            preflight.contains(&format!("commit {candidate} — the commit round 1 tested"))
+                && preflight.contains(&format!(
+                    "the build: the candidate's binary, from `git archive {candidate}`"
+                )),
+            "{which} builds the round's candidate: {preflight}"
+        );
+        assert_eq!(
+            ran.result["candidate"]["sha"],
+            candidate.as_str(),
+            "{which}"
+        );
+        assert!(
+            ran.prompts
+                .iter()
+                .filter(|(label, _)| label.contains(':')
+                    && !label.starts_with("git:")
+                    && !label.starts_with("record:"))
+                .all(|(_, prompt)| prompt.contains(&format!("(commit {candidate}, label c1)"))),
+            "{which}: every driving agent is handed the candidate's binary"
+        );
+    }
 }
 
 /// **A reporter the stage stands on.** The first preflight, the scope step and triage: with
@@ -3350,11 +3644,28 @@ fn a_stage_refuses_or_halts_before_anything_is_tested() {
     let dirty = sim.invoke(sim.args("test", json!({})), json!({}));
     assert_eq!(dirty.result["status"], "halted", "{}", dirty.result);
     assert_eq!(dirty.result["halted"]["phase"], "git");
-    assert!(
-        dirty.result["halted"]["halt"]["root_cause"]
-            .as_str()
-            .is_some_and(|cause| cause.starts_with("dirty: ")),
+    // THE REFUSAL IS ITS WORD (K3): the halt says whose the state is in the harness's own
+    // sentence, and names the file the tool's halt report is in — which names the stray file.
+    assert_eq!(
+        json!([
+            dirty.result["halted"]["refused"],
+            dirty.result["halted"]["whose"],
+            dirty.result["halted"]["halt"]
+        ]),
+        json!(["dirty", "the human's", null]),
         "{}",
+        dirty.result
+    );
+    assert!(
+        refused_line(&dirty.result)["halt"]["root_cause"]
+            .as_str()
+            .is_some_and(|cause| cause.starts_with("dirty: ") && cause.contains("notes.txt")),
+        "{}",
+        dirty.result
+    );
+    assert!(
+        !dirty.result.to_string().contains("notes.txt"),
+        "no prose of the tool's refusal passes through the harness: {}",
         dirty.result
     );
     assert_eq!(dirty.trace, lines(&TWO_READS[..2]));
@@ -3368,8 +3679,17 @@ fn a_stage_refuses_or_halts_before_anything_is_tested() {
         "{}",
         elsewhere.result
     );
+    assert_eq!(
+        json!([
+            elsewhere.result["halted"]["refused"],
+            elsewhere.result["halted"]["whose"]
+        ]),
+        json!(["wrong-branch", "the orchestrator's"]),
+        "{}",
+        elsewhere.result
+    );
     assert!(
-        elsewhere.result["halted"]["halt"]["root_cause"]
+        refused_line(&elsewhere.result)["halt"]["root_cause"]
             .as_str()
             .is_some_and(|cause| cause.starts_with("wrong-branch: ")),
         "{}",
@@ -3399,6 +3719,920 @@ fn a_run_that_was_never_opened_halts_the_stage_at_its_first_read() {
         ran.result
     );
     assert_eq!(ran.trace, lines(&TWO_READS));
+}
+
+// ---------------------------------------------------------------------------
+// What the harness reads: a digest, and nothing else (the second repair plan's K3)
+// ---------------------------------------------------------------------------
+
+/// A text as a real record is written — a dash, a typographic quote, an arrow — under a
+/// name a test can look for: what no relayed line carries.
+fn marked(what: &str) -> String {
+    format!("MARKER-{what} \u{2014} it\u{2019}s \u{2192} here")
+}
+
+/// The labels a state read is asked for under: the read, and the read again, twice.
+fn state_reads(tag: &str) -> [String; 3] {
+    [
+        format!("git:state:{tag}"),
+        format!("git:state:{tag}:again1"),
+        format!("git:state:{tag}:again2"),
+    ]
+}
+
+/// **A whole stage records over a record no relay would carry — and no text of that record
+/// is in any prompt or in the return** (the second repair plan's `K3`; the re-review's
+/// `R-H1` as the relay probe observed it on 2026-10-07: a line relayed through an agent
+/// comes back altered once it holds one character outside ASCII, and the state document
+/// holds them wherever a human wrote). THE STAND-IN RELAYS AS THE RUNTIME DOES — it decodes
+/// a line's escapes — so the harness as it was read no state here. The run is opened with a
+/// brief, sixty ledger rows and — by its scope step — a door's derivation, each written
+/// with a dash, a quote and an arrow and each under a marker: the stage reaches its pushed
+/// record; every agent that needs one of them READS IT BY KEY, with the command its prompt
+/// spells, and gets it whole; and the markers are in no prompt and in no return. The return
+/// names the file the state document lies in, and is a fraction of it.
+#[test]
+fn a_whole_stage_records_over_a_record_no_relay_carries_and_none_of_its_text_is_in_a_prompt_or_a_return()
+ {
+    if !can_run() {
+        return;
+    }
+    let seeded: Vec<Value> = (1..=60)
+        .map(|n| {
+            json!({"key": format!("seeded-{n:02}"), "doctype": "jigc-feedback", "round": 0,
+                   "source": "known at the opening", "door": "jigc doc set", "clause": "audit-clean",
+                   "repro": format!("{} ({n})", marked("REPRO"))})
+        })
+        .collect();
+    let opening = Opening {
+        clauses: vec!["audit-clean"],
+        items: json!([
+            {"item": "area-a", "kind": "audit-area", "clause": "audit-clean", "runs": "every-candidate",
+             "brief": marked("BRIEF")},
+            // A door mistyped by one letter: the item is in scope, and no round selects it.
+            in_scope("row-typo", "review-row", "audit-clean", &["jigc doc sett"], &[]),
+        ]),
+        bounds: vec![],
+        rows: json!(seeded),
+    };
+    let sim = Sim::opened("no-text", &opening);
+    let entries: Vec<Value> = (1..=60)
+        .map(|n| {
+            again(
+                &format!("seeded-{n:02}"),
+                "jigc doc set",
+                "audit-clean",
+                "no-break",
+            )
+        })
+        .collect();
+    let script = json!({
+        "scope": {"included": [{"door": "jigc doc set", "registry": "verbs", "derivation": marked("DERIVATION")}],
+                  "excluded": [], "uncovered": [], "reached_but_excluded": [], "left_open": []},
+        "agents": {
+            "area-a:review": nothing(),
+            "triage:p1": {"status": "graded", "entries": entries, "to_verify": [],
+                          "counts": {"findings_in": [{"reporter": "ledger", "count": 60}], "entries": 60, "merged": 0}},
+        },
+    });
+    let ran = sim.invoke(sim.args("test", json!({})), script);
+    let result = &ran.result;
+    assert_eq!(result["status"], "triaged", "{result}");
+    assert_eq!(sim.rig.remote(LOOP), Some(sim.rig.rev("HEAD")), "pushed");
+    assert_eq!(sim.rig.status(), "");
+
+    // NO TEXT OF THE RECORD PASSED THROUGH THE HARNESS.
+    let returned = result.to_string();
+    for what in ["BRIEF", "DERIVATION", "REPRO"] {
+        let marker = format!("MARKER-{what}");
+        for (label, prompt) in &ran.prompts {
+            assert!(
+                !prompt.contains(&marker),
+                "the prompt of `{label}` holds text of the record ({marker}): {prompt}"
+            );
+        }
+        assert!(
+            !returned.contains(&marker),
+            "the return holds text of the record ({marker}): {returned}"
+        );
+    }
+    // … AND EVERY AGENT THAT NEEDS IT READ IT BY KEY, WHOLE, with the command its prompt
+    // spells — the dash, the quote and the arrow included.
+    let read = |label: &str, command: &str| -> Value {
+        let printed = &ran
+            .reads
+            .iter()
+            .find(|(by, asked, _)| by == label && asked == command)
+            .unwrap_or_else(|| panic!("`{label}` read `{command}`: {:?}", ran.reads))
+            .2;
+        serde_json::from_str(printed).expect("a read prints one line of JSON")
+    };
+    assert_eq!(
+        read(
+            "area-a:review",
+            &format!("{RECORD} item --run {RUN} --item area-a")
+        )["item"]["brief"],
+        marked("BRIEF").as_str()
+    );
+    assert_eq!(
+        read(
+            "area-a:review",
+            &format!("{RECORD} item-doors --run {RUN} --round 1 --item area-a")
+        )["doors"],
+        json!([{"door": "jigc doc set", "registry": "verbs", "derivation": marked("DERIVATION")}])
+    );
+    let rows = read("triage:p1", &format!("{RECORD} untriaged --run {RUN}"));
+    assert_eq!(rows["count"], 60, "{rows}");
+    assert_eq!(
+        rows["untriaged"][59]["repro"],
+        format!("{} (60)", marked("REPRO")).as_str()
+    );
+    let triage = &ran
+        .prompts
+        .iter()
+        .find(|(label, _)| label == "triage:p1")
+        .expect("triage")
+        .1;
+    assert!(
+        triage.contains("Grade every finding below — 60 in all, from 1 reporter(s).")
+            && triage.contains(
+                "— 60 finding(s): the rows `dev/stabilize-record untriaged --run rc24` prints"
+            ),
+        "triage is handed the read and the count it is held to: {triage}"
+    );
+
+    // THE RETURN NAMES THE FILE AND HOLDS NO DOCUMENT (the plan's X2): a fraction of it.
+    let read_back = document(result);
+    assert_eq!(read_back["ledger"].as_array().map(Vec::len), Some(60));
+    let file = result["named"]["document"]["file"]
+        .as_str()
+        .expect("the file");
+    let whole = fs::metadata(file).expect("the state document").len() as usize;
+    assert!(
+        returned.len() < 6000 && whole > 5 * returned.len(),
+        "the return is {} bytes, over a document of {whole}: {returned}",
+        returned.len()
+    );
+    assert_eq!(
+        json!([
+            result["next"],
+            result["returned_to_orchestrator"],
+            result["state"]["ledger"]
+        ]),
+        json!(["stop", true, 60]),
+        "a `next` the script has no sentence for goes back with what the digest holds, and the file: {result}"
+    );
+
+    // WHAT NOTHING CAN HOLD IS NAMED IN THE RETURN (K4, through K3): the in-scope item no
+    // tested round selected — its door is mistyped — and how many doors of the round no
+    // item names; the file names the door.
+    assert_eq!(
+        result["named"]["never_selected"],
+        json!(["row-typo"]),
+        "{result}"
+    );
+    assert_eq!(
+        result["named"]["never_selected"],
+        read_back["never_selected"]
+    );
+    assert_eq!(
+        result["named"]["uncovered"],
+        json!({"round": 1, "doors": read_back["uncovered"].as_array().map(Vec::len)}),
+        "{result}"
+    );
+    // … at every later return too: an invocation that is refused, and one that only looks.
+    let refused = sim.invoke(sim.args("test", json!({})), json!({}));
+    assert_eq!(
+        json!([
+            refused.result["status"],
+            refused.result["named"]["never_selected"]
+        ]),
+        json!(["refused", ["row-typo"]]),
+        "{}",
+        refused.result
+    );
+}
+
+/// **A step that hands back anything but the digest its command printed is caught as
+/// altered** — so that what the relay probe found cannot come back silently. Three things
+/// a step's agent can hand back in its place, each for every try the harness makes of the
+/// state read: THE LINE THE TOOL PRINTS UNASKED — the state document in it, which is what a
+/// stage read until `K3` and which holds to its own hash; the digest with ONE CHARACTER
+/// CHANGED; and the digest with a character OUTSIDE ASCII, its hash made to fit, so that
+/// only the harness's own look at the line can tell. Each halts the stage at the read, says
+/// why in a sentence of its own, and passes on nothing of what came back.
+#[test]
+fn a_step_that_hands_back_anything_but_its_digest_is_caught_as_altered() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::opened("altered", &one_area());
+    let head = sim.rig.rev("HEAD");
+    for (how, says) in [
+        ("document", "is no digest of `dev/stabilize-step state`"),
+        ("byte", "does not end with the sha256 of itself"),
+        (
+            "non-ascii",
+            "a backslash or a character outside printable ASCII",
+        ),
+    ] {
+        let relays: serde_json::Map<String, Value> = state_reads("test-1")
+            .into_iter()
+            .map(|label| (label, json!(how)))
+            .collect();
+        let ran = sim.invoke(sim.args("test", json!({})), json!({"relays": relays}));
+        let result = &ran.result;
+        assert_eq!(
+            json!([result["status"], result["halted"]["phase"]]),
+            json!(["halted", "state"]),
+            "{how}: {result}"
+        );
+        assert!(
+            result["halted"]["reason"]
+                .as_str()
+                .is_some_and(|why| why.contains(says)),
+            "{how}: {result}"
+        );
+        assert_eq!(
+            ran.agents(),
+            [
+                "git:state",
+                "git:state:test-1",
+                "git:state:test-1:again1",
+                "git:state:test-1:again2"
+            ],
+            "{how}: asked for again twice, and then there is no state"
+        );
+        assert!(
+            !result.to_string().contains("the brief of area-a")
+                && !result.to_string().contains("\u{2014}\"")
+                && result.to_string().len() < 4000,
+            "{how}: nothing of what came back is passed on: {result}"
+        );
+    }
+    // Handed back once, and then the digest: the read is asked for again, and the stage reads.
+    let once = sim.invoke(
+        sim.args("test", json!({"stopAfter": "state"})),
+        json!({"relays": {"git:state:test-1": "document"}}),
+    );
+    assert_eq!(once.result["status"], "stopped", "{}", once.result);
+    assert_eq!(
+        once.agents(),
+        ["git:state", "git:state:test-1", "git:state:test-1:again1"]
+    );
+    // And the first read of all — the git state — is held the same way.
+    let first = sim.invoke(
+        sim.args("test", json!({})),
+        json!({"relays": {"git:state": "non-ascii"}}),
+    );
+    assert_eq!(
+        json!([first.result["status"], first.result["halted"]["phase"]]),
+        json!(["halted", "git"]),
+        "{}",
+        first.result
+    );
+    assert!(
+        first.result["halted"]["reason"]
+            .as_str()
+            .is_some_and(|why| why.contains("outside printable ASCII")),
+        "{}",
+        first.result
+    );
+    assert_eq!(first.agents(), ["git:state"]);
+    assert_eq!(sim.rig.rev("HEAD"), head);
+    assert_eq!(sim.rig.status(), "");
+}
+
+/// **An invocation that only looks finishes nothing and says what is owed; the one after it
+/// finishes it** (the second repair plan's `K2` through `K3`; the re-review's `R-L1` and
+/// `R-M1`). `stopAfter: 'state'` over a batch a record step applied and did not commit,
+/// and over a record that was committed and not pushed: neither head moves, no agent but
+/// the first read is launched, and the return names what an invocation without the stop
+/// would finish. And A PUSH THAT FAILED AFTER THE RECORD IS MADE BY THE NEXT INVOCATION'S
+/// FIRST READ — the halt says so, and it is true.
+#[test]
+fn an_invocation_that_only_looks_finishes_nothing_and_a_push_that_failed_is_made_by_the_next() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::opened("owed", &one_area());
+    let opened = sim.rig.rev("HEAD");
+    // (1) A pending batch: the record's gate is red only with the records.
+    let halted = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"record": {"gate": red(&[FLAKY])}})),
+    );
+    assert_eq!(
+        halted.result["halted"]["refused"], "gate-red",
+        "{}",
+        halted.result
+    );
+    let status = sim.rig.status();
+    let looked = sim.invoke(sim.args("test", json!({"stopAfter": "state"})), json!({}));
+    let result = &looked.result;
+    assert_eq!(
+        json!([result["status"], result["after"], result["owed"]]),
+        json!(["stopped", "state", ["applied"]]),
+        "{result}"
+    );
+    assert_eq!(
+        looked.agents(),
+        ["git:state"],
+        "one read, and it only looked"
+    );
+    assert!(
+        looked.commands.len() == 1 && looked.commands[0].contains(" --look "),
+        "{:?}",
+        looked.commands
+    );
+    assert_eq!(
+        json!([
+            result["pending"]["round"],
+            result["pending"]["calls"],
+            result["pending"].get("subject")
+        ]),
+        json!([1, 4, null]),
+        "the batch by its counts, and no text of it: {result}"
+    );
+    assert_eq!(sim.rig.rev("HEAD"), opened, "nothing was committed");
+    assert_eq!(sim.rig.status(), status, "and nothing changed in the tree");
+    assert!(sim.record(&["pending", "--run", RUN], "")["batch"].is_object());
+
+    // (2) The batch is committed, and its push is rejected: the push is owed.
+    sim.rig.remote_hook("pre-receive", "exit 1");
+    let unpushed = sim.invoke(sim.args("test", json!({})), json!({}));
+    let result = &unpushed.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["halted"]["phase"],
+            result["halted"]["refused"]
+        ]),
+        json!(["halted", "push", "push-rejected"]),
+        "{result}"
+    );
+    let message = result["message"].as_str().expect("a message");
+    assert!(
+        message.contains("THE PUSH IS OWED: invoke the stage again with the same args — its first read finds the record the remote lacks, vets it and pushes it"),
+        "{message}"
+    );
+    let recorded = sim.rig.rev("HEAD");
+    assert_eq!(sim.rig.rev("HEAD~1"), opened, "the record is committed");
+    assert_eq!(sim.rig.remote(LOOP), Some(opened.clone()), "and not pushed");
+    // … which an invocation that only looks says, and does not make.
+    fs::remove_file(sim.rig.origin.join("hooks/pre-receive")).expect("the remote answers again");
+    let looked = sim.invoke(sim.args("test", json!({"stopAfter": "state"})), json!({}));
+    assert_eq!(
+        json!([
+            looked.result["status"],
+            looked.result["owed"],
+            looked.result["pending"]
+        ]),
+        json!(["stopped", ["unpushed"], null]),
+        "{}",
+        looked.result
+    );
+    assert_eq!(looked.agents(), ["git:state"]);
+    assert_eq!(sim.rig.remote(LOOP), Some(opened), "a look pushes nothing");
+    assert_eq!(sim.rig.rev("HEAD"), recorded);
+
+    // (3) THE SAME ARGS AGAIN: the first read makes the push that is owed, and the stage
+    // starts from the state as it then stands — here a round that is over.
+    let next = sim.invoke(sim.args("test", json!({})), json!({}));
+    assert_eq!(
+        sim.rig.remote(LOOP),
+        Some(recorded.clone()),
+        "the owed push is made"
+    );
+    assert_eq!(
+        json!([
+            next.result["status"],
+            next.result["refused"]["refused"],
+            next.result["arrived"]["found"],
+            next.result["arrived"]["finished"]
+        ]),
+        json!(["refused", "stopped", ["unpushed"], ["unpushed"]]),
+        "the return says what the first read met and finished: {}",
+        next.result
+    );
+    assert_eq!(next.agents(), ["git:state", "git:state:test-1"]);
+    assert_eq!(sim.rig.rev("HEAD"), recorded);
+    assert_eq!(sim.rig.status(), "");
+}
+
+/// **A commit that failed, and a commit step whose agent died, are finished by asking
+/// again** (the re-review's `R3` and `R-L5`, through `K3`). A `git commit` that fails
+/// leaves the record's paths staged: the stage halts, and the next invocation finds the
+/// batch, gates it and commits it. And a commit step whose agent ran its command and then
+/// returned nothing is asked for again as THE ONE COMMAND, RUN AGAIN — the stand-in fails
+/// the run on a retry that tells a step's agent to look around the tree — and the step,
+/// handed the commit the stage began on, answers what it answered: one commit, recorded.
+#[test]
+fn a_commit_that_failed_and_a_commit_step_whose_agent_died_are_finished_by_asking_again() {
+    if !can_run() {
+        return;
+    }
+    // (1) The commit fails.
+    let sim = Sim::opened("failed-commit", &one_area());
+    let opened = sim.rig.rev("HEAD");
+    let marker = failing_commit(&sim.rig);
+    let failed = sim.invoke(sim.args("test", json!({})), small_stage(json!({})));
+    assert_eq!(
+        json!([
+            failed.result["status"],
+            failed.result["halted"]["phase"],
+            failed.result["halted"]["refused"]
+        ]),
+        json!(["halted", "record", "git"]),
+        "{}",
+        failed.result
+    );
+    assert_eq!(sim.rig.rev("HEAD"), opened, "the commit failed");
+    fs::remove_file(&marker).expect("commits work again");
+    let again = sim.invoke(sim.args("test", json!({})), json!({}));
+    assert_eq!(again.result["status"], "recorded", "{}", again.result);
+    assert_eq!(
+        again.agents(),
+        [
+            "git:state",
+            "record:pending",
+            "git:record:pending",
+            "git:push:pending",
+            "git:state:test-1"
+        ]
+    );
+    assert_eq!(
+        again.result["arrived"]["owed"],
+        json!(["staged"]),
+        "the first read named what the failed commit left: {}",
+        again.result
+    );
+    assert_eq!(sim.rig.rev("HEAD~1"), opened, "one record commit");
+    assert_eq!(sim.rig.remote(LOOP), Some(sim.rig.rev("HEAD")), "pushed");
+    assert_eq!(sim.rig.status(), "");
+
+    // (2) The commit step's agent dies after its command ran.
+    let sim = Sim::opened("dead-commit-step", &one_area());
+    let opened = sim.rig.rev("HEAD");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"endings": {"git:record:test:r1": "acts-and-dies-once"}})),
+    );
+    assert_eq!(ran.result["status"], "triaged", "{}", ran.result);
+    let asked: Vec<&String> = ran
+        .commands
+        .iter()
+        .filter(|ran| ran.starts_with("dev/stabilize-step record "))
+        .collect();
+    assert_eq!(asked.len(), 2, "the one command, run again: {asked:?}");
+    assert_eq!(asked[0], asked[1]);
+    assert!(
+        asked[0].contains(&format!(" --head {opened} ")),
+        "held to the commit the stage began on: {}",
+        asked[0]
+    );
+    let retry = &ran
+        .prompts
+        .iter()
+        .filter(|(label, _)| label == "git:record:test:r1")
+        .nth(1)
+        .expect("the commit step was asked for twice")
+        .1;
+    assert!(
+        retry.contains("RETRY: an earlier try of this same step returned nothing. Run the ONE command above again")
+            && !retry.split("\n\nRETRY").nth(1).is_some_and(|told| told.contains("git status") || told.contains("git log")),
+        "{retry}"
+    );
+    assert_eq!(
+        sim.rig.rev("HEAD~1"),
+        opened,
+        "ONE record commit, though the step ran twice"
+    );
+    assert_eq!(ran.result["record"], sim.rig.rev("HEAD").as_str());
+    assert_eq!(sim.rig.remote(LOOP), Some(sim.rig.rev("HEAD")), "pushed");
+}
+
+/// **The same ruling, sent twice, is refused and leaves no batch** (the re-review's `R2`,
+/// the way in without a kill; `no-change`). The second invocation composes the same batch,
+/// the record script refuses it as one that changes nothing, the executor returns that
+/// word — and the invocation answers `refused`: nothing written, nothing pending, no
+/// discard asked for.
+#[test]
+fn the_same_ruling_sent_twice_is_refused_and_leaves_no_batch() {
+    if !can_run() {
+        return;
+    }
+    let opening = Opening {
+        clauses: vec!["audit-clean"],
+        items: json!([item("area-a", "audit-area", "audit-clean")]),
+        bounds: vec![],
+        rows: json!([{"key": "known-one", "doctype": "jigc-feedback", "round": 0,
+                      "source": "known at the opening", "door": "jigc setup", "clause": "audit-clean",
+                      "repro": "the opening record"}]),
+    };
+    let sim = Sim::opened("twice", &opening);
+    let rulings = json!({"rulings": [{"key": "known-one", "ruling": "later", "note": "for the next release"}]});
+    let first = sim.invoke(sim.args("test", rulings.clone()), json!({}));
+    assert_eq!(first.result["status"], "ruled", "{}", first.result);
+    let ruled = sim.rig.rev("HEAD");
+    let second = sim.invoke(sim.args("test", rulings), json!({}));
+    let result = &second.result;
+    assert_eq!(
+        json!([result["status"], result["refused"]["refused"]]),
+        json!(["refused", "no-change"]),
+        "{result}"
+    );
+    assert_eq!(
+        second.agents(),
+        ["git:state", "git:state:test-1", "record:rulings:r0"],
+        "the batch is refused where it is applied: no commit step, no push"
+    );
+    let message = result["message"].as_str().expect("a message");
+    assert!(
+        message.contains("NO BATCH IS LEFT")
+            && message.contains("No discard is asked for")
+            && !message.contains("discard --branch"),
+        "{message}"
+    );
+    assert_eq!(
+        sim.record(&["pending", "--run", RUN], "")["batch"],
+        Value::Null
+    );
+    assert_eq!(sim.rig.rev("HEAD"), ruled);
+    assert_eq!(sim.rig.status(), "");
+}
+
+/// **What would not have been written has its exit at the commit and at the push** (the
+/// second repair plan's `K1`, through `K3`; at the report check it is
+/// [`a_report_overwritten_by_hand_voids_its_item_and_reaches_neither_the_commit_nor_the_remote`]).
+/// AT THE COMMIT: a report changed in the minutes between its check and the commit is
+/// refused there, the batch IS TAKEN BACK ALREADY and the file left the tree — so the halt
+/// asks for no discard, and the stage invoked again works the next attempt. AT A PUSH: a
+/// commit somebody made by hand under the run's directory, its subject one the scanner
+/// refuses, is never pushed — not by the first read that finds it owed either — and it is
+/// the human's.
+#[test]
+fn what_would_not_have_been_written_has_its_exit_at_the_commit_and_at_the_push() {
+    if !can_run() {
+        return;
+    }
+    // (1) At the commit.
+    let sim = Sim::opened("unvetted-commit", &one_area());
+    let opened = sim.rig.rev("HEAD");
+    let report = format!("{RUN_DIR}/r1/reports/test/area-a-review.a1.md");
+    let spoiled = format!(
+        "printf '%s\\n' '# a review' '' 'It ran in {}/probe.' '' '<!-- end of report -->' > {report}",
+        sim.rig.dir().join("home").display()
+    );
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"meanwhile": {"record:test:r1": spoiled}})),
+    );
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["halted"]["phase"],
+            result["halted"]["refused"]
+        ]),
+        json!(["halted", "record", "unvetted"]),
+        "{result}"
+    );
+    let message = result["message"].as_str().expect("a message");
+    assert!(
+        message.contains("THE BATCH IS TAKEN BACK ALREADY")
+            && message.contains("it reads the state as it stands and works the next attempt")
+            && !message.contains("discard --branch")
+            && !message.contains("APPLIED AND NOT COMMITTED"),
+        "{message}"
+    );
+    assert_eq!(sim.rig.rev("HEAD"), opened, "nothing was committed");
+    assert_eq!(
+        sim.record(&["pending", "--run", RUN], "")["batch"],
+        Value::Null
+    );
+    let status = sim.rig.status();
+    assert!(
+        !status.contains(" M ")
+            && !status.contains("area-a-review")
+            && !status.lines().any(|line| !line.starts_with("?? ")),
+        "the tables are as they were, nothing is staged, and the file left the tree:\n{status}"
+    );
+    let again = sim.invoke(sim.args("test", json!({})), small_stage(json!({})));
+    assert_eq!(again.result["status"], "triaged", "{}", again.result);
+    assert_eq!(
+        again.result["scope"]["status"], "stands",
+        "the next attempt"
+    );
+    assert_eq!(sim.rig.rev("HEAD~1"), opened);
+    assert_eq!(sim.rig.status(), "");
+
+    // (2) At a push: a commit by hand, under the run's directory, that the scanner refuses.
+    let sim = Sim::opened("unvetted-push", &one_area());
+    let opened = sim.rig.rev("HEAD");
+    sim.rig.change(
+        &format!("{RUN_DIR}/notes.md"),
+        "a note\n",
+        &format!("docs(record): a note that met {DENY_TERM}"),
+    );
+    let by_hand = sim.rig.rev("HEAD");
+    for _ in 0..2 {
+        let ran = sim.invoke(sim.args("test", json!({})), json!({}));
+        let result = &ran.result;
+        assert_eq!(
+            json!([
+                result["status"],
+                result["halted"]["phase"],
+                result["halted"]["refused"],
+                result["halted"]["whose"]
+            ]),
+            json!([
+                "halted",
+                "git",
+                "unvetted",
+                "the human's at a push; at a record's commit, the next attempt's"
+            ]),
+            "{result}"
+        );
+        assert_eq!(ran.agents(), ["git:state"]);
+        assert!(
+            !result.to_string().contains(DENY_TERM),
+            "the halt names the file that names the place, never the text: {result}"
+        );
+        assert_eq!(
+            sim.rig.remote(LOOP),
+            Some(opened.clone()),
+            "it is pushed by no invocation, however often the stage is invoked"
+        );
+    }
+    assert_eq!(sim.rig.rev("HEAD"), by_hand);
+}
+
+/// **A lock, a commit that is no record's and a head that moved are each named as
+/// somebody's, with what leaves the state** (`locked`, `foreign-commit`, `head-moved`: the
+/// second repair plan's `K2`, through `K3`). git's own lock is the orchestrator's, and is
+/// never removed by a step. Somebody commits a tuning change while the stage runs: the
+/// record's commit step is held to the commit the stage began on and refuses — the batch
+/// stays applied. The next invocation's first read meets that commit: it is ITS AUTHOR'S to
+/// push, by the command the halt spells — taken out of the message here, and run — and
+/// neither the human's nor the tool's. Then the stage, invoked once more, gates the batch
+/// on the tree as it now stands and records it.
+#[test]
+fn a_lock_a_commit_that_is_no_records_and_a_head_that_moved_are_each_named_as_somebodys() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::opened("somebodys", &one_area());
+    let opened = sim.rig.rev("HEAD");
+    // (1) git's lock.
+    let lock = sim.rig.root.join(".git/index.lock");
+    fs::write(&lock, "").expect("plant git's lock");
+    let locked = sim.invoke(sim.args("test", json!({})), json!({}));
+    assert_eq!(
+        json!([
+            locked.result["status"],
+            locked.result["halted"]["phase"],
+            locked.result["halted"]["refused"],
+            locked.result["halted"]["whose"]
+        ]),
+        json!(["halted", "git", "locked", "the orchestrator's"]),
+        "{}",
+        locked.result
+    );
+    assert!(lock.exists(), "the lock is never removed by a step");
+    assert!(
+        refused_line(&locked.result)["halt"]["root_cause"]
+            .as_str()
+            .is_some_and(|cause| cause.contains(".git/index.lock")),
+        "the file the halt names names the lock"
+    );
+    fs::remove_file(&lock).expect("the orchestrator removes it");
+
+    // (2) Somebody commits while the stage runs.
+    let tuning = "printf 'x\\n' > tuning.txt && git add tuning.txt && git commit -q -m 'chore: a tuning commit'";
+    let moved = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"meanwhile": {"record:test:r1": tuning}})),
+    );
+    let result = &moved.result;
+    assert_eq!(
+        json!([
+            result["halted"]["phase"],
+            result["halted"]["refused"],
+            result["halted"]["whose"]
+        ]),
+        json!(["record", "head-moved", "the orchestrator's"]),
+        "{result}"
+    );
+    assert!(
+        result["message"].as_str().is_some_and(|message| message
+            .contains("Nothing was committed or undone: THE BATCH IS STILL APPLIED")
+            && message.contains("its first read meets the commit somebody made")),
+        "{result}"
+    );
+    let theirs = sim.rig.rev("HEAD");
+    assert_eq!(
+        sim.rig.rev("HEAD~1"),
+        opened,
+        "the tuning commit, and no record"
+    );
+    assert!(sim.record(&["pending", "--run", RUN], "")["batch"].is_object());
+
+    // (3) The next first read meets that commit: its author's to push.
+    let foreign = sim.invoke(sim.args("test", json!({})), json!({}));
+    let result = &foreign.result;
+    assert_eq!(
+        json!([
+            result["halted"]["phase"],
+            result["halted"]["refused"],
+            result["halted"]["whose"]
+        ]),
+        json!(["git", "foreign-commit", "its author's"]),
+        "{result}"
+    );
+    assert_eq!(foreign.agents(), ["git:state"]);
+    assert_eq!(sim.rig.remote(LOOP), Some(opened), "nothing was pushed");
+    let message = result["message"].as_str().expect("a message");
+    let named = message
+        .split('`')
+        .find(|span| span.starts_with("git push origin "))
+        .unwrap_or_else(|| panic!("the halt names the push, as a command: {message}"));
+    assert_eq!(named, format!("git push origin {LOOP}"));
+    sim.rig.git(&named.split(' ').skip(1).collect::<Vec<_>>());
+    assert_eq!(sim.rig.remote(LOOP), Some(theirs.clone()));
+
+    // (4) And the stage, invoked once more, finishes the record it left — on the tree as
+    // it now stands.
+    let finished = sim.invoke(sim.args("test", json!({})), json!({}));
+    assert_eq!(finished.result["status"], "recorded", "{}", finished.result);
+    assert_eq!(
+        sim.rig.rev("HEAD~1"),
+        theirs,
+        "the record, on the tuning commit"
+    );
+    assert_eq!(sim.rig.remote(LOOP), Some(sim.rig.rev("HEAD")), "pushed");
+    assert_eq!(sim.rig.status(), "");
+}
+
+/// **A round's scope that was set aside halts the stage at the report check** (the second
+/// repair plan's `K1`, through `K3`): the file at the scope's path is no longer what the
+/// record script would have written, the check moves it out of the tree and names it
+/// (`aside`) — and the round has no scope any more, which until `K3` was first found at the
+/// record. The next attempt's scope step writes it again.
+#[test]
+fn a_rounds_scope_that_was_set_aside_halts_the_stage_at_the_report_check() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::opened("scope-aside", &one_area());
+    let scope = format!("{RUN_DIR}/r1/scope.md");
+    let spoil = format!(
+        "sed -i.bak 's#scripted: jigc doc set#seen in {}/probe#' {scope} && rm {scope}.bak",
+        sim.rig.dir().join("home").display()
+    );
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"meanwhile": {"area-a:review": spoil}})),
+    );
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["halted"]["phase"],
+            result["halted"]["aside"]
+        ]),
+        json!(["halted", "scope", [{"path": scope, "why": "host-path"}]]),
+        "{result}"
+    );
+    assert!(
+        result["halted"]["reason"]
+            .as_str()
+            .is_some_and(|why| why.contains("was set aside by the report check")
+                && why.contains("round 1 has no scope any more")),
+        "{result}"
+    );
+    assert_eq!(
+        *ran.agents().last().expect("a last agent"),
+        "git:check-reports"
+    );
+    assert!(
+        !sim.rig.root.join(&scope).exists(),
+        "the file left the tree"
+    );
+    let again = sim.invoke(sim.args("test", json!({})), small_stage(json!({})));
+    assert_eq!(again.result["status"], "triaged", "{}", again.result);
+    assert_eq!(again.result["scope"]["status"], "written", "written again");
+}
+
+/// **What a held command's step says is read as the tool's words, and its verdict as the
+/// tool's file** (the second repair plan's `K10`, read by `K3`: DECISIONS.md → *A long
+/// command is started, waited for and judged by the tool*, item 12). The real
+/// `hold-start` and `hold-wait`, asked for their digests, over the step suite's stand-in for
+/// a long command; each line read by the harness's own `readDigest` and `heldOf`: a command
+/// that still runs (`running`), one that ran to its end — green, red, and void where its
+/// output holds no verdict — and one whose supervisor is gone (`dead`), which has no verdict
+/// whatever its output holds. A held check's result row is the verdict's file and no word.
+/// WHAT STARTS AND WAITS FOR ONE IN A STAGE IS `K11`'s: no stage does yet.
+#[test]
+fn what_a_held_commands_step_says_is_read_as_the_tools_words_and_its_verdict_as_the_tools_file() {
+    if !can_run() {
+        return;
+    }
+    let held = Held::new("sim-held");
+    let scratch = held.rig.scratch.display().to_string();
+    let ends = |line: String, act: &str| -> Value {
+        let step = harness_pure(&json!([["readDigest", [{"status": "ran", "line": line}, act]]]))
+            .remove(0);
+        assert!(step.get("relay").is_none(), "a digest of the tool: {step}");
+        harness_pure(&json!([["heldOf", [step, scratch]]])).remove(0)
+    };
+    let green = as_recorded("gate-green.txt");
+
+    // RUNNING: started, and still running when a slice is over.
+    held.released(false);
+    let started = ends(
+        held.start_digest("gate-c1-a1", &GATE_KIND, &green, 0),
+        "hold-start",
+    );
+    assert_eq!(
+        json!([
+            started["ends"],
+            started["name"],
+            started["kind"],
+            started["output"]
+        ]),
+        json!([
+            "running",
+            "gate-c1-a1",
+            "gate",
+            format!("{scratch}/hold/gate-c1-a1/output")
+        ]),
+        "{started}"
+    );
+    held.runs_when(1);
+    assert_eq!(
+        ends(held.wait_digest("gate-c1-a1", 1), "hold-wait")["ends"],
+        "running"
+    );
+
+    // DONE, GREEN: the tool's verdict, in the file the line names.
+    held.released(true);
+    let done = ends(held.wait_digest("gate-c1-a1", 60), "hold-wait");
+    assert_eq!(
+        json!([done["ends"], done["why"]]),
+        json!(["green", null]),
+        "{done}"
+    );
+    let file = done["verdict"].as_str().expect("the verdict's file");
+    let kept = fs::read_to_string(file).expect("the verdict the tool kept");
+    assert_eq!(done["verdict_sha256"], sha256(&kept).as_str(), "{done}");
+    assert_eq!(file, format!("{scratch}/hold/gate-c1-a1/verdict.json"));
+
+    // DONE, RED and DONE, VOID: the same file, the tool's word.
+    let red = as_recorded("gate-red.txt");
+    held.start_digest("gate-c1-a2", &GATE_KIND, &red, 1);
+    let was_red = ends(held.wait_digest("gate-c1-a2", 60), "hold-wait");
+    assert_eq!(was_red["ends"], "red", "{was_red}");
+    let quick = as_recorded("gate-quick.txt");
+    held.start_digest("gate-c1-a3", &GATE_KIND, &quick, 0);
+    let was_void = ends(held.wait_digest("gate-c1-a3", 60), "hold-wait");
+    assert_eq!(
+        json!([was_void["ends"], was_void["why"]]),
+        json!(["void", "no-verdict"]),
+        "a pre-check's output is no verdict: {was_void}"
+    );
+
+    // DEAD: the supervisor is gone, and a whole green gate in the output changes nothing.
+    held.released(false);
+    let line = held.start_digest("gate-c1-a4", &GATE_KIND, &green, 0);
+    let pid = serde_json::from_str::<Value>(&line).expect("a digest")["pid"]
+        .as_u64()
+        .expect("the supervisor's pid");
+    held.runs_when(4);
+    fs::write(held.rig.scratch.join("hold/gate-c1-a4/output"), &green).expect("write the output");
+    let killed = Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .output()
+        .expect("run kill");
+    assert!(killed.status.success(), "{killed:?}");
+    let dead = ends(held.wait_digest("gate-c1-a4", 60), "hold-wait");
+    assert_eq!(
+        json!([dead["ends"], dead["why"], dead.get("verdict")]),
+        json!(["dead", "no-exit", null]),
+        "{dead}"
+    );
+    held.released(true);
+
+    // A HELD CHECK'S RESULT IS THE FILE, AND NO WORD.
+    let rows = harness_pure(&json!([["resultRows", [[
+        {"item": "regression-set", "status": "green", "verdict": file},
+        {"item": "gate", "status": "green"},
+    ]]]]))
+    .remove(0);
+    assert_eq!(
+        rows,
+        json!([{"item": "regression-set", "verdict": file}, {"item": "gate", "outcome": "green"}])
+    );
 }
 
 // ---------------------------------------------------------------------------
