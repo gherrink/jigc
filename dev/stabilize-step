@@ -29,6 +29,30 @@
 # append-only logs are the harness's (`branchName`, `runDir`, `PRODUCT_PATHS`,
 # `SYNC_LOGS`) and arrive as arguments.
 #
+# WHAT NO ACT REACHES, WHATEVER IT IS HANDED (the coordinator's seventh group of the pass
+# that followed the core's review; DECISIONS.md -> 2026-10-07, "The core's script-side
+# tasks, reviewed for three dangers", item 7). An agent's typed `git push` is held by the
+# deny rules of .claude/settings.json; a push this tool makes inside itself is seen by
+# none of them. So the tool holds the same line (implementation/release.md -> What agents
+# may not do), and tooling-tests/dev_stabilize_step.rs pins it act by act:
+#   main            is no argument of any act: a branch has a prefix, so `main` does not
+#                   parse, and neither does a refspec; `refs/heads/main`, which does, is
+#                   refused by the branch model's rule. No act commits where `main` is
+#                   checked out: each holds the branch checked out to the one it names, or
+#                   switches to the one it names first. (`sync-main` reads `origin/main`
+#                   and merges it INTO the run's branch — that direction, and no other.)
+#   release-plz-*   a branch of the release tool's is refused by its prefix (usage).
+#   a tag           no act names one: the tool runs no `git tag`, its one push names a
+#                   branch — which git refuses where a tag of the same name makes it
+#                   ambiguous — and `refs/tags/...` is refused by the branch model's rule.
+#   a forced push,  in no spelling: the one push is `git push origin <branch>`, the
+#   a deletion      source scan holds its shape, and `+name`, `:name`, `a:b` and a flag
+#                   are no branch names (usage).
+#   a branch the    EVERY BRANCH AN ACT IS HANDED — --loop, --branch, and the prefixes
+#   model refuses   --rounds and --prefix — is asked of dev/branch-name, the rule CI
+#                   holds every pushed branch to, before the act runs: before any write,
+#                   fetch or push (usage). A rule that cannot be asked is never a pass.
+#
 # Usage — every act prints ONE line of JSON on stdout, whatever it exits with; and every
 # act takes --digest DIR, which makes that line its DIGEST (THE DIGEST, below):
 #
@@ -497,7 +521,9 @@
 #
 #    0  the act is done, or the read is printed
 #    2  usage          an unknown act or flag, a missing argument, a name outside its
-#                      grammar — a branch name without a prefix, `main` among them
+#                      grammar — a branch name without a prefix, `main` among them — or
+#                      a branch no step works on: the release tool's, or one the branch
+#                      model's rule (dev/branch-name) refuses; nothing ran
 #    3  wrong-branch   the branch checked out is not the one the act names
 #    4  dirty          the tree holds what the act does not admit
 #    5  remote-ahead   the pushed branch has commits the local one lacks
@@ -603,6 +629,11 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
 RECORD = os.path.join(SCRIPT_DIR, "stabilize-record")
 MERGE_LOGS = os.path.join(SCRIPT_DIR, "merge-logs")
+# The branch model's rule (CLAUDE.md -> Branches), asked of every branch an act is handed
+# — and the prefix of the release tool's own branches, which that rule admits and no step
+# works on (the header: WHAT NO ACT REACHES).
+BRANCH_RULE = os.path.join(SCRIPT_DIR, "branch-name")
+RELEASE = "release-plz-"
 # The commands of the held kinds (HOLDS): the gate, the regression set, the probe tool —
 # and this tool itself, whose `build` is one.
 GATE = os.path.join(SCRIPT_DIR, "gate")
@@ -2219,6 +2250,26 @@ def grammar(pattern, what):
     return taken
 
 
+def in_the_model(args):
+    """EVERY BRANCH AN ACT IS HANDED IS ONE A STEP MAY WORK ON (the header: WHAT NO ACT
+    REACHES), asked once the arguments are parsed and BEFORE THE ACT RUNS — so before any
+    write, fetch or push: it is no branch of the release tool's, and dev/branch-name — the
+    branch model's own rule, which CI holds every pushed branch to — accepts it. A rule
+    that cannot be asked is never a pass."""
+    for flag in ("loop", "branch", "rounds", "prefix"):
+        name = getattr(args, flag, None)
+        if name is None:
+            continue
+        then = "the harness mints every branch of a run, in the branch model; the act is asked for again with one"
+        if name.startswith(RELEASE):
+            refuse("usage", "argument --%s: `%s` is a branch of the release tool's (`%s…`), and no step works on one, or pushes one — see dev/stabilize-step --help" % (flag, name, RELEASE), "", then)
+        if not os.path.isfile(BRANCH_RULE):
+            refuse("usage", "argument --%s: the branch model's rule, dev/branch-name, is not beside this tool, so `%s` cannot be held to it — and a rule that cannot be asked is never a pass" % (flag, name), "", "dev/branch-name lies beside dev/stabilize-step wherever that tool is run from")
+        asked = run([BRANCH_RULE, name])
+        if asked.code != 0:
+            refuse("usage", "argument --%s: `%s` is no branch of the branch model — dev/branch-name %s — and no step works on, or pushes, a branch that rule refuses; see dev/stabilize-step --help" % (flag, name, "refuses it" if asked.code == 1 else "could not be asked (it exited %d), which is never a pass" % asked.code), asked.shown(), then)
+
+
 def path_in_repository(value):
     if not value or not all(SEGMENT.fullmatch(part) for part in value.split("/")):
         raise argparse.ArgumentTypeError("%s is not a path inside the repository, of plain segments" % json.dumps(value))
@@ -2369,6 +2420,7 @@ def main(argv):
             beneath(named, "lines")
             kept = named
         args = arguments(argv)
+        in_the_model(args)
         args.does(args, facts)
         print(printed())
         return 0

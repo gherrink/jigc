@@ -127,6 +127,9 @@ use super::placed_executable;
 const TOOL: &str = "dev/stabilize-step";
 const RECORD: &str = "dev/stabilize-record";
 const MERGE_LOGS: &str = "dev/merge-logs";
+/// The branch model's rule, which the tool asks of every branch an act is handed.
+const BRANCH_RULE: &str = "dev/branch-name";
+const PROBE_TOOL: &str = "dev/stabilize-probe";
 /// The denylist half of the public-hygiene scan, and gitleaks' configuration: what the
 /// record script runs wherever it vets what a step would commit or push. The denylist's
 /// one term and what the stand-in for gitleaks reports are the record suite's.
@@ -415,7 +418,7 @@ impl StepRig {
 
         // The base: the tool and what it runs, a product path, the two logs, a file that
         // is neither.
-        for script in [TOOL, RECORD, MERGE_LOGS, SCANNER] {
+        for script in [TOOL, RECORD, MERGE_LOGS, SCANNER, BRANCH_RULE] {
             placed_executable::copy(&repo_root().join(script), &rig.root.join(script));
         }
         // What a vet needs: gitleaks' configuration, as committed; the stand-in for
@@ -5534,6 +5537,339 @@ fn no_act_takes_main_or_any_branch_without_a_prefix() {
     assert_eq!(rig.branch(), LOOP);
 }
 
+/// **What each act of the three tools can reach of a ref** — one row per act, held to each
+/// tool's own parser in both directions, so that an act added without its row is red:
+/// `no-ref` runs no git command that moves a ref of this repository; `local` moves local
+/// refs of the branch it is handed, and pushes nothing; `pushes` pushes the branch it is
+/// handed, by name, through the tool's one push.
+const REACH: &[(&str, &str, &str)] = &[
+    (TOOL, "git-state", "pushes"),
+    (TOOL, "push", "pushes"),
+    (TOOL, "land", "pushes"),
+    (TOOL, "carry", "pushes"),
+    (TOOL, "open-round", "local"),
+    (TOOL, "record", "local"),
+    (TOOL, "sync-main", "local"),
+    (TOOL, "discard", "no-ref"),
+    (TOOL, "find-round", "no-ref"),
+    (TOOL, "round-commits", "no-ref"),
+    (TOOL, "state", "no-ref"),
+    (TOOL, "begin", "no-ref"),
+    (TOOL, "check-reports", "no-ref"),
+    (TOOL, "table", "no-ref"),
+    (TOOL, "hold-start", "no-ref"),
+    (TOOL, "hold-wait", "no-ref"),
+    (TOOL, "hash", "no-ref"),
+    (TOOL, "build", "no-ref"),
+    (RECORD, "report", "no-ref"),
+    (RECORD, "ledger-add", "no-ref"),
+    (RECORD, "ledger-set", "no-ref"),
+    (RECORD, "result-set", "no-ref"),
+    (RECORD, "check-reports", "no-ref"),
+    (RECORD, "check-ledger", "no-ref"),
+    (RECORD, "bound-set", "no-ref"),
+    (RECORD, "scope-set", "no-ref"),
+    (RECORD, "triage-set", "no-ref"),
+    (RECORD, "item-set", "no-ref"),
+    (RECORD, "round-set", "no-ref"),
+    (RECORD, "run-set", "no-ref"),
+    (RECORD, "state", "no-ref"),
+    (RECORD, "item", "no-ref"),
+    (RECORD, "item-doors", "no-ref"),
+    (RECORD, "untriaged", "no-ref"),
+    (RECORD, "gate-set", "no-ref"),
+    (RECORD, "gate-check", "no-ref"),
+    (RECORD, "apply", "no-ref"),
+    (RECORD, "pending", "no-ref"),
+    (RECORD, "discard", "no-ref"),
+    (RECORD, "settle", "no-ref"),
+    (RECORD, "recover", "no-ref"),
+    (RECORD, "vet", "no-ref"),
+    (RECORD, "set-aside", "no-ref"),
+    (PROBE_TOOL, "begin", "no-ref"),
+    (PROBE_TOOL, "state", "no-ref"),
+    (PROBE_TOOL, "hash", "no-ref"),
+    (PROBE_TOOL, "hold", "no-ref"),
+    (PROBE_TOOL, "held", "no-ref"),
+    (PROBE_TOOL, "verdict", "no-ref"),
+];
+
+/// The names a tool's parser gives its acts: the lines that open `    <opens>"`.
+fn parsed_acts(tool: &str, opens: &str) -> BTreeSet<String> {
+    read(tool)
+        .lines()
+        .filter_map(|line| line.strip_prefix(opens))
+        .map(|rest| rest[..rest.find('"').expect("the act's name closes")].to_owned())
+        .collect()
+}
+
+/// **No act of the three tools reaches `main`, a release branch, a tag, a forced push or a
+/// branch outside the branch model — whatever it is handed** (the coordinator's seventh
+/// group of the pass that followed the core's review). The deny rules of
+/// `.claude/settings.json` hold an agent's typed `git push`; they see no push a tool makes
+/// inside itself. So before those tools are allowed without a prompt, they hold the same
+/// line themselves ([release.md](../implementation/release.md) → *What agents may not do*),
+/// and this test pins it act by act ([`REACH`]):
+///
+/// - **(a) `main`** — as a name, as `refs/heads/main`, as a refspec's right-hand side, or by
+///   an act being run while `main` is checked out: never pushed, committed on, merged
+///   into, reset or deleted. **`sync-main` reads `origin/main` and merges it INTO the run's
+///   branch: that direction is allowed, and stays.**
+/// - **(b)** a `release-plz-*` branch is never pushed, **(c)** no tag is pushed, created or
+///   deleted, **(d)** no push is forced in any spelling and no remote branch deleted,
+///   **(e)** no branch `dev/branch-name` refuses is pushed — or worked on at all.
+///
+/// The record script and the probe tool run no git command that moves a ref of this
+/// repository: read from their sources, by the subcommands they spell. For the step tool
+/// every branch flag of every act is handed each hostile name — and after EACH call the
+/// bare remote and the clone's own refs are what they were.
+#[test]
+fn no_act_reaches_main_a_release_branch_a_tag_or_a_branch_outside_the_model() {
+    // ONE ROW PER ACT, in both directions, for each of the three tools.
+    for (tool, opens) in [
+        (TOOL, "    act(\""),
+        (RECORD, "    command(\""),
+        (PROBE_TOOL, "    act(\""),
+    ] {
+        let rows: BTreeSet<String> = REACH
+            .iter()
+            .filter(|(of, _, _)| *of == tool)
+            .map(|(_, act, _)| (*act).to_owned())
+            .collect();
+        assert_eq!(
+            rows,
+            parsed_acts(tool, opens),
+            "the acts this suite says what they reach (left) are the acts {tool} has (right)"
+        );
+    }
+    // THE RECORD SCRIPT AND THE PROBE TOOL move no ref of this repository: the record script
+    // asks git five reads of it and commits only into the throwaway repository of a scan,
+    // and the probe tool runs git in its own throwaway repository and nowhere else.
+    let code = python_code(&read(RECORD));
+    let reads: BTreeSet<&str> = code
+        .split("asked_of_git([\"")
+        .skip(1)
+        .map(|rest| &rest[..rest.find('"').expect("a subcommand")])
+        .collect();
+    assert_eq!(
+        reads,
+        BTreeSet::from(["cat-file", "diff-tree", "log", "ls-tree", "rev-list"]),
+        "what {RECORD} asks git of the repository"
+    );
+    let roads: Vec<&str> = code
+        .lines()
+        .filter(|line| line.contains("[\"git\"]") || line.contains("tools[\"git\"]"))
+        .map(str::trim)
+        .collect();
+    assert_eq!(
+        roads,
+        [
+            "out = ran([tools[\"git\"]] + argv, \"git\")",
+            "out = subprocess.run([\"git\"] + argv, cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True)",
+        ],
+        "the two roads of {RECORD} to git: a scan's throwaway repository, and a read of this one"
+    );
+    assert!(
+        code.contains("            (\"init\", [\"init\", \"-q\", \"--template=\"]),\n            (\"add\", [\"add\", \"--\"] + [rel for rel, _ in files]),\n")
+            && code.matches("out = ran([tools[\"git\"]] + argv, \"git\")").count() == 1,
+        "what {RECORD} runs in a scan's throwaway repository is init, add and one commit"
+    );
+    let code = python_code(&read(PROBE_TOOL));
+    let run: BTreeSet<&str> = code
+        .split("[\"git\", \"")
+        .skip(1)
+        .map(|rest| &rest[..rest.find('"').expect("a subcommand")])
+        .collect();
+    assert_eq!(
+        run,
+        BTreeSet::from(["add", "commit", "config", "init", "rev-parse"]),
+        "the git commands {PROBE_TOOL} runs, each in its own throwaway repository"
+    );
+    assert_eq!(
+        code.matches("[\"git\", \"").count(),
+        code.matches("in_rig(repo, [\"git\", \"").count(),
+        "and nowhere else"
+    );
+
+    // THE STEP TOOL. An act that can move a ref takes the branch it moves as an argument.
+    let acts = acts();
+    let naming = |flags: &[String]| -> Vec<String> {
+        flags
+            .iter()
+            .filter(|flag| ["loop", "branch", "rounds", "prefix"].contains(&flag.as_str()))
+            .cloned()
+            .collect()
+    };
+    for (_, act, reach) in REACH.iter().filter(|(tool, _, _)| *tool == TOOL) {
+        if *reach != "no-ref" {
+            assert!(
+                !naming(&acts[*act]).is_empty(),
+                "`{act}` is said to move a ref and takes no branch"
+            );
+        }
+    }
+
+    let rig = StepRig::new("reach");
+    let scratch = rig.scratch.display().to_string();
+    let head = rig.rev("HEAD");
+    let refs = |at: &Path| -> String {
+        let out = rig.git_at(at, &["for-each-ref", "--format=%(refname) %(objectname)"]);
+        assert!(out.status.success(), "list the refs: {out:?}");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let call = |act: &str, with: &dyn Fn(&str) -> Option<String>| -> Stepped {
+        let mut args = vec![act.to_owned()];
+        for flag in &acts[act] {
+            args.push(format!("--{flag}"));
+            args.push(with(flag).unwrap_or_else(|| valid(flag, &scratch)));
+        }
+        if act == "carry" {
+            args.push(head.clone());
+        }
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        rig.step(&args)
+    };
+
+    // (a)-(e), AS AN ARGUMENT: every branch flag of every act, each hostile name — refused
+    // before the act runs, with no git command run, and nothing moved here or there.
+    let hostile = [
+        // (a) main, in every spelling a name can have.
+        "main",
+        "refs/heads/main",
+        "heads/main",
+        "origin/main",
+        // (b) the release tool's branches.
+        "release-plz-2026-10-07",
+        "release-plz-a/b",
+        // (c) a tag.
+        "refs/tags/v1",
+        "tags/v1",
+        // (d) a forced push, a deletion, a refspec.
+        "+fix/rc24",
+        ":fix/rc24",
+        "fix/rc24:main",
+        "fix/rc24:refs/heads/main",
+        "--force",
+        "-f",
+        // (e) a branch the branch model refuses.
+        "feat/x",
+        "stabilize/rc24",
+        "fix/a/b",
+        "milestone/rc24",
+    ];
+    let (here, there) = (refs(&rig.root), refs(&rig.origin));
+    let mut driven = 0;
+    for (act, flags) in &acts {
+        for flag in naming(flags) {
+            for name in hostile {
+                let seen = call(act, &|asked| (asked == flag).then(|| name.to_owned()));
+                seen.refused("usage");
+                assert!(
+                    seen.trace.is_empty(),
+                    "`{act} --{flag} {name}` ran git: {:?}",
+                    seen.trace
+                );
+                assert_eq!(
+                    (refs(&rig.root), refs(&rig.origin), rig.rev("HEAD")),
+                    (here.clone(), there.clone(), head.clone()),
+                    "`{act} --{flag} {name}`: nothing moved, here or on the bare remote"
+                );
+                driven += 1;
+            }
+        }
+    }
+    assert!(
+        driven >= 200,
+        "every branch flag of every act was handed every name: {driven}"
+    );
+
+    // (b) AND (e), WITH THE BRANCH REALLY THERE, checked out and ahead: the acts that would
+    // push it or commit on it refuse before they read it.
+    for name in ["feat/x", "release-plz-a/b"] {
+        rig.git(&["switch", "-q", "-c", name, LOOP]);
+        rig.change(
+            "crates/a.txt",
+            "changed\n",
+            "fix: a change on a branch no step works on",
+        );
+        let (here, there) = (refs(&rig.root), refs(&rig.origin));
+        for act in [
+            "push",
+            "record",
+            "discard",
+            "open-round",
+            "land",
+            "sync-main",
+        ] {
+            let flag = if acts[act].contains(&"branch".to_owned()) {
+                "branch"
+            } else {
+                "loop"
+            };
+            let seen = call(act, &|asked| (asked == flag).then(|| name.to_owned()));
+            seen.refused("usage");
+            assert!(
+                seen.trace.is_empty(),
+                "`{act} --{flag} {name}` ran git: {:?}",
+                seen.trace
+            );
+            assert_eq!(
+                (refs(&rig.root), refs(&rig.origin)),
+                (here.clone(), there.clone()),
+                "`{act} --{flag} {name}`, checked out and ahead: nothing moved, and the bare remote holds no such branch"
+            );
+        }
+        rig.git(&["switch", "-q", LOOP]);
+    }
+
+    // (a) RUN WHILE `main` IS CHECKED OUT, with the arguments a stage would hand it: whatever
+    // each act answers, `main` is where it was — here and on the remote — and nothing new
+    // is on the remote.
+    rig.git(&["switch", "-q", "main"]);
+    let main = rig.rev("main");
+    let there = refs(&rig.origin);
+    for (act, flags) in &acts {
+        if naming(flags).is_empty() {
+            continue;
+        }
+        call(act, &|_| None);
+        assert_eq!(
+            (rig.rev("main"), refs(&rig.origin)),
+            (main.clone(), there.clone()),
+            "`{act}`, run while `main` is checked out: `main` and the bare remote are where they were"
+        );
+        rig.git(&["switch", "-q", "main"]);
+    }
+    rig.git(&["switch", "-q", LOOP]);
+
+    // (c) A TAG OF THE BRANCH'S OWN NAME: git refuses the push as ambiguous, the tool
+    // answers that, and no tag — and no commit — reaches the remote.
+    rig.change(
+        &format!("{RUN_DIR}/note.md"),
+        "a note\n",
+        "docs(record): a note",
+    );
+    rig.git(&["tag", LOOP]);
+    let there = refs(&rig.origin);
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    assert_ne!(seen.code, 0, "the push is refused: {}", seen.raw);
+    assert_eq!(
+        refs(&rig.origin),
+        there,
+        "no tag and no commit reached the bare remote"
+    );
+    rig.git(&["tag", "-d", LOOP]);
+
+    // A RULE THAT CANNOT BE ASKED IS NEVER A PASS: without dev/branch-name beside the tool,
+    // an act that is handed a branch refuses, and one that is handed none is as it was.
+    fs::remove_file(rig.root.join(BRANCH_RULE)).expect("take the rule away");
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    seen.refused("usage");
+    assert!(seen.trace.is_empty(), "no git ran: {:?}", seen.trace);
+    assert_eq!(refs(&rig.origin), there, "and nothing was pushed");
+    rig.step(&["table"]).done("table", "listed");
+}
+
 #[test]
 fn the_tools_header_its_statuses_and_this_suites_table_agree() {
     let source = read(TOOL);
@@ -6219,6 +6555,8 @@ fn offences(source: &str) -> Vec<String> {
         };
         let known = (call.within == "git" && program == "[\"git\"] + list(argv)")
             || program == "[MERGE_LOGS]"
+            // The branch model's rule, asked of a branch an act is handed before it runs.
+            || (call.within == "in_the_model" && program == "[BRANCH_RULE, name]")
             || program.starts_with("[RECORD, \"state\", ")
             || program.starts_with("[RECORD, \"check-reports\"] + ")
             || program.starts_with("[RECORD, \"pending\", ")
