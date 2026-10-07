@@ -3454,9 +3454,11 @@ fn judged(ran: &Ran) -> Vec<(String, String)> {
             .expect("read the result the tool wrote"),
     )
     .expect("the result is JSON");
-    assert_eq!(
-        written["cases"], ran.result["cases"],
-        "what the harness returns is what the tool wrote under the scratch root"
+    assert!(
+        same_numbers(&written["cases"], &ran.result["cases"]),
+        "what the harness returns is what the tool wrote under the scratch root:\n{}\n{}",
+        written["cases"],
+        ran.result["cases"]
     );
     assert_eq!(
         ran.result["observed"].as_array().map(Vec::len),
@@ -3473,6 +3475,64 @@ fn judged(ran: &Ran) -> Vec<(String, String)> {
             )
         })
         .collect()
+}
+
+/// Whether two results are the same once A NUMBER IS READ AS ITS VALUE. The tool writes a
+/// hold of exactly one second as `1.0`; the runtime the harness returns it through hands
+/// on `1` — one number, and two JSON values to a reader that tells an integer from a
+/// float.
+fn same_numbers(left: &Value, right: &Value) -> bool {
+    match (left, right) {
+        (Value::Number(left), Value::Number(right)) => left.as_f64() == right.as_f64(),
+        (Value::Array(left), Value::Array(right)) => {
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .zip(right)
+                    .all(|(left, right)| same_numbers(left, right))
+        }
+        (Value::Object(left), Value::Object(right)) => {
+            left.len() == right.len()
+                && left.iter().all(|(name, left)| {
+                    right
+                        .get(name)
+                        .is_some_and(|right| same_numbers(left, right))
+                })
+        }
+        _ => left == right,
+    }
+}
+
+/// The comparison [`judged`] makes must not depend on how long a hold happened to take: a
+/// result with a whole number of seconds in it is the result the runtime hands back.
+#[test]
+fn a_whole_number_of_seconds_is_the_same_result_however_it_is_written() {
+    let written: Value = serde_json::from_str(
+        r#"[{"case": "a", "held_for": 1.0, "seconds": 1, "ended": ["returned"]}]"#,
+    )
+    .expect("what the tool wrote");
+    let returned: Value = serde_json::from_str(
+        r#"[{"case": "a", "held_for": 1, "seconds": 1, "ended": ["returned"]}]"#,
+    )
+    .expect("what the runtime handed back");
+    assert_ne!(written, returned, "the control: to serde the two differ");
+    assert!(
+        same_numbers(&written, &returned),
+        "`1.0` and `1` are one number"
+    );
+    for other in [
+        r#"[{"case": "a", "held_for": 1.004, "seconds": 1, "ended": ["returned"]}]"#,
+        r#"[{"case": "a", "held_for": "1", "seconds": 1, "ended": ["returned"]}]"#,
+        r#"[{"case": "a", "held_for": 1, "seconds": 1, "ended": []}]"#,
+        r#"[{"case": "a", "held_for": 1, "seconds": 1}]"#,
+        r#"[]"#,
+    ] {
+        let other: Value = serde_json::from_str(other).expect("another result");
+        assert!(
+            !same_numbers(&written, &other) && !same_numbers(&other, &written),
+            "a result that differs still differs: {other}"
+        );
+    }
 }
 
 fn all(cases: &[&str], verdict: &str) -> Vec<(String, String)> {
@@ -3556,46 +3616,63 @@ fn each_runtime_probe_returns_probed_with_one_judged_result_per_case_and_touches
     );
     only_the_probe_tool(&ran, &scratch);
 
-    // relay — twelve git steps, each handed the ONE line of a throwaway run; one of them
-    // relays it with a character changed.
-    let scratch = sim.probe_scratch("relay");
-    let ran = sim.invoke(
-        json!({"probe": "relay", "scratch": scratch}),
-        json!({"garbles": ["git:probe:state:r60-2"]}),
-    );
-    let tags = [
-        "r1-1", "r1-2", "r1-3", "r20-1", "r20-2", "r20-3", "r60-1", "r60-2", "r60-3", "r120-1",
-        "r120-2", "r120-3",
-    ];
-    let mut expected = all(&tags, "whole");
-    expected[7].1 = "altered".to_owned();
-    assert_eq!(judged(&ran), expected);
-    let mut steps = vec!["phase Probe".to_owned(), git("begin")];
-    steps.extend(tags.iter().map(|tag| git(&format!("state:{tag}"))));
-    steps.push(git("verdict"));
-    assert_eq!(
-        ran.trace, steps,
-        "the `relay` probe: every step a git step, on its model"
-    );
-    let altered = &ran.result["cases"][7];
-    assert!(
-        altered["bytes_back"].as_u64().is_some_and(|n| n >= 74_000)
-            && altered["bytes_back"] == altered["bytes_sent"],
-        "a line of the real run's size came back, one character off: {altered}"
-    );
-    assert!(
-        ran.result["observed"][7]["fault"]
-            .as_str()
-            .is_some_and(|why| why.contains("does not end with the sha256 of itself")),
-        "what the harness saw of it: {}",
-        ran.result["observed"][7]
-    );
-    assert!(
-        ran.result.to_string().len() < 20_000,
-        "a probe returns verdicts and never a relayed line: {} bytes",
-        ran.result.to_string().len()
-    );
-    only_the_probe_tool(&ran, &scratch);
+    // relay, and relay-document — twelve git steps each, each handed the ONE line of a
+    // throwaway run: its digest, or the line with the document in it; one of them relays
+    // it with a character changed.
+    for probe in ["relay", "relay-document"] {
+        let scratch = sim.probe_scratch(probe);
+        let ran = sim.invoke(
+            json!({"probe": probe, "scratch": scratch}),
+            json!({"garbles": ["git:probe:state:r60-2"]}),
+        );
+        let tags = [
+            "r1-1", "r1-2", "r1-3", "r20-1", "r20-2", "r20-3", "r60-1", "r60-2", "r60-3", "r120-1",
+            "r120-2", "r120-3",
+        ];
+        let mut expected = all(&tags, "whole");
+        expected[7].1 = "altered".to_owned();
+        assert_eq!(judged(&ran), expected);
+        let mut steps = vec!["phase Probe".to_owned(), git("begin")];
+        steps.extend(tags.iter().map(|tag| git(&format!("state:{tag}"))));
+        steps.push(git("verdict"));
+        assert_eq!(
+            ran.trace, steps,
+            "the `{probe}` probe: every step a git step, on its model"
+        );
+        let altered = &ran.result["cases"][7];
+        assert!(
+            altered["bytes_back"]
+                .as_u64()
+                .is_some_and(|n| if probe == "relay" {
+                    (2_000..8_000).contains(&n)
+                } else {
+                    n >= 74_000
+                })
+                && altered["bytes_back"] == altered["bytes_sent"],
+            "the digest of a run of the real run's size came back, or the document itself, one character off: {altered}"
+        );
+        assert!(
+            ran.commands
+                .iter()
+                .filter(|command| command.contains(" state "))
+                .all(|command| command.contains(&format!(" --probe {probe} "))),
+            "each relay step names its probe: {:?}",
+            ran.commands
+        );
+        assert!(
+            ran.result["observed"][7]["fault"]
+                .as_str()
+                .is_some_and(|why| why.contains("does not end with the sha256 of itself")),
+            "what the harness saw of it: {}",
+            ran.result["observed"][7]
+        );
+        assert!(
+            ran.result.to_string().len() < 20_000,
+            "a probe returns verdicts and never a relayed line: {} bytes",
+            ran.result.to_string().len()
+        );
+        only_the_probe_tool(&ran, &scratch);
+    }
 
     // payload — four batches, each written by the executor from its prompt and hashed.
     let scratch = sim.probe_scratch("payload");
@@ -3657,7 +3734,7 @@ fn each_runtime_probe_returns_probed_with_one_judged_result_per_case_and_touches
     assert_eq!(
         sim.repository(),
         before,
-        "four probes ran, and the repository is not what it was"
+        "five probes ran, and the repository is not what it was"
     );
 }
 
@@ -3730,7 +3807,7 @@ fn a_probe_is_refused_beside_a_stage_or_a_run_and_halts_at_its_first_step_on_a_s
         (&absent, "no-scratch"),
         (&a_file, "no-scratch"),
     ] {
-        for probe in ["required", "relay", "payload", "hold"] {
+        for probe in ["required", "relay", "relay-document", "payload", "hold"] {
             let ran = sim.invoke(
                 json!({"probe": probe, "scratch": unusable.display().to_string()}),
                 json!({}),

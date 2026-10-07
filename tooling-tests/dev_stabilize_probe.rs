@@ -12,9 +12,12 @@
 //! executed, on fixture data, with no runtime and no agent:
 //!
 //! - *relay* — a throwaway run under the scratch root whose `state` line is the real step
-//!   tool's over the real record script, at four sizes
-//!   ([`a_throwaway_runs_state_line_is_at_least_the_size_asked_at_four_sizes`]), and a line
-//!   that came back judged against the line that was sent
+//!   tool's over the real record script, at four sizes: **as its digest**, which is what
+//!   the probe relays since the second repair plan's `K9`
+//!   ([`the_relay_probes_line_is_a_digest_at_every_size`]), and — as the probe
+//!   `relay-document`, kept to compare — with the document in it
+//!   ([`a_throwaway_runs_state_line_is_at_least_the_size_asked_at_four_sizes`]); and a line
+//!   that came back judged against the line that was sent, of either
 //!   ([`a_relayed_line_is_judged_against_the_line_that_was_sent`]);
 //! - *payload* — a batch of N entries on disk judged by its sha256, and a file's hash as
 //!   one hashed line ([`a_batch_of_n_entries_is_judged_by_the_sha256_of_what_the_disk_holds`]);
@@ -78,15 +81,23 @@ const REFUSALS: &[(&str, i32)] = &[
     ("garbled", 9),
 ];
 
-/// The four sizes of the relay probe: ledger rows, doors of the round's scope, and the
-/// least its ONE line measures — the sizes the re-review measured a real run's state at
-/// (3, 25, 75 and 143 KB).
+/// The four sizes of the relay probes: ledger rows, doors of the round's scope, and the
+/// least the ONE line with the document in it measures — the sizes the re-review measured
+/// a real run's state at (3, 25, 75 and 143 KB).
 const SIZES: [(u64, u64, usize); 4] = [
     (1, 2, 3_000),
     (20, 40, 25_000),
     (60, 150, 74_000),
     (120, 300, 142_000),
 ];
+
+/// The items of each size's test set — a digest grows with those, and with nothing else —
+/// and the most a digest of that run measures.
+const DIGESTS: [(usize, usize); 4] = [(1, 2_000), (10, 3_500), (30, 6_500), (60, 11_500)];
+
+/// The probe that relays the line with the document in it: the cases the first run of the
+/// relay probe never got back whole, kept beside the probe of the digest for comparison.
+const DOCUMENT: &str = "relay-document";
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -374,7 +385,7 @@ fn relay_tags() -> Vec<String> {
 fn a_throwaway_runs_state_line_is_at_least_the_size_asked_at_four_sizes() {
     let rig = ProbeRig::new("sizes");
     let scratch = rig.scratch("scratch-relay");
-    let begun = rig.probe(&["begin", "--scratch", &scratch, "--probe", "relay"]);
+    let begun = rig.probe(&["begin", "--scratch", &scratch, "--probe", DOCUMENT]);
     let line = begun.done("begin", "begun");
     let runs = line["runs"].as_array().expect("the runs it built");
     assert_eq!(
@@ -396,6 +407,8 @@ fn a_throwaway_runs_state_line_is_at_least_the_size_asked_at_four_sizes() {
             "state",
             "--scratch",
             &scratch,
+            "--probe",
+            DOCUMENT,
             "--rows",
             &rows.to_string(),
             "--tag",
@@ -421,42 +434,133 @@ fn a_throwaway_runs_state_line_is_at_least_the_size_asked_at_four_sizes() {
             stated.raw.contains("\\u"),
             "the line carries what a real one carries: escapes"
         );
-        let sent =
-            fs::read_to_string(Path::new(&scratch).join(format!("probe/relay/sent/{tag}.line")))
-                .expect("the tool keeps what it sent");
+        let sent = fs::read_to_string(
+            Path::new(&scratch).join(format!("probe/{DOCUMENT}/sent/{tag}.line")),
+        )
+        .expect("the tool keeps what it sent");
         assert_eq!(sent, stated.raw, "what was sent is the line as printed");
     }
-    // A run is written once, and a size nobody built is no size.
-    rig.probe(&["begin", "--scratch", &scratch, "--probe", "relay"])
+    // A run is written once, a size nobody built is no size, and a probe that relays no
+    // line has no state to print.
+    rig.probe(&["begin", "--scratch", &scratch, "--probe", DOCUMENT])
         .refused("exists");
-    rig.probe(&[
-        "state",
-        "--scratch",
-        &scratch,
-        "--rows",
-        "7",
-        "--tag",
-        "r7-1",
-    ])
-    .refused("usage");
+    let state = |scratch: &str, probe: &'static str, rows: &'static str| -> Probed {
+        let tag = format!("r{rows}-1");
+        rig.probe(&[
+            "state",
+            "--scratch",
+            scratch,
+            "--probe",
+            probe,
+            "--rows",
+            rows,
+            "--tag",
+            &tag,
+        ])
+    };
+    state(&scratch, DOCUMENT, "7").refused("usage");
+    state(&scratch, "payload", "20").refused("usage");
+    state(&scratch, "relay", "20").refused("missing");
     let unbuilt = rig.scratch("scratch-unbuilt");
-    rig.probe(&[
-        "state",
-        "--scratch",
-        &unbuilt,
-        "--rows",
-        "20",
-        "--tag",
-        "r20-1",
-    ])
-    .refused("missing");
+    state(&unbuilt, DOCUMENT, "20").refused("missing");
+}
+
+/// **The relay probe relays the digest** (the second repair plan's `K9`): the line a
+/// throwaway run's own step tool prints when it is asked for one (`--digest`) — which is
+/// what the harness is to read. At each of the four sizes it is printable ASCII with no
+/// backslash in it, so there is nothing for an agent's return to decode; it counts the
+/// rows and the doors the document lists; and it measures a few kilobytes where the
+/// document measures 3 to 143 — growing with the run's test set, whose items the four runs
+/// have 1, 10, 30 and 60 of, and with nothing else. The file it names lies under the
+/// throwaway run's own scratch root.
+#[test]
+fn the_relay_probes_line_is_a_digest_at_every_size() {
+    let rig = ProbeRig::new("digest-sizes");
+    let scratch = rig.scratch("scratch-relay");
+    let begun = rig.probe(&["begin", "--scratch", &scratch, "--probe", "relay"]);
+    let line = begun.done("begin", "begun");
+    let runs = line["runs"].as_array().expect("the runs it built");
+    assert_eq!(runs.len(), SIZES.len(), "{line}");
+    for (((rows, doors, document), (items, at_most)), run) in SIZES.iter().zip(DIGESTS).zip(runs) {
+        let tag = format!("r{rows}-1");
+        let stated = rig.probe(&[
+            "state",
+            "--scratch",
+            &scratch,
+            "--probe",
+            "relay",
+            "--rows",
+            &rows.to_string(),
+            "--tag",
+            &tag,
+        ]);
+        let said = stated.done("state", "read");
+        let sent = stated.raw.trim_end_matches('\n');
+        assert_eq!(
+            json!([run["rows"], run["doors"], run["items"]]),
+            json!([rows, doors, items]),
+            "the run says what it holds: {run}"
+        );
+        assert!(
+            run["bytes"]
+                .as_u64()
+                .is_some_and(|said| said.abs_diff(sent.len() as u64) <= 8),
+            "and how long the line is that this probe relays — its digest, up to the name of a tag: {run}, and {} bytes were sent",
+            sent.len()
+        );
+        assert!(
+            sent.bytes().all(|byte| (0x20..0x7f).contains(&byte)) && !sent.contains('\\'),
+            "the digest is printable ASCII, and holds no escape: {sent}"
+        );
+        assert!(
+            sent.len() <= at_most && sent.len() * 2 < *document,
+            "at {rows} rows over {doors} doors and {items} items the digest is {} bytes: at most {at_most}, where the document is {document}",
+            sent.len()
+        );
+        assert_eq!(
+            json!([
+                said["state"]["ledger"],
+                said["state"]["doors"]["included"],
+                said["state"]["items"].as_array().map(Vec::len),
+                said["unfit"]
+            ]),
+            json!([rows, doors, items, []]),
+            "it counts what the run holds: {sent}"
+        );
+        // The file it names is the document, under the throwaway run's own scratch root.
+        let kept = Path::new(&scratch)
+            .join(format!("probe/relay/run-{rows}/scratch"))
+            .join(said["file"].as_str().expect("the file a digest names"));
+        let document: Value = serde_json::from_str(&fs::read_to_string(&kept).expect("read it"))
+            .expect("the document");
+        assert_eq!(
+            document["ledger"].as_array().map(Vec::len),
+            Some(*rows as usize),
+            "the document is in the file the digest names"
+        );
+        assert_eq!(
+            fs::read_to_string(Path::new(&scratch).join(format!("probe/relay/sent/{tag}.line")))
+                .expect("the tool keeps what it sent"),
+            stated.raw,
+            "what was sent is the line as printed"
+        );
+    }
 }
 
 #[test]
 fn a_relayed_line_is_judged_against_the_line_that_was_sent() {
-    let rig = ProbeRig::new("relay");
+    std::thread::scope(|threads| {
+        for probe in ["relay", DOCUMENT] {
+            threads.spawn(move || a_relay_is_judged(probe));
+        }
+    });
+}
+
+/// One of the two relay probes, judged: the digest's (`relay`), or the document's.
+fn a_relay_is_judged(probe: &str) {
+    let rig = ProbeRig::new(probe);
     let scratch = rig.scratch("scratch-relay");
-    rig.probe(&["begin", "--scratch", &scratch, "--probe", "relay"])
+    rig.probe(&["begin", "--scratch", &scratch, "--probe", probe])
         .done("begin", "begun");
     // Every case but one is sent; the hash each line ends with is what a harness that
     // took the line whole hands back.
@@ -467,6 +571,8 @@ fn a_relayed_line_is_judged_against_the_line_that_was_sent() {
             "state",
             "--scratch",
             &scratch,
+            "--probe",
+            probe,
             "--rows",
             &rows,
             "--tag",
@@ -492,7 +598,7 @@ fn a_relayed_line_is_judged_against_the_line_that_was_sent() {
             _ => format!("{tag}:r:{}:0", own[tag]),
         })
         .collect();
-    let judged = rig.verdict(&scratch, "relay", &cases);
+    let judged = rig.verdict(&scratch, probe, &cases);
     let line = judged.done("verdict", "judged");
     let expected: Vec<(String, String)> = relay_tags()
         .into_iter()
@@ -512,12 +618,12 @@ fn a_relayed_line_is_judged_against_the_line_that_was_sent() {
     assert!(
         case(line, "r120-1")["bytes_sent"]
             .as_u64()
-            .is_some_and(|n| n >= 142_000),
-        "a case says how much was sent: {line}"
+            .is_some_and(|n| (n >= 142_000) == (probe == DOCUMENT) && n > 1_000),
+        "a case says how much was sent — the document, or a digest of it: {line}"
     );
     assert_eq!(case(line, "r1-3")["tries"], 3, "{line}");
     assert_eq!(written(line)["cases"], line["cases"], "the result on disk");
-    assert_eq!(written(line)["probe"], "relay");
+    assert_eq!(written(line)["probe"], probe);
 }
 
 // ---------------------------------------------------------------------------
@@ -934,7 +1040,7 @@ fn every_act_refuses_a_scratch_root_inside_the_repository_and_changes_no_file_of
     let acts = |scratch: &str| -> Vec<Vec<String>> {
         let s = scratch.to_owned();
         let own = |args: &[&str]| -> Vec<String> { args.iter().map(|a| (*a).to_owned()).collect() };
-        let mut all: Vec<Vec<String>> = ["required", "relay", "payload", "hold"]
+        let mut all: Vec<Vec<String>> = ["required", "relay", DOCUMENT, "payload", "hold"]
             .iter()
             .map(|probe| own(&["begin", "--scratch", &s, "--probe", probe]))
             .collect();
@@ -942,6 +1048,8 @@ fn every_act_refuses_a_scratch_root_inside_the_repository_and_changes_no_file_of
             "state",
             "--scratch",
             &s,
+            "--probe",
+            "relay",
             "--rows",
             "1",
             "--tag",
@@ -1018,7 +1126,7 @@ fn every_act_refuses_a_scratch_root_inside_the_repository_and_changes_no_file_of
     // And every act, run to its end under a scratch root outside: the repository's tree,
     // its `git status`, its head and its remote are what they were.
     let scratch = rig.scratch("scratch-all");
-    for probe in ["required", "relay", "payload", "hold"] {
+    for probe in ["required", "relay", DOCUMENT, "payload", "hold"] {
         rig.probe(&["begin", "--scratch", &scratch, "--probe", probe])
             .done("begin", "begun");
     }
@@ -1026,6 +1134,8 @@ fn every_act_refuses_a_scratch_root_inside_the_repository_and_changes_no_file_of
         "state",
         "--scratch",
         &scratch,
+        "--probe",
+        "relay",
         "--rows",
         "20",
         "--tag",

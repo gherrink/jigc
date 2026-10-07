@@ -891,6 +891,24 @@ fn run_set(run: &str) -> Vec<String> {
     vec!["run-set".to_owned(), format!("--run={run}")]
 }
 
+/// The reads an agent of a stage makes by key: an item's row, and its doors in a round.
+fn read_item(run: &str, item: &str) -> Vec<String> {
+    vec![
+        "item".to_owned(),
+        format!("--run={run}"),
+        format!("--item={item}"),
+    ]
+}
+
+fn read_doors(run: &str, round: &str, item: &str) -> Vec<String> {
+    vec![
+        "item-doors".to_owned(),
+        format!("--run={run}"),
+        format!("--round={round}"),
+        format!("--item={item}"),
+    ]
+}
+
 /// A well-formed item of the test set: one review row, run where the round reaches it.
 fn item(id: &str) -> Value {
     json!({
@@ -1237,13 +1255,16 @@ const WRITERS: &[Writer] = &[
 ];
 
 /// The subcommands that write nothing.
-const READERS: [&str; 6] = [
+const READERS: [&str; 9] = [
     "check-reports",
     "check-ledger",
     "state",
     "gate-check",
     "pending",
     "vet",
+    "item",
+    "item-doors",
+    "untriaged",
 ];
 
 /// The subcommands that settle a batch and take no text of a caller's: they finish a write
@@ -1816,6 +1837,12 @@ fn every_subcommand(rig: &Rig, run: &str) -> Vec<(&'static str, Seen)> {
             "run-set",
             rig.run(&run_set(run), &json!({"rounds": 3}).to_string()),
         ),
+        ("item", rig.run(&read_item(run, "row-setup"), "")),
+        (
+            "item-doors",
+            rig.run(&read_doors(run, "1", "row-setup"), ""),
+        ),
+        ("untriaged", rig.run(&keeper("untriaged", run), "")),
     ]
 }
 
@@ -12751,4 +12778,275 @@ fn an_in_scope_item_no_tested_round_selected_is_named_and_so_is_a_door_no_item_n
         .must(OK, "round 2's fix cycle");
     stage(&rig, 3, &inside, &[("gate", "green")]);
     assert_eq!(rig.state()["uncovered"], unnamed(&[1, 3]));
+}
+
+// ---------------------------------------------------------------------------
+// What an agent reads by key
+// ---------------------------------------------------------------------------
+
+/// The harness's `unitDoors`, word for word: the doors of a round's test set a unit
+/// covers — its own doors, and those of its registries; a unit that runs on every
+/// candidate and names neither covers them all.
+fn unit_doors(item: &Value, included: &[Value]) -> Vec<Value> {
+    let named = |field: &str| item[field].as_array().cloned().unwrap_or_default();
+    let (doors, registries) = (named("doors"), named("registries"));
+    if item["runs"] == "every-candidate" && doors.is_empty() && registries.is_empty() {
+        return included.to_vec();
+    }
+    included
+        .iter()
+        .filter(|door| doors.contains(&door["door"]) || registries.contains(&door["registry"]))
+        .cloned()
+        .collect()
+}
+
+/// **An agent reads its brief, its doors and the untriaged rows by key** (the second
+/// repair plan's `K9`; [DECISIONS.md](../DECISIONS.md) → *2026-10-07 — A line holds what
+/// the harness acts on*). The harness put each of them into a prompt as text it had taken
+/// from the state document, which reached it through an agent's relay — and a relay does
+/// not carry a sentence (the relay probe, 2026-10-07). So the script answers three reads,
+/// each one line of JSON, each writing nothing, and a prompt names the read:
+/// `item` — a row of the test set, whole, its brief in it; `item-doors` — the doors of a
+/// round's test set the item covers, each with its registry and its derivation, selected
+/// as the harness selects them today (its own `unitDoors`, run here where `node` is
+/// installed, and transliterated where it is not) and from THE ROUND ASKED, which for a
+/// re-run is not the latest; `untriaged` — the ledger's rows whose triage is not
+/// finished, whole, in the ledger's order.
+#[test]
+fn an_agent_reads_its_brief_its_doors_and_the_untriaged_rows_by_key() {
+    let rig = census_run("reads", &["no-lost-files"]);
+    let brief = "the row\u{2019}s brief \u{2014} `jigc setup` \u{2192} what it must not lose";
+    let unit = |id: &str, kind: &str, runs: &str, doors: &[&str], registries: &[&str]| {
+        json!({"item": id, "kind": kind, "clause": "no-lost-files", "runs": runs,
+               "brief": format!("{brief} ({id})"), "doors": doors, "registries": registries})
+    };
+    let items = json!([
+        unit("gate", "check", "every-candidate", &[], &[]),
+        unit("sweep", "audit-area", "every-candidate", &[], &["codes"]),
+        unit(
+            "review-setup",
+            "review-row",
+            "in-scope",
+            &["jigc setup"],
+            &[]
+        ),
+        unit("review-codes", "review-row", "in-scope", &[], &["codes"]),
+        unit(
+            "review-both",
+            "review-row",
+            "in-scope",
+            &["jigc rename"],
+            &["codes"]
+        ),
+        unit(
+            "review-typo",
+            "review-row",
+            "in-scope",
+            &["jigc setpu"],
+            &[]
+        ),
+    ]);
+    rig.run(&item_set(RUN), &items.to_string())
+        .must(OK, "the test set");
+    let at = |name: &str, registry: &str| {
+        json!({"door": name, "registry": registry,
+               "derivation": format!("a changed symbol \u{2192} `{name}` reads it")})
+    };
+    let first = json!({
+        "included": [at("jigc setup", "verbs"), at("jigc rename", "verbs"),
+                     at("finalize.dirty", "codes"), at("finalize.clean", "codes")],
+        "excluded": [at("jigc doc show", "verbs")],
+    });
+    rig.seed_rows(&["seeded", "second", "third"]);
+    rig.run(
+        &ledger_add(RUN),
+        &row_at("audit-f3", "jigc setup").to_string(),
+    )
+    .must(OK, "a fourth row");
+    rig.run(
+        &ledger_set(RUN),
+        &json!([{"key": "second", "disposition": "later"},
+                {"key": "third", "grade": "needs-bound", "graded_by": "triage"}])
+        .to_string(),
+    )
+    .must(
+        OK,
+        "a row that is ruled, and one that is the human's: neither is a triage's",
+    );
+    rig.run(&scope_set(RUN, "1"), &first.to_string())
+        .must(OK, "round 1's scope");
+    let before = rig.snapshot();
+    let state = rig.state();
+
+    // An item's row: the state's own entry, its brief whole.
+    for row in state["items"].as_array().expect("the items") {
+        let id = row["item"].as_str().expect("an id");
+        let seen = rig.run(&read_item(RUN, id), "");
+        seen.must(OK, "an item's row");
+        assert_eq!(seen.json(), json!({"run": RUN, "item": row}), "`{id}`");
+        assert!(
+            seen.stdout.lines().count() == 1
+                && row["brief"]
+                    .as_str()
+                    .is_some_and(|text| text.starts_with(brief)),
+            "one line, and the brief as it was written: {}",
+            seen.stdout
+        );
+    }
+
+    // An item's doors in a round: what the harness's own selection answers.
+    let selected = |round: &str, included: &Value| {
+        let included = included.as_array().expect("the included doors").clone();
+        let mut counts = Vec::new();
+        for row in state["items"].as_array().expect("the items") {
+            let id = row["item"].as_str().expect("an id");
+            let seen = rig.run(&read_doors(RUN, round, id), "");
+            seen.must(OK, "an item's doors");
+            let expected = unit_doors(row, &included);
+            assert_eq!(
+                seen.json(),
+                json!({"run": RUN, "round": round.parse::<u64>().expect("a round"), "item": id, "doors": expected}),
+                "`{id}` in round {round}"
+            );
+            counts.push(expected.len());
+        }
+        if super::dev_stabilize_step::node_or_skip(
+            "the harness's own `unitDoors` was not held to dev/stabilize-record item-doors",
+        ) {
+            let calls: Vec<Value> = state["items"]
+                .as_array()
+                .expect("the items")
+                .iter()
+                .map(|row| json!(["unitDoors", [row, included]]))
+                .collect();
+            let harness = super::dev_stabilize_step::harness_pure(&json!(calls));
+            for (row, doors) in state["items"]
+                .as_array()
+                .expect("the items")
+                .iter()
+                .zip(harness)
+            {
+                assert_eq!(
+                    rig.run(
+                        &read_doors(RUN, round, row["item"].as_str().expect("an id")),
+                        ""
+                    )
+                    .json()["doors"],
+                    doors,
+                    "the harness's `unitDoors` for {} in round {round}",
+                    row["item"]
+                );
+            }
+        }
+        counts
+    };
+    assert_eq!(
+        selected("1", &state["doors"]["included"]),
+        [4, 2, 1, 2, 3, 0],
+        "all of them · a registry's · a door · a registry's · a door and a registry's · none, for a door mistyped"
+    );
+
+    // The untriaged rows: the ledger's own, whole, with why each is no triage's yet.
+    let seen = rig.run(&keeper("untriaged", RUN), "");
+    seen.must(OK, "the untriaged rows");
+    let rows: Vec<&Value> = state["ledger"]
+        .as_array()
+        .expect("the ledger")
+        .iter()
+        .filter(|row| row["route"] == "triage")
+        .collect();
+    assert_eq!(
+        seen.json(),
+        json!({"run": RUN, "count": 2, "untriaged": rows}),
+        "the rows the state counts as untriaged, in the ledger's order"
+    );
+    assert_eq!(
+        state["untriaged"],
+        json!([{"key": "seeded", "why": "ungraded"}, {"key": "audit-f3", "why": "ungraded"}])
+    );
+    for field in ["key", "why", "grade", "door", "clause", "repro"] {
+        assert!(
+            rows[0][field].is_string(),
+            "a row says `{field}`: {}",
+            rows[0]
+        );
+    }
+
+    // What is asked for and is not there is refused; and a read writes nothing.
+    rig.run(&read_item(RUN, "no-such-item"), "")
+        .refused(NO_SUCH_ROW, "an item the test set lacks");
+    rig.run(&read_doors(RUN, "1", "no-such-item"), "")
+        .refused(NO_SUCH_ROW, "the doors of an item the test set lacks");
+    rig.run(&read_doors(RUN, "2", "gate"), "")
+        .refused(NO_SCOPE, "the doors of a round that has no scope");
+    rig.run(&read_item(RUN, "Not A Slug"), "")
+        .refused(BAD_ID, "an item that is no id");
+    rig.run(&read_doors(RUN, "one", "gate"), "")
+        .refused(BAD_ID, "a round that is no number");
+    assert_eq!(rig.snapshot(), before, "the reads wrote nothing");
+
+    // A RE-RUN NAMES THE ROUND ITS POSITION GIVES: once round 2 has a scope of its own the
+    // state's doors are round 2's, and round 1's are still read by its number.
+    for key in ["seeded", "third", "audit-f3"] {
+        rig.run(
+            &ledger_set(RUN),
+            &json!({"key": key, "disposition": "later"}).to_string(),
+        )
+        .must(OK, "the rows are ruled");
+    }
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"candidate": candidate(1)}).to_string(),
+    )
+    .must(OK, "round 1's candidate");
+    // Round 1 is tested and holds no run: the step is a re-run INSIDE round 1, and what
+    // the position lists as that re-run's doors is what the read answers for its round.
+    let read = rig.state();
+    let rerun = &read["position"]["test"]["rerun"];
+    assert_eq!(
+        json!([read["next"].clone(), rerun["round"].clone()]),
+        json!(["retest", 1]),
+        "{read}"
+    );
+    let again = rerun["doors"].as_array().expect("the re-run's doors");
+    for entry in rerun["items"].as_array().expect("the re-run's items") {
+        let id = entry["item"].as_str().expect("an id");
+        let row = read["items"]
+            .as_array()
+            .expect("the items")
+            .iter()
+            .find(|row| row["item"] == id)
+            .expect("the item's row");
+        assert_eq!(
+            rig.run(&read_doors(RUN, "1", id), "").json()["doors"],
+            json!(unit_doors(row, again)),
+            "`{id}`, run again in round 1"
+        );
+    }
+    let greens: Vec<Value> = [
+        "gate",
+        "sweep",
+        "review-setup",
+        "review-codes",
+        "review-both",
+    ]
+    .iter()
+    .map(|id| ran(id, "green"))
+    .collect();
+    rig.run(
+        &result_set(RUN, "1", &candidate(1)),
+        &json!(greens).to_string(),
+    )
+    .must(OK, "round 1's runs");
+    let second =
+        json!({"included": [at("jigc rename", "verbs")], "excluded": [at("jigc setup", "verbs")]});
+    rig.run(&scope_set(RUN, "2"), &second.to_string())
+        .must(OK, "round 2's scope");
+    assert_eq!(rig.state()["doors"]["included"], second["included"]);
+    assert_eq!(selected("2", &second["included"]), [1, 0, 0, 0, 1, 0]);
+    assert_eq!(selected("1", &first["included"]), [4, 2, 1, 2, 3, 0]);
+    assert_eq!(
+        rig.run(&keeper("untriaged", RUN), "").json(),
+        json!({"run": RUN, "count": 0, "untriaged": []})
+    );
 }

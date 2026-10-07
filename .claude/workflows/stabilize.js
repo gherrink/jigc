@@ -184,7 +184,12 @@
 //             field out, (b) is asked for a source pass that drives nothing. What comes back —
 //             the object without it, the field, nothing, a throw — and after how many tries.
 //   relay     the ONE line of a throwaway run's state, at four sizes, each relayed three
-//             times by a git step under the stage's own step prompt.
+//             times by a git step under the stage's own step prompt — AS ITS DIGEST, the
+//             line the step tool prints when asked for one (`--digest`), which is what a
+//             stage is to read (the second repair plan's task K9).
+//   relay-document  the same, of the line WITH THE STATE DOCUMENT IN IT — what a stage
+//             reads today, and what this probe's first run never got back whole (2026-10-07:
+//             twelve of twelve). Kept to compare.
 //   payload   a record's batch of 20, 60, 120 and 300 entries, composed by the functions a
 //             stage composes one with and written by the executor from its prompt.
 //   hold      one long command: (a) held by a preflight agent inside its turn, as it holds
@@ -258,7 +263,7 @@
 //               committed and pushed; after `fixers` the fixers' commits are on the round
 //               branch; after `audit` the round branch is pushed as well.
 //   selfTest  — OPTIONAL: true runs zero agents and checks this script's own logic.
-//   probe     — INSTEAD OF A STAGE: 'required', 'relay', 'payload' or 'hold' — one runtime
+//   probe     — INSTEAD OF A STAGE: 'required', 'relay', 'relay-document', 'payload' or 'hold' — one runtime
 //               probe (above). It takes `scratch` — a directory that is there, outside the
 //               repository, and fresh: a probe's root under it is made once — and nothing
 //               else: no stage, no run.
@@ -334,7 +339,7 @@ const PAYLOAD_ENDS = 'STABILIZE_PAYLOAD'
 // probe's four batches. dev/stabilize-probe has the same lists, and
 // tooling-tests/stabilize_harness_fence.rs holds the two together.
 const PROBE_TOOL = 'dev/stabilize-probe'
-const PROBES = ['required', 'relay', 'payload', 'hold']
+const PROBES = ['required', 'relay', 'relay-document', 'payload', 'hold']
 const PROBE_ROWS = [1, 20, 60, 120]
 const PROBE_RELAYS = 3
 const PROBE_ENTRIES = [20, 60, 120, 300]
@@ -2448,11 +2453,11 @@ async function runProbe() {
       cases.push(id + ':' + triesOf(tries) + ':' + probeField(back))
     }
   }
-  if (v.probe === 'relay') {
+  if (v.probe === 'relay' || v.probe === 'relay-document') {
     for (const rows of PROBE_ROWS) {
       for (let n = 1; n <= PROBE_RELAYS; n++) {
         const tag = 'r' + rows + '-' + n
-        const { back, tries } = await watched(() => probeAct('state:' + tag, 'state', 'the ONE line of the state of a throwaway run of ' + rows + ' ledger row(s), relayed — relay ' + n + ' of ' + PROBE_RELAYS, '--scratch ' + s + ' --rows ' + rows + ' --tag ' + tag))
+        const { back, tries } = await watched(() => probeAct('state:' + tag, 'state', 'the ONE line of the state of a throwaway run of ' + rows + ' ledger row(s), relayed — relay ' + n + ' of ' + PROBE_RELAYS, '--scratch ' + s + ' --probe ' + v.probe + ' --rows ' + rows + ' --tag ' + tag))
         const cell = probeRelayed(back.raw, back.read)
         observed.push({ case: tag, tries, back: cell, fault: faultOf(back.read) })
         cases.push(tag + ':' + triesOf(tries) + ':' + cell)

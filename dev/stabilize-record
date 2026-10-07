@@ -752,6 +752,30 @@
 #       attempts that left no record are counted from (state). Prints {"applied", "files",
 #       "results"} — one result per call, as that call prints it.
 #
+#   dev/stabilize-record item --run R --item I
+#   dev/stabilize-record item-doors --run R --round N --item I
+#   dev/stabilize-record untriaged --run R
+#       WHAT AN AGENT OF A STAGE READS BY KEY (the second repair plan of the `test` half,
+#       K9): each one line of JSON, each from the state as `state` reads it, each writing
+#       nothing. The harness reads a digest of the state and no sentence of it
+#       (`dev/stabilize-step`: THE DIGEST) — a line relayed through an agent does not
+#       carry one — so a prompt names the read, and the agent runs it:
+#         item         a row of the test set, whole, as the state's `items` has it — its
+#                      brief in it: {"run", "item": {item, kind, clause, runs, doors,
+#                      registries, brief, selected}}. An item the test set lacks is
+#                      refused (no-such-row).
+#         item-doors   the doors of round N's test set the item covers — its own doors,
+#                      and those of its registries; all of the round's, for an item that
+#                      runs on every candidate and names neither — each with its registry
+#                      and its derivation: {"run", "round", "item", "doors": [{door,
+#                      registry, derivation}]}. It reads THE ROUND IT IS ASKED FOR, which
+#                      for a re-run is the round the position gives and not the latest;
+#                      a round with no scope is refused (no-scope).
+#         untriaged    the ledger's rows whose triage is not finished, whole and in the
+#                      ledger's order, each with why (`ungraded`, `unverified`):
+#                      {"run", "count", "untriaged": [...]} — the rows the state's
+#                      `untriaged` names by key, and a stage's triage is handed.
+#
 #   dev/stabilize-record pending --run R
 #       What of the run is written and in no commit yet, AS THIS SCRIPT KNOWS IT; writes
 #       nothing. Prints {"run", "opened", "journal", "interrupted", "batch", "once",
@@ -1266,7 +1290,7 @@ WRITERS = {
     "item-set": "anywhere",
     "apply": "by-call",
 }
-READERS = ("state", "pending", "check-reports", "check-ledger", "gate-check", "vet")
+READERS = ("state", "item", "item-doors", "untriaged", "pending", "check-reports", "check-ledger", "gate-check", "vet")
 KEEPERS = ("discard", "settle", "recover", "set-aside")
 ROUND_TAKES = {
     "candidate": "untested",
@@ -3327,6 +3351,51 @@ def state(args):
     say(json.dumps(document(run_dir, args.run)))
 
 
+def read_by_key(run):
+    """(the run's directory, its state document), for a read by key: under the shared lock,
+    and never across a write that was killed — as `state` reads it."""
+    run_dir = open_run(run)
+    fcntl.flock(os.open(run_dir, os.O_RDONLY), fcntl.LOCK_SH)
+    interrupted(run_dir, run)
+    return run_dir, document(run_dir, run)
+
+
+def item_of(held, name):
+    """The row of the test set an agent asks for by its id, as the state has it."""
+    rows = [item for item in held["items"] if item["item"] == slug(name, "item")]
+    if not rows:
+        refuse("no-such-row", "the test set of run %s has no item %s: its items are %s" % (held["run"], shown(name), ITEMS_BREAK.join(item["item"] for item in held["items"]) or "none"))
+    return rows[0]
+
+
+def read_item(args):
+    _, held = read_by_key(args.run)
+    say(json.dumps({"run": args.run, "item": item_of(held, args.item)}))
+
+
+def item_doors(args):
+    """THE DOORS OF A ROUND'S TEST SET AN ITEM COVERS: its own doors, and those of its
+    registries — and all of them, for an item that runs on every candidate and names
+    neither. The selection the harness made of the state document (its `unitDoors`), made
+    here so that no door's name or derivation passes through a relayed line."""
+    run_dir, held = read_by_key(args.run)
+    round_number = int(number(args.round, "round"))
+    item = item_of(held, args.item)
+    scope = read_scope(run_dir, round_number)
+    if scope is None:
+        refuse("no-scope", "round %d of run %s has no scope: its doors are written once, by its scope step (scope-set)" % (round_number, args.run))
+    included = [{"door": as_data(row[0]), "registry": as_data(row[2]), "derivation": as_data(row[3])} for row in scope[1] if row[1] == "included"]
+    if item["runs"] != "every-candidate" or item["doors"] or item["registries"]:
+        included = [door for door in included if door["door"] in item["doors"] or door["registry"] in item["registries"]]
+    say(json.dumps({"run": args.run, "round": round_number, "item": item["item"], "doors": included}))
+
+
+def untriaged(args):
+    _, held = read_by_key(args.run)
+    rows = [finding for finding in held["ledger"] if finding["route"] == "triage"]
+    say(json.dumps({"run": args.run, "count": len(rows), "untriaged": rows}))
+
+
 def interrupted(run_dir, run):
     """Refuse to read a run one of whose writes was killed between its files. The reader
     holds the shared lock, so the write is not alive: its journal is what is left."""
@@ -4150,6 +4219,9 @@ def arguments(argv):
     command("round-set", round_set, [("round", True)])
     command("run-set", run_set, [])
     command("state", state, [])
+    command("item", read_item, [("item", True)])
+    command("item-doors", item_doors, [("round", True), ("item", True)])
+    command("untriaged", untriaged, [])
     command("gate-set", gate_set, [("round", True), ("commit", True), ("summary", True)], writes=True)
     command("gate-check", gate_check, [("round", False), ("summary", True)], writes=True)
     command("apply", apply, [("round", False), ("subject", True)], writes=True)

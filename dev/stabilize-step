@@ -29,7 +29,8 @@
 # append-only logs are the harness's (`branchName`, `runDir`, `PRODUCT_PATHS`,
 # `SYNC_LOGS`) and arrive as arguments.
 #
-# Usage — every act prints ONE line of JSON on stdout, whatever it exits with:
+# Usage — every act prints ONE line of JSON on stdout, whatever it exits with; and every
+# act takes --digest DIR, which makes that line its DIGEST (THE DIGEST, below):
 #
 #   dev/stabilize-step git-state --stage test|fix --loop L --rounds P --run-dir D
 #                      [--product PATH]... [--look]
@@ -194,8 +195,9 @@
 #       The table of acts and arrival states, as data (below). Asks git nothing. Prints
 #       {status: listed, acts: [{act, half, phases, commands, owes}], arrivals: [{state,
 #       act, phase, found, answer, word, whose, leaves}], kept: [{file, act, written,
-#       read, believed}]} — `kept` is every file this tool writes, both outside the
-#       repository: the state document, and a commit step's answer beside its gate's file.
+#       read, believed}]} — `kept` is every file this tool writes, all outside the
+#       repository: the state document, a commit step's answer beside its gate's file,
+#       and the line an act asked for its digest would have printed (THE DIGEST, below).
 #
 #   dev/stabilize-step sync-main --loop L [--log PATH]...
 #       `origin/main` merged INTO L before its pull request, as the build harness's close
@@ -276,6 +278,56 @@
 #                         the read that names every commit and place again.
 # A scanner that cannot run is a refusal at each of the three (did-not-run), never a
 # pass. WHAT IS NOT VETTED: a push somebody makes by hand with plain git.
+#
+# THE DIGEST (the second repair plan of the `test` half, P3 and its task K9; DECISIONS.md ->
+# 2026-10-07, "A line holds what the harness acts on"). Observed on 2026-10-07: a line
+# relayed through an agent NEVER arrives byte for byte once it holds one character outside
+# ASCII — this tool prints it as a `\uXXXX` escape, the agent's structured return decodes
+# it, and the harness's hash of the bytes fails — and from about 80 KB it does not arrive
+# at all. A commit's subject, a refusal's prose and a ledger row are full of such
+# characters, and the state document was 75 KB at the first run's size. So:
+#
+#   dev/stabilize-step <act> --digest DIR <the act's arguments>
+#       EVERY ACT, ASKED FOR ITS DIGEST, PRINTS THAT AS ITS ONE LINE — whatever it exits
+#       with; its exit status and its line on stderr are what they are unasked. A digest
+#       holds WHAT THE HARNESS ACTS ON AND NOTHING ELSE: ids, words of a fixed list, counts,
+#       hashes, and paths of plain segments. Each field of each act has a DECLARED SHAPE
+#       (DIGEST, below the acts), and a value that does not fit its shape IS NOT PRINTED:
+#       the field is null, and `unfit` names it. No shape takes a space, a quote, a
+#       backslash or a character outside ASCII — so a digest is printable ASCII with no
+#       escape in it, and there is nothing for a relay to decode. It is:
+#         act, status [, refused: the refusal's WORD]
+#         <the act's fields, each as its shape has it: a list of names as it is, a list
+#          of anything else as its length, an object as its words and counts>
+#         unfit        the fields whose value did not fit, or []
+#         file         the file that holds WHAT THE DIGEST LEAVES OUT, by its path under
+#                      DIR — `lines/<act>.<16 hex>.json`: the ONE line the act prints
+#                      unasked, whole, a refusal's halt report in it; for a `state` that
+#                      read the document, `state/<tag>.json`: the document — or null:
+#                      DIR itself was refused, or the file could not be written
+#         file_sha256  that file's sha256, or null
+#         sha256       of the digest, as on every line (below)
+#       DIR is an absolute directory of plain segments, made if it is not there; `lines`
+#       under it — and `state`, for that act — is a directory UNDER it and no link out of
+#       it (usage, before the act runs); where the act takes --scratch too, the two are
+#       one root (usage). An agent that needs what a digest leaves out reads the file, or
+#       asks the record script by key: `dev/stabilize-record item`, `item-doors`,
+#       `untriaged`, `pending`.
+#       THE STATE'S DIGEST is {branch, state}, and `state` is: run, opened, next,
+#       not_ready, stop, round, fix_rounds, candidate {round, commit, current}, position
+#       {test, fix: each {refused | round, attempt, cycle, land, triage, rerun {clause,
+#       round, items: [{item, attempt, doors: how many}]}}}, facts {previous,
+#       previous-commit, scope, rounds, cycles}, rounds [{round, candidate, cycles}], doors
+#       {included, excluded: how many} of the latest round with a scope, uncovered [{round,
+#       doors: how many of that round's doors no item names}], items [{item, kind, clause,
+#       runs, selected, doors: how many of the latest scope's doors it covers, and where
+#       its own run stands — what of round, attempt, standing, why, rerun is not null}],
+#       clauses [{clause, status, round, commit, behind, retry}], never_selected,
+#       untriaged {count, why: [{why, count}]}, ledger, blockers, human_list (each how
+#       many), reverify (the keys of the human's list that stand there after a retry),
+#       human_clauses, human_stages, retest, unsettled, forbids_close {clauses: [{clause,
+#       status}], no_clauses, findings: how many, candidate}. It grows with the test set
+#       and with nothing else: no brief, no door, no derivation, no ledger row is in it.
 #
 # The line. One JSON object, `act` first, and LAST a `sha256` of the line as it stands
 # without that field — `…, "sha256": "<64 hex>"}` over `…}` — so that the harness can
@@ -436,11 +488,12 @@ ACTS = (
     {"act": "carry", "half": "fix", "phases": None, "commands": [], "owes": FIX_OWES},
     {"act": "sync-main", "half": "close", "phases": None, "commands": [], "owes": "the close's: it pushes nothing, and a merge that stopped is aborted or named"},
 )
-# KEPT: the files this tool writes — both outside the repository — each with the act that
-# writes it, when, who reads it, and where it is believed.
+# KEPT: the files this tool writes — all outside the repository — each with the act that
+# writes it (`*`: every act), when, who reads it, and where it is believed.
 KEPT = (
     {"file": "<scratch>/state/<tag>.json", "act": "state", "written": "by every `state`, once dev/stabilize-record printed the document", "read": "by whoever is handed the path: the state document, whole", "believed": "as that script's answer at that moment; nothing of this tool reads it back"},
     {"file": "<gate file>.recorded.json", "act": "record", "written": "by `record`, once its commit is made and BEFORE the batch is settled: {branch, commit, head, round, paths, applied, gate}", "read": "by `record` asked again where the journal holds no batch (the arrival state `recorded`)", "believed": "only where git agrees and the step is handed the commit the stage began on (--head): HEAD is the commit the file names, that commit's one parent is --head, the tree is clean, and the calls and checks are the ones the step is asked for. Without --head, or where any of it differs, the file says nothing and the answer is `no-batch`. A kill between the commit and this write leaves the batch in the journal and in HEAD, which is the arrival state `committed`: there is no moment after the commit at which neither says what was recorded"},
+    {"file": "<digest root>/lines/<act>.<16 hex>.json", "act": "*", "written": "by every act that is asked for its digest (--digest), a refusal among them, before the digest is printed — and not by a `state` that read the document, whose file is the row above: the ONE line the act prints unasked, whole, named after the act and the first sixteen digits of the line's sha256", "read": "by whoever is handed the digest, which names it by its path under the root and by its sha256: what the digest leaves out — a refusal's halt report, a pending batch's subject and paths, the names a gate shows red", "believed": "as the line of that act at that moment; nothing of this tool reads it back"},
 )
 # ARRIVALS: every state an act can be found in on arrival, in the order they are looked
 # for. `act` and `phase` key it: the open act, and the first phase of it that is not done
@@ -861,6 +914,8 @@ def git_state(args, facts):
 
 def state(args, facts):
     directory = os.path.join(args.scratch, "state")
+    if args.digest:
+        beneath(args.scratch, "state")
     os.makedirs(directory, exist_ok=True)
     reading = run([RECORD, "state", "--run", args.run])
     if reading.code != 0:
@@ -1195,6 +1250,268 @@ def sync_main(args, facts):
     facts.update(status="merged", head=said("rev-parse", "HEAD"))
 
 
+# --- the digest -----------------------------------------------------------------
+
+# THE DIGEST (the header's section of that name). A SHAPE is what a value of a digest may
+# be: the name of a plain value below — with `?` where null is one; `[shape, most]`, a list
+# of at most that many; `{field: shape}`, an object, of which a digest holds the fields
+# that were established; and `(NULL, shape)`, that shape or null. No plain value takes a
+# space, a quote, a backslash or a character outside ASCII: a digest is printed without
+# one escape, and holds no sentence.
+NULL = "or-null"
+# What a fact is where its brief cannot be made of it: a value no shape takes.
+MISFIT = object()
+PLAIN_VALUES = {
+    # a word of a list this tool or the record script holds: a status, a refusal, a route
+    "word": (re.compile(r"[a-z][a-z0-9-]*"), 64),
+    # an id the record script took as a slug: a run, an item, a clause, a reporter, a key
+    "id": (SLUG, 100),
+    "sha": (FULL_SHA, 40),
+    "sha256": (re.compile(r"[0-9a-f]{64}"), 64),
+    # a branch, or a path of plain segments: under the repository's root, or under the
+    # root the digest's files lie in
+    "path": (re.compile(r"[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*"), 300),
+    "version": (re.compile(r"[0-9A-Za-z.+-]+"), 64),
+}
+STATES = ["word", 20]
+VET = {"ok": "flag", "refused": "count", "subject": "flag", "stale": "count"}
+ASIDE = [{"path": "path", "why": "word"}, 200]
+STANDS = {"item": "id", "kind": "id", "clause": "id", "runs": "word", "selected": "flag?", "doors": "count?", "round": "count?", "attempt": "count?", "standing": "word?", "why": "word?", "rerun": "word?"}
+PLACE = {"refused": "word", "round": "count?", "attempt": "count", "cycle": "count", "land": "flag", "triage": "flag", "rerun": {"clause": "id", "round": "count", "items": [{"item": "id", "attempt": "count", "doors": "count"}, 200]}}
+STATE = {
+    "run": "id",
+    "opened": "flag",
+    "next": "word",
+    "not_ready": ["word", 10],
+    "stop": (NULL, {"why": "word", "round": "count", "then": "word"}),
+    "round": "count?",
+    "fix_rounds": "count",
+    "candidate": {"round": "count?", "commit": "sha?", "current": "flag"},
+    "position": {"test": PLACE, "fix": PLACE},
+    "facts": {"previous": "version?", "previous-commit": "sha?", "scope": "word?", "rounds": "count?", "cycles": "count?"},
+    "rounds": [{"round": "count", "candidate": "sha?", "cycles": "count"}, 100],
+    "doors": (NULL, {"included": "count", "excluded": "count"}),
+    "uncovered": [{"round": "count", "doors": "count"}, 100],
+    "items": [STANDS, 200],
+    "clauses": [{"clause": "id", "status": "word", "round": "count?", "commit": "sha?", "behind": "count?", "retry": "word?"}, 50],
+    "never_selected": ["id", 200],
+    "untriaged": {"count": "count", "why": [{"why": "word", "count": "count"}, 10]},
+    "ledger": "count",
+    "blockers": "count",
+    "human_list": "count",
+    "reverify": ["id", 200],
+    "human_clauses": [{"clause": "id", "why": "word"}, 50],
+    "human_stages": [{"stage": "word", "round": "count", "cycle": "count?", "at": "word", "attempt": "count", "attempts": "count", "why": "word"}, 10],
+    "retest": ["id", 50],
+    "unsettled": [{"cell": "word", "clauses": ["id", 50]}, 10],
+    "forbids_close": {"clauses": [{"clause": "id", "status": "word"}, 50], "no_clauses": "flag", "findings": "count", "candidate": "flag"},
+}
+# What every digest opens with, and each act's own fields, in the order they are printed.
+# A field that is not here is in no digest: it is in the file the digest names.
+LINE = {"act": "word?", "status": "word", "refused": "word"}
+ON = {"branch": "path?", "head": "sha"}
+PUSHED = {"remote_head": "sha?", "vetted": "count", "vet": VET}
+MET = {"found": STATES, "finished": STATES}
+DIGEST = {
+    "git-state": {**ON, "loop_head": "sha", **PUSHED, "opening": "sha?", "untracked": "count?", "pending": (NULL, {"round": "count?", "calls": "count", "checks": "count", "files": "count"}), **MET, "owed": STATES},
+    "state": {"branch": "path?", "state": STATE},
+    "begin": {"round": "count", "attempt": "count", "report": "path"},
+    "check-reports": {"check": {"ok": "flag", "attempt": "count", "missing": ["id", 200], "extra": "count", "other_attempts": "count", "reports": "count"}, "aside": ASIDE, **MET},
+    "find-round": {**ON, "local": ["path", 50], "remote": ["path", 50]},
+    "open-round": {**ON, "created": "flag", **MET},
+    "push": {**ON, **PUSHED, **MET},
+    "land": {"head": "sha", "merge_commit": "sha", **PUSHED, "tip_moved": "flag", "resolved_logs": ["path", 10], "moved_outside": "count", **MET},
+    "round-commits": {"all": ["sha", 200], "inside": ["sha", 200], "outside": ["sha", 200]},
+    "carry": {**ON, **PUSHED, "picked": [{"from": "sha", "to": "sha"}, 200], **MET},
+    "record": {**ON, "commit": "sha", "round": "count?", "paths": "count", "applied": {"calls": "count", "checks": "count", "failed": "count"}, "gate": {"ok": "flag", "verdict": "word", "red": "count", "known": "count", "new": "count", "candidate": "sha?"}, "vet": VET, "discarded": "flag", "aside": ASIDE, **MET},
+    "discard": {**ON, "unstaged": "count", "discarded": "count", **MET},
+    "table": {"acts": ["word", 50], "arrivals": ["word", 50], "kept": "count"},
+    "sync-main": {"head": "sha", "origin_main": "sha", "resolved_logs": ["path", 10], **MET},
+}
+
+
+def how_many(value):
+    """A list as its length: what the list holds is in the file the digest names."""
+    return len(value) if isinstance(value, (list, tuple, dict)) else value
+
+
+def unit_doors(item, included):
+    """The doors of a round's test set an item covers — its own, and those of its
+    registries; one that runs on every candidate and names neither covers them all. The
+    harness's `unitDoors`, and dev/stabilize-record's `item-doors`, which is the read that
+    lists them: a digest says how many."""
+    if item["runs"] == "every-candidate" and not item["doors"] and not item["registries"]:
+        return included
+    return [door for door in included if door["door"] in item["doors"] or door["registry"] in item["registries"]]
+
+
+def state_brief(document):
+    """The state document as the harness ACTS on it — where a stage stands, what follows,
+    the items by id with where each one's run stands, the clauses, and the rest as counts —
+    and nothing an agent reads for itself: no brief, no door, no ledger row."""
+    if document.get("opened") is not True:
+        return {name: document[name] for name in ("run", "opened") if name in document}
+    items = {item["item"]: item for item in document["items"]}
+    stands = {entry["item"]: entry for clause in document["clauses"] for entry in clause["items"]}
+    included = document["doors"] and document["doors"]["included"]
+
+    def placed(at):
+        """A stage's position, a re-run's items each with how many doors it covers there."""
+        again = at.get("rerun")
+        return at if again is None else dict(at, rerun=dict(again, items=[dict(entry, doors=len(unit_doors(items[entry["item"]], again["doors"]))) for entry in again["items"]]))
+
+    bare = {}
+    for door in document["uncovered"]:
+        for within in door["rounds"]:
+            bare[within] = bare.get(within, 0) + 1
+    whys = [entry["why"] for entry in document["untriaged"]]
+    forbids = document["forbids_close"]
+    brief = {name: document[name] for name in ("run", "opened", "next", "not_ready", "stop", "round", "fix_rounds", "candidate", "facts", "never_selected", "human_clauses", "human_stages", "retest", "unsettled")}
+    brief.update(
+        position={stage: placed(at) for stage, at in document["position"].items()},
+        rounds=[{"round": held["round"], "candidate": held["facts"]["candidate"], "cycles": held["facts"]["cycles"]} for held in document["rounds"]],
+        doors=document["doors"] and {side: len(doors) for side, doors in document["doors"].items()},
+        uncovered=[{"round": within, "doors": bare[within]} for within in sorted(bare)],
+        # An item's entry holds, of where its own run stands, what is not null.
+        items=[dict(item, doors=None if included is None else len(unit_doors(item, included)), **{name: value for name, value in stands.get(item["item"], {}).items() if name in ("round", "attempt", "standing", "why", "rerun") and value is not None}) for item in document["items"]],
+        clauses=document["clauses"],
+        untriaged={"count": len(whys), "why": [{"why": why, "count": whys.count(why)} for why in sorted(set(whys))]},
+        ledger=len(document["ledger"]),
+        blockers=len(document["blockers"]),
+        human_list=len(document["human_list"]),
+        # The findings the human may grant one more triage: the record script's own suffix.
+        reverify=[finding["key"] for finding in document["human_list"] if finding["why"].endswith("-after-retry")],
+        forbids_close={"clauses": [entry for entry in forbids if "clause" in entry], "no_clauses": any("clauses" in entry for entry in forbids), "findings": sum("finding" in entry for entry in forbids), "candidate": any("candidate" in entry for entry in forbids)},
+    )
+    return brief
+
+
+def vet_brief(vet):
+    return {"ok": vet.get("ok") is True, "refused": len(vet.get("refused") or []), "subject": bool(vet.get("subject")), "stale": len(vet.get("stale") or [])}
+
+
+# BRIEF: what a fact of a line is in its digest, where that is not the fact itself — a
+# list as its length, an object as the words and the counts of it.
+BRIEF = {
+    "branch": lambda name: name or None,
+    "opening": lambda sha: sha or None,
+    "untracked": how_many,
+    "vetted": how_many,
+    "paths": how_many,
+    "moved_outside": how_many,
+    "unstaged": how_many,
+    "discarded": how_many,
+    "kept": how_many,
+    "pending": lambda batch: batch and dict(batch, checks=len(batch["checks"]), files=len(batch["files"])),
+    "state": state_brief,
+    "check": lambda check: dict(check, **{name: len(check[name]) for name in ("extra", "other_attempts", "reports")}),
+    "applied": lambda batch: dict(batch, checks=len(batch["checks"]), failed=sum(1 for check in batch["checks"] if not (isinstance(check, dict) and check.get("ok") is True))),
+    "gate": lambda gate: dict(gate, **{name: len(gate[name]) for name in ("red", "known", "new")}),
+    "vet": vet_brief,
+    "acts": lambda acts: [act["act"] for act in acts],
+    "arrivals": lambda arrivals: [arrival["state"] for arrival in arrivals],
+}
+
+
+def fit(shape, value, at, unfit):
+    """`value` as the shape its field declares lets it be printed — or None, with the field
+    noted in `unfit`: WHAT DOES NOT FIT IS NOT PRINTED. An object keeps the fields its shape
+    names and that it has; a list of plain values is printed whole or not at all, and a list
+    of objects with each object's own misfits struck."""
+    if isinstance(shape, tuple):
+        return None if value is None else fit(shape[1], value, at, unfit)
+    if isinstance(shape, dict):
+        if isinstance(value, dict):
+            return {name: fit(inner, value[name], at + "." + name, unfit) for name, inner in shape.items() if name in value}
+    elif isinstance(shape, list):
+        if isinstance(value, (list, tuple)) and len(value) <= shape[1]:
+            struck = []
+            fitted = [fit(shape[0], entry, at, struck) for entry in value]
+            if not struck or isinstance(shape[0], dict):
+                unfit.extend(name for name in dict.fromkeys(struck) if name not in unfit)
+                return fitted
+    elif value is None and shape.endswith("?"):
+        return None
+    elif shape.rstrip("?") == "flag":
+        if isinstance(value, bool):
+            return value
+    elif shape.rstrip("?") == "count":
+        # A number an act was handed as an argument is still a number.
+        value = int(value) if isinstance(value, str) and re.fullmatch(r"[0-9]{1,9}", value) else value
+        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 10**9:
+            return value
+    else:
+        pattern, longest = PLAIN_VALUES[shape.rstrip("?")]
+        if isinstance(value, str) and len(value) <= longest and pattern.fullmatch(value):
+            return value
+    if at not in unfit:
+        unfit.append(at)
+    return None
+
+
+def digest_line(facts, root):
+    """THE DIGEST of an act's line: what the harness acts on, each value of the shape its
+    field declares — so the line is printable ASCII, and holds no backslash and no sentence —
+    then `unfit`, the fields whose value did not fit and is therefore null; `file` and
+    `file_sha256`, the file under `root` that holds what the digest leaves out — the state
+    document for a `state` that read it, and for every other line the line itself, as the
+    act prints it unasked — or null where there is no root to keep it under; and last the
+    sha256 of the digest, as on every line of this tool."""
+    unfit, fields = [], {}
+    act = facts.get("act")
+    for name, shape in dict(LINE, **(DIGEST.get(act, {}) if isinstance(act, str) else {})).items():
+        if name not in facts:
+            continue
+        try:
+            value = BRIEF[name](facts[name]) if name in BRIEF else facts[name]
+        except (KeyError, TypeError, AttributeError, IndexError):
+            # A fact that is not what this tool and the record script print: it does not fit.
+            value = MISFIT
+        fields[name] = fit(shape, value, name, unfit)
+    kept = None
+    if root is not None:
+        try:
+            if facts.get("act") == "state" and facts.get("status") == "read":
+                path = facts["file"]
+            else:
+                whole = line_of(facts) + "\n"
+                path = os.path.join(root, "lines", "%s.%s.json" % (fields.get("act") or "none", hashlib.sha256(whole.encode("utf-8")).hexdigest()[:16]))
+                with open(path, "w", encoding="utf-8") as file:
+                    file.write(whole)
+            with open(path, "rb") as file:
+                kept = (os.path.relpath(path, root), hashlib.sha256(file.read()).hexdigest())
+        except OSError:
+            kept = None
+    fields.update(unfit=unfit, file=fit("path?", kept and kept[0], "file", unfit), file_sha256=kept and kept[1])
+    # Printed close: a digest is relayed by an agent, and every byte of it is one to copy.
+    body = json.dumps(fields, separators=(",", ":"))
+    return '%s, "sha256": "%s"}' % (body[:-1], hashlib.sha256(body.encode("utf-8")).hexdigest())
+
+
+def beneath(root, name):
+    """The directory `name` under the root a digest's files lie in, made — and it IS under
+    that root: a link planted there would carry the write elsewhere, and is refused."""
+    directory = os.path.join(root, name)
+    try:
+        os.makedirs(directory, exist_ok=True)
+    except OSError as err:
+        refuse("usage", "the files of a digest cannot be kept under `%s`: %s" % (root, " ".join(str(err).split())), "", "hand the act a directory it can write under — the stage's scratch root")
+    if os.path.realpath(directory) != os.path.join(os.path.realpath(root), name):
+        refuse("usage", "`%s` is no directory under `%s`: it resolves to `%s`, and a file a digest names lies under the root the digest is asked with" % (directory, root, os.path.realpath(directory)), "", "a link beneath the root is removed by whoever planted it, or the act is handed another root")
+    return directory
+
+
+def digest_root(flags):
+    """(whether the act is asked for its digest, the root the flag names) — read off the
+    arguments before they are parsed, so that a refusal of the arguments is a digest too."""
+    for at, arg in enumerate(flags):
+        if arg == "--digest":
+            return True, flags[at + 1] if at + 1 < len(flags) else None
+        if arg.startswith("--digest="):
+            return True, arg[len("--digest="):]
+    return False, None
+
+
 # --- arguments ------------------------------------------------------------------
 
 
@@ -1252,6 +1569,7 @@ FLAGS = {
     "reporter": slug,
     "commit": full_sha,
     "head": full_sha,
+    "digest": directory_outside,
 }
 LISTS = {"product": path_in_repository, "log": path_in_repository}
 
@@ -1263,6 +1581,8 @@ def arguments(argv):
     def act(name, does, flags, lists=(), optional=(), names=None, switches=()):
         sub = acts.add_parser(name, add_help=False, allow_abbrev=False)
         sub.set_defaults(does=does)
+        # Every act prints its digest when it is asked for one.
+        sub.add_argument("--digest", type=FLAGS["digest"])
         for flag in flags:
             sub.add_argument("--" + flag, required=True, type=FLAGS[flag])
         for flag in optional:
@@ -1290,7 +1610,10 @@ def arguments(argv):
     act("sync-main", sync_main, ["loop"], lists=["log"])
     if not argv or argv[0] not in acts.choices:
         refuse("usage", "%s is not an act: the acts are %s — see dev/stabilize-step --help" % (json.dumps(argv[0]) if argv else "nothing", ", ".join(acts.choices)))
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.digest is not None and getattr(args, "scratch", None) not in (None, args.digest):
+        refuse("usage", "--digest %s and --scratch %s are two roots: the file a digest names lies under the root the act writes under, and the state document's is the scratch root — see dev/stabilize-step --help" % (args.digest, args.scratch))
+    return args
 
 
 # --- the line -------------------------------------------------------------------
@@ -1319,10 +1642,22 @@ def main(argv):
         usage_help()
         return 0
     facts = {"act": argv[0] if argv else None}
+    # An act that is asked for its digest prints that, whatever it exits with — and keeps
+    # the line it would have printed under the root the flag names.
+    asked, named = digest_root(flags)
+    kept = None
+    printed = (lambda: digest_line(facts, kept)) if asked else (lambda: line_of(facts))
     try:
+        if asked:
+            try:
+                directory_outside(named or "")
+            except argparse.ArgumentTypeError as err:
+                refuse("usage", "argument --digest: %s — see dev/stabilize-step --help" % err)
+            beneath(named, "lines")
+            kept = named
         args = arguments(argv)
         args.does(args, facts)
-        print(line_of(facts))
+        print(printed())
         return 0
     except Refusal as refusal:
         detail = " ".join(refusal.detail.split())
@@ -1333,7 +1668,7 @@ def main(argv):
             "recommendation": refusal.recommendation,
         }
         facts.update(status="halted", refused=refusal.kind, halt=halt)
-        print(line_of(facts))
+        print(printed())
         sys.stderr.write("%s: refused %s: %s\n" % (PROG, refusal.kind, detail))
         return STATUS[refusal.kind]
 

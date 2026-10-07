@@ -62,6 +62,18 @@
 //!   ([`DRIVEN`]), so a cell added to the table without its test is red; the tests are
 //!   the section *A record act is repeatable, and every invocation reconciles first*.
 //!
+//! - *A line holds what the harness acts on, and nothing else* (the second repair plan's
+//!   `K9`; [DECISIONS.md](../DECISIONS.md) → *2026-10-07 — A line holds what the harness
+//!   acts on*). Asked for its **digest** (`--digest`), an act prints ids, words, counts
+//!   and hashes of declared shapes — printable ASCII with no escape in it — and names the
+//!   file that holds the line it prints unasked. Every act and thirteen refusals are
+//!   driven through the flag ([`every_line_is_a_digest`]); **and every line this rig reads
+//!   unasked is put to the tool's own projection and held as a digest with nothing unfit**
+//!   (`ran_in`, [`StepRig::projected`]) — so each refusal [`REFUSALS`] names is held in the
+//!   test that drives it, here and in the simulation. The tests are the section *The
+//!   digest*; what no suite shows — that a real agent relays one whole — is the relay
+//!   probe's.
+//!
 //! **Every arm runs under a shell-hostile root** — a space, a `'`, a `"` and a `#` in the
 //! repository's path — because the rig has no other kind.
 //!
@@ -593,6 +605,17 @@ impl StepRig {
     /// As [`StepRig::ran`], with `env` over the rig's own environment.
     fn ran_in(&self, env: &[(&str, &str)], command: Command) -> Stepped {
         fs::write(&self.trace, "").expect("empty the trace");
+        // A line of the step tool that was not asked for as a digest is held to having one
+        // (below): the tool's by its path, or the one command of a step's prompt.
+        let spelled: Vec<String> = std::iter::once(command.get_program())
+            .chain(command.get_args())
+            .map(|word| word.to_string_lossy().into_owned())
+            .collect();
+        let whole = spelled[0] == self.root.join(TOOL).display().to_string()
+            || spelled
+                .iter()
+                .any(|word| word.starts_with(&format!("{TOOL} ")));
+        let whole = whole && !spelled.iter().any(|word| word.contains("--digest"));
         let out = self
             .hermetic(command)
             .envs(env.iter().copied())
@@ -601,7 +624,7 @@ impl StepRig {
             .output()
             .expect("run the tool");
         let raw = String::from_utf8_lossy(&out.stdout).into_owned();
-        Stepped {
+        let stepped = Stepped {
             code: out.status.code().expect("the tool exits"),
             line: line_of(&raw),
             raw,
@@ -611,7 +634,20 @@ impl StepRig {
                 .lines()
                 .map(str::to_owned)
                 .collect(),
+        };
+        if whole {
+            // EVERY LINE THIS RIG SEES HAS A DIGEST, and every value of it fits the shape
+            // the tool declares for its field — whatever the act, done or refused, in this
+            // suite and in the simulation that shares the rig.
+            let digest = self.projected(&stepped.raw);
+            assert_eq!(
+                digest["unfit"],
+                json!([]),
+                "a value of this line does not fit the shape its digest declares: {}",
+                stepped.raw
+            );
         }
+        stepped
     }
 
     /// The tool, called by its path from a directory that is not the repository: it finds
@@ -4753,8 +4789,9 @@ fn the_table_names_every_act_and_every_arrival_and_each_is_driven() {
         [
             ("state", "<scratch>/state/<tag>.json"),
             ("record", "<gate file>.recorded.json"),
+            ("*", "<digest root>/lines/<act>.<16 hex>.json"),
         ],
-        "the files the tool writes: the state document, and a commit step's kept answer"
+        "the files the tool writes: the state document, a commit step's kept answer, and — for an act asked for its digest — the line the digest leaves out"
     );
     let driven: BTreeSet<String> = DRIVEN
         .iter()
@@ -5410,19 +5447,26 @@ fn offences(source: &str) -> Vec<String> {
         }
     }
     // The files the tool opens: its own source for `--help`; the state it keeps under the
-    // scratch root; and the answer of a commit step that is done, kept beside the file of
-    // the gate it was held to and read by that step asked again.
+    // scratch root; the answer of a commit step that is done, kept beside the file of
+    // the gate it was held to and read by that step asked again; and, for an act asked for
+    // its digest, the line the digest leaves out — written under the digest's root, and
+    // the file the digest names read back for its hash.
     let writes: Vec<&str> = code.lines().filter(|line| line.contains("open(")).collect();
     let kept = writes
         .iter()
         .filter(|line| line.contains("open(answered_before(args)"))
         .count();
-    if writes.len() != 4
+    if writes.len() != 6
         || kept != 2
-        || writes.iter().filter(|line| line.contains("\"w\"")).count() != 2
+        || writes.iter().filter(|line| line.contains("\"w\"")).count() != 3
+        || writes
+            .iter()
+            .filter(|line| line.contains("open(path, \"rb\")"))
+            .count()
+            != 1
     {
         found.push(format!(
-            "the tool opens a file somewhere else than its help, the kept state and a commit step's kept answer: {writes:#?}"
+            "the tool opens a file somewhere else than its help, the kept state, a commit step's kept answer and the file a digest names: {writes:#?}"
         ));
     }
     found
@@ -5869,5 +5913,1347 @@ fn every_command_the_harness_composes_is_taken_by_the_tool_and_read_back() {
             && part.contains("`git cherry-pick -x <sha>`")
             && !part.contains(TOOL),
         "the part's re-cut is the list it was: {part}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The digest: a line holds what the harness acts on, and nothing else
+// ---------------------------------------------------------------------------
+
+/// The most a digest measures, in bytes: the bound every digest this suite sees is held
+/// under, the state's at the first real run's shape among them
+/// ([`the_state_digest_at_the_real_runs_shape_is_a_few_kilobytes`] measures that one).
+const DIGEST_BOUND: usize = 8 * 1024;
+
+/// The tool's own projection of a line it printed onto that line's digest, with no file
+/// written: the tool is loaded as a module, and its `digest_line` is called.
+const PROJECT: &str = r#"import importlib.machinery, importlib.util, json, sys
+loader = importlib.machinery.SourceFileLoader("stabilize_step", sys.argv[1])
+tool = importlib.util.module_from_spec(importlib.util.spec_from_loader("stabilize_step", loader))
+loader.exec_module(tool)
+sys.stdout.write(tool.digest_line(json.loads(sys.stdin.read()), None) + "\n")
+"#;
+
+/// What no declared shape of a digest lets through, checked without the tool's own table:
+/// a string is of letters, digits and `. _ / + -` — so no space, no quote and no prose — a
+/// number is a whole one, and a key is a plain name.
+fn plain(value: &Value, at: &str, raw: &str) {
+    let of = |text: &str, more: &str| {
+        text.len() <= 300
+            && text
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || more.contains(c))
+    };
+    match value {
+        Value::String(text) => assert!(
+            of(text, "._/+-"),
+            "`{at}` holds what is no id, word, count, hash or path — {text:?}: {raw}"
+        ),
+        Value::Number(number) => assert!(
+            number.is_u64(),
+            "`{at}` holds a number that is no count — {number}: {raw}"
+        ),
+        Value::Array(list) => list.iter().for_each(|entry| plain(entry, at, raw)),
+        Value::Object(fields) => {
+            for (name, inner) in fields {
+                assert!(
+                    of(name, "_-"),
+                    "`{at}` has a field that is no plain name — {name:?}: {raw}"
+                );
+                plain(inner, &format!("{at}.{name}"), raw);
+            }
+        }
+        Value::Null | Value::Bool(_) => {}
+    }
+}
+
+/// **A digest, held to what makes it one**: ONE line that ends with the sha256 of itself,
+/// as every line of the tool does; printable ASCII, and no backslash — so there is no
+/// escape in it for a relay to decode; under [`DIGEST_BOUND`]; and every value [`plain`].
+/// It says which of its fields did not fit their shape (`unfit`), and names the file that
+/// holds what it leaves out.
+fn held_as_a_digest(raw: &str) -> Value {
+    let digest = line_of(raw);
+    let line = raw.trim_end_matches('\n');
+    assert!(
+        line.bytes().all(|byte| (0x20..0x7f).contains(&byte)),
+        "a digest is printable ASCII: {line:?}"
+    );
+    assert!(!line.contains('\\'), "a digest holds no backslash: {line}");
+    assert!(
+        line.len() <= DIGEST_BOUND,
+        "a digest is at most {DIGEST_BOUND} bytes, and this one is {}: {line}",
+        line.len()
+    );
+    plain(&digest, "the digest", raw);
+    assert!(digest["unfit"].is_array(), "a digest says what did not fit");
+    for field in ["file", "file_sha256"] {
+        assert!(
+            digest.get(field).is_some(),
+            "a digest has `{field}`: {line}"
+        );
+    }
+    assert_eq!(
+        digest["file"].is_null(),
+        digest["file_sha256"].is_null(),
+        "a file is named with its hash, or neither is: {line}"
+    );
+    digest
+}
+
+/// What an act that was asked for its digest left: its exit status, the digest — held as
+/// one — its stderr, and the text of the file the digest names, held to the hash it names
+/// it with.
+struct Digested {
+    code: i32,
+    raw: String,
+    line: Value,
+    stderr: String,
+    kept: Option<String>,
+}
+
+impl StepRig {
+    /// The digest the tool makes of a line it printed, by its own function.
+    fn projected(&self, raw: &str) -> Value {
+        let mut child = self
+            .hermetic(Command::new("python3"))
+            .args(["-c", PROJECT])
+            .arg(self.root.join(TOOL))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn python3");
+        child_stdin::feed(&mut child, raw);
+        let out = child.wait_with_output().expect("python3 exits");
+        assert!(
+            out.status.success(),
+            "the tool makes a digest of a line it printed: {}\nthe line: {raw}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        held_as_a_digest(&String::from_utf8_lossy(&out.stdout))
+    }
+
+    /// An act asked for its digest (`--digest`), the file it names lying under the rig's
+    /// scratch root.
+    fn digest(&self, args: &[&str]) -> Digested {
+        self.digest_in(&[], args)
+    }
+
+    fn digest_in(&self, env: &[(&str, &str)], args: &[&str]) -> Digested {
+        let scratch = self.scratch.display().to_string();
+        let mut asked = vec![args[0], "--digest", scratch.as_str()];
+        asked.extend(&args[1..]);
+        let seen = self.step_in(env, &asked);
+        let line = held_as_a_digest(&seen.raw);
+        let kept = line["file"].as_str().map(|rel| {
+            let text = fs::read_to_string(self.scratch.join(rel))
+                .unwrap_or_else(|e| panic!("the file a digest names is there — `{rel}`: {e}"));
+            assert_eq!(
+                line["file_sha256"],
+                sha256(&text).as_str(),
+                "the file a digest names is held to the hash it names it with: {}",
+                seen.raw
+            );
+            text
+        });
+        Digested {
+            code: seen.code,
+            raw: seen.raw,
+            line,
+            stderr: seen.stderr,
+            kept,
+        }
+    }
+}
+
+impl Digested {
+    /// The file the digest names holds the line the act prints unasked — whole, ending in
+    /// its own hash — and the digest is the tool's projection of exactly that line.
+    fn of_its_line(&self, rig: &StepRig) -> Value {
+        let kept = self
+            .kept
+            .as_ref()
+            .unwrap_or_else(|| panic!("the digest names a file: {}", self.raw));
+        let whole = line_of(kept);
+        let mut projected = rig.projected(kept);
+        let mut said = self.line.clone();
+        for digest in [&mut projected, &mut said] {
+            for field in ["file", "file_sha256", "sha256"] {
+                digest
+                    .as_object_mut()
+                    .expect("a digest is an object")
+                    .remove(field);
+            }
+        }
+        assert_eq!(
+            said, projected,
+            "the digest an act prints (left) is the digest of the line its file holds (right)"
+        );
+        whole
+    }
+
+    /// The act is done and says `status`; nothing of it did not fit.
+    fn done(&self, rig: &StepRig, act: &str, status: &str) -> &Value {
+        assert_eq!(
+            self.code, 0,
+            "`{act}` exits 0: {} {}",
+            self.raw, self.stderr
+        );
+        assert_eq!(
+            json!([self.line["act"], self.line["status"], self.line["unfit"]]),
+            json!([act, status, []]),
+            "{}",
+            self.raw
+        );
+        assert!(self.stderr.is_empty(), "{}", self.stderr);
+        if act != "state" {
+            let whole = self.of_its_line(rig);
+            assert_eq!(json!([whole["act"], whole["status"]]), json!([act, status]));
+        }
+        &self.line
+    }
+
+    /// The act refused with `word`: the word is in the digest, and the prose — the halt
+    /// report — only in the file it names.
+    fn refused(&self, rig: &StepRig, word: &str) -> &Value {
+        let status = REFUSALS
+            .iter()
+            .find(|(known, _)| *known == word)
+            .map(|(_, status)| *status)
+            .unwrap_or_else(|| panic!("`{word}` is a refusal of the tool"));
+        assert_eq!(self.code, status, "{} {}", self.raw, self.stderr);
+        assert_eq!(
+            json!([
+                self.line["status"],
+                self.line["refused"],
+                self.line["unfit"]
+            ]),
+            json!(["halted", word, []]),
+            "{}",
+            self.raw
+        );
+        assert!(
+            self.stderr
+                .starts_with(&format!("stabilize-step: refused {word}: ")),
+            "{}",
+            self.stderr
+        );
+        assert!(
+            self.line.get("halt").is_none(),
+            "a refusal's prose is in no digest: {}",
+            self.raw
+        );
+        let whole = self.of_its_line(rig);
+        assert!(
+            whole["halt"]["root_cause"]
+                .as_str()
+                .is_some_and(|cause| cause.starts_with(&format!("{word}: ")))
+                && whole["halt"]["recommendation"].is_string(),
+            "the file holds the halt report: {whole}"
+        );
+        &self.line
+    }
+}
+
+/// A gate that is red on one test, whose name is what a real one can be: prose.
+const RED_GATE: &str = "gate: mode   full, keep-going\ntests   passed=9 failed=1  (over 3 test binaries)\n\nGATE: FAIL (step: test)\n\nfailing tests:\n  jigc::g_flows flow01::a “name” \u{2014} with a dash \u{2192} and an arrow\n\nfull output: x\n";
+
+/// **Every line of the tool is a digest when it is asked for one** (the second repair
+/// plan's `K9`; [DECISIONS.md](../DECISIONS.md) → *2026-10-07 — A line holds what the
+/// harness acts on*). Observed on 2026-10-07: a line relayed through an agent never
+/// arrives byte for byte once it holds one character outside ASCII — the tool prints it as
+/// an escape, the agent's return decodes it, the hash fails — and a commit's subject, a
+/// refusal's prose and a ledger row are full of them. So with `--digest` an act prints
+/// what the harness ACTS ON and nothing else — ids, words of a fixed list, counts, hashes,
+/// each of a shape its field declares — and names the file that holds the line it would
+/// have printed.
+///
+/// Driven here FOR REAL, through the flag: every act the parser takes, to its end; and
+/// thirteen refusals. Each digest is [`held_as_a_digest`]; the file it names is held to the
+/// hash it names it with and holds the act's whole line; and the digest is the tool's own
+/// projection of that line ([`Digested::of_its_line`]). **Every other line this suite and
+/// the simulation see** — each refusal [`REFUSALS`] names, in the test that drives it — is
+/// held to the same by the rig itself, which projects every line it reads
+/// ([`StepRig::projected`], in `ran_in`): the same function, without the file.
+#[test]
+fn every_line_is_a_digest() {
+    let stage = Stage::new("digest");
+    let rig = &stage.rig;
+    let scratch = rig.scratch.display().to_string();
+    let (product, logs) = (product(), logs());
+    let candidate = rig.rev("HEAD");
+    let mut done = BTreeSet::new();
+    let mut refused = BTreeSet::new();
+    let mut ended = |seen: &Digested, rig: &StepRig, act: &str, status: &str| -> Value {
+        done.insert(act.to_owned());
+        seen.done(rig, act, status).clone()
+    };
+    let mut refuse = |seen: &Digested, rig: &StepRig, word: &str| -> Value {
+        refused.insert(word.to_owned());
+        seen.refused(rig, word).clone()
+    };
+    let record = [
+        "record",
+        "--branch",
+        LOOP,
+        "--run-dir",
+        RUN_DIR,
+        "--gate",
+        stage.gate.as_str(),
+        "--calls",
+        "7",
+        "--checks",
+        "2",
+        "--scratch",
+        scratch.as_str(),
+    ];
+    let state = git_state("test", &product);
+
+    // A stage at its record step: what it is refused, and what it does.
+    refuse(&rig.digest(&["push"]), rig, "usage");
+    refuse(
+        &rig.digest(&["push", "--branch", "fix/another"]),
+        rig,
+        "wrong-branch",
+    );
+    refuse(
+        &rig.digest(&[
+            "begin",
+            "--run",
+            RUN,
+            "--round",
+            "1",
+            "--stage",
+            "test",
+            "--attempt",
+            "5",
+            "--reporter",
+            "attempt",
+            "--commit",
+            &candidate,
+            "--scratch",
+            &scratch,
+        ]),
+        rig,
+        "position",
+    );
+    refuse(&rig.digest(&record), rig, "no-batch");
+    let mut check = vec![
+        "check-reports",
+        "--run",
+        RUN,
+        "--round",
+        "1",
+        "--stage",
+        "test",
+        "--attempt",
+        "1",
+        "--scratch",
+        scratch.as_str(),
+        "--",
+    ];
+    check.extend(LAUNCHED);
+    let nowhere = rig.dir().join("no-denylist").display().to_string();
+    refuse(
+        &rig.digest_in(&[("JIGC_DENYLIST_FILE", nowhere.as_str())], &check),
+        rig,
+        "did-not-run",
+    );
+    let checked = ended(&rig.digest(&check), rig, "check-reports", "checked");
+    assert_eq!(
+        checked["check"],
+        json!({"ok": true, "attempt": 1, "missing": [], "extra": 0, "other_attempts": 0, "reports": 3}),
+        "the check, as counts and the reporters that left none: {checked}"
+    );
+    assert_eq!(checked["aside"], json!([]));
+
+    stage.apply(SUBJECT);
+    let owed = ended(&rig.digest(&state), rig, "git-state", "ready");
+    assert_eq!(
+        json!([
+            owed["branch"],
+            owed["head"],
+            owed["loop_head"],
+            owed["remote_head"]
+        ]),
+        json!([LOOP, candidate, candidate, candidate])
+    );
+    assert_eq!(
+        json!([
+            owed["pending"]["round"],
+            owed["pending"]["calls"],
+            owed["pending"]["checks"]
+        ]),
+        json!([1, 7, 2]),
+        "the pending batch, without its subject and its paths: {owed}"
+    );
+    assert!(
+        owed["pending"]["files"].as_u64().is_some_and(|n| n >= 4)
+            && owed["untracked"].as_u64().is_some_and(|n| n >= 3)
+            && owed["opening"].as_str().is_some_and(|sha| sha.len() == 40),
+        "{owed}"
+    );
+    assert_eq!(
+        json!([owed["found"], owed["finished"], owed["owed"]]),
+        json!([["applied"], [], ["applied"]]),
+        "the arrival states are words: {owed}"
+    );
+    let mut moved = record.to_vec();
+    let elsewhere = "0".repeat(40);
+    moved.extend(["--head", elsewhere.as_str()]);
+    refuse(&rig.digest(&moved), rig, "head-moved");
+    let green = fs::read_to_string(&stage.gate).expect("the gate's output");
+    fs::write(&stage.gate, RED_GATE).expect("a red gate");
+    let red = refuse(&rig.digest(&record), rig, "gate-red");
+    assert_eq!(
+        red["gate"],
+        json!({"ok": false, "verdict": "fail", "red": 2, "known": 0, "new": 2, "candidate": candidate}),
+        "what is red is counted, and named in the file alone: {red}"
+    );
+    fs::write(&stage.gate, green).expect("the green gate again");
+    let lock = rig.root.join(".git/index.lock");
+    fs::write(&lock, "").expect("a lock git left");
+    refuse(&rig.digest(&state), rig, "locked");
+    fs::remove_file(&lock).expect("remove the lock");
+    rig.write("notes.txt", "a note \u{2014} by hand\n");
+    refuse(&rig.digest(&state), rig, "dirty");
+    fs::remove_file(rig.root.join("notes.txt")).expect("remove the note");
+
+    let read = ended(
+        &rig.digest(&[
+            "state",
+            "--run",
+            RUN,
+            "--scratch",
+            &scratch,
+            "--tag",
+            "test-1",
+        ]),
+        rig,
+        "state",
+        "read",
+    );
+    assert_eq!(read["file"], "state/test-1.json");
+    assert_eq!(
+        read["state"]["position"]["test"],
+        json!({"round": 2, "attempt": 1}),
+        "the state as the applied batch leaves it: {read}"
+    );
+
+    let recorded = ended(&rig.digest(&record), rig, "record", "recorded");
+    let commit = rig.rev("HEAD");
+    assert_eq!(
+        json!([
+            recorded["commit"],
+            recorded["head"],
+            recorded["round"],
+            recorded["applied"]
+        ]),
+        json!([commit, commit, 1, {"calls": 7, "checks": 2, "failed": 0}]),
+        "{recorded}"
+    );
+    assert_eq!(
+        json!([
+            recorded["gate"]["ok"],
+            recorded["found"],
+            recorded["paths"].as_u64().map(|n| n >= 8)
+        ]),
+        json!([true, ["applied"], true]),
+        "{recorded}"
+    );
+    let pushed = ended(&rig.digest(&state), rig, "git-state", "ready");
+    assert_eq!(
+        json!([
+            pushed["finished"],
+            pushed["remote_head"],
+            pushed["vetted"],
+            pushed["pending"]
+        ]),
+        json!([["unpushed"], commit, 1, null]),
+        "the push that was owed is made, and said in words and a count: {pushed}"
+    );
+    let again = ended(
+        &rig.digest(&["push", "--branch", LOOP, "--run-dir", RUN_DIR]),
+        rig,
+        "push",
+        "ready",
+    );
+    assert_eq!(
+        json!([again["vetted"], again["remote_head"]]),
+        json!([0, commit])
+    );
+    let nothing = ended(
+        &rig.digest(&["discard", "--branch", LOOP, "--run-dir", RUN_DIR]),
+        rig,
+        "discard",
+        "discarded",
+    );
+    assert_eq!(
+        json!([nothing["unstaged"], nothing["discarded"]]),
+        json!([0, 0])
+    );
+    let begun = ended(
+        &rig.digest(&[
+            "begin",
+            "--run",
+            RUN,
+            "--round",
+            "2",
+            "--stage",
+            "test",
+            "--attempt",
+            "1",
+            "--reporter",
+            "attempt",
+            "--commit",
+            &commit,
+            "--scratch",
+            &scratch,
+        ]),
+        rig,
+        "begin",
+        "begun",
+    );
+    assert_eq!(
+        json!([begun["round"], begun["attempt"], begun["report"]]),
+        json!([2, 1, format!("{RUN_DIR}/r2/reports/test/attempt.a1.md")]),
+        "a number is a number, and the marker a path: {begun}"
+    );
+    rig.change("README.md", "tuned\n", "docs: a tuning commit");
+    refuse(&rig.digest(&state), rig, "foreign-commit");
+
+    // The acts of the `fix` half and of the close, on a rig of their own.
+    let rig = StepRig::new("digest-rounds");
+    let branch = format!("{ROUNDS}1");
+    let listed = ended(&rig.digest(&["table"]), &rig, "table", "listed");
+    assert!(
+        listed["acts"]
+            .as_array()
+            .is_some_and(|acts| acts.len() >= 14)
+            && listed["arrivals"]
+                .as_array()
+                .is_some_and(|rows| rows.contains(&json!("unpushed"))),
+        "the table's digest is its names; its sentences are in the file: {listed}"
+    );
+    let found = ended(
+        &rig.digest(&["find-round", "--prefix", &branch]),
+        &rig,
+        "find-round",
+        "ready",
+    );
+    assert_eq!(json!([found["local"], found["remote"]]), json!([[], []]));
+    let open = [
+        "open-round",
+        "--loop",
+        LOOP,
+        "--branch",
+        branch.as_str(),
+        "--run-dir",
+        RUN_DIR,
+    ];
+    let opened = ended(&rig.digest(&open), &rig, "open-round", "ready");
+    assert_eq!(
+        json!([opened["branch"], opened["created"]]),
+        json!([branch, true])
+    );
+    let fix = rig.change(
+        "crates/a.txt",
+        "fixed\n",
+        "fix: a finding \u{2014} “quoted”",
+    );
+    let pushed = ended(
+        &rig.digest(&["push", "--branch", &branch]),
+        &rig,
+        "push",
+        "ready",
+    );
+    assert_eq!(json!([pushed["head"], pushed["vetted"]]), json!([fix, 1]));
+    let commits = [
+        "round-commits",
+        "--loop",
+        LOOP,
+        "--branch",
+        branch.as_str(),
+        "--run-dir",
+        RUN_DIR,
+    ];
+    let between = ended(&rig.digest(&commits), &rig, "round-commits", "listed");
+    assert_eq!(
+        json!([between["all"], between["inside"], between["outside"]]),
+        json!([[fix], [], [fix]])
+    );
+    let land = land(&branch, &product, &logs);
+    let landed = ended(&rig.digest(&land), &rig, "land", "merged");
+    assert_eq!(
+        json!([
+            landed["merge_commit"],
+            landed["tip_moved"],
+            landed["moved_outside"],
+            landed["resolved_logs"]
+        ]),
+        json!([rig.rev(LOOP), false, 0, []]),
+        "{landed}"
+    );
+    assert_eq!(landed["remote_head"], landed["head"]);
+    ended(&rig.digest(&land), &rig, "land", "landed-before");
+    let dropped = format!("{ROUNDS}2");
+    rig.round(2);
+    let kept = rig.change(
+        &format!("{RUN_DIR}/r2/round.md"),
+        "r\n",
+        "docs(record): dropped",
+    );
+    let carried = ended(
+        &rig.digest(&carry(&product, &[&kept])),
+        &rig,
+        "carry",
+        "carried",
+    );
+    assert_eq!(
+        carried["picked"],
+        json!([{"from": kept, "to": rig.rev(LOOP)}])
+    );
+    assert_eq!(
+        rig.branch(),
+        LOOP,
+        "the carry stands on the loop branch; {dropped} is left"
+    );
+    let synced = ended(&rig.digest(&sync(&logs)), &rig, "sync-main", "up-to-date");
+    assert_eq!(
+        synced["origin_main"],
+        rig.remote("main").expect("main").as_str()
+    );
+
+    // Three more refusals: a merge among a round's commits is told in a word; so is a
+    // remote that takes no push, and one that is ahead; and a record the script cannot
+    // read.
+    rig.remote_hook("pre-receive", "exit 1");
+    let third = format!("{ROUNDS}3");
+    rig.round(3);
+    rig.change("crates/a.txt", "again\n", "fix: another");
+    refuse(
+        &rig.digest(&["push", "--branch", &third]),
+        &rig,
+        "push-rejected",
+    );
+    rig.remote_hook("pre-receive", "exit 0");
+    rig.git(&["switch", "-q", LOOP]);
+    rig.pushed_by_another(LOOP, "notes.md", "theirs\n");
+    refuse(
+        &rig.digest(&git_state("fix", &product)),
+        &rig,
+        "remote-ahead",
+    );
+    rig.write(&format!("{RUN_DIR}/ledger.md"), "not a table\n");
+    let unread = refuse(
+        &rig.digest(&[
+            "state",
+            "--run",
+            RUN,
+            "--scratch",
+            &scratch_of(&rig),
+            "--tag",
+            "test-9",
+        ]),
+        &rig,
+        "record",
+    );
+    assert!(unread.get("state").is_none(), "{unread}");
+
+    assert_eq!(
+        done,
+        acts().into_keys().collect::<BTreeSet<_>>(),
+        "every act the parser takes was driven to its end as a digest"
+    );
+    assert_eq!(
+        refused.into_iter().collect::<Vec<_>>(),
+        [
+            "did-not-run",
+            "dirty",
+            "foreign-commit",
+            "gate-red",
+            "head-moved",
+            "locked",
+            "no-batch",
+            "position",
+            "push-rejected",
+            "record",
+            "remote-ahead",
+            "usage",
+            "wrong-branch",
+        ],
+        "the refusals driven through the flag"
+    );
+}
+
+fn scratch_of(rig: &StepRig) -> String {
+    rig.scratch.display().to_string()
+}
+
+/// What a real record is written in, and a line of JSON carries as escapes: a dash, an
+/// arrow, typographic quotes, a backtick, a straight quote, a backslash and a pipe.
+const HOSTILE: &str =
+    "a \u{201c}quoted\u{201d} cell \u{2014} `jigc doc set` \u{2192} it\u{2019}s \"ok\" \\ a | b";
+
+/// A run of the rig at a shape — `rows` ledger rows, `doors` doors inside round 1's scope
+/// and as many left out, `items` items of the test set over four clauses, and the first
+/// `human` rows on the human's list — written through the record script, with `said` in
+/// every cell that takes a sentence: a brief, a row's source and repro, a door's
+/// derivation.
+fn shaped(
+    label: &str,
+    rows: usize,
+    doors: usize,
+    items: usize,
+    human: usize,
+    said: &str,
+) -> StepRig {
+    let rig = StepRig::new(label);
+    let clauses = ["audit-clean", "no-lost-files", "ports-clean", "trial-clean"];
+    let door = |n: usize| format!("jigc door {n:03}");
+    rig.wrote(
+        &format!("run-set --run {RUN}"),
+        &json!({"stop": "every-round", "previous": "1.0.0-rc.24", "previous-commit": "9".repeat(40),
+                "scope": "delta", "clauses": clauses})
+        .to_string(),
+    );
+    let set: Vec<Value> = (0..items)
+        .map(|n| {
+            if n == 0 {
+                json!({"item": "gate", "kind": "check", "clause": clauses[0],
+                       "runs": "every-candidate", "brief": said})
+            } else {
+                json!({"item": format!("review-{n:03}"), "kind": "review-row",
+                       "clause": clauses[n % clauses.len()], "runs": "in-scope",
+                       "doors": [door(n)], "brief": said})
+            }
+        })
+        .collect();
+    rig.wrote(&format!("item-set --run {RUN}"), &json!(set).to_string());
+    let ledger: Vec<Value> = (1..=rows)
+        .map(|n| {
+            json!({"key": format!("row-{n:03}"), "doctype": "jigc-feedback", "round": 0,
+                   "source": said, "door": door(n), "clause": clauses[n % clauses.len()],
+                   "repro": said})
+        })
+        .collect();
+    rig.wrote(
+        &format!("ledger-add --run {RUN}"),
+        &json!(ledger).to_string(),
+    );
+    if human > 0 {
+        let graded: Vec<Value> = (1..=human)
+            .map(|n| json!({"key": format!("row-{n:03}"), "grade": "needs-bound", "graded_by": "triage"}))
+            .collect();
+        rig.wrote(
+            &format!("ledger-set --run {RUN}"),
+            &json!(graded).to_string(),
+        );
+    }
+    rig.commit("docs(record): the opening's facts");
+    rig.git(&["push", "-q", "origin", LOOP]);
+    let listed = |from: usize| -> Vec<Value> {
+        (from + 1..=from + doors)
+            .map(|n| json!({"door": door(n), "registry": "verbs", "derivation": said}))
+            .collect()
+    };
+    rig.wrote(
+        &format!("scope-set --run {RUN} --round 1"),
+        &json!({"included": listed(0), "excluded": listed(doors)}).to_string(),
+    );
+    rig
+}
+
+impl StepRig {
+    /// The state's digest, and the document the file it names holds.
+    fn state_digest(&self, tag: &str) -> (Digested, Value) {
+        let scratch = scratch_of(self);
+        let seen = self.digest(&["state", "--run", RUN, "--scratch", &scratch, "--tag", tag]);
+        seen.done(self, "state", "read");
+        let document = serde_json::from_str(seen.kept.as_ref().expect("the state's file"))
+            .expect("the state document");
+        (seen, document)
+    }
+}
+
+/// A digest up to the hash of the file it names: everything but its two hashes.
+fn up_to_its_file(raw: &str) -> &str {
+    &raw[..raw
+        .find(",\"file_sha256\"")
+        .expect("a digest names its file's hash")]
+}
+
+/// A digest without its two hashes — its own, and the one of the file it names — and with
+/// every number struck out: what is left is its shape and its words.
+fn struck(raw: &str) -> String {
+    let mut out = String::new();
+    let mut chars = up_to_its_file(raw).chars().peekable();
+    while let Some(c) = chars.next() {
+        if c.is_ascii_digit() {
+            while chars.peek().is_some_and(char::is_ascii_digit) {
+                chars.next();
+            }
+            out.push('#');
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// **The state's digest does not grow with the ledger or the doors** — which is what the
+/// document did: 3, 25, 75 and 143 KB at these four sizes (the re-review's `R-H1`), relayed
+/// whole three times a stage. At 1 · 20 · 60 · 120 ledger rows over 2 · 40 · 150 · 300
+/// doors on each side of the round's scope the four digests differ in digits and in
+/// nothing else; and a run whose every sentence holds a dash, an arrow and typographic
+/// quotes has the digest, byte for byte up to the hash of the file it names, of the same
+/// run written in plain words.
+#[test]
+fn the_state_digest_does_not_grow_with_the_ledger_or_the_doors() {
+    let sizes = [(1, 2), (20, 40), (60, 150), (120, 300)];
+    let digests: Vec<(usize, String, Value)> = std::thread::scope(|threads| {
+        let built: Vec<_> = sizes
+            .iter()
+            .map(|(rows, doors)| {
+                threads.spawn(move || {
+                    let rig = shaped(&format!("digest-size-{rows}"), *rows, *doors, 2, 0, HOSTILE);
+                    let (seen, document) = rig.state_digest("test-1");
+                    (*rows, seen.raw, document)
+                })
+            })
+            .collect();
+        built
+            .into_iter()
+            .map(|thread| thread.join().expect("a rig is built"))
+            .collect()
+    });
+    for ((rows, doors), (_, raw, document)) in sizes.iter().zip(&digests) {
+        let digest = line_of(raw);
+        // The control: the run really has that many rows and doors, and the document says so.
+        assert_eq!(document["ledger"].as_array().map(Vec::len), Some(*rows));
+        assert_eq!(
+            document["doors"]["included"].as_array().map(Vec::len),
+            Some(*doors)
+        );
+        assert_eq!(
+            json!([
+                digest["state"]["ledger"],
+                digest["state"]["doors"],
+                digest["state"]["untriaged"]
+            ]),
+            json!([rows, {"included": doors, "excluded": doors},
+                   {"count": rows, "why": [{"why": "ungraded", "count": rows}]}]),
+            "the digest counts what the document lists: {raw}"
+        );
+    }
+    let (_, smallest, _) = &digests[0];
+    for (rows, raw, document) in &digests {
+        assert_eq!(
+            struck(raw),
+            struck(smallest),
+            "at {rows} rows the digest differs from the one at 1 row in more than digits"
+        );
+        assert!(
+            raw.len() < smallest.len() + 40,
+            "at {rows} rows the digest is {} bytes, and at 1 row {}",
+            raw.len(),
+            smallest.len()
+        );
+        assert!(
+            document.to_string().len() > 2_000 * rows.min(&60) / 20,
+            "the document grows, as measured: {} bytes at {rows} rows",
+            document.to_string().len()
+        );
+    }
+
+    // The same run in plain words: the digest is the same line, up to the hash of the
+    // file — which holds other bytes, because the document holds the sentences.
+    let spoken = shaped("digest-plain", 20, 40, 2, 0, "a plain cell")
+        .state_digest("test-1")
+        .0;
+    let (_, hostile, document) = &digests[1];
+    assert_eq!(
+        up_to_its_file(hostile),
+        up_to_its_file(&spoken.raw),
+        "a dash, an arrow and a typographic quote in every sentence of the record change no byte of the digest"
+    );
+    assert_ne!(line_of(hostile)["file_sha256"], spoken.line["file_sha256"]);
+    assert!(
+        [
+            &document["ledger"][0]["repro"],
+            &document["items"][0]["brief"]
+        ]
+        .iter()
+        .all(
+            |cell| cell.as_str().is_some_and(|text| text.contains('\u{2014}')
+                && text.contains('\u{2192}')
+                && text.contains('\u{201c}'))
+        ),
+        "the control: the sentences are in the document, as written: {}",
+        document["ledger"][0]
+    );
+}
+
+/// **The digest at the first real run's shape is a few kilobytes** — 60 ledger rows, 150
+/// doors on each side of the scope, 30 items of the test set over four clauses, and a
+/// human's list of 20: the shape the re-review measured the document at 75 KB for. What it
+/// grows with is the test set — an item is one entry of it, with where its own run stands
+/// — and with nothing else.
+#[test]
+fn the_state_digest_at_the_real_runs_shape_is_a_few_kilobytes() {
+    let rig = shaped("digest-real", 60, 150, 30, 20, HOSTILE);
+    let (seen, document) = rig.state_digest("test-1");
+    let state = &seen.line["state"];
+    assert_eq!(
+        json!([
+            state["ledger"],
+            state["human_list"],
+            state["untriaged"]["count"],
+            state["doors"]
+        ]),
+        json!([60, 20, 40, {"included": 150, "excluded": 150}]),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(state["items"].as_array().map(Vec::len), Some(30));
+    assert_eq!(state["clauses"].as_array().map(Vec::len), Some(4));
+    let whole = document.to_string().len();
+    eprintln!(
+        "the state at the real run's shape: a digest of {} bytes, of a document of {whole}",
+        seen.raw.trim_end().len()
+    );
+    assert!(
+        whole > 70_000,
+        "the control: the document at this shape is what was measured, {whole} bytes"
+    );
+    assert!(
+        seen.raw.len() <= 6_500,
+        "the digest at the real run's shape is {} bytes: more than 6,500",
+        seen.raw.len()
+    );
+
+    // An item is one entry: what a stage needs to launch it, and where its run stands.
+    assert_eq!(
+        state["items"][1],
+        json!({"item": "review-001", "kind": "review-row", "clause": "no-lost-files",
+               "runs": "in-scope", "selected": true, "doors": 1, "standing": "not-selected"}),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(
+        json!([state["items"][0]["doors"], state["items"][0]["selected"]]),
+        json!([150, true]),
+        "an item that runs on every candidate and names no door covers the round's"
+    );
+    // What nothing can hold is named in it (K4): the doors of the round no item reaches,
+    // as a count per round — 150 inside, 29 of them an item's.
+    assert_eq!(state["uncovered"], json!([{"round": 1, "doors": 121}]));
+    // No round is tested yet, so no tested round has selected an in-scope item: all 29.
+    assert_eq!(state["never_selected"].as_array().map(Vec::len), Some(29));
+    // And every field the harness reads of the document is there, of the document's value.
+    for name in [
+        "run",
+        "opened",
+        "next",
+        "not_ready",
+        "stop",
+        "round",
+        "fix_rounds",
+        "candidate",
+        "retest",
+        "human_clauses",
+        "human_stages",
+        "unsettled",
+    ] {
+        assert_eq!(state[name], document[name], "`{name}` is the document's");
+    }
+    assert_eq!(state["position"], document["position"]);
+    assert_eq!(state["facts"]["previous"], "1.0.0-rc.24");
+    assert_eq!(state["facts"]["previous-commit"], "9".repeat(40).as_str());
+    assert_eq!(state["blockers"], 0);
+    assert_eq!(state["reverify"], json!([]));
+    // What forbids closing, by kind: the clauses that are not green by name, the findings
+    // that are not recorded as a count, and whether the candidate is untested.
+    assert_eq!(
+        state["forbids_close"],
+        json!({"clauses": [
+                   {"clause": "audit-clean", "status": "void"}, {"clause": "no-lost-files", "status": "void"},
+                   {"clause": "ports-clean", "status": "void"}, {"clause": "trial-clean", "status": "void"}],
+               "no_clauses": false, "findings": 60, "candidate": true}),
+        "{}",
+        seen.raw
+    );
+
+    // Two states this rig is not in, as the record script prints them, put to the tool's
+    // own projection. A RE-RUN: its items, each with how many of THE RE-RUN'S doors it
+    // covers — which are not the latest round's — and none of the doors themselves. And
+    // THE HUMAN'S LIST after a retry: the keys a further triage may be granted to.
+    let mut document = document;
+    document["position"]["test"] = json!({"round": 1, "attempt": 2, "rerun": {
+        "clause": "audit-clean", "round": 1,
+        "items": [{"item": "review-001", "attempt": 2}, {"item": "gate", "attempt": 1}],
+        "doors": [document["doors"]["included"][0], document["doors"]["included"][1], document["doors"]["included"][2]],
+    }});
+    document["human_list"][3]["why"] = json!("ungraded-after-retry");
+    let forged = json!({"act": "state", "status": "read", "branch": LOOP, "state": document});
+    let digest = rig.projected(&forged.to_string());
+    assert_eq!(digest["unfit"], json!([]), "{digest}");
+    assert_eq!(
+        digest["state"]["position"]["test"],
+        json!({"round": 1, "attempt": 2, "rerun": {"clause": "audit-clean", "round": 1, "items": [
+            {"item": "review-001", "attempt": 2, "doors": 1}, {"item": "gate", "attempt": 1, "doors": 3}]}}),
+        "{digest}"
+    );
+    assert_eq!(digest["state"]["reverify"], json!(["row-004"]));
+    assert_eq!(digest["state"]["human_list"], 20);
+}
+
+/// **What a line leaves out is in a file it names** — by its path under the root the flag
+/// names, and by its hash: the document for the state, and for every other act the line
+/// the act prints unasked, a refusal's halt report in it. And **without the flag every
+/// line is what it was**: for the acts that only read, the line printed unasked is, byte
+/// for byte, the file that the same act's digest names.
+#[test]
+fn what_a_line_leaves_out_is_in_a_file_it_names() {
+    let stage = Stage::new("digest-file");
+    let rig = &stage.rig;
+    let scratch = scratch_of(rig);
+    stage.apply(SUBJECT);
+
+    // The state: the file is the record script's document, where the act always kept it.
+    let asked = [
+        "state",
+        "--run",
+        RUN,
+        "--scratch",
+        scratch.as_str(),
+        "--tag",
+        "test-1",
+    ];
+    let (seen, document) = rig.state_digest("test-1");
+    let unasked = rig.step(&asked);
+    assert_eq!(unasked.done("state", "read")["state"], document);
+    assert_eq!(
+        unasked.line["file"],
+        rig.scratch
+            .join("state/test-1.json")
+            .display()
+            .to_string()
+            .as_str()
+    );
+    assert_eq!(
+        seen.line["file"], "state/test-1.json",
+        "by its path under the root"
+    );
+    assert_eq!(
+        rig.wrote(&format!("state --run {RUN}"), ""),
+        *seen.kept.as_ref().expect("the file"),
+        "the file is what the record script printed"
+    );
+
+    // Every other act: the line it prints unasked.
+    let product = product();
+    let look: Vec<&str> = git_state("test", &product)
+        .into_iter()
+        .chain(["--look"])
+        .collect();
+    for (act, args) in [
+        ("git-state", look),
+        ("table", vec!["table"]),
+        ("find-round", vec!["find-round", "--prefix", ROUNDS]),
+    ] {
+        let unasked = rig.step(&args);
+        let seen = rig.digest(&args);
+        assert_eq!(
+            seen.kept.as_deref(),
+            Some(unasked.raw.as_str()),
+            "`{act}`: the file its digest names is the line it prints unasked, byte for byte"
+        );
+        let file = seen.line["file"].as_str().expect("a file");
+        assert!(
+            file.starts_with(&format!("lines/{act}.")) && file.ends_with(".json"),
+            "`{act}`: the file is named after the act and its content: {file}"
+        );
+    }
+    // What a digest leaves out of a pending batch — its subject, its paths, its checks —
+    // is in the file, and is in no digest.
+    let seen = rig.digest(&git_state("test", &product));
+    let whole = seen.of_its_line(rig);
+    assert_eq!(whole["pending"]["subject"], SUBJECT);
+    assert!(whole["pending"]["files"].is_array() && whole["pending"]["checks"].is_array());
+    assert!(
+        !seen.raw.contains("record"),
+        "no word of the subject is in the digest: {}",
+        seen.raw
+    );
+
+    // A root the files cannot lie under is refused before the act runs, and the digest
+    // that says so names no file: a root that is no absolute directory of plain segments,
+    // and a link planted beneath the root, which would carry the write elsewhere.
+    let head = rig.rev("HEAD");
+    for root in ["relative/dir", "/tmp/a b"] {
+        let seen = rig.step(&["push", "--digest", root, "--branch", LOOP]);
+        let digest = held_as_a_digest(&seen.raw);
+        assert_eq!(seen.code, 2, "{}", seen.raw);
+        assert_eq!(
+            json!([digest["status"], digest["refused"], digest["file"]]),
+            json!(["halted", "usage", null]),
+            "{}",
+            seen.raw
+        );
+    }
+    let planted = rig.dir().join("planted");
+    let elsewhere = rig.dir().join("elsewhere");
+    fs::create_dir_all(&planted).expect("a root");
+    fs::create_dir_all(&elsewhere).expect("another place");
+    std::os::unix::fs::symlink(&elsewhere, planted.join("lines")).expect("plant a link");
+    let seen = rig.step(&[
+        "push",
+        "--digest",
+        &planted.display().to_string(),
+        "--branch",
+        LOOP,
+    ]);
+    let digest = held_as_a_digest(&seen.raw);
+    assert_eq!(
+        json!([seen.code, digest["refused"].clone(), digest["file"].clone()]),
+        json!([2, "usage", null]),
+        "{}",
+        seen.raw
+    );
+    assert!(
+        seen.trace.is_empty(),
+        "the act did not run: {:?}",
+        seen.trace
+    );
+    assert_eq!(
+        fs::read_dir(&elsewhere).expect("read it").count(),
+        0,
+        "nothing was written through the link"
+    );
+    // The state's file lies under the same root as every other: two roots are refused.
+    let another = rig.dir().join("another-root").display().to_string();
+    let seen = rig.step(&[
+        "state",
+        "--run",
+        RUN,
+        "--scratch",
+        &scratch,
+        "--tag",
+        "test-2",
+        "--digest",
+        &another,
+    ]);
+    assert_eq!(
+        held_as_a_digest(&seen.raw)["refused"],
+        "usage",
+        "{}",
+        seen.raw
+    );
+    assert_eq!(rig.rev("HEAD"), head);
+}
+
+/// **Hostile content reaches no digest.** Every writer that takes a sentence is fed what a
+/// real record is written in — dashes, arrows, typographic quotes, a backslash, a title of
+/// 200 characters — and what no writer takes arrives another way: a commit's subject, the
+/// name of a test a gate shows red, a file somebody left beside the reports whose name has
+/// a line break in it. Each digest is still printable ASCII of plain values under its
+/// bound, its hash holds, nothing of it is unfit — and the content is in the file the
+/// digest names, which is what shows it was really there.
+#[test]
+fn hostile_content_reaches_no_digest() {
+    let title = format!("{HOSTILE} {}", "a title that goes on \u{2014} ".repeat(9));
+    let title = title.trim_end().to_owned();
+    assert!(title.chars().count() >= 200);
+    let rig = shaped("digest-hostile", 3, 2, 3, 1, &title);
+    let product = product();
+    let needle = "a title that goes on \u{2014} ";
+    let holds = |seen: &Digested, what: &str| {
+        assert_eq!(seen.line["unfit"], json!([]), "{what}: {}", seen.raw);
+        assert!(
+            seen.kept.as_ref().is_some_and(|kept| {
+                kept.contains(needle) || kept.contains(&needle.replace('\u{2014}', "\\u2014"))
+            }),
+            "{what}: the control — the content is in the file the digest names"
+        );
+    };
+
+    // The state, over a ledger, a test set and a scope written in it.
+    let (seen, document) = rig.state_digest("test-1");
+    holds(&seen, "the state");
+    assert_eq!(document["items"][1]["brief"], title.as_str());
+
+    // A pending batch whose subject is the title; and a gate red on a test of that name.
+    let stage = Stage::new("digest-hostile-stage");
+    let rig = &stage.rig;
+    stage.apply(&title);
+    let seen = rig.digest(&git_state("test", &product));
+    seen.done(rig, "git-state", "ready");
+    holds(&seen, "a pending batch's subject");
+    assert_eq!(seen.line["pending"]["calls"], 7, "{}", seen.raw);
+    fs::write(
+        &stage.gate,
+        RED_GATE.replace("jigc::g_flows flow01::a", &title),
+    )
+    .expect("a red gate");
+    let scratch = scratch_of(rig);
+    let record = [
+        "record",
+        "--branch",
+        LOOP,
+        "--run-dir",
+        RUN_DIR,
+        "--gate",
+        stage.gate.as_str(),
+        "--calls",
+        "7",
+        "--checks",
+        "2",
+        "--scratch",
+        scratch.as_str(),
+    ];
+    let seen = rig.digest(&record);
+    seen.refused(rig, "gate-red");
+    holds(&seen, "a red test's name");
+
+    // A file beside the reports that no reporter left, named with a line break, a quote
+    // and a dash: the report check counts it, and names it in the file alone.
+    let stray = format!("{RUN_DIR}/r1/reports/test/it\u{2019}s \u{2014} a\nstray \"file\".md");
+    rig.write(&stray, "x\n");
+    let mut check = vec![
+        "check-reports",
+        "--run",
+        RUN,
+        "--round",
+        "1",
+        "--stage",
+        "test",
+        "--attempt",
+        "1",
+        "--",
+    ];
+    check.extend(LAUNCHED);
+    let seen = rig.digest(&check);
+    seen.done(rig, "check-reports", "checked");
+    assert_eq!(
+        json!([
+            seen.line["check"]["ok"],
+            seen.line["check"]["extra"],
+            seen.line["check"]["missing"]
+        ]),
+        json!([false, 1, []]),
+        "{}",
+        seen.raw
+    );
+    assert!(
+        seen.kept
+            .as_ref()
+            .is_some_and(|kept| kept.contains("stray")),
+        "the name is in the file"
+    );
+    // And the tree that file makes dirty: its name is the refusal's prose.
+    let seen = rig.digest(&git_state("test", &product));
+    seen.refused(rig, "dirty");
+    assert!(
+        seen.kept
+            .as_ref()
+            .is_some_and(|kept| kept.contains("stray"))
+    );
+
+    // WHAT DOES NOT FIT IS NOT PRINTED: a value that is no id where an id is declared — a
+    // line the tool did not make — leaves the digest, and the digest says which field.
+    let forged = json!({"act": "push", "status": "ready", "branch": title, "head": "not a sha",
+                        "remote_head": null, "vetted": ["a", "b"]});
+    let digest = rig.projected(&forged.to_string());
+    assert_eq!(
+        json!([
+            digest["branch"],
+            digest["head"],
+            digest["vetted"],
+            digest["unfit"]
+        ]),
+        json!([null, null, 2, ["branch", "head"]]),
+        "{digest}"
+    );
+    let forged = json!({"act": "it\u{2019}s \u{2014} no act", "status": "read", "state": {"run": RUN, "opened": true, "next": "a sentence, not a word"}});
+    let digest = rig.projected(&forged.to_string());
+    assert_eq!(
+        json!([digest["act"], digest["unfit"]]),
+        json!([null, ["act"]]),
+        "{digest}"
+    );
+}
+
+/// **A digest survives the relay that no document did.** Observed on 2026-10-07 (the relay
+/// probe, twelve of twelve): an agent's structured return decodes the `\uXXXX` escapes of
+/// the line it relays, and the harness's hash of the bytes fails. The relay is modelled
+/// here as that decoding — every escape of the line replaced by its character — applied to
+/// both forms of the same state: the line with the document in it comes back altered, and
+/// the digest comes back as it was sent, because it holds no escape. Where `node` is
+/// installed the harness's own `readStep` reads the digest as it reads any line of the
+/// tool, and refuses the decoded document.
+#[test]
+fn a_digest_survives_a_relay_that_decodes_its_escapes() {
+    let rig = shaped("digest-relay", 3, 2, 3, 0, HOSTILE);
+    let scratch = scratch_of(&rig);
+    let asked = [
+        "state",
+        "--run",
+        RUN,
+        "--scratch",
+        scratch.as_str(),
+        "--tag",
+        "test-1",
+    ];
+    let document = rig.step(&asked).raw;
+    let digest = rig.digest(&asked).raw;
+    // The relay: what a JSON reader makes of the line's escapes, written back as text.
+    let relayed = |line: &str| -> String {
+        let mut out = String::new();
+        let mut rest = line;
+        while let Some(at) = rest.find("\\u") {
+            let code = u32::from_str_radix(&rest[at + 2..at + 6], 16).expect("an escape");
+            out.push_str(&rest[..at]);
+            out.push(char::from_u32(code).expect("a character"));
+            rest = &rest[at + 6..];
+        }
+        out + rest
+    };
+    assert_ne!(
+        relayed(&document),
+        document,
+        "the control: the document's line holds escapes"
+    );
+    assert_eq!(
+        relayed(&digest),
+        digest,
+        "a digest holds none: it is relayed as it was sent"
+    );
+    assert!(document.len() > 2 * digest.len());
+
+    if !node_or_skip(&format!(
+        "{HARNESS}'s `readStep` was not run on a digest of {TOOL}"
+    )) {
+        return;
+    }
+    let read = harness_pure(&json!([
+        ["readStep", [{"status": "ran", "line": relayed(&digest)}, "state"]],
+        ["readStep", [{"status": "ran", "line": relayed(&document)}, "state"]],
+    ]));
+    assert!(
+        read[0].get("relay").is_none()
+            && read[0]["status"] == "read"
+            && read[0]["state"]["next"] == "test"
+            && read[0]["file"] == "state/test-1.json",
+        "the harness reads a relayed digest: {}",
+        read[0]
+    );
+    assert!(
+        read[1]["relay"]
+            .as_str()
+            .is_some_and(|why| why.contains("does not end with the sha256 of itself")),
+        "and the relayed document is what it was on 2026-10-07 — altered: {}",
+        read[1]["relay"]
     );
 }

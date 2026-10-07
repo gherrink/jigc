@@ -170,6 +170,8 @@ A result says how an item *ran*, never what it found: what a hunting instrument 
 - `landed` · `dropped` — how a `fix` stage ended a round. `cycle` · `nothing-to-fix` — a `fix` stage that had nothing it could do; `next` says what is owed.
 - `stopped` — a `stopAfter` return.
 
+**A line holds what the harness acts on, and nothing else — built in the scripts, and not read by the harness yet** (2026-10-07 — [DECISIONS.md](../DECISIONS.md) → *A line holds what the harness acts on*; the second repair plan's `K9`). The relay probe observed that a line relayed through an agent never arrives byte for byte once it holds one character outside ASCII — the tool prints it as an escape, the agent's return decodes it, and the hash fails — and that from about 80 KB it does not arrive at all: so **the first state read of a real stage fails as the harness stands**. Every act of [`dev/stabilize-step`](../dev/stabilize-step) therefore prints, when asked (`--digest <scratch>`), a **digest** in place of its line: ids, words of a fixed list, counts, hashes and paths of plain segments, each field of a shape the tool declares, a value that does not fit its shape left out and named (`unfit`) — printable ASCII with no escape in it, held to its hash as every line is. What it leaves out is in a file it names by its path under that root and by its sha256: the state document for the state, and for every other act the line the act prints unasked, a refusal's halt report in it. **The state's digest grows with the test set and with nothing else** — about 135 bytes an item; 6.1 KB at 60 ledger rows, 150 doors on each side of the scope, 30 items and a human's list of 20, where the document is 92 KB — and what an agent needs of the rest it reads by key from the record script: an item's row with its brief (`item`), the doors of a round's test set an item covers (`item-doors`, for the round asked — a re-run's is not the latest), the untriaged rows (`untriaged`), a pending batch's subject (`pending`). The header of the step tool, *THE DIGEST*, has every field. **Until the harness has moved (`K3`) it asks for no digest, and reads the line with the document in it; without the flag every line is what it was.** What shows that a digest is relayed whole is no suite's to show — the suites model the relay as the decoding that was observed — but the relay probe's, run again ([The runtime probes](#the-runtime-probes)).
+
 ## Triage, the human's list and the forks
 
 **Every finding is graded, and nothing leaves the list unseen** (ruling 5). Triage grades every finding a stage produced — a lead, and every entry an agent *left open*, included — and keys each to one ledger row for the life of the run. An independent verifier re-drives everything graded as breaking or unclear, with a brief to refute it, and establishes on the previous release's binary whether it is a regression. The rule is the completion workflow's verify-real ([milestone-completion-workflow.md](milestone-completion-workflow.md) → The loop, step 2); what this workflow adds is who may decide what:
@@ -410,7 +412,7 @@ What a halt leaves, as the source has it — none of it observed in a run yet:
 
 ```
 Workflow({ name: 'stabilize', args: { selfTest: true } })                      — first, once: that the runtime takes the script at all
-Workflow({ name: 'stabilize', args: { probe: '<name>', scratch: '<dir>' } })   — <name>: required · relay · payload · hold
+Workflow({ name: 'stabilize', args: { probe: '<name>', scratch: '<dir>' } })   — <name>: required · relay · relay-document · payload · hold
 ```
 
 `<dir>` is a directory that exists, outside the repository, and **fresh for every invocation** — `mktemp -d` under the session's scratch root: a probe's root under it is made once, and a second invocation over the same root is refused (`exists`). `hold` takes one more argument, `seconds` — absent, twelve minutes; `2100` holds for the regression set's thirty-five. Anything of a stage beside `probe` — a `stage`, a `run`, a `model` — is refused before any agent runs.
@@ -418,7 +420,8 @@ Workflow({ name: 'stabilize', args: { probe: '<name>', scratch: '<dir>' } })   �
 | Probe | What it launches | It takes about |
 |---|---|---|
 | `required` | two reviewers on the stage's model, each under a return schema that requires the hash; two git steps | five to ten minutes — longer where a refused return costs a reviewer its three tries |
-| `relay` | fourteen git steps: one builds four throwaway runs, twelve relay a state line of 3, 25, 80 and 160 KB three times each, one judges | not measured; the large lines are what takes the time, or fails |
+| `relay` | fourteen git steps: one builds four throwaway runs — 1, 20, 60 and 120 ledger rows over 2, 40, 150 and 300 doors and 1, 10, 30 and 60 items — twelve relay each run's state **as its digest**, 1.3, 2.7, 5.6 and 10.1 KB, three times each, one judges | minutes |
+| `relay-document` | the same fourteen steps over the same runs, relaying the line **with the state document in it** — the form the first run of the probe never got back whole (2026-10-07), kept to compare | not measured; the large lines are what takes the time, or fails |
 | `payload` | four executors, each writing a batch of 9, 25, 49 and 121 KB from its prompt; two git steps | not measured |
 | `hold` | one preflight agent holding a command of twelve minutes, then a git step that starts the same command detached and git steps that ask for it, ninety seconds each | about half an hour: the two arms run one after the other, twelve minutes of holding each |
 
@@ -427,7 +430,8 @@ Workflow({ name: 'stabilize', args: { probe: '<name>', scratch: '<dir>' } })   �
 | Probe | The verdicts that settle its question | What the plan hangs on it |
 |---|---|---|
 | `required` | case a: `absent` · `returned` or `other` · `nothing` or `threw`, with the tries each cost; case b: `returned` or not | whether a schema may gain a `required` at all (`P4`'s row, and the choice between its two designs); case b: `O2` |
-| `relay` | per size, how many of three are `whole` | `R-H1`'s row: every line whole — the row is the document in a return, which `X2` closes; a failure at a size a run reaches — the row is due before the opening |
+| `relay` | per size, how many of three are `whole` | whether the harness may be built on the digest (`K3`): whole, three of three, at each of the four sizes — or `K3` is not started, and it is back with the human. `altered`: a line came back that does not hold to its own hash — something on the way still rewrites a digest; `missing`: no line came back; `other`: a line that holds and is another tag's; `unsent`: the command did not run |
+| `relay-document` | the same verdicts | nothing: it is the comparison — what `R-H1` looks like, observed |
 | `payload` | per size, `whole` or not | how many findings one record can carry (`P4`'s row; a bound of the plan's §10): a failure makes that row due before the opening |
 | `hold` | case a: `held` or not; case b: `outlived`, `killed` or `unread` | `T9`'s row, and how round 1 runs the regression set: from a brief inside the preflight's turn, or outside the stage |
 

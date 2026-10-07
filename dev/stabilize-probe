@@ -16,7 +16,11 @@
 #   required  what the runtime hands the harness when an agent's return lacks a field its
 #             schema requires
 #   relay     whether the ONE line of a run's state survives an agent's relay, at the
-#             sizes a real run's state has
+#             sizes a real run's state has — AS ITS DIGEST, which is what the harness is
+#             to read (dev/stabilize-step: THE DIGEST; the second repair plan's K9)
+#   relay-document
+#             the same, of the line WITH THE DOCUMENT IN IT: the cases this probe's first
+#             run (2026-10-07) never got back whole, kept to compare
 #   payload   whether a record's batch, written by an agent from its prompt by
 #             here-document, reaches the disk as the bytes the harness composed
 #   hold      whether a long command can be held past the tool's timeout — by one agent
@@ -35,23 +39,28 @@
 #
 # Usage — every act prints ONE line of JSON on stdout, whatever it exits with:
 #
-#   dev/stabilize-probe begin --scratch DIR --probe required|relay|payload|hold
+#   dev/stabilize-probe begin --scratch DIR --probe required|relay|relay-document|
+#                       payload|hold
 #       A probe's first act: its root, `DIR/probe/<probe>/`, made — ONCE: a root that is
 #       there is refused (exists), so that two invocations never judge each other's
 #       files; mint a fresh scratch root per invocation. And what the probe stands on:
 #       `required` — a stand-in for a candidate's binary, a file nothing runs, and its
-#       sha256; `relay` — four throwaway runs, each a repository of its own with the run
-#       `probe` opened in it through the copied record script: 1, 20, 60 and 120 ledger
-#       rows over 2, 40, 150 and 300 doors of round 1's scope, the sizes at which the
-#       re-review measured a state line of 3, 25, 75 and 143 KB. Prints {status: begun,
-#       probe, root} and `binary: {file, sha256, bytes}`, or `runs: [{rows, doors,
-#       bytes}]` — `bytes` the length of the run's state line.
+#       sha256; `relay` and `relay-document` — four throwaway runs, each a repository of
+#       its own with the run `probe` opened in it through the copied record script: 1,
+#       20, 60 and 120 ledger rows over 2, 40, 150 and 300 doors of round 1's scope, the
+#       sizes at which the re-review measured a state line of 3, 25, 75 and 143 KB, and a
+#       test set of 1, 10, 30 and 60 items, which is what a digest grows with. Prints
+#       {status: begun, probe, root} and `binary: {file, sha256, bytes}`, or `runs:
+#       [{rows, doors, items, bytes}]` — `bytes` the length of the line THIS probe
+#       relays: the state's digest, or the line with the document in it.
 #
-#   dev/stabilize-probe state --scratch DIR --rows N --tag T
+#   dev/stabilize-probe state --scratch DIR --probe relay|relay-document --rows N --tag T
 #       THE LINE A RELAY STEP RELAYS: `dev/stabilize-step state` of the throwaway run of
-#       N rows, run in that run's repository, its ONE line printed as that tool printed
-#       it — so its act is `state` and it ends with that tool's own sha256 — and kept as
-#       `DIR/probe/relay/sent/T.line`, which is what `verdict` holds the answer to.
+#       N rows, run in that run's repository — asked for its digest (`--digest`, the file
+#       it names under that run's own scratch root) by `relay`, and unasked by
+#       `relay-document` — its ONE line printed as that tool printed it, so its act is
+#       `state` and it ends with that tool's own sha256, and kept as
+#       `DIR/probe/<probe>/sent/T.line`, which is what `verdict` holds the answer to.
 #
 #   dev/stabilize-probe hash --scratch DIR --file FILE
 #       A file's hash as one hashed line: FILE lies under DIR — outside — and is there —
@@ -94,7 +103,8 @@
 #       nothing   every try ended with nothing
 #       threw     no try returned, and at least one threw
 #       halted    the agent halted: no answer
-#   relay      r<rows>-<n>:<tries>:<hash>:<bytes>, three per size
+#   relay, relay-document
+#              r<rows>-<n>:<tries>:<hash>:<bytes>, three per size
 #              <hash> is the sha256 the line ended with, where the harness could hold the
 #              line to it; `altered` where it could not; `none` where no line came back.
 #              <bytes> is how many bytes came back.
@@ -177,10 +187,16 @@ STATUS = {
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
 
-PROBES = ("required", "relay", "payload", "hold")
-# The relay probe's throwaway runs: ledger rows, and doors of round 1's scope.
+PROBES = ("required", "relay", "relay-document", "payload", "hold")
+# The relay probes' throwaway runs: ledger rows, and doors of round 1's scope.
 SIZES = ((1, 2), (20, 40), (60, 150), (120, 300))
 RELAYS = 3
+# The items of each run's test set, by its ledger rows: a digest grows with those.
+ITEMS = {1: 1, 20: 10, 60: 30, 120: 60}
+# The two relay probes, and whether the line each relays is the step tool's DIGEST — what
+# the harness is to read (`relay`) — or the line with the document in it, which the probe's
+# first run never got back whole, and which is kept to compare (`relay-document`).
+DIGESTED = {"relay": True, "relay-document": False}
 # The payload probe's batches, by their entries.
 ENTRIES = (20, 60, 120, 300)
 # The run every throwaway repository holds, and what is copied into it.
@@ -266,8 +282,8 @@ def begin(args, facts):
     facts.update(probe=args.probe, root=root)
     if args.probe == "required":
         facts.update(binary=stand_in(root))
-    if args.probe == "relay":
-        facts.update(runs=[throwaway_run(root, rows, doors) for rows, doors in SIZES])
+    if args.probe in DIGESTED:
+        facts.update(runs=[throwaway_run(root, rows, doors, DIGESTED[args.probe]) for rows, doors in SIZES])
     facts.update(status="begun")
 
 
@@ -341,10 +357,12 @@ def door(n):
     }
 
 
-def throwaway_run(root, rows, doors):
+def throwaway_run(root, rows, doors, digest):
     """A repository of its own under the probe's root, with the run `probe` opened in it
     as the workflow's doc opens one — through the copied record script — and round 1's
-    scope written: `rows` ledger rows over `doors` doors."""
+    scope written: `rows` ledger rows over `doors` doors, and a test set of as many items
+    as a run of that size has (ITEMS) — one that runs on every candidate, and review rows
+    of one door each."""
     base = os.path.join(root, "run-%d" % rows)
     repo = os.path.join(base, "repo")
     scratch = os.path.join(base, "scratch")
@@ -366,18 +384,22 @@ def throwaway_run(root, rows, doors):
     os.makedirs(run_dir)
     write_whole(os.path.join(run_dir, "opening.md"), "# the opening record\n\nA throwaway run of dev/stabilize-probe: %d ledger rows over %d doors. It tests nothing.\n" % (rows, doors))
     in_rig(repo, [record, "run-set", "--run", RUN], json.dumps({"stop": "every-round", "previous": "0.0.0-probe", "previous-commit": head, "scope": "delta", "clauses": ["audit-clean"]}))
-    in_rig(repo, [record, "item-set", "--run", RUN], json.dumps([{"item": "area-a", "kind": "audit-area", "clause": "audit-clean", "runs": "every-candidate", "brief": "the brief of a throwaway run's one item"}]))
+    items = [{"item": "area-a", "kind": "audit-area", "clause": "audit-clean", "runs": "every-candidate", "brief": "the brief of a throwaway run's first item"}]
+    items += [{"item": "review-%03d" % n, "kind": "review-row", "clause": "audit-clean", "runs": "in-scope", "doors": [door_name(n)], "brief": "the brief of a throwaway run's review row %03d — what `%s` must not lose" % (n, door_name(n))} for n in range(1, ITEMS[rows])]
+    in_rig(repo, [record, "item-set", "--run", RUN], json.dumps(items))
     in_rig(repo, [record, "ledger-add", "--run", RUN], json.dumps([row(n) for n in range(1, rows + 1)]))
     in_rig(repo, ["git", "add", "-A"])
     in_rig(repo, ["git", "commit", "-q", "-m", "docs(record): a probe's throwaway run is opened"])
     in_rig(repo, [record, "scope-set", "--run", RUN, "--round", "1", "--scratch", scratch], json.dumps({"included": [door(n) for n in range(1, doors + 1)], "excluded": []}))
-    line = state_line(repo, scratch, "built")
-    return {"rows": rows, "doors": doors, "bytes": len(line.rstrip("\n").encode("utf-8"))}
+    line = state_line(repo, scratch, "built", digest)
+    return {"rows": rows, "doors": doors, "items": len(items), "bytes": len(line.rstrip("\n").encode("utf-8"))}
 
 
-def state_line(repo, scratch, tag):
-    """The ONE line the run's own step tool prints for its state, as it printed it."""
-    out = in_rig(repo, [os.path.join(repo, "dev", "stabilize-step"), "state", "--run", RUN, "--scratch", scratch, "--tag", tag])
+def state_line(repo, scratch, tag, digest):
+    """The ONE line the run's own step tool prints for its state, as it printed it: its
+    digest, the file it names under the run's own scratch root — or the line with the
+    document in it."""
+    out = in_rig(repo, [os.path.join(repo, "dev", "stabilize-step"), "state", "--run", RUN, "--scratch", scratch, "--tag", tag] + (["--digest", scratch] if digest else []))
     if not out.endswith("\n") or out.count("\n") != 1:
         refuse("tool", "the throwaway run's step tool did not print ONE line for its state", out[:2000])
     return out
@@ -385,12 +407,14 @@ def state_line(repo, scratch, tag):
 
 def state(args, facts):
     outside(args.scratch)
-    root = root_of(args.scratch, "relay")
+    if args.probe not in DIGESTED:
+        refuse("usage", "the `%s` probe relays no line: the probes that do are %s — see dev/stabilize-probe --help" % (args.probe, ", ".join(DIGESTED)))
+    root = root_of(args.scratch, args.probe)
     base = os.path.join(root, "run-%s" % args.rows)
     repo = os.path.join(base, "repo")
     if not os.path.isfile(os.path.join(repo, "dev", "stabilize-step")):
         refuse("missing", "the throwaway run of %s rows was not built under `%s`" % (args.rows, root))
-    line = state_line(repo, os.path.join(base, "scratch"), args.tag)
+    line = state_line(repo, os.path.join(base, "scratch"), args.tag, DIGESTED[args.probe])
     sent = os.path.join(root, "sent")
     os.makedirs(sent, exist_ok=True)
     write_whole(os.path.join(sent, args.tag + ".line"), line)
@@ -618,7 +642,7 @@ def judge_hold(scratch, root, tokens):
     return cases
 
 
-JUDGES = {"required": judge_required, "relay": judge_relay, "payload": judge_payload, "hold": judge_hold}
+JUDGES = {"required": judge_required, "relay": judge_relay, "relay-document": judge_relay, "payload": judge_payload, "hold": judge_hold}
 
 
 def verdict(args, facts):
@@ -686,7 +710,7 @@ def arguments(argv):
         return sub
 
     act("begin", begin, ["scratch", "probe"])
-    act("state", state, ["scratch", "rows", "tag"])
+    act("state", state, ["scratch", "probe", "rows", "tag"])
     act("hash", hash_file, ["scratch", "file"])
     act("hold", hold, ["scratch", "name", "seconds"]).add_argument("--detach", action="store_true")
     act("held", held, ["scratch", "name"]).add_argument("--slice", default="0", type=slice_seconds)
