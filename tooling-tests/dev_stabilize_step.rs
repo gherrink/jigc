@@ -4728,6 +4728,103 @@ fn discard_refuses_a_batch_that_is_in_a_commit() {
     );
 }
 
+/// **A batch whose commit is made is not taken back because a hand wrote in it since** (the
+/// core review's `F4`). `discard` refused a committed batch only where no file of it was
+/// altered — and a file of an applied batch that a hand changed is refused with `discard`
+/// spelled as the command that leaves it. So a batch that was in HEAD, and on the remote,
+/// and one of whose tables a hand then touched, was taken back on the tool's own advice:
+/// the round's tables left the tree, the journal was gone, and `state` answered `test` for
+/// a round whose record the remote held. Whether a batch's commit is made is now ASKED OF
+/// HEAD — every file of it is there as the batch wrote it — and of nothing the tree holds.
+/// Such a batch is settled, never taken back; and the file is then what it is: a tracked
+/// file changed by hand, the human's, with no word of `discard`.
+#[test]
+fn a_batch_whose_commit_is_made_is_not_taken_back_because_a_hand_wrote_in_it_since() {
+    let discard = ["discard", "--branch", LOOP, "--run-dir", RUN_DIR];
+    let table = format!("{RUN_DIR}/ledger.md");
+    for first in ["discard", "git-state"] {
+        // Committed, not settled — and PUSHED, by the push that reads no journal.
+        let stage = Stage::unsettled(&format!("discard-altered-{first}"));
+        let rig = &stage.rig;
+        rig.step(&PUSH).done("push", "ready");
+        let recorded = rig.rev("HEAD");
+        assert_eq!(rig.remote(LOOP), Some(recorded.clone()));
+        assert!(rig.journal().is_some(), "a push settles nothing");
+        // A hand in a table of the record.
+        let by_hand = format!("{}\n<!-- a hand was here -->\n", rig.read(&table));
+        rig.write(&table, &by_hand);
+
+        if first == "discard" {
+            // THE ACT THE REFUSAL USED TO NAME, asked first: nothing is taken back.
+            let (journal, status) = (rig.journal(), rig.status());
+            let seen = rig.step(&discard);
+            let said = seen.refused("committed");
+            assert_eq!(said["found"], json!(["committed"]), "{}", seen.raw);
+            assert!(
+                said["halt"]["root_cause"]
+                    .as_str()
+                    .is_some_and(|cause| cause.contains(&table)),
+                "the file a hand changed is named: {}",
+                seen.raw
+            );
+            assert_eq!(
+                (rig.journal(), rig.status(), rig.read(&table)),
+                (journal, status, by_hand.clone()),
+                "nothing was written: the journal, the tree and the table are as they were"
+            );
+        }
+
+        // THE READ A STAGE STARTS FROM settles the batch — its commit is made — and names
+        // the file as what it then is: a tracked file changed by hand.
+        let seen = stage.git_state();
+        let said = seen.refused("dirty");
+        assert_eq!(
+            json!([said["found"], said["finished"]]),
+            json!([["altered", "committed", "dirty"], ["committed"]]),
+            "{}",
+            seen.raw
+        );
+        let then = said["halt"]["recommendation"]
+            .as_str()
+            .expect("what leaves it");
+        assert!(
+            then.contains("the human") && !then.contains("discard"),
+            "it is the human's, and no act that takes a batch back is named: {then}"
+        );
+        assert!(rig.journal().is_none(), "the batch is settled");
+        assert_eq!(rig.read(&table), by_hand, "the tree is as the hand left it");
+        assert_eq!(
+            (rig.rev("HEAD"), rig.remote(LOOP)),
+            (recorded.clone(), Some(recorded.clone())),
+            "and the commit, here and on the remote, is the record's"
+        );
+
+        // `discard` then has no batch, and takes nothing back.
+        let seen = rig.step(&discard);
+        let line = seen.done("discard", "discarded");
+        assert_eq!(
+            json!([line["found"], line["discarded"]]),
+            json!([[], []]),
+            "{}",
+            seen.raw
+        );
+        assert_eq!(rig.read(&table), by_hand);
+
+        // THE HUMAN'S ACT, plain git: what the commit holds is put back — and the run
+        // stands at its record, a tested round with its candidate.
+        rig.git(&["restore", "--", &table]);
+        let seen = stage.git_state();
+        assert_eq!(seen.done("git-state", "ready")["found"], json!([]));
+        let end = stage.end();
+        assert_eq!((end.head, end.status.as_str()), (recorded, ""));
+        assert!(
+            end.state["candidate"]["commit"].is_string() && end.state["next"] != "test",
+            "the state reads the round's record: {}",
+            end.state
+        );
+    }
+}
+
 /// **A temporary is no report** (the re-review's `R4`): a writer of the record script that
 /// is killed leaves its temporary beside its target. The report check counted one as a
 /// file nobody launched, and the read a stage starts from refused the tree as dirty, naming
@@ -5472,7 +5569,15 @@ const CHANGING: &[(&str, &[&str])] = &[
 const BRANCH_NAMES: [&str; 3] = ["args.loop", "args.branch", "branch"];
 
 /// The pieces of text the tool may join a name to, inside a git call.
-const JOINED: [&str; 5] = ["origin/", "refs/heads/", "*", "/opening.md", ":(exclude)"];
+const JOINED: [&str; 6] = [
+    "origin/",
+    "refs/heads/",
+    "*",
+    "/opening.md",
+    ":(exclude)",
+    // A file of the applied batch as HEAD holds it: whether the batch's commit is made.
+    "HEAD:",
+];
 
 #[derive(Debug, Clone, PartialEq)]
 enum Arg {

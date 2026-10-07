@@ -188,7 +188,11 @@
 #       THE APPLIED BATCH TAKEN BACK, BY THE ACT THAT ASKS GIT FIRST. B is checked out —
 #       wrong-branch — and git's lock does not stand — locked. A batch whose commit is
 #       made is NOT taken back — committed: `dev/stabilize-record discard` reads no git,
-#       and would write every committed table as it was before the batch. Else what a
+#       and would write every committed table as it was before the batch. WHETHER THE
+#       COMMIT IS MADE IS ASKED OF HEAD — every file of the batch is there with the
+#       content the batch wrote — and of nothing the tree holds: a hand that wrote in a
+#       committed table since does not make the batch one that is taken back (the review
+#       of the core for three dangers, F4). Else what a
 #       commit step staged of the record is unstaged, and every file of the batch is as
 #       it was before the batch, or gone where the batch made it; the reports and the
 #       scope stay. With no batch there is nothing to take back, and that is its answer.
@@ -332,7 +336,9 @@
 #              (recorded), or REFUSES it and says whose it is and what leaves it:
 #                wrong-branch    the caller's — before any write, fetch or push
 #                git-lock        the orchestrator's: the tool never removes a lock
-#                altered         the human's: `discard` is named, as a command
+#                altered         the human's: `discard` is named, as a command —
+#                                while no commit holds the batch; after its commit the
+#                                batch is settled, and the file is `dirty`
 #                head-moved      the orchestrator's: the stage is invoked again
 #                unvetted        the human's: a local commit is his to take back
 #                foreign-commit  its author's: `git push origin <branch>`, by name
@@ -712,9 +718,9 @@ ARRIVALS = (
     {"state": "stray-temporaries", "act": "record", "phase": "applied", "found": "the record script's own temporaries, which no journal names: a write killed before its journal", "answer": "undone", "word": None, "whose": "the tool's", "leaves": "`dev/stabilize-record recover`, which the act runs: they are removed, and the state is the one before that write"},
     {"state": "applied", "act": "record", "phase": "committed", "found": "the journal holds a batch, every file of it is in the tree as the batch wrote it, and no commit holds it", "answer": "owed", "word": None, "whose": "the stage's", "leaves": "the full gate on the tree, then `dev/stabilize-step record`, which is repeatable; or `dev/stabilize-step discard`, which takes the batch back"},
     {"state": "staged", "act": "record", "phase": "committed", "found": "as `applied`, with paths of the record in the index: a commit step killed after its `git add`, or one whose `git commit` failed", "answer": "owed", "word": None, "whose": "the stage's", "leaves": "as `applied`: the commit step admits its own staged lines, stages the paths again, vets them and commits"},
-    {"state": "altered", "act": "record", "phase": "committed", "found": "a file of the applied batch is no longer what the batch wrote", "answer": "refused", "word": "dirty", "whose": "the human's", "leaves": "it is the human's, because a hand wrote in a table of the record: `dev/stabilize-step discard --branch <branch> --run-dir <run-dir>` takes the batch back — every file of it as it was before the batch, whatever was written since — and the stage invoked again works the next attempt; or the file is put back as the batch wrote it, and the step asked for again"},
+    {"state": "altered", "act": "record", "phase": "committed", "found": "a file of the applied batch is no longer what the batch wrote, and no commit holds the batch: HEAD does not hold every file of it as the batch wrote it", "answer": "refused", "word": "dirty", "whose": "the human's", "leaves": "it is the human's, because a hand wrote in a table of the record: `dev/stabilize-step discard --branch <branch> --run-dir <run-dir>` takes the batch back — every file of it as it was before the batch, whatever was written since — and the stage invoked again works the next attempt; or the file is put back as the batch wrote it, and the step asked for again"},
     {"state": "head-moved", "act": "record", "phase": "committed", "found": "the branch is not at the commit the stage began on (--head): somebody committed while the stage ran", "answer": "refused", "word": "head-moved", "whose": "the orchestrator's", "leaves": "nothing was committed or undone: the batch stays applied. The stage is invoked again: its first read meets the commit — one the remote lacks is its author's to push — and then gates the batch on the tree as it now stands, and commits it there"},
-    {"state": "committed", "act": "record", "phase": "settled", "found": "the journal holds a batch, and every file of it is in HEAD as the batch wrote it: the commit was made, and the batch was not forgotten", "answer": "finished", "word": None, "whose": "the tool's", "leaves": "`dev/stabilize-record settle`, which `git-state` and `record` run; `discard` refuses such a batch"},
+    {"state": "committed", "act": "record", "phase": "settled", "found": "the journal holds a batch, and every file of it is in HEAD as the batch wrote it — asked of HEAD, whatever a hand wrote in the tree since: the commit was made, and the batch was not forgotten", "answer": "finished", "word": None, "whose": "the tool's", "leaves": "`dev/stabilize-record settle`, which `git-state` and `record` run; `discard` refuses such a batch, altered or not. A file of it that a hand changed AFTER the commit is then no file of an open record: the act that settled the batch reads the tree again, and refuses it as a tracked file changed by hand (`dirty`, the human's — `git restore -- <file>` puts back what the commit holds)"},
     {"state": "recorded", "act": "record", "phase": "pushed", "found": "the commit step is asked for again after it was done: no batch, and HEAD is the one commit since the commit the stage began on (--head), which is the commit this step answered with", "answer": "answered", "word": None, "whose": "the tool's", "leaves": "nothing to leave: the step answers again what it answered then, and the push is the next step"},
     {"state": "unpushed", "act": "record", "phase": "pushed", "found": "the loop branch is ahead of its remote by commits that touch only the run's directory: a record that was committed and not pushed", "answer": "finished", "word": None, "whose": "the tool's", "leaves": "the push that is owed, which `git-state` makes for the `test` stage before it answers — every commit of it vetted first; while a batch is applied it is that record's own push"},
     {"state": "unvetted", "act": "record", "phase": "pushed", "found": "a commit the push would publish is not what dev/stabilize-record would have written", "answer": "refused", "word": "unvetted", "whose": "the human's", "leaves": "nothing is pushed, and it is the human's: the commit is local, and rewriting it or taking it back is his to confirm. `dev/stabilize-record vet --range -- <branch> --not <what the remote holds>`, which the refusal spells whole, names every commit and place again"},
@@ -1036,18 +1042,37 @@ def admitted(status, pending, facts):
     return untracked, held, staged
 
 
+def in_head(batch):
+    """THE BATCH'S COMMIT IS MADE, asked of git and of nothing the tree holds: every file of
+    the batch is in HEAD with the content the batch wrote — the sha256 the journal holds
+    of it. What a hand wrote in the tree since changes nothing of that. (A table of the
+    record script is UTF-8 text with no carriage return, so what git prints of one is its
+    bytes; a file in HEAD that is anything else is not what the batch wrote.)"""
+    for path, digest in batch["files"].items():
+        held = git("show", "HEAD:" + path)
+        if held.code != 0 or hashlib.sha256(held.out.encode("utf-8")).hexdigest() != digest:
+            return False
+    return True
+
+
 def standing(pending, facts, **names):
     """WHERE THE OPEN ACT STANDS, from git and the journal and never from a flag: (the
     written-once files pending, the batch's files pending, the arrival state). The state is
     None with no batch; `applied`, or `staged` where paths of the record are in the index;
     `committed` where every file of the batch is in HEAD as the batch wrote it — none of
     them differs from HEAD, and none from what the batch wrote. A file of the batch that
-    is no longer what the batch wrote is the human's (`altered`)."""
+    is no longer what the batch wrote is the human's (`altered`) WHILE NO COMMIT HOLDS THE
+    BATCH; where HEAD holds it the commit is made — `committed`, whatever a hand wrote in
+    the tree since — and the file is, once the batch is settled, a tracked file changed by
+    hand like any other: the tree is read again by whoever settles it."""
     batch = pending.get("batch")
     if batch and not any(act["act"] == batch.get("act") and act["phases"] for act in ACTS):
         refuse("record", "the journal names an open act this tool has no phases for: %s" % json.dumps(batch.get("act")), "`dev/stabilize-record pending`")
     if batch and batch["altered"]:
-        refuse_as(facts, "altered", "a file of the applied batch is no longer what the batch wrote: %s" % ", ".join(batch["altered"]), "`dev/stabilize-record pending` names it as altered: its content is not the one the journal holds a hash of", **names)
+        if in_head(batch):
+            note(facts, "altered")
+            return [], [], "committed"
+        refuse_as(facts, "altered", "a file of the applied batch is no longer what the batch wrote: %s" % ", ".join(batch["altered"]), "`dev/stabilize-record pending` names it as altered: its content is not the one the journal holds a hash of, and HEAD does not hold the batch", **names)
     untracked, held, staged = admitted(said("status", "--porcelain", "--untracked-files=all"), pending, facts)
     return untracked, held, (("staged" if staged else "applied") if held else "committed") if batch else None
 
@@ -1139,6 +1164,9 @@ def git_state(args, facts):
     elif state == "committed":
         settled(run_name, "the commit of the applied batch is made")
         note(facts, state, "finished")
+        # The tree, read again without the batch: what a hand wrote in a committed table
+        # is a tracked file changed by hand, and no pending write of the run.
+        untracked, held, _ = standing(pending_of(run_name), facts, branch=current, run_dir=args.run_dir)
     elif state:
         note(facts, state, "owed")
     # 5. The pushed loop branch.
@@ -1470,9 +1498,12 @@ def discard(args, facts):
         # 2. Where the batch stands, asked of git: one whose commit is made is not taken back.
         status = [(line[:2], line[3:]) for line in lines(said("status", "--porcelain", "--untracked-files=all"))]
         ours = list(batch["files"]) + (pending.get("once") or [])
-        if not batch["altered"] and not any(path in batch["files"] for code, path in status):
+        if in_head(batch) or not any(path in batch["files"] for code, path in status):
+            # ASKED OF HEAD, whatever the tree holds: a batch whose commit is made is not
+            # taken back because a hand wrote in one of its tables since — and one of
+            # which the tree holds nothing that HEAD does not has nothing to take back.
             note(facts, "committed")
-            refuse("committed", "the applied batch of run %s is in a commit — every file of it is in HEAD as the batch wrote it: it is not taken back" % run_name, "`git status --porcelain --untracked-files=all` names no file of the batch, and `dev/stabilize-record pending` none as altered", "nothing was written. `dev/stabilize-step git-state` settles a batch whose commit is made, and says what else is owed; what a commit holds is taken back by a commit, which is the human's to make")
+            refuse("committed", "the applied batch of run %s is in a commit — %s: it is not taken back" % (run_name, "every file of it is in HEAD as the batch wrote it%s" % (", and a hand changed %s in the tree since" % ", ".join(batch["altered"]) if batch["altered"] else "") if in_head(batch) else "no file of it differs from HEAD"), "`git show HEAD:<file>` of each file of the batch, held to the hash the journal holds of it; `git status --porcelain --untracked-files=all`", "nothing was written. `dev/stabilize-step git-state` settles a batch whose commit is made, and says what else is owed — a file a hand changed since is then a tracked file changed by hand, the human's; what a commit holds is taken back by a commit, which is the human's to make")
         paths = sorted(path for code, path in status if code[0] in "AM" and path in ours)
         note(facts, "altered" if batch["altered"] else "staged" if paths else "applied")
         # 3. What a commit step staged of it, unstaged; then every file as before the batch.
