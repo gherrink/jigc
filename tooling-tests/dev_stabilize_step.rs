@@ -573,6 +573,21 @@ impl StepRig {
             .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
     }
 
+    /// The commits the remote's heads stand at, sorted and each once: what the tool is told
+    /// when it ASKS THE REMOTE what it holds (`git ls-remote --heads origin`).
+    pub(crate) fn remote_heads(&self) -> Vec<String> {
+        let out = self.git_at(
+            &self.origin,
+            &["for-each-ref", "--format=%(objectname)", "refs/heads"],
+        );
+        assert!(out.status.success(), "list the remote's heads: {out:?}");
+        let heads: BTreeSet<String> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        heads.into_iter().collect()
+    }
+
     /// A commit somebody else pushed: made in a second clone, so that the remote's branch
     /// has a commit the work clone lacks.
     pub(crate) fn pushed_by_another(&self, branch: &str, rel: &str, text: &str) -> String {
@@ -743,6 +758,26 @@ fn with<'a>(head: &[&'a str], lists: &[(&'a str, &'a [String])]) -> Vec<&'a str>
 
 fn lines(list: &[&str]) -> Vec<String> {
     list.iter().map(|line| (*line).to_owned()).collect()
+}
+
+/// **The git calls of the tool's one push**, in its order (the tool's header: *What a push
+/// publishes*): the remote is ASKED what it holds, and which of those commits this clone
+/// holds too; the branch's commit is read once; the range is that commit less what the
+/// remote holds, by sha; after the vet both are asked again; then the push, and the remote
+/// read back. `held` is what the remote's heads stood at before the call
+/// ([`StepRig::remote_heads`]) and `tip` the commit the branch stood at.
+fn push_calls(branch: &str, tip: &str, held: &[String]) -> Vec<String> {
+    let held = held.join(" ");
+    vec![
+        "ls-remote --heads origin".to_owned(),
+        format!("rev-list --no-walk --ignore-missing {held}"),
+        format!("rev-parse {branch}"),
+        format!("rev-list --reverse {tip} --not {held}"),
+        "ls-remote --heads origin".to_owned(),
+        format!("rev-parse {branch}"),
+        format!("push origin {branch}"),
+        format!("ls-remote --exit-code --heads origin {branch}"),
+    ]
 }
 
 /// A report as `dev/stabilize-record report` leaves one: text, and its last line.
@@ -1263,6 +1298,7 @@ fn push_pushes_the_branch_by_name_and_reads_the_remote_back() {
     let branch = rig.round(1);
     let push = ["push", "--branch", branch.as_str()];
     let first = rig.change("crates/a.txt", "fixed\n", "fix: a finding");
+    let held = rig.remote_heads();
 
     let seen = rig.step(&push);
     let line = seen.done("push", "ready");
@@ -1273,19 +1309,16 @@ fn push_pushes_the_branch_by_name_and_reads_the_remote_back() {
             "branch": branch, "head": first, "sha256": line["sha256"],
         })
     );
-    assert_eq!(rig.remote(&branch), Some(first));
+    assert_eq!(rig.remote(&branch), Some(first.clone()));
+    let mut expected = vec![
+        "branch --show-current".to_owned(),
+        format!("ls-remote --exit-code --heads origin {branch}"),
+    ];
+    expected.extend(push_calls(&branch, &first, &held));
+    expected.push("rev-parse HEAD".to_owned());
     assert_eq!(
-        seen.trace,
-        lines(&[
-            "branch --show-current",
-            &format!("ls-remote --exit-code --heads origin {branch}"),
-            &format!("rev-list --reverse {branch} --not --remotes=origin"),
-            &format!("push origin {branch}"),
-            &format!("ls-remote --exit-code --heads origin {branch}"),
-            &format!("rev-parse {branch}"),
-            "rev-parse HEAD",
-        ]),
-        "a branch that is not pushed yet has nothing to compare"
+        seen.trace, expected,
+        "a branch that is not pushed yet has nothing to compare; what the remote lacks of it is asked of the remote, and the vet is of the commit by its sha"
     );
 
     // A branch that is pushed is first held to its pushed tip.
@@ -1408,6 +1441,7 @@ fn land_merges_the_round_with_a_merge_commit_and_pushes_the_loop_branch() {
     let branch = a_round(&rig);
     let (pre, round_head) = (rig.rev(LOOP), rig.rev(&branch));
     let outside = format!(":(exclude){RUN_DIR}");
+    let held = rig.remote_heads();
 
     let seen = rig.step(&land(&branch, &product, &logs));
     let line = seen.done("land", "merged");
@@ -1457,11 +1491,10 @@ fn land_merges_the_round_with_a_merge_commit_and_pushes_the_loop_branch() {
             "status --porcelain",
             &format!("diff --quiet HEAD {branch} -- {}", product.join(" ")),
             &format!("diff --quiet HEAD {branch} -- . {outside}"),
-            &format!("rev-list --reverse {LOOP} --not --remotes=origin"),
-            &format!("push origin {LOOP}"),
-            &format!("ls-remote --exit-code --heads origin {LOOP}"),
-            &format!("rev-parse {LOOP}"),
-        ]),
+        ])
+        .into_iter()
+        .chain(push_calls(LOOP, &merge, &held))
+        .collect::<Vec<_>>(),
         "the commands of the land step's list, in its order"
     );
 
@@ -1822,6 +1855,7 @@ fn carry_takes_a_dropped_rounds_record_commits_over_to_the_loop_branch() {
         "docs(record): dropped",
     );
     let pre = rig.rev(LOOP);
+    let held = rig.remote_heads();
 
     let seen = rig.step(&carry(&product, &[first.as_str(), second.as_str()]));
     let line = seen.done("carry", "carried");
@@ -1868,14 +1902,15 @@ fn carry_takes_a_dropped_rounds_record_commits_over_to_the_loop_branch() {
             &format!("rev-list --count {pre}..HEAD"),
             &format!("diff --name-only {pre} HEAD"),
             &format!("diff --quiet {pre} HEAD -- {}", product.join(" ")),
-            &format!("rev-list --reverse {LOOP} --not --remotes=origin"),
-            &format!("push origin {LOOP}"),
-            &format!("ls-remote --exit-code --heads origin {LOOP}"),
-            &format!("rev-parse {LOOP}"),
+        ])
+        .into_iter()
+        .chain(push_calls(LOOP, &made[1], &held))
+        .chain(lines(&[
             "branch --show-current",
             "rev-parse HEAD",
             &format!("log --reverse --format=%H {pre}..HEAD"),
-        ]),
+        ]))
+        .collect::<Vec<_>>(),
         "the commands of the carry step's list, in its order"
     );
 }
@@ -2978,6 +3013,21 @@ fn nothing_is_published_that_was_not_vetted() {
             format!("docs(record): by hand\n\nWritten in {home}."),
             vec![(None, "host-path")],
         ),
+        // WHAT A COMMIT SAYS IS HELD TO WHAT ITS FILES ARE HELD TO (the core review's `F6`):
+        // gitleaks reads added lines and never a message, so a secret-shaped string in a
+        // subject or a body passed every push.
+        (
+            "a secret-shaped string in the body of the message alone",
+            clean.clone(),
+            format!("docs(record): by hand\n\nThe environment held {STUB_SECRET}."),
+            vec![(None, "hygiene")],
+        ),
+        (
+            "a secret-shaped string in the subject alone",
+            clean.clone(),
+            format!("docs(record): by hand, with {STUB_SECRET}"),
+            vec![(None, "hygiene")],
+        ),
     ];
     for (what, text, message, expected) in cases {
         rig.write(&by_hand, &text);
@@ -3029,7 +3079,9 @@ fn nothing_is_published_that_was_not_vetted() {
             seen.raw
         );
         assert!(
-            !seen.raw.contains(DENY_TERM) && !seen.raw.contains(&home),
+            !seen.raw.contains(DENY_TERM)
+                && !seen.raw.contains(&home)
+                && !seen.raw.contains(STUB_SECRET),
             "{what}: named by where, never by what: {}",
             seen.raw
         );
@@ -3041,10 +3093,15 @@ fn nothing_is_published_that_was_not_vetted() {
             .as_str()
             .expect("what is done about it");
         assert!(then.contains("the human's"), "{what}: {then}");
+        // The read is of THE BRANCH, less what the remote held when the step asked it —
+        // each commit by its sha, and no remote-tracking ref.
         let read = named_command(then, "dev/stabilize-record vet --range ");
         assert_eq!(
             read,
-            format!("dev/stabilize-record vet --range -- {LOOP} --not --remotes=origin")
+            format!(
+                "dev/stabilize-record vet --range -- {LOOP} --not {}",
+                rig.remote_heads().join(" ")
+            )
         );
         let (code, out, _) = rig.record_script(read, "");
         let answer: Value = serde_json::from_str(&out).expect("the read prints its result");
@@ -3137,6 +3194,254 @@ fn nothing_is_published_that_was_not_vetted() {
     assert_eq!(rig.remote(&dropped), None);
 }
 
+/// A path inside single quotes of a shell text.
+fn sh_quoted(path: &Path) -> String {
+    path.display().to_string().replace('\'', "'\\''")
+}
+
+/// **Something that happens WHILE THE RANGE IS SCANNED**: the rig's `gitleaks` becomes one
+/// that — the first time it is asked to scan a range, which is the push's vet — runs
+/// `during`, a shell text, and then scans as the stand-in does. It stands in for a second
+/// committer, or a second pusher, in the seconds the two scanners take at every push.
+fn while_the_range_is_scanned(rig: &StepRig, during: &str) {
+    rig.on_path("gitleaks-stub", &gitleaks_stub());
+    let flag = sh_quoted(&rig.dir().join("happened"));
+    fs::remove_file(rig.dir().join("bin/gitleaks")).expect("remove the stand-in");
+    rig.on_path(
+        "gitleaks",
+        &format!(
+            "#!/bin/sh\ncase \" $* \" in *\" --log-opts \"*) if [ ! -e '{flag}' ]; then : >'{flag}'\n( {during} ) >/dev/null 2>&1\nfi ;; esac\nexec gitleaks-stub \"$@\"\n"
+        ),
+    );
+}
+
+/// **What the remote lacks is asked of the remote, and never read off a remote-tracking
+/// ref** (the core review's `F2`). Both reads of a push — which commits are no record's,
+/// and which commits are vetted — were `<branch> --not --remotes=origin`: with ONE ref under
+/// `refs/remotes/origin/` standing at a local commit, nothing was foreign, nothing was
+/// vetted, and `git push` published everything. A tracking ref says what a fetch once saw,
+/// or what a hand wrote there; the tool now asks the remote (`git ls-remote`), and a ref
+/// the remote does not bear out switches off nothing — whichever ref it is.
+#[test]
+fn what_the_remote_lacks_is_asked_of_the_remote_and_never_read_off_a_tracking_ref() {
+    let rig = StepRig::new("vet-asked");
+    let product = product();
+    let record_push = ["push", "--branch", LOOP, "--run-dir", RUN_DIR];
+
+    // MUST NOT REFUSE: a head of the remote that this clone does not hold — `main`, moved
+    // on by somebody else — leaves nothing out of a range, and stops no record's push.
+    rig.pushed_by_another("main", "elsewhere.md", "elsewhere\n");
+    let note = rig.change(
+        &format!("{RUN_DIR}/note.md"),
+        "a note\n",
+        "docs(record): a note",
+    );
+    let seen = rig.step(&git_state("test", &product));
+    let line = seen.done("git-state", "ready");
+    assert_eq!(
+        json!([line["vetted"], line["remote_head"]]),
+        json!([[note], note]),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(rig.remote(LOOP), Some(note.clone()));
+
+    // Some task's commit, outside the run's directory, with a denylisted line — and the
+    // control: it is refused, by the read and by both pushes.
+    let leak = rig.change(
+        "docs-x/leak.md",
+        &format!("{DENY_TERM} outside\n"),
+        "docs: a task's commit",
+    );
+    rig.step(&git_state("test", &product))
+        .refused("foreign-commit");
+
+    // A ref the remote does not bear out: of a branch it does not hold, of `main`, of the
+    // loop branch itself.
+    for stale in ["fix/gone-branch", "main", LOOP] {
+        rig.git(&[
+            "update-ref",
+            &format!("refs/remotes/origin/{stale}"),
+            "HEAD",
+        ]);
+        for (what, seen, word) in [
+            (
+                "git-state",
+                rig.step(&git_state("test", &product)),
+                "foreign-commit",
+            ),
+            ("a record's push", rig.step(&record_push), "foreign-commit"),
+            ("a push", rig.step(&["push", "--branch", LOOP]), "unvetted"),
+        ] {
+            let what = format!("`{what}`, with `origin/{stale}` at the local head");
+            let said = seen.refused(word);
+            if word == "unvetted" {
+                assert_eq!(
+                    json!([
+                        said["vet"]["commits"],
+                        said["vet"]["refused"][0]["commit"],
+                        said["vet"]["refused"][0]["path"]
+                    ]),
+                    json!([[leak], leak, "docs-x/leak.md"]),
+                    "{what}: the commit is vetted, and named: {}",
+                    seen.raw
+                );
+            }
+            assert_eq!(
+                rig.remote(LOOP),
+                Some(note.clone()),
+                "{what}: NOTHING REACHED THE REMOTE"
+            );
+            assert!(
+                !rig.git_at(&rig.origin, &["cat-file", "-e", &leak])
+                    .status
+                    .success(),
+                "{what}: the bare remote does not hold the commit"
+            );
+            assert!(
+                !seen.trace.iter().any(|call| call.starts_with("push ")),
+                "{what}: no push was tried: {:?}",
+                seen.trace
+            );
+        }
+    }
+}
+
+/// **A commit that lands while the range is vetted is not published** (the core review's
+/// `F1`). The push listed what the remote lacked, vetted that list, and pushed the branch
+/// by name — so whatever the branch stood at when `git push` ran was published, and the
+/// line came back with `vetted: [A]` and `remote_head: B`. The vet is now of ONE commit, by
+/// its sha, and after it the branch and the remote are both asked again: where either
+/// moved, nothing is pushed, and the step asked again meets what landed as its first read
+/// meets any commit.
+#[test]
+fn a_commit_that_lands_while_the_range_is_vetted_is_not_published() {
+    // THE BRANCH MOVED: a second committer, in the seconds the scanners take.
+    let rig = StepRig::new("vet-raced");
+    let product = product();
+    let pushed = rig.rev("HEAD");
+    let note = rig.change(
+        &format!("{RUN_DIR}/note.md"),
+        "a note\n",
+        "docs(record): a note",
+    );
+    while_the_range_is_scanned(
+        &rig,
+        &format!(
+            "cd '{}' && mkdir -p docs-x && printf '%s raced\\n' {DENY_TERM} >docs-x/raced.md && git add docs-x/raced.md && git commit -q -m 'docs: landed while the vet ran'",
+            sh_quoted(&rig.root)
+        ),
+    );
+    let seen = rig.step(&git_state("test", &product));
+    let said = seen.refused("remote-differs");
+    let raced = rig.rev("HEAD");
+    assert_ne!(raced, note, "a commit landed while the range was scanned");
+    assert!(
+        said["halt"]["root_cause"]
+            .as_str()
+            .is_some_and(|cause| cause.contains(&note) && cause.contains(&raced)),
+        "the commit that was vetted and the one the branch stands at are named: {}",
+        seen.raw
+    );
+    assert_eq!(
+        rig.remote(LOOP),
+        Some(pushed.clone()),
+        "NOTHING REACHED THE REMOTE"
+    );
+    for commit in [&note, &raced] {
+        assert!(
+            !rig.git_at(&rig.origin, &["cat-file", "-e", commit])
+                .status
+                .success(),
+            "the bare remote does not hold {commit}"
+        );
+    }
+    assert!(
+        !seen.trace.iter().any(|call| call.starts_with("push ")),
+        "no push was tried: {:?}",
+        seen.trace
+    );
+    // THE EXIT: asked again, the step meets what landed as it meets any commit — it is no
+    // record's, and it is vetted like every other.
+    rig.step(&git_state("test", &product))
+        .refused("foreign-commit");
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    assert_eq!(
+        seen.refused("unvetted")["vet"]["commits"],
+        json!([note, raced]),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(rig.remote(LOOP), Some(pushed));
+
+    // THE REMOTE MOVED: it holds another head than when the range was read.
+    let rig = StepRig::new("vet-moved");
+    let pushed = rig.rev("HEAD");
+    let note = rig.change(
+        &format!("{RUN_DIR}/note.md"),
+        "a note\n",
+        "docs(record): a note",
+    );
+    while_the_range_is_scanned(
+        &rig,
+        &format!(
+            "git --git-dir='{}' update-ref refs/heads/fix/elsewhere {pushed}",
+            sh_quoted(&rig.origin)
+        ),
+    );
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    seen.refused("remote-differs");
+    assert_eq!(rig.remote(LOOP), Some(pushed), "nothing was pushed");
+    assert!(
+        !seen.trace.iter().any(|call| call.starts_with("push ")),
+        "no push was tried: {:?}",
+        seen.trace
+    );
+    // MUST NOT REFUSE: the step asked again, over a remote that stands still.
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    assert_eq!(seen.done("push", "ready")["vetted"], json!([note]));
+    assert_eq!(rig.remote(LOOP), Some(note));
+}
+
+/// **What a commit says is held to what its files are held to** (the core review's `F6`) —
+/// here for a commit that changes nothing of a run: a fixer's, a tuning commit. gitleaks
+/// reads added lines and never a message, so the one check of a writer that a push did not
+/// repeat was the secret scan of what a commit SAYS.
+#[test]
+fn what_a_commit_says_is_held_to_what_its_files_are_held_to() {
+    let rig = StepRig::new("vet-message");
+    let pushed = rig.rev("HEAD");
+    for message in [
+        format!("fix: a finding\n\nThe environment held {STUB_SECRET}."),
+        format!("fix: a finding of {STUB_SECRET}"),
+    ] {
+        let commit = rig.change("crates/a.txt", "fixed\n", &message);
+        let seen = rig.step(&["push", "--branch", LOOP]);
+        let said = seen.refused("unvetted");
+        let refused = said["vet"]["refused"].as_array().expect("what was refused");
+        assert_eq!(
+            refused
+                .iter()
+                .map(|found| json!([found["commit"], found["path"], found["why"]]))
+                .collect::<Vec<_>>(),
+            vec![json!([commit, null, "hygiene"])],
+            "the commit, and its message: {}",
+            seen.raw
+        );
+        assert!(
+            !seen.raw.contains(STUB_SECRET),
+            "by where, never by what: {}",
+            seen.raw
+        );
+        assert_eq!(rig.remote(LOOP), Some(pushed.clone()), "nothing was pushed");
+        rig.git(&["reset", "-q", "--hard", &pushed]);
+    }
+    // MUST NOT REFUSE: the same change, saying nothing of the kind.
+    let clean = rig.change("crates/a.txt", "fixed\n", "fix: a finding");
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    assert_eq!(seen.done("push", "ready")["vetted"], json!([clean]));
+}
+
 /// The stub stands in for gitleaks' exit contract, reads the tree and not the range, and
 /// says nothing about gitleaks' rules. This arm runs whatever the machine has over the
 /// range a push would publish: with gitleaks installed, a credential-shaped string in an
@@ -3196,8 +3501,39 @@ fn the_machines_own_gitleaks_reads_the_range_a_push_would_publish() {
     );
     assert_eq!(
         rig.remote(LOOP),
-        Some(clean),
+        Some(clean.clone()),
         "the credential was not pushed"
+    );
+
+    // AND WHAT A COMMIT SAYS (the core review's `F6`): the same string in a message, over a
+    // file that holds nothing — which gitleaks, reading a range, never reads.
+    rig.git(&["reset", "-q", "--hard", &clean]);
+    let said_it = rig.change(
+        "crates/a.txt",
+        "tuned again\n",
+        &format!("build(dev): a third tuning commit\n\nThe environment held {token}."),
+    );
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    let said = seen.refused("unvetted");
+    assert_eq!(
+        json!([
+            said["vet"]["refused"][0]["commit"],
+            said["vet"]["refused"][0]["path"],
+            said["vet"]["refused"][0]["why"]
+        ]),
+        json!([said_it, null, "hygiene"]),
+        "gitleaks' own rules read the message: {}",
+        seen.raw
+    );
+    assert!(
+        !seen.raw.contains(&token),
+        "and never the string: {}",
+        seen.raw
+    );
+    assert_eq!(
+        rig.remote(LOOP),
+        Some(clean),
+        "the credential in the message was not pushed"
     );
 }
 
@@ -5016,9 +5352,6 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "--no-merges",
             "--merges",
             "--reverse",
-            // The commits no branch of the remote holds yet: which of them is no record's.
-            "--not",
-            "--remotes=origin",
             "--",
         ],
     ),
@@ -5038,8 +5371,10 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "--parents",
             "-n",
             "--reverse",
-            "--not",
-            "--remotes=origin",
+            // Which of the commits the remote's heads stand at this clone holds too: what
+            // a range leaves out is what the remote said, and no remote-tracking ref.
+            "--no-walk",
+            "--ignore-missing",
         ],
     ),
     ("diff", &["--name-only", "--diff-filter=U", "--quiet", "--"]),
@@ -5726,6 +6061,20 @@ fn a_planted_offender_reddens_the_scan() {
             "a shape the tool does not have",
         ),
         ("git(\"push\", \"--all\", \"origin\")", "`--all`"),
+        // What the remote lacks is asked of the remote: a range read off the remote-tracking
+        // refs, in either read of a push, is one the tool no longer makes.
+        (
+            "said(\"rev-list\", \"--reverse\", args.branch, \"--not\", \"--remotes=origin\")",
+            "`--remotes=origin`",
+        ),
+        (
+            "said(\"log\", \"--format=%H\", args.branch, \"--not\", \"--remotes=origin\")",
+            "`--remotes=origin`",
+        ),
+        (
+            "git(\"push\", \"origin\", \"HEAD\")",
+            "a shape the tool does not have",
+        ),
         ("git(\"push\", \"--tags\", \"origin\")", "`--tags`"),
         ("git(\"rebase\", args.branch)", "`git rebase`"),
         ("git(\"reset\", \"--hard\", \"HEAD\")", "`git reset`"),

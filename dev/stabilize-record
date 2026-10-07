@@ -884,7 +884,12 @@
 #       this is THE ONE CALL OF THIS SCRIPT THAT ASKS GIT ABOUT THE REPOSITORY, of the
 #       commits of that range and of nothing else. Over the range: the two scanners CI
 #       runs over a push, as CI runs them (.github/workflows/ci.yml, `hygiene`) — every
-#       commit message and every added line, of every path. And for every commit that
+#       commit message and every added line, of every path. AND WHAT A COMMIT SAYS IS
+#       HELD TO WHAT ITS FILES ARE HELD TO: of those two, gitleaks reads added lines and
+#       never a message, so the messages of the range are scanned as the files of a
+#       batch are (WHAT A WRITER DOES TO ITS TEXT, 4) — each a file of one throwaway
+#       repository, under both scanners; a hit is the commit's, its `path` null (the
+#       review of the core for three dangers, F6). And for every commit that
 #       changes a file of AN OPENED RUN (a path below completions/artifacts/<run>/ in a
 #       commit that holds that run's opening.md), the rules above on each such file as
 #       the commit holds it, and no host path in the commit's message. (What a commit
@@ -4125,6 +4130,9 @@ def scan_hits(files):
 
 
 SUBJECT = "the-subject-of-the-commit"
+# Where the messages of a range's commits lie in the scan's throwaway repository: one file
+# per commit, named by its sha (vet --range).
+MESSAGES = "the-messages-of-the-range"
 
 
 def vet_files(run_dir, run, names, subject):
@@ -4277,6 +4285,19 @@ def vet_range(revs):
     for hit in refused:
         whole = [commit for commit in commits if hit["commit"] and commit.startswith(hit["commit"])]
         hit["commit"] = whole[0] if len(whole) == 1 else hit["commit"]
+    # WHAT A COMMIT SAYS IS HELD TO WHAT ITS FILES ARE HELD TO. The range scan reads every
+    # message against the denylist, and gitleaks reads added lines and NEVER a message — so
+    # the messages of the range are scanned as the files of a batch are: each a file of ONE
+    # throwaway repository, under both scanners (a message the range scan named already is
+    # refused, and is not scanned twice).
+    named = {hit["commit"] for hit in refused if hit["path"] is None}
+    messages = []
+    for commit in commits:
+        message = asked_of_git(["log", "-1", "--format=%B", commit, "--"], "read %s" % commit).decode("utf-8", "replace")
+        if commit not in named and message.strip() and "\0" not in message:
+            messages.append(("%s/%s" % (MESSAGES, commit), message if message.endswith("\n") else message + "\n"))
+    for rel in scan_hits(messages):
+        refused.append({"commit": rel[len(MESSAGES) + 1:], "path": None, "why": "hygiene", "detail": "the public-hygiene scan matches its message — a secret-shaped string, or a denylisted term: what a commit says is held to what its files are held to"})
     prefix = "/".join(ARTIFACTS) + "/"
     for commit in commits:
         # What the commit ITSELF changes: for a merge, what differs from every parent —
