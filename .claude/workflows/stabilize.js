@@ -41,6 +41,29 @@
 // a finding, a grade, a verdict, a scope's derivation, its own halt report — is no line of a
 // tool, is held to no hash, and is passed on as it came.
 //
+// WHAT AN AGENT OF A STAGE TYPES (the second repair plan's task K11; DECISIONS.md ->
+// 2026-10-07, "What the harness tells an agent to run"). The human's ruling of 2026-10-07:
+// an agent this script launched, told to start a command "in the background" and wait "in
+// slices", composed a waiting shell no permission rule can name and stopped on a prompt —
+// "there should be tooling for this". So EVERY COMMAND A PROMPT OF THIS SCRIPT NAMES IS ONE
+// PLAIN INVOCATION OF ONE OF THREE COMMITTED TOOLS — `dev/stabilize-step`,
+// `dev/stabilize-record`, and in a probe `dev/stabilize-probe` — rendered by one function
+// (`typed`): no pipe, no redirect, no `&&`, no substitution, no loop, no second command,
+// and no other program. The gate, the regression set, cargo, git and a hash are reached
+// THROUGH the step tool's acts. A LONG COMMAND IS HELD BY THE TOOL (`hold`): one step
+// starts it, one step asks after it — its agent asks again while the tool says `running`,
+// and composes nothing — and the tool judges it. WHERE AN AGENT HANDS A WRITER A TEXT — its
+// report, the round's scope, a record's batch — it writes a file WITH ITS FILE TOOL, under
+// the scratch root, at the path this script names, and the writer is called with that path
+// (`--from`). No prompt tells an agent to wait, to send anything to the background, to
+// redirect, to pipe or to poll by its own means; tooling-tests/stabilize_harness_fence.rs,
+// arm (s), composes every prompt and holds each to that, and names its exceptions: the
+// independent drive of a proposal (a patched tree is no commit, and no held kind builds
+// one), the cross-model pass (a tool of another family, launched only for an item the
+// invocation names), and the re-cut of a part (the `fix` half's, about to go). WHAT A ROLE
+// RUNS OF ITS OWN CRAFT — a reviewer's rig, a driver's commands on the binary, the
+// preflight's read of CI, the trial image — is named by no prompt and held by no fence.
+//
 // THE BOUND ACROSS ROUNDS AND THE STOP MODE (ruling 6) are the record script's too: the
 // run's opening writes them (`dev/stabilize-record run-set`), `next` is `stop` where the
 // human is asked before the step that follows, and the position refuses a stage of a run
@@ -70,11 +93,13 @@
 //
 // THE STAGES (ruling 9).
 //   test   git state (the path-class assert) -> state -> THE ATTEMPT BEGUN ON RECORD ->
-//          preflight ∥ scope -> state -> the round's instruments, in parallel -> the
-//          reports checked -> per pass: triage -> verify-real -> per fork an advocate and
-//          an independent drive -> the reports checked -> the record step (its batch
-//          applied, the full gate) -> the record's one commit on the loop branch, held to
-//          the candidate's gate -> push -> state.
+//          (preflight -> HELD: the candidate's binary, the previous release's, the
+//          candidate's gate) ∥ scope -> state -> HELD: the round's held checks, one after
+//          another -> the round's instruments, in parallel -> the reports checked -> per
+//          pass: triage -> verify-real -> per fork an advocate and an independent drive ->
+//          the reports checked -> the record step (its batch applied from a file; HELD:
+//          the full gate) -> the record's one commit on the loop branch, held to the
+//          candidate's gate -> push -> state.
 //          Returns {status: 'triaged', round, candidate, counts, human_list, forks, next}.
 //   fix    git state -> state -> the round's branch found -> [the human's rulings
 //          recorded] -> per cycle: the round branch opened -> fixers, one area at a time,
@@ -141,7 +166,8 @@
 // what `check-reports` says. A result counts only with its report on disk; a report with no
 // result stays on the list and is committed, and counts for nothing. Per reporter:
 //   preflight (first), scope    no result, or no report: the stage halts — nothing can be
-//                               driven or selected without them. The attempt is counted.
+//                               asserted or selected without them, and nothing is built
+//                               after a preflight that did not assert. The attempt is counted.
 //   preflight (second)          no result, or no verified image: the trial arms and the
 //                               checks it was asked for are VOID with that reason, and the
 //                               stage goes on.
@@ -209,17 +235,38 @@
 //                               first read makes it. Refused `unvetted`: the human's, and
 //                               never the push that is owed — it is refused again until the
 //                               commit is taken back. Refused `foreign-commit`: its author's.
-//   a held command (`hold-start`, `hold-wait` — read here by `heldOf`; what starts and waits
-//   for one is the second repair plan's task K11, and no stage does yet):
-//     running                     the slice is over: the wait is asked again.
-//     done, green | red | void    THE TOOL'S VERDICT, in the file its line names: a held
-//                               check's result row is that file and no word (`resultRows`),
-//                               red is filed as a finding by the record script, and void is
-//                               a void run with the tool's `why`.
-//     dead                        no verdict, whatever its output holds: a held check has NO
-//                               result — the state reads it as not run and asks for it
-//                               again — and a gate that is dead is a halt. Never started
-//                               again under its name.
+//   a held command (`hold`: one step starts it, one asks after it; read by `heldOf`). WHAT
+//   A STAGE HOLDS, AND WHICH ENDS IT TAKES, is one table (HELD_TAKES); every other end is a
+//   HALT that names the job — but for a held check, which then has no result:
+//                    green        red          void         dead         running | unread
+//     a build        the binary:  HALT         HALT         HALT         HALT — the job
+//                    path, hash,  (`build`)                              is named, and
+//                    version are                                         the one call that
+//                    the tool's                                          answers once it
+//     the candidate's a fact; the  a fact; the  HALT         HALT        is over; the next
+//       gate         file is on   red is on    (`gate`): no record       attempt starts
+//                    record       record       could be held to it      its own
+//     a held check   ITS RESULT IS THE FILE THE TOOL KEPT   NO RESULT: the stage goes on
+//                    ITS VERDICT IN, and no word: red is    and records; the state reads
+//                    filed as a finding by the record       the check as not run and asks
+//                    script, void is a void run with `why`  for it again; the return names it
+//     a held gate    answered from the candidate's own gate, which is not run twice; in a
+//       of the set   re-run NOT RUN — it reads the tree — and it has no result (below)
+//     a record's     the ONE commit step, handed the file   HALT (`record`): nothing is
+//       gate         the tool kept the output in, and held  committed, THE BATCH STAYS
+//                    to the candidate's gate there          APPLIED, and the next
+//                                                           invocation gates it again
+//                                                           under the next name
+//   AND WHO ASKS AFTER IT:
+//     the start's agent died      the start is asked for again — its ONE command — and the
+//                               tool answers with the job that is there: nothing starts twice.
+//     the asking agent died       THE WAIT IS TAKEN OVER: the step is asked for again, and
+//                               its one command is the wait, never the start. The command,
+//                               which outlives every agent, ran once.
+//     a turn ended on `running`   the next agent takes the wait over, HOLD_LAPS in turn.
+//     a name that was there       (a record's gate) a job an earlier invocation started
+//       before the stage asked    under the name is that invocation's, a verdict of the
+//                               tree as it stood then: the next name is asked.
 //
 // A FORK IS ON RECORD (the harness review's M3). A verdict the verifier found to contest a
 // settled decision is recorded with that verdict, in the round's triage record: its kind,
@@ -228,9 +275,12 @@
 // and never `fix` or `close`; the ruling is one of the three dispositions, written by the
 // one step that records `args.rulings`.
 //
-// ONE BINARY PER CANDIDATE (ruling 11). Preflight builds it; every driving agent is handed
-// its path and hash on a `BINARY:` line and returns the hash it asserted; this script
-// compares the two itself and halts on a mismatch.
+// ONE BINARY PER CANDIDATE (ruling 11). THE STEP TOOL BUILDS IT, from the commit and never
+// from the working tree, as a held command (`buildBoth`), and its path, its hash, the
+// version it prints and that a bare `jigc` resolves to it are the tool's facts, read off
+// its verdict — no agent's reading. Every driving agent is handed the path and the hash on
+// a `BINARY:` line and returns the hash it asserted; this script compares the two itself
+// and halts on a mismatch.
 //
 // A ROUND TESTS ONE CANDIDATE, AND EVERY RESULT OF IT NAMES THAT COMMIT (ruling 11; the
 // orchestrator's ruling of 2026-10-07 on the core review's F3: a result recorded on another
@@ -246,8 +296,18 @@
 // not asked for there — its definition halts on such a list — and is recorded VOID with
 // that reason, never run on the tip and recorded as the candidate's. So a check that did
 // not run in its round's `test` stage is not run again inside that round; the clause is
-// the human's after the re-run, and a held check (K11), which names its commits, is where
-// that ends.
+// the human's after the re-run. ACCEPTED AS BUILT, AS A DECLARED BOUND FOR THE FIRST RUN
+// (the orchestrator's ruling of 2026-10-07): the tip differs from the candidate only by
+// record commits, but proving that is the path rule's, which is the `fix` half's repair;
+// until then a void check is settled by the next round, whose candidate is the tip, and
+// such a round ends at `rule`, not `close`. A HELD CHECK THAT NAMES ITS COMMITS IS WHERE
+// THAT ENDS: the regression set is started with the two commits it compares and is held
+// again in a re-run, on the round's candidate. A HELD GATE IS NOT: it reads the working
+// tree, so it is not held again inside its round (`offTreeHeld`) — and because the record
+// script takes a held check's result from the tool's verdict file and from no word, a
+// re-run can record nothing for it: `next` stays `retest` for that clause, and a re-run in
+// which nothing else is due is refused before any agent runs. What ends that is the
+// record script's: a void, by a caller's word, for a held check that did not run.
 //
 // THE LABELS. The contracts of the agent definitions bind on lines of the prompt — LABELS,
 // below. Each is spelled here exactly as the definitions spell it, and
@@ -255,16 +315,20 @@
 //
 // THE RECORD STEP (the repair's change C4; DECISIONS.md -> 2026-10-06, "A stabilization
 // run's record commit under a red candidate"). A stage's tables are written in ONE place and
-// in three acts. (1) A `build-executor` applies the record's calls as ONE batch
-// (`dev/stabilize-record apply`): every table is written or none is, and the record script
-// holds the batch as pending. (2) The same agent runs the FULL gate on the tree with the
-// records and keeps its whole output. (3) A git step makes the one commit
+// in three acts. (1) A `build-executor` writes the record's calls to a file with its file
+// tool and applies them as ONE batch (`dev/stabilize-record apply --from FILE --sha256
+// HASH`): the writer holds the file to the hash this script composed, every table is
+// written or none is, and the record script holds the batch as pending. (2) THE FULL GATE
+// on the tree with the records is a command the step tool holds — started by one step,
+// asked after by another, under a name of the record's own — and the tool keeps its whole
+// output. (3) A git step makes the one commit
 // (`dev/stabilize-step record`): it holds that gate to the candidate's own — which the
-// preflight ran, and whose red steps and tests the batch itself puts on record — and commits
+// tool held too, and whose red steps and tests the batch itself puts on record — and commits
 // when nothing is red that the candidate's gate did not show red. On a green candidate that
 // is the rule that a commit follows a green gate. Red that is new is a halt that names it,
 // with the batch still applied: THE NEXT INVOCATION OF EITHER STAGE FINDS THE PENDING BATCH,
-// runs the gate on it again and commits it, and does nothing else (`finishRecord`). What is
+// holds the gate on it again — no executor runs: nothing is applied — and commits it, and
+// does nothing else (`finishRecord`). What is
 // accepted as recorded is the commit step's own line, held to its hash: the commit, the gate
 // check that holds, and as many calls and checks as this script composed.
 //
@@ -291,10 +355,14 @@
 //             twelve of twelve). Kept to compare.
 //   payload   a record's batch of 20, 60, 120 and 300 entries, composed by the functions a
 //             stage composes one with and written by the executor from its prompt.
-//   hold      one long command: (a) held by a preflight agent inside its turn, as it holds
-//             the gate; (b) started by one git step and asked for by later ones, a slice each.
-// A probe names no run, no round and no branch; its steps are commands of that tool and of
-// no other; and it reaches no code of a stage: the script returns from `runProbe`. What it
+//   hold      one long command: (a) HELD AS A STAGE HOLDS ITS GATE — started through the
+//             step tool by one step, and asked after by ONE agent, again and again inside
+//             its turn: the same two prompts, so that this case under the runtime is the
+//             test that a held command asks the human for nothing; (b) started by one git
+//             step through the probe tool and asked for by later ones, a slice each.
+// A probe names no run, no round and no branch; its steps are commands of that tool — and,
+// for the hold probe's case (a), the two of the step tool that hold a command; and it
+// reaches no code of a stage: the script returns from `runProbe`. What it
 // returns is `status: 'probed'` with the tool's judged `cases` — one per case, each with its
 // `verdict` — the file they were written to under the scratch root, and what this script
 // itself observed of each call (`observed`); or `status: 'halted'` with the step that failed.
@@ -417,11 +485,36 @@ const VERIFY_PASSES = 3
 const GIT_MODEL = 'sonnet'
 // The one tool a git step runs a command of, and relays the line of.
 const STEP_TOOL = 'dev/stabilize-step'
-// The full gate, as a run runs it — the candidate's, by the preflight, and a record step's.
-// `--keep-going`: no red step stops it but a red build, and the suite is one step, so what
-// each gate names red is ALL that is red and a record commit is held to the candidate test
-// by test (dev/gate; the record script refuses a red gate that was run without it).
-const GATE = 'dev/gate --keep-going'
+// THE TOOLS AN AGENT TYPES A COMMAND OF — and there are three (the second repair plan's task
+// K11; the human's ruling of 2026-10-07: no step of a stage may need his permission): the
+// step tool above, the record script, and — in a probe — the probe tool. The gate, the
+// regression set, cargo, git and a hash are reached THROUGH the step tool's acts, and never
+// typed by an agent: the full gate of a run — `--keep-going`, so that what it names red is
+// all that is red — is the command of that tool's held kind `gate`.
+const RECORD_TOOL = 'dev/stabilize-record'
+// typed — THE ONE FUNCTION THAT RENDERS A COMMAND AN AGENT RUNS: one plain invocation of a
+// tool, as a code span — the tool, and words a shell reads as words and as nothing else. No
+// pipe, no redirect, no second command, no substitution: tooling-tests/
+// stabilize_harness_fence.rs, arm (s), composes every prompt this script can compose and
+// holds each command in it to that shape, and the committed settings allow exactly the
+// three tools by a command's first word.
+function typed(tool, words) {
+  return '`' + tool + (words ? ' ' + words : '') + '`'
+}
+// Where the regression set's list lies: a path the CANDIDATE'S COMMIT holds — that tool
+// reads the list out of the commit it tests (dev/regression-set) — and what a held
+// `regression` is started with. The fence holds it to the file the commit holds.
+const REGRESSION_LIST = 'completions/artifacts/M55/stabilization-build/regression-set/intended-changes.tsv'
+// A HELD COMMAND IS ASKED AFTER BY ONE AGENT AT A TIME, which asks again for as long as its
+// turn lasts (observed 2026-10-07: one agent held thirty-five minutes inside its turn, and a
+// read per agent cost 26 agents). Where a turn ends on `running`, the next agent takes the
+// wait over — at most this many in turn; then the stage halts and names the job.
+const HOLD_LAPS = 3
+// A NAME IS ONE COMMAND'S, AND IS NEVER STARTED UNDER AGAIN (dev/stabilize-step: A HELD
+// COMMAND). A record's gate that an earlier invocation started under the name this one
+// would mint is that invocation's — a verdict of a tree as it stood then — so the next
+// name is asked: `<name>-1`, `<name>-2`, … up to this many.
+const HOLD_NAMES = 9
 const RUNS_ROOT = 'completions/artifacts'
 // Adjustment (ii): the paths the published crates carry, and their tests. They move only
 // through an audited round's merge; every other path commits directly behind the gate. The
@@ -505,8 +598,8 @@ function stepRefusal(word, branch) {
 // THE HELD CHECKS. A check that is one long command is an item whose kind says so:
 // `held-<id>`, `<id>` a kind of the step tool's held commands (its HOLDS; dev/stabilize-record
 // reads the same form). The tool starts it, waits for it and JUDGES it; what this script
-// reads of it is `heldOf`. Which step of a stage starts one is the second repair plan's task
-// K11: until then a round that runs such an item halts and names it.
+// reads of it is `heldOf`. A `test` stage starts each one itself, after the candidate's gate
+// and never beside it (`hold`), and a held gate is answered from the candidate's own.
 const HELD_PREFIX = 'held-'
 const HELD_CHECKS = ['gate', 'regression']
 function heldKind(kind) {
@@ -516,12 +609,48 @@ function heldKind(kind) {
 // HELD_ENDS — how a held command can stand when it is asked for, and what follows: the
 // header's table (HOW A STEP CAN END), as the words `heldOf` answers with.
 const HELD_ENDS = {
-  running: 'the slice is over and the command still runs: the wait is asked again',
-  green: 'the command ran to its end and the tool read its verdict green: a held check\'s result is the verdict\'s file',
-  red: 'the command ran to its end and the tool read its verdict red: a held check\'s result is the verdict\'s file, and the record script files the finding',
-  void: 'the command ran to its end and its output holds no verdict the tool takes — `why` says which: a held check\'s result is the verdict\'s file, a void run',
-  dead: 'the command\'s process is gone and nothing says how it ended: it has no verdict, whatever its output holds, and is not started again under its name — a held check has no result, and a gate that is dead is a halt',
-  unread: 'the step that asked did not answer with a job of the tool\'s: nothing is known of the command',
+  running: 'every agent that asked after it in turn ended its turn while the command still ran',
+  green: 'the command ran to its end, and the tool read its verdict green',
+  red: 'the command ran to its end, and the tool read its verdict red',
+  void: 'the command ran to its end, and its output holds no verdict the tool takes',
+  dead: 'the command\'s process is gone and nothing says how it ended: it has no verdict, whatever its output holds, and is never started again under its name',
+  unread: 'the step that asked did not answer with a job of the tool\'s, and nothing is known of how the command stands',
+}
+// HELD_TAKES — WHAT A STAGE HOLDS, AND WHICH ENDS IT TAKES (the header: HOW A STEP CAN END, a
+// held command). Any other end is a HALT that names the job — but for a held check, which
+// then has NO RESULT: the stage goes on and records, and the state asks for the check again.
+const HELD_TAKES = {
+  build: ['green'],
+  gate: ['green', 'red'],
+  check: ['green', 'red', 'void'],
+  record: ['green', 'red'],
+  probe: ['green'],
+}
+// offTreeHeld — the items that are due and CANNOT RUN where the tree checked out is not the
+// candidate (`moved`: a re-run, whose round's record commits lie on top of it): a held gate
+// reads the working tree. A held check that names its commits — the regression set — runs.
+function offTreeHeld(due, moved) {
+  return moved ? due.filter((i) => heldKind(i.kind) === 'gate').map((i) => i.item) : []
+}
+// mayRun — whether a held command may STILL RUN when the stage stops asking after it.
+function mayRun(job) {
+  return !!job && !!job.name && (job.ends === 'running' || (job.ends === 'unread' && job.started === true))
+}
+// heldFault — a held command that did not end as the stage needs it, as the halt says it.
+function heldFault(what, job) {
+  return what + (job.name ? ' (the held command `' + job.name + '`)' : '') + ' did not end as the stage needs it: ' + (HELD_ENDS[job.ends] || 'it ended `' + job.ends + '`') + (job.why ? ' — `' + job.why + '`' : '') + '.'
+}
+// heldThen — what a halt over a held command says is to be done, where the command MAY
+// STILL RUN: it is nobody's to end, the one call that answers once it is over is named, and
+// the stage is invoked again after that. Null where it does not run: the halt's own
+// sentence stands, and the next attempt names and starts the next.
+function heldThen(scratch, job) {
+  if (!mayRun(job)) return null
+  return ' THE COMMAND MAY STILL RUN, in a session of its own, and nothing ends it but its own end: ' + typed(STEP_TOOL, 'hold-wait --scratch ' + scratch + ' --name ' + job.name) + ' answers once it is over' + (job.output ? ', and its whole output is ' + job.output : '') + '. Invoke the stage again AFTER THAT, with the same args — two gates at once contend for one lock: the next attempt names and starts its own command, and takes nothing over from this one.'
+}
+// heldSaid — a held command as a return names it: its job, how it ended, and nothing else.
+function heldSaid(job) {
+  return { name: job.name || null, kind: job.kind || null, ends: job.ends, why: job.why || null, output: job.output || null }
 }
 // The paragraph every agent definition carries, verbatim (tooling-tests/
 // release_pipeline_fence.rs holds it there) — for the two roles that have no definition and
@@ -845,17 +974,35 @@ function launcher(ctx) {
 function stageFlags(ctx) {
   return '--run ' + ctx.run + ' --round ' + ctx.round + ' --stage ' + ctx.stage + (ctx.stage === 'fix' ? ' --cycle ' + ctx.cycle : '')
 }
-function reportLine(ctx, name) {
-  return LABELS.report + ' ' + stageFlags(ctx) + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' — write your report through `dev/stabilize-record report` with exactly these flags, and `--scratch ' + ctx.scratch + '` (and one more `--scratch` for each scratch root of your own outside it).'
+// A REPORT REACHES ITS WRITER FROM A FILE (dev/stabilize-record: A WRITER FED FROM A FILE): the
+// reporter writes it with its file tool to the path this script names, under the scratch
+// root, and hands it over by ONE plain call — the labelled line carries both.
+function reportFile(ctx, name) {
+  return ctx.scratch + '/report/r' + ctx.round + '/' + ctx.stage + (ctx.stage === 'fix' ? '.c' + ctx.cycle : '') + '/' + name + '.a' + ctx.attempt + '.md'
 }
-function binaryLine(built, withImage) {
+function reportCall(ctx, name) {
+  return typed(RECORD_TOOL, 'report ' + stageFlags(ctx) + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + ' --from ' + reportFile(ctx, name))
+}
+function reportLine(ctx, name) {
+  return LABELS.report + ' ' + stageFlags(ctx) + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' — write your report, whole, to the file `' + reportFile(ctx, name) + '` WITH YOUR FILE TOOL, and hand it over by ONE plain call, typed as it stands: ' + reportCall(ctx, name) + ' (with one more `--scratch` for each scratch root of your own outside that one).'
+}
+// below — a path under the scratch root, as the step tool takes one: without the root.
+function below(scratch, path) {
+  return path.startsWith(scratch + '/') ? path.slice(scratch.length + 1) : path
+}
+// `scratch`: the invocation's scratch root, under which the binaries lie — and with it THE
+// ONE PLAIN CALL THAT ASSERTS THE HASH, spelled whole, so that no driving agent computes a
+// hash by a command of its own or works out a path below the root. A probe's reviewer, which
+// drives nothing, is handed none.
+function binaryLine(built, withImage, scratch) {
   return LABELS.binary + ' candidate `' + built.candidate.binary + '` sha256 ' + built.candidate.sha256 + ' (commit ' + built.candidate.sha + ', label ' + built.candidate.label + ')'
     + (built.previous ? '; previous release `' + built.previous.binary + '` sha256 ' + built.previous.sha256 + ' (version ' + built.previous.version + ')' : '')
     + (withImage && built.image ? '; trial image `' + built.image.tag + '`' : '')
-    + '. Return the sha256 you asserted for the candidate as `asserted_sha256`.'
+    + '.' + (scratch ? ' ASSERT THE CANDIDATE\'S HASH BEFORE YOU DRIVE ANYTHING, by ONE plain call typed as it stands, and never by a hash command of your own: ' + typed(STEP_TOOL, 'hash --scratch ' + scratch + ' --file ' + below(scratch, built.candidate.binary)) + ' prints ONE line of JSON whose `content_sha256` must be that sha256' + (built.previous ? ' — and the same call with `' + below(scratch, built.previous.binary) + '` gives the previous release\'s' : '') + '.' : '')
+    + ' Return the sha256 you asserted for the candidate as `asserted_sha256`.'
 }
 function branchLine(branch, loop) {
-  return LABELS.branch + ' ' + branch + (branch === loop ? '' : ' (forked from ' + loop + ')') + ', already checked out by the harness. Before you commit, `git branch --show-current` must print exactly `' + branch + '` — if it does not, commit nothing and halt. Never create, switch, merge or push a branch; the harness\'s git steps own them.'
+  return LABELS.branch + ' ' + branch + (branch === loop ? '' : ' (forked from ' + loop + ')') + ', already checked out by the harness. Before you commit, the branch checked out must be exactly `' + branch + '` — if it is not, commit nothing and halt. Never create, switch, merge or push a branch; the harness\'s git steps own them.'
 }
 
 // hashMismatch — ruling 11's comparison, made here and by no agent: the reporters that
@@ -979,7 +1126,7 @@ function runRulingsFault(rulings, state) {
 function ledgerSource(run, state) {
   const awaiting = plain(state.untriaged) && Number.isInteger(state.untriaged.count) ? state.untriaged.count : 0
   if (!awaiting) return []
-  return [{ reporter: LEDGER_SOURCE, report: runDir(run) + '/ledger.md', count: awaiting, read: 'dev/stabilize-record untriaged --run ' + run, findings: [] }]
+  return [{ reporter: LEDGER_SOURCE, report: runDir(run) + '/ledger.md', count: awaiting, read: typed(RECORD_TOOL, 'untriaged --run ' + run), findings: [] }]
 }
 // findingsOf — how many findings a source hands triage: its own lines, or — for the source
 // that names a read — as many rows as the state counts.
@@ -1072,10 +1219,12 @@ function readDigest(r, act) {
 function heldOf(step, scratch) {
   if (!step) return { ends: 'unread', why: 'the step returned no result' }
   if (step.status === 'halted') return { ends: 'unread', why: step.refused ? stepRefusal(step.refused) : step.relay || 'the step halted', refused: step.refused || null }
-  const job = { name: step.name, kind: step.kind, output: isText(step.output) ? scratch + '/' + step.output : null }
+  // `fresh`: THIS call started the command — the tool answers `started` once per name, and
+  // any other answer of a start is a job that was there before it asked.
+  const job = { name: step.name, kind: step.kind, output: isText(step.output) ? scratch + '/' + step.output : null, fresh: step.status === 'started' }
   if (step.status === 'started' || step.status === 'running') return Object.assign({ ends: 'running' }, job)
   if (step.status === 'dead') return Object.assign({ ends: 'dead', why: step.why || null }, job)
-  if (step.status === 'done' && ['green', 'red', 'void'].includes(step.verdict) && isText(step.verdict_file) && SHA256_RE.test(String(step.verdict_sha256))) return Object.assign({ ends: step.verdict, why: step.why || null, verdict: scratch + '/' + step.verdict_file, verdict_sha256: step.verdict_sha256 }, job)
+  if (step.status === 'done' && ['green', 'red', 'void'].includes(step.verdict) && isText(step.verdict_file) && SHA256_RE.test(String(step.verdict_sha256))) return Object.assign({ ends: step.verdict, why: step.why || null, verdict: scratch + '/' + step.verdict_file, verdict_sha256: step.verdict_sha256, facts: plain(step.facts) ? step.facts : {} }, job)
   return Object.assign({ ends: 'unread', why: 'the step said `' + step.status + '` and named no verdict of the tool\'s' }, job)
 }
 
@@ -1187,6 +1336,7 @@ function recordThen(run, branch, word, discarded) {
   if (word === 'gate-red') return stands + ' THE BATCH IS STILL APPLIED AND NOT COMMITTED — the tables written, held by the record script as pending, and no dirty tree. Invoke the stage again: that invocation runs the full gate on the batch once more, commits and pushes it, and does nothing else.' + takeBack
   if (word === 'unvetted') return stands + (discarded === true ? ' THE BATCH IS TAKEN BACK ALREADY, and a report or a scope that was no such file has left the tree: nothing is pending, and no discard is asked for. Invoke the stage again: it reads the state as it stands and works the next attempt.' : ' The batch was NOT taken back — a file of it is in a commit already — and it is the human\'s: the step\'s own line says which file.')
   if (word === 'head-moved') return stands + ' Nothing was committed or undone: THE BATCH IS STILL APPLIED. Invoke the stage again: its first read meets the commit somebody made while the stage ran — one the remote lacks is its author\'s to push — then gates the batch on the tree as it now stands, and commits it there.' + takeBack
+  if (word === 'no-gate') return stands + ' THE BATCH IS STILL APPLIED AND NOT COMMITTED — the tables written, held by the record script as pending, and no dirty tree: its gate left no verdict, and no commit step ran. Invoke the stage again: that invocation holds the full gate on the batch once more, under the next name, commits and pushes it, and does nothing else.' + takeBack
   if (word === 'did-not-run' || word === 'locked') return stands + ' Everything is as it was: THE BATCH IS STILL APPLIED. Once what the refusal names is dealt with, invoke the stage again: that invocation gates the batch once more, commits and pushes it, and does nothing else.' + takeBack
   return stands + ' A record step that stopped may have left its batch APPLIED AND NOT COMMITTED — the tables written, held by the record script as pending, and no dirty tree. Invoke the stage again: its first read says what is there. Where a batch is pending, that invocation runs the full gate on it once more, commits and pushes it, and does nothing else; where the commit was made and nothing else, it settles and pushes it; where none is, it reads the state as it stands and works the next attempt.' + takeBack
 }
@@ -1207,8 +1357,12 @@ function pushThen(branch, word) {
 // before it goes on. A STEP OF THE TOOL IS ONE COMMAND, AND ITS RETRY IS THAT COMMAND, RUN
 // AGAIN: the tool reconciles — it finishes what an earlier run of it left, answers again
 // what it answered, or refuses and says whose the state is — and the agent looks at nothing.
-const LOOK_AGAIN = 'RETRY after a transient failure of an earlier attempt at this same call. Before anything else look at what that attempt left — `git status --porcelain`, `git log -1`, and whether your report already stands at its path — and go on from it: never `git clean` (the untracked files under the run\'s directory are other agents\' reports), never make a commit or write a report that exists already. If you cannot tell what the dead attempt did, halt and say so.'
+const LOOK_AGAIN = 'RETRY after a transient failure of an earlier attempt at this same call. Before anything else look at what that attempt left — the tree\'s status, the last commit, and whether your report already stands at its path — and go on from it: never clean the tree (the untracked files under the run\'s directory are other agents\' reports), never make a commit or hand over a report that exists already. If you cannot tell what the dead attempt did, halt and say so.'
 const RUN_AGAIN = 'RETRY: an earlier try of this same step returned nothing. Run the ONE command above again, exactly as it is written, and relay its line: the command says itself what an earlier run of it left — it finishes that, answers again what it answered, or refuses — and you look at nothing else and repair nothing.'
+// What a state read is told when the line an earlier try relayed was not the command's.
+function relayAgain(n) {
+  return 'AGAIN (' + n + '): the line an earlier attempt returned was not the line the command printed. Copy the line from the command\'s output character for character.'
+}
 
 // ---- structured-output schemas ----
 const HALT = {
@@ -1217,7 +1371,7 @@ const HALT = {
   properties: {
     root_cause: { type: 'string' },
     evidence: { type: 'string', description: 'the command and its full output, or the refusal line verbatim' },
-    tree_state: { type: 'string', description: '`git status`, `git branch --show-current`, and which commits landed' },
+    tree_state: { type: 'string', description: 'the tree\'s status, the branch checked out, and which commits landed' },
     recommendation: { type: 'string' },
   },
 }
@@ -1252,8 +1406,6 @@ const PREFLIGHT_SCHEMA = {
   properties: {
     status: { type: 'string', enum: ['ready', 'halted'] },
     halt: HALT,
-    candidate: { type: 'object', properties: { label: { type: 'string' }, sha: { type: 'string' }, binary: { type: 'string' }, sha256: { type: 'string' }, path_check: { type: 'string', description: 'what `command -v jigc` printed with the binary\'s directory first on PATH' } } },
-    previous: { type: 'object', properties: { version: { type: 'string' }, binary: { type: 'string' }, sha256: { type: 'string' } } },
     image: { type: 'object', properties: { tag: { type: 'string' }, verified: { type: 'boolean' }, failed: STRINGS } },
     checks: { type: 'array', items: { type: 'object', required: ['check', 'status'], properties: { check: { type: 'string', description: 'the id of the item the prompt listed the check under' }, status: { type: 'string', enum: ['green', 'red', 'void'] }, commit: { type: 'string', description: 'the full sha the check ran on: a green or a red is evidence about that commit and no other' }, evidence: { type: 'string' } } } },
     report: { type: 'string', description: 'the path `dev/stabilize-record report` printed' },
@@ -1428,30 +1580,47 @@ const FIXER_SCHEMA = {
     report: { type: 'string' },
   },
 }
-// What the record step's executor returns: that the gate ran to its verdict, red or green.
-// It makes no commit and returns no evidence of its own: the commit step reads the batch
-// and the gate's output itself.
+// What the record step's executor returns: that the batch is applied. It runs no gate,
+// makes no commit and returns no evidence of its own: the gate is a command the step tool
+// holds, and the commit step reads the batch and the gate's output itself.
 const RECORD_SCHEMA = {
   type: 'object',
   required: ['status'],
   properties: {
-    status: { type: 'string', enum: ['gated', 'halted'] },
+    status: { type: 'string', enum: ['applied', 'halted'] },
     halt: HALT,
     refused: { type: 'string', description: 'when the batch of step 2 was refused: the ONE word that follows `refused` on the line `dev/stabilize-record` printed on stderr — `no-change`, `check`, `hygiene`, …' },
-    gate: { type: 'string', description: 'the file the gate\'s whole output was kept in, as the prompt names it' },
   },
 }
 
 // ---- the git steps (build-git) — each ONE command of dev/stabilize-step, its line relayed ----
-const STEP_RULES = 'Run exactly the ONE command below, from the repository\'s root, and nothing else: no command before it or after it, no branch, no commit, no file edit, no `git stash`, no reset, no rebase, no pull, never `--force`, and `main` is never checked out, merged into or pushed. The command does the whole step and checks it. It prints ONE line of JSON on stdout — also when it refuses, which it says with an exit status that is not 0 and one line on stderr. A refusal is the step\'s answer: you never repair what it names, never run the command a second time, and never do by hand what it did not do.'
+const STEP_RULES = 'Run exactly the ONE command below, from the repository\'s root, typed as it stands, and nothing else: no command before it, after it or around it, no branch, no commit, no file edit, no stash, no reset, no rebase, no pull, never `--force`, and `main` is never checked out, merged into or pushed. The command does the whole step and checks it. It prints ONE line of JSON on stdout — also when it refuses, which it says with an exit status that is not 0 and one line on stderr. A refusal is the step\'s answer: you never repair what it names, never run the command a second time, and never do by hand what it did not do.'
+// ASK_RULES — the rules of THE ONE STEP THAT RUNS ITS COMMAND MORE THAN ONCE: the step that
+// asks what became of a held command (`hold-wait`). The tool answers within a time of its
+// own, shorter than the two minutes an agent's shell gives a call, and says `running` while
+// the command has not ended: the agent ASKS AGAIN — that same plain call, and nothing in
+// between — for as long as its turn lasts. It composes no shell around it and keeps no
+// time of its own: what an agent improvised there is what stopped a stage on a prompt
+// nobody was watching (the human's ruling of 2026-10-07).
+const ASK_RULES = 'Run exactly the ONE command below, from the repository\'s root, typed as it stands, and nothing else: no command before it, after it or around it, no branch, no commit, no file edit, no stash, no reset, no rebase, no pull, never `--force`, and `main` is never checked out, merged into or pushed. It asks the tool what became of a long command the tool itself started and holds, and it answers by itself within a minute and a half, with ONE line of JSON on stdout — also when it refuses, which it says with an exit status that is not 0 and one line on stderr. WHILE THAT LINE\'S `status` IS `running`, RUN THE SAME COMMAND AGAIN, typed as it stands, as often as it takes: the long command can take the better part of an hour, and asking again is the whole of this step — nothing else is run in between, and you keep no time of your own. The first line whose `status` is anything else — `done`, `dead`, or a refusal — is the step\'s answer: you never repair what it names, and never start the long command yourself.'
 // AS_PRINTED — how a line is relayed, in the words every step that relays one is told.
 const AS_PRINTED = 'the ONE line the command printed on stdout, WHOLE and AS PRINTED, whatever it exited with: every character copied, no key re-ordered or dropped, nothing summarised, no `\\u…` escape rewritten into its character'
-function stepPrompt(what, act, flags) {
+function stepPrompt(what, act, flags, asks) {
   return [
-    'GIT STEP — ' + what + '. ' + STEP_RULES,
-    '1. `' + STEP_TOOL + ' ' + act + ' ' + flags + '`',
-    '2. Report status = ran and line = ' + AS_PRINTED + '. The harness holds the line to the hash it ends with, so a line that is not the command\'s is caught. Only when the command printed no such line: status = halted, and the halt report (root_cause, evidence = the command and everything it printed, tree_state = `git status` and `git branch --show-current`).',
+    'GIT STEP — ' + what + '. ' + (asks ? ASK_RULES : STEP_RULES),
+    '1. ' + typed(STEP_TOOL, act + ' ' + flags),
+    '2. Report status = ran and line = ' + AS_PRINTED + (asks ? ' — of the LAST run of it: the first line whose `status` is not `running`' : '') + '. The harness holds the line to the hash it ends with, so a line that is not the command\'s is caught. Only when the command printed no such line: status = halted, and the halt report (root_cause, evidence = the command and everything it printed, tree_state = the tree\'s status and the branch checked out).',
   ].join('\n')
+}
+// THE HELD COMMANDS — a long command is STARTED by one step and ASKED AFTER by another: two
+// plain calls of the tool, each its own agent's, so that the agent that asks never starts
+// and a step asked for again never starts twice. `flags` are what the kind takes
+// (dev/stabilize-step: `hold-start`).
+function holdStartPrompt(v, name, kind, flags, what) {
+  return stepPrompt('START ' + what + ' as a command the tool holds (`' + name + '`): the tool starts it in a session of its own and answers at once — the command runs on, and another step asks after it', 'hold-start', '--scratch ' + v.scratch + ' --name ' + name + ' --kind ' + kind + ' ' + flags + ' ' + digestFlag(v.scratch))
+}
+function holdWaitPrompt(v, name, what) {
+  return stepPrompt('what became of ' + what + ', a command the tool holds (`' + name + '`)', 'hold-wait', '--scratch ' + v.scratch + ' --name ' + name + ' ' + digestFlag(v.scratch), true)
 }
 // A list the harness owns, as the flags that hand it to an act.
 function listFlags(flag, values) {
@@ -1535,30 +1704,35 @@ function syncMainPrompt(run, scratch) {
 
 // ---- the agents' prompts — thin: the role and its contract live in the definition ----
 function opening(v) {
-  return 'The run\'s opening record is `' + runDir(v.run) + '/opening.md`; its state is `dev/stabilize-record state --run ' + v.run + '`.'
+  return 'The run\'s opening record is `' + runDir(v.run) + '/opening.md`; its state is ' + typed(RECORD_TOOL, 'state --run ' + v.run) + '.'
 }
+// THE PREFLIGHT BUILDS NOTHING AND HOLDS NO GATE (the second repair plan's task K11): the
+// two binaries, the candidate's gate and every held check are commands `dev/stabilize-step`
+// holds, started and asked after by steps of this script. What is left to the role is what
+// only an agent can do: the environment asserts, the trial image, and the checks that are a
+// brief. Its prompt names no command at all — how it asserts is its definition's.
 function preflightPrompt(ctx, launch, name, plan) {
-  const steps = ['the environment asserts — `git status --porcelain` may show untracked files under `' + runDir(ctx.run) + '/` and nothing else: what the record script wrote and no record step has committed yet — reports, the round\'s scope, its journal' + (plan.tested ? '. THE CANDIDATE IS NOT `HEAD` HERE: it is the commit the round tested, and the round\'s record commits lie on top of it — `git merge-base --is-ancestor ' + plan.sha + ' HEAD` must hold, and nothing this call covers reads the working tree: both binaries are built from `git archive`' : '')]
+  const steps = ['the environment asserts — the tree may hold untracked files under `' + runDir(ctx.run) + '/` and nothing else: what the record script wrote and no record step has committed yet — reports, the round\'s scope, its journal' + (plan.tested ? '. THE CANDIDATE IS NOT `HEAD` HERE: it is the commit the round tested, and the round\'s record commits lie on top of it — commit ' + plan.sha + ' must be an ancestor of `HEAD`, and nothing this call covers reads the working tree' : '')]
   const asked = plan.crossModel ? crossModelAssert() : null
-  if (plan.build) {
-    steps.push('the build: the candidate\'s binary, from `git archive ' + plan.sha + '`, copied to `' + plan.binary + '`')
-    steps.push('the previous release\'s binary: version `' + plan.previous.version + '`, built from commit ' + plan.previous.commit + ' (`git rev-parse --verify ' + plan.previous.commit + '^{commit}` must resolve it) with `git archive`, exactly as the candidate is built, at `' + ctx.scratch + '/bin/previous/jigc` — one that is there already, read-only, is kept once its `--version` prints that version. Both are facts of the run\'s record (`facts.previous`, `facts.previous-commit` of its state), and neither is read from prose')
-  }
-  if (plan.gate) steps.push('the candidate\'s full gate, ONCE: `' + GATE + ' > ' + plan.gate + ' 2>&1` (`mkdir -p` its directory first; `--keep-going` is part of the command: no red step stops this gate, so what it names red is all that is red) — in the background, waited for in this same turn in slices of under five minutes, until that file holds the gate\'s verdict line; never `--fast`, never `--quick`, never piped. It is a FACT about the candidate, not an assert: `GATE: FAIL` is an answer and never your halt. The stage\'s record step reads which steps and tests it shows red out of that file, and a record commit is held to exactly that list — so the file is the gate\'s whole output, unedited. A check below whose brief is the full gate is answered from this same run: the gate is not run twice')
   if (plan.image) steps.push('the trial image, built and verified from the candidate\'s commit')
   if (asked) steps.push(asked)
-  if (plan.checks.length) steps.push('the deterministic checks, one per item below, each returned in `checks` under `check` = the item\'s id; a CI run still in progress is waited for at most 60 minutes:\n' + plan.checks.map((c) => '   - ' + c.item + ': its brief is the `brief` of the item\'s row — `' + itemRead(ctx.run, c.item) + '`').join('\n'))
+  if (plan.checks.length) steps.push('the deterministic checks, one per item below, each returned in `checks` under `check` = the item\'s id; a CI run that is still in progress 60 minutes on is void:\n' + plan.checks.map((c) => '   - ' + c.item + ': its brief is the `brief` of the item\'s row — ' + typed(RECORD_TOOL, itemRead(ctx.run, c.item))).join('\n'))
   return [
     'PREFLIGHT — stabilization run `' + ctx.run + '`, round ' + ctx.round + ', the `' + ctx.stage + '` stage. ' + opening(ctx),
     launch.line(name),
     'Candidate: label ' + plan.label + ', commit ' + plan.sha + ' — ' + (plan.tested ? 'the commit round ' + ctx.round + ' tested, an ancestor of' : 'the tip of') + ' `' + plan.branch + '`, which is checked out. Scratch root: `' + ctx.scratch + '`.',
+    'NO BUILD AND NO GATE IS YOURS, whatever your definition says of either: the candidate\'s binary, the previous release\'s, the candidate\'s full gate and every scripted check are commands the harness has `' + STEP_TOOL + '` start, hold and judge, by steps of its own. You build nothing, run no gate, and return no binary.',
     'The steps this call covers, in this order, and nothing else:',
-  ].concat(steps.map((s, i) => (i + 1) + '. ' + s)).join('\n')
+  ].concat(steps.map((s2, i) => (i + 1) + '. ' + s2)).join('\n')
 }
 function scopeText(scope, fallback) {
   if (scope == null) return 'the run\'s default scope, a fact of its record: ' + (fallback === 'everything' ? 'everything — every door of every registry is inside' : 'the derived delta')
   if (typeof scope === 'string') return scope === 'everything' ? 'everything — set by the human: every door of every registry is inside' : 'the derived delta'
-  return scope.range ? 'the commit range ' + scope.range + ' — set by the human' : 'the named doors, set by the human: ' + scope.doors.map((d) => '`' + d + '`').join(' · ')
+  return scope.range ? 'the commit range ' + scope.range + ' — set by the human' : 'the named doors, set by the human: ' + scope.doors.join(' · ')
+}
+// The file the scope step writes the round's scope to before it hands it over.
+function scopeFile(ctx) {
+  return ctx.scratch + '/scope/r' + ctx.round + '.a' + ctx.attempt + '.json'
 }
 function scopePrompt(ctx, launch, name, plan) {
   return [
@@ -1568,7 +1742,7 @@ function scopePrompt(ctx, launch, name, plan) {
     'The scope this stage was started with: ' + scopeText(plan.scope, plan.fallback) + '.',
     plan.earlier ? 'The door lists of round ' + (ctx.round - 1) + '\'s fixers and fix-diff auditors — inputs, never the result: the `doors_affected` of every report under `' + runDir(ctx.run) + '/r' + (ctx.round - 1) + '/reports/fix/`, which this prompt hands you.' : 'There is no earlier round whose door lists could be an input.',
     'The units of the test set are the rows of `' + runDir(ctx.run) + '/test-set.md` (the state document\'s `items`).',
-    'Write the round\'s scope with `dev/stabilize-record scope-set --run ' + ctx.run + ' --round ' + ctx.round + ' --scratch ' + ctx.scratch + '`, once.',
+    'Write the round\'s scope — ONE JSON object, as that script\'s help has it — to the file `' + scopeFile(ctx) + '` WITH YOUR FILE TOOL, and hand it over, once, by ONE plain call, typed as it stands: ' + typed(RECORD_TOOL, 'scope-set --run ' + ctx.run + ' --round ' + ctx.round + ' --scratch ' + ctx.scratch + ' --from ' + scopeFile(ctx)) + '.',
   ].join('\n')
 }
 function doorList(doors) {
@@ -1580,19 +1754,19 @@ function doorList(doors) {
 // selection this script made itself until 2026-10-07 is that read's (`unitDoors` there),
 // from the round it is asked for, which for a re-run is the round the position gives.
 function itemRead(run, item) {
-  return 'dev/stabilize-record item --run ' + run + ' --item ' + item
+  return 'item --run ' + run + ' --item ' + item
 }
 function doorsRead(run, round, item) {
-  return 'dev/stabilize-record item-doors --run ' + run + ' --round ' + round + ' --item ' + item
+  return 'item-doors --run ' + run + ' --round ' + round + ' --item ' + item
 }
 // briefLine / doorLines — a unit's brief and its door list, as its prompt says them: by the
 // read, for an item of the test set; as given, for the one unit that is this script's own
 // (the audit of a fix diff, whose brief is this script's sentence).
 function briefLine(ctx, unit) {
-  return unit.brief != null ? 'Your brief: ' + unit.brief : 'Your brief is the `brief` of your item\'s row in the test set — read it: `' + itemRead(ctx.run, unit.item) + '`.'
+  return unit.brief != null ? 'Your brief: ' + unit.brief : 'Your brief is the `brief` of your item\'s row in the test set — read it: ' + typed(RECORD_TOOL, itemRead(ctx.run, unit.item)) + '.'
 }
 function doorLines(ctx, unit) {
-  return Array.isArray(unit.doors) ? 'The door list — a finding names its door in these exact words:\n' + doorList(unit.doors) : 'The door list — a finding names its door in these exact words — is what `' + doorsRead(ctx.run, unit.round, unit.item) + '` prints: ' + (unit.doors == null ? 'the doors' : unit.doors + ' door(s)') + ' of round ' + unit.round + '\'s test set that your item covers, each with its registry and its derivation.'
+  return Array.isArray(unit.doors) ? 'The door list — a finding names its door in these exact words:\n' + doorList(unit.doors) : 'The door list — a finding names its door in these exact words — is what ' + typed(RECORD_TOOL, doorsRead(ctx.run, unit.round, unit.item)) + ' prints: ' + (unit.doors == null ? 'the doors' : unit.doors + ' door(s)') + ' of round ' + unit.round + '\'s test set that your item covers, each with its registry and its derivation.'
 }
 // forkNames / unitNames — the reporter names a fork and a list of units will ask for, or
 // why one cannot be made: found before anything is launched, never inside a running chain.
@@ -1619,7 +1793,7 @@ function unitPrompt(ctx, launch, name, step, unit, built, handed) {
     'STABILIZATION RUN `' + ctx.run + '`, round ' + ctx.round + ', the `' + ctx.stage + '` stage — ' + step.task + ': `' + unit.item + '`. ' + opening(ctx),
     launch.line(name),
   ]
-  if (role.drives) lines.push(binaryLine(built, step.image))
+  if (role.drives) lines.push(binaryLine(built, step.image, ctx.scratch))
   lines.push(briefLine(ctx, unit))
   lines.push('Candidate: label ' + built.candidate.label + ', commit ' + built.candidate.sha + '. Scratch root: `' + ctx.scratch + '` — mint your own directory under it.')
   if (unit.range) lines.push('The unit is the diff `' + unit.range + '` over the product paths (' + PRODUCT_PATHS.join(', ') + ').')
@@ -1634,13 +1808,13 @@ function triagePrompt(ctx, launch, name, sources, pass) {
     launch.line(name),
     'The reporters this stage has launched so far, each with one report of attempt ' + ctx.attempt + ' — a report of the stage beside these is the partial stage you halt on: ' + (others.join(' · ') || '(none)') + '.' + (pass > 1 ? ' This is pass ' + pass + ': it grades only what the agents of the pass before left open; every other finding of the stage was graded then, and is not handed to you again.' : ''),
     'Grade every finding below — ' + sources.reduce((n, s) => n + findingsOf(s), 0) + ' in all, from ' + sources.length + ' reporter(s). The reports are the files named; each list is that reporter\'s structured return, and an entry marked `left open` is what an agent left open, triaged like any finding.' + (sources.some((s) => s.reporter === LEDGER_SOURCE) ? ' The source `' + LEDGER_SOURCE + '` is no reporter of this stage: its entries are rows the ledger already holds, whose triage nobody finished. Grade each under its own key, found again — from the report its repro names, which this prompt hands you with it — and count the source in `findings_in` like any other.' : ''),
-  ].concat(sources.map((s) => '- ' + s.reporter + ' — report: ' + (s.report ? '`' + s.report + '`' : '(none)') + ' — ' + findingsOf(s) + ' finding(s):' + (s.read ? ' the rows `' + s.read + '` prints — each whole, under its key, with why its triage is not finished (`ungraded`: nobody graded it; `unverified`: graded, and nobody verified it). Read them there: this prompt carries none of them.' : '\n' + s.findings.map((f) => '   - ' + f).join('\n')))).join('\n')
+  ].concat(sources.map((s) => '- ' + s.reporter + ' — report: ' + (s.report ? '`' + s.report + '`' : '(none)') + ' — ' + findingsOf(s) + ' finding(s):' + (s.read ? ' the rows ' + s.read + ' prints — each whole, under its key, with why its triage is not finished (`ungraded`: nobody graded it; `unverified`: graded, and nobody verified it). Read them there: this prompt carries none of them.' : '\n' + s.findings.map((f) => '   - ' + f).join('\n')))).join('\n')
 }
 function verifyPrompt(ctx, launch, name, entry, redrive, built) {
   return [
     'VERIFY-REAL — stabilization run `' + ctx.run + '`, round ' + ctx.round + ', ONE finding. ' + opening(ctx),
     launch.line(name),
-    binaryLine(built, false),
+    binaryLine(built, false, ctx.scratch),
     'The finding: ledger key `' + entry.key + '` · door: ' + entry.door + ' · the clause it is said to break: ' + entry.clause + ' · triage\'s grade: ' + entry.grade + ' · its repro block: ' + entry.repro + '.',
     redrive ? 'What triage asks you to re-drive: ' + redrive : '',
     'Scratch root: `' + ctx.scratch + '` — mint your own directory under it.',
@@ -1650,23 +1824,35 @@ function advocatePrompt(ctx, launch, name, fork, built) {
   return [
     'A FORK of the stabilization run `' + ctx.run + '`, round ' + ctx.round + ' — finding `' + fork.key + '` (' + fork.kind + '). ' + opening(ctx),
     launch.line(name),
-    binaryLine(built, false),
+    binaryLine(built, false, ctx.scratch),
     'The finding: door: ' + fork.door + ' · clause: ' + fork.clause + ' · repro: ' + fork.repro + '.',
     'What raised the fork: ' + fork.statement,
     'The cheap cut is what that statement would leave as it is; argue the robust case, and drive what you propose. Return `proposal` as a change somebody else can apply to a clone of commit ' + built.candidate.sha + ': another agent drives it after you, without your spike.',
     'Scratch root: `' + ctx.scratch + '` — mint your own directory under it.',
   ].join('\n')
 }
+// reportHandOver — how a role that has no definition is told to write its report: the file,
+// by its file tool, and the ONE plain call that hands it over. A role with a definition is
+// told by its `REPORT:` line and by that definition.
+function reportHandOver(ctx, name) {
+  return 'Write it, whole, to the file `' + reportFile(ctx, name) + '` WITH YOUR FILE TOOL — its last line is `<!-- end of report -->` — and hand it over by ONE plain call, typed as it stands: ' + reportCall(ctx, name) + '; return the path it prints as `report`. A refusal about your text you repair in the file, and hand it over again; any other refusal you return as your halt, verbatim. Never remove, recursively, a path built from variables, and read every exit status from the command itself, bare.'
+}
 // The independent drive of an advocate's proposal. Its agent has no definition, so this
-// prompt is its whole contract — and so it is long where the others are thin.
+// prompt is its whole contract — and so it is long where the others are thin. ITS `HOW` IS
+// THE ONE ROW THAT IS NOT REPLACEABLE (DECISIONS.md -> 2026-10-07, "A long command is started,
+// waited for and judged by the tool", item 12, row 12): a proposal is a PATCHED tree, which
+// is no commit, and the step tool builds a commit and nothing else — so the drive clones,
+// patches and builds by a shell of its own, under the session's permission mode. What CAN
+// be a plain call is one: the hash it asserts is asked of the tool, on a line of its own.
 function proposalPrompt(ctx, name, fork, advocate, built) {
   return [
-    'You drive a PROPOSAL you did not write. A fork of the stabilization run `' + ctx.run + '` (round ' + ctx.round + ', finding `' + fork.key + '`) goes to the human with an advocate\'s case; a proposal is a claim, and before the human sees it somebody other than its author runs it end to end — through every OTHER party\'s next step (implementation/milestone-planning-workflow.md -> Settle, the claim-driven rule). You are that somebody. Your brief is to REFUTE it: assume a step the advocate reports as passing does not pass.',
+    'You drive a PROPOSAL you did not write. A fork of the stabilization run `' + ctx.run + '` (round ' + ctx.round + ', finding `' + fork.key + '`) goes to the human with an advocate\'s case; a proposal is a claim, and before the human sees it somebody other than its author runs it end to end — through every OTHER party\'s next step (implementation/milestone-planning-workflow.md, Settle: the claim-driven rule). You are that somebody. Your brief is to REFUTE it: assume a step the advocate reports as passing does not pass.',
     'The proposal, as its author returned it: ' + (advocate.proposal || '(none returned — read it from the report)'),
-    'The advocate\'s report, handed to you: ' + (advocate.report ? '`' + advocate.report + '`' : '(none)') + '. The steps it says it drove:\n' + ((advocate.driven || []).map((d) => '   - ' + d.step + ' — `' + d.command + '` — ' + d.result).join('\n') || '   (none)'),
-    'HOW. In a directory of your own, minted with `mktemp -d` under `' + ctx.scratch + '`: clone commit ' + built.candidate.sha + ' (`git clone` this repository there and check that commit out, detached — never the working tree, never a branch of this repository), apply the proposal as written, build it there (`cargo build --release --locked`, a target directory of its own), and run every next step the proposal names, each as printed, each exit status read bare. Where the proposal names a step you cannot run, say so in `undriven`, with why. For the BEFORE of each step drive the candidate itself: `shasum -a 256 ' + built.candidate.binary + '` must print ' + built.candidate.sha256 + ', and you return that hash as `asserted_sha256`.',
+    'The advocate\'s report, handed to you: ' + (advocate.report ? '`' + advocate.report + '`' : '(none)') + '. The steps it says it drove:\n' + ((advocate.driven || []).map((d) => '   - ' + d.step + ' — ' + d.command + ' — ' + d.result).join('\n') || '   (none)'),
+    'HOW. In a directory of your own, minted with `mktemp -d` under `' + ctx.scratch + '`: clone commit ' + built.candidate.sha + ' (`git clone` this repository there and check that commit out, detached — never the working tree, never a branch of this repository), apply the proposal as written, build it there (`cargo build --release --locked`, a target directory of its own), and run every next step the proposal names, each as printed, each exit status read bare. Where the proposal names a step you cannot run, say so in `undriven`, with why.',
+    'THE BEFORE of each step is the candidate itself, and its hash is ASKED OF THE TOOL, by ONE plain call typed as it stands, and never computed by a command of your own: ' + typed(STEP_TOOL, 'hash --scratch ' + ctx.scratch + ' --file ' + below(ctx.scratch, built.candidate.binary)) + ' prints ONE line of JSON whose `content_sha256` must be ' + built.candidate.sha256 + ', and you return that hash as `asserted_sha256`.',
     'WHAT YOU RETURN. One entry of `steps` per next step: the command, what it printed and exited, and `agrees` — whether that is what the advocate reported. `holds` is true only when every step ran as the proposal says. What you hit that is not this proposal goes in `left_open`.',
-    'WHAT YOU MAY TOUCH. Nothing in this repository: no edit, no commit, no branch, no push, no install. One file reaches it — your report, written with `dev/stabilize-record report ' + stageFlags(ctx) + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + '` as a single here-document whose last line is `<!-- end of report -->`; return the path it prints as `report`. A refusal about your text you repair in the text; any other refusal you return as your halt, verbatim. Never `rm -rf` a path built from variables, and never pipe a command whose exit status you read.',
+    'WHAT YOU MAY TOUCH. Nothing in this repository: no edit, no commit, no branch, no push, no install. One file reaches it — your report. ' + reportHandOver(ctx, name),
     NEVER,
   ].join('\n')
 }
@@ -1682,11 +1868,11 @@ function crossModelAssert() {
 function crossModelPrompt(ctx, name, unit) {
   const tool = crossModelTool()
   return [
-    'A CROSS-MODEL SOURCE PASS of review row `' + unit.item + '` — stabilization run `' + ctx.run + '`, round ' + ctx.round + '. This invocation named this item for it (args.crossModel): a cross-model second opinion is a human-approved suggestion, never auto-run (implementation/milestone-planning-workflow.md -> Review), and naming the item was the approval. You relay what a model of another family claims about this row\'s source; you judge none of it and drive none of it.',
-    'HOW. `command -v ' + tool + '` must answer — if it does not, halt and say so: nothing is installed. In a directory of your own, minted with `mktemp -d` under `' + ctx.scratch + '`, write the pass\'s prompt to a file: the row\'s brief (the `brief` of the item\'s row, which `' + itemRead(ctx.run, unit.item) + '` prints — read it, and hand over what it says to review), the door list below, and the instruction to return each claim with its `file:line` and the door it stands at. Then run `' + tool + ' review - < <the prompt file> > <an output file> 2>&1`, its exit status read bare, and read the output file.',
-    'WHAT ITS CLAIMS ARE. Leads, never findings: a claim one model makes that nobody reproduced is a lead, and the row\'s reconciler drives every one. Return each as a finding with `lead: true`, its door in the exact words of the list below (or named plainly and marked unlisted), the clause it would break as the claim reads, and `repro` = the heading you give the claim in your report. A pass that returned nothing usable is a halt, with its output as the evidence.',
+    'A CROSS-MODEL SOURCE PASS of review row `' + unit.item + '` — stabilization run `' + ctx.run + '`, round ' + ctx.round + '. This invocation named this item for it (args.crossModel): a cross-model second opinion is a human-approved suggestion, never auto-run (implementation/milestone-planning-workflow.md, Review), and naming the item was the approval. You relay what a model of another family claims about this row\'s source; you judge none of it and drive none of it.',
+    'HOW. `command -v ' + tool + '` must answer — if it does not, halt and say so: nothing is installed. In a directory of your own, minted with `mktemp -d` under `' + ctx.scratch + '`, write the pass\'s prompt to a file: the row\'s brief (the `brief` of the item\'s row, which ' + typed(RECORD_TOOL, itemRead(ctx.run, unit.item)) + ' prints — read it, and hand over what it says to review), the door list below, and the instruction to return each claim with its `file:line` and the door it stands at. Then run `' + tool + ' review - < <the prompt file> > <an output file> 2>&1`, its exit status read bare, and read the output file.',
+    'WHAT ITS CLAIMS ARE. Leads, never findings: a claim one model makes that nobody reproduced is a lead, and the row\'s reconciler drives every one. Return each as a finding with `lead` set to true, its door in the exact words of the list below (or named plainly and marked unlisted), the clause it would break as the claim reads, and `repro` = the heading you give the claim in your report. A pass that returned nothing usable is a halt, with its output as the evidence.',
     doorLines(ctx, unit),
-    'WHAT YOU MAY TOUCH. Nothing in this repository: no edit, no commit, no branch, no push, no install. One file reaches it — your report, the pass\'s output whole and your list of leads, written with `dev/stabilize-record report ' + stageFlags(ctx) + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + '` as a single here-document whose last line is `<!-- end of report -->`; return the path it prints as `report`. A refusal about your text you repair in the text; any other refusal you return as your halt, verbatim. Never `rm -rf` a path built from variables, and never pipe a command whose exit status you read.',
+    'WHAT YOU MAY TOUCH. Nothing in this repository: no edit, no commit, no branch, no push, no install. One file reaches it — your report, the pass\'s output whole and your list of leads. ' + reportHandOver(ctx, name),
     NEVER,
   ].join('\n')
 }
@@ -1699,26 +1885,29 @@ function fixerPrompt(ctx, launch, name, area, branch) {
   ].concat(area.findings.map((f) => '- `' + f.key + '` · door: ' + f.door + ' · clause: ' + f.clause + ' · repro: ' + f.repro + (f.detail ? ' · the human\'s ruling: ' + f.detail : ''))).join('\n')
 }
 
-// A record step's payload: one line, written to a file of the step's own and held to its
-// hash before the script reads it — so that a row is the row this script composed.
-function payload(dir, name, value, lines) {
-  const text = lines ? value.join('\n') : JSON.stringify(value)
+// A record step's payload: ONE line, which its executor writes to a file WITH ITS FILE TOOL —
+// no here-document, no redirect — and which the writer it is handed to holds to this hash
+// (`apply --from FILE --sha256 HASH`): a batch that is not the text this script composed is
+// refused there, and nothing is written. The text stands between two marker lines, so that
+// what is data is told from what is an instruction.
+function payload(dir, name, value) {
+  const text = JSON.stringify(value)
   const file = dir + '/' + name
-  const hash = sha256(text + '\n')
   return {
     file,
-    sha256: hash,
-    write: 'Write ' + (lines ? 'these lines' : 'this ONE line') + ', exactly, to `' + file + '` (`mkdir -p ' + dir + '` first) — `cat > ' + file + ' <<\'' + PAYLOAD_ENDS + '\'`, the text, then `' + PAYLOAD_ENDS + '` on a line of its own:\n' + text + '\n   Then `shasum -a 256 ' + file + '` must print `' + hash + '` — if it does not, the text was altered on its way: write it again, and halt if it still differs.',
+    sha256: sha256(text + '\n'),
+    write: 'Write the file `' + file + '` WITH YOUR FILE TOOL — the tool that writes a file, and no shell: its content is exactly the ONE line that stands between the two marker lines below — neither marker, nothing before it, and ONE newline after it.\n' + PAYLOAD_ENDS + '\n' + text + '\n' + PAYLOAD_ENDS,
   }
-}
-// gateStep — the full gate of a record step, its whole output kept where the commit step
-// reads it.
-function gateStep(file) {
-  return 'The FULL gate on the tree as it now stands, its WHOLE output kept: `' + GATE + ' > ' + file + ' 2>&1` (`--keep-going` is part of the command: no red step stops this gate) — in the background, waited for in this same turn in slices of under five minutes, until that file holds the gate\'s verdict line. Never `--fast`, never `--quick`, never piped, and the file is never edited.'
 }
 // RECORD_RUNS — how the executor is told to run a record's steps.
 const RECORD_RUNS = 'Run these from the repository\'s root, in this order, each exactly as written and each exit status read bare. A refusal is a halt — its one line the evidence — and nothing it names is repaired by hand:'
-const RECORD_RETURNS = 'YOU MAKE NO COMMIT, and stage nothing: the harness\'s next step reads the gate\'s output, holds it to the gate of the round\'s candidate, and makes the one commit. So a RED gate is not your halt: return status = gated as soon as the file holds the gate\'s verdict line — `GATE: PASS` or `GATE: FAIL` alike — and gate = the file. A halt is a refusal of step 2, or a gate that printed no verdict line — and with a refusal of step 2 return refused = the ONE word that follows `refused` on the line it printed on stderr.'
+const RECORD_RETURNS = 'YOU MAKE NO COMMIT, stage nothing, and RUN NO GATE — whatever your definition says of one: the harness holds the full gate itself, as a command of `' + STEP_TOOL + '`, by steps of its own that follow this one, and then makes the one commit. Return status = applied as soon as step 2 printed its line. A halt is a refusal of step 2 — and with it return refused = the ONE word that follows `refused` on the line it printed on stderr. One refusal is yours to repair, once: `bad-value`, naming the file as not the batch that was hashed — write the file again, exactly, and run step 2 again; refused a second time, it is your halt.'
+// subjectOf — the subject of a record's commit, after its `docs(record): `: plain ASCII,
+// with nothing a shell reads, because it is a word of the ONE plain call that applies the
+// batch.
+function subjectOf(run, round, what) {
+  return run + ' r' + round + ' - ' + what
+}
 // call — one call of a record's batch: a subcommand of the record script with its flags, as
 // its argument list, and what it reads on stdin.
 function call(flags, more, stdin) {
@@ -1729,34 +1918,30 @@ function call(flags, more, stdin) {
 function isCheck(made) {
   return made.argv[0].startsWith('check-')
 }
-// recordPrompt — a record step: the calls as ONE batch, then the gate. Returns the prompt,
-// the file the gate's output is kept in, and what the commit step is held to.
+// recordPrompt — a record step's executor: the calls as ONE batch, written to a file and
+// applied from it, AND NOTHING ELSE — the gate that follows is a command the step tool
+// holds. Returns the prompt, the name that gate is held under — one per record, from the
+// directory this script names the record by — and what the commit step is held to.
+function recordHold(dir) {
+  return 'record-' + dir.slice(dir.lastIndexOf('/') + 1)
+}
 function recordPrompt(v, what, branch, dir, round, calls, subject) {
-  const batch = payload(dir, 'batch.json', calls)
-  const gate = dir + '/gate.txt'
+  const batch = payload(dir, 'batch-' + sha256(JSON.stringify(calls) + '\n').slice(0, 12) + '.json', calls)
   const text = [
     LABELS.record + ' — stabilization run `' + v.run + '`: ' + what + '.',
     branchLine(branch, branchName(v.run)),
     RECORD_RUNS,
     '1. ' + batch.write,
-    '2. `dev/stabilize-record apply --run ' + v.run + (round ? ' --round ' + round : '') + ' --subject ' + shq('docs(record): ' + subject) + ' --scratch ' + v.scratch + ' < ' + batch.file + '` — the ' + calls.length + ' call(s) of this record as ONE batch: every table is written, or none is. It prints one line of JSON.',
-    '3. ' + gateStep(gate),
+    '2. ' + typed(RECORD_TOOL, 'apply --run ' + v.run + (round ? ' --round ' + round : '') + ' --subject ' + shq('docs(record): ' + subject) + ' --scratch ' + v.scratch + ' --from ' + batch.file + ' --sha256 ' + batch.sha256) + ' — the ' + calls.length + ' call(s) of this record as ONE batch, read from the file of step 1 and held to its hash: every table is written, or none is. It prints one line of JSON.',
     RECORD_RETURNS,
   ].join('\n')
-  return { text, gate, expect: { calls: calls.length, checks: calls.filter(isCheck).length } }
+  return { text, hold: recordHold(dir), expect: { calls: calls.length, checks: calls.filter(isCheck).length } }
 }
-// pendingRecordPrompt — the record step of a batch an earlier invocation applied and did not
-// commit: the gate again, and nothing else.
-function pendingRecordPrompt(v, branch, dir, pending) {
-  const gate = dir + '/gate.txt'
-  const text = [
-    LABELS.record + ' — stabilization run `' + v.run + '`: a record step of an earlier invocation applied its batch — ' + pending.calls + ' call(s); its subject and its files are what `dev/stabilize-record pending --run ' + v.run + '` prints — and did not commit it. The batch is on disk and pending; you apply NOTHING and write no table.',
-    branchLine(branch, branchName(v.run)),
-    'Run this from the repository\'s root, exactly as written (`mkdir -p ' + dir + '` first):',
-    '1. ' + gateStep(gate),
-    RECORD_RETURNS,
-  ].join('\n')
-  return { text, gate, expect: { calls: pending.calls, checks: pending.checks } }
+// pendingRecord — the record step of a batch an earlier invocation applied and did not
+// commit: NO EXECUTOR RUNS — nothing is applied and no table written — and what is left of
+// the step is its gate, held by the tool, and its one commit.
+function pendingRecord(dir, pending) {
+  return { text: null, hold: recordHold(dir), expect: { calls: pending.calls, checks: pending.checks } }
 }
 // stageRecordCommands — a stage's record, as the calls of its ONE batch: the reports checked
 // first, then the candidate's gate (a `test` stage's), then what each item did, then the
@@ -1810,7 +1995,7 @@ function rulingsRecordPrompt(v, round, branch, rulings, ran, at) {
     calls.push(call('ledger-set --run ' + v.run + ' --scratch ' + v.scratch, [], patches))
     calls.push(call('check-ledger --run ' + v.run + ' --', patches.map((p2) => p2.key)))
   }
-  return recordPrompt(v, 'the human\'s rulings — ' + patches.length + ' on a finding, ' + bounds.length + ' declared bound(s), ' + about.length + ' about the run. They are the human\'s, relayed: record them as given, and judge none of them', branch, v.scratch + '/record/rulings-r' + round, round, calls, v.run + ' r' + round + ' — the human\'s rulings')
+  return recordPrompt(v, 'the human\'s rulings — ' + patches.length + ' on a finding, ' + bounds.length + ' declared bound(s), ' + about.length + ' about the run. They are the human\'s, relayed: record them as given, and judge none of them', branch, v.scratch + '/record/rulings-r' + round, round, calls, subjectOf(v.run, round, 'the rulings of the human'))
 }
 
 // ---- the runtime probes: what a probe's agents are told, and what it hands the tool ----
@@ -1826,7 +2011,7 @@ function probeReviewPrompt(id, binary) {
   const lines = [
     'A PROBE of the stabilization harness\'s runtime — the `required` probe, case ' + id + '. It is no stage of any run: there is no round, no test set and NO REPORT — you write no file, and you run no command of `dev/stabilize-record`.',
     binaryLine({ candidate: { binary: binary.file, sha256: binary.sha256, sha: '0'.repeat(40), label: 'probe' } }, false),
-    'Your brief: one review row\'s SOURCE PASS, and a small one — read the comment block `' + PROBE_TOOL + '` opens with, and return what you find wrong in it as findings. None is expected, and `findings: []` is an answer. YOU DRIVE NOTHING: the file on the line above is a stand-in and no build of any commit — the commit that line names is forty zeros and names nothing — and no command of it is run.',
+    'Your brief: one review row\'s SOURCE PASS, and a small one — read the comment block `' + PROBE_TOOL + '` opens with, and return what you find wrong in it as findings. None is expected, and an empty `findings` is an answer. YOU DRIVE NOTHING: the file on the line above is a stand-in and no build of any commit — the commit that line names is forty zeros and names nothing — and no command of it is run.',
     'The door list — a finding names its door in these exact words:\n' + doorList([{ door: PROBE_TOOL, registry: 'tooling' }]),
   ]
   if (id === 'a') lines.push('THIS CASE PROBES WHAT THE RUNTIME DOES WITH A RETURN THAT LACKS A FIELD ITS SCHEMA REQUIRES. Leave `asserted_sha256` OUT of your return: the field is not there at all — not empty, not null, not a placeholder — whatever the schema of the return says of it. If your return is refused for lacking it, return the same object again, still without it: you never fill it in.')
@@ -1888,22 +2073,10 @@ function probePayloadPrompt(scratch, n, batch) {
     LABELS.record + ' — a PROBE of the stabilization harness, of no run (the `payload` probe: a record\'s batch of ' + n + ' entries, written and hashed). NOTHING IS APPLIED, GATED OR COMMITTED: no command of `dev/stabilize-record` and no gate is yours here, you make no commit, and no file of the repository is written.',
     RECORD_RUNS,
     '1. ' + batch.write,
-    '2. `' + PROBE_TOOL + ' hash --scratch ' + scratch + ' --file ' + batch.file + '` — it prints ONE line of JSON.',
+    '2. ' + typed(PROBE_TOOL, 'hash --scratch ' + scratch + ' --file ' + batch.file) + ' — it prints ONE line of JSON.',
     'Report status = ran and line = ' + AS_PRINTED + ' — the line of step 2. Only when step 2 printed no such line: status = halted, and the halt report.',
   ].join('\n')
 }
-// The `hold` probe's agent (a): ONE long command, held as the preflight holds the gate — in
-// the background, waited for in slices, inside its turn.
-function probeHoldPrompt(scratch, name, seconds) {
-  const out = scratch + '/probe/hold/' + name + '.out'
-  return [
-    'PREFLIGHT — a PROBE of the stabilization harness, of no run (the `hold` probe, case ' + name + '). There is no candidate, no environment assert, no build, no gate, no check and NO REPORT: this call covers the two steps below and nothing else, and no file of the repository is written. Scratch root: `' + scratch + '`.',
-    'The steps this call covers, in this order, and nothing else:',
-    '1. the long command, ONCE: `' + PROBE_TOOL + ' hold --scratch ' + scratch + ' --name ' + name + ' --seconds ' + seconds + ' > ' + out + ' 2>&1` — in the background, waited for in this same turn in slices of under five minutes, until that file holds the command\'s ONE line; never piped, and the file is never edited. It prints NOTHING for ' + seconds + ' seconds, and then one line of JSON.',
-    '2. Report status = ran and line = ' + AS_PRINTED + ' — here, the one line that file then holds. Only when the file never came to hold such a line: status = halted, and the halt report.',
-  ].join('\n')
-}
-
 // ---- self-test: this script's own logic, with no agent ----
 function selfTest() {
   const failed = []
@@ -2056,7 +2229,7 @@ function selfTest() {
   const awaiting = { untriaged: { count: 2, why: [{ why: 'ungraded', count: 1 }, { why: 'unverified', count: 1 }] }, ledger: 3 }
   const handed = ledgerSource('rc24-tier1', awaiting)
   check('the rows whose triage is unfinished are one source, named for the ledger', handed.length === 1 && handed[0].reporter === LEDGER_SOURCE && handed[0].report === 'completions/artifacts/rc24-tier1/ledger.md' && findingsOf(handed[0]) === 2)
-  check('the rows are handed over by the read that prints them, and none by this script', handed[0].findings.length === 0 && handed[0].read === 'dev/stabilize-record untriaged --run rc24-tier1' && findingsOf({ reporter: 'x', findings: ['1 — a', '2 — b', '3 — c'] }) === 3)
+  check('the rows are handed over by the read that prints them, and none by this script', handed[0].findings.length === 0 && handed[0].read === '`dev/stabilize-record untriaged --run rc24-tier1`' && findingsOf({ reporter: 'x', findings: ['1 — a', '2 — b', '3 — c'] }) === 3)
   check('nothing awaits triage: no source', ledgerSource('x', { untriaged: { count: 0, why: [] } }).length === 0 && ledgerSource('x', {}).length === 0 && ledgerSource('x', { untriaged: [{ key: 'a document\'s list', why: 'ungraded' }] }).length === 0)
   check('no reporter can be named as the ledger is', !Object.keys(CHAINS).some((kind) => CHAINS[kind].some((stepList) => stepList.some((step) => reporterName(['x', step.as]) === LEDGER_SOURCE))) && !LEDGER_SOURCE.includes('-'))
 
@@ -2074,7 +2247,7 @@ function selfTest() {
   const entry = { key: 'f-1', door: 'jigc setup', clause: 'no-lost-files', grade: 'breaks', repro: 'r2/reports/test/row-3-driver.a1.md, block 2' }
   const fork = { key: 'f-1', kind: 'contested', door: 'jigc setup', clause: 'no-lost-files', repro: 'x', statement: 'the verifier' }
   const prompts = {
-    preflight: preflightPrompt(ctx, launch, launch.add(['preflight']), { build: true, image: true, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', binary: '/tmp/scratch-1/bin/c2/jigc', checks: [{ item: 'the-gate' }], crossModel: false, previous: previousOf({ facts }) }),
+    preflight: preflightPrompt(ctx, launch, launch.add(['preflight']), { image: true, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', checks: [{ item: 'ci' }], crossModel: false }),
     scope: scopePrompt(ctx, launch, launch.add(['scope']), { sha: 'c'.repeat(40), label: 'c2', base: 'd'.repeat(40), earlier: true, scope: { doors: ['jigc setup'] }, previous: previousOf({ facts }), fallback: facts.scope }),
     review: unitPrompt(ctx, launch, launch.add(['row-3', 'source']), CHAINS['review-row'][0][0], unit, built, []),
     drive: unitPrompt(ctx, launch, launch.add(['row-3', 'reconciler']), CHAINS['review-row'][1][0], unit, built, [{ as: 'source', report: 'a.md' }]),
@@ -2090,15 +2263,15 @@ function selfTest() {
   for (const role of Object.keys(ROLES)) {
     for (const label of Object.keys(LABELS)) check('the ' + role + ' prompt and ' + LABELS[label], carries(prompts[role], label) === ROLES[role].labels.includes(label))
   }
-  check('a record step opens with its label', prompts.record.startsWith(LABELS.record) && rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).text.startsWith(LABELS.record) && pendingRecordPrompt(fix, 'fix/rc24-tier1', '/tmp/scratch-1/record/pending-r1', { calls: 3, checks: 1, files: 2, round: 1 }).text.startsWith(LABELS.record))
-  check('the preflight is handed the previous release as data', prompts.preflight.includes('version `1.0.0-rc.24`') && prompts.preflight.includes('built from commit ' + 'e'.repeat(40)) && prompts.preflight.includes('the tip of `fix/rc24-tier1`'))
+  check('a record step opens with its label', prompts.record.startsWith(LABELS.record) && rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).text.startsWith(LABELS.record))
+  check('the preflight builds nothing and holds no gate: it is told so, and handed neither', prompts.preflight.includes('NO BUILD AND NO GATE IS YOURS') && prompts.preflight.includes('the tip of `fix/rc24-tier1`') && !/git archive|dev\/gate|cargo|built from commit|path_check/.test(prompts.preflight) && prompts.preflight.includes('   - ci: its brief is the `brief` of the item\'s row — `dev/stabilize-record item --run rc24-tier1 --item ci`') && PREFLIGHT_SCHEMA.properties.candidate === undefined && PREFLIGHT_SCHEMA.properties.previous === undefined)
   check('a round\'s base is the earlier candidate, or the previous release\'s commit', prompts.scope.includes('base = ' + 'd'.repeat(40)) && scopePrompt(ctx, launcher(ctx), 'scope', { sha: 'c'.repeat(40), label: 'c1', base: null, earlier: false, scope: null, previous: previousOf({ facts }), fallback: 'everything' }).includes('base = ' + 'e'.repeat(40) + ' (the previous release, 1.0.0-rc.24'))
   check('a triage is told what the ledger\'s rows are', triagePrompt(ctx, launcher(ctx), 'triage-p1', handed, 1).includes('The source `' + LEDGER_SOURCE + '` is no reporter') && !prompts.triage.includes('is no reporter'))
-  const finishing = preflightPrompt(ctx, launcher(ctx), 'preflight', { build: true, image: false, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', binary: 'x', checks: [], crossModel: false, previous: previousOf({ facts }), tested: true })
-  check('a finishing preflight builds the commit the round tested, and is told that it is not HEAD', finishing.includes('the commit round 2 tested, an ancestor of `fix/rc24-tier1`') && finishing.includes('THE CANDIDATE IS NOT `HEAD` HERE') && finishing.includes('`git merge-base --is-ancestor ' + 'c'.repeat(40) + ' HEAD` must hold') && !prompts.preflight.includes('NOT `HEAD`'))
+  const finishing = preflightPrompt(ctx, launcher(ctx), 'preflight', { image: false, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', checks: [], crossModel: false, tested: true })
+  check('a finishing preflight is told that the candidate is the commit the round tested, and not HEAD', finishing.includes('the commit round 2 tested, an ancestor of `fix/rc24-tier1`') && finishing.includes('THE CANDIDATE IS NOT `HEAD` HERE') && finishing.includes('commit ' + 'c'.repeat(40) + ' must be an ancestor of `HEAD`') && !finishing.includes('`git ') && !prompts.preflight.includes('NOT `HEAD`'))
   check('a fork is recorded with the verdict it rides on, and with no other entry', JSON.stringify(triageRecord(ctx, [{ key: 'f-1', new: false, grade: 'breaks', verdict: 'confirmed', regression: false, fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }, { key: 'f-2', new: false, grade: 'breaks', fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }]).triage) === JSON.stringify([{ key: 'f-1', grade: 'breaks', verdict: 'confirmed', regression: false, fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }, { key: 'f-2', grade: 'breaks' }]))
-  check('a report line gives the flags', launch.line('scope') === reportLine(ctx, 'scope') && reportLine(ctx, 'scope').startsWith('REPORT: --run rc24-tier1 --round 2 --stage fix --cycle 3 --reporter scope --attempt 4 ') && reportLine(Object.assign({}, ctx, { stage: 'test' }), 'x').startsWith('REPORT: --run rc24-tier1 --round 2 --stage test --reporter x --attempt 4 '))
-  check('a binary line gives the path and the hash', binaryLine(built, true).startsWith('BINARY: candidate `/tmp/scratch-1/bin/c2/jigc` sha256 ' + 'b'.repeat(64)) && binaryLine(built, true).includes('jigc-trial:c2') && !binaryLine(built, false).includes('jigc-trial:c2'))
+  check('a report line gives the flags', launch.line('scope') === reportLine(ctx, 'scope') && reportLine(ctx, 'scope').startsWith('REPORT: --run rc24-tier1 --round 2 --stage fix --cycle 3 --reporter scope --attempt 4 ') && reportLine(Object.assign({}, ctx, { stage: 'test' }), 'x').startsWith('REPORT: --run rc24-tier1 --round 2 --stage test --reporter x --attempt 4 ') && reportLine(Object.assign({}, ctx, { stage: 'test' }), 'x').includes('to the file `/tmp/scratch-1/report/r2/test/x.a4.md` WITH YOUR FILE TOOL') && reportLine(Object.assign({}, ctx, { stage: 'test' }), 'x').includes('`dev/stabilize-record report --run rc24-tier1 --round 2 --stage test --reporter x --attempt 4 --scratch /tmp/scratch-1 --from /tmp/scratch-1/report/r2/test/x.a4.md`') && reportFile(ctx, 'scope') === '/tmp/scratch-1/report/r2/fix.c3/scope.a4.md')
+  check('a binary line gives the path and the hash, and the one plain call that asserts it', binaryLine(built, true, '/tmp/scratch-1').includes('`dev/stabilize-step hash --scratch /tmp/scratch-1 --file bin/c2/jigc` prints ONE line of JSON whose `content_sha256` must be that sha256') && binaryLine(built, true, '/tmp/scratch-1').endsWith(' Return the sha256 you asserted for the candidate as `asserted_sha256`.') && !binaryLine(built, true).includes('stabilize-step') && prompts.review.includes('`dev/stabilize-step hash --scratch /tmp/scratch-1 --file bin/c2/jigc`') && prompts.verify.includes('`dev/stabilize-step hash --scratch /tmp/scratch-1 --file bin/c2/jigc`') && binaryLine(built, true).startsWith('BINARY: candidate `/tmp/scratch-1/bin/c2/jigc` sha256 ' + 'b'.repeat(64)) && binaryLine(built, true).includes('jigc-trial:c2') && !binaryLine(built, false).includes('jigc-trial:c2'))
   check('every chain is staffed from the roles', Object.keys(CHAINS).concat(['fix-diff']).every((kind) => (CHAINS[kind] || FIX_AUDIT).every((stepList) => stepList.every((s) => ROLES[s.role] && isSlug(s.as) && !s.as.includes('-') && (s.hands || []).every((h) => (CHAINS[kind] || FIX_AUDIT).some((earlier) => earlier.some((e) => e.as === h)))))))
 
   // The cross-model pass runs for the items an invocation names, and for no other: an
@@ -2116,7 +2289,7 @@ function selfTest() {
   const recut = carryPrompt(fix, 1, ['a'.repeat(40)], 'fix/rc24-tier1-r1-part1')
   for (const act of Object.keys(steps)) {
     const numbered = steps[act].split('\n')
-    check('the `' + act + '` step is one command of the tool, and its line relayed', numbered.length === 3 && numbered[0].startsWith('GIT STEP — ') && numbered[0].endsWith(STEP_RULES) && numbered[1].startsWith('1. `' + STEP_TOOL + ' ' + act + ' ') && numbered[1].endsWith('`') && numbered[2].startsWith('2. Report status = ran and line = ') && !/`git (?!stash|status|branch --show-current)/.test(steps[act]))
+    check('the `' + act + '` step is one command of the tool, and its line relayed', numbered.length === 3 && numbered[0].startsWith('GIT STEP — ') && numbered[0].endsWith(STEP_RULES) && numbered[1].startsWith('1. `' + STEP_TOOL + ' ' + act + ' ') && numbered[1].endsWith('`') && numbered[2].startsWith('2. Report status = ran and line = ') && !steps[act].includes('`git '))
     check('the `' + act + '` step asks for its digest, once, under the scratch root — and before any list of names', numbered[1].split(' --digest /tmp/scratch-1').length === 2 && (!numbered[1].includes(' -- ') || numbered[1].indexOf(' --digest ') < numbered[1].indexOf(' -- ')))
   }
   check('the names a step hands the tool are the harness\'s', steps['git-state'].includes('`' + STEP_TOOL + ' git-state --stage test --loop fix/rc24-tier1 --rounds fix/rc24-tier1-r --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates --digest /tmp/scratch-1`') && steps.land.includes(' land --loop fix/rc24-tier1 --branch fix/rc24-tier1-r1 --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates --log DECISIONS.md --log implementation/project-history.md --digest /tmp/scratch-1`') && steps.carry.endsWith(STEP_RULES + '\n1. `' + STEP_TOOL + ' carry --loop fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --product Cargo.toml --product Cargo.lock --product crates --digest /tmp/scratch-1 -- ' + 'a'.repeat(40) + '`\n' + steps.carry.split('\n')[2]) && steps['sync-main'].includes(' sync-main --loop fix/rc24-tier1 --log DECISIONS.md --log implementation/project-history.md --digest /tmp/scratch-1`') && steps.state.includes(' state --run rc24-tier1 --scratch /tmp/scratch-1 --tag t --digest /tmp/scratch-1`') && steps['find-round'].includes(' find-round --prefix fix/rc24-tier1-r1 --digest /tmp/scratch-1`') && steps.push.includes(' push --branch fix/rc24-tier1-r1 --digest /tmp/scratch-1`') && steps.record.includes(' record --branch fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --gate /tmp/scratch-1/record/x/gate.txt --calls 3 --checks 2 --scratch /tmp/scratch-1 --digest /tmp/scratch-1`'))
@@ -2125,7 +2298,7 @@ function selfTest() {
   check('the re-cut of a part is still the list of commands it was', recut.startsWith('GIT STEP — re-cut a part of round 1 of `rc24-tier1` as a branch of its own, `fix/rc24-tier1-r1-part1`') && recut.includes(CARRY_RULES) && recut.includes('`git cherry-pick -x <sha>`') && recut.includes('`git push origin fix/rc24-tier1-r1-part1`') && !recut.includes(STEP_TOOL) && recut.split('\n').length === 8)
   const gitPrompts = Object.keys(steps).map((act) => steps[act]).concat([recut])
   check('no prompt names the tool without the opt-in', Object.keys(prompts).filter((role) => names.test(prompts[role])).join(' ') === 'crossModel' && !names.test(rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).text) && !names.test(gitPrompts.join('\n')))
-  const asserts = (crossModel) => preflightPrompt(ctx, launcher(ctx), 'preflight', { build: false, image: false, sha: 'c'.repeat(40), label: 'c2', branch: 'b', binary: 'x', checks: [], crossModel })
+  const asserts = (crossModel) => preflightPrompt(ctx, launcher(ctx), 'preflight', { image: false, sha: 'c'.repeat(40), label: 'c2', branch: 'b', checks: [], crossModel })
   check('the preflight is asked about the tool only when an item is named', names.test(asserts(true)) && asserts(true).includes('`' + CROSS_CHECK + '`') && !names.test(asserts(false)) && !names.test(asserts(undefined)) && !asserts(false).includes(CROSS_CHECK))
   const dropping = launcher(ctx)
   dropping.add(['row-3', 'source'])
@@ -2175,14 +2348,14 @@ function selfTest() {
   const recordCalls = batchOf(prompts.record)
   check('the check names every reporter launched', launch.names.every((n) => checkReportsPrompt(ctx, launch.names).includes(' ' + n)) && checkReportsPrompt(ctx, launch.names).includes('`' + STEP_TOOL + ' check-reports --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 --scratch /tmp/scratch-1 --digest /tmp/scratch-1 -- ' + launch.names.join(' ') + '`') && spelled(recordCalls[0]) === 'check-reports --run rc24-tier1 --round 2 --stage fix --cycle 3 --attempt 4 -- ' + launch.names.join(' '))
   check('the ledger check names every key', spelled(recordCalls[recordCalls.length - 1]) === 'check-ledger --run rc24-tier1 -- f-1')
-  check('a record\'s calls are one payload, held to its hash', prompts.record.includes(sha256(JSON.stringify(recordCalls) + '\n')) && prompts.record.includes('`cat > /tmp/scratch-1/record/x/batch.json <<\'' + PAYLOAD_ENDS + '\'`') && spelled(recordCalls[1]) === 'round-set --run rc24-tier1 --round 2' && recordCalls[1].stdin === '{"cycles":3}' && recordCalls.length === 3)
-  check('a record step applies its calls as one batch, runs the full gate, and makes no commit', prompts.record.includes('\n2. `dev/stabilize-record apply --run rc24-tier1 --round 2 --subject \'docs(record): s\' --scratch /tmp/scratch-1 < /tmp/scratch-1/record/x/batch.json`') && prompts.record.includes('\n3. The FULL gate') && prompts.record.includes('`dev/gate --keep-going > /tmp/scratch-1/record/x/gate.txt 2>&1`') && prompts.record.endsWith(RECORD_RETURNS) && !/`git (add|commit)/.test(prompts.record) && prompts.record.includes('Never `--fast`, never `--quick`'))
+  check('a record\'s calls are one payload, written by a file tool and held to its hash by the writer', prompts.record.includes(' --sha256 ' + sha256(JSON.stringify(recordCalls) + '\n') + '`') && prompts.record.includes('\n1. Write the file `/tmp/scratch-1/record/x/batch-' + sha256(JSON.stringify(recordCalls) + '\n').slice(0, 12) + '.json` WITH YOUR FILE TOOL') && prompts.record.includes('\n' + PAYLOAD_ENDS + '\n' + JSON.stringify(recordCalls) + '\n' + PAYLOAD_ENDS + '\n') && !/cat |mkdir|shasum|<<|here-document/.test(prompts.record) && spelled(recordCalls[1]) === 'round-set --run rc24-tier1 --round 2' && recordCalls[1].stdin === '{"cycles":3}' && recordCalls.length === 3)
+  check('a record step applies its calls as one batch from a file, RUNS NO GATE, and makes no commit', prompts.record.includes('\n2. `dev/stabilize-record apply --run rc24-tier1 --round 2 --subject \'docs(record): s\' --scratch /tmp/scratch-1 --from /tmp/scratch-1/record/x/batch-' + sha256(JSON.stringify(recordCalls) + '\n').slice(0, 12) + '.json --sha256 ' + sha256(JSON.stringify(recordCalls) + '\n') + '`') && !prompts.record.includes('\n3. ') && !prompts.record.includes('dev/gate') && prompts.record.endsWith(RECORD_RETURNS) && RECORD_RETURNS.includes('RUN NO GATE') && RECORD_RETURNS.includes('Return status = applied') && JSON.stringify(RECORD_SCHEMA.properties.status.enum) === JSON.stringify(['applied', 'halted']) && RECORD_SCHEMA.properties.gate === undefined && !/`git (add|commit)/.test(prompts.record))
   const stageRecord = recordPrompt(ctx, 'x', 'fix/rc24-tier1', '/tmp/scratch-1/record/z', 0, stageRecordCommands(Object.assign({}, ctx, { stage: 'test' }), { reporters: ['a'], gate: { commit: 'c'.repeat(40), file: '/tmp/scratch-1/gate/c2.a4.txt' }, results: { commit: 'c'.repeat(40), rows: resultRows([{ item: 'a', status: 'green' }, { item: 'it\'s-b', status: 'void', reason: 'it\'s chain died' }]) }, rows: [], triage: [], patches: [], facts: { candidate: 'c'.repeat(40) }, keys: [] }), 's')
-  check('what the commit step is held to is what was composed', JSON.stringify(stageRecord.expect) === JSON.stringify({ calls: 4, checks: 1 }) && stageRecord.gate === '/tmp/scratch-1/record/z/gate.txt' && !stageRecord.text.includes(' --round 0') && JSON.stringify(recordPrompt(ctx, 'x', 'b', '/d', 2, recordCalls, 's').expect) === JSON.stringify({ calls: 3, checks: 2 }))
-  check('a test stage\'s record puts the candidate\'s gate on record, from the file the preflight kept', spelled(batchOf(stageRecord.text)[1]) === 'gate-set --run rc24-tier1 --round 2 --commit ' + 'c'.repeat(40) + ' --summary /tmp/scratch-1/gate/c2.a4.txt --scratch /tmp/scratch-1' && !recordCalls.some((made) => made.argv[0] === 'gate-set'))
+  check('what the commit step is held to is what was composed', JSON.stringify(stageRecord.expect) === JSON.stringify({ calls: 4, checks: 1 }) && stageRecord.hold === 'record-z' && stageRecord.gate === undefined && !stageRecord.text.includes(' --round 0') && JSON.stringify(recordPrompt(ctx, 'x', 'b', '/d', 2, recordCalls, 's').expect) === JSON.stringify({ calls: 3, checks: 2 }))
+  check('a test stage\'s record puts the candidate\'s gate on record, from the file the tool kept its output in', spelled(batchOf(stageRecord.text)[1]) === 'gate-set --run rc24-tier1 --round 2 --commit ' + 'c'.repeat(40) + ' --summary /tmp/scratch-1/gate/c2.a4.txt --scratch /tmp/scratch-1' && !recordCalls.some((made) => made.argv[0] === 'gate-set'))
   check('what each item did is one call, its rows data whatever they hold', spelled(batchOf(stageRecord.text)[2]) === 'result-set --run rc24-tier1 --round 2 --commit ' + 'c'.repeat(40) + ' --scratch /tmp/scratch-1' && batchOf(stageRecord.text)[2].stdin === JSON.stringify([{ item: 'a', outcome: 'green' }, { item: 'it\'s-b', outcome: 'void', reason: 'it\'s chain died' }]))
-  const resumed = pendingRecordPrompt(fix, 'fix/rc24-tier1', '/tmp/scratch-1/record/pending-r1', { calls: 5, checks: 2, files: 4, round: 1 })
-  check('a pending batch is gated again and nothing is applied', resumed.text.includes('its subject and its files are what `dev/stabilize-record pending --run rc24-tier1` prints') && !resumed.text.includes('stabilize-record apply') && !resumed.text.includes(PAYLOAD_ENDS) && resumed.text.includes('`dev/gate --keep-going > /tmp/scratch-1/record/pending-r1/gate.txt 2>&1`') && resumed.text.endsWith(RECORD_RETURNS) && JSON.stringify(resumed.expect) === JSON.stringify({ calls: 5, checks: 2 }))
+  const resumed = pendingRecord('/tmp/scratch-1/record/pending', { calls: 5, checks: 2, files: 4, round: 1 })
+  check('a pending batch is gated again by the tool: no executor runs, and nothing is applied', resumed.text === null && resumed.hold === 'record-pending' && JSON.stringify(resumed.expect) === JSON.stringify({ calls: 5, checks: 2 }))
   const cycleRecord = stageRecordCommands(ctx, { reporters: [], rows: [{ key: 'f-2' }], triage: [{ key: 'f-1', grade: 'breaks' }], patches: [{ key: 'f-1', disposition: 'fixed', detail: 'c'.repeat(40) }], clauses: [], facts: null, keys: ['f-1', 'f-2'] }).map((made) => made.argv[0])
   const at = (name) => cycleRecord.indexOf(name)
   check('a cycle\'s fixes are on the rows before its audit\'s triage reads them', at('ledger-add') >= 0 && at('ledger-add') < at('ledger-set') && at('ledger-set') < at('triage-set') && at('triage-set') < at('check-ledger'))
@@ -2199,8 +2372,9 @@ function selfTest() {
   check('a commit step that refused is said in the sentence of its word', recordFault({ status: 'halted', refused: 'gate-red', branch: 'fix/rc24-tier1' }, composed).includes('refused `gate-red` — the orchestrator\'s: ') && recordFault({ status: 'halted', relay: 'the relayed line is no digest' }, composed) === 'the relayed line is no digest')
 
   // The candidate's gate is run by the first preflight of a `test` stage, and by no other.
-  const gated = (gate) => preflightPrompt(ctx, launcher(ctx), 'preflight', { build: false, image: false, gate, sha: 'c'.repeat(40), label: 'c2', branch: 'b', binary: 'x', checks: [], crossModel: false })
-  check('the preflight keeps the candidate\'s gate where the record step reads it', gated('/tmp/scratch-1/gate/c2.a4.txt').includes('`dev/gate --keep-going > /tmp/scratch-1/gate/c2.a4.txt 2>&1`') && gated('/tmp/scratch-1/gate/c2.a4.txt').includes('never your halt') && !gated(undefined).includes('dev/gate') && !prompts.preflight.includes('dev/gate --keep-going >'))
+  const heldStart = holdStartPrompt(base, 'gate-c2-a4', 'gate', '--run rc24-tier1', 'the full gate')
+  const heldWait = holdWaitPrompt(base, 'gate-c2-a4', 'the full gate')
+  check('the gate of a run is a command the tool holds, started by one plain call and asked after by another', heldStart.includes('\n1. `dev/stabilize-step hold-start --scratch /tmp/scratch-1 --name gate-c2-a4 --kind gate --run rc24-tier1 --digest /tmp/scratch-1`\n') && heldStart.split('\n')[0].endsWith(STEP_RULES) && heldWait.includes('\n1. `dev/stabilize-step hold-wait --scratch /tmp/scratch-1 --name gate-c2-a4 --digest /tmp/scratch-1`\n') && heldWait.split('\n')[0].endsWith(ASK_RULES) && ASK_RULES.includes('RUN THE SAME COMMAND AGAIN') && !STEP_RULES.includes('RUN THE SAME COMMAND AGAIN') && STEP_RULES.includes('never run the command a second time') && heldWait.includes('of the LAST run of it') && !heldStart.includes('of the LAST run of it'))
 
   // Ruling 11's comparison.
   const good = { status: 'reported', asserted_sha256: 'b'.repeat(64) }
@@ -2241,7 +2415,7 @@ function selfTest() {
   check('the areas', areas.map((x) => x.n + ':' + x.findings.map((f) => f.key).join('+')).join(' ') === '1:f-1+f-3 2:f-2 3:f-4' && areasOf([], null).length === 0 && areasOf([{ key: 'f', door: 'd' }], null).length === 1)
   check('a unit is handed its brief and its doors as the reads that print them, and no text of either', prompts.review.includes('\nYour brief is the `brief` of your item\'s row in the test set — read it: `dev/stabilize-record item --run rc24-tier1 --item row-3`.\n') && prompts.review.includes('is what `dev/stabilize-record item-doors --run rc24-tier1 --round 2 --item row-3` prints: 1 door(s) of round 2\'s test set') && !prompts.review.includes('Your brief: ') && !prompts.review.includes('   - ') && prompts.crossModel.includes('`dev/stabilize-record item --run rc24-tier1 --item row-3`') && prompts.crossModel.includes('`dev/stabilize-record item-doors --run rc24-tier1 --round 2 --item row-3`') && doorsRead('rc24-tier1', 1, 'row-3').endsWith(' --round 1 --item row-3'))
   check('the one unit that is this script\'s own is handed its brief and its doors as given', unitPrompt(ctx, launcher(ctx), 'x', FIX_AUDIT[0][0], { item: 'audit', brief: 'The fix diff.', doors: [{ door: 'jigc setup', registry: 'verbs' }], range: 'a..b' }, built, []).includes('\nYour brief: The fix diff.\n') && briefLine(ctx, { item: 'audit', brief: '' }) === 'Your brief: ' && doorLines(ctx, { item: 'a', doors: [] }).endsWith('\n   (none)') && doorLines(ctx, { item: 'a', doors: null, round: 3 }).includes('prints: the doors of round 3\'s test set'))
-  check('a check is listed for the preflight by its item and the read that prints its brief', prompts.preflight.includes('\n   - the-gate: its brief is the `brief` of the item\'s row — `dev/stabilize-record item --run rc24-tier1 --item the-gate`'))
+  check('a check is listed for the preflight by its item and the read that prints its brief', prompts.preflight.includes('\n   - ci: its brief is the `brief` of the item\'s row — `dev/stabilize-record item --run rc24-tier1 --item ci`'))
   check('triage is handed the ledger\'s rows as the read that prints them, held to their count', triagePrompt(ctx, launcher(ctx), 'triage-p1', handed.concat([{ reporter: 'row-3-source', report: 'a.md', findings: ['1 — x'] }]), 1).includes('Grade every finding below — 3 in all, from 2 reporter(s).') && triagePrompt(ctx, launcher(ctx), 'triage-p1', handed, 1).includes('\n- ledger — report: `completions/artifacts/rc24-tier1/ledger.md` — 2 finding(s): the rows `dev/stabilize-record untriaged --run rc24-tier1` prints') && prompts.triage.includes('\n- row-3-source — report: `a.md` — 1 finding(s):\n   - 1 — x'))
 
   // WHAT THIS SCRIPT READS: a step's line is a digest, or it is not read.
@@ -2268,7 +2442,7 @@ function selfTest() {
   check('a record step that stopped says what the next invocation does, and names the act that takes a batch back', [null, 'gate-red', 'head-moved', 'did-not-run', 'locked', 'no-batch'].every((word) => recordThen('rc24-tier1', 'fix/rc24-tier1', word).includes(discards) && !recordThen('rc24-tier1', 'fix/rc24-tier1', word).includes('stabilize-record discard')) && recordThen('rc24-tier1', 'fix/rc24-tier1', 'gate-red').includes('THE BATCH IS STILL APPLIED') && recordThen('rc24-tier1', 'fix/rc24-tier1', 'head-moved').includes('its first read meets the commit') && recordThen('rc24-tier1', 'fix/rc24-tier1', null).includes('may have left its batch APPLIED AND NOT COMMITTED'))
   check('a commit refused as unvetted has taken its batch back, and asks for no discard', recordThen('rc24-tier1', 'fix/rc24-tier1', 'unvetted', true).includes('THE BATCH IS TAKEN BACK ALREADY') && !recordThen('rc24-tier1', 'fix/rc24-tier1', 'unvetted', true).includes(discards) && !recordThen('rc24-tier1', 'fix/rc24-tier1', 'unvetted', true).includes('pending, and no dirty tree') && recordThen('rc24-tier1', 'fix/rc24-tier1', 'unvetted', false).includes('was NOT taken back') && recordThen('rc24-tier1', 'fix/rc24-tier1', 'unvetted').includes('was NOT taken back'))
   check('a push that failed is owed to the next first read — but never one refused as unvetted, and not beside a commit that is no record\'s', pushThen('fix/rc24-tier1', null).includes('THE PUSH IS OWED') && pushThen('fix/rc24-tier1', 'push-rejected').includes('its first read finds the record the remote lacks') && pushThen('fix/rc24-tier1', 'unvetted').includes('THE PUSH IS NOT OWED TO ANY LATER INVOCATION') && !pushThen('fix/rc24-tier1', 'unvetted').includes('THE PUSH IS OWED:') && pushThen('fix/rc24-tier1', 'foreign-commit').includes('`git push origin fix/rc24-tier1`') && !pushThen('fix/rc24-tier1', 'foreign-commit').includes('THE PUSH IS OWED:'))
-  check('a step that returned nothing is asked for again as its one command, and no agent of a step is told to look around', RUN_AGAIN.includes('Run the ONE command above again') && !RUN_AGAIN.includes('git status') && !RUN_AGAIN.includes('git log') && LOOK_AGAIN.includes('`git status --porcelain`') && RUN_AGAIN !== LOOK_AGAIN)
+  check('a step that returned nothing is asked for again as its one command, and no agent of a step is told to look around', RUN_AGAIN.includes('Run the ONE command above again') && !RUN_AGAIN.includes('git status') && !RUN_AGAIN.includes('git log') && LOOK_AGAIN.includes('the tree\'s status') && !LOOK_AGAIN.includes('`git ') && RUN_AGAIN !== LOOK_AGAIN)
   check('an invocation that only looks says so to its first read, and to no other step', gitStatePrompt(base, true).includes(' --product crates --look --digest /tmp/scratch-1`') && !steps['git-state'].includes('--look') && Object.keys(steps).every((act) => !steps[act].includes('--look')))
   check('a record\'s push on the loop branch publishes records only, and its commit is held to the commit the stage began on', pushPrompt(base, 'fix/rc24-tier1', true).includes(' push --branch fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --digest /tmp/scratch-1`') && !steps.push.includes('--run-dir') && recordCommitPrompt(base, 'fix/rc24-tier1', '/tmp/scratch-1/record/x/gate.txt', { calls: 3, checks: 2 }, 'c'.repeat(40)).includes(' --calls 3 --checks 2 --scratch /tmp/scratch-1 --head ' + 'c'.repeat(40) + ' --digest /tmp/scratch-1`') && !steps.record.includes('--head'))
 
@@ -2281,10 +2455,18 @@ function selfTest() {
   const job = { act: 'hold-wait', name: 'gate-c1-a1', kind: 'gate', output: 'hold/gate-c1-a1/output' }
   const doneAs = (verdict, why) => heldOf(Object.assign({ status: 'done', verdict, why: why || null, verdict_file: 'hold/gate-c1-a1/verdict.json', verdict_sha256: 'e'.repeat(64) }, job), '/tmp/scratch-1')
   check('a held check is an item whose kind names a held command of the tool', heldKind('held-regression') === 'regression' && heldKind('held-gate') === 'gate' && heldKind('held-build') === null && heldKind('held-') === null && heldKind('check') === null && heldKind('regression') === null && heldKind(null) === null && HELD_CHECKS.every((id) => !CHAINS[HELD_PREFIX + id] && HELD_PREFIX + id !== CHECK_KIND))
-  check('a held command that still runs is asked for again', heldOf(Object.assign({ status: 'running' }, job), '/tmp/scratch-1').ends === 'running' && heldOf(Object.assign({ status: 'started' }, job, { act: 'hold-start' }), '/tmp/scratch-1').ends === 'running' && heldOf(Object.assign({ status: 'running' }, job), '/tmp/scratch-1').output === '/tmp/scratch-1/hold/gate-c1-a1/output')
+  check('a held command that still runs is asked for again', heldOf(Object.assign({ status: 'running' }, job), '/tmp/scratch-1').ends === 'running' && heldOf(Object.assign({ status: 'started' }, job, { act: 'hold-start' }), '/tmp/scratch-1').ends === 'running' && heldOf(Object.assign({ status: 'running' }, job), '/tmp/scratch-1').output === '/tmp/scratch-1/hold/gate-c1-a1/output' && heldOf(Object.assign({ status: 'started' }, job), '/tmp/scratch-1').fresh === true && heldOf(Object.assign({ status: 'running' }, job), '/tmp/scratch-1').fresh === false && doneAs('green').fresh === false)
   check('a held command that ran to its end is the tool\'s verdict, by the file the tool kept it in', ['green', 'red', 'void'].every((verdict) => doneAs(verdict).ends === verdict && doneAs(verdict).verdict === '/tmp/scratch-1/hold/gate-c1-a1/verdict.json' && doneAs(verdict).verdict_sha256 === 'e'.repeat(64)) && doneAs('void', 'no-verdict').why === 'no-verdict' && doneAs('green').why === null)
   check('a held command that is dead has no verdict, and one that is done without the tool\'s verdict is not read', heldOf(Object.assign({ status: 'dead', why: 'no-exit' }, job), '/tmp/scratch-1').ends === 'dead' && heldOf(Object.assign({ status: 'dead', why: 'killed', verdict: 'green', verdict_file: 'hold/x/verdict.json', verdict_sha256: 'e'.repeat(64) }, job), '/tmp/scratch-1').verdict === undefined && doneAs('passed').ends === 'unread' && heldOf(Object.assign({ status: 'done', verdict: 'green' }, job), '/tmp/scratch-1').ends === 'unread' && heldOf(null, '/tmp/scratch-1').ends === 'unread' && heldOf({ status: 'halted', refused: 'missing' }, '/tmp/scratch-1').refused === 'missing' && heldOf({ status: 'halted', relay: 'altered' }, '/tmp/scratch-1').why === 'altered')
   check('every way a held command can stand has its sentence', JSON.stringify(Object.keys(HELD_ENDS)) === JSON.stringify(['running', 'green', 'red', 'void', 'dead', 'unread']) && Object.keys(HELD_ENDS).every((ends) => isText(HELD_ENDS[ends])))
+  check('a held gate cannot run where the tree is not the candidate, and a held check that names its commits can', JSON.stringify(offTreeHeld([{ item: 'gate', kind: 'held-gate' }, { item: 'reg', kind: 'held-regression' }, { item: 'ci', kind: 'check' }, { item: 'row', kind: 'review-row' }], true)) === JSON.stringify(['gate']) && offTreeHeld([{ item: 'gate', kind: 'held-gate' }], false).length === 0 && offTreeHeld([], true).length === 0)
+  check('what a stage holds takes the ends its table names, and no other', JSON.stringify(HELD_TAKES) === JSON.stringify({ build: ['green'], gate: ['green', 'red'], check: ['green', 'red', 'void'], record: ['green', 'red'], probe: ['green'] }) && Object.keys(HELD_TAKES).every((use) => HELD_TAKES[use].every((ends) => HELD_ENDS[ends])) && !Object.keys(HELD_TAKES).some((use) => ['running', 'dead', 'unread'].some((ends) => HELD_TAKES[use].includes(ends))))
+  check('a held command that may still run is named with the one call that answers once it is over', mayRun({ name: 'gate-c1-a1', ends: 'running' }) && mayRun({ name: 'gate-c1-a1', ends: 'unread', started: true }) && !mayRun({ name: 'gate-c1-a1', ends: 'unread', started: false }) && !mayRun({ name: 'gate-c1-a1', ends: 'dead' }) && !mayRun({ name: 'gate-c1-a1', ends: 'void' }) && !mayRun({ ends: 'running' }) && heldThen('/tmp/scratch-1', { name: 'gate-c1-a1', ends: 'running', output: '/tmp/scratch-1/hold/gate-c1-a1/output' }).includes('`dev/stabilize-step hold-wait --scratch /tmp/scratch-1 --name gate-c1-a1`') && heldThen('/tmp/scratch-1', { name: 'gate-c1-a1', ends: 'running' }).includes('MAY STILL RUN') && heldThen('/tmp/scratch-1', { name: 'gate-c1-a1', ends: 'dead' }) === null)
+  check('a held command that did not end as the stage needs it is said by its job and the tool\'s word', heldFault('the candidate\'s gate', { name: 'gate-c1-a1', ends: 'void', why: 'no-verdict' }).includes('`gate-c1-a1`') && heldFault('the candidate\'s gate', { name: 'gate-c1-a1', ends: 'void', why: 'no-verdict' }).includes('`no-verdict`') && heldFault('x', { ends: 'unread' }).includes(HELD_ENDS.unread) && JSON.stringify(heldSaid({ name: 'n', kind: 'gate', ends: 'dead', why: 'no-exit', output: '/o', verdict: '/v', facts: {} })) === JSON.stringify({ name: 'n', kind: 'gate', ends: 'dead', why: 'no-exit', output: '/o' }))
+  check('a command an agent types is rendered by one function, as one code span', typed(STEP_TOOL, 'table') === '`dev/stabilize-step table`' && typed(RECORD_TOOL, '') === '`dev/stabilize-record`' && RECORD_TOOL === 'dev/stabilize-record' && isText(REGRESSION_LIST) && !REGRESSION_LIST.startsWith('/') && HOLD_LAPS >= 1 && HOLD_NAMES >= 2)
+  check('the subject of a record is plain words, and so is every word of the call that applies it', /^[A-Za-z0-9 _.\/:=@%+,()-]+$/.test('docs(record): ' + subjectOf('rc24-tier1', 2, 'the record of the test stage')) && subjectOf('rc24-tier1', 2, 'a re-run of no-lost-files') === 'rc24-tier1 r2 - a re-run of no-lost-files' && /--subject 'docs\(record\): rc24-tier1 r1 - the rulings of the human' /.test(rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', [{ go: true }], {}, { round: 1, stages: {} }).text))
+  check('the scope and a report reach their writer from a file the agent writes with its file tool', prompts.scope.includes('to the file `/tmp/scratch-1/scope/r2.a4.json` WITH YOUR FILE TOOL') && prompts.scope.includes('`dev/stabilize-record scope-set --run rc24-tier1 --round 2 --scratch /tmp/scratch-1 --from /tmp/scratch-1/scope/r2.a4.json`') && prompts.proposal.includes(reportCall(ctx, 'proposal-f-1')) && prompts.crossModel.includes(reportCall(ctx, 'row-3-crossmodel')) && [prompts.proposal, prompts.crossModel, prompts.scope, prompts.review].every((text) => !text.includes('here-document')))
+  check('the one driving role with no definition asks the tool for the binary\'s hash', prompts.proposal.includes('`dev/stabilize-step hash --scratch /tmp/scratch-1 --file bin/c2/jigc`') && prompts.proposal.includes('`content_sha256` must be ' + 'b'.repeat(64)) && !prompts.proposal.includes('shasum') && below('/tmp/scratch-1', '/tmp/scratch-1/bin/c2/jigc') === 'bin/c2/jigc' && below('/tmp/scratch-1', '/elsewhere/jigc') === '/elsewhere/jigc')
   check('a held check\'s result is the file of the tool\'s verdict, and no word', results([{ item: 'regression-set', status: 'green', verdict: '/tmp/scratch-1/hold/regression-c1-a1/verdict.json' }, { item: 'gate', status: 'red', evidence: 'e' }]) === JSON.stringify([{ item: 'regression-set', verdict: '/tmp/scratch-1/hold/regression-c1-a1/verdict.json' }, { item: 'gate', outcome: 'red', doctype: 'jigc-feedback', door: 'the check `gate`', repro: 'e' }]))
   check('a refusal of a batch as one that changes nothing is the record script\'s word', NO_CHANGE === 'no-change' && RECORD_SCHEMA.properties.refused.type === 'string' && !RECORD_SCHEMA.required.includes('refused') && RECORD_RETURNS.includes('return refused = the ONE word'))
 
@@ -2305,13 +2487,13 @@ function selfTest() {
   check('only case a is told to leave the field out', probeReview('a').includes('Leave `asserted_sha256` OUT of your return') && !probeReview('b').includes('OUT of your return') && probeReview('a').replace('case a', 'case b').startsWith(probeReview('b') + '\n'))
   check('the probe\'s schema requires the hash, and a stage\'s does not', PROBE_UNIT_SCHEMA.required.includes('asserted_sha256') && !UNIT_SCHEMA.required.includes('asserted_sha256') && PROBE_UNIT_SCHEMA.properties === UNIT_SCHEMA.properties)
   const probed = PROBE_ENTRIES.map((n) => probeBatch('/tmp/scratch-1', n))
-  const probedCalls = (batch) => JSON.parse(batch.write.split('\n')[1])
+  const probedCalls = (batch) => JSON.parse(batch.write.split('\n')[2])
   check('a probe\'s batch is a stage\'s record of that many findings, under the scratch root', probed.every((batch, i) => batch.file === '/tmp/scratch-1/probe/payload/e' + PROBE_ENTRIES[i] + '/batch.json' && JSON.stringify(probedCalls(batch).map((made) => made.argv[0])) === JSON.stringify(['check-reports', 'ledger-add', 'triage-set', 'check-ledger']) && JSON.parse(probedCalls(batch)[1].stdin).length === PROBE_ENTRIES[i] && JSON.parse(probedCalls(batch)[2].stdin).length === PROBE_ENTRIES[i] && probedCalls(batch)[3].argv.length === 4 + PROBE_ENTRIES[i]))
-  check('a probe\'s batch is held to the hash of its text, and grows with its entries', probed.every((batch) => batch.sha256 === sha256(batch.write.split('\n')[1] + '\n') && batch.write.includes('must print `' + batch.sha256 + '`')) && probed.every((batch, i) => i === 0 || batch.write.length > probed[i - 1].write.length) && distinct(probed.map((batch) => batch.sha256)))
+  check('a probe\'s batch is held to the hash of its text, and grows with its entries', probed.every((batch) => batch.sha256 === sha256(batch.write.split('\n')[2] + '\n') && batch.write.split('\n')[1] === PAYLOAD_ENDS && batch.write.split('\n')[3] === PAYLOAD_ENDS && batch.write.startsWith('Write the file `' + batch.file + '` WITH YOUR FILE TOOL')) && probed.every((batch, i) => i === 0 || batch.write.length > probed[i - 1].write.length) && distinct(probed.map((batch) => batch.sha256)))
   const probePayload = probePayloadPrompt('/tmp/scratch-1', 20, probed[0])
-  check('a probe\'s executor writes the payload as a record step does, hashes it, and applies nothing', probePayload.startsWith(LABELS.record + ' — a PROBE') && probePayload.includes('\n' + RECORD_RUNS + '\n1. ' + probed[0].write + '\n2. `dev/stabilize-probe hash --scratch /tmp/scratch-1 --file /tmp/scratch-1/probe/payload/e20/batch.json`') && !probePayload.includes('stabilize-record apply') && !probePayload.includes(GATE) && !probePayload.includes(LABELS.branch))
-  const probeHeld = probeHoldPrompt('/tmp/scratch-1', 'a', 720)
-  check('a probe\'s long command is held as the gate is: in the background, in slices, its output in a file', probeHeld.includes('`dev/stabilize-probe hold --scratch /tmp/scratch-1 --name a --seconds 720 > /tmp/scratch-1/probe/hold/a.out 2>&1` — in the background, waited for in this same turn in slices of under five minutes') && !probeHeld.includes('\n' + LABELS.report) && !probeHeld.includes(GATE))
+  check('a probe\'s executor writes the payload as a record step does, hashes it, and applies nothing', probePayload.startsWith(LABELS.record + ' — a PROBE') && probePayload.includes('\n' + RECORD_RUNS + '\n1. ' + probed[0].write + '\n2. `dev/stabilize-probe hash --scratch /tmp/scratch-1 --file /tmp/scratch-1/probe/payload/e20/batch.json`') && !probePayload.includes('stabilize-record apply') && !probePayload.includes('dev/gate') && !probePayload.includes('shasum') && !probePayload.includes(LABELS.branch))
+  const probeHeld = holdStartPrompt({ scratch: '/tmp/scratch-1' }, 'a', 'probe', '--seconds 720', 'the hold probe\'s long command, case a, of 720 seconds')
+  check('a probe\'s long command is held as a stage\'s gate is: started by one plain call of the step tool, and asked after by another', probeHeld.includes('\n1. `dev/stabilize-step hold-start --scratch /tmp/scratch-1 --name a --kind probe --seconds 720 --digest /tmp/scratch-1`\n') && !probeHeld.includes('\n' + LABELS.report) && !/background|slices|2>&1/.test(probeHeld) && holdWaitPrompt({ scratch: '/tmp/scratch-1' }, 'a', 'x').includes('`dev/stabilize-step hold-wait --scratch /tmp/scratch-1 --name a --digest /tmp/scratch-1`'))
   check('a slice of a read is under the tool\'s default timeout, and a hold past its ceiling', PROBE_SLICE < 120 && PROBE_HOLD > 600 && PROBE_HOLD <= PROBE_HOLD_MAX)
   check('no prompt of a probe names a run, a round or a branch', [probeBegin, probeReview('a'), probePayload, probeHeld].every((text) => !text.includes('fix/') && !text.includes(RUNS_ROOT) && !text.includes('--run ') && !text.includes('--round ') && !text.includes('--branch ') && !text.includes('--loop ')))
 
@@ -2356,7 +2538,9 @@ let breakerTripped = false
 // How each try of a call ended, kept only while a probe watches one (`watched`): null in
 // every stage, where nothing reads it.
 let triesSeen = null
-async function agentR(prompt, opts, again) {
+// `seen`, where a caller hands one: how often the call was tried (`tries`) — what tells a
+// held command this invocation's own dead try started from one that was there before it.
+async function agentR(prompt, opts, again, seen) {
   const lbl = (opts && opts.label) ? opts.label : 'agent'
   if (breakerTripped) {
     log('rate-limit breaker is tripped — NOT spawning ' + lbl)
@@ -2365,6 +2549,7 @@ async function agentR(prompt, opts, again) {
   let lastErr
   for (let attempt = 0; attempt <= TRANSIENT_RETRIES; attempt++) {
     const note = attempt === 0 ? '' : '\n\n' + (again || LOOK_AGAIN)
+    if (seen) seen.tries = attempt + 1
     try {
       const result = await agent(prompt + note, Object.assign({ model }, opts))
       if (triesSeen) triesSeen.push({ ended: result != null ? 'returned' : 'nothing' })
@@ -2386,14 +2571,74 @@ async function agentR(prompt, opts, again) {
   return null
 }
 // Every git step, and every read of the record, is a build-git call on Sonnet.
-function gitStep(label, phaseTitle, prompt, schema, again) {
-  return agentR(prompt, { label: 'git:' + label, phase: phaseTitle, agentType: 'build-git', schema, model: GIT_MODEL }, again)
+function gitStep(label, phaseTitle, prompt, schema, again, seen) {
+  return agentR(prompt, { label: 'git:' + label, phase: phaseTitle, agentType: 'build-git', schema, model: GIT_MODEL }, again, seen)
 }
 // toolStep — a git step that is ONE command of the tool: what the command `act` printed,
 // read off the relayed line — its DIGEST, or it is not read. Null when the agent returned
 // nothing, after the command was asked for again.
-async function toolStep(label, phaseTitle, act, prompt) {
-  return readDigest(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA, RUN_AGAIN), act)
+async function toolStep(label, phaseTitle, act, prompt, seen) {
+  return readDigest(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA, RUN_AGAIN, seen), act)
+}
+// hold — ONE LONG COMMAND, HELD BY THE TOOL: started by one step, asked after by another, and
+// judged by the tool, whose verdict comes back as what `heldOf` reads. `job` is { name, kind,
+// flags, what, phase } and, for a record's gate, `sequence`.
+//   THE START is one plain call, and IDEMPOTENT BY NAME: a start step whose agent died is
+//   asked for again as its one command, and the tool answers with the job that is there —
+//   nothing is started twice. With `sequence` the name is `<name>-<n>`: where the FIRST try
+//   of a start is answered by a job that was there already, that job is an EARLIER
+//   INVOCATION'S — a gate of the tree as it stood then — and the next name is asked.
+//   THE WAIT is one plain call an agent runs again while the tool says `running`. A WAIT
+//   WHOSE AGENT DIED IS TAKEN OVER, never started again: the step's retry is the wait, and
+//   the command, which outlives every agent, ran once. An agent whose turn ended on
+//   `running` is followed by the next, HOLD_LAPS in turn.
+// It returns how the command stands — `running` and `unread` among them, with `started`:
+// whether a command of this name is there, and may still run.
+async function hold(job) {
+  let started = null
+  let name = job.name
+  for (let n = 1; n <= (job.sequence ? HOLD_NAMES : 1) && !started; n++) {
+    name = job.sequence ? job.name + '-' + n : job.name
+    if (!isSlug(name)) return { ends: 'unread', kind: job.kind, why: 'no name of a held command can be made of `' + name + '`: it must be a slug of at most ' + SLUG_MAX + ' characters' }
+    const seen = { tries: 0 }
+    const at = heldOf(await toolStep('hold-start:' + name, job.phase, 'hold-start', holdStartPrompt(v, name, job.kind, job.flags, job.what), seen), v.scratch)
+    if (job.sequence && at.ends !== 'unread' && !at.fresh && seen.tries < 2) {
+      log('the held command `' + name + '` was there before this invocation asked for it — an earlier invocation\'s, ' + at.ends + ': it is not read as this one\'s, and the next name is asked')
+      continue
+    }
+    started = at
+  }
+  if (!started) return { ends: 'unread', name, kind: job.kind, why: 'every name from `' + job.name + '-1` to `' + name + '` holds a command of an earlier invocation under this scratch root' }
+  // A start the tool REFUSED started nothing; one whose agent returned nothing, or whose
+  // line did not come back, may have.
+  if (started.ends === 'unread') return Object.assign({ name, kind: job.kind }, started, { started: !started.refused })
+  let now = started
+  for (let lap = 1; now.ends === 'running' && lap <= HOLD_LAPS; lap++) now = Object.assign({ name, kind: job.kind, output: started.output }, heldOf(await toolStep('hold-wait:' + name + (lap > 1 ? ':lap' + lap : ''), job.phase, 'hold-wait', holdWaitPrompt(v, name, job.what)), v.scratch))
+  return Object.assign(now, { started: true })
+}
+// buildOf — the `jigc` binary of a commit, BUILT BY A HELD COMMAND and read off the tool's
+// verdict: its path, its hash, the version it prints and that a bare `jigc` resolves to it
+// are the tool's facts, held here to what was asked, and no agent's reading (ruling 11; the
+// re-review's R-L3). Anything but a green build halts the stage: no instrument runs
+// without the binary.
+async function buildOf(name, sha, to, version, what, phaseTitle) {
+  const job = await hold({ name, kind: 'build', flags: '--commit ' + sha + ' --to ' + to + (version ? ' --version ' + version : ''), what, phase: phaseTitle })
+  if (!HELD_TAKES.build.includes(job.ends)) return { fault: heldFault(what, job) + ' No instrument runs without the binary.', phase: 'build', held: heldSaid(job), transient: job.ends === 'unread' || job.ends === 'running', then: heldThen(v.scratch, job) }
+  const f = job.facts
+  if (f.commit !== sha || f.binary !== to || !SHA256_RE.test(String(f.content_sha256 || '')) || f.resolves !== true || (version && f.version !== version)) return { fault: what + ' is not the binary that was asked for: the tool\'s verdict names ' + JSON.stringify({ commit: f.commit, binary: f.binary, version: f.version, resolves: f.resolves }), phase: 'build', held: heldSaid(job) }
+  return { binary: v.scratch + '/' + to, sha256: f.content_sha256, version: f.version }
+}
+// buildBoth — the ONE binary a candidate is driven as, and the previous release's, which
+// every regression fact is measured against: each from its commit, never from the working
+// tree. The previous release's is named by its commit, so that one that is built already
+// under this scratch root is the one the tool answers with.
+async function buildBoth(ctx, label, sha, previous, phaseTitle) {
+  const built = await buildOf('build-' + label + '-a' + ctx.attempt, sha, 'bin/' + label + '.a' + ctx.attempt + '/jigc', null, 'the candidate\'s binary, label ' + label, phaseTitle)
+  if (built.fault) return built
+  const short = String(previous.commit).slice(0, 12)
+  const before = await buildOf('build-previous-' + short, String(previous.commit), 'bin/previous-' + short + '/jigc', previous.version, 'the previous release\'s binary, version ' + previous.version, phaseTitle)
+  if (before.fault) return before
+  return { candidate: { label, sha, binary: built.binary, sha256: built.sha256 }, previous: { version: before.version, binary: before.binary, sha256: before.sha256 }, image: null }
 }
 function roleStep(role, label, phaseTitle, prompt, schema) {
   return agentR(prompt, { label, phase: phaseTitle, agentType: ROLES[role].agentType, schema })
@@ -2451,7 +2696,7 @@ async function readState() {
   const tag = v.stage + '-' + (++stateReads)
   let why = 'the step returned no result'
   for (let n = 0; n < 3; n++) {
-    const again = n === 0 ? '' : '\n\nAGAIN (' + n + '): the line an earlier attempt returned was not the line the command printed. Copy the line from the command\'s output character for character.'
+    const again = n === 0 ? '' : '\n\n' + relayAgain(n)
     const r = await toolStep('state:' + tag + (n ? ':again' + n : ''), 'State', 'state', statePrompt(v, tag) + again)
     if (!r) return { error: why, transient: true }
     if (!r.relay) {
@@ -2502,15 +2747,25 @@ function pushHalt(pushed, branch, what) {
 // (`--head`). Null in the `fix` stage's own records, which follow its fixers' commits: which
 // head those are held to is that half's repair.
 let stageHead = null
-// recordStep — a record step, whole: the executor applies the batch and runs the gate; then
-// the ONE commit, a git step. `rec` is what `recordPrompt` returned. Returns the commit
-// step's digest as `result` — or `fault`, with `then`: what the next invocation does, and
-// `unchanged` where the batch was refused as one that changes nothing.
+// recordStep — a record step, whole, in three acts: (1) the executor applies the batch — or
+// none runs, where an earlier invocation applied it (`rec.text` is null); (2) THE FULL GATE
+// on the tree with the records, a command the tool holds (`hold`, under a name of its own);
+// (3) the ONE commit, a git step, held to that gate's output as the tool kept it. `rec` is
+// what `recordPrompt` or `pendingRecord` returned. Returns the commit step's digest as
+// `result` — or `fault`, with `then`: what the next invocation does, and `unchanged` where
+// the batch was refused as one that changes nothing.
 async function recordStep(label, branch, rec) {
-  const gated = await roleStep('record', 'record:' + label, 'Record', rec.text, RECORD_SCHEMA)
-  if (!gated) return { fault: 'the record step returned no result', result: null, transient: true, then: recordThen(v.run, branch, null) }
-  if (gated.status !== 'gated') return { fault: (gated.halt && gated.halt.root_cause) || 'the record step halted', result: null, halt: gated.halt || null, unchanged: gated.refused === NO_CHANGE, then: gated.refused === NO_CHANGE ? ' Nothing was written and NO BATCH IS LEFT: the record script refused the batch as one that changes nothing (`' + NO_CHANGE + '`) — every file it would write is what the run holds already. No discard is asked for.' : recordThen(v.run, branch, null) }
-  const r = await toolStep('record:' + label, 'Record', 'record', recordCommitPrompt(v, branch, rec.gate, rec.expect, stageHead))
+  if (rec.text) {
+    const applied = await roleStep('record', 'record:' + label, 'Record', rec.text, RECORD_SCHEMA)
+    if (!applied) return { fault: 'the record step returned no result', result: null, transient: true, then: recordThen(v.run, branch, null) }
+    if (applied.status !== 'applied') return { fault: (applied.halt && applied.halt.root_cause) || 'the record step halted', result: null, halt: applied.halt || null, unchanged: applied.refused === NO_CHANGE, then: applied.refused === NO_CHANGE ? ' Nothing was written and NO BATCH IS LEFT: the record script refused the batch as one that changes nothing (`' + NO_CHANGE + '`) — every file it would write is what the run holds already. No discard is asked for.' : recordThen(v.run, branch, null) }
+  }
+  // A RECORD'S GATE WITH NO VERDICT — void, dead, or nobody left to ask after it: nothing
+  // is committed, THE BATCH STAYS APPLIED, and the next invocation gates it again, under
+  // the next name.
+  const gate = await hold({ name: rec.hold, sequence: true, kind: 'gate', flags: '--run ' + v.run, what: 'the full gate on the tree with the records', phase: 'Record' })
+  if (!HELD_TAKES.record.includes(gate.ends)) return { fault: heldFault('the record\'s gate', gate) + ' Nothing was committed.', result: null, transient: gate.ends === 'unread' || gate.ends === 'running', held: heldSaid(gate), then: recordThen(v.run, branch, 'no-gate') + (heldThen(v.scratch, gate) || '') }
+  const r = await toolStep('record:' + label, 'Record', 'record', recordCommitPrompt(v, branch, gate.output, rec.expect, stageHead))
   const found = recordFault(r, rec.expect)
   if (!found) return { result: r }
   const fault = found.replace('<branch>', branch)
@@ -2521,7 +2776,7 @@ async function recordStep(label, branch, rec) {
 // tool established (`gate`: the counts of what is red; `step`: the file its own line is in),
 // the executor's own halt report where it halted, and what the next invocation does.
 function recordHalt(phaseName, recorded, more) {
-  return halt(phaseName, recorded.fault, Object.assign({ transient: !!recorded.transient, refused: recorded.refused || null, whose: recorded.refused && STEP_REFUSALS[recorded.refused] ? STEP_REFUSALS[recorded.refused].whose : null, step: recorded.step || null, gate: recorded.gate || null, halt: recorded.halt || null, then: recorded.then }, more || {}))
+  return halt(phaseName, recorded.fault, Object.assign({ transient: !!recorded.transient, refused: recorded.refused || null, whose: recorded.refused && STEP_REFUSALS[recorded.refused] ? STEP_REFUSALS[recorded.refused].whose : null, step: recorded.step || null, gate: recorded.gate || null, held: recorded.held || null, halt: recorded.halt || null, then: recorded.then }, more || {}))
 }
 // pushRecord — the push of a record this invocation committed on `branch`, and then the
 // head the next record of the invocation is held to. A record on the loop branch is pushed
@@ -2537,7 +2792,7 @@ async function finishRecord(gs) {
   phase('Record')
   const pending = gs.pending
   log('a record step left its batch applied and not committed on ' + gs.branch + ' — ' + pending.calls + ' call(s), ' + pending.files + ' file(s): this invocation gates and commits it, and starts nothing')
-  const recorded = await recordStep('pending', gs.branch, pendingRecordPrompt(v, gs.branch, v.scratch + '/record/pending', pending))
+  const recorded = await recordStep('pending', gs.branch, pendingRecord(v.scratch + '/record/pending', pending))
   if (recorded.fault) return recordHalt('record', recorded, { pending })
   const pushed = await pushRecord('push:pending', gs.branch)
   if (!onIt(pushed, gs.branch, true)) return pushHalt(pushed, gs.branch, 'the pending record is committed on ' + gs.branch + ' (' + recorded.result.commit + ') and the branch was not pushed')
@@ -2721,20 +2976,13 @@ async function driveFork(ctx, launch, built, fork, tag) {
   return out
 }
 
-// preflightOf — one preflight call, and what must hold of its return before anything drives it.
+// preflightOf — one preflight call: the environment asserts, the trial image where it is
+// asked for, and the checks that are a brief. IT BUILDS NOTHING: the binaries are the
+// tool's (`buildBoth`).
 async function preflightOf(ctx, launch, parts, plan, phaseTitle) {
   const name = launch.add(parts)
   const r = await roleStep('preflight', name, phaseTitle, preflightPrompt(ctx, launch, name, plan), PREFLIGHT_SCHEMA)
   if (!r || r.status !== 'ready') return { name, fault: r ? 'the preflight halted: ' + ((r.halt && r.halt.root_cause) || 'no reason given') : 'the preflight returned no result', transient: !r, halt: r ? r.halt : null }
-  if (plan.build) {
-    const c = r.candidate || {}
-    if (c.sha !== plan.sha || !SHA256_RE.test(String(c.sha256 || '')) || c.binary !== plan.binary) return { fault: 'the preflight did not return the candidate it was asked for: ' + JSON.stringify(c) }
-    // The posture every driving agent relies on: with the binary's directory first on
-    // PATH, a bare `jigc` IS that binary — else a route the binary prints runs another.
-    if (c.path_check !== plan.binary) return { fault: 'the preflight did not show that a bare `jigc` resolves to the candidate\'s binary: `command -v jigc` printed ' + JSON.stringify(c.path_check == null ? null : c.path_check) + ', and the binary is ' + plan.binary }
-    if (!r.previous || !SHA256_RE.test(String(r.previous.sha256 || '')) || !r.previous.binary) return { fault: 'the preflight returned no previous release\'s binary: ' + JSON.stringify(r.previous || null) }
-    if (r.previous.version !== plan.previous.version) return { fault: 'the preflight returned the binary of ' + JSON.stringify(r.previous.version) + ', and the previous release the run\'s record names is ' + plan.previous.version + ': every regression fact would be measured against the wrong release' }
-  }
   if (plan.image && !(r.image && r.image.verified && r.image.tag)) return { name, fault: 'the trial image is not verified: ' + JSON.stringify(r.image || null) }
   return { name, result: r }
 }
@@ -2807,11 +3055,11 @@ async function ruleTheRun(state, checkedOut) {
 async function finishTriage(ctx, launch, state, tip, branch) {
   phase('Triage')
   const sources = ledgerSource(v.run, state)
-  const binary = v.scratch + '/bin/' + tip.label + '.a' + ctx.attempt + '/jigc'
   log('round ' + ctx.round + ': the ' + ctx.stage + ' stage left its triage unfinished — ' + findingsOf(sources[0] || { findings: [] }) + ' row(s) are graded and verified now, attempt ' + ctx.attempt + '; no instrument runs')
-  const pre = await preflightOf(ctx, launch, ['preflight'], { build: true, image: false, sha: tip.sha, label: tip.label, branch, binary, checks: [], crossModel: false, previous: previousOf(state), tested: tip.tested }, 'Triage')
+  const pre = await preflightOf(ctx, launch, ['preflight'], { image: false, sha: tip.sha, label: tip.label, branch, checks: [], crossModel: false, tested: tip.tested }, 'Triage')
   if (pre.fault) return { halted: halt('preflight', pre.fault, { transient: !!pre.transient, halt: pre.halt || null, branch }) }
-  const built = { candidate: { label: tip.label, sha: tip.sha, binary, sha256: pre.result.candidate.sha256 }, previous: pre.result.previous, image: null }
+  const built = await buildBoth(ctx, tip.label, tip.sha, previousOf(state), 'Triage')
+  if (built.fault) return { halted: halt(built.phase, built.fault, { transient: !!built.transient, held: built.held || null, branch, then: built.then }) }
   const tri = await triagePasses(ctx, launch, built, sources, [])
   if (tri.fault) return { halted: halt('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null, step: tri.step || null, branch }) }
   if (tri.faults.length) return { halted: halt('binary', tri.faults.join('; '), { branch }) }
@@ -2822,7 +3070,7 @@ async function finishTriage(ctx, launch, state, tip, branch) {
   const rec = triageRecord(ctx, tri.entries)
   const dir = v.scratch + '/record/triage-r' + ctx.round + (ctx.stage === 'fix' ? '-c' + ctx.cycle : '') + '-a' + ctx.attempt
   const commands = stageRecordCommands(ctx, { reporters: launch.names, rows: rec.rows, triage: rec.triage, patches: [], clauses: [], facts: null, keys: tri.entries.map((e) => e.key) })
-  const recorded = await recordStep('triage:r' + ctx.round, branch, recordPrompt(v, 'round ' + ctx.round + '\'s triage, finished — ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s) graded; no instrument ran', branch, dir, ctx.round, commands, v.run + ' r' + ctx.round + ' — the round\'s triage, finished'))
+  const recorded = await recordStep('triage:r' + ctx.round, branch, recordPrompt(v, 'round ' + ctx.round + '\'s triage, finished — ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s) graded; no instrument ran', branch, dir, ctx.round, commands, subjectOf(v.run, ctx.round, 'the triage of the round, finished')))
   if (recorded.fault) return { halted: recordHalt('record', recorded, { launched: launch.names, branch, forks: tri.forks }) }
   const pushed = await pushRecord('push:triage', branch)
   if (!onIt(pushed, branch, true)) return { halted: pushHalt(pushed, branch, 'the triage is recorded on ' + branch + ' (' + recorded.result.commit + ') and the branch was not pushed') }
@@ -2904,11 +3152,17 @@ async function runProbe() {
   }
   if (v.probe === 'hold') {
     const seconds = v.seconds || PROBE_HOLD
-    // (a) ONE agent holds the command inside its turn.
-    const a = await watched(() => roleStep('preflight', 'probe:hold:a', 'Probe', probeHoldPrompt(s, 'a', seconds), STEP_SCHEMA))
-    const held = readStep(a.back, 'hold')
-    const line = held && held.status === 'held' && held.name === 'a' ? 'held' : a.back && typeof a.back.line === 'string' ? 'other' : 'none'
-    observed.push({ case: 'a', seconds, tries: a.tries, line, fault: faultOf(held) })
+    // (a) HELD AS A STAGE HOLDS ITS GATE (the second repair plan's task K11): one step
+    // starts the command THROUGH THE STEP TOOL — its held kind `probe`, under the name the
+    // probe tool judges — and ONE agent asks after it, again and again, inside its turn:
+    // the same two prompts a stage's held command gets, read by the same reader. So this
+    // case, run under the runtime, is the test that no step of a held command asks the
+    // human for anything.
+    const begunA = heldOf(await toolStep('hold-start:a', 'Probe', 'hold-start', holdStartPrompt(v, 'a', 'probe', '--seconds ' + seconds, 'the hold probe\'s long command, case a, of ' + seconds + ' seconds')), s)
+    const a = await watched(() => toolStep('hold-wait:a', 'Probe', 'hold-wait', holdWaitPrompt(v, 'a', 'the hold probe\'s long command, case a')))
+    const held = heldOf(a.back, s)
+    const line = HELD_TAKES.probe.includes(held.ends) && held.kind === 'probe' && held.name === 'a' ? 'held' : a.back && !a.back.relay && held.name === 'a' ? 'other' : 'none'
+    observed.push({ case: 'a', seconds, started: begunA.ends, tries: a.tries, line, ends: held.ends, why: held.why || null })
     cases.push('a:' + triesOf(a.tries) + ':' + line)
     // (b) One step starts it and returns; later steps ask for it, a slice each, until it
     // has ended or as many slices as it could take are spent.
@@ -2996,32 +3250,47 @@ async function runTest() {
   const crossStrangers = crossNamed.filter((id) => !items.some((i) => i.item === id && chainOf(i.kind, true).some((stepList) => stepList.some((s) => s.crossModel))))
   if (crossStrangers.length) return halt('state', 'args.crossModel names ' + crossStrangers.join(', ') + ', which is no item of the test set whose chain has a cross-model pass — the items that have one are ' + (items.filter((i) => chainOf(i.kind, true).some((stepList) => stepList.some((s) => s.crossModel))).map((i) => i.item).join(', ') || '(none)'))
   const runs = (i) => (rerun ? rerun.items.some((x) => x.item === i.item) : i.selected === true)
+  // A HELD GATE IS NOT RUN AGAIN INSIDE ITS ROUND: it reads the working tree, which in a
+  // re-run is no longer the round's candidate (above: A ROUND TESTS ONE CANDIDATE). Where
+  // nothing else of the clause is due there is nothing this invocation could run.
+  const offTreeGates = offTreeHeld(items.filter(runs), moved)
+  if (rerun && offTreeGates.length === rerun.items.length) return { status: 'refused', stage: 'test', run: v.run, unrun: offTreeGates, message: 'the state asks for a re-run of clause `' + rerun.clause + '` in round ' + rerun.round + ', and every item of it that is due is a HELD GATE — ' + offTreeGates.join(', ') + ': a gate reads the working tree, which is no longer that round\'s candidate (' + sha + '), so it is not run again inside the round — what it would show is evidence about no commit of it. It is settled by the next round, whose candidate is the tip. AND NOTHING CAN BE RECORDED FOR IT HERE: the record script takes a held check\'s result from the tool\'s verdict file and from no word, so `next` stays `' + state.next + '` until that script takes a void for a held check that did not run — owed to it, and said in DECISIONS.md. Nothing was run beyond the two reads.', next: state.next, retest: state.retest, position: at, named: namedOf(state, rerun.round), arrived }
   log('round ' + ctx.round + ', attempt ' + ctx.attempt + ' of the test stage: ' + (rerun ? 'A RE-RUN inside it, on ' + sha + ' — ' + rerun.items.map((i) => i.item + ' (its attempt ' + i.attempt + ')').join(', ') + ' of clause `' + rerun.clause + '`, and nothing else' : 'candidate ' + label + ' = ' + sha + '; ' + items.length + ' item(s) in the test set'))
   if (looks) return { status: 'stopped', after: 'state', stage: 'test', run: v.run, round: ctx.round, attempt: ctx.attempt, candidate: { label, sha }, owed: arrived.owed, state: attached(state), named: namedOf(state, rerun ? rerun.round : null), arrived }
   const unbegun = await beginAttempt(ctx, launch, sha)
   if (unbegun) return unbegun
 
-  // Preflight (the asserts, the one build, the checks that run on every candidate) beside
-  // the scope step: neither reads what the other writes. A RE-RUN has no scope step — the
-  // round's scope stands, and its doors are what the items run over again — and no gate of
-  // the candidate's to record: its round has one, and the record commit is held to the
-  // gate of the candidate the run tested last.
+  // The preflight, then what the tool holds — the two builds, and the candidate's gate —
+  // beside the scope step: neither reads what the other writes. THE PREFLIGHT COMES FIRST:
+  // an environment assert that fails stops the stage before anything is built. A RE-RUN
+  // has no scope step — the round's scope stands, and its doors are what the items run
+  // over again — and no gate of the candidate's to hold: its round has one on record, and
+  // the tree is no longer that candidate.
   phase('Preflight and scope')
   const earlier = (state.rounds || []).find((r) => r.round === ctx.round - 1)
-  const binary = v.scratch + '/bin/' + label + '.a' + ctx.attempt + '/jigc'
-  // The candidate's own gate: the preflight runs it once and keeps its whole output, and
-  // the record's batch puts what it shows red on record — what a record commit is held to.
-  const candidateGate = rerun ? null : v.scratch + '/gate/' + label + '.a' + ctx.attempt + '.txt'
   const always = items.filter((i) => i.kind === CHECK_KIND && runs(i))
   const scopeName = rerun ? null : launch.add(['scope'])
-  const steps = [() => preflightOf(ctx, launch, ['preflight'], { build: true, image: false, gate: candidateGate, sha, label, branch: loopBranch, binary, checks: moved ? [] : always, crossModel: crossNamed.length > 0, previous: previousOf(state), tested: moved }, 'Preflight and scope')]
+  const steps = [async () => {
+    const asserted = await preflightOf(ctx, launch, ['preflight'], { image: false, sha, label, branch: loopBranch, checks: moved ? [] : always, crossModel: crossNamed.length > 0, tested: moved }, 'Preflight and scope')
+    if (asserted.fault) return asserted
+    const binaries = await buildBoth(ctx, label, sha, previousOf(state), 'Preflight and scope')
+    if (binaries.fault) return Object.assign({ name: asserted.name }, binaries)
+    // THE CANDIDATE'S OWN GATE, ONCE: a command the tool holds, whose whole output the
+    // tool keeps — the record's batch puts what it shows red on record, a record commit is
+    // held to exactly that, and a held gate of the test set is answered from this run of
+    // it. Green and red are both FACTS about the candidate; a gate that left no verdict
+    // leaves nothing a record could be held to, and the stage halts there.
+    const gate = rerun ? null : await hold({ name: 'gate-' + label + '-a' + ctx.attempt, kind: 'gate', flags: '--run ' + v.run, what: 'the full gate of the candidate, label ' + label, phase: 'Preflight and scope' })
+    if (gate && !HELD_TAKES.gate.includes(gate.ends)) return { name: asserted.name, fault: heldFault('the candidate\'s gate', gate) + ' A record commit is held to the candidate\'s own gate, so nothing of this attempt could be recorded against one.', phase: 'gate', held: heldSaid(gate), transient: gate.ends === 'unread' || gate.ends === 'running', then: heldThen(v.scratch, gate) }
+    return { name: asserted.name, result: asserted.result, built: binaries, gate }
+  }]
   if (!rerun) steps.push(() => roleStep('scope', 'scope', 'Preflight and scope', scopePrompt(ctx, launch, scopeName, { sha, label, base: earlier && earlier.candidate ? earlier.candidate : null, earlier: !!earlier, scope: v.scope, previous: previousOf(state), fallback: state.facts.scope }), SCOPE_SCHEMA))
   const both = await parallel(steps)
   const pre = both[0] || { fault: 'the preflight returned no result', transient: true }
   const sc = rerun ? { status: 'stands' } : both[1]
-  if (pre.fault) return halt('preflight', pre.fault, { transient: !!pre.transient, halt: pre.halt || null })
+  if (pre.fault) return halt(pre.phase || 'preflight', pre.fault, { transient: !!pre.transient, halt: pre.halt || null, held: pre.held || null, then: pre.then })
   if (!sc || (sc.status !== 'written' && sc.status !== 'stands')) return halt('scope', sc ? 'the scope step halted: ' + ((sc.halt && sc.halt.root_cause) || 'no reason given') : 'the scope step returned no result', { transient: !sc, halt: sc ? sc.halt : null })
-  const built = { candidate: { label, sha, binary, sha256: pre.result.candidate.sha256 }, previous: pre.result.previous, image: null }
+  const built = pre.built
   const second = await readState()
   if (!second.state) return halt('state', 'the run\'s state could not be read after the scope step: ' + second.error, { transient: !!second.transient, halt: second.halt || null, step: second.step || null })
   state = second.state
@@ -3037,7 +3306,22 @@ async function runTest() {
   const late = selected.filter((i) => i.kind === CHECK_KIND && !always.some((x) => x.item === i.item))
   const unknownKinds = hunting.filter((i) => !CHAINS[i.kind]).map((i) => i.item + ' (' + i.kind + ')')
   if (unknownKinds.length) return halt('state', 'this round runs item(s) of a kind the harness has no chain for: ' + unknownKinds.join(', ') + ' — a kind is added by adding its chain to CHAINS, never by guessing one', { launched: launch.names })
-  if (held.length) return halt('state', 'this round runs held check(s) — ' + held.map((i) => i.item + ' (' + i.kind + ')').join(', ') + ' — each ONE long command that `' + STEP_TOOL + '` starts, waits for and judges (`hold-start --kind ' + held.map((i) => heldKind(i.kind)).join(' | ') + '`, `hold-wait`). This script reads what such a command\'s step says (`heldOf`) and records its verdict\'s file, and NO STEP OF A STAGE STARTS ONE YET: that is the second repair plan\'s task K11, and until it has landed a round with a held check does not run', { launched: launch.names, held: held.map((i) => ({ item: i.item, kind: i.kind })) })
+  // THE HELD CHECKS — each ONE long command the tool starts, holds and JUDGES: one after
+  // another, after the candidate's gate and never beside it. A held gate is answered from
+  // the candidate's own gate, which is not run twice — and in a re-run not at all. What
+  // comes back is how each command ended (`heldOf`): a verdict of the tool's is the
+  // check's result, by its file; any other end leaves the check WITHOUT one, and the stage
+  // goes on.
+  const heldRan = []
+  for (const i of held) {
+    const kind = heldKind(i.kind)
+    if (kind === 'gate') {
+      heldRan.push(Object.assign({ item: i.item }, pre.gate || { ends: 'not-run', kind, why: 'off-tree' }))
+      continue
+    }
+    heldRan.push(Object.assign({ item: i.item }, await hold({ name: i.item + '-' + label + '-a' + ctx.attempt, kind, flags: '--previous ' + previousOf(state).commit + ' --candidate ' + sha + ' --list ' + REGRESSION_LIST, what: 'the held check `' + i.item + '`: the regression set, the previous release against the candidate', phase: 'Preflight and scope' })))
+  }
+  for (const h of heldRan.filter((x) => !HELD_TAKES.check.includes(x.ends))) log('NO RESULT: the held check `' + h.item + '` — ' + (h.ends === 'not-run' ? 'a gate reads the working tree, which is no longer the round\'s candidate: it is not run again inside its round' : (HELD_ENDS[h.ends] || h.ends) + (h.why ? ' (`' + h.why + '`)' : '')) + '. It has no result on record, and the state asks for it again')
   const needsImage = hunting.some((i) => chainOf(i.kind, false).some((stepList) => stepList.some((s) => s.image)))
   let checks = pre.result.checks || []
   // The second preflight: the trial image, and the checks the scope selected. One that did
@@ -3046,7 +3330,7 @@ async function runTest() {
   let secondName = null
   let unprovided = null
   if (needsImage || late.length) {
-    const more = await preflightOf(ctx, launch, ['preflight', 'second'], { build: false, image: needsImage, sha, label, branch: loopBranch, binary, checks: late, crossModel: false, previous: previousOf(state) }, 'Preflight and scope')
+    const more = await preflightOf(ctx, launch, ['preflight', 'second'], { image: needsImage, sha, label, branch: loopBranch, checks: late, crossModel: false, tested: moved }, 'Preflight and scope')
     secondName = more.name
     if (more.fault) {
       unprovided = 'the second preflight did not provide it — ' + more.fault
@@ -3059,7 +3343,7 @@ async function runTest() {
   const imageless = (i) => !!unprovided && chainOf(i.kind, false).some((stepList) => stepList.some((s) => s.image))
   log('scope ' + sc.status + ': ' + (rerun ? 'the doors of round ' + doorsOf : state.doors.included + ' door(s)') + ' inside; ' + hunting.length + ' of ' + state.items.filter((i) => i.kind !== CHECK_KIND).length + ' hunting item(s) run ' + (rerun ? 'again' : 'this round') + ', and ' + (always.length + late.length) + ' check(s)')
   if (sc.uncovered && sc.uncovered.length) log('NOT COVERED: ' + sc.uncovered.length + ' door(s) of the round\'s test set are reached by no item — ' + sc.uncovered.join(' · '))
-  if (v.stopAfter === 'preflight') return { status: 'stopped', after: 'preflight', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, previous: built.previous, checks, scope: { status: sc.status, uncovered: sc.uncovered || [], reached_but_excluded: sc.reached_but_excluded || [] }, reporters: launch.names, named: namedOf(state, doorsOf), arrived }
+  if (v.stopAfter === 'preflight') return { status: 'stopped', after: 'preflight', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, previous: built.previous, gate: pre.gate ? heldSaid(pre.gate) : null, held: heldRan.map((h) => Object.assign({ item: h.item }, heldSaid(h))), checks, scope: { status: sc.status, uncovered: sc.uncovered || [], reached_but_excluded: sc.reached_but_excluded || [] }, reporters: launch.names, named: namedOf(state, doorsOf), arrived }
 
   // The round's instruments.
   phase('Instruments')
@@ -3125,14 +3409,17 @@ async function runTest() {
     const elsewhere = c && c.status !== 'void' && c.commit !== sha ? 'the check ran on ' + (c.commit ? 'the commit ' + c.commit : 'a commit the preflight did not name') + ', not on the candidate' : null
     unitStatus.push({ item: item.item, status: !c || elsewhere ? 'void' : c.status, reason: elsewhere || offTree || (c ? c.evidence || 'the check could not run, and the preflight returned no reason' : late.includes(item) && unprovided ? unprovided : 'the preflight returned nothing for it'), evidence: c && c.evidence ? c.evidence + ' — the preflight\'s report: ' + pre.result.report : null })
   }
+  // A HELD CHECK'S RESULT IS THE FILE THE TOOL KEPT ITS VERDICT IN, and no word: green, red
+  // or void as that file says. One that left no verdict has no row.
+  for (const h of heldRan.filter((x) => HELD_TAKES.check.includes(x.ends))) unitStatus.push({ item: h.item, status: h.ends, verdict: h.verdict })
   const rec = triageRecord(ctx, tri.entries)
   // A re-run writes no fact of the round: the round is tested, and its record stands.
   const facts = rerun ? null : { candidate: sha, binary: built.candidate.sha256 }
   if (crossNamed.length) Object.assign(facts, { 'cross-model': crossRan, 'cross-model-void': crossVoid.map((x) => x.item) })
   if (facts && sc.base && SHORT_SHA_RE.test(sc.base)) facts.base = sc.base
   const dir = v.scratch + '/record/test-r' + ctx.round + '-a' + ctx.attempt
-  const commands = stageRecordCommands(ctx, { reporters: launch.names, gate: rerun ? null : { commit: sha, file: candidateGate }, results: { commit: sha, rows: resultRows(unitStatus) }, rows: rec.rows, triage: rec.triage, patches: [], facts, keys: tri.entries.map((e) => e.key) })
-  const recorded = await recordStep('test:r' + ctx.round, loopBranch, recordPrompt(v, rerun ? 'the record of a re-run inside round ' + ctx.round + ' — ' + rerun.items.length + ' item(s) of clause `' + rerun.clause + '` run again, ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s)' : 'the record of round ' + ctx.round + '\'s test stage — ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s)', loopBranch, dir, rerun ? state.candidate.round : ctx.round, commands, v.run + ' r' + ctx.round + (rerun ? ' — a re-run of ' + rerun.clause : ' — the test stage\'s record')))
+  const commands = stageRecordCommands(ctx, { reporters: launch.names, gate: pre.gate ? { commit: sha, file: pre.gate.output } : null, results: { commit: sha, rows: resultRows(unitStatus) }, rows: rec.rows, triage: rec.triage, patches: [], facts, keys: tri.entries.map((e) => e.key) })
+  const recorded = await recordStep('test:r' + ctx.round, loopBranch, recordPrompt(v, rerun ? 'the record of a re-run inside round ' + ctx.round + ' — ' + rerun.items.length + ' item(s) of clause `' + rerun.clause + '` run again, ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s)' : 'the record of round ' + ctx.round + '\'s test stage — ' + launch.names.length + ' report(s), ' + tri.entries.length + ' finding(s)', loopBranch, dir, rerun ? state.candidate.round : ctx.round, commands, subjectOf(v.run, ctx.round, rerun ? 'a re-run of ' + rerun.clause : 'the record of the test stage')))
   if (recorded.fault) return recordHalt('record', recorded, { launched: launch.names, forks: tri.forks })
   const pushed = await pushRecord('push', loopBranch)
   if (!onIt(pushed, loopBranch, true)) return pushHalt(pushed, loopBranch, 'the record is committed on ' + loopBranch + ' (' + recorded.result.commit + ') and the branch was not pushed')
@@ -3152,9 +3439,11 @@ async function runTest() {
     cross_model: { named: crossNamed, ran: crossRan, void: crossVoid },
     candidate: built.candidate,
     record: recorded.result.commit,
-    counts: { items: state.items.length, items_run: hunting.length + always.length + late.length, reporters: launch.names.length, findings_in: tri.handed, entries: tri.entries.length, by_grade: byGrade, blockers: state.blockers, for_the_human: state.human_list, voided: unitStatus.filter((u) => u.status === 'void').map((u) => u.item) },
+    counts: { items: state.items.length, items_run: hunting.length + always.length + late.length + held.length, reporters: launch.names.length, findings_in: tri.handed, entries: tri.entries.length, by_grade: byGrade, blockers: state.blockers, for_the_human: state.human_list, voided: unitStatus.filter((u) => u.status === 'void').map((u) => u.item) },
     forks: tri.forks,
     unverified: tri.unverified,
+    // How each held check ended — the tool's word, the job and the file its output is in.
+    held: heldRan.map((h) => Object.assign({ item: h.item }, heldSaid(h))),
     // What the scope step's agent read; what the record script computed is `named`.
     scope: { status: sc.status, uncovered: sc.uncovered || [], reached_but_excluded: sc.reached_but_excluded || [] },
     forbids_close: state.forbids_close,
@@ -3174,7 +3463,10 @@ async function runTest() {
 // findings by their door and repro (`fixerPrompt`, `areasOf`), `landed.moved_outside` as a
 // list, and a record's own `--head` are what its repair reads by key or from the digest — a
 // blocker's row has no read yet (DECISIONS.md -> 2026-10-07, "A line holds what the harness
-// acts on", item 6). Nothing below is reachable until that repair lifts the refusal.
+// acts on", item 6). AND ITS ROUND-TIP BINARY IS STILL ASKED OF A PREFLIGHT, which builds
+// none any more (the second repair plan's task K11): that binary, its fixers' gates and the
+// fixer's prompt are its repair's to hold by the tool's acts. Nothing below is reachable
+// until that repair lifts the refusal.
 async function runFix() {
   phase('State')
   const gs = await toolStep('state', 'State', 'git-state', gitStatePrompt(v))

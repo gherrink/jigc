@@ -5,6 +5,12 @@ agent git:begin · build-git · sonnet · State
 phase Preflight and scope
 parallel 2 {
   agent preflight · stabilize-preflight · opus · Preflight and scope
+  agent git:hold-start:build-c1-a1 · build-git · sonnet · Preflight and scope
+  agent git:hold-wait:build-c1-a1 · build-git · sonnet · Preflight and scope
+  agent git:hold-start:build-previous-<its commit> · build-git · sonnet · Preflight and scope
+  agent git:hold-wait:build-previous-<its commit> · build-git · sonnet · Preflight and scope
+  agent git:hold-start:gate-c1-a1 · build-git · sonnet · Preflight and scope
+  agent git:hold-wait:gate-c1-a1 · build-git · sonnet · Preflight and scope
   agent scope · stabilize-scope · opus · Preflight and scope
 }
 agent git:state:test-2 · build-git · sonnet · State
@@ -50,6 +56,8 @@ agent proposal:doc-set-drops-a-slot · general-purpose · opus · Triage
 agent git:check-reports:p1 · build-git · sonnet · Triage
 phase Record
 agent record:test:r1 · build-executor · opus · Record
+agent git:hold-start:record-test-r1-a1-1 · build-git · sonnet · Record
+agent git:hold-wait:record-test-r1-a1-1 · build-git · sonnet · Record
 agent git:record:test:r1 · build-git · sonnet · Record
 agent git:push · build-git · sonnet · Record
 agent git:state:test-3 · build-git · sonnet · State

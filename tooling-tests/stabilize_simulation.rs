@@ -20,20 +20,26 @@
 //!
 //! **What is stubbed, and why** — only what cannot run inside a test:
 //!
-//! - *The full gate — the candidate's, which the preflight runs, and the one a record step
-//!   runs.* The gate runs this suite; each stand-in writes what a full gate prints — green,
-//!   or red with the steps and tests a scenario scripts — to the file its prompt names. What
-//!   reads that file is real: `dev/stabilize-record gate-set` and `gate-check`, and the
-//!   commit step that holds one to the other.
+//! - *The long commands a stage holds — the full gate, the candidate's and a record step's;
+//!   the regression set; cargo.* The gate runs this suite, and the other two take the
+//!   better part of an hour. Each is a stand-in ([`LONG_COMMAND`], [`CARGO`]) placed where
+//!   the step tool finds the real one, and prints what a scenario scripts: a gate green,
+//!   red with its steps and tests, or with no verdict; the regression tool's one line; a
+//!   build that fails. **What starts, holds and judges it is real** (the second repair
+//!   plan's `K11`): `dev/stabilize-step hold-start` and `hold-wait`, the supervisor's fork
+//!   and its lock, the verdict read by `dev/stabilize-record gate-check`, `git archive`,
+//!   the binary placed read-only — and so is what reads the gate's file afterwards:
+//!   `gate-set`, and the commit step that holds one gate to the other.
 //! - *gitleaks, of the two hygiene scanners.* A test runner has none; the stand-in is the
 //!   record suite's, which keeps gitleaks' exit contract
 //!   ([`gitleaks_stub`](super::dev_stabilize_record::gitleaks_stub)), which every
 //!   [`StepRig`] carries since a step vets what it would commit or push. The denylist half
 //!   is the real `dev/hygiene-scan`, over the rig's denylist of one term.
-//! - *The builds of a binary and of a trial image.* A "binary" is a file the preflight's
-//!   stand-in writes at the path its prompt names. Its sha256 is real — measured by the
-//!   preflight, and measured again by every stand-in that "drives" it — so the comparison
-//!   the harness makes of the two is a comparison of two measurements.
+//! - *The build of a trial image, and what a binary is.* A "binary" is the file the
+//!   stand-in for cargo left and the step tool placed. Its sha256 is real — the tool's,
+//!   read off its verdict by the harness, and asked of the tool again by every stand-in
+//!   that "drives" it, through the call its prompt spells — so the comparison the harness
+//!   makes of the two is a comparison of two measurements.
 //! - *The instruments' own work*: reviewing, driving, grading, verifying, arguing. What an
 //!   agent returns is the scenario's script; that it reports through the record script
 //!   under the name it was handed is not.
@@ -64,6 +70,15 @@
 //!   a digest with one character changed, or one with a character outside ASCII and its
 //!   hash made to fit (`relays`): each is caught, and nothing of it is passed on. A probe's
 //!   steps are relayed byte for byte, as before: their lines are the probe tool's.
+//!
+//! **Every command an agent runs is taken out of its prompt, as it is spelled there**
+//! (`K11`) — a step's one command, a report's hand-over, the scope's, the batch's, a hash's
+//! — so a prompt that names an act the tool does not have, or a flag it does not take,
+//! fails the run at that command; a file an agent writes is written as a file tool writes
+//! one; and every prompt an agent is handed is held by the prompt fence
+//! ([`prompt_faults`](super::stabilize_harness_fence::prompt_faults)): each command in it
+//! is one plain invocation of one of three tools, and it tells no agent to wait, to
+//! redirect or to pipe by its own means.
 //!
 //! **What every agent reads by key is read** (`K3`): a prompt names the read — an item's
 //! row with its brief, the doors of a round an item covers, the untriaged rows, a pending
@@ -136,6 +151,7 @@ use super::dev_stabilize_step::{
     node_or_skip, sha256,
 };
 use super::placed_executable;
+use super::stabilize_harness_fence::prompt_faults;
 
 const HARNESS: &str = ".claude/workflows/stabilize.js";
 const RUNTIME: &str = "tooling-tests/fixtures/stabilize-runtime.mjs";
@@ -272,12 +288,69 @@ struct Sim {
     invocations: Cell<u32>,
 }
 
+/// A stand-in for a long command a stage holds — `dev/gate`, `dev/regression-set` — placed
+/// where the step tool finds the real one. It writes down that it ran, with its pid and
+/// its arguments; runs until the suite releases it — a file, never a number of seconds —
+/// OR UNTIL THE RIG IS GONE, so that a command a failed test never released does not run
+/// on after it; prints what the runtime's stand-in handed the ONE call that started it; and
+/// exits as it is told. **The step tool that starts it, waits for it and judges it is real.**
+pub(crate) const LONG_COMMAND: &str = r#"#!/bin/sh
+printf '%s %s %s\n' "$$" "$(basename "$0")" "$*" >>"$HOLD_RAN"
+while [ ! -e "$HOLD_RELEASE" ] && [ -d "${HOLD_RELEASE%/*}" ]; do sleep 0.1; done
+cat "$HOLD_PRINTS"
+exit "${HOLD_EXIT:-0}"
+"#;
+
+/// A stand-in for cargo, first on the rig's `PATH`: the build of a held `build`, in the
+/// commit the step tool unpacked. The binary it "builds" prints the version the runtime's
+/// stand-in names — the one the step asked for, where it asked for one — or it fails.
+pub(crate) const CARGO: &str = r#"#!/bin/sh
+dir=
+while [ $# -gt 0 ]; do
+  if [ "$1" = --target-dir ]; then dir=$2; fi
+  shift
+done
+printf '%s cargo %s\n' "$$" "$(pwd -P)" >>"$HOLD_RAN"
+echo "   Compiling jigc (a stand-in) in $(pwd -P)"
+if [ -n "$SIM_BUILD_FAILS" ]; then echo "error: could not compile" >&2; exit 101; fi
+mkdir -p "$dir/release"
+printf '#!/bin/sh\necho "jigc %s"\n' "$SIM_BUILD_VERSION" >"$dir/release/jigc"
+chmod 755 "$dir/release/jigc"
+"#;
+
+/// The composer of the prompt an agent of this label is handed, for the exceptions the
+/// prompt fence names by composer.
+fn composer_of(label: &str) -> &'static str {
+    if label.starts_with("proposal:") {
+        "proposalPrompt"
+    } else if label.ends_with(":crossmodel") {
+        "crossModelPrompt"
+    } else if label.starts_with("preflight") {
+        "preflightPrompt"
+    } else {
+        "a prompt"
+    }
+}
+
 impl Sim {
     /// A repository with a remote, the scanners a write of the record script needs, and
     /// the loop branch of a run nobody has opened yet checked out.
     fn new(label: &str) -> Self {
         let rig = StepRig::unopened(&format!("sim-{label}"));
         fs::create_dir_all(rig.dir().join("tmp")).expect("create the rig's temp directory");
+        // THE LONG COMMANDS A STAGE HOLDS, as stand-ins: committed on `main`, where the
+        // step tool finds `dev/gate` and `dev/regression-set` beside itself, and cargo
+        // first on the `PATH`. What each prints is handed to it by the call that starts it.
+        for tool in ["dev/gate", "dev/regression-set"] {
+            placed_executable::write(&rig.root.join(tool), LONG_COMMAND);
+        }
+        rig.commit("chore: the long commands a stage holds, as stand-ins");
+        rig.git(&["push", "-q", "origin", "main"]);
+        rig.on_path("cargo", CARGO);
+        let held = rig.dir().join("held");
+        fs::create_dir_all(&held).expect("create the directory of what a held command prints");
+        fs::write(held.join("released"), "").expect("release the held commands");
+        fs::write(held.join("ran"), "").expect("nothing ran yet");
         rig.git(&["switch", "-q", "-c", LOOP]);
         Sim {
             rig,
@@ -301,8 +374,46 @@ impl Sim {
                 "TMPDIR",
                 format!("{}/", self.rig.dir().join("tmp").display()),
             )
+            .env("SIM_HELD", self.rig.dir().join("held"))
             .current_dir(&self.rig.root);
         command
+    }
+
+    /// The long commands that ran, as their stand-ins wrote them down: `<program> <arguments>`
+    /// each, without the pid — `gate --keep-going`, `regression-set run …`, `cargo <tree>`.
+    fn long_commands(&self) -> Vec<String> {
+        fs::read_to_string(self.rig.dir().join("held/ran"))
+            .expect("what ran")
+            .lines()
+            .map(|line| {
+                line.split_once(' ')
+                    .expect("a pid and a command")
+                    .1
+                    .to_owned()
+            })
+            .collect()
+    }
+
+    /// Release the held command `name`, which the scenario left running.
+    fn release(&self, name: &str) {
+        fs::write(self.rig.dir().join(format!("held/release-{name}")), "")
+            .expect("release the held command");
+    }
+
+    /// One act of the real step tool, asked directly — never through a stage: its line.
+    fn step(&self, args: &[&str]) -> Value {
+        let out = self
+            .command(&self.rig.root.join("dev/stabilize-step"))
+            .args(args)
+            .stdin(Stdio::null())
+            .output()
+            .expect("run the step tool");
+        serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
+            panic!(
+                "the step tool prints one JSON line ({e}): {}",
+                String::from_utf8_lossy(&out.stderr)
+            )
+        })
     }
 
     /// A call of the real record script that must succeed: the one JSON line it prints.
@@ -441,6 +552,23 @@ impl Sim {
             Vec::<String>::new(),
             "invocation {n}: an agent the scenario scripts was never launched"
         );
+        // EVERY PROMPT AN AGENT WAS HANDED IS HELD by the fence that holds every prompt the
+        // script can compose (the second repair plan's `K11`): each command it names is one
+        // plain invocation of a tool, and it tells no agent to wait, to redirect or to pipe
+        // by its own means.
+        for prompt in said["prompts"].as_array().expect("the prompts") {
+            let (label, handed) = (text(&prompt["label"]), text(&prompt["prompt"]));
+            let (faults, _) = prompt_faults(
+                composer_of(&label),
+                &handed,
+                &mut std::collections::BTreeSet::new(),
+            );
+            assert!(
+                faults.is_empty(),
+                "invocation {n}: the prompt of `{label}` names what is no plain invocation of a tool:\n{}",
+                faults.join("\n")
+            );
+        }
         Ran {
             result: said["result"].clone(),
             trace,
@@ -680,7 +808,13 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
     assert_eq!(result["status"], "triaged", "{result}");
 
     // (1) WHAT WAS LAUNCHED, AND IN WHICH ORDER: the golden.
-    golden(TRACE, &format!("{}\n", ran.trace.join("\n")));
+    // The previous release's build is named by its commit — the rig's — which the golden
+    // holds as a placeholder: what the file pins is the steps, never a sha of a test rig.
+    golden(
+        TRACE,
+        &format!("{}\n", ran.trace.join("\n"))
+            .replace(&previous_build(&sim), "build-previous-<its commit>"),
+    );
 
     // (2) EXACTLY ONE REPORT PER LAUNCHED REPORTER, on disk and committed. The launched
     // are those whose prompt handed them a report to write; the stand-in wrote each
@@ -712,7 +846,7 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
     let mut committed = committed.lines();
     assert_eq!(
         committed.next(),
-        Some("docs(record): rc24 r1 — the test stage's record"),
+        Some("docs(record): rc24 r1 - the record of the test stage"),
         "the record is ONE commit, with the subject the step names"
     );
     let paths: Vec<&str> = committed.filter(|line| !line.is_empty()).collect();
@@ -874,8 +1008,14 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
         .iter()
         .filter(|ran| ran.starts_with("dev/stabilize-step "))
     {
+        // The one command of the step tool that is no step: the hash the independent drive
+        // of a proposal asks of the tool, and reads itself.
         assert!(
-            step.contains(&format!(" --digest {scratch}")),
+            step.contains(&format!(" --digest {scratch}"))
+                || step
+                    == &format!(
+                        "dev/stabilize-step hash --scratch {scratch} --file bin/c1.a1/jigc"
+                    ),
             "a step of the stage asked for the line the tool prints unasked: {step}"
         );
     }
@@ -1057,11 +1197,13 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
             "git:state",
             "git:state:test-1",
             "record:rulings:r1",
+            "git:hold-start:record-rulings-r1-1",
+            "git:hold-wait:record-rulings-r1-1",
             "git:record:rulings:r1",
             "git:push:rulings",
             "git:state:test-2"
         ],
-        "two reads, the one step that records rulings, its commit, the push, the state: nothing is started"
+        "two reads, the one step that records rulings, its gate — held — its commit, the push, the state: nothing is started"
     );
     // M3: THE FORK IS STILL UNRULED, so the next step is still the human's — never `fix`,
     // though nothing else is left to rule on.
@@ -1091,9 +1233,20 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
         fork_ruled.result
     );
     assert_eq!(
-        fork_ruled.agents()[2..4],
-        ["record:rulings:r1", "git:record:rulings:r1"],
-        "M3: by the one step that records rulings"
+        fork_ruled
+            .agents()
+            .into_iter()
+            .filter(|label| label.contains("rulings"))
+            .collect::<Vec<_>>(),
+        [
+            "record:rulings:r1",
+            "git:hold-start:record-rulings-r1-1",
+            "git:hold-start:record-rulings-r1-2",
+            "git:hold-wait:record-rulings-r1-2",
+            "git:record:rulings:r1",
+            "git:push:rulings"
+        ],
+        "M3: by the one step that records rulings — whose gate is held under the NEXT name: the first is the gate of the rulings recorded before these, on the tree as it stood then"
     );
     let ruled = fork_ruled;
     let after = sim.state();
@@ -1169,19 +1322,39 @@ fn again(key: &str, door: &str, clause: &str, grade: &str) -> Value {
     entry
 }
 
-/// The agents of an invocation that only finishes a round's triage, in order.
-fn finishing_lap(verified: &[&str], last_state: &str) -> Vec<String> {
-    let mut agents = lines(&[
-        "git:state",
-        "git:state:test-1",
-        "git:begin",
-        "preflight",
-        "triage:p1",
-    ]);
-    agents.extend(verified.iter().map(|key| format!("verify:{key}")));
+/// The agents of a re-run inside round 1, in order: the candidate's binary built again —
+/// from its commit, by a held command of that attempt's name — the previous release's
+/// answered by the build that is there, NO GATE OF THE CANDIDATE'S, the `instruments` that
+/// are due, and the record with its own gate, held.
+fn rerun_agents(sim: &Sim, attempt: u32, instruments: &[&str]) -> Vec<String> {
+    let mut agents = lines(&["git:state", "git:state:test-1", "git:begin", "preflight"]);
+    agents.extend(held_steps(&format!("build-c1-a{attempt}")));
+    agents.push(format!("git:hold-start:{}", previous_build(sim)));
+    agents.push("git:state:test-2".to_owned());
+    agents.extend(lines(instruments));
+    agents.extend(lines(&["git:check-reports", "record:test:r1"]));
+    agents.extend(held_steps(&format!("record-test-r1-a{attempt}-1")));
     agents.extend(lines(&[
-        "git:check-reports:p1",
-        "record:triage:r1",
+        "git:record:test:r1",
+        "git:push",
+        "git:state:test-3",
+    ]));
+    agents
+}
+
+/// The agents of an invocation that only finishes a round's triage, in order — `attempt`
+/// is the stage's: the candidate's binary is built again, by a held command of that
+/// attempt's name, and the previous release's, built already under this scratch root, is
+/// the one its start answers with; then the record's own gate, held.
+fn finishing_lap(sim: &Sim, attempt: u32, verified: &[&str], last_state: &str) -> Vec<String> {
+    let mut agents = lines(&["git:state", "git:state:test-1", "git:begin", "preflight"]);
+    agents.extend(held_steps(&format!("build-c1-a{attempt}")));
+    agents.push(format!("git:hold-start:{}", previous_build(sim)));
+    agents.push("triage:p1".to_owned());
+    agents.extend(verified.iter().map(|key| format!("verify:{key}")));
+    agents.extend(lines(&["git:check-reports:p1", "record:triage:r1"]));
+    agents.extend(held_steps(&format!("record-triage-r1-a{attempt}-1")));
+    agents.extend(lines(&[
         "git:record:triage:r1",
         "git:push:triage",
         last_state,
@@ -1256,7 +1429,7 @@ fn an_unverified_finding_is_finished_by_the_next_invocation_and_after_one_more_i
     assert_eq!(finished["triage_only"], true, "M6: {finished}");
     assert_eq!(
         finishing.agents(),
-        finishing_lap(&[key], "git:state:test-2"),
+        finishing_lap(&sim, 2, &[key], "git:state:test-2"),
         "M6: the attempt begun, the preflight, triage, the verifier, the reports checked, the record, its commit, the push, the state"
     );
     assert_eq!(
@@ -1267,7 +1440,7 @@ fn an_unverified_finding_is_finished_by_the_next_invocation_and_after_one_more_i
     let (subject, paths) = head_commit(&sim);
     assert_eq!(
         subject,
-        format!("docs(record): {RUN} r1 — the round's triage, finished")
+        format!("docs(record): {RUN} r1 - the triage of the round, finished")
     );
     assert_eq!(sim.rig.rev("HEAD~1"), recorded, "one record commit");
     assert_eq!(sim.rig.remote(LOOP), Some(sim.rig.rev("HEAD")), "pushed");
@@ -1535,7 +1708,11 @@ fn a_red_gate_in_a_record_step_leaves_a_pending_batch_that_the_next_invocation_c
             pending["batch"]["round"],
             pending["batch"]["altered"]
         ]),
-        json!(["docs(record): rc24 r1 — the test stage's record", 1, []])
+        json!([
+            "docs(record): rc24 r1 - the record of the test stage",
+            1,
+            []
+        ])
     );
 
     // THE HALT SAYS WHAT TO DO, AND IT IS TRUE: invoke the stage again — or take the batch
@@ -1572,17 +1749,23 @@ fn a_red_gate_in_a_record_step_leaves_a_pending_batch_that_the_next_invocation_c
         again.agents(),
         [
             "git:state",
-            "record:pending",
+            "git:hold-start:record-pending-1",
+            "git:hold-start:record-pending-2",
+            "git:hold-wait:record-pending-2",
             "git:record:pending",
             "git:push:pending",
             "git:state:test-1"
-        ]
+        ],
+        "no executor runs for a batch that is applied; and the gate the invocation before this one held under the first name is ITS gate — red — so the next name is asked"
     );
     let head = sim.rig.rev("HEAD");
     assert_eq!(sim.rig.rev("HEAD~1"), opened, "one commit");
     assert_eq!(again.result["record"], head.as_str());
     let (subject, paths) = head_commit(&sim);
-    assert_eq!(subject, "docs(record): rc24 r1 — the test stage's record");
+    assert_eq!(
+        subject,
+        "docs(record): rc24 r1 - the record of the test stage"
+    );
     assert!(
         paths
             .iter()
@@ -1714,8 +1897,8 @@ fn a_record_step_that_returns_no_evidence_of_its_checks_is_not_taken_as_recorded
     assert_eq!(sim.rig.rev("HEAD"), opened, "nothing was committed");
     assert_eq!(
         ran.agents()[ran.agents().len() - 2..],
-        ["record:test:r1", "git:record:test:r1"],
-        "the commit step ran, and is what refused"
+        ["git:hold-wait:record-test-r1-a1-1", "git:record:test:r1"],
+        "the record's gate was held, the commit step ran, and is what refused"
     );
     // Nothing is pending, so the stage invoked again works the next attempt.
     let again = sim.invoke(sim.args("test", json!({})), small_stage(json!({})));
@@ -2183,16 +2366,18 @@ fn a_stage_stopped_after_its_scope_step_is_run_again_by_the_invocation_that_foll
         lines(&["attempt.a1.md", "preflight.a1.md", "scope.a1.md"]),
         "what a stopped stage leaves: its attempt's marker, the reports written so far — and the round's scope, below"
     );
+    let mut launched = lines(&["git:state", "git:state:test-1", "git:begin", "preflight"]);
+    for name in ["build-c1-a1", previous_build(&sim).as_str(), "gate-c1-a1"] {
+        launched.extend(held_steps(name));
+    }
     assert_eq!(
         ran.agents(),
-        [
-            "git:state",
-            "git:state:test-1",
-            "git:begin",
-            "preflight",
-            "scope",
-            "git:state:test-2"
-        ]
+        launched
+            .iter()
+            .map(String::as_str)
+            .chain(["scope", "git:state:test-2"])
+            .collect::<Vec<_>>(),
+        "the preflight, then what the tool holds — the two builds and the candidate's gate — beside the scope step"
     );
     // A stop after `state` is before the attempt begins: it leaves nothing at all.
     let nothing_left = Sim::opened("stopped-at-state", &one_area());
@@ -2333,7 +2518,7 @@ fn a_red_check_is_filed_as_a_finding_and_a_go_is_recorded_without_starting_anyth
     assert_eq!(lap.result["status"], "triaged", "{}", lap.result);
     assert_eq!(
         lap.agents(),
-        finishing_lap(&["red-gate"], "git:state:test-2")
+        finishing_lap(&sim, 2, &["red-gate"], "git:state:test-2")
     );
     let state = sim.state();
     let graded_row = &state["ledger"][0];
@@ -2393,6 +2578,8 @@ fn a_red_check_is_filed_as_a_finding_and_a_go_is_recorded_without_starting_anyth
             "git:state",
             "git:state:test-1",
             "record:rulings:r1",
+            "git:hold-start:record-rulings-r1-1",
+            "git:hold-wait:record-rulings-r1-1",
             "git:record:rulings:r1",
             "git:push:rulings",
             "git:state:test-2"
@@ -2517,25 +2704,14 @@ fn a_rerun_is_an_attempt_inside_its_round_begins_no_round_and_is_refused_where_t
     );
     assert_eq!(
         again.agents(),
-        [
-            "git:state",
-            "git:state:test-1",
-            "git:begin",
-            "preflight",
-            "git:state:test-2",
-            "git:check-reports",
-            "record:test:r1",
-            "git:record:test:r1",
-            "git:push",
-            "git:state:test-3"
-        ],
-        "a re-run launches no scope step and no item it was not asked for"
+        rerun_agents(&sim, 2, &[]),
+        "a re-run launches no scope step, no gate of the candidate's and no item it was not asked for"
     );
     assert_eq!(sim.rig.rev("HEAD~1"), asked, "one record commit");
     let (subject, paths) = head_commit(&sim);
     assert_eq!(
         subject,
-        format!("docs(record): {RUN} r1 — a re-run of gate-green")
+        format!("docs(record): {RUN} r1 - a re-run of gate-green")
     );
     assert_eq!(
         paths,
@@ -2823,21 +2999,7 @@ fn an_instruments_reporter_that_does_not_report_voids_its_item_and_the_hunt_is_r
     assert_eq!(again.result["status"], "triaged", "{}", again.result);
     assert_eq!(
         again.agents(),
-        [
-            "git:state",
-            "git:state:test-1",
-            "git:begin",
-            "preflight",
-            "git:state:test-2",
-            "area-a:review",
-            "cross:review",
-            "drive-a:drive",
-            "git:check-reports",
-            "record:test:r1",
-            "git:record:test:r1",
-            "git:push",
-            "git:state:test-3"
-        ],
+        rerun_agents(&sim, 2, &["area-a:review", "cross:review", "drive-a:drive"]),
         "the hunts, run again, and nothing else"
     );
     let state = sim.state();
@@ -2897,10 +3059,10 @@ fn an_instruments_reporter_that_does_not_report_voids_its_item_and_the_hunt_is_r
             .1;
         assert!(
             preflight.contains(&format!("commit {candidate} — the commit round 1 tested"))
-                && preflight.contains(&format!(
-                    "the build: the candidate's binary, from `git archive {candidate}`"
-                )),
-            "{which} builds the round's candidate: {preflight}"
+                && ran.commands.iter().any(|command| command
+                    .contains(&format!(" --kind build --commit {candidate} --to bin/c1.a"))),
+            "{which} builds the round's candidate, from its commit, by a held command: {:?}",
+            ran.commands
         );
         assert_eq!(
             ran.result["candidate"]["sha"],
@@ -3467,8 +3629,7 @@ fn a_cross_model_pass_that_fails_is_recorded_as_not_run_and_the_items_own_passes
 
 /// What a return is held to before anything is taken from it: one entry per key from
 /// triage (`L9`), the previous release's binary wherever a verifier drove it (`L11`), the
-/// binary a reviewer was handed (`M7`), the posture the preflight proved and the commit a
-/// check ran on (`L1`).
+/// binary a reviewer was handed (`M7`), and the commit a check ran on (`L1`).
 #[test]
 fn a_return_is_held_to_its_keys_its_binaries_and_its_commit_before_it_is_taken() {
     if !can_run() {
@@ -3542,25 +3703,12 @@ fn a_return_is_held_to_its_keys_its_binaries_and_its_commit_before_it_is_taken()
         "M7: the reviewer's hash is compared like every driver's"
     );
 
-    // L1 — the posture the preflight proved is read: a bare `jigc` that resolves elsewhere.
-    let sim = Sim::opened("path-check", &one_area());
-    let ran = sim.invoke(
-        sim.args("test", json!({})),
-        json!({"scope": one_door(), "pathCheck": "/usr/local/bin/jigc"}),
-    );
-    assert_eq!(
-        ran.result["halted"]["phase"], "preflight",
-        "L1: {}",
-        ran.result
-    );
-    assert!(
-        ran.result["halted"]["reason"].as_str().is_some_and(
-            |reason| reason.contains("`command -v jigc` printed \"/usr/local/bin/jigc\"")
-        ),
-        "L1: {}",
-        ran.result
-    );
-    // L1 — and so is the commit a check ran on: green on another commit is void here.
+    // L1 — the posture every driving agent relies on, that a bare `jigc` IS the binary, is
+    // no longer a preflight's reading: it is a fact of the build, which the step tool
+    // establishes and refuses a build without (`dev_stabilize_step`), and the harness holds
+    // the tool's verdict to what it asked for. A commit that does not build halts the stage
+    // (below: a held command that is red).
+    // L1 — the commit a check ran on is read: green on another commit is void here.
     let sim = Sim::opened(
         "check-commit",
         &Opening {
@@ -4155,11 +4303,13 @@ fn a_commit_that_failed_and_a_commit_step_whose_agent_died_are_finished_by_askin
         again.agents(),
         [
             "git:state",
-            "record:pending",
+            "git:hold-start:record-pending-1",
+            "git:hold-wait:record-pending-1",
             "git:record:pending",
             "git:push:pending",
             "git:state:test-1"
-        ]
+        ],
+        "no executor: the batch is applied, and what is left of the step is its gate and its commit"
     );
     assert_eq!(
         again.result["arrived"]["owed"],
@@ -4636,6 +4786,722 @@ fn what_a_held_commands_step_says_is_read_as_the_tools_words_and_its_verdict_as_
 }
 
 // ---------------------------------------------------------------------------
+// What a stage tells an agent to run (the second repair plan's `K11`)
+// ---------------------------------------------------------------------------
+
+/// The names of a stage's held commands, as the harness mints them.
+fn previous_build(sim: &Sim) -> String {
+    format!("build-previous-{}", &sim.rig.rev("main")[..12])
+}
+
+/// The kinds of step a held command is: its start, and the step that asks after it.
+fn held_steps(name: &str) -> [String; 2] {
+    [
+        format!("git:hold-start:{name}"),
+        format!("git:hold-wait:{name}"),
+    ]
+}
+
+/// An opening whose test set holds held checks beside one audit area: the regression set,
+/// `held-regression`, once per item of `regressions`, and the gate, `held-gate`.
+fn with_held_checks(regressions: &[&str]) -> Opening {
+    let mut items = vec![
+        item("area-a", "audit-area", "audit-clean"),
+        item("gate", "held-gate", "working-product"),
+    ];
+    items.extend(
+        regressions
+            .iter()
+            .map(|id| item(id, "held-regression", "working-product")),
+    );
+    Opening {
+        clauses: vec!["audit-clean", "working-product"],
+        items: json!(items),
+        bounds: vec![],
+        rows: json!([]),
+    }
+}
+
+/// How an item of the test set stands, as the state document has it.
+fn standing(state: &Value, id: &str) -> Value {
+    state["clauses"]
+        .as_array()
+        .expect("the clauses")
+        .iter()
+        .flat_map(|clause| clause["items"].as_array().expect("its items").clone())
+        .find(|entry| entry["item"] == id)
+        .map(|entry| json!([entry["standing"], entry["why"]]))
+        .unwrap_or_else(|| panic!("the state has the item `{id}`: {state}"))
+}
+
+/// THE HUMAN'S RULING OF 2026-10-07 — *"there should be tooling for this"*: an agent that
+/// was told to start a command "in the background" and wait "in slices" composed a shell
+/// no permission rule can name, and stopped on a prompt. So NO AGENT OF A STAGE COMPOSES A
+/// SHELL: the two binaries, the candidate's gate and the record's gate are each started by
+/// ONE plain call of the step tool and asked after by ONE plain call, the batch and every
+/// report reach their writer from a file, and every command that ran on an agent's behalf
+/// is a command of `dev/stabilize-step` or of `dev/stabilize-record`, as its prompt spells it.
+#[test]
+fn the_builds_and_the_gates_are_held_by_acts_and_every_command_an_agent_runs_is_a_plain_call_of_a_tool()
+ {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::opened("held-acts", &one_area());
+    let previous = previous_build(&sim);
+    let ran = sim.invoke(sim.args("test", json!({})), small_stage(json!({})));
+    assert_eq!(ran.result["status"], "triaged", "{}", ran.result);
+
+    // THE STEPS: each long command started by one step and asked after by another — the
+    // candidate's binary, the previous release's, the candidate's gate, the record's gate.
+    let agents: Vec<String> = ran.agents().iter().map(|a| (*a).to_owned()).collect();
+    let steps: Vec<String> = agents
+        .iter()
+        .filter(|label| label.starts_with("git:hold-"))
+        .cloned()
+        .collect();
+    let expected: Vec<String> = [
+        "build-c1-a1",
+        previous.as_str(),
+        "gate-c1-a1",
+        "record-test-r1-a1-1",
+    ]
+    .iter()
+    .flat_map(|name| held_steps(name))
+    .collect();
+    assert_eq!(steps, expected, "the held commands of a stage, in order");
+    // And the preflight runs before anything is built: an assert that fails stops the
+    // stage there.
+    let at = |label: &str| {
+        agents
+            .iter()
+            .position(|a| a == label)
+            .unwrap_or_else(|| panic!("`{label}` was launched: {agents:?}"))
+    };
+    assert!(at("preflight") < at("git:hold-start:build-c1-a1"));
+    assert!(
+        at("git:hold-wait:gate-c1-a1") < at("area-a:review"),
+        "the instruments follow the candidate's gate"
+    );
+    assert!(
+        at("record:test:r1") < at("git:hold-start:record-test-r1-a1-1")
+            && at("git:hold-wait:record-test-r1-a1-1") < at("git:record:test:r1"),
+        "the record's gate stands between its batch and its commit"
+    );
+
+    // EVERY COMMAND THAT RAN is one plain call of a tool — and of no other program.
+    for command in &ran.commands {
+        assert!(
+            command.starts_with("dev/stabilize-step ")
+                || command.starts_with("dev/stabilize-record "),
+            "an agent ran `{command}`"
+        );
+        for shape in ["|", ">", "<", "&", ";", "$", "\n"] {
+            assert!(!command.contains(shape), "`{command}` holds `{shape}`");
+        }
+    }
+    // THE LONG COMMANDS RAN ONCE EACH, started by the tool and by nobody else: the gate
+    // twice — the candidate's and the record's — and one build per binary.
+    let long = sim.long_commands();
+    assert_eq!(
+        long.iter().filter(|c| *c == "gate --keep-going").count(),
+        2,
+        "{long:?}"
+    );
+    assert_eq!(
+        long.iter().filter(|c| c.starts_with("cargo ")).count(),
+        2,
+        "{long:?}"
+    );
+
+    // NO PROMPT TELLS AN AGENT TO HOLD ANYTHING BY ITS OWN MEANS — the preflight's and the
+    // executor's least of all: neither names a gate or a build.
+    for (label, prompt) in &ran.prompts {
+        for word in [
+            "in the background",
+            "in slices",
+            "here-document",
+            "shasum",
+            "git archive",
+            "dev/gate",
+            "2>&1",
+        ] {
+            assert!(
+                !prompt.contains(word),
+                "the prompt of `{label}` holds `{word}`"
+            );
+        }
+    }
+    let executor = &ran
+        .prompts
+        .iter()
+        .find(|(label, _)| label == "record:test:r1")
+        .expect("the record's executor")
+        .1;
+    assert!(
+        executor.contains(" --from ")
+            && executor.contains(" --sha256 ")
+            && executor.contains("RUN NO GATE"),
+        "the executor writes a file, applies it by its hash, and runs no gate: {executor}"
+    );
+
+    // THE BINARY'S HASH IS THE TOOL'S: what the stage returns, and what the round's record
+    // holds, is the hash of the file every driving agent was handed.
+    let candidate = &ran.result["candidate"];
+    let binary = candidate["binary"].as_str().expect("the binary's path");
+    assert_eq!(
+        binary,
+        format!("{}/bin/c1.a1/jigc", sim.rig.scratch.display())
+    );
+    let bytes = fs::read(binary).expect("the binary the tool built");
+    assert_eq!(candidate["sha256"], sha256_of(&bytes).as_str());
+    let state = sim.state();
+    assert_eq!(state["rounds"][0]["facts"]["binary"], candidate["sha256"]);
+    // AND THE ROUND'S GATE IS ON RECORD from the file the tool kept the gate's output in.
+    assert!(
+        sim.rig
+            .read(&format!("{RUN_DIR}/r1/gate.md"))
+            .contains("pass"),
+        "the candidate's gate is a fact of the round"
+    );
+}
+
+fn sha256_of(bytes: &[u8]) -> String {
+    sha256(std::str::from_utf8(bytes).expect("a stand-in binary is text"))
+}
+
+/// A SCRIPTED CHECK'S VERDICT IS THE TOOL'S (the re-review's `R-M8`). The stage starts the
+/// regression set — after the candidate's gate, never beside it — and the result it records
+/// is THE FILE THE TOOL KEPT ITS VERDICT IN: red where that tool's one line says red,
+/// whatever any agent of the stage says, and void with the tool's own reason for each of
+/// the seven that tool has. The gate as an item of the test set is answered from the
+/// candidate's own gate, which is not run twice.
+#[test]
+fn a_held_check_is_started_by_the_stage_and_recorded_from_the_tools_verdict_file() {
+    if !can_run() {
+        return;
+    }
+    let reasons = [
+        "did-not-run",
+        "build-previous",
+        "build-candidate",
+        "baseline",
+        "swap",
+        "incomplete",
+        "evidence",
+    ];
+    let voids: Vec<String> = reasons.iter().map(|r| format!("reg-{r}")).collect();
+    let mut ids: Vec<&str> = vec!["regression-set", "reg-green"];
+    ids.extend(voids.iter().map(String::as_str));
+    let sim = Sim::opened("held-checks", &with_held_checks(&ids));
+    let mut held = json!({"regression-set": {"status": "red"}, "reg-green": {"status": "green"}});
+    for reason in reasons {
+        held[format!("reg-{reason}")] = json!({"status": "void", "reason": reason});
+    }
+    // The preflight's stand-in would call every check green: nobody asks it.
+    let said_green: serde_json::Map<String, Value> = ids
+        .iter()
+        .map(|id| ((*id).to_owned(), json!("green")))
+        .collect();
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"held": held, "checks": said_green})),
+    );
+    assert_eq!(ran.result["status"], "triaged", "{}", ran.result);
+    let agents = ran.agents();
+    let at = |label: &str| {
+        agents
+            .iter()
+            .position(|a| *a == label)
+            .unwrap_or_else(|| panic!("`{label}` was launched: {agents:?}"))
+    };
+    assert!(
+        at("git:hold-wait:gate-c1-a1") < at("git:hold-start:regression-set-c1-a1"),
+        "the regression set runs after the gate, never beside it"
+    );
+    assert!(at("git:hold-wait:regression-set-c1-a1") < at("area-a:review"));
+    assert!(
+        !ran.prompts
+            .iter()
+            .any(|(label, prompt)| label.starts_with("preflight") && prompt.contains("regression")),
+        "the preflight is asked nothing about a held check"
+    );
+
+    // WHAT IS ON RECORD: red, green, and void with the tool's reason — each from its file.
+    let state = sim.state();
+    assert_eq!(
+        standing(&state, "regression-set"),
+        json!(["red", null]),
+        "{state}"
+    );
+    assert_eq!(standing(&state, "reg-green"), json!(["green", null]));
+    assert_eq!(standing(&state, "gate"), json!(["green", null]));
+    for id in &voids {
+        assert_eq!(standing(&state, id), json!(["void", "void"]), "{id}");
+    }
+    let results = sim.rig.read(&format!("{RUN_DIR}/r1/results.md"));
+    for reason in reasons {
+        assert!(
+            results.contains(reason),
+            "the void's reason `{reason}` is on record: {results}"
+        );
+    }
+    assert!(
+        state["ledger"]
+            .as_array()
+            .expect("the ledger")
+            .iter()
+            .any(|row| row["key"] == "red-regression-set"),
+        "a red check is filed as a finding by the record script: {state}"
+    );
+    // The verdicts' files are among the record's paths, written once.
+    let (_, paths) = head_commit(&sim);
+    for id in ids.iter().chain(["gate"].iter()) {
+        let file = format!("{RUN_DIR}/r1/checks/{id}.a1.json");
+        assert!(
+            paths.contains(&file),
+            "`{file}` is in the record's commit: {paths:?}"
+        );
+    }
+    let kept: Value = serde_json::from_str(
+        sim.rig
+            .read(&format!("{RUN_DIR}/r1/checks/regression-set.a1.json"))
+            .trim_end(),
+    )
+    .expect("the verdict on record is the tool's line");
+    assert_eq!(
+        json!([
+            kept["item"],
+            kept["kind"],
+            kept["verdict"],
+            kept["commit"],
+            kept["facts"]["candidate"]
+        ]),
+        json!([
+            "regression-set",
+            "regression",
+            "red",
+            ran.result["candidate"]["sha"],
+            ran.result["candidate"]["sha"]
+        ]),
+        "{kept}"
+    );
+    // The gate's verdict is the candidate's gate, which ran once beside the record's.
+    assert_eq!(
+        sim.long_commands()
+            .iter()
+            .filter(|c| *c == "gate --keep-going")
+            .count(),
+        2
+    );
+    assert_eq!(
+        ran.result["held"]
+            .as_array()
+            .expect("what became of each held check")
+            .iter()
+            .map(|h| json!([h["item"], h["ends"]]))
+            .collect::<Vec<_>>()[..3],
+        [
+            json!(["gate", "green"]),
+            json!(["regression-set", "red"]),
+            json!(["reg-green", "green"])
+        ]
+    );
+}
+
+/// HOW A HELD COMMAND CAN END, each with its cell. A step that asks after one and dies is
+/// followed by another THAT TAKES THE WAIT OVER — the command ran once. A held check whose
+/// supervisor was killed is DEAD: it has no result, the stage goes on and records, and the
+/// state asks for it again. A command still running when nobody is left to ask after it
+/// halts the stage and NAMES THE JOB, with the one call that answers once it is over. A
+/// candidate's gate whose output holds no verdict, and a commit that does not build, halt
+/// the stage before any instrument runs.
+#[test]
+fn a_held_command_that_is_taken_over_dead_left_running_void_or_red_has_its_cell() {
+    if !can_run() {
+        return;
+    }
+    // TAKEN OVER: the first agent that asks after the candidate's gate dies; the step is
+    // asked for again — the ONE command, which is the wait and never the start.
+    let sim = Sim::opened("held-over", &with_held_checks(&["regression-set"]));
+    let scratch = sim.rig.scratch.display().to_string();
+    let over = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"endings": {
+            "git:hold-wait:gate-c1-a1": "acts-and-dies-once",
+            "git:hold-start:build-c1-a1": "acts-and-dies-once",
+        }})),
+    );
+    assert_eq!(over.result["status"], "triaged", "{}", over.result);
+    let asked = |label: &str| over.agents().iter().filter(|a| **a == label).count();
+    assert_eq!(
+        [
+            asked("git:hold-start:gate-c1-a1"),
+            asked("git:hold-wait:gate-c1-a1")
+        ],
+        [1, 2],
+        "the wait is asked again, and the start is not"
+    );
+    // A START WHOSE AGENT DIED is asked again too, and answers with the job that is there.
+    assert_eq!(asked("git:hold-start:build-c1-a1"), 2);
+    let long = sim.long_commands();
+    assert_eq!(
+        [
+            long.iter().filter(|c| *c == "gate --keep-going").count(),
+            long.iter().filter(|c| c.starts_with("cargo ")).count()
+        ],
+        [2, 2],
+        "the candidate's gate and its build each ran ONCE: {long:?}"
+    );
+
+    // DEAD: the regression set's supervisor is killed while the command runs.
+    let sim = Sim::opened("held-dead", &with_held_checks(&["regression-set"]));
+    let scratch_dead = sim.rig.scratch.display().to_string();
+    let kill = format!(
+        "python3 -c \"import json,os,signal; os.kill(json.load(open('{scratch_dead}/hold/regression-set-c1-a1/job.json'))['pid'], signal.SIGKILL)\""
+    );
+    let dead = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({
+            "unreleased": ["regression-set-c1-a1"],
+            "meanwhile": {"git:hold-start:regression-set-c1-a1": kill},
+        })),
+    );
+    sim.release("regression-set-c1-a1");
+    assert_eq!(dead.result["status"], "triaged", "{}", dead.result);
+    let of = dead.result["held"]
+        .as_array()
+        .expect("the held checks")
+        .iter()
+        .find(|h| h["item"] == "regression-set")
+        .expect("the regression set");
+    assert_eq!(
+        json!([of["ends"], of["why"]]),
+        json!(["dead", "no-exit"]),
+        "{of}"
+    );
+    let state = sim.state();
+    assert_eq!(
+        standing(&state, "regression-set"),
+        json!(["void", "not-run"]),
+        "a dead check has NO result on record: {state}"
+    );
+    assert_eq!(standing(&state, "gate"), json!(["green", null]));
+    assert!(
+        !sim.rig
+            .root
+            .join(format!("{RUN_DIR}/r1/checks/regression-set.a1.json"))
+            .exists(),
+        "and no verdict's file"
+    );
+
+    // LEFT RUNNING: nobody is left to ask after the candidate's gate.
+    let sim = Sim::opened("held-running", &one_area());
+    let scratch_running = sim.rig.scratch.display().to_string();
+    let opened = sim.rig.rev("HEAD");
+    let left = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({
+            "unreleased": ["gate-c1-a1"],
+            "endings": {"git:hold-wait:gate-c1-a1": "dies"},
+            "agents": {},
+        })),
+    );
+    let halted = &left.result;
+    assert_eq!(
+        json!([
+            halted["status"],
+            halted["halted"]["phase"],
+            halted["halted"]["transient"]
+        ]),
+        json!(["halted", "gate", true]),
+        "{halted}"
+    );
+    assert_eq!(
+        json!([
+            halted["halted"]["held"]["name"],
+            halted["halted"]["held"]["kind"],
+            halted["halted"]["held"]["output"]
+        ]),
+        json!([
+            "gate-c1-a1",
+            "gate",
+            format!("{scratch_running}/hold/gate-c1-a1/output")
+        ]),
+        "the halt names the job: {halted}"
+    );
+    let call =
+        format!("`dev/stabilize-step hold-wait --scratch {scratch_running} --name gate-c1-a1`");
+    assert!(
+        text(&halted["message"]).contains(&call)
+            && text(&halted["message"]).contains("MAY STILL RUN"),
+        "and the one call that answers once it is over: {halted}"
+    );
+    assert!(
+        !left.agents().contains(&"area-a:review"),
+        "no instrument ran"
+    );
+    assert_eq!(sim.rig.rev("HEAD"), opened, "nothing was recorded");
+    let asking = [
+        "hold-wait",
+        "--scratch",
+        &scratch_running,
+        "--name",
+        "gate-c1-a1",
+        "--slice",
+        "1",
+    ];
+    assert_eq!(
+        sim.step(&asking)["status"],
+        "running",
+        "the command runs on"
+    );
+    sim.release("gate-c1-a1");
+    let ended = sim.step(&[
+        "hold-wait",
+        "--scratch",
+        &scratch_running,
+        "--name",
+        "gate-c1-a1",
+    ]);
+    assert_eq!(
+        json!([ended["status"], ended["verdict"]]),
+        json!(["done", "green"])
+    );
+
+    // VOID: the candidate's gate printed no verdict. Nothing could be recorded against it.
+    let sim = Sim::opened("held-void", &one_area());
+    let void = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"gate": {"void": true}, "agents": {}})),
+    );
+    let halted = &void.result;
+    assert_eq!(
+        json!([
+            halted["status"],
+            halted["halted"]["phase"],
+            halted["halted"]["held"]["ends"],
+            halted["halted"]["held"]["why"]
+        ]),
+        json!(["halted", "gate", "void", "no-verdict"]),
+        "{halted}"
+    );
+    assert!(!void.agents().contains(&"area-a:review"));
+
+    // RED: the candidate's commit does not build. No instrument runs without the binary.
+    let sim = Sim::opened("held-red", &one_area());
+    let unbuilt = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"builds": {"fails": ["candidate"]}, "agents": {}})),
+    );
+    let halted = &unbuilt.result;
+    assert_eq!(
+        json!([
+            halted["status"],
+            halted["halted"]["phase"],
+            halted["halted"]["held"]["ends"],
+            halted["halted"]["held"]["why"]
+        ]),
+        json!(["halted", "build", "red", "build"]),
+        "{halted}"
+    );
+    assert!(
+        !unbuilt
+            .agents()
+            .iter()
+            .any(|a| a.starts_with("git:hold-start:gate"))
+    );
+    let _ = scratch;
+}
+
+/// A HELD CHECK THAT NAMES ITS COMMITS IS RUN AGAIN INSIDE ITS ROUND — on the round's
+/// candidate, never the tip (the orchestrator's ruling of 2026-10-07 on the core review's
+/// `F3`; the harness's header: *where that ends*). The regression set is started with the
+/// two commits it compares, so a re-run can hold it again though the round's record
+/// commits have moved the tree on; THE CANDIDATE'S GATE IS NOT HELD AGAIN — it reads the
+/// working tree — and the round keeps the gate it has on record.
+#[test]
+fn a_held_regression_that_was_void_is_run_again_in_a_rerun_on_the_rounds_candidate_and_no_gate_is()
+{
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::opened("held-rerun", &with_held_checks(&["regression-set"]));
+    let candidate = sim.rig.rev("HEAD");
+    let first = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(
+            json!({"held": {"regression-set": {"status": "void", "reason": "did-not-run"}}}),
+        ),
+    );
+    assert_eq!(first.result["status"], "triaged", "{}", first.result);
+    assert_eq!(
+        standing(&sim.state(), "regression-set"),
+        json!(["void", "void"])
+    );
+    let go = sim.invoke(
+        sim.args("test", json!({"rulings": [{"go": true}]})),
+        json!({}),
+    );
+    assert_eq!(
+        json!([go.result["status"], go.result["next"]]),
+        json!(["ruled", "retest"]),
+        "the state asks for the void check again: {}",
+        go.result
+    );
+    assert_ne!(
+        sim.rig.rev("HEAD"),
+        candidate,
+        "record commits moved the tip"
+    );
+
+    let again = sim.invoke(
+        sim.args("test", json!({"clause": "working-product"})),
+        json!({}),
+    );
+    assert_eq!(again.result["status"], "triaged", "{}", again.result);
+    let scratch = sim.rig.scratch.display().to_string();
+    let previous = sim.rig.rev("main");
+    assert!(
+        again.commands.contains(&format!(
+            "dev/stabilize-step hold-start --scratch {scratch} --name regression-set-c1-a2 --kind regression --previous {previous} --candidate {candidate} --list completions/artifacts/M55/stabilization-build/regression-set/intended-changes.tsv --digest {scratch}"
+        )),
+        "the regression set is held again, over the round's candidate: {:?}",
+        again.commands
+    );
+    assert!(
+        !again
+            .agents()
+            .iter()
+            .any(|a| a.starts_with("git:hold-start:gate-")),
+        "no gate of the candidate's is held in a re-run: {:?}",
+        again.agents()
+    );
+    let state = sim.state();
+    assert_eq!(
+        standing(&state, "regression-set"),
+        json!(["green", null]),
+        "{state}"
+    );
+    let kept: Value = serde_json::from_str(
+        sim.rig
+            .read(&format!("{RUN_DIR}/r1/checks/regression-set.a2.json"))
+            .trim_end(),
+    )
+    .expect("the re-run's verdict on record");
+    assert_eq!(
+        json!([kept["verdict"], kept["commit"]]),
+        json!(["green", candidate]),
+        "{kept}"
+    );
+    assert_eq!(
+        sim.long_commands()
+            .iter()
+            .filter(|c| *c == "gate --keep-going")
+            .count(),
+        4,
+        "the candidate's gate once, and one gate per record — the stage's, the ruling's, the re-run's: {:?}",
+        sim.long_commands()
+    );
+}
+
+/// A RECORD'S GATE THAT LEFT NO VERDICT, and the name of the next one. The batch stays
+/// applied; the next invocation gates it again — UNDER THE NEXT NAME, because a held
+/// command is never started again under its own, and a job an earlier invocation left is
+/// never read as this one's — and commits it. No executor runs for a batch that is applied.
+#[test]
+fn a_records_gate_with_no_verdict_leaves_the_batch_applied_and_the_next_invocation_names_the_next_gate()
+ {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::opened("held-record", &one_area());
+    let opened = sim.rig.rev("HEAD");
+    let first = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"record": {"gate": {"void": true}}})),
+    );
+    let halted = &first.result;
+    assert_eq!(
+        json!([
+            halted["status"],
+            halted["halted"]["phase"],
+            halted["halted"]["held"]["name"],
+            halted["halted"]["held"]["ends"]
+        ]),
+        json!(["halted", "record", "record-test-r1-a1-1", "void"]),
+        "{halted}"
+    );
+    assert!(text(&halted["message"]).contains("THE BATCH"), "{halted}");
+    assert_eq!(sim.rig.rev("HEAD"), opened, "nothing was committed");
+    assert!(
+        !first.agents().contains(&"git:record:test:r1"),
+        "no commit step ran"
+    );
+
+    // The next invocation: the gate again, twice void — each under the next name.
+    let second = sim.invoke(
+        sim.args("test", json!({})),
+        json!({"record": {"gate": {"void": true}}}),
+    );
+    assert_eq!(
+        second.result["halted"]["held"]["name"], "record-pending-1",
+        "{}",
+        second.result
+    );
+    assert!(
+        !second.agents().iter().any(|a| a.starts_with("record:")),
+        "a batch that is applied needs no executor: {:?}",
+        second.agents()
+    );
+    let third = sim.invoke(sim.args("test", json!({})), json!({}));
+    assert_eq!(third.result["status"], "recorded", "{}", third.result);
+    let steps: Vec<&str> = third
+        .agents()
+        .into_iter()
+        .filter(|a| a.starts_with("git:hold-"))
+        .collect();
+    assert_eq!(
+        steps,
+        [
+            "git:hold-start:record-pending-1",
+            "git:hold-start:record-pending-2",
+            "git:hold-wait:record-pending-2"
+        ],
+        "the job of the earlier invocation is not this one's: the next name is asked"
+    );
+    assert_ne!(sim.rig.rev("HEAD"), opened, "the record is committed");
+    assert_eq!(
+        sim.rig.remote(LOOP),
+        Some(sim.rig.rev("HEAD")),
+        "and pushed"
+    );
+
+    // AN ALTERED BATCH is refused by the writer, which holds the file to its hash.
+    let sim = Sim::opened("held-altered", &one_area());
+    let altered = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"record": {"payload": "altered"}})),
+    );
+    assert_eq!(
+        json!([altered.result["status"], altered.result["halted"]["phase"]]),
+        json!(["halted", "record"]),
+        "{}",
+        altered.result
+    );
+    assert!(
+        text(&altered.result["halted"]["reason"]).contains("bad-value"),
+        "{}",
+        altered.result
+    );
+    assert_eq!(
+        sim.state()["position"]["test"]["attempt"],
+        2,
+        "nothing was applied"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // The runtime probes
 // ---------------------------------------------------------------------------
 
@@ -4776,16 +5642,21 @@ fn all(cases: &[&str], verdict: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// A probe's commands are the probe tool's and a payload's write, under its scratch root:
-/// none names a run, a round or a branch, and none is a command of the record script, of
-/// the step tool, or git's.
-fn only_the_probe_tool(ran: &Ran, scratch: &str) {
+/// A probe's commands are the probe tool's, under its scratch root: none names a run, a
+/// round or a branch, and none is a command of the record script or git's. `held` are the
+/// commands of the step tool a probe may run beside them — the two plain calls that hold
+/// the hold probe's case (a), as a stage holds its gate — and no other probe has any.
+fn only_the_probe_tool(ran: &Ran, scratch: &str, held: &[&str]) {
     assert!(!ran.commands.is_empty(), "the probe ran commands");
+    let mut by_the_step_tool = Vec::new();
     for command in &ran.commands {
         let shown = command.replace(scratch, "<scratch>");
+        if shown.starts_with("dev/stabilize-step ") {
+            by_the_step_tool.push(shown);
+            continue;
+        }
         assert!(
-            shown.starts_with("dev/stabilize-probe ")
-                || shown.starts_with("mkdir -p <scratch>/probe/payload/e"),
+            shown.starts_with("dev/stabilize-probe "),
             "a probe ran a command that is not the probe tool's: {shown}"
         );
         for foreign in [
@@ -4804,6 +5675,10 @@ fn only_the_probe_tool(ran: &Ran, scratch: &str) {
             );
         }
     }
+    assert_eq!(
+        by_the_step_tool, held,
+        "the commands of the step tool a probe ran"
+    );
 }
 
 #[test]
@@ -4848,7 +5723,7 @@ fn each_runtime_probe_returns_probed_with_one_judged_result_per_case_and_touches
         ran.result["result"],
         format!("{scratch}/probe/required/result.json").as_str()
     );
-    only_the_probe_tool(&ran, &scratch);
+    only_the_probe_tool(&ran, &scratch, &[]);
 
     // relay, and relay-document — twelve git steps each, each handed the ONE line of a
     // throwaway run: its digest, or the line with the document in it; one of them relays
@@ -4905,7 +5780,7 @@ fn each_runtime_probe_returns_probed_with_one_judged_result_per_case_and_touches
             "a probe returns verdicts and never a relayed line: {} bytes",
             ran.result.to_string().len()
         );
-        only_the_probe_tool(&ran, &scratch);
+        only_the_probe_tool(&ran, &scratch, &[]);
     }
 
     // payload — four batches, each written by the executor from its prompt and hashed.
@@ -4937,10 +5812,11 @@ fn each_runtime_probe_returns_probed_with_one_judged_result_per_case_and_touches
             "a batch grows with its entries: {case}"
         );
     }
-    only_the_probe_tool(&ran, &scratch);
+    only_the_probe_tool(&ran, &scratch, &[]);
 
-    // hold — (a) one agent holds the command to its last line; (b) one step starts it, and
-    // a later one reads that it ended.
+    // hold — (a) HELD AS A STAGE HOLDS ITS GATE: one step starts the command through the
+    // step tool, and one agent asks after it until it has ended — two plain calls, and
+    // the tool's verdict; (b) one step starts it, and a later one reads that it ended.
     let scratch = sim.probe_scratch("hold");
     let ran = sim.invoke(
         json!({"probe": "hold", "scratch": scratch, "seconds": 1}),
@@ -4955,15 +5831,32 @@ fn each_runtime_probe_returns_probed_with_one_judged_result_per_case_and_touches
         [
             "phase Probe".to_owned(),
             git("begin"),
-            "agent probe:hold:a · stabilize-preflight · opus · Probe".to_owned(),
+            "agent git:hold-start:a · build-git · sonnet · Probe".to_owned(),
+            "agent git:hold-wait:a · build-git · sonnet · Probe".to_owned(),
             git("hold:b"),
             git("held:b:1"),
             git("verdict"),
         ],
-        "the `hold` probe: the preflight's role, then a start and a read as git steps"
+        "the `hold` probe: a start and a wait through the step tool, then a start and a read through the probe tool"
     );
     assert_eq!(ran.result["cases"][1]["reads"], 1);
-    only_the_probe_tool(&ran, &scratch);
+    assert_eq!(
+        json!([
+            ran.result["observed"][0]["line"],
+            ran.result["observed"][0]["ends"]
+        ]),
+        json!(["held", "green"]),
+        "case a is the tool's verdict of the held command: {}",
+        ran.result
+    );
+    only_the_probe_tool(
+        &ran,
+        &scratch,
+        &[
+            "dev/stabilize-step hold-start --scratch <scratch> --name a --kind probe --seconds 1 --digest <scratch>",
+            "dev/stabilize-step hold-wait --scratch <scratch> --name a --digest <scratch>",
+        ],
+    );
 
     assert_eq!(
         sim.repository(),

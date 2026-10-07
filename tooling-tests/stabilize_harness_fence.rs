@@ -94,6 +94,19 @@
 //!   step tool refuses with, and for no other; and a held check's kind is a kind the tool
 //!   holds. The functions that are the `fix` half's own are named, each with its reason.
 //!
+//! - **(s)** every command a prompt names is one plain invocation of a tool (the second
+//!   repair plan's task `K11`; the human's ruling of 2026-10-07 that no step of a stage may
+//!   need his permission): every prompt the script can compose is composed — a table of
+//!   calls of its composers, held whole against the script's own functions, driven under
+//!   `node` — and held ([`prompt_faults`]): a code span that opens with `dev/` is
+//!   `dev/stabilize-step`, `dev/stabilize-record` or `dev/stabilize-probe` and plain words;
+//!   no span is a command of another program; nothing a shell composes with stands
+//!   anywhere; and no prompt tells an agent to wait, to send a command to the background,
+//!   to redirect, to pipe or to poll by its own means. What is not replaceable is a named
+//!   exception with its reason, red where no prompt meets it or its line stops holding
+//!   its shape; and each shape, put back into each prompt, is red. The simulation holds
+//!   every prompt of every invocation it runs to the same function.
+//!
 //! **Driven, where `node` is on `PATH`** (it is on this project's development machines and
 //! on GitHub's hosted runners; where it is not, the arm fails under CI and passes anywhere
 //! else — the gate gains no dependency — and the gate's own summary names it as a test
@@ -368,7 +381,7 @@ fn b_every_build_git_call_runs_on_sonnet() {
     }
     assert!(
         function(&full, "toolStep").contains(
-            "readDigest(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA, RUN_AGAIN), act)"
+            "readDigest(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA, RUN_AGAIN, seen), act)"
         ),
         "a step that is one command of the tool goes through `gitStep`, and so through that call — read as a digest, and asked for again as its one command"
     );
@@ -989,7 +1002,8 @@ fn j_what_the_record_script_decides_from_reaches_it_and_what_it_decides_is_passe
         tested.contains(
             "const facts = rerun ? null : { candidate: sha, binary: built.candidate.sha256 }"
         ) && tested.contains("if (!rerun) steps.push(() => roleStep('scope', 'scope',")
-            && tested.contains("gate: rerun ? null : { commit: sha, file: candidateGate }")
+            && tested.contains("const gate = rerun ? null : await hold({ name: 'gate-' + label + '-a' + ctx.attempt, kind: 'gate',")
+            && tested.contains("gate: pre.gate ? { commit: sha, file: pre.gate.output } : null")
             && !source.contains("alone"),
         "a re-run writes no fact of the round, resolves no scope and records no candidate's gate"
     );
@@ -1218,7 +1232,7 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
     let ledger = function(&full, "ledgerSource");
     assert!(
         ledger.contains("state.untriaged.count")
-            && ledger.contains("read: 'dev/stabilize-record untriaged --run ' + run")
+            && ledger.contains("read: typed(RECORD_TOOL, 'untriaged --run ' + run)")
             && !ledger.contains("state.ledger")
             && !ledger.contains(".round"),
         "the rows are the state's `untriaged`, whatever round or stage they came from — as how many there are, and the read that prints them"
@@ -1235,31 +1249,43 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
         previous.contains("facts.previous") && previous.contains("facts['previous-commit']"),
         "the previous release is read off the state's facts"
     );
-    let preflight = function(&full, "preflightPrompt");
+    // THE PREVIOUS RELEASE'S BINARY IS BUILT BY THE TOOL, from the commit and to the version
+    // the record names (the second repair plan's `K11`): it is handed to the function that
+    // holds the two builds, never to a preflight, and the tool's verdict is held to it.
+    let builds = function(&full, "buildBoth");
     assert!(
-        preflight.contains("plan.previous.version") && preflight.contains("plan.previous.commit"),
-        "the preflight is told the previous release's version and commit"
+        builds.contains(
+            "String(previous.commit), 'bin/previous-' + short + '/jigc', previous.version,"
+        ) && function(&full, "buildOf").contains("(version && f.version !== version)")
+            && function(&full, "buildOf").contains("' --version ' + version"),
+        "the previous release's binary is built from the record's commit, and held to the record's version"
     );
     let scope = function(&full, "scopePrompt");
     assert!(
         scope.contains("plan.previous.commit") && scope.contains("plan.fallback"),
         "the scope step is told the previous release's commit and the default scope"
     );
-    let mut preflights = 0;
-    for line in source
+    let mut built = 0;
+    for line in without(&full, &["selfTest", "runFix"])
         .lines()
-        .filter(|line| line.contains("preflightOf(ctx") && !line.starts_with("async function "))
+        .filter(|line| line.contains("await buildBoth("))
     {
-        preflights += 1;
+        built += 1;
         assert!(
-            line.contains("previous: previousOf(state)"),
-            "a preflight is not handed the run's previous release: {line}"
+            line.contains(", previousOf(state), "),
+            "the builds are not handed the run's previous release: {line}"
         );
     }
-    assert!(preflights >= 4, "the scan found the preflight calls");
+    assert_eq!(
+        built, 2,
+        "a `test` stage and the lap that finishes a triage each build both binaries"
+    );
     assert!(
-        function(&full, "preflightOf").contains("r.previous.version !== plan.previous.version"),
-        "and the binary it returns is held to that release"
+        !function(&full, "preflightPrompt").contains("plan.previous")
+            && !function(&full, "preflightPrompt").contains("plan.binary")
+            && !function(&full, "preflightOf").contains("r.candidate")
+            && !function(&full, "preflightOf").contains("r.previous"),
+        "and no preflight builds or returns a binary"
     );
     assert!(
         source.contains("scope: v.scope, previous: previousOf(state), fallback: state.facts.scope"),
@@ -1306,18 +1332,29 @@ fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_
     let full = harness();
     let source = code(&full);
 
-    // One function runs a record step: the executor first, then the ONE commit, a git step
-    // that is handed what the batch was composed of.
+    // One function runs a record step: the executor first — where a batch is to be applied
+    // — then THE GATE, A COMMAND THE TOOL HOLDS, under a name of the record's own that is
+    // never an earlier invocation's; then the ONE commit, a git step that is handed the
+    // file the tool kept the gate's output in and what the batch was composed of.
     let step = function(&full, "recordStep");
     let executor = step
         .find("await roleStep('record', ")
         .expect("a record step launches its executor");
+    let gate = step
+        .find("const gate = await hold({ name: rec.hold, sequence: true, kind: 'gate', flags: '--run ' + v.run,")
+        .expect("a record step's gate is held by the tool, under the record's own name, in sequence");
     let commit = step
-        .find("await toolStep('record:' + label, 'Record', 'record', recordCommitPrompt(v, branch, rec.gate, rec.expect, stageHead))")
+        .find("await toolStep('record:' + label, 'Record', 'record', recordCommitPrompt(v, branch, gate.output, rec.expect, stageHead))")
         .expect("a record step's commit is the tool's `record` act, handed the gate's file, what was composed and the commit the stage began on");
     assert!(
-        executor < commit && step.contains("recordFault(r, rec.expect)"),
-        "the executor, then the commit, then the line held to what was composed"
+        executor < gate && gate < commit && step.contains("recordFault(r, rec.expect)"),
+        "the executor, then the gate, then the commit, then the line held to what was composed"
+    );
+    assert!(
+        step.contains("\n  if (rec.text) {\n")
+            && step.contains("if (!HELD_TAKES.record.includes(gate.ends)) return { fault: ")
+            && step.contains("then: recordThen(v.run, branch, 'no-gate')"),
+        "no executor runs for a batch that is applied; and a gate that left no verdict commits nothing and leaves the batch applied"
     );
     assert_eq!(
         source.matches("roleStep('record', ").count()
@@ -1356,46 +1393,45 @@ fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_
         "what a record is held to is counted off the calls the script composed"
     );
 
-    // BOTH GATES OF A ROUND KEEP GOING — the candidate's, which the preflight runs, and a
-    // record step's — so that what each names red is all that is red and the two are held
-    // against each other test by test. One constant spells the command, and nothing else
-    // in the harness spells a gate that is run.
+    // BOTH GATES OF A ROUND KEEP GOING — the candidate's and a record step's — so that what
+    // each names red is all that is red and the two are held against each other test by
+    // test. THE COMMAND IS THE STEP TOOL'S, the one of its held kind `gate`, and no code of
+    // the harness spells a gate that is run: both are started by `hold`, as that kind.
+    let tool = fs::read_to_string(repo_root().join(STEP_TOOL)).expect("read the step tool");
     assert!(
-        source.contains("\nconst GATE = 'dev/gate --keep-going'\n")
-            && function(&full, "preflightPrompt")
-                .contains("`' + GATE + ' > ' + plan.gate + ' 2>&1`")
-            && function(&full, "gateStep").contains("`' + GATE + ' > ' + file + ' 2>&1`")
-            && !source.contains("`dev/gate > "),
-        "the candidate's gate and a record step's gate are not both `dev/gate --keep-going`"
+        tool.contains("{\"kind\": \"gate\", \"takes\": [\"run\"], \"may\": [], \"command\": \"dev/gate --keep-going\"")
+            && !without(&full, &["selfTest", "closeOf"]).contains("dev/gate")
+            && function(&full, "runTest").contains("kind: 'gate', flags: '--run ' + v.run,"),
+        "the candidate's gate and a record step's gate are both the tool's held `gate`, which is `dev/gate --keep-going`"
     );
 
-    // The executor's prompt spells no commit: it applies the batch and runs the gate.
-    for name in ["recordPrompt", "pendingRecordPrompt", "gateStep"] {
-        let body = function(&full, name);
-        assert!(
-            !body.contains("git commit")
-                && !body.contains("git add")
-                && !body.contains("ONE commit of the paths"),
-            "`{name}` has the executor commit"
-        );
-    }
+    // The executor's prompt spells no commit and no gate: it writes the batch to a file
+    // and applies it from there, held to its hash — and nothing else.
+    let prompt = function(&full, "recordPrompt");
     assert!(
-        source.contains("\nconst RECORD_RETURNS = 'YOU MAKE NO COMMIT, and stage nothing: ")
-            && function(&full, "recordPrompt").contains("    RECORD_RETURNS,\n")
-            && function(&full, "pendingRecordPrompt").contains("    RECORD_RETURNS,\n"),
-        "both prompts of a record step end by saying so"
+        !prompt.contains("git commit")
+            && !prompt.contains("git add")
+            && !prompt.contains("ONE commit of the paths")
+            && !prompt.contains("'3. "),
+        "`recordPrompt` has the executor commit, or run a third step"
     );
     assert!(
-        function(&full, "recordPrompt").contains("'2. `dev/stabilize-record apply --run '")
-            && !function(&full, "pendingRecordPrompt").contains("stabilize-record apply"),
-        "a record's calls are ONE batch, and a batch that is applied already is not applied again"
+        source.contains(
+            "\nconst RECORD_RETURNS = 'YOU MAKE NO COMMIT, stage nothing, and RUN NO GATE"
+        ) && prompt.contains("    RECORD_RETURNS,\n"),
+        "a record step's prompt ends by saying so"
+    );
+    assert!(
+        prompt.contains("'2. ' + typed(RECORD_TOOL, 'apply --run ' + v.run")
+            && prompt.contains("' --from ' + batch.file + ' --sha256 ' + batch.sha256)")
+            && function(&full, "pendingRecord")
+                .contains("return { text: null, hold: recordHold(dir),"),
+        "a record's calls are ONE batch, read from a file and held to its hash; and a batch that is applied already has no executor"
     );
     let executor = &definitions()["build-executor"];
     assert!(
-        executor.contains("no commit of yours")
-            && executor.contains("a red gate is not your halt here")
-            && !executor.contains("its `GATE: PASS`"),
-        "build-executor.md still has the record step's executor commit, or halt on a red gate"
+        executor.contains("no commit of yours") && !executor.contains("its `GATE: PASS`"),
+        "build-executor.md still has the record step's executor commit"
     );
 
     // An invocation that finds a batch applied and not committed finishes it first — before
@@ -1413,7 +1449,7 @@ fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_
     }
     let finish = function(&full, "finishRecord");
     assert!(
-        finish.contains("await recordStep('pending', gs.branch, pendingRecordPrompt("),
+        finish.contains("await recordStep('pending', gs.branch, pendingRecord("),
         "a pending batch is finished by a record step that applies nothing"
     );
     for launching in [
@@ -1617,21 +1653,11 @@ const NO_STAGES: &[(&str, &str)] = &[
         "table",
         "the tool's table of acts and arrival states, printed for a reader and for the tool's own suite",
     ),
-    // A HELD COMMAND (the second repair plan's `K10`): built in the tool, and asked for by
-    // no stage UNTIL `K11` — which makes the gates, the regression set and the two builds
-    // tool steps, and takes the first three of these rows out again (a listed act the
-    // script asks for is red, below).
-    (
-        "hold-start",
-        "no stage asks for it YET: the harness starts a long command by a tool step once the second repair plan's K11 has landed, and that task removes this row",
-    ),
-    (
-        "hold-wait",
-        "no stage asks for it YET: the harness waits for a held command by a tool step once the second repair plan's K11 has landed, and that task removes this row",
-    ),
+    // A HELD COMMAND (the second repair plan's `K10` and `K11`): `hold-start` and
+    // `hold-wait` are steps of a stage. The two acts beside them are asked for by NO STEP:
     (
         "hash",
-        "no stage asks for it YET: a file's hash is asked of the tool, not of `shasum`, once the second repair plan's K11 has landed, and that task removes this row",
+        "no STEP is a hash: it is the one command of the tool an AGENT is told to run and read itself — the independent drive of a proposal, which has no definition, asks the tool for the candidate's hash where a prompt once spelled `shasum`",
     ),
     (
         "build",
@@ -1652,10 +1678,35 @@ fn l_every_git_step_is_one_command_of_the_tool_but_the_recut_of_a_part() {
     // One function composes every such prompt: the command, and "relay its line".
     let composer = function(&full, "stepPrompt");
     assert!(
-        composer.contains("'1. `' + STEP_TOOL + ' ' + act + ' ' + flags + '`',")
-            && composer.contains("'GIT STEP — ' + what + '. ' + STEP_RULES,")
+        composer.contains("'1. ' + typed(STEP_TOOL, act + ' ' + flags),")
+            && composer.contains("'GIT STEP — ' + what + '. ' + (asks ? ASK_RULES : STEP_RULES),")
             && composer.matches("\n    '").count() == 3,
-        "`stepPrompt` is the step's opening, ONE command and its report: {composer}"
+        "`stepPrompt` is the step's opening, ONE command — rendered by the one function that renders a command — and its report: {composer}"
+    );
+    // ONE STEP RUNS ITS COMMAND MORE THAN ONCE — the step that asks after a held command —
+    // and it is told so by rules of its own: every other step never runs its command twice.
+    let asking: Vec<String> = git_prompts(&full)
+        .into_iter()
+        .filter(|name| function(&full, name).trim_end().ends_with(", true)\n}"))
+        .collect();
+    assert_eq!(
+        asking,
+        ["holdWaitPrompt"],
+        "the steps that are told to ask again"
+    );
+    assert!(
+        code(&full).contains("\nconst ASK_RULES = 'Run exactly the ONE command below")
+            && code(&full).matches("RUN THE SAME COMMAND AGAIN").count()
+                - function(&full, "selfTest")
+                    .matches("RUN THE SAME COMMAND AGAIN")
+                    .count()
+                == 1
+            && code(&full).contains("never run the command a second time"),
+        "the rules of the step that asks again, and of every step that does not"
+    );
+    assert!(
+        function(&full, "proposalPrompt").contains("typed(STEP_TOOL, 'hash --scratch ' + ctx.scratch + ' --file ' + below(ctx.scratch, built.candidate.binary))"),
+        "the hash a prompt asks of the tool is the tool's `hash`, of the candidate's binary"
     );
 
     // Each act is asked for by exactly one prompt function, and each prompt function asks
@@ -1770,7 +1821,7 @@ fn l_every_git_step_is_one_command_of_the_tool_but_the_recut_of_a_part() {
             if line.contains("carryPrompt(v, round, take, part), CARRY_SCHEMA)") {
                 "the part's re-cut"
             } else if line
-                .contains("readDigest(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA, RUN_AGAIN), act)")
+                .contains("readDigest(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA, RUN_AGAIN, seen), act)")
             {
                 "toolStep"
             } else if line.contains(
@@ -1891,9 +1942,9 @@ fn q_a_runtime_probe_works_on_no_run_and_its_steps_are_the_probe_tools() {
             let act = rest.split('\'').nth(2).expect("a step names its act");
             asked.insert(act.to_owned());
         }
-        // … spelled into a role's prompt as a command: `PROBE_TOOL + ' <act> `, in backticks.
+        // … spelled into a role's prompt as a command: `typed(PROBE_TOOL, '<act> …`.
         if name != "probeStep" {
-            for rest in body.split("`' + PROBE_TOOL + ' ").skip(1) {
+            for rest in body.split("typed(PROBE_TOOL, '").skip(1) {
                 asked.insert(rest[..rest.find(' ').expect("an act and its flags")].to_owned());
             }
         }
@@ -1928,7 +1979,6 @@ fn q_a_runtime_probe_works_on_no_run_and_its_steps_are_the_probe_tools() {
             "runDir(",
             "v.run",
             "v.stage",
-            "toolStep(",
             "readState(",
             "beginAttempt(",
             "settleReports(",
@@ -1937,8 +1987,7 @@ fn q_a_runtime_probe_works_on_no_run_and_its_steps_are_the_probe_tools() {
             "rulingsStep(",
             "launcher(",
             "reportLine(",
-            "' + GATE",
-            "GATE + '",
+            "dev/gate",
             "stabilize-record apply",
             "git ",
         ] {
@@ -1953,24 +2002,34 @@ fn q_a_runtime_probe_works_on_no_run_and_its_steps_are_the_probe_tools() {
                 "`{name}` composes a command of the step tool"
             );
         }
+        // ONE PROBE HOLDS A COMMAND AS A STAGE DOES — the `hold` probe's case (a), through the
+        // step tool's held kind `probe`: the two prompts a stage's held command gets, and
+        // nothing else of a stage's steps.
+        let steps = body.matches("toolStep(").count();
+        assert_eq!(
+            steps,
+            if name == "runProbe" { 2 } else { 0 },
+            "`{name}` runs a step of the step tool"
+        );
     }
-    // The roles a probe launches are a stage's, by the roles table: the reviewer, the
-    // executor and the preflight — and each is handed a probe's own prompt.
     let run = function(&full, "runProbe");
+    assert!(
+        run.contains("heldOf(await toolStep('hold-start:a', 'Probe', 'hold-start', holdStartPrompt(v, 'a', 'probe', '--seconds ' + seconds,")
+            && run.contains("await watched(() => toolStep('hold-wait:a', 'Probe', 'hold-wait', holdWaitPrompt(v, 'a',")
+            && run.contains("HELD_TAKES.probe.includes(held.ends) && held.kind === 'probe' && held.name === 'a' ? 'held'"),
+        "the hold probe's case (a) is started and asked after by the two steps a stage holds a command with, and its line is the tool's verdict"
+    );
+    // The roles a probe launches are a stage's, by the roles table: the reviewer and the
+    // executor — and each is handed a probe's own prompt.
     let launched: Vec<&str> = run
         .split("roleStep('")
         .skip(1)
         .map(|rest| &rest[..rest.find('\'').expect("a role")])
         .collect();
-    assert_eq!(
-        launched,
-        ["review", "record", "preflight"],
-        "the roles a probe launches"
-    );
+    assert_eq!(launched, ["review", "record"], "the roles a probe launches");
     for (role, prompt) in [
         ("review", "probeReviewPrompt("),
         ("record", "probePayloadPrompt("),
-        ("preflight", "probeHoldPrompt("),
     ] {
         let call = run
             .lines()
@@ -2422,8 +2481,8 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
     let composers = git_prompts(&full);
     assert_eq!(
         composers.len(),
-        12,
-        "the composers of a step: {composers:?}"
+        14,
+        "the composers of a step — the twelve of the acts, and the two of a held command: {composers:?}"
     );
     for name in &composers {
         assert_eq!(
@@ -2460,8 +2519,8 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
     );
     assert_eq!(
         ours.matches("readStep(").count(),
-        5,
-        "`readStep` is declared once and called by `readDigest`, by a probe's step and by the two probes that relay a line of their own — a stage's step never goes around `readDigest`"
+        4,
+        "`readStep` is declared once and called by `readDigest`, by a probe's step and by the probe that relays a line of its own — a stage's step never goes around `readDigest`"
     );
     assert!(
         !function(&full, "lostStep").contains("? r.line :")
@@ -2602,18 +2661,26 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
         );
     }
     assert!(
-        function(&full, "itemRead").contains("'dev/stabilize-record item --run ' + run + ' --item ' + item")
-            && function(&full, "doorsRead").contains(
-                "'dev/stabilize-record item-doors --run ' + run + ' --round ' + round + ' --item ' + item"
-            )
+        function(&full, "itemRead").contains("'item --run ' + run + ' --item ' + item")
+            && function(&full, "doorsRead")
+                .contains("'item-doors --run ' + run + ' --round ' + round + ' --item ' + item")
+            && function(&full, "briefLine")
+                .contains("typed(RECORD_TOOL, itemRead(ctx.run, unit.item))")
+            && function(&full, "doorLines")
+                .contains("typed(RECORD_TOOL, doorsRead(ctx.run, unit.round, unit.item))")
             && function(&full, "doorLines").contains("doorsRead(ctx.run, unit.round, unit.item)")
             && function(&full, "preflightPrompt").contains("itemRead(ctx.run, c.item)")
             && function(&full, "crossModelPrompt").contains("itemRead(ctx.run, unit.item)")
             && function(&full, "crossModelPrompt").contains("doorLines(ctx, unit)")
             && function(&full, "unitPrompt").contains("briefLine(ctx, unit)")
-            && function(&full, "unitPrompt").contains("doorLines(ctx, unit)")
-            && function(&full, "pendingRecordPrompt").contains("`dev/stabilize-record pending --run ' + v.run + '`"),
-        "a brief, a door list and a pending batch's subject are each handed over as the read that prints them"
+            && function(&full, "unitPrompt").contains("doorLines(ctx, unit)"),
+        "a brief and a door list are each handed over as the read that prints them"
+    );
+    // A PENDING BATCH'S SUBJECT is handed to nobody any more: no executor runs for a batch
+    // that is applied (the second repair plan's `K11`), so no prompt names its read.
+    assert!(
+        !ours.contains("pending --run") && function(&full, "pendingRecord").contains("text: null"),
+        "a pending batch has no executor, and no prompt"
     );
     assert_eq!(
         ours.matches("doorList(").count(),
@@ -2623,7 +2690,7 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
     assert!(
         function(&full, "ledgerSource").contains("findings: []")
             && function(&full, "triagePrompt")
-                .contains("(s.read ? ' the rows `' + s.read + '` prints"),
+                .contains("(s.read ? ' the rows ' + s.read + ' prints"),
         "triage is handed the read of the untriaged rows, and none of them"
     );
 
@@ -2708,9 +2775,11 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
     for held in [
         "const sha = rerun ? String((state.rounds.find((r) => r.round === rerun.round) || {}).candidate || '') : String(gs.head)",
         "const moved = sha !== String(gs.head)",
-        "checks: moved ? [] : always, crossModel: crossNamed.length > 0, previous: previousOf(state), tested: moved }",
+        "checks: moved ? [] : always, crossModel: crossNamed.length > 0, tested: moved }",
+        "const binaries = await buildBoth(ctx, label, sha, previousOf(state), 'Preflight and scope')",
         "const unbegun = await beginAttempt(ctx, launch, sha)",
-        "gate: rerun ? null : { commit: sha, file: candidateGate }, results: { commit: sha, rows: resultRows(unitStatus) }",
+        "gate: pre.gate ? { commit: sha, file: pre.gate.output } : null, results: { commit: sha, rows: resultRows(unitStatus) }",
+        "flags: '--previous ' + previousOf(state).commit + ' --candidate ' + sha + ' --list ' + REGRESSION_LIST,",
         "const facts = rerun ? null : { candidate: sha, binary: built.candidate.sha256 }",
         "const c = offTree ? null : checks.find((x) => x.check === item.item)",
     ] {
@@ -2748,4 +2817,821 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
             .contains("if (unit.verdict) return { item: unit.item, verdict: unit.verdict }"),
         "a held check's result is the verdict's file, and no word"
     );
+}
+
+// ---------------------------------------------------------------------------
+// (s) every command a prompt names is one plain invocation of a tool
+// ---------------------------------------------------------------------------
+
+/// The three tools a prompt of the harness may name a command of — what the allow rules of
+/// the committed settings are written from, one rule per tool, by a command's first word.
+pub(crate) const PROMPT_TOOLS: [&str; 3] = [
+    "dev/stabilize-step",
+    "dev/stabilize-record",
+    "dev/stabilize-probe",
+];
+
+/// A word a code span may not be: a program an agent would run by a shell of its own. The
+/// tools of a run are reached THROUGH the step tool's acts, never typed.
+const PROGRAMS: &[&str] = &[
+    "git",
+    "cargo",
+    "shasum",
+    "sha256sum",
+    "sh",
+    "bash",
+    "zsh",
+    "sleep",
+    "nohup",
+    "cat",
+    "mkdir",
+    "mktemp",
+    "tar",
+    "gh",
+    "codex",
+    "node",
+    "python",
+    "python3",
+    "timeout",
+    "watch",
+    "tee",
+    "xargs",
+    "env",
+    "cd",
+    "rm",
+    "cp",
+    "mv",
+    "tail",
+    "head",
+    "grep",
+    "command",
+];
+
+/// A code span of several words that is no command, by what it is — the whole list: a
+/// span of several words that is neither an invocation of a tool, nor a list of flags, nor
+/// one of these, is red.
+const NOT_COMMANDS: &[(&str, &str)] = &[(
+    "left open",
+    "the mark triage is told an entry carries: two words of a list, no program",
+)];
+
+/// What a prompt tells an agent to do BY ITS OWN MEANS, as a word: each is a shell the
+/// agent composes, and a permission prompt nobody is watching (the human's ruling of
+/// 2026-10-07). Read outside the commands of the three tools.
+const OWN_MEANS: &[&str] = &[
+    "wait",
+    "waits",
+    "waited",
+    "waiting",
+    "background",
+    "redirect",
+    "redirected",
+    "redirects",
+    "pipe",
+    "piped",
+    "pipes",
+    "piping",
+    "poll",
+    "polls",
+    "polled",
+    "polling",
+    "sleep",
+    "sleeps",
+    "nohup",
+    "here-document",
+    "heredoc",
+    "slices",
+];
+
+/// The characters a shell composes with: none stands anywhere in a prompt.
+const SHELL_SHAPES: &[(char, &str)] = &[
+    ('|', "a pipe"),
+    ('>', "a redirect"),
+    ('<', "a redirect, or a here-document"),
+    ('&', "`&&`, or a command sent to the background"),
+    ('$', "a substitution"),
+];
+
+/// The report's end marker — the one text with a `<` in it that a prompt spells: the last
+/// line of a report, as `dev/stabilize-record` holds it.
+const END_MARKER: &str = "<!-- end of report -->";
+
+/// The line a payload stands between, twice: the text an agent writes to a file with its
+/// file tool — DATA, whatever it holds, and no instruction.
+const PAYLOAD_MARKER: &str = "STABILIZE_PAYLOAD";
+
+/// THE EXCEPTIONS — what a prompt still names that is no plain invocation of a tool, each
+/// with the prompt it stands in, how its line opens (`*`: the whole prompt), why it is not
+/// replaced, and what it must still hold: an exception that no prompt meets, or whose line
+/// no longer holds its shape, is stale, and red.
+const EXCEPTIONS: &[(&str, &str, &str, &[&str])] = &[
+    (
+        "proposalPrompt",
+        "HOW. ",
+        "the plan's row 12, NOT REPLACEABLE: an advocate's proposal is a PATCHED tree, which is no commit — and the step tool builds a commit and nothing else. The independent drive clones, patches and builds by a shell of its own, under the session's permission mode; the hash it asserts is asked of the tool, on a line of its own",
+        &[
+            "`git clone`",
+            "`cargo build --release --locked`",
+            "`mktemp -d`",
+        ],
+    ),
+    (
+        "crossModelPrompt",
+        "HOW. ",
+        "the cross-model pass runs a tool of another model family, which the commit holds no wrapper for and no stage needs: it is launched only for an item the invocation names, one by one, and naming it is the human's approval — its one command is a shell of the role's own",
+        &[" review - ", "`mktemp -d`"],
+    ),
+    (
+        "preflightPrompt",
+        "whether the cross-model pass's tool answers",
+        "the same pass's own assert, asked only where the invocation names an item for it: whether that tool answers at all",
+        &["`command -v "],
+    ),
+    (
+        "carryPrompt",
+        "*",
+        "the `fix` half's, which refuses to start: the re-cut of a part is ruled to be rebuilt as a revert (DECISIONS.md, 2026-10-06), and a mechanism about to go is not ported — it is the one step that is still a list of git commands",
+        &["`git cherry-pick -x "],
+    ),
+];
+
+/// One word of a plain invocation: bare, or in single quotes with nothing a shell reads.
+fn plain_word(word: &str) -> bool {
+    let bare = |text: &str, more: &str| {
+        !text.is_empty()
+            && text
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "_./:=@%+,-".contains(c) || more.contains(c))
+    };
+    match word.strip_prefix('\'').and_then(|w| w.strip_suffix('\'')) {
+        Some(quoted) => bare(quoted, " ()"),
+        None => bare(word, ""),
+    }
+}
+
+/// A command line as its words: split at spaces outside single quotes.
+fn words_of(line: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut word = String::new();
+    let mut quoted = false;
+    for c in line.chars() {
+        if c == '\'' {
+            quoted = !quoted;
+        }
+        if c == ' ' && !quoted {
+            words.push(std::mem::take(&mut word));
+        } else {
+            word.push(c);
+        }
+    }
+    words.push(word);
+    words
+}
+
+/// Whether a code span is a list of flags: it opens with `--`, and every word is plain.
+fn is_flags(span: &str, words: &[&str]) -> bool {
+    span.starts_with("--") && words.iter().all(|word| plain_word(word))
+}
+
+/// Why a code span that opens with a tool's path is no plain invocation of it, or `None`.
+fn call_fault(span: &str) -> Option<String> {
+    let words = words_of(span);
+    if !PROMPT_TOOLS.contains(&words[0].as_str()) {
+        return Some(format!(
+            "`{span}` opens with `{}`, which is none of the three tools a prompt may name",
+            words[0]
+        ));
+    }
+    words[1..]
+        .iter()
+        .find(|word| !plain_word(word))
+        .map(|word| format!("`{span}` is no plain invocation: `{word}` is no plain word"))
+}
+
+/// A prompt, held: what in it is not one plain invocation of a tool, or tells an agent to
+/// do by its own means what a tool does — and the tools its commands are of. `name` is the
+/// prompt's composer, for the exceptions; `met` collects the exceptions it met.
+pub(crate) fn prompt_faults(
+    name: &str,
+    prompt: &str,
+    met: &mut BTreeSet<&'static str>,
+) -> (Vec<String>, BTreeSet<String>) {
+    let mut faults = Vec::new();
+    let mut tools = BTreeSet::new();
+    // What is cut before anything is read: the paragraph every definition carries, a
+    // payload — data — and the lines that are the named exceptions.
+    let mut kept: Vec<&str> = Vec::new();
+    let mut payload = false;
+    let whole = EXCEPTIONS
+        .iter()
+        .find(|(of, opens, _, _)| *of == name && *opens == "*" && prompt.contains("re-cut a part"));
+    if let Some((_, _, _, holds)) = whole {
+        met.insert("carryPrompt");
+        for shape in *holds {
+            if !prompt.contains(shape) {
+                faults.push(format!(
+                    "the exception of `{name}` no longer holds `{shape}`: it is stale"
+                ));
+            }
+        }
+        return (faults, tools);
+    }
+    for line in prompt.lines() {
+        if line == PAYLOAD_MARKER {
+            payload = !payload;
+            continue;
+        }
+        if payload || line.starts_with("**Never push to or merge into `main`") {
+            continue;
+        }
+        let excepted = EXCEPTIONS.iter().find(|(of, opens, _, _)| {
+            *of == name
+                && *opens != "*"
+                && (line.starts_with(opens)
+                    || line
+                        .split_once(". ")
+                        .is_some_and(|(_, rest)| rest.starts_with(opens)))
+        });
+        if let Some((of, opens, _, holds)) = excepted {
+            met.insert(if *opens == "HOW. " {
+                *of
+            } else {
+                "preflightPrompt"
+            });
+            for shape in *holds {
+                if !line.contains(shape) {
+                    faults.push(format!(
+                        "the exception of `{name}` (`{opens}…`) no longer holds `{shape}`: it is stale"
+                    ));
+                }
+            }
+            continue;
+        }
+        kept.push(line);
+    }
+    if payload {
+        faults.push("a payload opens and does not close".to_owned());
+    }
+    let text = kept.join("\n").replace(END_MARKER, "");
+    for (shape, what) in SHELL_SHAPES {
+        if let Some(at) = text.find(*shape) {
+            let from = text[..at].rfind('\n').map_or(0, |n| n + 1);
+            let line = &text[from..];
+            let line = &line[..line.find('\n').unwrap_or(line.len())];
+            faults.push(format!(
+                "`{shape}` — {what} — stands in: {}",
+                &line[..line.len().min(200)]
+            ));
+        }
+    }
+    // The code spans.
+    let pieces: Vec<&str> = text.split('`').collect();
+    if pieces.len().is_multiple_of(2) {
+        faults.push("a code span opens and does not close".to_owned());
+    }
+    let mut prose = String::new();
+    for (n, piece) in pieces.iter().enumerate() {
+        if n % 2 == 0 {
+            prose.push_str(piece);
+            prose.push(' ');
+            continue;
+        }
+        let span = piece.trim();
+        if span.is_empty() {
+            continue;
+        }
+        if span.starts_with("dev/") {
+            match call_fault(span) {
+                Some(fault) => faults.push(fault),
+                None => {
+                    tools.insert(words_of(span)[0].clone());
+                }
+            }
+            continue;
+        }
+        prose.push_str(span);
+        prose.push(' ');
+        let words: Vec<&str> = span.split_whitespace().collect();
+        if words.len() == 1 {
+            if PROGRAMS.contains(&words[0]) {
+                faults.push(format!(
+                    "`{span}` is a program an agent would run by a shell of its own"
+                ));
+            }
+        } else if PROGRAMS.contains(&words[0]) {
+            faults.push(format!(
+                "`{span}` is a command of `{}`: a prompt names a command of one of the three tools, and of no other program",
+                words[0]
+            ));
+        } else if !(is_flags(span, &words) || NOT_COMMANDS.iter().any(|(text, _)| *text == span)) {
+            faults.push(format!(
+                "`{span}` is a code span of several words that is no invocation of a tool, no list of flags and no text this suite lists as no command"
+            ));
+        }
+    }
+    // A tool, or any other script of `dev/`, named outside a code span.
+    for word in prose.split(|c: char| c.is_whitespace() || "(),;:".contains(c)) {
+        let word = word.trim_end_matches('.');
+        if word.starts_with("dev/") && !PROMPT_TOOLS.contains(&word) {
+            faults.push(format!(
+                "`{word}` is a script of `dev/` no prompt may send an agent to"
+            ));
+        }
+    }
+    // What an agent is told to do by its own means.
+    for word in prose
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+        .filter(|word| !word.is_empty())
+    {
+        let lower = word.to_ascii_lowercase();
+        if OWN_MEANS.contains(&lower.as_str()) {
+            faults.push(format!(
+                "the word `{word}`: a prompt tells no agent to wait, to send a command to the background, to redirect, to pipe or to poll by its own means"
+            ));
+        }
+    }
+    (faults, tools)
+}
+
+/// Every prompt the harness can compose, as JavaScript evaluated beside its pure functions:
+/// `[name of the composer, what this call of it is, the expression]`. Whatever an agent or
+/// the record would supply is a plain sentinel, so what a prompt holds is the harness's.
+const PROMPTS: &[(&str, &str, &str)] = &[
+    (
+        "stepPrompt",
+        "a step",
+        "stepPrompt('a step', 'state', '--run rc24')",
+    ),
+    (
+        "stepPrompt",
+        "a step that asks again",
+        "stepPrompt('a held command', 'hold-wait', '--scratch /s --name n', true)",
+    ),
+    ("gitStatePrompt", "the first read", "gitStatePrompt(V)"),
+    ("gitStatePrompt", "a look", "gitStatePrompt(V, true)"),
+    ("statePrompt", "", "statePrompt(V, 'test-1')"),
+    ("beginPrompt", "", "beginPrompt(CTX, SHA)"),
+    (
+        "checkReportsPrompt",
+        "",
+        "checkReportsPrompt(CTX, ['attempt', 'preflight', 'scope'])",
+    ),
+    ("findRoundPrompt", "", "findRoundPrompt(V, 1)"),
+    (
+        "openRoundPrompt",
+        "",
+        "openRoundPrompt(V, 1, 'fix/rc24-r1')",
+    ),
+    ("pushPrompt", "a branch", "pushPrompt(V, 'fix/rc24-r1')"),
+    ("pushPrompt", "a record", "pushPrompt(V, 'fix/rc24', true)"),
+    (
+        "recordCommitPrompt",
+        "",
+        "recordCommitPrompt(V, 'fix/rc24', '/s/hold/record-test-r1-a1-1/output', { calls: 3, checks: 2 }, SHA)",
+    ),
+    ("landPrompt", "", "landPrompt(V, 1, 'fix/rc24-r1')"),
+    (
+        "roundCommitsPrompt",
+        "",
+        "roundCommitsPrompt(V, 1, 'fix/rc24-r1')",
+    ),
+    (
+        "carryPrompt",
+        "a dropped round",
+        "carryPrompt(V, 1, [SHA], null)",
+    ),
+    (
+        "carryPrompt",
+        "a part",
+        "carryPrompt(V, 1, [SHA], 'fix/rc24-r1-part1')",
+    ),
+    ("syncMainPrompt", "", "syncMainPrompt('rc24', '/s')"),
+    (
+        "holdStartPrompt",
+        "a gate",
+        "holdStartPrompt(V, 'gate-c1-a1', 'gate', '--run rc24', 'the gate')",
+    ),
+    (
+        "holdStartPrompt",
+        "a build",
+        "holdStartPrompt(V, 'build-c1-a1', 'build', '--commit ' + SHA + ' --to bin/c1.a1/jigc --version 1.0.0-rc.24', 'a binary')",
+    ),
+    (
+        "holdStartPrompt",
+        "the regression set",
+        "holdStartPrompt(V, 'regression-set-c1-a1', 'regression', '--previous ' + SHA + ' --candidate ' + SHA + ' --list ' + REGRESSION_LIST, 'the regression set')",
+    ),
+    (
+        "holdStartPrompt",
+        "the probe",
+        "holdStartPrompt(V, 'a', 'probe', '--seconds 720', 'the hold')",
+    ),
+    (
+        "holdWaitPrompt",
+        "",
+        "holdWaitPrompt(V, 'gate-c1-a1', 'the gate')",
+    ),
+    (
+        "preflightPrompt",
+        "a round's first",
+        "preflightPrompt(CTX, launcher(CTX), 'preflight', { image: false, sha: SHA, label: 'c1', branch: 'fix/rc24', checks: [{ item: 'ci' }, { item: 'tarball' }], crossModel: false, tested: false })",
+    ),
+    (
+        "preflightPrompt",
+        "a candidate that is not the tree",
+        "preflightPrompt(CTX, launcher(CTX), 'preflight', { image: false, sha: SHA, label: 'c1', branch: 'fix/rc24', checks: [], crossModel: false, tested: true })",
+    ),
+    (
+        "preflightPrompt",
+        "the second: the image",
+        "preflightPrompt(CTX, launcher(CTX), 'preflight-second', { image: true, sha: SHA, label: 'c1', branch: 'fix/rc24', checks: [{ item: 'late' }], crossModel: false, tested: false })",
+    ),
+    (
+        "preflightPrompt",
+        "with the cross-model pass's assert",
+        "preflightPrompt(CTX, launcher(CTX), 'preflight', { image: false, sha: SHA, label: 'c1', branch: 'fix/rc24', checks: [], crossModel: true, tested: false })",
+    ),
+    (
+        "scopePrompt",
+        "the first round",
+        "scopePrompt(CTX, launcher(CTX), 'scope', { sha: SHA, label: 'c1', base: null, earlier: false, scope: null, previous: PREVIOUS, fallback: 'delta' })",
+    ),
+    (
+        "scopePrompt",
+        "a later round, named doors",
+        "scopePrompt(Object.assign({}, CTX, { round: 2 }), launcher(CTX), 'scope', { sha: SHA, label: 'c2', base: SHA, earlier: true, scope: { doors: ['a door'] }, previous: PREVIOUS, fallback: 'everything' })",
+    ),
+    (
+        "scopePrompt",
+        "a range",
+        "scopePrompt(CTX, launcher(CTX), 'scope', { sha: SHA, label: 'c1', base: null, earlier: false, scope: { range: 'abcdef1..1234567' }, previous: PREVIOUS, fallback: 'delta' })",
+    ),
+    (
+        "unitPrompt",
+        "a reviewer, by the reads",
+        "unitPrompt(CTX, launcher(CTX), 'row-a-source', { as: 'source', role: 'review', task: 'the SOURCE PASS of this review row' }, { item: 'row-a', doors: 2, round: 1 }, BUILT, [])",
+    ),
+    (
+        "unitPrompt",
+        "a driver with the image, handed reports",
+        "unitPrompt(CTX, launcher(CTX), 'arm-a-run', { as: 'run', role: 'drive', task: 'RUN this trial arm', image: true }, { item: 'arm-a', doors: null, round: 1 }, BUILT, [{ as: 'rehearse', report: 'completions/artifacts/rc24/r1/reports/test/arm-a-rehearse.a1.md' }, { as: 'other', report: null }])",
+    ),
+    (
+        "unitPrompt",
+        "the audit of a fix diff, as given",
+        "unitPrompt(Object.assign({}, CTX, { stage: 'fix', cycle: 1 }), launcher(Object.assign({}, CTX, { stage: 'fix', cycle: 1 })), 'audit-review', { as: 'review', role: 'review', task: 'the review of this round\\'s FIX DIFF' }, { item: 'fix-diff', brief: 'a brief of the script\\'s own', doors: [{ door: 'a door', registry: 'verbs' }], range: 'abcdef1..1234567' }, BUILT, [])",
+    ),
+    (
+        "triagePrompt",
+        "the first pass, with the ledger's rows",
+        "triagePrompt(CTX, launcher(CTX), 'triage-p1', [{ reporter: 'row-a-source', report: 'a/report.md', findings: ['F1 — a title · door: a door · clause: a-clause · repro: a block'] }].concat(ledgerSource('rc24', { untriaged: { count: 2 } })), 1)",
+    ),
+    (
+        "triagePrompt",
+        "a later pass",
+        "triagePrompt(CTX, launcher(CTX), 'triage-p2', [{ reporter: 'verify-p1-a-key', report: null, findings: ['left open 1 — a thing'] }], 2)",
+    ),
+    (
+        "verifyPrompt",
+        "",
+        "verifyPrompt(CTX, launcher(CTX), 'verify-p1-a-key', { key: 'a-key', door: 'a door', clause: 'a-clause', grade: 'breaks', repro: 'a block' }, 'what to drive again', BUILT)",
+    ),
+    (
+        "advocatePrompt",
+        "",
+        "advocatePrompt(CTX, launcher(CTX), 'advocate-p1-a-key', { key: 'a-key', kind: 'contested', door: 'a door', clause: 'a-clause', repro: 'a block', statement: 'a statement' }, BUILT)",
+    ),
+    (
+        "proposalPrompt",
+        "",
+        "proposalPrompt(CTX, 'proposal-p1-a-key', { key: 'a-key' }, { proposal: 'a proposal', report: 'a/report.md', driven: [{ step: 'a step', command: 'a command of the advocate', result: 'a result' }] }, BUILT)",
+    ),
+    (
+        "crossModelPrompt",
+        "",
+        "crossModelPrompt(CTX, 'row-a-crossmodel', { item: 'row-a', doors: 2, round: 1 })",
+    ),
+    (
+        "fixerPrompt",
+        "",
+        "fixerPrompt(Object.assign({}, CTX, { stage: 'fix', cycle: 1 }), launcher(Object.assign({}, CTX, { stage: 'fix', cycle: 1 })), 'fixer-1', { registry: 'verbs', findings: [{ key: 'a-key', door: 'a door', clause: 'a-clause', repro: 'a block', detail: 'a ruling' }] }, 'fix/rc24-r1')",
+    ),
+    (
+        "recordPrompt",
+        "a stage's record",
+        "recordPrompt(V, 'the record of a stage', 'fix/rc24', '/s/record/test-r1-a1', 1, stageRecordCommands(CTX, { reporters: ['attempt'], gate: { commit: SHA, file: '/s/hold/gate-c1-a1/output' }, results: { commit: SHA, rows: [{ item: 'row-a', outcome: 'green' }] }, rows: [], patches: [], triage: [], facts: { candidate: SHA }, keys: [] }), subjectOf('rc24', 1, 'the record of the test stage')).text",
+    ),
+    (
+        "rulingsRecordPrompt",
+        "",
+        "rulingsRecordPrompt(V, 1, 'fix/rc24', [{ go: true }], {}, { round: 1, stages: {} }).text",
+    ),
+    (
+        "probeStep",
+        "",
+        "probeStep('its first act', 'begin', '--scratch /s --probe relay')",
+    ),
+    (
+        "probeReviewPrompt",
+        "case a",
+        "probeReviewPrompt('a', { file: '/s/probe/required/binary', sha256: HASH })",
+    ),
+    (
+        "probeReviewPrompt",
+        "case b",
+        "probeReviewPrompt('b', { file: '/s/probe/required/binary', sha256: HASH })",
+    ),
+    (
+        "probePayloadPrompt",
+        "",
+        "probePayloadPrompt('/s', 20, probeBatch('/s', 20))",
+    ),
+    ("LOOK_AGAIN", "what an agent's retry is told", "LOOK_AGAIN"),
+    ("RUN_AGAIN", "what a step's retry is told", "RUN_AGAIN"),
+    (
+        "relayAgain",
+        "what a state read asked again is told",
+        "relayAgain(2)",
+    ),
+    (
+        "schemaWords",
+        "what every schema says of a field",
+        "schemaWords()",
+    ),
+];
+
+/// What composes a prompt and is in no row of [`PROMPTS`] by its own name, each with the
+/// composer that holds it.
+const HELD_IN: &[(&str, &str)] = &[
+    (
+        "reportLine",
+        "every reporter's prompt, through `launch.line`",
+    ),
+    ("binaryLine", "every driving agent's prompt"),
+    ("branchLine", "the record's and the fixer's"),
+    ("briefLine", "a unit's prompt"),
+    ("doorLines", "a unit's prompt, and the cross-model pass's"),
+    (
+        "findingLines",
+        "triage's prompt: what a reporter returned of its own findings, an agent's text",
+    ),
+];
+
+/// Evaluates [`PROMPTS`] beside the harness's pure functions: per row the text, or the
+/// error of an expression the script cannot evaluate.
+const COMPOSER: &str = r#"
+import { readFileSync } from 'node:fs'
+const [script, rowsJson] = process.argv.slice(2)
+const source = readFileSync(script, 'utf8').replace(/^export const meta = /m, 'const meta = ')
+const pure = source.slice(0, source.indexOf('\n// ---- args: parsed, and refused before any agent ----\n'))
+const rows = JSON.parse(rowsJson)
+const setup = `
+const SHA = 'a'.repeat(40)
+const HASH = 'b'.repeat(64)
+const V = { run: 'rc24', stage: 'test', scratch: '/s' }
+const CTX = { run: 'rc24', round: 1, stage: 'test', attempt: 1, scratch: '/s' }
+const PREVIOUS = { version: '1.0.0-rc.24', commit: SHA }
+const BUILT = { candidate: { label: 'c1', sha: SHA, binary: '/s/bin/c1.a1/jigc', sha256: HASH }, previous: { version: '1.0.0-rc.24', binary: '/s/bin/previous/jigc', sha256: HASH }, image: { tag: 'jigc-trial:c1' } }
+function schemaWords() {
+  const said = []
+  const walk = (value) => {
+    if (!value || typeof value !== 'object') return
+    if (typeof value.description === 'string') said.push(value.description)
+    for (const inner of Object.values(value)) walk(inner)
+  }
+  for (const schema of [STEP_SCHEMA, CARRY_SCHEMA, PREFLIGHT_SCHEMA, SCOPE_SCHEMA, UNIT_SCHEMA, PROBE_UNIT_SCHEMA, TRIAGE_SCHEMA, VERIFY_SCHEMA, ADVOCATE_SCHEMA, PROPOSAL_SCHEMA, FIXER_SCHEMA, RECORD_SCHEMA]) walk(schema)
+  return said.join('\\n')
+}
+`
+const out = rows.map((row) => {
+  try {
+    const text = new Function(pure + setup + '\nreturn (' + row + ')')()
+    return typeof text === 'string' ? { text } : { error: 'it composes no text: ' + JSON.stringify(text) }
+  } catch (e) {
+    return { error: String((e && e.message) || e) }
+  }
+})
+console.log(JSON.stringify(out))
+"#;
+
+/// [`PROMPTS`], composed by the committed script (or by `source`, a mutant of it).
+fn composed(source: Option<&str>) -> Vec<(String, String, Result<String, String>)> {
+    let scratch = ScratchDir::new("stabilize-prompts");
+    let driver = scratch.path().join("composer.mjs");
+    fs::write(&driver, COMPOSER).expect("write the composer");
+    let script = match source {
+        Some(text) => {
+            let path = scratch.path().join("stabilize.js");
+            fs::write(&path, text).expect("write the mutant");
+            path
+        }
+        None => repo_root().join(HARNESS),
+    };
+    let rows: Vec<&str> = PROMPTS.iter().map(|(_, _, row)| *row).collect();
+    let out = Command::new("node")
+        .arg(&driver)
+        .arg(&script)
+        .arg(serde_json::to_string(&rows).expect("the rows as JSON"))
+        .output()
+        .expect("run node");
+    assert!(
+        out.status.success(),
+        "the composer under node: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let said: Vec<Value> = serde_json::from_slice(&out.stdout).expect("one JSON list");
+    PROMPTS
+        .iter()
+        .zip(said)
+        .map(|((name, what, _), one)| {
+            let text = match one["text"].as_str() {
+                Some(text) => Ok(text.to_owned()),
+                None => Err(one["error"].as_str().unwrap_or("no text").to_owned()),
+            };
+            ((*name).to_owned(), (*what).to_owned(), text)
+        })
+        .collect()
+}
+
+/// Every fault of every prompt of a script, and the tools its prompts name.
+fn all_faults(source: Option<&str>) -> (Vec<String>, BTreeSet<String>, BTreeSet<&'static str>) {
+    let mut faults = Vec::new();
+    let mut tools = BTreeSet::new();
+    let mut met = BTreeSet::new();
+    for (name, what, text) in composed(source) {
+        let at = if what.is_empty() {
+            name.clone()
+        } else {
+            format!("{name} ({what})")
+        };
+        match text {
+            Err(error) => faults.push(format!("{at}: the script composes none — {error}")),
+            Ok(text) => {
+                let (found, named) = prompt_faults(&name, &text, &mut met);
+                faults.extend(found.into_iter().map(|fault| format!("{at}: {fault}")));
+                tools.extend(named);
+            }
+        }
+    }
+    (faults, tools, met)
+}
+
+#[test]
+fn s_every_command_a_prompt_names_is_one_plain_invocation_of_a_tool() {
+    let full = harness();
+    // The table is whole: every function of the script that composes a prompt has a row —
+    // or is held in one, and says in which.
+    let listed: BTreeSet<&str> = PROMPTS
+        .iter()
+        .map(|(name, _, _)| *name)
+        .chain(HELD_IN.iter().map(|(name, _)| *name))
+        .collect();
+    let composers: BTreeSet<String> = functions(&full)
+        .into_iter()
+        .filter(|name| {
+            name.ends_with("Prompt")
+                || name.ends_with("Line")
+                || name.ends_with("Lines")
+                || name == "probeStep"
+        })
+        .collect();
+    let mut unlisted: Vec<String> = composers
+        .iter()
+        .filter(|name| !listed.contains(name.as_str()))
+        .map(|name| format!("`{name}` composes a prompt, and this suite composes none with it"))
+        .collect();
+    unlisted.extend(
+        HELD_IN
+            .iter()
+            .filter(|(name, where_)| !composers.contains(*name) || where_.is_empty())
+            .map(|(name, _)| {
+                format!(
+                    "`{name}` is listed as part of a prompt, and the script has no such function"
+                )
+            }),
+    );
+    if !node_or_skip(&format!("no prompt of {HARNESS} was composed and read")) {
+        assert_eq!(unlisted, Vec::<String>::new());
+        return;
+    }
+    let (mut faults, tools, met) = all_faults(None);
+    faults.extend(unlisted);
+    assert!(
+        faults.is_empty(),
+        "what the prompts of {HARNESS} name that is no plain invocation of a tool, or tell an agent to do by its own means:\n{}",
+        faults.join("\n")
+    );
+    // The tools found — what the allow rules are written from.
+    println!("the tools the prompts of {HARNESS} name a command of: {tools:?}");
+    assert_eq!(
+        tools,
+        PROMPT_TOOLS
+            .iter()
+            .map(|tool| (*tool).to_owned())
+            .collect::<BTreeSet<_>>(),
+        "the tools the prompts name commands of (left) are the three the commit holds under `dev/` (right)"
+    );
+    for tool in PROMPT_TOOLS {
+        assert!(
+            repo_root().join(tool).is_file(),
+            "the commit holds `{tool}`"
+        );
+    }
+    // Every exception is met by a prompt, and says why.
+    for (name, opens, why, _) in EXCEPTIONS {
+        assert!(
+            why.split_whitespace().count() >= 12,
+            "the exception of `{name}` (`{opens}`) carries its reason"
+        );
+    }
+    assert_eq!(
+        met,
+        [
+            "carryPrompt",
+            "crossModelPrompt",
+            "preflightPrompt",
+            "proposalPrompt"
+        ]
+        .into_iter()
+        .collect::<BTreeSet<_>>(),
+        "the exceptions a prompt met: one that none meets is stale"
+    );
+
+    // EACH SHAPE, PUT BACK INTO EACH PROMPT, IS RED — and so is each word, each program
+    // and each script that is no tool of the three.
+    let planted: &[(&str, &str)] = &[
+        (" `dev/gate --keep-going`", "none of the three tools"),
+        (
+            " `dev/stabilize-step state --run rc24 > /s/out.txt 2>&1`",
+            "a redirect",
+        ),
+        (" `dev/stabilize-step state --run rc24 | tail -1`", "a pipe"),
+        (
+            " `dev/stabilize-step state --run rc24 && dev/stabilize-step table`",
+            "`&&`",
+        ),
+        (
+            " `dev/stabilize-step state --run rc24 ; true`",
+            "no plain word",
+        ),
+        (
+            " `dev/stabilize-step hash --file $(pwd)/x`",
+            "a substitution",
+        ),
+        (
+            " `dev/stabilize-record report --run rc24 <<'END'`",
+            "a here-document",
+        ),
+        (
+            " `dev/stabilize-step hold-wait --name n &`",
+            "the background",
+        ),
+        (" `sleep 60`", "a command of `sleep`"),
+        (" `nohup dev/stabilize-step table`", "a command of `nohup`"),
+        (" `cd /s`", "a command of `cd`"),
+        (
+            " `FOO=1 dev/stabilize-step table`",
+            "no invocation of a tool",
+        ),
+        (" `git status --porcelain`", "a command of `git`"),
+        (" `shasum -a 256 /s/x`", "a command of `shasum`"),
+        (" `cargo build --release`", "a command of `cargo`"),
+        (" `dev/regression-set run`", "none of the three tools"),
+        (
+            " `for n in 1 2 3; do dev/stabilize-step table; done`",
+            "no invocation of a tool",
+        ),
+        (" Run dev/gate once.", "a script of `dev/`"),
+        (" It runs in the background.", "the word `background`"),
+        (" You wait for it in this same turn.", "the word `wait`"),
+        (
+            " Its output is redirected to a file.",
+            "the word `redirected`",
+        ),
+        (" Never piped.", "the word `piped`"),
+        (" Poll the file.", "the word `Poll`"),
+        (
+            " Written as a single here-document.",
+            "the word `here-document`",
+        ),
+    ];
+    for (name, what, text) in composed(None) {
+        let text = text.expect("composed above");
+        if EXCEPTIONS
+            .iter()
+            .any(|(of, opens, _, _)| *of == name && *opens == "*")
+            && text.contains("re-cut a part")
+        {
+            continue;
+        }
+        let first = text.lines().next().expect("a prompt has a line").to_owned();
+        for (shape, names) in planted {
+            let mutant = text.replacen(&first, &format!("{first}{shape}"), 1);
+            let (found, _) = prompt_faults(&name, &mutant, &mut BTreeSet::new());
+            assert!(
+                found.iter().any(|fault| fault.contains(names)),
+                "`{shape}` put into `{name}` ({what}) must be named ({names}); found: {found:#?}"
+            );
+        }
+    }
 }
