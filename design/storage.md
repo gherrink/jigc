@@ -112,6 +112,7 @@ docs/decisions/ docs/specs/ docs/prds/ docs/architecture/ docs/changelog/   # co
 .jigc/                      # one project-state home (committed config + bootstrap; gitignored caches)
   AGENT.md                  #   committed — the managed bootstrap routing sentence (CLI-owned; the host file references it)
   version                   #   committed — the binary-provenance stamp: which jigc built the store (recommended home; see Store provenance)
+  settings-entries.json     #   committed — the entries `jigc setup` added to the assistant settings file, kept so `jigc uninstall` takes back exactly those; absent where there is nothing to record (assistant-adapter.md → Taken back by a record, never by resemblance)
   config/                   #   committed — the project cascade layer (see Config layout)
     packs.yaml              #     pack composition (e.g. compose the embedded methodology pack)
     manifest.yaml           #     scalar-set knobs + the deltas list — created on the first `jigc config` delta

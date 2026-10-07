@@ -100,7 +100,9 @@
 //! must-not-refuse cell in the layouts this door is reachable in.
 //!
 //! **And where git cannot answer, nothing is installed** (cells 41–42; the completion
-//! audit's install-teardown F2). The pre-write ask had a third outcome — git did not answer
+//! audit's install-teardown F2) — **under a code of its own, `setup.unverified-install-path`**
+//! (2026-10-06, the human's ruling on the fix pass's item 17; it rode the dirty-install code
+//! until then). The pre-write ask had a third outcome — git did not answer
 //! — under which the install ran and only its commit was skipped. Cell 41 iterates how git
 //! stops answering (a corrupt index, a submodule whose gitdir is gone, no `git` on `PATH`,
 //! an ownership refusal, an unreadable `HEAD`) crossed with `--force`: exit 1 before the
@@ -116,7 +118,19 @@
 //! ignored file under `.jigc/`. The design says so now; cell 43 holds each door to the two
 //! things that leaves owed — nothing lost, and a route that works as printed.
 //!
-//! Forty-three cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
+//! **And a file that was not there before the run is not the adopter's work** (cells 44–46;
+//! the human's ruling of 2026-10-06 on the fix pass's item 1). A tracked install file
+//! deleted from the working tree is a difference from `HEAD`, the pre-write gate asks only
+//! about paths that exist, and the backstop before the commit then refused over the file
+//! the install had just written — once where jigc's bytes equalled `HEAD`'s, and on every
+//! run where they did not (a merged-into file that held the adopter's lines, a committed
+//! link). Cell 44 iterates every member a default install commits × how it was deleted
+//! (`rm`, `git rm`): one run restores it and commits it. Cell 45 is the committed link, at
+//! a member the install merges into and at one it replaces. Cell 46 is the must-refuse
+//! half: a path absent from the working tree whose **index** entry holds bytes `HEAD` does
+//! not is still the adopter's, and keeps its staged blob.
+//!
+//! Forty-six cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
 //! `git init` repos.
 
 use crate::support::older_guide::as_an_older_build_wrote_it;
@@ -127,6 +141,12 @@ use std::process::Command;
 /// The blocking code the door refuses with — `CarryoverBoundary::Setup`'s own identity
 /// (`crates/engine/src/finalize.rs` → `setup_dirty_install_finding`).
 const DIRTY_CODE: &str = "setup.dirty-install-path";
+
+/// The blocking code the door refuses with where git **could not answer** its pre-write
+/// question (`crates/engine/src/finalize.rs` → `setup_unasked_install_finding`) — a code of
+/// its own since 2026-10-06 (the human's ruling on the fix pass's item 17): under
+/// [`DIRTY_CODE`] the usual remedy is `--force`, which this refusal does not honour.
+const UNVERIFIED_CODE: &str = "setup.unverified-install-path";
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -1137,12 +1157,15 @@ fn force_over_a_whole_rewrite_path_says_what_it_replaced() {
 /// pathspec, so it reddens here until somebody decides both — and it cannot join the
 /// pathspec without stating both either, because `InstallMember` has no default.
 ///
-/// The count is **ten paths**, not the eleven a reading of the writer *occurrences* gives:
-/// `.claude/settings.json` is one path with three writers (allowlist, SessionStart hook,
-/// deny floor). Two of the ten are exempt, and each exemption is a content oracle rather
-/// than a name: the guide's recorded body digest, the version stamp's one-line shape.
+/// The count is **eleven paths**, not the twelve a reading of the writer *occurrences*
+/// gives: `.claude/settings.json` is one path with three writers (allowlist, SessionStart
+/// hook, deny floor). Two of the eleven are exempt, and each exemption is a content oracle
+/// rather than a name: the guide's recorded body digest, the version stamp's one-line shape.
+/// **The eleventh is the settings record** (2026-10-06, the human's ruling on the fix
+/// pass's item 21): what those three writers added, kept so the teardown can take back
+/// exactly that.
 ///
-/// **Five preserve and five replace** (the rc.24 fix pass, `(R1, F1)`). The writer column
+/// **Five preserve and six replace** (the rc.24 fix pass, `(R1, F1)`). The writer column
 /// is what the unborn-`HEAD` exemption reads, and cell (23) holds each row of it to what
 /// the real writer does — this cell pins the declaration, that one pins that it is true.
 ///
@@ -1210,6 +1233,17 @@ fn the_install_path_class_is_dispositioned_member_by_member() {
                     own: O::SettledComposeMarker,
                 },
             ),
+            // The record of the settings entries jigc added, written whole from what the
+            // run computed. It rides the settings merge's own code — no code was minted
+            // for it — and its oracle is the record's shape, whichever build wrote it.
+            (
+                ".jigc/settings-entries.json",
+                D::Refuses,
+                W::Replaces {
+                    refusal: "setup.inject-allowlist",
+                    own: O::SettingsRecord,
+                },
+            ),
             // Merge-never-clobber, fresh-repo seed only.
             (".gitignore", D::Refuses, W::Preserves),
             // M48's refuse-to-clobber already dropped a user-modified copy from the
@@ -1265,6 +1299,8 @@ fn plant_for(path: &str) -> &'static str {
         ".jigc/version" => "USERMARK: we pin jigc here\nsee the team wiki\n",
         ".jigc/config/.gitkeep" => "USERMARK\n",
         ".jigc/config/packs.yaml" => "# USERMARK why we pin dev only\npacks:\n- dev\n",
+        // JSON an adopter might keep there, and no record: neither of the record's keys.
+        ".jigc/settings-entries.json" => "{\n  \"USERMARK\": \"our own notes\"\n}\n",
         ".gitignore" => "USERMARK.log\n",
         GUIDE => "# my own skill notes\n\nUSERMARK\n",
         HOOK => "#!/bin/sh\n# USERMARK our own policy hook\nexit 0\n",
@@ -1436,9 +1472,10 @@ fn every_install_member_keeps_its_declared_promise_on_an_unborn_head() {
             ".jigc/version",
             ".jigc/config/.gitkeep",
             ".jigc/config/packs.yaml",
+            ".jigc/settings-entries.json",
         ],
-        "the four members the verification found destroyed on `1.0.0-rc.24` are exactly the \
-         ones that refuse now"
+        "the four members the verification found destroyed on `1.0.0-rc.24` refuse now, and \
+         so does the settings record, a replacing member that build did not have"
     );
 }
 
@@ -2048,6 +2085,7 @@ fn an_ignored_file_at_a_replaced_install_path_refuses_at_either_head() {
         ".jigc/version",
         ".jigc/config/.gitkeep",
         ".jigc/config/packs.yaml",
+        ".jigc/settings-entries.json",
     ]
     .into_iter()
     .collect();
@@ -2057,7 +2095,7 @@ fn an_ignored_file_at_a_replaced_install_path_refuses_at_either_head() {
         .collect();
     assert_eq!(
         refused, expected,
-        "the four members whose writer replaces what it finds refuse at both HEADs, and no \
+        "the five members whose writer replaces what it finds refuse at both HEADs, and no \
          member whose writer preserves does"
     );
 }
@@ -2433,6 +2471,7 @@ fn a_change_hidden_by_an_index_flag_refuses_at_every_tracked_member() {
         ".jigc/version",
         ".jigc/config/.gitkeep",
         ".jigc/config/packs.yaml",
+        ".jigc/settings-entries.json",
     ];
     let expected: Vec<String> = members
         .iter()
@@ -3197,7 +3236,10 @@ impl Muted {
 /// ask had no answer, and it installed without one.
 ///
 /// So the axis is *how git stops answering* ([`GitMute`]), crossed with the consent. In
-/// every cell: exit 1 under the guard's own code, the file at the replaced path
+/// every cell: exit 1 under **this refusal's own code** — never the dirty-install code,
+/// whose route ends at a `--force` this refusal does not honour (the human's ruling of
+/// 2026-10-06 on item 17; it rode [`DIRTY_CODE`] until then) — on the text surface and as
+/// the finding's key under `--format json`, the file at the replaced path
 /// byte-identical, the file at a merged-into path byte-identical, `HEAD` unmoved. The
 /// route's printed `git` command is then run as printed and fails the way the refusal said
 /// git failed. Then the repair, and the door behaves as it does in any healthy repository:
@@ -3228,7 +3270,15 @@ fn where_git_cannot_answer_setup_refuses_before_its_first_write() {
                         Some(1),
                         "{what} {args:?}: git cannot answer, so nothing is installed: {said_out}"
                     );
-                    assert!(said_out.contains(DIRTY_CODE), "{what} {args:?}: {said_out}");
+                    assert!(
+                        said_out.contains(UNVERIFIED_CODE) && !said_out.contains(DIRTY_CODE),
+                        "{what} {args:?}: under its own code, and not the one whose remedy is \
+                         `--force`: {said_out}"
+                    );
+                    assert!(
+                        !route(&out).contains("jigc setup --force"),
+                        "{what} {args:?}: the route offers no consent: {said_out}"
+                    );
                     assert!(
                         said_out.contains("git could not tell"),
                         "{what} {args:?}: the refusal says what it could not ask: {said_out}"
@@ -3259,11 +3309,42 @@ fn where_git_cannot_answer_setup_refuses_before_its_first_write() {
                     );
                 }
 
+                // A driver reads the same identity: one finding, keyed at the new code.
+                let json = muted.jigc(repo, home, &["setup", "--format", "json"]);
+                assert_eq!(json.status.code(), Some(1), "{what}: {}", said(&json));
+                let envelope: serde_json::Value = serde_json::from_slice(&json.stderr)
+                    .unwrap_or_else(|err| {
+                        panic!("{what}: the envelope parses ({err}): {}", said(&json))
+                    });
+                let codes: Vec<&str> = envelope["findings"]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("{what}: a findings array: {envelope}"))
+                    .iter()
+                    .filter_map(|finding| finding["code"].as_str())
+                    .collect();
+                assert_eq!(codes, [UNVERIFIED_CODE], "{what}: {envelope}");
+                assert_eq!(
+                    envelope["findings"][0]["key"]["code"], UNVERIFIED_CODE,
+                    "{what}: and it is the key's code: {envelope}"
+                );
+                assert_eq!(
+                    read(repo, ".jigc/AGENT.md"),
+                    notes,
+                    "{what}: still untouched"
+                );
+
                 // The repair, then the door as it is in a healthy repository.
                 mute.repair(repo, aside);
                 assert_eq!(head_of(repo), before, "{what}: `HEAD` never moved");
                 let out = jigc(repo, home, &["setup"]);
                 assert_eq!(out.status.code(), Some(1), "{what}: {}", said(&out));
+                assert!(
+                    said(&out).contains(DIRTY_CODE) && !said(&out).contains(UNVERIFIED_CODE),
+                    "{what}: git answers again, so this is the dirty-install refusal, whose \
+                     route does end at `--force`: {}",
+                    said(&out)
+                );
+                assert!(route(&out).contains("jigc setup --force"), "{what}");
                 assert_eq!(
                     refused_paths(&out),
                     vec![".jigc/AGENT.md".to_string()],
@@ -3323,7 +3404,11 @@ fn git_that_answers_is_never_refused_as_git_that_does_not() {
         "superproject: {}",
         said(&rerun)
     );
-    assert!(!said(&rerun).contains(DIRTY_CODE), "{}", said(&rerun));
+    assert!(
+        !said(&rerun).contains(DIRTY_CODE) && !said(&rerun).contains(UNVERIFIED_CODE),
+        "{}",
+        said(&rerun)
+    );
     assert_eq!(git(superproject.path(), &["status", "--porcelain"]), "");
 
     let identify = |repo: &Path| {
@@ -3355,7 +3440,7 @@ fn git_that_answers_is_never_refused_as_git_that_does_not() {
             let out = jigc(repo, home, &["setup"]);
             assert_eq!(out.status.code(), Some(0), "{what}, {run}: {}", said(&out));
             assert!(
-                !said(&out).contains(DIRTY_CODE),
+                !said(&out).contains(DIRTY_CODE) && !said(&out).contains(UNVERIFIED_CODE),
                 "{what}, {run}: {}",
                 said(&out)
             );
@@ -3416,7 +3501,7 @@ fn git_that_answers_is_never_refused_as_git_that_does_not() {
             let out = jigc(&repo, home, &["setup"]);
             let said_out = said(&out);
             assert!(
-                !said_out.contains(DIRTY_CODE),
+                !said_out.contains(DIRTY_CODE) && !said_out.contains(UNVERIFIED_CODE),
                 "{what}, {run}: the guard has nothing to say where there is no work tree: \
                  {said_out}"
             );
@@ -3592,4 +3677,211 @@ fn a_repository_that_ignores_jigcs_own_paths_is_held_to_what_the_design_says() {
         said(&out)
     );
     assert!(!repo.join(".jigc").exists());
+}
+
+// ──── a file absent before the run, written by it, is not the adopter's work ────
+
+/// A born repository holding the adopter's own committed `CLAUDE.md` and settings file and
+/// an in-worktree hooks directory, with a default install committed over it — so every
+/// member of the install's path class but the fresh-repository `.gitignore` is in `HEAD`,
+/// and the two the install merges into differ from what a fresh write would put there.
+fn installed_with_every_member(tag: &str) -> (TempDir, TempDir) {
+    let (repo, home) = born_repo(tag);
+    {
+        let (repo, home) = (repo.path(), home.path());
+        write(repo, "CLAUDE.md", plant_for("CLAUDE.md"));
+        write(
+            repo,
+            ".claude/settings.json",
+            plant_for(".claude/settings.json"),
+        );
+        write(repo, ".githooks/README", "project hooks\n");
+        git(repo, &["add", "-A"]);
+        git(repo, &["commit", "-q", "-m", "our own files"]);
+        git(repo, &["config", "core.hooksPath", ".githooks"]);
+        let out = jigc(repo, home, &["setup"]);
+        assert_eq!(out.status.code(), Some(0), "the install: {}", said(&out));
+        assert_eq!(git(repo, &["status", "--porcelain"]), "", "premise: clean");
+    }
+    (repo, home)
+}
+
+/// (44) **A tracked install file deleted from the working tree is restored and committed in
+/// one run** — at every member a default install commits, deleted either way git knows
+/// (`rm`, leaving the index at `HEAD`; `git rm`, staging the deletion).
+///
+/// Driven on `1.0.0-rc.24` and on the fix pass alike: the pre-write gate passed (it asks
+/// about paths that exist), the install was written, and the backstop before the commit
+/// refused under `setup.dirty-install-path` over the file jigc had just written. A second
+/// run completed only where the restored bytes equalled `HEAD`'s; over a `CLAUDE.md` that
+/// had held the adopter's lines it refused on every run, the route pointing at jigc's own
+/// file.
+#[test]
+fn a_deleted_tracked_install_file_is_restored_and_committed_in_one_run() {
+    let committed: Vec<String> = {
+        let (repo, _home) = installed_with_every_member("deleted-premise");
+        let tree = git(repo.path(), &["ls-tree", "-r", "--name-only", "HEAD"]);
+        install_class()
+            .into_iter()
+            .map(|member| member.path)
+            .filter(|path| tree.lines().any(|line| line == path))
+            .collect()
+    };
+    assert!(
+        committed.len() >= 9 && committed.iter().any(|path| path == HOOK),
+        "premise: the default install commits every member but the fresh-repo `.gitignore`, \
+         the hook included: {committed:?}"
+    );
+    std::thread::scope(|scope| {
+        for path in &committed {
+            for how in ["rm", "git rm"] {
+                scope.spawn(move || {
+                    let what = format!("`{path}` deleted by `{how}`");
+                    let (repo, home) = installed_with_every_member("deleted");
+                    let (repo, home) = (repo.path(), home.path());
+                    match how {
+                        "rm" => fs::remove_file(repo.join(path)).expect("delete the file"),
+                        _ => drop(git(repo, &["rm", "-q", "--", path])),
+                    }
+                    assert_ne!(
+                        git(repo, &["status", "--porcelain"]),
+                        "",
+                        "{what}: premise — the deletion is a difference from `HEAD`"
+                    );
+
+                    let out = jigc(repo, home, &["setup"]);
+                    let said_out = said(&out);
+                    assert_eq!(out.status.code(), Some(0), "{what}: {said_out}");
+                    assert!(
+                        !said_out.contains(DIRTY_CODE)
+                            && !said_out.contains("setup.forced-install-path"),
+                        "{what}: nothing of the adopter's was at the path: {said_out}"
+                    );
+                    assert!(
+                        fs::symlink_metadata(repo.join(path)).is_ok_and(|entry| entry.is_file()),
+                        "{what}: the file is back"
+                    );
+                    assert_eq!(
+                        git(repo, &["status", "--porcelain"]),
+                        "",
+                        "{what}: restored and committed — nothing left over"
+                    );
+                    assert!(
+                        git(repo, &["ls-tree", "-r", "--name-only", "HEAD"])
+                            .lines()
+                            .any(|line| line == path),
+                        "{what}: `HEAD` carries it"
+                    );
+                    let head = git(repo, &["rev-parse", "HEAD"]);
+                    let rerun = jigc(repo, home, &["setup"]);
+                    assert_eq!(rerun.status.code(), Some(0), "{what}: {}", said(&rerun));
+                    assert_eq!(
+                        git(repo, &["rev-parse", "HEAD"]),
+                        head,
+                        "{what}: a re-run changes nothing"
+                    );
+                });
+            }
+        }
+    });
+}
+
+/// (45) **The same over a deleted committed link** — the variant the fix pass's fixer and
+/// its audit disagreed about. Both were right: where jigc's restored bytes equal `HEAD`'s a
+/// second run completed, and a link never does — the path is a type change against `HEAD`
+/// on every run, so `setup` refused until `git commit -- <path>`.
+///
+/// At a member the install merges into (`CLAUDE.md -> AGENTS.md`, the link removed), and at
+/// one it replaces (`.jigc/AGENT.md`, whose link the door's own refusal says to remove):
+/// one run installs a regular file there, commits it, and never writes what the link led to.
+#[test]
+fn a_deleted_committed_link_is_replaced_by_the_install_in_one_run() {
+    for (member, target, how) in [
+        ("CLAUDE.md", "AGENTS.md", "rm"),
+        ("CLAUDE.md", "AGENTS.md", "git rm"),
+        (".jigc/AGENT.md", "NOTES.md", "rm"),
+        (".jigc/AGENT.md", "NOTES.md", "git rm"),
+    ] {
+        let what = format!("`{member}` -> `{target}`, the link removed by `{how}`");
+        let (repo, home) = born_repo("deleted-link");
+        let (repo, home) = (repo.path(), home.path());
+        write(repo, target, plant_for("CLAUDE.md"));
+        let link = repo.join(member);
+        fs::create_dir_all(link.parent().expect("parent")).expect("create parent");
+        let depth = member.matches('/').count();
+        std::os::unix::fs::symlink(format!("{}{target}", "../".repeat(depth)), &link)
+            .expect("plant the link");
+        git(repo, &["add", "-A"]);
+        git(repo, &["commit", "-q", "-m", "our layout"]);
+        match how {
+            "rm" => fs::remove_file(&link).expect("remove the link"),
+            _ => drop(git(repo, &["rm", "-q", "--", member])),
+        }
+
+        let out = jigc(repo, home, &["setup"]);
+        assert_eq!(out.status.code(), Some(0), "{what}: {}", said(&out));
+        assert!(!said(&out).contains(DIRTY_CODE), "{what}: {}", said(&out));
+        assert!(
+            fs::symlink_metadata(&link).is_ok_and(|entry| entry.is_file()),
+            "{what}: a regular file stands where the link was"
+        );
+        assert!(
+            git(repo, &["ls-tree", "HEAD", "--", member]).starts_with("100644 blob"),
+            "{what}: and that is what `HEAD` carries"
+        );
+        assert_eq!(
+            read(repo, target),
+            plant_for("CLAUDE.md"),
+            "{what}: what the link led to was never written"
+        );
+        assert_eq!(git(repo, &["status", "--porcelain"]), "", "{what}: clean");
+    }
+}
+
+/// (46) **…and a path absent from the working tree whose index entry holds bytes `HEAD` does
+/// not is still refused, its staged blob intact** — the must-refuse half of (44). *Absent
+/// before the run* exempts a path only where git holds nothing of the adopter's there; a
+/// file staged and then deleted (`AD`), or edited, staged and deleted (`MD`), exists in the
+/// index alone, and the install commit would replace that entry.
+#[test]
+fn a_path_absent_from_the_worktree_but_staged_is_still_the_adopters() {
+    for (member, state) in [
+        ("CLAUDE.md", "AD"),
+        ("CLAUDE.md", "MD"),
+        (".jigc/AGENT.md", "AD"),
+        (".jigc/AGENT.md", "MD"),
+    ] {
+        let what = format!("`{member}` in state `{state}`");
+        let (repo, home) = born_repo("absent-staged");
+        let (repo, home) = (repo.path(), home.path());
+        if state == "MD" {
+            write(repo, member, "committed line\n");
+            git(repo, &["add", "--", member]);
+            git(repo, &["commit", "-q", "-m", "ours"]);
+        }
+        let staged_bytes = format!("committed line\n{}", plant_for(member));
+        write(repo, member, &staged_bytes);
+        git(repo, &["add", "--", member]);
+        fs::remove_file(repo.join(member)).expect("delete the working file");
+        assert!(
+            git(repo, &["status", "--porcelain", "--", member]).starts_with(state),
+            "{what}: premise"
+        );
+        let head = git(repo, &["rev-parse", "HEAD"]);
+
+        let out = jigc(repo, home, &["setup"]);
+        assert_eq!(out.status.code(), Some(1), "{what}: {}", said(&out));
+        assert!(
+            said(&out).contains(DIRTY_CODE) && refused_paths(&out) == [member.to_string()],
+            "{what}: refused by name: {}",
+            said(&out)
+        );
+        assert_eq!(git(repo, &["rev-parse", "HEAD"]), head, "{what}: no commit");
+        // `git show :<path>` prints the index entry; `git()` trims, so compare trimmed.
+        assert_eq!(
+            git(repo, &["show", &format!(":{member}")]),
+            staged_bytes.trim(),
+            "{what}: the staged blob is byte-identical"
+        );
+    }
 }

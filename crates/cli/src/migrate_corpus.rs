@@ -838,15 +838,20 @@ pub(crate) fn migrate_committed_corpus(
                         // committed source's own shape may be the prior `from`, so it cannot be
                         // bumped directly; the gated v2 always can). `bump_to` carries the
                         // target version into the post-fold pass.
-                        prepared.push(PreparedDoc {
-                            rel_key,
-                            target_key,
-                            source,
-                            from,
-                            to: to.clone(),
-                            changes,
-                            bump_to: Some(dt.version),
-                        });
+                        queue_or_refuse(
+                            repo_root,
+                            &mut report,
+                            &mut prepared,
+                            PreparedDoc {
+                                rel_key,
+                                target_key,
+                                source,
+                                from,
+                                to: to.clone(),
+                                changes,
+                                bump_to: Some(dt.version),
+                            },
+                        );
                     }
                     Err(_) => {
                         report
@@ -893,15 +898,20 @@ pub(crate) fn migrate_committed_corpus(
                         report.already_current.push(rel_key);
                         continue;
                     }
-                    prepared.push(PreparedDoc {
-                        rel_key,
-                        target_key,
-                        source,
-                        from,
-                        to: to.clone(),
-                        changes,
-                        bump_to: None,
-                    });
+                    queue_or_refuse(
+                        repo_root,
+                        &mut report,
+                        &mut prepared,
+                        PreparedDoc {
+                            rel_key,
+                            target_key,
+                            source,
+                            from,
+                            to: to.clone(),
+                            changes,
+                            bump_to: None,
+                        },
+                    );
                 }
             }
         }
@@ -1101,6 +1111,62 @@ pub(crate) fn migrate_committed_corpus(
     report.touched.sort();
     report.touched.dedup();
     Ok(report)
+}
+
+/// **Queue a doc for the fold — or refuse it, because its own home is not a regular file**
+/// (the rc.24 fix pass's item 9; the human's ruling of 2026-10-07). The one seam through
+/// which a doc becomes a doc this run will **write**, so the question is asked exactly
+/// there and of nothing the run only reads.
+///
+/// The candidate read above follows a link, and the write behind the fold renames a temp
+/// file over the home and removes a relocated source: so over a home that was a live link
+/// the run replaced the link with a regular file at exit 0, named nowhere, while the file
+/// the link pointed at kept the old bytes. A relocating doc goes through the same read and
+/// the same write, so its source is asked here too. The entry is asked
+/// what it is, without following a link ([`engine::store::home_entry`]), and one that is
+/// not a regular file is the store's refusal for that state at every command
+/// (`store.home-not-regular-file`, through its one constructor, worded for a door that
+/// acts on the committed store by [`engine::finalize::store_home_refusal`]), keyed at the
+/// entry's path.
+///
+/// **It refuses that doc and no other.** Like every refusal of one doc outside the
+/// transform's fold — the pre-fold refusals above, the relocation's destination below —
+/// it joins `blocked`, the run's other docs still migrate and commit, and the run exits
+/// non-zero. Asked before the fold, so a linked doc can neither halt the fold nor be
+/// reported `deferred` behind another doc's halt; pure, so `--dry-run` reports the
+/// identical verdict.
+///
+/// **Not asked of a doc the run does not write**: one already at the current version is
+/// read and reported `already_current`, and one the adoption gate declines is reported
+/// `unadopted`. Reads follow a link at a home at every door (`design/finalize.md` → 4.
+/// Promote, Declared bounds), and neither is a refusal this command makes today.
+fn queue_or_refuse(
+    repo_root: &Path,
+    report: &mut CorpusMigrationReport,
+    prepared: &mut Vec<PreparedDoc>,
+    doc: PreparedDoc,
+) {
+    if let engine::store::HomeEntry::Foreign(shape) =
+        engine::store::home_entry(&repo_root.join(&doc.rel_key))
+    {
+        let bare = shape.bare();
+        let withheld = if doc.rel_key == doc.target_key {
+            format!("the doc behind it is not migrated, and the {bare} is left as it is")
+        } else {
+            format!(
+                "the doc behind it is not migrated to `{}`, and the {bare} is left as it is",
+                doc.target_key
+            )
+        };
+        report.blocked.push(engine::finalize::store_home_refusal(
+            &doc.rel_key,
+            shape,
+            &withheld,
+            "re-run `jigc migrate-corpus`",
+        ));
+        return;
+    }
+    prepared.push(doc);
 }
 
 /// One prepared migration job, owning its source + schema pair + per-doc change list (the
@@ -2163,10 +2229,32 @@ fn destination_occupant(repo_root: &Path, target: &str, v2: &[u8]) -> Option<Occ
 /// migration, and no deterministic merge of two documents exists — so the doc is blocked and
 /// the operator reconciles the two homes by hand (`design/corpus-migration.md` → the union).
 ///
-/// One code for every occupant: the state is the same — the destination is not free — and
-/// the message and the route say which it is, so each tells the reader the act that fits.
+/// **Two codes, by what stands there** (the human's ruling of 2026-10-06 on the rc.24 fix
+/// pass's items 7 and 8). A regular file — another document, or one that could not be
+/// read — is this door's `migrate-corpus.destination-collision`, keyed at the doc that
+/// could not move: two documents contest one home. An entry that is **not a regular file**
+/// is no document at all, and it is the store's refusal for that state at every command
+/// (`store.home-not-regular-file`, through its one constructor), keyed at the entry's own
+/// path. Until that ruling all three rode the collision code. Neither stops the run: like
+/// every refusal of one doc outside the transform's fold, the others still migrate.
 fn destination_collision_finding(rel_key: &str, target: &str, occupant: Occupant) -> Finding {
     let (message, route) = match occupant {
+        Occupant::Foreign(entry) => {
+            return engine::store::home_shape_refusal(
+                target,
+                entry,
+                &format!(
+                    "`{rel_key}`, which relocates there, was left where it is: the \
+                     migration lands a regular file at a doc's home and never writes \
+                     through or over anything else (no data loss)"
+                ),
+                format!(
+                    "move the {} at `{target}` out of the way — it is not a document jigc \
+                     can land on — then re-run `jigc migrate-corpus`",
+                    entry.bare(),
+                ),
+            );
+        }
         Occupant::AnotherDocument => (
             format!(
                 "`{rel_key}` relocates to `{target}`, which already holds a *different* \
@@ -2187,19 +2275,6 @@ fn destination_collision_finding(rel_key: &str, target: &str, occupant: Occupant
             format!(
                 "make `{target}` readable (or move it out of the way if it is not this \
                  document), then re-run `jigc migrate-corpus`"
-            ),
-        ),
-        Occupant::Foreign(entry) => (
-            format!(
-                "`{rel_key}` relocates to `{target}`, where {} stands; the migration lands a \
-                 regular file at a doc's home and never writes through or over anything \
-                 else (no data loss), so `{rel_key}` was left where it is",
-                entry.noun(),
-            ),
-            format!(
-                "move the {} at `{target}` out of the way — it is not a document jigc can \
-                 land on — then re-run `jigc migrate-corpus`",
-                entry.bare(),
             ),
         ),
     };
@@ -2565,6 +2640,18 @@ fn unlanded_paths(
             && doc_source(repo_root, &source, Corpus::Head)
                 .and_then(|committed| read_stamp_from_source(&committed))
                 == Some(dt.version)
+        {
+            continue;
+        }
+        // **A migrated result is a regular file at the doc's home** (the rc.24 fix pass's
+        // item 9). The read below follows a link, so a home the user had turned into a link
+        // to bytes at the current version — uncommitted, over a `HEAD` still below it — read
+        // as *an earlier run's migration, written and never landed*: the run staged the path
+        // and committed **the link** in the doc's place, at exit 0, as `recovered`. jigc
+        // writes regular files and never a link, so an entry that is anything else is not
+        // what a run of this command left, and it is no part of this run's commit.
+        if engine::store::home_entry(&repo_root.join(&target))
+            != engine::store::HomeEntry::RegularFile
         {
             continue;
         }

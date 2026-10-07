@@ -61,7 +61,15 @@ It does these things:
   `jigc` is its interface to the project — a plain import line, no marker fence);
 - allowlists `Bash(jigc:*)` in `.claude/settings.json` and adds a `SessionStart` hook
   that runs `jigc start` (so each session opens with orientation), so the agent
-  can call the CLI without a permission prompt;
+  can call the CLI without a permission prompt — and writes down which entries it
+  added, in `.jigc/settings-entries.json`, committed with the install. An entry you
+  already had is left as it was and is not on that list, so `jigc uninstall` takes
+  back exactly what `setup` added and leaves yours, identical ones included. That
+  list is used only where git tracks the settings file. Where git ignores the file
+  `setup` writes no list; and wherever git does not track the file, or the install
+  has no list, `jigc uninstall` leaves every entry identical to one of jigc's in
+  place and names them, for you to remove by hand — or with `jigc uninstall
+  --force`, which removes them all, yours included;
 - writes jigc's own guides — this file and the migration field notes — to the path
   your assistant reads skills from (`.claude/skills/jigc/SKILL.md` for Claude Code),
   as **one file jigc owns**: it opens with a `jigc-version:` stamp naming the build
@@ -115,10 +123,10 @@ track them yet) and re-run, or pass `jigc setup --force`, the single consent —
 lets the install run and commit those paths as it leaves them, and *says* which paths
 it was spent on, since at a regenerated path what it leaves is jigc's content and not
 yours. And where git cannot answer the comparison at all — a corrupt index, a broken
-submodule, no `git` on `PATH` — `setup` stops under the same code before writing
-anything, quotes what git said, and prints the one `git` command to run to see it;
-`--force` does not pass that, since there is nothing git named to consent over. Fix
-what git reports and re-run. This is the same rule as the carryover gate at `jigc task
+submodule, no `git` on `PATH` — `setup` stops before writing anything under a code of
+its own, `setup.unverified-install-path`: it quotes what git said and prints the one
+`git` command to run to see it. `--force` does not pass that one, since there is
+nothing git named to consent over. Fix what git reports and re-run. This is the same rule as the carryover gate at `jigc task
 finalize` below — a door committing paths it does not own says so instead of
 sweeping them in — at its other door.
 
@@ -141,7 +149,8 @@ refusal prints the two commands that clear the flag.
 so an untracked `CLAUDE.md`, `.gitignore` or `.claude/settings.json` is not a refusal:
 `setup` merges into it, and it rides the repository's first commit with your lines
 intact. A file at a path jigc *replaces* — `.jigc/AGENT.md`, `.jigc/config/.gitkeep`,
-`.jigc/config/packs.yaml` (the round-trip drops your comments), a `.jigc/version` that
+`.jigc/config/packs.yaml` (the round-trip drops your comments),
+`.jigc/settings-entries.json`, a `.jigc/version` that
 is not jigc's own one-line stamp — refuses there as anywhere else, and the refusal
 names what works without a commit, since `git stash` has nothing to stand on yet: move
 the file out of the way, or commit it first.
@@ -186,7 +195,9 @@ out of `.jigc/` or delete it, then re-run, or pass `--force`. Every *other* jigc
 run starts the log again while the knob is on, and the installed `pre-commit` hook
 is one: a plain `git commit` between two attempts brings it back. So turn the knob
 off first (`jigc config set invocation-log false`, and `git add` the config file
-that changes), then move the log out.
+that changes), then move the log out. While the knob is on, the refusal itself
+says that order — switch the log off, move the log, then uninstall — and prints
+both commands.
 
 ### Reading while the task is open
 

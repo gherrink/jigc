@@ -286,14 +286,21 @@ pub enum Command {
     /// or writing over it — asked of the files, so it holds where `git status` says
     /// nothing: a file git ignores at a path the install replaces (unless the bytes are
     /// jigc's own generated content, which keeps re-installing cleanly), and a change
-    /// hidden by an assume-unchanged or skip-worktree index flag. In a repository with no
-    /// commit yet, an untracked file it
+    /// hidden by an assume-unchanged or skip-worktree index flag. A footprint file you
+    /// deleted and did not commit is not such work: `setup` writes it again and commits
+    /// it. Where git itself cannot answer the question (a corrupt index, no `git` on
+    /// `PATH`), it refuses before writing anything under a code of its own,
+    /// `setup.unverified-install-path`, and `--force` does not pass that. In a repository
+    /// with no commit yet, an untracked file it
     /// merges into (`CLAUDE.md`, `.gitignore`, the settings file) rides the first commit
     /// instead; one it would replace still refuses. A file it replaces whole
     /// (`.jigc/AGENT.md`, `.jigc/version`, `.jigc/config/.gitkeep`,
-    /// `.jigc/config/packs.yaml`) is written as a regular file at exactly its path: a
-    /// symlink there, or on the way to it, refuses before anything is written — with or
-    /// without `--force` — instead of writing through it.
+    /// `.jigc/config/packs.yaml`, `.jigc/settings-entries.json`) is written as a regular
+    /// file at exactly its path: a symlink there, or on the way to it, refuses before
+    /// anything is written — with or without `--force` — instead of writing through it.
+    /// The last of those is the record of the entries this command added to
+    /// `.claude/settings.json`, committed with the install where git can hold the
+    /// settings file and absent everywhere else; `jigc uninstall` reads it.
     Setup {
         /// Commit the install footprint even where it carries bytes `jigc setup` did
         /// not write — the explicit consent to sweep uncommitted work into
@@ -306,13 +313,21 @@ pub enum Command {
     },
 
     /// Reverse this project's jigc install — removes `.jigc/`, unwires the
-    /// `CLAUDE.md` reference, and drops the `Bash(jigc:*)` permit from
-    /// `.claude/settings.json`. Touches nothing outside the repository — the `doc-code`
+    /// `CLAUDE.md` reference, and takes back the entries `jigc setup` added to
+    /// `.claude/settings.json`: exactly the ones the install recorded in
+    /// `.jigc/settings-entries.json`, so an identical entry you already had stays. That
+    /// record is used only where git tracks the settings file. Where the file is ignored
+    /// or untracked, and for an install with no record (one made by an earlier jigc), it
+    /// removes none of those entries and names each one it left, for you to remove by
+    /// hand (`--force` removes every entry identical to one jigc installs, yours
+    /// included). Touches nothing outside the repository — the `doc-code`
     /// probe runs inside `jigc`. Idempotent: a second run is a clean no-op, and the
     /// host files it edits (`CLAUDE.md`, `.claude/settings.json`, a `pre-commit`
     /// hook that holds lines of your own) keep your own content byte-for-byte: only
-    /// the block jigc wrote leaves the hook, and a hook jigc cannot find its own
-    /// block in is left as it is and named (`--force` removes it). Four states it
+    /// the block jigc wrote leaves the hook — the lines between its two marker
+    /// comments, whatever jigc version wrote them — and a hook from an older install
+    /// with no end marker, in which jigc cannot find its own block, is left as it is
+    /// and named (`--force` removes it). Four states it
     /// refuses instead of destroying, because `.jigc/` is their only copy — a
     /// fan-out sub-task path under `.jigc/worktrees/` that holds content blocks
     /// with `uninstall.dirty-worktree` (get the work out — or, for a path this
@@ -347,13 +362,17 @@ pub enum Command {
     /// starts the log while the knob is on, and that includes the installed
     /// `pre-commit` hook's `jigc validate` on each `git commit` — so turn the knob
     /// off (`jigc config set invocation-log false`, then `git add` the config
-    /// change) before you move the log out.
+    /// change) before you move the log out. While the knob is on, the refusal
+    /// over the log says that order itself: switch the log off, move the log,
+    /// then uninstall.
     Uninstall {
         /// Remove `.jigc/` even when it holds a fan-out worktree with content, an
         /// open task's staged docs, a file jigc did not write, or a workbench file
         /// no index has a copy of (the invocation log among them) — the explicit
-        /// consent to destroy work no commit has a copy of. Inert when all four
-        /// guards are already clean.
+        /// consent to destroy work no commit has a copy of. It also removes every
+        /// entry of `.claude/settings.json` identical to one jigc installs, whoever
+        /// wrote it, where the plain command removes only the ones the install
+        /// recorded. Otherwise inert when all four guards are already clean.
         #[arg(long)]
         force: bool,
     },

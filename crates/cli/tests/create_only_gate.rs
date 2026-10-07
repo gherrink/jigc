@@ -711,9 +711,12 @@ fn an_untracked_file_at_the_home_is_refused() {
 /// it, and the task's finalize then wrote the doc through the link. The home's own directory
 /// entry is what is asked now — a dangling link (target inside the repository, or outside
 /// it), a link to a device, a live link, a directory — and every one is refused by both
-/// minting doors: exit 1, `create.already-exists` keyed at the minted id, the verb's own
-/// route, nothing staged, no role bound, the entry untouched and nothing written through it.
-/// The message says what is there rather than that a doc *already exists*.
+/// minting doors: exit 1, the verb's own route, nothing staged, no role bound, the entry
+/// untouched and nothing written through it. The refusal says what is there rather than
+/// that a doc *already exists* — and since 2026-10-06 its code does too: it was built under
+/// `create.already-exists`, keyed at the minted id, and is the store's
+/// `store.home-not-regular-file`, keyed at the entry's path, as at every other command
+/// (`home_shape_one_code.rs`). `create.already-exists` is back to a doc that exists.
 ///
 /// Then the door's next step is driven: the route's distinct identity lands a regular file
 /// beside the entry, which stands exactly as it was.
@@ -772,8 +775,21 @@ fn an_entry_that_is_not_a_regular_file_is_an_occupied_home() {
             let task = corpus.start_workflow("park-idea", "file over a taken home");
 
             let out = mint(&corpus, verb, "Taken Home", &task);
-            assert_already_exists(&out, verb, "idea:taken-home", &what);
             let finding = refusal(&out, &what);
+            assert_eq!(
+                (
+                    finding["key"]["code"].as_str(),
+                    finding["key"]["target"].as_str()
+                ),
+                (
+                    Some(engine::store::HOME_NOT_REGULAR_FILE),
+                    Some("docs/ideas/taken-home.md")
+                ),
+                "{what}: the store's code for the state, keyed at the entry — never \
+                 `{ALREADY_EXISTS}`, which says a doc is there; {finding:#}",
+            );
+            assert_eq!(finding["severity"], "blocking", "{what}; {finding:#}");
+            assert_distinct_identity_route(&finding, verb, &what);
             let message = finding["message"].as_str().unwrap_or_default();
             let noun = if shape == "directory" {
                 "a directory"

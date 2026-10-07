@@ -256,8 +256,9 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
         "crates/engine/src/finalize.rs",
         "setup_unasked_install_finding",
         Aim::Aimed,
-        "`setup.dirty-install-path` where git could not answer the door's pre-write question \
-         (the rc.24 fix pass's completion audit) — `git status`, the question that failed, \
+        "`setup.unverified-install-path`, the door's refusal where git could not answer its \
+         pre-write question (the rc.24 fix pass's completion audit; a code of its own since \
+         2026-10-06) — `git status`, the question that failed, \
          for the reader to run. It carries no path operand, and is aimed all the same: \
          `jigc setup` typed from a linked worktree asks the main checkout, where `git status` \
          can fail while it answers in the worktree the reader is standing in",
@@ -344,8 +345,9 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
         "crates/cli/src/milestone.rs",
         "record_shape_block",
         Aim::Aimed,
-        "the same conflict block's shape sibling — a record whose home has become a link — \
-         and the same `git checkout HEAD --` restore, which puts the regular file back where \
+        "the record doors' refusal over a record whose home has become a link \
+         (`store.home-not-regular-file`; the conflict block's shape sibling until \
+         2026-10-06) — and the same `git checkout HEAD --` restore, which puts the regular file back where \
          `HEAD` still holds the record as one (git replaces the entry, it does not write \
          through it). Aimed for the reason its sibling is: a record door runs from any \
          directory of the checkout",

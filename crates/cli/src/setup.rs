@@ -698,14 +698,38 @@ pub const PRECOMMIT_SENTINEL: &str =
 /// a stale binary, and with it a stale `doc-code` probe, which runs inside `jigc`; the
 /// absolute path pins the one binary that is both). A pure CLI-side renderer — the engine stays
 /// filesystem-/shell-free. Disk placement + idempotency land in T2.
+///
+/// **The block is closed by its end marker here too** ([`PRECOMMIT_SENTINEL_END`]; the
+/// human's ruling of 2026-10-06 on the rc.24 fix pass's item 19). The standalone hook is
+/// the shebang, jigc's block **between its two markers**, and the final `exit 0` — the
+/// same bracketed block the wrap case splices into a foreign hook
+/// ([`wrapped_managed_block`]). Until then only the wrapped block carried the end marker,
+/// and the standalone one was recognised by being this build's body byte for byte: so a
+/// hook another build wrote, or one edited inside jigc's lines, could not be told from
+/// anybody else's, and the teardown had to leave it. Delimited, the block is found by its
+/// markers whatever is between them and whatever stands around them.
 pub fn precommit_hook_body(jigc_path: &Path) -> String {
+    format!("#!/bin/sh\n{}\nexit 0\n", wrapped_managed_block(jigc_path))
+}
+
+/// **jigc's block of the `pre-commit` hook** — from the start sentinel through the rename
+/// backstop, newline-terminated: no shebang, no end marker, no final `exit`. The one
+/// rendering both hook forms are built from, and the text a hook **without** an end marker
+/// is searched for ([`standalone_remainder`]) — every build before 2026-10-06 wrote the
+/// standalone hook as the shebang, exactly these bytes, a blank line and `exit 0`.
+///
+/// **So this text is also the legacy form's, and a unit test pins it as that.** An edit
+/// here changes what the hook does *and* stops this build recognising the marker-less hook
+/// earlier builds wrote, which then falls to the leave-it-and-say-so arm. The day the
+/// block's text has to change, the pre-marker text is kept as its own frozen constant
+/// first (`precommit_hook_body_golden` reddens to say so).
+fn managed_block(jigc_path: &Path) -> String {
     // The committed-in jigc path. `display()` is the install-time, single-machine
     // path (a non-UTF-8 path would render lossily, but a git hook on such a path is
     // not a target we support); quoted in the script so a path with spaces survives.
     let jigc = jigc_path.display();
     format!(
-        "#!/bin/sh\n\
-         {PRECOMMIT_SENTINEL}\n\
+        "{PRECOMMIT_SENTINEL}\n\
          #\n\
          # Warn-only doc<->code drift backstop: runs `jigc validate` over the\n\
          # committed store and prints a warning ONLY when a doc-code check raised a\n\
@@ -736,9 +760,7 @@ pub fn precommit_hook_body(jigc_path: &Path) -> String {
          if printf '%s' \"$report\" | tr -d '\\n' | grep -Eq '\"blocking_probes\"[[:space:]]*:[[:space:]]*\\[[^]]*\"doc-code\"'; then\n\
          \techo 'jigc: doc<->code drift detected in committed docs — run `jigc validate` for details (commit not blocked).' >&2\n\
          fi\n\
-         {PRECOMMIT_RENAME_BLOCK}\
-         \n\
-         exit 0\n"
+         {PRECOMMIT_RENAME_BLOCK}"
     )
 }
 
@@ -842,12 +864,14 @@ if [ -n \"$moves\" ]; then\n\
 \tfi\n\
 fi\n";
 
-/// The sentinel that closes the jigc-managed block when it is **wrapped** around a
-/// pre-existing foreign `pre-commit` hook. A fresh (jigc-only) hook is exactly the
-/// rendered [`precommit_hook_body`] and carries no end marker; a wrapped hook
-/// brackets the appended jigc block between [`PRECOMMIT_SENTINEL`] and this line so a
-/// re-install can strip-and-regenerate **only** the jigc block, leaving the foreign
-/// hook verbatim (non-destructive + idempotent).
+/// The sentinel that closes the jigc-managed block — in **every** hook `setup` writes
+/// since 2026-10-06 (the human's ruling on the rc.24 fix pass's item 19): the block sits
+/// between [`PRECOMMIT_SENTINEL`] and this line whether it is spliced into a pre-existing
+/// foreign hook or stands in the hook jigc writes whole, so a re-install can
+/// strip-and-regenerate **only** the jigc block and the teardown can remove exactly it,
+/// leaving everything around it verbatim (non-destructive + idempotent). Until then a
+/// fresh (jigc-only) hook carried no end marker; such a hook is still met in the field and
+/// is the legacy arm of both readers ([`standalone_remainder`]).
 const PRECOMMIT_SENTINEL_END: &str = "# jigc-managed pre-commit hook — end";
 
 /// Install the assistant-neutral warn-only `pre-commit` hook for the repo at
@@ -861,7 +885,11 @@ const PRECOMMIT_SENTINEL_END: &str = "# jigc-managed pre-commit hook — end";
 /// naive `.git/hooks` join. Then writes the rendered [`precommit_hook_body`]
 /// idempotently and non-destructively:
 ///   - no existing hook (or one that is *only* a prior jigc block) → the file becomes
-///     exactly the freshly rendered body (regenerated each `setup`);
+///     exactly the freshly rendered body (regenerated each `setup`). **A prior block is
+///     found by its two markers, whichever build wrote what is between them** — and, for
+///     the hook a build before 2026-10-06 wrote with no end marker, by being there
+///     exactly as jigc wrote it ([`strip_managed_block`]): that is the upgrade, and it
+///     leaves a hook that carries both markers;
 ///   - a pre-existing **foreign** hook → its content is preserved **verbatim** and a
 ///     jigc block (bracketed by [`PRECOMMIT_SENTINEL`]/[`PRECOMMIT_SENTINEL_END`]) is
 ///     spliced in just after the foreign shebang and **before** the foreign body, so
@@ -887,9 +915,10 @@ pub fn install_precommit_hook(jigc_home: &Path, jigc_path: &Path) -> std::io::Re
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => rendered,
         Err(e) => return Err(e),
         Ok(existing) => {
-            let foreign = strip_managed_block(&existing, &rendered);
-            if foreign.trim().is_empty() {
-                // Empty, or only a prior jigc block: regenerate the standalone hook.
+            let foreign = strip_managed_block(&existing);
+            if foreign.trim().is_empty() || is_standalone_frame(&foreign) {
+                // Empty, or only a prior jigc block inside the frame the standalone hook
+                // puts around it: regenerate the standalone hook.
                 rendered
             } else {
                 // Preserve the foreign hook verbatim; run the wrapped jigc block
@@ -942,48 +971,47 @@ fn display_hook_path(jigc_home: &Path, hook: &Path) -> String {
     }
 }
 
-/// The jigc-managed block for the **wrap** case: the rendered body with its shebang
-/// line dropped (the foreign hook owns the shebang) and its trailing `exit 0` dropped
-/// (the block is warn-only — it must fall through to the foreign hook that follows it,
-/// which owns the final exit), with an end-sentinel appended so the block is
-/// self-delimited for strip-and-regenerate. The block runs **before** the foreign hook
-/// so the backstop fires even when the foreign hook ends in an explicit `exit`.
+/// The jigc-managed block **between its two markers** — [`managed_block`] closed by
+/// [`PRECOMMIT_SENTINEL_END`], self-delimited for strip-and-regenerate and for the
+/// teardown. Both hook forms carry exactly these bytes: the standalone hook between its
+/// shebang and its final `exit 0` ([`precommit_hook_body`]), and a foreign hook just after
+/// its own shebang, where the block runs **before** the foreign body so the backstop fires
+/// even when the foreign hook ends in an explicit `exit` (it is warn-only and never exits,
+/// so control falls through).
 fn wrapped_managed_block(jigc_path: &Path) -> String {
-    let body = precommit_hook_body(jigc_path);
-    // Drop the leading `#!/bin/sh\n` shebang — the wrapped block runs inside the
-    // foreign hook's interpreter.
-    let without_shebang = body
-        .strip_prefix("#!/bin/sh\n")
-        .expect("the rendered body always begins with the sh shebang");
-    // Drop the trailing `exit 0\n` — the wrapped block must not terminate the script;
-    // control falls through to the foreign hook spliced in after it.
-    let without_exit = without_shebang
-        .strip_suffix("exit 0\n")
-        .expect("the rendered body always ends with `exit 0`")
-        .trim_end_matches('\n');
-    format!("{without_exit}\n{PRECOMMIT_SENTINEL_END}\n")
+    // No shebang (the hook it sits in owns one) and no `exit` (the block must not
+    // terminate the script: control falls through to whatever follows it).
+    format!("{}{PRECOMMIT_SENTINEL_END}\n", managed_block(jigc_path))
 }
 
 /// Remove the jigc-managed block from a pre-existing hook, returning the foreign
 /// remainder. A block counts as jigc-managed in exactly two forms:
-///   - a **wrapped** block bracketed by BOTH [`PRECOMMIT_SENTINEL`] (start) and
-///     [`PRECOMMIT_SENTINEL_END`] (end) — cut out inclusive of both markers and the
-///     trailing newline, the foreign remainder returned;
-///   - a **standalone** jigc hook — `content` byte-identical to `rendered` (the freshly
-///     rendered standalone body, which carries the start sentinel but no end marker) —
-///     wholly ours, so the remainder is empty.
+///   - **bracketed** by BOTH [`PRECOMMIT_SENTINEL`] (start) and [`PRECOMMIT_SENTINEL_END`]
+///     (end) — cut out inclusive of both markers and the end marker's newline, **whatever
+///     is between them and whichever build wrote it**. Every hook `setup` writes since
+///     2026-10-06 has this form, standalone or wrapped;
+///   - **the legacy standalone block**, with no end marker — the hook builds before that
+///     day wrote whole. It is jigc's only where it is in the file **exactly as jigc wrote
+///     it**, rendered again from the hook's own `jigc='…'` line ([`standalone_remainder`]);
+///     then it comes out and what is left is returned.
 ///
-/// Anything else is **foreign** and returned unchanged — including a foreign hook that
-/// merely *contains* the start-sentinel string on a line but has no matching end marker
-/// and is not our rendered body. Treating a start-sentinel-without-end-marker as wholly
-/// jigc-managed would overwrite that foreign hook (synthetic data-loss); a complete
-/// bracketed block (or the exact standalone body) is the only thing we own.
-fn strip_managed_block<'a>(content: &'a str, rendered: &str) -> std::borrow::Cow<'a, str> {
+/// Anything else is **foreign** and returned unchanged — including a hook that merely
+/// *contains* the start-sentinel string on a line, and a marker-less hook whose jigc lines
+/// were edited or were written from a text this build does not know. Treating a
+/// start-sentinel-without-end-marker as wholly jigc-managed would overwrite that hook
+/// (synthetic data-loss); a delimited block, or the exact legacy one, is all we own.
+///
+/// **The legacy arm used to be a whole-file comparison with the body this build renders
+/// for *its own* path**, so a marker-less hook installed by a `jigc` at another path, or
+/// one the adopter had added a line to, was called foreign and wrapped — the new block
+/// spliced in ahead of the old one, both running. It is found by its own recorded path
+/// now, wherever it sits, which is what makes the upgrade leave one block.
+fn strip_managed_block(content: &str) -> std::borrow::Cow<'_, str> {
     let Some(start) = content.find(PRECOMMIT_SENTINEL) else {
         return std::borrow::Cow::Borrowed(content);
     };
     match content[start..].find(PRECOMMIT_SENTINEL_END) {
-        // Wrapped block: cut from the start-sentinel's line through the end marker.
+        // A delimited block: cut from the start-sentinel's line through the end marker.
         Some(rel_end) => {
             // Back up to the beginning of the start-sentinel's line.
             let block_start = content[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
@@ -997,12 +1025,30 @@ fn strip_managed_block<'a>(content: &'a str, rendered: &str) -> std::borrow::Cow
             out.push_str(&content[block_end..]);
             std::borrow::Cow::Owned(out)
         }
-        // No end marker: ours only if the file is byte-identical to a freshly rendered
-        // standalone hook. A foreign hook that merely references the start sentinel is
-        // preserved verbatim (wrapped, not stripped).
-        None if content == rendered => std::borrow::Cow::Borrowed(""),
-        None => std::borrow::Cow::Borrowed(content),
+        // No end marker: ours only where the legacy block is there verbatim.
+        None => match standalone_remainder(content) {
+            Some(rest) => std::borrow::Cow::Owned(rest),
+            None => std::borrow::Cow::Borrowed(content),
+        },
     }
+}
+
+/// Whether `rest` — a hook with jigc's block cut out of it — is exactly the frame the
+/// **standalone** hook puts around that block ([`precommit_hook_body`]): jigc's own
+/// `#!/bin/sh` on the first line, a bare `exit 0`, and blank lines. Then the file was
+/// jigc's whole, and `setup` regenerates it and the teardown removes it.
+///
+/// **jigc's shebang, not any shebang.** A foreign hook that is nothing but
+/// `#!/bin/bash` and `exit 0` is somebody's file and is kept; one that is nothing but
+/// `#!/bin/sh` and `exit 0` is, with jigc's block in it, byte for byte the hook jigc writes
+/// whole — the two cannot be told apart, and nothing a hook does is in either.
+fn is_standalone_frame(rest: &str) -> bool {
+    let mut lines = rest.lines();
+    lines.next() == Some("#!/bin/sh")
+        && lines.all(|line| {
+            let line = line.trim();
+            line.is_empty() || line == "exit 0"
+        })
 }
 
 /// The teardown verdict for an existing `pre-commit` hook — what [`remove_precommit_hook`]
@@ -1039,14 +1085,18 @@ pub enum PrecommitRemoval {
 /// inverse of [`install_precommit_hook`]'s splice (`uninstall` does not know which
 /// absolute `jigc` path the hook was installed with, so it keys on the sentinels'
 /// **structure**, never on a rendered-body byte match):
-///   - a **wrapped** block bracketed by BOTH [`PRECOMMIT_SENTINEL`] and
-///     [`PRECOMMIT_SENTINEL_END`] → cut inclusive of both markers and restore the
-///     foreign remainder verbatim (empty remainder → remove the file);
-///   - a **standalone** jigc hook — one that opens with the rendered body's fixed prefix
-///     `#!/bin/sh\n{PRECOMMIT_SENTINEL}\n` → **exactly the block jigc wrote is cut out**
-///     ([`standalone_remainder`]), and what is left decides: nothing but the shebang and
-///     the final `exit 0` → remove the file; anything else → it is the adopter's, restore
-///     it;
+///   - a block **bracketed by BOTH** [`PRECOMMIT_SENTINEL`] and
+///     [`PRECOMMIT_SENTINEL_END`] → cut inclusive of both markers, **whatever is between
+///     them and whichever build wrote it**, and what is left decides: nothing, or nothing
+///     but the frame the standalone hook puts around its block ([`is_standalone_frame`]) →
+///     remove the file; anything else → it is somebody's, restore it verbatim. Every hook
+///     `setup` writes since 2026-10-06 is this form (the human's ruling on the rc.24 fix
+///     pass's item 19), so for those the teardown never has to recognise a text;
+///   - **no end marker** — a standalone hook from a build before that day. One that opens
+///     with the rendered body's fixed prefix `#!/bin/sh\n{PRECOMMIT_SENTINEL}\n` →
+///     **exactly the block jigc wrote is cut out** ([`standalone_remainder`]), and what is
+///     left decides: nothing but the shebang and the final `exit 0` → remove the file;
+///     anything else → it is the adopter's, restore it;
 ///   - anything else — including a foreign hook that merely *contains* the start
 ///     sentinel string but has no matching end marker and is not our standalone shape
 ///     — is foreign and left untouched (mirrors [`strip_managed_block`]'s data-loss
@@ -1061,16 +1111,19 @@ pub enum PrecommitRemoval {
 /// teardown now asks the same question the same way, and removes the bytes jigc wrote —
 /// the wrapped path's rule, applied where there is no end marker to find them by.
 ///
-/// **Where the block is not there as jigc writes it** — the adopter edited *inside* jigc's
-/// own lines, or another build of jigc wrote a different body — its lines cannot be told
+/// **Where a marker-less block is not there as jigc writes it** — the adopter edited
+/// *inside* jigc's own lines, or a build wrote a different body — its lines cannot be told
 /// from theirs, so the file is left byte-identical and the teardown says so
 /// ([`PrecommitTeardown::Kept`]). `force` is the operator's consent to delete, the flag
-/// that already takes an edited guide artifact, and it removes the file.
+/// that already takes an edited guide artifact, and it removes the file. **This arm is
+/// reached only by a hook with no end marker**: a delimited block is jigc's by its markers,
+/// edited inside or not, and comes out.
 fn classify_precommit_for_teardown(content: &str, force: bool) -> PrecommitTeardown {
     let Some(start) = content.find(PRECOMMIT_SENTINEL) else {
         return PrecommitTeardown::NotOurs;
     };
-    // Wrapped block: bracketed by both sentinels — cut it out, restore the foreign body.
+    // A delimited block: bracketed by both sentinels — cut it out, whatever it holds, and
+    // restore what stands around it.
     if let Some(rel_end) = content[start..].find(PRECOMMIT_SENTINEL_END) {
         // Back up to the beginning of the start-sentinel's line (keeps a preceding
         // foreign shebang), and advance past the end-marker's own line.
@@ -1085,7 +1138,9 @@ fn classify_precommit_for_teardown(content: &str, force: bool) -> PrecommitTeard
         // foreign hook's normalized pre-wrap bytes.
         let mut foreign = String::from(&content[..block_start]);
         foreign.push_str(after.trim_start_matches('\n'));
-        if foreign.trim().is_empty() {
+        // Nothing left, or nothing but the standalone hook's own frame: the file was
+        // jigc's whole.
+        if foreign.trim().is_empty() || is_standalone_frame(&foreign) {
             return PrecommitTeardown::RemoveFile;
         }
         return PrecommitTeardown::RestoreForeign(foreign);
@@ -1110,17 +1165,15 @@ fn classify_precommit_for_teardown(content: &str, force: bool) -> PrecommitTeard
 /// `uninstall` does not know which `jigc` installed the hook, and does not need to: the
 /// rendering takes one input, the installing binary's path, and the hook records it on its
 /// own `jigc='…'` line. So the block is rendered again from that line
-/// ([`wrapped_managed_block`], the same bytes the wrap case brackets, less its end marker)
-/// and looked for verbatim. Found, it is jigc's and it comes out; what remains is whatever
+/// ([`managed_block`], the bytes both hook forms bracket) and looked for verbatim. Found, it is jigc's and it comes out; what remains is whatever
 /// else the file held — lines above it, below it, after the final `exit 0`. Not found, and
 /// nothing here can say which lines are whose.
 fn standalone_remainder(content: &str) -> Option<String> {
     let jigc_path = content
         .lines()
         .find_map(|line| line.strip_prefix("jigc='")?.strip_suffix('\''))?;
-    let wrapped = wrapped_managed_block(Path::new(jigc_path));
-    let block = wrapped.strip_suffix(&format!("{PRECOMMIT_SENTINEL_END}\n"))?;
-    let at = content.find(block)?;
+    let block = managed_block(Path::new(jigc_path));
+    let at = content.find(&block)?;
     let mut rest = String::from(&content[..at]);
     // The blank line the rendered body keeps between its block and the final `exit 0`.
     rest.push_str(content[at + block.len()..].trim_start_matches('\n'));
@@ -1187,11 +1240,12 @@ fn narrate_kept_precommit(jigc_home: &Path) {
         .map(|dir| display_hook_path(jigc_home, &precommit_hook_in(&dir)))
         .unwrap_or_else(|_| "pre-commit".to_string());
     eprintln!(
-        "warning: left the `pre-commit` hook `{hook}` in place — it opens as the hook jigc \
-         writes and is not that hook byte for byte: it was edited inside jigc's own lines, or \
-         written by another build of jigc, so jigc cannot tell its lines from yours and \
-         removed none.\n  note: jigc's lines in it print nothing once the install is gone. \
-         Delete the file yourself, or re-run `jigc uninstall --force` to remove it whole."
+        "warning: left the `pre-commit` hook `{hook}` in place — it opens as a hook jigc \
+         wrote before its block carried an end marker, and is not that hook byte for byte: \
+         it was edited inside jigc's own lines, or written from another text, so jigc \
+         cannot tell its lines from yours and removed none.\n  note: jigc's lines in it \
+         print nothing once the install is gone. Delete the file yourself, or re-run `jigc \
+         uninstall --force` to remove it whole."
     );
 }
 
@@ -1324,6 +1378,201 @@ fn seed_secrets_gitignore(jigc_home: &Path) -> std::io::Result<bool> {
         }
     }
     Ok(true)
+}
+
+/// **Where `jigc setup` records the settings entries it added** — one small committed
+/// file, repo-relative, a member of the install commit ([`install_tracked_paths`]; the
+/// human's ruling of 2026-10-06 on the rc.24 fix pass's item 21, `DECISIONS.md` → *Ahead
+/// of the run's opening*, 5b, 10, and the entry that built it).
+///
+/// **What it is for.** `setup` merges three kinds of entry into a file it does not own —
+/// `permissions.allow` permits, the `permissions.deny` floor and a session hook command —
+/// and each merge adds an entry only where none stands. So an entry the adopter already
+/// had is, afterwards, indistinguishable from one jigc added, and `jigc uninstall` removed
+/// both: driven on `1.0.0-rc.24`, an adopter's own `Bash(rm -rf:*)` deny rule, their
+/// `Bash(git add:*)` permit and their own `jigc start` hook were gone at exit 0 — from a
+/// file git held no copy of, where the settings file is ignored. Which entries a run
+/// added is known only to that run, so the run writes it down.
+///
+/// **It is consulted only where git tracks the settings file** ([`SettingsClaim`]) — the
+/// record and the file it describes then travel together, clone by clone. A record trusted
+/// wherever it is found would be read against a settings file that is private to each
+/// clone, and say of one clone's own entries that jigc added them. For the same reason it
+/// is **written** only where the install commit can carry the settings file
+/// ([`settings_file_is_committable`]) and removed where it cannot: it is absent wherever
+/// there is nothing to record.
+///
+/// **The form** is JSON — the settings file's own — in one object: `format` (a number a
+/// later build can branch on; this build reads [`SETTINGS_RECORD_FORMAT`] and treats any
+/// other as no record), `file` (the settings file it describes, so a record written for
+/// another assistant's file claims nothing in this one) and `added`
+/// ([`adapter::SettingsEntries`]: `allow`, `deny`, `hooks`).
+///
+/// Under `.jigc/` and outside every gitignored prefix, beside `.jigc/version`: it goes with
+/// the tree `jigc uninstall` removes whole, which is why the teardown reads it first.
+pub const SETTINGS_RECORD_PATH: &str = ".jigc/settings-entries.json";
+
+/// The one settings-record format this build writes and reads ([`SETTINGS_RECORD_PATH`]).
+const SETTINGS_RECORD_FORMAT: u64 = 1;
+
+/// The settings record's on-disk body ([`SETTINGS_RECORD_PATH`]). Unknown keys are
+/// tolerated on read, so a later build may add one without a new format number.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct SettingsRecord {
+    /// [`SETTINGS_RECORD_FORMAT`].
+    format: u64,
+    /// The repo-relative settings file the entries were added to.
+    file: String,
+    /// The entries `jigc setup` added to it and that are still jigc's to take back.
+    added: adapter::SettingsEntries,
+}
+
+/// The entries the settings record claims for `file` — or `None` where no record this
+/// build can read describes that file: absent, not a regular file (read without following
+/// a link), not a record, another format, or written for another settings file.
+///
+/// Fails closed, and closed is the safe direction here: no claim means `jigc uninstall`
+/// removes nothing and names what it left.
+fn read_settings_record(jigc_home: &Path, file: &str) -> Option<adapter::SettingsEntries> {
+    let path = jigc_home.join(SETTINGS_RECORD_PATH);
+    if engine::store::home_entry(&path) != engine::store::HomeEntry::RegularFile {
+        return None;
+    }
+    parse_settings_record(&std::fs::read(path).ok()?, file)
+}
+
+/// The claims of a settings record's bytes for `file`, where this build can read them.
+fn parse_settings_record(bytes: &[u8], file: &str) -> Option<adapter::SettingsEntries> {
+    let record: SettingsRecord = serde_json::from_slice(bytes).ok()?;
+    (record.format == SETTINGS_RECORD_FORMAT && record.file == file).then_some(record.added)
+}
+
+/// **The record an earlier run left, as `jigc setup` reads it** — the file at
+/// [`SETTINGS_RECORD_PATH`], or, where nothing is at that path, the copy `HEAD` holds.
+///
+/// The second half is the rule every install file already follows (the human's ruling of
+/// 2026-10-06 on the fix pass's item 1): a tracked install file deleted from the working
+/// tree is restored by the next `setup`, the deletion staged or not. The other members are
+/// restored by being written again; this one cannot be, because what it says is known only
+/// to the runs that added the entries — so it is read back from the commit that holds it,
+/// and written again from there. A deletion somebody **committed** is not undone: `HEAD`
+/// then holds no record, and the install is one without a record.
+///
+/// Only *nothing at the path* asks git. A link, a directory or an unreadable file there is
+/// not an absent record, and is answered by the guards that own those shapes.
+fn earlier_settings_record(jigc_home: &Path, file: &str) -> Option<adapter::SettingsEntries> {
+    let absent = std::fs::symlink_metadata(jigc_home.join(SETTINGS_RECORD_PATH))
+        .is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound);
+    if !absent {
+        return read_settings_record(jigc_home, file);
+    }
+    let held = git_output(jigc_home, ["show", &format!("HEAD:{SETTINGS_RECORD_PATH}")])?;
+    held.status
+        .success()
+        .then(|| parse_settings_record(&held.stdout, file))
+        .flatten()
+}
+
+/// Whether `bytes` are a settings record in jigc's own shape — an object carrying a
+/// numeric `format` and a string `file`, **whichever format it is** ([`OwnContent`]'s
+/// oracle for this member). A record a later build wrote is jigc's too; this build cannot
+/// read its claims ([`read_settings_record`]) and can still tell it from a file somebody
+/// authored at the path.
+fn settings_record_is_jigcs(bytes: &[u8]) -> bool {
+    serde_json::from_slice::<serde_json::Value>(bytes).is_ok_and(|value| {
+        value.get("format").is_some_and(serde_json::Value::is_u64)
+            && value.get("file").is_some_and(serde_json::Value::is_string)
+    })
+}
+
+/// **What the settings record says once this run's three merges have run** — asked
+/// *before* them, because afterwards an entry the run added and one it found are the same
+/// entry.
+///
+/// Two sets, and their union: the profile's entries the settings file does **not** hold
+/// yet, which are exactly the ones the merges are about to add
+/// ([`adapter::settings_entries_present`] is the merges' own presence test); and the
+/// entries an earlier record claims ([`earlier_settings_record`]) that the file **still**
+/// holds. An earlier claim whose entry has left the file is dropped — if the entry is
+/// merged back in by this run it is claimed again as added, and if somebody else writes it
+/// later it is theirs.
+///
+/// **So the record never claims an entry no run of `setup` added.** That is the whole
+/// rule for an install that predates the record: its entries are in the settings file, no
+/// record lists them, and a later `setup` finds them present and adds nothing — so it
+/// records nothing for them, and `jigc uninstall` leaves them and names them. The
+/// alternative, reading an older install's entries back out of git history or assuming
+/// that whatever equals jigc's is jigc's, is the inference the record exists to replace.
+fn settings_record_entries(
+    jigc_home: &Path,
+    profile: &AdapterProfile,
+) -> std::io::Result<adapter::SettingsEntries> {
+    let installs = adapter::SettingsEntries::installed_by(profile);
+    let adding = installs.without(&adapter::settings_entries_present(
+        jigc_home, profile, &installs,
+    )?);
+    let kept = match earlier_settings_record(jigc_home, &profile.allowlist.file) {
+        Some(earlier) => adapter::settings_entries_present(jigc_home, profile, &earlier)?,
+        None => adapter::SettingsEntries::default(),
+    };
+    Ok(kept.with(&adding))
+}
+
+/// Write the settings record for `file`, as a regular file at exactly its path
+/// ([`crate::regular_file::replace`]) — or, where `added` names nothing, **remove** a
+/// record that stands there. `Ok(true)` iff a record was removed.
+///
+/// *Absent where there is nothing to record* holds in both directions: a run that added
+/// nothing writes no file, and a run that finds a record it can no longer stand behind —
+/// the settings file left git, so the two no longer travel together — takes it away rather
+/// than leave a claim to be read against some later settings file. The removal reaches the
+/// install commit like any other change to a member ([`commit_install`]).
+fn write_settings_record(
+    jigc_home: &Path,
+    file: &str,
+    added: &adapter::SettingsEntries,
+) -> std::io::Result<bool> {
+    if added.is_empty() {
+        return match std::fs::remove_file(jigc_home.join(SETTINGS_RECORD_PATH)) {
+            Ok(()) => Ok(true),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(err) => Err(err),
+        };
+    }
+    let record = SettingsRecord {
+        format: SETTINGS_RECORD_FORMAT,
+        file: file.to_string(),
+        added: added.clone(),
+    };
+    let mut body = serde_json::to_string_pretty(&record)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+    body.push('\n');
+    crate::regular_file::replace(jigc_home, SETTINGS_RECORD_PATH, body.as_bytes()).map(|()| false)
+}
+
+/// **Whether the install commit can carry the settings file** — the condition the settings
+/// record is written under ([`SETTINGS_RECORD_PATH`]).
+///
+/// The record is only ever read where git tracks the settings file, so it is only worth
+/// writing where this run's commit will hold that file: the install home is a work tree,
+/// and git does not ignore the file the three merges land in — the settings path itself,
+/// or the file its link leads to ([`merged_through_links`]). `git check-ignore` reports a
+/// tracked file as not ignored whatever the ignore rules say, so a file git already holds
+/// answers `true` here.
+///
+/// A git that cannot answer is `false`: no record, and a teardown that names what it left.
+fn settings_file_is_committable(
+    jigc_home: &Path,
+    allowlist_file: &str,
+    through: &[MergedThrough],
+) -> bool {
+    if !home_is_a_work_tree(jigc_home).unwrap_or(false) {
+        return false;
+    }
+    match through.iter().find(|link| link.link == allowlist_file) {
+        Some(link) => !link.ignored,
+        None => !git_path_ignored(jigc_home, allowlist_file),
+    }
 }
 
 /// The assistant whose embedded profile MVP `setup` installs. Single-assistant in
@@ -1623,14 +1872,15 @@ fn install(
         return Err(refusal);
     }
 
-    // 0d′b. **A file the install merges into is followed through a link only to a file
-    //       this repository can commit — asked before the first write** (the rc.24 fix
+    // 0d′b. **A file the install merges into is followed through a link only to a regular
+    //       file inside the checkout — asked before the first write** (the rc.24 fix
     //       pass's completion audit, the end-to-end tester's F2). The members above are the
     //       ones whose writer replaces; these are the ones whose writer keeps what it finds,
     //       and they open their destination through whatever is there too. `through` is
     //       where each accepted link leads, and from here on those files are install
-    //       members like any other: asked about by the dirty gate, named in the install
-    //       commit.
+    //       members like any other: asked about by the dirty gate and named in the install
+    //       commit — or, where git ignores the file, dropped from both exactly as an
+    //       ignored ordinary `CLAUDE.md` is (the human's ruling of 2026-10-06, item 18).
     let through = merged_through_links(jigc_home, &members, &line_file, &allowlist_file)?;
     hook_link_refusal(jigc_home).map_or(Ok(()), Err)?;
     let through_paths: Vec<String> = through.iter().map(|link| link.target.clone()).collect();
@@ -1761,10 +2011,15 @@ fn install(
     // 1–5. **The write span**, behind one seam (M54 Increment 4 / T1; S22): every error
     //      it returns reaches [`record_failed_install`] before it propagates, so a failed
     //      first run leaves a repository a plain re-run completes.
+    //
+    //      **Whether this run keeps the settings record is settled here too**, from what
+    //      git says before the first write ([`settings_file_is_committable`]).
+    let record_settings = settings_file_is_committable(jigc_home, &allowlist_file, &through);
     let InstallWrites {
         ignore,
         seeded_gitignore,
         hook_path,
+        dropped_settings_record,
     } = write_install_span(
         jigc_home,
         profile,
@@ -1772,6 +2027,7 @@ fn install(
         &bootstrap_file,
         &allowlist_file,
         declared_guide.filter(|_| guide_file.is_some()),
+        record_settings,
     )
     .inspect_err(|_| {
         record_failed_install(
@@ -1814,11 +2070,36 @@ fn install(
     // stderr, beside the summary, where this door says what the summary's pinned keys
     // cannot — `line_file` stays the path the assistant reads, which is the link.
     for link in &through {
-        eprintln!(
-            "note: `{}` is a link, so `jigc setup` merged into the file it leads to, `{}` — \
-             that is the file the install commit carries.",
-            link.link, link.target,
-        );
+        if link.ignored {
+            eprintln!(
+                "note: `{}` is a link, so `jigc setup` merged into the file it leads to, \
+                 `{}` — git ignores that file, so no commit carries it.",
+                link.link, link.target,
+            );
+        } else {
+            eprintln!(
+                "note: `{}` is a link, so `jigc setup` merged into the file it leads to, \
+                 `{}` — that is the file the install commit carries.",
+                link.link, link.target,
+            );
+        }
+    }
+    // The ack for a settings record this run took away ([`write_settings_record`]): a file
+    // jigc removed from the repository is said, on the channel the link ack above uses.
+    if dropped_settings_record {
+        if record_settings {
+            eprintln!(
+                "note: removed `{SETTINGS_RECORD_PATH}` — it listed no entry `jigc setup` \
+                 added that is still in `{allowlist_file}`, and this run added none.",
+            );
+        } else {
+            eprintln!(
+                "note: removed `{SETTINGS_RECORD_PATH}`, the record of the entries `jigc \
+                 setup` added to `{allowlist_file}` — git does not hold that file here, so \
+                 the record no longer describes a file that travels with it. `jigc \
+                 uninstall` will leave the entries in `{allowlist_file}` and name them.",
+            );
+        }
     }
     // 6b. **Keep the provenance of what this run wrote where no commit will hold it** (the
     //     rc.24 fix pass, the ignored sibling of `(R1, F1)`). Asked after the commit step
@@ -1867,6 +2148,9 @@ struct InstallWrites {
     ignore: crate::gitignore::Ensured,
     seeded_gitignore: bool,
     hook_path: PathBuf,
+    /// Whether the span removed a settings record that stood at [`SETTINGS_RECORD_PATH`]
+    /// ([`write_settings_record`]) — the install says so.
+    dropped_settings_record: bool,
 }
 
 /// **Every write [`install`] makes before its install commit, as one fallible span** (M54
@@ -1878,10 +2162,11 @@ struct InstallWrites {
 /// gate refused them as the adopter's work with `setup.dirty-install-path`, recoverable
 /// only by `--force`. A return added to this span later is covered by construction.
 ///
-/// **The enumeration, by grep over this span: 12 error returns**, all `.map_err(…)?` —
+/// **The enumeration, by grep over this span: 14 error returns**, all `.map_err(…)?` —
 /// `setup.write-bootstrap`, `setup.inject-reference`, `setup.init-project-layer`,
 /// `setup.compose-marker`, `setup.version-stamp`, `setup.secrets-gitignore`,
-/// `setup.inject-allowlist`, `setup.inject-hook`, `setup.inject-deny`,
+/// `setup.inject-allowlist` three times (the read the settings record is computed from,
+/// the allowlist merge, the record's own write), `setup.inject-hook`, `setup.inject-deny`,
 /// `setup.write-guide`, and `setup.install-hook` twice (`current_exe`, the hook write).
 /// **What that grep misses:** (a) a `?` **inside a callee** — `init_project_layer`, the
 /// `inject_*` merges and `install_precommit_hook` can fail after a partial write of their
@@ -1891,7 +2176,8 @@ struct InstallWrites {
 /// not be used, not error returns; (d) a panic, which returns nothing.
 ///
 /// `guide` is the guide artifact to write: `None` when the profile declares none, or when
-/// [`install`]'s step 0d decided the file on disk is the adopter's.
+/// [`install`]'s step 0d decided the file on disk is the adopter's. `record_settings` is
+/// whether this run keeps the settings record ([`settings_file_is_committable`]).
 fn write_install_span(
     jigc_home: &Path,
     profile: &AdapterProfile,
@@ -1899,6 +2185,7 @@ fn write_install_span(
     bootstrap_file: &str,
     allowlist_file: &str,
     guide: Option<&adapter::GuideTarget>,
+    record_settings: bool,
 ) -> Result<InstallWrites, Finding> {
     // 1. Reference floor: write the managed bootstrap file, then point the
     //    always-loaded file at it with a bare import line.
@@ -1976,6 +2263,24 @@ fn write_install_span(
         )
     })?;
 
+    // 3 (before). **What the settings record will say once steps 3, 4 and 4b have run** —
+    //    asked now, because after them an entry this run added and one it found are the
+    //    same entry ([`settings_record_entries`]). Nothing where the run keeps no record.
+    let recorded = if record_settings {
+        settings_record_entries(jigc_home, profile).map_err(|err| {
+            Finding::block(
+                "setup.inject-allowlist",
+                format!(
+                    "cannot read `{allowlist_file}` to record which entries `jigc setup` \
+                     adds to it: {err}"
+                ),
+                format!("ensure `{allowlist_file}` is readable, then re-run `jigc setup`"),
+            )
+        })?
+    } else {
+        adapter::SettingsEntries::default()
+    };
+
     // 3. Allowlist `jigc` so the agent runs it without friction.
     adapter::inject_allowlist(jigc_home, profile).map_err(|err| {
         Finding::block(
@@ -2008,6 +2313,28 @@ fn write_install_span(
             format!("ensure `{allowlist_file}` is writable, then re-run `jigc setup`"),
         )
     })?;
+
+    // 4b′. Write down which of those entries are jigc's — the **settings record**
+    //      ([`SETTINGS_RECORD_PATH`]; the human's ruling of 2026-10-06, item 21), the one
+    //      thing that lets `jigc uninstall` take back what steps 3, 4 and 4b added and
+    //      leave an identical entry the adopter already had. Directly behind the merges it
+    //      describes: a run that fails between them and here leaves entries no record
+    //      claims, which the teardown leaves in place and names — never the reverse, a
+    //      claim over an entry no run added. It rides the settings merge's own code; the
+    //      record is that merge's, and a code of its own would be a new finding code.
+    //      Where this run keeps no record, `recorded` is empty and a record that stands
+    //      there is removed.
+    let dropped_settings_record = write_settings_record(jigc_home, allowlist_file, &recorded)
+        .map_err(|err| {
+            Finding::block(
+                "setup.inject-allowlist",
+                format!(
+                    "cannot write `{SETTINGS_RECORD_PATH}`, the record of the entries `jigc \
+                     setup` added to `{allowlist_file}`: {err}"
+                ),
+                format!("ensure `{SETTINGS_RECORD_PATH}` is writable, then re-run `jigc setup`"),
+            )
+        })?;
 
     // 4c. Write the adapter's own **owned artifact** — jigc's shipped guides at the
     //     profile-declared path, stamped with this build's version and the `blake3` of
@@ -2072,6 +2399,7 @@ fn write_install_span(
         ignore,
         seeded_gitignore,
         hook_path,
+        dropped_settings_record,
     })
 }
 
@@ -2212,6 +2540,16 @@ fn install_tracked_paths(
             Refuses,
             replaces("setup.compose-marker", OwnContent::SettledComposeMarker),
         ),
+        // [`write_settings_record`] — the record of the settings entries jigc added,
+        // written whole from what the run computed; nothing an adopter put at the path is
+        // carried over. It rides the code of the settings merge it belongs to. Unlike its
+        // neighbours it is not written by every run: the file is absent where there is
+        // nothing to record, and each filter over this table already drops an absent path.
+        member(
+            SETTINGS_RECORD_PATH,
+            Refuses,
+            replaces("setup.inject-allowlist", OwnContent::SettingsRecord),
+        ),
     ];
     // The root `.gitignore` is committed **only** when setup itself seeded it on the
     // fresh-repo path — never an established repo's pre-existing `.gitignore` (which setup
@@ -2331,12 +2669,12 @@ pub enum InstallWriter {
 /// reasoning that an ignored path cannot be swept into the install commit, which is true of
 /// a file the install merges into and beside the point for one it replaces.
 ///
-/// **Two kinds of answer, and the difference is what an upgrade does to each.** Three
+/// **Two kinds of answer, and the difference is what an upgrade does to each.** Four
 /// oracles read a property that no build of jigc changes — the stamp's one-line shape, the
-/// marker's emptiness, the guide's digest of its own body — so a copy an older build wrote
-/// is recognised by a newer one. Two ask whether this run's write would leave the file
-/// byte-identical, which is true of an older build's copy only while the generated content
-/// has not moved between the builds. Where it has, the bytes are still jigc's and nothing
+/// marker's emptiness, the guide's digest of its own body, the settings record's two
+/// keys — so a copy an older build wrote is recognised by a newer one. Two ask whether
+/// this run's write would leave the file byte-identical, which is true of an older build's
+/// copy only while the generated content has not moved between the builds. Where it has, the bytes are still jigc's and nothing
 /// in them says so; that provenance is the install footprint record's
 /// ([`INSTALL_FOOTPRINT_PATH`]), which keeps the hash of every ignored file a run replaced
 /// and is subtracted before this question is reached. So an upgrade over an ignored,
@@ -2368,6 +2706,9 @@ pub enum OwnContent {
     /// `jigc-body-blake3:` ([`guide_text_is_jigcs`], the test [`guide_ownership`] decides
     /// by), whichever build wrote it.
     GuideDigest,
+    /// `.jigc/settings-entries.json` — a settings record in jigc's own shape
+    /// ([`settings_record_is_jigcs`]), whichever build wrote it and whatever it lists.
+    SettingsRecord,
 }
 
 impl OwnContent {
@@ -2384,6 +2725,7 @@ impl OwnContent {
             Self::BootstrapBody => bytes == adapter::bootstrap_file().as_bytes(),
             Self::VersionStamp => version_stamp_is_jigcs(jigc_home),
             Self::EmptyMarker => bytes.is_empty(),
+            Self::SettingsRecord => settings_record_is_jigcs(&bytes),
             Self::SettledComposeMarker => String::from_utf8(bytes).is_ok_and(|text| {
                 compose_marker_rendering(Some(&text), &file).is_ok_and(|after| after == text)
             }),
@@ -2504,12 +2846,16 @@ fn version_stamp_is_jigcs(jigc_home: &Path) -> bool {
 /// re-run, and a route whose own act leads into a second refusal is the trap this check
 /// was written to close.
 ///
-/// **And it says to commit the removal where git tracks the entry**, which driving the
-/// route found it owed: a *committed* link removed and left uncommitted is a deleted
+/// **And it says to commit the removal where git tracks the entry.** Driving the route
+/// found it owed that once: a *committed* link removed and left uncommitted is a deleted
 /// tracked path — dirty against `HEAD` — so the re-run wrote the install and its
 /// commit-time backstop then refused over that very path, with the dirty-install route
-/// pointing at jigc's own freshly written file. With the removal committed the path is
-/// clean and absent, and one re-run installs.
+/// pointing at jigc's own freshly written file. **That is no longer what happens**
+/// ([`DirtyPaths::absent`], 2026-10-06): a path that was absent before the run is not the
+/// adopter's work, so the re-run installs over an uncommitted removal too and commits the
+/// regular file in the link's place. The route keeps the commit — it is true as printed
+/// and leaves the removal as a change of its own in the history — but the install no
+/// longer depends on it.
 fn replaced_path_refusal(jigc_home: &Path, members: &[InstallMember]) -> Option<Finding> {
     let mut code = None;
     let mut blocked: Vec<crate::regular_file::Blocker> = Vec::new();
@@ -2559,12 +2905,19 @@ struct MergedThrough {
     link: String,
     /// The file it leads to, relative to the checkout root.
     target: String,
+    /// Whether git ignores that file ([`LinkEnd::MergeableIgnored`]) — then no commit
+    /// carries what was merged there, and the ack says so.
+    ignored: bool,
 }
 
 /// Where a link at a merged-into member leads, as far as the install is concerned.
 enum LinkEnd {
     /// A regular file inside this checkout that git does not ignore — repo-relative.
     Mergeable(String),
+    /// A regular file inside this checkout that git **ignores** — repo-relative. Merged
+    /// into, and in no commit: exactly what the install does with an ignored ordinary file
+    /// at the member's own path.
+    MergeableIgnored(String),
     /// Anything else, as the clause the refusal says of it.
     Refused(String),
 }
@@ -2572,13 +2925,29 @@ enum LinkEnd {
 /// **Follow the link at `<jigc_home>/<path>` the way the member's writer will, and say
 /// whether that is somewhere the install may write.**
 ///
-/// The answer is `Mergeable` only for a **regular file inside the checkout that git does
-/// not ignore**. Whether git *holds* that file is then asked like any other member's: it
-/// joins the install's path class, so on a born `HEAD` an untracked or modified one draws
-/// the dirty-install refusal by name, and on an unborn one it rides the first commit with
-/// the link (`DirtyPaths::rides_the_first_commit`). An ignored file is refused here because
-/// that gate cannot refuse it — it drops an ignored path the install merges into, since no
-/// commit would carry it either way — and a link is followed only to a file a commit can.
+/// The link is followed to a **regular file inside the checkout**, and nowhere else. Where
+/// git does not ignore that file the answer is `Mergeable`, and whether git *holds* it is
+/// then asked like any other member's: it joins the install's path class, so on a born
+/// `HEAD` an untracked or modified one draws the dirty-install refusal by name, and on an
+/// unborn one it rides the first commit with the link
+/// (`DirtyPaths::rides_the_first_commit`).
+///
+/// **Where git ignores it, the answer is `MergeableIgnored` — the file is merged into and
+/// joins no commit** (the human's ruling of 2026-10-06 on the fix pass's item 18). The
+/// pass refused this end, on the reasoning that the dirty gate cannot refuse an ignored
+/// path the install merges into and a link should be followed only to a file a commit can
+/// carry. That made a link the one way to be refused over a file the install accepts
+/// everywhere else: an ignored ordinary `CLAUDE.md` gets jigc's section at exit 0 and is in
+/// no commit, `1.0.0-rc.24` followed this link and merged, and a merge loses nothing
+/// either way. So the target is what an ignored ordinary file at the member's own path is
+/// — same bytes written, same absence from the install commit — and it reaches both of
+/// that file's filters by the same road, as a member of the path class
+/// ([`install_candidates`] and [`commit_install`] each drop an ignored path the install
+/// merges into).
+///
+/// **Still refused:** an end outside the checkout, an end that does not exist, an end that
+/// is not a regular file, and an end inside git's own directory — which `git check-ignore`
+/// does not call ignored and which is no working file of the repository at all.
 fn link_end(jigc_home: &Path, path: &str) -> LinkEnd {
     let Ok(real) = std::fs::canonicalize(jigc_home.join(path)) else {
         return LinkEnd::Refused(
@@ -2603,12 +2972,14 @@ fn link_end(jigc_home: &Path, path: &str) -> LinkEnd {
             "leads to `{relative}`, which is not a regular file"
         ));
     }
-    if relative == ".git" || relative.starts_with(".git/") || git_path_ignored(jigc_home, &relative)
-    {
+    if relative == ".git" || relative.starts_with(".git/") {
         return LinkEnd::Refused(format!(
-            "leads to `{relative}`, which git does not track and never will — it is ignored, \
-             or inside git's own directory — so no commit would carry what jigc merges there"
+            "leads to `{relative}`, inside git's own directory, which is no working file of \
+             this repository"
         ));
+    }
+    if git_path_ignored(jigc_home, &relative) {
+        return LinkEnd::MergeableIgnored(relative);
     }
     LinkEnd::Mergeable(relative)
 }
@@ -2627,11 +2998,15 @@ fn link_end(jigc_home: &Path, path: &str) -> LinkEnd {
 /// link pointed; to a **tracked file in the repository**, it merged there and left that
 /// file modified and uncommitted beside an install commit that did not name it.
 ///
-/// **So a link is followed only to a file this repository can commit, and then that file
+/// **So a link is followed only to a regular file inside the checkout, and then that file
 /// is the member** ([`link_end`]). `CLAUDE.md -> AGENTS.md` is an ordinary thing for a
 /// repository to have, and it keeps working: the reference is merged into `AGENTS.md`,
 /// `AGENTS.md` is asked about by the dirty gate and named in the install commit, and the
-/// ack says which file was written. Every other end refuses before the first write.
+/// ack says which file was written. **A file git ignores is followed to as well** (the
+/// human's ruling of 2026-10-06, reversing this pass's refusal): it is merged into and
+/// joins no commit, as an ignored ordinary file at the member's own path does, and the ack
+/// says that instead. Every other end — out of the checkout, nowhere, a directory, git's
+/// own directory — refuses before the first write.
 ///
 /// **`.jigc/.gitignore` is the one member a link is never followed at**: its writer
 /// (`crate::gitignore::ensure`) refuses a symlink itself, and did so *after* the bootstrap
@@ -2672,6 +3047,12 @@ fn merged_through_links(
             LinkEnd::Mergeable(target) => through.push(MergedThrough {
                 link: member.path.clone(),
                 target,
+                ignored: false,
+            }),
+            LinkEnd::MergeableIgnored(target) => through.push(MergedThrough {
+                link: member.path.clone(),
+                target,
+                ignored: true,
             }),
             LinkEnd::Refused(why) => {
                 // The member's own existing write-failure code, as at a replaced path.
@@ -2689,8 +3070,7 @@ fn merged_through_links(
                     blocker.clearing_act()
                 } else {
                     format!(
-                        "{}, or point it at a file inside this repository that git does not \
-                         ignore",
+                        "{}, or point it at a regular file inside this repository",
                         blocker.clearing_act()
                     )
                 });
@@ -2704,8 +3084,8 @@ fn merged_through_links(
         code,
         format!(
             "{} — `jigc setup` merges into the file at {}, and it follows a link there only \
-             to a regular file this repository can commit. Nothing was installed and no \
-             install commit was made",
+             to a regular file inside this repository. Nothing was installed and no install \
+             commit was made",
             states.join("; "),
             if states.len() == 1 {
                 "that path"
@@ -2801,6 +3181,17 @@ fn jigc_owned_at(jigc_home: &Path, member: &InstallMember, before: &DirtyPaths) 
 /// commit ([`DirtyPaths::rides_the_first_commit`]). The one predicate both asks share —
 /// [`install`]'s pre-write gate over the candidate set, and [`commit_install`]'s backstop
 /// over the settled pathspec — and the one `--force` reports what it was spent on from.
+///
+/// **And not absent before the run** ([`DirtyPaths::absent`]; the human's ruling of
+/// 2026-10-06 on the fix pass's item 1). A tracked install file deleted from the working
+/// tree is a difference from `HEAD`, so it was in `before`; the pre-write gate asks only
+/// about paths that exist, so it passed; the install wrote the file; and the backstop then
+/// refused over it — naming jigc's own freshly written file as the adopter's uncommitted
+/// work, on every run wherever the restored bytes differ from `HEAD`'s (a merged-into file
+/// that had held the adopter's lines; a committed link, which a regular file never
+/// equals). Nothing of the adopter's was at such a path, on disk or in the index, so the
+/// install restores it and commits it. The deletion itself is not preserved: the install's
+/// job is to put the file there, and `HEAD` holds what was deleted.
 fn dirty_install_refusals(
     jigc_home: &Path,
     members: &[InstallMember],
@@ -2809,6 +3200,7 @@ fn dirty_install_refusals(
     members
         .iter()
         .filter(|member| before.contains(&member.path))
+        .filter(|member| !before.absent.contains(&member.path))
         .filter(|member| !jigc_owned_at(jigc_home, member, before))
         .filter(|member| !before.rides_the_first_commit(member))
         .map(|member| member.path.clone())
@@ -3203,7 +3595,10 @@ fn clear_install_footprint(jigc_home: &Path) {
 /// differed **before** the run. Those are exactly the paths that were clean before the run
 /// and are not clean now, so jigc wrote them in this run, whichever step failed and however
 /// far a callee got before its own `?`. A path the adopter had dirty before the run is in
-/// `before`, so it is never recorded.
+/// `before`, so it is never recorded — **except one that was dirty by being absent**
+/// ([`DirtyPaths::absent`]): a deleted tracked install file the failed run wrote afresh is
+/// jigc's by the same rule the commit's backstop applies, and left out of the record the
+/// re-run refused over it as the adopter's.
 ///
 /// **Then staged, mirroring [`commit_install`]'s refusal arm.** A record alone leaves a
 /// tracked install path (a committed `CLAUDE.md` the install merged into) refused, because
@@ -3235,7 +3630,9 @@ fn record_failed_install(
         install_candidates(jigc_home, line_file, allowlist_file, guide_file, through)
             .into_iter()
             .map(|member| member.path)
-            .filter(|path| now.contains(path) && !before.contains(path))
+            .filter(|path| {
+                now.contains(path) && (!before.contains(path) || before.absent.contains(path))
+            })
             .collect();
     record_install_footprint(jigc_home, &written);
     if !written.is_empty() {
@@ -3272,6 +3669,20 @@ struct DirtyPaths {
     /// is flagged assume-unchanged or skip-worktree, and git calls the file modified once
     /// asked without the flag ([`unseen_by_status`]). Filled like [`Self::ignored`].
     flagged: BTreeSet<String>,
+    /// The subset that **was not in the working tree** when the question was asked and
+    /// whose index entry holds nothing `HEAD` does not: a tracked file deleted, the
+    /// deletion staged (`D `) or not (` D`). git holds nothing of the adopter's at such a
+    /// path and neither does the disk, so whatever stands there once the install has run
+    /// is what the install wrote ([`dirty_install_refusals`]; the human's ruling of
+    /// 2026-10-06 on the fix pass's item 1).
+    ///
+    /// **Both halves are needed, and each is asked of whoever knows it.** The index half
+    /// is git's own status letter: a path staged and then deleted (`AD`, `MD`) is absent
+    /// too, and its staged blob is the adopter's, in no commit — that one still refuses.
+    /// The working-tree half is the entry itself, read without following a link: a staged
+    /// deletion says nothing about the disk, where an untracked file of the adopter's may
+    /// stand at the same path.
+    absent: BTreeSet<String>,
 }
 
 impl DirtyPaths {
@@ -3284,6 +3695,7 @@ impl DirtyPaths {
         self.untracked.remove(path);
         self.ignored.remove(path);
         self.flagged.remove(path);
+        self.absent.remove(path);
     }
 
     /// **The unborn-`HEAD` exemption, as a property of the member rather than of the
@@ -3466,6 +3878,16 @@ fn ask_dirty_against_head(jigc_home: &Path, pathspec: &[String]) -> Result<Dirty
         let path = record[3..].to_string();
         if record.starts_with("??") {
             dirty.untracked.insert(path.clone());
+        }
+        // A deletion and nothing else — never an unmerged `DD`/`DU`, whose letters mean
+        // something else — at a path the disk agrees is empty ([`DirtyPaths::absent`]).
+        // *Not found*, and no other failure: an entry that cannot be read is not known to
+        // be absent, and stays a subject.
+        if (record.starts_with(" D ") || record.starts_with("D  "))
+            && std::fs::symlink_metadata(jigc_home.join(&path))
+                .is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound)
+        {
+            dirty.absent.insert(path.clone());
         }
         dirty.all.insert(path);
     }
@@ -3854,7 +4276,14 @@ fn commit_install(
         through,
     )
     .into_iter()
-    .filter(|member| jigc_home.join(&member.path).exists())
+    // Present — or the one member a run can take **away**: a settings record this run
+    // removed ([`write_settings_record`]) while git still tracks it. `git add -- <path>`
+    // stages that removal and the pathspec commit carries it, so the record leaves the
+    // repository in the install commit and not as a deletion left lying in the tree.
+    .filter(|member| {
+        jigc_home.join(&member.path).exists()
+            || (member.path == SETTINGS_RECORD_PATH && git_tracks(jigc_home, &member.path))
+    })
     .filter(|member| !git_path_ignored(jigc_home, &member.path))
     .collect();
     let mut paths: Vec<String> = members.iter().map(|member| member.path.clone()).collect();
@@ -3886,9 +4315,12 @@ fn commit_install(
     // the candidate paths before the first write, so an ordinary refusal never gets here and
     // never has to write anything first. What reaches this ask is the member the pre-write
     // enumeration cannot name — the hook, whose home the install itself resolves — plus any
-    // path whose candidacy the pre-write filters answered differently (a staged deletion the
-    // install then recreates). The install *is* written and staged by the time this refuses,
-    // which is what its finding says.
+    // path whose candidacy the pre-write filters answered differently: one that was absent
+    // from the working tree while its **index** entry held bytes `HEAD` does not (staged,
+    // then deleted). A path absent with nothing of the adopter's in the index — a deleted
+    // tracked file, the deletion staged or not — is not one of them: the install wrote what
+    // stands there now ([`DirtyPaths::absent`]). The install *is* written and staged by the
+    // time this refuses, which is what its finding says.
     let (dirty, unborn): (Vec<String>, bool) = match subject {
         InstallSubject::Consented(_) => (Vec::new(), false),
         // No work tree at the home, so no commit — the benign skip this door has always
@@ -4184,6 +4616,15 @@ fn git_path_ignored(jigc_home: &Path, path: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether git **tracks** `path` (repo-relative) in `jigc_home` — it has an index entry
+/// (`git ls-files --error-unmatch`). A git that cannot answer tracks nothing: both readers
+/// of this fail towards doing less.
+fn git_tracks(jigc_home: &Path, path: &str) -> bool {
+    git_output(jigc_home, ["ls-files", "--error-unmatch", "--", path])
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// Run `git -C <jigc_home> <args>`, returning the captured output if git ran (whatever
 /// its exit), or `None` if git could not be spawned. The install-commit path is
 /// best-effort: a git hiccup degrades to [`InstallCommit::Skipped`], never a setup
@@ -4262,11 +4703,12 @@ pub struct RemovedArtifacts {
     pub jigc_dir: bool,
     /// A jigc-injected bootstrap reference was unwired from the always-loaded file.
     pub reference: bool,
-    /// The `Bash(jigc:*)` allowlist permit was dropped from the settings file.
+    /// An allowlist permit was dropped from the settings file — one `setup` recorded as
+    /// added, or under `--force` any identical to one jigc installs.
     pub allowlist: bool,
-    /// jigc's `SessionStart` hook command was dropped from the settings file.
+    /// A `SessionStart` hook command was dropped from the settings file, on the same rule.
     pub hook: bool,
-    /// The `deny` safety floor was dropped from the settings file.
+    /// A `deny` safety-floor pattern was dropped from the settings file, on the same rule.
     pub deny: bool,
     /// The jigc-managed `pre-commit` hook was removed or unwrapped.
     pub precommit: bool,
@@ -4305,6 +4747,15 @@ impl RemovedArtifacts {
 /// seventh member, because the set is what `setup` writes rather than a fixed list (M48
 /// Increment 10). Every settings removal is **surgical**: a foreign permit / hook / deny
 /// entry sharing the file survives.
+///
+/// **And so does an entry that merely equals one of jigc's** (the human's ruling of
+/// 2026-10-06 on the rc.24 fix pass's item 21). The three settings removals take the
+/// entries `setup` recorded as added ([`SETTINGS_RECORD_PATH`]) and no others, and the
+/// record is read only where git tracks the settings file ([`SettingsClaim`]). Where it is
+/// not — the file is ignored or untracked, or the install has no record — none of the three
+/// kinds is removed, and every entry left that is identical to one jigc installs is named
+/// ([`narrate_left_settings_entries`]). `force` takes them all, as it takes everything
+/// else this door otherwise refuses to destroy.
 ///
 /// **The guide artifact comes out only while it is still jigc's** ([`guide_ownership`]): a
 /// copy the user has edited is left byte-identical and reported as the
@@ -4372,9 +4823,10 @@ impl RemovedArtifacts {
 /// file under `.jigc/` is refused over, named itself, or named through the work unit
 /// whose bookkeeping it is.
 ///
-/// `force` is the operator's consent to delete. It skips the four guards, and — the one
-/// other thing this teardown refuses on its own — takes the adapter's owned guide artifact
-/// even when the user has edited it.
+/// `force` is the operator's consent to delete. It skips the four guards, and takes the
+/// three things this teardown otherwise leaves in place: the adapter's owned guide
+/// artifact once the user has edited it, a `pre-commit` hook jigc cannot find its own
+/// block in, and every settings entry identical to one jigc installs.
 ///
 /// **Idempotent:** each step is independently a clean no-op when its artifact is already
 /// absent — an already-removed `.jigc/`, a `CLAUDE.md` without the section, an
@@ -4475,6 +4927,21 @@ fn uninstall(
         }
     }
 
+    // 0b. **Which settings entries are jigc's to take back** ([`SettingsClaim`]) — read
+    //     now, because the record that says so lives in the tree step 1 removes.
+    let allowlist_file = profile.allowlist.file.clone();
+    let installs = adapter::SettingsEntries::installed_by(profile);
+    let claim = SettingsClaim::read(jigc_home, &allowlist_file);
+    // `--force` is the operator's consent to delete, here as at the guards above: every
+    // entry identical to one jigc installs or recorded goes, each occurrence of it — what
+    // this door did for every caller before it kept a record.
+    let (take, every) = match (&claim, force) {
+        (SettingsClaim::Recorded(added), true) => (installs.with(added), true),
+        (_, true) => (installs.clone(), true),
+        (SettingsClaim::Recorded(added), false) => (added.clone(), false),
+        (_, false) => (adapter::SettingsEntries::default(), false),
+    };
+
     // 1. Remove the whole `.jigc/` tree — the bootstrap `AGENT.md`, the cascade config
     //    layer, the compose marker, and the transient index/state working area, all at
     //    once. An already-absent tree is a clean no-op.
@@ -4527,21 +4994,24 @@ fn uninstall(
         )
     })?;
 
-    // 3. Remove the `Bash(jigc:*)` permit from the allowlist — leaving unrelated permits and
-    //    keys intact and the file valid JSON.
-    let allowlist_file = profile.allowlist.file.clone();
-    removed.allowlist = adapter::remove_allowlist(jigc_home, profile).map_err(|err| {
-        Finding::block(
-            "uninstall.remove-allowlist",
-            format!("cannot remove the allowlist permit from `{allowlist_file}`: {err}"),
-            format!("ensure `{allowlist_file}` is writable, then re-run `jigc uninstall`"),
-        )
-    })?;
+    // 3. Remove the permits `jigc setup` added from the allowlist — leaving every other
+    //    permit and key intact and the file valid JSON. **The ones the settings record
+    //    lists, not the ones that equal jigc's** (step 0b; the human's ruling of
+    //    2026-10-06, item 21): an identical permit the adopter already had stays, here and
+    //    at steps 4 and 5.
+    removed.allowlist =
+        adapter::remove_allowlist(jigc_home, profile, &take.allow, every).map_err(|err| {
+            Finding::block(
+                "uninstall.remove-allowlist",
+                format!("cannot remove the allowlist permit from `{allowlist_file}`: {err}"),
+                format!("ensure `{allowlist_file}` is writable, then re-run `jigc uninstall`"),
+            )
+        })?;
 
     // 4. Remove the `SessionStart` hook from the same settings file — surgically, so a
     //    foreign hook sharing the `hooks` object survives (the M36 symmetry fix: both
     //    hooks must come out, or they fire against a removed install).
-    removed.hook = adapter::remove_hook(jigc_home, profile).map_err(|err| {
+    removed.hook = adapter::remove_hook(jigc_home, profile, &take.hooks, every).map_err(|err| {
         Finding::block(
             "uninstall.remove-hook",
             format!("cannot remove the session hook from `{allowlist_file}`: {err}"),
@@ -4550,14 +5020,24 @@ fn uninstall(
     })?;
 
     // 5. Remove the `deny` safety floor from the same settings file — dropping only the
-    //    profile's floor patterns, preserving any user `deny` entry.
-    removed.deny = adapter::remove_deny(jigc_home, profile).map_err(|err| {
+    //    floor patterns `jigc setup` added, preserving any user `deny` entry.
+    removed.deny = adapter::remove_deny(jigc_home, profile, &take.deny, every).map_err(|err| {
         Finding::block(
             "uninstall.remove-deny",
             format!("cannot remove the deny safety floor from `{allowlist_file}`: {err}"),
             format!("ensure `{allowlist_file}` is writable, then re-run `jigc uninstall`"),
         )
     })?;
+
+    // 5b. **Name what steps 3–5 left** — every entry still in the settings file that is
+    //     identical to one jigc installs. Left is the rule wherever jigc cannot say the
+    //     entry is its own, and a thing left in place is said, never silently skipped: the
+    //     reader may have to remove jigc's entries by hand. The file parsed for the three
+    //     steps above, so a read that fails now has nothing to add.
+    let left = adapter::settings_entries_present(jigc_home, profile, &installs).unwrap_or_default();
+    if !left.is_empty() {
+        narrate_left_settings_entries(&allowlist_file, &left, &claim);
+    }
 
     // 6. Remove the `pre-commit` hook — a standalone jigc hook is deleted; one that holds
     //    anything else as well (a foreign hook setup wrapped, a standalone one the adopter
@@ -4634,6 +5114,119 @@ fn uninstall(
         site: None,
         pruned_worktrees,
     })
+}
+
+/// **What `jigc uninstall` may say of the settings entries that equal jigc's** — read
+/// before the teardown removes `.jigc/`, and the whole of the human's ruling of 2026-10-06
+/// on the fix pass's item 21: *the record is used only where git tracks the settings file*.
+///
+/// The teardown removes an entry only under [`Self::Recorded`], and then only the entries
+/// the record lists. In both other states it removes none of the three kinds and names
+/// what it left ([`narrate_left_settings_entries`]) — `--force` aside, which is the
+/// operator's consent and takes every entry identical to one jigc installs.
+#[derive(Debug)]
+enum SettingsClaim {
+    /// git tracks the settings file **and** the record beside it: these are the entries
+    /// `jigc setup` added. Both, because a record git does not track is one clone's own
+    /// note about a file every clone shares — it did not travel with what it describes.
+    Recorded(adapter::SettingsEntries),
+    /// git does not track the file the settings path leads to — it is ignored, untracked,
+    /// absent, outside the checkout, or git could not say. Whatever a record says, it is
+    /// not read against a file that is private to this clone.
+    SettingsUntracked,
+    /// git tracks the settings file and no record it tracks describes it: an install made
+    /// by a jigc that kept none, a record that was never committed, or one this build
+    /// cannot read ([`read_settings_record`]).
+    NoRecord,
+}
+
+impl SettingsClaim {
+    /// Ask git, and then the record. **Tracked is asked of the file the settings path
+    /// leads to**, resolved the way the merges and the removals open it: a committed link
+    /// to a file git ignores is a tracked *link* and an untracked *file*, and the entries
+    /// are in the file.
+    fn read(jigc_home: &Path, allowlist_file: &str) -> Self {
+        let settings = std::fs::canonicalize(jigc_home.join(allowlist_file))
+            .ok()
+            .zip(std::fs::canonicalize(jigc_home).ok())
+            .and_then(|(real, root)| real.strip_prefix(root).ok().map(Path::to_path_buf))
+            .and_then(|relative| relative.to_str().map(str::to_string));
+        if !settings.is_some_and(|path| git_tracks(jigc_home, &path)) {
+            return Self::SettingsUntracked;
+        }
+        if !git_tracks(jigc_home, SETTINGS_RECORD_PATH) {
+            return Self::NoRecord;
+        }
+        read_settings_record(jigc_home, allowlist_file).map_or(Self::NoRecord, Self::Recorded)
+    }
+}
+
+/// Say which entries identical to jigc's the teardown **left** in the settings file, and
+/// why — on stderr, beside the summary, the channel this door's other narrations use
+/// ([`narrate_kept_precommit`]). Not a finding: nothing is wrong and nothing blocks, and
+/// the `removed` flags already say what went.
+///
+/// Every entry is listed, by the key it sits under, because the sentence's whole use is
+/// that the reader can remove jigc's entries by hand. And it says what `--force` does
+/// *exactly*: it does not tell jigc's entries from the reader's either — it takes both.
+fn narrate_left_settings_entries(
+    allowlist_file: &str,
+    left: &adapter::SettingsEntries,
+    claim: &SettingsClaim,
+) {
+    let count = left.len();
+    let (opens, why) = match claim {
+        SettingsClaim::Recorded(_) => (
+            "note",
+            format!(
+                "the install's record (`{SETTINGS_RECORD_PATH}`) does not say `jigc setup` \
+                 added what is listed here: it was there before, or an earlier jigc that \
+                 kept no record added it"
+            ),
+        ),
+        SettingsClaim::SettingsUntracked => (
+            "warning",
+            format!(
+                "git does not track `{allowlist_file}` in this checkout, and the record of \
+                 what `jigc setup` added is used only where it does, so jigc cannot tell its \
+                 entries from yours and removed none"
+            ),
+        ),
+        SettingsClaim::NoRecord => (
+            "warning",
+            format!(
+                "no record git tracks (`{SETTINGS_RECORD_PATH}`) lists what `jigc setup` \
+                 added — an install made by a jigc that kept none, or a record that was \
+                 never committed — so jigc cannot tell its entries from yours and removed \
+                 none"
+            ),
+        ),
+    };
+    let quoted = |entries: &[String]| -> String {
+        entries
+            .iter()
+            .map(|entry| format!("`{entry}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let mut listing = String::new();
+    if !left.allow.is_empty() {
+        listing.push_str(&format!("\n  permissions.allow: {}", quoted(&left.allow)));
+    }
+    if !left.deny.is_empty() {
+        listing.push_str(&format!("\n  permissions.deny: {}", quoted(&left.deny)));
+    }
+    for hook in &left.hooks {
+        listing.push_str(&format!("\n  hooks.{}: `{}`", hook.event, hook.command));
+    }
+    eprintln!(
+        "{opens}: left {count} entr{} in `{allowlist_file}` identical to one{} `jigc setup` \
+         installs — {why}:{listing}\n  note: remove by hand any you do not want to keep. \
+         `jigc uninstall --force` removes every entry identical to one jigc installs, yours \
+         included.",
+        if count == 1 { "y" } else { "ies" },
+        if count == 1 { "" } else { "s" },
+    );
 }
 
 /// The registrations in git's worktree registry that **jigc made** under this workbench —
@@ -5428,6 +6021,27 @@ fn untracked_workbench_finding(jigc_home: &Path, untracked: &[String]) -> Findin
         None => "move what you need out of `.jigc/`, or delete what you do not, then re-run \
                  `jigc uninstall`; `jigc uninstall --force` deletes them with the install"
             .to_string(),
+    };
+    // **The order, where it is true** (the human's ruling of 2026-10-06, the fix pass's
+    // item 3). The route above ends the refusal once; with the knob still on, the next jigc
+    // run of any other verb — the installed `pre-commit` hook's among them — writes the log
+    // again and the teardown refuses once more. So the route says the order that ends it in
+    // one pass, and leads with it: off, then the paths, then the re-run. Keyed on both
+    // halves, never on the file alone: with the knob off the move is the whole truth, and a
+    // listing without the log holds nothing a later run rewrites.
+    let log = crate::invocation_log::log_path(&jigc_home.join(".jigc"));
+    let log_listed = untracked.iter().any(|path| jigc_home.join(path) == log);
+    let route = if log_listed && crate::invocation_log::enabled_at(jigc_home) {
+        let keep = engine::finding::git_at(jigc_home, "add -- .jigc/config");
+        format!(
+            "the invocation log is still switched on, and until it is off every other jigc \
+             run writes it again (the installed pre-commit hook runs one on each commit), so \
+             in this order — first switch it off: `jigc config set invocation-log false`, \
+             then `{keep}` for the config change that makes; then, for the paths above: \
+             {route}"
+        )
+    } else {
+        route
     };
     Finding::block(
         "uninstall.untracked-workbench-file",
@@ -6602,9 +7216,279 @@ mod tests {
              \t\techo 'jigc: an out-of-band managed-doc rename exists in the committed tree — run `jigc validate` for details (not staged in this commit; commit not blocked).' >&2\n\
              \tfi\n\
              fi\n\
+             # jigc-managed pre-commit hook — end\n\
              \n\
              exit 0\n",
         );
+
+        // **And the hook every build before the end marker wrote is this text less that one
+        // line** — pinned from the literal above, never from the renderer, because the
+        // upgrade and the teardown find such a hook by rendering this block again
+        // ([`standalone_remainder`]). A change to the block's text reddens here first:
+        // freeze the pre-marker text as a constant of its own before making it, or every
+        // hook an earlier build installed stops being recognised.
+        let legacy = body.replacen("# jigc-managed pre-commit hook — end\n", "", 1);
+        assert_eq!(legacy.len() + PRECOMMIT_SENTINEL_END.len() + 1, body.len());
+        assert_eq!(
+            legacy_standalone_body(Path::new("/abs/install/bin/jigc")),
+            legacy,
+            "the pre-marker standalone hook: shebang, the block, a blank line, `exit 0`",
+        );
+        assert_eq!(
+            standalone_remainder(&legacy).as_deref(),
+            Some("#!/bin/sh\nexit 0\n"),
+            "and this build still finds its block, leaving the frame",
+        );
+    }
+
+    /// The standalone hook as every build before 2026-10-06 wrote it: the shebang, jigc's
+    /// block with **no end marker**, a blank line and `exit 0`.
+    fn legacy_standalone_body(jigc_path: &Path) -> String {
+        format!("#!/bin/sh\n{}\nexit 0\n", managed_block(jigc_path))
+    }
+
+    /// A hook file under a fresh `git init`, holding `content` — or absent for `None`.
+    fn hook_holding(content: Option<&str>) -> (TempDir, PathBuf) {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+        let hook = dir.path().join(".git/hooks/pre-commit");
+        std::fs::create_dir_all(hook.parent().expect("hooks dir")).expect("create hooks dir");
+        if let Some(content) = content {
+            std::fs::write(&hook, content).expect("seed the hook");
+        }
+        (dir, hook)
+    }
+
+    /// **The hook `setup` writes carries both markers, and that is what a re-install and
+    /// the teardown key on** (the human's ruling of 2026-10-06 on the rc.24 fix pass's item
+    /// 19): once each, the end marker ahead of the final `exit 0`; a re-install is
+    /// byte-identical; and an install by a `jigc` at another path replaces the block rather
+    /// than stacking a second one — which the marker-less hook could not promise, since it
+    /// was recognised only as *this* path's body.
+    #[test]
+    fn the_standalone_hook_is_delimited_by_both_markers() {
+        let (dir, hook) = hook_holding(None);
+        let here = Path::new("/abs/bin/jigc");
+        install_precommit_hook(dir.path(), here).expect("install");
+        let once = std::fs::read_to_string(&hook).expect("read");
+        assert_eq!(once, precommit_hook_body(here));
+        assert_eq!(once.matches(PRECOMMIT_SENTINEL).count(), 1);
+        assert_eq!(once.matches(PRECOMMIT_SENTINEL_END).count(), 1);
+        assert!(
+            once.find(PRECOMMIT_SENTINEL_END).expect("end marker")
+                < once.rfind("\nexit 0\n").expect("the final exit"),
+            "the block ends before the frame's `exit 0`:\n{once}"
+        );
+        install_precommit_hook(dir.path(), here).expect("re-install");
+        assert_eq!(std::fs::read_to_string(&hook).expect("read"), once);
+
+        let moved = Path::new("/opt/elsewhere/bin/jigc");
+        install_precommit_hook(dir.path(), moved).expect("install from another path");
+        assert_eq!(
+            std::fs::read_to_string(&hook).expect("read"),
+            precommit_hook_body(moved),
+            "one block, the new binary's — found by its markers, not by its text",
+        );
+    }
+
+    /// **The upgrade from a hook without the end marker.** A build before 2026-10-06
+    /// wrote the standalone hook with no end marker; `setup` by this build meets it.
+    ///
+    /// - exactly as that build wrote it, for this `jigc` path or another → replaced by
+    ///   the delimited hook: one block, both markers;
+    /// - with the adopter's line beside jigc's block (below it, after the final `exit 0`,
+    ///   above it) → the block is found verbatim and replaced by the delimited one, the
+    ///   adopter's line kept, a re-install byte-identical, and the teardown then takes
+    ///   the block and leaves the line;
+    /// - edited *inside* jigc's lines → **treated as before**: nothing in the file can be
+    ///   called jigc's, so it is kept verbatim as a foreign hook and wrapped.
+    #[test]
+    fn an_install_over_a_hook_without_the_end_marker_upgrades_it() {
+        const LINT: &str = "npm run lint || exit 1   # USERMARK\n";
+        let here = Path::new("/abs/bin/jigc");
+        for wrote in [here, Path::new("/opt/a place/bin/jigc")] {
+            let legacy = legacy_standalone_body(wrote);
+            assert!(!legacy.contains(PRECOMMIT_SENTINEL_END), "premise");
+            let (dir, hook) = hook_holding(Some(&legacy));
+            install_precommit_hook(dir.path(), here).expect("upgrade");
+            assert_eq!(
+                std::fs::read_to_string(&hook).expect("read"),
+                precommit_hook_body(here),
+                "a hook `{}` installed with no end marker becomes the delimited hook",
+                wrote.display()
+            );
+        }
+
+        let legacy = legacy_standalone_body(here);
+        let (head, tail) = legacy
+            .split_once(&format!("{PRECOMMIT_SENTINEL}\n"))
+            .expect("the legacy body opens with the shebang and the sentinel");
+        for (place, content) in [
+            (
+                "below jigc's block, above the final `exit 0`",
+                legacy.replacen("\nexit 0\n", &format!("\n{LINT}exit 0\n"), 1),
+            ),
+            ("after the final `exit 0`", format!("{legacy}{LINT}")),
+            (
+                "between the shebang and jigc's block",
+                format!("{head}{LINT}{PRECOMMIT_SENTINEL}\n{tail}"),
+            ),
+        ] {
+            let (dir, hook) = hook_holding(Some(&content));
+            install_precommit_hook(dir.path(), here).expect("upgrade");
+            let upgraded = std::fs::read_to_string(&hook).expect("read");
+            assert!(upgraded.starts_with("#!/bin/sh\n"), "{place}:\n{upgraded}");
+            assert_eq!(upgraded.matches(LINT).count(), 1, "{place}:\n{upgraded}");
+            assert_eq!(
+                (
+                    upgraded.matches(PRECOMMIT_SENTINEL).count(),
+                    upgraded.matches(PRECOMMIT_SENTINEL_END).count(),
+                    upgraded.matches("jigc='").count(),
+                ),
+                (1, 1, 1),
+                "{place}: one block, delimited — the old one is not left running beside it:\n\
+                 {upgraded}"
+            );
+            install_precommit_hook(dir.path(), here).expect("re-install");
+            assert_eq!(
+                std::fs::read_to_string(&hook).expect("read"),
+                upgraded,
+                "{place}: byte-identical on a re-install"
+            );
+            assert_eq!(
+                remove_precommit_hook(dir.path(), false).expect("teardown"),
+                PrecommitRemoval::Removed,
+                "{place}"
+            );
+            let left = std::fs::read_to_string(&hook).expect("the adopter's hook stays");
+            assert!(
+                left.contains(LINT) && !left.contains("jigc"),
+                "{place}: the block is out and the line is in:\n{left}"
+            );
+        }
+
+        // Edited inside jigc's lines: as before — foreign, kept verbatim, wrapped.
+        let inside = legacy.replacen(
+            "# Warn-only doc<->code drift backstop",
+            "# USERMARK our own note on the backstop",
+            1,
+        );
+        assert_ne!(inside, legacy, "premise: the edit landed inside the block");
+        let (dir, hook) = hook_holding(Some(&inside));
+        install_precommit_hook(dir.path(), here).expect("install");
+        let wrapped = std::fs::read_to_string(&hook).expect("read");
+        assert!(
+            wrapped.contains("# USERMARK our own note on the backstop")
+                && wrapped.contains(PRECOMMIT_SENTINEL_END),
+            "an edited marker-less hook is somebody's file: kept, and wrapped:\n{wrapped}"
+        );
+    }
+
+    /// **The teardown removes exactly the lines between jigc's two markers — whatever
+    /// build wrote them, whatever stands around them** (the same ruling). The block here is
+    /// one *this* build would never render: another `jigc` path, a comment line of its text
+    /// changed, a line added inside it. It comes out by its markers all the same:
+    ///
+    /// - nothing around it but the standalone frame → the file is removed;
+    /// - the adopter's line above it, below it, or after the final `exit 0` → the block is
+    ///   out, every other byte stays, and a second teardown changes nothing;
+    /// - spliced into a foreign hook → that hook is restored byte for byte.
+    ///
+    /// And the frame is jigc's own shebang only: what is left of a foreign
+    /// `#!/bin/bash` hook that held nothing but `exit 0` is that hook, kept.
+    #[test]
+    fn the_teardown_cuts_between_the_two_markers_whatever_is_between_them() {
+        const LINT: &str = "npm run lint || exit 1   # USERMARK\n";
+        // A block no rendering of this build's produces.
+        let other_build = |body: String| {
+            let edited = body
+                .replacen(
+                    "# Warn-only doc<->code drift backstop",
+                    "# Warn-only backstop (as some other build worded it)",
+                    1,
+                )
+                .replacen("\nreport=", "\n# a line this build never wrote\nreport=", 1);
+            assert_ne!(edited, body, "premise: the block's text differs");
+            edited
+        };
+        let standalone = other_build(precommit_hook_body(Path::new("/some/other/bin/jigc")));
+        assert!(
+            standalone_remainder(&standalone).is_none(),
+            "premise: this build cannot find the block by its text"
+        );
+
+        let (dir, hook) = hook_holding(Some(&standalone));
+        assert_eq!(
+            remove_precommit_hook(dir.path(), false).expect("teardown"),
+            PrecommitRemoval::Removed
+        );
+        assert!(
+            !hook.exists(),
+            "nothing but the frame was around it: the file goes"
+        );
+
+        let (head, tail) = standalone
+            .split_once(&format!("{PRECOMMIT_SENTINEL}\n"))
+            .expect("shebang, then the sentinel");
+        for (place, content) in [
+            (
+                "below the block, above the final `exit 0`",
+                standalone.replacen("\nexit 0\n", &format!("\n{LINT}exit 0\n"), 1),
+            ),
+            ("after the final `exit 0`", format!("{standalone}{LINT}")),
+            (
+                "between the shebang and the block",
+                format!("{head}{LINT}{PRECOMMIT_SENTINEL}\n{tail}"),
+            ),
+        ] {
+            let (dir, hook) = hook_holding(Some(&content));
+            assert_eq!(
+                remove_precommit_hook(dir.path(), false).expect("teardown"),
+                PrecommitRemoval::Removed,
+                "{place}"
+            );
+            let left = std::fs::read_to_string(&hook)
+                .unwrap_or_else(|err| panic!("{place}: the adopter's hook is still there: {err}"));
+            assert!(
+                left.starts_with("#!/bin/sh\n") && left.contains(LINT),
+                "{place}: still a script, with the adopter's line:\n{left}"
+            );
+            assert!(
+                !left.contains("jigc") && !left.contains("blocking_probes"),
+                "{place}: and nothing that stood between the markers:\n{left}"
+            );
+            assert_eq!(
+                remove_precommit_hook(dir.path(), false).expect("second teardown"),
+                PrecommitRemoval::Nothing,
+                "{place}"
+            );
+            assert_eq!(
+                std::fs::read_to_string(&hook).expect("read"),
+                left,
+                "{place}"
+            );
+        }
+
+        // Spliced into a foreign hook by `setup`, then the block's text changed.
+        for foreign in [
+            "#!/bin/sh\n# someone's hand-rolled hook\necho hello\nexit 0\n",
+            // Nothing but another interpreter's shebang and an exit: still somebody's file.
+            "#!/bin/bash\nexit 0\n",
+        ] {
+            let (dir, hook) = hook_holding(Some(foreign));
+            install_precommit_hook(dir.path(), Path::new("/abs/bin/jigc")).expect("wrap");
+            let wrapped = other_build(std::fs::read_to_string(&hook).expect("read"));
+            std::fs::write(&hook, &wrapped).expect("as another build left it");
+            assert_eq!(
+                remove_precommit_hook(dir.path(), false).expect("teardown"),
+                PrecommitRemoval::Removed
+            );
+            assert_eq!(
+                std::fs::read_to_string(&hook).expect("the foreign hook is restored"),
+                foreign,
+                "byte for byte"
+            );
+        }
     }
 
     /// Run `git -C <dir> <args...>`, asserting success — the test driver for the
@@ -7590,11 +8474,22 @@ mod tests {
     /// no-op over what is left. In the fourth nothing is removed at all, and only `force`
     /// takes the file. Beside them, the must-not-keep cell: a hook nobody extended is
     /// removed whole, whichever `jigc` path installed it.
+    ///
+    /// **This is the hook with no end marker — the one every build before 2026-10-06
+    /// wrote — and it is treated as it was** (the human's ruling on item 19). The hook
+    /// `setup` writes now is delimited, and its cells are
+    /// `the_teardown_cuts_between_the_two_markers_whatever_is_between_them`: there an edit
+    /// inside the block does not keep the file, because the markers say whose the lines
+    /// are.
     #[test]
     fn remove_precommit_takes_only_jigcs_block_out_of_an_extended_standalone_hook() {
         const LINT: &str = "npm run lint || exit 1   # USERMARK\n";
         let jigc_path = Path::new("/opt/a place/bin/jigc");
-        let installed = precommit_hook_body(jigc_path);
+        let installed = legacy_standalone_body(jigc_path);
+        assert!(
+            !installed.contains(PRECOMMIT_SENTINEL_END),
+            "premise: no end marker"
+        );
         let (head, tail) = installed
             .split_once(&format!("{PRECOMMIT_SENTINEL}\n"))
             .expect("the standalone body opens with the shebang and the sentinel");
@@ -7610,16 +8505,7 @@ mod tests {
             ),
         ];
         for (place, content) in extended {
-            let dir = TempDir::new();
-            git(dir.path(), &["init", "-q"]);
-            let hook = dir.path().join(".git/hooks/pre-commit");
-            install_precommit_hook(dir.path(), jigc_path).expect("install a standalone hook");
-            assert_eq!(
-                std::fs::read_to_string(&hook).expect("read"),
-                installed,
-                "{place}: the premise — a standalone hook"
-            );
-            std::fs::write(&hook, &content).expect("extend the hook");
+            let (dir, hook) = hook_holding(Some(&content));
 
             assert_eq!(
                 remove_precommit_hook(dir.path(), false).expect("teardown"),
@@ -7687,10 +8573,7 @@ mod tests {
         assert!(!hook.exists(), "and it does");
 
         // The must-not-keep cell: unextended, it goes whole.
-        let dir = TempDir::new();
-        git(dir.path(), &["init", "-q"]);
-        let hook = dir.path().join(".git/hooks/pre-commit");
-        install_precommit_hook(dir.path(), jigc_path).expect("install");
+        let (dir, hook) = hook_holding(Some(&installed));
         assert_eq!(
             remove_precommit_hook(dir.path(), false).expect("teardown"),
             PrecommitRemoval::Removed

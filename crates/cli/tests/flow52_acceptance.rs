@@ -2462,10 +2462,21 @@ fn the_owe_set_is_derived_and_a_withdrawn_declarer_reddens_every_door() {
     // by the seam rather than by a pack — and a count would have been bumped to 2 without
     // saying which two. Each is the cell a hand-list could not express, because on a
     // hand-list an exempt code is indistinguishable from one somebody forgot.
+    //
+    // **And a third, 2026-10-06**: a doc's home that is not a regular file. It is no new
+    // contract — it was `finalize.promote-clobber`'s second arm, and rode that row's `Owed`
+    // while no step said a word about a link — but under a code of its own (the human's
+    // ruling on the fix pass's items 7 and 8) it needs a disposition of its own, and it is
+    // the linked-worktree row's kind: it binds on what somebody put at one path of the
+    // checkout, which no step can know.
     exempt_rows.sort_unstable();
     assert_eq!(
         exempt_rows,
-        ["finalize.linked-worktree-doc", "setup.dirty-install-path"],
+        [
+            "finalize.linked-worktree-doc",
+            "setup.dirty-install-path",
+            "store.home-not-regular-file",
+        ],
         "the source set's stated exemptions, by code — a new one is a decision with its \
          reason on the row, and it is named here when it is made",
     );

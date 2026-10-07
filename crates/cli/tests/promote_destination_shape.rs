@@ -22,7 +22,10 @@
 //! - **provenance** — a doc the unit minted (`created`), and a committed doc the unit copied
 //!   in through a live link and edited (`edited-from-base`, the live-link edit path).
 //!
-//! Every cell refuses with `finalize.promote-clobber` keyed at the destination, commits
+//! Every cell refuses with `store.home-not-regular-file` keyed at the destination — the one
+//! code every command answers this state with since 2026-10-06; it was built as
+//! `finalize.promote-clobber`'s second arm, and that code is back to a promote that would
+//! overwrite a file — commits
 //! nothing, writes nothing — at the home, through it, or outside the repository — leaves the
 //! entry exactly as it stood, and keeps the unit's staged work. Then **the printed route is
 //! driven as printed** and the unit lands a regular file at its home.
@@ -36,7 +39,7 @@
 //! in `engine::target_surface::enumerate_target_surface`), so the cell would hang here rather
 //! than assert anything about the promote.
 //!
-//! The create-only gate's half (`create.already-exists` over the same entries) is
+//! The create-only gate's half (the same code over the same entries) is
 //! `create_only_gate::an_entry_that_is_not_a_regular_file_is_an_occupied_home`; the in-task
 //! re-slug's is `doc_rename_in_task::the_reslug_destination_guard_refuses_a_home_that_is_not_a_regular_file`.
 //! The last test here is the one **other** door that mints a managed doc at its home without
@@ -52,7 +55,12 @@ use std::process::Output;
 
 use support::trial_corpus::{State, TrialCorpus};
 
-const CLOBBER: &str = "finalize.promote-clobber";
+/// The store's one code for a home that is not a regular file.
+const SHAPE: &str = engine::store::HOME_NOT_REGULAR_FILE;
+/// The two codes this suite's doors answered the state with until 2026-10-06. Each has gone
+/// back to its own meaning — a file a promote would overwrite, a record that exists — and no
+/// cell here may answer either.
+const RETIRED_HERE: [&str; 2] = ["finalize.promote-clobber", "milestone.record-exists"];
 /// The prose only the unit's own doc carries — what a write-through would put somewhere.
 const MARKER: &str = "PROMOTE-SHAPE-MARKER the decision this task recorded.";
 const TITLE: &str = "Cache Strategy";
@@ -261,8 +269,8 @@ fn blocked(out: &Output, what: &str) -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// The one blocking finding, asserted to be the clobber refusal keyed at `destination` and
-/// naming the entry's shape. Returns its route.
+/// The one blocking finding, asserted to be the store's shape refusal keyed at `destination`
+/// and naming the entry's shape. Returns its route.
 fn the_shape_refusal(
     findings: &[serde_json::Value],
     destination: &str,
@@ -280,9 +288,9 @@ fn the_shape_refusal(
             finding["key"]["code"].as_str(),
             finding["key"]["target"].as_str()
         ),
-        (Some(CLOBBER), Some(destination)),
-        "{what}: keyed {{{CLOBBER}, {destination}}} — the code and key of every other \
-         occupant; {finding:#}",
+        (Some(SHAPE), Some(destination)),
+        "{what}: keyed {{{SHAPE}, {destination}}} — the entry is the subject, at every \
+         door; {finding:#}",
     );
     let message = finding["message"].as_str().expect("a message");
     assert!(
@@ -298,7 +306,7 @@ fn the_shape_refusal(
         let lower = surface.to_lowercase();
         assert!(
             !lower.contains("remove") && !lower.contains("delete") && !surface.contains("git rm"),
-            "{what}: the clobber refusal never teaches raw removal (RC-lacon A4/A7); got: \
+            "{what}: the refusal never teaches raw removal (RC-lacon A4/A7); got: \
              {surface}",
         );
         assert!(
@@ -904,8 +912,10 @@ fn the_milestone_boundary_refuses_an_entry_that_is_not_a_regular_file() {
 /// a dangling link at the record's home read as a free id: the door exited 0 with a record
 /// commit that held the **link**, and the record itself sat in an untracked file. The same
 /// mechanism as the promote's, at a different sink, so the same contract: the home's entry
-/// is read without following a link, an entry that is not a regular file refuses under the
-/// door's existing `milestone.record-exists`, and the write creates the file exclusively.
+/// is read without following a link, an entry that is not a regular file refuses — under
+/// the store's code for that state, keyed at the entry (the door's `milestone.record-exists`
+/// until 2026-10-06, which says a record is there) — and the write creates the file
+/// exclusively.
 /// Nothing is written or minted; with the entry moved out, the same command lands the record
 /// as a regular file.
 #[test]
@@ -926,9 +936,17 @@ fn the_milestone_record_is_never_created_through_a_link_at_its_home() {
         let out = corpus.jigc(&["milestone", "create", MILESTONE_TITLE]);
         let said = text(&out);
         assert!(
-            !out.status.success() && said.contains("milestone.record-exists"),
-            "{what}: the door refuses under its own occupied-id code; {said}",
+            !out.status.success()
+                && said.contains(&format!("· {SHAPE} — "))
+                && said.contains(&format!("at: {home}")),
+            "{what}: the door refuses under the store's code, keyed at the entry; {said}",
         );
+        for retired in RETIRED_HERE {
+            assert!(
+                !said.contains(retired),
+                "{what}: `{retired}` says something is there that is not; {said}",
+            );
+        }
         assert!(
             said.contains(entry.noun()) && said.contains(home),
             "{what}: the refusal names the entry and the record's home; {said}",

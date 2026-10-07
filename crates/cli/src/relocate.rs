@@ -125,10 +125,10 @@ impl RelocateRefusal {
             RelocateRefusal::UntrackableDestination => "write.untrackable-destination",
             RelocateRefusal::UnaddressableDestination => crate::ingest::UNADDRESSABLE_IDENTITY,
             // The code every door raises over a managed doc's home that is not a regular
-            // file — minted by `engine::finalize` ([`engine::finalize::store_home_refusal`]),
-            // named here so the axis is total; `the_foreign_source_row_reads_the_shipped_code`
-            // holds the two together.
-            RelocateRefusal::ForeignSource => "finalize.promote-clobber",
+            // file — minted by `engine::store::home_shape_refusal`, reached here through
+            // [`engine::finalize::store_home_refusal`], and named so the axis is total;
+            // `the_foreign_source_row_reads_the_shipped_code` holds the two together.
+            RelocateRefusal::ForeignSource => engine::store::HOME_NOT_REGULAR_FILE,
         }
     }
 }
@@ -221,7 +221,6 @@ pub(crate) fn refuse_foreign_source(repo_root: &Path, old_rel: &str, new_rel: &s
     {
         return Err(render::envelope_finding_error(
             &engine::finalize::store_home_refusal(
-                repo_root,
                 old_rel,
                 shape,
                 &format!("it is not moved to `{new_rel}`"),
@@ -1189,7 +1188,6 @@ mod tests {
         assert_eq!(
             RelocateRefusal::ForeignSource.code(),
             engine::finalize::store_home_refusal(
-                Path::new("/repo"),
                 "legacy/a.md",
                 engine::store::ForeignEntry::Symlink,
                 "it is not moved",

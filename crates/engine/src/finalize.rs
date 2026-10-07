@@ -615,11 +615,11 @@ fn plan_clobber_guard(
                     }
                 }
                 Occupant::File { .. } => by,
-                Occupant::Foreign(shape) => ClobberedBy::Shape {
-                    shape,
-                    exit,
-                    unit: shape_unit,
-                },
+                // Not a clobber at all: the entry is no file to overwrite, and the
+                // refusal is the store's own, under its own code ([`shape_refusal`]).
+                Occupant::Foreign(shape) => {
+                    return shape_refusal(&refused.promotion.destination, shape, exit, shape_unit);
+                }
                 Occupant::Held(holder) => ClobberedBy::Held {
                     holder,
                     exit,
@@ -748,7 +748,14 @@ fn plan_milestone_clobber_guard(
                 // The shape arm refuses whoever staged the body: with no origin there is no
                 // sub-task to name, and the entry at the home is still not one to write
                 // through.
-                Occupant::Foreign(shape) => ClobberedBy::Shape { shape, exit, unit },
+                Occupant::Foreign(shape) => {
+                    return Some(shape_refusal(
+                        &refused.promotion.destination,
+                        shape,
+                        exit,
+                        unit,
+                    ));
+                }
                 // Asked of a `created` doc only, and `created` is read off an origin.
                 Occupant::Held(holder) => ClobberedBy::Held { holder, exit, unit },
                 // Asked of every promotion: the staged file is replaced whoever wrote the
@@ -948,7 +955,7 @@ fn refused_promotions<'p>(
 }
 
 /// **The exit a unit has from an entry at its doc's home that is not a regular file** —
-/// what [`clobber_finding`]'s shape arm routes at. The entry is never jigc's to change, so
+/// what [`shape_refusal`] routes at. The entry is never jigc's to change, so
 /// every exit is either a different home for the doc or the user's own act on the entry;
 /// which of those *lands* depends on how the unit came to hold the doc.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1163,16 +1170,6 @@ enum ClobberedBy<'a> {
         /// and the rest of its collision group.
         origin: &'a crate::milestone::MergedOrigin,
     },
-    /// **Any** unit's doc, over a destination that holds an entry which is not a regular
-    /// file (`(R6, D-7)`) — the arm that is about the entry and not about the doc.
-    Shape {
-        /// What is at the destination.
-        shape: crate::store::ForeignEntry,
-        /// The exit this unit has from it.
-        exit: ShapeExit,
-        /// Who is told.
-        unit: ShapeUnit<'a>,
-    },
     /// **Any** promotion at the milestone boundary, over a path **a sub-task worktree has
     /// staged** (CPL-2) — the doc and the staged file are two contributions to one commit
     /// at one path.
@@ -1238,12 +1235,11 @@ enum ClobberedBy<'a> {
 ///   ([`sub_task_clobber_text`]), whose unit has neither of the exits above: a sub-task has
 ///   no boundary of its own, and adopting the occupant first moves `HEAD` off the
 ///   milestone's base.
-/// - **[`ClobberedBy::Shape`]** — the destination holds an entry that is **not a regular
-///   file** ([`shape_clobber_text`]; the rc.24 fix pass, `(R6, D-7)`). One identity with the
-///   arms above — the same code, keyed at the same destination path — because it is the
-///   same refusal: something a third party put at the doc's home, which a promote would
-///   write over or, here, *through*. It routes at no `jigc migrate`: a link is not a file
-///   to adopt (driven: `migrate.source-untrackable`).
+/// - *(A destination holding an entry that is **not a regular file** was an arm here, under
+///   this code, from the rc.24 fix pass's `(R6, D-7)` until 2026-10-06. It is the store's
+///   own refusal now, under [`crate::store::HOME_NOT_REGULAR_FILE`] — [`shape_refusal`] —
+///   and this code is back to what it was minted for: a promote that would overwrite a
+///   file, or what git holds at its path.)*
 /// - **[`ClobberedBy::Staged`]** — the destination is a path **a sub-task worktree has
 ///   staged** ([`staged_clobber_text`]; the completion audit's CPL-2). The occupant is not
 ///   in the main checkout at all: it is in the tree the boundary commits, where the doc
@@ -1305,9 +1301,6 @@ fn clobber_finding(repo_root: &Path, destination: &str, by: ClobberedBy) -> Find
             landing,
             origin,
         } => sub_task_clobber_text(destination, milestone, landing, origin),
-        ClobberedBy::Shape { shape, exit, unit } => {
-            shape_clobber_text(destination, shape, exit, unit)
-        }
         ClobberedBy::Held { holder, exit, unit } => {
             held_clobber_text(repo_root, destination, holder, exit, unit)
         }
@@ -1426,9 +1419,16 @@ fn sub_task_renames(origin: &crate::milestone::MergedOrigin) -> String {
     }
 }
 
-/// The message and the route of [`clobber_finding`]'s **shape arm** — a promote refused
-/// because its destination holds an entry that is not a regular file (the rc.24 fix pass,
+/// **The refusal over a doc's home that is not a regular file**, as the committing doors,
+/// the promote sink and the store doors word it — `store.home-not-regular-file`, through its
+/// one constructor ([`crate::store::home_shape_refusal`]): this function supplies the clause
+/// that says what the door did not do and the route, per unit (the rc.24 fix pass,
 /// `(R6, D-7)`; `design/finalize.md` → 4. Promote).
+///
+/// **It was `finalize.promote-clobber`'s shape arm until 2026-10-06** (the human's ruling on
+/// the fix pass's items 7 and 8): the same state was answered under six codes across fifteen
+/// commands, and one state owes one identity. Nothing else about the refusal moved — the
+/// key is still the path of the entry, the exits are the ones below.
 ///
 /// **The contract it states**: a promote lands a regular file at exactly its canonical
 /// path, or the transaction refuses before anything is written. jigc writes regular files
@@ -1452,29 +1452,19 @@ fn sub_task_renames(origin: &crate::milestone::MergedOrigin) -> String {
 /// At the milestone boundary every exit is stated as **no commit**, because the file arm's
 /// rule holds here too: a commit made before the boundary moves `HEAD` off the milestone's
 /// pinned base and blocks it on `finalize.base-mismatch`.
-fn shape_clobber_text(
+fn shape_refusal(
     destination: &str,
     shape: crate::store::ForeignEntry,
     exit: ShapeExit,
     unit: ShapeUnit,
-) -> (String, String) {
+) -> Finding {
     use crate::finding::shell_operand;
-    let noun = shape.noun();
     let bare = shape.bare();
-    let whose = unit.whose();
-    let message = match unit {
+    let withheld = match unit {
         // No unit and no promote: the doc is committed at this home, and the door would
         // have rewritten it there or carried the entry somewhere else.
-        ShapeUnit::Store { withheld, .. } => format!(
-            "`{destination}` is {noun}, not a regular file — jigc keeps a managed doc as a \
-             regular file at exactly its home, and neither writes through a link nor moves \
-             one, so {withheld}"
-        ),
-        _ => format!(
-            "`{destination}` is {noun}, not a regular file — jigc lands a managed doc as a \
-             regular file at exactly its home and never writes through a link, so {whose} \
-             is not promoted there"
-        ),
+        ShapeUnit::Store { withheld, .. } => withheld.to_owned(),
+        _ => format!("{} is not promoted there", unit.whose()),
     };
 
     let yours = format!(
@@ -1548,7 +1538,7 @@ fn shape_clobber_text(
              {rerun}"
         ),
     };
-    (message, route)
+    crate::store::home_shape_refusal(destination, shape, &withheld, route)
 }
 
 /// The message and the route of [`clobber_finding`]'s **staged arm** — a promotion refused at
@@ -1852,7 +1842,25 @@ fn fixed_clobber_text(
 ///
 /// The file git holds is never jigc's to decide about: the route names the one command that
 /// brings it back into the worktree ([`crate::finding::git_at`], so it runs from any
-/// directory) and says it is left as it is. It teaches no removal and no commit.
+/// directory) and says it is left as it is. It teaches no removal.
+///
+/// **And where the doc was meant to replace the committed one, the route says the order that
+/// lands** (the rc.24 fix pass's item 15; the human's ruling of 2026-10-06). The state is the
+/// one jigc's own route produces: a committed doc deleted from the worktree, the deletion
+/// confirmed with `jigc unmanage` (`reconciliation.rename`'s weak signal) and not committed,
+/// and a task that then mints a doc under the same id. Neither exit above replaces the
+/// committed doc under its id, which is what that reader set out to do. The exit first ruled
+/// for it — *commit the deletion first, then finalize* — is not one: driven, the finalize
+/// then refuses on `finalize.base-mismatch`, because the task was started before that commit
+/// and the commit touches its doc's own path. What lands, driven as printed: **commit the
+/// deletion, drop the task, start the work again** — the create then finds a free home. So
+/// the task arm under `HEAD` names those three in that order, says why the commit alone does
+/// not land the task, and prints no command for the commit: it is the reader's own act on a
+/// deletion they already made, and a route teaches no removal. It is said of
+/// [`ShapeUnit::Task`] alone — the unit it was driven for. A doc under a fixed identity is
+/// outside it (a committed deletion at a singleton's home is its own blocking finding), a
+/// file held only by the index has no deletion to commit, and at the milestone boundary a
+/// commit made first is the base move the paragraph above rules out.
 fn held_clobber_text(
     repo_root: &Path,
     destination: &str,
@@ -1890,8 +1898,21 @@ fn held_clobber_text(
          it back into the worktree, and that is no commit"
     );
     let route = match (exit, unit.rename(), unit.drop_the_mint()) {
-        (ShapeExit::RenameOrMoveOut, Some(rename), _) => {
-            format!("{intact}: {rename}, then {rerun}. {left}")
+        (ShapeExit::RenameOrMoveOut, Some(rename), drop) => {
+            // The exit that puts this doc in the committed one's place — see the doc
+            // comment's last paragraph for why it is these three steps, in this order.
+            let replace = match (holder, unit, drop) {
+                (Holder::Head, ShapeUnit::Task { .. }, Some(drop)) => format!(
+                    ". To put this doc in the committed one's place instead — where that \
+                     file is gone on purpose — commit the deletion of `{destination}`, \
+                     {drop}, and start the work again: the create then finds the home free. \
+                     Committing the deletion does not by itself land this task — it was \
+                     started before that commit, which touches its doc's path, so its \
+                     finalize then refuses on `finalize.base-mismatch`"
+                ),
+                _ => String::new(),
+            };
+            format!("{intact}: {rename}, then {rerun}. {left}{replace}")
         }
         (_, _, Some(drop)) => {
             let again = match unit {
@@ -1918,9 +1939,9 @@ fn held_clobber_text(
     (message, route)
 }
 
-/// **The promote sink's refusal** — [`clobber_finding`]'s shape arm, raised by the write
-/// itself (`cli::task::promote`) when the entry at a destination is not a regular file at
-/// the moment it would be written.
+/// **The promote sink's refusal** — [`shape_refusal`], raised by the write itself
+/// (`cli::task::promote`) when the entry at a destination is not a regular file at the
+/// moment it would be written.
 ///
 /// The planner's guard is the routed refusal; this is the backstop behind it, for an entry
 /// that appeared between the plan and the write — the pattern the retire sink set at M51
@@ -1928,26 +1949,14 @@ fn held_clobber_text(
 /// not the write. Same code and key as the planner's, so a driver reads one identity
 /// whichever of the two caught it.
 #[must_use]
-pub fn promote_sink_refusal(
-    repo_root: &Path,
-    destination: &str,
-    shape: crate::store::ForeignEntry,
-) -> Finding {
-    clobber_finding(
-        repo_root,
-        destination,
-        ClobberedBy::Shape {
-            shape,
-            exit: ShapeExit::MoveOut,
-            unit: ShapeUnit::Sink,
-        },
-    )
+pub fn promote_sink_refusal(destination: &str, shape: crate::store::ForeignEntry) -> Finding {
+    shape_refusal(destination, shape, ShapeExit::MoveOut, ShapeUnit::Sink)
 }
 
-/// **A store door's refusal over a home that is not a regular file** — [`clobber_finding`]'s
-/// shape arm, raised by a door that writes or moves a committed doc **where it stands**
-/// rather than promoting one (the rc.24 fix pass; `design/finalize.md` → 4. Promote,
-/// *the doors that write a committed home in place*).
+/// **A store door's refusal over a home that is not a regular file** — [`shape_refusal`],
+/// raised by a door that writes or moves a committed doc **where it stands** rather than
+/// promoting one (the rc.24 fix pass; `design/finalize.md` → 4. Promote, *the doors that
+/// write a committed home in place*).
 ///
 /// `(R6, D-7)` made the shape arm true of every door that promotes. The doors that do not
 /// promote shared the mechanism and were left declared: `jigc rename` moved a link with
@@ -1955,7 +1964,7 @@ pub fn promote_sink_refusal(
 /// relocation primitive carried a link to a new home. They refuse the same state of the
 /// same doc under the **same code, keyed at the same path**: one fault owes one identity
 /// (`cli::rename::RefusalKind::code`'s rule), and a driver that has learnt what
-/// `finalize.promote-clobber` at a doc's home means has nothing new to learn at these
+/// `store.home-not-regular-file` at a doc's home means has nothing new to learn at these
 /// doors. What differs is the unit — there is none — so the message says what the door
 /// withheld (`withheld`) and the route ends at the door's own command (`rerun`) once the
 /// regular file is committed at the home.
@@ -1963,22 +1972,18 @@ pub fn promote_sink_refusal(
 /// `home` is the repo-relative path of the entry.
 #[must_use]
 pub fn store_home_refusal(
-    repo_root: &Path,
     home: &str,
     shape: crate::store::ForeignEntry,
     withheld: &str,
     rerun: &str,
 ) -> Finding {
-    clobber_finding(
-        repo_root,
+    // The home has to hold the regular file itself — the one exit a committed doc has
+    // from it. The store arm words it; the variant records which exit it is.
+    shape_refusal(
         home,
-        ClobberedBy::Shape {
-            shape,
-            // The home has to hold the regular file itself — the one exit a committed doc
-            // has from it. The store arm words it; the variant records which exit it is.
-            exit: ShapeExit::RegularFile,
-            unit: ShapeUnit::Store { withheld, rerun },
-        },
+        shape,
+        ShapeExit::RegularFile,
+        ShapeUnit::Store { withheld, rerun },
     )
 }
 
@@ -2620,16 +2625,32 @@ pub fn setup_dirty_install_finding(
     )
 }
 
-/// **The [`CarryoverBoundary::Setup`] door's refusal when git cannot be asked its
-/// pre-write question** — one blocking finding under the guard's own code, raised before
-/// the install's first write (the rc.24 fix pass's completion audit, install-teardown F2).
+/// The finding code of [`setup_unasked_install_finding`] — `jigc setup`'s refusal where
+/// git could not answer the question the door asks before its first write.
 ///
-/// **The guard's code, because it is the guard refusing.** `setup.dirty-install-path` is
-/// *a path in the install's pathspec holds bytes no commit holds*; this is the same door
-/// unable to rule that out, over the same paths, and the reader's next act is the same
-/// kind — make git able to vouch for them. A driver keyed on the code stops the same way.
-/// [`setup_dirty_install_finding`] is not reused because every sentence it writes is about
-/// a set git named, and here git named none.
+/// **A code of its own** (the human's ruling of 2026-10-06 on the rc.24 fix pass's item
+/// 17). It rode [`CarryoverBoundary::Setup`]'s `setup.dirty-install-path` from the day it
+/// was built, on the reasoning that it is the same guard unable to rule the same state
+/// out. But a code is what a driver keys its next act on, and under the dirty-install code
+/// the usual next act is `jigc setup --force` — which this refusal does not honour, since
+/// the consent is spent on paths git names and here git named none. One code whose remedy
+/// works in one of its two states is two states. The name sits in the family's own
+/// grammar, beside `setup.dirty-install-path` and `setup.forced-install-path`: the same
+/// install paths, in the state where nobody could verify them.
+const SETUP_UNVERIFIED_INSTALL_CODE: &str = "setup.unverified-install-path";
+
+/// **The [`CarryoverBoundary::Setup`] door's refusal when git cannot be asked its
+/// pre-write question** — one blocking finding under a code of its own
+/// ([`SETUP_UNVERIFIED_INSTALL_CODE`]), raised before the install's first write (the rc.24
+/// fix pass's completion audit, install-teardown F2).
+///
+/// **Not the guard's code, though it is the guard refusing.** `setup.dirty-install-path`
+/// is *a path in the install's pathspec holds bytes no commit holds*; this is the same
+/// door unable to rule that out, over the same paths. The two were one code until
+/// 2026-10-06 and are two because their remedies differ: the first ends at `--force`, and
+/// this one says `--force` changes nothing. [`setup_dirty_install_finding`] is not reused
+/// either, because every sentence it writes is about a set git named, and here git named
+/// none.
 ///
 /// **What it says, and may not say.** `said` is git's own output, quoted rather than
 /// interpreted, because the causes are unbounded — a corrupt index, a submodule whose
@@ -2666,7 +2687,7 @@ pub fn setup_unasked_install_finding(
     };
     let asked = crate::finding::git_at(home, asked);
     Finding::block(
-        CarryoverBoundary::Setup.code(),
+        SETUP_UNVERIFIED_INSTALL_CODE,
         format!(
             "git could not tell `jigc setup` which of its install paths hold work that is in \
              no commit — the question it asks before its first write — so nothing was \
@@ -4671,12 +4692,16 @@ sections:
     /// Assert a shape refusal's surfaces teach no raw removal and name the entry.
     #[cfg(unix)]
     fn assert_shape_surfaces(finding: &Finding, destination: &str, noun: &str, cell: &str) {
-        assert_eq!(finding.code, "finalize.promote-clobber", "{cell}");
+        assert_eq!(
+            finding.code,
+            crate::store::HOME_NOT_REGULAR_FILE,
+            "{cell}: the store's one code for this state, at every door",
+        );
         assert_eq!(finding.severity, Severity::Blocking, "{cell}");
         assert_eq!(
             target(finding),
             Some(destination),
-            "{cell}: keyed at the destination path — the key of every other occupant",
+            "{cell}: keyed at the destination path — the entry is the subject",
         );
         assert!(
             finding.message.contains(noun) && finding.message.contains(destination),
@@ -4702,7 +4727,7 @@ sections:
     /// **A promote lands a regular file at exactly its home, or the plan refuses** (the
     /// rc.24 fix pass, `(R6, D-7)`; `design/finalize.md` → 4. Promote). Over every entry
     /// that is not a regular file × every way a task can hold the doc — minted, copied in,
-    /// unrecorded — the planner blocks with `finalize.promote-clobber` keyed at the
+    /// unrecorded — the planner blocks with `store.home-not-regular-file` keyed at the
     /// destination and writes nothing, at the home or through it.
     ///
     /// Until then the guard asked `is_file()`, which follows links: a dangling link read as
@@ -4896,11 +4921,10 @@ sections:
     #[test]
     fn the_sink_refusal_carries_the_planners_code_and_key() {
         let finding = promote_sink_refusal(
-            Path::new("/repo"),
             "decisions/single-node-cache.md",
             crate::store::ForeignEntry::Symlink,
         );
-        assert_eq!(finding.code, "finalize.promote-clobber");
+        assert_eq!(finding.code, crate::store::HOME_NOT_REGULAR_FILE);
         assert_eq!(finding.severity, Severity::Blocking);
         assert_eq!(target(&finding), Some("decisions/single-node-cache.md"));
         let route = finding.route.as_deref().expect("a route");
@@ -4932,13 +4956,16 @@ sections:
             (ForeignEntry::Other, "a special file", "special file"),
         ] {
             let finding = store_home_refusal(
-                Path::new("/repo"),
                 "decisions/single-node-cache.md",
                 shape,
                 "`adr:single-node-cache` is not renamed",
                 "re-run `jigc rename adr:single-node-cache --to Cache`",
             );
-            assert_eq!(finding.code, "finalize.promote-clobber", "{shape:?}");
+            assert_eq!(
+                finding.code,
+                crate::store::HOME_NOT_REGULAR_FILE,
+                "{shape:?}"
+            );
             assert_eq!(finding.severity, Severity::Blocking, "{shape:?}");
             assert_eq!(
                 target(&finding),
@@ -5941,6 +5968,23 @@ sections:
                     "the refusal never teaches a removal: {surface}",
                 );
             }
+            // The exit that replaces the committed doc (the fix pass's item 15) is said
+            // where there is a deletion to commit — under `HEAD` — and nowhere else, in the
+            // order that lands, with the reason the commit alone does not.
+            let replace = "commit the deletion of `decisions/single-node-cache.md`, drop this \
+                           task (`jigc task discard record-decision --force`";
+            assert_eq!(
+                route.contains(replace),
+                in_head,
+                "the replace exit is the `HEAD` arm's alone (in_head={in_head}): {route}",
+            );
+            assert_eq!(
+                route.contains("start the work again")
+                    && route.contains("`finalize.base-mismatch`"),
+                in_head,
+                "it ends at the work started again and says why the commit alone does not \
+                 land the task (in_head={in_head}): {route}",
+            );
             assert!(
                 !root.path().join(destination).exists(),
                 "the planner writes nothing",
@@ -6429,7 +6473,8 @@ sections:
     /// — the promote is shared, so the contract is. Over every shape × every way the join
     /// can hand a body on — a sub-task's fresh doc (kept its id · suffixed), a sub-task's
     /// edit of a committed doc, and a body with no origin at all — the planner blocks with
-    /// `finalize.promote-clobber` keyed at the destination. The file arm lets the last two
+    /// `store.home-not-regular-file` keyed at the destination. The clobber guard's file arm
+    /// lets the last two
     /// through by design (*edited-from-base re-promotes*, *unrecorded is not a clobber*);
     /// the shape arm asks neither, because it is about the entry.
     ///
@@ -7369,6 +7414,47 @@ sections:
                     .is_some_and(|r| r.contains("re-run the finalize with `--carry-staged`")),
                 "the committing door keeps its own route: {:?}",
                 finding.route
+            );
+        }
+    }
+
+    /// **Where git could not be asked, the refusal has a code of its own** (the human's
+    /// ruling of 2026-10-06 on the rc.24 fix pass's item 17). It rode the boundary's
+    /// `setup.dirty-install-path`, whose route ends at `jigc setup --force`; this one's
+    /// route names `--force` only to say it changes nothing, so a driver keyed on the
+    /// shared code was sent at a remedy the door does not honour.
+    #[test]
+    fn the_unasked_setup_refusal_has_a_code_of_its_own_and_offers_no_consent() {
+        let present = vec![".jigc/AGENT.md".to_string(), "CLAUDE.md".to_string()];
+        let finding = setup_unasked_install_finding(
+            Path::new("/work/repo"),
+            "status",
+            "fatal: index file corrupt",
+            &present,
+        );
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(finding.code, "setup.unverified-install-path");
+        assert_eq!(finding.code, SETUP_UNVERIFIED_INSTALL_CODE);
+        assert_ne!(
+            finding.code,
+            CarryoverBoundary::Setup.code(),
+            "not the dirty-install code: that one's remedy is `--force`",
+        );
+        assert!(
+            crate::finding::is_declared_singleton(&finding.code) && finding.location.is_none(),
+            "one finding over the whole set, in the `setup.` family — no location to key it",
+        );
+        let route = finding.route.as_ref().expect("blocking ⇒ routed");
+        assert!(
+            route.as_str().contains("`git -C /work/repo status`")
+                && !route.as_str().contains("jigc setup --force"),
+            "the route is the question that failed, and no consent: {route}"
+        );
+        for path in &present {
+            assert!(
+                finding.message.contains(path.as_str()),
+                "{:?}",
+                finding.message
             );
         }
     }

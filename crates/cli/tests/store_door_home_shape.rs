@@ -27,11 +27,19 @@
 //!
 //! One contract, three seams. Each door asks the home's own directory entry, without
 //! following a link, **before** `git mv` and before any write; an entry that is not a
-//! regular file refuses under the code the door already has for it, nothing is written or
-//! moved, and the printed route — the regular file put back at the home — lands the same
-//! command. The corpus migration is the one in-place writer left as it was, and the last
-//! test pins why: it writes a temp file and renames it over the home, which never writes
-//! through whatever stood there.
+//! regular file refuses, nothing is written or moved, and the printed route — the regular
+//! file put back at the home — lands the same command.
+//!
+//! **One code, at every seam** (the human's ruling of 2026-10-06 on the fix pass's items 7
+//! and 8). As built, each door answered under the code it already had for *something is in
+//! the way* — three codes in this suite alone: `finalize.promote-clobber` at the doc's own
+//! home, a referrer's and the movers, `write.already-present` at a rename's destination,
+//! `reconciliation.conflict-block` at the record doors. They all answer
+//! `store.home-not-regular-file` now, keyed at the entry's path;
+//! `home_shape_one_code.rs` iterates the commands. The corpus migration was the one in-place
+//! writer left as it was — it renames a temp file over the home, which replaced a link
+//! without naming it — and since the human's ruling of 2026-10-07 it refuses that one doc
+//! like the doors above; the last two tests hold it and its recovery arm.
 
 #![cfg(unix)]
 
@@ -43,13 +51,17 @@ use std::process::Output;
 
 use support::trial_corpus::{State, TrialCorpus};
 
-/// The code a door that writes or moves a committed doc raises over a home that is not a
-/// regular file — the committing doors' own (`design/command-output-contract.md`).
-const SHAPE: &str = "finalize.promote-clobber";
-/// The destination-occupancy code `jigc rename` and its in-task sibling share.
-const OCCUPIED: &str = "write.already-present";
-/// The record doors' own refusal over a record that is not as jigc left it.
-const RECORD_CONFLICT: &str = "reconciliation.conflict-block";
+/// The code every door raises over a home that is not a regular file — the store's own,
+/// through its one constructor (`design/command-output-contract.md` → the file row).
+const SHAPE: &str = engine::store::HOME_NOT_REGULAR_FILE;
+/// The codes this suite's doors answered that state with until 2026-10-06, each of which
+/// has gone back to its own meaning: a rename's destination that holds *a doc*, and a
+/// record that was *edited*. No cell here may answer either.
+const RETIRED_HERE: [&str; 3] = [
+    "finalize.promote-clobber",
+    "write.already-present",
+    "reconciliation.conflict-block",
+];
 
 const ADR: &str = "adr:cache-strategy";
 const ADR_HOME: &str = "docs/decisions/cache-strategy.md";
@@ -232,14 +244,13 @@ fn commit_all(corpus: &TrialCorpus, message: &str) {
 /// raises for the same state of the same doc. The route's exit — the regular file put where
 /// the link was, committed — then lands the command the refusal printed, as printed.
 /// **The refusal reaches a `--format json` driver with its key** (the rc.24 fix pass, the
-/// completion audit's CPL-7). `design/command-output-contract.md` lists
-/// `finalize.promote-clobber` under the file-path target form and says of this door's arm
-/// that it is *keyed at that home* — and until this cell the door answered
-/// `{"error": "blocking · finalize.promote-clobber — …"}`: the code inside a message, no
-/// `findings`, no `key`. Re-run with `--format json`, the same refusal must be the reject
-/// arm every committing door gives the code: stdout empty, exit 1, and on stderr the
-/// findings envelope holding one blocking finding keyed `(finalize.promote-clobber, home)`,
-/// with its route beside it and nothing written.
+/// completion audit's CPL-7). `design/command-output-contract.md` lists the code under the
+/// file-path target form — and until this cell the door answered
+/// `{"error": "blocking · <code> — …"}`: the code inside a message, no `findings`, no
+/// `key`. Re-run with `--format json`, the same refusal must be the reject arm every
+/// committing door gives the state: stdout empty, exit 1, and on stderr the findings
+/// envelope holding one blocking finding keyed `(store.home-not-regular-file, home)`, with
+/// its route beside it and nothing written.
 fn assert_keyed_on_the_wire(corpus: &TrialCorpus, argv: &[&str], home: &str, what: &str) {
     let mut json: Vec<&str> = argv.to_vec();
     json.extend(["--format", "json"]);
@@ -487,8 +498,8 @@ impl Occupant {
 /// code-less and route-less, rolled back — where a regular-file occupant gets
 /// `write.already-present`. A directory answered a bare `Is a directory (os error 21)`, and
 /// a live link was called *"a different doc"*. All four now refuse at the gate, before the
-/// transaction, under the door's own occupancy code and naming what is there; both exits the
-/// route names land.
+/// transaction, naming what is there — under the store's code for the state, since
+/// 2026-10-06, where they first rode the occupancy code; both exits the route names land.
 #[test]
 fn a_rename_refuses_a_destination_that_is_not_a_regular_file() {
     let taken = "docs/decisions/taken.md";
@@ -506,10 +517,16 @@ fn a_rename_refuses_a_destination_that_is_not_a_regular_file() {
         let said = text(&out);
         assert_eq!(out.status.code(), Some(1), "{what}: refused; {said}");
         assert!(
-            said.contains(&format!("· {OCCUPIED} — ")),
-            "{what}: under the door's own occupancy code — never git's `fatal`, never a \
-             bare OS error; {said}",
+            said.contains(&format!("· {SHAPE} — ")) && said.contains(&format!("at: {taken}")),
+            "{what}: under the store's code for an entry that is no file, keyed at the \
+             entry — never git's `fatal`, never a bare OS error; {said}",
         );
+        for retired in RETIRED_HERE {
+            assert!(
+                !said.contains(retired),
+                "{what}: `{retired}` says a doc is there, and none is; {said}",
+            );
+        }
         assert!(
             said.contains(occupant.noun()) && said.contains(taken),
             "{what}: the refusal names the entry and the home it holds; {said}",
@@ -822,10 +839,10 @@ enum RecordLink {
 /// its own commit for holding nothing and reported *a hook's complaint*.
 ///
 /// The record's home is asked for its own entry, without following a link, at the one
-/// preflight every one of those doors runs; an entry that is not a regular file is the
-/// door's existing conflict-block — the record is jigc's to write, and it is not as jigc
-/// left it. Nothing is written, minted or committed, and the route's restore lands the same
-/// command.
+/// preflight every one of those doors runs; an entry that is not a regular file refuses
+/// there — the record is jigc's to write, as a regular file — under the store's code for
+/// that state (the door's own conflict-block until 2026-10-06, which is an edit's code).
+/// Nothing is written, minted or committed, and the route's restore lands the same command.
 #[test]
 fn a_milestone_record_is_never_rewritten_through_a_link_at_its_home() {
     for door in RecordDoor::ALL {
@@ -881,12 +898,18 @@ fn a_milestone_record_is_never_rewritten_through_a_link_at_its_home() {
                 "{what}: the door refuses — it never writes the record through a link; {said}",
             );
             assert!(
-                said.contains(RECORD_CONFLICT)
+                said.contains(&format!("· {SHAPE} — "))
                     && said.contains("a symbolic link")
                     && said.contains(RECORD_HOME),
-                "{what}: the record door's own conflict-block, naming the entry and the \
-                 record's home; {said}",
+                "{what}: the store's refusal, naming the entry and the record's home; {said}",
             );
+            for retired in RETIRED_HERE {
+                assert!(
+                    !said.contains(retired),
+                    "{what}: `{retired}` is an edit's code, and nobody edited the record; \
+                     {said}",
+                );
+            }
             assert!(
                 !said.contains("hook"),
                 "{what}: nobody's hook complained — the door refused before it wrote; {said}",
@@ -967,60 +990,260 @@ fn a_milestone_record_is_never_rewritten_through_a_link_at_its_home() {
     }
 }
 
-// ── the corpus migration: already safe, and pinned as such ───────────────────────────
+// ── the corpus migration: refused per doc ────────────────────────────────────────────
 
-/// **The corpus migration never writes through a link** — the one in-place writer of a
-/// committed home this pass leaves as it was, driven rather than read.
-///
-/// `jigc migrate-corpus` rewrites a doc by writing a sibling temp file and renaming it over
-/// the home. A rename replaces the directory entry it lands on; it does not open it. So over
-/// a home that is a live link the migrated bytes land as a **regular file at exactly the
-/// home**, the migration's own commit records that file, and the link's target keeps the
-/// bytes it had. What it does not do is refuse: the link is replaced, not named — the
-/// declared difference from the doors above (`design/finalize.md` → 4. Promote, Declared
-/// bounds).
-#[test]
-fn the_corpus_migration_lands_a_regular_file_and_writes_through_nothing() {
-    let what = "jigc migrate-corpus · a linked doc";
-    let corpus = TrialCorpus::build(State::Fresh);
-    land_adr(&corpus, "Cache Strategy", None);
-    // The v0 corpus state: the doc as it was before the stamp existed.
-    let home = corpus.repo().join(ADR_HOME);
-    let stamped = fs::read_to_string(&home).expect("read the adr");
+/// Take the `schema-version:` stamp off the committed doc at `rel` — the v0 corpus state,
+/// the doc as it was before the stamp existed, which `jigc migrate-corpus` migrates.
+fn unstamp(corpus: &TrialCorpus, rel: &str) -> String {
+    let home = corpus.repo().join(rel);
+    let stamped = fs::read_to_string(&home).expect("read the doc");
     let unstamped: String = stamped
         .lines()
         .filter(|line| !line.starts_with("schema-version:"))
         .map(|line| format!("{line}\n"))
         .collect();
-    assert_ne!(stamped, unstamped, "the premise: the adr carried a stamp");
+    assert_ne!(stamped, unstamped, "the premise: `{rel}` carried a stamp");
     fs::write(&home, &unstamped).expect("strip the stamp");
-    let linked = link_out(&corpus, ADR_HOME);
-    commit_all(&corpus, "chore: an unstamped adr whose home is a link");
+    unstamped
+}
 
-    let out = corpus.jigc(&["migrate-corpus"]);
+/// `jigc migrate-corpus <flags> --format json`: the report, and the exit.
+fn migration_report(corpus: &TrialCorpus, flags: &[&str]) -> (serde_json::Value, Option<i32>) {
+    let mut argv = vec!["migrate-corpus"];
+    argv.extend_from_slice(flags);
+    argv.extend(["--format", "json"]);
+    let out = corpus.jigc(&argv);
+    let report = serde_json::from_slice(&out.stdout)
+        .unwrap_or_else(|e| panic!("the report on stdout ({e}); {}", text(&out)));
+    (report, out.status.code())
+}
+
+/// **The corpus migration refuses a doc whose home is a link — that doc, and no other**
+/// (the rc.24 fix pass's item 9; the human's ruling of 2026-10-07).
+///
+/// `jigc migrate-corpus` rewrites a doc by reading it, folding it, and renaming a sibling
+/// temp file over its home. The read follows a link and the rename replaces the entry it
+/// lands on, so over a home that is a live link the run exited 0 having **replaced the link
+/// with a regular file** — named nowhere — while the file the link pointed at kept the old,
+/// un-migrated bytes. It was the one writer of a committed home the pass left declared
+/// rather than refusing (`design/finalize.md` → 4. Promote).
+///
+/// It refuses now, as every refusal of one doc outside the transform's fold does at this
+/// command: that doc is `blocked` under `store.home-not-regular-file`, keyed at its home;
+/// the run's other docs still migrate and are committed; and the run exits non-zero,
+/// because a corpus with a refused doc in it is not migrated. `--dry-run` describes the
+/// outcome the applying run then has, and `--format json` carries the refusal in
+/// `blocked`. The link stands and nothing is written through it. Then the route is taken:
+/// the doc itself put at its home as a regular file and committed, after which the same
+/// command migrates it.
+///
+/// The cells that must not refuse sit beside it: the ordinary doc in the same run, and —
+/// after the first run — a linked doc that is **already current**, which the run only
+/// reads and leaves `already_current` at exit 0.
+#[test]
+fn the_corpus_migration_refuses_a_linked_doc_and_migrates_the_rest() {
+    const OTHER: &str = "adr:keeper";
+    const OTHER_HOME: &str = "docs/decisions/keeper.md";
+    let what = "jigc migrate-corpus · one linked doc, one ordinary";
+    let corpus = TrialCorpus::build(State::Fresh);
+    land_adr(&corpus, "Cache Strategy", None);
+    assert_eq!(land_adr(&corpus, "Keeper", None), OTHER);
+    unstamp(&corpus, ADR_HOME);
+    unstamp(&corpus, OTHER_HOME);
+    let linked = link_out(&corpus, ADR_HOME);
+    commit_all(&corpus, "chore: two unstamped adrs, one behind a link");
+    let head = corpus.git(&["rev-parse", "HEAD"]);
+
+    // What every run below must say about the two docs.
+    let assert_outcome = |report: &serde_json::Value, exit: Option<i32>, mode: &str| {
+        let what = format!("{what} · {mode}");
+        assert_eq!(
+            exit,
+            Some(1),
+            "{what}: a refused doc holds the exit non-zero; {report:#}"
+        );
+        let blocked = report["blocked"].as_array().expect("a `blocked` array");
+        assert_eq!(blocked.len(), 1, "{what}: one doc is refused; {report:#}");
+        assert_eq!(
+            (
+                blocked[0]["key"]["code"].as_str(),
+                blocked[0]["key"]["target"].as_str()
+            ),
+            (Some(SHAPE), Some(ADR_HOME)),
+            "{what}: the linked doc, under the store's code, keyed at its home; {:#}",
+            blocked[0],
+        );
+        let message = blocked[0]["message"].as_str().unwrap_or_default();
+        assert!(
+            message.contains("a symbolic link") && message.contains("not migrated"),
+            "{what}: the refusal says what stands there and what was not done; {message}",
+        );
+        assert_eq!(
+            report["migrated"],
+            serde_json::json!([OTHER_HOME]),
+            "{what}: the ordinary doc still migrates — a refusal of one doc stops no \
+             other; {report:#}",
+        );
+        linked.assert_untouched(&what);
+    };
+
+    // The preview, then the run it previews: the same two verdicts.
+    let (dry, dry_exit) = migration_report(&corpus, &["--dry-run"]);
+    assert_outcome(&dry, dry_exit, "--dry-run");
+    assert_eq!(dry["dry_run"], true, "{what}: the preview says it is one");
+    assert_eq!(
+        corpus.git(&["status", "--porcelain"]),
+        "",
+        "{what}: the preview wrote nothing",
+    );
+    assert_eq!(corpus.git(&["rev-parse", "HEAD"]), head, "{what}");
+
+    let (applied, exit) = migration_report(&corpus, &[]);
+    assert_outcome(&applied, exit, "the applying run");
     assert!(
-        out.status.success(),
-        "{what}: the migration lands; {}",
-        text(&out)
+        applied["commit"]
+            .as_str()
+            .is_some_and(|sha| !sha.is_empty()),
+        "{what}: the run's other writes land and commit; {applied:#}",
+    );
+    assert!(
+        head_body(&corpus, OTHER_HOME).contains("schema-version:"),
+        "{what}: the ordinary doc is committed with its stamp",
     );
     assert_eq!(
-        fs::read(&linked.target).expect("the link's target"),
-        linked.target_before,
-        "{what}: nothing was written through the link — its target is still unstamped",
+        head_mode(&corpus, ADR_HOME).as_deref(),
+        Some("120000"),
+        "{what}: the commit left the link a link — nothing replaced it",
     );
     assert_eq!(
-        fingerprint(&home),
-        "regular file",
-        "{what}: the migrated doc is a regular file at exactly its home",
+        corpus.git(&["status", "--porcelain"]),
+        "",
+        "{what}: nothing is left staged or modified",
+    );
+
+    // The text surface names the same refusal, and none of the door's other codes.
+    let out = corpus.jigc(&["migrate-corpus"]);
+    let said = text(&out);
+    assert_eq!(out.status.code(), Some(1), "{what}: still refused; {said}");
+    assert!(
+        said.contains(&format!("blocked    {ADR_HOME}")) && said.contains(SHAPE),
+        "{what}: the report lists the doc as blocked, under the one code; {said}",
+    );
+    for retired in RETIRED_HERE {
+        assert!(!said.contains(retired), "{what}: not `{retired}`; {said}");
+    }
+
+    // ── the route, as printed: the doc itself at its home, committed, then the command ──
+    let route = applied["blocked"][0]["route"]
+        .as_str()
+        .expect("a route")
+        .to_owned();
+    assert!(
+        route.contains("as a regular file") && route.contains("commit that"),
+        "{what}: the exit is the regular file put at the home and committed; got: {route}",
+    );
+    linked.regularize();
+    commit_all(&corpus, "docs: the adr itself, where the link was");
+    let reruns = spans(&route, "jigc migrate-corpus");
+    assert_eq!(
+        reruns.len(),
+        1,
+        "{what}: one command to re-run; got: {route}"
+    );
+    let rerun = run_emitted(&corpus, reruns[0]);
+    assert!(
+        rerun.status.success(),
+        "{what}: with the regular file at the home the same command lands; {}",
+        text(&rerun),
+    );
+    assert_eq!(head_mode(&corpus, ADR_HOME).as_deref(), Some("100644"));
+    assert!(
+        head_body(&corpus, ADR_HOME).contains("schema-version:"),
+        "{what}: the migrated doc is committed with its stamp",
+    );
+
+    // ── must not refuse: a linked doc the run only reads ──
+    let current = link_out(&corpus, OTHER_HOME);
+    commit_all(&corpus, "chore: a current adr behind a link");
+    let (read_only, exit) = migration_report(&corpus, &[]);
+    assert_eq!(
+        (exit, read_only["blocked"].as_array().map(Vec::len)),
+        (Some(0), Some(0)),
+        "{what}: a doc already at the current version is not written, so a link at its \
+         home is not this command's to refuse — it is read, as every read follows a link; \
+         {read_only:#}",
+    );
+    assert!(
+        read_only["already_current"]
+            .as_array()
+            .is_some_and(|docs| docs.iter().any(|doc| doc == OTHER_HOME)),
+        "{what}: and it is reported current; {read_only:#}",
+    );
+    current.assert_untouched(what);
+}
+
+/// **The recovery arm never commits a link as an earlier run's migration** — the second
+/// per-doc arm of this command that reached a doc's home through a link (the rc.24 fix
+/// pass's item 9, found while counting its class).
+///
+/// A run whose commit was rejected leaves the migration written and staged, and the next
+/// run *recovers* it: a doc `HEAD` holds below the current version whose worktree copy is
+/// already current is staged and committed. The worktree read follows a link — so a home
+/// the user had turned into a link to bytes at the current version, uncommitted, was
+/// taken for that residue, and the run committed **the user's link** in the doc's place at
+/// exit 0, reporting `1 recovered from an earlier run`.
+///
+/// A migrated result is a regular file, so a link is not one: nothing is staged, nothing
+/// is committed, and the user's uncommitted change is exactly where they left it.
+#[test]
+fn the_corpus_migration_never_lands_a_link_as_an_earlier_runs_migration() {
+    let what = "jigc migrate-corpus · an uncommitted link to current bytes";
+    let corpus = TrialCorpus::build(State::Fresh);
+    land_adr(&corpus, "Cache Strategy", None);
+    let home = corpus.repo().join(ADR_HOME);
+    // A stamped copy elsewhere, and `HEAD` holding the doc as it was before the stamp.
+    let stamped = fs::read(&home).expect("read the adr");
+    fs::create_dir_all(corpus.repo().join("elsewhere")).expect("mk elsewhere/");
+    fs::write(corpus.repo().join("elsewhere/stamped-copy.md"), &stamped).expect("the copy");
+    unstamp(&corpus, ADR_HOME);
+    commit_all(
+        &corpus,
+        "chore: an unstamped adr, and a stamped copy elsewhere",
+    );
+    let head = corpus.git(&["rev-parse", "HEAD"]);
+    // The user's own change, uncommitted: the home becomes a link to the stamped copy.
+    fs::remove_file(&home).expect("take the file out of the home");
+    std::os::unix::fs::symlink("../../elsewhere/stamped-copy.md", &home).expect("link");
+    let status = corpus.git(&["status", "--porcelain"]);
+    assert!(
+        status.contains(ADR_HOME),
+        "the premise: the link is an uncommitted change; got: {status}"
+    );
+
+    let (report, exit) = migration_report(&corpus, &[]);
+    assert_eq!(
+        (exit, report["commit"].as_str()),
+        (Some(0), None),
+        "{what}: nothing to migrate and nothing committed; {report:#}",
+    );
+    assert_eq!(
+        corpus.git(&["rev-parse", "HEAD"]),
+        head,
+        "{what}: `HEAD` has not moved — the link was not landed as jigc's commit",
+    );
+    assert_eq!(
+        corpus.git(&["status", "--porcelain"]),
+        status,
+        "{what}: the user's uncommitted change is exactly where they left it — not staged",
     );
     assert_eq!(
         head_mode(&corpus, ADR_HOME).as_deref(),
         Some("100644"),
-        "{what}: and the migration's commit holds that file, not the link",
+        "{what}: `HEAD` still holds the doc as a file",
     );
+    let said = text(&corpus.jigc(&["migrate-corpus"]));
     assert!(
-        head_body(&corpus, ADR_HOME).contains("schema-version:"),
-        "{what}: carrying the stamp the migration added",
+        !said.contains("recovered"),
+        "{what}: a link is not an earlier run's migration; {said}",
     );
-    assert_eq!(corpus.git(&["status", "--porcelain"]), "", "{what}");
 }

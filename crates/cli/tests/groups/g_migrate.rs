@@ -33,6 +33,8 @@ mod gitignore_amend_union;
 mod gitignore_writer_acks;
 #[path = "../golden_harness.rs"]
 mod golden_harness;
+#[path = "../home_shape_one_code.rs"]
+mod home_shape_one_code;
 #[path = "../home_vacated.rs"]
 mod home_vacated;
 #[path = "../install_line.rs"]
@@ -135,6 +137,8 @@ mod step_source_rules;
 mod test_target_registration;
 #[path = "../unclaimed_file_family.rs"]
 mod unclaimed_file_family;
+#[path = "../uninstall_settings_record.rs"]
+mod uninstall_settings_record;
 #[path = "../verb_suite_coverage.rs"]
 mod verb_suite_coverage;
 #[path = "../version_mismatch_break.rs"]

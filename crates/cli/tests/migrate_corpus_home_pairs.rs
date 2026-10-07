@@ -53,10 +53,10 @@ use crate::support::frozen_pack;
 // ---------------------------------------------------------------------------------------------
 
 /// A throwaway directory that removes itself on drop.
-struct TempDir(PathBuf);
+pub(crate) struct TempDir(PathBuf);
 
 impl TempDir {
-    fn new(tag: &str) -> Self {
+    pub(crate) fn new(tag: &str) -> Self {
         let mut path = std::env::temp_dir();
         path.push(format!(
             "jigc-home-pairs-{tag}-{}-{:?}",
@@ -67,7 +67,7 @@ impl TempDir {
         TempDir(path)
     }
 
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.0
     }
 }
@@ -93,7 +93,7 @@ fn git(repo: &Path, args: &[&str]) {
 }
 
 /// Run `jigc <args>` in `repo` against the manufactured `pack`.
-fn jigc(repo: &Path, home: &Path, pack: &Path, args: &[&str]) -> std::process::Output {
+pub(crate) fn jigc(repo: &Path, home: &Path, pack: &Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_jigc"))
         .args(args)
         .current_dir(repo)
@@ -120,7 +120,7 @@ fn run(repo: &Path, home: &Path, pack: &Path, args: &[&str]) -> (String, bool) {
 /// ([`frozen_pack::bumped_pack`]), wrapped in the throwaway root this suite owns.
 ///
 /// Returns the pack dir and the version the corpus is stamped at.
-fn bumped_pack(
+pub(crate) fn bumped_pack(
     tag: &str,
     ty: &str,
     prior: impl FnOnce(&str) -> String,
@@ -138,10 +138,10 @@ fn bumped_pack(
 /// The shipped `adr`'s declared home line.
 const ADR_LOCATION: &str = "location: decisions/\n";
 /// The shipped `changelog`'s declared home line.
-const CHANGELOG_PLACEMENT: &str = "placement: { file: CHANGELOG.md }\n";
+pub(crate) const CHANGELOG_PLACEMENT: &str = "placement: { file: CHANGELOG.md }\n";
 
 /// Replace `needle` with `replacement` exactly once, asserting it was there.
-fn swap(body: &str, needle: &str, replacement: &str) -> String {
+pub(crate) fn swap(body: &str, needle: &str, replacement: &str) -> String {
     let out = body.replacen(needle, replacement, 1);
     assert_ne!(body, out, "the schema must carry `{}`", needle.trim_end());
     out
@@ -191,7 +191,7 @@ A cold node loses its sessions.
 }
 
 /// A conformant `changelog` body, stamped at `version` — a staged group and one cut release.
-fn changelog_body(version: u32) -> String {
+pub(crate) fn changelog_body(version: u32) -> String {
     format!(
         "\
 ---
@@ -221,7 +221,7 @@ schema-version: {version}
 }
 
 /// A git repo with `jigc setup` run over it against `pack`, ready to take a committed corpus.
-fn set_up_repo(tag: &str, home: &Path, pack: &Path) -> TempDir {
+pub(crate) fn set_up_repo(tag: &str, home: &Path, pack: &Path) -> TempDir {
     let dir = TempDir::new(tag);
     let root = dir.path();
     git(root, &["init", "-q"]);
@@ -242,7 +242,7 @@ fn set_up_repo(tag: &str, home: &Path, pack: &Path) -> TempDir {
 }
 
 /// Commit `body` at the repo-relative `path`.
-fn commit_doc(repo: &Path, path: &str, body: &str) {
+pub(crate) fn commit_doc(repo: &Path, path: &str, body: &str) {
     let full = repo.join(path);
     if let Some(parent) = full.parent() {
         fs::create_dir_all(parent).expect("mk the doc's home");
@@ -842,9 +842,17 @@ fn a_destination_that_is_not_a_regular_file_blocks_and_is_left_as_it_is() {
                 "{cell}: exactly one doc blocks; report:\n{report:#}"
             );
             assert_eq!(
-                blocked[0]["code"], "migrate-corpus.destination-collision",
-                "{cell}: the destination is taken, and the shipped collision code says so; \
-                 finding:\n{:#}",
+                (
+                    blocked[0]["key"]["code"].as_str(),
+                    blocked[0]["key"]["target"].as_str()
+                ),
+                (
+                    Some(engine::store::HOME_NOT_REGULAR_FILE),
+                    Some("HISTORY.md")
+                ),
+                "{cell}: the store's code for an entry that is no file, keyed at the entry \
+                 — never `migrate-corpus.destination-collision`, which is two documents \
+                 contesting one home; finding:\n{:#}",
                 blocked[0],
             );
             let message = blocked[0]["message"].as_str().unwrap_or_default();
@@ -963,6 +971,96 @@ fn a_destination_that_is_not_a_regular_file_blocks_and_is_left_as_it_is() {
         Some(migrated),
         "…the destination holding the migrated bytes",
     );
+}
+
+/// **A relocating doc whose *source* is a link is refused, and nothing moves** (the rc.24 fix
+/// pass's item 9; the human's ruling of 2026-10-07). The destination is asked what stands
+/// there (above); the source is the same question from the other end. The walk enumerates a
+/// live link at a prior home and the read follows it, so the bytes behind the link were the
+/// doc the run would have landed at the new home — and the entry it would then have removed
+/// from the old one is the link. The doc's own home is asked for its entry before the run
+/// queues it: refused under the store's one code, keyed at the source, with the link, the
+/// file it points at and the destination all as they were. Both modes agree.
+#[test]
+#[cfg(unix)]
+fn a_relocating_doc_behind_a_link_is_refused_and_nothing_moves() {
+    let (pack, from_version) = bumped_pack(
+        "linked-source",
+        "changelog",
+        |shipped| shipped.to_string(),
+        |shipped| {
+            swap(
+                shipped,
+                CHANGELOG_PLACEMENT,
+                "placement: { file: HISTORY.md }\n",
+            )
+        },
+    );
+    let home = TempDir::new("home-linked-source");
+    let repo = set_up_repo("linked-source", home.path(), pack.path());
+    let stranded = changelog_body(from_version);
+    fs::create_dir_all(repo.path().join("elsewhere")).expect("mk elsewhere/");
+    fs::write(repo.path().join("elsewhere/changelog.md"), &stranded).expect("the doc's bytes");
+    std::os::unix::fs::symlink("elsewhere/changelog.md", repo.path().join("CHANGELOG.md"))
+        .expect("the prior home is a link to them");
+    git(repo.path(), &["add", "-A"]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "a changelog behind a link"],
+    );
+
+    for mode in [
+        &["migrate-corpus", "--dry-run", "--format", "json"][..],
+        &["migrate-corpus", "--format", "json"][..],
+    ] {
+        let cell = format!("`jigc {}`", mode.join(" "));
+        let (report, ok) = report(repo.path(), home.path(), pack.path(), mode);
+        assert!(
+            !ok,
+            "{cell}: a refused doc holds the exit non-zero; {report:#}"
+        );
+        let blocked = report["blocked"].as_array().expect("a `blocked[]` array");
+        assert_eq!(blocked.len(), 1, "{cell}: one doc is refused; {report:#}");
+        assert_eq!(
+            (
+                blocked[0]["key"]["code"].as_str(),
+                blocked[0]["key"]["target"].as_str()
+            ),
+            (
+                Some(engine::store::HOME_NOT_REGULAR_FILE),
+                Some("CHANGELOG.md")
+            ),
+            "{cell}: the store's code, keyed at the source the run would have moved; {:#}",
+            blocked[0],
+        );
+        let message = blocked[0]["message"].as_str().unwrap_or_default();
+        assert!(
+            message.contains("a symbolic link") && message.contains("HISTORY.md"),
+            "{cell}: the refusal says what stands there and where the doc was not moved; \
+             {message}",
+        );
+        assert_eq!(
+            report["migrated"],
+            serde_json::json!([]),
+            "{cell}: nothing migrated; {report:#}",
+        );
+        assert!(
+            fs::symlink_metadata(repo.path().join("CHANGELOG.md"))
+                .is_ok_and(|meta| meta.file_type().is_symlink()),
+            "{cell}: the link stands",
+        );
+        assert_eq!(
+            fs::read_to_string(repo.path().join("elsewhere/changelog.md"))
+                .ok()
+                .as_deref(),
+            Some(stranded.as_str()),
+            "{cell}: the file it points at is byte-untouched",
+        );
+        assert!(
+            fs::symlink_metadata(repo.path().join("HISTORY.md")).is_err(),
+            "{cell}: nothing landed at the destination",
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

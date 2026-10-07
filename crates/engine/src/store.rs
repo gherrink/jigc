@@ -124,6 +124,72 @@ impl ForeignEntry {
     }
 }
 
+/// **`store.home-not-regular-file`** — a managed doc's home holds an entry that is not a
+/// regular file: a symbolic link (dangling or live, wherever it points), a directory, a
+/// special file. One code, at every command that meets the shape (the human's ruling of
+/// 2026-10-06 on the rc.24 fix pass's items 7 and 8), minted by one constructor
+/// ([`home_shape_refusal`]).
+///
+/// **Why it has a code of its own.** The rc.24 fix pass taught each door to ask
+/// [`home_entry`] instead of following a link, and each fixer answered the shape under the
+/// code its door already had for *something is in the way*: `finalize.promote-clobber`,
+/// `write.already-present`, `create.already-exists`, `reconciliation.conflict-block`,
+/// `milestone.record-exists`, `migrate-corpus.destination-collision` — six codes, one state.
+/// A code is what a driver keys its next act on, and each of the six routes somewhere else
+/// for its own state: give the doc another id, adopt the occupant, discard the task, restore
+/// the record, continue the milestone, fold two documents into one. None of those is the
+/// act this state needs — the entry out of the home, or the regular file itself in it —
+/// so one state under six codes was six half-true identities.
+///
+/// **Why this name.** The subject is the committed store's own invariant — *a managed doc
+/// is a regular file at exactly its home* — and not any one command's, so it sits in the
+/// `store.*` family beside [`NOT_FOUND`] and [`UNKNOWN_TYPE`], which are also answered by
+/// every door that addresses the store. `home` is the word every refusal for this state
+/// already used for the path, and `not-regular-file` says the predicate [`home_entry`]
+/// tests, which covers a link, a directory and a special file alike; a name with `symlink`
+/// in it would be false of two of the three.
+///
+/// A member of the owed set ([`NOT_FOUND`]): the contract lists it under the file-path
+/// target form, so it reaches the findings envelope at every producer.
+pub const HOME_NOT_REGULAR_FILE: &str = "store.home-not-regular-file";
+
+/// **The one refusal over a managed doc's home that is not a regular file** — the single
+/// mint of [`HOME_NOT_REGULAR_FILE`], and the constructor every door that meets the shape
+/// goes through (`crates/cli/tests/home_shape_one_code.rs` holds the doors to it: every
+/// production caller is a row there, and every row's commands are driven).
+///
+/// **What is fixed here, for every door:** the code; the key — the **path of the entry**,
+/// repo-relative, because the entry is the subject and an entry that is not a doc has no
+/// `<type>:<slug>` to be addressed at (`design/command-output-contract.md` → the form
+/// table, the file row); and the sentence that says what stands there and the contract it
+/// breaks. **What a door supplies:** `withheld`, the clause saying what that door did not
+/// do, and the `route`, because the exit differs by door — a unit that minted a doc can
+/// give it another id, a door acting on the committed store needs the regular file
+/// committed at the home. No route here teaches a removal: jigc writes regular files only,
+/// so the entry is somebody else's and what becomes of it is theirs to decide.
+///
+/// `home` is the repo-relative path of the entry.
+#[must_use]
+pub fn home_shape_refusal(
+    home: &str,
+    shape: ForeignEntry,
+    withheld: &str,
+    route: impl Into<Route>,
+) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        HOME_NOT_REGULAR_FILE,
+        format!(
+            "`{home}` is {}, not a regular file — jigc keeps a managed doc as a regular \
+             file at exactly its home, and neither writes through a link nor moves one, so \
+             {withheld}",
+            shape.noun()
+        ),
+        Some(Location::addressed(home, 1, 1)),
+        Some(route.into()),
+    )
+}
+
 /// Read the entry at a managed doc's home **without following a link** — the one
 /// occupancy observation the create gate, both committing doors' planners and the promote
 /// sink share (the rc.24 fix pass, `(R6, D-7)`).

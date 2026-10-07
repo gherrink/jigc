@@ -3230,26 +3230,28 @@ fn free_destination(
     // The second home again, asked the committing door's other question (the rc.24 fix
     // pass, `(R6, D-7)`): an entry there that is **not a regular file** — a dangling link,
     // a directory — has no body for `create_incumbent` to report, and is still a home this
-    // task's doc can never be promoted to (`finalize.promote-clobber`'s shape arm). The
-    // parity this guard exists for is with that door, so it refuses here too.
+    // task's doc can never be promoted to. The parity this guard exists for is with that
+    // door, so it refuses here too — and under that door's code for the state, the
+    // store's one (`store.home-not-regular-file`, keyed at the entry's path; until
+    // 2026-10-06 this arm rode `write.already-present`, keyed at the destination identity,
+    // which says a doc is there). The route is the occupancy refusal's own.
     if let Some(shape) = state::foreign_home_entry(&task.jigc_home, schema, new_slug)
         && let Some(home) = engine::finalize::promote_destination(schema, new_slug)
     {
-        return Err(DocFailure::block(occupied_destination_refusal(
-            new_uri,
-            old_uri,
-            to,
-            format!(
-                "the home of `{new_uri}`, `{home}`, is {} — jigc lands a doc as a regular \
-                 file at exactly its home and never writes through a link, so this task's \
-                 doc could not be promoted under that identity",
-                shape.noun()
+        return Err(DocFailure::block(engine::store::home_shape_refusal(
+            &home,
+            shape,
+            &format!(
+                "this task's doc `{old_uri}` is not renamed to `{new_uri}`, whose home \
+                 that is: it could not be promoted there"
             ),
-            format!(
-                "move the {} out of the doc's home, so that `{home}` is free, and re-run \
-                 this rename",
+            engine::finding::Route::human(format!(
+                "give this doc an id whose home is free — re-run `jigc doc rename \
+                 {old_uri} --to {} --slug <other-slug>`; or move the {} out of the doc's \
+                 home, so that `{home}` is free, and re-run this rename",
+                crate::task::shell_token(to),
                 shape.bare()
-            ),
+            )),
         )));
     }
     Ok(new_path)
@@ -3674,8 +3676,19 @@ fn already_exists_refusal(
         Some(held) => Ok(one_doc_per_task_route(task, verb, &held, &entry.as_role)),
         None => distinct_identity_route(task, verb, schema, slug_override, foreign),
     });
+    // An occupant that is not a regular file is the store's refusal, keyed at the entry's
+    // path — a foreign entry was observed *at* the identity's home, so the home resolves.
+    // A doc-shaped occupant is this gate's own: a doc already exists.
+    let home = Address::parse(address)
+        .ok()
+        .and_then(|address| engine::finalize::promote_destination(schema, address.slug.as_str()));
     match route {
-        Ok(route) => DocFailure::block(state::already_exists_finding(address, foreign, route)),
+        Ok(route) => DocFailure::block(match (foreign, home) {
+            (Some(shape), Some(home)) => {
+                state::create_only_home_refusal(&home, address, shape, route)
+            }
+            _ => state::already_exists_finding(address, route),
+        }),
         Err(err) => DocFailure::Orchestration(err),
     }
 }

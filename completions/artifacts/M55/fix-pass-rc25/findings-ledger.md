@@ -858,6 +858,8 @@ In the last column, **rc-row** is a row of `implementation/decisions-pending.md`
 
 ### (a) Decisions taken or deferred inside the pass that were never put to the human — 20
 
+**[Ruled 2026-10-06: the human has ruled on every one of the twenty, one question at a time, ahead of the opening of the stabilization run — `DECISIONS.md` → *2026-10-06 — Ahead of the run's opening*, ruling 5. His words, and the sheet each question was asked from, are [the pre-opening record](../stabilization-build/pre-opening/README.md), which uses the numbers below. *Confirmed as built:* 2, 4, 10, 11, 13, 14, 16, 20. *Changed before the run opens:* 1, 3, 6, 7 with 8, 9, 12, 15, 17, 18, 19. *Recorded for the 1.x fix pass:* 5, and what the rulings on 12, 13, 14 and 16 left for later. *Declared bounds:* 16, and what remains of 3. Nothing is built by the rulings, and the items below are kept as written at the close.]**
+
 Each is a fixer's own *human's call*, *decision for the human*, *confirm* or *the human's to reverse*, or a choice the orchestrator took under the standing rule. The draft of this ledger listed thirteen at `5f5b273a`; two of those are settled since — the absent-home cell (`8d9c3afb`-1: built at `78e8ded1` on the ruling *an identity git holds is occupied*) and the git-cannot-answer arm (`ef9456b5`-1: built at `f0b1120a`, whose own choices are item 17) — and round 4 added nine. All twenty are one row of `implementation/decisions-pending.md` (→ *Before the next release candidate*).
 
 From rounds 1–3 (table D):
@@ -889,6 +891,8 @@ From round 4 (table F):
 Not in this count, because the log already records each as the orchestrator's call open to overturn: the three queued members that make an exit-0 command refuse (`DECISIONS.md`, 2026-10-04, *five further class members queued*, items 3–5).
 
 ### (b) New findings surfaced after the audit and not fixed — 3
+
+**[Ruled 2026-10-06: the human has ruled on all three — the same entry, where they are items 21, 22 and 23, and the same record. *1 (`4E-1`)* is fixed before the run opens: `setup` records the permission entries it added and `uninstall` removes exactly those. *2 (`4C-1`)* and *3 (`W-1`)* are declared bounds, the human's, each with its reach; the guard for 2 and a notice for 3 are recorded for the 1.x fix pass. Nothing is built by the rulings, and the items below are kept as written at the close.]**
 
 1. `4E-1` — **`jigc uninstall` removes a `permissions.deny` / `permissions.allow` entry the adopter already had** if it is identical to one jigc installs. Driven on the release build by the area E fixer (the cell is named open in `528d0205`'s commit message); silent where the settings file is untracked or ignored. Closing it needs a record of what was there first.
 2. `4C-1` — **an index-only staged blob at the home of a doc the task updates is replaced by the promote's `git add` at exit 0.** Driven by the area C fixer; the re-shaped rollback test walks through the state.

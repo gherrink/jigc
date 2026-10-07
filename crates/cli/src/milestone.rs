@@ -277,10 +277,6 @@ pub enum MilestoneCommand {
     /// sub-task that minted the doc dropped (`jigc task discard <task-id> --force`).
     /// Two sub-tasks' docs that promote to one path — two mints of one such doctype —
     /// are refused together, under the same code, and the route keeps one.
-    /// And no doc — created or edited — is promoted onto a destination whose
-    /// entry is not a regular file (a symbolic link, a directory): a doc lands as a
-    /// regular file at exactly its home and is never written through a link, so the
-    /// boundary blocks with the same code and names the exit that sub-task's doc has.
     /// A home with nothing on disk is occupied all the same when git still holds a file
     /// there — a committed doc deleted from the worktree, a file staged and taken out of
     /// it: a newly created doc is not promoted over it either, under the same code.
@@ -288,6 +284,12 @@ pub enum MilestoneCommand {
     /// boundary commits the staged code and the docs together, one file per path, so it
     /// blocks with the same code and routes at renaming the doc or at taking the staged
     /// file into git's stash (`git -C <worktree> stash push -- <path>`).
+    /// And no doc — created or edited — is promoted onto a destination whose
+    /// entry is not a regular file (a symbolic link, a directory): a doc lands as a
+    /// regular file at exactly its home and is never written through a link, so the
+    /// boundary blocks with `store.home-not-regular-file`, the code every command
+    /// answers that state with, and names the exit that sub-task's doc has. The
+    /// milestone's own record is held to the same rule, under the same code.
     /// The code half lands what a sub-task has **staged in a live worktree** and nothing
     /// else, and a landed boundary then removes the worktrees — so it refuses first,
     /// with `milestone.unlanded-work`, committing nothing and leaving the milestone
@@ -295,11 +297,15 @@ pub enum MilestoneCommand {
     /// land without: a commit made inside the worktree that no ref reaches, paths
     /// still staged in the index of a worktree whose directory is gone (or whose
     /// `.git` link is), or anything staged or committed in the worktree of a sub-task
-    /// settled by `jigc task discard`. The refusal prints, per path, the command that
-    /// keeps the commit under a branch, the one that turns it into staged paths so it
-    /// lands, the one that brings the checkout back or re-links it, or the stash that
-    /// keeps a settled sub-task's staged paths. There is no `--force` here: the other
-    /// exit is `jigc milestone discard`.
+    /// settled by `jigc task discard` — and, in that sub-task's worktree, an unstaged
+    /// edit or an untracked file git does not ignore, since nothing lands from it and
+    /// the worktree goes with the milestone. Files git ignores (build output) are
+    /// named as they go and never refused over. The refusal prints, per path, the
+    /// command that keeps the commit under a branch, the one that turns it into staged
+    /// paths so it lands, the one that brings the checkout back or re-links it, or the
+    /// stash that keeps a settled sub-task's work (`git -C <worktree> stash
+    /// --include-untracked` where it holds unstaged or untracked files). There is no
+    /// `--force` here: the other exit is `jigc milestone discard`.
     Finalize {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
@@ -1530,17 +1536,28 @@ enum RecordWitness {
 /// the bare `git checkout -- <record>`, which restores from the **index** and so puts a
 /// `git add`ed edit straight back; after it the bytes on disk equal the witness, so the
 /// re-run is the first encounter of an untouched record and cannot block again.
+///
+/// **The `LastWrite` route also names the exit for a record nobody edited** (the human's
+/// ruling of 2026-10-06 on the fix pass's item 12). The held hash is a hash of bytes, and
+/// this door does not ask git while it holds one (`design/reconciliation.md` → Open
+/// questions, *a recorded baseline in a converting checkout* — the cause, which stands). So
+/// in a checkout that converts line endings, a record git checked out again — a branch
+/// switch and back, a stash — differs from the hash while git calls it unmodified, and the
+/// restore above has nothing to restore: run as printed it exits 0 and the door refuses
+/// again. The exit that works is `jigc unmanage <record>`: it drops the hash, and the next
+/// run takes the [`RecordWitness::Head`] arm, where the comparison is git's. The route
+/// cannot know which case it is printed in — knowing would be asking git — so it prints the
+/// one git question that tells them apart and says what its answer means. It is no way
+/// past a real edit: with the hash dropped, an uncommitted edit is the `Head` arm's
+/// refusal, over the same untouched bytes.
 fn record_conflict_block(
     jigc_home: &Path,
     key: &str,
     witness: RecordWitness,
 ) -> engine::file_state::ConflictBlock {
-    let restore = |source: &str| {
-        engine::finding::git_at(
-            jigc_home,
-            &format!("checkout {source}-- {}", crate::task::shell_token(key)),
-        )
-    };
+    let token = crate::task::shell_token(key);
+    let restore =
+        |source: &str| engine::finding::git_at(jigc_home, &format!("checkout {source}-- {token}"));
     match witness {
         RecordWitness::LastWrite => engine::file_state::ConflictBlock::new(
             "the milestone record is machine-maintained and was edited out of band since jigc \
@@ -1548,8 +1565,15 @@ fn record_conflict_block(
             engine::finding::Route::human(format!(
                 "restore `{key}` to what jigc last wrote (`{restore}` for an uncommitted edit, \
                  else revert the commit that changed it) and re-run this command — an external \
-                 edit to a machine-maintained record is never merged and never clobbered",
+                 edit to a machine-maintained record is never merged and never clobbered. \
+                 Where nobody edited it — `{status}` prints nothing and no commit changed the \
+                 record, as after a branch switch or a stash in a checkout that converts line \
+                 endings — there is nothing to restore: run `jigc unmanage {token}` and re-run \
+                 this command. That drops the hash jigc holds for the record, and the record \
+                 is then compared with `HEAD`",
                 restore = restore(""),
+                status =
+                    engine::finding::git_at(jigc_home, &format!("status --porcelain -- {token}")),
             )),
         ),
         RecordWitness::Head => engine::file_state::ConflictBlock::new(
@@ -1567,36 +1591,37 @@ fn record_conflict_block(
     }
 }
 
-/// The conflict presentation for a record whose **home is not a regular file** — the shape
-/// sibling of [`record_conflict_block`], raised by [`reconcile_record_preflight`] before it
-/// reads a byte (the rc.24 fix pass, the record doors' half of `(R6, D-7)`).
+/// The refusal for a record whose **home is not a regular file** — raised by
+/// [`reconcile_record_preflight`] before it reads a byte (the rc.24 fix pass, the record
+/// doors' half of `(R6, D-7)`).
 ///
-/// It is the same refusal as an out-of-band edit, so it is the same identity: a
-/// machine-maintained record that is not as jigc left it is never merged, never clobbered —
-/// and never written *through*. What the route can say depends on where the entry came from,
-/// and it names both: where `HEAD` still holds the record as a file, the restore is the
-/// `HEAD`-sourced checkout [`record_conflict_block`]'s `Head` arm emits (git replaces the
-/// entry with the file; it does not write through it); where the entry itself was committed,
-/// nothing in `HEAD` can restore it, so the exit is the regular file put back by hand and
-/// committed. It teaches no removal: the entry is the reader's, and so is whatever a link
-/// points at.
+/// **It is the store's refusal, under the store's code** (`store.home-not-regular-file`,
+/// through its one constructor; the human's ruling of 2026-10-06 on the fix pass's items 7
+/// and 8). It was built as this door's standing `reconciliation.conflict-block` — *a
+/// machine-maintained record that is not as jigc left it* — and that code's meaning is an
+/// edit: two sets of bytes, one of which has to give. Here there are no second bytes to
+/// reconcile, only an entry that is not a file. The key is unchanged — the record's path.
+///
+/// What the route can say depends on where the entry came from, and it names both: where
+/// `HEAD` still holds the record as a file, the restore is the `HEAD`-sourced checkout
+/// [`record_conflict_block`]'s `Head` arm emits (git replaces the entry with the file; it
+/// does not write through it); where the entry itself was committed, nothing in `HEAD` can
+/// restore it, so the exit is the regular file put back by hand and committed. It teaches
+/// no removal: the entry is the reader's, and so is whatever a link points at.
 fn record_shape_block(
     jigc_home: &Path,
     key: &str,
     shape: engine::store::ForeignEntry,
-) -> engine::file_state::ConflictBlock {
+) -> engine::finding::Finding {
     let restore = engine::finding::git_at(
         jigc_home,
         &format!("checkout HEAD -- {}", crate::task::shell_token(key)),
     );
     let bare = shape.bare();
-    engine::file_state::ConflictBlock::new(
-        format!(
-            "the milestone record is machine-maintained and its home is now {}, not the \
-             regular file jigc wrote — jigc writes the record as a regular file at exactly \
-             that path and never through a link",
-            shape.noun()
-        ),
+    engine::store::home_shape_refusal(
+        key,
+        shape,
+        "the milestone record, which is jigc's to write, is not rewritten",
         engine::finding::Route::human(format!(
             "nothing was written. Put the record back at `{key}` as a regular file and re-run \
              this command: `{restore}` restores it where `HEAD` still holds the record as a \
@@ -1671,13 +1696,10 @@ fn reconcile_record_preflight(
     // to a byte-identical copy read as in sync, and the door then wrote the record *through*
     // the link: `jigc milestone add-task` exited 0 over a record commit that held the link,
     // with the record's new body in the link's untracked target. The home's own entry is
-    // asked first, without following a link, and one that is not a regular file is this
-    // door's conflict-block whatever it points at: the record is jigc's to write, and it is
-    // not as jigc left it.
+    // asked first, without following a link, and one that is not a regular file refuses
+    // here whatever it points at: the record is jigc's to write, as a regular file.
     if let engine::store::HomeEntry::Foreign(shape) = engine::store::home_entry(&record_path) {
-        return Err(finding_to_err(
-            record_shape_block(jigc_home, &key, shape).finding_at(&key),
-        ));
+        return Err(finding_to_err(record_shape_block(jigc_home, &key, shape)));
     }
     let Ok(bytes) = std::fs::read(&record_path) else {
         return Ok(()); // no committed record yet → nothing to overwrite, nothing to guard.
@@ -5135,7 +5157,8 @@ fn leftover_at(path: &Path) -> LeftoverAt {
 /// phase earlier, leg by leg — the second by [`fan_out_posture_findings`], the third by
 /// [`unlanded_work`]; the first (bytes) it narrates, on M46's measured warrant, because this
 /// probe's bytes leg would refuse every worktree that staged the code the boundary exists
-/// to land. The callers are the **three refusing**
+/// to land — save in the worktree of a sub-task settled as discarded, from which nothing
+/// lands, where [`unlanded_work`] asks a bytes leg of its own ([`loose_work`]). The callers are the **three refusing**
 /// worktree doors — [`PROVISION_DOOR`] (phase 1), [`DISCARD_DOOR`]
 /// ([`held_subtask_worktrees`]) and [`UNINSTALL_DOOR`] (`crate::setup::dirty_fanout_worktrees`)
 /// — and they ask one probe rather than growing three that drift, which is what made the
@@ -7885,7 +7908,13 @@ struct UnlandedWork {
 /// * a commit no ref reaches, **stale or live**, whatever the sub-task's state;
 /// * the paths staged in its index **where the boundary does not carry them** — no live
 ///   checkout stands there, or the sub-task is settled. A landed sub-task's live index is
-///   the boundary's input and is not a hold: that is the ordinary fan-out.
+///   the boundary's input and is not a hold: that is the ordinary fan-out;
+/// * **in the live worktree of a settled sub-task, its unstaged edits and its untracked
+///   files that git does not ignore** ([`loose_work`]; the human's ruling of 2026-10-06
+///   on the fix pass's item 6). Nothing lands from that sub-task and its worktree stays
+///   until this teardown, so those bytes — in no git object — were removed at exit 0
+///   and named afterwards as *not recoverable*. Files git ignores stay named, not
+///   refused.
 ///
 /// **The subject is what the boundary would leave out or drop, and nothing wider.** A
 /// landed sub-task is asked at its path whether or not this repository registered it (a
@@ -7912,10 +7941,13 @@ struct UnlandedWork {
 /// where **no live checkout** stands at the sub-task's path: once `jigc milestone provision`
 /// has put a fresh worktree there (git registers it under a new name beside the old
 /// record), that checkout answers for the sub-task and the older record — still intact,
-/// never dropped — is superseded with whatever it held. (1) The bytes leg is not asked here, by the M46 ruling
-/// this guard does not reopen: a live worktree's unstaged, untracked and ignored bytes are
-/// still narrated by the teardown rather than refused over, for a landed sub-task *and*
-/// for a settled one. (2) An operation git has left un-concluded in a **settled**
+/// never dropped — is superseded with whatever it held. (1) The bytes leg is asked of one
+/// cell only. For a **landed** sub-task the M46 ruling stands and this guard does not
+/// reopen it: its live worktree's unstaged, untracked and ignored bytes are narrated by
+/// the teardown rather than refused over, since the boundary took its staged set. For a
+/// **settled** one the ignored bytes alone are still narrated. And a settled sub-task's
+/// path where **no live checkout** stands is asked no bytes at all: git removes no
+/// directory it does not read as a worktree, so the teardown takes nothing there. (2) An operation git has left un-concluded in a **settled**
 /// sub-task's worktree is likewise narrated: [`fan_out_posture_findings`] asks the
 /// worktrees the boundary commits from. (3) `jigc task validate <sub-task-id>` does not
 /// preview this refusal — it is a milestone-boundary gate, like `milestone.zero-contribution`,
@@ -7950,7 +7982,7 @@ fn unlanded_work(
         // The boundary carries a staged path only out of a live checkout of a sub-task it
         // lands; everywhere else the index is work it would leave behind.
         let staged_is_held = !(checkout && landed);
-        let (shape, anchored) = match anchored_reading(
+        let anchored = anchored_reading(
             jigc_home,
             &path,
             checkout,
@@ -7958,24 +7990,44 @@ fn unlanded_work(
             // A moved repository's records name its old path: looked for here, because
             // settling the milestone without what one holds needs no record to be dropped.
             Lookup::OrMadeBeforeAMove,
-        ) {
-            Ok(None) => continue,
-            Ok(Some(anchored)) => (
+        );
+        // The bytes leg, asked of exactly one cell: the live checkout of a sub-task settled
+        // as discarded ([`loose_work`]). A landed sub-task's loose bytes stay narrated.
+        let loose = if checkout && !landed {
+            loose_work(&path)
+        } else {
+            Ok(Vec::new())
+        };
+        let (shape, entries, anchored) = match (anchored, loose) {
+            (Ok(None), Ok(loose)) if loose.is_empty() => continue,
+            (Ok(anchored), Ok(loose)) => (
                 match at {
                     LeftoverAt::Absent => LeftoverShape::Registration,
                     LeftoverAt::Leaf => LeftoverShape::File,
                     LeftoverAt::Directory | LeftoverAt::Unreadable(_) => LeftoverShape::Directory,
                 },
-                Some(anchored),
+                loose,
+                anchored,
             ),
-            Err(err) => (LeftoverShape::Unreadable(format!("{err:#}")), None),
+            // Either read failing is the probe not knowing, and that is a hold. What the
+            // other read established still rides the line.
+            (Ok(anchored), Err(err)) => (
+                LeftoverShape::Unreadable(format!("{err:#}")),
+                Vec::new(),
+                anchored,
+            ),
+            (Err(err), _) => (
+                LeftoverShape::Unreadable(format!("{err:#}")),
+                Vec::new(),
+                None,
+            ),
         };
         held.push(UnlandedWork {
             path,
             hold: LeftoverHold {
                 verdict,
                 shape,
-                entries: Vec::new(),
+                entries,
                 operation: None,
                 anchored,
             },
@@ -7984,6 +8036,37 @@ fn unlanded_work(
         });
     }
     held
+}
+
+/// **What a live worktree holds that is in no git object and that git does not ignore** —
+/// its unstaged edits and its untracked files, each in the words the teardown's narration
+/// would have named it by after the fact (`<path> (never staged)`, `<path> (staged only in
+/// part)`; [`render::DiscardState::label`]). [`unlanded_work`]'s bytes leg, asked of a
+/// sub-task settled as discarded (the human's ruling of 2026-10-06 on the fix pass's
+/// item 6).
+///
+/// It reads [`worktree_work`], the narration's own probe, and leaves two of its cells out:
+///
+/// * **a wholly staged path** — the registration leg's already ([`Anchored::staged`]), so
+///   it is named once;
+/// * **a path git ignores** — build output. The ruling keeps it *named, not refused*: a
+///   provisioned worktree arrives tracked-only while the sub-task walk tells the agent to
+///   build and test, so refusing on the ignored axis would fire on most *discard one, land
+///   the rest* runs. The teardown still names it as it goes ([`discarded_work`]).
+///
+/// The listing is asked for by its own flags ([`crate::task::status_argv`], every
+/// untracked file by its own path), so `status.showUntrackedFiles=no` hides nothing from
+/// it: that setting says what a `git status` prints, never what a removal destroys.
+fn loose_work(worktree: &Path) -> Result<Vec<String>> {
+    Ok(worktree_work(worktree)?
+        .into_iter()
+        .filter_map(|(path, state)| match state? {
+            state @ (render::DiscardState::NeverStaged | render::DiscardState::PartlyStaged) => {
+                Some(format!("{path} ({})", state.label()))
+            }
+            render::DiscardState::Ignored => None,
+        })
+        .collect())
 }
 
 /// [`FINALIZE_DOOR`]'s refusal over one path of [`unlanded_work`]: a blocking finding that
@@ -8008,7 +8091,10 @@ fn unlanded_work(
 /// * a path staged in a live worktree of a **settled** sub-task — `git stash` puts it
 ///   under `refs/stash`, a ref of the repository rather than of the worktree, so it
 ///   outlives the teardown. Nothing lands from a settled sub-task, so there is no landing
-///   exit to offer.
+///   exit to offer. Where that worktree also holds loose work ([`loose_work`]) the stash
+///   is `git stash --include-untracked`, one command for the staged paths, the unstaged
+///   edits and the untracked files: a plain stash leaves an untracked file where it is,
+///   and the re-run would refuse again.
 ///
 /// **No consent is offered, because this door has none**: `jigc milestone finalize` takes
 /// no `--force`. The two exits are the commands above followed by the same `finalize`, or
@@ -8039,9 +8125,15 @@ fn unlanded_work_finding(
             .to_owned(),
     };
     let unreadable = matches!(held.hold.shape, LeftoverShape::Unreadable(_));
+    // What the worktree itself holds loose ([`loose_work`]) — only ever a live checkout
+    // of a settled sub-task, where the teardown reaches.
+    let loose = !held.hold.entries.is_empty();
     let fate = if unreadable {
         "the teardown behind a landed boundary would then drop the registration, with \
          whatever it holds"
+    } else if loose {
+        "the teardown behind a landed boundary would then remove the worktree, and that \
+         work with it"
     } else if held.registered {
         "the teardown behind a landed boundary would then drop the registration, and that \
          work with it"
@@ -8071,7 +8163,7 @@ fn unlanded_work_finding(
                 aimed(&format!("reset --soft {base}")),
             ));
         }
-        if !anchored.staged.is_empty() && live {
+        if !anchored.staged.is_empty() && live && !loose {
             exits.push(format!(
                 "`{}` keeps the staged paths as a stash, which outlives the worktree",
                 aimed("stash"),
@@ -8093,6 +8185,22 @@ fn unlanded_work_finding(
             ));
         }
     }
+    // The settled sub-task's loose work: the same kind of exit as its staged paths, widened
+    // to what a plain `git stash` leaves behind — an untracked file. One stash takes all
+    // three, so where staged paths stand beside the loose work the line prints this one.
+    if loose {
+        let staged = anchored.is_some_and(|anchored| !anchored.staged.is_empty());
+        exits.push(format!(
+            "`{}` keeps {} as a stash, which outlives the worktree — what git ignores is \
+             not stashed and goes with the worktree, named as it goes",
+            aimed("stash --include-untracked"),
+            if staged {
+                "the staged paths, the unstaged edits and the untracked files"
+            } else {
+                "the unstaged edits and the untracked files"
+            },
+        ));
+    }
     let exits = if exits.is_empty() {
         String::new()
     } else {
@@ -8113,15 +8221,16 @@ fn unlanded_work_finding(
     // re-link a directory with no `.git` entry ([`unlinked_checkout`]), and this door's
     // own stash a live index. A `.git` entry git cannot read through, and a file in the
     // way, each leave a step that is the reader's and no line to paste.
-    let carries_command = anchored.is_some_and(|anchored| {
-        anchored.commit.is_some()
-            || matches!(held.hold.shape, LeftoverShape::Registration)
-            || matches!(
-                unlinked_checkout(&held.path, anchored),
-                Some(Unlinked::NoEntry(_))
-            )
-            || (!anchored.staged.is_empty() && live)
-    });
+    let carries_command = loose
+        || anchored.is_some_and(|anchored| {
+            anchored.commit.is_some()
+                || matches!(held.hold.shape, LeftoverShape::Registration)
+                || matches!(
+                    unlinked_checkout(&held.path, anchored),
+                    Some(Unlinked::NoEntry(_))
+                )
+                || (!anchored.staged.is_empty() && live)
+        });
     // The first move differs by what the line carries: a command to run, a step to take
     // by hand, or — where the registration could not even be read — git's own message and
     // nothing to paste.

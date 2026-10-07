@@ -734,12 +734,13 @@ pub enum TaskCommand {
         /// empty-commit guard (`finalize.empty-commit`, or `finalize.nothing-staged` where
         /// the working tree has changes and the index is empty), the **sub-task boundary**
         /// (`finalize.milestone-sub-task` — a milestone's sub-task has no per-task commit
-        /// door at all), the planner's two collision gates
+        /// door at all), the planner's gates on where a doc would land
         /// (`finalize.promote-clobber` over a file already sitting at a promote
-        /// destination, or over any entry there that is not a regular file — a symbolic
-        /// link, a directory: a doc lands as a regular file at exactly its home and is
-        /// never written through a link — or, for a doc this task newly created, over a
+        /// destination or, for a doc this task newly created, over a
         /// path git still holds though its file is missing from the worktree;
+        /// `store.home-not-regular-file` over any entry there that is not a regular
+        /// file — a symbolic link, a directory: a doc lands as a regular file at exactly
+        /// its home and is never written through a link;
         /// `finalize.migration-no-replacement` over a
         /// recorded migration
         /// source with nothing staged to replace it), and the carryover gate, where an
@@ -5759,7 +5760,7 @@ fn promote(
             engine::store::home_entry(&repo_root.join(&promotion.destination))
         {
             return Err(crate::render::finding_error(
-                &engine::finalize::promote_sink_refusal(repo_root, &promotion.destination, shape),
+                &engine::finalize::promote_sink_refusal(&promotion.destination, shape),
             ));
         }
     }
@@ -10824,7 +10825,7 @@ mod tests {
     /// refusal; this is the write's own, for an entry that is there when the write would
     /// happen whatever the plan saw. Over every shape — a dangling link, a live link, a
     /// link to a device, a directory, a FIFO — a two-promotion plan whose *second*
-    /// destination holds the entry returns `finalize.promote-clobber` keyed at it, and the
+    /// destination holds the entry returns `store.home-not-regular-file` keyed at it, and the
     /// *first*, free, destination is still absent: the whole set is asked ahead of the
     /// first copy, so the transaction refuses with no promotion landed rather than k-1 of
     /// them. The entry stands, nothing is written through it, and the rollback family is
@@ -10875,7 +10876,7 @@ mod tests {
             assert_eq!(
                 refusal_key(&err),
                 (
-                    "finalize.promote-clobber".to_string(),
+                    engine::store::HOME_NOT_REGULAR_FILE.to_string(),
                     Some("docs/blocked.md".to_string())
                 ),
                 "{shape}: the planner's code and key, from the sink",
