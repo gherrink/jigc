@@ -6,6 +6,8 @@ The workflow's one home is [implementation/stabilization-workflow.md](../../../.
 
 ## Where it stands
 
+**[2026-10-07 — the list below is the record's as it was written on 2026-10-06. Since then the `test` half was repaired along the plan and re-reviewed by two independent reviewers: fit for a canary run, not yet fit for the real run. Where that stands is the section *The re-review of the `test` half* below, and the directory it points at.]**
+
 - **The workflow is built, and it is not fit for a real run.** Two independent reviews of the build came back **red**. **No stage of it is used on a real run until that stage's repair and re-review are recorded in `DECISIONS.md`** — the `test` half first, by the human's ruling on the order.
 - **The repair is designed and not started** ([repair-plan.md](repair-plan.md)). Its order is ruled; two questions about it are open with the human, and six readings the orchestrator took are reported to him and not yet confirmed (→ *Open with the human*).
 - **No run is opened, and no stage has been driven by the Workflow runtime.** The self-test under the runtime and the canary run — the build's own verification, `DECISIONS.md` → the rulings entry → *The build* → *Verification*, items 1 and 3 — have not run; the plan puts the canary in the repair's last task.
@@ -66,6 +68,20 @@ What was decided about the repair since the plan was returned — the human's ru
 
 - **Two questions:** what becomes of the *land a part* exit · how a record commit is gated when the candidate's own gate is red. A third, the order of the repair, was ruled while this record was written. **[The second was ruled 2026-10-06, after this record: a record commit is accepted if its gate turns nothing red that the candidate's own gate did not already show red — `DECISIONS.md` → *2026-10-06 — A stabilization run's record commit under a red candidate*. Not built. *Land a part* was ruled the same day, in the same entry: a part lands by revert on the round branch, the plan's option C. Not built. Nothing is open with the human.]**
 - **Six readings of the orchestrator's, reported on 2026-10-06 and not yet confirmed** — each stands until the human overturns it.
+
+## The re-review of the `test` half, and the plan of its second repair
+
+**Recorded 2026-10-07, on `fix/rc24-tier1` at `cbb3d736`.** The repair of the `test` half is the eighteen commits after this record's own (`git log 603018ac..cbb3d736`), and the `DECISIONS.md` entries of 2026-10-06 from *The tooling's own test suites live in `tooling-tests/`* to *The gate, repaired*; the last two commits of the range added the regression set's first part and the record of its first run. It was then re-reviewed by two independent, read-only reviewers who did not see each other's report, over that range. Their reports and the plan that follows them are in [re-review-test-half/](re-review-test-half/plan.md):
+
+| | file | verdict | what it holds |
+|---|---|---|---|
+| **A** — the record script and the state machine | [re-review-test-half/records-state.md](re-review-test-half/records-state.md), written by the reviewer | **fit for a canary run of `test`; not yet fit for the real run** | 16 findings, `R1`–`R16`: 1 HIGH · 7 MEDIUM · 8 LOW; where each of the first review's thirteen findings stands (ten closed, one partly, two not); eighteen mutants, all killed; a table of what a fresh invocation reads after a kill at each point of a record step; its helpers, verbatim |
+| **B** — the harness, the agents, the gate, the regression tool, and the workflow doc read whole for the first time | [re-review-test-half/harness-doc.md](re-review-test-half/harness-doc.md), written by the reviewer | **the same** | 20 findings: 2 HIGH (`R-H1`, `R-H2`) · 8 MEDIUM (`R-M1`–`R-M8`) · 10 LOW (`R-L1`–`R-L10`); a disposition for each of the first review's twenty-nine (sixteen closed, three in part, ten not — seven of them the `fix` half's); the reporter × ending table; which lines of the harness the simulation executes; sixteen sentences of the doc that are false or lack what the code does; six leads |
+| the plan | [re-review-test-half/plan.md](re-review-test-half/plan.md), written by a planning agent | — | every HIGH and MEDIUM finding driven again at the tip (eighteen confirmed, none refuted); six causes and the structural change for each; a home for every finding, lead and still-open finding of the first review; ten builder tasks and five steps of the orchestrating session's; a canary at the real run's shape, in three parts; five questions that are the human's; what the `fix` half's repair is owed in addition |
+
+**Together: 3 HIGH · 15 MEDIUM · 18 LOW, and nothing built on them yet.** Both reviewers say that no defect found records something false and that each halts on the safe side; the plan qualifies that for one finding (`R5`, whose end state is a wrong `close`). The plan is a design: nothing of it was built, and its *done when* facts are tests that do not exist.
+
+**The copies are sanitized by the rule this record states under *Files*.** Review A's report is byte-identical to its source (`cmp`). Review B's differs in one place: its one relative link to the first review's report, which lies one directory up from its new home, was retargeted (`harness-agents-gate.md` → `../harness-agents-gate.md`). Neither holds an absolute host path, a login name, a session or agent id, or a credential; the one term that looks like a denylist entry (`zzqprivatetermzz`, in review A's blocks) is the synthetic denylist of its rigs. Their rigs, scenario scripts and outputs stayed in the session scratch directory: a repro that matters is rebuilt from its block, and review A's appendix holds its helpers whole.
 
 ## Files
 
