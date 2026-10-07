@@ -1,0 +1,739 @@
+#!/usr/bin/env python3
+#
+# dev/stabilize-probe — the script side of the stabilization harness's RUNTIME PROBES
+# (DECISIONS.md -> 2026-10-07, "The runtime probes of the stabilization harness"; the
+# second repair plan's task K0 and its §5,
+# completions/artifacts/M55/stabilization-build/re-review-test-half/plan.md).
+#
+# Nobody had observed four facts about the runtime the harness
+# (.claude/workflows/stabilize.js) runs in, and tasks were being cut on guesses about
+# them. A probe is ONE invocation of the harness — `{ probe: <name>, scratch: <dir> }` —
+# that observes one of them with real agents; this script is what those agents run, and
+# what JUDGES the result. An agent's sentence is no result: the verdict of a probe is this
+# script's comparison of what was sent with what came back, written under the scratch
+# root and printed as one line.
+#
+#   required  what the runtime hands the harness when an agent's return lacks a field its
+#             schema requires
+#   relay     whether the ONE line of a run's state survives an agent's relay, at the
+#             sizes a real run's state has
+#   payload   whether a record's batch, written by an agent from its prompt by
+#             here-document, reaches the disk as the bytes the harness composed
+#   hold      whether a long command can be held past the tool's timeout — by one agent
+#             inside its turn, and by a process that outlives the agent that started it
+#
+# WHAT IT NEVER DOES. A probe touches no run, no branch, no remote and no file of the
+# repository. Every act takes a scratch root and writes under `<scratch>/probe/` and
+# nowhere else; it REFUSES a scratch root that is not there, is no directory, or lies
+# inside the repository — judged on the real path, so a link into the repository is
+# inside it. The one thing it runs that is the repository's is a COPY: the relay probe
+# builds its throwaway runs in repositories of their own under the scratch root, with
+# copies of dev/stabilize-record, dev/stabilize-step and dev/hygiene-scan, and every git
+# command it runs is run there, with no git configuration of the machine's.
+# tooling-tests/dev_stabilize_probe.rs holds the repository's tree, its `git status`, its
+# head and its remote to what they were.
+#
+# Usage — every act prints ONE line of JSON on stdout, whatever it exits with:
+#
+#   dev/stabilize-probe begin --scratch DIR --probe required|relay|payload|hold
+#       A probe's first act: its root, `DIR/probe/<probe>/`, made — ONCE: a root that is
+#       there is refused (exists), so that two invocations never judge each other's
+#       files; mint a fresh scratch root per invocation. And what the probe stands on:
+#       `required` — a stand-in for a candidate's binary, a file nothing runs, and its
+#       sha256; `relay` — four throwaway runs, each a repository of its own with the run
+#       `probe` opened in it through the copied record script: 1, 20, 60 and 120 ledger
+#       rows over 2, 40, 150 and 300 doors of round 1's scope, the sizes at which the
+#       re-review measured a state line of 3, 25, 75 and 143 KB. Prints {status: begun,
+#       probe, root} and `binary: {file, sha256, bytes}`, or `runs: [{rows, doors,
+#       bytes}]` — `bytes` the length of the run's state line.
+#
+#   dev/stabilize-probe state --scratch DIR --rows N --tag T
+#       THE LINE A RELAY STEP RELAYS: `dev/stabilize-step state` of the throwaway run of
+#       N rows, run in that run's repository, its ONE line printed as that tool printed
+#       it — so its act is `state` and it ends with that tool's own sha256 — and kept as
+#       `DIR/probe/relay/sent/T.line`, which is what `verdict` holds the answer to.
+#
+#   dev/stabilize-probe hash --scratch DIR --file FILE
+#       A file's hash as one hashed line: FILE lies under DIR — outside — and is there —
+#       missing. Prints {status: hashed, file, bytes, file_sha256}.
+#
+#   dev/stabilize-probe hold --scratch DIR --name S --seconds N [--detach]
+#       THE LONG COMMAND. It prints NOTHING for N seconds and then its ONE line,
+#       {status: held, name, seconds, pid, started, ended}. A name is held ONCE — exists.
+#       With --detach the same command is started in a session of its own, its output in
+#       `DIR/probe/hold/S.out`, and this call answers at once: {status: started, name,
+#       seconds, pid, out}.
+#
+#   dev/stabilize-probe held --scratch DIR --name S [--slice SECONDS]
+#       What became of a hold, asked within a slice (under five minutes; none: at once):
+#       `done` — its last line is written; `dead` — its process is gone and no last line
+#       was; `running` — neither, when the slice is over. Prints {status, name, seconds,
+#       pid, waited} and, for `done`, `held_for`. Each is an answer, never a refusal.
+#
+#   dev/stabilize-probe verdict --scratch DIR --probe P --sum SHA256 -- CASE...
+#       THE JUDGEMENT. The harness hands over what it observed, one CASE per case of the
+#       probe, each a token of [a-z0-9:-] and nothing an agent wrote; SHA256 is the hash
+#       of the cases joined by single spaces, so that a case retyped on its way is
+#       refused and never judged — garbled, as are a case outside its grammar and a set
+#       of cases that is not exactly the probe's. Each case is then held to what THIS
+#       script knows — the line it sent, the file on the disk, the hold's own files, the
+#       stand-in's hash — and the result is written to `DIR/probe/P/result.json`. Prints
+#       {status: judged, probe, file, cases: [{case, verdict, …}]}.
+#
+# THE CASES, AND THE VERDICTS. `tries` is how each try of the agent ended, as the harness
+# counted it: one letter per try, r (it returned), n (nothing came back), t (the call
+# threw).
+#
+#   required   a:<tries>:<field>   b:<tries>:<field>
+#              <field> is the `asserted_sha256` that came back: 64 hex, or `absent`
+#              (a return without the field), `malformed`, `halted` (the agent halted),
+#              `none` (no return at all).
+#       absent    the harness was handed the object WITHOUT the field
+#       returned  the field came back, and it is the stand-in's hash
+#       other     the field came back, and it is not: made up
+#       nothing   every try ended with nothing
+#       threw     no try returned, and at least one threw
+#       halted    the agent halted: no answer
+#   relay      r<rows>-<n>:<tries>:<hash>:<bytes>, three per size
+#              <hash> is the sha256 the line ended with, where the harness could hold the
+#              line to it; `altered` where it could not; `none` where no line came back.
+#              <bytes> is how many bytes came back.
+#       whole     the line that came back is the line that was sent
+#       altered   a line came back that does not hold to its own hash
+#       other     a line came back that holds, and is not the one sent under this tag
+#       missing   no line came back
+#       unsent    this script never sent a line under this tag: the command did not run
+#   payload    e<entries>:<tries>:<expected>:<relayed>, for 20, 60, 120 and 300 entries
+#              <expected> is the sha256 the harness composed the batch with; <relayed>
+#              the `file_sha256` of the `hash` line the agent returned, or `none`.
+#       whole     `DIR/probe/payload/e<entries>/batch.json` has the expected hash
+#       altered   the file is there, and its hash is another
+#       missing   the file is not there
+#              and `relayed`: agrees | differs | none — whether what the agent returned
+#              says what the disk says. The verdict is the disk's, never the agent's.
+#   hold       a:<tries>:<line>    <line> is held | other | none — whether the agent
+#                                  returned the hold's own last line
+#              b:<reads>:<last>    how many times the harness asked `held`, and the last
+#                                  answer: done | running | dead | none
+#       held      (a) the command ran to its last line, and its agent returned it
+#       not-held  (a) the command was not killed, and its agent did not return its line
+#       outlived  (b) the command ran to its last line after the agent that started it
+#                 had returned, and a later agent read that it had
+#       unread    (b) the command ran to its last line, and no read said so
+#       running   (b) it is still running: the reads were spent first
+#       killed    the command's process is gone, and it never wrote its last line
+#       unstarted no hold of that name was ever started
+#
+# The line. One JSON object, `act` first, and LAST a `sha256` of the line as it stands
+# without that field — exactly as dev/stabilize-step prints its line, so that the harness
+# reads both with one function. A refusal prints its line too: {act, status: halted,
+# refused: WORD, halt: {root_cause, evidence, tree_state, recommendation}}.
+#
+# Exit status, and the word a refusal opens with — `stabilize-probe: refused <word>: …`,
+# one line on stderr:
+#
+#    0  the act is done, or the answer is printed
+#    2  usage       an unknown act, flag or probe, a missing argument, a name outside
+#                   its grammar
+#    3  inside      the scratch root lies inside the repository
+#    4  no-scratch  the scratch root is not there, or is no directory
+#    5  exists      what the act would make is there already: a probe's root, a hold
+#    6  missing     what the act reads is not there: a probe that was not begun, a run
+#                   that was not built, a file, a hold nobody started
+#    7  outside     the file to hash does not lie under the scratch root
+#    8  tool        a command the act runs failed: git, the copied record script or step
+#                   tool — a scanner that could not run among them — or a hold that did
+#                   not start
+#    9  garbled     the cases are not the ones the harness composed, or not the probe's
+#
+# Needs python3 and git, which the gate needs already; the relay probe's `begin` needs
+# what a write of dev/stabilize-record needs — gitleaks and a denylist. It finds its
+# repository from where it lies, never from where it was called.
+# tooling-tests/dev_stabilize_probe.rs drives it.
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+PROG = "stabilize-probe"
+
+STATUS = {
+    "usage": 2,
+    "inside": 3,
+    "no-scratch": 4,
+    "exists": 5,
+    "missing": 6,
+    "outside": 7,
+    "tool": 8,
+    "garbled": 9,
+}
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+ROOT = os.path.dirname(SCRIPT_DIR)
+
+PROBES = ("required", "relay", "payload", "hold")
+# The relay probe's throwaway runs: ledger rows, and doors of round 1's scope.
+SIZES = ((1, 2), (20, 40), (60, 150), (120, 300))
+RELAYS = 3
+# The payload probe's batches, by their entries.
+ENTRIES = (20, 60, 120, 300)
+# The run every throwaway repository holds, and what is copied into it.
+RUN = "probe"
+COPIED = ("dev/stabilize-record", "dev/stabilize-step", "dev/hygiene-scan", ".gitleaks.toml")
+# A slice is under five minutes: a call that waits longer meets the tool's own ceiling.
+SLICE_BELOW = 300
+
+SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+PLAIN = re.compile(r"[A-Za-z0-9._-]+")
+SHA256 = re.compile(r"[0-9a-f]{64}")
+TRIES = r"[rnt]{1,3}"
+
+
+class Refusal(Exception):
+    def __init__(self, kind, detail, evidence, recommendation):
+        super().__init__(detail)
+        self.kind = kind
+        self.detail = detail
+        self.evidence = evidence
+        self.recommendation = recommendation
+
+
+def refuse(kind, detail, evidence="", recommendation="the probe is invoked again under a fresh scratch root; nothing of the repository was written"):
+    raise Refusal(kind, detail, evidence, recommendation)
+
+
+def usage_help():
+    for line in open(__file__, encoding="utf-8").read().split("\n")[1:]:
+        if not line.startswith("#"):
+            break
+        print(re.sub(r"^# ?", "", line))
+
+
+def sha256_of(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def read_bytes(path):
+    with open(path, "rb") as file:
+        return file.read()
+
+
+def write_whole(path, text):
+    """A file written whole or not at all: beside its place, then moved into it."""
+    staged = path + ".writing"
+    with open(staged, "w", encoding="utf-8") as file:
+        file.write(text)
+    os.replace(staged, path)
+
+
+# --- the scratch root -----------------------------------------------------------
+
+
+def outside(scratch):
+    """The scratch root every act starts from: a directory that is there, and no part of
+    the repository — by its real path."""
+    real = os.path.realpath(scratch)
+    root = os.path.realpath(ROOT)
+    if real == root or real.startswith(root + os.sep):
+        refuse("inside", "the scratch root `%s` lies inside the repository (`%s`): a probe writes no file of it" % (scratch, real), "the repository is `%s`" % root, "hand the probe a directory outside the repository — `mktemp -d` under the session's scratch root")
+    if not os.path.isdir(real):
+        refuse("no-scratch", "the scratch root `%s` is not there, or is no directory: a probe makes its own root under it, and never the scratch root itself" % scratch, "", "mint it with `mktemp -d`, and hand the probe that path")
+    return scratch
+
+
+def root_of(scratch, probe, begun=True):
+    root = os.path.join(scratch, "probe", probe)
+    if begun and not os.path.isdir(root):
+        refuse("missing", "the `%s` probe was not begun under `%s`: its root `%s` is not there" % (probe, scratch, root), "", "`dev/stabilize-probe begin --scratch %s --probe %s` is a probe's first act" % (scratch, probe))
+    return root
+
+
+# --- begin ------------------------------------------------------------------------
+
+
+def begin(args, facts):
+    outside(args.scratch)
+    root = root_of(args.scratch, args.probe, begun=False)
+    if os.path.lexists(root):
+        refuse("exists", "the `%s` probe was begun under `%s` already: `%s` is there, and two invocations never judge each other's files" % (args.probe, args.scratch, root))
+    os.makedirs(root)
+    facts.update(probe=args.probe, root=root)
+    if args.probe == "required":
+        facts.update(binary=stand_in(root))
+    if args.probe == "relay":
+        facts.update(runs=[throwaway_run(root, rows, doors) for rows, doors in SIZES])
+    facts.update(status="begun")
+
+
+def stand_in(root):
+    """The file a reviewer of the `required` probe is handed as the candidate's binary:
+    nothing runs it, and its hash is what `returned` is judged against."""
+    path = os.path.join(root, "bin", "jigc")
+    os.makedirs(os.path.dirname(path))
+    write_whole(path, "a stand-in for a candidate's binary: dev/stabilize-probe wrote it for the `required` probe, it is no build of any commit, and nothing runs it\n")
+    data = read_bytes(path)
+    return {"file": path, "sha256": sha256_of(data), "bytes": len(data)}
+
+
+# --- a throwaway run --------------------------------------------------------------
+
+
+def rig_env():
+    """The environment of every child that works in a throwaway repository: no git
+    configuration of the machine's, a fixed identity, and no repository named from
+    outside — so that nothing it does can land anywhere but where it stands."""
+    env = dict(os.environ)
+    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY"):
+        env.pop(name, None)
+    env.update(
+        GIT_CONFIG_NOSYSTEM="1",
+        GIT_CONFIG_GLOBAL=os.devnull,
+        GIT_TERMINAL_PROMPT="0",
+        GIT_AUTHOR_NAME="The Probe",
+        GIT_AUTHOR_EMAIL="probe@example.invalid",
+        GIT_AUTHOR_DATE="2026-01-01T00:00:00Z",
+        GIT_COMMITTER_NAME="The Probe",
+        GIT_COMMITTER_EMAIL="probe@example.invalid",
+        GIT_COMMITTER_DATE="2026-01-01T00:00:00Z",
+    )
+    return env
+
+
+def in_rig(repo, argv, fed=None):
+    """One command, run in a throwaway repository: what it printed. It must succeed."""
+    done = subprocess.run(argv, cwd=repo, env=rig_env(), capture_output=True, text=True, encoding="utf-8", errors="replace", **({"stdin": subprocess.DEVNULL} if fed is None else {"input": fed}))
+    if done.returncode != 0:
+        shown = (done.stdout + done.stderr).strip()
+        refuse("tool", "a command of a throwaway run failed: `%s` exited %d" % (" ".join(argv[:3]), done.returncode), " ".join(shown.split())[:2000], "read what it printed: a write of the copied record script needs gitleaks and a denylist, as every write of a run does")
+    return done.stdout
+
+
+def row(n):
+    """A ledger row of a throwaway run, its cells of one line each and of what a real row
+    is made of: a door's name, backticks, quotes, and the dashes and arrows that a line
+    of JSON carries as escapes."""
+    return {
+        "key": "probe-row-%03d" % n,
+        "doctype": "jigc-feedback",
+        "round": 0,
+        "source": "known at the opening",
+        "door": door_name(n),
+        "clause": "audit-clean",
+        "repro": "the block “row %03d” — `jigc doc set` drops the slot it was handed → the read that follows says \"ok\" and lacks it" % n,
+    }
+
+
+def door_name(n):
+    return "jigc probe door %03d" % n
+
+
+def door(n):
+    return {
+        "door": door_name(n),
+        "registry": "verbs",
+        "derivation": "reached by the change — `crates/cli/src/doc.rs` is in the delta → the verb it dispatches is inside; \"door %03d\" of a throwaway run, written by dev/stabilize-probe and derived by nobody" % n,
+    }
+
+
+def throwaway_run(root, rows, doors):
+    """A repository of its own under the probe's root, with the run `probe` opened in it
+    as the workflow's doc opens one — through the copied record script — and round 1's
+    scope written: `rows` ledger rows over `doors` doors."""
+    base = os.path.join(root, "run-%d" % rows)
+    repo = os.path.join(base, "repo")
+    scratch = os.path.join(base, "scratch")
+    os.makedirs(os.path.join(repo, "dev"))
+    os.makedirs(scratch)
+    for rel in COPIED:
+        shutil.copy2(os.path.join(ROOT, rel), os.path.join(repo, rel))
+    in_rig(repo, ["git", "init", "-q", "-b", "probe/" + RUN])
+    # Nothing below may reach another repository: the one git works in is this one.
+    top = in_rig(repo, ["git", "rev-parse", "--show-toplevel"]).strip()
+    if os.path.realpath(top) != os.path.realpath(repo):
+        refuse("tool", "the throwaway repository `%s` is not the one git works in there (`%s`)" % (repo, top))
+    in_rig(repo, ["git", "config", "core.hooksPath", os.devnull])
+    in_rig(repo, ["git", "add", "-A"])
+    in_rig(repo, ["git", "commit", "-q", "-m", "chore: the base of a probe's throwaway run"])
+    head = in_rig(repo, ["git", "rev-parse", "HEAD"]).strip()
+    record = os.path.join(repo, "dev", "stabilize-record")
+    run_dir = os.path.join(repo, "completions", "artifacts", RUN)
+    os.makedirs(run_dir)
+    write_whole(os.path.join(run_dir, "opening.md"), "# the opening record\n\nA throwaway run of dev/stabilize-probe: %d ledger rows over %d doors. It tests nothing.\n" % (rows, doors))
+    in_rig(repo, [record, "run-set", "--run", RUN], json.dumps({"stop": "every-round", "previous": "0.0.0-probe", "previous-commit": head, "scope": "delta", "clauses": ["audit-clean"]}))
+    in_rig(repo, [record, "item-set", "--run", RUN], json.dumps([{"item": "area-a", "kind": "audit-area", "clause": "audit-clean", "runs": "every-candidate", "brief": "the brief of a throwaway run's one item"}]))
+    in_rig(repo, [record, "ledger-add", "--run", RUN], json.dumps([row(n) for n in range(1, rows + 1)]))
+    in_rig(repo, ["git", "add", "-A"])
+    in_rig(repo, ["git", "commit", "-q", "-m", "docs(record): a probe's throwaway run is opened"])
+    in_rig(repo, [record, "scope-set", "--run", RUN, "--round", "1", "--scratch", scratch], json.dumps({"included": [door(n) for n in range(1, doors + 1)], "excluded": []}))
+    line = state_line(repo, scratch, "built")
+    return {"rows": rows, "doors": doors, "bytes": len(line.rstrip("\n").encode("utf-8"))}
+
+
+def state_line(repo, scratch, tag):
+    """The ONE line the run's own step tool prints for its state, as it printed it."""
+    out = in_rig(repo, [os.path.join(repo, "dev", "stabilize-step"), "state", "--run", RUN, "--scratch", scratch, "--tag", tag])
+    if not out.endswith("\n") or out.count("\n") != 1:
+        refuse("tool", "the throwaway run's step tool did not print ONE line for its state", out[:2000])
+    return out
+
+
+def state(args, facts):
+    outside(args.scratch)
+    root = root_of(args.scratch, "relay")
+    base = os.path.join(root, "run-%s" % args.rows)
+    repo = os.path.join(base, "repo")
+    if not os.path.isfile(os.path.join(repo, "dev", "stabilize-step")):
+        refuse("missing", "the throwaway run of %s rows was not built under `%s`" % (args.rows, root))
+    line = state_line(repo, os.path.join(base, "scratch"), args.tag)
+    sent = os.path.join(root, "sent")
+    os.makedirs(sent, exist_ok=True)
+    write_whole(os.path.join(sent, args.tag + ".line"), line)
+    return line
+
+
+# --- hash -------------------------------------------------------------------------
+
+
+def hash_file(args, facts):
+    outside(args.scratch)
+    real = os.path.realpath(args.file)
+    scratch = os.path.realpath(args.scratch)
+    if not real.startswith(scratch + os.sep):
+        refuse("outside", "`%s` does not lie under the scratch root `%s`: a probe reads no file but its own" % (args.file, args.scratch))
+    if not os.path.isfile(real):
+        refuse("missing", "`%s` is not there, or is no file" % args.file)
+    data = read_bytes(real)
+    facts.update(status="hashed", file=args.file, bytes=len(data), file_sha256=sha256_of(data))
+
+
+# --- hold -------------------------------------------------------------------------
+
+
+def hold_files(root, name):
+    return {kind: os.path.join(root, "%s.%s" % (name, kind)) for kind in ("json", "done", "out")}
+
+
+def hold(args, facts):
+    outside(args.scratch)
+    root = root_of(args.scratch, "hold")
+    files = hold_files(root, args.name)
+    seconds = int(args.seconds)
+    facts.update(name=args.name, seconds=seconds)
+    if args.detach:
+        if os.path.lexists(files["json"]):
+            refuse("exists", "a hold named `%s` was started under `%s` already: a name is held once" % (args.name, args.scratch))
+        with open(files["out"], "wb") as sink:
+            child = subprocess.Popen([sys.executable, os.path.realpath(__file__), "hold", "--scratch", args.scratch, "--name", args.name, "--seconds", args.seconds], cwd=root, stdin=subprocess.DEVNULL, stdout=sink, stderr=subprocess.STDOUT, start_new_session=True)
+        # Until the child has taken the name, or is gone: this call answers that it started.
+        waiting = time.monotonic() + 30
+        while not os.path.exists(files["json"]) and child.poll() is None and time.monotonic() < waiting:
+            time.sleep(0.05)
+        if not os.path.exists(files["json"]):
+            refuse("tool", "the detached hold `%s` did not start" % args.name, read_bytes(files["out"]).decode("utf-8", "replace")[:2000])
+        facts.update(status="started", pid=child.pid, out=files["out"])
+        return
+    try:
+        marker = os.open(files["json"], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError:
+        refuse("exists", "a hold named `%s` was started under `%s` already: a name is held once" % (args.name, args.scratch))
+    started = time.time()
+    with os.fdopen(marker, "w", encoding="utf-8") as file:
+        json.dump({"pid": os.getpid(), "started": started, "seconds": seconds}, file)
+    # The hold itself: nothing is printed until its seconds are over.
+    until = time.monotonic() + seconds
+    while True:
+        left = until - time.monotonic()
+        if left <= 0:
+            break
+        time.sleep(min(left, 1.0))
+    ended = time.time()
+    write_whole(files["done"], json.dumps({"ended": ended}))
+    facts.update(status="held", pid=os.getpid(), started=started, ended=ended)
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def process_of(root, name, wait=0):
+    """What became of a hold, from its own files: (`unstarted` | `done` | `dead` |
+    `running`, its record, when it ended) — `running` only once `wait` seconds are over."""
+    files = hold_files(root, name)
+    if not os.path.isfile(files["json"]):
+        return "unstarted", None, None
+    with open(files["json"], encoding="utf-8") as file:
+        record = json.load(file)
+    until = time.monotonic() + wait
+    while True:
+        gone = not alive(record["pid"])
+        # Asked after the process was looked at: a hold that ended between the two looks
+        # is done, never dead.
+        if os.path.isfile(files["done"]):
+            with open(files["done"], encoding="utf-8") as file:
+                return "done", record, json.load(file)["ended"]
+        if gone:
+            return "dead", record, None
+        if time.monotonic() >= until:
+            return "running", record, None
+        time.sleep(0.2)
+
+
+def held(args, facts):
+    outside(args.scratch)
+    root = root_of(args.scratch, "hold")
+    asked = time.monotonic()
+    status, record, ended = process_of(root, args.name, int(args.slice))
+    if status == "unstarted":
+        refuse("missing", "no hold named `%s` was started under `%s`" % (args.name, args.scratch))
+    facts.update(status=status, name=args.name, seconds=record["seconds"], pid=record["pid"], waited=round(time.monotonic() - asked, 1))
+    if status == "done":
+        facts.update(held_for=round(ended - record["started"], 3))
+
+
+# --- verdict ----------------------------------------------------------------------
+
+
+def parsed(tokens, patterns):
+    """The cases the harness handed over, each matched to its grammar and each of the
+    probe's cases there exactly once: {case: the match}."""
+    seen = {}
+    for token in tokens:
+        hit = next((found for found in (pattern.fullmatch(token) for pattern in patterns) if found), None)
+        if hit is None:
+            refuse("garbled", "the case `%s` is not in the grammar of the probe's cases" % token)
+        if hit.group("case") in seen:
+            refuse("garbled", "the case `%s` was handed over twice" % hit.group("case"))
+        seen[hit.group("case")] = hit
+    return seen
+
+
+def held_to(seen, expected):
+    if sorted(seen) != sorted(expected):
+        refuse("garbled", "the cases handed over are not the probe's: %s were, and its cases are %s" % (", ".join(sorted(seen)) or "none", ", ".join(expected)))
+
+
+def ended_as(tries):
+    return [{"r": "returned", "n": "nothing", "t": "threw"}[letter] for letter in tries]
+
+
+def unreturned(tries):
+    return "threw" if "t" in tries else "nothing"
+
+
+def judge_required(scratch, root, tokens):
+    seen = parsed(tokens, [re.compile(r"(?P<case>[ab]):(?P<tries>%s):(?P<field>absent|none|halted|malformed|[0-9a-f]{64})" % TRIES)])
+    held_to(seen, ["a", "b"])
+    handed = sha256_of(read_bytes(os.path.join(root, "bin", "jigc")))
+    cases = []
+    for name in ("a", "b"):
+        tries, field = seen[name].group("tries"), seen[name].group("field")
+        if (field == "none") == tries.endswith("r"):
+            refuse("garbled", "the case `%s` says that the last try %s, and that the field is `%s`" % (name, "returned" if tries.endswith("r") else "did not return", field))
+        if field == "none":
+            verdict = unreturned(tries)
+        elif field in ("absent", "halted"):
+            verdict = field
+        else:
+            verdict = "returned" if field == handed else "other"
+        cases.append({"case": name, "verdict": verdict, "tries": len(tries), "ended": ended_as(tries), "handed": handed, "back": field})
+    return cases
+
+
+def own_hash(line):
+    """The sha256 a line of the step tool ends with."""
+    return line.rstrip("\n")[-66:-2]
+
+
+def judge_relay(scratch, root, tokens):
+    seen = parsed(tokens, [re.compile(r"(?P<case>r(?P<rows>[0-9]+)-[0-9]+):(?P<tries>%s):(?P<hash>altered|none|[0-9a-f]{64}):(?P<bytes>[0-9]{1,9})" % TRIES)])
+    held_to(seen, ["r%d-%d" % (rows, n) for rows, _ in SIZES for n in range(1, RELAYS + 1)])
+    cases = []
+    for rows, _ in SIZES:
+        for n in range(1, RELAYS + 1):
+            name = "r%d-%d" % (rows, n)
+            tries, back = seen[name].group("tries"), seen[name].group("hash")
+            sent = os.path.join(root, "sent", name + ".line")
+            line = read_bytes(sent).decode("utf-8") if os.path.isfile(sent) else None
+            if line is None:
+                verdict = "unsent"
+            elif back == "none":
+                verdict = "missing"
+            elif back == "altered":
+                verdict = "altered"
+            else:
+                verdict = "whole" if back == own_hash(line) else "other"
+            cases.append({"case": name, "verdict": verdict, "rows": rows, "tries": len(tries), "ended": ended_as(tries), "bytes_sent": len(line.rstrip("\n").encode("utf-8")) if line is not None else 0, "bytes_back": int(seen[name].group("bytes"))})
+    return cases
+
+
+def judge_payload(scratch, root, tokens):
+    seen = parsed(tokens, [re.compile(r"(?P<case>e[0-9]+):(?P<tries>%s):(?P<expected>[0-9a-f]{64}):(?P<relayed>none|[0-9a-f]{64})" % TRIES)])
+    held_to(seen, ["e%d" % entries for entries in ENTRIES])
+    cases = []
+    for entries in ENTRIES:
+        name = "e%d" % entries
+        tries, expected, relayed = seen[name].group("tries"), seen[name].group("expected"), seen[name].group("relayed")
+        path = os.path.join(root, name, "batch.json")
+        data = read_bytes(path) if os.path.isfile(path) else None
+        on_disk = sha256_of(data) if data is not None else None
+        verdict = "missing" if data is None else "whole" if on_disk == expected else "altered"
+        cases.append({"case": name, "verdict": verdict, "entries": entries, "tries": len(tries), "ended": ended_as(tries), "bytes": len(data) if data is not None else 0, "expected": expected, "on_disk": on_disk, "relayed": "none" if relayed == "none" else "agrees" if relayed == on_disk else "differs"})
+    return cases
+
+
+def judge_hold(scratch, root, tokens):
+    seen = parsed(tokens, [re.compile(r"(?P<case>a):(?P<tries>%s):(?P<line>held|other|none)" % TRIES), re.compile(r"(?P<case>b):(?P<reads>[0-9]{1,3}):(?P<last>done|running|dead|none)")])
+    held_to(seen, ["a", "b"])
+    cases = []
+    for name in ("a", "b"):
+        process, record, ended = process_of(root, name)
+        if process == "unstarted":
+            verdict = "unstarted"
+        elif process == "dead":
+            verdict = "killed"
+        elif name == "a":
+            verdict = "held" if process == "done" and seen[name].group("line") == "held" else "not-held"
+        elif process == "running":
+            verdict = "running"
+        else:
+            verdict = "outlived" if seen[name].group("last") == "done" else "unread"
+        case = {"case": name, "verdict": verdict, "process": process, "seconds": record["seconds"] if record else None, "held_for": round(ended - record["started"], 3) if ended else None}
+        if name == "a":
+            case.update(tries=len(seen[name].group("tries")), ended=ended_as(seen[name].group("tries")), line=seen[name].group("line"))
+        else:
+            case.update(reads=int(seen[name].group("reads")), last=seen[name].group("last"))
+        cases.append(case)
+    return cases
+
+
+JUDGES = {"required": judge_required, "relay": judge_relay, "payload": judge_payload, "hold": judge_hold}
+
+
+def verdict(args, facts):
+    outside(args.scratch)
+    root = root_of(args.scratch, args.probe)
+    if sha256_of(" ".join(args.cases).encode("utf-8")) != args.sum:
+        refuse("garbled", "the cases do not hash to the sum they were handed over with: one of them was altered on its way, and nothing was judged", "", "the step is asked for again with the cases as the harness composed them")
+    cases = JUDGES[args.probe](args.scratch, root, args.cases)
+    path = os.path.join(root, "result.json")
+    write_whole(path, json.dumps({"probe": args.probe, "judged_by": "dev/stabilize-probe verdict", "cases": cases}, indent=1) + "\n")
+    facts.update(status="judged", probe=args.probe, file=path, cases=cases)
+
+
+# --- arguments ------------------------------------------------------------------
+
+
+class Arguments(argparse.ArgumentParser):
+    def error(self, message):
+        refuse("usage", "%s — see dev/stabilize-probe --help" % message)
+
+
+def grammar(pattern, what):
+    def taken(value):
+        if not pattern.fullmatch(value):
+            raise argparse.ArgumentTypeError("%s is not %s" % (json.dumps(value), what))
+        return value
+
+    return taken
+
+
+def directory_outside(value):
+    parts = value[1:].split("/")
+    if not value.startswith("/") or not all(PLAIN.fullmatch(part) for part in parts) or "." in parts or ".." in parts:
+        raise argparse.ArgumentTypeError("%s is not an absolute path of plain segments" % json.dumps(value))
+    return value
+
+
+def slice_seconds(value):
+    if not re.fullmatch(r"[0-9]{1,3}", value) or int(value) >= SLICE_BELOW:
+        raise argparse.ArgumentTypeError("%s is not a slice: whole seconds, under %d" % (json.dumps(value), SLICE_BELOW))
+    return value
+
+
+FLAGS = {
+    "scratch": directory_outside,
+    "probe": grammar(re.compile("|".join(PROBES)), "one of " + ", ".join(PROBES)),
+    "rows": grammar(re.compile("|".join(str(rows) for rows, _ in SIZES)), "one of the sizes " + ", ".join(str(rows) for rows, _ in SIZES)),
+    "tag": grammar(SLUG, "a slug (a-z0-9 words joined by single `-`)"),
+    "file": directory_outside,
+    "name": grammar(SLUG, "a slug (a-z0-9 words joined by single `-`)"),
+    "seconds": grammar(re.compile(r"[1-9][0-9]{0,3}"), "whole seconds, 1 to 9999"),
+    "sum": grammar(SHA256, "a sha256"),
+}
+
+
+def arguments(argv):
+    parser = Arguments(prog="dev/" + PROG, add_help=False, allow_abbrev=False)
+    acts = parser.add_subparsers(dest="act", required=True, parser_class=Arguments)
+
+    def act(name, does, flags):
+        sub = acts.add_parser(name, add_help=False, allow_abbrev=False)
+        sub.set_defaults(does=does)
+        for flag in flags:
+            sub.add_argument("--" + flag, required=True, type=FLAGS[flag])
+        return sub
+
+    act("begin", begin, ["scratch", "probe"])
+    act("state", state, ["scratch", "rows", "tag"])
+    act("hash", hash_file, ["scratch", "file"])
+    act("hold", hold, ["scratch", "name", "seconds"]).add_argument("--detach", action="store_true")
+    act("held", held, ["scratch", "name"]).add_argument("--slice", default="0", type=slice_seconds)
+    act("verdict", verdict, ["scratch", "probe", "sum"]).add_argument("cases", nargs=argparse.ONE_OR_MORE)
+    if not argv or argv[0] not in acts.choices:
+        refuse("usage", "%s is not an act: the acts are %s — see dev/stabilize-probe --help" % (json.dumps(argv[0]) if argv else "nothing", ", ".join(acts.choices)))
+    return parser.parse_args(argv)
+
+
+# --- the line -------------------------------------------------------------------
+
+
+def line_of(facts):
+    """The one line an act prints: its facts as JSON, and last the sha256 of that JSON —
+    as dev/stabilize-step prints its line, so that the harness reads both alike."""
+    body = json.dumps({"act": facts["act"], "status": facts["status"], **facts})
+    return '%s, "sha256": "%s"}' % (body[:-1], hashlib.sha256(body.encode("utf-8")).hexdigest())
+
+
+def main(argv):
+    # UTF-8 out, whatever the caller's locale claims: the line is read by a script.
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+    flags = argv[: argv.index("--")] if "--" in argv else argv
+    if any(arg in ("-h", "--help") for arg in flags):
+        usage_help()
+        return 0
+    facts = {"act": argv[0] if argv else None}
+    try:
+        args = arguments(argv)
+        relayed = args.does(args, facts)
+        # The relay probe's line is another tool's, and is printed as that tool printed it.
+        sys.stdout.write(relayed if relayed is not None else line_of(facts) + "\n")
+        return 0
+    except Refusal as refusal:
+        detail = " ".join(refusal.detail.split())
+        halt = {
+            "root_cause": "%s: %s" % (refusal.kind, detail),
+            "evidence": " ".join(refusal.evidence.split()),
+            "tree_state": "(a probe reads and writes nothing of the repository: no tree was read)",
+            "recommendation": refusal.recommendation,
+        }
+        facts.update(status="halted", refused=refusal.kind, halt=halt)
+        print(line_of(facts))
+        sys.stderr.write("%s: refused %s: %s\n" % (PROG, refusal.kind, detail))
+        return STATUS[refusal.kind]
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

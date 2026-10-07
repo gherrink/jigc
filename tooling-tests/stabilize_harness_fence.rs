@@ -76,6 +76,14 @@
 //!   definition takes the candidate the finishing lap asks it for. What a stage then DOES is
 //!   held where it is run ([`stabilize_simulation`](super::stabilize_simulation)).
 //!
+//! - **(q)** a runtime probe works on no run (the second repair plan's task `K0`): an
+//!   invocation that names one is refused beside anything of a stage, and reaches no code of
+//!   a stage — the script's last statement sends it to `runProbe` and nowhere else; every
+//!   step of a probe is a command of `dev/stabilize-probe` — each act that tool has is asked
+//!   for, and no other — on the roles a stage launches; no code of a probe names a run, a
+//!   round, a branch, the record script, the step tool or a gate; the harness and the tool
+//!   have the same cases; and the one schema that requires the hash is the probe's.
+//!
 //! **Driven, where `node` is on `PATH`** (it is on this project's development machines and
 //! on GitHub's hosted runners; where it is not, the arm fails under CI and passes anywhere
 //! else — the gate gains no dependency — and the gate's own summary names it as a test
@@ -103,6 +111,7 @@ use super::dev_stabilize_step::node_or_skip;
 const HARNESS: &str = ".claude/workflows/stabilize.js";
 const RECORD_SCRIPT: &str = "dev/stabilize-record";
 const STEP_TOOL: &str = "dev/stabilize-step";
+const PROBE_TOOL: &str = "dev/stabilize-probe";
 const DEFINITIONS: &str = ".claude/agents";
 
 /// The four lines the definitions task named as what its contracts bind on. The script may
@@ -365,11 +374,13 @@ fn b_every_build_git_call_runs_on_sonnet() {
 }
 
 /// The functions that compose a git step's prompt: through `stepPrompt`, or as a list that
-/// opens `GIT STEP — `.
+/// opens `GIT STEP — `. `probeStep` is no such function: it composes a step of a runtime
+/// probe — the same prompt, with the probe tool where the step tool stands — and arm (q)
+/// holds what it is handed.
 fn git_prompts(full: &str) -> Vec<String> {
     functions(full)
         .into_iter()
-        .filter(|name| name != "stepPrompt" && name != "selfTest")
+        .filter(|name| name != "stepPrompt" && name != "selfTest" && name != "probeStep")
         .filter(|name| {
             let body = function(full, name);
             body.contains("stepPrompt(") || body.contains("'GIT STEP — ")
@@ -1294,9 +1305,13 @@ fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_
         "the executor, then the commit, then the line held to what was composed"
     );
     assert_eq!(
-        source.matches("roleStep('record', ").count(),
+        source.matches("roleStep('record', ").count()
+            - function(&full, "runProbe")
+                .matches("roleStep('record', 'probe:payload:e' + n, 'Probe', probePayloadPrompt(")
+                .count(),
         1,
-        "the record's executor is launched in one place"
+        "the record's executor is launched in one place — and by the `payload` probe, whose \
+         prompt applies nothing (arm (q))"
     );
     assert_eq!(
         source.matches("recordCommitPrompt(").count()
@@ -1688,6 +1703,10 @@ fn l_every_git_step_is_one_command_of_the_tool_but_the_recut_of_a_part() {
                 .contains("readStep(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA), act)")
             {
                 "toolStep"
+            } else if line.contains(
+                "const raw = await gitStep('probe:' + label, 'Probe', probeStep(what, act, flags), STEP_SCHEMA)",
+            ) {
+                "a probe's step"
             } else {
                 "another"
             }
@@ -1695,8 +1714,284 @@ fn l_every_git_step_is_one_command_of_the_tool_but_the_recut_of_a_part() {
         .collect();
     assert_eq!(
         direct,
-        ["toolStep", "the part's re-cut"],
+        ["toolStep", "a probe's step", "the part's re-cut"],
         "who calls `gitStep`"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// (q) a runtime probe works on no run
+// ---------------------------------------------------------------------------
+
+/// The acts `dev/stabilize-probe` has, read from its own parser.
+fn probe_acts() -> BTreeSet<String> {
+    let tool = fs::read_to_string(repo_root().join(PROBE_TOOL)).expect("read the probe tool");
+    tool.lines()
+        .filter_map(|line| line.strip_prefix("    act(\""))
+        .map(|rest| rest[..rest.find('"').expect("the act's name closes")].to_owned())
+        .collect()
+}
+
+/// The numbers of the one-line list or tuple a source declares as `declaration`.
+fn numbers_in(source: &str, declaration: &str) -> Vec<u64> {
+    let line = source
+        .lines()
+        .find(|line| line.starts_with(declaration))
+        .unwrap_or_else(|| panic!("`{declaration}` is declared"));
+    line[declaration.len()..]
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|digits| !digits.is_empty())
+        .map(|digits| digits.parse().expect("a number"))
+        .collect()
+}
+
+#[test]
+fn q_a_runtime_probe_works_on_no_run_and_its_steps_are_the_probe_tools() {
+    let full = harness();
+    let source = code(&full);
+    assert!(
+        source.contains(&format!("\nconst PROBE_TOOL = '{PROBE_TOOL}'\n")),
+        "the script names the probe tool once"
+    );
+    assert_eq!(
+        source.matches(PROBE_TOOL).count()
+            - function(&full, "selfTest").matches(PROBE_TOOL).count(),
+        1,
+        "and spells it nowhere else: every command of it is composed from that name"
+    );
+
+    // An invocation that names a probe is refused beside anything of a stage, before the
+    // stage's own arguments are read; and it reaches no stage: the script's last statement
+    // sends it to `runProbe`.
+    let args = function(&full, "validateArgs");
+    let probed = args
+        .find("\n  if (a.probe != null) return probeFault(a)\n")
+        .expect("a probe's arguments are judged by `probeFault`");
+    assert!(
+        args.find("\n  if (a.selfTest) return null\n")
+            .expect("the self-test")
+            < probed
+            && probed < args.find("STAGES.includes(a.stage)").expect("the stage"),
+        "a probe is told from a stage before anything of a stage is read"
+    );
+    let fault = function(&full, "probeFault");
+    assert!(
+        fault.contains("!['probe', 'scratch', 'seconds'].includes(name)")
+            && fault.contains("if (scratchFault(a.scratch)) return scratchFault(a.scratch)")
+            && fault.contains("a.probe !== 'hold'"),
+        "a probe takes its scratch root — and `seconds`, for `hold` — and nothing else: {fault}"
+    );
+    assert!(
+        source.trim_end().ends_with(
+            "\nreturn await (v.probe ? runProbe() : v.stage === 'test' ? runTest() : runFix())"
+        ),
+        "the script's last statement sends a probe to `runProbe`, and nothing else there"
+    );
+    assert_eq!(
+        source.matches("runProbe(").count(),
+        2,
+        "`runProbe` is declared, and called by that statement alone"
+    );
+
+    // EVERY STEP OF A PROBE IS A COMMAND OF THE PROBE TOOL. The acts it asks for — through
+    // its one step function, or spelled into a role's prompt — are the acts the tool has.
+    let acts = probe_acts();
+    assert!(
+        acts.len() >= 6,
+        "the scan found the probe tool's acts: {acts:?}"
+    );
+    let probe_functions: Vec<String> = functions(&full)
+        .into_iter()
+        .filter(|name| {
+            name.starts_with("probe")
+                || name == "runProbe"
+                || name == "watched"
+                || name == "faultOf"
+        })
+        .collect();
+    assert!(
+        probe_functions.len() >= 10,
+        "the scan found the probe's functions: {probe_functions:?}"
+    );
+    let mut asked = BTreeSet::new();
+    for name in &probe_functions {
+        let body = function(&full, name);
+        // … by a git step: `probeAct('<label>', '<act>', …`.
+        for rest in body.split("probeAct('").skip(1) {
+            let act = rest.split('\'').nth(2).expect("a step names its act");
+            asked.insert(act.to_owned());
+        }
+        // … spelled into a role's prompt as a command: `PROBE_TOOL + ' <act> `, in backticks.
+        if name != "probeStep" {
+            for rest in body.split("`' + PROBE_TOOL + ' ").skip(1) {
+                asked.insert(rest[..rest.find(' ').expect("an act and its flags")].to_owned());
+            }
+        }
+    }
+    assert_eq!(
+        asked, acts,
+        "the acts a probe asks for (left) are the acts {PROBE_TOOL} has (right)"
+    );
+    let step = function(&full, "probeStep");
+    assert!(
+        step.contains(
+            "return stepPrompt('a PROBE of the stabilization harness, of no run — ' + what, act, flags).replace('1. `' + STEP_TOOL + ' ', '1. `' + PROBE_TOOL + ' ')"
+        ),
+        "a probe's step is the harness's own step prompt, with the probe tool where the step \
+         tool stands: {step}"
+    );
+    assert!(
+        function(&full, "probeAct").contains("return { raw, read: readStep(raw, act) }"),
+        "and its line is read as every step's line is, as the act that was asked for"
+    );
+
+    // NO CODE OF A PROBE NAMES A RUN, A ROUND OR A BRANCH, and none reaches what a stage
+    // does with side effects: the record script, the step tool's acts, a gate, a report.
+    for name in &probe_functions {
+        let body = code(function(&full, name));
+        for foreign in [
+            "branchName(",
+            "loopBranch",
+            "branchLine(",
+            "LABELS.branch",
+            "LABELS.report",
+            "runDir(",
+            "v.run",
+            "v.stage",
+            "toolStep(",
+            "readState(",
+            "beginAttempt(",
+            "settleReports(",
+            "recordStep(",
+            "recordPrompt(",
+            "rulingsStep(",
+            "launcher(",
+            "reportLine(",
+            "' + GATE",
+            "GATE + '",
+            "stabilize-record apply",
+            "git ",
+        ] {
+            assert!(
+                !body.contains(foreign),
+                "`{name}` is a probe's, and has `{foreign}`"
+            );
+        }
+        if name != "probeStep" {
+            assert!(
+                !body.contains("STEP_TOOL") && !body.contains("stepPrompt("),
+                "`{name}` composes a command of the step tool"
+            );
+        }
+    }
+    // The roles a probe launches are a stage's, by the roles table: the reviewer, the
+    // executor and the preflight — and each is handed a probe's own prompt.
+    let run = function(&full, "runProbe");
+    let launched: Vec<&str> = run
+        .split("roleStep('")
+        .skip(1)
+        .map(|rest| &rest[..rest.find('\'').expect("a role")])
+        .collect();
+    assert_eq!(
+        launched,
+        ["review", "record", "preflight"],
+        "the roles a probe launches"
+    );
+    for (role, prompt) in [
+        ("review", "probeReviewPrompt("),
+        ("record", "probePayloadPrompt("),
+        ("preflight", "probeHoldPrompt("),
+    ] {
+        let call = run
+            .lines()
+            .find(|line| line.contains(&format!("roleStep('{role}', 'probe:")))
+            .expect("the role's call");
+        assert!(
+            call.contains(prompt) && call.contains("await watched(() => "),
+            "the `{role}` of a probe is handed a probe's prompt, and its tries are watched: {call}"
+        );
+    }
+    // A PROBE'S AGENTS ARE MEANT TO FAIL: what a watched call exhausted is the probe's
+    // answer, and the breaker is put back so that the judgement still runs.
+    let watched = function(&full, "watched");
+    assert!(
+        watched.contains("\n  triesSeen = []\n")
+            && watched.contains("\n  triesSeen = null\n")
+            && watched.contains("\n  exhaustedLabels = []\n  breakerTripped = false\n"),
+        "`watched` counts the tries of one call, and puts the breaker back: {watched}"
+    );
+    assert_eq!(
+        source.matches("triesSeen = ").count(),
+        3,
+        "the tries are watched in `watched`, and nowhere in a stage"
+    );
+    assert_eq!(
+        function(&full, "agentR")
+            .matches("if (triesSeen) triesSeen.push(")
+            .count(),
+        2,
+        "a try is counted where it returns or comes back with nothing, and where it throws"
+    );
+
+    // THE ONE SCHEMA THAT REQUIRES THE HASH IS THE PROBE'S: no stage's return gained a
+    // required field by this — what a `required` buys is what the probe is there to see.
+    assert!(
+        source.contains(
+            "\nconst PROBE_UNIT_SCHEMA = Object.assign({}, UNIT_SCHEMA, { required: UNIT_SCHEMA.required.concat(['asserted_sha256']) })\n"
+        ),
+        "the probe's schema is a unit's, with the hash required"
+    );
+    assert_eq!(
+        source.matches("PROBE_UNIT_SCHEMA").count()
+            - function(&full, "selfTest")
+                .matches("PROBE_UNIT_SCHEMA")
+                .count(),
+        2,
+        "and it is used by the `required` probe's reviewers alone"
+    );
+    let unit = &source[source
+        .find("\nconst UNIT_SCHEMA = {\n")
+        .expect("a unit's schema")..];
+    assert!(
+        unit[..unit.find("\n}\n").expect("it closes")]
+            .contains("\n  required: ['status', 'findings'],\n"),
+        "a stage's unit still requires its status and its findings, and no hash"
+    );
+
+    // THE HARNESS AND THE TOOL HAVE THE SAME CASES.
+    let tool = fs::read_to_string(repo_root().join(PROBE_TOOL)).expect("read the probe tool");
+    assert_eq!(
+        quoted_in(&full, "const PROBES = "),
+        tool.lines()
+            .find(|line| line.starts_with("PROBES = ("))
+            .expect("the tool's probes")
+            .split('"')
+            .skip(1)
+            .step_by(2)
+            .map(str::to_owned)
+            .collect::<Vec<_>>(),
+        "the probes"
+    );
+    let sizes = numbers_in(&tool, "SIZES = ");
+    assert_eq!(
+        numbers_in(&full, "const PROBE_ROWS = "),
+        sizes.iter().step_by(2).copied().collect::<Vec<_>>(),
+        "the ledger rows of the relay probe's runs"
+    );
+    assert_eq!(
+        numbers_in(&full, "const PROBE_RELAYS = "),
+        numbers_in(&tool, "RELAYS = "),
+        "how often each run's line is relayed"
+    );
+    assert_eq!(
+        numbers_in(&full, "const PROBE_ENTRIES = "),
+        numbers_in(&tool, "ENTRIES = "),
+        "the entries of the payload probe's batches"
+    );
+    let slice = numbers_in(&full, "const PROBE_SLICE = ")[0];
+    assert!(
+        slice < 120 && slice < numbers_in(&tool, "SLICE_BELOW = ")[0],
+        "a read of a hold waits a slice the tool takes, under a shell tool's default timeout: {slice}"
     );
 }
 
@@ -1956,6 +2251,22 @@ fn i_where_node_is_installed_the_script_parses_and_its_self_test_passes() {
     ];
     for args in &malformed {
         let seen = invoke(&driver, args);
+        assert_eq!(seen["status"], "refused", "args {args}: {seen}");
+    }
+    // An invocation that names a probe is refused beside anything of a stage, with no
+    // scratch root, and under a name no probe has — and no agent is launched for it.
+    for args in [
+        r#"{"probe": "everything", "scratch": "/tmp/scratch-1"}"#.to_owned(),
+        r#"{"probe": "relay"}"#.to_owned(),
+        r#"{"probe": "relay", "scratch": "relative/dir"}"#.to_owned(),
+        r#"{"probe": "relay", "scratch": "/tmp/scratch-1", "stage": "test"}"#.to_owned(),
+        format!(r#"{{"probe": "payload", "stage": "test", {run}}}"#),
+        r#"{"probe": "hold", "scratch": "/tmp/scratch-1", "run": "rc24-tier1"}"#.to_owned(),
+        r#"{"probe": "hold", "scratch": "/tmp/scratch-1", "seconds": 0}"#.to_owned(),
+        r#"{"probe": "relay", "scratch": "/tmp/scratch-1", "seconds": 60}"#.to_owned(),
+        format!(r#"{{"stage": "test", {run}, "seconds": 60}}"#),
+    ] {
+        let seen = invoke(&driver, &args);
         assert_eq!(seen["status"], "refused", "args {args}: {seen}");
     }
     // No value of `crossModel` turns the cross-model pass on for every item.

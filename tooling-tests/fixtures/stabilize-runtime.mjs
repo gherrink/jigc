@@ -7,11 +7,18 @@
 //   node stabilize-runtime.mjs <the harness script> <a scenario file>
 //
 // run from the root of the repository the stage works on. The scenario is the suite's:
-// { args, checks, gate, scope, agents, record, wrongBinary, wrongPrevious, endings } — the
+// { args, checks, gate, scope, agents, record, wrongBinary, wrongPrevious, endings, omits,
+// violation, garbles } — the
 // invocation's arguments, and what the scripted agents say (below). `wrongBinary` names the
 // reporters that return another hash than the one they were handed: a driver that drove
 // something else; `wrongPrevious` the verifiers that return another hash for the previous
-// release's binary. `endings` says how an agent ENDS where that is not "it returns its
+// release's binary. `omits` names, by an agent's label, the fields it LEAVES OUT of its
+// return — whatever its stand-in would have put there; where the call's schema requires
+// such a field, what the runtime then does is not known to this stand-in and is the
+// scenario's to say, as `violation`: `handed` (the script is handed the return as it is),
+// `nothing` (it is handed nothing, on every try) or `throws` (the call throws, on every
+// try). `garbles` names the git steps that relay their line with one character changed.
+// `endings` says how an agent ENDS where that is not "it returns its
 // result and has written its report", by its label:
 //   dies               it returns nothing, every time it is tried, and wrote no report
 //   dies-after-report  it wrote its report — once — and returns nothing
@@ -36,6 +43,19 @@
 //                                  written to the file the prompt names
 //   scope      stabilize-scope     the round's doors written with the prompt's `scope-set`
 //                                  — or `stands`, where an earlier attempt wrote them
+//   git:probe:* build-git          the ONE command of a probe's step — a command of
+//                                  dev/stabilize-probe, and of no other tool
+//   probe:required:*  milestone-code-reviewer  the return the scenario scripts, with the
+//                                  hash of the file on its binary line, measured; no
+//                                  report — a probe that hands its reviewer one fails the run
+//   probe:payload:*   build-executor  the payload written as the prompt says, then the
+//                                  prompt's `dev/stabilize-probe hash`, its line relayed;
+//                                  a prompt that names the record script or a gate fails
+//                                  the run
+//   probe:hold:*      stabilize-preflight  the prompt's `dev/stabilize-probe hold`, run to
+//                                  its end — in the foreground: nothing here has a
+//                                  background, a slice or a timeout — and the one line its
+//                                  output file then holds, relayed
 //   record:*   build-executor      the steps the prompt lists, in its order: the payload
 //                                  written as the prompt says and held to its hash, the
 //                                  batch applied by the prompt's own `apply`, and the gate
@@ -74,7 +94,9 @@ const scenario = JSON.parse(readFileSync(scenarioFile, 'utf8'))
 const scripted = scenario.agents || {}
 const endings = scenario.endings || {}
 
+const omits = scenario.omits || {}
 const trace = []
+const ran = []
 const logs = []
 const reporters = []
 const swallowed = []
@@ -93,6 +115,8 @@ function fail(why) {
   throw new Error(why)
 }
 function sh(command, input) {
+  // What ran on an agent's behalf, by its first line: a payload's text is not a command.
+  ran.push(command.split('\n')[0])
   const out = spawnSync('sh', ['-c', command], { encoding: 'utf8', input: input || '' })
   return { code: out.status, stdout: out.stdout || '', stderr: out.stderr || '' }
 }
@@ -156,8 +180,14 @@ function writeReport(label, prompt, said) {
 function gitStep(label, prompt) {
   const first = prompt.split('\n').find((line) => line.startsWith('1. `')) || ''
   const command = first.slice(4, first.lastIndexOf('`'))
-  if (!command.startsWith('dev/stabilize-step ')) fail('the git step `' + label + '` is not ONE command of dev/stabilize-step: ' + first)
+  // A probe's step is a command of the probe tool, and of no other; a stage's, of the step tool.
+  const tool = label.startsWith('git:probe:') ? 'dev/stabilize-probe ' : 'dev/stabilize-step '
+  if (!command.startsWith(tool)) fail('the git step `' + label + '` is not ONE command of ' + tool.trim() + ': ' + first)
   const out = sh(command)
+  if ((scenario.garbles || []).includes(label)) {
+    used.add(label)
+    return { status: 'ran', line: out.stdout.replace('"status"', '"Status"') }
+  }
   if (!out.stdout) return { status: 'halted', halt: { root_cause: 'the command printed no line', evidence: command + '\n' + out.stderr, tree_state: treeState(), recommendation: 'read the tree before the step is asked for again' } }
   // The step that begins an attempt writes the attempt's marker: a report the harness
   // launched, under the reporter the command names.
@@ -237,27 +267,38 @@ function scopeStep(label, prompt) {
 // The record step (build-executor.md, the RECORD STEP paragraph): the numbered steps of
 // the prompt, in order, each exactly as written — the payload, the batch applied, the gate —
 // and NO commit. A refusal is a halt, its one line the evidence.
-function recordStep(label, prompt) {
-  const lines = prompt.split('\n')
-  const from = lines.findIndex((line) => line.startsWith('Run th'))
-  const to = lines.findIndex((line) => line.startsWith('YOU MAKE NO COMMIT'))
-  if (from < 0 || to < 0 || !/^BRANCH: (\S+?)[ ,]/m.test(prompt)) fail('the record step `' + label + '` is not the prompt a record step is handed')
+// The numbered steps of an executor's prompt, between the line that says how they are run
+// and the line the prompt ends with: each as its lines.
+function numbered(lines, from, to) {
   const steps = []
   for (const line of lines.slice(from + 1, to)) {
     if (line.startsWith(steps.length + 1 + '. ')) steps.push([line.slice(String(steps.length + 1).length + 2)])
     else steps[steps.length - 1].push(line)
   }
+  return steps
+}
+// The payload: the text, by the here-document the prompt spells, held to its hash. What
+// went wrong, or null.
+function writePayload(step) {
+  const file = span(step[0], '/')
+  const text = step.slice(1, -1).join('\n')
+  const hash = /must print `([0-9a-f]{64})`/.exec(step[step.length - 1])
+  const wrote = sh(span(step[0], 'mkdir -p ') + ' && ' + span(step[0], 'cat > ') + '\n' + text + '\nSTABILIZE_PAYLOAD\n')
+  return wrote.code !== 0 || !hash || sha256Of(file) !== hash[1] ? { file, stderr: wrote.stderr } : null
+}
+function recordStep(label, prompt) {
+  const lines = prompt.split('\n')
+  const from = lines.findIndex((line) => line.startsWith('Run th'))
+  const to = lines.findIndex((line) => line.startsWith('YOU MAKE NO COMMIT'))
+  if (from < 0 || to < 0 || !/^BRANCH: (\S+?)[ ,]/m.test(prompt)) fail('the record step `' + label + '` is not the prompt a record step is handed')
+  const steps = numbered(lines, from, to)
   const halted = (cause, evidence) => ({ status: 'halted', halt: { root_cause: cause, evidence, tree_state: treeState(), recommendation: 'the record step stopped where it stood: it commits nothing' } })
   const ruled = scenario.record || {}
   let gate = null
   for (const step of steps) {
     if (step[0].startsWith('Write ')) {
-      // The payload: the text, by the here-document the prompt spells, held to its hash.
-      const file = span(step[0], '/')
-      const text = step.slice(1, -1).join('\n')
-      const hash = /must print `([0-9a-f]{64})`/.exec(step[step.length - 1])
-      const wrote = sh(span(step[0], 'mkdir -p ') + ' && ' + span(step[0], 'cat > ') + '\n' + text + '\nSTABILIZE_PAYLOAD\n')
-      if (wrote.code !== 0 || !hash || sha256Of(file) !== hash[1]) return halted('the payload of the record step is not the text it was handed: ' + file, wrote.stderr)
+      const lost = writePayload(step)
+      if (lost) return halted('the payload of the record step is not the text it was handed: ' + lost.file, lost.stderr)
       continue
     }
     const command = span(step[0], 'dev/')
@@ -275,6 +316,58 @@ function recordStep(label, prompt) {
   }
   if (!gate) fail('the record step `' + label + '` names no gate')
   return { status: 'gated', gate }
+}
+
+// ---- a probe's agents ----
+// What no probe's prompt may carry: a report to write, a command of the record script or of
+// the step tool, a gate, a git command, a branch.
+function probeOnly(label, whole) {
+  // What a retry is told on top — to look at the tree a dead try left — is every call's,
+  // and no part of the probe's own prompt.
+  const prompt = whole.split('\n\nRETRY after a transient failure')[0]
+  const carried = [['a report to write', /^REPORT: /m], ['a command of the record script', /`dev\/stabilize-record [a-z]/], ['a command of the step tool', /dev\/stabilize-step/], ['a gate', /dev\/gate/], ['a git command', /`git /], ['a branch', /^BRANCH: |fix\//m]].filter(([, pattern]) => pattern.test(prompt)).map(([what]) => what)
+  if (carried.length) fail('the prompt of the probe\'s `' + label + '` carries ' + carried.join(', ') + ': a probe works on no run and writes nothing of the repository')
+}
+// The `required` probe's reviewer: what the scenario scripts, with the hash of the file its
+// binary line names — measured. It writes no report.
+function probeReviewer(label, prompt) {
+  probeOnly(label, prompt)
+  used.add(label)
+  if (!(label in scripted)) fail('no agent is scripted for the label `' + label + '`')
+  const binary = /^BINARY: candidate `([^`]+)` sha256 [0-9a-f]{64} \(commit [0-9a-f]{40}, label [^)]+\)/m.exec(prompt)
+  if (!binary) fail('the prompt of `' + label + '` carries no binary line')
+  return Object.assign({}, scripted[label], { asserted_sha256: (scenario.wrongBinary || []).includes(label) ? '0'.repeat(64) : sha256Of(binary[1]) })
+}
+// The `payload` probe's executor: the payload written as the prompt says, then the one
+// command that hashes it — its line relayed.
+function probePayload(label, prompt) {
+  probeOnly(label, prompt)
+  const lines = prompt.split('\n')
+  const from = lines.findIndex((line) => line.startsWith('Run th'))
+  const to = lines.findIndex((line) => line.startsWith('Report status = ran'))
+  if (!prompt.startsWith('RECORD STEP — a PROBE') || from < 0 || to < 0) fail('the probe\'s `' + label + '` is not handed a record step\'s payload to write')
+  let line = null
+  for (const step of numbered(lines, from, to)) {
+    if (step[0].startsWith('Write ')) {
+      const lost = writePayload(step)
+      if (lost) return { status: 'halted', halt: { root_cause: 'the payload is not the text it was handed: ' + lost.file, evidence: lost.stderr, tree_state: treeState(), recommendation: 'nothing was applied' } }
+      continue
+    }
+    const command = span(step[0], 'dev/stabilize-probe hash ')
+    if (!command) fail('a step of the probe\'s `' + label + '` is neither its payload nor its hash: ' + step[0])
+    line = sh(command).stdout
+  }
+  return line ? { status: 'ran', line } : fail('the probe\'s `' + label + '` hashed nothing')
+}
+// The `hold` probe's agent: the long command, run to its end, and the one line its output
+// file then holds.
+function probeHold(label, prompt) {
+  probeOnly(label, prompt)
+  const command = span(prompt, 'dev/stabilize-probe hold ')
+  const out = command && / > (\S+) 2>&1$/.exec(command)
+  if (!out) fail('the probe\'s `' + label + '` is handed no long command with its output in a file')
+  sh(command)
+  return { status: 'ran', line: readFileSync(out[1], 'utf8') }
 }
 
 // ---- a scripted reporter ----
@@ -298,6 +391,9 @@ const KINDS = [
   { labels: /^preflight(-second)?$/, agentType: 'stabilize-preflight', play: preflight },
   { labels: /^scope$/, agentType: 'stabilize-scope', play: scopeStep },
   { labels: /^record:/, agentType: 'build-executor', play: recordStep },
+  { labels: /^probe:required:/, agentType: 'milestone-code-reviewer', play: probeReviewer },
+  { labels: /^probe:payload:/, agentType: 'build-executor', play: probePayload },
+  { labels: /^probe:hold:/, agentType: 'stabilize-preflight', play: probeHold },
 ]
 
 // ---- what a schema asks of a return ----
@@ -352,7 +448,19 @@ async function agent(prompt, opts) {
     throw e
   }
   if (ends === 'dies-after-report') return null
+  // A field the scenario has this agent leave out — whatever its stand-in put there.
+  const left = omits[o.label] || []
+  if (left.length) used.add(o.label)
+  for (const name of left) delete back[name]
   const why = conforms(o.schema, back, 'the return of `' + o.label + '`')
+  // A return that lacks a field its schema REQUIRES, by a scripted omission: what the
+  // runtime does then is what a probe exists to find out, so the scenario says it.
+  if (why && left.some((name) => why.endsWith(' lacks `' + name + '`'))) {
+    if (scenario.violation === 'handed') return into(back)
+    if (scenario.violation === 'nothing') return null
+    if (scenario.violation === 'throws') throw new Error('scripted: the runtime refused a return — ' + why)
+    fail('`' + o.label + '` leaves out a field its schema requires, and the scenario does not say what the runtime does then (`violation`: handed, nothing or throws)')
+  }
   if (why) fail(why + ': the runtime would not hand the script this return')
   return into(back)
 }
@@ -383,8 +491,8 @@ try {
 } catch (e) {
   fatal.push('the script threw: ' + ((e && e.stack) || e))
 }
-const unused = Object.keys(scripted).concat(Object.keys(endings)).filter((label) => !used.has(label))
-process.stdout.write(JSON.stringify({ result: result === undefined ? null : result, trace, logs, reporters, swallowed, unused, fatal }) + '\n')
+const unused = Object.keys(scripted).concat(Object.keys(endings), Object.keys(omits), scenario.garbles || []).filter((label) => !used.has(label))
+process.stdout.write(JSON.stringify({ result: result === undefined ? null : result, trace, ran, logs, reporters, swallowed, unused, fatal }) + '\n')
 if (fatal.length) {
   process.stderr.write(fatal.join('\n') + '\n')
   process.exitCode = 1

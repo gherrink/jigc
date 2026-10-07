@@ -90,6 +90,16 @@
 //! **The `fix` stage refuses to start**, and that is all that is asserted of it; the rig,
 //! the scenario and the stand-in are shaped so that its half's tasks add its agents here.
 //!
+//! **The runtime probes are invoked here too** (the second repair plan's task `K0`;
+//! [DECISIONS.md](../DECISIONS.md) → *2026-10-07 — The runtime probes of the stabilization
+//! harness*): each of the four, through the committed harness and the real
+//! `dev/stabilize-probe`, to `probed` with one judged result per case — and held to
+//! touching no run, no branch, no remote and no file of the repository. What a probe exists
+//! to find out is exactly what a stand-in cannot show: here the scenario SAYS what the
+//! runtime does with a return that lacks a required field (`violation`), every line is
+//! relayed whole unless a scenario garbles it, and a hold is run in the foreground. The
+//! script side of each verdict is [`dev_stabilize_probe`](super::dev_stabilize_probe)'s.
+//!
 //! **Without `node`** the suite cannot run a stage: it fails under CI and passes anywhere
 //! else, and the gate's summary says which tests passed without running
 //! ([`node_or_skip`]).
@@ -222,6 +232,8 @@ struct Ran {
     logs: Vec<String>,
     /// The reporters launched, by the name each one's prompt handed it.
     reporters: Vec<String>,
+    /// Every command the stand-in ran on an agent's behalf, by its first line.
+    commands: Vec<String>,
 }
 
 impl Ran {
@@ -425,6 +437,7 @@ impl Sim {
             trace,
             logs: list("logs"),
             reporters: list("reporters"),
+            commands: list("ran"),
         }
     }
 
@@ -3310,6 +3323,453 @@ fn a_run_that_was_never_opened_halts_the_stage_at_its_first_read() {
         ran.result
     );
     assert_eq!(ran.trace, lines(&TWO_READS));
+}
+
+// ---------------------------------------------------------------------------
+// The runtime probes
+// ---------------------------------------------------------------------------
+
+const PROBE: &str = "dev/stabilize-probe";
+
+impl Sim {
+    /// A rig that holds the probe tool beside what it copies, committed and pushed. No run
+    /// is opened in it — and a probe opens none.
+    fn with_probe(label: &str) -> Self {
+        let sim = Sim::new(label);
+        placed_executable::copy(&repo_root().join(PROBE), &sim.rig.root.join(PROBE));
+        sim.rig.commit("chore: the probe tool");
+        sim.rig.git(&["push", "-q", "origin", LOOP]);
+        sim
+    }
+
+    /// A fresh scratch root for one probe: outside the repository, of plain segments, made.
+    fn probe_scratch(&self, name: &str) -> String {
+        let scratch = self.rig.dir().join(format!("probe-{name}"));
+        fs::create_dir_all(&scratch).expect("create a probe's scratch root");
+        scratch.display().to_string()
+    }
+
+    /// Everything of the repository a probe must leave as it was: the head, the branch,
+    /// every ref, what `git status` shows, the remote — and that no run's directory exists.
+    fn repository(&self) -> Vec<String> {
+        vec![
+            self.rig.rev("HEAD"),
+            self.rig.branch(),
+            self.rig
+                .git(&["for-each-ref", "--format=%(refname) %(objectname)"]),
+            self.rig.status(),
+            format!("{:?} {:?}", self.rig.remote("main"), self.rig.remote(LOOP)),
+            format!(
+                "a run's directory: {}",
+                self.rig.root.join("completions").exists()
+            ),
+        ]
+    }
+}
+
+/// What a probe returned as judged: each case and its verdict, in order.
+fn judged(ran: &Ran) -> Vec<(String, String)> {
+    assert_eq!(ran.result["status"], "probed", "the probe: {}", ran.result);
+    let cases = ran.result["cases"]
+        .as_array()
+        .unwrap_or_else(|| panic!("a probe returns its cases: {}", ran.result));
+    let written: Value = serde_json::from_str(
+        &fs::read_to_string(ran.result["result"].as_str().expect("the result's file"))
+            .expect("read the result the tool wrote"),
+    )
+    .expect("the result is JSON");
+    assert_eq!(
+        written["cases"], ran.result["cases"],
+        "what the harness returns is what the tool wrote under the scratch root"
+    );
+    assert_eq!(
+        ran.result["observed"].as_array().map(Vec::len),
+        Some(cases.len()),
+        "one observation of the harness's own per case: {}",
+        ran.result
+    );
+    cases
+        .iter()
+        .map(|c| {
+            (
+                c["case"].as_str().expect("a case").to_owned(),
+                c["verdict"].as_str().expect("a verdict").to_owned(),
+            )
+        })
+        .collect()
+}
+
+fn all(cases: &[&str], verdict: &str) -> Vec<(String, String)> {
+    cases
+        .iter()
+        .map(|c| ((*c).to_owned(), verdict.to_owned()))
+        .collect()
+}
+
+/// A probe's commands are the probe tool's and a payload's write, under its scratch root:
+/// none names a run, a round or a branch, and none is a command of the record script, of
+/// the step tool, or git's.
+fn only_the_probe_tool(ran: &Ran, scratch: &str) {
+    assert!(!ran.commands.is_empty(), "the probe ran commands");
+    for command in &ran.commands {
+        let shown = command.replace(scratch, "<scratch>");
+        assert!(
+            shown.starts_with("dev/stabilize-probe ")
+                || shown.starts_with("mkdir -p <scratch>/probe/payload/e"),
+            "a probe ran a command that is not the probe tool's: {shown}"
+        );
+        for foreign in [
+            "fix/",
+            "--run ",
+            "--round ",
+            "--branch",
+            "--loop",
+            "stabilize-step",
+            "stabilize-record",
+            "git ",
+        ] {
+            assert!(
+                !shown.contains(foreign),
+                "a probe's command names `{foreign}`: {shown}"
+            );
+        }
+    }
+}
+
+#[test]
+fn each_runtime_probe_returns_probed_with_one_judged_result_per_case_and_touches_nothing_of_the_repository()
+ {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::with_probe("probes");
+    let before = sim.repository();
+    let git = |label: &str| format!("agent git:probe:{label} · build-git · sonnet · Probe");
+
+    // required — (a) leaves the hash out and the runtime hands the return over as it is;
+    // (b) returns the hash of the file it was handed.
+    let scratch = sim.probe_scratch("required");
+    let ran = sim.invoke(
+        json!({"probe": "required", "scratch": scratch}),
+        json!({
+            "agents": {"probe:required:a": nothing(), "probe:required:b": nothing()},
+            "omits": {"probe:required:a": ["asserted_sha256"]},
+            "violation": "handed",
+        }),
+    );
+    assert_eq!(
+        judged(&ran),
+        [("a", "absent"), ("b", "returned")].map(|(c, v)| (c.to_owned(), v.to_owned()))
+    );
+    assert_eq!(
+        ran.trace,
+        [
+            "phase Probe".to_owned(),
+            git("begin"),
+            "agent probe:required:a · milestone-code-reviewer · opus · Probe".to_owned(),
+            "agent probe:required:b · milestone-code-reviewer · opus · Probe".to_owned(),
+            git("verdict"),
+        ],
+        "the `required` probe: its root, two reviewers on the stage's model, the judgement"
+    );
+    assert_eq!(ran.result["probe"], "required");
+    assert_eq!(ran.result["scratch"], scratch.as_str());
+    assert_eq!(
+        ran.result["result"],
+        format!("{scratch}/probe/required/result.json").as_str()
+    );
+    only_the_probe_tool(&ran, &scratch);
+
+    // relay — twelve git steps, each handed the ONE line of a throwaway run; one of them
+    // relays it with a character changed.
+    let scratch = sim.probe_scratch("relay");
+    let ran = sim.invoke(
+        json!({"probe": "relay", "scratch": scratch}),
+        json!({"garbles": ["git:probe:state:r60-2"]}),
+    );
+    let tags = [
+        "r1-1", "r1-2", "r1-3", "r20-1", "r20-2", "r20-3", "r60-1", "r60-2", "r60-3", "r120-1",
+        "r120-2", "r120-3",
+    ];
+    let mut expected = all(&tags, "whole");
+    expected[7].1 = "altered".to_owned();
+    assert_eq!(judged(&ran), expected);
+    let mut steps = vec!["phase Probe".to_owned(), git("begin")];
+    steps.extend(tags.iter().map(|tag| git(&format!("state:{tag}"))));
+    steps.push(git("verdict"));
+    assert_eq!(
+        ran.trace, steps,
+        "the `relay` probe: every step a git step, on its model"
+    );
+    let altered = &ran.result["cases"][7];
+    assert!(
+        altered["bytes_back"].as_u64().is_some_and(|n| n >= 74_000)
+            && altered["bytes_back"] == altered["bytes_sent"],
+        "a line of the real run's size came back, one character off: {altered}"
+    );
+    assert!(
+        ran.result["observed"][7]["fault"]
+            .as_str()
+            .is_some_and(|why| why.contains("does not end with the sha256 of itself")),
+        "what the harness saw of it: {}",
+        ran.result["observed"][7]
+    );
+    assert!(
+        ran.result.to_string().len() < 20_000,
+        "a probe returns verdicts and never a relayed line: {} bytes",
+        ran.result.to_string().len()
+    );
+    only_the_probe_tool(&ran, &scratch);
+
+    // payload — four batches, each written by the executor from its prompt and hashed.
+    let scratch = sim.probe_scratch("payload");
+    let ran = sim.invoke(json!({"probe": "payload", "scratch": scratch}), json!({}));
+    let sizes = ["e20", "e60", "e120", "e300"];
+    assert_eq!(judged(&ran), all(&sizes, "whole"));
+    let mut steps = vec!["phase Probe".to_owned(), git("begin")];
+    steps.extend(
+        sizes
+            .iter()
+            .map(|size| format!("agent probe:payload:{size} · build-executor · opus · Probe")),
+    );
+    steps.push(git("verdict"));
+    assert_eq!(
+        ran.trace, steps,
+        "the `payload` probe: the role that writes a record"
+    );
+    for (case, entries) in ran.result["cases"]
+        .as_array()
+        .expect("cases")
+        .iter()
+        .zip([20, 60, 120, 300])
+    {
+        assert_eq!(case["entries"], entries, "{case}");
+        assert_eq!(case["relayed"], "agrees", "{case}");
+        assert!(
+            case["bytes"].as_u64().is_some_and(|n| n > 300 * entries),
+            "a batch grows with its entries: {case}"
+        );
+    }
+    only_the_probe_tool(&ran, &scratch);
+
+    // hold — (a) one agent holds the command to its last line; (b) one step starts it, and
+    // a later one reads that it ended.
+    let scratch = sim.probe_scratch("hold");
+    let ran = sim.invoke(
+        json!({"probe": "hold", "scratch": scratch, "seconds": 1}),
+        json!({}),
+    );
+    assert_eq!(
+        judged(&ran),
+        [("a", "held"), ("b", "outlived")].map(|(c, v)| (c.to_owned(), v.to_owned()))
+    );
+    assert_eq!(
+        ran.trace,
+        [
+            "phase Probe".to_owned(),
+            git("begin"),
+            "agent probe:hold:a · stabilize-preflight · opus · Probe".to_owned(),
+            git("hold:b"),
+            git("held:b:1"),
+            git("verdict"),
+        ],
+        "the `hold` probe: the preflight's role, then a start and a read as git steps"
+    );
+    assert_eq!(ran.result["cases"][1]["reads"], 1);
+    only_the_probe_tool(&ran, &scratch);
+
+    assert_eq!(
+        sim.repository(),
+        before,
+        "four probes ran, and the repository is not what it was"
+    );
+}
+
+#[test]
+fn a_probe_is_refused_beside_a_stage_or_a_run_and_halts_at_its_first_step_on_a_scratch_root_it_cannot_use()
+ {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::with_probe("probe-refusals");
+    let before = sim.repository();
+    let scratch = sim.probe_scratch("unused");
+
+    // Refused before any agent: an unknown probe, no scratch root, and anything of a stage.
+    for args in [
+        json!({"probe": "everything", "scratch": scratch}),
+        json!({"probe": "relay"}),
+        json!({"probe": "relay", "scratch": "relative/dir"}),
+        json!({"probe": "relay", "scratch": scratch, "stage": "test"}),
+        json!({"probe": "relay", "scratch": scratch, "stage": "fix"}),
+        json!({"probe": "relay", "scratch": scratch, "run": RUN}),
+        json!({"probe": "payload", "scratch": scratch, "stage": "test", "run": RUN}),
+        json!({"probe": "relay", "scratch": scratch, "seconds": 5}),
+        json!({"probe": "hold", "scratch": scratch, "seconds": 0}),
+        json!({"probe": "hold", "scratch": scratch, "stopAfter": "state"}),
+    ] {
+        let ran = sim.invoke(args.clone(), json!({}));
+        assert_eq!(
+            ran.result["status"], "refused",
+            "args {args}: {}",
+            ran.result
+        );
+        assert!(
+            ran.result["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("Nothing was run")),
+            "args {args}: {}",
+            ran.result
+        );
+        assert_eq!(
+            ran.trace,
+            Vec::<String>::new(),
+            "args {args}: no agent, no phase"
+        );
+        assert_eq!(
+            ran.commands,
+            Vec::<String>::new(),
+            "args {args}: no command"
+        );
+    }
+    assert_eq!(
+        fs::read_dir(&scratch)
+            .expect("read the scratch root")
+            .count(),
+        0,
+        "a refused probe made nothing"
+    );
+
+    // A scratch root the harness cannot see is no good: the tool says so at the probe's
+    // first step, and nothing else is launched. Inside the repository — by a link of plain
+    // segments, judged on its real path; not there; no directory.
+    let inside = sim.rig.dir().join("a-link-inside");
+    std::os::unix::fs::symlink(sim.rig.root.join("crates"), &inside)
+        .expect("link into the repository");
+    let absent = sim.rig.dir().join("absent");
+    let a_file = sim.rig.dir().join("a-file");
+    fs::write(&a_file, "no directory\n").expect("write a file");
+    for (unusable, word) in [
+        (&inside, "inside"),
+        (&absent, "no-scratch"),
+        (&a_file, "no-scratch"),
+    ] {
+        for probe in ["required", "relay", "payload", "hold"] {
+            let ran = sim.invoke(
+                json!({"probe": probe, "scratch": unusable.display().to_string()}),
+                json!({}),
+            );
+            assert_eq!(ran.result["status"], "halted", "{probe}: {}", ran.result);
+            assert_eq!(ran.result["probe"], probe);
+            assert_eq!(ran.result["halted"]["phase"], "begin", "{}", ran.result);
+            assert_eq!(ran.result["halted"]["refused"], word, "{}", ran.result);
+            assert_eq!(
+                ran.agents(),
+                ["git:probe:begin"],
+                "{probe} under a scratch root that is {word}: one step, and nothing after it"
+            );
+        }
+    }
+    assert!(!absent.exists(), "a refused probe makes no scratch root");
+    assert_eq!(
+        fs::read_dir(sim.rig.root.join("crates"))
+            .expect("read the linked directory")
+            .count(),
+        1,
+        "a probe wrote into the repository through a link"
+    );
+    assert_eq!(
+        sim.repository(),
+        before,
+        "a refused probe changed the repository"
+    );
+}
+
+#[test]
+fn what_the_runtime_does_with_a_return_that_lacks_a_required_field_is_the_probes_answer() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::with_probe("probe-required");
+    let reviewers = json!({"probe:required:a": nothing(), "probe:required:b": nothing()});
+    let both =
+        json!({"probe:required:a": ["asserted_sha256"], "probe:required:b": ["asserted_sha256"]});
+    let reviewer = |id: &str| format!("probe:required:{id}");
+
+    // NOTHING is handed over, on every try — by both reviewers: each is tried three times,
+    // two calls exhaust their retries, and the judgement is still asked for.
+    let scratch = sim.probe_scratch("nothing");
+    let ran = sim.invoke(
+        json!({"probe": "required", "scratch": scratch}),
+        json!({"agents": reviewers, "omits": both, "violation": "nothing"}),
+    );
+    assert_eq!(
+        judged(&ran),
+        [("a", "nothing"), ("b", "nothing")].map(|(c, v)| (c.to_owned(), v.to_owned()))
+    );
+    let (a, b) = (reviewer("a"), reviewer("b"));
+    assert_eq!(
+        ran.agents(),
+        [
+            "git:probe:begin",
+            a.as_str(),
+            a.as_str(),
+            a.as_str(),
+            b.as_str(),
+            b.as_str(),
+            b.as_str(),
+            "git:probe:verdict",
+        ],
+        "three tries each, and the breaker two exhausted calls trip does not stop the judgement"
+    );
+    assert_eq!(ran.result["cases"][0]["tries"], 3, "{}", ran.result);
+    assert_eq!(
+        ran.result["observed"][1]["tries"],
+        json!([{"ended": "nothing"}, {"ended": "nothing"}, {"ended": "nothing"}]),
+        "how each try ended: {}",
+        ran.result
+    );
+    assert!(
+        ran.result["observed"][0]["returned"].is_null(),
+        "{}",
+        ran.result
+    );
+
+    // The call THROWS, on every try — for (a) alone.
+    let scratch = sim.probe_scratch("throws");
+    let ran = sim.invoke(
+        json!({"probe": "required", "scratch": scratch}),
+        json!({"agents": reviewers, "omits": {"probe:required:a": ["asserted_sha256"]}, "violation": "throws"}),
+    );
+    assert_eq!(
+        judged(&ran),
+        [("a", "threw"), ("b", "returned")].map(|(c, v)| (c.to_owned(), v.to_owned()))
+    );
+    assert!(
+        ran.result["observed"][0]["tries"][2]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("lacks `asserted_sha256`")),
+        "what a try threw is kept: {}",
+        ran.result
+    );
+
+    // The field comes back, and is not the file's hash; and a reviewer that halts.
+    let scratch = sim.probe_scratch("other");
+    let ran = sim.invoke(
+        json!({"probe": "required", "scratch": scratch}),
+        json!({
+            "agents": {
+                "probe:required:a": nothing(),
+                "probe:required:b": {"status": "halted", "findings": [],
+                    "halt": {"root_cause": "the file is no binary"}},
+            },
+            "wrongBinary": ["probe:required:a"],
+        }),
+    );
+    assert_eq!(
+        judged(&ran),
+        [("a", "other"), ("b", "halted")].map(|(c, v)| (c.to_owned(), v.to_owned()))
+    );
 }
 
 // ---------------------------------------------------------------------------

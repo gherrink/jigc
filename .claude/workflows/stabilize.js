@@ -176,7 +176,29 @@
 // attempt's reports carry the next attempt number, which the state document gives. `resumeFromRunId` is for a KILLED run
 // only, and then with the SAME args: every agent call's cache key is its prompt.
 //
+// THE RUNTIME PROBES (the second repair plan's task K0 and its §5; DECISIONS.md -> 2026-10-07,
+// "The runtime probes of the stabilization harness"). An invocation with `probe` works on NO
+// RUN: it observes ONE fact about the runtime this script runs in — with the roles, the
+// prompts and the schemas a stage uses — and has `dev/stabilize-probe` judge what it saw.
+//   required  two reviewers under a schema that REQUIRES the hash: (a) is told to leave the
+//             field out, (b) is asked for a source pass that drives nothing. What comes back —
+//             the object without it, the field, nothing, a throw — and after how many tries.
+//   relay     the ONE line of a throwaway run's state, at four sizes, each relayed three
+//             times by a git step under the stage's own step prompt.
+//   payload   a record's batch of 20, 60, 120 and 300 entries, composed by the functions a
+//             stage composes one with and written by the executor from its prompt.
+//   hold      one long command: (a) held by a preflight agent inside its turn, as it holds
+//             the gate; (b) started by one git step and asked for by later ones, a slice each.
+// A probe names no run, no round and no branch; its steps are commands of that tool and of
+// no other; and it reaches no code of a stage: the script returns from `runProbe`. What it
+// returns is `status: 'probed'` with the tool's judged `cases` — one per case, each with its
+// `verdict` — the file they were written to under the scratch root, and what this script
+// itself observed of each call (`observed`); or `status: 'halted'` with the step that failed.
+// A PROBE'S AGENTS ARE MEANT TO FAIL: how each try of a watched call ended is the answer, so
+// the retries are counted, and the breaker two exhausted calls trip is put back.
+//
 // Usage:  Workflow({ name: 'stabilize', args: { stage: 'test', run: '<run>', scratch: '<dir>' } })
+//         Workflow({ name: 'stabilize', args: { probe: 'relay', scratch: '<dir>' } })
 //   stage     — REQUIRED: 'test' or 'fix'.
 //   run       — REQUIRED: the run's slug. Its directory is completions/artifacts/<run>/ and
 //               its branches are named from it (`branchName`).
@@ -236,12 +258,19 @@
 //               committed and pushed; after `fixers` the fixers' commits are on the round
 //               branch; after `audit` the round branch is pushed as well.
 //   selfTest  — OPTIONAL: true runs zero agents and checks this script's own logic.
+//   probe     — INSTEAD OF A STAGE: 'required', 'relay', 'payload' or 'hold' — one runtime
+//               probe (above). It takes `scratch` — a directory that is there, outside the
+//               repository, and fresh: a probe's root under it is made once — and nothing
+//               else: no stage, no run.
+//   seconds   — OPTIONAL, the `hold` probe only: how long its command holds. Absent, twelve
+//               minutes; 2100 is the regression set's thirty-five.
 //   model     — OPTIONAL: the model every agent call but the git steps is pinned to ('opus').
 
 export const meta = {
   name: 'stabilize',
-  description: 'One stage of a stabilization run. test: preflight, scope, the round\'s instruments, triage, verify-real, the record. fix: the human\'s rulings, fixers, the audit of the fix diff (at most 3 cycles), land — or the exits at a bound: continue, drop, land a part. Reads the round, the cycle and the next step from dev/stabilize-record state. Args: { stage, run, scratch, scope?, clause?, crossModel?, rulings?, raise?, exit?, stopAfter?, selfTest?, model? }.',
+  description: 'One stage of a stabilization run. test: preflight, scope, the round\'s instruments, triage, verify-real, the record. fix: the human\'s rulings, fixers, the audit of the fix diff (at most 3 cycles), land — or the exits at a bound: continue, drop, land a part. Reads the round, the cycle and the next step from dev/stabilize-record state. Args: { stage, run, scratch, scope?, clause?, crossModel?, rulings?, raise?, exit?, stopAfter?, selfTest?, model? }. Or one runtime probe, on no run: { probe, scratch, seconds? }.',
   phases: [
+    { title: 'Probe' },
     { title: 'State' },
     { title: 'Preflight and scope' },
     { title: 'Instruments' },
@@ -254,7 +283,7 @@ export const meta = {
 
 // ---- constants ----
 const STAGES = ['test', 'fix']
-const ARGS = ['stage', 'run', 'scratch', 'scope', 'clause', 'crossModel', 'rulings', 'raise', 'exit', 'stopAfter', 'selfTest', 'model']
+const ARGS = ['stage', 'run', 'scratch', 'scope', 'clause', 'crossModel', 'rulings', 'raise', 'exit', 'stopAfter', 'selfTest', 'model', 'probe', 'seconds']
 // The steps a stage can be stopped after, for tuning.
 const STOPS = { test: ['state', 'preflight', 'instruments', 'triage'], fix: ['state', 'rulings', 'fixers', 'audit'] }
 const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
@@ -299,6 +328,23 @@ const LABELS = { report: 'REPORT:', binary: 'BINARY:', area: 'AREA:', record: 'R
 // Ruling 4's three: the dispositions that are the human's to give.
 const HUMAN_RULINGS = ['admitted', 'bound', 'later']
 const PAYLOAD_ENDS = 'STABILIZE_PAYLOAD'
+// THE RUNTIME PROBES. The tool a probe's steps are commands of, and which judges what a
+// probe observed; the probes; and their cases — the ledger rows of the relay probe's four
+// throwaway runs and how often each one's line is relayed, and the entries of the payload
+// probe's four batches. dev/stabilize-probe has the same lists, and
+// tooling-tests/stabilize_harness_fence.rs holds the two together.
+const PROBE_TOOL = 'dev/stabilize-probe'
+const PROBES = ['required', 'relay', 'payload', 'hold']
+const PROBE_ROWS = [1, 20, 60, 120]
+const PROBE_RELAYS = 3
+const PROBE_ENTRIES = [20, 60, 120, 300]
+// The hold probe's command holds twelve minutes — past the ten a call of an agent's shell
+// tool may take — unless `args.seconds` says otherwise; and a read of a detached hold waits
+// a slice that is under that tool's DEFAULT timeout of two minutes, so that a git step needs
+// to be told nothing about timeouts.
+const PROBE_HOLD = 720
+const PROBE_HOLD_MAX = 3600
+const PROBE_SLICE = 90
 // The name under which a triage is handed the rows of the ledger that still await it. No
 // reporter can carry it: an item's reporters are `<item>-<step>`.
 const LEDGER_SOURCE = 'ledger'
@@ -527,6 +573,23 @@ function notFit(a) {
   return 'the `' + a.stage + '` stage is NOT FIT FOR USE and refuses to start: ' + NOT_FIT[a.stage] + '. The build of the stabilization workflow was reviewed red — its record is ' + BUILD_RECORD + ' — and a stage is used only once its half is repaired and re-reviewed. Nothing was run: no agent, no read. What is taken meanwhile: ' + STAGES.filter((stage) => !NOT_FIT[stage]).map((stage) => 'the `' + stage + '` stage').concat(['what the human rules about the run (args.rulings: ' + RUN_RULINGS.map((name) => '`' + name + '`').join(', ') + '), which either stage records and which starts nothing']).join('; and ') + '. A ruling on a finding or a declared bound is this stage\'s own first step and waits with it — until then an invocation of `test` that carries only such rulings records them on the loop branch, and starts nothing'
 }
 
+// scratchFault — why a value is no scratch root, or null.
+function scratchFault(value) {
+  return typeof value !== 'string' || !SCRATCH_RE.test(value) || /\/\.\.?(\/|$)/.test(value) ? 'args.scratch ' + JSON.stringify(value) + ' is not an absolute directory path of plain segments ([A-Za-z0-9._-]): every agent works under it, and it reaches a shell' : null
+}
+// probeFault — why an invocation that names a probe is refused, or null. A probe works on no
+// run: it takes the scratch root, and nothing a stage takes. Whether that root is there, a
+// directory and outside the repository is a file system's to say, and the probe's first step
+// asks the tool, which refuses before anything is written.
+function probeFault(a) {
+  if (!PROBES.includes(a.probe)) return 'args.probe ' + JSON.stringify(a.probe) + ' is not a runtime probe: ' + PROBES.join(', ')
+  const beside = Object.keys(a).filter((name) => !['probe', 'scratch', 'seconds'].includes(name))
+  if (beside.length) return 'a probe works on no run and no stage: it takes `scratch` — and `seconds`, for `hold` — and nothing else, not ' + beside.join(', ')
+  if (scratchFault(a.scratch)) return scratchFault(a.scratch)
+  if (a.seconds != null && (a.probe !== 'hold' || !Number.isInteger(a.seconds) || a.seconds < 1 || a.seconds > PROBE_HOLD_MAX)) return 'args.seconds is how long the `hold` probe holds its command — a whole number from 1 to ' + PROBE_HOLD_MAX + ' — and no argument of another probe: not ' + JSON.stringify(a.seconds)
+  return null
+}
+
 // validateArgs — every refusal that precedes the first agent. Returns the message of the
 // refusal, or null.
 function validateArgs(a) {
@@ -535,9 +598,11 @@ function validateArgs(a) {
   if (unknown.length) return 'unknown arg(s) ' + unknown.join(', ') + ' — the args are ' + ARGS.join(', ')
   if (a.selfTest != null && typeof a.selfTest !== 'boolean') return 'args.selfTest must be true or false'
   if (a.selfTest) return null
+  if (a.probe != null) return probeFault(a)
   if (!STAGES.includes(a.stage)) return 'args.stage ' + JSON.stringify(a.stage) + ' is not one of ' + STAGES.join(', ')
   if (!isSlug(a.run)) return 'args.run ' + JSON.stringify(a.run) + ' is not a slug: lowercase a-z0-9 words joined by single dashes, at most ' + SLUG_MAX + ' characters — it names the run\'s directory and its branches'
-  if (typeof a.scratch !== 'string' || !SCRATCH_RE.test(a.scratch) || /\/\.\.?(\/|$)/.test(a.scratch)) return 'args.scratch ' + JSON.stringify(a.scratch) + ' is not an absolute directory path of plain segments ([A-Za-z0-9._-]): every agent works under it, and it reaches a shell'
+  if (scratchFault(a.scratch)) return scratchFault(a.scratch)
+  if (a.seconds != null) return 'args.seconds is the `hold` probe\'s, and no argument of a stage'
   if (a.model != null && (typeof a.model !== 'string' || !MODEL_RE.test(a.model))) return 'args.model ' + JSON.stringify(a.model) + ' is not a model name'
   if (a.stopAfter != null && !STOPS[a.stage].includes(a.stopAfter)) return 'args.stopAfter ' + JSON.stringify(a.stopAfter) + ' is not a step of `' + a.stage + '`: ' + STOPS[a.stage].join(', ')
   const only = (name, stage) => (a[name] != null && a.stage !== stage ? 'args.' + name + ' belongs to the `' + stage + '` stage' : null)
@@ -951,6 +1016,9 @@ const UNIT_SCHEMA = {
     summary: { type: 'string', description: '2-4 sentences' },
   },
 }
+// The `required` probe's: a unit's return, with the hash REQUIRED — the one thing about a
+// schema the probe is there to see the runtime's answer to. No stage uses it.
+const PROBE_UNIT_SCHEMA = Object.assign({}, UNIT_SCHEMA, { required: UNIT_SCHEMA.required.concat(['asserted_sha256']) })
 const TRIAGE_SCHEMA = {
   type: 'object',
   required: ['status', 'entries', 'counts'],
@@ -1084,11 +1152,13 @@ const RECORD_SCHEMA = {
 
 // ---- the git steps (build-git) — each ONE command of dev/stabilize-step, its line relayed ----
 const STEP_RULES = 'Run exactly the ONE command below, from the repository\'s root, and nothing else: no command before it or after it, no branch, no commit, no file edit, no `git stash`, no reset, no rebase, no pull, never `--force`, and `main` is never checked out, merged into or pushed. The command does the whole step and checks it. It prints ONE line of JSON on stdout — also when it refuses, which it says with an exit status that is not 0 and one line on stderr. A refusal is the step\'s answer: you never repair what it names, never run the command a second time, and never do by hand what it did not do.'
+// AS_PRINTED — how a line is relayed, in the words every step that relays one is told.
+const AS_PRINTED = 'the ONE line the command printed on stdout, WHOLE and AS PRINTED, whatever it exited with: every character copied, no key re-ordered or dropped, nothing summarised, no `\\u…` escape rewritten into its character'
 function stepPrompt(what, act, flags) {
   return [
     'GIT STEP — ' + what + '. ' + STEP_RULES,
     '1. `' + STEP_TOOL + ' ' + act + ' ' + flags + '`',
-    '2. Report status = ran and line = the ONE line the command printed on stdout, WHOLE and AS PRINTED, whatever it exited with: every character copied, no key re-ordered or dropped, nothing summarised, no `\\u…` escape rewritten into its character. The harness holds the line to the hash it ends with, so a line that is not the command\'s is caught. Only when the command printed no such line: status = halted, and the halt report (root_cause, evidence = the command and everything it printed, tree_state = `git status` and `git branch --show-current`).',
+    '2. Report status = ran and line = ' + AS_PRINTED + '. The harness holds the line to the hash it ends with, so a line that is not the command\'s is caught. Only when the command printed no such line: status = halted, and the halt report (root_cause, evidence = the command and everything it printed, tree_state = `git status` and `git branch --show-current`).',
   ].join('\n')
 }
 // A list the harness owns, as the flags that hand it to an act.
@@ -1316,9 +1386,11 @@ function fixerPrompt(ctx, launch, name, area, branch) {
 function payload(dir, name, value, lines) {
   const text = lines ? value.join('\n') : JSON.stringify(value)
   const file = dir + '/' + name
+  const hash = sha256(text + '\n')
   return {
     file,
-    write: 'Write ' + (lines ? 'these lines' : 'this ONE line') + ', exactly, to `' + file + '` (`mkdir -p ' + dir + '` first) — `cat > ' + file + ' <<\'' + PAYLOAD_ENDS + '\'`, the text, then `' + PAYLOAD_ENDS + '` on a line of its own:\n' + text + '\n   Then `shasum -a 256 ' + file + '` must print `' + sha256(text + '\n') + '` — if it does not, the text was altered on its way: write it again, and halt if it still differs.',
+    sha256: hash,
+    write: 'Write ' + (lines ? 'these lines' : 'this ONE line') + ', exactly, to `' + file + '` (`mkdir -p ' + dir + '` first) — `cat > ' + file + ' <<\'' + PAYLOAD_ENDS + '\'`, the text, then `' + PAYLOAD_ENDS + '` on a line of its own:\n' + text + '\n   Then `shasum -a 256 ' + file + '` must print `' + hash + '` — if it does not, the text was altered on its way: write it again, and halt if it still differs.',
   }
 }
 // gateStep — the full gate of a record step, its whole output kept where the commit step
@@ -1326,6 +1398,8 @@ function payload(dir, name, value, lines) {
 function gateStep(file) {
   return 'The FULL gate on the tree as it now stands, its WHOLE output kept: `' + GATE + ' > ' + file + ' 2>&1` (`--keep-going` is part of the command: no red step stops this gate) — in the background, waited for in this same turn in slices of under five minutes, until that file holds the gate\'s verdict line. Never `--fast`, never `--quick`, never piped, and the file is never edited.'
 }
+// RECORD_RUNS — how the executor is told to run a record's steps.
+const RECORD_RUNS = 'Run these from the repository\'s root, in this order, each exactly as written and each exit status read bare. A refusal is a halt — its one line the evidence — and nothing it names is repaired by hand:'
 const RECORD_RETURNS = 'YOU MAKE NO COMMIT, and stage nothing: the harness\'s next step reads the gate\'s output, holds it to the gate of the round\'s candidate, and makes the one commit. So a RED gate is not your halt: return status = gated as soon as the file holds the gate\'s verdict line — `GATE: PASS` or `GATE: FAIL` alike — and gate = the file. A halt is a refusal of step 2, or a gate that printed no verdict line.'
 // call — one call of a record's batch: a subcommand of the record script with its flags, as
 // its argument list, and what it reads on stdin.
@@ -1345,7 +1419,7 @@ function recordPrompt(v, what, branch, dir, round, calls, subject) {
   const text = [
     LABELS.record + ' — stabilization run `' + v.run + '`: ' + what + '.',
     branchLine(branch, branchName(v.run)),
-    'Run these from the repository\'s root, in this order, each exactly as written and each exit status read bare. A refusal is a halt — its one line the evidence — and nothing it names is repaired by hand:',
+    RECORD_RUNS,
     '1. ' + batch.write,
     '2. `dev/stabilize-record apply --run ' + v.run + (round ? ' --round ' + round : '') + ' --subject ' + shq('docs(record): ' + subject) + ' --scratch ' + v.scratch + ' < ' + batch.file + '` — the ' + calls.length + ' call(s) of this record as ONE batch: every table is written, or none is. It prints one line of JSON.',
     '3. ' + gateStep(gate),
@@ -1421,6 +1495,97 @@ function rulingsRecordPrompt(v, round, branch, rulings, ran, at) {
   return recordPrompt(v, 'the human\'s rulings — ' + patches.length + ' on a finding, ' + bounds.length + ' declared bound(s), ' + about.length + ' about the run. They are the human\'s, relayed: record them as given, and judge none of them', branch, v.scratch + '/record/rulings-r' + round, round, calls, v.run + ' r' + round + ' — the human\'s rulings')
 }
 
+// ---- the runtime probes: what a probe's agents are told, and what it hands the tool ----
+// probeStep — a probe's step that is ONE command of the probe tool: THE HARNESS'S OWN STEP
+// PROMPT, word for word, with that tool where the step tool stands. What a probe's git step
+// is told — one command, its line relayed whole — is what a stage's is told.
+function probeStep(what, act, flags) {
+  return stepPrompt('a PROBE of the stabilization harness, of no run — ' + what, act, flags).replace('1. `' + STEP_TOOL + ' ', '1. `' + PROBE_TOOL + ' ')
+}
+// The `required` probe's reviewer: a source pass that drives nothing, under the binary line a
+// stage's reviewer is handed — and, for case a, told in so many words to leave the hash out.
+function probeReviewPrompt(id, binary) {
+  const lines = [
+    'A PROBE of the stabilization harness\'s runtime — the `required` probe, case ' + id + '. It is no stage of any run: there is no round, no test set and NO REPORT — you write no file, and you run no command of `dev/stabilize-record`.',
+    binaryLine({ candidate: { binary: binary.file, sha256: binary.sha256, sha: '0'.repeat(40), label: 'probe' } }, false),
+    'Your brief: one review row\'s SOURCE PASS, and a small one — read the comment block `' + PROBE_TOOL + '` opens with, and return what you find wrong in it as findings. None is expected, and `findings: []` is an answer. YOU DRIVE NOTHING: the file on the line above is a stand-in and no build of any commit — the commit that line names is forty zeros and names nothing — and no command of it is run.',
+    'The door list — a finding names its door in these exact words:\n' + doorList([{ door: PROBE_TOOL, registry: 'tooling' }]),
+  ]
+  if (id === 'a') lines.push('THIS CASE PROBES WHAT THE RUNTIME DOES WITH A RETURN THAT LACKS A FIELD ITS SCHEMA REQUIRES. Leave `asserted_sha256` OUT of your return: the field is not there at all — not empty, not null, not a placeholder — whatever the schema of the return says of it. If your return is refused for lacking it, return the same object again, still without it: you never fill it in.')
+  return lines.join('\n')
+}
+// probeField — the `asserted_sha256` a reviewer of the `required` probe came back with, as
+// the cell the tool judges: the hash, or why there is none. Nothing an agent wrote reaches
+// a command: a value that is no sha256 is `malformed`.
+function probeField(back) {
+  if (!back) return 'none'
+  if (back.status === 'halted') return 'halted'
+  if (back.asserted_sha256 == null) return 'absent'
+  return typeof back.asserted_sha256 === 'string' && SHA256_RE.test(back.asserted_sha256) ? back.asserted_sha256 : 'malformed'
+}
+// triesOf — how each try of a watched call ended, one letter per try: r (it returned), n
+// (nothing came back), t (the call threw).
+function triesOf(tries) {
+  return tries.map((t) => t.ended[0]).join('')
+}
+function utf8Length(text) {
+  let n = 0
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i)
+    if (c >= 0xd800 && c < 0xdc00 && i + 1 < text.length) {
+      n += 4
+      i++
+    } else n += c < 0x80 ? 1 : c < 0x800 ? 2 : 3
+  }
+  return n
+}
+// probeRelayed — a relayed line as the cells the tool judges: the hash the line ends with,
+// where `readStep` could hold the line to it; `altered` where it could not; `none` where no
+// line came back — and how many bytes did.
+function probeRelayed(raw, read) {
+  const line = raw && typeof raw.line === 'string' ? raw.line.replace(/\n$/, '') : null
+  if (line == null) return 'none:0'
+  if (read.relay || !SHA256_RE.test(String(read.sha256))) return 'altered:' + utf8Length(line)
+  return read.sha256 + ':' + utf8Length(line)
+}
+// probeBatch — the `payload` probe's batch of `n` entries: a stage's record of `n` findings,
+// each new, graded and confirmed, composed by the functions a stage composes its record with
+// — and as the payload its executor is told to write. Its cells are of what a real entry is
+// made of: a door's name, backticks, quotes, a dash and an arrow.
+function probeBatch(scratch, n) {
+  const ctx = { run: 'probe', round: 1, stage: 'test', attempt: 1, scratch }
+  const entries = []
+  for (let i = 1; i <= n; i++) {
+    const id = String(i).padStart(3, '0')
+    entries.push({ key: 'probe-finding-' + id, new: true, doctype: RED_DOCTYPE, source: 'row-' + (1 + i % 12) + '-review', door: 'jigc doc set', clause: 'no-lost-files', repro: 'F' + id + ' — `jigc doc set` drops the slot it was handed → the read that follows says "ok" and lacks it', grade: 'breaks', verdict: 'confirmed', regression: false })
+  }
+  const rec = triageRecord(ctx, entries)
+  const calls = stageRecordCommands(ctx, { reporters: [ATTEMPT, 'triage-p1'], gate: null, results: null, rows: rec.rows, patches: [], triage: rec.triage, facts: null, keys: rec.rows.map((r) => r.key) })
+  return payload(scratch + '/probe/payload/e' + n, 'batch.json', calls)
+}
+// The `payload` probe's executor: the record prompt's own words for a payload, and then the
+// file's hash — NOTHING is applied, gated or committed.
+function probePayloadPrompt(scratch, n, batch) {
+  return [
+    LABELS.record + ' — a PROBE of the stabilization harness, of no run (the `payload` probe: a record\'s batch of ' + n + ' entries, written and hashed). NOTHING IS APPLIED, GATED OR COMMITTED: no command of `dev/stabilize-record` and no gate is yours here, you make no commit, and no file of the repository is written.',
+    RECORD_RUNS,
+    '1. ' + batch.write,
+    '2. `' + PROBE_TOOL + ' hash --scratch ' + scratch + ' --file ' + batch.file + '` — it prints ONE line of JSON.',
+    'Report status = ran and line = ' + AS_PRINTED + ' — the line of step 2. Only when step 2 printed no such line: status = halted, and the halt report.',
+  ].join('\n')
+}
+// The `hold` probe's agent (a): ONE long command, held as the preflight holds the gate — in
+// the background, waited for in slices, inside its turn.
+function probeHoldPrompt(scratch, name, seconds) {
+  const out = scratch + '/probe/hold/' + name + '.out'
+  return [
+    'PREFLIGHT — a PROBE of the stabilization harness, of no run (the `hold` probe, case ' + name + '). There is no candidate, no environment assert, no build, no gate, no check and NO REPORT: this call covers the two steps below and nothing else, and no file of the repository is written. Scratch root: `' + scratch + '`.',
+    'The steps this call covers, in this order, and nothing else:',
+    '1. the long command, ONCE: `' + PROBE_TOOL + ' hold --scratch ' + scratch + ' --name ' + name + ' --seconds ' + seconds + ' > ' + out + ' 2>&1` — in the background, waited for in this same turn in slices of under five minutes, until that file holds the command\'s ONE line; never piped, and the file is never edited. It prints NOTHING for ' + seconds + ' seconds, and then one line of JSON.',
+    '2. Report status = ran and line = ' + AS_PRINTED + ' — here, the one line that file then holds. Only when the file never came to hold such a line: status = halted, and the halt report.',
+  ].join('\n')
+}
+
 // ---- self-test: this script's own logic, with no agent ----
 function selfTest() {
   const failed = []
@@ -1475,9 +1640,16 @@ function selfTest() {
     ['a clause beside a scope', Object.assign({}, base, { clause: 'no-lost-files', scope: 'everything' })], ['a clause beside a cross-model pass', Object.assign({}, base, { clause: 'no-lost-files', crossModel: ['row-3'] })],
     ['a cross-model pass on fix', Object.assign({}, fix, { crossModel: ['row-3'] })], ['a cross-model item that is no id', Object.assign({}, base, { crossModel: ['Row 3'] })],
     ['a cross-model item named twice', Object.assign({}, base, { crossModel: ['row-3', 'row-3'] })],
+    ['a probe nobody has', { probe: 'everything', scratch: '/tmp/scratch-1' }], ['a probe that is no name', { probe: true, scratch: '/tmp/scratch-1' }], ['a probe of no name', { probe: '', scratch: '/tmp/scratch-1' }],
+    ['a probe with no scratch', { probe: 'relay' }], ['a probe with a relative scratch', { probe: 'relay', scratch: 'tmp/x' }], ['a probe with a scratch that climbs', { probe: 'hold', scratch: '/tmp/../etc' }], ['a probe with a quote in its scratch', { probe: 'payload', scratch: '/tmp/a\'b' }],
+    ['a probe beside a stage', { probe: 'relay', stage: 'test', scratch: '/tmp/scratch-1' }], ['a probe beside a run', { probe: 'relay', run: 'rc24-tier1', scratch: '/tmp/scratch-1' }], ['a probe beside a stage and a run', Object.assign({ probe: 'payload' }, base)], ['a probe beside a stage that refuses', Object.assign({ probe: 'hold' }, fix)],
+    ['a probe beside a model', { probe: 'required', scratch: '/tmp/scratch-1', model: 'sonnet' }], ['a probe beside a ruling about the run', { probe: 'hold', scratch: '/tmp/scratch-1', rulings: [{ go: true }] }], ['a probe beside a tuning stop', { probe: 'relay', scratch: '/tmp/scratch-1', stopAfter: 'state' }],
+    ['seconds on a probe that holds nothing', { probe: 'relay', scratch: '/tmp/scratch-1', seconds: 60 }], ['a hold of no time', { probe: 'hold', scratch: '/tmp/scratch-1', seconds: 0 }], ['a hold of half a second', { probe: 'hold', scratch: '/tmp/scratch-1', seconds: 0.5 }],
+    ['a hold that is no number', { probe: 'hold', scratch: '/tmp/scratch-1', seconds: '720' }], ['a hold past its bound', { probe: 'hold', scratch: '/tmp/scratch-1', seconds: PROBE_HOLD_MAX + 1 }], ['seconds on a stage', Object.assign({}, base, { seconds: 60 })],
   ].concat([true, false, 'all', '*', 'every', 'row-3', 1, [], {}, { all: true }, ['*'], ['all rows'], [true]].map((every) => ['a cross-model pass for every item: ' + JSON.stringify(every), Object.assign({}, base, { crossModel: every })]))
   for (const [name, given] of refused) check('refused: ' + name, typeof validateArgs(given) === 'string')
-  const taken = [
+  const taken = PROBES.map((probe) => ({ probe, scratch: '/tmp/scratch-1' })).concat([
+    { probe: 'hold', scratch: '/tmp/scratch-1', seconds: 1 }, { probe: 'hold', scratch: '/tmp/scratch-1', seconds: PROBE_HOLD_MAX },
     base, fix, { selfTest: true }, Object.assign({}, base, { scope: 'everything' }), Object.assign({}, base, { scope: { range: 'abcdef1..1234567' } }),
     Object.assign({}, base, { scope: { doors: ['jigc setup', 'jigc doc show'] } }), Object.assign({}, base, { stopAfter: 'preflight', model: 'sonnet' }),
     Object.assign({}, base, { clause: 'no-lost-files' }), Object.assign({}, base, { crossModel: ['row-3'] }), Object.assign({}, base, { crossModel: ['row-3', 'row-7'] }),
@@ -1485,7 +1657,7 @@ function selfTest() {
     Object.assign({}, base, { rulings: [{ go: true }] }), Object.assign({}, fix, { rulings: [{ go: true }, { rerun: 'no-lost-files' }, { rerun: 'no-regression' }] }), Object.assign({}, fix, { rulings: [{ rounds: 4 }] }), Object.assign({}, base, { rulings: [{ rounds: 4 }, { rerun: 'no-lost-files' }] }), Object.assign({}, base, { rulings: [{ reverify: 'f-1' }, { reverify: 'f-2' }, { again: 'test' }] }), Object.assign({}, fix, { rulings: [{ cycles: 4 }, { again: 'fix' }] }),
     Object.assign({}, base, { rulings: [{ key: 'f-1', ruling: later }] }), Object.assign({}, base, { rulings: [{ key: 'f-1', ruling: admitted, note: 'n' }, { bound: 'b', reach: 'x', where: 'y', pin: 'unpinned' }] }),
     Object.assign({}, fix, { rulings: [{ key: 'f-1', ruling: admitted, note: 'build the robust path' }, { key: 'f-2', ruling: later }, { key: 'f-3', ruling: bound, bound: 'non-jigc-writer', reach: 'races against a writer that is not jigc', where: 'the stop after round 1, item 3', pin: 'unpinned' }, { bound: 'planted-state', reach: 'a state nobody reaches', where: 'the stop after round 1', pin: 'flow12::planted' }] }),
-  ]
+  ])
   for (const given of taken) check('taken: ' + JSON.stringify(given), validateArgs(given) === null)
 
   // A stage that is not fit for use refuses to start — every invocation of it but the one
@@ -1745,6 +1917,33 @@ function selfTest() {
   check('the areas', areas.map((x) => x.n + ':' + x.findings.map((f) => f.key).join('+')).join(' ') === '1:f-1+f-3 2:f-2 3:f-4' && areasOf([], null).length === 0 && areasOf([{ key: 'f', door: 'd' }], null).length === 1)
   check('a unit\'s doors', unitDoors({ doors: ['jigc setup'], registries: ['codes'] }, [{ door: 'jigc setup', registry: 'verbs' }, { door: 'jigc rename', registry: 'verbs' }, { door: 'finalize.dirty', registry: 'codes' }]).map((d) => d.door).join(',') === 'jigc setup,finalize.dirty')
 
+  // The runtime probes: what their agents are told, and what is handed to the tool.
+  const probeBegin = probeStep('its first act', 'begin', '--scratch /tmp/scratch-1 --probe relay')
+  check('a probe\'s step is the harness\'s own step prompt, with the probe tool where the step tool stands', probeBegin === stepPrompt('a PROBE of the stabilization harness, of no run — its first act', 'begin', '--scratch /tmp/scratch-1 --probe relay').split(STEP_TOOL).join(PROBE_TOOL) && probeBegin.includes('\n1. `dev/stabilize-probe begin --scratch /tmp/scratch-1 --probe relay`\n') && probeBegin.includes(STEP_RULES) && probeBegin.includes(AS_PRINTED) && !probeBegin.includes(STEP_TOOL))
+  check('the field a reviewer came back with, as a cell — and nothing an agent wrote', probeField(null) === 'none' && probeField({ status: 'halted', asserted_sha256: 'a'.repeat(64) }) === 'halted' && probeField({ status: 'reported', findings: [] }) === 'absent' && probeField({ status: 'reported', asserted_sha256: null }) === 'absent' && probeField({ status: 'reported', asserted_sha256: 'a'.repeat(64) }) === 'a'.repeat(64) && probeField({ status: 'reported', asserted_sha256: 'x\'; rm -r /' }) === 'malformed' && probeField({ status: 'reported', asserted_sha256: 'A'.repeat(64) }) === 'malformed' && probeField({ status: 'reported', asserted_sha256: 7 }) === 'malformed')
+  check('how the tries of a call ended', triesOf([{ ended: 'nothing' }, { ended: 'threw', message: 'm' }, { ended: 'returned' }]) === 'ntr' && triesOf([{ ended: 'returned' }]) === 'r' && triesOf([{ ended: 'nothing' }, { ended: 'nothing' }, { ended: 'nothing' }]) === 'nnn')
+  check('the bytes of a text', utf8Length('') === 0 && utf8Length('a\u00e9\u2014\ud83d\ude00') === 1 + 2 + 3 + 4)
+  const probeLine = printed({ act: 'state', status: 'read', state: { run: 'probe', door: 'a \u2014 b' } })
+  const probeOwn = sha256(JSON.stringify({ act: 'state', status: 'read', state: { run: 'probe', door: 'a \u2014 b' } }))
+  const relayed = (text) => probeRelayed({ status: 'ran', line: text }, readStep({ status: 'ran', line: text }, 'state'))
+  check('a relayed line that holds is its own hash, and its bytes', relayed(probeLine) === probeOwn + ':' + utf8Length(probeLine) && relayed(probeLine + '\n') === probeOwn + ':' + utf8Length(probeLine))
+  check('a relayed line that does not hold is altered, and its bytes', relayed(probeLine.replace('probe', 'prob')) === 'altered:' + (utf8Length(probeLine) - 1) && relayed('not json') === 'altered:8' && relayed(probeLine.replace('\u2014', '-')) === 'altered:' + (utf8Length(probeLine) - 2))
+  check('no line came back', probeRelayed(null, null) === 'none:0' && probeRelayed({ status: 'ran' }, readStep({ status: 'ran' }, 'state')) === 'none:0' && probeRelayed({ status: 'halted', halt: { root_cause: 'x' } }, readStep({ status: 'halted', halt: { root_cause: 'x' } }, 'state')) === 'none:0')
+  const probeReview = (id) => probeReviewPrompt(id, { file: '/tmp/scratch-1/probe/required/bin/jigc', sha256: 'c'.repeat(64) })
+  check('a probe\'s reviewer is handed the binary line a stage\'s reviewer is, and no report', probeReview('b').includes('\nBINARY: candidate `/tmp/scratch-1/probe/required/bin/jigc` sha256 ' + 'c'.repeat(64) + ' (commit ' + '0'.repeat(40) + ', label probe). Return the sha256 you asserted for the candidate as `asserted_sha256`.\n') && !probeReview('b').includes('\n' + LABELS.report) && !probeReview('a').includes('\n' + LABELS.report))
+  check('only case a is told to leave the field out', probeReview('a').includes('Leave `asserted_sha256` OUT of your return') && !probeReview('b').includes('OUT of your return') && probeReview('a').replace('case a', 'case b').startsWith(probeReview('b') + '\n'))
+  check('the probe\'s schema requires the hash, and a stage\'s does not', PROBE_UNIT_SCHEMA.required.includes('asserted_sha256') && !UNIT_SCHEMA.required.includes('asserted_sha256') && PROBE_UNIT_SCHEMA.properties === UNIT_SCHEMA.properties)
+  const probed = PROBE_ENTRIES.map((n) => probeBatch('/tmp/scratch-1', n))
+  const probedCalls = (batch) => JSON.parse(batch.write.split('\n')[1])
+  check('a probe\'s batch is a stage\'s record of that many findings, under the scratch root', probed.every((batch, i) => batch.file === '/tmp/scratch-1/probe/payload/e' + PROBE_ENTRIES[i] + '/batch.json' && JSON.stringify(probedCalls(batch).map((made) => made.argv[0])) === JSON.stringify(['check-reports', 'ledger-add', 'triage-set', 'check-ledger']) && JSON.parse(probedCalls(batch)[1].stdin).length === PROBE_ENTRIES[i] && JSON.parse(probedCalls(batch)[2].stdin).length === PROBE_ENTRIES[i] && probedCalls(batch)[3].argv.length === 4 + PROBE_ENTRIES[i]))
+  check('a probe\'s batch is held to the hash of its text, and grows with its entries', probed.every((batch) => batch.sha256 === sha256(batch.write.split('\n')[1] + '\n') && batch.write.includes('must print `' + batch.sha256 + '`')) && probed.every((batch, i) => i === 0 || batch.write.length > probed[i - 1].write.length) && distinct(probed.map((batch) => batch.sha256)))
+  const probePayload = probePayloadPrompt('/tmp/scratch-1', 20, probed[0])
+  check('a probe\'s executor writes the payload as a record step does, hashes it, and applies nothing', probePayload.startsWith(LABELS.record + ' — a PROBE') && probePayload.includes('\n' + RECORD_RUNS + '\n1. ' + probed[0].write + '\n2. `dev/stabilize-probe hash --scratch /tmp/scratch-1 --file /tmp/scratch-1/probe/payload/e20/batch.json`') && !probePayload.includes('stabilize-record apply') && !probePayload.includes(GATE) && !probePayload.includes(LABELS.branch))
+  const probeHeld = probeHoldPrompt('/tmp/scratch-1', 'a', 720)
+  check('a probe\'s long command is held as the gate is: in the background, in slices, its output in a file', probeHeld.includes('`dev/stabilize-probe hold --scratch /tmp/scratch-1 --name a --seconds 720 > /tmp/scratch-1/probe/hold/a.out 2>&1` — in the background, waited for in this same turn in slices of under five minutes') && !probeHeld.includes('\n' + LABELS.report) && !probeHeld.includes(GATE))
+  check('a slice of a read is under the tool\'s default timeout, and a hold past its ceiling', PROBE_SLICE < 120 && PROBE_HOLD > 600 && PROBE_HOLD <= PROBE_HOLD_MAX)
+  check('no prompt of a probe names a run, a round or a branch', [probeBegin, probeReview('a'), probePayload, probeHeld].every((text) => !text.includes('fix/') && !text.includes(RUNS_ROOT) && !text.includes('--run ') && !text.includes('--round ') && !text.includes('--branch ') && !text.includes('--loop ')))
+
   return { status: failed.length ? 'self-test-failed' : 'self-test-passed', checks, failed }
 }
 
@@ -1783,6 +1982,9 @@ const cycleLimit = v.raise ? v.raise.cycles : DEFAULT_CYCLES
 const TRANSIENT_RETRIES = 2
 let exhaustedLabels = []
 let breakerTripped = false
+// How each try of a call ended, kept only while a probe watches one (`watched`): null in
+// every stage, where nothing reads it.
+let triesSeen = null
 async function agentR(prompt, opts) {
   const lbl = (opts && opts.label) ? opts.label : 'agent'
   if (breakerTripped) {
@@ -1794,11 +1996,13 @@ async function agentR(prompt, opts) {
     const note = attempt === 0 ? '' : '\n\nRETRY after a transient failure of an earlier attempt at this same call. Before anything else look at what that attempt left — `git status --porcelain`, `git log -1`, and whether your report already stands at its path — and go on from it: never `git clean` (the untracked files under the run\'s directory are other agents\' reports), never make a commit or write a report that exists already. If you cannot tell what the dead attempt did, halt and say so.'
     try {
       const result = await agent(prompt + note, Object.assign({ model }, opts))
+      if (triesSeen) triesSeen.push({ ended: result != null ? 'returned' : 'nothing' })
       if (result != null) return result
       lastErr = new Error('agent returned null')
       log('null return on ' + lbl + ' (attempt ' + (attempt + 1) + '/' + (TRANSIENT_RETRIES + 1) + ')')
     } catch (e) {
       lastErr = e
+      if (triesSeen) triesSeen.push({ ended: 'threw', message: String((e && e.message) || e) })
       log('transient failure on ' + lbl + ' (attempt ' + (attempt + 1) + '/' + (TRANSIENT_RETRIES + 1) + ') — ' + ((e && e.message) || e))
     }
   }
@@ -2198,6 +2402,103 @@ function closeOf() {
     order: ['the close of the run, as the workflow\'s doc has it', 'sync: close.sync, spawned verbatim on model close.sync.model', 'dev/gate green on the merged tree', 'git push origin ' + loopBranch, 'gh pr create --base main --head ' + loopBranch],
     sync: { agentType: 'build-git', model: GIT_MODEL, label: 'git:sync-main', prompt: syncMainPrompt(v.run), schema: STEP_SCHEMA, reads: 'its `line` is the ONE line `' + STEP_TOOL + ' sync-main` printed — JSON: status `merged` or `up-to-date` with head, origin_main and resolved_logs, or `halted` with the word it refused with and its halt report' },
   }
+}
+
+// ---- the runtime probes ----
+// watched — a call of a probe, and how each try of it ended. A PROBE'S AGENTS ARE MEANT TO
+// FAIL — that is what it observes — so two calls that exhausted their retries are its answer
+// and no sign of a rate limit: the breaker is put back, and the step that judges still runs.
+async function watched(call) {
+  triesSeen = []
+  const back = await call()
+  const tries = triesSeen
+  triesSeen = null
+  exhaustedLabels = []
+  breakerTripped = false
+  return { back, tries }
+}
+// probeAct — a probe's step that is ONE command of the probe tool, on the git steps' model:
+// the return as it came back, and what `readStep` makes of its line.
+async function probeAct(label, act, what, flags) {
+  const raw = await gitStep('probe:' + label, 'Probe', probeStep(what, act, flags), STEP_SCHEMA)
+  return { raw, read: readStep(raw, act) }
+}
+// faultOf — why a step's line is not an answer, in a few words, or null: never the line.
+function faultOf(read) {
+  if (!read) return 'nothing came back'
+  if (read.relay) return read.relay
+  return read.status === 'halted' ? (read.halt && read.halt.root_cause) || 'the step halted' : null
+}
+// runProbe — ONE probe, whole: its root made by the tool, its cases observed with the roles
+// a stage launches, and what was observed handed to the tool as tokens — letters, digits
+// and hashes this script computed, never a word an agent wrote — which it judges against
+// what it knows itself, writes under the scratch root and prints.
+async function runProbe() {
+  phase('Probe')
+  const s = v.scratch
+  const stopped = (at, why, more) => Object.assign({ status: 'halted', probe: v.probe, scratch: s, halted: Object.assign({ phase: at, reason: why }, more || {}), message: 'the `' + v.probe + '` probe HALTED at ' + at + ': ' + why + '. No file of the repository was written; what the probe left lies under ' + s + '/probe/' + v.probe + '/. Invoke it again under a FRESH scratch root: a probe\'s root is made once.' })
+  const begun = (await probeAct('begin', 'begin', 'its first act: the root of the `' + v.probe + '` probe under the scratch root, and what the probe stands on', '--scratch ' + s + ' --probe ' + v.probe)).read
+  if (!begun || begun.status !== 'begun') return stopped('begin', 'the probe was not begun: ' + faultOf(begun), { refused: (begun && begun.refused) || null, halt: (begun && begun.halt) || null })
+  const observed = []
+  const cases = []
+  if (v.probe === 'required') {
+    for (const id of ['a', 'b']) {
+      const { back, tries } = await watched(() => roleStep('review', 'probe:required:' + id, 'Probe', probeReviewPrompt(id, begun.binary), PROBE_UNIT_SCHEMA))
+      observed.push({ case: id, tries, returned: back })
+      cases.push(id + ':' + triesOf(tries) + ':' + probeField(back))
+    }
+  }
+  if (v.probe === 'relay') {
+    for (const rows of PROBE_ROWS) {
+      for (let n = 1; n <= PROBE_RELAYS; n++) {
+        const tag = 'r' + rows + '-' + n
+        const { back, tries } = await watched(() => probeAct('state:' + tag, 'state', 'the ONE line of the state of a throwaway run of ' + rows + ' ledger row(s), relayed — relay ' + n + ' of ' + PROBE_RELAYS, '--scratch ' + s + ' --rows ' + rows + ' --tag ' + tag))
+        const cell = probeRelayed(back.raw, back.read)
+        observed.push({ case: tag, tries, back: cell, fault: faultOf(back.read) })
+        cases.push(tag + ':' + triesOf(tries) + ':' + cell)
+      }
+    }
+  }
+  if (v.probe === 'payload') {
+    for (const n of PROBE_ENTRIES) {
+      const batch = probeBatch(s, n)
+      const { back, tries } = await watched(() => roleStep('record', 'probe:payload:e' + n, 'Probe', probePayloadPrompt(s, n, batch), STEP_SCHEMA))
+      const read = readStep(back, 'hash')
+      const relayed = read && read.status === 'hashed' && SHA256_RE.test(String(read.file_sha256)) ? read.file_sha256 : 'none'
+      observed.push({ case: 'e' + n, tries, composed: { file: batch.file, sha256: batch.sha256 }, relayed, fault: faultOf(read) })
+      cases.push('e' + n + ':' + triesOf(tries) + ':' + batch.sha256 + ':' + relayed)
+    }
+  }
+  if (v.probe === 'hold') {
+    const seconds = v.seconds || PROBE_HOLD
+    // (a) ONE agent holds the command inside its turn.
+    const a = await watched(() => roleStep('preflight', 'probe:hold:a', 'Probe', probeHoldPrompt(s, 'a', seconds), STEP_SCHEMA))
+    const held = readStep(a.back, 'hold')
+    const line = held && held.status === 'held' && held.name === 'a' ? 'held' : a.back && typeof a.back.line === 'string' ? 'other' : 'none'
+    observed.push({ case: 'a', seconds, tries: a.tries, line, fault: faultOf(held) })
+    cases.push('a:' + triesOf(a.tries) + ':' + line)
+    // (b) One step starts it and returns; later steps ask for it, a slice each, until it
+    // has ended or as many slices as it could take are spent.
+    const started = (await watched(() => probeAct('hold:b', 'hold', 'the long command, STARTED in a session of its own: this step returns at once, and the command runs on for ' + seconds + ' seconds', '--scratch ' + s + ' --name b --seconds ' + seconds + ' --detach'))).back.read
+    const most = Math.ceil(seconds / PROBE_SLICE) + 2
+    let reads = 0
+    let last = 'none'
+    while (reads < most && last !== 'done' && last !== 'dead') {
+      reads++
+      const answer = (await watched(() => probeAct('held:b:' + reads, 'held', 'what became of the long command another step started, asked within a slice of ' + PROBE_SLICE + ' seconds — read ' + reads, '--scratch ' + s + ' --name b --slice ' + PROBE_SLICE))).back.read
+      last = answer && ['done', 'running', 'dead'].includes(answer.status) ? answer.status : 'none'
+      // A hold nobody started is asked for once: the tool's refusal is the answer.
+      if (answer && answer.refused) break
+    }
+    observed.push({ case: 'b', seconds, started: started ? started.status : null, reads, last, fault: faultOf(started) })
+    cases.push('b:' + reads + ':' + last)
+  }
+  const asked = '--scratch ' + s + ' --probe ' + v.probe + ' --sum ' + sha256(cases.join(' ')) + ' -- ' + cases.join(' ')
+  const judged = (await probeAct('verdict', 'verdict', 'the judgement: what the harness observed of each case, held by the tool to what it knows itself, and written under the scratch root', asked)).read
+  // What was observed is not lost with the step that should have judged it: the command is
+  // returned, and whoever runs it as it stands gets the verdict.
+  if (!judged || judged.status !== 'judged' || !Array.isArray(judged.cases)) return stopped('verdict', 'what the probe observed was not judged: ' + faultOf(judged) + '. The observations stand: `halted.command`, run as it is from the repository\'s root, judges them', { refused: (judged && judged.refused) || null, halt: (judged && judged.halt) || null, command: PROBE_TOOL + ' verdict ' + asked, observed })
+  return { status: 'probed', probe: v.probe, scratch: s, result: judged.file, cases: judged.cases, observed, message: 'the `' + v.probe + '` probe ran: `cases` is what ' + PROBE_TOOL + ' judged, one entry per case with its `verdict`, as it wrote it to ' + judged.file + '; `observed` is what this script saw of each call. What a verdict decides is implementation/stabilization-workflow.md -> The runtime probes.' }
 }
 
 // ---- the `test` stage ----
@@ -2689,4 +2990,4 @@ async function runFix() {
   }
 }
 
-return await (v.stage === 'test' ? runTest() : runFix())
+return await (v.probe ? runProbe() : v.stage === 'test' ? runTest() : runFix())
