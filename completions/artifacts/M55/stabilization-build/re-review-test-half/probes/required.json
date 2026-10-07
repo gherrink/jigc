@@ -1,0 +1,28 @@
+{
+ "probe": "required",
+ "judged_by": "dev/stabilize-probe verdict",
+ "cases": [
+  {
+   "case": "a",
+   "verdict": "threw",
+   "tries": 3,
+   "ended": [
+    "threw",
+    "threw",
+    "threw"
+   ],
+   "handed": "11b25b0b146e292537dda54a7e2b34882a266429ccfbb86d9eaad065cebea768",
+   "back": "none"
+  },
+  {
+   "case": "b",
+   "verdict": "returned",
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "handed": "11b25b0b146e292537dda54a7e2b34882a266429ccfbb86d9eaad065cebea768",
+   "back": "11b25b0b146e292537dda54a7e2b34882a266429ccfbb86d9eaad065cebea768"
+  }
+ ]
+}

@@ -1,0 +1,27 @@
+{
+ "probe": "hold",
+ "judged_by": "dev/stabilize-probe verdict",
+ "cases": [
+  {
+   "case": "a",
+   "verdict": "held",
+   "process": "done",
+   "seconds": 2100,
+   "held_for": 2100.062,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "line": "held"
+  },
+  {
+   "case": "b",
+   "verdict": "outlived",
+   "process": "done",
+   "seconds": 2100,
+   "held_for": 2100.034,
+   "reads": 22,
+   "last": "done"
+  }
+ ]
+}

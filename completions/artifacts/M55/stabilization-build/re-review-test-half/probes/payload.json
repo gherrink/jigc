@@ -1,0 +1,58 @@
+{
+ "probe": "payload",
+ "judged_by": "dev/stabilize-probe verdict",
+ "cases": [
+  {
+   "case": "e20",
+   "verdict": "whole",
+   "entries": 20,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes": 8412,
+   "expected": "24760ebcf0bbfa98b03132da372edf351ca8c8ea0d046eb087e02f2761d84959",
+   "on_disk": "24760ebcf0bbfa98b03132da372edf351ca8c8ea0d046eb087e02f2761d84959",
+   "relayed": "agrees"
+  },
+  {
+   "case": "e60",
+   "verdict": "whole",
+   "entries": 60,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes": 24384,
+   "expected": "2f48a7fca216b33d2ef1348beb94e81bce10a6d5305439b8de6c4b4da1926d04",
+   "on_disk": "2f48a7fca216b33d2ef1348beb94e81bce10a6d5305439b8de6c4b4da1926d04",
+   "relayed": "agrees"
+  },
+  {
+   "case": "e120",
+   "verdict": "whole",
+   "entries": 120,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes": 48339,
+   "expected": "4766313c8b64549660889b0b8bc5205bfcce478a73e6007ad840ef05e818bbaa",
+   "on_disk": "4766313c8b64549660889b0b8bc5205bfcce478a73e6007ad840ef05e818bbaa",
+   "relayed": "agrees"
+  },
+  {
+   "case": "e300",
+   "verdict": "whole",
+   "entries": 300,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes": 120204,
+   "expected": "37d28f3e6ea5c665d64d8de09e6005c4dc163738bdf721b0eb0093c7a7df3024",
+   "on_disk": "37d28f3e6ea5c665d64d8de09e6005c4dc163738bdf721b0eb0093c7a7df3024",
+   "relayed": "agrees"
+  }
+ ]
+}

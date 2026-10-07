@@ -1,0 +1,140 @@
+{
+ "probe": "relay",
+ "judged_by": "dev/stabilize-probe verdict",
+ "cases": [
+  {
+   "case": "r1-1",
+   "verdict": "altered",
+   "rows": 1,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 3345,
+   "bytes_back": 3318
+  },
+  {
+   "case": "r1-2",
+   "verdict": "altered",
+   "rows": 1,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 3345,
+   "bytes_back": 3318
+  },
+  {
+   "case": "r1-3",
+   "verdict": "altered",
+   "rows": 1,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 3345,
+   "bytes_back": 3318
+  },
+  {
+   "case": "r20-1",
+   "verdict": "altered",
+   "rows": 20,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 25672,
+   "bytes_back": 25189
+  },
+  {
+   "case": "r20-2",
+   "verdict": "altered",
+   "rows": 20,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 25672,
+   "bytes_back": 25189
+  },
+  {
+   "case": "r20-3",
+   "verdict": "altered",
+   "rows": 20,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 25672,
+   "bytes_back": 25189
+  },
+  {
+   "case": "r60-1",
+   "verdict": "missing",
+   "rows": 60,
+   "tries": 2,
+   "ended": [
+    "nothing",
+    "returned"
+   ],
+   "bytes_sent": 80682,
+   "bytes_back": 0
+  },
+  {
+   "case": "r60-2",
+   "verdict": "missing",
+   "rows": 60,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 80682,
+   "bytes_back": 0
+  },
+  {
+   "case": "r60-3",
+   "verdict": "altered",
+   "rows": 60,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 80682,
+   "bytes_back": 79059
+  },
+  {
+   "case": "r120-1",
+   "verdict": "missing",
+   "rows": 120,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 159194,
+   "bytes_back": 0
+  },
+  {
+   "case": "r120-2",
+   "verdict": "missing",
+   "rows": 120,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 159194,
+   "bytes_back": 0
+  },
+  {
+   "case": "r120-3",
+   "verdict": "missing",
+   "rows": 120,
+   "tries": 2,
+   "ended": [
+    "nothing",
+    "returned"
+   ],
+   "bytes_sent": 159194,
+   "bytes_back": 0
+  }
+ ]
+}
