@@ -272,6 +272,7 @@ const LEDGER_MISMATCH: i32 = 21;
 const GATE_MISMATCH: i32 = 22;
 const FAULT: i32 = 23;
 const VET_MISMATCH: i32 = 24;
+const NO_CHANGE: i32 = 25;
 
 /// Every refusal class with its status, as `--help` must list them.
 const REFUSALS: &[(i32, &str)] = &[
@@ -294,6 +295,7 @@ const REFUSALS: &[(i32, &str)] = &[
     (PENDING, "pending"),
     (CHECK, "check"),
     (FAULT, "fault"),
+    (NO_CHANGE, "no-change"),
 ];
 
 const LEDGER_COLUMNS: [&str; 10] = [
@@ -3702,17 +3704,22 @@ fn check_reports_holds_a_stage_to_one_report_per_launched_reporter() {
     rig.run(&check_reports(RUN, "1", "2", &launched), "")
         .must(OK, "attempt 2, complete");
 
-    // Whatever else lies in the stage's directory is an extra file: a note by hand, a
-    // directory, the temporary of a write that was killed.
+    // The script's own temporary — a write in flight, or what a killed one left, which the
+    // next writer removes — is no report, and nobody launched it (the re-review's `R4`).
     let stage = rig.root.join(&dir);
-    fs::write(stage.join("notes.txt"), "by hand\n").expect("a stray file");
     fs::write(stage.join(".stabilize-record.x1.tmp"), "half").expect("a stray temporary");
+    rig.run(&check_reports(RUN, "1", "2", &launched), "")
+        .must(OK, "a temporary beside the reports");
+
+    // Whatever else lies in the stage's directory is an extra file: a note by hand, a
+    // directory.
+    fs::write(stage.join("notes.txt"), "by hand\n").expect("a stray file");
     fs::create_dir(stage.join("audit-extra.a2.md")).expect("a directory named as a report");
     let seen = rig.run(&check_reports(RUN, "1", "2", &launched), "");
     seen.must(REPORTS_MISMATCH, "strays in the stage's directory");
     assert_eq!(
         seen.json()["extra"],
-        json!([".stabilize-record.x1.tmp", "audit-extra.a2.md", "notes.txt"])
+        json!(["audit-extra.a2.md", "notes.txt"])
     );
 
     // A stage that launched nobody passes on an empty directory, and a reporter named
@@ -9577,6 +9584,13 @@ fn a_write_killed_between_its_files_is_never_read_as_a_finished_one() {
         3,
         "its temporaries are what is left"
     );
+    assert_eq!(
+        rig.run(&keeper("pending", RUN), "").json()["temporaries"]
+            .as_array()
+            .map(Vec::len),
+        Some(3),
+        "and `pending` names them"
+    );
     rig.run(&keeper("recover", RUN), "").must(OK, "recover");
     assert_eq!(rig.snapshot(), before, "and they are removed");
 
@@ -9797,6 +9811,150 @@ fn a_record_steps_batch_is_written_whole_held_as_pending_and_can_be_taken_back()
         json!([nobody["opened"], nobody["batch"], nobody["once"]]),
         json!([false, null, []])
     );
+}
+
+/// A rig at the point where a `test` stage's record is composed: a finding triaged once,
+/// the census, and the item the batch records a result of.
+fn before_a_record(label: &str) -> Rig {
+    let rig = triaged_once(label);
+    rig.run(
+        &run_set(RUN),
+        &json!({"clauses": ["no-lost-files"]}).to_string(),
+    )
+    .must(OK, "the census");
+    rig.run(&item_set(RUN), &item("row-setup").to_string())
+        .must(OK, "the item the batch records a result of");
+    rig
+}
+
+/// The human's ruling on a finding, as a batch of its own.
+fn ruling_batch() -> Value {
+    json!([
+        call(
+            ledger_set(RUN),
+            &json!([{"key": "audit-f3", "disposition": "later", "detail": "next release"}])
+                .to_string()
+        ),
+        call(check_ledger(RUN, &["audit-f3"]), ""),
+    ])
+}
+
+/// **A batch that would change nothing is refused before a journal exists** (the second
+/// repair plan's `P1`; the re-review's `R2`, the way in without a kill): the same ruling
+/// sent twice was applied twice — every call of it is one the state takes — and the second
+/// time no file differed from what the run held. Its commit step found nothing to commit,
+/// the journal kept the batch, and every later record of the run was refused `pending`. A
+/// batch every file of which is what the run holds already is no batch: nothing is written,
+/// no journal exists, and the next record is applied.
+#[test]
+fn a_batch_that_would_change_nothing_is_refused_before_a_journal_exists() {
+    let rig = before_a_record("no-change");
+    rig.run(&apply(RUN, Some("1")), &stage_batch(&rig).to_string())
+        .must(OK, "the stage's record");
+    rig.run(&keeper("settle", RUN), "")
+        .must(OK, "its commit is made");
+    rig.run(&apply(RUN, Some("1")), &ruling_batch().to_string())
+        .must(OK, "the ruling, recorded");
+    rig.run(&keeper("settle", RUN), "")
+        .must(OK, "its commit is made");
+    let written = rig.snapshot();
+    let read = rig.state();
+
+    let again = rig.run(&apply(RUN, Some("1")), &ruling_batch().to_string());
+    again.refused(NO_CHANGE, "the same ruling, sent again");
+    assert!(
+        again.stderr.contains("nothing was written"),
+        "{}",
+        again.stderr
+    );
+    assert_eq!(
+        rig.snapshot(),
+        written,
+        "no file, no temporary and no journal"
+    );
+    assert_eq!(
+        rig.run(&keeper("pending", RUN), "").json()["batch"],
+        Value::Null
+    );
+    assert_eq!(rig.state(), read);
+
+    // MUST NOT REFUSE: a batch one file of which differs, and any later record of the run.
+    let other = json!([
+        call(
+            ledger_set(RUN),
+            &json!([{"key": "audit-f3", "disposition": "later", "detail": "the release after"}])
+                .to_string()
+        ),
+        call(check_ledger(RUN, &["audit-f3"]), ""),
+    ]);
+    rig.run(&apply(RUN, Some("1")), &other.to_string())
+        .must(OK, "a ruling that says something else");
+}
+
+/// **Taking a batch back is a journaled write, and a killed one is finished by whoever
+/// writes next** (the plan's `P1`: every state between two of a record step's own commands
+/// has its answer). `discard` restores one file after the other; killed between two it left
+/// tables that were half the batch and half what stood before it, with the journal still
+/// saying *applied*. It now says in the journal that the batch is being taken back before
+/// it restores anything: the state is not read across it, `pending` says the write was
+/// interrupted, and the next writer — or `recover` — finishes taking it back.
+#[test]
+fn taking_a_batch_back_is_a_journaled_write_and_a_killed_one_is_finished() {
+    for (at, marked) in [(1, false), (2, true), (3, true)] {
+        let mut rig = before_a_record(&format!("killed-discard-{at}"));
+        let before = rig.snapshot();
+        let read = rig.state();
+        rig.run(&apply(RUN, Some("1")), &stage_batch(&rig).to_string())
+            .must(OK, "the batch");
+        let applied = rig.state();
+        // The script's first rename is the journal's own; each later one restores a table.
+        with_kill_switch(&mut rig, "STUB_KILL_AT_REPLACE", at);
+        let seen = rig.run(&keeper("discard", RUN), "");
+        assert_eq!((seen.code, seen.signal), (None, Some(9)), "{seen:?}");
+        rig.env.truncate(0);
+        let pending = rig.run(&keeper("pending", RUN), "").json();
+        assert_eq!(
+            pending["interrupted"], marked,
+            "killed before rename {at}: {pending}"
+        );
+        if !marked {
+            // Killed before the journal said so: the batch is applied, whole.
+            assert_eq!(
+                pending["temporaries"].as_array().map(Vec::len),
+                Some(1),
+                "what it left is its temporary: {pending}"
+            );
+            rig.run(&keeper("recover", RUN), "").must(OK, "recover");
+            assert_eq!(rig.state(), applied, "the batch stands as applied");
+            assert_eq!(
+                rig.run(&keeper("pending", RUN), "").json()["batch"]["calls"],
+                6
+            );
+            continue;
+        }
+        let refused = rig.run(&state(RUN), "");
+        refused.refused(INTERRUPTED, "the state over a batch half taken back");
+        assert!(
+            refused.stderr.contains("recover --run rc24"),
+            "the refusal names what finishes it: {}",
+            refused.stderr
+        );
+        // The next writer — any writer — finishes it before its own write: here the batch
+        // itself, applied again over tables that are the ones before it.
+        if at == 2 {
+            rig.run(&keeper("recover", RUN), "").must(OK, "recover");
+            assert_eq!(
+                rig.snapshot(),
+                before,
+                "the tree before the batch, byte for byte"
+            );
+            assert_eq!(rig.state(), read);
+        } else {
+            rig.run(&apply(RUN, Some("1")), &stage_batch(&rig).to_string())
+                .must(OK, "the batch, applied again");
+            assert_eq!(rig.state(), applied);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

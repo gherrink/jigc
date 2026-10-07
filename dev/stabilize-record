@@ -694,8 +694,12 @@
 #       the calls wrote is written as one batch (below), and the journal holds it as THE
 #       APPLIED BATCH: its files with the sha256 each was written with and its text
 #       before, the subject of the commit that records it, the round whose candidate
-#       gate that commit is held to, and how many calls and which checks it ran. A run
-#       has one applied batch at a time (pending). A BATCH THAT HOLDS A STAGE'S REPORT
+#       gate that commit is held to, how many calls and which checks it ran, and the act
+#       it is a batch of (`record`). A run has one applied batch at a time (pending). A
+#       BATCH THAT WOULD CHANGE NOTHING IS NO BATCH (no-change): where every file the
+#       calls wrote is already what the run holds — the same ruling, sent twice — nothing
+#       is written and no journal exists, because no commit could ever settle it. A
+#       BATCH THAT HOLDS A STAGE'S REPORT
 #       CHECK IS THE RECORD OF THAT ATTEMPT of the stage, and says so in the round's
 #       record (round.md: recorded, as `test a<K>` or `fix-c<C> a<K>`) — which is what the
 #       attempts that left no record are counted from (state). Prints {"applied", "files",
@@ -703,18 +707,27 @@
 #
 #   dev/stabilize-record pending --run R
 #       What of the run is written and in no commit yet, AS THIS SCRIPT KNOWS IT; writes
-#       nothing. Prints {"run", "opened", "journal", "interrupted", "batch", "once"}:
-#       whether a write was killed between its files; the applied batch — {round,
-#       subject, calls, checks, files: {path: sha256}, altered: the files of it whose
-#       content is no longer what the batch wrote} — or null; and the files on disk
-#       that are written once and never rewritten: every report, and each round's scope.
-#       Whether one of those is in a commit is git's to say, and this script reads no
-#       git: dev/stabilize-step holds a tree to this answer.
+#       nothing. Prints {"run", "opened", "journal", "interrupted", "batch", "once",
+#       "temporaries"}: whether a write was killed between its files — a batch being
+#       placed, or one being taken back; the applied batch — {act, round, subject, calls,
+#       checks, files: {path: sha256}, altered: the files of it whose content is no
+#       longer what the batch wrote, discarding: that it is being taken back} — or null;
+#       the files on disk that are written once and never rewritten: every report, and
+#       each round's scope; and THIS SCRIPT'S OWN TEMPORARIES that a killed write left
+#       (the read holds the shared lock, so none of them is a live writer's). Whether a
+#       file is in a commit is git's to say, and this script reads no git:
+#       dev/stabilize-step holds a tree to this answer, and has `recover` finish what
+#       was killed before it does (its table of arrival states).
 #
 #   dev/stabilize-record discard --run R
 #       Takes the applied batch back: every file of it as it was before the batch, or
 #       gone where the batch made it, and the journal's batch with it. The reports and
-#       the scope are no part of a batch and stay. Prints {"discarded"}.
+#       the scope are no part of a batch and stay. IT IS A JOURNALED WRITE: the journal
+#       first says that the batch is being taken back, so that one killed between two
+#       files is finished by the next writer, and never read as applied. IT READS NO GIT,
+#       and so takes a batch back whose commit is made: the act that asks git first is
+#       `dev/stabilize-step discard`, which is the one an orchestrator calls. Prints
+#       {"discarded"}.
 #
 #   dev/stabilize-record settle --run R
 #       Forgets the applied batch, because the commit that records it was made: the one
@@ -722,8 +735,11 @@
 #       {"settled"}.
 #
 #   dev/stabilize-record recover --run R
-#       Settles a write that was killed, as every writer does before it writes (below).
-#       Prints {"recovered"} — the files it put in place.
+#       Settles a write that was killed, as every writer does before it writes (below):
+#       a batch whose journal was written is put in place, a batch that was being taken
+#       back is taken back, and the temporaries of a write killed before its journal are
+#       removed. Prints {"recovered": the files it put in place, "discarded": the files
+#       of a batch it finished taking back, "removed": how many temporaries}.
 #
 #   dev/stabilize-record vet --run R [--subject TEXT] [--] [PATH...]
 #       WHAT IS ABOUT TO BE COMMITTED, HELD TO WHAT THIS SCRIPT WOULD HAVE WRITTEN; writes
@@ -779,9 +795,12 @@
 # file the journal (.pending.json) then names which temporary becomes which file; each
 # is put in place; and the journal forgets them. A call killed before the journal is
 # written leaves no file of its batch, and its temporaries are removed by the next
-# writer. A call killed after it leaves an INTERRUPTED write: `state` refuses to read
+# writer — and are no report to `check-reports`, which does not count them. A call killed
+# after it leaves an INTERRUPTED write: `state` refuses to read
 # across it (interrupted), and the next writer — or `recover` — puts the rest of the
-# batch in place before it does anything else. A table has one writer at a time: every
+# batch in place before it does anything else. TAKING A BATCH BACK (discard) is such a
+# write too: the journal says it is under way before the first file is restored, and a
+# killed one is finished the same way. A table has one writer at a time: every
 # write is made under the run directory's lock, taken once a writer has its input and
 # never while it waits for it, so rows written at once are all written, and state reads
 # between two writes, never across one. Every JSON result is one line on stdout, printed
@@ -865,8 +884,10 @@
 # (.claude/workflows/stabilize.js, `rulingsRecordPrompt`), and a fence holds that no
 # other code of it spells them (tooling-tests/stabilize_harness_fence.rs, arms f and k).
 # Outside the harness the confinement is the orchestrator's discipline, and nothing's
-# enforcement. Nor does it know git: `settle` trusts that the commit was made, and
-# whether a pending file is committed is dev/stabilize-step's to read. (ONE read asks
+# enforcement. Nor does it know git: `settle` trusts that the commit was made, `discard`
+# that it was not, and whether a pending file is committed is dev/stabilize-step's to
+# read — which is why that tool, and no caller of this script, decides between the two
+# (its `git-state`, `record` and `discard`). (ONE read asks
 # git, and only about the commits it is handed: `vet --range`.)
 #
 # AND IT CANNOT KNOW WHO WROTE A FILE. A reporter has a shell, so a file at a report's
@@ -956,6 +977,8 @@
 #   23  fault         an input no refusal names, or a defect of this script: one line
 #   24  vet           failed: a file, a subject or a commit is not what this script would
 #                     have written, or a report check is stale (the result is on stdout)
+#   25  no-change     a batch every file of which is what the run holds already: there
+#                     is nothing to record, and nothing was written
 #
 # Needs python3, git and bash (dev/hygiene-scan), which the gate needs already, and
 # gitleaks and a denylist to write anything at all.
@@ -995,6 +1018,7 @@ STATUS = {
     "pending": 18,
     "check": 19,
     "fault": 23,
+    "no-change": 25,
 }
 REPORTS_MISMATCH = 20
 LEDGER_MISMATCH = 21
@@ -1140,9 +1164,13 @@ FENCES = (
 )
 
 # The run's journal, in its directory: which temporaries of a batch become which files
-# while a batch is being placed, and the applied batch that no commit holds yet. It is
-# never committed, and it is gone when it has nothing to say.
+# while a batch is being placed, and the applied batch that no commit holds yet — with the
+# act it is a batch of (`act`: `record`, the one act that applies one today), and, while it
+# is being taken back, that it is (`discarding`). It is never committed, and it is gone when
+# it has nothing to say.
 JOURNAL = ".pending.json"
+# This script's own temporaries: a file beside its target until it is put in place.
+TEMPORARY = re.compile(r"\.%s\..*\.tmp" % re.escape(PROG))
 # What the call staged (target -> (path, text, replace, why a taken path is refused)), what
 # it prints once that has landed, the run directories it holds the lock of, and — inside a
 # batch — the input of the call that is running.
@@ -1561,7 +1589,7 @@ def read_journal(run_dir):
             for name, entry in batch["files"].items():
                 if not (isinstance(name, str) and SHA256.fullmatch(entry["sha256"]) and (entry["before"] is None or isinstance(entry["before"], str))):
                     raise ValueError("a batch file")
-            if not (isinstance(batch["subject"], str) and isinstance(batch["calls"], int) and isinstance(batch["checks"], list) and (batch["round"] is None or isinstance(batch["round"], int))):
+            if not (isinstance(batch["subject"], str) and isinstance(batch["calls"], int) and isinstance(batch["checks"], list) and (batch["round"] is None or isinstance(batch["round"], int)) and isinstance(batch.get("act", "record"), str) and isinstance(batch.get("discarding", False), bool)):
                 raise ValueError("a batch")
     except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError) as err:
         refuse("corrupt", "%s is not the journal this script writes (%s); it is not read on a guess" % (rel, " ".join(str(err).split()) or type(err).__name__))
@@ -1601,22 +1629,53 @@ def place(run_dir, entry, settling=False):
     os.unlink(temporary)
 
 
+def take_back(run_dir, batch):
+    """Take an applied batch back: the journal first says that it is being taken back; then
+    every file of it is written as it was before the batch — or removed, where the batch
+    made it; then the journal forgets the batch. A run killed at any point leaves a journal
+    from which the next writer finishes it (recover): writing a file's text before the
+    batch a second time changes nothing. Returns the files, run-relative."""
+    if not batch.get("discarding"):
+        write_journal(run_dir, [], dict(batch, discarding=True))
+    for name, entry in batch["files"].items():
+        target = below(run_dir, name.split("/"))
+        if entry["before"] is None:
+            if os.path.lexists(target):
+                os.unlink(target)
+        else:
+            handle, temporary = tempfile.mkstemp(dir=os.path.dirname(target), prefix=".%s." % PROG, suffix=".tmp")
+            with os.fdopen(handle, "w", encoding="utf-8", newline="") as out:
+                out.write(entry["before"])
+                out.flush()
+                os.fsync(out.fileno())
+            os.chmod(temporary, 0o644)
+            os.replace(temporary, target)
+    write_journal(run_dir, [], None)
+    return list(batch["files"])
+
+
 def recover(run_dir):
     """Settle a write that was killed, and return what was placed. A batch whose journal
     is written is COMMITTED: every file of it that is not in place yet is put there. A
     batch killed before its journal is DISCARDED: its temporaries are removed, and no file
-    of it was ever in place. Called under the run's exclusive lock, which every write is
-    made under — so a temporary found here belongs to nobody alive."""
+    of it was ever in place. A batch that was being TAKEN BACK is taken back whole. Called
+    under the run's exclusive lock, which every write is made under — so a temporary found
+    here belongs to nobody alive."""
     held = read_journal(run_dir)
     for entry in held["placing"]:
         place(run_dir, entry, settling=True)
     if held["placing"]:
         write_journal(run_dir, [], held["batch"])
-    for directory, _, names in os.walk(run_dir):
-        for name in names:
-            if re.fullmatch(r"\.%s\..*\.tmp" % re.escape(PROG), name):
-                os.unlink(os.path.join(directory, name))
+    if held["batch"] is not None and held["batch"].get("discarding"):
+        take_back(run_dir, held["batch"])
+    for path in temporaries(run_dir):
+        os.unlink(path)
     return ["/".join(ARTIFACTS + (os.path.basename(run_dir), entry["path"])) for entry in held["placing"]]
+
+
+def temporaries(run_dir):
+    """This script's own temporaries below the run's directory, wherever they lie."""
+    return sorted(os.path.join(directory, name) for directory, _, names in os.walk(run_dir) for name in names if TEMPORARY.fullmatch(name))
 
 
 def flush(run_dir, batch=None):
@@ -3143,9 +3202,12 @@ def state(args):
 def interrupted(run_dir, run):
     """Refuse to read a run one of whose writes was killed between its files. The reader
     holds the shared lock, so the write is not alive: its journal is what is left."""
-    placing = read_journal(run_dir)["placing"]
+    held = read_journal(run_dir)
+    placing = held["placing"]
     if placing:
         refuse("interrupted", "a write of run %s was killed between its files — %s of its batch are journaled and may not be in place: the state is not read across it. `dev/stabilize-record recover --run %s` finishes the batch, as any writer does first" % (run, ", ".join(entry["path"] for entry in placing), run))
+    if held["batch"] is not None and held["batch"].get("discarding"):
+        refuse("interrupted", "the applied batch of run %s was being taken back, and that write was killed between its files — %s may be as the batch wrote them or as they were before it: the state is not read across it. `dev/stabilize-record recover --run %s` finishes taking the batch back, as any writer does first" % (run, ", ".join(held["batch"]["files"]), run))
 
 
 def document(run_dir, run):
@@ -3349,6 +3411,10 @@ def check_reports(args):
     for name in sorted(os.listdir(directory)) if os.path.isdir(directory) else []:
         path = os.path.join(directory, name)
         parsed = REPORT_NAME.fullmatch(name)
+        if TEMPORARY.fullmatch(name) and os.path.isfile(path) and not os.path.islink(path):
+            # This script's own temporary: a write in flight, or what a killed one left —
+            # which the next writer removes. It is no report, and nobody launched it.
+            continue
         if parsed is None or os.path.islink(path) or not os.path.isfile(path):
             extra.append(name)
         elif int(parsed.group(2)) != attempt:
@@ -3498,7 +3564,7 @@ def apply(args):
             refuse("bad-value", "call %d of the batch is %s: a batch holds %s" % (n, shown(call["argv"][0]), ", ".join(APPLICABLE)))
     one_writer(run_dir)
     if read_journal(run_dir)["batch"] is not None:
-        refuse("pending", "run %s has a batch that is applied and not committed: its record step commits it (`dev/stabilize-step record`), or `dev/stabilize-record discard --run %s` takes it back; nothing was written" % (args.run, args.run))
+        refuse("pending", "run %s has a batch that is applied and not settled: `dev/stabilize-step git-state` says where it stands and settles one whose commit is made; its record step commits one that is not (`dev/stabilize-step record`), or `dev/stabilize-step discard` takes it back — never `discard` of this script on a batch that may be in a commit, which reads no git; nothing was written" % args.run)
     results, checks, reached = [], [], []
     for n, call in enumerate(given, 1):
         name = call["argv"][0]
@@ -3533,7 +3599,13 @@ def apply(args):
         marks[stage_] = ("", max(attempt, marks.get(stage_, ("", 0))[1]))
         counted(run_dir, round_, "recorded", ["%s a%d" % (stage, held[1]) for stage, held in marks.items()])
     files = [staged[0] for staged in STAGED.values()]
-    flush(run_dir, {"round": round_number, "subject": args.subject, "calls": len(given), "checks": checks, "files": {}})
+    # A BATCH THAT WOULD CHANGE NOTHING IS NO BATCH: with every file of it already what the
+    # run holds, its commit step would find nothing to commit, and the journal would keep a
+    # batch no commit can ever settle.
+    if all(os.path.isfile(target) and not os.path.islink(target) and open(target, encoding="utf-8", newline="").read() == text for target, (rel, text, replace, taken) in STAGED.items()):
+        STAGED.clear()
+        refuse("no-change", "the batch of %d call(s) changes nothing: %s — what the run holds already. There is nothing to record, and nothing was written" % (len(given), ", ".join(files) or "it writes no file"))
+    flush(run_dir, {"act": "record", "round": round_number, "subject": args.subject, "calls": len(given), "checks": checks, "files": {}})
     say(json.dumps({"applied": len(given), "files": files, "results": results}))
 
 
@@ -3547,7 +3619,7 @@ def pending(args):
     except Refusal as refusal:
         if refusal.kind != "not-opened":
             raise
-        say(json.dumps({"run": args.run, "opened": False, "interrupted": False, "batch": None, "once": []}))
+        say(json.dumps({"run": args.run, "opened": False, "interrupted": False, "batch": None, "once": [], "temporaries": []}))
         return
     fcntl.flock(os.open(run_dir, os.O_RDONLY), fcntl.LOCK_SH)
     held = read_journal(run_dir)
@@ -3574,34 +3646,22 @@ def pending(args):
                 same = False
             if not same:
                 altered.append("%s/%s" % (prefix, name))
-        batch = {"round": batch["round"], "subject": batch["subject"], "calls": batch["calls"], "checks": batch["checks"], "files": {"%s/%s" % (prefix, name): entry["sha256"] for name, entry in batch["files"].items()}, "altered": altered}
-    say(json.dumps({"run": args.run, "opened": True, "journal": "%s/%s" % (prefix, JOURNAL), "interrupted": bool(held["placing"]), "batch": batch, "once": once}))
+        batch = {"act": batch.get("act", "record"), "round": batch["round"], "subject": batch["subject"], "calls": batch["calls"], "checks": batch["checks"], "files": {"%s/%s" % (prefix, name): entry["sha256"] for name, entry in batch["files"].items()}, "altered": altered, "discarding": batch.get("discarding", False)}
+    # The reader holds the shared lock, so no write is alive: a temporary is a killed one's.
+    left = ["%s/%s" % (prefix, os.path.relpath(path, run_dir)) for path in temporaries(run_dir)]
+    say(json.dumps({"run": args.run, "opened": True, "journal": "%s/%s" % (prefix, JOURNAL), "interrupted": bool(held["placing"]) or bool(batch and batch["discarding"]), "batch": batch, "once": once, "temporaries": left}))
 
 
 def discard(args):
     """Take the applied batch back: every file of it as it was before the batch — or gone,
     where the batch made it — and the journal with it. The reports and the scope of the
-    stage are no part of a batch, and stay."""
+    stage are no part of a batch, and stay. It reads no git: whether the batch is in a
+    commit is asked by the act that calls this (`dev/stabilize-step discard`)."""
     run_dir = open_run(args.run)
     one_writer(run_dir)
     batch = read_journal(run_dir)["batch"]
-    discarded = []
-    for name, entry in (batch["files"] if batch else {}).items():
-        target = below(run_dir, name.split("/"))
-        if entry["before"] is None:
-            if os.path.lexists(target):
-                os.unlink(target)
-        else:
-            handle, temporary = tempfile.mkstemp(dir=os.path.dirname(target), prefix=".%s." % PROG, suffix=".tmp")
-            with os.fdopen(handle, "w", encoding="utf-8", newline="") as out:
-                out.write(entry["before"])
-                out.flush()
-                os.fsync(out.fileno())
-            os.chmod(temporary, 0o644)
-            os.replace(temporary, target)
-        discarded.append("/".join(ARTIFACTS + (args.run, name)))
-    write_journal(run_dir, [], None)
-    say(json.dumps({"discarded": discarded}))
+    discarded = take_back(run_dir, batch) if batch else []
+    say(json.dumps({"discarded": ["/".join(ARTIFACTS + (args.run, name)) for name in discarded]}))
 
 
 def settle(args):
@@ -3618,9 +3678,11 @@ def settle(args):
 def recover_(args):
     """Settle a write that was killed, as every writer does before it writes."""
     run_dir = open_run(args.run)
-    held = read_journal(run_dir)["placing"]
+    held = read_journal(run_dir)
+    left = temporaries(run_dir)
     one_writer(run_dir)
-    say(json.dumps({"recovered": ["/".join(ARTIFACTS + (args.run, entry["path"])) for entry in held]}))
+    named = lambda names: ["/".join(ARTIFACTS + (args.run, name)) for name in names]
+    say(json.dumps({"recovered": named(entry["path"] for entry in held["placing"]), "discarded": named(held["batch"]["files"] if held["batch"] and held["batch"].get("discarding") else []), "removed": len(left)}))
 
 
 # --- vet: what a writer checks, again, where the content becomes permanent ---------------

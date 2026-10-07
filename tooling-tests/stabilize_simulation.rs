@@ -1846,6 +1846,8 @@ fn the_records_commit_step_commits_exactly_the_applied_batch_or_nothing() {
         done.trace,
         lines(&[
             "branch --show-current",
+            "rev-parse --git-path index.lock",
+            "rev-parse HEAD",
             "status --porcelain --untracked-files=all",
             &format!("add -- {facts}"),
             &format!("diff --name-only -- {facts}"),
@@ -1853,11 +1855,15 @@ fn the_records_commit_step_commits_exactly_the_applied_batch_or_nothing() {
             "rev-parse HEAD",
             "status --porcelain --untracked-files=all",
         ]),
-        "the commands of the act, in order: what is staged is held to the tree once it is vetted, nothing is pushed, and no path is added by a directory"
+        "the commands of the act, in order: the branch and git's lock before anything else, what is staged held to the tree once it is vetted, nothing pushed, and no path added by a directory"
     );
+    // Asked again as the harness asks today — with no word of the commit the stage began
+    // on — nothing says that the last commit is this record's: there is nothing to record.
     record(&green, "2", LOOP).refused("no-batch");
 
-    // A write of the record that was killed between its files is no state a step reads.
+    // A write of the record that was killed between its files is FINISHED by the read a
+    // stage starts from, which says so (the second repair plan's `P1`): no state is read
+    // across it, and none is left for a hand.
     fs::write(
         sim.rig.root.join(format!("{RUN_DIR}/.pending.json")),
         "{\"placing\": [{\"path\": \"ledger.md\", \"temporary\": \".stabilize-record.x.tmp\", \"replace\": true}], \"batch\": null}\n",
@@ -1876,12 +1882,15 @@ fn the_records_commit_step_commits_exactly_the_applied_batch_or_nothing() {
         "--product",
         &product[0],
     ]);
-    assert!(
-        killed.refused("record")["halt"]["recommendation"]
-            .as_str()
-            .is_some_and(|what| what.contains("recover --run rc24")),
-        "the refusal names what finishes the write: {}",
+    assert_eq!(
+        killed.done("git-state", "ready")["finished"],
+        json!(["interrupted-write", "unpushed"]),
+        "the killed write is finished, and the record no push took is pushed: {}",
         killed.raw
+    );
+    assert_eq!(
+        sim.record(&["pending", "--run", RUN], "")["interrupted"],
+        false
     );
 }
 

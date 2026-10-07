@@ -18,9 +18,11 @@
 # WHAT IT NEVER DOES. No force of any spelling, no rebase, no reset, no pull, no stash,
 # no branch or tag deletion; `main` is never switched to, merged into or pushed — the one
 # thing done with it is `sync-main`, which fetches it and merges `origin/main` INTO the
-# run's branch. (The one thing it takes back is its own: the paths the record's commit
-# step staged a moment before, unstaged again when it does not commit them.) A branch name it is handed has a prefix (`fix/<run>…`), so `main` is no
-# argument of any act. tooling-tests/dev_stabilize_step.rs reads this out of every git
+# run's branch. (The one thing it takes back is its own: the paths a record's commit step
+# staged, unstaged again when it does not commit them or when the batch is taken back —
+# the index, never the tree.) It removes no lock of git's, and it pushes for itself only
+# what is a record's (`git-state`). A branch name it is handed has a prefix
+# (`fix/<run>…`), so `main` is no argument of any act. tooling-tests/dev_stabilize_step.rs reads this out of every git
 # call of this source, and drives each act against real git.
 #
 # IT NAMES NOTHING. Every branch name, the run's directory, the product paths and the
@@ -30,17 +32,35 @@
 # Usage — every act prints ONE line of JSON on stdout, whatever it exits with:
 #
 #   dev/stabilize-step git-state --stage test|fix --loop L --rounds P --run-dir D
-#                      [--product PATH]...
-#       The state a stage starts from. The branch checked out is L (`test`), or L or a
-#       name that begins P (`fix`) — wrong-branch. The tree holds nothing but THE RUN'S
-#       PENDING WRITES (below) — dirty. The pushed L has no
-#       commit the local one lacks — remote-ahead. And THE PATH-CLASS ASSERT, from the
-#       commit that added D/opening.md on: no commit on L's first-parent line changed a
-#       product path outside a merge — product-path — and every merge there is a round's,
-#       its subject beginning `Merge branch 'P` — foreign-merge. Without an opening the
-#       assert does not run. Prints {status: ready, branch, head, loop_head, opening,
-#       untracked, pending} — `pending` is null, or the applied batch a record step left
-#       uncommitted: {round, subject, calls, checks, files}.
+#                      [--product PATH]... [--look]
+#       THE STATE A STAGE STARTS FROM — AND EVERY INVOCATION RECONCILES FIRST: what an
+#       earlier one left between two commands of a record is found here, by name, and
+#       finished, undone or named as somebody's (THE ACTS, THEIR PHASES, AND WHAT IS
+#       FOUND ON ARRIVAL, below). In this order: the branch checked out is L (`test`), or
+#       L or a name that begins P (`fix`) — wrong-branch, BEFORE ANYTHING IS WRITTEN,
+#       FETCHED OR PUSHED. git's own lock does not stand — locked. A write of the record
+#       script that was killed is finished (`dev/stabilize-record recover`). The tree
+#       holds nothing but THE RUN'S PENDING WRITES (below) — dirty — and a batch whose
+#       commit is made and that was not forgotten is settled. The pushed L has no commit
+#       the local one lacks — remote-ahead. THE PATH-CLASS ASSERT, from the commit that
+#       added D/opening.md on: no commit on L's first-parent line changed a product path
+#       outside a merge — product-path — and every merge there is a round's, its subject
+#       beginning `Merge branch 'P` — foreign-merge. Without an opening the assert does
+#       not run. And, for `test` on an opened run, WHAT THE REMOTE LACKS OF L: every
+#       commit of it changes only D and is no merge — foreign-commit: some task's commit,
+#       which its author pushes, and no stage starts over — and THE PUSH THAT IS OWED IS
+#       MADE, each commit vetted as at every push (unvetted, push-rejected). Where a
+#       batch is applied and not committed the push is that record's own, and is left.
+#       --look: AN INVOCATION THAT ONLY LOOKS FINISHES NOTHING — no recover, no settle, no
+#       push — and says what is owed. (It fetches the loop branch, as this read always has.)
+#       Prints {status: ready, branch, head, loop_head, remote_head, opening, untracked,
+#       pending, found, finished, owed [, vetted]} — `remote_head` is what origin's L
+#       stands at (null: not pushed); `pending` is null, or the applied batch a record
+#       step left uncommitted: {round, subject, calls, checks, files}; `found` names
+#       every arrival state it met, in the table's order, `finished` those it finished
+#       and `owed` those it left — to the stage (`applied`, `staged`: the gate, then
+#       `record`), or, under --look, to the next invocation. (Under --look over a killed
+#       write the tree is not read across it: `untracked` and `pending` are null.)
 #
 #   dev/stabilize-step state --run R --scratch DIR --tag T
 #       The run's record, read: `dev/stabilize-record state --run R`, kept as
@@ -81,12 +101,15 @@
 #       for git-state, and no applied batch — dirty. Prints {status: ready, branch, head,
 #       created}.
 #
-#   dev/stabilize-step push --branch B
+#   dev/stabilize-step push --branch B [--run-dir D]
 #       B pushed by name. B is checked out — wrong-branch; the pushed B has no commit
 #       the local one lacks — remote-ahead; EVERY COMMIT THE PUSH WOULD PUBLISH IS VETTED
 #       (the third boundary, below) — unvetted, and nothing is pushed; the remote takes
-#       it — push-rejected — and then stands at the local head — remote-differs. Prints
-#       {status: ready, branch, head, remote_head, vetted: the commits it published}.
+#       it — push-rejected — and then stands at the local head — remote-differs. With
+#       --run-dir it is A RECORD'S PUSH: every commit it would publish changes only D and
+#       is no merge — foreign-commit, and nothing is pushed. Asked again, it publishes
+#       nothing and says where the remote stands. Prints {status: ready, branch, head,
+#       remote_head, vetted: the commits it published}.
 #
 #   dev/stabilize-step land --loop L --branch B --run-dir D [--product PATH]...
 #                      [--log PATH]...
@@ -117,17 +140,33 @@
 #       remote_head, picked: [{from, to}]}.
 #
 #   dev/stabilize-step record --branch B --run-dir D --gate FILE --calls N --checks M
+#                      [--head SHA] [--scratch DIR]
 #       A RECORD STEP'S ONE COMMIT (DECISIONS.md -> 2026-10-06, "A stabilization run's
-#       record commit under a red candidate"). B is checked out — wrong-branch. The run
+#       record commit under a red candidate") — AND A STEP THAT IS REPEATABLE: asked
+#       again with the same arguments it goes on from where the step before it stopped,
+#       and says in `found` what it met — `applied`; `staged`: its own paths in the
+#       index, of a step killed after its `git add` or whose `git commit` failed, which
+#       it stages again; `committed`: the batch in HEAD already, of a step killed before
+#       it settled, which is taken as recorded and settled; `recorded`: the step done,
+#       which answers again what it answered. B is checked out — wrong-branch — and git's
+#       lock does not stand — locked. The run
 #       has an applied batch (`dev/stabilize-record apply`), of N calls and M checks
 #       each of which holds — no-batch — and the tree holds exactly the run's pending
-#       writes — dirty. FILE holds the whole output of the
+#       writes — dirty; a file of the batch a hand changed is the human's, and the
+#       refusal names the act that takes the batch back. --head is THE COMMIT THE STAGE
+#       BEGAN ON: the record is committed on it or not at all — head-moved, nothing
+#       committed or undone — so that no commit somebody made while the stage ran is
+#       published beside it; and it is what lets a step that is done answer again
+#       (`recorded`: HEAD is the one commit since, the tree is clean, and the answer this
+#       step kept beside FILE — FILE.recorded.json, written once the commit is made and
+#       before the batch is settled — names that commit and N and M; the table's `kept`
+#       says where that file is believed). FILE holds the whole output of the
 #       full gate that ran on this tree — as `dev/gate --keep-going`, so that what it names
 #       red is all that is red — and `dev/stabilize-record gate-check` holds
 #       it to the candidate's gate as the batch's round has it on record: red that the
 #       candidate's gate did not show is refused — gate-red — naming it, and NOTHING IS
 #       COMMITTED OR UNDONE: the batch stays applied, for this act to be asked for again
-#       after another gate, or for `dev/stabilize-record discard`. Else every pending path
+#       after another gate, or for `dev/stabilize-step discard`. Else every pending path
 #       is added by name, AND WHAT IS STAGED IS VETTED (the second boundary, below): every
 #       such path, the subject, and the batch's own report checks against the disk. A hit
 #       — or a path that changed under the step — is refused (unvetted), and it has its
@@ -137,8 +176,26 @@
 #       from, and the stage invoked again works the next attempt. Else ONE commit is made
 #       with the subject the batch carries, and the batch is settled. Prints {status:
 #       recorded, branch, commit, head, round, paths, applied: {calls, checks}, gate: <the
-#       check's result>}; a refusal carries what of these the act had established — and
-#       an unvetted one {vet: <the vet's result>, discarded, aside: what left the tree}.
+#       check's result>, found, finished}; a refusal carries what of these the act had
+#       established — and an unvetted one {vet: <the vet's result>, discarded, aside:
+#       what left the tree}.
+#
+#   dev/stabilize-step discard --branch B --run-dir D
+#       THE APPLIED BATCH TAKEN BACK, BY THE ACT THAT ASKS GIT FIRST. B is checked out —
+#       wrong-branch — and git's lock does not stand — locked. A batch whose commit is
+#       made is NOT taken back — committed: `dev/stabilize-record discard` reads no git,
+#       and would write every committed table as it was before the batch. Else what a
+#       commit step staged of the record is unstaged, and every file of the batch is as
+#       it was before the batch, or gone where the batch made it; the reports and the
+#       scope stay. With no batch there is nothing to take back, and that is its answer.
+#       Prints {status: discarded, branch, head, unstaged, discarded, found, finished}.
+#
+#   dev/stabilize-step table
+#       The table of acts and arrival states, as data (below). Asks git nothing. Prints
+#       {status: listed, acts: [{act, half, phases, commands, owes}], arrivals: [{state,
+#       act, phase, found, answer, word, whose, leaves}], kept: [{file, act, written,
+#       read, believed}]} — `kept` is every file this tool writes, both outside the
+#       repository: the state document, and a commit step's answer beside its gate's file.
 #
 #   dev/stabilize-step sync-main --loop L [--log PATH]...
 #       `origin/main` merged INTO L before its pull request, as the build harness's close
@@ -153,10 +210,54 @@
 # no dirty tree. This tool asks that script (`pending`) and holds `git status` to the
 # answer, path by path: an UNTRACKED file that is one of the run's written-once files —
 # a report, a round's scope; an untracked or modified file of THE APPLIED BATCH whose
-# content is still what the batch wrote; and the script's own journal. Any other line —
-# a tracked file changed by hand, a file of a batch changed after it was written, an
-# untracked file anywhere else — is a tree no step starts from. A write that was killed
-# between its files is refused (record), naming what finishes it.
+# content is still what the batch wrote; either of them STAGED, while a batch is applied
+# — what that record's own commit step staged and did not commit; and the script's own
+# journal. Any other line — a tracked file changed by hand, a file of a batch changed
+# after it was written, a staged path with no batch open, an untracked file anywhere
+# else — is a tree no step starts from. A write of that script that was killed — between
+# its files, or before its journal — is FINISHED before the tree is read
+# (`dev/stabilize-record recover`), by every act that reads the pending writes.
+#
+# THE ACTS, THEIR PHASES, AND WHAT IS FOUND ON ARRIVAL (the second repair plan of the
+# `test` half, P1; DECISIONS.md -> 2026-10-07, "A record act is repeatable, and every
+# invocation reconciles first"). A record is three commands — `dev/stabilize-record
+# apply`, `record`, `push` — and a kill, a `git commit` that fails or a push the remote
+# does not take leaves the run BETWEEN two of them. Every such state has a name, and an
+# answer, in ONE table that this script holds as data (ACTS, ARRIVALS), prints (`table`)
+# and answers from:
+#   an ACT     is a step that changes git or the record. Its PHASES are its sub-steps in
+#              order, each with what says FROM GIT AND THE JOURNAL — never from a flag
+#              alone — that it is done, and the one step that resumes it. `record` has
+#              four: applied (the journal holds the batch, whole) -> committed (every
+#              file of it is in HEAD as the batch wrote it) -> settled (the journal
+#              holds no batch) -> pushed (the remote stands at the local head). The
+#              journal names the act that is open. The acts of the `fix` half — `land`,
+#              `carry`, `open-round` — are rows of the same table, marked as that half's
+#              and given no phase here: its repair adds them, and no second table.
+#   an ARRIVAL is a state an act can be found in, keyed by the open act and the first
+#              phase of it that is not done. The tool FINISHES it (interrupted-write,
+#              committed, unpushed), UNDOES it (stray-temporaries), leaves it OWED to
+#              the stage (applied, staged: the gate, then `record`), ANSWERS again
+#              (recorded), or REFUSES it and says whose it is and what leaves it:
+#                wrong-branch    the caller's — before any write, fetch or push
+#                git-lock        the orchestrator's: the tool never removes a lock
+#                altered         the human's: `discard` is named, as a command
+#                head-moved      the orchestrator's: the stage is invoked again
+#                unvetted        the human's: a local commit is his to take back
+#                foreign-commit  its author's: `git push origin <branch>`, by name
+#                remote-ahead    the human's
+#                dirty           the human's — anything else in the tree
+# RECONCILING is: for the open act, the first phase that is not done — finish it, or say
+# who does. `git-state` does it for a stage, and `record`, `discard` and the report check
+# do the part of it they stand on. So a record step killed at any point between two of
+# its commands ends, within two reads, in ONE OF TWO STATES and no third: where the
+# journal was not yet written, the state before the batch; else the state of the record
+# that was never interrupted, pushed. WHERE THIS ENDS: a kill INSIDE a git child. Its
+# one common trace, `index.lock`, has its row; that git moves a ref whole or not at all
+# is relied on; anything else such a kill leaves is the last row, `dirty`.
+# WHAT THE TOOL PUSHES FOR ITSELF is a record's commit and nothing else: a commit on
+# the loop branch that changes a path outside the run's directory is its author's to
+# push, and until it is pushed no `test` stage starts.
 #
 # WHAT IS VETTED, AND WHERE. A reporter has a shell, so a file at a report's path is
 # whatever its last writer left, and a commit is whoever made it. What the record script
@@ -202,7 +303,8 @@
 #   14  carry-differs  what was carried is not what the act names; nothing is undone
 #   15  push-rejected  the remote did not take the push
 #   16  remote-differs after the push the remote does not stand at the local head
-#   17  record         dev/stabilize-record refused, failed or printed no JSON
+#   17  record         dev/stabilize-record refused, failed or printed no JSON, or its
+#                      journal names an act this tool has no phases for
 #   18  git            a git command failed where the act expects none to
 #   19  gate-red       the gate on the tree with the records shows red that the
 #                      candidate's own gate did not; nothing is committed or undone
@@ -213,6 +315,12 @@
 #                      would have written; nothing was committed, nothing pushed
 #   23  did-not-run    a public-hygiene scanner could not run: never a pass; nothing was
 #                      moved, committed or pushed
+#   24  locked         git's own lock stands in the repository; it is named, never removed
+#   25  head-moved     the branch is not at the commit the stage began on; nothing was
+#                      committed or undone
+#   26  foreign-commit the loop branch is ahead of its remote by a commit that is no
+#                      record's: its author pushes it; the tool pushed nothing
+#   27  committed      the applied batch is in a commit: it is not taken back
 #
 # Needs python3 and git, which the gate needs already. It finds its repository from
 # where it lies, never from where it was called.
@@ -225,6 +333,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 PROG = "stabilize-step"
 
@@ -251,6 +360,10 @@ STATUS = {
     "position": 21,
     "unvetted": 22,
     "did-not-run": 23,
+    "locked": 24,
+    "head-moved": 25,
+    "foreign-commit": 26,
+    "committed": 27,
 }
 # What `git ls-remote --exit-code` exits with when no ref matches.
 NO_SUCH_REF = 2
@@ -278,6 +391,79 @@ SEGMENT = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*")
 # A segment of the scratch directory, as the harness takes it (its SCRATCH_RE).
 PLAIN = re.compile(r"[A-Za-z0-9._-]+")
 STAGES = ("test", "fix")
+# git's own lock is waited for this often, this long each time, before it is named: a git
+# process of somebody's — an editor's `git status` — holds it for a moment and is no state.
+LOCK_WAITS, LOCK_WAIT = 10, 0.2
+
+# THE ACTS, THEIR PHASES, AND WHAT IS FOUND ON ARRIVAL (the header's section of that name).
+# ONE table, as data: `table` prints it, `git-state`, `record`, `discard` and `push` answer
+# from it — a state they name is a row of ARRIVALS, and what a refusal says leaves it is
+# that row's `leaves` — and tooling-tests/dev_stabilize_step.rs holds every row to a test.
+#
+# ACTS: every act of this tool. `half` is the half of the workflow whose repair gives the
+# act its phases; `phases` is null for a read, for an act that is one command of the record
+# script, and for an act whose phases its half has not built yet — `owes` says which. A
+# phase is a sub-step of the act, in order, with what says FROM GIT AND THE JOURNAL that it
+# is done, the one step that resumes it, and who takes that step; `commands` are the
+# commands that carry the act, which is what a test kills between.
+FIX_OWES = "the `fix` half's repair (the second repair plan of the `test` half, section 9, row 1): its phases, each with its predicate and its resume step, are rows of THIS table, and its arrival states rows of ARRIVALS"
+ONE_COMMAND = "nothing: one command, whose repeat is refused or changes nothing"
+A_READ = "nothing: a read"
+ACTS = (
+    {"act": "git-state", "half": "both", "phases": None, "commands": [], "owes": "nothing of its own: the read every stage starts from, which reconciles the open act first"},
+    {"act": "state", "half": "both", "phases": None, "commands": [], "owes": A_READ},
+    {"act": "table", "half": "both", "phases": None, "commands": [], "owes": A_READ},
+    {"act": "begin", "half": "both", "phases": None, "commands": [], "owes": ONE_COMMAND + " — a marker that is there already is the record script's refusal, and the attempt is counted"},
+    {"act": "check-reports", "half": "both", "phases": None, "commands": [], "owes": ONE_COMMAND},
+    {
+        "act": "record",
+        "half": "test",
+        "commands": ["dev/stabilize-record apply", "dev/stabilize-step record", "dev/stabilize-step push"],
+        "phases": [
+            {"phase": "applied", "done": "the journal holds the batch, whole: no file of it is still to be placed", "resumes": "dev/stabilize-record recover", "by": "the tool: a batch whose journal was written is put in place, and one killed before its journal leaves nothing — the act is then not open"},
+            {"phase": "committed", "done": "every file of the batch is in HEAD as the batch wrote it", "resumes": "dev/stabilize-step record", "by": "the stage: the full gate on the tree first, then the commit step, which is repeatable"},
+            {"phase": "settled", "done": "the journal holds no batch", "resumes": "dev/stabilize-record settle", "by": "the tool"},
+            {"phase": "pushed", "done": "the remote's branch stands at the local head", "resumes": "dev/stabilize-step push", "by": "the tool, for the `test` stage's loop branch: every commit of the push vetted first"},
+        ],
+        "owes": "nothing",
+    },
+    {"act": "discard", "half": "test", "phases": None, "commands": [], "owes": "nothing: it undoes the `record` act where its phase is `applied`, and a discard that was killed is finished by `recover` (the arrival state `interrupted-write`)"},
+    {"act": "push", "half": "both", "phases": None, "commands": [], "owes": "nothing for a record's push, which is the last phase of `record`; a round branch's push is " + FIX_OWES},
+    {"act": "find-round", "half": "fix", "phases": None, "commands": [], "owes": A_READ},
+    {"act": "round-commits", "half": "fix", "phases": None, "commands": [], "owes": A_READ},
+    {"act": "open-round", "half": "fix", "phases": None, "commands": [], "owes": FIX_OWES},
+    {"act": "land", "half": "fix", "phases": None, "commands": [], "owes": FIX_OWES},
+    {"act": "carry", "half": "fix", "phases": None, "commands": [], "owes": FIX_OWES},
+    {"act": "sync-main", "half": "close", "phases": None, "commands": [], "owes": "the close's: it pushes nothing, and a merge that stopped is aborted or named"},
+)
+# KEPT: the files this tool writes — both outside the repository — each with the act that
+# writes it, when, who reads it, and where it is believed.
+KEPT = (
+    {"file": "<scratch>/state/<tag>.json", "act": "state", "written": "by every `state`, once dev/stabilize-record printed the document", "read": "by whoever is handed the path: the state document, whole", "believed": "as that script's answer at that moment; nothing of this tool reads it back"},
+    {"file": "<gate file>.recorded.json", "act": "record", "written": "by `record`, once its commit is made and BEFORE the batch is settled: {branch, commit, head, round, paths, applied, gate}", "read": "by `record` asked again where the journal holds no batch (the arrival state `recorded`)", "believed": "only where git agrees and the step is handed the commit the stage began on (--head): HEAD is the commit the file names, that commit's one parent is --head, the tree is clean, and the calls and checks are the ones the step is asked for. Without --head, or where any of it differs, the file says nothing and the answer is `no-batch`. A kill between the commit and this write leaves the batch in the journal and in HEAD, which is the arrival state `committed`: there is no moment after the commit at which neither says what was recorded"},
+)
+# ARRIVALS: every state an act can be found in on arrival, in the order they are looked
+# for. `act` and `phase` key it: the open act, and the first phase of it that is not done
+# (`*`: whatever act is asked, open or not). `answer` is what the tool does — `finished`
+# and `undone` by itself, `owed` to the stage, `answered` again, or `refused` with `word` —
+# `whose` the state is, and `leaves` what leaves it, command included.
+ARRIVALS = (
+    {"state": "wrong-branch", "act": "*", "phase": "*", "found": "the branch checked out is not the one the act names", "answer": "refused", "word": "wrong-branch", "whose": "the caller's", "leaves": "the branch the act names is checked out, and the act is asked for again. Nothing was read past the branch's name, and nothing was written, fetched or pushed"},
+    {"state": "git-lock", "act": "*", "phase": "*", "found": "git's own lock stands in the repository (index.lock): a git process runs there, or one was killed", "answer": "refused", "word": "locked", "whose": "the orchestrator's", "leaves": "the tool never removes a lock. With no git process running in the repository the orchestrator removes the file the refusal names, and the act is asked for again; while one runs, it is asked for again once that process is done"},
+    {"state": "interrupted-write", "act": "record", "phase": "applied", "found": "a write of the record script was killed between its files: a batch half in place, or half taken back", "answer": "finished", "word": None, "whose": "the tool's", "leaves": "`dev/stabilize-record recover`, which the act runs before it reads anything else: the batch is put in place whole, or taken back whole"},
+    {"state": "stray-temporaries", "act": "record", "phase": "applied", "found": "the record script's own temporaries, which no journal names: a write killed before its journal", "answer": "undone", "word": None, "whose": "the tool's", "leaves": "`dev/stabilize-record recover`, which the act runs: they are removed, and the state is the one before that write"},
+    {"state": "applied", "act": "record", "phase": "committed", "found": "the journal holds a batch, every file of it is in the tree as the batch wrote it, and no commit holds it", "answer": "owed", "word": None, "whose": "the stage's", "leaves": "the full gate on the tree, then `dev/stabilize-step record`, which is repeatable; or `dev/stabilize-step discard`, which takes the batch back"},
+    {"state": "staged", "act": "record", "phase": "committed", "found": "as `applied`, with paths of the record in the index: a commit step killed after its `git add`, or one whose `git commit` failed", "answer": "owed", "word": None, "whose": "the stage's", "leaves": "as `applied`: the commit step admits its own staged lines, stages the paths again, vets them and commits"},
+    {"state": "altered", "act": "record", "phase": "committed", "found": "a file of the applied batch is no longer what the batch wrote", "answer": "refused", "word": "dirty", "whose": "the human's", "leaves": "it is the human's, because a hand wrote in a table of the record: `dev/stabilize-step discard --branch <branch> --run-dir <run-dir>` takes the batch back — every file of it as it was before the batch, whatever was written since — and the stage invoked again works the next attempt; or the file is put back as the batch wrote it, and the step asked for again"},
+    {"state": "head-moved", "act": "record", "phase": "committed", "found": "the branch is not at the commit the stage began on (--head): somebody committed while the stage ran", "answer": "refused", "word": "head-moved", "whose": "the orchestrator's", "leaves": "nothing was committed or undone: the batch stays applied. The stage is invoked again: its first read meets the commit — one the remote lacks is its author's to push — and then gates the batch on the tree as it now stands, and commits it there"},
+    {"state": "committed", "act": "record", "phase": "settled", "found": "the journal holds a batch, and every file of it is in HEAD as the batch wrote it: the commit was made, and the batch was not forgotten", "answer": "finished", "word": None, "whose": "the tool's", "leaves": "`dev/stabilize-record settle`, which `git-state` and `record` run; `discard` refuses such a batch"},
+    {"state": "recorded", "act": "record", "phase": "pushed", "found": "the commit step is asked for again after it was done: no batch, and HEAD is the one commit since the commit the stage began on (--head), which is the commit this step answered with", "answer": "answered", "word": None, "whose": "the tool's", "leaves": "nothing to leave: the step answers again what it answered then, and the push is the next step"},
+    {"state": "unpushed", "act": "record", "phase": "pushed", "found": "the loop branch is ahead of its remote by commits that touch only the run's directory: a record that was committed and not pushed", "answer": "finished", "word": None, "whose": "the tool's", "leaves": "the push that is owed, which `git-state` makes for the `test` stage before it answers — every commit of it vetted first; while a batch is applied it is that record's own push"},
+    {"state": "unvetted", "act": "record", "phase": "pushed", "found": "a commit the push would publish is not what dev/stabilize-record would have written", "answer": "refused", "word": "unvetted", "whose": "the human's", "leaves": "nothing is pushed, and it is the human's: the commit is local, and rewriting it or taking it back is his to confirm. `dev/stabilize-record vet --range -- <branch> --not --remotes=origin` names every commit and place again"},
+    {"state": "foreign-commit", "act": "*", "phase": "*", "found": "the loop branch is ahead of its remote by a commit that changes a path outside the run's directory, or by a merge: some task's commit, and no record's", "answer": "refused", "word": "foreign-commit", "whose": "its author's", "leaves": "it is neither the tool's nor the human's: the commit is some task's, behind that task's own gate, and its author — or the orchestrator, for that task — pushes it by name: `git push origin <branch>`. The tool pushes no commit that is not a record's, and no record beside one; the act is then asked for again"},
+    {"state": "remote-ahead", "act": "*", "phase": "*", "found": "the pushed branch has commits the local one lacks", "answer": "refused", "word": "remote-ahead", "whose": "the human's", "leaves": "the human reconciles the two; the branch is never pulled, merged or rebased by a step"},
+    {"state": "dirty", "act": "*", "phase": "*", "found": "anything else in the tree: a tracked file changed by hand, a staged path that is no open record's, an untracked file that is no pending write of the run", "answer": "refused", "word": "dirty", "whose": "the human's", "leaves": "the human reconciles it; the step is not repeated on a guess"},
+)
 
 
 class Refusal(Exception):
@@ -291,6 +477,25 @@ class Refusal(Exception):
 
 def refuse(kind, detail, evidence="", recommendation="the human reconciles it; the step is not repeated on a guess"):
     raise Refusal(kind, detail, evidence, recommendation)
+
+
+def note(facts, state, how=None):
+    """An arrival state the act met: named in the line's `found`, and — where the act
+    finished it, or leaves it owed — in `finished` or `owed`."""
+    for name in ("found",) + ((how,) if how else ()):
+        if state not in facts.setdefault(name, []):
+            facts[name].append(state)
+
+
+def refuse_as(facts, state, detail, evidence="", **names):
+    """Refuse an arrival state the table answers with a refusal: its word, and what leaves
+    it as its row says."""
+    row = next(row for row in ARRIVALS if row["state"] == state)
+    note(facts, state)
+    leaves = row["leaves"]
+    for name, value in names.items():
+        leaves = leaves.replace("<%s>" % name.replace("_", "-"), value)
+    refuse(row["word"], detail, evidence, leaves)
 
 
 def usage_help():
@@ -351,22 +556,53 @@ def answers(ran, yes=0, no=1):
 # --- the checks several acts share --------------------------------------------
 
 
-def checked_out(branch):
+def checked_out(branch, facts):
+    """THE FIRST THING AN ACT ASKS: the branch checked out is the one it names — before it
+    reads anything else, and before any write, fetch or push."""
     current = said("branch", "--show-current")
     if current != branch:
-        refuse("wrong-branch", "`%s` is checked out, and the step works on `%s`" % (current, branch), "`git branch --show-current` printed `%s`" % current)
+        refuse_as(facts, "wrong-branch", "`%s` is checked out, and the step works on `%s`" % (current, branch), "`git branch --show-current` printed `%s`" % current)
     return current
 
 
-def pushed_is_not_ahead(branch):
+def unlocked(facts):
+    """git's own lock does not stand in the repository. A lock that is still there after a
+    moment is named and left: the tool never removes one."""
+    lock = said("rev-parse", "--git-path", "index.lock")
+    for _ in range(LOCK_WAITS):
+        if not os.path.lexists(os.path.join(ROOT, lock)):
+            return
+        time.sleep(LOCK_WAIT)
+    refuse_as(facts, "git-lock", "git's own lock stands in the repository: %s" % lock, "`git rev-parse --git-path index.lock` printed `%s`, and that file was there for %.0f s" % (lock, LOCK_WAITS * LOCK_WAIT))
+
+
+def heads(listed, branch):
+    """The shas `git ls-remote --heads` listed for exactly this branch."""
+    return [line.split("\t")[0] for line in lines(listed) if line.split("\t")[1:] == ["refs/heads/" + branch]]
+
+
+def pushed_is_not_ahead(branch, facts):
     """A branch that is pushed has no commit the local one lacks. One that is not pushed
-    yet has nothing to compare."""
-    if not answers(git("ls-remote", "--exit-code", "--heads", "origin", branch), no=NO_SUCH_REF):
-        return
+    yet has nothing to compare. Returns the sha the pushed branch stands at, or None."""
+    listing = git("ls-remote", "--exit-code", "--heads", "origin", branch)
+    if not answers(listing, no=NO_SUCH_REF):
+        return None
     said("fetch", "origin", branch)
     behind = git("merge-base", "--is-ancestor", "origin/" + branch, branch)
     if not answers(behind):
-        refuse("remote-ahead", "the pushed `%s` has commits the local one lacks" % branch, behind.shown(), "the human reconciles the two; the branch is never pulled, merged or rebased by a step")
+        refuse_as(facts, "remote-ahead", "the pushed `%s` has commits the local one lacks" % branch, behind.shown())
+    return (heads(listing.out, branch) or [None])[0]
+
+
+def records_only(branch, run_dir, facts):
+    """Every commit of the branch that no branch of the remote holds yet is A RECORD'S: it
+    changes nothing outside the run's directory, and is no merge. A commit that is not is
+    some task's, behind that task's own gate — the tool pushes no such commit, and no
+    record beside one."""
+    foreign = lines(said("log", "--format=%H", branch, "--not", "--remotes=origin", "--", ".", ":(exclude)" + run_dir))
+    foreign += [merge for merge in lines(said("rev-list", "--merges", branch, "--not", "--remotes=origin")) if merge not in foreign]
+    if foreign:
+        refuse_as(facts, "foreign-commit", "`%s` is ahead of its remote by %d commit(s) that are no record's — each changes a path outside %s, or is a merge: %s" % (branch, len(foreign), run_dir, ", ".join(foreign)), "`git log --format=%%H %s --not --remotes=origin -- . ':(exclude)%s'` and `git rev-list --merges %s --not --remotes=origin`" % (branch, run_dir, branch), branch=branch)
 
 
 def vetted(asking, undone):
@@ -412,6 +648,7 @@ def push(branch, facts):
         vet = vetted(run([RECORD, "vet", "--range", "--", branch, "--not", "--remotes=origin"]), "nothing was pushed")
         if vet.get("ok") is not True:
             facts.update(vet=vet)
+            note(facts, "unvetted")
             refuse("unvetted", "`%s` would publish what dev/stabilize-record would not have written, in %d of the %d commit(s) the remote does not hold yet: %s" % (branch, len({found.get("commit") for found in vet.get("refused") or []}), len(unpushed), places(vet.get("refused") or [])), "`dev/stabilize-record vet --range` answered: %s" % json.dumps(vet.get("refused")), "nothing was pushed, and it is the human's: the commit is local, and rewriting it or taking it back is his to confirm — a hit is fixed before the push, never after (implementation/public-hygiene.md). `dev/stabilize-record vet --range -- %s --not --remotes=origin` names every commit and place again, pushes nothing, and answers ok once nothing unvetted is left; then this step is asked for again" % branch)
     facts.update(vetted=unpushed)
     pushing = git("push", "origin", branch)
@@ -419,46 +656,110 @@ def push(branch, facts):
         refuse("push-rejected", "the remote did not take `%s`" % branch, pushing.shown(), "the human looks at the remote; a push is never forced")
     listed = said("ls-remote", "--exit-code", "--heads", "origin", branch)
     local = said("rev-parse", branch)
-    remote = [line.split("\t")[0] for line in lines(listed) if line.split("\t")[1:] == ["refs/heads/" + branch]]
-    if remote != [local]:
+    if heads(listed, branch) != [local]:
         refuse("remote-differs", "after the push origin's `%s` does not stand at the local head %s" % (branch, local), "`git ls-remote` printed: %s" % (listed or "(nothing)"))
     facts["remote_head"] = local
 
 
-def pending_of(run_dir):
+def pending_of(run_name):
     """What of the run is written and in no commit yet, as dev/stabilize-record says it."""
-    asking = run([RECORD, "pending", "--run", os.path.basename(run_dir)])
+    asking = run([RECORD, "pending", "--run", run_name])
     try:
         pending = json.loads(asking.out) if asking.code == 0 else None
     except ValueError:
         pending = None
     if not isinstance(pending, dict):
         refuse("record", "dev/stabilize-record could not say what of the run is pending", asking.shown())
-    if pending.get("interrupted"):
-        refuse("record", "a write of the run's record was killed between its files", asking.shown(), "`dev/stabilize-record recover --run %s` finishes it; the step is then asked for again" % os.path.basename(run_dir))
     return pending
 
 
-def admitted(status, pending):
-    """(the untracked written-once files, the files of the applied batch) a tree holds —
-    THE RUN'S PENDING WRITES, in the header's words. Any other line of `git status
-    --porcelain` is a tree the step does not start from."""
+def arrived(run_dir, facts, look=False):
+    """THE RUN'S PENDING WRITES, as dev/stabilize-record says them — ONCE EVERY WRITE OF
+    THAT SCRIPT THAT WAS KILLED IS FINISHED: a batch half in place is put in place, one
+    half taken back is taken back, and the temporaries of a write killed before its
+    journal are removed (`recover`: the arrival states `interrupted-write` and
+    `stray-temporaries`). An act that only looks finishes nothing, and says what is owed."""
+    run_name = os.path.basename(run_dir)
+    pending = pending_of(run_name)
+    killed = [state for state, there in (("interrupted-write", pending.get("interrupted")), ("stray-temporaries", pending.get("temporaries"))) if there]
+    if not killed or look:
+        for state in killed:
+            note(facts, state, "owed")
+        return pending
+    recovering = run([RECORD, "recover", "--run", run_name])
+    if recovering.code != 0:
+        refuse("record", "a write of the run's record was killed, and dev/stabilize-record could not finish it", recovering.shown())
+    for state in killed:
+        note(facts, state, "finished")
+    return pending_of(run_name)
+
+
+def admitted(status, pending, facts):
+    """(the written-once files no commit holds, the files of the applied batch that differ
+    from HEAD, which of both are in the index) a tree holds — THE RUN'S PENDING WRITES, in
+    the header's words. Any other line of `git status --porcelain` is a tree the step does
+    not start from."""
     batch = pending.get("batch") or {}
     once, files, altered = pending.get("once") or [], batch.get("files") or {}, batch.get("altered") or []
-    untracked, held, other = [], [], []
+    untracked, held, staged, other = [], [], [], []
     for line in lines(status):
-        path = line[3:]
-        if line.startswith("?? ") and path == pending.get("journal"):
+        code, path = line[:2], line[3:]
+        if code == "??" and (path == pending.get("journal") or path in (pending.get("temporaries") or [])):
             continue
-        if line.startswith("?? ") and path in once:
+        if code == "??" and path in once:
             untracked.append(path)
-        elif line[:3] in ("?? ", " M ") and path in files and path not in altered:
+        elif batch and code in ("A ", "AM") and path in once:
+            # THE ACT'S OWN STAGED LINES: what the commit step of the open record staged,
+            # and did not commit. It stages them again from the tree, and vets what it staged.
+            untracked.append(path)
+            staged.append(path)
+        elif code in ("??", " M", "A ", "M ", "AM", "MM") and path in files and path not in altered:
             held.append(path)
+            staged += [path] if code[0] in "AM" else []
         else:
             other.append(line)
     if other:
-        refuse("dirty", "the tree holds more than what dev/stabilize-record wrote and no commit holds yet: %s" % "; ".join(other), "`git status --porcelain --untracked-files=all` printed: %s" % " | ".join(lines(status)))
-    return untracked, held
+        refuse_as(facts, "dirty", "the tree holds more than what dev/stabilize-record wrote and no commit holds yet: %s" % "; ".join(other), "`git status --porcelain --untracked-files=all` printed: %s" % " | ".join(lines(status)))
+    return untracked, held, staged
+
+
+def standing(pending, facts, **names):
+    """WHERE THE OPEN ACT STANDS, from git and the journal and never from a flag: (the
+    written-once files pending, the batch's files pending, the arrival state). The state is
+    None with no batch; `applied`, or `staged` where paths of the record are in the index;
+    `committed` where every file of the batch is in HEAD as the batch wrote it — none of
+    them differs from HEAD, and none from what the batch wrote. A file of the batch that
+    is no longer what the batch wrote is the human's (`altered`)."""
+    batch = pending.get("batch")
+    if batch and not any(act["act"] == batch.get("act") and act["phases"] for act in ACTS):
+        refuse("record", "the journal names an open act this tool has no phases for: %s" % json.dumps(batch.get("act")), "`dev/stabilize-record pending`")
+    if batch and batch["altered"]:
+        refuse_as(facts, "altered", "a file of the applied batch is no longer what the batch wrote: %s" % ", ".join(batch["altered"]), "`dev/stabilize-record pending` names it as altered: its content is not the one the journal holds a hash of", **names)
+    untracked, held, staged = admitted(said("status", "--porcelain", "--untracked-files=all"), pending, facts)
+    return untracked, held, (("staged" if staged else "applied") if held else "committed") if batch else None
+
+
+def settled(run_name, what):
+    """The batch's commit is made: the record script forgets the batch."""
+    settling = run([RECORD, "settle", "--run", run_name])
+    if settling.code != 0:
+        refuse("record", "%s, and dev/stabilize-record could not settle its batch" % what, settling.shown())
+
+
+def taken_back(run_name, paths):
+    """THE BATCH TAKEN BACK: what a commit step staged of it is unstaged — the index, never
+    the tree, and those paths only — and then every file of it is as it was before the
+    batch (`dev/stabilize-record discard`). What that script said it took back."""
+    if paths:
+        said("restore", "--staged", "--", *paths)
+    discarding = run([RECORD, "discard", "--run", run_name])
+    try:
+        discarded = json.loads(discarding.out)["discarded"] if discarding.code == 0 else None
+    except (ValueError, KeyError, TypeError):
+        discarded = None
+    if not isinstance(discarded, list):
+        refuse("record", "dev/stabilize-record could not take the applied batch back", discarding.shown())
+    return discarded
 
 
 def clean(status, command):
@@ -505,20 +806,34 @@ def same(ran, what):
 
 
 def git_state(args, facts):
-    # 1. The branch checked out.
+    run_name = os.path.basename(args.run_dir)
+    facts.update(found=[], finished=[], owed=[])
+    # 1. The branch checked out — before anything else is read, written, fetched or pushed.
     current = said("branch", "--show-current")
     if current != args.loop and not (args.stage == "fix" and current.startswith(args.rounds)):
-        refuse("wrong-branch", "`%s` is checked out: the `%s` stage starts from %s" % (current, args.stage, "the loop branch `%s`" % args.loop if args.stage == "test" else "`%s` or a round's branch, `%s…`" % (args.loop, args.rounds)), "`git branch --show-current` printed `%s`" % current)
-    # 2. The tree.
-    pending = pending_of(args.run_dir)
-    untracked, held = admitted(said("status", "--porcelain", "--untracked-files=all"), pending)
-    batch = pending.get("batch")
-    # 3. The pushed loop branch.
-    pushed_is_not_ahead(args.loop)
-    # 4. The commit that added the run's opening record.
+        refuse_as(facts, "wrong-branch", "`%s` is checked out: the `%s` stage starts from %s" % (current, args.stage, "the loop branch `%s`" % args.loop if args.stage == "test" else "`%s` or a round's branch, `%s…`" % (args.loop, args.rounds)), "`git branch --show-current` printed `%s`" % current)
+    # 2. git's own lock.
+    unlocked(facts)
+    # 3. What a killed write of the record script left: finished first — or, by an
+    #    invocation that only looks, named as owed; the tree is then not read across it.
+    pending = arrived(args.run_dir, facts, args.look)
+    read = not (args.look and pending.get("interrupted"))
+    # 4. The tree, and where the open act stands: a batch whose commit is made is settled.
+    untracked, held, state = standing(pending, facts, branch=current, run_dir=args.run_dir) if read else (None, None, None)
+    batch = pending.get("batch") if read else None
+    if state == "committed" and args.look:
+        note(facts, state, "owed")
+    elif state == "committed":
+        settled(run_name, "the commit of the applied batch is made")
+        note(facts, state, "finished")
+    elif state:
+        note(facts, state, "owed")
+    # 5. The pushed loop branch.
+    remote = pushed_is_not_ahead(args.loop, facts)
+    # 6. The commit that added the run's opening record.
     opening = said("log", "--diff-filter=A", "--format=%H", "-n", "1", args.loop, "--", args.run_dir + "/opening.md")
     if opening:
-        # 5. The path-class assert: product paths move only through a round's merge.
+        # 7. The path-class assert: product paths move only through a round's merge.
         since = opening + ".." + args.loop
         direct = lines(said("log", "--first-parent", "--no-merges", "--format=%H", since, "--", *args.product))
         if direct:
@@ -527,12 +842,21 @@ def git_state(args, facts):
         foreign = [subject for subject in lines(said("log", "--first-parent", "--merges", "--format=%s", since)) if not subject.startswith("Merge branch '" + args.rounds)]
         if foreign:
             refuse("foreign-merge", "a merge on `%s` is not a round's: %s" % (args.loop, "; ".join(foreign)), "`git log --first-parent --merges --format=%%s %s`" % since)
-    # 6. The report.
-    # An applied batch none of whose files the tree still holds was committed, and only
-    # its settling was lost: it is nothing pending.
-    live = batch is not None and (held or not batch["files"])
-    facts.update(status="ready", branch=current, head=said("rev-parse", "HEAD"), loop_head=said("rev-parse", args.loop), opening=opening, untracked=untracked)
-    facts.update(pending={"round": batch["round"], "subject": batch["subject"], "calls": batch["calls"], "checks": batch["checks"], "files": held} if live else None)
+    # 8. What the remote lacks of the `test` stage's loop branch — the last phase of a
+    #    record: every commit of it is a record's, and the push that is owed is made.
+    #    (A round's branch, and the loop branch under `fix`, are that half's cells.)
+    if args.stage == "test" and opening and remote != said("rev-parse", args.loop):
+        records_only(args.loop, args.run_dir, facts)
+        if args.look or state in ("applied", "staged"):
+            note(facts, "unpushed", "owed")
+        else:
+            note(facts, "unpushed")
+            push(args.loop, facts)
+            note(facts, "unpushed", "finished")
+            remote = facts.pop("remote_head")
+    # 9. The report.
+    facts.update(status="ready", branch=current, head=said("rev-parse", "HEAD"), loop_head=said("rev-parse", args.loop), remote_head=remote, opening=opening, untracked=untracked)
+    facts.update(pending={"round": batch["round"], "subject": batch["subject"], "calls": batch["calls"], "checks": batch["checks"], "files": held} if state in ("applied", "staged") else None)
 
 
 def state(args, facts):
@@ -586,7 +910,7 @@ def begin(args, facts):
 def check_reports(args, facts):
     # 1. What is pending and written once, vetted: a file there that the record script
     #    would not have written is no report, and leaves the tree.
-    once = written_once(said("status", "--porcelain", "--untracked-files=all"), pending_of(args.run))
+    once = written_once(said("status", "--porcelain", "--untracked-files=all"), arrived(args.run, facts))
     aside = set_aside(args.run, once, args.scratch, "no report was vetted, and none was moved")
     facts.update(aside=aside.get("aside") or [])
     # 2. The check: a reporter whose file left has left none.
@@ -609,7 +933,7 @@ def find_round(args, facts):
 
 
 def open_round(args, facts):
-    _, held = admitted(said("status", "--porcelain", "--untracked-files=all"), pending_of(args.run_dir))
+    _, held, _ = admitted(said("status", "--porcelain", "--untracked-files=all"), arrived(args.run_dir, facts), facts)
     if held:
         refuse("dirty", "a record's batch is applied and not committed: %s" % ", ".join(held), "`dev/stabilize-record pending`", "its record step commits it on the branch it was applied on, before any branch is opened")
     created = not answers(git("rev-parse", "--verify", "--quiet", "refs/heads/" + args.branch))
@@ -618,12 +942,15 @@ def open_round(args, facts):
         said("switch", "--no-track", "-c", args.branch, args.loop)
     else:
         said("switch", args.branch)
-    facts.update(status="ready", branch=checked_out(args.branch), head=said("rev-parse", "HEAD"), created=created)
+    facts.update(status="ready", branch=checked_out(args.branch, facts), head=said("rev-parse", "HEAD"), created=created)
 
 
 def push_branch(args, facts):
-    current = checked_out(args.branch)
-    pushed_is_not_ahead(args.branch)
+    current = checked_out(args.branch, facts)
+    pushed_is_not_ahead(args.branch, facts)
+    if args.run_dir:
+        # A RECORD'S PUSH publishes records, and nothing beside them.
+        records_only(args.branch, args.run_dir, facts)
     push(args.branch, facts)
     facts.update(status="ready", branch=current, head=said("rev-parse", "HEAD"))
 
@@ -637,7 +964,7 @@ def land(args, facts):
     said("switch", args.loop)
     pre = said("rev-parse", "HEAD")
     # 3. The pushed loop branch.
-    pushed_is_not_ahead(args.loop)
+    pushed_is_not_ahead(args.loop, facts)
     # 4. A round that landed before.
     if answers(git("merge-base", "--is-ancestor", args.branch, args.loop)):
         facts.update(status="landed-before", head=pre)
@@ -682,7 +1009,7 @@ def carry(args, facts):
     # 2. The loop branch, and its pushed tip.
     said("switch", args.loop)
     pre = said("rev-parse", "HEAD")
-    pushed_is_not_ahead(args.loop)
+    pushed_is_not_ahead(args.loop, facts)
     # 3. The commits, one by one.
     for sha in args.shas:
         picking = git("cherry-pick", "-x", sha)
@@ -708,25 +1035,55 @@ def carry(args, facts):
     facts.update(picked=[{"from": sha, "to": to} for sha, to in zip(args.shas, made)])
 
 
+def answered_before(args):
+    """Where the answer of this commit step is kept once it is done: beside the file of the
+    gate it was held to, which is one record step's own."""
+    return args.gate + ".recorded.json"
+
+
 def record(args, facts):
     run_name = os.path.basename(args.run_dir)
-    # 1. The branch.
-    current = checked_out(args.branch)
-    # 2. The applied batch, and the tree as exactly the run's pending writes.
-    pending = pending_of(args.run_dir)
+    facts.update(found=[], finished=[])
+    # 1. The branch — before anything else is read or written.
+    current = checked_out(args.branch, facts)
+    # 2. git's own lock.
+    unlocked(facts)
+    # 3. What a killed write of the record script left, finished; then the applied batch.
+    pending = arrived(args.run_dir, facts)
     batch = pending.get("batch")
+    head = said("rev-parse", "HEAD")
     if not batch:
-        refuse("no-batch", "run %s has no applied batch: there is nothing this step records" % run_name, "`dev/stabilize-record pending` printed no batch", "a record step applies its batch first (`dev/stabilize-record apply`)")
+        # ASKED AGAIN AFTER IT WAS DONE: no batch, the tree clean, and HEAD the one commit
+        # since the commit the stage began on — the commit this step answered with, of the
+        # batch it names. Then it answers again what it answered then. Without --head
+        # nothing says that the last commit is this record's, and there is nothing to record.
+        try:
+            kept = json.loads(open(answered_before(args), encoding="utf-8").read())
+            applied = (kept["applied"]["calls"], len(kept["applied"]["checks"]))
+        except (OSError, ValueError, KeyError, TypeError):
+            kept, applied = {}, None
+        if not (args.head is not None and applied == (int(args.calls), int(args.checks)) and (kept.get("branch"), kept.get("commit")) == (current, head) and said("rev-list", "--parents", "-n", "1", "HEAD").split()[1:] == [args.head]):
+            refuse("no-batch", "run %s has no applied batch: there is nothing this step records" % run_name, "`dev/stabilize-record pending` printed no batch", "a record step applies its batch first (`dev/stabilize-record apply`)")
+        clean(said("status", "--porcelain", "--untracked-files=all"), "git status --porcelain --untracked-files=all")
+        note(facts, "recorded")
+        facts.update(kept, status="recorded")
+        return
     facts.update(round=batch["round"], applied={"calls": batch["calls"], "checks": batch["checks"]})
     failed = [check for check in batch["checks"] if not (isinstance(check, dict) and check.get("ok") is True)]
     if batch["calls"] != int(args.calls) or len(batch["checks"]) != int(args.checks) or failed:
-        refuse("no-batch", "the applied batch is not the one this step records: it ran %d call(s) and %d check(s), %d of which do not hold, and the step names %s and %s" % (batch["calls"], len(batch["checks"]), len(failed), args.calls, args.checks), "`dev/stabilize-record pending` printed: %s" % json.dumps(facts["applied"]), "nothing was committed: `dev/stabilize-record discard --run %s` takes a batch back that no step of this stage applied" % run_name)
-    untracked, held = admitted(said("status", "--porcelain", "--untracked-files=all"), pending)
+        refuse("no-batch", "the applied batch is not the one this step records: it ran %d call(s) and %d check(s), %d of which do not hold, and the step names %s and %s" % (batch["calls"], len(batch["checks"]), len(failed), args.calls, args.checks), "`dev/stabilize-record pending` printed: %s" % json.dumps(facts["applied"]), "nothing was committed: `dev/stabilize-step discard --branch %s --run-dir %s` takes a batch back that no step of this stage applied" % (args.branch, args.run_dir))
+    # 4. Where the act stands: the tree as exactly the run's pending writes — its own staged
+    #    lines among them — or the batch in HEAD already.
+    untracked, held, state = standing(pending, facts, branch=args.branch, run_dir=args.run_dir)
+    note(facts, state)
     paths = sorted(untracked + held)
-    facts.update(paths=paths)
-    if not paths:
-        refuse("no-batch", "nothing of run %s is pending: the batch's files are in a commit already" % run_name, "`git status --porcelain --untracked-files=all` printed nothing under %s" % args.run_dir, "`dev/stabilize-record settle --run %s` forgets a batch whose commit was made" % run_name)
-    # 3. The gate that ran on this tree, held to the candidate's.
+    # 5. The commit the stage began on: a record is committed on it, or not at all.
+    files = sorted(batch["files"])
+    commit = said("log", "-n", "1", "--format=%H", "--", *files) if state == "committed" else None
+    began = said("rev-list", "--parents", "-n", "1", commit).split()[1:] if commit else [head]
+    if args.head is not None and (began != [args.head] or commit not in (None, head)):
+        refuse_as(facts, "head-moved", "`%s` is not at the commit the stage began on: the stage began on %s, and the branch stands at %s%s" % (args.branch, args.head, head, " — the commit that holds the batch is %s, on %s" % (commit, " and ".join(began) or "no parent") if commit else ""), "`git rev-parse HEAD` printed %s" % head)
+    # 6. The gate that ran on this tree, held to the candidate's.
     flags = [] if batch["round"] is None else ["--round", str(batch["round"])]
     checking = run([RECORD, "gate-check", "--run", run_name, "--summary", args.gate] + flags)
     try:
@@ -737,48 +1094,84 @@ def record(args, facts):
         refuse("record", "dev/stabilize-record could not hold the gate's output to the candidate's gate", checking.shown(), "the batch stays applied and uncommitted: the step is asked for again once the full gate's whole output is in that file")
     facts.update(gate=gate)
     if checking.code != 0:
-        refuse("gate-red", "the gate on the tree with the records shows red that the candidate's own gate did not: %s" % "; ".join(gate["new"]), checking.shown(), "nothing was committed or undone: the batch stays applied. A stage invoked again runs the gate on it once more and commits it if nothing is newly red; `dev/stabilize-record discard --run %s` takes the batch back instead" % run_name)
-    # 4. Every pending path by name, staged — and what is staged, vetted: the paths, the
-    #    subject the batch carries, and the batch's report checks against the disk.
-    subject = batch["subject"]
-    said("add", "--", *paths)
-    vetting = run([RECORD, "vet", "--run", run_name, "--subject=" + subject, "--"] + paths)
-    moved = lines(git("diff", "--name-only", "--", *paths).out)
-    if vetting.code != 0 or moved:
-        # Nothing is committed. The step takes back what it staged, and then answers.
-        said("restore", "--staged", "--", *paths)
-        vet = vetted(vetting, "nothing was committed, and the batch stays applied")
-        facts.update(vet=vet)
-        # The exit: the batch back — where all of it is still pending — and what is no
-        # report out of the tree, so that the next attempt starts from a tree it can use.
-        whole = len(held) == len(batch["files"])
-        if whole:
-            discarding = run([RECORD, "discard", "--run", run_name])
-            if discarding.code != 0:
-                refuse("record", "the record is not committed, and dev/stabilize-record could not take its batch back", discarding.shown())
-        aside = set_aside(run_name, untracked, args.scratch, "nothing was committed, and the batch is taken back")
-        facts.update(aside=aside.get("aside") or [], discarded=whole)
-        hits = [places(vet.get("refused") or [])] if vet.get("refused") else []
-        hits += ["the commit's subject (%s)" % vet["subject"].get("why")] if vet.get("subject") else []
-        hits += ["the batch's report check of %s no longer holds — gone: %s; changed: %s" % (stale.get("dir"), ", ".join(stale.get("gone") or []) or "none", ", ".join(stale.get("changed") or []) or "none") for stale in vet.get("stale") or []]
-        hits += ["changed while the step ran: %s" % ", ".join(moved)] if moved else []
-        refuse("unvetted", "the record's commit would hold what dev/stabilize-record would not have written: %s" % "; ".join(hits), "`dev/stabilize-record vet` answered: %s" % json.dumps({name: vet.get(name) for name in ("refused", "subject", "stale")}), "nothing was committed, and nothing is left to undo: %s, and what is no report was moved out of the tree (%s). `dev/stabilize-step git-state` answers for the tree, and the stage invoked again works the next attempt — the instruments run again, because their record was not made" % ("the batch is taken back (`dev/stabilize-record discard`)" if whole else "the batch's files are not all pending, so it is NOT taken back — `dev/stabilize-record settle --run %s` forgets a batch whose commit was made" % run_name, ", ".join(found["to"] for found in facts["aside"]) or "nothing had to be"))
-    # 5. The one commit, with that subject.
-    said("commit", "-q", "-m", subject)
-    commit = said("rev-parse", "HEAD")
-    facts.update(commit=commit, head=commit)
-    # 6. The batch is committed: the record script forgets it.
-    settling = run([RECORD, "settle", "--run", run_name])
-    if settling.code != 0:
-        refuse("record", "the record commit %s is made, and dev/stabilize-record could not settle its batch" % commit, settling.shown())
+        refuse("gate-red", "the gate on the tree with the records shows red that the candidate's own gate did not: %s" % "; ".join(gate["new"]), checking.shown(), "nothing was committed or undone: the batch stays applied. A stage invoked again runs the gate on it once more and commits it if nothing is newly red; `dev/stabilize-step discard --branch %s --run-dir %s` takes the batch back instead" % (args.branch, args.run_dir))
+    if state == "committed":
+        # THE BATCH IS IN HEAD ALREADY — a commit step that was killed after its commit: it
+        # is taken as recorded, and only its settling is left.
+        paths = lines(said("show", "--name-only", "--format=", commit))
+    else:
+        facts.update(paths=paths)
+        # 7. Every pending path by name, staged — again, where a step before this one
+        #    staged them — and what is staged, vetted: the paths, the subject the batch
+        #    carries, and the batch's report checks against the disk.
+        subject = batch["subject"]
+        said("add", "--", *paths)
+        vetting = run([RECORD, "vet", "--run", run_name, "--subject=" + subject, "--"] + paths)
+        moved = lines(git("diff", "--name-only", "--", *paths).out)
+        if vetting.code != 0 or moved:
+            # Nothing is committed. The step takes back what it staged, and then answers.
+            said("restore", "--staged", "--", *paths)
+            vet = vetted(vetting, "nothing was committed, and the batch stays applied")
+            facts.update(vet=vet)
+            # The exit: the batch back, and what is no report out of the tree, so that the
+            # next attempt starts from a tree it can use.
+            taken_back(run_name, [])
+            aside = set_aside(run_name, untracked, args.scratch, "nothing was committed, and the batch is taken back")
+            facts.update(aside=aside.get("aside") or [], discarded=True)
+            hits = [places(vet.get("refused") or [])] if vet.get("refused") else []
+            hits += ["the commit's subject (%s)" % vet["subject"].get("why")] if vet.get("subject") else []
+            hits += ["the batch's report check of %s no longer holds — gone: %s; changed: %s" % (stale.get("dir"), ", ".join(stale.get("gone") or []) or "none", ", ".join(stale.get("changed") or []) or "none") for stale in vet.get("stale") or []]
+            hits += ["changed while the step ran: %s" % ", ".join(moved)] if moved else []
+            refuse("unvetted", "the record's commit would hold what dev/stabilize-record would not have written: %s" % "; ".join(hits), "`dev/stabilize-record vet` answered: %s" % json.dumps({name: vet.get(name) for name in ("refused", "subject", "stale")}), "nothing was committed, and nothing is left to undo: the batch is taken back (`dev/stabilize-record discard`), and what is no report was moved out of the tree (%s). `dev/stabilize-step git-state` answers for the tree, and the stage invoked again works the next attempt — the instruments run again, because their record was not made" % (", ".join(found["to"] for found in facts["aside"]) or "nothing had to be"))
+        # 8. The one commit, with that subject.
+        said("commit", "-q", "-m", subject)
+        commit = said("rev-parse", "HEAD")
+    facts.update(paths=paths, commit=commit, head=commit, branch=current)
+    # 9. The answer, kept for this step asked again — BEFORE the batch is settled, so that
+    #    from the commit on there is no moment at which neither the journal nor this file
+    #    says what was recorded: killed before this write the step finds its batch in HEAD
+    #    (`committed`), killed after it and after the settling it finds this (`recorded`).
+    with open(answered_before(args), "w", encoding="utf-8") as file:
+        file.write(json.dumps({name: facts[name] for name in ("branch", "commit", "head", "round", "paths", "applied", "gate")}))
+    # 10. The batch is committed: the record script forgets it.
+    settled(run_name, "the record commit %s is made" % commit)
+    if state == "committed":
+        note(facts, state, "finished")
     clean(said("status", "--porcelain", "--untracked-files=all"), "git status --porcelain --untracked-files=all")
-    # 7. The report.
-    facts.update(status="recorded", branch=current)
+    # 11. The report.
+    facts.update(status="recorded")
+
+
+def discard(args, facts):
+    run_name = os.path.basename(args.run_dir)
+    facts.update(found=[], finished=[])
+    # 1. The branch, git's own lock, and what a killed write left — as every act of a record.
+    current = checked_out(args.branch, facts)
+    unlocked(facts)
+    pending = arrived(args.run_dir, facts)
+    batch = pending.get("batch")
+    paths, taken = [], []
+    if batch:
+        # 2. Where the batch stands, asked of git: one whose commit is made is not taken back.
+        status = [(line[:2], line[3:]) for line in lines(said("status", "--porcelain", "--untracked-files=all"))]
+        ours = list(batch["files"]) + (pending.get("once") or [])
+        if not batch["altered"] and not any(path in batch["files"] for code, path in status):
+            note(facts, "committed")
+            refuse("committed", "the applied batch of run %s is in a commit — every file of it is in HEAD as the batch wrote it: it is not taken back" % run_name, "`git status --porcelain --untracked-files=all` names no file of the batch, and `dev/stabilize-record pending` none as altered", "nothing was written. `dev/stabilize-step git-state` settles a batch whose commit is made, and says what else is owed; what a commit holds is taken back by a commit, which is the human's to make")
+        paths = sorted(path for code, path in status if code[0] in "AM" and path in ours)
+        note(facts, "altered" if batch["altered"] else "staged" if paths else "applied")
+        # 3. What a commit step staged of it, unstaged; then every file as before the batch.
+        taken = taken_back(run_name, paths)
+    facts.update(status="discarded", branch=current, head=said("rev-parse", "HEAD"), unstaged=paths, discarded=taken)
+
+
+def table(args, facts):
+    facts.update(status="listed", acts=ACTS, arrivals=ARRIVALS, kept=KEPT)
 
 
 def sync_main(args, facts):
     # 1. The branch and the tree.
-    checked_out(args.loop)
+    checked_out(args.loop, facts)
     clean(said("status", "--porcelain"), "git status --porcelain")
     pre = said("rev-parse", "HEAD")
     # 2. main, fetched.
@@ -858,6 +1251,7 @@ FLAGS = {
     "checks": count,
     "reporter": slug,
     "commit": full_sha,
+    "head": full_sha,
 }
 LISTS = {"product": path_in_repository, "log": path_in_repository}
 
@@ -866,29 +1260,33 @@ def arguments(argv):
     parser = Arguments(prog="dev/" + PROG, add_help=False, allow_abbrev=False)
     acts = parser.add_subparsers(dest="act", required=True, parser_class=Arguments)
 
-    def act(name, does, flags, lists=(), optional=(), names=None):
+    def act(name, does, flags, lists=(), optional=(), names=None, switches=()):
         sub = acts.add_parser(name, add_help=False, allow_abbrev=False)
         sub.set_defaults(does=does)
         for flag in flags:
             sub.add_argument("--" + flag, required=True, type=FLAGS[flag])
         for flag in optional:
             sub.add_argument("--" + flag, type=FLAGS.get(flag, str))
+        for flag in switches:
+            sub.add_argument("--" + flag, action="store_true")
         for flag in lists:
             sub.add_argument("--" + flag, action="append", default=[], type=LISTS[flag])
         if names:
             sub.add_argument(names[0], nargs=names[1], type=names[2])
 
-    act("git-state", git_state, ["stage", "loop", "rounds", "run-dir"], lists=["product"])
+    act("git-state", git_state, ["stage", "loop", "rounds", "run-dir"], lists=["product"], switches=["look"])
     act("state", state, ["run", "scratch", "tag"])
     act("begin", begin, ["run", "round", "stage", "attempt", "reporter", "commit", "scratch"], optional=["cycle"])
     act("check-reports", check_reports, ["run", "round", "stage", "attempt"], optional=["cycle", "scratch"], names=("names", argparse.ZERO_OR_MORE, str))
     act("find-round", find_round, ["prefix"])
     act("open-round", open_round, ["loop", "branch", "run-dir"])
-    act("push", push_branch, ["branch"])
+    act("push", push_branch, ["branch"], optional=["run-dir"])
     act("land", land, ["loop", "branch", "run-dir"], lists=["product", "log"])
     act("round-commits", round_commits, ["loop", "branch", "run-dir"])
     act("carry", carry, ["loop", "run-dir"], lists=["product"], names=("shas", argparse.ONE_OR_MORE, full_sha))
-    act("record", record, ["branch", "run-dir", "gate", "calls", "checks"], optional=["scratch"])
+    act("record", record, ["branch", "run-dir", "gate", "calls", "checks"], optional=["scratch", "head"])
+    act("discard", discard, ["branch", "run-dir"])
+    act("table", table, [])
     act("sync-main", sync_main, ["loop"], lists=["log"])
     if not argv or argv[0] not in acts.choices:
         refuse("usage", "%s is not an act: the acts are %s — see dev/stabilize-step --help" % (json.dumps(argv[0]) if argv else "nothing", ", ".join(acts.choices)))

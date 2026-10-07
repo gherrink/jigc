@@ -1589,6 +1589,21 @@ fn tool_acts() -> BTreeSet<String> {
         .collect()
 }
 
+/// The acts of the tool that NO STAGE ASKS FOR, each with its reason — the difference
+/// between the acts the script composes and the acts the tool has (the orchestrator's
+/// ruling of 2026-10-07 on the second repair plan's `K2`; the convention is the rig's
+/// `RIG_ONLY_STATES`).
+const NO_STAGES: &[(&str, &str)] = &[
+    (
+        "discard",
+        "taking an applied batch back is the orchestrator's decision and a subagent's act, never a stage's",
+    ),
+    (
+        "table",
+        "the tool's table of acts and arrival states, printed for a reader and for the tool's own suite",
+    ),
+];
+
 #[test]
 fn l_every_git_step_is_one_command_of_the_tool_but_the_recut_of_a_part() {
     let full = harness();
@@ -1636,10 +1651,30 @@ fn l_every_git_step_is_one_command_of_the_tool_but_the_recut_of_a_part() {
             taken.unwrap_or_default()
         );
     }
+    // The acts the script asks for are acts of the tool — and the tool's other acts are
+    // [`NO_STAGES`], each with its reason. Held in both directions: an act of the tool that
+    // is neither asked for nor listed is red, and so is a listed act the script asks for.
+    let asked_for: BTreeSet<String> = asked.keys().cloned().collect();
+    let listed: BTreeSet<String> = NO_STAGES
+        .iter()
+        .map(|(act, why)| {
+            assert!(
+                why.split_whitespace().count() >= 5,
+                "`{act}` carries its reason: {why:?}"
+            );
+            (*act).to_owned()
+        })
+        .collect();
+    assert_eq!(listed.len(), NO_STAGES.len(), "no act is listed twice");
     assert_eq!(
-        asked.keys().cloned().collect::<BTreeSet<_>>(),
+        asked_for.intersection(&listed).collect::<Vec<_>>(),
+        Vec::<&String>::new(),
+        "an act the script asks for is listed as one no stage asks for: the list is stale"
+    );
+    assert_eq!(
+        asked_for.union(&listed).cloned().collect::<BTreeSet<_>>(),
         acts,
-        "the acts the script asks for (left) are the acts {STEP_TOOL} has (right)"
+        "the acts the script asks for and the ones no stage asks for (left) are the acts {STEP_TOOL} has (right)"
     );
 
     // A step that is one command lists no git command of its own. The one function that

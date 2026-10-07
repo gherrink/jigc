@@ -49,6 +49,19 @@
 //!   so [`the_machines_own_gitleaks_reads_the_range_a_push_would_publish`] runs whatever
 //!   the machine has over a real range.
 //!
+//! - *A record act is repeatable, and every invocation reconciles first* (the second repair
+//!   plan's `K2`; [DECISIONS.md](../DECISIONS.md) → *2026-10-07 — A record act is
+//!   repeatable, and every invocation reconciles first*). A record is three commands, and
+//!   what a kill, a failed commit or a rejected push leaves between two of them has a name
+//!   and an answer in ONE table the tool holds as data and prints (`table`), keyed by act
+//!   and phase. **Kills are driven for real**: each command runs under [`KILLER`], which
+//!   sends the unmodified script SIGKILL between two of its system calls, in a copy of a
+//!   stage stood up once ([`StepRig::copy`]) — and every end is asserted through the
+//!   record script's `state`, the tree, the journal and the remote ([`End`]), never
+//!   described ([`killed_before_each_point`]). Every arrival state of the table is driven by a test this suite names
+//!   ([`DRIVEN`]), so a cell added to the table without its test is red; the tests are
+//!   the section *A record act is repeatable, and every invocation reconciles first*.
+//!
 //! **Every arm runs under a shell-hostile root** — a space, a `'`, a `"` and a `#` in the
 //! repository's path — because the rig has no other kind.
 //!
@@ -128,6 +141,10 @@ const REFUSALS: &[(&str, i32)] = &[
     ("position", 21),
     ("unvetted", 22),
     ("did-not-run", 23),
+    ("locked", 24),
+    ("head-moved", 25),
+    ("foreign-commit", 26),
+    ("committed", 27),
 ];
 
 fn repo_root() -> PathBuf {
@@ -716,8 +733,9 @@ fn git_state_reads_the_state_a_stage_starts_from() {
     assert_eq!(
         *line,
         json!({
-            "act": "git-state", "status": "ready", "branch": LOOP, "head": opening,
-            "loop_head": opening, "opening": opening, "untracked": [report, scope],
+            "act": "git-state", "status": "ready", "found": [], "finished": [], "owed": [],
+            "branch": LOOP, "head": opening, "loop_head": opening, "remote_head": opening,
+            "opening": opening, "untracked": [report, scope],
             "pending": null, "sha256": line["sha256"],
         })
     );
@@ -725,6 +743,7 @@ fn git_state_reads_the_state_a_stage_starts_from() {
         seen.trace,
         lines(&[
             "branch --show-current",
+            "rev-parse --git-path index.lock",
             "status --porcelain --untracked-files=all",
             &format!("ls-remote --exit-code --heads origin {LOOP}"),
             &format!("fetch origin {LOOP}"),
@@ -735,10 +754,11 @@ fn git_state_reads_the_state_a_stage_starts_from() {
                 product.join(" ")
             ),
             &format!("log --first-parent --merges --format=%s {opening}..{LOOP}"),
+            &format!("rev-parse {LOOP}"),
             "rev-parse HEAD",
             &format!("rev-parse {LOOP}"),
         ]),
-        "the commands of the step's list, in its order"
+        "the commands of the read, in its order: the branch, git's lock, the tree, the remote, the path-class assert, and what the remote lacks — nothing, here"
     );
 }
 
@@ -820,7 +840,7 @@ fn git_state_refuses_a_tree_that_holds_more_than_reports() {
         );
         assert_eq!(
             seen.trace.len(),
-            4,
+            5,
             "{what}: nothing runs past the check but the halt's two reads: {:?}",
             seen.trace
         );
@@ -870,10 +890,15 @@ fn git_state_asserts_that_product_paths_move_only_through_a_rounds_merge() {
         seen.raw
     );
 
-    // A direct commit that touches no product path is no concern of the assert's — and a
-    // merge that is not a round's is refused whatever it carries.
+    // A direct commit that touches no product path is no concern of the assert's — once
+    // its author pushed it: unpushed, it is a commit no stage starts over
+    // ([`a_commit_that_is_no_records_is_not_pushed_by_the_tool`]). And a merge that is not
+    // a round's is refused whatever it carries.
     let rig = StepRig::new("git-state-foreign");
     rig.change("README.md", "tuned\n", "docs: a direct change");
+    rig.step(&git_state("test", &product))
+        .refused("foreign-commit");
+    rig.git(&["push", "-q", "origin", LOOP]);
     rig.step(&git_state("test", &product))
         .done("git-state", "ready");
     rig.git(&["switch", "-q", "-c", "work/side"]);
@@ -2904,8 +2929,10 @@ fn nothing_is_published_that_was_not_vetted() {
         rig.git(&["add", "--", &by_hand]);
         rig.git(&["commit", "-q", "-m", &message]);
         let commit = rig.rev("HEAD");
-        // The states before the push say nothing of it — which is why the push must.
-        stage.git_state().done("git-state", "ready");
+        // The read a stage starts from meets it as the push does — the push that is owed
+        // is the read's to make, and it makes none that is not vetted.
+        stage.git_state().refused("unvetted");
+        assert_eq!(rig.remote(LOOP), Some(recorded.clone()));
 
         let seen = rig.step(&["push", "--branch", LOOP]);
         let said = seen.refused("unvetted");
@@ -3120,6 +3147,1632 @@ fn the_machines_own_gitleaks_reads_the_range_a_push_would_publish() {
 }
 
 // ---------------------------------------------------------------------------
+// A record act is repeatable, and every invocation reconciles first
+// ---------------------------------------------------------------------------
+
+/// Runs one of the two scripts unmodified, in a process of its own, and writes down each
+/// point it passes — for the step tool every child command and the one file it writes of a
+/// record, the commit step's kept answer (`KILL_WRAPS=children`), for the record script
+/// every operation that makes, places or removes a file below the run's directory
+/// (`files`: a temporary made, a rename, a link, an unlink). `KILL_AT=N` sends the
+/// process SIGKILL just before its Nth point, `KILL_BEFORE=WORDS` before the first point
+/// whose text holds the words: a kill between two system calls of the committed code,
+/// never inside a copy of it. (The re-review's helpers `killat.py` and `killstep.py`, as one
+/// file.)
+const KILLER: &str = r#"import builtins
+import os
+import runpy
+import signal
+import subprocess
+import sys
+import tempfile
+
+at = int(os.environ.get("KILL_AT", "0"))
+words = os.environ.get("KILL_BEFORE", "")
+log = os.environ["KILL_LOG"]
+under = os.path.realpath(os.environ["KILL_UNDER"])
+seen = [0]
+
+
+def point(what):
+    seen[0] += 1
+    with open(log, "a", encoding="utf-8") as out:
+        out.write(what + "\n")
+    if seen[0] == at or (words and words in what):
+        os.kill(os.getpid(), signal.SIGKILL)
+
+
+def before(module, name, says):
+    real = getattr(module, name)
+
+    def wrapped(*args, **kwargs):
+        what = says(*args, **kwargs)
+        if what is not None:
+            point(what)
+        return real(*args, **kwargs)
+
+    setattr(module, name, wrapped)
+
+
+def below(path):
+    return (os.path.realpath(str(path)) + "/").startswith(under + "/")
+
+
+def named(what, path):
+    return "%s %s" % (what, os.path.basename(str(path))) if below(os.path.dirname(str(path))) else None
+
+
+if os.environ["KILL_WRAPS"] == "children":
+    before(subprocess, "run", lambda argv, *a, **k: " ".join(os.path.basename(arg) if os.path.isabs(arg) else arg for arg in argv[:3]))
+    before(builtins, "open", lambda path, mode="r", *a, **k: "write " + os.path.basename(str(path)) if mode == "w" and str(path).endswith(".recorded.json") else None)
+else:
+    before(tempfile, "mkstemp", lambda *a, **k: "mkstemp" if "dir" in k and below(k["dir"]) else None)
+    before(os, "replace", lambda source, target, *a, **k: named("replace", target))
+    before(os, "link", lambda source, target, *a, **k: named("link", target))
+    before(os, "unlink", lambda path, *a, **k: named("unlink", path))
+script = sys.argv[1]
+sys.argv = sys.argv[1:]
+runpy.run_path(script, run_name="__main__")
+"#;
+
+/// What a counted or a killed run of a script left: its exit status — none where a signal
+/// ended it — the points it passed, and its stderr.
+struct Counted {
+    code: Option<i32>,
+    points: Vec<String>,
+    stderr: String,
+}
+
+impl StepRig {
+    /// A copy of the rig as it stands, in a directory of its own: the repository, its
+    /// remote, the scratch root and what lies beside them — made by a child (`cp -R`: no
+    /// file that will be executed is written by this process, [`placed_executable`]) — and
+    /// the clone pointed at the copy of its remote. What a kill is driven on: a stage is
+    /// stood up once, and every kill point gets a copy.
+    fn copy(&self, label: &str) -> Self {
+        let dir = ScratchDir::new(&format!("stabilize-step-{label}"));
+        let copied = Command::new("cp")
+            .arg("-R")
+            .arg(self.dir.path().join("."))
+            .arg(dir.path())
+            .output()
+            .expect("run cp");
+        assert!(copied.status.success(), "copy the rig: {copied:?}");
+        let rig = StepRig {
+            root: dir.path().join(HOSTILE_ROOT),
+            origin: dir.path().join("origin.git"),
+            scratch: dir.path().join("scratch"),
+            home: dir.path().join("home"),
+            trace: dir.path().join("trace"),
+            path: format!(
+                "{}:{}",
+                dir.path().join("bin").display(),
+                std::env::var("PATH").expect("the suite runs with a UTF-8 PATH")
+            ),
+            dir,
+        };
+        rig.git(&[
+            "remote",
+            "set-url",
+            "origin",
+            &rig.origin.display().to_string(),
+        ]);
+        rig
+    }
+
+    /// One of the two scripts under [`KILLER`], fed `stdin`: `wraps` says which points are
+    /// counted, `kill` which of them it dies before (`("KILL_AT", "0")`: none).
+    fn wrapped(
+        &self,
+        wraps: &str,
+        script: &str,
+        args: &[&str],
+        stdin: &str,
+        kill: (&str, &str),
+    ) -> Counted {
+        let killer = self.dir.path().join("kill.py");
+        fs::write(&killer, KILLER).expect("write the killer");
+        let log = self.dir.path().join("points");
+        fs::write(&log, "").expect("empty the points");
+        let mut command = Command::new("python3");
+        command
+            .arg(&killer)
+            .arg(self.root.join(script))
+            .args(args)
+            .current_dir(self.dir.path());
+        let mut child = self
+            .hermetic(command)
+            .env("KILL_WRAPS", wraps)
+            .env("KILL_LOG", &log)
+            .env("KILL_UNDER", self.root.join(RUN_DIR))
+            .env(kill.0, kill.1)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn python3");
+        child_stdin::feed(&mut child, stdin);
+        let out = child.wait_with_output().expect("the script ends");
+        Counted {
+            code: out.status.code(),
+            points: fs::read_to_string(&log)
+                .expect("read the points")
+                .lines()
+                .map(str::to_owned)
+                .collect(),
+            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+        }
+    }
+
+    /// The run's journal, as the bytes on disk — none where there is no file.
+    fn journal(&self) -> Option<String> {
+        fs::read_to_string(self.root.join(RUN_DIR).join(".pending.json")).ok()
+    }
+
+    /// Every ref of the clone and what it stands at: a fetch or a push moves one.
+    fn refs(&self) -> String {
+        self.git(&["for-each-ref", "--format=%(refname) %(objectname)"])
+    }
+}
+
+/// Where a run stands, as everything a later act could read of it: the record script's
+/// state document, the local head and the remote's, the tree, and every file below the
+/// run's directory — the journal and a temporary among them.
+#[derive(Debug, Clone, PartialEq)]
+struct End {
+    state: Value,
+    head: String,
+    remote: Option<String>,
+    status: String,
+    files: BTreeMap<String, String>,
+}
+
+fn files_below(dir: &Path, prefix: &str, found: &mut BTreeMap<String, String>) {
+    let mut entries: Vec<_> = fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("list {}: {e}", dir.display()))
+        .map(|entry| entry.expect("a directory entry"))
+        .collect();
+    entries.sort_by_key(std::fs::DirEntry::file_name);
+    for entry in entries {
+        let name = format!("{prefix}{}", entry.file_name().to_string_lossy());
+        if entry.path().is_dir() {
+            files_below(&entry.path(), &format!("{name}/"), found);
+        } else {
+            let text = fs::read(entry.path()).expect("read a file of the run");
+            found.insert(name, String::from_utf8_lossy(&text).into_owned());
+        }
+    }
+}
+
+/// The arguments of the `record` act's three commands, as the kill test and the plants
+/// below run them.
+const PUSH: [&str; 3] = ["push", "--branch", LOOP];
+
+impl Stage {
+    /// A copy of the stage as it stands ([`StepRig::copy`]): its gate's file and the batch
+    /// that names it are the copy's own.
+    fn copy(&self, label: &str) -> Self {
+        let rig = self.rig.copy(label);
+        let (from, to) = (
+            self.rig.dir().display().to_string(),
+            rig.dir().display().to_string(),
+        );
+        Stage {
+            gate: self.gate.replace(&from, &to),
+            batch: serde_json::from_str(&self.batch.to_string().replace(&from, &to))
+                .expect("the batch, with the copy's paths"),
+            rig,
+        }
+    }
+
+    fn end(&self) -> End {
+        let mut files = BTreeMap::new();
+        files_below(&self.rig.root.join(RUN_DIR), "", &mut files);
+        End {
+            state: serde_json::from_str(&self.rig.wrote(&format!("state --run {RUN}"), ""))
+                .expect("the state document"),
+            head: self.rig.rev("HEAD"),
+            remote: self.rig.remote(LOOP),
+            status: self.rig.status(),
+            files,
+        }
+    }
+
+    /// The commit step, with more flags than the harness passes today.
+    fn record_with(&self, more: &[&str]) -> Stepped {
+        let scratch = self.rig.scratch.display().to_string();
+        let mut args = vec![
+            "record",
+            "--branch",
+            LOOP,
+            "--run-dir",
+            RUN_DIR,
+            "--gate",
+            self.gate.as_str(),
+            "--calls",
+            "7",
+            "--checks",
+            "2",
+            "--scratch",
+            scratch.as_str(),
+        ];
+        args.extend(more);
+        self.rig.step(&args)
+    }
+
+    /// The `apply` of the stage's batch, under the killer.
+    fn apply_under(&self, kill: (&str, &str)) -> Counted {
+        self.rig.wrapped(
+            "files",
+            RECORD,
+            &["apply", "--run", RUN, "--round", "1", "--subject", SUBJECT],
+            &self.batch.to_string(),
+            kill,
+        )
+    }
+
+    /// The commit step, as the harness asks for it, under the killer.
+    fn record_under(&self, kill: (&str, &str)) -> Counted {
+        let scratch = self.rig.scratch.display().to_string();
+        self.rig.wrapped(
+            "children",
+            TOOL,
+            &[
+                "record",
+                "--branch",
+                LOOP,
+                "--run-dir",
+                RUN_DIR,
+                "--gate",
+                &self.gate,
+                "--calls",
+                "7",
+                "--checks",
+                "2",
+                "--scratch",
+                &scratch,
+            ],
+            "",
+            kill,
+        )
+    }
+
+    /// A stage whose record is COMMITTED AND NEITHER SETTLED NOR PUSHED: the commit step
+    /// was killed between its commit and the call that forgets the batch.
+    fn unsettled(label: &str) -> Self {
+        let stage = Stage::new(label);
+        stage.apply(SUBJECT);
+        let killed = stage.record_under(("KILL_BEFORE", "stabilize-record settle"));
+        assert_eq!(
+            killed.code, None,
+            "the commit step was killed: {}",
+            killed.stderr
+        );
+        assert_eq!(stage.rig.git(&["log", "-1", "--format=%s"]), SUBJECT);
+        assert!(
+            stage.rig.journal().is_some(),
+            "and its batch is not settled"
+        );
+        stage
+    }
+
+    /// `git-state` with one more flag.
+    fn git_state_with(&self, flag: &str) -> Stepped {
+        let product = product();
+        let mut args = git_state("test", &product);
+        args.push(flag);
+        self.rig.step(&args)
+    }
+
+    /// ONE READ, as an invocation of a stage makes it: the git state — which finishes what
+    /// the tool finishes — and then the one step that state leaves to the stage: a batch
+    /// that is applied and not committed is committed by the commit step, on the gate's
+    /// file, and pushed. What the git state said; or why the read ended at a refusal.
+    fn read(&self) -> Result<Value, String> {
+        let seen = self.git_state();
+        if seen.code != 0 {
+            return Err(format!("`git-state` refused: {}", seen.stderr.trim()));
+        }
+        if !seen.line["pending"].is_null() {
+            let recorded = self.record();
+            if recorded.code != 0 {
+                return Err(format!(
+                    "the commit step refused: {}",
+                    recorded.stderr.trim()
+                ));
+            }
+            let pushed = self.rig.step(&PUSH);
+            if pushed.code != 0 {
+                return Err(format!("the push refused: {}", pushed.stderr.trim()));
+            }
+        }
+        Ok(seen.line)
+    }
+
+    /// TWO READS, and where they end: the second must find nothing at all.
+    fn within_two_reads(&self) -> Result<End, String> {
+        self.read()?;
+        let second = self.read()?;
+        if second["found"] != json!([]) || !second["pending"].is_null() {
+            return Err(format!("the second read still found something: {second}"));
+        }
+        Ok(self.end())
+    }
+}
+
+/// The three commands of the `record` act, as the tool's table names them: what a kill is
+/// driven between. [`the_table_names_every_act_and_every_arrival_and_each_is_driven`] holds
+/// the table's own list to this one, so an act that gains phases there gains its kills here.
+const KILLED: [&str; 3] = [
+    "dev/stabilize-record apply",
+    "dev/stabilize-step record",
+    "dev/stabilize-step push",
+];
+
+/// ONE COMMAND OF A RECORD, KILLED BEFORE EACH OF ITS POINTS — what the four tests below
+/// share. The command (`KILLED[which]`) runs once under the killer to count its points:
+/// every file operation of `apply` below the run's directory; every child command of
+/// `record` and of `push`, and the write of the commit step's kept answer. It is then
+/// killed before each of them, in a copy of the stage of its own, and within two reads the
+/// run stands — **as `state`, the tree, the journal and the remote say it** — at one of two
+/// states:
+///
+/// - where the journal was not yet written, at **the state before the batch**: the tables
+///   as they were, the reports and the scope still pending, the attempt counted, nothing to
+///   push;
+/// - else at **the state of the uninterrupted control**, with the remote at the local head
+///   and a clean tree.
+///
+/// Never at a third, and never at a refusal: nothing here is the human's. With `retried`,
+/// the commit step is first asked for again as the harness would ask — the same command,
+/// with the commit the stage began on — and must answer `recorded` with the control's
+/// commit; what it found at each point is returned, in the points' order.
+fn killed_before_each_point(which: usize, retried: bool) -> Vec<(String, Value)> {
+    let command = KILLED[which];
+    let label = format!("kill-{which}{}", if retried { "-again" } else { "" });
+    let base = Stage::new(&label);
+    let before = base.end();
+    let control = base.copy(&format!("{label}-control"));
+    control.apply(SUBJECT);
+    control.record().done("record", "recorded");
+    control.rig.step(&PUSH).done("push", "ready");
+    let after = control.end();
+    assert_eq!(
+        (after.remote.as_deref(), after.status.as_str()),
+        (Some(after.head.as_str()), ""),
+        "the control ends pushed and clean"
+    );
+    assert!(
+        !after.files.contains_key(".pending.json") && before.head != after.head,
+        "and with one commit more, and no journal"
+    );
+
+    // The command, from where it starts.
+    let from = base.copy(&format!("{label}-from"));
+    if which >= 1 {
+        from.apply(SUBJECT);
+    }
+    if which == 2 {
+        from.record().done("record", "recorded");
+    }
+    let run = |stage: &Stage, kill: (&str, &str)| match which {
+        0 => stage.apply_under(kill),
+        1 => stage.record_under(kill),
+        _ => stage.rig.wrapped("children", TOOL, &PUSH, "", kill),
+    };
+    let counted = from.copy(&format!("{label}-count"));
+    let whole = run(&counted, ("KILL_AT", "0"));
+    assert_eq!(
+        whole.code,
+        Some(0),
+        "`{command}`, counted: {}",
+        whole.stderr
+    );
+    let points = whole.points;
+    assert!(points.len() >= 8, "`{command}` passes points: {points:?}");
+    if which == 1 {
+        let at = |point: &str| {
+            points
+                .iter()
+                .position(|what| what == point)
+                .unwrap_or_else(|| panic!("`{point}` is a point of the commit step: {points:?}"))
+        };
+        assert!(
+            at("git commit -q") < at("write gate.txt.recorded.json")
+                && at("write gate.txt.recorded.json") < at("stabilize-record settle --run"),
+            "the commit step's answer is kept after its commit and before the batch is settled: {points:?}"
+        );
+    }
+
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let ended = std::sync::Mutex::new(Vec::new());
+    std::thread::scope(|threads| {
+        for _ in 0..6 {
+            threads.spawn(|| {
+                loop {
+                    let k = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                    let Some(what) = points.get(k - 1) else {
+                        break;
+                    };
+                    let stage = from.copy(&format!("{label}-{k}"));
+                    let killed = run(&stage, ("KILL_AT", &k.to_string()));
+                    let journaled = stage.rig.journal().is_some();
+                    let mut found = Value::Null;
+                    let end = if killed.code.is_some() {
+                        Err(format!(
+                            "it was not killed (exit {:?}): {}",
+                            killed.code, killed.stderr
+                        ))
+                    } else if retried {
+                        let again = stage.record_with(&["--head", &before.head]);
+                        found = again.line["found"].clone();
+                        if again.code != 0
+                            || again.line["status"] != "recorded"
+                            || again.line["commit"] != after.head.as_str()
+                            || again.line["applied"]["calls"] != 7
+                            || again.line["gate"]["ok"] != true
+                        {
+                            Err(format!(
+                                "asked for again, the commit step did not answer `recorded` with the control's commit: {}",
+                                again.raw.trim()
+                            ))
+                        } else if stage.rig.step(&PUSH).code != 0 {
+                            Err("the push after it refused".to_owned())
+                        } else {
+                            stage.within_two_reads()
+                        }
+                    } else {
+                        stage.within_two_reads()
+                    };
+                    ended.lock().expect("the ends").push((
+                        k,
+                        what.clone(),
+                        which == 0 && !journaled,
+                        end,
+                        found,
+                    ));
+                }
+            });
+        }
+    });
+    let mut ended = ended.into_inner().expect("the ends");
+    ended.sort_by_key(|(k, ..)| *k);
+    assert_eq!(ended.len(), points.len(), "every kill point was driven");
+    let mut wrong = Vec::new();
+    let (mut undone, mut finished) = (0, 0);
+    for (k, what, unjournaled, end, _) in &ended {
+        let (wanted, name) = if *unjournaled {
+            undone += 1;
+            (&before, "the state before the batch")
+        } else {
+            finished += 1;
+            (&after, "the state of the uninterrupted control")
+        };
+        match end {
+            Err(why) => wrong.push(format!("before point {k} (`{what}`): {why}")),
+            Ok(end) if end != wanted => wrong.push(format!(
+                "before point {k} (`{what}`): a third state, and not {name} — head {} remote {:?} tree [{}] next {} journal {}",
+                end.head,
+                end.remote,
+                end.status.replace('\n', " | "),
+                end.state["next"],
+                end.files.contains_key(".pending.json"),
+            )),
+            Ok(_) => {}
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "`{command}`: {} of {} kills did not end in one of the two states:\n{}",
+        wrong.len(),
+        ended.len(),
+        wrong.join("\n")
+    );
+    if which == 0 {
+        assert!(
+            undone >= 3 && finished >= 8,
+            "both ends are met where the batch is applied: {undone} before the batch, {finished} at the control"
+        );
+    } else {
+        assert_eq!(
+            undone, 0,
+            "past its journal a record is finished, never undone"
+        );
+    }
+    ended
+        .into_iter()
+        .map(|(_, what, _, _, found)| (what, found))
+        .collect()
+}
+
+/// **A record step killed between its commands ends in one of two states, and no third**
+/// (the second repair plan's `P1`; the re-review's `R2`, `R3`, `R4` and `R7`; the plan
+/// review's `B8`) — here, **while its batch is applied**: before each file operation of
+/// `dev/stabilize-record apply` below the run's directory. A kill before the journal is
+/// written ends at the state before the batch — what it left are temporaries, which the
+/// read removes; a kill after it ends at the control's state — the batch is put in place
+/// whole, found applied, gated, committed and pushed ([`killed_before_each_point`]). One
+/// test per command, so that none of them runs for minutes: this name selects all three.
+#[test]
+fn a_record_step_killed_between_its_commands_ends_in_one_of_two_states_while_its_batch_is_applied()
+{
+    killed_before_each_point(0, false);
+}
+
+/// The same, **in its commit step**: before each child command of `dev/stabilize-step
+/// record` and before the write of its kept answer. Every such kill ends at the control's
+/// state: a batch that is applied or staged is committed by the step asked again, one
+/// whose commit is made is settled by the read, and the record is pushed.
+#[test]
+fn a_record_step_killed_between_its_commands_ends_in_one_of_two_states_in_its_commit_step() {
+    killed_before_each_point(1, false);
+}
+
+/// The same, **in its push**: before each child command of `dev/stabilize-step push`. The
+/// read makes the push that is owed, or finds it made.
+#[test]
+fn a_record_step_killed_between_its_commands_ends_in_one_of_two_states_in_its_push() {
+    killed_before_each_point(2, false);
+}
+
+/// **A commit step that was killed, asked for again, answers `recorded`** — at every one of
+/// its points (the orchestrator's *done when* for a repeatable act: *a second identical
+/// call*). Handed the commit the stage began on, the same command commits where no commit
+/// was made; takes its batch as recorded where the commit was made and the batch not
+/// settled (`committed`); and answers again from the answer it kept beside the gate's file
+/// once the batch is settled (`recorded`) — the file the tool's table lists under `kept`.
+/// **A kill between the commit and that file's write** is one of the points, and ends at
+/// `committed`: the journal still holds the batch, and HEAD holds its files. Each time the
+/// answer names the control's commit, and the push then ends at the control's state.
+#[test]
+fn a_commit_step_that_was_killed_answers_recorded_when_it_is_asked_for_again() {
+    let answered = killed_before_each_point(1, true);
+    let found_at = |point: &str| -> &Value {
+        let mut at = answered.iter().filter(|(what, _)| what.starts_with(point));
+        let (_, found) = at
+            .next()
+            .unwrap_or_else(|| panic!("the commit step was killed before `{point}`"));
+        assert!(at.next().is_none(), "`{point}` names one point");
+        found
+    };
+    assert_eq!(
+        json!([
+            found_at("git add --"),
+            found_at("stabilize-record vet"),
+            found_at("git commit -q"),
+            found_at("write gate.txt.recorded.json"),
+            found_at("stabilize-record settle"),
+            answered.last().expect("the last point").1,
+        ]),
+        json!([
+            ["applied"],
+            ["staged"],
+            ["staged"],
+            ["committed"],
+            ["committed"],
+            ["recorded"],
+        ]),
+        "what a commit step that was killed finds when it is asked for again: its batch to commit, its own staged paths, the batch in HEAD — from the commit to the settling, the write of its kept answer between them — and after the settling the answer it kept"
+    );
+}
+
+/// **The wrong branch is refused before any write, fetch or push** (the plan review's
+/// `B8`): a stage launched from the wrong directory, or on the wrong branch, must leave
+/// nothing behind — the canary's safety rests on that order, and the acts now finish steps
+/// themselves. Everything an act could finish is planted — a temporary of a killed write, a
+/// batch whose commit is made and could be settled, a commit the remote lacks — and each
+/// act of the record is asked on another branch: the journal, the tree, the remote and
+/// every ref are as they were, and the git commands the tool ran are the branch's name and
+/// the halt report's two reads.
+#[test]
+fn the_wrong_branch_is_refused_before_any_write_fetch_or_push() {
+    let stage = Stage::unsettled("wrong-branch");
+    let rig = &stage.rig;
+    let temporary = format!("{RUN_DIR}/.stabilize-record.killed.tmp");
+    rig.write(&temporary, "half a table\n");
+    let branch = rig.round(1);
+    let (journal, status, refs, remote) =
+        (rig.journal(), rig.status(), rig.refs(), rig.remote(LOOP));
+    assert_ne!(remote, Some(rig.rev(LOOP)), "a push is owed");
+
+    let product = product();
+    let state = git_state("test", &product);
+    let mut look = state.clone();
+    look.push("--look");
+    let scratch = rig.scratch.display().to_string();
+    let record = [
+        "record",
+        "--branch",
+        LOOP,
+        "--run-dir",
+        RUN_DIR,
+        "--gate",
+        stage.gate.as_str(),
+        "--calls",
+        "7",
+        "--checks",
+        "2",
+        "--scratch",
+        scratch.as_str(),
+    ];
+    let discard = ["discard", "--branch", LOOP, "--run-dir", RUN_DIR];
+    let record_push = ["push", "--branch", LOOP, "--run-dir", RUN_DIR];
+    let acts: [(&str, &[&str]); 6] = [
+        ("git-state", &state),
+        ("git-state --look", &look),
+        ("record", &record),
+        ("push", &PUSH),
+        ("push --run-dir", &record_push),
+        ("discard", &discard),
+    ];
+    for (what, args) in acts {
+        let seen = rig.step(args);
+        seen.refused("wrong-branch");
+        assert_eq!(
+            seen.trace,
+            lines(&[
+                "branch --show-current",
+                "branch --show-current",
+                "status --porcelain"
+            ]),
+            "`{what}`: the branch's name, and the halt report's two reads — no fetch, no push, no write"
+        );
+        assert_eq!(
+            (rig.journal(), rig.status(), rig.refs(), rig.remote(LOOP)),
+            (
+                journal.clone(),
+                status.clone(),
+                refs.clone(),
+                remote.clone()
+            ),
+            "`{what}`: the journal, the tree, every ref and the remote are as they were"
+        );
+        assert!(
+            rig.root.join(&temporary).exists() && rig.branch() == branch,
+            "`{what}`: the temporary is where it was"
+        );
+    }
+}
+
+/// **A lock git left is named and never removed** (the plan review's advisory on `P1`): a
+/// kill inside a git child leaves `index.lock`, and every later `git add` fails on it. The
+/// acts that touch the index refuse before they read past the branch — naming the file,
+/// leaving it, and saying whose it is: the orchestrator's, once no git process runs. With
+/// the lock gone the same act does what it was asked.
+#[test]
+fn a_lock_git_left_is_named_and_not_removed() {
+    let stage = Stage::new("lock");
+    let rig = &stage.rig;
+    stage.apply(SUBJECT);
+    let lock = rig.root.join(".git/index.lock");
+    fs::write(&lock, "").expect("leave a lock");
+    let (journal, status, head) = (rig.journal(), rig.status(), rig.rev("HEAD"));
+    let discard = ["discard", "--branch", LOOP, "--run-dir", RUN_DIR];
+    for (what, seen) in [
+        ("git-state", stage.git_state()),
+        ("record", stage.record()),
+        ("discard", rig.step(&discard)),
+    ] {
+        let said = seen.refused("locked");
+        let halt = &said["halt"];
+        assert!(
+            halt["root_cause"]
+                .as_str()
+                .is_some_and(|cause| cause.contains(".git/index.lock"))
+                && halt["recommendation"].as_str().is_some_and(|then| then
+                    .contains("no git process")
+                    && then.contains("asked for again")),
+            "`{what}`: the lock is named, and what leaves it: {}",
+            seen.raw
+        );
+        assert!(lock.exists(), "`{what}`: the lock is not removed");
+        assert_eq!(
+            (rig.journal(), rig.status(), rig.rev("HEAD")),
+            (journal.clone(), status.clone(), head.clone()),
+            "`{what}`: nothing was written"
+        );
+        assert!(
+            !seen
+                .trace
+                .iter()
+                .any(|call| ["add", "commit", "restore", "push", "fetch"]
+                    .contains(&call.split(' ').next().unwrap_or_default())),
+            "`{what}`: nothing that changes anything ran: {:?}",
+            seen.trace
+        );
+    }
+    // MUST NOT REFUSE: the same acts once the lock is gone.
+    fs::remove_file(&lock).expect("the orchestrator removes the lock");
+    assert_eq!(
+        stage.git_state().done("git-state", "ready")["pending"]["subject"],
+        SUBJECT
+    );
+    stage.record().done("record", "recorded");
+}
+
+/// **Looking finishes nothing, and says what is owed** (the plan review's advisory; the
+/// re-review's `R-L1`): an invocation that only looks (`stopAfter: 'state'`) asks with
+/// `--look`. Every state the tool would finish is named in `found` and `owed`, in the
+/// table's order, and nothing is finished — the journal, the temporary, every ref and the
+/// remote are as they were. The same read without the flag finishes all of it.
+#[test]
+fn looking_finishes_nothing_and_says_what_is_owed() {
+    let stage = Stage::unsettled("look");
+    let rig = &stage.rig;
+    let temporary = format!("{RUN_DIR}/r1/.stabilize-record.killed.tmp");
+    rig.write(&temporary, "half a table\n");
+    let (journal, status, head, remote) = (
+        rig.journal(),
+        rig.status(),
+        rig.rev("HEAD"),
+        rig.remote(LOOP),
+    );
+    let all = json!(["stray-temporaries", "committed", "unpushed"]);
+
+    let seen = stage.git_state_with("--look");
+    let line = seen.done("git-state", "ready");
+    assert_eq!(
+        json!([
+            line["found"],
+            line["owed"],
+            line["finished"],
+            line["pending"]
+        ]),
+        json!([all, all, [], null]),
+        "everything the tool would finish is owed, and named: {}",
+        seen.raw
+    );
+    assert_eq!(
+        json!([line["head"], line["remote_head"]]),
+        json!([head, remote]),
+        "the remote's head is said beside the local one: {}",
+        seen.raw
+    );
+    assert_eq!(
+        (
+            rig.journal(),
+            rig.status(),
+            rig.rev("HEAD"),
+            rig.remote(LOOP)
+        ),
+        (journal, status, head.clone(), remote),
+        "and nothing is finished"
+    );
+    assert!(rig.root.join(&temporary).exists());
+    assert!(
+        !seen.trace.iter().any(|call| call.starts_with("push ")),
+        "no push: {:?}",
+        seen.trace
+    );
+
+    // The same read, without the flag: all of it finished, by name.
+    let seen = stage.git_state();
+    let line = seen.done("git-state", "ready");
+    assert_eq!(
+        json!([
+            line["found"],
+            line["owed"],
+            line["finished"],
+            line["remote_head"]
+        ]),
+        json!([all, [], all, head]),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(
+        (rig.journal(), rig.status(), rig.remote(LOOP)),
+        (None, String::new(), Some(head)),
+        "the batch is settled, the temporary gone, the record pushed"
+    );
+
+    // A batch that is applied and not committed is the stage's to finish, in both.
+    let stage = Stage::new("look-applied");
+    stage.apply(SUBJECT);
+    for seen in [stage.git_state_with("--look"), stage.git_state()] {
+        let line = seen.done("git-state", "ready");
+        assert_eq!(
+            json!([
+                line["found"],
+                line["owed"],
+                line["finished"],
+                line["pending"]["subject"]
+            ]),
+            json!([["applied"], ["applied"], [], SUBJECT]),
+            "{}",
+            seen.raw
+        );
+    }
+}
+
+/// **A commit that is no record's is not pushed by the tool** (the plan review's advisory;
+/// the lead *a commit made on the loop branch while a stage runs*): the loop branch ahead
+/// of its remote by a commit that touches anything outside the run's directory is some
+/// task's commit, behind that task's own gate. A stage does not start over it, and the
+/// refusal is NOT the human's: it names the commit and the one command its author runs.
+/// Nor does a record's own push (`push --run-dir`) publish it — and neither publishes the
+/// record commits beside it. Once its author pushed it, the stage starts.
+#[test]
+fn a_commit_that_is_no_records_is_not_pushed_by_the_tool() {
+    let rig = StepRig::new("foreign");
+    let product = product();
+    let pushed = rig.rev("HEAD");
+    rig.change(
+        &format!("{RUN_DIR}/note.md"),
+        "a record\n",
+        "docs(record): a note",
+    );
+    let tuning = rig.change("README.md", "tuned\n", "build(dev): a tuning commit");
+    let record_push = ["push", "--branch", LOOP, "--run-dir", RUN_DIR];
+    for (what, seen) in [
+        ("git-state", rig.step(&git_state("test", &product))),
+        ("a record's push", rig.step(&record_push)),
+    ] {
+        let said = seen.refused("foreign-commit");
+        let halt = &said["halt"];
+        assert!(
+            halt["root_cause"]
+                .as_str()
+                .is_some_and(|cause| cause.contains(&tuning)),
+            "`{what}`: the commit is named: {}",
+            seen.raw
+        );
+        let then = halt["recommendation"].as_str().expect("what leaves it");
+        assert!(
+            then.contains(&format!("`git push origin {LOOP}`"))
+                && then.contains("its author")
+                && !then.contains("the human reconciles"),
+            "`{what}`: whose it is, and the command: {then}"
+        );
+        assert_eq!(
+            rig.remote(LOOP),
+            Some(pushed.clone()),
+            "`{what}`: nothing was pushed — not the record's commit beside it either"
+        );
+        assert!(
+            !seen.trace.iter().any(|call| call.starts_with("push ")),
+            "`{what}`: no push is tried: {:?}",
+            seen.trace
+        );
+    }
+    // Its author pushes it, behind its own gate — by name, with plain git.
+    rig.git(&["push", "-q", "origin", LOOP]);
+    let seen = rig.step(&git_state("test", &product));
+    assert_eq!(seen.done("git-state", "ready")["found"], json!([]));
+
+    // MUST NOT REFUSE: a commit that touches only the run's directory is a record's, and
+    // the push that is owed for it is made — by the read, and by a record's own push.
+    let record = rig.change(
+        &format!("{RUN_DIR}/note.md"),
+        "a record, again\n",
+        "docs(record): the note, again",
+    );
+    assert_eq!(
+        rig.step(&record_push).done("push", "ready")["vetted"],
+        json!([record])
+    );
+    let record = rig.change(
+        &format!("{RUN_DIR}/note.md"),
+        "a record, once more\n",
+        "docs(record): the note, once more",
+    );
+    let seen = rig.step(&git_state("test", &product));
+    let line = seen.done("git-state", "ready");
+    assert_eq!(
+        json!([line["found"], line["finished"], line["remote_head"]]),
+        json!([["unpushed"], ["unpushed"], record]),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(rig.remote(LOOP), Some(record));
+}
+
+/// **A record that is committed and not pushed is said, and pushed first** (the re-review's
+/// `R7`; the harness review's `R-M1` from the script's side): a push the remote did not
+/// take left a record one commit ahead, and the read a stage starts from said `ready` —
+/// the next round began on a tip the remote did not have. The read now reports the
+/// remote's head, makes the push that is owed before anything else, and where the remote
+/// still does not take it, is refused as the push is.
+#[test]
+fn a_record_the_remote_lacks_is_pushed_before_a_stage_starts() {
+    let stage = Stage::new("owed-push");
+    let rig = &stage.rig;
+    let pushed = rig.rev("HEAD");
+    stage.apply(SUBJECT);
+    stage.record().done("record", "recorded");
+    let recorded = rig.rev("HEAD");
+    rig.remote_hook("pre-receive", "exit 1");
+    rig.step(&PUSH).refused("push-rejected");
+
+    // The remote still does not answer: the stage does not start, and the refusal is the
+    // push's own.
+    stage.git_state().refused("push-rejected");
+    assert_eq!(rig.remote(LOOP), Some(pushed));
+
+    // The cause is dealt with: the same read makes the push, and says so.
+    fs::remove_file(rig.origin.join("hooks/pre-receive")).expect("the remote answers again");
+    let seen = stage.git_state();
+    let line = seen.done("git-state", "ready");
+    assert_eq!(
+        json!([
+            line["found"],
+            line["finished"],
+            line["head"],
+            line["remote_head"],
+            line["vetted"]
+        ]),
+        json!([["unpushed"], ["unpushed"], recorded, recorded, [recorded]]),
+        "the push that was owed is made first, vetted: {}",
+        seen.raw
+    );
+    assert_eq!(rig.remote(LOOP), Some(recorded.clone()));
+
+    // A commit of the range that the record script would not have written is NOT pushed by
+    // the read either: it is the human's, as at every push (the plan review's `B2`).
+    let path = format!("{RUN_DIR}/r1/reports/test/by-hand.a2.md");
+    rig.write(&path, &report_saying(&format!("It met {DENY_TERM} there.")));
+    rig.git(&["add", "--", &path]);
+    rig.git(&["commit", "-q", "-m", "docs(record): a report, by hand"]);
+    let seen = stage.git_state();
+    let said = seen.refused("unvetted");
+    assert!(
+        said["halt"]["recommendation"]
+            .as_str()
+            .is_some_and(|then| then.contains("it is the human's")),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(rig.remote(LOOP), Some(recorded), "nothing was pushed");
+}
+
+/// A `git` that fails every `commit` while the file `fail-commit` lies in the rig — a
+/// signing agent that does not answer, a hook that refuses — and is the real git otherwise.
+fn failing_commit(rig: &StepRig) -> PathBuf {
+    let quoted = |path: &Path| path.display().to_string().replace('\'', "'\\''");
+    let marker = rig.dir().join("fail-commit");
+    rig.on_path(
+        "git",
+        &format!(
+            "#!/bin/sh\nif [ \"$1\" = commit ] && [ -e '{marker}' ]; then echo 'error: gpg failed to sign the data' >&2; exit 128; fi\nexec '{git}' \"$@\"\n",
+            marker = quoted(&marker),
+            git = quoted(&real_git()),
+        ),
+    );
+    fs::write(&marker, "").expect("commits fail from here");
+    marker
+}
+
+/// **A commit that failed is asked for again, and commits** (the re-review's `R3`): the
+/// commit step is `git add` and then `git commit`, under whatever the machine's git
+/// configuration says — and a commit that failed, or a kill between the two, left a staged
+/// tree every act refused as dirty, which no command of either script left. The staged
+/// lines of the act's own paths are the act's: the read names the state, and the same step
+/// commits.
+#[test]
+fn a_commit_that_failed_is_asked_for_again_and_commits() {
+    let stage = Stage::new("failed-commit");
+    let rig = &stage.rig;
+    let head = rig.rev("HEAD");
+    stage.apply(SUBJECT);
+    let marker = failing_commit(rig);
+    let seen = stage.record();
+    seen.refused("git");
+    assert_eq!(rig.rev("HEAD"), head, "the commit failed");
+    assert!(
+        rig.status().lines().any(|line| line.starts_with("A  ")),
+        "and its paths are staged: {}",
+        rig.status()
+    );
+
+    // The cause still stands: the same refusal, and nothing worse.
+    stage.record().refused("git");
+    // What a stage would start from says what it found, and is no refusal.
+    let state = stage.git_state();
+    let line = state.done("git-state", "ready");
+    assert_eq!(
+        json!([line["found"], line["owed"], line["pending"]["subject"]]),
+        json!([["staged"], ["staged"], SUBJECT]),
+        "{}",
+        state.raw
+    );
+
+    // The cause is dealt with: the step, asked for again, commits exactly the record.
+    fs::remove_file(marker).expect("commits work again");
+    let seen = stage.record();
+    let line = seen.done("record", "recorded");
+    assert_eq!(line["found"], json!(["staged"]), "{}", seen.raw);
+    assert_eq!(rig.rev("HEAD~1"), head, "one commit");
+    assert_eq!(rig.git(&["log", "-1", "--format=%s"]), SUBJECT);
+    assert_eq!(rig.status(), "");
+}
+
+/// The human's ruling on the stage's one finding, as a batch of its own.
+fn ruling() -> Value {
+    json!([
+        {"argv": ["ledger-set", "--run", RUN],
+         "stdin": json!([{"key": "f-1", "disposition": "later", "detail": "next release"}]).to_string()},
+        {"argv": ["check-ledger", "--run", RUN, "--", "f-1"]},
+    ])
+}
+
+/// **A batch that changes nothing is refused at `apply`, before a journal exists** (the
+/// re-review's `R2`, the way in without a kill): the same ruling sent twice was applied
+/// twice, its commit step found nothing to commit, and the journal kept the batch — after
+/// which every later record of the run was refused. A batch every file of which is what
+/// the run holds already is no batch.
+#[test]
+fn a_batch_that_changes_nothing_is_refused_at_apply() {
+    let stage = Stage::new("no-change");
+    let rig = &stage.rig;
+    stage.apply(SUBJECT);
+    stage.record().done("record", "recorded");
+    let apply = format!(
+        "{RECORD} apply --run {RUN} --round 1 --subject 'docs(record): rc24 r1 — the rulings'"
+    );
+    let rule = |what: &str| {
+        let (code, _, err) = rig.record_script(&apply, &ruling().to_string());
+        assert_eq!(code, 0, "{what}: {err}");
+        let scratch = rig.scratch.display().to_string();
+        rig.step(&[
+            "record",
+            "--branch",
+            LOOP,
+            "--run-dir",
+            RUN_DIR,
+            "--gate",
+            &stage.gate,
+            "--calls",
+            "2",
+            "--checks",
+            "1",
+            "--scratch",
+            &scratch,
+        ])
+        .done("record", "recorded");
+    };
+    rule("the ruling, recorded");
+    let head = rig.rev("HEAD");
+
+    // The same ruling, sent again.
+    let (code, out, err) = rig.record_script(&apply, &ruling().to_string());
+    assert_eq!(
+        (code, out.as_str()),
+        (25, ""),
+        "the same batch again is refused: {err}"
+    );
+    assert!(
+        err.starts_with("stabilize-record: refused no-change: ")
+            && err.contains("nothing was written"),
+        "{err}"
+    );
+    assert_eq!(
+        (rig.journal(), rig.status(), rig.rev("HEAD")),
+        (None, String::new(), head),
+        "no journal, and nothing to commit"
+    );
+    // MUST NOT REFUSE: any later record of the run.
+    let other = json!([
+        {"argv": ["ledger-set", "--run", RUN],
+         "stdin": json!([{"key": "f-1", "disposition": "later", "detail": "the release after"}]).to_string()},
+        {"argv": ["check-ledger", "--run", RUN, "--", "f-1"]},
+    ]);
+    let (code, _, err) = rig.record_script(&apply, &other.to_string());
+    assert_eq!(code, 0, "a later record is applied: {err}");
+    // (Nothing of this stage was pushed: the read says that too, and leaves the push to
+    // the record that is open.)
+    assert_eq!(
+        stage.git_state().done("git-state", "ready")["owed"],
+        json!(["applied", "unpushed"])
+    );
+}
+
+/// **`discard` asks git, and refuses a batch that is in a commit** (the re-review's `R2`):
+/// taking a batch back writes every file as it was before the batch — committed or not. As
+/// an act of the step tool it reads the batch's phase first: one that is applied is taken
+/// back, with what the commit step staged of it unstaged; one whose commit is made is not,
+/// and the refusal names what settles it. Asked twice, it says that nothing is left.
+#[test]
+fn discard_refuses_a_batch_that_is_in_a_commit() {
+    let discard = ["discard", "--branch", LOOP, "--run-dir", RUN_DIR];
+
+    // Committed and not settled: nothing is taken back.
+    let stage = Stage::unsettled("discard-committed");
+    let rig = &stage.rig;
+    let (journal, status, tables) = (
+        rig.journal(),
+        rig.status(),
+        rig.read(&format!("{RUN_DIR}/ledger.md")),
+    );
+    let seen = rig.step(&discard);
+    let said = seen.refused("committed");
+    assert!(
+        said["halt"]["recommendation"]
+            .as_str()
+            .is_some_and(|then| then.contains("`dev/stabilize-step git-state`")),
+        "the refusal names the read that settles it: {}",
+        seen.raw
+    );
+    assert_eq!(
+        (
+            rig.journal(),
+            rig.status(),
+            rig.read(&format!("{RUN_DIR}/ledger.md"))
+        ),
+        (journal, status, tables),
+        "the committed tables are as they were"
+    );
+
+    // Applied, and its paths staged by a commit that failed: taken back, and unstaged.
+    let stage = Stage::new("discard-staged");
+    let rig = &stage.rig;
+    let before = stage.end();
+    stage.apply(SUBJECT);
+    let marker = failing_commit(rig);
+    stage.record().refused("git");
+    fs::remove_file(marker).expect("commits work again");
+    let seen = rig.step(&discard);
+    let line = seen.done("discard", "discarded");
+    assert_eq!(line["found"], json!(["staged"]), "{}", seen.raw);
+    assert!(
+        line["discarded"]
+            .as_array()
+            .is_some_and(|files| files.contains(&json!(format!("{RUN_DIR}/ledger.md")))),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(
+        stage.end(),
+        before,
+        "the state before the batch: the tables, the pending reports, nothing staged"
+    );
+    stage.starts_again_as(2, "after the batch is taken back");
+
+    // MUST NOT REFUSE: a second identical call. It reports that nothing is left.
+    let seen = rig.step(&discard);
+    let line = seen.done("discard", "discarded");
+    assert_eq!(
+        json!([line["found"], line["discarded"]]),
+        json!([[], []]),
+        "{}",
+        seen.raw
+    );
+}
+
+/// **A temporary is no report** (the re-review's `R4`): a writer of the record script that
+/// is killed leaves its temporary beside its target. The report check counted one as a
+/// file nobody launched, and the read a stage starts from refused the tree as dirty, naming
+/// no command. A temporary is the script's own: its check does not count one, and every
+/// act of the step tool that reads the run's pending writes has the script remove them
+/// first.
+#[test]
+fn a_temporary_is_no_report() {
+    let stage = Stage::new("temporary");
+    let rig = &stage.rig;
+    let beside_reports = format!("{RUN_DIR}/r1/reports/test/.stabilize-record.killed.tmp");
+    let beside_tables = format!("{RUN_DIR}/.stabilize-record.killed.tmp");
+
+    // The record script's own check: a temporary is neither a report nor an extra file.
+    rig.write(&beside_reports, "half a report\n");
+    let mut check = format!("check-reports --run {RUN} --round 1 --stage test --attempt 1 --");
+    for reporter in LAUNCHED {
+        check.push_str(&format!(" {reporter}"));
+    }
+    let said: Value = serde_json::from_str(&rig.wrote(&check, "")).expect("the check's result");
+    assert_eq!(
+        json!([said["ok"], said["extra"]]),
+        json!([true, []]),
+        "{said}"
+    );
+
+    // The step's report check removes it, and says so.
+    let seen = stage.check();
+    let line = seen.done("check-reports", "checked");
+    assert_eq!(
+        json!([line["check"]["ok"], line["finished"]]),
+        json!([true, ["stray-temporaries"]]),
+        "{}",
+        seen.raw
+    );
+    assert!(!rig.root.join(&beside_reports).exists());
+
+    // And so does the read a stage starts from, for one beside the tables.
+    rig.write(&beside_tables, "half a table\n");
+    rig.write(&beside_reports, "half a report\n");
+    let seen = stage.git_state();
+    let line = seen.done("git-state", "ready");
+    assert_eq!(
+        json!([line["found"], line["finished"]]),
+        json!([["stray-temporaries"], ["stray-temporaries"]]),
+        "{}",
+        seen.raw
+    );
+    assert!(!rig.root.join(&beside_tables).exists() && !rig.root.join(&beside_reports).exists());
+    stage.starts_again_as(2, "after the temporaries are gone");
+}
+
+/// **A branch that moved under the stage is refused** (the lead *a commit made on the loop
+/// branch while a stage runs*): the commit step is handed the commit the stage began on
+/// (`--head`), and a record is committed on that commit or not at all — else a commit
+/// nobody gated beside this record would be published by the record's push. Nothing is
+/// committed or undone; the stage invoked again meets the commit as one that is not
+/// pushed, and then gates the batch on the tree as it stands.
+#[test]
+fn a_branch_that_moved_under_the_stage_is_refused() {
+    let stage = Stage::new("head-moved");
+    let rig = &stage.rig;
+    let began = rig.rev("HEAD");
+    stage.apply(SUBJECT);
+    let pending = rig.status();
+    // Somebody's commit, made while the stage's instruments ran: one file, by name.
+    rig.write("README.md", "tuned\n");
+    rig.git(&["add", "--", "README.md"]);
+    rig.git(&["commit", "-q", "-m", "build(dev): a tuning commit"]);
+    let tuning = rig.rev("HEAD");
+    assert_eq!(rig.status(), pending, "the batch is as it was applied");
+
+    let seen = stage.record_with(&["--head", &began]);
+    let said = seen.refused("head-moved");
+    assert!(
+        said["halt"]["root_cause"]
+            .as_str()
+            .is_some_and(|cause| cause.contains(&began) && cause.contains(&tuning)),
+        "both commits are named: {}",
+        seen.raw
+    );
+    assert_eq!(
+        (rig.rev("HEAD"), rig.status()),
+        (tuning.clone(), pending),
+        "nothing was committed or undone"
+    );
+    // MUST NOT REFUSE: the head the stage began on.
+    let seen = stage.record_with(&["--head", &tuning]);
+    seen.done("record", "recorded");
+    assert_eq!(rig.rev("HEAD~1"), tuning);
+}
+
+/// **An applied batch a hand changed is the human's — and the refusal names the command**
+/// (the plan's cell *a file of the batch changed since*): the one arrival state of the
+/// record act the tool neither finishes nor undoes. Driven as the refusal spells it: the
+/// act that takes the batch back, and then a tree a stage starts from.
+#[test]
+fn an_applied_batch_a_hand_changed_is_the_humans_and_the_refusal_names_what_leaves_it() {
+    let stage = Stage::new("altered");
+    let rig = &stage.rig;
+    let before = stage.end();
+    stage.apply(SUBJECT);
+    let ledger = format!("{RUN_DIR}/ledger.md");
+    rig.write(&ledger, &rig.read(&ledger).replace("f-1", "f-2"));
+    for seen in [stage.git_state(), stage.record()] {
+        let said = seen.refused("dirty");
+        let then = said["halt"]["recommendation"]
+            .as_str()
+            .expect("what leaves it");
+        assert!(
+            said["halt"]["root_cause"]
+                .as_str()
+                .is_some_and(|cause| cause.contains(&ledger))
+                && then.contains("the human's"),
+            "the file is named, and whose it is: {}",
+            seen.raw
+        );
+        assert_eq!(
+            named_command(then, "dev/stabilize-step discard"),
+            format!("dev/stabilize-step discard --branch {LOOP} --run-dir {RUN_DIR}"),
+            "and the command that takes the batch back: {then}"
+        );
+    }
+    let then = stage.git_state();
+    let then = then.line["halt"]["recommendation"]
+        .as_str()
+        .expect("what leaves it")
+        .to_owned();
+    rig.shell(named_command(&then, "dev/stabilize-step discard"))
+        .done("discard", "discarded");
+    assert_eq!(stage.end(), before, "the state before the batch");
+    stage.starts_again_as(2, "after the batch is taken back");
+}
+
+/// **A second identical call finds what is done, and says so** — the must-not-refuse
+/// controls of a repeatable act. An ordinary record, and then each command of it once
+/// more with the same arguments: the commit step answers `recorded` again with the commit
+/// it made, the batch it committed and the gate it was held to (`found: recorded`) where
+/// it is handed the commit the stage began on — which is what says that the one commit
+/// since is this record's; the push publishes nothing and says where the remote stands;
+/// the read finds nothing. A commit step whose batch is committed and not settled answers
+/// `recorded` too (`found: committed`).
+#[test]
+fn a_second_identical_call_finds_what_is_done() {
+    let stage = Stage::new("again");
+    let rig = &stage.rig;
+    let began = rig.rev("HEAD");
+    stage.apply(SUBJECT);
+    let first = stage.record_with(&["--head", &began]);
+    let first = first.done("record", "recorded").clone();
+    assert_eq!(first["found"], json!(["applied"]), "an ordinary record");
+    let commit = rig.rev("HEAD");
+
+    let again = stage.record_with(&["--head", &began]);
+    let line = again.done("record", "recorded");
+    assert_eq!(
+        json!([
+            line["found"],
+            line["commit"],
+            line["applied"],
+            line["gate"],
+            line["paths"],
+            line["round"]
+        ]),
+        json!([
+            ["recorded"],
+            commit,
+            first["applied"],
+            first["gate"],
+            first["paths"],
+            first["round"]
+        ]),
+        "the same answer, and that it was found done: {}",
+        again.raw
+    );
+    assert_eq!(rig.rev("HEAD"), commit, "no second commit");
+    // Without the commit the stage began on, nothing says the last commit is this record's.
+    stage.record().refused("no-batch");
+    // Nor does a record of another stage's answer for this one: another head.
+    stage.record_with(&["--head", &commit]).refused("no-batch");
+
+    let pushed = rig.step(&PUSH);
+    assert_eq!(pushed.done("push", "ready")["vetted"], json!([commit]));
+    let pushed = rig.step(&PUSH);
+    let line = pushed.done("push", "ready");
+    assert_eq!(
+        json!([line["vetted"], line["remote_head"]]),
+        json!([[], commit]),
+        "{}",
+        pushed.raw
+    );
+    for _ in 0..2 {
+        let seen = stage.git_state();
+        let line = seen.done("git-state", "ready");
+        assert_eq!(
+            json!([
+                line["found"],
+                line["finished"],
+                line["owed"],
+                line["pending"],
+                line["remote_head"]
+            ]),
+            json!([[], [], [], null, commit]),
+            "{}",
+            seen.raw
+        );
+    }
+
+    // Committed and not settled: the commit step settles it and answers as recorded.
+    let stage = Stage::unsettled("again-committed");
+    let commit = stage.rig.rev("HEAD");
+    let seen = stage.record();
+    let line = seen.done("record", "recorded");
+    assert_eq!(
+        json!([
+            line["found"],
+            line["commit"],
+            line["applied"]["calls"],
+            line["gate"]["ok"]
+        ]),
+        json!([["committed"], commit, 7, true]),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(
+        (
+            stage.rig.journal(),
+            stage.rig.rev("HEAD"),
+            stage.rig.status()
+        ),
+        (None, commit, String::new()),
+        "settled, and no second commit"
+    );
+}
+
+/// Every arrival state of the tool's table, and the test of this suite that drives it.
+const DRIVEN: &[(&str, &str)] = &[
+    (
+        "wrong-branch",
+        "the_wrong_branch_is_refused_before_any_write_fetch_or_push",
+    ),
+    ("git-lock", "a_lock_git_left_is_named_and_not_removed"),
+    (
+        "interrupted-write",
+        "a_record_step_killed_between_its_commands_ends_in_one_of_two_states_while_its_batch_is_applied",
+    ),
+    ("stray-temporaries", "a_temporary_is_no_report"),
+    ("applied", "looking_finishes_nothing_and_says_what_is_owed"),
+    (
+        "staged",
+        "a_commit_that_failed_is_asked_for_again_and_commits",
+    ),
+    (
+        "altered",
+        "an_applied_batch_a_hand_changed_is_the_humans_and_the_refusal_names_what_leaves_it",
+    ),
+    (
+        "head-moved",
+        "a_branch_that_moved_under_the_stage_is_refused",
+    ),
+    ("committed", "discard_refuses_a_batch_that_is_in_a_commit"),
+    ("recorded", "a_second_identical_call_finds_what_is_done"),
+    (
+        "unpushed",
+        "a_record_the_remote_lacks_is_pushed_before_a_stage_starts",
+    ),
+    (
+        "unvetted",
+        "a_record_the_remote_lacks_is_pushed_before_a_stage_starts",
+    ),
+    (
+        "foreign-commit",
+        "a_commit_that_is_no_records_is_not_pushed_by_the_tool",
+    ),
+    (
+        "remote-ahead",
+        "git_state_refuses_a_pushed_loop_branch_that_is_ahead",
+    ),
+    (
+        "dirty",
+        "git_state_refuses_a_tree_that_holds_more_than_reports",
+    ),
+];
+
+/// **The table of acts and arrivals is the tool's own, printed by a read, and every cell of
+/// it is driven** (the plan's `P1`: *one table, keyed by act and phase*). `dev/stabilize-step
+/// table` prints it as data: every act of the tool with the half that owns it and — for an
+/// act the tool reconciles — its phases in order, each with what says it is done and the
+/// step that resumes it; and every state an act can be found in on arrival, keyed by the
+/// act and the phase it stands before, with the tool's answer, the word of a refusal, whose
+/// it is and what leaves it. Held here: every act the parser takes has its row, and an act
+/// of the `fix` half is marked as that half's and given no phase by this one; every word is
+/// a refusal of the tool; and the arrivals are exactly [`DRIVEN`], each by a test of this
+/// file — so a cell added to the table without its test is red.
+#[test]
+fn the_table_names_every_act_and_every_arrival_and_each_is_driven() {
+    let rig = StepRig::new("table");
+    let seen = rig.step(&["table"]);
+    let table = seen.done("table", "listed");
+    assert!(seen.trace.is_empty(), "the read asks git nothing");
+
+    // The acts: the parser's own, each with its half; the phases of `record`, in order.
+    let rows: BTreeMap<String, &Value> = table["acts"]
+        .as_array()
+        .expect("the acts")
+        .iter()
+        .map(|act| (act["act"].as_str().expect("an act's name").to_owned(), act))
+        .collect();
+    assert_eq!(
+        rows.keys().cloned().collect::<BTreeSet<_>>(),
+        acts().into_keys().collect::<BTreeSet<_>>(),
+        "the table's acts (left) are the acts the tool takes (right)"
+    );
+    // The acts the table gives phases are the acts a kill is driven between ([`KILLED`]).
+    let phased: Vec<&str> = table["acts"]
+        .as_array()
+        .expect("the acts")
+        .iter()
+        .filter(|act| act["phases"].is_array())
+        .flat_map(|act| act["commands"].as_array().expect("an act's commands"))
+        .map(|command| command.as_str().expect("a command"))
+        .collect();
+    assert_eq!(
+        phased, KILLED,
+        "the commands of the acts the table gives phases (left) are the commands this suite kills (right): an act that gains phases gains its kills"
+    );
+    let phases: Vec<&str> = rows["record"]["phases"]
+        .as_array()
+        .expect("the record act has phases")
+        .iter()
+        .map(|phase| {
+            for field in ["done", "resumes", "by"] {
+                assert!(phase[field].is_string(), "a phase says `{field}`: {phase}");
+            }
+            phase["phase"].as_str().expect("a phase's name")
+        })
+        .collect();
+    assert_eq!(phases, ["applied", "committed", "settled", "pushed"]);
+    for act in ["land", "carry", "open-round"] {
+        assert_eq!(
+            json!([rows[act]["half"], rows[act]["phases"]]),
+            json!(["fix", null]),
+            "`{act}` is the `fix` half's, and this half gives it no phase"
+        );
+    }
+
+    // The arrivals: keyed by act and phase, answered, and each driven by name.
+    let source = read("tooling-tests/dev_stabilize_step.rs");
+    let arrivals = table["arrivals"].as_array().expect("the arrivals");
+    let mut named = BTreeSet::new();
+    for arrival in arrivals {
+        let state = arrival["state"].as_str().expect("a state's name");
+        assert!(named.insert(state.to_owned()), "`{state}` stands once");
+        for field in ["act", "found", "whose", "leaves"] {
+            assert!(
+                arrival[field].is_string(),
+                "`{state}` says `{field}`: {arrival}"
+            );
+        }
+        let act = arrival["act"].as_str().expect("the act");
+        assert!(
+            act == "*" || rows.contains_key(act),
+            "`{state}` is keyed by an act of the table: {act}"
+        );
+        if act != "*" {
+            let known: Vec<&str> = rows[act]["phases"]
+                .as_array()
+                .expect("an act with arrivals has phases")
+                .iter()
+                .map(|phase| phase["phase"].as_str().expect("a phase"))
+                .collect();
+            assert!(
+                known.contains(&arrival["phase"].as_str().expect("a phase")),
+                "`{state}` is keyed by a phase of `{act}`: {arrival}"
+            );
+        }
+        let answer = arrival["answer"].as_str().expect("an answer");
+        assert!(
+            ["refused", "finished", "undone", "owed", "answered"].contains(&answer),
+            "`{state}`: {answer}"
+        );
+        assert_eq!(
+            arrival["word"].is_string(),
+            answer == "refused",
+            "`{state}`: a refusal has its word, and nothing else has one"
+        );
+        if let Some(word) = arrival["word"].as_str() {
+            assert!(
+                REFUSALS.iter().any(|(known, _)| *known == word),
+                "`{state}` is refused with a word of the tool: {word}"
+            );
+        }
+    }
+    // What the tool writes, both outside the repository: one row per act that writes.
+    let kept: Vec<(&str, &str)> = table["kept"]
+        .as_array()
+        .expect("the kept files")
+        .iter()
+        .map(|kept| {
+            for field in ["written", "read", "believed"] {
+                assert!(
+                    kept[field].is_string(),
+                    "a kept file says `{field}`: {kept}"
+                );
+            }
+            (
+                kept["act"].as_str().expect("the act that writes it"),
+                kept["file"].as_str().expect("the file"),
+            )
+        })
+        .collect();
+    assert_eq!(
+        kept,
+        [
+            ("state", "<scratch>/state/<tag>.json"),
+            ("record", "<gate file>.recorded.json"),
+        ],
+        "the files the tool writes: the state document, and a commit step's kept answer"
+    );
+    let driven: BTreeSet<String> = DRIVEN
+        .iter()
+        .map(|(state, _)| (*state).to_owned())
+        .collect();
+    assert_eq!(
+        named, driven,
+        "the table's arrival states (left) are the ones this suite drives (right)"
+    );
+    for (state, test) in DRIVEN {
+        assert!(
+            source.contains(&format!("\nfn {test}()")),
+            "`{state}` is driven by `{test}`, which is a test of this file"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The names an act takes
 // ---------------------------------------------------------------------------
 
@@ -3300,11 +4953,20 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "--no-merges",
             "--merges",
             "--reverse",
+            // The commits no branch of the remote holds yet: which of them is no record's.
+            "--not",
+            "--remotes=origin",
             "--",
         ],
     ),
-    ("show", &["--stat", "--format=%s", "--"]),
-    ("rev-parse", &["--verify", "--quiet"]),
+    // `--name-only --format=`: the paths a record's commit holds, where the commit step
+    // finds its batch in HEAD already.
+    (
+        "show",
+        &["--stat", "--format=%s", "--name-only", "--format=", "--"],
+    ),
+    // `--git-path`: where git's own lock would lie, which the tool names and never removes.
+    ("rev-parse", &["--verify", "--quiet", "--git-path"]),
     (
         "rev-list",
         &[
@@ -3730,7 +5392,10 @@ fn offences(source: &str) -> Vec<String> {
             // is no report set aside, and a batch that is not committed taken back.
             || program.starts_with("[RECORD, \"vet\", ")
             || program.starts_with("[RECORD, \"set-aside\", ")
-            || (call.within == "record" && program.starts_with("[RECORD, \"discard\", "))
+            || (call.within == "taken_back" && program.starts_with("[RECORD, \"discard\", "))
+            // A write of the record script that was killed, finished before the tree is
+            // read: by the one helper every act that reads the pending writes asks.
+            || (call.within == "arrived" && program.starts_with("[RECORD, \"recover\", "))
             // The one write the tool makes through the record script: an attempt's marker,
             // by the act that begins the attempt, under the reporter it was handed.
             || (call.within == "begin"
@@ -3744,10 +5409,20 @@ fn offences(source: &str) -> Vec<String> {
             ));
         }
     }
+    // The files the tool opens: its own source for `--help`; the state it keeps under the
+    // scratch root; and the answer of a commit step that is done, kept beside the file of
+    // the gate it was held to and read by that step asked again.
     let writes: Vec<&str> = code.lines().filter(|line| line.contains("open(")).collect();
-    if writes.len() != 2 || writes.iter().filter(|line| line.contains("\"w\"")).count() != 1 {
+    let kept = writes
+        .iter()
+        .filter(|line| line.contains("open(answered_before(args)"))
+        .count();
+    if writes.len() != 4
+        || kept != 2
+        || writes.iter().filter(|line| line.contains("\"w\"")).count() != 2
+    {
         found.push(format!(
-            "the tool opens a file somewhere else than its help and the kept state: {writes:#?}"
+            "the tool opens a file somewhere else than its help, the kept state and a commit step's kept answer: {writes:#?}"
         ));
     }
     found
