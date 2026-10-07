@@ -1,0 +1,138 @@
+{
+ "probe": "relay",
+ "judged_by": "dev/stabilize-probe verdict",
+ "cases": [
+  {
+   "case": "r1-1",
+   "verdict": "whole",
+   "rows": 1,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 1343,
+   "bytes_back": 1343
+  },
+  {
+   "case": "r1-2",
+   "verdict": "whole",
+   "rows": 1,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 1343,
+   "bytes_back": 1343
+  },
+  {
+   "case": "r1-3",
+   "verdict": "whole",
+   "rows": 1,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 1343,
+   "bytes_back": 1343
+  },
+  {
+   "case": "r20-1",
+   "verdict": "whole",
+   "rows": 20,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 2682,
+   "bytes_back": 2682
+  },
+  {
+   "case": "r20-2",
+   "verdict": "whole",
+   "rows": 20,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 2682,
+   "bytes_back": 2682
+  },
+  {
+   "case": "r20-3",
+   "verdict": "whole",
+   "rows": 20,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 2682,
+   "bytes_back": 2682
+  },
+  {
+   "case": "r60-1",
+   "verdict": "whole",
+   "rows": 60,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 5645,
+   "bytes_back": 5645
+  },
+  {
+   "case": "r60-2",
+   "verdict": "whole",
+   "rows": 60,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 5645,
+   "bytes_back": 5645
+  },
+  {
+   "case": "r60-3",
+   "verdict": "whole",
+   "rows": 60,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 5645,
+   "bytes_back": 5645
+  },
+  {
+   "case": "r120-1",
+   "verdict": "whole",
+   "rows": 120,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 10090,
+   "bytes_back": 10090
+  },
+  {
+   "case": "r120-2",
+   "verdict": "whole",
+   "rows": 120,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 10090,
+   "bytes_back": 10090
+  },
+  {
+   "case": "r120-3",
+   "verdict": "whole",
+   "rows": 120,
+   "tries": 1,
+   "ended": [
+    "returned"
+   ],
+   "bytes_sent": 10090,
+   "bytes_back": 10090
+  }
+ ]
+}

@@ -1,0 +1,36 @@
+gate: repo   <repo>
+gate: log    <tmp>/jigc-gate-z5RSCz
+gate: target shared (<repo>/target)
+gate: mode   full, keep-going (no red step stops the run but a red build; the suite is ONE step, `test` -- what is named red is all that is red)
+gate: git    /Library/Developer/CommandLineTools/usr/bin/git
+gate:        SDKROOT /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -- the real git, not the /usr/bin/git xcrun trampoline
+gate: deps   42 entries
+gate: hygiene  skipped (JIGC_GATE_HYGIENE=off)
+
+==> fmt     ok        (1s)
+==> clippy  ok        (0s)
+==> build   ok        (0s)
+==> test-build ok        (0s)
+gate: tiers  none -- the suite runs as ONE step, `test`, and reads no timing record
+==> test    ok        (0s)
+==> doctest ok        (0s)
+
+--- summary ---
+fmt     exit=0
+clippy  exit=0
+build   exit=0
+test-build exit=0
+test    exit=0
+doctest exit=0
+tests   passed=2 failed=0  (over 3 test binaries)
+
+--- heaviest of this run (seconds; every test is a `test-seconds` line in the log) ---
+suites:
+     0.0s  tiny::numbers two_is_even  (1 tests)
+     0.0s  tiny::numbers two_is_two  (1 tests)
+tests:
+     0.0s  tiny::numbers two_is_even
+     0.0s  tiny::numbers two_is_two
+
+GATE: PASS
+full output: <tmp>/jigc-gate-z5RSCz

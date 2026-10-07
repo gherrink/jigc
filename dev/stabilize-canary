@@ -137,13 +137,16 @@
 #                * arm-control     trial-arm            usable-by-agents  every candidate
 #                  drive-doc-list  audit-drive          usable-by-agents  every candidate
 #                * gate            check                working-product   every candidate
-#                * regression-set  check                working-product   every candidate
+#                * regression-set  held-regression      working-product   every candidate
 #                (*: run where --items names none.) `arm-control` is walk arm 00 of the trial
 #                protocol, the positive control: it is scripted, so it needs the trial
 #                image and a container runtime and no credential. `drive-doc-list` is ITS
 #                STAND-IN for a machine without one. `gate` is answered from the
 #                candidate's own gate; `regression-set` is the long scripted check,
-#                about thirty-five minutes.
+#                about thirty-five minutes — A HELD CHECK: its kind names the command
+#                the step tool holds (its `hold-start --kind regression`); that tool
+#                starts it, waits for it and judges it, and the item's result is
+#                written from the tool's verdict file and from no agent's word.
 #   the finding  ONE ledger row of round 0, `canary-seeded-claim`, ungraded: a CLAIM
 #                about the door that would break the first clause if it were true — that
 #                `jigc doc list`, at exit 0, removes an untracked file — with its block
@@ -175,12 +178,18 @@
 # the round's test set — the state's `never_selected` and `check`'s `selected` say so.
 #
 # WHAT IT STANDS ON TODAY, and what changes it. The opening is written for the scripts
-# as they stood when this tool was built: a check is an item of kind `check` whose BRIEF
-# the preflight reads (`regression-set` names its command there, and how it is held is
-# the preflight's); `args` is the stage's argument object; `expect` counts the agents of
-# the harness as it was. A scripted check that is a held command of dev/stabilize-step,
-# a harness that reads a digest, and reports written from files change the items' rows
-# and the count — the suite's simulated stage goes red where they do.
+# as they stand: `gate` is an item of kind `check`, whose BRIEF the preflight reads, and
+# `regression-set` is a held check, `held-regression` — a kind the record script reads
+# (its result is the verdict file of dev/stabilize-step's held command) AND THE HARNESS
+# DOES NOT RUN YET: until it starts held commands by tool steps (the second repair plan's
+# K11) a stage over an opening that holds the item begins its attempt, runs its preflight
+# and its scope step, and halts at the state, naming the item and its kind — an attempt
+# counted, no instrument run, no record made. So a canary is run with the default items
+# only once that task has landed; the suite drives its simulated stage without the item
+# until then, and pins the halt. `args` is the stage's argument object, and
+# `expect` counts the agents of the harness as it is — no step of a held command, and no
+# digest: a harness that reads a digest, held commands as tool steps and reports written
+# from files change the count, and the suite's simulated stage goes red where they do.
 #
 # TO DISPOSE OF IT. Nothing is to be removed inside this repository: the tool writes no
 # file of it. The canary is ROOT, a directory under a temp or scratch directory, and goes
@@ -335,12 +344,12 @@ ITEMS = (
     },
     {
         "item": "regression-set",
-        "kind": "check",
+        "kind": "held-regression",
         "clause": "working-product",
         "runs": "every-candidate",
         "default": True,
         "agents": 0,
-        "brief": "The regression set, first part - a long scripted check, about thirty-five minutes: `dev/regression-set run --previous %(previous)s --candidate SHA --list " + LIST + " --scratch DIR`, SHA the candidate's commit and DIR a directory minted under the scratch root, held as the gate is held. Green, red or void is the `status` of the ONE line it prints, and that line is the evidence.",
+        "brief": "The regression set, first part - a long scripted check, about thirty-five minutes, AS A HELD COMMAND of dev/stabilize-step (`hold-start --kind regression`): the previous release's commit %(previous)s against the candidate's, over the list " + LIST + " as the candidate holds it. The tool starts it, waits for it and reads the verdict out of the ONE line dev/regression-set prints; this item's result is written from that verdict's file. No agent runs a command off this brief.",
     },
 )
 # The agents of a `test` stage beside the items' chains, where every agent ends well and

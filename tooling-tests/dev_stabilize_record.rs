@@ -13050,3 +13050,380 @@ fn an_agent_reads_its_brief_its_doors_and_the_untriaged_rows_by_key() {
         json!({"run": RUN, "count": 0, "untriaged": []})
     );
 }
+
+// ---------------------------------------------------------------------------
+// 31 · A writer fed from a file, and a scripted check's result
+// ---------------------------------------------------------------------------
+
+/// A call of a writer that takes its text from `file` (`--from`).
+fn from_file(mut args: Vec<String>, file: &Path) -> Vec<String> {
+    args.push(format!("--from={}", file.display()));
+    args
+}
+
+/// **A writer takes its text from a file the caller names** (the second repair plan's
+/// `K10`; the human's ruling of 2026-10-07 that no step of a stage may need his
+/// permission). A here-document is a shell an agent composes, and a redirect is one more;
+/// with `--from` the call that writes a report, a round's scope or a record's batch is ONE
+/// plain invocation, and the text is a file the agent wrote with its file tool. What is
+/// written is what the same text on stdin writes, byte for byte, stdin is not read — and a
+/// batch is HELD TO THE HASH its composer names (`--sha256`): one that is not that file is
+/// refused, and nothing is written.
+#[test]
+fn a_writer_takes_its_text_from_a_file() {
+    let rig = Rig::new("from-file");
+    let fed = |name: &str, text: &str| {
+        let path = rig.tmp.join(name);
+        fs::write(&path, text).expect("write what a writer is fed");
+        path
+    };
+
+    // A report: the file, and never stdin.
+    let body = format!("# a report\n\nNothing found \u{2014} \u{201c}nothing\u{201d}.\n\n{ENDS}\n");
+    let file = fed("report.md", &body);
+    let seen = rig.run(
+        &from_file(report(RUN, "1", "audit-a", "1"), &file),
+        "what stdin holds is not the report",
+    );
+    seen.must(OK, "a report from a file");
+    assert_eq!(seen.stdout.trim(), report_path("1", "audit-a", "1"));
+    rig.run(&report(RUN, "1", "audit-b", "1"), &body)
+        .must(OK, "the same report on stdin");
+    assert_eq!(
+        rig.read(&report_path("1", "audit-a", "1")),
+        rig.read(&report_path("1", "audit-b", "1")),
+        "a report from a file is the report the same text on stdin leaves"
+    );
+    // What a writer holds its text to, it holds a file's to: a report that was cut off.
+    let cut = fed("cut.md", "# a report\n\nCut off before its last li");
+    let before = rig.snapshot();
+    rig.run(&from_file(report(RUN, "1", "audit-c", "1"), &cut), "")
+        .refused(TRUNCATED, "a file that holds a report cut off");
+    // A file that is not there, and a directory: refused, and nothing written.
+    for (what, path) in [
+        ("a file that is not there", rig.tmp.join("no-such-file")),
+        ("a directory", rig.tmp.clone()),
+    ] {
+        let seen = rig.run(&from_file(report(RUN, "1", "audit-c", "1"), &path), &body);
+        seen.refused(BAD_VALUE, what);
+        assert!(seen.stderr.contains("--from"), "{}", seen.stderr);
+    }
+    assert_eq!(rig.snapshot(), before, "a refused file writes nothing");
+
+    // A round's scope.
+    let doors = scope(&[INSIDE], &[EXCLUDED]).to_string();
+    let seen = rig.run(
+        &from_file(scope_set(RUN, "1"), &fed("scope.json", &doors)),
+        "{}",
+    );
+    seen.must(OK, "a scope from a file");
+    let other = Rig::new("from-file-stdin");
+    other
+        .run(&scope_set(RUN, "1"), &doors)
+        .must(OK, "the same scope on stdin");
+    assert_eq!(
+        rig.read(&scope_path("1")),
+        other.read(&scope_path("1")),
+        "a scope from a file is the scope the same text on stdin leaves"
+    );
+
+    // A record's batch: from a file, HELD TO THE HASH its composer names.
+    let batch = format!(
+        "{}\n",
+        json!([call(ledger_add(RUN), &row("audit-f4").to_string())])
+    );
+    let file = fed("batch.json", &batch);
+    let held_to = |hash: &str| {
+        let mut args = from_file(apply(RUN, None), &file);
+        args.push(format!("--sha256={hash}"));
+        args
+    };
+    let before = rig.snapshot();
+    let wrong = rig.run(&held_to(&sha256('0')), "[]");
+    wrong.refused(
+        BAD_VALUE,
+        "a batch that is not the file its composer hashed",
+    );
+    assert!(
+        wrong.stderr.contains(&sha256_of(&batch)) && wrong.stderr.contains("--sha256"),
+        "the refusal says which hash the file has: {}",
+        wrong.stderr
+    );
+    // A file that was altered on its way: one byte.
+    fs::write(&file, batch.replace("audit-f4", "audit-f5")).expect("alter the batch");
+    rig.run(&held_to(&sha256_of(&batch)), "")
+        .refused(BAD_VALUE, "a batch one byte of which changed");
+    fs::write(&file, &batch).expect("the batch again");
+    // A batch from a file names its hash, and a hash names a file.
+    rig.run(&from_file(apply(RUN, None), &file), "")
+        .refused(USAGE, "a batch from a file, and no hash");
+    let mut alone = apply(RUN, None);
+    alone.push(format!("--sha256={}", sha256_of(&batch)));
+    rig.run(&alone, &batch)
+        .refused(USAGE, "a hash, and no file it is the hash of");
+    assert_eq!(rig.snapshot(), before, "a refused batch writes nothing");
+    let applied = rig.run(&held_to(&sha256_of(&batch)), "what stdin holds is no batch");
+    applied.must(OK, "the batch, from the file its hash names");
+    assert_eq!(applied.json()["applied"], 1);
+    assert_eq!(rig.state()["ledger"][0]["key"], "audit-f4");
+}
+
+/// The verdict of a held command, as `dev/stabilize-step hold-wait` keeps one
+/// (`<scratch>/hold/<name>/verdict.json`): ONE line that ends with its own sha256. The step
+/// suite hands that tool's own file to this script
+/// (`dev_stabilize_step::the_tools_verdict_file_is_what_the_record_script_records`); here
+/// the file is composed, so that every way it can be wrong is.
+fn verdict_file(rig: &Rig, name: &str, body: &Value) -> PathBuf {
+    let text = body.to_string();
+    let line = format!(
+        "{}, \"sha256\": \"{}\"}}\n",
+        &text[..text.len() - 1],
+        sha256_of(&text)
+    );
+    let path = rig.tmp.join(format!("{name}.verdict.json"));
+    fs::write(&path, line).expect("write a verdict's file");
+    path
+}
+
+/// What the tool keeps of a regression set that ran to its end as `verdict`.
+fn regression_verdict(rig: &Rig, verdict: &str, why: Option<&str>, commit: &str) -> Value {
+    let work = rig.tmp.join("scratch/hold/regression-r1-a1/work");
+    json!({
+        "tool": "stabilize-step", "name": "regression-r1-a1", "kind": "regression",
+        "asked": {"previous": sha('e'), "candidate": commit, "list": "lists/intended-changes.tsv"},
+        "exit": if verdict == "green" { 0 } else { 1 }, "seconds": 2100,
+        "verdict": verdict, "why": why,
+        "detail": "22 difference(s), 1 of them off the list; 11 test(s) excluded by a row",
+        "facts": {"status": verdict, "previous": sha('e'), "candidate": commit,
+                  "list_sha256": sha256('7'), "differences": 22, "not_on_list": 1, "excluded": 11},
+        "evidence": {"line": {"tool": "regression-set", "status": verdict,
+                              "previous": {"commit": sha('e'), "sha256": sha256('1')},
+                              "candidate": {"commit": commit, "sha256": sha256('2')},
+                              "list": {"path": "lists/intended-changes.tsv", "commit": commit,
+                                       "sha256": sha256('7'), "rows": 33},
+                              "excluded": [{"binary": "jigc::g_flow", "test": "flow01::a", "change": "fails on its own binary",
+                                            "pointer": "excluded:records/run-2.json"}],
+                              "not_on_list": [{"binary": "jigc::g_doc", "test": "doc::b \u{2014} a name"}],
+                              "evidence": work.join("evidence"), "work": work}},
+        "output": "hold/regression-r1-a1/output", "output_sha256": sha256('3'),
+    })
+}
+
+/// **A scripted check's result is the tool's verdict, and no outcome word is taken from the
+/// caller** (the second repair plan's `K10`; the re-review's `R-M8`). An item of a kind that
+/// begins `held-` is a check whose command `dev/stabilize-step` holds and judges. Its
+/// result is written from the verdict file that tool keeps — the row names the file, and
+/// nothing else — and the verdict REACHES THE RECORD AS A FILE WRITTEN ONCE,
+/// `r<N>/checks/<item>.a<attempt>.json`: the two commits, the list's hash and what was
+/// excluded are on record, host paths replaced as in every file of a run. A row that
+/// brings its own word, a file that is not that tool's line, a verdict of another kind or
+/// of another commit are refused; a red verdict is filed as a finding, as every red check
+/// is; the file is vetted as one; and a result whose verdict file is gone is missed.
+#[test]
+fn a_scripted_checks_result_is_the_tools_verdict() {
+    let rig = Rig::new("held-check");
+    fs::create_dir_all(rig.tmp.join("scratch/hold/regression-r1-a1/work"))
+        .expect("the scratch root a stage hands its writers");
+    rig.run(
+        &run_set(RUN),
+        &format!(r#"{{{BOUNDED}, {RELEASE}, "clauses": ["clause-a"]}}"#),
+    )
+    .must(OK, "the run's facts");
+    let held = json!({"item": "regression-set", "kind": "held-regression", "clause": "clause-a",
+                      "runs": "every-candidate",
+                      "brief": "the regression set, held and judged by dev/stabilize-step"});
+    let mut plain = held.clone();
+    plain["item"] = json!("ci");
+    plain["kind"] = json!("check");
+    rig.run(&item_set(RUN), &json!([held, plain]).to_string())
+        .must(OK, "a held check, and a check an agent reads");
+    rig.run(&scope_set(RUN, "1"), &scope(&[INSIDE], &[]).to_string())
+        .must(OK, "round 1's scope");
+    let commit = sha('a');
+    let scratch = rig.tmp.join("scratch").display().to_string();
+    let result = |rows: Value| {
+        let mut args = result_set(RUN, "1", &commit);
+        args.push(format!("--scratch={scratch}"));
+        rig.run(&args, &rows.to_string())
+    };
+    let green = verdict_file(
+        &rig,
+        "green",
+        &regression_verdict(&rig, "green", None, &commit),
+    );
+    let before = rig.snapshot();
+
+    // NO OUTCOME WORD IS TAKEN FROM THE CALLER — and a verdict file is no row of an item
+    // an agent reads.
+    for (what, row, says) in [
+        (
+            "an outcome word for a held check",
+            json!({"item": "regression-set", "outcome": "green"}),
+            "No outcome word is taken from a caller",
+        ),
+        (
+            "a void, with its reason",
+            json!({"item": "regression-set", "outcome": "void", "reason": "it did not run"}),
+            "No outcome word is taken from a caller",
+        ),
+        (
+            "a verdict's file, and a word beside it",
+            json!({"item": "regression-set", "verdict": green, "outcome": "green"}),
+            "and nothing else",
+        ),
+        (
+            "a verdict's file for a check that is not held",
+            json!({"item": "ci", "verdict": green}),
+            "is no held check",
+        ),
+    ] {
+        let seen = result(json!([row]));
+        seen.refused(BAD_VALUE, what);
+        assert!(seen.stderr.contains(says), "{what}: {}", seen.stderr);
+    }
+    // A file that is not the tool's verdict of THIS check, on THIS commit.
+    let of = |name: &str, change: &dyn Fn(&mut Value)| {
+        let mut body = regression_verdict(&rig, "green", None, &commit);
+        change(&mut body);
+        verdict_file(&rig, name, &body)
+    };
+    let retyped = rig.tmp.join("retyped.verdict.json");
+    let typed = fs::read_to_string(&green).expect("the verdict");
+    let again = typed.replace("\"verdict\":\"green\"", "\"verdict\": \"green\"");
+    assert_ne!(again, typed, "one space more, and the same JSON");
+    fs::write(&retyped, again).expect("retype the verdict");
+    for (what, file) in [
+        (
+            "a file that is not there",
+            rig.tmp.join("no-such.verdict.json"),
+        ),
+        ("a line that does not hold to its hash", retyped),
+        (
+            "another tool's line",
+            of("tool", &|body| body["tool"] = json!("an-agent")),
+        ),
+        (
+            "a verdict of another kind",
+            of("kind", &|body| body["kind"] = json!("gate")),
+        ),
+        (
+            "a word that is no verdict",
+            of("word", &|body| body["verdict"] = json!("passed")),
+        ),
+        (
+            "a verdict of another candidate",
+            of("commit", &|body| {
+                body["asked"]["candidate"] = json!(sha('b'))
+            }),
+        ),
+        (
+            "a void that does not say why",
+            of("why", &|body| body["verdict"] = json!("void")),
+        ),
+    ] {
+        let seen = result(json!([{"item": "regression-set", "verdict": file}]));
+        seen.refused(BAD_VALUE, what);
+        assert!(seen.stderr.contains("verdict"), "{what}: {}", seen.stderr);
+    }
+    assert_eq!(rig.snapshot(), before, "a refused verdict writes nothing");
+
+    // THE RESULT IS THE FILE'S WORD, and the verdict is on record, written once.
+    let red = verdict_file(&rig, "red", &regression_verdict(&rig, "red", None, &commit));
+    let seen = result(json!([{"item": "regression-set", "verdict": red}, ran("ci", "green")]));
+    seen.must(OK, "a held check's result, from its verdict file");
+    assert_eq!(
+        seen.json()["recorded"],
+        json!([{"item": "regression-set", "attempt": 1, "outcome": "red"},
+               {"item": "ci", "attempt": 1, "outcome": "green"}])
+    );
+    let on_record = format!("completions/artifacts/{RUN}/r1/checks/regression-set.a1.json");
+    let text = rig.read(&on_record);
+    let kept: Value = serde_json::from_str(&text).expect("the verdict on record is JSON");
+    assert_eq!(
+        json!([
+            kept["item"],
+            kept["attempt"],
+            kept["round"],
+            kept["commit"],
+            kept["kind"],
+            kept["verdict"]
+        ]),
+        json!(["regression-set", 1, 1, commit, "regression", "red"]),
+        "{kept}"
+    );
+    assert_eq!(
+        json!([
+            kept["evidence"]["line"]["previous"]["commit"],
+            kept["evidence"]["line"]["candidate"]["commit"],
+            kept["evidence"]["line"]["list"]["sha256"],
+            kept["evidence"]["line"]["excluded"][0]["test"]
+        ]),
+        json!([sha('e'), commit, sha256('7'), "flow01::a"]),
+        "the two commits, the list's hash and what was excluded are on record: {kept}"
+    );
+    assert_eq!(
+        kept["evidence"]["line"]["work"], "<scratch>/hold/regression-r1-a1/work",
+        "a host path is its public placeholder, as in every file of a run: {kept}"
+    );
+    assert!(!text.contains(&rig.tmp.display().to_string()), "{text}");
+    // A RED CHECK IS A FINDING, filed under the item's own key.
+    assert_eq!(seen.json()["findings"], json!(["red-regression-set"]));
+    let read = rig.state();
+    let finding = &read["ledger"][0];
+    assert_eq!(
+        json!([finding["key"], finding["grade"], finding["clause"]]),
+        json!(["red-regression-set", "ungraded", "clause-a"])
+    );
+    assert!(
+        finding["repro"]
+            .as_str()
+            .is_some_and(|repro| repro.contains(&on_record)),
+        "the finding's repro names the verdict on record: {finding}"
+    );
+
+    // THE FILE IS VETTED AS ONE: as the script wrote it, it passes; changed by a hand,
+    // it is no verdict.
+    let vet = |path: &str| rig.run(&strings(&["vet", &format!("--run={RUN}"), "--", path]), "");
+    vet(&on_record).must(OK, "the verdict on record, as written");
+    fs::write(
+        rig.root.join(&on_record),
+        text.replace("\"red\"", "\"green\""),
+    )
+    .expect("change a word");
+    let seen = vet(&on_record);
+    seen.must(VET_MISMATCH, "a verdict a hand turned green");
+    assert_eq!(
+        seen.json()["refused"][0]["why"],
+        "bad-value",
+        "{}",
+        seen.stdout
+    );
+    // And the state does not read across it: the result says red, and so does its file.
+    rig.run(&state(RUN), "").refused(
+        CORRUPT,
+        "a verdict on record that says another word than its result",
+    );
+    fs::write(rig.root.join(&on_record), &text).expect("the verdict again");
+    rig.state();
+    // WHAT IS DELETED IS MISSED.
+    fs::remove_file(rig.root.join(&on_record)).expect("delete the verdict");
+    let gone = rig.run(&state(RUN), "");
+    gone.refused(CORRUPT, "a result whose verdict file is gone");
+    assert!(
+        gone.stderr.contains("regression-set.a1.json"),
+        "{}",
+        gone.stderr
+    );
+    fs::write(rig.root.join(&on_record), &text).expect("the verdict again");
+    // A file beside the verdicts that has no verdict's name is no file of a run.
+    let stray = format!("completions/artifacts/{RUN}/r1/checks/notes.md");
+    fs::write(rig.root.join(&stray), "a note\n").expect("write a stray file");
+    let seen = vet(&stray);
+    seen.must(VET_MISMATCH, "a stray file beside the verdicts");
+    assert_eq!(
+        seen.json()["refused"][0]["why"],
+        "bad-id",
+        "{}",
+        seen.stdout
+    );
+}

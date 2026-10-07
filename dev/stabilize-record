@@ -52,6 +52,9 @@
 #   r<N>/gate.md                            the candidate's gate: what the full gate
 #                                           showed red before the round's records were
 #                                           written                      (gate-set)
+#   r<N>/checks/<item>.a<A>.json            a held check's verdict, as dev/stabilize-step
+#                                           judged its command — written once, with the
+#                                           result of that run           (result-set)
 #   .pending.json                           the journal (below) — never committed
 #   r<N>/reports/test/<reporter>.a<A>.md    a test-stage report          (report)
 #   r<N>/reports/fix/c<K>/<reporter>.a<A>.md  a fix-stage report, cycle K  (report)
@@ -71,8 +74,10 @@
 #
 #   dev/stabilize-record report --run R --round N --stage test|fix [--cycle K]
 #                        --reporter S --attempt A [--scratch DIR]... <report
-#       The report on stdin, written to the path above; prints that path. --cycle is
-#       the fix stage's and only its. A path already taken is refused (exists): a
+#   dev/stabilize-record report … --from FILE
+#       The report on stdin — or, with --from, THE FILE its reporter wrote it to, and
+#       then stdin is not read (A WRITER FED FROM A FILE, below) — written to the path
+#       above; prints that path. --cycle is the fix stage's and only its. A path already taken is refused (exists): a
 #       re-run passes the next attempt and the stale report stays where it is.
 #       A REPORT ENDS WITH THE LINE
 #           <!-- end of report -->
@@ -123,6 +128,12 @@
 #                      to its end and is red (a deterministic check); it was not reached, or
 #                      did not run to its end
 #         reason       with void and only with it: why, in a line of text
+#         verdict      FOR A HELD CHECK, AND ONLY FOR ONE — an item whose kind is
+#                      `held-<id>` (item-set): the file dev/stabilize-step kept its
+#                      verdict of the held command in (<scratch>/hold/<name>/verdict.json).
+#                      Such a row names the item and this, AND NOTHING ELSE: its outcome
+#                      is the verdict the tool read out of the command's own output, and
+#                      no word is taken from a caller (A SCRIPTED CHECK'S RESULT, below).
 #         doctype, door, repro   with red and only with it: A RED RUN IS A FINDING. Its row
 #                      is appended to the ledger by this call, under the key `red-<item>`,
 #                      ungraded and open — round N, the item's clause, and these three as a
@@ -143,6 +154,29 @@
 #       by the same call (round.md: ran, as `<item> a<K>`): a result that is gone later —
 #       an item's last one, or its only one — is missed there, and `state` refuses (corrupt)
 #       results that hold fewer runs of an item, or more, than the record counts.
+#
+#       A SCRIPTED CHECK'S RESULT IS THE TOOL'S VERDICT (the second repair plan of the
+#       `test` half, K10). A check that is one long command — the gate, the regression
+#       set — is started, waited for and JUDGED by dev/stabilize-step (its `hold-start`
+#       and `hold-wait`); what an agent would return of it is a word, and a word can be
+#       wrong. So an item of kind `held-<id>` has no outcome a caller could name
+#       (bad-value), and no other item has a verdict's file (bad-value). The file is ONE
+#       line that ends with the sha256 of itself, and it is that tool's (`tool`), of a
+#       held `<id>` (`kind`), green, red or void with why — and, where the command was
+#       asked for a commit, of THIS call's commit; anything else is refused (bad-value)
+#       and nothing is written. green is green; void is void, its reason the verdict's
+#       `why` and its sentence; RED IS A FINDING like every red run — filed under
+#       `red-<item>`, its door `the held check <item>`, its repro the verdict's own
+#       sentence and where the verdict lies. AND THE VERDICT REACHES THE RECORD AS A FILE
+#       WRITTEN ONCE, in the same batch as the result: r<N>/checks/<item>.a<attempt>.json
+#       — the item, its attempt, the round and the commit, the kind, the verdict, why,
+#       what was asked, the exit status, the facts and the evidence of the kind (for the
+#       regression set its own line: the two commits and their binaries' hashes, the
+#       list's path, commit and hash, every difference on and off the list and every
+#       test that was excluded), host paths replaced as in every file of a run. `state`
+#       holds every such result to its file — one that is gone, or says another word, is
+#       refused (corrupt): what is deleted is missed — and `vet` holds the file to its
+#       result (bad-value) and to a verdict's name (bad-id).
 #
 #       THE CLAUSE TABLE (clauses.md) IS RENDERED, AND NOTHING SETS A CLAUSE'S STATUS. It
 #       is the view of the derivation below — a row per clause of the run's census (run-set:
@@ -171,7 +205,9 @@
 #       None of the three may be blank. Prints {"bounds", "bound"}.
 #
 #   dev/stabilize-record scope-set --run R --round N [--scratch DIR]... <scope.json
-#       The round's doors, as the scope step resolved them — one JSON object:
+#   dev/stabilize-record scope-set … --from FILE
+#       The round's doors, as the scope step resolved them — one JSON object, on stdin
+#       or in the file --from names:
 #         {"included": [DOOR...], "excluded": [DOOR...]}
 #         DOOR = {"door", "registry", "derivation"}   — text, none of it blank: the door,
 #                the registry it comes from, and how it was derived
@@ -229,7 +265,13 @@
 #         kind         what kind of instrument it is: a review row, a trial arm, an
 #                      audit area, a deterministic check. A slug, and NOT a vocabulary of
 #                      this script's: the harness has a chain of agents per kind, and a
-#                      kind it has none for is its halt, never a guess of either's.
+#                      kind it has none for is its halt, never a guess of either's. ONE
+#                      FORM IS READ HERE: `held-<id>` is A HELD CHECK — a check that is
+#                      one long command, which dev/stabilize-step starts, waits for and
+#                      judges; <id> is the id of that tool's kind of held command
+#                      (`held-gate`, `held-regression`). Its result is that tool's
+#                      verdict and no caller's word (result-set), and its brief is for a
+#                      reader: no agent runs a command off it.
 #         clause       the clause of the closing condition it judges   — a slug, AND A
 #                      CLAUSE OF THE CENSUS (run-set: clauses) once that is written: the
 #                      derivation walks the census, so an item of a clause it does not
@@ -732,7 +774,11 @@
 #
 #   dev/stabilize-record apply --run R [--round N] --subject TEXT [--scratch DIR]...
 #                        <batch.json
-#       A RECORD STEP'S WRITES, AS ONE BATCH. Stdin is a JSON array of calls, each
+#   dev/stabilize-record apply … --from FILE --sha256 HASH
+#       A RECORD STEP'S WRITES, AS ONE BATCH. Stdin — or the file --from names, HELD TO
+#       THE SHA256 ITS COMPOSER NAMES IT BY: a file of another hash is not the batch that
+#       was composed, and is refused (bad-value) with the hash it has, nothing written;
+#       the two flags come together or not at all (usage) — is a JSON array of calls, each
 #       {"argv": [SUBCOMMAND, FLAG...], "stdin": TEXT}: the table writers above and the
 #       two checks, exactly as they are called alone. They run in the batch's order, each
 #       reading what the ones before it wrote, and NOTHING IS ON DISK until every call
@@ -817,8 +863,9 @@
 #       nothing. Every PATH is a file of the run, repository-relative as `pending` names
 #       it, read from the disk and held to the rules a writer holds its text to (WHAT A
 #       WRITER DOES TO ITS TEXT, below) by the writers' own functions: it lies below the
-#       run's directory behind no link, and a file beside the reports has a report's
-#       name; it is text; a report ends with its last line; NO HOST PATH IS LEFT IN IT —
+#       run's directory behind no link, a file beside the reports has a report's name,
+#       and one beside the verdicts of the held checks a verdict's — and is the verdict
+#       its result was written from (result-set); it is text; a report ends with its last line; NO HOST PATH IS LEFT IN IT —
 #       the text is what the placeholder replacement leaves, so the public placeholders
 #       themselves pass; no line reddens a standing fence; and the public-hygiene scan,
 #       ONE scan over all of them and the subject. --subject is the subject of the commit
@@ -876,6 +923,17 @@
 # never while it waits for it, so rows written at once are all written, and state reads
 # between two writes, never across one. Every JSON result is one line on stdout, printed
 # once the call's batch has landed.
+#
+# A WRITER FED FROM A FILE (the second repair plan of the `test` half, K10; the human's
+# ruling of 2026-10-07 that no step of a stage may need his permission). Three writers
+# are called by an agent of a stage, and each used to be handed its text by a shell the
+# agent composed — a here-document, or a redirect: a command no permission rule can
+# name. With --from the agent writes the text to a file with its file tool, and the call
+# is ONE plain invocation: `report` (its report), `scope-set` (the round's scope) and
+# `apply` (a record's batch, with --sha256). The file is read as stdin would be — the
+# same bytes give the same write, and every rule of the writer holds — and stdin is not
+# read. A file that cannot be read is refused (bad-value). The other writers are called
+# by nobody but a batch, which carries their text.
 #
 # WHERE THE STATE TAKES A WRITE — THE WRITER x STATE TABLE. A write is taken only where
 # the state asks for it; anywhere else it is refused (bad-value: "the state does not ask
@@ -1023,7 +1081,10 @@
 #                     item a round has run or owes a run keeps its clause, runs, doors
 #                     and registries
 #    7  bad-value     a value outside its vocabulary, a malformed row, a report that is
-#                     not text — or A WRITE THE STATE DOES NOT ASK FOR: a round that is not
+#                     not text; a file named by --from that cannot be read, or that is
+#                     not the file --sha256 names; an outcome word for a held check, or a
+#                     verdict's file that is not the tool's verdict of that check on that
+#                     commit — or A WRITE THE STATE DOES NOT ASK FOR: a round that is not
 #                     begun and not handed out, a fact outside its position, a go, a
 #                     grant, a raised bound or the re-run of an item nobody is asked
 #                     for; a result for an item the round's scope does not select; an
@@ -1113,6 +1174,14 @@ SHA = re.compile(r"[0-9a-f]{7,40}")
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 REPORT_NAME = re.compile(r"(%s)\.a([1-9][0-9]{0,5})\.md" % SLUG.pattern)
+# A held check's verdict on record: r<N>/checks/<item>.a<attempt>.json.
+CHECK_NAME = re.compile(r"(%s)\.a([1-9][0-9]{0,5})\.json" % SLUG.pattern)
+# AN ITEM WHOSE CHECK IS A HELD COMMAND says so by its kind: `held-<id>`, the id of a kind
+# of command dev/stabilize-step holds and judges (its HOLDS: `gate`, `regression`). It is
+# the one kind this script reads: such an item's result is that tool's verdict.
+HELD = "held-"
+# The tool whose verdict that is, as its verdict's file names it.
+HOLDER = "stabilize-step"
 # A segment of a path below the run's directory, as `vet` is handed one; a round's
 # directory; and an argument of a range, as `git rev-list` takes it — a name, or one of
 # the two flags a range is cut with. Nothing else reaches a git command.
@@ -1258,6 +1327,9 @@ STAGED = {}
 OUT = []
 LOCKED = set()
 INPUT = []
+# Where the call reads its text from when its caller names a file (--from): the path, and
+# — for a batch — the sha256 its composer names it by (--sha256).
+FROM = []
 # The calls a batch may hold (apply): the table writers, and the two checks.
 APPLICABLE = ("gate-set", "ledger-add", "ledger-set", "triage-set", "result-set", "bound-set", "item-set", "round-set", "run-set", "check-reports", "check-ledger")
 CHECKS = ("check-reports", "check-ledger")
@@ -1873,10 +1945,22 @@ def untick(text):
 
 
 def stdin_bytes():
-    """The call's input: its own stdin, or — for a call of a batch — what the batch gives."""
+    """The call's input: for a call of a batch, what the batch gives; the file its caller
+    names (--from), held to the hash it is named by where one is (--sha256); else stdin."""
     if INPUT:
         return INPUT[-1].encode("utf-8", "surrogatepass")
-    return sys.stdin.buffer.read()
+    if not FROM:
+        return sys.stdin.buffer.read()
+    path, wanted = FROM[-1]
+    try:
+        with open(path, "rb") as file:
+            data = file.read()
+    except OSError as err:
+        refuse("bad-value", "--from %s cannot be read as a file (%s); nothing was written" % (shown(path), " ".join(str(err).split())))
+    has = hashlib.sha256(data).hexdigest()
+    if wanted is not None and has != wanted:
+        refuse("bad-value", "--from %s is not the file its composer hashed: its sha256 is %s, and --sha256 names %s — the text was altered on its way, or the file is another. Write the file again, exactly; nothing was written" % (shown(path), has, shown(wanted)))
+    return data
 
 
 def json_stdin():
@@ -2394,9 +2478,16 @@ def result_set(args):
         refuse("bad-value", "commit %s is not a full sha of 40 hex digits: the commit the items ran on" % shown(args.commit))
     given = []
     for row in json_rows("result"):
-        fields(row, ("item", "outcome"), ("reason",) + RED_FIELDS, "a result")
+        fields(row, ("item",), ("outcome", "reason", "verdict") + RED_FIELDS, "a result")
         what = "result %s" % shown(row["item"])
         name = slug(row["item"], "item")
+        if "verdict" in row:
+            # A HELD CHECK'S ROW names the file of the tool's verdict, and nothing else.
+            if set(row) != {"item", "verdict"} or not isinstance(row["verdict"], str):
+                refuse("bad-value", "%s: a held check's row names the item and — as `verdict` — the file dev/stabilize-step kept its verdict in, and nothing else: no outcome word is taken from a caller" % what)
+            given.append((name, None, None, None, row["verdict"]))
+            continue
+        fields(row, ("item", "outcome"), ("reason",) + RED_FIELDS, "a result")
         outcome = one_of(row["outcome"], CLAUSE_STATUSES, what + ": outcome")
         if ("reason" in row) != (outcome == "void"):
             refuse("bad-value", "%s: void says why the item did not run to its end, as `reason`, and no other outcome does" % what)
@@ -2409,8 +2500,8 @@ def result_set(args):
             key = slug(RED + name, what + ": the key of its finding")
             finding = [tick(key), tick(one_of(row["doctype"], DOCTYPES, what + ": doctype"))] + [said(row, field, what, scratch) for field in ("door", "repro")]
             detail = tick(key)
-        given.append((name, outcome, detail, finding))
-    distinct([name for name, _, _, _ in given], "item")
+        given.append((name, outcome, detail, finding, None))
+    distinct([name for name, _, _, _, _ in given], "item")
     one_writer(run_dir)
     # The state as it stands before the write: what the round is, and what it asks for.
     read = standing(run_dir, args.run)
@@ -2427,10 +2518,18 @@ def result_set(args):
     ledger, ledger_above, ledger_rows = read_ledger(run_dir)
     keys = unique_rows(ledger, ledger_rows)
     recorded, filed, added = [], [], []
-    for name, outcome, detail, finding in given:
+    for name, outcome, detail, finding, verdict in given:
         if name not in items:
             refuse("no-such-row", "the test set has no item %s; nothing was written" % name)
         item = item_rows[items.index(name)]
+        kind = untick(item[1])
+        # A SCRIPTED CHECK'S RESULT IS THE TOOL'S VERDICT: an item whose check is a held
+        # command takes its result from the verdict's file and from nothing a caller says —
+        # and no other item takes one from a file.
+        if kind.startswith(HELD) and verdict is None:
+            refuse("bad-value", "%s: the item %s is a held check (kind %s) — dev/stabilize-step holds its command and judges it, and its result is written from that tool's verdict: name the file (`verdict`: <scratch>/hold/<name>/verdict.json). No outcome word is taken from a caller; nothing was written" % (what, name, kind))
+        if verdict is not None and not kind.startswith(HELD):
+            refuse("bad-value", "%s: the item %s is of kind %s, which is no held check (`%s<id>`): its result is what its agents report, as `outcome`, and no verdict's file; nothing was written" % (what, name, kind, HELD))
         if not selected_by(item, scope[1]):
             refuse("bad-value", "%s: its scope does not select the item %s — an item no scope selected owes nothing, and has no result there; nothing was written" % (what, name))
         attempt = sum(untick(row[0]) == name for row in rows) + 1
@@ -2438,6 +2537,11 @@ def result_set(args):
             refuse("exists", "%s holds the result of %s's run in its test stage, and the round is not tested yet — a run again is an attempt of a round that is, and only where the state asks for it; nothing was written" % (rel, name))
         if tested and (name, int(round_number)) not in due:
             refuse("bad-value", "%s is tested, and the state does not ask for a run of %s in it again — its next step is `%s`, and a re-run is taken for an item the state lists as due while that step is `retest`, in the round that selected the item; nothing was written" % (what, name, read["next"]))
+        if verdict is not None:
+            # The verdict reaches the record as a file WRITTEN ONCE, in this call's batch.
+            parts = ["r" + round_number, "checks", "%s.a%d.json" % (name, attempt)]
+            outcome, detail, finding, text = held_result(verdict, name, kind[len(HELD):], round_number, attempt, args.commit, scratch, "/".join(ARTIFACTS + (args.run,) + tuple(parts)))
+            publish(run_dir, parts, text, replace=False, taken="a held check's verdict is written once, under the attempt its run is")
         rows.append([tick(name), str(attempt), tick(args.commit), outcome, detail])
         recorded.append({"item": name, "attempt": attempt, "outcome": outcome})
         if finding is None:
@@ -2470,6 +2574,70 @@ def result_set(args):
         census(run_dir, added)
     render_view(run_dir)
     say(json.dumps({"results": rel, "recorded": recorded, "findings": filed}))
+
+
+def held_result(path, name, held, round_number, attempt, commit, scratch, rel):
+    """A held check's result, from THE TOOL'S VERDICT and from nothing else: (outcome, the
+    result row's detail, the finding a red one is filed as, the verdict as it is written on
+    record). `path` is the file dev/stabilize-step kept — ONE line that ends with the sha256
+    of itself — and it is that tool's verdict of a held `held` command, on this commit, or
+    the call is refused."""
+    what = "the verdict's file %s of the item %s" % (shown(path), name)
+    try:
+        with open(path, "rb") as file:
+            line = file.read().decode("utf-8")
+    except (OSError, ValueError) as err:
+        refuse("bad-value", "%s cannot be read as text (%s); nothing was written" % (what, " ".join(str(err).split())))
+    line = line[:-1] if line.endswith("\n") else line
+    marker = ', "sha256": "'
+    at = line.rfind(marker)
+    kept = None
+    if "\n" not in line and at > 0 and line.endswith('"}') and hashlib.sha256((line[:at] + "}").encode("utf-8")).hexdigest() == line[at + len(marker):-2]:
+        try:
+            kept = json.loads(line)
+            json.dumps(kept, ensure_ascii=False).encode("utf-8")
+        except (ValueError, RecursionError):
+            kept = None
+    if not isinstance(kept, dict):
+        refuse("bad-value", "%s is not ONE line of JSON that ends with the sha256 of itself: it is not the verdict dev/stabilize-step kept, or it was altered on its way; nothing was written" % what)
+    asked = kept.get("asked") if isinstance(kept.get("asked"), dict) else {}
+    of = [asked[flag] for flag in ("candidate", "commit") if flag in asked]
+    wrong = (
+        "it is no verdict of dev/%s (its `tool` is %s)" % (HOLDER, shown(kept.get("tool"))) if kept.get("tool") != HOLDER
+        else "it is the verdict of a held `%s`, and the item's kind is `%s%s`" % (kept.get("kind"), HELD, held) if kept.get("kind") != held
+        else "its verdict is %s, which is none of %s" % (shown(kept.get("verdict")), ", ".join(CLAUSE_STATUSES)) if kept.get("verdict") not in CLAUSE_STATUSES
+        else "it is void and does not say why" if kept["verdict"] == "void" and not (isinstance(kept.get("why"), str) and kept["why"].strip())
+        else "it is the verdict of a command on %s, and the results of this call are of runs on %s" % (", ".join(map(shown, of)), commit) if any(sha != commit for sha in of)
+        else None
+    )
+    if wrong:
+        refuse("bad-value", "%s: %s; nothing was written" % (what, wrong))
+    outcome, why, said_ = kept["verdict"], kept.get("why"), " ".join(str(kept.get("detail") or "").split())
+    record = {"item": name, "attempt": attempt, "round": int(round_number), "commit": commit, "kind": held, "verdict": outcome, "why": why, "detail": said_}
+    record.update({field: kept.get(field) for field in ("name", "asked", "exit", "seconds", "facts", "evidence", "output_sha256")})
+    text = public(json.dumps(record, indent=1, ensure_ascii=False) + "\n", scratch)
+    detail, finding = "-", None
+    if outcome == "void":
+        detail = cell(public("%s%s" % (why, ": " + said_ if said_ else ""), scratch))
+    if outcome == "red":
+        key = slug(RED + name, "the key of the finding of %s" % name)
+        finding = [tick(key), tick(DOCTYPES[0]), cell("the held check `%s`" % name), cell(public("the held command `%s`, judged red by dev/%s from its own output%s — the verdict on record: %s" % (held, HOLDER, ": " + said_ if said_ else "", rel), scratch))]
+        detail = tick(key)
+    return outcome, detail, finding, text
+
+
+def verdict_on_record(run_dir, round_number, name, attempt):
+    """(the path of a held check's verdict on record, the word it says) — None for the word
+    where the file is gone, or is not the verdict of that run of that item."""
+    parts = ["r%s" % round_number, "checks", "%s.a%d.json" % (name, attempt)]
+    path = below(run_dir, parts)
+    try:
+        text = STAGED[path][1] if path in STAGED else open(path, encoding="utf-8").read()
+        kept = json.loads(text)
+        word = kept["verdict"] if (kept["item"], kept["attempt"], kept["round"]) == (name, attempt, int(round_number)) and kept["verdict"] in CLAUSE_STATUSES else None
+    except (OSError, ValueError, KeyError, TypeError):
+        word = None
+    return "/".join(ARTIFACTS + (os.path.basename(run_dir),) + tuple(parts)), word
 
 
 def bound_set(args):
@@ -3044,6 +3212,14 @@ def grounds(run_dir):
                 spoiled(results_rel, "lacks attempt %d of %s — the round's record (%s) counts %d run(s) of it, and a result that is gone is not read as a run that never was" % (has + 1, name, record_rel, said_))
             if has > said_:
                 spoiled(results_rel, "holds attempt %d of %s, a run the round's record (%s) does not count" % (has, name, record_rel))
+        # — and a held check's result is the tool's verdict ON RECORD: the file that result
+        # was written from is there, and says the word the result says.
+        kinds = {untick(row[0]): untick(row[1]) for row in item_rows}
+        for ran in held["results"]:
+            if kinds.get(ran["item"], "").startswith(HELD):
+                kept, word = verdict_on_record(run_dir, number_, ran["item"], ran["attempt"])
+                if word != ran["outcome"]:
+                    spoiled(results_rel, "says that the held check %s was %s in its attempt %d, and %s — the verdict that result was written from — %s: a held check's result is the tool's verdict on record, and what is deleted is missed" % (ran["item"], ran["outcome"], ran["attempt"], kept, "is gone, or is no verdict of that run" if word is None else "says %s" % word))
         rounds.append(held)
     return facts, item_rows, rounds
 
@@ -3897,7 +4073,10 @@ def run_file(prefix, rel):
     report = len(parts) > 2 and bool(ROUND_DIR.fullmatch(parts[0])) and parts[1] == "reports"
     if report and not REPORT_NAME.fullmatch(parts[-1]):
         refuse("bad-id", "%s lies beside the reports and has no report's name" % rel)
-    return parts, report, len(parts) == 2 and bool(ROUND_DIR.fullmatch(parts[0])) and parts[1] == "scope.md"
+    check = len(parts) > 2 and bool(ROUND_DIR.fullmatch(parts[0])) and parts[1] == "checks"
+    if check and not (len(parts) == 3 and CHECK_NAME.fullmatch(parts[2])):
+        refuse("bad-id", "%s lies beside the verdicts of the held checks and has no verdict's name" % rel)
+    return parts, report, len(parts) == 2 and bool(ROUND_DIR.fullmatch(parts[0])) and parts[1] == "scope.md", check
 
 
 def held_to_the_rules(text, report):
@@ -3956,7 +4135,7 @@ def vet_files(run_dir, run, names, subject):
     vetted, refused, clean = {}, [], []
     for rel in distinct(names, "path"):
         try:
-            parts, report, _ = run_file(prefix, rel)
+            parts, report, _, check = run_file(prefix, rel)
             path = below(run_dir, parts)
             if not os.path.isfile(path):
                 refused.append({"path": rel, "why": "gone", "detail": "no such file"})
@@ -3967,6 +4146,15 @@ def vet_files(run_dir, run, names, subject):
             except ValueError:
                 refuse("bad-value", "it is not UTF-8 text")
             held_to_the_rules(text, report)
+            if check:
+                # A HELD CHECK'S VERDICT IS VETTED AS ONE: it is the verdict the result
+                # of that run of that item was written from, and says the word it says.
+                found = CHECK_NAME.fullmatch(parts[2])
+                results_rel, _, result_rows = read_results(run_dir, parts[0][1:])
+                ran = [held for held in results_of(results_rel, result_rows) if (held["item"], held["attempt"]) == (found.group(1), int(found.group(2)))]
+                _, word = verdict_on_record(run_dir, parts[0][1:], found.group(1), int(found.group(2)))
+                if not ran or word != ran[0]["outcome"]:
+                    refuse("bad-value", "it is not the verdict the result of attempt %s of %s was written from: %s" % (found.group(2), found.group(1), "the round's results hold no such run" if not ran else "the result says %s, and the file %s" % (ran[0]["outcome"], "is no verdict of that run" if word is None else "says %s" % word)))
         except Refusal as refusal:
             if refusal.kind in ("did-not-run", "usage"):
                 raise
@@ -4107,7 +4295,7 @@ def vet_range(revs):
             touched = True
             mode, kind, blob = listed.split("\t")[0].split(" ")
             try:
-                _, report, _ = run_file(prefix + run + "/", name)
+                _, report, _, _ = run_file(prefix + run + "/", name)
                 if mode == "120000" or kind != "blob":
                     refuse("outside", "it is a link, or no file: a write there would land outside the run directory")
                 try:
@@ -4162,7 +4350,7 @@ def set_aside(args):
     if to is not None and (not os.path.isabs(to) or (os.path.realpath(to) + "/").startswith(os.path.realpath(ROOT) + "/")):
         refuse("bad-value", "--to %s is not an absolute directory outside the repository: what is set aside leaves the tree" % shown(to))
     for rel in args.names:
-        _, report, scope = run_file(prefix, rel)
+        _, report, scope, _ = run_file(prefix, rel)
         if not report and not scope:
             refuse("bad-value", "%s is no report and no round's scope: only a file that is written once is set aside — a table of a batch is taken back whole (`discard`)" % rel)
     one_writer(run_dir)
@@ -4206,14 +4394,14 @@ def arguments(argv):
         return sub
 
     stage = [("round", True), ("stage", True), ("cycle", False), ("attempt", True)]
-    command("report", report, stage + [("reporter", True)], writes=True)
+    command("report", report, stage + [("reporter", True), ("from", False)], writes=True)
     command("ledger-add", ledger_add, [], writes=True)
     command("ledger-set", ledger_set, [], writes=True)
     command("result-set", result_set, [("round", True), ("commit", True)], writes=True)
     command("check-reports", check_reports, stage, names=True)
     command("check-ledger", check_ledger, [], names=True)
     command("bound-set", bound_set, [("bound", True), ("reach", False), ("ruling", False), ("pin", False)], writes=True)
-    command("scope-set", scope_set, [("round", True)], writes=True)
+    command("scope-set", scope_set, [("round", True), ("from", False)], writes=True)
     command("triage-set", triage_set, [("round", True)])
     command("item-set", item_set, [], writes=True)
     command("round-set", round_set, [("round", True)])
@@ -4224,7 +4412,7 @@ def arguments(argv):
     command("untriaged", untriaged, [])
     command("gate-set", gate_set, [("round", True), ("commit", True), ("summary", True)], writes=True)
     command("gate-check", gate_check, [("round", False), ("summary", True)], writes=True)
-    command("apply", apply, [("round", False), ("subject", True)], writes=True)
+    command("apply", apply, [("round", False), ("subject", True), ("from", False), ("sha256", False)], writes=True)
     command("pending", pending, [])
     command("discard", discard, [])
     command("settle", settle, [])
@@ -4260,6 +4448,15 @@ def main(argv):
             except UnicodeEncodeError:
                 refuse("bad-value", "an argument is not UTF-8 text: %s" % shown(arg))
         args = arguments(argv)
+        # A WRITER FED FROM A FILE (--from): a batch names the hash it is held to, and a
+        # hash names a file.
+        source, wanted = getattr(args, "from", None), getattr(args, "sha256", None)
+        if args.command == "apply" and (source is None) != (wanted is None):
+            refuse("usage", "a batch from a file is held to its hash, and a hash is the hash of a file: pass --from and --sha256 together, or neither — see dev/stabilize-record --help")
+        if wanted is not None and not SHA256.fullmatch(wanted):
+            refuse("bad-value", "--sha256 %s is not a sha256 of 64 hex digits" % shown(wanted))
+        if source is not None:
+            FROM.append((source, wanted))
         code = args.act(args) or 0
         if STAGED:
             flush(open_run(args.run))

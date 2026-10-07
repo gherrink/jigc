@@ -1,0 +1,20 @@
+gate: repo   <repo>
+gate: log    <tmp>/jigc-gate-UU8nS8
+gate: target shared (<repo>/target)
+gate: mode   quick (fmt, clippy, build -- NOT the full gate, do not commit on it)
+gate: git    /Library/Developer/CommandLineTools/usr/bin/git
+gate:        SDKROOT /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -- the real git, not the /usr/bin/git xcrun trampoline
+gate: deps   65 entries
+gate: hygiene  skipped (JIGC_GATE_HYGIENE=off)
+
+==> fmt     ok        (0s)
+==> clippy  ok        (0s)
+==> build   ok        (0s)
+
+--- summary ---
+fmt     exit=0
+clippy  exit=0
+build   exit=0
+
+GATE: PASS
+full output: <tmp>/jigc-gate-UU8nS8

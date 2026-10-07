@@ -1602,6 +1602,26 @@ const NO_STAGES: &[(&str, &str)] = &[
         "table",
         "the tool's table of acts and arrival states, printed for a reader and for the tool's own suite",
     ),
+    // A HELD COMMAND (the second repair plan's `K10`): built in the tool, and asked for by
+    // no stage UNTIL `K11` — which makes the gates, the regression set and the two builds
+    // tool steps, and takes the first three of these rows out again (a listed act the
+    // script asks for is red, below).
+    (
+        "hold-start",
+        "no stage asks for it YET: the harness starts a long command by a tool step once the second repair plan's K11 has landed, and that task removes this row",
+    ),
+    (
+        "hold-wait",
+        "no stage asks for it YET: the harness waits for a held command by a tool step once the second repair plan's K11 has landed, and that task removes this row",
+    ),
+    (
+        "hash",
+        "no stage asks for it YET: a file's hash is asked of the tool, not of `shasum`, once the second repair plan's K11 has landed, and that task removes this row",
+    ),
+    (
+        "build",
+        "the command of the held kind `build`, which `hold-start --kind build` runs: it takes as long as cargo does, and no prompt of any stage names it",
+    ),
 ];
 
 #[test]

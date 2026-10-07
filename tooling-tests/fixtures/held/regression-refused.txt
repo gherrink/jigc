@@ -1,0 +1,2 @@
+regression-set: refused commit: the candidate's commit is the previous release's, `047a8ab6697a0816cf6497dabaa7f8f79b98ad43`: two builds of one commit can differ in their bytes, so no hash would tell, and a commit checked against itself establishes nothing
+{"tool": "regression-set", "status": "refused", "refused": "commit", "detail": "the candidate's commit is the previous release's, `047a8ab6697a0816cf6497dabaa7f8f79b98ad43`: two builds of one commit can differ in their bytes, so no hash would tell, and a commit checked against itself establishes nothing"}

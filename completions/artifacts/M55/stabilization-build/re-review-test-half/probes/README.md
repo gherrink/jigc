@@ -2,7 +2,7 @@
 
 **Run 2026-10-07 by the orchestrating session, from the main checkout, at `1d21024e` (task `K0`).** Four invocations of the stabilization harness that work on no run, no branch and no remote, each observing one fact about the Workflow runtime that nobody had observed; a fifth fact turned up beside them. The probes' design is [the plan](../plan.md) → §5; what they changed in it is its *What the probes showed* there, and `DECISIONS.md` → *2026-10-07 — The runtime probes, run*. This file states the results and restates neither.
 
-**What is committed here.** The four `result.json` files, one per probe, as `dev/stabilize-probe verdict` wrote them — byte-identical copies, renamed after their probe. Each holds the cases as the script judged them: how every try of a call ended, the byte counts and hashes the harness computed, and the verdict. They hold no host path and no id. **What is not committed:** the probes' scratch roots and the workflow journals, which hold what each agent said; the few words quoted below are from those journals, and nothing else of them is copied.
+**What is committed here.** The four `result.json` files, one per probe, as `dev/stabilize-probe verdict` wrote them — byte-identical copies, renamed after their probe — **and a fifth, [relay-digest.json](relay-digest.json): the relay probe run again on the digest**, a byte-identical copy too, named to tell it from the first relay run. Each holds the cases as the script judged them: how every try of a call ended, the byte counts and hashes the harness computed, and the verdict. They hold no host path and no id. **What is not committed:** the probes' scratch roots and the workflow journals, which hold what each agent said; the few words quoted below are from those journals, and nothing else of them is copied.
 
 | file | probe | what was asked | what came back |
 |---|---|---|---|
@@ -10,6 +10,7 @@
 | [payload.json](payload.json) | `payload` | the harness composes a record's batch of 20, 60, 120 and 300 entries; the executor writes it from its prompt and returns the file's hash | **whole, four of four** — 8,412 to 120,204 bytes; the hash on disk equal to the expected one, the relayed one agreeing |
 | [required.json](required.json) | `required` | two reviewers under a schema that requires the hash: (a) told to leave it out; (b) a source pass that drives nothing | (a) **`threw`, three tries of three** — nothing came back, not even the fields that were there. (b) `returned`, first try, **with the hash it was handed** |
 | [hold.json](hold.json) | `hold` | a command of 2,100 seconds: (a) held by one agent inside its turn; (b) started detached by one agent and asked for by others | (a) **`held`**, 2,100.06 s. (b) **`outlived`** its starter: 22 reads, the last `done`, 2,100.03 s |
+| [relay-digest.json](relay-digest.json) | `relay`, **run again on the digest** — after the plan's `K9`, at `c2169e19`; the result file is dated 2026-10-07 on the machine it ran on, and the orchestrator's brief for `K10` names the run as of 2026-10-08 | a git step runs `dev/stabilize-step state --digest` on a throwaway run and relays its one line — the state's **digest**, printable ASCII by construction; four sizes (1, 10, 30 and 60 items over the same four ledgers), three times each | **whole, twelve of twelve**, each on its first try — 1,343 · 2,682 · 5,645 · 10,090 bytes sent, and the same bytes back |
 
 ## What each result means
 
@@ -34,7 +35,7 @@ So the re-review's `R-H1` is not an inference about 75 KB any more. **The first 
 
 ## What they leave unsettled
 
-- Whether a line that is pure ASCII and a few kilobytes long is relayed whole. The two reasons above explain every failure seen, but no such line was sent: the relay probe runs again on the digest (the plan's `K9`) before the harness is built on it.
+- ~~Whether a line that is pure ASCII and a few kilobytes long is relayed whole.~~ **Settled by the run on the digest** ([relay-digest.json](relay-digest.json), the last row of the table): the digest was relayed whole twelve times of twelve, from 1.3 to 10.1 KB. That result is what the start of the harness task (the plan's `K3`, which builds the harness on the digest) rested on; the plan's condition for it was *whole, three of three, at each of the four sizes*. What it does not show: a digest above 10 KB, and any line of the step tool other than the state's.
 - A structured return of 26 KB arrived; of 80 KB, one in three. **A triage's return grows with the findings it is handed**, and nothing measured one.
 - How an agent that *dies* reaches the script. Case (a) of `required` shows a call that fails by its own doing; nothing here killed an agent.
 - Whether an allow rule stops the prompt the hold probe met: shown only once the held-command acts exist and the rule is in place.

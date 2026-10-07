@@ -1,0 +1,44 @@
+gate: repo   <repo>
+gate: log    <tmp>/jigc-gate-7kotUS
+gate: target shared (<repo>/target)
+gate: mode   full, keep-going (no red step stops the run but a red build; the suite is ONE step, `test` -- what is named red is all that is red)
+gate: git    /Library/Developer/CommandLineTools/usr/bin/git
+gate:        SDKROOT /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -- the real git, not the /usr/bin/git xcrun trampoline
+gate: deps   0 entries
+gate: hygiene  skipped (JIGC_GATE_HYGIENE=off)
+
+==> fmt     ok        (0s)
+==> clippy  ok        (1s)
+==> build   ok        (0s)
+==> test-build ok        (0s)
+gate: tiers  none -- the suite runs as ONE step, `test`, and reads no timing record
+==> test    FAILED 100 (0s)
+==> doctest ok        (0s)
+
+--- summary ---
+fmt     exit=0
+clippy  exit=0
+build   exit=0
+test-build exit=0
+test    exit=100
+doctest exit=0
+tests   passed=1 failed=1  (over 3 test binaries)
+
+--- heaviest of this run (seconds; every test is a `test-seconds` line in the log) ---
+suites:
+     0.0s  tiny::numbers two_is_three  (1 tests)
+     0.0s  tiny::numbers two_is_two  (1 tests)
+tests:
+     0.0s  tiny::numbers two_is_three
+     0.0s  tiny::numbers two_is_two
+
+GATE: FAIL (step: test)
+
+failing tests:
+  tiny::numbers two_is_three
+
+errors (first 20 distinct):
+  error: test run failed
+
+full output: <tmp>/jigc-gate-7kotUS
+the failing step is test -- read its "===== STEP test =====" block in that log

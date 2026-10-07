@@ -96,8 +96,16 @@ const DEFAULT_ITEMS: [(&str, &str); 5] = [
     ("cross-cutting", "audit-cross-cutting"),
     ("arm-control", "trial-arm"),
     ("gate", "check"),
-    ("regression-set", "check"),
+    ("regression-set", "held-regression"),
 ];
+
+/// The default items the harness AS COMMITTED runs: all of them but the held check, whose
+/// kind the record script reads and the harness has no row for until it starts held
+/// commands by tool steps (the second repair plan's `K11`). A stage is driven over these
+/// until then; over the default opening it halts, and
+/// [`a_stage_over_the_default_opening_halts_at_the_held_check_until_the_harness_holds_one`]
+/// pins that.
+const RUNNABLE: &str = "row-doc-list,cross-cutting,arm-control,gate";
 
 /// The word a refusal opens with, and its exit status.
 const REFUSALS: &[(&str, i32)] = &[
@@ -514,6 +522,8 @@ fn stage_script(line: &Value, verifier: Value) -> Value {
                 checks[id] = json!("green");
                 &[]
             }
+            // A held check has no agent, and no agent's word: the tool judges it.
+            "held-regression" => &[],
             "review-row" => &["source", "driver", "reconciler"],
             "trial-arm" => &["rehearse", "run", "score"],
             "audit-cross-cutting" => &["review"],
@@ -859,7 +869,13 @@ fn the_opening_holds_one_item_of_each_kind_and_one_seeded_finding_nobody_has_gra
     // ONE OF EACH KIND a round's `test` runs: a review row, the cross-cutting pass, a trial
     // arm, and the deterministic checks — the gate among them, and one long scripted check.
     let kinds: Vec<&str> = expected.iter().map(|(_, kind)| kind.as_str()).collect();
-    for kind in ["review-row", "audit-cross-cutting", "trial-arm", "check"] {
+    for kind in [
+        "review-row",
+        "audit-cross-cutting",
+        "trial-arm",
+        "check",
+        "held-regression",
+    ] {
         assert!(kinds.contains(&kind), "an item of kind `{kind}`: {kinds:?}");
     }
     let item = |id: &str| -> &Value {
@@ -884,12 +900,16 @@ fn the_opening_holds_one_item_of_each_kind_and_one_seeded_finding_nobody_has_gra
     for (id, _) in &DEFAULT_ITEMS[1..] {
         assert_eq!(item(id)["runs"], "every-candidate", "`{id}`: {state}");
     }
+    // THE LONG SCRIPTED CHECK IS A HELD CHECK: its kind names the command the step tool
+    // holds, and its brief says so and is no command line for an agent to run.
     assert!(
         item("regression-set")["brief"]
             .as_str()
-            .is_some_and(|brief| brief.contains("dev/regression-set run ")
-                && brief.contains(&canary.previous)),
-        "the long check's brief names its command and the previous release's commit: {state}"
+            .is_some_and(|brief| brief.contains("`hold-start --kind regression`")
+                && brief.contains(&canary.previous)
+                && !brief.contains("dev/regression-set run")
+                && !brief.contains("--scratch")),
+        "the held check's brief names the held command and the previous release's commit, and spells no command of the regression tool: {state}"
     );
 
     // THE CENSUS: four clauses, and every item judges one of them. The fourth has no
@@ -993,7 +1013,7 @@ fn the_printed_invocation_runs_the_clones_own_harness_through_a_whole_test_stage
         return;
     }
     let canary = Canary::new("stage");
-    let line = canary.ready("canary", &[]);
+    let line = canary.ready("canary", &["--items", RUNNABLE]);
     let root = canary.root("canary");
     let (clone, origin) = (root.join("clone"), root.join("origin.git"));
     let source_before = canary.snapshot();
@@ -1010,7 +1030,7 @@ fn the_printed_invocation_runs_the_clones_own_harness_through_a_whole_test_stage
             result["counts"]["items_run"],
             result["counts"]["voided"]
         ]),
-        json!([RUN, 1, 5, 5, []]),
+        json!([RUN, 1, 4, 4, []]),
         "every item of the opening ran, and none is void: {result}"
     );
 
@@ -1056,11 +1076,6 @@ fn the_printed_invocation_runs_the_clones_own_harness_through_a_whole_test_stage
         ran.agents
     );
     assert_eq!(line["expect"]["agents"], 22, "{line}");
-    assert_eq!(
-        line["expect"]["wall_minutes"],
-        json!({"from": 120, "to": 150}),
-        "the plan's estimate for the whole set: {line}"
-    );
 
     // THE RECORD IS ONE COMMIT ON THE OPENING, AND THE BARE REMOTE HOLDS IT.
     let head = canary.git(&clone, &["rev-parse", "HEAD"]);
@@ -1135,7 +1150,7 @@ fn a_verifier_that_dies_leaves_the_seeded_finding_unverified_and_the_later_argum
         return;
     }
     let canary = Canary::new("plant");
-    let line = canary.ready("canary", &[]);
+    let line = canary.ready("canary", &["--items", RUNNABLE]);
     let clone = canary.root("canary").join("clone");
 
     // THE CANARY'S ONE PLANT: the seeded row's verifier is stopped from outside, each time
@@ -1201,6 +1216,66 @@ fn a_verifier_that_dies_leaves_the_seeded_finding_unverified_and_the_later_argum
         lap.agents
     );
     assert_eq!(canary.state(&clone)["ledger"][0]["grade"], "refuted");
+}
+
+/// **A stage over the DEFAULT opening halts at the held check — until the harness holds
+/// one** (the second repair plan's `K10` settled the row; `K11` teaches the harness). The
+/// opening's `regression-set` is a held check, `held-regression`: a kind the record script
+/// reads, and one the harness as committed has no row for. So the printed invocation,
+/// over the default items, begins its attempt, runs its preflight and its scope step, and
+/// halts at the state — naming the item and its kind — with no instrument run and no
+/// record made. **This arm is a pin, and `K11` turns it**: once the harness starts a held
+/// command by tool steps, the whole-stage arm above runs the default items again.
+#[test]
+fn a_stage_over_the_default_opening_halts_at_the_held_check_until_the_harness_holds_one() {
+    if !node_or_skip(&format!("no stage of {HARNESS} was run on a canary")) {
+        return;
+    }
+    let canary = Canary::new("held");
+    let line = canary.ready("canary", &[]);
+    let root = canary.root("canary");
+    let (clone, origin) = (root.join("clone"), root.join("origin.git"));
+    assert_eq!(
+        json!([line["expect"]["agents"], line["expect"]["wall_minutes"]]),
+        json!([22, {"from": 120, "to": 150}]),
+        "the line's count and the plan's estimate for the whole set — a held check has no agent: {line}"
+    );
+    let mut script = stage_script(&line, refuted());
+    script["agents"] = json!({});
+    let ran = canary.invoke(&line, &line["args"], script, 1);
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["halted"]["phase"],
+            result["halted"]["launched"]
+        ]),
+        json!(["halted", "state", ["attempt", "scope", "preflight"]]),
+        "it halts at the state, after its preflight and its scope step: {result}"
+    );
+    assert!(
+        result
+            .to_string()
+            .contains("regression-set (held-regression)"),
+        "the halt names the item and its kind: {result}"
+    );
+    assert!(
+        !ran.agents.iter().any(|label| label.starts_with("triage")
+            || DEFAULT_ITEMS
+                .iter()
+                .any(|(item, _)| label.starts_with(&format!("{item}:")))),
+        "no instrument ran, and no triage: {:?}",
+        ran.agents
+    );
+    let head = canary.git(&clone, &["rev-parse", "HEAD"]);
+    assert_eq!(
+        json!([
+            head,
+            canary.git(&origin, &["rev-parse", &format!("refs/heads/{LOOP}")])
+        ]),
+        json!([line["head"], line["head"]]),
+        "no record was made, and nothing was pushed"
+    );
 }
 
 #[test]

@@ -66,13 +66,29 @@
 //!   `K9`; [DECISIONS.md](../DECISIONS.md) → *2026-10-07 — A line holds what the harness
 //!   acts on*). Asked for its **digest** (`--digest`), an act prints ids, words, counts
 //!   and hashes of declared shapes — printable ASCII with no escape in it — and names the
-//!   file that holds the line it prints unasked. Every act and thirteen refusals are
+//!   file that holds the line it prints unasked. Every act and sixteen refusals are
 //!   driven through the flag ([`every_line_is_a_digest`]); **and every line this rig reads
 //!   unasked is put to the tool's own projection and held as a digest with nothing unfit**
 //!   (`ran_in`, [`StepRig::projected`]) — so each refusal [`REFUSALS`] names is held in the
 //!   test that drives it, here and in the simulation. The tests are the section *The
 //!   digest*; what no suite shows — that a real agent relays one whole — is the relay
 //!   probe's.
+//!
+//! - *A long command is started, waited for and judged by the tool* (the second repair
+//!   plan's `K10`; [DECISIONS.md](../DECISIONS.md) → *2026-10-07 — A long command is
+//!   started, waited for and judged by the tool*; the human's ruling of 2026-10-07 that no
+//!   step of a stage may need his permission). `hold-start` starts one in a session of its
+//!   own and answers at once; `hold-wait` answers within a slice the tool owns; and the
+//!   verdict is read by the tool, out of the command's own output, per kind. **Driven for
+//!   real, with commands that are stand-ins** ([`LONG_COMMAND`]: it runs until the test
+//!   releases it — a file, never a number of seconds — and prints what a file holds; and
+//!   [`CARGO`], which "builds" what the tree it runs in says): the starter exits and
+//!   another process waits, two wait at once, a supervisor and a command are killed with
+//!   SIGKILL. **The verdict readers are fed recorded real output** ([`as_recorded`],
+//!   [`regression_line`]), and the probe's kind runs the real probe tool. The tool's
+//!   kinds are [`HELD_KINDS`], each by a test of this file; the tests are the section *A
+//!   held command*. What no arm shows: a command that outlives the SHELL of its starter
+//!   being ended — the hold probe's case (b) observed that — and anything with an agent.
 //!
 //! **Every arm runs under a shell-hostile root** — a space, a `'`, a `"` and a `#` in the
 //! repository's path — because the rig has no other kind.
@@ -157,6 +173,9 @@ const REFUSALS: &[(&str, i32)] = &[
     ("head-moved", 25),
     ("foreign-commit", 26),
     ("committed", 27),
+    ("taken", 28),
+    ("missing", 29),
+    ("build", 30),
 ];
 
 fn repo_root() -> PathBuf {
@@ -4790,8 +4809,15 @@ fn the_table_names_every_act_and_every_arrival_and_each_is_driven() {
             ("state", "<scratch>/state/<tag>.json"),
             ("record", "<gate file>.recorded.json"),
             ("*", "<digest root>/lines/<act>.<16 hex>.json"),
+            ("hold-start", "<scratch>/hold/<name>/job.json"),
+            ("hold-start", "<scratch>/hold/<name>/lock"),
+            ("hold-start", "<scratch>/hold/<name>/output"),
+            ("hold-start", "<scratch>/hold/<name>/exit.json"),
+            ("hold-wait", "<scratch>/hold/<name>/verdict.json"),
+            ("build", "<scratch>/<work>/"),
+            ("build", "<scratch>/<to>"),
         ],
-        "the files the tool writes: the state document, a commit step's kept answer, and — for an act asked for its digest — the line the digest leaves out"
+        "the files the tool writes: the state document, a commit step's kept answer, for an act asked for its digest the line the digest leaves out — and what a held command leaves under the scratch root: its record, its lock, its output, how it ended, the tool's verdict, and a build's work and its binary"
     );
     let driven: BTreeSet<String> = DRIVEN
         .iter()
@@ -5024,6 +5050,62 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("add", &["--"]),
     ("restore", &["--staged", "--"]),
     ("cherry-pick", &["-x", "--abort"]),
+    // A commit, unpacked for a build: the archive of it, as a file under the scratch root.
+    ("archive", &["--format=tar", "-o"]),
+];
+
+/// Every place the tool opens a file, as the line spells it, and how often: its own source
+/// for `--help`; the state it keeps under the scratch root and the line a digest leaves
+/// out (both `path`, written); a commit step's kept answer, read and written; the file a
+/// digest names, read back for its hash; and A HELD COMMAND'S FILES — read whole by one
+/// helper, written once by another, the supervisor's two streams, the two locks, a
+/// build's archive, cargo's output and the binary, which is created and never replaced.
+const OPENS: &[(&str, usize)] = &[
+    ("for line in open(__file__, encoding=\"utf-8\").read()", 1),
+    ("with open(path, \"w\", encoding=\"utf-8\") as file:", 2),
+    (
+        "json.loads(open(answered_before(args), encoding=\"utf-8\").read())",
+        1,
+    ),
+    (
+        "with open(answered_before(args), \"w\", encoding=\"utf-8\") as file:",
+        1,
+    ),
+    ("with open(path, \"rb\") as file:", 1),
+    ("with open(found, \"rb\") as file:", 1),
+    ("with open(at, \"x\", encoding=\"utf-8\") as file:", 1),
+    (
+        "out = os.open(os.path.join(home, \"output\"), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)",
+        1,
+    ),
+    ("null = os.open(os.devnull, os.O_RDWR)", 1),
+    ("mutex = os.open(holds, os.O_RDONLY)", 2),
+    (
+        "lock = os.open(os.path.join(home, \"lock\"), os.O_RDONLY)",
+        1,
+    ),
+    (
+        "lock = os.open(os.path.join(home, \"lock\"), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)",
+        1,
+    ),
+    ("with tarfile.open(tarball) as archive:", 1),
+    (
+        "with open(os.path.join(work, \"cargo.log\"), \"x\", encoding=\"utf-8\") as log:",
+        1,
+    ),
+    (
+        "with os.fdopen(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o555), \"wb\") as file:",
+        1,
+    ),
+];
+
+/// The commands a held kind may run, as `held_command` returns them: each opens with one of
+/// the tool's own constants — the gate, the regression set, this tool, the probe tool.
+const HELD_PROGRAMS: [&str; 4] = [
+    "return [GATE, \"--keep-going\"]",
+    "return [REGRESSION, \"run\", \"--previous\", ",
+    "return [BUILD, \"build\", \"--scratch\", ",
+    "return [PROBE, \"hold\", \"--scratch\", ",
 ];
 
 /// The subcommands that change a branch, a commit or a remote, and every shape the tool
@@ -5390,6 +5472,9 @@ fn offences(source: &str) -> Vec<String> {
             "os.rename",
             "os.replace",
             "os.chmod",
+            // It ends nothing: a held command runs to its end, or is somebody's to kill.
+            "os.kill",
+            "import signal",
             "eval(",
             "exec(",
             "__import__",
@@ -5400,17 +5485,83 @@ fn offences(source: &str) -> Vec<String> {
             }
         }
     }
+    // TWO roads to a process: `run`, whose output the tool reads, from the repository's
+    // root — and `streamed`, a long command whose output is kept and not read. And ONE
+    // fork: the supervisor of a held command, in a session of its own, which never returns.
     let spawning: Vec<&str> = code
         .lines()
         .filter(|line| line.contains("subprocess") && !line.starts_with("import "))
+        .map(str::trim_start)
         .collect();
-    if spawning.len() != 1
-        || !spawning[0]
-            .trim_start()
-            .starts_with("done = subprocess.run(argv, cwd=ROOT, ")
+    if spawning.len() != 2
+        || !spawning[0].starts_with("done = subprocess.run(argv, cwd=ROOT, ")
+        || spawning[1]
+            != "return subprocess.run(argv, cwd=cwd, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT if out else None).returncode"
     {
         found.push(format!(
-            "a process is started somewhere else than in `run`: {spawning:#?}"
+            "a process is started somewhere else than in `run` and `streamed`: {spawning:#?}"
+        ));
+    }
+    for (once, within) in [
+        ("os.fork(", "hold_start"),
+        ("os.setsid(", "supervise"),
+        ("os._exit(", "supervise"),
+    ] {
+        if code.matches(once).count() != 1
+            || !code
+                .lines()
+                .skip_while(|line| !line.starts_with(&format!("def {within}(")))
+                .skip(1)
+                .take_while(|line| !line.starts_with("def "))
+                .any(|line| line.contains(once))
+        {
+            found.push(format!(
+                "`{once}…)` stands somewhere else than once, in `{within}`: a second fork, or a session of somebody else's"
+            ));
+        }
+    }
+    // What a held command runs is the tool's own: `streamed` is called by the supervisor,
+    // with the command `held_command` built, and by the build, with cargo — and
+    // `held_command` returns nothing but the four programs of the table.
+    for call in calls(&code, &["streamed"]) {
+        let program = match call.args.first() {
+            Some(Arg::Expression(text)) => text.clone(),
+            other => format!("{other:?}"),
+        };
+        let known = (call.within == "supervise" && program == "argv" && call.args.len() == 2)
+            || (call.within == "build"
+                && program
+                    == "[\"cargo\", \"build\", \"--release\", \"--locked\", \"--bin\", \"jigc\", \"--target-dir\", os.path.join(work, \"target\")]");
+        if !known {
+            found.push(format!(
+                "`streamed({program})` in `{}`: a long command the tool does not hold",
+                call.within
+            ));
+        }
+    }
+    let supervised: Vec<String> = calls(&code, &["supervise"])
+        .iter()
+        .map(|call| format!("{} in {}", shape(&call.args), call.within))
+        .collect();
+    let returned: Vec<&str> = code
+        .lines()
+        .skip_while(|line| !line.starts_with("def held_command("))
+        .skip(1)
+        .take_while(|line| !line.starts_with("def "))
+        .map(str::trim)
+        .filter(|line| line.starts_with("return "))
+        .collect();
+    if supervised != ["home argv in hold_start"]
+        || !code
+            .contains("        argv = held_command(args.kind, args.name, asked, args.scratch)\n")
+        || returned.len() != HELD_PROGRAMS.len()
+        || !returned
+            .iter()
+            .zip(HELD_PROGRAMS)
+            .all(|(line, opens)| line.starts_with(opens))
+    {
+        found.push(format!(
+            "a held command is something else than what `held_command` builds from the table's four programs: supervised {supervised:?}, returned {returned:#?}"
         ));
     }
     for call in calls(&code, &["run"]) {
@@ -5433,6 +5584,8 @@ fn offences(source: &str) -> Vec<String> {
             // A write of the record script that was killed, finished before the tree is
             // read: by the one helper every act that reads the pending writes asks.
             || (call.within == "arrived" && program.starts_with("[RECORD, \"recover\", "))
+            // The binary a build made, asked for its version before it is placed.
+            || (call.within == "build" && program == "[made, \"--version\"]")
             // The one write the tool makes through the record script: an attempt's marker,
             // by the act that begins the attempt, under the reporter it was handed.
             || (call.within == "begin"
@@ -5451,22 +5604,25 @@ fn offences(source: &str) -> Vec<String> {
     // the gate it was held to and read by that step asked again; and, for an act asked for
     // its digest, the line the digest leaves out — written under the digest's root, and
     // the file the digest names read back for its hash.
-    let writes: Vec<&str> = code.lines().filter(|line| line.contains("open(")).collect();
-    let kept = writes
+    // — and what a held command leaves under the scratch root. Each site is spelled in
+    // [`OPENS`], and stands as often as it says.
+    let opened: Vec<&str> = code
+        .lines()
+        .filter(|line| line.contains("open("))
+        .map(str::trim)
+        .collect();
+    let strange: Vec<&&str> = opened
         .iter()
-        .filter(|line| line.contains("open(answered_before(args)"))
-        .count();
-    if writes.len() != 6
-        || kept != 2
-        || writes.iter().filter(|line| line.contains("\"w\"")).count() != 3
-        || writes
-            .iter()
-            .filter(|line| line.contains("open(path, \"rb\")"))
-            .count()
-            != 1
-    {
+        .filter(|line| !OPENS.iter().any(|(site, _)| line.contains(site)))
+        .collect();
+    let miscounted: Vec<String> = OPENS
+        .iter()
+        .filter(|(site, often)| opened.iter().filter(|line| line.contains(site)).count() != *often)
+        .map(|(site, often)| format!("{often} × `{site}`"))
+        .collect();
+    if !strange.is_empty() || !miscounted.is_empty() {
         found.push(format!(
-            "the tool opens a file somewhere else than its help, the kept state, a commit step's kept answer and the file a digest names: {writes:#?}"
+            "the tool opens a file somewhere else than its help, the kept state, a commit step's kept answer, the file a digest names and a held command's own files: {strange:#?}; not as often as listed: {miscounted:#?}"
         ));
     }
     found
@@ -5628,6 +5784,35 @@ fn a_planted_offender_reddens_the_scan() {
             "a program the tool does not run",
         ),
         ("os.remove(args.branch)", "`os.remove`"),
+        // A held command: nothing a caller names is run, nothing is forked or detached a
+        // second time, nothing is killed, and no file is opened outside the listed sites.
+        (
+            "streamed([\"sh\", \"-c\", args.branch], ROOT)",
+            "a long command the tool does not hold",
+        ),
+        (
+            "streamed(args.branch.split(), ROOT)",
+            "a long command the tool does not hold",
+        ),
+        (
+            "supervise(args.branch, [args.branch])",
+            "a held command is something else",
+        ),
+        ("os.fork()", "`os.fork(…)` stands somewhere else"),
+        ("os.setsid()", "`os.setsid(…)` stands somewhere else"),
+        (
+            "subprocess.Popen([args.branch], start_new_session=True)",
+            "a process is started somewhere else",
+        ),
+        ("os.kill(1, 9)", "`os.kill`"),
+        (
+            "open(args.branch, \"w\").write(\"\")",
+            "the tool opens a file somewhere else",
+        ),
+        (
+            "git(\"archive\", \"--remote=origin\", args.branch)",
+            "`--remote=origin`",
+        ),
     ];
     for (line, names) in planted {
         let mutant = source.replacen(anchor, &format!("{anchor}    {line}\n"), 1);
@@ -6170,7 +6355,7 @@ const RED_GATE: &str = "gate: mode   full, keep-going\ntests   passed=9 failed=1
 /// have printed.
 ///
 /// Driven here FOR REAL, through the flag: every act the parser takes, to its end; and
-/// thirteen refusals. Each digest is [`held_as_a_digest`]; the file it names is held to the
+/// sixteen refusals. Each digest is [`held_as_a_digest`]; the file it names is held to the
 /// hash it names it with and holds the act's whole line; and the digest is the tool's own
 /// projection of that line ([`Digested::of_its_line`]). **Every other line this suite and
 /// the simulation see** — each refusal [`REFUSALS`] names, in the test that drives it — is
@@ -6561,6 +6746,129 @@ fn every_line_is_a_digest() {
     );
     assert!(unread.get("state").is_none(), "{unread}");
 
+    // The acts that hold a long command, on a rig whose commands are stand-ins: a gate
+    // that is red, started, waited for and judged; a file hashed; a binary built.
+    let held = Held::new("digest-held");
+    let rig = &held.rig;
+    rig.on_path("cargo", CARGO);
+    rig.write("version.txt", "1.0.0-rc.24\n");
+    let built_from = rig.commit("chore: a version");
+    held.released(true);
+    let prints = rig.dir().join("prints");
+    fs::write(&prints, as_recorded("gate-red.txt")).expect("what the gate prints");
+    let told = [
+        prints.display().to_string(),
+        held.ran.display().to_string(),
+        held.release.display().to_string(),
+    ];
+    let env = [
+        ("HOLD_PRINTS", told[0].as_str()),
+        ("HOLD_RAN", told[1].as_str()),
+        ("HOLD_RELEASE", told[2].as_str()),
+        ("HOLD_EXIT", "1"),
+    ];
+    let start = |run: &'static str| {
+        rig.digest_in(
+            &env,
+            &[
+                "hold-start",
+                "--scratch",
+                &held.scratch,
+                "--name",
+                "gate-c1-a1",
+                "--kind",
+                "gate",
+                "--run",
+                run,
+            ],
+        )
+    };
+    let started = ended(&start(RUN), rig, "hold-start", "started");
+    assert_eq!(
+        json!([started["name"], started["kind"], started["output"]]),
+        json!(["gate-c1-a1", "gate", "hold/gate-c1-a1/output"]),
+        "{started}"
+    );
+    let wait = |name: &str| {
+        rig.digest(&[
+            "hold-wait",
+            "--scratch",
+            &held.scratch,
+            "--name",
+            name,
+            "--slice",
+            "60",
+        ])
+    };
+    let waited = ended(&wait("gate-c1-a1"), rig, "hold-wait", "done");
+    assert_eq!(
+        json!([
+            waited["verdict"],
+            waited["why"],
+            waited["exit"],
+            waited["facts"],
+            waited["verdict_file"]
+        ]),
+        json!(["red", null, 1,
+               {"passed": 1, "failed": 1, "binaries": 3, "steps": ["test"], "tests": 1},
+               "hold/gate-c1-a1/verdict.json"]),
+        "what is red is counted, and named in the verdict's file alone: {waited}"
+    );
+    refuse(&start("another"), rig, "taken");
+    refuse(&wait("nobody"), rig, "missing");
+    let hashed = ended(
+        &rig.digest(&[
+            "hash",
+            "--scratch",
+            &held.scratch,
+            "--file",
+            "hold/gate-c1-a1/output",
+        ]),
+        rig,
+        "hash",
+        "hashed",
+    );
+    assert_eq!(
+        json!([hashed["path"], hashed["content_sha256"]]),
+        json!([
+            "hold/gate-c1-a1/output",
+            sha256(&as_recorded("gate-red.txt"))
+        ]),
+        "{hashed}"
+    );
+    let build = |commit: &str, work: &str, to: &str| {
+        rig.digest(&[
+            "build",
+            "--scratch",
+            &held.scratch,
+            "--commit",
+            commit,
+            "--work",
+            work,
+            "--to",
+            to,
+        ])
+    };
+    let built = ended(
+        &build(&built_from, "work-1", "bin/c1/jigc"),
+        rig,
+        "build",
+        "built",
+    );
+    assert_eq!(
+        json!([
+            built["commit"],
+            built["binary"],
+            built["version"],
+            built["resolves"]
+        ]),
+        json!([built_from, "bin/c1/jigc", "1.0.0-rc.24", true]),
+        "{built}"
+    );
+    rig.write("fails-to-build", "\n");
+    let broken = rig.commit("chore: a commit that does not build");
+    refuse(&build(&broken, "work-2", "bin/c2/jigc"), rig, "build");
+
     assert_eq!(
         done,
         acts().into_keys().collect::<BTreeSet<_>>(),
@@ -6569,17 +6877,20 @@ fn every_line_is_a_digest() {
     assert_eq!(
         refused.into_iter().collect::<Vec<_>>(),
         [
+            "build",
             "did-not-run",
             "dirty",
             "foreign-commit",
             "gate-red",
             "head-moved",
             "locked",
+            "missing",
             "no-batch",
             "position",
             "push-rejected",
             "record",
             "remote-ahead",
+            "taken",
             "usage",
             "wrong-branch",
         ],
@@ -7255,5 +7566,1252 @@ fn a_digest_survives_a_relay_that_decodes_its_escapes() {
             .is_some_and(|why| why.contains("does not end with the sha256 of itself")),
         "and the relayed document is what it was on 2026-10-07 — altered: {}",
         read[1]["relay"]
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A held command: started, waited for and judged by the tool
+// ---------------------------------------------------------------------------
+
+/// How long a shell call of an agent runs before its tool gives up on it, in seconds, where
+/// the agent names no other limit. A wait ends inside it, or the wait itself is what stops
+/// the agent.
+const AGENT_SHELL_SECONDS: u64 = 120;
+
+/// The kinds of held command the tool has, each with the test of this suite that drives its
+/// verdict — the tool's own table (`table`: `holds`) is held to this list.
+const HELD_KINDS: &[(&str, &str)] = &[
+    ("gate", "the_verdict_of_a_held_command_is_read_by_the_tool"),
+    (
+        "regression",
+        "the_verdict_of_a_held_command_is_read_by_the_tool",
+    ),
+    (
+        "build",
+        "a_binary_is_built_from_a_commit_and_judged_by_its_hash_its_version_and_its_path",
+    ),
+    ("probe", "the_verdict_of_a_held_command_is_read_by_the_tool"),
+];
+
+/// A stand-in for the command of a held kind — `dev/gate`, `dev/regression-set`. It writes
+/// down that it ran, with its pid and its arguments; waits until the test releases it — a
+/// file, never a number of seconds, so that no arm races a clock; prints what a file holds;
+/// and exits as it is told.
+const LONG_COMMAND: &str = r#"#!/bin/sh
+printf '%s %s\n' "$$" "$*" >>"$HOLD_RAN"
+while [ ! -e "$HOLD_RELEASE" ]; do sleep 0.1; done
+cat "$HOLD_PRINTS"
+exit "${HOLD_EXIT:-0}"
+"#;
+
+/// A stand-in for cargo: `build … --target-dir DIR`, run in an unpacked commit. The binary
+/// it "builds" prints the version `Cargo.toml` of that tree names — so what it built is
+/// read off the tree it built from — or it fails, where the tree says so.
+const CARGO: &str = r#"#!/bin/sh
+dir=
+while [ $# -gt 0 ]; do
+  if [ "$1" = --target-dir ]; then dir=$2; fi
+  shift
+done
+echo "   Compiling jigc (stand-in) in $(pwd -P)"
+if [ -e fails-to-build ]; then echo "error: could not compile" >&2; exit 101; fi
+mkdir -p "$dir/release"
+printf '#!/bin/sh\necho "jigc %s"\n' "$(cat version.txt)" >"$dir/release/jigc"
+chmod 755 "$dir/release/jigc"
+"#;
+
+/// What a real command of a held kind printed, recorded: `tooling-tests/fixtures/held/`.
+/// The gate's four are `dev/gate` itself, run on a throwaway crate of two tests on
+/// 2026-10-07 — `--keep-going` green and red, `--fast`, `--quick`; the regression tool's are
+/// its own lines. Host paths are replaced by the public placeholders, and nothing else.
+fn as_recorded(name: &str) -> String {
+    read(&format!("tooling-tests/fixtures/held/{name}"))
+}
+
+/// A line of the regression tool as it prints one: the committed record of a real run,
+/// which is that line laid out over many, as ONE line again.
+fn regression_line(record: &str) -> (Value, String) {
+    let line: Value = serde_json::from_str(&read(&format!(
+        "completions/artifacts/M55/stabilization-build/regression-set/{record}"
+    )))
+    .expect("a committed line of the regression tool");
+    let text = format!("{line}\n");
+    (line, text)
+}
+
+const REGRESSION_LIST: &str =
+    "completions/artifacts/M55/stabilization-build/regression-set/intended-changes.tsv";
+
+/// A rig whose held commands are stand-ins, and what each call tells them.
+struct Held {
+    rig: StepRig,
+    scratch: String,
+    ran: PathBuf,
+    release: PathBuf,
+}
+
+impl Held {
+    fn new(label: &str) -> Self {
+        let rig = StepRig::new(label);
+        for tool in ["dev/gate", "dev/regression-set"] {
+            placed_executable::write(&rig.root.join(tool), LONG_COMMAND);
+        }
+        let scratch = rig.scratch.display().to_string();
+        let (ran, release) = (rig.dir().join("ran"), rig.dir().join("release"));
+        fs::write(&ran, "").expect("nothing ran yet");
+        Held {
+            rig,
+            scratch,
+            ran,
+            release,
+        }
+    }
+
+    /// The stand-ins run to their end at once, or wait to be released.
+    fn released(&self, yes: bool) {
+        if yes {
+            fs::write(&self.release, "").expect("release the command");
+        } else if self.release.exists() {
+            fs::remove_file(&self.release).expect("hold the command");
+        }
+    }
+
+    /// `hold-start` of `name` — `flags` are the kind and what it takes — with a command that
+    /// prints `prints` and exits `exit`.
+    fn start(&self, name: &str, flags: &[&str], prints: &str, exit: i32) -> Stepped {
+        let file = self.rig.dir().join(format!("prints-{name}"));
+        fs::write(&file, prints).expect("what the command prints");
+        let (file, exit) = (file.display().to_string(), exit.to_string());
+        let (ran, release) = (
+            self.ran.display().to_string(),
+            self.release.display().to_string(),
+        );
+        let mut args = vec!["hold-start", "--scratch", &self.scratch, "--name", name];
+        args.extend(flags);
+        self.rig.step_in(
+            &[
+                ("HOLD_RAN", ran.as_str()),
+                ("HOLD_RELEASE", release.as_str()),
+                ("HOLD_PRINTS", file.as_str()),
+                ("HOLD_EXIT", exit.as_str()),
+            ],
+            &args,
+        )
+    }
+
+    /// `hold-wait` of `name`, within `slice` seconds — or within the tool's own.
+    fn wait(&self, name: &str, slice: Option<u32>) -> Stepped {
+        let slice = slice.map(|seconds| seconds.to_string());
+        let mut args = vec!["hold-wait", "--scratch", &self.scratch, "--name", name];
+        if let Some(slice) = &slice {
+            args.extend(["--slice", slice.as_str()]);
+        }
+        self.rig.step(&args)
+    }
+
+    /// Started with a command that runs to its end at once, and waited for.
+    fn judged(&self, name: &str, flags: &[&str], prints: &str, exit: i32) -> Value {
+        self.released(true);
+        self.start(name, flags, prints, exit)
+            .done("hold-start", "started");
+        let seen = self.wait(name, Some(60));
+        assert_eq!(seen.code, 0, "{} {}", seen.raw, seen.stderr);
+        seen.line
+    }
+
+    /// The commands that ran, once `count` of them have: a command is started by a process
+    /// of its own, a moment after the start has answered.
+    fn runs_when(&self, count: usize) -> Vec<String> {
+        until("the command has started", || self.runs().len() >= count);
+        self.runs()
+    }
+
+    /// The commands that ran: `<pid> <arguments>` each.
+    fn runs(&self) -> Vec<String> {
+        fs::read_to_string(&self.ran)
+            .expect("what ran")
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// The file a job keeps under the scratch root.
+    fn kept(&self, name: &str, file: &str) -> PathBuf {
+        self.rig.scratch.join("hold").join(name).join(file)
+    }
+
+    /// The verdict file a line names: there, ONE line that ends with its own sha256, and
+    /// the file the line names it by.
+    fn verdict_of(&self, line: &Value) -> Value {
+        let rel = line["verdict_file"]
+            .as_str()
+            .unwrap_or_else(|| panic!("a job that is done names its verdict's file: {line}"));
+        let text = fs::read_to_string(self.rig.scratch.join(rel)).expect("the verdict file");
+        assert_eq!(
+            line["verdict_sha256"],
+            sha256(&text).as_str(),
+            "the line names the file by its hash: {line}"
+        );
+        let verdict = line_of(&text);
+        assert_eq!(
+            json!([
+                verdict["tool"],
+                verdict["name"],
+                verdict["kind"],
+                verdict["verdict"],
+                verdict["why"]
+            ]),
+            json!([
+                "stabilize-step",
+                line["name"],
+                line["kind"],
+                line["verdict"],
+                line["why"]
+            ]),
+            "the file says what the line says: {verdict}"
+        );
+        verdict
+    }
+}
+
+/// Wait — a minute at most — until `holds`.
+fn until(what: &str, holds: impl Fn() -> bool) {
+    let asked = std::time::Instant::now();
+    while !holds() {
+        assert!(
+            asked.elapsed() < std::time::Duration::from_secs(60),
+            "after a minute, still not: {what}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
+const GATE_KIND: [&str; 4] = ["--kind", "gate", "--run", RUN];
+
+fn regression_kind<'a>(previous: &'a str, candidate: &'a str) -> Vec<&'a str> {
+    vec![
+        "--kind",
+        "regression",
+        "--previous",
+        previous,
+        "--candidate",
+        candidate,
+        "--list",
+        REGRESSION_LIST,
+    ]
+}
+
+/// **A long command is started ONCE, by name, and it outlives the process that started it**
+/// (the second repair plan's `K10`; the human's ruling of 2026-10-07 on the permission
+/// prompt; the hold probe's case (b)). `hold-start` answers at once — while the command
+/// still runs — and names the file the command's output is kept in, which is the tool's to
+/// name and no redirect of anybody's. Asked again under the same name it answers with the
+/// job that is there, running or done, and nothing is started a second time; the same
+/// name with other arguments is refused (`taken`). And ANOTHER process waits for it, after
+/// the starter has exited, and reads its verdict.
+#[test]
+fn a_held_command_is_started_once_and_outlives_its_starter() {
+    let held = Held::new("hold-once");
+    let green = as_recorded("gate-green.txt");
+    held.released(false);
+    let first = held.start("gate-c1-a1", &GATE_KIND, &green, 0);
+    let started = first.done("hold-start", "started").clone();
+    assert_eq!(
+        json!([started["name"], started["kind"], started["output"]]),
+        json!(["gate-c1-a1", "gate", "hold/gate-c1-a1/output"]),
+        "the job, and the file its output is kept in — under the scratch root: {started}"
+    );
+    let pid = started["pid"].as_u64().expect("the supervisor's pid");
+    assert!(
+        first.trace.is_empty(),
+        "a start asks git nothing: {:?}",
+        first.trace
+    );
+
+    // The starter has exited — its call returned — and the command runs.
+    let at_once = held.wait("gate-c1-a1", Some(0));
+    assert_eq!(
+        json!([
+            at_once.done("hold-wait", "running")["pid"],
+            at_once.line["verdict"]
+        ]),
+        json!([pid, null]),
+        "{}",
+        at_once.raw
+    );
+    assert_eq!(
+        held.runs_when(1).len(),
+        1,
+        "the command was started: {:?}",
+        held.runs()
+    );
+    assert!(
+        held.runs()[0].ends_with(" --keep-going"),
+        "the gate's command is the tool's own, `dev/gate --keep-going`: {:?}",
+        held.runs()
+    );
+
+    // ASKED TWICE, IT ANSWERS WITH THE JOB THAT IS RUNNING — never a second one.
+    let again = held.start("gate-c1-a1", &GATE_KIND, &green, 0);
+    assert_eq!(again.done("hold-start", "running")["pid"], pid);
+    assert_eq!(
+        held.runs().len(),
+        1,
+        "and nothing was started: {:?}",
+        held.runs()
+    );
+    // The same name, another command: refused, and nothing is started.
+    let other = regression_kind(&"a".repeat(40), &"b".repeat(40))
+        .iter()
+        .map(|flag| (*flag).to_owned())
+        .collect::<Vec<_>>();
+    let other: Vec<&str> = other.iter().map(String::as_str).collect();
+    held.start("gate-c1-a1", &other, &green, 0).refused("taken");
+    held.start(
+        "gate-c1-a1",
+        &["--kind", "gate", "--run", "another"],
+        &green,
+        0,
+    )
+    .refused("taken");
+    assert_eq!(held.runs().len(), 1);
+
+    // ANOTHER PROCESS WAITS, the starter long gone, and reads the verdict.
+    held.released(true);
+    let ended = held.wait("gate-c1-a1", Some(60));
+    let done = ended.done("hold-wait", "done");
+    assert_eq!(
+        json!([done["verdict"], done["why"], done["exit"], done["pid"]]),
+        json!(["green", null, 0, pid]),
+        "{done}"
+    );
+    assert_eq!(
+        fs::read_to_string(held.kept("gate-c1-a1", "output")).expect("the output"),
+        green,
+        "the command's output, whole, in the file the tool named"
+    );
+    held.verdict_of(done);
+
+    // Asked for once more when it is done: the job that is there, with its verdict — and
+    // it is not run again.
+    let after = held.start("gate-c1-a1", &GATE_KIND, &green, 0);
+    assert_eq!(
+        json!([
+            after.done("hold-start", "done")["verdict"],
+            after.line["verdict_sha256"]
+        ]),
+        json!(["green", done["verdict_sha256"]])
+    );
+    assert_eq!(held.runs().len(), 1, "it ran once: {:?}", held.runs());
+    // A name nobody started is no job.
+    held.wait("gate-c9-a9", Some(0)).refused("missing");
+}
+
+/// **A wait answers within its slice — a number the tool owns, shorter than an agent's
+/// shell lets a call run.** While the command runs, `hold-wait` returns `running` when the
+/// slice is over, having waited that long and no longer; the slice an agent may name only
+/// shortens it. Two waiters at once are both answered, with one verdict — so a wait can be
+/// taken over.
+#[test]
+fn a_wait_answers_within_its_slice() {
+    let held = Held::new("hold-slice");
+    let green = as_recorded("gate-green.txt");
+    held.released(false);
+    held.start("gate", &GATE_KIND, &green, 0)
+        .done("hold-start", "started");
+
+    // The slice is over, and the command still runs: `running`, after that long.
+    let asked = std::time::Instant::now();
+    let waiting = held.wait("gate", Some(2));
+    let took = asked.elapsed().as_secs_f64();
+    assert_eq!(
+        json!([
+            waiting.done("hold-wait", "running")["waited"],
+            waiting.line["slice"]
+        ]),
+        json!([2, 2]),
+        "{}",
+        waiting.raw
+    );
+    assert!(
+        (2.0..60.0).contains(&took),
+        "the wait took its slice, and no more than a process costs beside it: {took} s"
+    );
+
+    // THE TOOL'S OWN SLICE: what a wait is bounded by where none is named — shorter than
+    // an agent's shell lets a call run — and a longer one is no argument.
+    let table = held.rig.step(&["table"]);
+    let own = table.done("table", "listed")["slice"]
+        .as_u64()
+        .expect("the tool's slice");
+    assert!(
+        (30..AGENT_SHELL_SECONDS - 10).contains(&own),
+        "the tool's slice ends inside an agent's default shell limit of {AGENT_SHELL_SECONDS} s, with room for the call itself: {own}"
+    );
+    let longer = (own + 1).to_string();
+    held.rig
+        .step(&[
+            "hold-wait",
+            "--scratch",
+            &held.scratch,
+            "--name",
+            "gate",
+            "--slice",
+            &longer,
+        ])
+        .refused("usage");
+
+    // TWO WAITERS AT ONCE, and the command ends under them: both are answered, alike.
+    let (first, second) = std::thread::scope(|threads| {
+        let one = threads.spawn(|| held.wait("gate", None));
+        let two = threads.spawn(|| held.wait("gate", Some(60)));
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        held.released(true);
+        (one.join().expect("a waiter"), two.join().expect("a waiter"))
+    });
+    assert_eq!(
+        first.done("hold-wait", "done")["slice"],
+        own,
+        "a wait that names no slice is bounded by the tool's: {}",
+        first.raw
+    );
+    for seen in [&first, &second] {
+        assert_eq!(seen.done("hold-wait", "done")["verdict"], "green");
+    }
+    assert_eq!(
+        first.line["verdict_sha256"], second.line["verdict_sha256"],
+        "one verdict, whoever read it first"
+    );
+    assert!(
+        first.line["waited"]
+            .as_u64()
+            .is_some_and(|waited| waited < own),
+        "a wait ends when the command does: {}",
+        first.raw
+    );
+    assert_eq!(held.runs().len(), 1);
+}
+
+/// **A job whose process is gone without its end on record is `dead` — named, and never
+/// `done`.** The supervisor killed: no record of how the command ended. The command killed:
+/// a record that says by which signal. Neither is read for a verdict, whatever the output
+/// holds — here a whole green gate, written before the kill — and neither is started again
+/// under its name.
+#[test]
+fn a_held_command_whose_process_is_gone_is_dead_and_never_done() {
+    let held = Held::new("hold-dead");
+    let green = as_recorded("gate-green.txt");
+    let kill = |pid: u64| {
+        let out = Command::new("kill")
+            .args(["-9", &pid.to_string()])
+            .output()
+            .expect("run kill");
+        assert!(out.status.success(), "kill {pid}: {out:?}");
+    };
+    held.released(false);
+
+    // The supervisor is killed.
+    let started = held.start("gate-a1", &GATE_KIND, &green, 0);
+    let pid = started.done("hold-start", "started")["pid"]
+        .as_u64()
+        .expect("the supervisor's pid");
+    // The command runs — and the output holds a whole green gate already: it is not what
+    // makes a job done.
+    held.runs_when(1);
+    fs::write(held.kept("gate-a1", "output"), &green).expect("write the output");
+    kill(pid);
+    let gone = held.wait("gate-a1", Some(60));
+    let dead = gone.done("hold-wait", "dead");
+    assert_eq!(
+        json!([
+            dead["why"],
+            dead["verdict"],
+            dead["verdict_file"],
+            dead["exit"]
+        ]),
+        json!(["no-exit", null, null, null]),
+        "{dead}"
+    );
+    assert!(!held.kept("gate-a1", "verdict.json").exists());
+    assert_eq!(
+        held.start("gate-a1", &GATE_KIND, &green, 0)
+            .done("hold-start", "dead")["why"],
+        "no-exit",
+        "asked for again, a dead job is named — and nothing is started under its name"
+    );
+    assert_eq!(held.runs().len(), 1, "{:?}", held.runs());
+
+    // The command is killed, its supervisor alive: the record says by what.
+    held.start("gate-a2", &GATE_KIND, &green, 0)
+        .done("hold-start", "started");
+    let command: u64 = held.runs_when(2)[1]
+        .split(' ')
+        .next()
+        .and_then(|pid| pid.parse().ok())
+        .expect("the command's pid");
+    kill(command);
+    let gone = held.wait("gate-a2", Some(60));
+    let dead = gone.done("hold-wait", "dead");
+    assert_eq!(
+        json!([dead["why"], dead["signal"], dead["verdict"], dead["exit"]]),
+        json!(["killed", 9, null, null]),
+        "{dead}"
+    );
+    held.released(true);
+}
+
+/// **The verdict of a held command is read by the tool, out of the command's own output —
+/// per kind, and from recorded real output.** A gate: the record script's own reader of a
+/// full gate's two lines, so a pre-check's output (`--fast`, and `--quick`, which prints a
+/// verdict line and no totals) is no verdict. The regression set: its ONE line, held to
+/// the exit status its tool gives that line and to the two commits and the list that were
+/// asked. A verdict that is missing, cut off, another kind's, or that the exit status does
+/// not bear out is `void` and says why — `done`, and never green.
+///
+/// Recorded, and what is not: the gate's four outputs and the regression tool's green,
+/// red, `evidence`, `did-not-run` and refused lines are real ([`as_recorded`],
+/// [`regression_line`]). The five other void reasons are the recorded `did-not-run` line
+/// with the reason's word, at the exit status the tool's header gives that word: a void
+/// line is read by three fields, and no run of thirty-five minutes was made to print each.
+#[test]
+fn the_verdict_of_a_held_command_is_read_by_the_tool() {
+    let held = Held::new("hold-verdict");
+    let (green, red) = (as_recorded("gate-green.txt"), as_recorded("gate-red.txt"));
+    let (ran_green, green_line) = regression_line("run-3-result.json");
+    let (ran_red, red_line) = regression_line("run-2-result.json");
+    let commits = |line: &Value| {
+        (
+            line["previous"]["commit"]
+                .as_str()
+                .expect("a sha")
+                .to_owned(),
+            line["candidate"]["commit"]
+                .as_str()
+                .expect("a sha")
+                .to_owned(),
+        )
+    };
+    let (previous, candidate) = commits(&ran_green);
+    let (red_previous, red_candidate) = commits(&ran_red);
+
+    // --- a gate -------------------------------------------------------------------
+    let seen = held.judged("gate-green", &GATE_KIND, &green, 0);
+    assert_eq!(
+        json!([
+            seen["status"],
+            seen["verdict"],
+            seen["why"],
+            seen["exit"],
+            seen["facts"]
+        ]),
+        json!(["done", "green", null, 0,
+               {"passed": 2, "failed": 0, "binaries": 3, "steps": [], "tests": 0}]),
+        "a green gate, from its two lines: {seen}"
+    );
+    let on_file = held.verdict_of(&seen);
+    assert_eq!(
+        on_file["evidence"]["totals"], "tests   passed=2 failed=0  (over 3 test binaries)",
+        "the totals line is in the file: {on_file}"
+    );
+    let seen = held.judged("gate-red", &GATE_KIND, &red, 1);
+    assert_eq!(
+        json!([
+            seen["status"],
+            seen["verdict"],
+            seen["why"],
+            seen["exit"],
+            seen["facts"]
+        ]),
+        json!(["done", "red", null, 1,
+               {"passed": 1, "failed": 1, "binaries": 3, "steps": ["test"], "tests": 1}]),
+        "a red gate: its red steps, and how many tests: {seen}"
+    );
+    assert_eq!(
+        held.verdict_of(&seen)["evidence"]["red"],
+        json!(["step test", "test tiny::numbers two_is_three"]),
+        "what is red is named in the file"
+    );
+    let cut = &green[..green.find("\nGATE: PASS").expect("the verdict line")];
+    for (name, prints, exit, why) in [
+        ("gate-fast", as_recorded("gate-fast.txt"), 0, "no-verdict"),
+        ("gate-quick", as_recorded("gate-quick.txt"), 0, "no-verdict"),
+        ("gate-cut", cut.to_owned(), 0, "no-verdict"),
+        ("gate-nothing", String::new(), 0, "no-verdict"),
+        ("gate-other-kind", green_line.clone(), 0, "no-verdict"),
+        ("gate-green-exit-1", green.clone(), 1, "exit-differs"),
+        ("gate-red-exit-0", red.clone(), 0, "exit-differs"),
+    ] {
+        let seen = held.judged(name, &GATE_KIND, &prints, exit);
+        assert_eq!(
+            json!([seen["status"], seen["verdict"], seen["why"]]),
+            json!(["done", "void", why]),
+            "`{name}`: {seen}"
+        );
+        held.verdict_of(&seen);
+    }
+
+    // --- the regression set ---------------------------------------------------------
+    let asked = regression_kind(&previous, &candidate);
+    let seen = held.judged("regression-green", &asked, &green_line, 0);
+    assert_eq!(
+        json!([seen["status"], seen["verdict"], seen["why"], seen["facts"]]),
+        json!(["done", "green", null,
+               {"status": "green", "reason": null, "previous": previous, "candidate": candidate,
+                "list_sha256": ran_green["list"]["sha256"], "differences": 22,
+                "not_on_list": 0, "excluded": 11, "excluded_by_no_row": 0}]),
+        "{seen}"
+    );
+    assert_eq!(
+        held.verdict_of(&seen)["evidence"]["line"],
+        ran_green,
+        "the tool's own line is in the file, whole"
+    );
+    assert!(
+        held.runs().last().is_some_and(|ran| ran.contains(&format!(
+            " run --previous {previous} --candidate {candidate} --list {REGRESSION_LIST} --scratch "
+        ))),
+        "the command is the tool's own, from the commits and the list asked: {:?}",
+        held.runs().last()
+    );
+    let red_asked = regression_kind(&red_previous, &red_candidate);
+    let seen = held.judged("regression-red", &red_asked, &red_line, 1);
+    assert_eq!(
+        json!([seen["verdict"], seen["why"], seen["facts"]["not_on_list"]]),
+        json!(["red", null, 1]),
+        "{seen}"
+    );
+    // Void, and why: each reason the tool has, at the exit status it gives it.
+    let did_not_run = as_recorded("regression-void-did-not-run.txt");
+    let ran_void: Value = serde_json::from_str(&did_not_run).expect("a void line");
+    let (void_previous, void_candidate) = commits(&ran_void);
+    let void_asked = regression_kind(&void_previous, &void_candidate);
+    let seen = held.judged("regression-did-not-run", &void_asked, &did_not_run, 10);
+    assert_eq!(
+        json!([seen["verdict"], seen["why"], seen["facts"]["reason"]]),
+        json!(["void", "did-not-run", "did-not-run"]),
+        "{seen}"
+    );
+    let seen = held.judged(
+        "regression-evidence",
+        &void_asked,
+        &as_recorded("regression-void-evidence.txt"),
+        16,
+    );
+    assert_eq!(
+        json!([seen["verdict"], seen["why"]]),
+        json!(["void", "evidence"])
+    );
+    for (reason, exit) in [
+        ("build-previous", 11),
+        ("build-candidate", 12),
+        ("baseline", 13),
+        ("swap", 14),
+        ("incomplete", 15),
+    ] {
+        let line = did_not_run.replace(
+            "\"reason\": \"did-not-run\"",
+            &format!("\"reason\": \"{reason}\""),
+        );
+        assert_ne!(line, did_not_run);
+        let seen = held.judged(&format!("regression-{reason}"), &void_asked, &line, exit);
+        assert_eq!(
+            json!([seen["status"], seen["verdict"], seen["why"]]),
+            json!(["done", "void", reason]),
+            "{seen}"
+        );
+    }
+    // A refusal is no run: void. So is a line the exit status does not bear out, a line of
+    // other commits than the ones asked, a line that was cut off, and another kind's output.
+    let half = &green_line[..green_line.len() / 2];
+    for (name, flags, prints, exit, why) in [
+        (
+            "regression-refused",
+            &asked,
+            as_recorded("regression-refused.txt"),
+            4,
+            "refused",
+        ),
+        (
+            "regression-green-exit-1",
+            &asked,
+            green_line.clone(),
+            1,
+            "exit-differs",
+        ),
+        (
+            "regression-red-exit-0",
+            &red_asked,
+            red_line.clone(),
+            0,
+            "exit-differs",
+        ),
+        (
+            "regression-void-exit-0",
+            &void_asked,
+            did_not_run.clone(),
+            0,
+            "exit-differs",
+        ),
+        (
+            "regression-other-commits",
+            &red_asked,
+            green_line.clone(),
+            0,
+            "not-asked",
+        ),
+        ("regression-cut", &asked, half.to_owned(), 0, "no-verdict"),
+        (
+            "regression-twice",
+            &asked,
+            format!("{green_line}{green_line}"),
+            0,
+            "no-verdict",
+        ),
+        (
+            "regression-other-kind",
+            &asked,
+            green.clone(),
+            0,
+            "no-verdict",
+        ),
+    ] {
+        let seen = held.judged(name, flags, &prints, exit);
+        assert_eq!(
+            json!([seen["status"], seen["verdict"], seen["why"]]),
+            json!(["done", "void", why]),
+            "`{name}`: {seen}"
+        );
+    }
+
+    // --- the probe's hold: the real tool, a second long ---------------------------------
+    placed_executable::copy(
+        &repo_root().join("dev/stabilize-probe"),
+        &held.rig.root.join("dev/stabilize-probe"),
+    );
+    let begun = held
+        .rig
+        .hermetic(Command::new(held.rig.root.join("dev/stabilize-probe")))
+        .args(["begin", "--scratch", &held.scratch, "--probe", "hold"])
+        .output()
+        .expect("run the probe tool");
+    assert!(begun.status.success(), "{begun:?}");
+    let probe = ["--kind", "probe", "--seconds", "1"];
+    let seen = held.judged("probe-a", &probe, "", 0);
+    assert_eq!(
+        json!([seen["status"], seen["verdict"], seen["why"], seen["facts"]]),
+        json!(["done", "green", null, {"seconds": 1}]),
+        "the probe's own last line, of the name and the seconds asked: {seen}"
+    );
+    // A name the probe tool has held already is its refusal: no last line, void.
+    let seen = held.judged("probe-b", &probe, "", 0);
+    assert_eq!(seen["verdict"], "green", "{seen}");
+    fs::remove_dir_all(held.rig.scratch.join("hold/probe-b")).expect("forget the job");
+    let seen = held.judged("probe-b", &probe, "", 0);
+    assert_eq!(
+        json!([seen["status"], seen["verdict"], seen["why"]]),
+        json!(["done", "void", "no-verdict"]),
+        "{seen}"
+    );
+    // THE PROBE'S OWN LINE, RECORDED — a hold of one second under the names `probe-c` and
+    // `probe-d` — and then a stand-in in the probe tool's place that prints it: a line of
+    // other seconds than were asked is not the hold that was asked for, and a line that
+    // does not hold to its own hash is no line of that tool at all.
+    let real = |name: &str| {
+        let out = held
+            .rig
+            .hermetic(Command::new(held.rig.root.join("dev/stabilize-probe")))
+            .args([
+                "hold",
+                "--scratch",
+                &held.scratch,
+                "--name",
+                name,
+                "--seconds",
+                "1",
+            ])
+            .output()
+            .expect("run the probe tool");
+        assert!(out.status.success(), "{out:?}");
+        String::from_utf8(out.stdout).expect("the probe's line")
+    };
+    let (line_c, line_d) = (real("probe-c"), real("probe-d"));
+    placed_executable::write(&held.rig.root.join("dev/stabilize-probe"), LONG_COMMAND);
+    let two = ["--kind", "probe", "--seconds", "2"];
+    let seen = held.judged("probe-c", &two, &line_c, 0);
+    assert_eq!(
+        json!([seen["status"], seen["verdict"], seen["why"]]),
+        json!(["done", "void", "not-asked"]),
+        "{seen}"
+    );
+    let retyped = line_d.replace("\"seconds\": 1,", "\"seconds\": 2,");
+    assert_ne!(retyped, line_d, "the line says its seconds: {line_d}");
+    let seen = held.judged("probe-d", &two, &retyped, 0);
+    assert_eq!(
+        json!([seen["status"], seen["verdict"], seen["why"]]),
+        json!(["done", "void", "no-verdict"]),
+        "a line retyped to say what was asked does not hold to its hash: {seen}"
+    );
+}
+
+/// **The exit statuses a regression verdict is held to are the regression tool's own**: the
+/// tool's table (`table`: `holds`) names, per status of that tool's line, the exit status
+/// that goes with it, and this arm reads the same table out of the header of
+/// `dev/regression-set`.
+#[test]
+fn the_exits_a_regression_verdict_is_held_to_are_the_regression_tools_own() {
+    let header = read("dev/regression-set");
+    let at = header
+        .find("# Exit status, and the word a refusal opens with")
+        .expect("the regression tool's table of exit statuses");
+    let theirs: BTreeMap<String, u64> = header[at..]
+        .lines()
+        .skip(1)
+        .take_while(|line| line.starts_with('#'))
+        .filter_map(|line| {
+            let mut words = line.trim_start_matches('#').split_whitespace();
+            let status: u64 = words.next()?.parse().ok()?;
+            Some((words.next()?.to_owned(), status))
+        })
+        .collect();
+    assert!(theirs.len() >= 12, "the scan read the table: {theirs:?}");
+    let rig = StepRig::new("hold-exits");
+    let table = rig.step(&["table"]);
+    let holds = table.done("table", "listed")["holds"]
+        .as_array()
+        .expect("the kinds")
+        .clone();
+    let regression = holds
+        .iter()
+        .find(|kind| kind["kind"] == "regression")
+        .expect("the regression set's row");
+    let ours: BTreeMap<String, u64> = regression["exits"]
+        .as_object()
+        .expect("the exits")
+        .iter()
+        .map(|(word, status)| (word.clone(), status.as_u64().expect("a status")))
+        .collect();
+    assert_eq!(
+        ours, theirs,
+        "the exits the step tool holds a regression line to (left) are dev/regression-set's (right)"
+    );
+    // And the kinds are the ones this suite drives, each by a test of this file.
+    let source = read("tooling-tests/dev_stabilize_step.rs");
+    assert_eq!(
+        holds
+            .iter()
+            .map(|kind| kind["kind"].as_str().expect("a kind"))
+            .collect::<Vec<_>>(),
+        HELD_KINDS.iter().map(|(kind, _)| *kind).collect::<Vec<_>>(),
+        "the kinds of held command (left) are the ones this suite drives (right)"
+    );
+    for (kind, test) in HELD_KINDS {
+        assert!(
+            source.contains(&format!("\nfn {test}()")),
+            "`{kind}` is driven by `{test}`"
+        );
+    }
+    for kind in &holds {
+        for field in ["command", "judged", "takes"] {
+            assert!(
+                kind[field].is_string() || kind[field].is_array(),
+                "a kind says `{field}`: {kind}"
+            );
+        }
+    }
+}
+
+/// A build of the rig's `HEAD` under `name`, to `to` under the scratch root.
+fn build_kind<'a>(commit: &'a str, to: &'a str, version: Option<&'a str>) -> Vec<&'a str> {
+    let mut flags = vec!["--kind", "build", "--commit", commit, "--to", to];
+    if let Some(version) = version {
+        flags.extend(["--version", version]);
+    }
+    flags
+}
+
+/// **A binary is built from a COMMIT, as a held command, and judged by the tool: by its
+/// hash, the version it prints and the path a bare `jigc` resolves to** — under the suite's
+/// stand-in for cargo, which builds what the tree it runs in says. So what was built is
+/// the commit's, never the working tree's; the binary lands where it was asked for, under
+/// the scratch root, read-only; a build that fails, or whose binary prints another version
+/// than the one asked, is `red`; and a binary that is not the one the build left is `void`.
+#[test]
+fn a_binary_is_built_from_a_commit_and_judged_by_its_hash_its_version_and_its_path() {
+    let held = Held::new("hold-build");
+    let rig = &held.rig;
+    rig.on_path("cargo", CARGO);
+    rig.write("version.txt", "1.0.0-rc.24\n");
+    let commit = rig.commit("chore: a version");
+    // The working tree moves on, uncommitted: no build may see it.
+    rig.write("version.txt", "9.9.9\n");
+    held.released(true);
+
+    held.start(
+        "build-c1",
+        &build_kind(&commit, "bin/c1/jigc", Some("1.0.0-rc.24")),
+        "",
+        0,
+    )
+    .done("hold-start", "started");
+    let ended = held.wait("build-c1", Some(60));
+    let done = ended.done("hold-wait", "done").clone();
+    let binary = rig.scratch.join("bin/c1/jigc");
+    let bytes = fs::read(&binary).expect("the binary, where it was asked for");
+    assert_eq!(
+        json!([done["verdict"], done["why"], done["facts"]]),
+        json!(["green", null,
+               {"commit": commit, "binary": "bin/c1/jigc", "bytes": bytes.len(),
+                "content_sha256": sha256(&String::from_utf8_lossy(&bytes)),
+                "version": "1.0.0-rc.24", "resolves": true}]),
+        "the hash, the version and the path: {done}"
+    );
+    use std::os::unix::fs::PermissionsExt as _;
+    assert_eq!(
+        fs::metadata(&binary)
+            .expect("the binary")
+            .permissions()
+            .mode()
+            & 0o222,
+        0,
+        "the binary is read-only"
+    );
+    let unpacked =
+        fs::canonicalize(held.kept("build-c1", "work/source")).expect("the unpacked commit");
+    let cargo =
+        fs::read_to_string(held.kept("build-c1", "work/cargo.log")).expect("cargo's output");
+    assert_eq!(
+        cargo,
+        format!("   Compiling jigc (stand-in) in {}\n", unpacked.display()),
+        "cargo ran in the unpacked commit, never in the repository — and its output is kept beside it"
+    );
+    assert_eq!(
+        fs::read_to_string(held.kept("build-c1", "output"))
+            .expect("the build's output")
+            .lines()
+            .count(),
+        1,
+        "the held build's output is the build's ONE line"
+    );
+    held.verdict_of(&done);
+
+    // A binary that is no longer the one the build left: void.
+    held.start("build-c2", &build_kind(&commit, "bin/c2/jigc", None), "", 0)
+        .done("hold-start", "started");
+    let swapped = rig.scratch.join("bin/c2/jigc");
+    until("the build has ended", || {
+        swapped.exists() && held.kept("build-c2", "exit.json").exists()
+    });
+    fs::remove_file(&swapped).expect("remove the binary");
+    fs::write(&swapped, "#!/bin/sh\necho 'jigc 1.0.0-rc.24'\n").expect("another binary");
+    let seen = held.wait("build-c2", Some(60));
+    assert_eq!(
+        json!([seen.done("hold-wait", "done")["verdict"], seen.line["why"]]),
+        json!(["void", "hash-differs"]),
+        "{}",
+        seen.raw
+    );
+
+    // Another version than the one asked: red. A build that fails: red.
+    held.start(
+        "build-c3",
+        &build_kind(&commit, "bin/c3/jigc", Some("1.0.0")),
+        "",
+        0,
+    )
+    .done("hold-start", "started");
+    let seen = held.wait("build-c3", Some(60));
+    assert_eq!(
+        json!([seen.done("hold-wait", "done")["verdict"], seen.line["why"]]),
+        json!(["red", "build"]),
+        "{}",
+        seen.raw
+    );
+    rig.git(&["checkout", "-q", "--", "version.txt"]);
+    rig.write("fails-to-build", "\n");
+    let broken = rig.commit("chore: a commit that does not build");
+    held.start("build-c4", &build_kind(&broken, "bin/c4/jigc", None), "", 0)
+        .done("hold-start", "started");
+    let seen = held.wait("build-c4", Some(60));
+    assert_eq!(
+        json!([seen.done("hold-wait", "done")["verdict"], seen.line["why"]]),
+        json!(["red", "build"]),
+        "{}",
+        seen.raw
+    );
+    for built in ["bin/c3/jigc", "bin/c4/jigc"] {
+        assert!(
+            !rig.scratch.join(built).exists(),
+            "a build that is red leaves no binary: {built}"
+        );
+    }
+
+    // The build itself, asked for directly, refuses a target that is there and a commit
+    // that is none — and leaves what is there as it is.
+    let direct = |work: &str, commit: &str, to: &str| {
+        rig.step(&[
+            "build",
+            "--scratch",
+            &held.scratch,
+            "--commit",
+            commit,
+            "--work",
+            work,
+            "--to",
+            to,
+        ])
+    };
+    direct("work-1", &commit, "bin/c1/jigc").refused("taken");
+    assert_eq!(fs::read(&binary).expect("the binary"), bytes);
+    direct("work-2", &"0".repeat(40), "bin/c5/jigc").refused("git");
+    direct("work-3", &broken, "bin/c5/jigc").refused("build");
+}
+
+/// **A held command writes only under the scratch root it resolved** (`SP-2`'s class: only
+/// the root is resolved, so a link planted beneath it carries a write elsewhere). Every
+/// path the tool writes — a job's directory, the file a binary lands at, a build's work —
+/// is held to lying under the real root, and a link on the way is refused before anything
+/// is started or written; so is a root inside the repository, and a file to hash that a
+/// link leads out to.
+#[test]
+fn a_held_command_writes_only_under_the_scratch_root_it_resolved() {
+    let held = Held::new("hold-links");
+    let rig = &held.rig;
+    rig.on_path("cargo", CARGO);
+    rig.write("version.txt", "1.0.0-rc.24\n");
+    let commit = rig.commit("chore: a version");
+    held.released(true);
+    let elsewhere = rig.dir().join("elsewhere");
+    fs::create_dir(&elsewhere).expect("a directory that is not the scratch root");
+    let link = |at: &Path| std::os::unix::fs::symlink(&elsewhere, at).expect("plant a link");
+    let untouched = || {
+        assert_eq!(
+            fs::read_dir(&elsewhere).expect("elsewhere").count(),
+            0,
+            "nothing was written where the link leads"
+        );
+    };
+    let green = as_recorded("gate-green.txt");
+
+    // `<scratch>/hold` is a link.
+    link(&rig.scratch.join("hold"));
+    held.start("gate", &GATE_KIND, &green, 0).refused("usage");
+    held.wait("gate", Some(0)).refused("usage");
+    untouched();
+    fs::remove_file(rig.scratch.join("hold")).expect("remove the link");
+    // A job's directory is a link.
+    fs::create_dir(rig.scratch.join("hold")).expect("the holds");
+    link(&rig.scratch.join("hold/gate"));
+    held.start("gate", &GATE_KIND, &green, 0).refused("usage");
+    held.wait("gate", Some(0)).refused("usage");
+    untouched();
+    assert!(
+        held.runs().is_empty(),
+        "nothing was started: {:?}",
+        held.runs()
+    );
+    fs::remove_file(rig.scratch.join("hold/gate")).expect("remove the link");
+    // Where a binary is to land is behind a link — as a held build, and asked directly.
+    link(&rig.scratch.join("bin"));
+    held.start("build", &build_kind(&commit, "bin/c1/jigc", None), "", 0)
+        .refused("usage");
+    rig.step(&[
+        "build",
+        "--scratch",
+        &held.scratch,
+        "--commit",
+        &commit,
+        "--work",
+        "work",
+        "--to",
+        "bin/c1/jigc",
+    ])
+    .refused("usage");
+    link(&rig.scratch.join("work-linked"));
+    rig.step(&[
+        "build",
+        "--scratch",
+        &held.scratch,
+        "--commit",
+        &commit,
+        "--work",
+        "work-linked",
+        "--to",
+        "built/jigc",
+    ])
+    .refused("usage");
+    untouched();
+    // A file to hash that a link leads out to; one that is not there; a path that climbs.
+    fs::write(elsewhere.join("secret"), "s\n").expect("a file elsewhere");
+    let hash = |file: &str| rig.step(&["hash", "--scratch", &held.scratch, "--file", file]);
+    hash("bin/secret").refused("usage");
+    hash("no-such-file").refused("missing");
+    hash("../elsewhere/secret").refused("usage");
+    fs::remove_file(elsewhere.join("secret")).expect("remove it");
+
+    // A scratch root that resolves INTO THE REPOSITORY — a link, since the rig's own root
+    // is no plain path: refused, and the repository is as it was.
+    let into = rig.dir().join("into-the-repository");
+    std::os::unix::fs::symlink(rig.root.join("crates"), &into).expect("plant a link");
+    let into = into.display().to_string();
+    let before = rig.status();
+    for args in [
+        vec![
+            "hold-start",
+            "--scratch",
+            &into,
+            "--name",
+            "gate",
+            "--kind",
+            "gate",
+            "--run",
+            RUN,
+        ],
+        vec!["hold-wait", "--scratch", &into, "--name", "gate"],
+        vec!["hash", "--scratch", &into, "--file", "a.txt"],
+        vec![
+            "build",
+            "--scratch",
+            &into,
+            "--commit",
+            &commit,
+            "--work",
+            "w",
+            "--to",
+            "b/jigc",
+        ],
+    ] {
+        rig.step(&args).refused("usage");
+    }
+    // — and so is the root a digest's files are kept under, before one of them is made.
+    let asked = rig.step(&[
+        "hash",
+        "--digest",
+        &into,
+        "--scratch",
+        &into,
+        "--file",
+        "a.txt",
+    ]);
+    assert_eq!(
+        json!([asked.code, asked.line["refused"], asked.line["file"]]),
+        json!([2, "usage", null]),
+        "a digest's root inside the repository is refused, and no file is kept there: {}",
+        asked.raw
+    );
+    assert_eq!(
+        rig.status(),
+        before,
+        "nothing was written in the repository"
+    );
+    assert!(
+        held.runs().is_empty(),
+        "and nothing was started: {:?}",
+        held.runs()
+    );
+}
+
+/// **A file's hash is asked of the tool**, and no agent runs `shasum`: the file lies under
+/// the scratch root, and the answer is its sha256 and its length.
+#[test]
+fn a_file_is_hashed_by_the_tool() {
+    let rig = StepRig::new("hold-hash");
+    let scratch = rig.scratch.display().to_string();
+    let text = "{\"a\": \"\u{2014}\"}\n";
+    fs::create_dir_all(rig.scratch.join("record/x")).expect("a directory of a record step");
+    fs::write(rig.scratch.join("record/x/batch.json"), text).expect("write a batch");
+    let seen = rig.step(&[
+        "hash",
+        "--scratch",
+        &scratch,
+        "--file",
+        "record/x/batch.json",
+    ]);
+    assert_eq!(
+        json!([
+            seen.done("hash", "hashed")["path"],
+            seen.line["bytes"],
+            seen.line["content_sha256"]
+        ]),
+        json!(["record/x/batch.json", text.len(), sha256(text)]),
+        "{}",
+        seen.raw
+    );
+    assert!(seen.trace.is_empty(), "it asks git nothing");
+    rig.step(&["hash", "--scratch", &scratch, "--file", "record/x"])
+        .refused("missing");
+}
+
+/// **The tool's verdict file is what the record script records a scripted check from** —
+/// the two scripts, end to end: a regression set held to its end, and its verdict file
+/// handed to `result-set` for an item of kind `held-regression`. The result's word is the
+/// file's; the file on record holds the two commits, the list's hash and what was excluded.
+#[test]
+fn the_tools_verdict_file_is_what_the_record_script_records() {
+    let held = Held::new("hold-record");
+    let rig = &held.rig;
+    let (ran, line) = regression_line("run-3-result.json");
+    let (previous, candidate) = (
+        ran["previous"]["commit"].as_str().expect("a sha"),
+        ran["candidate"]["commit"].as_str().expect("a sha"),
+    );
+    rig.wrote(
+        &format!("run-set --run {RUN}"),
+        &json!({"stop": "at-the-bound", "rounds": 3, "previous": "1.0.0-rc.24",
+                "previous-commit": previous, "scope": "delta", "clauses": ["working-product"]})
+        .to_string(),
+    );
+    rig.wrote(
+        &format!("item-set --run {RUN}"),
+        &json!({"item": "regression-set", "kind": "held-regression", "clause": "working-product",
+                "runs": "every-candidate",
+                "brief": "the regression set, as a held command of dev/stabilize-step"})
+        .to_string(),
+    );
+    rig.wrote(
+        &format!("scope-set --run {RUN} --round 1"),
+        &json!({"included": [], "excluded": []}).to_string(),
+    );
+    let done = held.judged(
+        "regression-r1-a1",
+        &regression_kind(previous, candidate),
+        &line,
+        0,
+    );
+    assert_eq!(done["verdict"], "green", "{done}");
+    let verdict = rig
+        .scratch
+        .join(done["verdict_file"].as_str().expect("the verdict's file"));
+    let result = |row: Value| {
+        rig.record_script(
+            &format!(
+                "{RECORD} result-set --run {RUN} --round 1 --commit {candidate} --scratch '{}'",
+                held.scratch
+            ),
+            &row.to_string(),
+        )
+    };
+    let (code, out, err) = result(json!({"item": "regression-set", "verdict": verdict}));
+    assert_eq!(code, 0, "{err}");
+    let recorded: Value = serde_json::from_str(out.trim()).expect("the result");
+    assert_eq!(
+        recorded["recorded"],
+        json!([{"item": "regression-set", "attempt": 1, "outcome": "green"}]),
+        "{recorded}"
+    );
+    let on_record: Value =
+        serde_json::from_str(&rig.read(&format!("{RUN_DIR}/r1/checks/regression-set.a1.json")))
+            .expect("the verdict on record");
+    assert_eq!(
+        json!([
+            on_record["verdict"],
+            on_record["evidence"]["line"]["previous"]["commit"],
+            on_record["evidence"]["line"]["candidate"]["commit"],
+            on_record["evidence"]["line"]["list"]["sha256"],
+            on_record["evidence"]["line"]["excluded"]
+                .as_array()
+                .map(Vec::len)
+        ]),
+        json!(["green", previous, candidate, ran["list"]["sha256"], 11]),
+        "the two commits, the list's hash and what was excluded are on record: {on_record}"
     );
 }

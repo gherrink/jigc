@@ -1,0 +1,33 @@
+gate: repo   <repo>
+gate: log    <tmp>/jigc-gate-wPJGzu
+gate: target shared (<repo>/target)
+gate: mode   fast (fmt, clippy, build, the fast test tier -- a PRE-CHECK, not the gate, do not commit on it)
+gate: git    /Library/Developer/CommandLineTools/usr/bin/git
+gate:        SDKROOT /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -- the real git, not the /usr/bin/git xcrun trampoline
+gate: deps   65 entries
+gate: hygiene  skipped (JIGC_GATE_HYGIENE=off)
+
+==> fmt     ok        (0s)
+==> clippy  ok        (0s)
+==> build   ok        (0s)
+gate: tiers  fast tier = every test not measured at 2s or more; 0 of 2 recorded tests wait for the second tier
+gate:        record <repo>/target/jigc-gate/test-seconds.tsv
+==> tier1   ok        (1s)
+
+--- summary ---
+fmt     exit=0
+clippy  exit=0
+build   exit=0
+tier1   exit=0
+fast tier  2 passed, 0 failed -- the second tier and the doctests were not run
+
+--- heaviest of this run (seconds; every test is a `test-seconds` line in the log) ---
+suites:
+     0.0s  tiny::numbers two_is_even  (1 tests)
+     0.0s  tiny::numbers two_is_two  (1 tests)
+tests:
+     0.0s  tiny::numbers two_is_even
+     0.0s  tiny::numbers two_is_two
+
+PRE-CHECK: PASS -- fmt, clippy, build and the fast test tier. NOT a gate: never commit on it
+full output: <tmp>/jigc-gate-wPJGzu
