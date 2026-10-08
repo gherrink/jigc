@@ -2278,3 +2278,125 @@ fn hygiene_scan_reports_a_line_introduced_only_by_a_merge_resolution() {
         "a hit is reported by location only.\nstdout: {stdout}",
     );
 }
+
+/// The hit lines of a scan's output, as it prints them.
+fn scan_hits(stdout: &str) -> Vec<&str> {
+    stdout
+        .lines()
+        .filter(|line| line.starts_with("  "))
+        .collect()
+}
+
+/// **An added line is read by where it stands, never by what it opens with** (the review of
+/// the stabilization core for three dangers, `F5` — a defect of this guard, older than that
+/// tooling). `git log -p` prints an added line as `+<its text>`, and the scan took every
+/// line that opens `+++ ` for a file header: so an added line whose own text opens `++ ` —
+/// a shell trace prints `++ …` for a nested command — was scanned by nothing, and where
+/// lines followed it they were filed under a path made of that line's text, which the
+/// scan then PRINTED. A hunk's header says how many lines it adds; inside it every `+`
+/// line is one of them.
+#[test]
+fn hygiene_scan_reads_an_added_line_by_where_it_stands_and_never_by_what_it_opens_with() {
+    let repo = ScanRepo::new("hygiene-scan-opens");
+    repo.write("f", "a\n");
+    repo.write("g", "x\n");
+    repo.commit_all("base");
+
+    // The review's block: the line is the last one added, and was read by nothing.
+    repo.write("f", "a\n++ zebrafixture here\n");
+    repo.commit_all("a shell trace, pasted");
+    let traced = repo.git_ok(&["rev-parse", "HEAD"]);
+    let (code, stdout, stderr) = repo.scan("zebrafixture\n", false, &["HEAD^..HEAD"]);
+    assert_eq!(
+        code, 1,
+        "an added line whose text opens `++ ` is an added line.\nstdout: {stdout}\nstderr: {stderr}",
+    );
+    assert_eq!(
+        scan_hits(&stdout),
+        [format!("  added    {}  f:2", &traced[..12])],
+        "named by its commit, its path and its line.\nstdout: {stdout}",
+    );
+
+    // Every opening that reads as structure — a file header, a hunk header, a removed
+    // line — and the lines after each: all of them scanned, all of them under their own
+    // path and line, in two files of one commit.
+    repo.write(
+        "f",
+        "a\n++ zebrafixture one\n+++ b/elsewhere zebrafixture two\nplain\n@@ -1 +1 @@ zebrafixture three\n-- zebrafixture four\nlast zebrafixture five\n",
+    );
+    repo.write("g", "x\n-- zebrafixture six\n");
+    repo.commit_all("more of the same");
+    let more = repo.git_ok(&["rev-parse", "HEAD"]);
+    let (code, stdout, stderr) = repo.scan("zebrafixture\n", false, &["HEAD^..HEAD"]);
+    assert_eq!(code, 1, "stdout: {stdout}\nstderr: {stderr}");
+    let sha = &more[..12];
+    assert_eq!(
+        scan_hits(&stdout),
+        [
+            format!("  added    {sha}  f:2"),
+            format!("  added    {sha}  f:3"),
+            format!("  added    {sha}  f:5"),
+            format!("  added    {sha}  f:6"),
+            format!("  added    {sha}  f:7"),
+            format!("  added    {sha}  g:2"),
+        ],
+        "each line under the file it is in, at its own number.\nstdout: {stdout}",
+    );
+    assert!(
+        !stdout.contains("zebrafixture") && !stdout.contains("elsewhere"),
+        "a hit is reported by location only — and no line's text is taken for a path.\nstdout: {stdout}",
+    );
+
+    // MUST NOT HIT: the same lines REMOVED are no new exposure, whatever they open with.
+    repo.write("f", "a\n");
+    repo.write("g", "x\n");
+    repo.commit_all("the lines, removed");
+    let (code, stdout, stderr) = repo.scan("zebrafixture\n", false, &["HEAD^..HEAD"]);
+    assert_eq!(
+        code, 0,
+        "removed lines are not scanned.\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("denylist clean"), "stdout: {stdout}");
+}
+
+/// **Where a commit begins is said by git, and by nothing a commit holds** (the same
+/// review's ninth lead, driven). The scan split what `git log` printed on a byte it had
+/// asked git to print before each commit's id — and a message line that opens with that
+/// byte was taken for a commit: the twelve characters after it were printed as its id. A
+/// hit, so the safe side; but named by WHAT the line held, in a log that is public.
+#[test]
+fn hygiene_scan_names_a_hit_by_its_commit_whatever_a_message_or_a_line_holds() {
+    let repo = ScanRepo::new("hygiene-scan-marker");
+    repo.write("f", "a\n");
+    repo.git_ok(&["add", "-A"]);
+    repo.git_ok(&[
+        "commit",
+        "-q",
+        "-m",
+        "subject\n\n\u{1}zebrafixture-private tail",
+    ]);
+    let said = repo.git_ok(&["rev-parse", "HEAD"]);
+    let (code, stdout, stderr) = repo.scan("zebrafixture\n", false, &["HEAD"]);
+    assert_eq!(code, 1, "stdout: {stdout}\nstderr: {stderr}");
+    assert_eq!(
+        scan_hits(&stdout),
+        [format!("  message  {}", &said[..12])],
+        "the message's hit is named by the commit git said it is of.\nstdout: {stdout}",
+    );
+    assert!(
+        !stdout.contains("zebrafixture"),
+        "by location only: nothing of the line is printed.\nstdout: {stdout}",
+    );
+
+    // And an added line that holds the byte is an added line of its file.
+    repo.write("f", "a\n\u{1}0123456789ab zebrafixture\n");
+    repo.commit_all("a line that holds the byte");
+    let held = repo.git_ok(&["rev-parse", "HEAD"]);
+    let (code, stdout, stderr) = repo.scan("zebrafixture\n", false, &["HEAD^..HEAD"]);
+    assert_eq!(code, 1, "stdout: {stdout}\nstderr: {stderr}");
+    assert_eq!(
+        scan_hits(&stdout),
+        [format!("  added    {}  f:2", &held[..12])],
+        "stdout: {stdout}"
+    );
+}

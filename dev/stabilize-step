@@ -29,6 +29,32 @@
 # append-only logs are the harness's (`branchName`, `runDir`, `PRODUCT_PATHS`,
 # `SYNC_LOGS`) and arrive as arguments.
 #
+# WHAT NO ACT REACHES, WHATEVER IT IS HANDED (the coordinator's seventh group of the pass
+# that followed the core's review; DECISIONS.md -> 2026-10-07, "The core's script-side
+# tasks, reviewed for three dangers", item 7). An agent's typed `git push` is held by the
+# deny rules of .claude/settings.json; a push this tool makes inside itself is seen by
+# none of them. So the tool holds the same line (implementation/release.md -> What agents
+# may not do), and tooling-tests/dev_stabilize_step.rs pins it act by act:
+#   main            is no argument of any act: a branch has a prefix, so `main` does not
+#                   parse, and neither does a refspec; `refs/heads/main`, which does, is
+#                   refused by the branch model's rule. No act commits where `main` is
+#                   checked out: each holds the branch checked out to the one it names, or
+#                   switches to the one it names first. (`sync-main` reads `origin/main`
+#                   and merges it INTO the run's branch — that direction, and no other.)
+#   release-plz-*   a branch of the release tool's is refused by its prefix (usage).
+#   a tag           no act names one: the tool runs no `git tag`, its one push writes
+#                   `refs/heads/<branch>` in full — never a ref git could read as a tag
+#                   — and is not made at all where a tag answers to the branch's name
+#                   (push-rejected); `refs/tags/...` is refused by the branch model's rule.
+#   a forced push,  in no spelling: the one push is `git push origin
+#   a deletion      <sha>:refs/heads/<branch>` — the vetted commit, the branch it was
+#                   read from — the source scan holds that shape, and `+name`, `:name`,
+#                   `a:b` and a flag are no branch names (usage).
+#   a branch the    EVERY BRANCH AN ACT IS HANDED — --loop, --branch, and the prefixes
+#   model refuses   --rounds and --prefix — is asked of dev/branch-name, the rule CI
+#                   holds every pushed branch to, before the act runs: before any write,
+#                   fetch or push (usage). A rule that cannot be asked is never a pass.
+#
 # Usage — every act prints ONE line of JSON on stdout, whatever it exits with; and every
 # act takes --digest DIR, which makes that line its DIGEST (THE DIGEST, below):
 #
@@ -47,10 +73,11 @@
 #       added D/opening.md on: no commit on L's first-parent line changed a product path
 #       outside a merge — product-path — and every merge there is a round's, its subject
 #       beginning `Merge branch 'P` — foreign-merge. Without an opening the assert does
-#       not run. And, for `test` on an opened run, WHAT THE REMOTE LACKS OF L: every
-#       commit of it changes only D and is no merge — foreign-commit: some task's commit,
-#       which its author pushes, and no stage starts over — and THE PUSH THAT IS OWED IS
-#       MADE, each commit vetted as at every push (unvetted, push-rejected). Where a
+#       not run. And, for `test` on an opened run, WHAT THE REMOTE LACKS OF L — asked of
+#       the remote, never read off a remote-tracking ref (WHAT A PUSH PUBLISHES, below):
+#       every commit of it changes only D and is no merge — foreign-commit: some task's
+#       commit, which its author pushes, and no stage starts over — and THE PUSH THAT IS
+#       OWED IS MADE, as every push is (unvetted, remote-differs, push-rejected). Where a
 #       batch is applied and not committed the push is that record's own, and is left.
 #       --look: AN INVOCATION THAT ONLY LOOKS FINISHES NOTHING — no recover, no settle, no
 #       push — and says what is owed. (It fetches the loop branch, as this read always has.)
@@ -103,14 +130,19 @@
 #       created}.
 #
 #   dev/stabilize-step push --branch B [--run-dir D]
-#       B pushed by name. B is checked out — wrong-branch; the pushed B has no commit
+#       B pushed: THE COMMIT THAT WAS VETTED, BY ITS SHA, into B's ref on the remote, and
+#       nothing later. B is checked out — wrong-branch; the pushed B has no commit
 #       the local one lacks — remote-ahead; EVERY COMMIT THE PUSH WOULD PUBLISH IS VETTED
-#       (the third boundary, below) — unvetted, and nothing is pushed; the remote takes
-#       it — push-rejected — and then stands at the local head — remote-differs. With
-#       --run-dir it is A RECORD'S PUSH: every commit it would publish changes only D and
-#       is no merge — foreign-commit, and nothing is pushed. Asked again, it publishes
-#       nothing and says where the remote stands. Prints {status: ready, branch, head,
-#       remote_head, vetted: the commits it published}.
+#       (the third boundary, and WHAT A PUSH PUBLISHES, below) — unvetted, and nothing is
+#       pushed; the remote and B still stand where the vet saw them — remote-differs,
+#       and nothing is pushed; the remote takes it — push-rejected — and then stands at
+#       the commit that was vetted — remote-differs; and B gained nothing while it was
+#       pushed — remote-differs, the vetted commit published and what landed since
+#       named, unpublished. With --run-dir it is A RECORD'S
+#       PUSH: every commit it would publish changes only D and is no merge —
+#       foreign-commit, and nothing is pushed. Asked again, it publishes nothing and
+#       says where the remote stands. Prints {status: ready, branch, head, remote_head:
+#       the commit that was vetted, vetted: the commits it published}.
 #
 #   dev/stabilize-step land --loop L --branch B --run-dir D [--product PATH]...
 #                      [--log PATH]...
@@ -185,7 +217,11 @@
 #       THE APPLIED BATCH TAKEN BACK, BY THE ACT THAT ASKS GIT FIRST. B is checked out —
 #       wrong-branch — and git's lock does not stand — locked. A batch whose commit is
 #       made is NOT taken back — committed: `dev/stabilize-record discard` reads no git,
-#       and would write every committed table as it was before the batch. Else what a
+#       and would write every committed table as it was before the batch. WHETHER THE
+#       COMMIT IS MADE IS ASKED OF HEAD — every file of the batch is there with the
+#       content the batch wrote — and of nothing the tree holds: a hand that wrote in a
+#       committed table since does not make the batch one that is taken back (the review
+#       of the core for three dangers, F4). Else what a
 #       commit step staged of the record is unstaged, and every file of the batch is as
 #       it was before the batch, or gone where the batch made it; the reports and the
 #       scope stay. With no batch there is nothing to take back, and that is its answer.
@@ -329,7 +365,9 @@
 #              (recorded), or REFUSES it and says whose it is and what leaves it:
 #                wrong-branch    the caller's — before any write, fetch or push
 #                git-lock        the orchestrator's: the tool never removes a lock
-#                altered         the human's: `discard` is named, as a command
+#                altered         the human's: `discard` is named, as a command —
+#                                while no commit holds the batch; after its commit the
+#                                batch is settled, and the file is `dirty`
 #                head-moved      the orchestrator's: the stage is invoked again
 #                unvetted        the human's: a local commit is his to take back
 #                foreign-commit  its author's: `git push origin <branch>`, by name
@@ -358,12 +396,53 @@
 #                         batch's report checks against the disk. A hit: nothing is
 #                         committed, the batch is taken back, the next attempt starts clean.
 #   3. every push         of `push`, `land` and `carry` alike — one helper makes them all:
-#                         every commit no branch of the remote holds yet, whoever made it.
-#                         A hit: nothing is pushed, and it is the human's — the commit is
-#                         local, and rewriting it is his to confirm. The refusal names
-#                         the read that names every commit and place again.
+#                         every commit no branch of the remote holds yet, whoever made it
+#                         — its added lines, AND WHAT IT SAYS: a commit's message is held
+#                         to both scanners, as a file is. A hit: nothing is pushed, and it
+#                         is the human's — the commit is local, and rewriting it is his
+#                         to confirm. The refusal names the read that names every commit
+#                         and place again.
 # A scanner that cannot run is a refusal at each of the three (did-not-run), never a
 # pass. WHAT IS NOT VETTED: a push somebody makes by hand with plain git.
+#
+# WHAT A PUSH PUBLISHES (the review of the core for three dangers, F1, F2 and F6;
+# DECISIONS.md -> 2026-10-07, "The core's script-side tasks, reviewed for three dangers").
+# The tool has ONE push, in one helper, and the acts that reach it are `git-state` (the
+# push a record is owed), `push`, `land` and `carry`. Each of them publishes exactly what
+# was vetted, by four reads around the vet:
+#   the remote is ASKED what it holds — `git ls-remote --heads origin`, at the push — and
+#       that listing, not a ref under refs/remotes/, is what a range leaves out: a
+#       tracking ref says what a fetch once saw, or what a hand wrote, and a range read
+#       off one that the remote does not bear out is empty where it should not be. So
+#       are the commits `git-state` and a record's push hold to being records'
+#       (foreign-commit). A head of the remote whose commit this clone does not hold
+#       leaves nothing out: the range is then longer, never shorter — and where that
+#       makes it the whole history, `git fetch origin` is the human's, and the step is
+#       asked for again.
+#   the commit is read ONCE — `git rev-parse <branch>` — and the vet is of that commit,
+#       by its sha: what the branch gains while the scanners run is no part of it. THE
+#       NAME IS HELD TO THE BRANCH'S OWN REF FIRST (`git rev-parse --symbolic-full-name`):
+#       git reads a short name as a tag before a branch, and a push of a sha is not one
+#       git refuses as ambiguous — so beside a tag of the branch's name no push is made
+#       (push-rejected), as none was while the push was by name and git refused it.
+#   BOTH ARE ASKED AGAIN after the vet: a remote that lists other heads than before, or
+#       a branch that no longer stands at the vetted commit, is refused (remote-differs)
+#       and NOTHING IS PUSHED — the step asked again vets what the remote lacks then.
+#   THE PUSH NAMES THE COMMIT THAT WAS VETTED — `git push origin
+#       <sha>:refs/heads/<branch>` — and never the branch: what git would read of the
+#       branch at that moment is not what it sends. A commit that lands between the
+#       second read of the branch and the push, a window of one process start, is NOT
+#       PUBLISHED. (Until this, the push was by name, and such a commit was published
+#       unvetted and only named afterwards.)
+#   the remote is read back after the push: it stands at the commit that was vetted, or
+#       the act is refused (remote-differs) and says what stands there instead — a
+#       commit past it is another push's, never this one's.
+#   the branch is read once more: where it gained a commit since the vet's last read,
+#       the act is refused (remote-differs) and SAYS WHAT IT DID NOT PUBLISH — the
+#       vetted commit is on the remote, the later ones are named and are not; the step
+#       asked again vets them, and one that is no record's is met by its first read.
+# NOT CLOSED BY ANY PUSH WITHOUT FORCE: the remote is moved forward from where git's own
+# handshake finds it, which nothing here can hold to the position the vet saw.
 #
 # THE DIGEST (the second repair plan of the `test` half, P3 and its task K9; DECISIONS.md ->
 # 2026-10-07, "A line holds what the harness acts on"). Observed on 2026-10-07: a line
@@ -412,6 +491,8 @@
 #       clauses [{clause, status, round, commit, behind, retry}], never_selected,
 #       untriaged {count, why: [{why, count}]}, ledger, blockers, human_list (each how
 #       many), reverify (the keys of the human's list that stand there after a retry),
+#       regression_unknown (the keys of the findings confirmed without anybody knowing
+#       whether each is a regression),
 #       human_clauses, human_stages, retest, unsettled, forbids_close {clauses: [{clause,
 #       status}], no_clauses, findings: how many, candidate}. It grows with the test set
 #       and with nothing else: no brief, no door, no derivation, no ledger row is in it.
@@ -457,7 +538,9 @@
 #
 #    0  the act is done, or the read is printed
 #    2  usage          an unknown act or flag, a missing argument, a name outside its
-#                      grammar — a branch name without a prefix, `main` among them
+#                      grammar — a branch name without a prefix, `main` among them — or
+#                      a branch no step works on: the release tool's, or one the branch
+#                      model's rule (dev/branch-name) refuses; nothing ran
 #    3  wrong-branch   the branch checked out is not the one the act names
 #    4  dirty          the tree holds what the act does not admit
 #    5  remote-ahead   the pushed branch has commits the local one lacks
@@ -470,8 +553,13 @@
 #   12  merge-differs  the merge commit is not the one the act names; nothing is undone
 #   13  pick-stopped   a cherry-pick stopped; it is aborted
 #   14  carry-differs  what was carried is not what the act names; nothing is undone
-#   15  push-rejected  the remote did not take the push
-#   16  remote-differs after the push the remote does not stand at the local head
+#   15  push-rejected  the remote did not take the push — or none was made: the
+#                      branch's name is a tag's too, or another ref's
+#   16  remote-differs the remote, or the branch, does not stand where a push holds it:
+#                      one of them moved while the range was vetted — nothing was pushed
+#                      — or after the push the remote does not stand at the vetted
+#                      commit, or the branch gained a commit while the vetted one was
+#                      pushed — that one is published, and nothing later
 #   17  record         dev/stabilize-record refused, failed or printed no JSON, or its
 #                      journal names an act this tool has no phases for
 #   18  git            a git command failed where the act expects none to
@@ -561,6 +649,11 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
 RECORD = os.path.join(SCRIPT_DIR, "stabilize-record")
 MERGE_LOGS = os.path.join(SCRIPT_DIR, "merge-logs")
+# The branch model's rule (CLAUDE.md -> Branches), asked of every branch an act is handed
+# — and the prefix of the release tool's own branches, which that rule admits and no step
+# works on (the header: WHAT NO ACT REACHES).
+BRANCH_RULE = os.path.join(SCRIPT_DIR, "branch-name")
+RELEASE = "release-plz-"
 # The commands of the held kinds (HOLDS): the gate, the regression set, the probe tool —
 # and this tool itself, whose `build` is one.
 GATE = os.path.join(SCRIPT_DIR, "gate")
@@ -617,7 +710,7 @@ ACTS = (
             {"phase": "applied", "done": "the journal holds the batch, whole: no file of it is still to be placed", "resumes": "dev/stabilize-record recover", "by": "the tool: a batch whose journal was written is put in place, and one killed before its journal leaves nothing — the act is then not open"},
             {"phase": "committed", "done": "every file of the batch is in HEAD as the batch wrote it", "resumes": "dev/stabilize-step record", "by": "the stage: the full gate on the tree first, then the commit step, which is repeatable"},
             {"phase": "settled", "done": "the journal holds no batch", "resumes": "dev/stabilize-record settle", "by": "the tool"},
-            {"phase": "pushed", "done": "the remote's branch stands at the local head", "resumes": "dev/stabilize-step push", "by": "the tool, for the `test` stage's loop branch: every commit of the push vetted first"},
+            {"phase": "pushed", "done": "the remote's branch stands at the local head — as the remote says when it is asked, never as a remote-tracking ref has it", "resumes": "dev/stabilize-step push", "by": "the tool, for the `test` stage's loop branch: every commit of the push vetted first, and the push made only where the remote and the branch still stand where the vet saw them"},
         ],
         "owes": "nothing",
     },
@@ -676,12 +769,12 @@ ARRIVALS = (
     {"state": "stray-temporaries", "act": "record", "phase": "applied", "found": "the record script's own temporaries, which no journal names: a write killed before its journal", "answer": "undone", "word": None, "whose": "the tool's", "leaves": "`dev/stabilize-record recover`, which the act runs: they are removed, and the state is the one before that write"},
     {"state": "applied", "act": "record", "phase": "committed", "found": "the journal holds a batch, every file of it is in the tree as the batch wrote it, and no commit holds it", "answer": "owed", "word": None, "whose": "the stage's", "leaves": "the full gate on the tree, then `dev/stabilize-step record`, which is repeatable; or `dev/stabilize-step discard`, which takes the batch back"},
     {"state": "staged", "act": "record", "phase": "committed", "found": "as `applied`, with paths of the record in the index: a commit step killed after its `git add`, or one whose `git commit` failed", "answer": "owed", "word": None, "whose": "the stage's", "leaves": "as `applied`: the commit step admits its own staged lines, stages the paths again, vets them and commits"},
-    {"state": "altered", "act": "record", "phase": "committed", "found": "a file of the applied batch is no longer what the batch wrote", "answer": "refused", "word": "dirty", "whose": "the human's", "leaves": "it is the human's, because a hand wrote in a table of the record: `dev/stabilize-step discard --branch <branch> --run-dir <run-dir>` takes the batch back — every file of it as it was before the batch, whatever was written since — and the stage invoked again works the next attempt; or the file is put back as the batch wrote it, and the step asked for again"},
+    {"state": "altered", "act": "record", "phase": "committed", "found": "a file of the applied batch is no longer what the batch wrote, and no commit holds the batch: HEAD does not hold every file of it as the batch wrote it", "answer": "refused", "word": "dirty", "whose": "the human's", "leaves": "it is the human's, because a hand wrote in a table of the record: `dev/stabilize-step discard --branch <branch> --run-dir <run-dir>` takes the batch back — every file of it as it was before the batch, whatever was written since — and the stage invoked again works the next attempt; or the file is put back as the batch wrote it, and the step asked for again"},
     {"state": "head-moved", "act": "record", "phase": "committed", "found": "the branch is not at the commit the stage began on (--head): somebody committed while the stage ran", "answer": "refused", "word": "head-moved", "whose": "the orchestrator's", "leaves": "nothing was committed or undone: the batch stays applied. The stage is invoked again: its first read meets the commit — one the remote lacks is its author's to push — and then gates the batch on the tree as it now stands, and commits it there"},
-    {"state": "committed", "act": "record", "phase": "settled", "found": "the journal holds a batch, and every file of it is in HEAD as the batch wrote it: the commit was made, and the batch was not forgotten", "answer": "finished", "word": None, "whose": "the tool's", "leaves": "`dev/stabilize-record settle`, which `git-state` and `record` run; `discard` refuses such a batch"},
+    {"state": "committed", "act": "record", "phase": "settled", "found": "the journal holds a batch, and every file of it is in HEAD as the batch wrote it — asked of HEAD, whatever a hand wrote in the tree since: the commit was made, and the batch was not forgotten", "answer": "finished", "word": None, "whose": "the tool's", "leaves": "`dev/stabilize-record settle`, which `git-state` and `record` run; `discard` refuses such a batch, altered or not. A file of it that a hand changed AFTER the commit is then no file of an open record: the act that settled the batch reads the tree again, and refuses it as a tracked file changed by hand (`dirty`, the human's — `git restore -- <file>` puts back what the commit holds)"},
     {"state": "recorded", "act": "record", "phase": "pushed", "found": "the commit step is asked for again after it was done: no batch, and HEAD is the one commit since the commit the stage began on (--head), which is the commit this step answered with", "answer": "answered", "word": None, "whose": "the tool's", "leaves": "nothing to leave: the step answers again what it answered then, and the push is the next step"},
     {"state": "unpushed", "act": "record", "phase": "pushed", "found": "the loop branch is ahead of its remote by commits that touch only the run's directory: a record that was committed and not pushed", "answer": "finished", "word": None, "whose": "the tool's", "leaves": "the push that is owed, which `git-state` makes for the `test` stage before it answers — every commit of it vetted first; while a batch is applied it is that record's own push"},
-    {"state": "unvetted", "act": "record", "phase": "pushed", "found": "a commit the push would publish is not what dev/stabilize-record would have written", "answer": "refused", "word": "unvetted", "whose": "the human's", "leaves": "nothing is pushed, and it is the human's: the commit is local, and rewriting it or taking it back is his to confirm. `dev/stabilize-record vet --range -- <branch> --not --remotes=origin` names every commit and place again"},
+    {"state": "unvetted", "act": "record", "phase": "pushed", "found": "a commit the push would publish is not what dev/stabilize-record would have written", "answer": "refused", "word": "unvetted", "whose": "the human's", "leaves": "nothing is pushed, and it is the human's: the commit is local, and rewriting it or taking it back is his to confirm. `dev/stabilize-record vet --range -- <branch> --not <what the remote holds>`, which the refusal spells whole, names every commit and place again"},
     {"state": "foreign-commit", "act": "*", "phase": "*", "found": "the loop branch is ahead of its remote by a commit that changes a path outside the run's directory, or by a merge: some task's commit, and no record's", "answer": "refused", "word": "foreign-commit", "whose": "its author's", "leaves": "it is neither the tool's nor the human's: the commit is some task's, behind that task's own gate, and its author — or the orchestrator, for that task — pushes it by name: `git push origin <branch>`. The tool pushes no commit that is not a record's, and no record beside one; the act is then asked for again"},
     {"state": "remote-ahead", "act": "*", "phase": "*", "found": "the pushed branch has commits the local one lacks", "answer": "refused", "word": "remote-ahead", "whose": "the human's", "leaves": "the human reconciles the two; the branch is never pulled, merged or rebased by a step"},
     {"state": "dirty", "act": "*", "phase": "*", "found": "anything else in the tree: a tracked file changed by hand, a staged path that is no open record's, an untracked file that is no pending write of the run", "answer": "refused", "word": "dirty", "whose": "the human's", "leaves": "the human reconciles it; the step is not repeated on a guess"},
@@ -826,15 +919,43 @@ def pushed_is_not_ahead(branch, facts):
     return (heads(listing.out, branch) or [None])[0]
 
 
+# What the remote said it holds, the first time this act asked it: an act is one process,
+# and every range of it is read against ONE answer (remote_holds).
+ASKED = []
+
+
+def remote_holds():
+    """WHAT THE REMOTE HOLDS, ASKED OF THE REMOTE (the header: WHAT A PUSH PUBLISHES): (the
+    listing of its heads, as it printed it; the commits they stand at that this clone holds
+    too, sorted) — asked ONCE per act, so that which commits are no record's and which
+    commits are vetted are read against the same answer; the push asks again, and is not
+    made over another one. Never read off a remote-tracking ref, which says what a fetch
+    once saw — or what a hand wrote there. A head whose commit this clone does not hold is
+    no part of the second: nothing is left out of a range through it, so a range is the
+    longer for it and never the shorter."""
+    if not ASKED:
+        listing = said("ls-remote", "--heads", "origin")
+        stand = sorted({line.split("\t")[0] for line in lines(listing)})
+        ASKED.append((listing, sorted(lines(said("rev-list", "--no-walk", "--ignore-missing", *stand))) if stand else []))
+    return ASKED[0]
+
+
+def lacking(tip, reach):
+    """The range of what the remote lacks of a commit, as `git rev-list` takes it: the
+    commit, and — after `--not` — what the remote holds."""
+    return [tip] + (["--not"] + reach[1] if reach[1] else [])
+
+
 def records_only(branch, run_dir, facts):
-    """Every commit of the branch that no branch of the remote holds yet is A RECORD'S: it
-    changes nothing outside the run's directory, and is no merge. A commit that is not is
-    some task's, behind that task's own gate — the tool pushes no such commit, and no
-    record beside one."""
-    foreign = lines(said("log", "--format=%H", branch, "--not", "--remotes=origin", "--", ".", ":(exclude)" + run_dir))
-    foreign += [merge for merge in lines(said("rev-list", "--merges", branch, "--not", "--remotes=origin")) if merge not in foreign]
+    """Every commit of the branch that no branch of the remote holds — as the remote said
+    when the act asked it — is A RECORD'S: it changes nothing outside the run's
+    directory, and is no merge. A commit that is not is some task's, behind that task's own
+    gate — the tool pushes no such commit, and no record beside one."""
+    lacks = lacking(said("rev-parse", branch), remote_holds())
+    foreign = lines(said("log", "--format=%H", *lacks, "--", ".", ":(exclude)" + run_dir))
+    foreign += [merge for merge in lines(said("rev-list", "--merges", *lacks)) if merge not in foreign]
     if foreign:
-        refuse_as(facts, "foreign-commit", "`%s` is ahead of its remote by %d commit(s) that are no record's — each changes a path outside %s, or is a merge: %s" % (branch, len(foreign), run_dir, ", ".join(foreign)), "`git log --format=%%H %s --not --remotes=origin -- . ':(exclude)%s'` and `git rev-list --merges %s --not --remotes=origin`" % (branch, run_dir, branch), branch=branch)
+        refuse_as(facts, "foreign-commit", "`%s` is ahead of its remote by %d commit(s) that are no record's — each changes a path outside %s, or is a merge: %s" % (branch, len(foreign), run_dir, ", ".join(foreign)), "`git log --format=%%H %s -- . ':(exclude)%s'` and `git rev-list --merges %s` — the branch's commit, less what `git ls-remote --heads origin` listed" % (" ".join(lacks), run_dir, " ".join(lacks)), branch=branch)
 
 
 def vetted(asking, undone):
@@ -873,24 +994,58 @@ def set_aside(run_name, paths, scratch, undone):
 
 
 def push(branch, facts):
-    """The branch pushed by name — once every commit the push would publish is vetted —
-    and the remote read back: the sha it stands at."""
-    unpushed = lines(said("rev-list", "--reverse", branch, "--not", "--remotes=origin"))
+    """THE ONE PUSH OF THE TOOL (the header: WHAT A PUSH PUBLISHES): the branch's commit
+    published once every commit the remote lacks of it is vetted — the remote asked what it
+    holds, the vet made of that commit by its sha, the push made only where the remote
+    and the branch still stand where the vet saw them, AND MADE OF THAT SHA, never of the
+    branch's name. The remote is read back: the sha it stands at is the commit that was
+    vetted; and the branch is read once more: what it gained since is named, unpublished."""
+    # 1. What the remote holds now, and THE COMMIT THIS PUSH PUBLISHES: read once, here.
+    #    THE NAME IS THE BRANCH'S ALONE: git reads a short name as a tag before it reads it
+    #    as a branch, so beside a tag of the same name every read below would be of the
+    #    tag's commit — and a push of a sha, unlike a push by name, is not one git refuses
+    #    as ambiguous.
+    reach = remote_holds()
+    named = said("rev-parse", "--symbolic-full-name", branch)
+    if named != "refs/heads/" + branch:
+        refuse("push-rejected", "`%s` is not the name of that branch alone in this repository — a tag, or another ref, answers to it too — so the commit a push would publish is not known to be the branch's: no push was made" % branch, "`git rev-parse --symbolic-full-name %s` printed `%s`, not `refs/heads/%s`" % (branch, named or "(nothing: the name is ambiguous)", branch), "the human looks at `git for-each-ref` for the other ref of that name — a tag is his to delete, never a step's; then the step is asked for again. Nothing was vetted, and nothing reached the remote")
+    tip = said("rev-parse", branch)
+    lacks = lacking(tip, reach)
+    # 2. Every commit of it the remote lacks, vetted — the range by the commit's sha, so
+    #    that what is vetted is that commit and nothing the branch gains meanwhile.
+    unpushed = lines(said("rev-list", "--reverse", *lacks))
     if unpushed:
-        vet = vetted(run([RECORD, "vet", "--range", "--", branch, "--not", "--remotes=origin"]), "nothing was pushed")
+        vet = vetted(run([RECORD, "vet", "--range", "--"] + lacks), "nothing was pushed")
         if vet.get("ok") is not True:
             facts.update(vet=vet)
             note(facts, "unvetted")
-            refuse("unvetted", "`%s` would publish what dev/stabilize-record would not have written, in %d of the %d commit(s) the remote does not hold yet: %s" % (branch, len({found.get("commit") for found in vet.get("refused") or []}), len(unpushed), places(vet.get("refused") or [])), "`dev/stabilize-record vet --range` answered: %s" % json.dumps(vet.get("refused")), "nothing was pushed, and it is the human's: the commit is local, and rewriting it or taking it back is his to confirm — a hit is fixed before the push, never after (implementation/public-hygiene.md). `dev/stabilize-record vet --range -- %s --not --remotes=origin` names every commit and place again, pushes nothing, and answers ok once nothing unvetted is left; then this step is asked for again" % branch)
+            refuse("unvetted", "`%s` would publish what dev/stabilize-record would not have written, in %d of the %d commit(s) the remote does not hold yet: %s" % (branch, len({found.get("commit") for found in vet.get("refused") or []}), len(unpushed), places(vet.get("refused") or [])), "`dev/stabilize-record vet --range` answered: %s" % json.dumps(vet.get("refused")), "nothing was pushed, and it is the human's: the commit is local, and rewriting it or taking it back is his to confirm — a hit is fixed before the push, never after (implementation/public-hygiene.md). `dev/stabilize-record vet --range -- %s` names every commit and place again — the branch, less what the remote held when this step asked it — pushes nothing, and answers ok once nothing unvetted is left; then this step is asked for again" % " ".join([branch] + lacks[1:]))
     facts.update(vetted=unpushed)
-    pushing = git("push", "origin", branch)
+    # 3. Asked again, both: the remote holds what it held when the range was read, and the
+    #    branch stands at the commit that was vetted. Else nothing is pushed.
+    then = "nothing was pushed, and nothing is lost: the step is asked for again, and vets what the remote lacks then — a commit that landed meanwhile is met by its first read"
+    if said("ls-remote", "--heads", "origin") != reach[0]:
+        refuse("remote-differs", "the remote moved while `%s` was vetted: it no longer holds what it held when the range was read, so what a push would publish now is not the range that was vetted" % branch, "`git ls-remote --heads origin` printed another listing than before the vet", then)
+    moved = said("rev-parse", branch)
+    if moved != tip:
+        refuse("remote-differs", "`%s` moved while it was vetted: the vet was of %s, and the branch stands at %s — a commit landed meanwhile, and nothing vetted it" % (branch, tip, moved), "`git rev-parse %s` printed %s before the vet and %s after it" % (branch, tip, moved), then)
+    # 4. The push — OF THE COMMIT THAT WAS VETTED, by its sha, into the branch's own ref:
+    #    whatever the branch gained since the last read of it is no part of what git sends.
+    #    And the remote read back: it stands at that commit.
+    pushing = git("push", "origin", tip + ":refs/heads/" + branch)
     if pushing.code != 0:
         refuse("push-rejected", "the remote did not take `%s`" % branch, pushing.shown(), "the human looks at the remote; a push is never forced")
     listed = said("ls-remote", "--exit-code", "--heads", "origin", branch)
-    local = said("rev-parse", branch)
-    if heads(listed, branch) != [local]:
-        refuse("remote-differs", "after the push origin's `%s` does not stand at the local head %s" % (branch, local), "`git ls-remote` printed: %s" % (listed or "(nothing)"))
-    facts["remote_head"] = local
+    if heads(listed, branch) != [tip]:
+        refuse("remote-differs", "after the push origin's `%s` does not stand at the commit that was vetted, %s" % (branch, tip), "`git ls-remote` printed: %s" % (listed or "(nothing)"), "the human looks at the remote: this step published %s and nothing later, so a commit past it that stands there was pushed by somebody else, since — it is named by `git log %s..origin/%s` after a fetch, and what it holds is his to judge (implementation/public-hygiene.md)" % (tip, tip, branch))
+    facts["remote_head"] = tip
+    # 5. The branch, read once more: a commit that landed on it since the vet's last read
+    #    is NOT PUBLISHED — the push was of a sha — and the act says so, by name.
+    stands = said("rev-parse", branch)
+    if stands != tip:
+        since = tip + ".." + stands
+        landed = lines(said("rev-list", "--reverse", since))
+        refuse("remote-differs", "`%s` moved while it was pushed: the commit that was vetted, %s, is published, and nothing later — the branch stands at %s, and %d commit(s) of it are NOT on the remote: %s" % (branch, tip, stands, len(landed), ", ".join(landed) or "(none: the branch was moved back)"), "`git rev-list --reverse %s`, after `git push origin %s:refs/heads/%s`" % (since, tip, branch), "nothing unvetted was published, and nothing is lost: the step is asked for again, and vets what the remote lacks then — a commit that landed meanwhile is met by its first read")
 
 
 def pending_of(run_name):
@@ -955,18 +1110,37 @@ def admitted(status, pending, facts):
     return untracked, held, staged
 
 
+def in_head(batch):
+    """THE BATCH'S COMMIT IS MADE, asked of git and of nothing the tree holds: every file of
+    the batch is in HEAD with the content the batch wrote — the sha256 the journal holds
+    of it. What a hand wrote in the tree since changes nothing of that. (A table of the
+    record script is UTF-8 text with no carriage return, so what git prints of one is its
+    bytes; a file in HEAD that is anything else is not what the batch wrote.)"""
+    for path, digest in batch["files"].items():
+        held = git("show", "HEAD:" + path)
+        if held.code != 0 or hashlib.sha256(held.out.encode("utf-8")).hexdigest() != digest:
+            return False
+    return True
+
+
 def standing(pending, facts, **names):
     """WHERE THE OPEN ACT STANDS, from git and the journal and never from a flag: (the
     written-once files pending, the batch's files pending, the arrival state). The state is
     None with no batch; `applied`, or `staged` where paths of the record are in the index;
     `committed` where every file of the batch is in HEAD as the batch wrote it — none of
     them differs from HEAD, and none from what the batch wrote. A file of the batch that
-    is no longer what the batch wrote is the human's (`altered`)."""
+    is no longer what the batch wrote is the human's (`altered`) WHILE NO COMMIT HOLDS THE
+    BATCH; where HEAD holds it the commit is made — `committed`, whatever a hand wrote in
+    the tree since — and the file is, once the batch is settled, a tracked file changed by
+    hand like any other: the tree is read again by whoever settles it."""
     batch = pending.get("batch")
     if batch and not any(act["act"] == batch.get("act") and act["phases"] for act in ACTS):
         refuse("record", "the journal names an open act this tool has no phases for: %s" % json.dumps(batch.get("act")), "`dev/stabilize-record pending`")
     if batch and batch["altered"]:
-        refuse_as(facts, "altered", "a file of the applied batch is no longer what the batch wrote: %s" % ", ".join(batch["altered"]), "`dev/stabilize-record pending` names it as altered: its content is not the one the journal holds a hash of", **names)
+        if in_head(batch):
+            note(facts, "altered")
+            return [], [], "committed"
+        refuse_as(facts, "altered", "a file of the applied batch is no longer what the batch wrote: %s" % ", ".join(batch["altered"]), "`dev/stabilize-record pending` names it as altered: its content is not the one the journal holds a hash of, and HEAD does not hold the batch", **names)
     untracked, held, staged = admitted(said("status", "--porcelain", "--untracked-files=all"), pending, facts)
     return untracked, held, (("staged" if staged else "applied") if held else "committed") if batch else None
 
@@ -1058,6 +1232,9 @@ def git_state(args, facts):
     elif state == "committed":
         settled(run_name, "the commit of the applied batch is made")
         note(facts, state, "finished")
+        # The tree, read again without the batch: what a hand wrote in a committed table
+        # is a tracked file changed by hand, and no pending write of the run.
+        untracked, held, _ = standing(pending_of(run_name), facts, branch=current, run_dir=args.run_dir)
     elif state:
         note(facts, state, "owed")
     # 5. The pushed loop branch.
@@ -1389,9 +1566,12 @@ def discard(args, facts):
         # 2. Where the batch stands, asked of git: one whose commit is made is not taken back.
         status = [(line[:2], line[3:]) for line in lines(said("status", "--porcelain", "--untracked-files=all"))]
         ours = list(batch["files"]) + (pending.get("once") or [])
-        if not batch["altered"] and not any(path in batch["files"] for code, path in status):
+        if in_head(batch) or not any(path in batch["files"] for code, path in status):
+            # ASKED OF HEAD, whatever the tree holds: a batch whose commit is made is not
+            # taken back because a hand wrote in one of its tables since — and one of
+            # which the tree holds nothing that HEAD does not has nothing to take back.
             note(facts, "committed")
-            refuse("committed", "the applied batch of run %s is in a commit — every file of it is in HEAD as the batch wrote it: it is not taken back" % run_name, "`git status --porcelain --untracked-files=all` names no file of the batch, and `dev/stabilize-record pending` none as altered", "nothing was written. `dev/stabilize-step git-state` settles a batch whose commit is made, and says what else is owed; what a commit holds is taken back by a commit, which is the human's to make")
+            refuse("committed", "the applied batch of run %s is in a commit — %s: it is not taken back" % (run_name, "every file of it is in HEAD as the batch wrote it%s" % (", and a hand changed %s in the tree since" % ", ".join(batch["altered"]) if batch["altered"] else "") if in_head(batch) else "no file of it differs from HEAD"), "`git show HEAD:<file>` of each file of the batch, held to the hash the journal holds of it; `git status --porcelain --untracked-files=all`", "nothing was written. `dev/stabilize-step git-state` settles a batch whose commit is made, and says what else is owed — a file a hand changed since is then a tracked file changed by hand, the human's; what a commit holds is taken back by a commit, which is the human's to make")
         paths = sorted(path for code, path in status if code[0] in "AM" and path in ours)
         note(facts, "altered" if batch["altered"] else "staged" if paths else "applied")
         # 3. What a commit step staged of it, unstaged; then every file as before the batch.
@@ -1868,6 +2048,7 @@ STATE = {
     "blockers": "count",
     "human_list": "count",
     "reverify": ["id", 200],
+    "regression_unknown": ["id", 200],
     "human_clauses": [{"clause": "id", "why": "word"}, 50],
     "human_stages": [{"stage": "word", "round": "count", "cycle": "count?", "at": "word", "attempt": "count", "attempts": "count", "why": "word"}, 10],
     "retest": ["id", 50],
@@ -1943,7 +2124,7 @@ def state_brief(document):
             bare[within] = bare.get(within, 0) + 1
     whys = [entry["why"] for entry in document["untriaged"]]
     forbids = document["forbids_close"]
-    brief = {name: document[name] for name in ("run", "opened", "next", "not_ready", "stop", "round", "fix_rounds", "candidate", "facts", "never_selected", "human_clauses", "human_stages", "retest", "unsettled")}
+    brief = {name: document[name] for name in ("run", "opened", "next", "not_ready", "stop", "round", "fix_rounds", "candidate", "facts", "never_selected", "human_clauses", "human_stages", "retest", "unsettled", "regression_unknown")}
     brief.update(
         position={stage: placed(at) for stage, at in document["position"].items()},
         rounds=[{"round": held["round"], "candidate": held["facts"]["candidate"], "cycles": held["facts"]["cycles"]} for held in document["rounds"]],
@@ -2107,6 +2288,26 @@ def grammar(pattern, what):
     return taken
 
 
+def in_the_model(args):
+    """EVERY BRANCH AN ACT IS HANDED IS ONE A STEP MAY WORK ON (the header: WHAT NO ACT
+    REACHES), asked once the arguments are parsed and BEFORE THE ACT RUNS — so before any
+    write, fetch or push: it is no branch of the release tool's, and dev/branch-name — the
+    branch model's own rule, which CI holds every pushed branch to — accepts it. A rule
+    that cannot be asked is never a pass."""
+    for flag in ("loop", "branch", "rounds", "prefix"):
+        name = getattr(args, flag, None)
+        if name is None:
+            continue
+        then = "the harness mints every branch of a run, in the branch model; the act is asked for again with one"
+        if name.startswith(RELEASE):
+            refuse("usage", "argument --%s: `%s` is a branch of the release tool's (`%s…`), and no step works on one, or pushes one — see dev/stabilize-step --help" % (flag, name, RELEASE), "", then)
+        if not os.path.isfile(BRANCH_RULE):
+            refuse("usage", "argument --%s: the branch model's rule, dev/branch-name, is not beside this tool, so `%s` cannot be held to it — and a rule that cannot be asked is never a pass" % (flag, name), "", "dev/branch-name lies beside dev/stabilize-step wherever that tool is run from")
+        asked = run([BRANCH_RULE, name])
+        if asked.code != 0:
+            refuse("usage", "argument --%s: `%s` is no branch of the branch model — dev/branch-name %s — and no step works on, or pushes, a branch that rule refuses; see dev/stabilize-step --help" % (flag, name, "refuses it" if asked.code == 1 else "could not be asked (it exited %d), which is never a pass" % asked.code), asked.shown(), then)
+
+
 def path_in_repository(value):
     if not value or not all(SEGMENT.fullmatch(part) for part in value.split("/")):
         raise argparse.ArgumentTypeError("%s is not a path inside the repository, of plain segments" % json.dumps(value))
@@ -2257,6 +2458,7 @@ def main(argv):
             beneath(named, "lines")
             kept = named
         args = arguments(argv)
+        in_the_model(args)
         args.does(args, facts)
         print(printed())
         return 0

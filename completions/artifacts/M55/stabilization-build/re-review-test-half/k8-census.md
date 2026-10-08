@@ -98,7 +98,7 @@
 | | Finding | Where it went |
 |---|---|---|
 | `R-H1` | the state document relayed whole — observed: never whole | closed `c2169e19`, `a99b7639`; an agent's own return at size: row `wf-return-size` (12) |
-| `R-H2` | one field left out halts the stage | closed `106c5179` for the hash, `6d30208f` for the verifier's definition; rows `wf-x1b` (12), `wf-o2` (C) |
+| `R-H2` | one field left out halts the stage | closed `106c5179` for the hash, `6d30208f` for the verifier's definition, and — since the commit that finished `X1b`, the third after the merge `6e78975b` — for the verifier's two cells; row `wf-o2` (C) |
 | `R-M1` | after a rejected push the same invocation pushes nothing | closed `b34fb073`, `a99b7639`; the `fix` stage's four sites: row `wf-runfix` (F) |
 | `R-M2` | two dead reporters halt the stage | row `wf-r-m2` (12); bound 11 |
 | `R-M3` | the stood-on reporters are checked late | row `wf-r-m3` (12); bound 11 |
@@ -135,7 +135,7 @@
 | `L8` | definitions still name a `probe` step | = `R-L9` |
 | cells·1 | a second preflight that returned and left no report halts | said, in the table; row `wf-r-m3` (12) |
 | cells·2 | an absent hash halts | closed `106c5179` |
-| cells·3 | a confirmed verdict without its regression fact halts | row `wf-x1b` (12); it is a row of the stated list |
+| cells·3 | a confirmed verdict without its regression fact halts | closed — the commit that finished `X1b`, the third after the merge `6e78975b`: recorded as confirmed with the fact unknown, and the row left the stated list *(was: row `wf-x1b` (12))* |
 | cells·4 | the second death of an invocation halts | = `R-M2` |
 | cells·5 | an agent that returns twice has no cell | none — the runtime hands one return, and its two shadows are refused where they could occur |
 | sim·1 | never taken: a relay that fails | closed `a99b7639` |
@@ -145,7 +145,7 @@
 | sim·5 | a report nobody launched, inside a stage | row `wf-b4` (12) |
 | sim·6 | a record whose executor halts | row `wf-b4` (12) |
 | sim·7 | a preflight that returns the wrong thing | closed `a182c92e` — a binary's facts are the tool's, and the preflight returns none |
-| sim·8 | triage's counts, a key that is no slug, a verifier without its fact, an advocate's hash | closed `106c5179` for every hash; rows `wf-x1b`, `wf-b4` (12) for the rest |
+| sim·8 | triage's counts, a key that is no slug, a verifier without its fact, an advocate's hash | closed `106c5179` for every hash, and — since the commit that finished `X1b`, the third after the merge `6e78975b` — for the verifier's fact; row `wf-b4` (12) for the rest |
 | sim·9 | a second round | canary — no stage of any suite has a round before it; bound 22 |
 | sim·10 | an unknown kind, a name that cannot be made, `stopAfter` at `instruments` and `triage` | row `wf-b4` (12) for the name; the others not examined since |
 | sim·11 | a scripted reporter always returns the hash; every relayed line is small | closed `1d21024e`, `106c5179`, `a99b7639` |
@@ -217,7 +217,7 @@
 
 | | Finding | Where it went |
 |---|---|---|
-| probe | a workflow invoked by its name runs the copy the session loaded first | said — *Invoking the harness*; bound 9; row `wf-by-name` (C, L) |
+| probe | a workflow invoked by its name runs the copy the session loaded first | said — *Invoking the harness*; bound 9; row `wf-by-name` (L) — the header's half closed by the commit that finished `X1b`, the third after the merge `6e78975b` |
 | ruling | a step of a stage asked the human for a permission | closed `bbe873eb`, `a182c92e`, `083d4745`, `6d30208f` in what a prompt names; rows `wf-o5`, `wf-probes-again` (C) for what shows it |
 | `SP-1` | a failure that is no refusal prints a traceback | row `wf-sp` (L) |
 | `SP-2` | only the scratch root is resolved | closed `8c0513e5`, `bbe873eb` for the class; the probe tool itself: row `wf-sp` (L) |
@@ -240,7 +240,7 @@
 | `K0`·4 | a hold killed and not reaped reads as `running` | row `wf-step-edges` (L) |
 | `K0`·5 | the durations of `relay` and `payload` are not measured | said — the probes' table says *not measured* |
 | `K1`·1 | a push made by hand | bound 4 |
-| `K1`·2 | what a push would publish is read off the remote-tracking refs | row `wf-step-edges` (L) |
+| `K1`·2 | what a push would publish is read off the remote-tracking refs | closed `4853016e` — the focused review's `F2`: it is asked of the remote *(was: row `wf-step-edges` (L))* |
 | `K1`·3 | a file that changes and changes back | row `wf-step-edges` (L) |
 | `K1`·4 | setting aside an earlier attempt's only file lowers the attempt | row `wf-step-edges` (L) |
 | `K1`·5 | four harness edits; `discard` does not ask git | closed `a99b7639`, `b34fb073` |
@@ -271,14 +271,14 @@
 | `K10`·3 | a dead job's command may run on; two gates contend; a work directory stays | bound 19; row `wf-step-edges` (L) |
 | `K10`·4 | a held gate needs an opened run; five void reasons are not recorded lines; four error paths have no arm; a range's vet holds a verdict to its name | row `wf-step-edges` (L) |
 | `K10`·5 | `item-set` can change a held kind; a caller can compose a verdict's file; `state --scratch` | row `wf-writers` (F) |
-| `K3`·1 | a check that was void in its round is not run again inside it | bound 2; rows `wf-held-void` (12), `wf-m8` (F) |
+| `K3`·1 | a check that was void in its round is not run again inside it | bound 2; row `wf-m8` (F) — a held gate is void by a word there since the commit that finished `X1b`, the third after the merge `6e78975b` |
 | `K3`·2 | whether a real agent runs the read its prompt names | canary; bound 7 |
 | `K3`·3 | five sentences of five definitions | closed `083d4745` |
 | `K3`·4 | the executor's `refused` is an agent's reading; the probe tool's lines are no digests | row `wf-step-edges` (L) |
 | `K3`·5 | a red check's row no longer names its first door | row `wf-keys` (12) |
 | `K3`·6 | what a stage tells an agent to run | closed `a182c92e` |
 | `K3`·7 | the `fix` stage is not converted | row `wf-runfix` (F) |
-| `K11`·1 | the record script's void for a held check; a dead held check uncounted | row `wf-held-void` (12); bound 19 |
+| `K11`·1 | the record script's void for a held check; a dead held check uncounted | closed `afcde397` for the record script, the commit that finished `X1b`, the third after the merge `6e78975b` for the harness: void by a word, a counted run; bound 19 for the command that may run on *(was: row `wf-held-void` (12))* |
 | `K11`·2 | a stale name and a dead start at once; no arm makes the tool lie about a build; a wait's second lap | row `wf-step-edges` (L) |
 | `K11`·3 | six definitions grant no tool that writes a file | closed `6d30208f` |
 | `K11`·4 | the cross-model pass, a proposal's build and a role's own craft can meet a prompt | bound 8 |
@@ -286,7 +286,7 @@
 | `K11`·6 | the definitions and the settings | closed `083d4745`, `6d30208f` for the definitions; row `wf-o5` (C) for the settings |
 | `O7`·1 | whether the file tool's write under a scratch root asks for a permission | row `wf-probes-again` (C) |
 | `O7`·2 | no fence holds a definition's wording to its prompt | row `wf-defs-fence` (12) |
-| `X1`·1 | `X1b`, and a stand-in that leaves out a field beneath an object | row `wf-x1b` (12) |
+| `X1`·1 | `X1b`, and a stand-in that leaves out a field beneath an object | closed — the commit that finished `X1b`, the third after the merge `6e78975b`: the two cells are `unknown`, each with its arm, and `omits` takes a dotted path *(was: row `wf-x1b` (12))* |
 | `X1`·2 | the definitions' halves: a reviewer's hash, a verifier's | row `wf-o2` (C); closed `6d30208f` for the verifier |
 | `X1`·3 | a name that cannot be made halts after the held checks; findings still live in returns | row `wf-b4` (12) |
 | `X1`·4 | a verifier's `contested` left out reads as not contested | bound 23 |
@@ -309,7 +309,7 @@
 
 **§4, the orchestrating session's steps:** `O1` row `wf-r-m5` · `O2` row `wf-o2` · `O4` row `wf-r-l9` · `O5` row `wf-o5` · `O6` and `O7` closed `083d4745`, `6d30208f` · the relay probe again, closed · the two probes again, row `wf-probes-again` · the bounds, put to the human: the workflow doc's list · the canary: row `wf-canary`. **The three optional tasks** `X3`, `X4`, `X5` are not built: rows `wf-r-m2`, `wf-r-m4`, `wf-r-m3`.
 
-**The focused review of the core's diff** (`F1` to `F8`) is on another branch and is one row, `wf-core-review`, which that branch's merge discharges. It is not counted here.
+**The focused review of the core's diff** (`F1` to `F8`) is on another branch and is one row, `wf-core-review`, which that branch's merge discharges. It is not counted here. **[Discharged 2026-10-08: the merge was made on that branch (`6e78975b`); its ledger is [the build's record](../README.md) → *The core's script-side tasks, reviewed for three dangers*. What the review left open is four rows added by key — `wf-held-gate-tree` (12), `wf-attributes` (L, the human's), `wf-ci-gitleaks` (L, the human's), `wf-flaky-copy` (L) — and is still not counted here.]**
 
 ## The totals
 
@@ -317,8 +317,8 @@
 
 | | Lines |
 |---|---|
-| closed by a commit | 90 |
-| a row | 79 |
+| closed by a commit | 94 |
+| a row | 75 |
 | a declared bound | 23 |
 | said — a sentence of the workflow doc, true since this task | 18 |
 | canary | 10 |
@@ -326,13 +326,13 @@
 | the human's | 2 |
 | the same as another line (`=`) | 7 |
 
-*A line that is closed in part and has a row for the rest is counted once, by the first word of its last cell; the row is written all the same. The count was made by a script over the six tables, not by hand: 90 + 79 + 23 + 18 + 10 + 16 + 2 + 7 = 245.*
+*A line that is closed in part and has a row for the rest is counted once, by the first word of its last cell; the row is written all the same. The count was made by a script over the six tables, not by hand: 94 + 75 + 23 + 18 + 10 + 16 + 2 + 7 = 245.* **[As written on 2026-10-08 at `6d30208f`: 90 closed and 79 rows. Four lines moved from *row* to *closed* with the integration of the two branches that day — cells·3, `K1`·2, `K11`·1 and `X1`·1, each saying what it was — counted again by the first word of each last cell.]**
 
-**The rows, by due point** — thirty-seven keys, the older row that `wf-r-l9` is a note on among them, and `wf-core-review` too: before a stage runs with real agents, **eight** (`wf-core-review`, `wf-o5`, `wf-probes-again`, `wf-canary`, `wf-r-m5`, `wf-o2`, `wf-by-name`, `wf-r-l9`); between rounds 1 and 2, **thirteen** (`wf-defs-fence`, `wf-b4`, `wf-r-m2`, `wf-r-m3`, `wf-r-m4`, `wf-x1b`, `wf-held-void`, `wf-r8`, `wf-r-m8`, `wf-return-size`, `wf-never-selected`, `wf-keys`, `wf-regression-clone`); the first stop, **three** (`wf-t11`, `wf-gate-cost`, `wf-test-leaks`); with the `fix` half's repair, **eight** (`wf-fix-acts`, `wf-f2`, `wf-r10`, `wf-writers`, `wf-r-m6`, `wf-runfix`, `wf-fix-half`, `wf-m8`); a later release's run, **five** (`wf-declared-later`, `wf-step-edges`, `wf-sp`, `wf-canary-large`, `wf-r-l2` — the last sooner if the canary or round 1 shows it).
+**The rows, by due point** — thirty-eight keys since the integration of 2026-10-08, the older row that `wf-r-l9` is a note on among them (thirty-seven as first written: `wf-core-review`, `wf-x1b` and `wf-held-void` are discharged, `wf-by-name` moved to its guard's due point, and four keys were added for what the focused review left open): before a stage runs with real agents, **six** (`wf-o5`, `wf-probes-again`, `wf-canary`, `wf-r-m5`, `wf-o2`, `wf-r-l9`); between rounds 1 and 2, **twelve** (`wf-defs-fence`, `wf-b4`, `wf-r-m2`, `wf-r-m3`, `wf-r-m4`, `wf-r8`, `wf-r-m8`, `wf-return-size`, `wf-never-selected`, `wf-keys`, `wf-regression-clone`, `wf-held-gate-tree`); the first stop, **three** (`wf-t11`, `wf-gate-cost`, `wf-test-leaks`); with the `fix` half's repair, **eight** (`wf-fix-acts`, `wf-f2`, `wf-r10`, `wf-writers`, `wf-r-m6`, `wf-runfix`, `wf-fix-half`, `wf-m8`); a later release's run, **nine** (`wf-declared-later`, `wf-step-edges`, `wf-sp`, `wf-canary-large`, `wf-r-l2` — the last sooner if the canary or round 1 shows it — `wf-by-name`'s guard, and `wf-attributes`, `wf-ci-gitleaks` and `wf-flaky-copy`, each due with the next change to the file it names).
 
 ## What this task did not verify
 
 - **No command was driven.** Every *closed* above rests on the closing commit's own message and its `DECISIONS.md` entry — red first, its mutants, the reviews' blocks run again — and on this task's reading of the code at `6d30208f` where the workflow doc states behaviour. Nothing was re-run.
-- **The scripts' and the harness's headers were not edited** — they are not this task's files — and two of their sentences are known stale: the harness's two usage lines invoke by name (`wf-by-name`), and the canary's header says the committed settings carry the allow rules (`wf-o5`). `R15`'s first bullet, two sentences of the record script's header, was not re-read.
+- **The scripts' and the harness's headers were not edited** — they are not this task's files — and two of their sentences are known stale: the harness's two usage lines invoke by name (`wf-by-name`), and the canary's header says the committed settings carry the allow rules (`wf-o5`). **[Both corrected 2026-10-08, by the commit that finished `X1b`.]** `R15`'s first bullet, two sentences of the record script's header, was not re-read.
 - **Three numbers are from the orchestrator's brief and from no committed record:** a gate's slow tier of 1,678 s, that the step suite's stand-in leaks polling processes, and the count of the focused review's findings.
 - **The simulation's arms were searched, not read**, for the two roads this task says no arm scripts — a call after the breaker tripped, and a second triage pass.

@@ -206,10 +206,12 @@
 //   independent drive           stays unverified, and the proposal of a case argued on a
 //                               binary nobody asserted is not driven.
 //   a verifier, `confirmed`     no `regression`, or no hash of the previous release's binary
-//                               (`ran_on.previous`): THE STAGE STILL HALTS — the two cells
-//                               this script cannot turn alone. What they are owed is the
-//                               verdict recorded as confirmed with its regression fact
-//                               UNKNOWN, which the record script does not take yet.
+//                               (`ran_on.previous`) — or one that is another: THE VERDICT
+//                               STANDS, AND ITS REGRESSION FACT IS UNKNOWN (`regressionOf`).
+//                               The record takes `confirmed` with the field ABSENT — never
+//                               `false` for a fact nobody established, and never an
+//                               unverified finding — and the state names the finding
+//                               (`regression_unknown`), which every return counts.
 // AND A HASH THAT CAME BACK AND IS NOT THE BINARY'S IS THE SAME CELL as one that did not come
 // back — a step's item void, a finding unverified, a fork not on record — with both hashes in
 // the reason, and the return naming the reporter (`unasserted`). Until this task it halted
@@ -227,8 +229,7 @@
 // made (`names`) · the report check, unread or naming a file nobody launched
 // (`report-check`) · the round's scope set aside (`scope-aside`) · a reporter the stage
 // stands on that left no report (`stood-on`) · ANY ending of triage but its grades with its
-// report (`triage`) · a confirmed verdict without its regression fact or the previous
-// binary's hash (`regression-fact`, until the cells above are turned) · the record step
+// report (`triage`) · the record step
 // (`record`), its push (`push`), and the state read back after it (`read-back`) — these
 // three with the batch applied or the record committed, and nothing lost. Nothing else
 // halts there: a list that grows is a row added, or the fence is red.
@@ -280,7 +281,7 @@
 //                               commit is taken back. Refused `foreign-commit`: its author's.
 //   a held command (`hold`: one step starts it, one asks after it; read by `heldOf`). WHAT
 //   A STAGE HOLDS, AND WHICH ENDS IT TAKES, is one table (HELD_TAKES); every other end is a
-//   HALT that names the job — but for a held check, which then has no result:
+//   HALT that names the job — but for a held check, which is then VOID BY A WORD:
 //                    green        red          void         dead         running | unread
 //     a build        the binary:  HALT         HALT         HALT         HALT — the job
 //                    path, hash,  (`build`)                              is named, and
@@ -289,12 +290,13 @@
 //     the candidate's a fact; the  a fact; the  HALT         HALT        is over; the next
 //       gate         file is on   red is on    (`gate`): no record       attempt starts
 //                    record       record       could be held to it      its own
-//     a held check   ITS RESULT IS THE FILE THE TOOL KEPT   NO RESULT: the stage goes on
-//                    ITS VERDICT IN, and no word: red is    and records; the state reads
-//                    filed as a finding by the record       the check as not run and asks
-//                    script, void is a void run with `why`  for it again; the return names it
+//     a held check   ITS RESULT IS THE FILE THE TOOL KEPT   VOID BY A WORD (`heldVoid`):
+//                    ITS VERDICT IN, and no word: red is    the stage goes on and records
+//                    filed as a finding by the record       it void, a run that counts; the
+//                    script, void is a void run with `why`  state asks for its re-run where
+//                                                           it owes one; the return names it
 //     a held gate    answered from the candidate's own gate, which is not run twice; in a
-//       of the set   re-run NOT RUN — it reads the tree — and it has no result (below)
+//       of the set   re-run NOT RUN — it reads the tree — and it is void by a word (below)
 //     a record's     the ONE commit step, handed the file   HALT (`record`): nothing is
 //       gate         the tool kept the output in, and held  committed, THE BATCH STAYS
 //                    to the candidate's gate there          APPLIED, and the next
@@ -348,11 +350,9 @@
 // such a round ends at `rule`, not `close`. A HELD CHECK THAT NAMES ITS COMMITS IS WHERE
 // THAT ENDS: the regression set is started with the two commits it compares and is held
 // again in a re-run, on the round's candidate. A HELD GATE IS NOT: it reads the working
-// tree, so it is not held again inside its round (`offTreeHeld`) — and because the record
-// script takes a held check's result from the tool's verdict file and from no word, a
-// re-run can record nothing for it: `next` stays `retest` for that clause, and a re-run in
-// which nothing else is due is refused before any agent runs. What ends that is the
-// record script's: a void, by a caller's word, for a held check that did not run.
+// tree, so it is not held again inside its round — it is recorded VOID BY A WORD
+// (`off-tree`), the one word the record script takes of a held check: a run that counts,
+// so `next` leaves `retest` and the clause is the human's after it, as after a check's.
 //
 // THE LABELS. The contracts of the agent definitions bind on lines of the prompt — LABELS,
 // below. Each is spelled here exactly as the definitions spell it, and
@@ -414,8 +414,11 @@
 // A PROBE'S AGENTS ARE MEANT TO FAIL: how each try of a watched call ended is the answer, so
 // the retries are counted, and the breaker two exhausted calls trip is put back.
 //
-// Usage:  Workflow({ name: 'stabilize', args: { stage: 'test', run: '<run>', scratch: '<dir>' } })
-//         Workflow({ name: 'stabilize', args: { probe: 'relay', scratch: '<dir>' } })
+// Usage — BY THE SCRIPT'S PATH, NEVER BY ITS NAME: a session loads a workflow it invokes by
+// name once and runs that copy for as long as it lives, after the file is edited too
+// (observed 2026-10-07; implementation/stabilization-workflow.md -> Invoking the harness):
+//         Workflow({ scriptPath: '<the repository's root>/.claude/workflows/stabilize.js', args: { stage: 'test', run: '<run>', scratch: '<dir>' } })
+//         Workflow({ scriptPath: '<the repository's root>/.claude/workflows/stabilize.js', args: { probe: 'relay', scratch: '<dir>' } })
 //   stage     — REQUIRED: 'test' or 'fix'.
 //   run       — REQUIRED: the run's slug. Its directory is completions/artifacts/<run>/ and
 //               its branches are named from it (`branchName`).
@@ -618,8 +621,8 @@ const STEP_REFUSALS = {
   'merge-differs': { whose: 'the human\'s', leaves: 'the merge commit is not the merge that was asked for — its parents, its tree or what it moved: nothing was undone' },
   'pick-stopped': { whose: 'the human\'s', leaves: 'a cherry-pick stopped, and was aborted' },
   'carry-differs': { whose: 'the human\'s', leaves: 'what was carried over is not exactly the commits named: nothing was undone' },
-  'push-rejected': { whose: 'the orchestrator\'s', leaves: 'the remote did not take the push: nothing is lost — the commit is local — and the push is owed' },
-  'remote-differs': { whose: 'the orchestrator\'s', leaves: 'after the push the remote does not stand at the local head: the push is owed, and the next first read looks again' },
+  'push-rejected': { whose: 'the orchestrator\'s', leaves: 'the remote did not take the push — or none was made, because a tag or another ref answers to the branch\'s name: nothing is lost — the commit is local — and the push is owed' },
+  'remote-differs': { whose: 'the orchestrator\'s', leaves: 'the remote, or the branch, did not stand where the push held it. One of them moved while the range was vetted, and nothing was pushed; or the commit that was vetted IS published — by its sha, and nothing later — and the remote stands elsewhere, or a commit that landed on the branch meanwhile is not on the remote. The push is owed, and the next first read looks again' },
   'record': { whose: 'the orchestrator\'s', leaves: '`dev/stabilize-record` refused, or its answer could not be read: the step\'s own line holds that script\'s refusal — the tree is as that script left it, which is whole or untouched' },
   'git': { whose: 'the orchestrator\'s', leaves: 'a git command of the step failed: the step\'s own line holds the command and what it printed, and nothing after it ran' },
   'gate-red': { whose: 'the orchestrator\'s', leaves: 'the gate that ran on the tree with the records shows red that the candidate\'s own gate did not: nothing was committed or undone, and the batch stays applied — the step\'s own line names what is new' },
@@ -663,7 +666,7 @@ const HELD_ENDS = {
 }
 // HELD_TAKES — WHAT A STAGE HOLDS, AND WHICH ENDS IT TAKES (the header: HOW A STEP CAN END, a
 // held command). Any other end is a HALT that names the job — but for a held check, which
-// then has NO RESULT: the stage goes on and records, and the state asks for the check again.
+// is then VOID BY A WORD (`heldVoid`): the stage goes on and records it, a run that counts.
 const HELD_TAKES = {
   build: ['green'],
   gate: ['green', 'red'],
@@ -671,11 +674,18 @@ const HELD_TAKES = {
   record: ['green', 'red'],
   probe: ['green'],
 }
-// offTreeHeld — the items that are due and CANNOT RUN where the tree checked out is not the
-// candidate (`moved`: a re-run, whose round's record commits lie on top of it): a held gate
-// reads the working tree. A held check that names its commits — the regression set — runs.
-function offTreeHeld(due, moved) {
-  return moved ? due.filter((i) => heldKind(i.kind) === 'gate').map((i) => i.item) : []
+// heldVoid — WHY A HELD CHECK LEFT NO VERDICT, as the ONE WORD the record script takes of a
+// held check (dev/stabilize-record result-set: `{item, outcome: void, reason}`, the reason of
+// a declared shape — `<word>` or `<word>:<key>`, a slug and the held job's name — which
+// HELD_VOID_RE is; the fence holds the two patterns equal). The word is the one this script
+// already reads: `off-tree` for a held gate that is not run where the tree is not the
+// candidate; the tool's own word where it REFUSED the start; else how the job stood when
+// the stage stopped asking — `dead`, `running`, `unread`. Every part is a slug by
+// construction: no sentence, no path and no agent's prose reaches the record through it.
+const HELD_VOID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*(?::[A-Za-z0-9._-]+)?$/
+function heldVoid(job) {
+  const word = job.ends === 'not-run' ? 'off-tree' : job.refused || job.ends
+  return word + (job.name ? ':' + job.name : '')
 }
 // mayRun — whether a held command may STILL RUN when the stage stops asking after it.
 function mayRun(job) {
@@ -773,8 +783,12 @@ const FIX_AUDIT = [[{ as: 'review', role: 'review', task: 'the review of this ro
 //               found is triaged all the same — a finding is verified by another agent
 //   unverified  the finding stays UNVERIFIED, as after a verifier that died
 //   no-fork     half a fork is no fork: nothing of it is on record, the finding unverified
+//   unknown     THE VERDICT STANDS AND ITS REGRESSION FACT IS UNKNOWN: recorded as confirmed
+//               with `regression` ABSENT (`regressionOf`, `triageRecord`) — never `false`,
+//               and never an unverified finding — and named by the state
 //   halts       THE STAGE STILL HALTS — a cell owed to a task, by name, in
-//               tooling-tests/stabilize_harness_fence.rs (OWED), and a row of HALTS_AFTER
+//               tooling-tests/stabilize_harness_fence.rs (OWED), and a row of HALTS_AFTER.
+//               NO CELL HOLDS IT TODAY: the last two were turned to `unknown`
 // `with` is the verdict the need holds under. The fence, arm (t), holds this table to the
 // schemas — every optional field of a driving role's schema has a row here or a reason
 // there — and every cell that is not `halts` to an arm of the simulation.
@@ -785,8 +799,8 @@ const NEEDS = {
   verify: [
     { field: 'verdict', then: 'unverified', why: 'what it found: a verifier that returns none verified nothing' },
     { field: 'asserted_sha256', then: 'unverified', why: ASSERTED },
-    { field: 'regression', with: 'confirmed', then: 'halts', why: 'whether the finding it confirmed is a regression: the verifier\'s fact, and nobody else\'s' },
-    { field: 'ran_on.previous', with: 'confirmed', then: 'halts', why: 'the hash it asserted for the previous release\'s binary: what a regression fact is backed by' },
+    { field: 'regression', with: 'confirmed', then: 'unknown', why: 'whether the finding it confirmed is a regression: the verifier\'s fact, and nobody else\'s' },
+    { field: 'ran_on.previous', with: 'confirmed', then: 'unknown', why: 'the hash it asserted for the previous release\'s binary: what a regression fact is backed by' },
   ],
   advocate: [{ field: 'asserted_sha256', then: 'no-fork', why: ASSERTED }],
   proposal: [{ field: 'asserted_sha256', then: 'no-fork', why: ASSERTED }],
@@ -805,7 +819,6 @@ const HALTS_AFTER = {
   'scope-aside': { phase: 'scope', when: 'the round\'s scope was set aside by the report check: the file at its path is not what the record script would have written' },
   'stood-on': { phase: 'reports', when: 'a reporter the stage stands on left no report: the attempt\'s marker, the first preflight, the scope step, a second preflight that provided, the preflight of a finishing lap' },
   'triage': { phase: 'triage', when: 'ANY ending of triage but its grades with its report — no result, a halt, counts that do not balance, a key that is none or is given twice, no report — and, inside a pass, a verifier\'s name that cannot be made and a report check that could not be read' },
-  'regression-fact': { phase: 'binary', when: 'a CONFIRMED verdict that does not say whether the finding is a regression, or whose hash of the previous release\'s binary is not there or is another: the two cells of NEEDS that still halt' },
   'record': { phase: 'record', when: 'the record step: the executor applied nothing or its batch was refused, the record\'s gate left no verdict, or the commit step refused — the batch stays applied where it was, and the next invocation finishes it' },
   'push': { phase: 'push', when: 'the push of the record\'s commit failed or was refused: the record is committed, the push is owed, and the next invocation\'s first read makes it' },
   'read-back': { phase: 'state', when: 'the state could not be read back once the record was committed and pushed: nothing is lost, and the next invocation reads it' },
@@ -1132,6 +1145,23 @@ function unasserted(role, reporter, result, expected) {
   return '(' + reporter + ') returned ' + (SHA256_RE.test(String(result.asserted_sha256)) ? 'the `asserted_sha256` ' + result.asserted_sha256 : 'an `asserted_sha256` that is no sha256') + ', which is not the candidate\'s binary (' + expected + '): nothing it drove is evidence about this candidate'
 }
 
+// regressionOf — THE REGRESSION FACT OF A CONFIRMED VERDICT, OR null WHERE NOBODY KNOWS IT
+// (NEEDS: `unknown`; the orchestrator's ruling of 2026-10-07, built as the second repair
+// plan's X1b). The fact is a boolean the verifier returned AND is backed by the previous
+// release's binary: the hash it returned for that binary is there and is the one it was
+// handed. Anything else — no `regression`, one that is no boolean, no `ran_on.previous`, or
+// another hash — is a fact nobody established: the verdict stands, the fact is unknown, and
+// `unknown` says why in the stage's log.
+function regressionOf(reporter, result, previous) {
+  const gap = lacks('verify', result).find((n) => n.then === 'unknown')
+  const ran = result.ran_on || {}
+  const why = gap ? lacksWhy(reporter, gap)
+    : typeof result.regression !== 'boolean' ? '(' + reporter + ') returned a `regression` that is neither true nor false'
+      : ran.previous !== previous ? '(' + reporter + ') returned ' + (SHA256_RE.test(String(ran.previous)) ? 'the hash ' + ran.previous : 'a hash that is no sha256') + ' for the previous release\'s binary, which is not the one it was handed (' + previous + '): what its regression fact rests on was not that release'
+        : null
+  return why ? { regression: null, unknown: why } : { regression: result.regression, unknown: null }
+}
+
 // reportsRead — what a `check-reports` step established, or why it established nothing:
 // the launched reporters that left NO REPORT (`missing` — each is then taken off the list,
 // and what it was launched for is recorded as not done), or the files nobody launched
@@ -1275,14 +1305,16 @@ function evidenceOf(state) {
 
 // namedOf — what every return names of the state beside `next`: the in-scope items no tested
 // round's scope has selected, by id; how many doors of the round in hand no item of the test
-// set names; and the file the state document lies in — its path and its sha256 — where the
-// doors are named and everything else this script does not read can be read. Neither list
-// forbids closing: both are a declared bound, and the human reads them at every stop.
+// set names; HOW MANY FINDINGS ARE CONFIRMED WITH THEIR REGRESSION FACT UNKNOWN and not yet
+// recorded (`regression_unknown`: the digest lists their keys, and the document says which);
+// and the file the state document lies in — its path and its sha256 — where the
+// doors are named and everything else this script does not read can be read. None of the
+// three forbids closing: the human reads them at every stop, and at the close.
 function namedOf(state, round) {
   if (!state) return null
   const within = round == null ? state.round : round
   const bare = (state.uncovered || []).find((u) => u.round === within)
-  return { never_selected: state.never_selected || [], uncovered: { round: within == null ? null : within, doors: bare ? bare.doors : 0 }, document: state.document || null }
+  return { never_selected: state.never_selected || [], uncovered: { round: within == null ? null : within, doors: bare ? bare.doors : 0 }, regression_unknown: (state.regression_unknown || []).length, document: state.document || null }
 }
 
 // readStep — a git step's return as the object its command printed. The relayed line must
@@ -1435,7 +1467,9 @@ function triageRecord(ctx, entries) {
       const t = { key: e.key, grade: e.grade }
       if (e.grade === 'out-of-scope') t.bound = e.bound
       if (e.verdict) t.verdict = e.verdict
-      if (e.verdict === 'confirmed') t.regression = e.regression
+      // A regression fact that is UNKNOWN is the field LEFT OUT — the record's cell for a
+      // confirmed finding nobody could say it of — and never `false`.
+      if (e.verdict === 'confirmed' && typeof e.regression === 'boolean') t.regression = e.regression
       // A fork rides on the verdict that raised it, and is a row a later invocation reads.
       if (e.verdict && e.fork) t.fork = e.fork
       return t
@@ -2501,9 +2535,9 @@ function selfTest() {
   const good = { status: 'reported', asserted_sha256: 'b'.repeat(64) }
   check('the hash comparison', hashMismatch('b'.repeat(64), [{ name: 'a', drives: true, result: good }, { name: 'b', drives: false, result: { status: 'reported' } }, { name: 'c', drives: true, result: { status: 'halted' } }, { name: 'd', drives: true, result: null }]).length === 0)
   check('a hash that differs, and one never returned', JSON.stringify(hashMismatch('b'.repeat(64), [{ name: 'a', drives: true, result: { status: 'reported', asserted_sha256: 'c'.repeat(64) } }, { name: 'b', drives: true, result: { status: 'reported' } }, { name: 'c', drives: true, result: good }])) === JSON.stringify([{ reporter: 'a', asserted: 'c'.repeat(64) }, { reporter: 'b', asserted: null }]))
-  check('a needed field that is not there is the row of its role, and one that is there is none', JSON.stringify(lacks('review', { status: 'reported', findings: [] }).map((n) => n.field + ':' + n.then)) === JSON.stringify(['asserted_sha256:void']) && lacks('review', good).length === 0 && lacks('crossModel', { status: 'reported' }).length === 0 && JSON.stringify(lacks('verify', { status: 'verified', key: 'k' }).map((n) => n.field)) === JSON.stringify(['verdict', 'asserted_sha256']) && JSON.stringify(lacks('verify', { status: 'verified', key: 'k', verdict: 'confirmed', asserted_sha256: 'b'.repeat(64), ran_on: { candidate: 'b'.repeat(64) } }).map((n) => n.field + ':' + n.then)) === JSON.stringify(['regression:halts', 'ran_on.previous:halts']) && lacks('verify', { status: 'verified', key: 'k', verdict: 'refuted', asserted_sha256: 'b'.repeat(64) }).length === 0)
+  check('a needed field that is not there is the row of its role, and one that is there is none', JSON.stringify(lacks('review', { status: 'reported', findings: [] }).map((n) => n.field + ':' + n.then)) === JSON.stringify(['asserted_sha256:void']) && lacks('review', good).length === 0 && lacks('crossModel', { status: 'reported' }).length === 0 && JSON.stringify(lacks('verify', { status: 'verified', key: 'k' }).map((n) => n.field)) === JSON.stringify(['verdict', 'asserted_sha256']) && JSON.stringify(lacks('verify', { status: 'verified', key: 'k', verdict: 'confirmed', asserted_sha256: 'b'.repeat(64), ran_on: { candidate: 'b'.repeat(64) } }).map((n) => n.field + ':' + n.then)) === JSON.stringify(['regression:unknown', 'ran_on.previous:unknown']) && lacks('verify', { status: 'verified', key: 'k', verdict: 'refuted', asserted_sha256: 'b'.repeat(64) }).length === 0)
   check('why a return is no evidence about the candidate: no hash, another hash, and text that is none', unasserted('drive', 'drive-a-drive', { status: 'reported' }, 'b'.repeat(64)) === '(drive-a-drive) returned no `asserted_sha256` — ' + ASSERTED && unasserted('drive', 'd', { status: 'reported', asserted_sha256: 'c'.repeat(64) }, 'b'.repeat(64)) === '(d) returned the `asserted_sha256` ' + 'c'.repeat(64) + ', which is not the candidate\'s binary (' + 'b'.repeat(64) + '): nothing it drove is evidence about this candidate' && unasserted('drive', 'd', { status: 'reported', asserted_sha256: 'x`; rm -r /' }, 'b'.repeat(64)).includes('an `asserted_sha256` that is no sha256') && !unasserted('drive', 'd', { status: 'reported', asserted_sha256: 'x`; rm -r /' }, 'b'.repeat(64)).includes('rm -r') && unasserted('drive', 'd', good, 'b'.repeat(64)) === null && unasserted('crossModel', 'x', { status: 'reported' }, 'b'.repeat(64)) === null)
-  check('every cell of what a stage needs is one of four words, and every row of what still halts names its phase', Object.values(NEEDS).every((rows) => rows.every((n) => ['void', 'unverified', 'no-fork', 'halts'].includes(n.then) && isText(n.field) && isText(n.why))) && Object.keys(NEEDS).every((role) => ROLES[role] && ROLES[role].drives) && Object.values(HALTS_AFTER).every((row) => isText(row.phase) && isText(row.when)) && Object.values(NEEDS).some((rows) => rows.some((n) => n.then === 'halts')) === ('regression-fact' in HALTS_AFTER))
+  check('every cell of what a stage needs is one of five words, and every row of what still halts names its phase', Object.values(NEEDS).every((rows) => rows.every((n) => ['void', 'unverified', 'no-fork', 'unknown', 'halts'].includes(n.then) && isText(n.field) && isText(n.why))) && Object.keys(NEEDS).every((role) => ROLES[role] && ROLES[role].drives) && Object.values(HALTS_AFTER).every((row) => isText(row.phase) && isText(row.when)) && Object.values(NEEDS).some((rows) => rows.some((n) => n.then === 'halts')) === ('regression-fact' in HALTS_AFTER))
 
   // The human's rulings enter in one step.
   const rulingsCalls = batchOf(rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).text)
@@ -2572,7 +2606,7 @@ function selfTest() {
 
   // What every return names of the state: what nothing can hold, and the file.
   const namedState = { round: 2, never_selected: ['row-b'], uncovered: [{ round: 1, doors: 3 }, { round: 2, doors: 1 }], document: { file: '/tmp/scratch-1/state/test-2.json', sha256: 'f'.repeat(64) }, ledger: 60, blockers: 2, human_list: 5, untriaged: { count: 1, why: [{ why: 'ungraded', count: 1 }] } }
-  check('every return names the items no round selected, the doors of the round no item names, and the file', JSON.stringify(namedOf(namedState)) === JSON.stringify({ never_selected: ['row-b'], uncovered: { round: 2, doors: 1 }, document: namedState.document }) && namedOf(namedState, 1).uncovered.doors === 3 && namedOf(namedState, 3).uncovered.doors === 0 && namedOf(null) === null && JSON.stringify(namedOf({ opened: false })) === JSON.stringify({ never_selected: [], uncovered: { round: null, doors: 0 }, document: null }))
+  check('every return names the items no round selected, the doors of the round no item names, and the file', JSON.stringify(namedOf(namedState)) === JSON.stringify({ never_selected: ['row-b'], uncovered: { round: 2, doors: 1 }, regression_unknown: 0, document: namedState.document }) && namedOf(Object.assign({}, namedState, { regression_unknown: ['f-1', 'f-2'] })).regression_unknown === 2 && namedOf(namedState, 1).uncovered.doors === 3 && namedOf(namedState, 3).uncovered.doors === 0 && namedOf(null) === null && JSON.stringify(namedOf({ opened: false })) === JSON.stringify({ never_selected: [], uncovered: { round: null, doors: 0 }, regression_unknown: 0, document: null }))
   check('what a return holds of the state is counts and words, never a list of rows', attached(namedState).ledger === 60 && attached(namedState).blockers === 2 && attached(namedState).human_list === 5 && attached(namedState).untriaged.count === 1 && !('document' in attached(namedState)) && !('items' in attached(namedState)))
 
   // A held command, as this script reads it: the tool's words, and the tool's verdict.
@@ -2583,7 +2617,11 @@ function selfTest() {
   check('a held command that ran to its end is the tool\'s verdict, by the file the tool kept it in', ['green', 'red', 'void'].every((verdict) => doneAs(verdict).ends === verdict && doneAs(verdict).verdict === '/tmp/scratch-1/hold/gate-c1-a1/verdict.json' && doneAs(verdict).verdict_sha256 === 'e'.repeat(64)) && doneAs('void', 'no-verdict').why === 'no-verdict' && doneAs('green').why === null)
   check('a held command that is dead has no verdict, and one that is done without the tool\'s verdict is not read', heldOf(Object.assign({ status: 'dead', why: 'no-exit' }, job), '/tmp/scratch-1').ends === 'dead' && heldOf(Object.assign({ status: 'dead', why: 'killed', verdict: 'green', verdict_file: 'hold/x/verdict.json', verdict_sha256: 'e'.repeat(64) }, job), '/tmp/scratch-1').verdict === undefined && doneAs('passed').ends === 'unread' && heldOf(Object.assign({ status: 'done', verdict: 'green' }, job), '/tmp/scratch-1').ends === 'unread' && heldOf(null, '/tmp/scratch-1').ends === 'unread' && heldOf({ status: 'halted', refused: 'missing' }, '/tmp/scratch-1').refused === 'missing' && heldOf({ status: 'halted', relay: 'altered' }, '/tmp/scratch-1').why === 'altered')
   check('every way a held command can stand has its sentence', JSON.stringify(Object.keys(HELD_ENDS)) === JSON.stringify(['running', 'green', 'red', 'void', 'dead', 'unread']) && Object.keys(HELD_ENDS).every((ends) => isText(HELD_ENDS[ends])))
-  check('a held gate cannot run where the tree is not the candidate, and a held check that names its commits can', JSON.stringify(offTreeHeld([{ item: 'gate', kind: 'held-gate' }, { item: 'reg', kind: 'held-regression' }, { item: 'ci', kind: 'check' }, { item: 'row', kind: 'review-row' }], true)) === JSON.stringify(['gate']) && offTreeHeld([{ item: 'gate', kind: 'held-gate' }], false).length === 0 && offTreeHeld([], true).length === 0)
+  check('a held check that left no verdict is void by ONE word of the shape the record script takes: the tool\'s own word where it refused the start, how the job stood otherwise, and the job\'s name', heldVoid({ ends: 'not-run', kind: 'gate', why: 'off-tree' }) === 'off-tree' && heldVoid({ ends: 'dead', why: 'no-exit', name: 'regression-set-c1-a1' }) === 'dead:regression-set-c1-a1' && heldVoid({ ends: 'running', name: 'reg-c1-a2' }) === 'running:reg-c1-a2' && heldVoid({ ends: 'unread', refused: 'taken', name: 'reg-c1-a1' }) === 'taken:reg-c1-a1' && heldVoid({ ends: 'unread', why: 'the step returned no result', name: 'reg-c1-a1' }) === 'unread:reg-c1-a1' && heldVoid({ ends: 'unread', kind: 'regression', why: 'no name of a held command can be made' }) === 'unread' && Object.keys(HELD_ENDS).filter((ends) => !HELD_TAKES.check.includes(ends)).concat(['not-run']).every((ends) => HELD_VOID_RE.test(heldVoid({ ends, name: 'x'.repeat(SLUG_MAX) })) && heldVoid({ ends, name: 'x'.repeat(SLUG_MAX) }).length <= 200) && Object.keys(STEP_REFUSALS).every((word) => HELD_VOID_RE.test(heldVoid({ ends: 'unread', refused: word, name: 'a-b' }))) && !HELD_VOID_RE.test('it did not run to its end') && !HELD_VOID_RE.test('dead:/tmp/x') && JSON.stringify(resultRows([{ item: 'reg', status: 'void', reason: heldVoid({ ends: 'dead', name: 'reg-c1-a1' }) }])) === JSON.stringify([{ item: 'reg', outcome: 'void', reason: 'dead:reg-c1-a1' }]))
+  const knows = { status: 'verified', verdict: 'confirmed', regression: true, asserted_sha256: 'b'.repeat(64), ran_on: { candidate: 'b'.repeat(64), previous: 'c'.repeat(64) } }
+  const without = (drop) => { const r = JSON.parse(JSON.stringify(knows)); drop(r); return r }
+  check('a regression fact is taken only as a boolean with the previous binary\'s hash behind it, and is unknown otherwise — never false', JSON.stringify(regressionOf('v', knows, 'c'.repeat(64))) === JSON.stringify({ regression: true, unknown: null }) && regressionOf('v', without((r) => { r.regression = false }), 'c'.repeat(64)).regression === false && [without((r) => { delete r.regression }), without((r) => { delete r.ran_on.previous }), without((r) => { delete r.ran_on }), without((r) => { r.regression = 'no' }), without((r) => { r.ran_on.previous = 'd'.repeat(64) }), without((r) => { r.regression = null })].every((r) => regressionOf('v', r, 'c'.repeat(64)).regression === null && isText(regressionOf('v', r, 'c'.repeat(64)).unknown)) && regressionOf('verify-p1-k', without((r) => { delete r.regression }), 'c'.repeat(64)).unknown.startsWith('(verify-p1-k) returned no `regression` — ') && regressionOf('v', without((r) => { delete r.ran_on.previous }), 'c'.repeat(64)).unknown.startsWith('(v) returned no `ran_on.previous` — ') && regressionOf('v', without((r) => { r.ran_on.previous = 'x`; rm -r /' }), 'c'.repeat(64)).unknown.includes('a hash that is no sha256') && !regressionOf('v', without((r) => { r.ran_on.previous = 'x`; rm -r /' }), 'c'.repeat(64)).unknown.includes('rm -r'))
+  check('a confirmed finding whose regression fact is unknown is recorded with the field LEFT OUT, and one that is known with its boolean', JSON.stringify(triageRecord(ctx, [{ key: 'f-1', new: false, grade: 'breaks', verdict: 'confirmed', regression: null }, { key: 'f-2', new: false, grade: 'breaks', verdict: 'confirmed', regression: false }, { key: 'f-3', new: false, grade: 'breaks', verdict: 'confirmed' }, { key: 'f-4', new: false, grade: 'breaks', verdict: 'refuted', regression: true }]).triage) === JSON.stringify([{ key: 'f-1', grade: 'breaks', verdict: 'confirmed' }, { key: 'f-2', grade: 'breaks', verdict: 'confirmed', regression: false }, { key: 'f-3', grade: 'breaks', verdict: 'confirmed' }, { key: 'f-4', grade: 'breaks', verdict: 'refuted' }]))
   check('what a stage holds takes the ends its table names, and no other', JSON.stringify(HELD_TAKES) === JSON.stringify({ build: ['green'], gate: ['green', 'red'], check: ['green', 'red', 'void'], record: ['green', 'red'], probe: ['green'] }) && Object.keys(HELD_TAKES).every((use) => HELD_TAKES[use].every((ends) => HELD_ENDS[ends])) && !Object.keys(HELD_TAKES).some((use) => ['running', 'dead', 'unread'].some((ends) => HELD_TAKES[use].includes(ends))))
   check('a held command that may still run is named with the one call that answers once it is over', mayRun({ name: 'gate-c1-a1', ends: 'running' }) && mayRun({ name: 'gate-c1-a1', ends: 'unread', started: true }) && !mayRun({ name: 'gate-c1-a1', ends: 'unread', started: false }) && !mayRun({ name: 'gate-c1-a1', ends: 'dead' }) && !mayRun({ name: 'gate-c1-a1', ends: 'void' }) && !mayRun({ ends: 'running' }) && heldThen('/tmp/scratch-1', { name: 'gate-c1-a1', ends: 'running', output: '/tmp/scratch-1/hold/gate-c1-a1/output' }).includes('`dev/stabilize-step hold-wait --scratch /tmp/scratch-1 --name gate-c1-a1`') && heldThen('/tmp/scratch-1', { name: 'gate-c1-a1', ends: 'running' }).includes('MAY STILL RUN') && heldThen('/tmp/scratch-1', { name: 'gate-c1-a1', ends: 'dead' }) === null)
   check('a held command that did not end as the stage needs it is said by its job and the tool\'s word', heldFault('the candidate\'s gate', { name: 'gate-c1-a1', ends: 'void', why: 'no-verdict' }).includes('`gate-c1-a1`') && heldFault('the candidate\'s gate', { name: 'gate-c1-a1', ends: 'void', why: 'no-verdict' }).includes('`no-verdict`') && heldFault('x', { ends: 'unread' }).includes(HELD_ENDS.unread) && JSON.stringify(heldSaid({ name: 'n', kind: 'gate', ends: 'dead', why: 'no-exit', output: '/o', verdict: '/v', facts: {} })) === JSON.stringify({ name: 'n', kind: 'gate', ends: 'dead', why: 'no-exit', output: '/o' }))
@@ -2638,7 +2676,7 @@ if (typeof args === 'string') {
 }
 const refusal = validateArgs(parsedArgs)
 if (refusal) {
-  return { status: 'refused', message: refusal + '. Nothing was run. Usage: Workflow({ name: \'stabilize\', args: { stage: \'test\' | \'fix\', run: \'<run>\', scratch: \'<absolute dir>\' } }) — the script\'s header has the rest.' }
+  return { status: 'refused', message: refusal + '. Nothing was run. Usage: Workflow({ scriptPath: \'<the repository\'s root>/.claude/workflows/stabilize.js\', args: { stage: \'test\' | \'fix\', run: \'<run>\', scratch: \'<absolute dir>\' } }) — by the script\'s path, never by its name; the script\'s header has the rest.' }
 }
 if (parsedArgs.selfTest) return selfTest()
 const unfit = notFit(parsedArgs)
@@ -2990,7 +3028,6 @@ async function runUnits(ctx, launch, built, units, phaseTitle) {
 async function triagePasses(ctx, launch, built, sources, forksIn) {
   const entries = []
   const forks = forksIn.slice()
-  const faults = []
   const unverified = []
   const unreportedBy = []
   let pending = sources.filter((s) => findingsOf(s))
@@ -3040,20 +3077,6 @@ async function triagePasses(ctx, launch, built, sources, forksIn) {
         // reporter and the field in the reason, and nothing of the stage waits on it. Its
         // report, and what it left open, are taken below as any verifier's are.
         const unheld = unasserted('verify', name, r, built.candidate.sha256)
-        const ran = r.ran_on || {}
-        // The previous release's binary is driven with every confirmed verdict — that is
-        // where the regression fact comes from, true or false — so its hash is held there.
-        // THESE TWO STILL HALT THE STAGE (NEEDS: `halts`; HALTS_AFTER: `regression-fact`):
-        // what they are owed is a verdict recorded as confirmed with its regression fact
-        // UNKNOWN, a cell the record script does not take yet.
-        if (!unheld && r.verdict === 'confirmed' && ran.previous !== built.previous.sha256) {
-          faults.push('the verifier of `' + e.key + '` asserted ' + JSON.stringify({ candidate: r.asserted_sha256 == null ? null : r.asserted_sha256, previous: ran.previous == null ? null : ran.previous }) + ', not the binaries it was handed')
-          return
-        }
-        if (!unheld && r.verdict === 'confirmed' && typeof r.regression !== 'boolean') {
-          faults.push('the verifier of `' + e.key + '` confirmed it and did not say whether it is a regression')
-          return
-        }
         verified.push({ e, name, r, unheld })
       })
       for (const { e, r } of verified.filter((v) => !v.unheld && v.r.contested)) driven.push(await driveFork(ctx, launch, built, { key: e.key, kind: 'contested', door: e.door, clause: e.clause, repro: e.repro, statement: 'the verifier found the finding to contest a settled decision — ' + (r.basis || '(no basis returned)') }, 'p' + pass))
@@ -3084,7 +3107,16 @@ async function triagePasses(ctx, launch, built, sources, forksIn) {
       }
       const entry = entries.find((x) => x.key === e.key)
       entry.verdict = r.verdict
-      if (r.verdict === 'confirmed') entry.regression = r.regression
+      // The previous release's binary is driven with every confirmed verdict — that is
+      // where the regression fact comes from, true or false — so the fact is taken only
+      // with that binary's hash behind it. WITHOUT IT THE VERDICT STANDS AND THE FACT IS
+      // UNKNOWN (NEEDS: `unknown`): the finding is confirmed, NOT unverified, and nothing
+      // of the stage waits on it.
+      if (r.verdict === 'confirmed') {
+        const fact = regressionOf(name, r, built.previous.sha256)
+        entry.regression = fact.regression
+        if (fact.unknown) log('REGRESSION UNKNOWN: `' + e.key + '` is confirmed, and its verifier ' + fact.unknown + '. It is recorded as confirmed with that fact unknown — never as not a regression — and the state names it')
+      }
       entry.basis = r.basis
       if (fork) {
         entry.fork = { kind: fork.fork.kind, case: fork.fork.advocate.verdict, drive: fork.fork.independent_drive.holds ? 'holds' : 'differs' }
@@ -3094,7 +3126,7 @@ async function triagePasses(ctx, launch, built, sources, forksIn) {
     if (pass > VERIFY_PASSES) break
   }
   for (const left of unverified) log('NOT VERIFIED: `' + left.key + '` — ' + left.why + '. It stays unverified: the state counts the pass, and after one more the finding is the human\'s')
-  return { entries, forks, faults, handed, unverified, unreportedBy }
+  return { entries, forks, handed, unverified, unreportedBy }
 }
 
 // driveFork — ruling 5: a contested fix, or one that needs a new mechanism, goes to the
@@ -3214,7 +3246,6 @@ async function finishTriage(ctx, launch, state, tip, branch) {
   if (built.fault) return { halted: halt(built.phase, built.fault, { transient: !!built.transient, held: built.held || null, branch, then: built.then }) }
   const tri = await triagePasses(ctx, launch, built, sources, [])
   if (tri.fault) return { halted: haltAfter('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null, step: tri.step || null, branch }) }
-  if (tri.faults.length) return { halted: haltAfter('regression-fact', tri.faults.join('; '), { branch }) }
   // The lap stands on its preflight as a stage does: binaries with no report behind them
   // are no evidence, whatever was verified on them.
   if (tri.unreportedBy.includes(pre.name)) return { halted: haltAfter('stood-on', 'the preflight of this lap returned and left no report: what was driven on its binaries has nothing on record behind it', { branch, launched: launch.names }) }
@@ -3402,11 +3433,6 @@ async function runTest() {
   const crossStrangers = crossNamed.filter((id) => !items.some((i) => i.item === id && chainOf(i.kind, true).some((stepList) => stepList.some((s) => s.crossModel))))
   if (crossStrangers.length) return halt('state', 'args.crossModel names ' + crossStrangers.join(', ') + ', which is no item of the test set whose chain has a cross-model pass — the items that have one are ' + (items.filter((i) => chainOf(i.kind, true).some((stepList) => stepList.some((s) => s.crossModel))).map((i) => i.item).join(', ') || '(none)'))
   const runs = (i) => (rerun ? rerun.items.some((x) => x.item === i.item) : i.selected === true)
-  // A HELD GATE IS NOT RUN AGAIN INSIDE ITS ROUND: it reads the working tree, which in a
-  // re-run is no longer the round's candidate (above: A ROUND TESTS ONE CANDIDATE). Where
-  // nothing else of the clause is due there is nothing this invocation could run.
-  const offTreeGates = offTreeHeld(items.filter(runs), moved)
-  if (rerun && offTreeGates.length === rerun.items.length) return { status: 'refused', stage: 'test', run: v.run, unrun: offTreeGates, message: 'the state asks for a re-run of clause `' + rerun.clause + '` in round ' + rerun.round + ', and every item of it that is due is a HELD GATE — ' + offTreeGates.join(', ') + ': a gate reads the working tree, which is no longer that round\'s candidate (' + sha + '), so it is not run again inside the round — what it would show is evidence about no commit of it. It is settled by the next round, whose candidate is the tip. AND NOTHING CAN BE RECORDED FOR IT HERE: the record script takes a held check\'s result from the tool\'s verdict file and from no word, so `next` stays `' + state.next + '` until that script takes a void for a held check that did not run — owed to it, and said in DECISIONS.md. Nothing was run beyond the two reads.', next: state.next, retest: state.retest, position: at, named: namedOf(state, rerun.round), arrived }
   log('round ' + ctx.round + ', attempt ' + ctx.attempt + ' of the test stage: ' + (rerun ? 'A RE-RUN inside it, on ' + sha + ' — ' + rerun.items.map((i) => i.item + ' (its attempt ' + i.attempt + ')').join(', ') + ' of clause `' + rerun.clause + '`, and nothing else' : 'candidate ' + label + ' = ' + sha + '; ' + items.length + ' item(s) in the test set'))
   if (looks) return { status: 'stopped', after: 'state', stage: 'test', run: v.run, round: ctx.round, attempt: ctx.attempt, candidate: { label, sha }, owed: arrived.owed, state: attached(state), named: namedOf(state, rerun ? rerun.round : null), arrived }
   const unbegun = await beginAttempt(ctx, launch, sha)
@@ -3462,8 +3488,8 @@ async function runTest() {
   // another, after the candidate's gate and never beside it. A held gate is answered from
   // the candidate's own gate, which is not run twice — and in a re-run not at all. What
   // comes back is how each command ended (`heldOf`): a verdict of the tool's is the
-  // check's result, by its file; any other end leaves the check WITHOUT one, and the stage
-  // goes on.
+  // check's result, by its file; any other end leaves the check VOID BY A WORD, and the
+  // stage goes on.
   const heldRan = []
   for (const i of held) {
     const kind = heldKind(i.kind)
@@ -3473,7 +3499,7 @@ async function runTest() {
     }
     heldRan.push(Object.assign({ item: i.item }, await hold({ name: i.item + '-' + label + '-a' + ctx.attempt, kind, flags: '--previous ' + previousOf(state).commit + ' --candidate ' + sha + ' --list ' + REGRESSION_LIST, what: 'the held check `' + i.item + '`: the regression set, the previous release against the candidate', phase: 'Preflight and scope' })))
   }
-  for (const h of heldRan.filter((x) => !HELD_TAKES.check.includes(x.ends))) log('NO RESULT: the held check `' + h.item + '` — ' + (h.ends === 'not-run' ? 'a gate reads the working tree, which is no longer the round\'s candidate: it is not run again inside its round' : (HELD_ENDS[h.ends] || h.ends) + (h.why ? ' (`' + h.why + '`)' : '')) + '. It has no result on record, and the state asks for it again')
+  for (const h of heldRan.filter((x) => !HELD_TAKES.check.includes(x.ends))) log('VOID BY A WORD: the held check `' + h.item + '` — ' + (h.ends === 'not-run' ? 'a gate reads the working tree, which is no longer the round\'s candidate: it is not run again inside its round' : (HELD_ENDS[h.ends] || h.ends) + (h.why ? ' (`' + h.why + '`)' : '')) + '. It left no verdict, and is recorded void — `' + heldVoid(h) + '` — a run that counts')
   const needsImage = hunting.some((i) => chainOf(i.kind, false).some((stepList) => stepList.some((s) => s.image)))
   let checks = pre.result.checks || []
   // The second preflight: the trial image, and the checks the scope selected. One that did
@@ -3544,7 +3570,6 @@ async function runTest() {
   for (const source of ledgerSource(v.run, state)) sources.push(source)
   const tri = await triagePasses(ctx, launch, built, sources, [])
   if (tri.fault) return haltAfter('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null, step: tri.step || null })
-  if (tri.faults.length) return haltAfter('regression-fact', tri.faults.join('; '))
   if (v.stopAfter === 'triage') return { status: 'stopped', after: 'triage', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, entries: tri.entries, forks: tri.forks, reporters: launch.names, named: namedOf(state, doorsOf), arrived }
 
   // The record step: the reports checked, what each item did, the rows, the round's facts.
@@ -3564,8 +3589,11 @@ async function runTest() {
     unitStatus.push({ item: item.item, status: !c || elsewhere ? 'void' : c.status, reason: elsewhere || offTree || (c ? c.evidence || 'the check could not run, and the preflight returned no reason' : late.includes(item) && unprovided ? unprovided : 'the preflight returned nothing for it'), evidence: c && c.evidence ? c.evidence + ' — the preflight\'s report: ' + pre.result.report : null })
   }
   // A HELD CHECK'S RESULT IS THE FILE THE TOOL KEPT ITS VERDICT IN, and no word: green, red
-  // or void as that file says. One that left no verdict has no row.
-  for (const h of heldRan.filter((x) => HELD_TAKES.check.includes(x.ends))) unitStatus.push({ item: h.item, status: h.ends, verdict: h.verdict })
+  // or void as that file says. ONE THAT LEFT NO VERDICT IS VOID BY A WORD — the one word a
+  // caller may say of a held check — so that it has a run on record and the state can
+  // leave `retest`: dead, its start refused, still running when the stage stopped asking,
+  // or a gate that is not held off the candidate's tree.
+  for (const h of heldRan) unitStatus.push(HELD_TAKES.check.includes(h.ends) ? { item: h.item, status: h.ends, verdict: h.verdict } : { item: h.item, status: 'void', reason: heldVoid(h) })
   const rec = triageRecord(ctx, tri.entries)
   // A re-run writes no fact of the round: the round is tested, and its record stands.
   const facts = rerun ? null : { candidate: sha, binary: built.candidate.sha256 }
@@ -3768,7 +3796,6 @@ async function runFix() {
     phase('Triage')
     const tri = await triagePasses(ctx, launch, built, sources, [])
     if (tri.fault) return { halted: halt('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null, branch }) }
-    if (tri.faults.length) return { halted: halt('binary', tri.faults.join('; '), { branch }) }
     phase('Record')
     const rec = triageRecord(ctx, tri.entries)
     const keys = tri.entries.map((e) => e.key)

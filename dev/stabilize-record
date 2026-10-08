@@ -119,7 +119,11 @@
 #   dev/stabilize-record result-set --run R --round N --commit SHA [--scratch DIR]...
 #                        <results.json
 #       WHAT AN ITEM OF THE TEST SET DID, in the round whose scope selected it — one JSON
-#       object per item, or an array of them, all of runs on the commit SHA (a full sha):
+#       object per item, or an array of them, all of runs on the commit SHA (a full sha).
+#       A ROUND TESTS ONE CANDIDATE: once round N has its candidate, SHA is that candidate
+#       or the call is refused (bad-value) — a re-run runs on the round's candidate,
+#       wherever the round's record commits have moved the branch's tip since; before
+#       that, the candidate is held to the results where it is written (round-set).
 #         item         a row of the test set (no-such-row), which round N's scope selects
 #                      (state: WHETHER THE LATEST ROUND RUNS AN ITEM — the same rule, of
 #                      round N's doors). An item no scope selected owes nothing and has
@@ -133,7 +137,9 @@
 #                      verdict of the held command in (<scratch>/hold/<name>/verdict.json).
 #                      Such a row names the item and this, AND NOTHING ELSE: its outcome
 #                      is the verdict the tool read out of the command's own output, and
-#                      no word is taken from a caller (A SCRIPTED CHECK'S RESULT, below).
+#                      no word is taken from a caller (A SCRIPTED CHECK'S RESULT, below)
+#                      — BUT `void`, for a held check that left no verdict to name: the
+#                      row is then {item, outcome: void, reason}, its reason a word.
 #         doctype, door, repro   with red and only with it: A RED RUN IS A FINDING. Its row
 #                      is appended to the ledger by this call, under the key `red-<item>`,
 #                      ungraded and open — round N, the item's clause, and these three as a
@@ -167,7 +173,23 @@
 #       and nothing is written. green is green; void is void, its reason the verdict's
 #       `why` and its sentence; RED IS A FINDING like every red run — filed under
 #       `red-<item>`, its door `the held check <item>`, its repro the verdict's own
-#       sentence and where the verdict lies. AND THE VERDICT REACHES THE RECORD AS A FILE
+#       sentence and where the verdict lies.
+#       A HELD CHECK THAT LEFT NO VERDICT IS VOID BY A WORD, AND NOTHING ELSE IS A WORD.
+#       A held command can end with no verdict's file to hand in — its job is dead, its
+#       start was refused, the stage ended while it ran, a gate is not held again off the
+#       candidate's tree — and an item with no result stays due for a re-run nobody can
+#       record: a state no stage leaves. So `void`, and ONLY `void`, is taken as a word
+#       for a held item, and its reason is A WORD OF A DECLARED SHAPE, never a sentence:
+#       `<word>` or `<word>:<key>` — lowercase a-z0-9 words joined by single `-`, and a
+#       key of plain characters (A-Z a-z 0-9 . _ -), which is the held job's name; 200
+#       characters at most (bad-value). A shape and no list of words: the words are the
+#       step tool's and the harness's own (dead, running, taken, no-verdict, ...), and a
+#       list here would be a second copy of theirs. `green` and `red` stay the tool's
+#       verdict or nothing (bad-value, as before). The row's detail is `without a
+#       verdict: <reason>`, no verdict is written on record for that attempt, and `state`
+#       refuses one that lies there (corrupt). IT IS VOID LIKE ANY ITEM'S: its clause is
+#       void, it forbids `close`, it is owed its re-run where the state asks for one, and
+#       after two runs its clause is the human's. AND THE VERDICT REACHES THE RECORD AS A FILE
 #       WRITTEN ONCE, in the same batch as the result: r<N>/checks/<item>.a<attempt>.json
 #       — the item, its attempt, the round and the commit, the kind, the verdict, why,
 #       what was asked, the exit status, the facts and the evidence of the kind (for the
@@ -225,7 +247,14 @@
 #         verdict      the verifier's, of a finding graded breaks or unclear:
 #                      confirmed | refuted. Without one, the finding awaits it.
 #         regression   with confirmed and only with it: true when the repro is green on
-#                      the previous release's binary — the verifier's fact
+#                      the previous release's binary, false when it is red there too —
+#                      the verifier's fact. ABSENT, OR null, WHERE THE VERIFIER DOES NOT
+#                      KNOW: it was handed no binary of the previous release, the door is
+#                      one that release does not have, its return does not back the
+#                      claim. The cell is then `-` beside `confirmed`, the finding is
+#                      graded confirmed and routed as one, and `state` names it
+#                      (regression_unknown): an unknown fact is never written as `no`.
+#                      Anything else — a word, a number — is refused (bad-value).
 #         fork         with a verdict and only with one: A FORK — the verifier found the
 #                      finding to contest a settled decision, so what is done about it is
 #                      the human's to rule and no fixer's. One object, all three named:
@@ -342,8 +371,10 @@
 #                      the use of that pass, and how much of it, shows at every stop
 #       candidate, base, binary and outcome are written ONCE: a second, different
 #       value is refused (exists). A candidate is taken for a round that has a scope
-#       (no-scope) and whose results are of runs on that commit (bad-value): a round is
-#       tested over the doors its scope resolved, on one candidate. EVERY FACT IS TAKEN
+#       (no-scope), whose results are of runs on that commit, and whose gate on record —
+#       where it holds one (gate-set) — is the gate of that commit (bad-value, each): a
+#       round is tested over the doors its scope resolved, on one candidate, and THE
+#       CANDIDATE'S GATE IS THE GATE OF THE CANDIDATE. EVERY FACT IS TAKEN
 #       ONLY WHERE THE STATE ASKS FOR IT (WHERE THE STATE TAKES A WRITE, below) — and a fact
 #       said again as it stands changes nothing and is taken anywhere. What the record
 #       holds beside these — ran, awaiting, recorded — this script counts, and no caller
@@ -449,6 +480,15 @@
 #                                triage records of the latest round in a row left it so,
 #                                retry: due | spent}
 #         blockers     the keys routed fix
+#         regression_unknown  the keys of the findings a verifier CONFIRMED WITHOUT
+#                      KNOWING WHETHER EACH IS A REGRESSION (triage-set: regression absent
+#                      or null), for as long as the finding is not routed recorded. Such
+#                      a finding is routed by its grade and its door exactly as a
+#                      confirmed non-regression is — fix inside the test set, the human's
+#                      outside it — and is never fixed unasked as "a regression", which
+#                      nobody established. The missing fact forbids `close` no longer
+#                      than the finding itself does: it is an attribute of a finding,
+#                      not a missing verdict.
 #         human_list   [{key, why}] — the findings routed human
 #         human_stages [{stage, round, cycle, at, attempt, attempts, why}] — the stage
 #                      whose attempts are spent, when the step is that stage's: `attempt`
@@ -753,7 +793,10 @@
 #       (bad-value). A RED gate must be the output of `dev/gate --keep-going`, which its
 #       mode line says: a gate that stops at its first red stage names the first red and
 #       not all of it, and is refused (bad-value). A green gate ran every test however it
-#       was run. A round tests one candidate: another commit is refused (exists).
+#       was run. A round tests one candidate: another commit is refused (exists) — and
+#       the candidate, where it is written, is held to this gate's commit (round-set):
+#       the gate is written while the round is not tested, so before the candidate or
+#       with it, and a record commit's gate is held to it as the candidate's (gate-check).
 #       Prints {"gate", "commit", "verdict", "red"}.
 #
 #   dev/stabilize-record gate-check [--round N] --summary FILE [--scratch DIR]...
@@ -884,7 +927,15 @@
 #       this is THE ONE CALL OF THIS SCRIPT THAT ASKS GIT ABOUT THE REPOSITORY, of the
 #       commits of that range and of nothing else. Over the range: the two scanners CI
 #       runs over a push, as CI runs them (.github/workflows/ci.yml, `hygiene`) — every
-#       commit message and every added line, of every path. And for every commit that
+#       commit message and every added line, of every path. AND WHAT A COMMIT SAYS IS
+#       HELD TO WHAT ITS FILES ARE HELD TO: of those two, gitleaks reads added lines and
+#       never a message, so the messages of the range are scanned as the files of a
+#       batch are (WHAT A WRITER DOES TO ITS TEXT, 4) — each a file of one throwaway
+#       repository, under both scanners; a hit is the commit's, its `path` null (the
+#       review of the core for three dangers, F6). AND A MERGE'S OWN LINES ARE READ BY
+#       BOTH: the denylist scan asks git for what a merge itself introduced
+#       (`--remerge-diff`), and here gitleaks is asked the same — one flag more than CI
+#       passes it, which reads no merge's resolution. And for every commit that
 #       changes a file of AN OPENED RUN (a path below completions/artifacts/<run>/ in a
 #       commit that holds that run's opening.md), the rules above on each such file as
 #       the commit holds it, and no host path in the commit's message. (What a commit
@@ -950,9 +1001,14 @@
 #               round, and every stop is computed from the latest round. (While the
 #               run's opening is not done no stage starts and nothing is decided, and the
 #               opening's own order is not held: round 1 may be begun then.)
+#               (result-set for a held check — its verdict's file, or `void` by a word
+#               where it left none — is this row too, taken at the same positions: a
+#               void by a word is the run of the test stage, or a re-run the state asks.)
 #   untested    gate-set, and the facts candidate, base, binary, cross-model and
 #               cross-model-void: as a round, and only while that round is not tested —
 #               they are its test stage's record, written with or before the candidate.
+#               (The candidate is held, where it is written, to the two writers that
+#               take a commit for the round's evidence: the results' and the gate's.)
 #   fix         the fact cycles: in the latest round, once it is tested, where the
 #               position refuses no fix stage — not past either bound, not after the
 #               round's outcome.
@@ -1082,7 +1138,8 @@
 #                     and registries
 #    7  bad-value     a value outside its vocabulary, a malformed row, a report that is
 #                     not text; a file named by --from that cannot be read, or that is
-#                     not the file --sha256 names; an outcome word for a held check, or a
+#                     not the file --sha256 names; an outcome word for a held check —
+#                     green or red, or a void whose reason is no word of its shape — or a
 #                     verdict's file that is not the tool's verdict of that check on that
 #                     commit — or A WRITE THE STATE DOES NOT ASK FOR: a round that is not
 #                     begun and not handed out, a fact outside its position, a go, a
@@ -1182,6 +1239,13 @@ CHECK_NAME = re.compile(r"(%s)\.a([1-9][0-9]{0,5})\.json" % SLUG.pattern)
 HELD = "held-"
 # The tool whose verdict that is, as its verdict's file names it.
 HOLDER = "stabilize-step"
+# A HELD CHECK THAT LEFT NO VERDICT is void by a word (result-set): why, in a declared shape
+# — a word of the slug grammar and, after a colon, optionally a key of plain characters,
+# which is the held job's name — and never a sentence. And what its row opens with, so that
+# a void that owes no verdict's file is told from one whose file is gone.
+HELD_VOID = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*(?::[A-Za-z0-9._-]+)?")
+HELD_VOID_MAX = 200
+NO_VERDICT = "without a verdict: "
 # A segment of a path below the run's directory, as `vet` is handed one; a round's
 # directory; and an argument of a range, as `git rev-list` takes it — a name, or one of
 # the two flags a range is cut with. Nothing else reaches a git command.
@@ -2513,7 +2577,14 @@ def result_set(args):
     items_rel, _, item_rows = read_test_set(run_dir)
     items = unique_rows(items_rel, item_rows)
     rel, above, rows = read_results(run_dir, round_number)
-    tested = any(held["round"] == int(round_number) and held["facts"]["candidate"] is not None for held in read["rounds"])
+    candidate = next((held["facts"]["candidate"] for held in read["rounds"] if held["round"] == int(round_number)), None)
+    tested = candidate is not None
+    # A ROUND TESTS ONE CANDIDATE, and a result is the run of an item ON IT: once the round
+    # has its candidate, a result of another commit is no evidence of that round — whatever
+    # the branch's tip is by then (the review of the core for three dangers, F3). Before
+    # that, the candidate is held to the results where it is written (tested_on).
+    if tested and args.commit != candidate:
+        refuse("bad-value", "%s tests the candidate %s, and a result is the run of an item on it — not on %s: a round tests one candidate, and a re-run runs on the round's candidate, wherever its record commits have moved the branch's tip since; nothing was written" % (what, candidate, args.commit))
     due = [(entry["item"], entry["round"]) for clause in read["clauses"] for entry in clause["items"] if entry["rerun"] == "due"] if read["next"] == "retest" else []
     ledger, ledger_above, ledger_rows = read_ledger(run_dir)
     keys = unique_rows(ledger, ledger_rows)
@@ -2526,8 +2597,15 @@ def result_set(args):
         # A SCRIPTED CHECK'S RESULT IS THE TOOL'S VERDICT: an item whose check is a held
         # command takes its result from the verdict's file and from nothing a caller says —
         # and no other item takes one from a file.
+        if kind.startswith(HELD) and verdict is None and outcome != "void":
+            refuse("bad-value", "%s: the item %s is a held check (kind %s) — dev/stabilize-step holds its command and judges it, and its result is written from that tool's verdict: name the file (`verdict`: <scratch>/hold/<name>/verdict.json). No outcome word is taken from a caller but `void`, for a check that left no verdict; nothing was written" % (what, name, kind))
         if kind.startswith(HELD) and verdict is None:
-            refuse("bad-value", "%s: the item %s is a held check (kind %s) — dev/stabilize-step holds its command and judges it, and its result is written from that tool's verdict: name the file (`verdict`: <scratch>/hold/<name>/verdict.json). No outcome word is taken from a caller; nothing was written" % (what, name, kind))
+            # A HELD CHECK THAT LEFT NO VERDICT — its job dead, its start refused, the stage
+            # over while it ran, a gate not held off the candidate's tree: it is void, and
+            # void is the one word taken for it. Its reason is a word of a declared shape.
+            if not HELD_VOID.fullmatch(detail) or len(detail) > HELD_VOID_MAX:
+                refuse("bad-value", "%s: the item %s is a held check (kind %s), and a void that names no verdict's file says why in a word — `<word>` or `<word>:<key>`, lowercase words joined by single `-`, the key the held job's name, %d characters at most — and %s is no such word; nothing was written" % (what, name, kind, HELD_VOID_MAX, shown(detail)))
+            detail = cell(NO_VERDICT + detail)
         if verdict is not None and not kind.startswith(HELD):
             refuse("bad-value", "%s: the item %s is of kind %s, which is no held check (`%s<id>`): its result is what its agents report, as `outcome`, and no verdict's file; nothing was written" % (what, name, kind, HELD))
         if not selected_by(item, scope[1]):
@@ -2837,6 +2915,11 @@ def tested_on(run_dir, round_number, candidate):
     elsewhere = sorted({untick(row[2]) for row in rows} - {candidate})
     if elsewhere:
         refuse("bad-value", "round %s: its results (%s) are of runs on %s, and a round tests one candidate — not %s; nothing was written" % (round_number, rel, ", ".join(elsewhere), candidate))
+    # And the gate on record as the candidate's is the candidate's: a record commit's gate
+    # is held to it (gate-check), and the gate of another tree is no baseline for that.
+    gate = read_gate(run_dir, round_number)
+    if gate is not None and gate[1]["commit"] != candidate:
+        refuse("bad-value", "round %s: %s holds the gate of %s, and a round tests one candidate — not %s: the candidate's gate is the gate of the candidate; nothing was written" % (round_number, gate[0], gate[1]["commit"], candidate))
 
 
 def run_set(args):
@@ -2918,9 +3001,16 @@ def triage_entry(entry):
         if "regression" in entry:
             refuse("bad-value", "%s: a regression is the verifier's fact about a finding it confirmed" % what)
         return key, [grade, "refuted", "-", fork], ("refuted", "verify-real")
-    if not isinstance(entry.get("regression"), bool):
-        refuse("bad-value", "%s: confirmed says whether the finding is a regression — `regression` is true when the repro is green on the previous release, else false" % what)
-    if entry["regression"]:
+    regression = entry.get("regression")
+    if regression is not None and not isinstance(regression, bool):
+        refuse("bad-value", "%s: confirmed says whether the finding is a regression where its verifier knows — `regression` is true when the repro is green on the previous release, false when it is red there too — and says nothing (the field absent, or null) where it does not: %s is none of the three" % (what, shown(regression)))
+    if regression is None:
+        # THE VERIFIER DOES NOT KNOW — it was handed no binary of the previous release, the
+        # door is one that release does not have, its return does not back the claim. The
+        # cell says so (`-` beside `confirmed`), the finding is confirmed, and the state
+        # names it: never `no`, which would be a fact nobody established.
+        return key, [grade, "confirmed", "-", fork], ("confirmed", "verify-real")
+    if regression:
         return key, [grade, "confirmed", "yes", fork], ("regression", "verify-real")
     return key, [grade, "confirmed", "no", fork], ("confirmed", "verify-real")
 
@@ -3218,6 +3308,11 @@ def grounds(run_dir):
         for ran in held["results"]:
             if kinds.get(ran["item"], "").startswith(HELD):
                 kept, word = verdict_on_record(run_dir, number_, ran["item"], ran["attempt"])
+                if ran["outcome"] == "void" and (ran["reason"] or "").startswith(NO_VERDICT):
+                    # A void by a word: the check left NO verdict, and none is on record.
+                    if word is not None:
+                        spoiled(results_rel, "says that the held check %s left no verdict in its attempt %d, and %s holds one, which says %s: a result is the tool's verdict on record, or the word that there was none" % (ran["item"], ran["attempt"], kept, word))
+                    continue
                 if word != ran["outcome"]:
                     spoiled(results_rel, "says that the held check %s was %s in its attempt %d, and %s — the verdict that result was written from — %s: a held check's result is the tool's verdict on record, and what is deleted is missed" % (ran["item"], ran["outcome"], ran["attempt"], kept, "is gone, or is no verdict of that run" if word is None else "says %s" % word))
         rounds.append(held)
@@ -3763,6 +3858,9 @@ def document(run_dir, run):
         "uncovered": uncovered,
         "ledger": findings,
         "blockers": [finding["key"] for finding in findings if finding["route"] == "fix"],
+        # Confirmed, and nobody knows whether it is a regression: named for as long as the
+        # finding is not recorded, so that the missing fact is never read as `no`.
+        "regression_unknown": [finding["key"] for finding in findings if finding["route"] != "recorded" and finding["triage"] is not None and finding["triage"]["verdict"] == "confirmed" and finding["triage"]["regression"] is None],
         "human_list": [{"key": finding["key"], "why": finding["why"]} for finding in findings if finding["route"] == "human"],
         "human_stages": human_stages,
         **following,
@@ -4125,6 +4223,9 @@ def scan_hits(files):
 
 
 SUBJECT = "the-subject-of-the-commit"
+# Where the messages of a range's commits lie in the scan's throwaway repository: one file
+# per commit, named by its sha (vet --range).
+MESSAGES = "the-messages-of-the-range"
 
 
 def vet_files(run_dir, run, names, subject):
@@ -4244,7 +4345,11 @@ def range_scan(revs):
         did_not_run("dev/hygiene-scan exited %d: %s" % (out.returncode, last_line(out)))
     with tempfile.TemporaryDirectory(prefix="jigc-stabilize-scan-") as work:
         report = os.path.join(work, "gitleaks.json")
-        argv = [tools["gitleaks"], "git", "--redact", "--no-banner", "--no-color", "--exit-code", str(GITLEAKS_FOUND), "--report-format", "json", "--report-path", report, "--log-opts", " ".join(revs)]
+        # A MERGE'S OWN LINES TOO: gitleaks reads what `git log -p` prints, and that prints
+        # no diff for a merge unless it is asked. `--remerge-diff` shows what the merge
+        # itself introduced — a line typed while a conflict was resolved — as the denylist
+        # scan asks for it (dev/hygiene-scan); CI's own gitleaks step does not ask.
+        argv = [tools["gitleaks"], "git", "--redact", "--no-banner", "--no-color", "--exit-code", str(GITLEAKS_FOUND), "--report-format", "json", "--report-path", report, "--log-opts", " ".join(["--remerge-diff"] + revs)]
         config = os.path.join(ROOT, ".gitleaks.toml")
         if os.path.isfile(config):
             argv += ["--config", config]
@@ -4254,6 +4359,12 @@ def range_scan(revs):
                 leaks = [{"commit": leak.get("Commit") or None, "path": leak.get("File") or None, "why": "hygiene", "detail": "gitleaks rule %s at line %s" % (leak["RuleID"], leak["StartLine"])} for leak in json.load(open(report, encoding="utf-8"))]
             except (OSError, ValueError, KeyError, TypeError, AttributeError):
                 leaks = []
+            for leak in leaks:
+                # A file of a merge's own diff is named with the diff's `b/` before it:
+                # where the commit holds no such path and holds the one after it, that one.
+                commit, path = leak["commit"], leak["path"]
+                if commit and FULL_SHA.fullmatch(commit) and path and path.startswith("b/") and not asked_of_git(["ls-tree", "-z", commit, "--", path], "read %s" % commit) and asked_of_git(["ls-tree", "-z", commit, "--", path[2:]], "read %s" % commit):
+                    leak["path"] = path[2:]
             hits += leaks or [{"commit": None, "path": None, "why": "hygiene", "detail": "gitleaks found a secret-shaped string in the range"}]
         elif out.returncode != 0:
             did_not_run("gitleaks exited %d: %s" % (out.returncode, last_line(out)))
@@ -4277,6 +4388,19 @@ def vet_range(revs):
     for hit in refused:
         whole = [commit for commit in commits if hit["commit"] and commit.startswith(hit["commit"])]
         hit["commit"] = whole[0] if len(whole) == 1 else hit["commit"]
+    # WHAT A COMMIT SAYS IS HELD TO WHAT ITS FILES ARE HELD TO. The range scan reads every
+    # message against the denylist, and gitleaks reads added lines and NEVER a message — so
+    # the messages of the range are scanned as the files of a batch are: each a file of ONE
+    # throwaway repository, under both scanners (a message the range scan named already is
+    # refused, and is not scanned twice).
+    named = {hit["commit"] for hit in refused if hit["path"] is None}
+    messages = []
+    for commit in commits:
+        message = asked_of_git(["log", "-1", "--format=%B", commit, "--"], "read %s" % commit).decode("utf-8", "replace")
+        if commit not in named and message.strip() and "\0" not in message:
+            messages.append(("%s/%s" % (MESSAGES, commit), message if message.endswith("\n") else message + "\n"))
+    for rel in scan_hits(messages):
+        refused.append({"commit": rel[len(MESSAGES) + 1:], "path": None, "why": "hygiene", "detail": "the public-hygiene scan matches its message — a secret-shaped string, or a denylisted term: what a commit says is held to what its files are held to"})
     prefix = "/".join(ARTIFACTS) + "/"
     for commit in commits:
         # What the commit ITSELF changes: for a merge, what differs from every parent —

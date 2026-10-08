@@ -127,6 +127,9 @@ use super::placed_executable;
 const TOOL: &str = "dev/stabilize-step";
 const RECORD: &str = "dev/stabilize-record";
 const MERGE_LOGS: &str = "dev/merge-logs";
+/// The branch model's rule, which the tool asks of every branch an act is handed.
+const BRANCH_RULE: &str = "dev/branch-name";
+const PROBE_TOOL: &str = "dev/stabilize-probe";
 /// The denylist half of the public-hygiene scan, and gitleaks' configuration: what the
 /// record script runs wherever it vets what a step would commit or push. The denylist's
 /// one term and what the stand-in for gitleaks reports are the record suite's.
@@ -415,7 +418,7 @@ impl StepRig {
 
         // The base: the tool and what it runs, a product path, the two logs, a file that
         // is neither.
-        for script in [TOOL, RECORD, MERGE_LOGS, SCANNER] {
+        for script in [TOOL, RECORD, MERGE_LOGS, SCANNER, BRANCH_RULE] {
             placed_executable::copy(&repo_root().join(script), &rig.root.join(script));
         }
         // What a vet needs: gitleaks' configuration, as committed; the stand-in for
@@ -571,6 +574,21 @@ impl StepRig {
         out.status
             .success()
             .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+    }
+
+    /// The commits the remote's heads stand at, sorted and each once: what the tool is told
+    /// when it ASKS THE REMOTE what it holds (`git ls-remote --heads origin`).
+    pub(crate) fn remote_heads(&self) -> Vec<String> {
+        let out = self.git_at(
+            &self.origin,
+            &["for-each-ref", "--format=%(objectname)", "refs/heads"],
+        );
+        assert!(out.status.success(), "list the remote's heads: {out:?}");
+        let heads: BTreeSet<String> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        heads.into_iter().collect()
     }
 
     /// A commit somebody else pushed: made in a second clone, so that the remote's branch
@@ -743,6 +761,29 @@ fn with<'a>(head: &[&'a str], lists: &[(&'a str, &'a [String])]) -> Vec<&'a str>
 
 fn lines(list: &[&str]) -> Vec<String> {
     list.iter().map(|line| (*line).to_owned()).collect()
+}
+
+/// **The git calls of the tool's one push**, in its order (the tool's header: *What a push
+/// publishes*): the remote is ASKED what it holds, and which of those commits this clone
+/// holds too; the name is held to the branch's own ref, and the branch's commit is read
+/// once; the range is that commit less what the remote holds, by sha; after the vet both
+/// are asked again; then the push — OF THAT COMMIT, BY ITS SHA, into the branch's ref — the
+/// remote read back, and the branch read once more. `held` is what the remote's heads stood at before the call
+/// ([`StepRig::remote_heads`]) and `tip` the commit the branch stood at.
+fn push_calls(branch: &str, tip: &str, held: &[String]) -> Vec<String> {
+    let held = held.join(" ");
+    vec![
+        "ls-remote --heads origin".to_owned(),
+        format!("rev-list --no-walk --ignore-missing {held}"),
+        format!("rev-parse --symbolic-full-name {branch}"),
+        format!("rev-parse {branch}"),
+        format!("rev-list --reverse {tip} --not {held}"),
+        "ls-remote --heads origin".to_owned(),
+        format!("rev-parse {branch}"),
+        format!("push origin {tip}:refs/heads/{branch}"),
+        format!("ls-remote --exit-code --heads origin {branch}"),
+        format!("rev-parse {branch}"),
+    ]
 }
 
 /// A report as `dev/stabilize-record report` leaves one: text, and its last line.
@@ -1258,11 +1299,12 @@ fn open_round_opens_the_branch_from_the_loop_branch_or_switches_to_it() {
 }
 
 #[test]
-fn push_pushes_the_branch_by_name_and_reads_the_remote_back() {
+fn push_pushes_the_vetted_commit_by_its_sha_and_reads_the_remote_back() {
     let rig = StepRig::new("push");
     let branch = rig.round(1);
     let push = ["push", "--branch", branch.as_str()];
     let first = rig.change("crates/a.txt", "fixed\n", "fix: a finding");
+    let held = rig.remote_heads();
 
     let seen = rig.step(&push);
     let line = seen.done("push", "ready");
@@ -1273,19 +1315,16 @@ fn push_pushes_the_branch_by_name_and_reads_the_remote_back() {
             "branch": branch, "head": first, "sha256": line["sha256"],
         })
     );
-    assert_eq!(rig.remote(&branch), Some(first));
+    assert_eq!(rig.remote(&branch), Some(first.clone()));
+    let mut expected = vec![
+        "branch --show-current".to_owned(),
+        format!("ls-remote --exit-code --heads origin {branch}"),
+    ];
+    expected.extend(push_calls(&branch, &first, &held));
+    expected.push("rev-parse HEAD".to_owned());
     assert_eq!(
-        seen.trace,
-        lines(&[
-            "branch --show-current",
-            &format!("ls-remote --exit-code --heads origin {branch}"),
-            &format!("rev-list --reverse {branch} --not --remotes=origin"),
-            &format!("push origin {branch}"),
-            &format!("ls-remote --exit-code --heads origin {branch}"),
-            &format!("rev-parse {branch}"),
-            "rev-parse HEAD",
-        ]),
-        "a branch that is not pushed yet has nothing to compare"
+        seen.trace, expected,
+        "a branch that is not pushed yet has nothing to compare; what the remote lacks of it is asked of the remote, and the vet is of the commit by its sha"
     );
 
     // A branch that is pushed is first held to its pushed tip.
@@ -1350,7 +1389,7 @@ fn push_refuses_where_its_list_halted() {
             .filter(|call| call.starts_with("push "))
             .count(),
         1,
-        "one push, by name, and no second try: {:?}",
+        "one push, of the vetted commit, and no second try: {:?}",
         seen.trace
     );
 
@@ -1368,6 +1407,31 @@ fn push_refuses_where_its_list_halted() {
     );
     rig.step(&["push", "--branch", LOOP])
         .refused("remote-differs");
+
+    // A TAG OF THE BRANCH'S OWN NAME, at another commit: git reads a short name as the tag,
+    // so every read of the branch would be of the tag's commit — and a push of a sha is not
+    // one git refuses as ambiguous. The name is held to the branch's own ref: no push.
+    let rig = StepRig::new("push-tagged");
+    let pushed = rig.rev("HEAD");
+    let note = rig.change(
+        &format!("{RUN_DIR}/note.md"),
+        "a record\n",
+        "docs(record): a note",
+    );
+    rig.git(&["tag", LOOP, &pushed]);
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    seen.refused("push-rejected");
+    assert!(
+        !seen.trace.iter().any(|call| call.starts_with("push ")),
+        "no push is tried: {:?}",
+        seen.trace
+    );
+    assert_eq!(rig.remote(LOOP), Some(pushed));
+    // MUST NOT REFUSE: the same branch once the name is its own again.
+    rig.git(&["tag", "-d", LOOP]);
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    assert_eq!(seen.done("push", "ready")["vetted"], json!([note]));
+    assert_eq!(rig.remote(LOOP), Some(note));
 }
 
 // ---------------------------------------------------------------------------
@@ -1408,6 +1472,7 @@ fn land_merges_the_round_with_a_merge_commit_and_pushes_the_loop_branch() {
     let branch = a_round(&rig);
     let (pre, round_head) = (rig.rev(LOOP), rig.rev(&branch));
     let outside = format!(":(exclude){RUN_DIR}");
+    let held = rig.remote_heads();
 
     let seen = rig.step(&land(&branch, &product, &logs));
     let line = seen.done("land", "merged");
@@ -1457,11 +1522,10 @@ fn land_merges_the_round_with_a_merge_commit_and_pushes_the_loop_branch() {
             "status --porcelain",
             &format!("diff --quiet HEAD {branch} -- {}", product.join(" ")),
             &format!("diff --quiet HEAD {branch} -- . {outside}"),
-            &format!("rev-list --reverse {LOOP} --not --remotes=origin"),
-            &format!("push origin {LOOP}"),
-            &format!("ls-remote --exit-code --heads origin {LOOP}"),
-            &format!("rev-parse {LOOP}"),
-        ]),
+        ])
+        .into_iter()
+        .chain(push_calls(LOOP, &merge, &held))
+        .collect::<Vec<_>>(),
         "the commands of the land step's list, in its order"
     );
 
@@ -1822,6 +1886,7 @@ fn carry_takes_a_dropped_rounds_record_commits_over_to_the_loop_branch() {
         "docs(record): dropped",
     );
     let pre = rig.rev(LOOP);
+    let held = rig.remote_heads();
 
     let seen = rig.step(&carry(&product, &[first.as_str(), second.as_str()]));
     let line = seen.done("carry", "carried");
@@ -1868,14 +1933,15 @@ fn carry_takes_a_dropped_rounds_record_commits_over_to_the_loop_branch() {
             &format!("rev-list --count {pre}..HEAD"),
             &format!("diff --name-only {pre} HEAD"),
             &format!("diff --quiet {pre} HEAD -- {}", product.join(" ")),
-            &format!("rev-list --reverse {LOOP} --not --remotes=origin"),
-            &format!("push origin {LOOP}"),
-            &format!("ls-remote --exit-code --heads origin {LOOP}"),
-            &format!("rev-parse {LOOP}"),
+        ])
+        .into_iter()
+        .chain(push_calls(LOOP, &made[1], &held))
+        .chain(lines(&[
             "branch --show-current",
             "rev-parse HEAD",
             &format!("log --reverse --format=%H {pre}..HEAD"),
-        ]),
+        ]))
+        .collect::<Vec<_>>(),
         "the commands of the carry step's list, in its order"
     );
 }
@@ -2978,6 +3044,21 @@ fn nothing_is_published_that_was_not_vetted() {
             format!("docs(record): by hand\n\nWritten in {home}."),
             vec![(None, "host-path")],
         ),
+        // WHAT A COMMIT SAYS IS HELD TO WHAT ITS FILES ARE HELD TO (the core review's `F6`):
+        // gitleaks reads added lines and never a message, so a secret-shaped string in a
+        // subject or a body passed every push.
+        (
+            "a secret-shaped string in the body of the message alone",
+            clean.clone(),
+            format!("docs(record): by hand\n\nThe environment held {STUB_SECRET}."),
+            vec![(None, "hygiene")],
+        ),
+        (
+            "a secret-shaped string in the subject alone",
+            clean.clone(),
+            format!("docs(record): by hand, with {STUB_SECRET}"),
+            vec![(None, "hygiene")],
+        ),
     ];
     for (what, text, message, expected) in cases {
         rig.write(&by_hand, &text);
@@ -3029,7 +3110,9 @@ fn nothing_is_published_that_was_not_vetted() {
             seen.raw
         );
         assert!(
-            !seen.raw.contains(DENY_TERM) && !seen.raw.contains(&home),
+            !seen.raw.contains(DENY_TERM)
+                && !seen.raw.contains(&home)
+                && !seen.raw.contains(STUB_SECRET),
             "{what}: named by where, never by what: {}",
             seen.raw
         );
@@ -3041,10 +3124,15 @@ fn nothing_is_published_that_was_not_vetted() {
             .as_str()
             .expect("what is done about it");
         assert!(then.contains("the human's"), "{what}: {then}");
+        // The read is of THE BRANCH, less what the remote held when the step asked it —
+        // each commit by its sha, and no remote-tracking ref.
         let read = named_command(then, "dev/stabilize-record vet --range ");
         assert_eq!(
             read,
-            format!("dev/stabilize-record vet --range -- {LOOP} --not --remotes=origin")
+            format!(
+                "dev/stabilize-record vet --range -- {LOOP} --not {}",
+                rig.remote_heads().join(" ")
+            )
         );
         let (code, out, _) = rig.record_script(read, "");
         let answer: Value = serde_json::from_str(&out).expect("the read prints its result");
@@ -3137,6 +3225,389 @@ fn nothing_is_published_that_was_not_vetted() {
     assert_eq!(rig.remote(&dropped), None);
 }
 
+/// A path inside single quotes of a shell text.
+fn sh_quoted(path: &Path) -> String {
+    path.display().to_string().replace('\'', "'\\''")
+}
+
+/// **Something that happens WHILE THE RANGE IS SCANNED**: the rig's `gitleaks` becomes one
+/// that — the first time it is asked to scan a range, which is the push's vet — runs
+/// `during`, a shell text, and then scans as the stand-in does. It stands in for a second
+/// committer, or a second pusher, in the seconds the two scanners take at every push.
+fn while_the_range_is_scanned(rig: &StepRig, during: &str) {
+    rig.on_path("gitleaks-stub", &gitleaks_stub());
+    let flag = sh_quoted(&rig.dir().join("happened"));
+    fs::remove_file(rig.dir().join("bin/gitleaks")).expect("remove the stand-in");
+    rig.on_path(
+        "gitleaks",
+        &format!(
+            "#!/bin/sh\ncase \" $* \" in *\" --log-opts \"*) if [ ! -e '{flag}' ]; then : >'{flag}'\n( {during} ) >/dev/null 2>&1\nfi ;; esac\nexec gitleaks-stub \"$@\"\n"
+        ),
+    );
+}
+
+/// **What the remote lacks is asked of the remote, and never read off a remote-tracking
+/// ref** (the core review's `F2`). Both reads of a push — which commits are no record's,
+/// and which commits are vetted — were `<branch> --not --remotes=origin`: with ONE ref under
+/// `refs/remotes/origin/` standing at a local commit, nothing was foreign, nothing was
+/// vetted, and `git push` published everything. A tracking ref says what a fetch once saw,
+/// or what a hand wrote there; the tool now asks the remote (`git ls-remote`), and a ref
+/// the remote does not bear out switches off nothing — whichever ref it is.
+#[test]
+fn what_the_remote_lacks_is_asked_of_the_remote_and_never_read_off_a_tracking_ref() {
+    let rig = StepRig::new("vet-asked");
+    let product = product();
+    let record_push = ["push", "--branch", LOOP, "--run-dir", RUN_DIR];
+
+    // MUST NOT REFUSE: a head of the remote that this clone does not hold — `main`, moved
+    // on by somebody else — leaves nothing out of a range, and stops no record's push.
+    rig.pushed_by_another("main", "elsewhere.md", "elsewhere\n");
+    let note = rig.change(
+        &format!("{RUN_DIR}/note.md"),
+        "a note\n",
+        "docs(record): a note",
+    );
+    let seen = rig.step(&git_state("test", &product));
+    let line = seen.done("git-state", "ready");
+    assert_eq!(
+        json!([line["vetted"], line["remote_head"]]),
+        json!([[note], note]),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(rig.remote(LOOP), Some(note.clone()));
+
+    // Some task's commit, outside the run's directory, with a denylisted line — and the
+    // control: it is refused, by the read and by both pushes.
+    let leak = rig.change(
+        "docs-x/leak.md",
+        &format!("{DENY_TERM} outside\n"),
+        "docs: a task's commit",
+    );
+    rig.step(&git_state("test", &product))
+        .refused("foreign-commit");
+
+    // A ref the remote does not bear out: of a branch it does not hold, of `main`, of the
+    // loop branch itself.
+    for stale in ["fix/gone-branch", "main", LOOP] {
+        rig.git(&[
+            "update-ref",
+            &format!("refs/remotes/origin/{stale}"),
+            "HEAD",
+        ]);
+        for (what, seen, word) in [
+            (
+                "git-state",
+                rig.step(&git_state("test", &product)),
+                "foreign-commit",
+            ),
+            ("a record's push", rig.step(&record_push), "foreign-commit"),
+            ("a push", rig.step(&["push", "--branch", LOOP]), "unvetted"),
+        ] {
+            let what = format!("`{what}`, with `origin/{stale}` at the local head");
+            let said = seen.refused(word);
+            if word == "unvetted" {
+                assert_eq!(
+                    json!([
+                        said["vet"]["commits"],
+                        said["vet"]["refused"][0]["commit"],
+                        said["vet"]["refused"][0]["path"]
+                    ]),
+                    json!([[leak], leak, "docs-x/leak.md"]),
+                    "{what}: the commit is vetted, and named: {}",
+                    seen.raw
+                );
+            }
+            assert_eq!(
+                rig.remote(LOOP),
+                Some(note.clone()),
+                "{what}: NOTHING REACHED THE REMOTE"
+            );
+            assert!(
+                !rig.git_at(&rig.origin, &["cat-file", "-e", &leak])
+                    .status
+                    .success(),
+                "{what}: the bare remote does not hold the commit"
+            );
+            assert!(
+                !seen.trace.iter().any(|call| call.starts_with("push ")),
+                "{what}: no push was tried: {:?}",
+                seen.trace
+            );
+        }
+    }
+}
+
+/// **A commit that lands while the range is vetted is not published** (the core review's
+/// `F1`). The push listed what the remote lacked, vetted that list, and pushed the branch
+/// by name — so whatever the branch stood at when `git push` ran was published, and the
+/// line came back with `vetted: [A]` and `remote_head: B`. The vet is now of ONE commit, by
+/// its sha, and after it the branch and the remote are both asked again: where either
+/// moved, nothing is pushed, and the step asked again meets what landed as its first read
+/// meets any commit.
+#[test]
+fn a_commit_that_lands_while_the_range_is_vetted_is_not_published() {
+    // THE BRANCH MOVED: a second committer, in the seconds the scanners take.
+    let rig = StepRig::new("vet-raced");
+    let product = product();
+    let pushed = rig.rev("HEAD");
+    let note = rig.change(
+        &format!("{RUN_DIR}/note.md"),
+        "a note\n",
+        "docs(record): a note",
+    );
+    while_the_range_is_scanned(
+        &rig,
+        &format!(
+            "cd '{}' && mkdir -p docs-x && printf '%s raced\\n' {DENY_TERM} >docs-x/raced.md && git add docs-x/raced.md && git commit -q -m 'docs: landed while the vet ran'",
+            sh_quoted(&rig.root)
+        ),
+    );
+    let seen = rig.step(&git_state("test", &product));
+    let said = seen.refused("remote-differs");
+    let raced = rig.rev("HEAD");
+    assert_ne!(raced, note, "a commit landed while the range was scanned");
+    assert!(
+        said["halt"]["root_cause"]
+            .as_str()
+            .is_some_and(|cause| cause.contains(&note) && cause.contains(&raced)),
+        "the commit that was vetted and the one the branch stands at are named: {}",
+        seen.raw
+    );
+    assert_eq!(
+        rig.remote(LOOP),
+        Some(pushed.clone()),
+        "NOTHING REACHED THE REMOTE"
+    );
+    for commit in [&note, &raced] {
+        assert!(
+            !rig.git_at(&rig.origin, &["cat-file", "-e", commit])
+                .status
+                .success(),
+            "the bare remote does not hold {commit}"
+        );
+    }
+    assert!(
+        !seen.trace.iter().any(|call| call.starts_with("push ")),
+        "no push was tried: {:?}",
+        seen.trace
+    );
+    // THE EXIT: asked again, the step meets what landed as it meets any commit — it is no
+    // record's, and it is vetted like every other.
+    rig.step(&git_state("test", &product))
+        .refused("foreign-commit");
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    assert_eq!(
+        seen.refused("unvetted")["vet"]["commits"],
+        json!([note, raced]),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(rig.remote(LOOP), Some(pushed));
+
+    // THE REMOTE MOVED: it holds another head than when the range was read.
+    let rig = StepRig::new("vet-moved");
+    let pushed = rig.rev("HEAD");
+    let note = rig.change(
+        &format!("{RUN_DIR}/note.md"),
+        "a note\n",
+        "docs(record): a note",
+    );
+    while_the_range_is_scanned(
+        &rig,
+        &format!(
+            "git --git-dir='{}' update-ref refs/heads/fix/elsewhere {pushed}",
+            sh_quoted(&rig.origin)
+        ),
+    );
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    seen.refused("remote-differs");
+    assert_eq!(rig.remote(LOOP), Some(pushed), "nothing was pushed");
+    assert!(
+        !seen.trace.iter().any(|call| call.starts_with("push ")),
+        "no push was tried: {:?}",
+        seen.trace
+    );
+    // MUST NOT REFUSE: the step asked again, over a remote that stands still.
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    assert_eq!(seen.done("push", "ready")["vetted"], json!([note]));
+    assert_eq!(rig.remote(LOOP), Some(note));
+}
+
+/// **Something that happens BETWEEN THE VET AND THE PUSH** — after the tool's last read of
+/// the branch, before git's own: the rig's `git` becomes one that — the first time it is
+/// asked to push — runs `during`, a shell text, and then pushes exactly as it was asked. It
+/// writes down the tool's calls as the rig's own `git` does. It stands in for a second
+/// committer in the one process start between the two reads.
+fn while_the_push_starts(rig: &StepRig, during: &str) {
+    let flag = sh_quoted(&rig.dir().join("pushed-once"));
+    let shim = GIT_SHIM.replace("@GIT@", &real_git().display().to_string());
+    let (traced, runs) = shim
+        .split_once("exec ")
+        .expect("the rig's git ends by running the real one");
+    rig.on_path(
+        "git",
+        &format!(
+            "{traced}if [ \"$1\" = push ] && [ ! -e '{flag}' ]; then : >'{flag}'\n( {during} ) >/dev/null 2>&1\nfi\nexec {runs}"
+        ),
+    );
+}
+
+/// **A push names the commit that was vetted, and publishes nothing later** (the core
+/// review's `F1`, finished). The vet is of one commit, by its sha; the push was still `git
+/// push origin <branch>`, so a commit that landed between the tool's last read of the
+/// branch and git's own — one process start — was published, vetted by nothing, and only
+/// NAMED by the read-back. The push is now of that sha (`<sha>:refs/heads/<branch>`): what
+/// lands in the window is NOT ON THE REMOTE, and the act says what it did not publish —
+/// for the push a record is owed (`git-state`) and for `push`, through the tool's one push.
+#[test]
+fn a_commit_that_lands_between_the_vet_and_the_push_is_not_published_and_is_named() {
+    let product = product();
+    let state = git_state("test", &product);
+    let acts: [(&str, &[&str], &str); 2] = [
+        ("the push a record is owed", &state, "foreign-commit"),
+        ("a push", &PUSH, "unvetted"),
+    ];
+    for (what, act, again) in acts {
+        let rig = StepRig::new("push-raced");
+        let note = rig.change(
+            &format!("{RUN_DIR}/note.md"),
+            "a note\n",
+            "docs(record): a note",
+        );
+        while_the_push_starts(
+            &rig,
+            &format!(
+                "cd '{}' && mkdir -p docs-x && printf '%s raced\\n' {DENY_TERM} >docs-x/raced.md && git add docs-x/raced.md && git commit -q -m 'docs: landed while the push started'",
+                sh_quoted(&rig.root)
+            ),
+        );
+        let seen = rig.step(act);
+        let said = seen.refused("remote-differs");
+        let raced = rig.rev("HEAD");
+        assert_ne!(raced, note, "{what}: a commit landed as the push started");
+        // THE COMMIT THAT WAS VETTED IS PUBLISHED, AND NOTHING LATER — asked of the bare
+        // remote, which does not hold what landed.
+        assert_eq!(
+            rig.remote(LOOP),
+            Some(note.clone()),
+            "{what}: the remote stands at the commit that was vetted: {}",
+            seen.raw
+        );
+        assert!(
+            !rig.git_at(&rig.origin, &["cat-file", "-e", &raced])
+                .status
+                .success(),
+            "{what}: THE BARE REMOTE DOES NOT HOLD {raced}"
+        );
+        let pushes: Vec<&String> = seen
+            .trace
+            .iter()
+            .filter(|call| call.starts_with("push "))
+            .collect();
+        assert_eq!(
+            pushes,
+            [&format!("push origin {note}:refs/heads/{LOOP}")],
+            "{what}: one push, of the vetted commit by its sha"
+        );
+        // THE ACT SAYS WHAT IT DID NOT PUBLISH: the commit that is on the remote, and the
+        // one that is not, each by its sha.
+        assert_eq!(
+            json!([said["vetted"], said["remote_head"]]),
+            json!([[note], note]),
+            "{what}: {}",
+            seen.raw
+        );
+        assert!(
+            said["halt"]["root_cause"].as_str().is_some_and(|cause| {
+                cause.contains(&format!("{note}, is published"))
+                    && cause.contains(&format!("NOT on the remote: {raced}"))
+            }),
+            "{what}: what was published and what was not are named: {}",
+            seen.raw
+        );
+        // THE EXIT: asked again, the step meets what landed as it meets any commit — and
+        // publishes none of it.
+        let seen = rig.step(act);
+        let said = seen.refused(again);
+        if again == "unvetted" {
+            assert_eq!(said["vet"]["commits"], json!([raced]), "{}", seen.raw);
+        }
+        assert_eq!(
+            rig.remote(LOOP),
+            Some(note),
+            "{what}: nothing more was pushed"
+        );
+    }
+}
+
+/// **What a commit says is held to what its files are held to** (the core review's `F6`) —
+/// here for a commit that changes nothing of a run: a fixer's, a tuning commit. gitleaks
+/// reads added lines and never a message, so the one check of a writer that a push did not
+/// repeat was the secret scan of what a commit SAYS.
+#[test]
+fn what_a_commit_says_is_held_to_what_its_files_are_held_to() {
+    let rig = StepRig::new("vet-message");
+    let pushed = rig.rev("HEAD");
+    for message in [
+        format!("fix: a finding\n\nThe environment held {STUB_SECRET}."),
+        format!("fix: a finding of {STUB_SECRET}"),
+    ] {
+        let commit = rig.change("crates/a.txt", "fixed\n", &message);
+        let seen = rig.step(&["push", "--branch", LOOP]);
+        let said = seen.refused("unvetted");
+        let refused = said["vet"]["refused"].as_array().expect("what was refused");
+        assert_eq!(
+            refused
+                .iter()
+                .map(|found| json!([found["commit"], found["path"], found["why"]]))
+                .collect::<Vec<_>>(),
+            vec![json!([commit, null, "hygiene"])],
+            "the commit, and its message: {}",
+            seen.raw
+        );
+        assert!(
+            !seen.raw.contains(STUB_SECRET),
+            "by where, never by what: {}",
+            seen.raw
+        );
+        assert_eq!(rig.remote(LOOP), Some(pushed.clone()), "nothing was pushed");
+        rig.git(&["reset", "-q", "--hard", &pushed]);
+    }
+    // MUST NOT REFUSE: the same change, saying nothing of the kind.
+    let clean = rig.change("crates/a.txt", "fixed\n", "fix: a finding");
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    assert_eq!(seen.done("push", "ready")["vetted"], json!([clean]));
+}
+
+/// **The secret scan of a range reads a merge's own lines** (the core review's sixth lead,
+/// driven: a credential typed while a conflict was resolved was pushed by the tool).
+/// gitleaks reads what `git log -p` prints, and that prints no diff for a merge unless it
+/// is asked; the denylist scan asks (`--remerge-diff`), and the push's secret scan now asks
+/// the same. Held here on every machine by what the scanner is ASKED — the stand-in reads
+/// no range — and by the machine's own gitleaks over a real merge in the arm below.
+#[test]
+fn the_secret_scan_of_a_range_is_asked_for_a_merges_own_lines() {
+    let rig = StepRig::new("vet-merge-asked");
+    let note = rig.change(
+        &format!("{RUN_DIR}/note.md"),
+        "a note\n",
+        "docs(record): a note",
+    );
+    let held = rig.remote_heads().join(" ");
+    let asked = rig.dir().join("asked");
+    while_the_range_is_scanned(
+        &rig,
+        &format!("printf '%s\\n' \"$*\" >'{}'", sh_quoted(&asked)),
+    );
+    rig.step(&["push", "--branch", LOOP]).done("push", "ready");
+    let asked = fs::read_to_string(&asked).expect("what the range's secret scan was asked");
+    assert!(
+        asked.contains(&format!("--log-opts --remerge-diff {note} --not {held} ")),
+        "the range, and a merge's own lines with it: {asked}"
+    );
+}
+
 /// The stub stands in for gitleaks' exit contract, reads the tree and not the range, and
 /// says nothing about gitleaks' rules. This arm runs whatever the machine has over the
 /// range a push would publish: with gitleaks installed, a credential-shaped string in an
@@ -3196,8 +3667,79 @@ fn the_machines_own_gitleaks_reads_the_range_a_push_would_publish() {
     );
     assert_eq!(
         rig.remote(LOOP),
-        Some(clean),
+        Some(clean.clone()),
         "the credential was not pushed"
+    );
+
+    // AND WHAT A COMMIT SAYS (the core review's `F6`): the same string in a message, over a
+    // file that holds nothing — which gitleaks, reading a range, never reads.
+    rig.git(&["reset", "-q", "--hard", &clean]);
+    let said_it = rig.change(
+        "crates/a.txt",
+        "tuned again\n",
+        &format!("build(dev): a third tuning commit\n\nThe environment held {token}."),
+    );
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    let said = seen.refused("unvetted");
+    assert_eq!(
+        json!([
+            said["vet"]["refused"][0]["commit"],
+            said["vet"]["refused"][0]["path"],
+            said["vet"]["refused"][0]["why"]
+        ]),
+        json!([said_it, null, "hygiene"]),
+        "gitleaks' own rules read the message: {}",
+        seen.raw
+    );
+    assert!(
+        !seen.raw.contains(&token),
+        "and never the string: {}",
+        seen.raw
+    );
+    assert_eq!(
+        rig.remote(LOOP),
+        Some(clean.clone()),
+        "the credential in the message was not pushed"
+    );
+
+    // AND A MERGE'S OWN LINES (the core review's sixth lead): neither parent holds the
+    // string — only the hand that resolved the conflict typed it.
+    rig.git(&["reset", "-q", "--hard", &clean]);
+    rig.git(&["switch", "-q", "-c", "fix/side"]);
+    rig.change("crates/a.txt", "theirs\n", "fix: theirs");
+    rig.git(&["switch", "-q", LOOP]);
+    rig.change("crates/a.txt", "ours\n", "fix: ours");
+    assert!(
+        !rig.git_ok(&["merge", "-q", "fix/side"]),
+        "the fixture needs a conflict, so that the resolution is the merge's own"
+    );
+    rig.write(
+        "crates/a.txt",
+        &format!("resolved, and the environment held {token}\n"),
+    );
+    let merge = rig.commit("Merge branch 'fix/side'");
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    let said = seen.refused("unvetted");
+    assert!(
+        said["vet"]["refused"]
+            .as_array()
+            .expect("what was refused")
+            .iter()
+            .any(|found| found["commit"] == merge.as_str()
+                && found["path"] == "crates/a.txt"
+                && found["why"] == "hygiene"),
+        "gitleaks names the merge and the file: {}",
+        seen.raw
+    );
+    assert!(
+        !seen.raw.contains(&token),
+        "and never the string: {}",
+        seen.raw
+    );
+    assert_eq!(
+        rig.remote(LOOP),
+        Some(clean),
+        "the credential in the merge was not pushed"
     );
 }
 
@@ -4392,6 +4934,103 @@ fn discard_refuses_a_batch_that_is_in_a_commit() {
     );
 }
 
+/// **A batch whose commit is made is not taken back because a hand wrote in it since** (the
+/// core review's `F4`). `discard` refused a committed batch only where no file of it was
+/// altered — and a file of an applied batch that a hand changed is refused with `discard`
+/// spelled as the command that leaves it. So a batch that was in HEAD, and on the remote,
+/// and one of whose tables a hand then touched, was taken back on the tool's own advice:
+/// the round's tables left the tree, the journal was gone, and `state` answered `test` for
+/// a round whose record the remote held. Whether a batch's commit is made is now ASKED OF
+/// HEAD — every file of it is there as the batch wrote it — and of nothing the tree holds.
+/// Such a batch is settled, never taken back; and the file is then what it is: a tracked
+/// file changed by hand, the human's, with no word of `discard`.
+#[test]
+fn a_batch_whose_commit_is_made_is_not_taken_back_because_a_hand_wrote_in_it_since() {
+    let discard = ["discard", "--branch", LOOP, "--run-dir", RUN_DIR];
+    let table = format!("{RUN_DIR}/ledger.md");
+    for first in ["discard", "git-state"] {
+        // Committed, not settled — and PUSHED, by the push that reads no journal.
+        let stage = Stage::unsettled(&format!("discard-altered-{first}"));
+        let rig = &stage.rig;
+        rig.step(&PUSH).done("push", "ready");
+        let recorded = rig.rev("HEAD");
+        assert_eq!(rig.remote(LOOP), Some(recorded.clone()));
+        assert!(rig.journal().is_some(), "a push settles nothing");
+        // A hand in a table of the record.
+        let by_hand = format!("{}\n<!-- a hand was here -->\n", rig.read(&table));
+        rig.write(&table, &by_hand);
+
+        if first == "discard" {
+            // THE ACT THE REFUSAL USED TO NAME, asked first: nothing is taken back.
+            let (journal, status) = (rig.journal(), rig.status());
+            let seen = rig.step(&discard);
+            let said = seen.refused("committed");
+            assert_eq!(said["found"], json!(["committed"]), "{}", seen.raw);
+            assert!(
+                said["halt"]["root_cause"]
+                    .as_str()
+                    .is_some_and(|cause| cause.contains(&table)),
+                "the file a hand changed is named: {}",
+                seen.raw
+            );
+            assert_eq!(
+                (rig.journal(), rig.status(), rig.read(&table)),
+                (journal, status, by_hand.clone()),
+                "nothing was written: the journal, the tree and the table are as they were"
+            );
+        }
+
+        // THE READ A STAGE STARTS FROM settles the batch — its commit is made — and names
+        // the file as what it then is: a tracked file changed by hand.
+        let seen = stage.git_state();
+        let said = seen.refused("dirty");
+        assert_eq!(
+            json!([said["found"], said["finished"]]),
+            json!([["altered", "committed", "dirty"], ["committed"]]),
+            "{}",
+            seen.raw
+        );
+        let then = said["halt"]["recommendation"]
+            .as_str()
+            .expect("what leaves it");
+        assert!(
+            then.contains("the human") && !then.contains("discard"),
+            "it is the human's, and no act that takes a batch back is named: {then}"
+        );
+        assert!(rig.journal().is_none(), "the batch is settled");
+        assert_eq!(rig.read(&table), by_hand, "the tree is as the hand left it");
+        assert_eq!(
+            (rig.rev("HEAD"), rig.remote(LOOP)),
+            (recorded.clone(), Some(recorded.clone())),
+            "and the commit, here and on the remote, is the record's"
+        );
+
+        // `discard` then has no batch, and takes nothing back.
+        let seen = rig.step(&discard);
+        let line = seen.done("discard", "discarded");
+        assert_eq!(
+            json!([line["found"], line["discarded"]]),
+            json!([[], []]),
+            "{}",
+            seen.raw
+        );
+        assert_eq!(rig.read(&table), by_hand);
+
+        // THE HUMAN'S ACT, plain git: what the commit holds is put back — and the run
+        // stands at its record, a tested round with its candidate.
+        rig.git(&["restore", "--", &table]);
+        let seen = stage.git_state();
+        assert_eq!(seen.done("git-state", "ready")["found"], json!([]));
+        let end = stage.end();
+        assert_eq!((end.head, end.status.as_str()), (recorded, ""));
+        assert!(
+            end.state["candidate"]["commit"].is_string() && end.state["next"] != "test",
+            "the state reads the round's record: {}",
+            end.state
+        );
+    }
+}
+
 /// **A temporary is no report** (the re-review's `R4`): a writer of the record script that
 /// is killed leaves its temporary beside its target. The report check counted one as a
 /// file nobody launched, and the read a stage starts from refused the tree as dirty, naming
@@ -4624,6 +5263,111 @@ fn a_second_identical_call_finds_what_is_done() {
         ),
         (None, commit, String::new()),
         "settled, and no second commit"
+    );
+}
+
+/// **A kept answer is believed only for the commit and the batch it names** (the core
+/// review's `F8`). A commit step asked again answers `recorded` from the answer it kept
+/// beside its gate's file where four things hold: it is handed the commit the stage began
+/// on, the calls and checks are the ones asked, the branch and THE COMMIT are the ones the
+/// file names, and HEAD's one parent is that commit. The code was right; but with the
+/// commit's equality dropped, and with the calls and checks' dropped, the whole suite stayed
+/// green — two of four conditions were held by no test. Each is driven here: every other
+/// condition holds, and the step still answers `no-batch`.
+#[test]
+fn a_kept_answer_is_believed_only_for_the_commit_and_the_batch_it_names() {
+    let stage = Stage::new("again-kept");
+    let rig = &stage.rig;
+    let began = rig.rev("HEAD");
+    stage.apply(SUBJECT);
+    stage
+        .record_with(&["--head", &began])
+        .done("record", "recorded");
+    let commit = rig.rev("HEAD");
+    // The control: the same step, asked again, is believed.
+    let again = stage.record_with(&["--head", &began]);
+    assert_eq!(
+        again.done("record", "recorded")["found"],
+        json!(["recorded"])
+    );
+
+    // THE CALLS AND THE CHECKS: the answer of a batch of seven calls and two checks is
+    // none for a step that names another batch — fewer, more, or other checks.
+    let scratch = rig.scratch.display().to_string();
+    for (calls, checks) in [("6", "2"), ("8", "2"), ("7", "1"), ("7", "3")] {
+        let seen = rig.step(&[
+            "record",
+            "--branch",
+            LOOP,
+            "--run-dir",
+            RUN_DIR,
+            "--gate",
+            stage.gate.as_str(),
+            "--calls",
+            calls,
+            "--checks",
+            checks,
+            "--scratch",
+            scratch.as_str(),
+            "--head",
+            &began,
+        ]);
+        seen.refused("no-batch");
+        assert_eq!(rig.rev("HEAD"), commit, "nothing was committed");
+    }
+
+    // THE COMMIT: another commit on the commit the stage began on — one parent, that one,
+    // the tree clean, the same branch — is not the commit the kept answer names.
+    rig.git(&["reset", "-q", "--hard", &began]);
+    let note = format!("{RUN_DIR}/another.md");
+    rig.write(&note, "another record\n");
+    rig.git(&["add", "--", &note]);
+    rig.git(&[
+        "commit",
+        "-q",
+        "-m",
+        "docs(record): another commit on the same parent",
+    ]);
+    let other = rig.rev("HEAD");
+    assert_ne!(other, commit);
+    assert_eq!(rig.rev("HEAD^"), began);
+    let seen = stage.record_with(&["--head", &began]);
+    let said = seen.refused("no-batch");
+    assert!(
+        said["commit"].is_null() && said["found"] == json!([]),
+        "nothing of the kept answer is said for another commit: {}",
+        seen.raw
+    );
+    assert_eq!(rig.rev("HEAD"), other, "nothing was committed");
+}
+
+/// **The push a record is owed is left while a batch is applied** (the core review's eighth
+/// lead: the guard removed, four tests stayed green). An earlier record that is committed
+/// and not pushed is `unpushed`; with a batch applied on top the push is that record's own
+/// — its commit step's, after the gate — and the read a stage starts from leaves it owed.
+#[test]
+fn the_push_a_record_is_owed_is_left_while_a_batch_is_applied() {
+    let stage = Stage::new("owed-applied");
+    let rig = &stage.rig;
+    let pushed = rig.remote(LOOP);
+    let note = format!("{RUN_DIR}/earlier.md");
+    rig.write(&note, "an earlier record\n");
+    rig.git(&["add", "--", &note]);
+    rig.git(&["commit", "-q", "-m", "docs(record): an earlier record"]);
+    stage.apply(SUBJECT);
+    let seen = stage.git_state();
+    let line = seen.done("git-state", "ready");
+    assert_eq!(
+        json!([line["found"], line["owed"], line["finished"]]),
+        json!([["applied", "unpushed"], ["applied", "unpushed"], []]),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(rig.remote(LOOP), pushed, "nothing was pushed");
+    assert!(
+        !seen.trace.iter().any(|call| call.starts_with("push ")),
+        "no push was tried: {:?}",
+        seen.trace
     );
 }
 
@@ -4928,6 +5672,346 @@ fn no_act_takes_main_or_any_branch_without_a_prefix() {
     assert_eq!(rig.branch(), LOOP);
 }
 
+/// **What each act of the three tools can reach of a ref** — one row per act, held to each
+/// tool's own parser in both directions, so that an act added without its row is red:
+/// `no-ref` runs no git command that moves a ref of this repository; `local` moves local
+/// refs of the branch it is handed, and pushes nothing; `pushes` pushes the branch it is
+/// handed, by name, through the tool's one push.
+const REACH: &[(&str, &str, &str)] = &[
+    (TOOL, "git-state", "pushes"),
+    (TOOL, "push", "pushes"),
+    (TOOL, "land", "pushes"),
+    (TOOL, "carry", "pushes"),
+    (TOOL, "open-round", "local"),
+    (TOOL, "record", "local"),
+    (TOOL, "sync-main", "local"),
+    (TOOL, "discard", "no-ref"),
+    (TOOL, "find-round", "no-ref"),
+    (TOOL, "round-commits", "no-ref"),
+    (TOOL, "state", "no-ref"),
+    (TOOL, "begin", "no-ref"),
+    (TOOL, "check-reports", "no-ref"),
+    (TOOL, "table", "no-ref"),
+    (TOOL, "hold-start", "no-ref"),
+    (TOOL, "hold-wait", "no-ref"),
+    (TOOL, "hash", "no-ref"),
+    (TOOL, "build", "no-ref"),
+    (RECORD, "report", "no-ref"),
+    (RECORD, "ledger-add", "no-ref"),
+    (RECORD, "ledger-set", "no-ref"),
+    (RECORD, "result-set", "no-ref"),
+    (RECORD, "check-reports", "no-ref"),
+    (RECORD, "check-ledger", "no-ref"),
+    (RECORD, "bound-set", "no-ref"),
+    (RECORD, "scope-set", "no-ref"),
+    (RECORD, "triage-set", "no-ref"),
+    (RECORD, "item-set", "no-ref"),
+    (RECORD, "round-set", "no-ref"),
+    (RECORD, "run-set", "no-ref"),
+    (RECORD, "state", "no-ref"),
+    (RECORD, "item", "no-ref"),
+    (RECORD, "item-doors", "no-ref"),
+    (RECORD, "untriaged", "no-ref"),
+    (RECORD, "gate-set", "no-ref"),
+    (RECORD, "gate-check", "no-ref"),
+    (RECORD, "apply", "no-ref"),
+    (RECORD, "pending", "no-ref"),
+    (RECORD, "discard", "no-ref"),
+    (RECORD, "settle", "no-ref"),
+    (RECORD, "recover", "no-ref"),
+    (RECORD, "vet", "no-ref"),
+    (RECORD, "set-aside", "no-ref"),
+    (PROBE_TOOL, "begin", "no-ref"),
+    (PROBE_TOOL, "state", "no-ref"),
+    (PROBE_TOOL, "hash", "no-ref"),
+    (PROBE_TOOL, "hold", "no-ref"),
+    (PROBE_TOOL, "held", "no-ref"),
+    (PROBE_TOOL, "verdict", "no-ref"),
+];
+
+/// The names a tool's parser gives its acts: the lines that open `    <opens>"`.
+fn parsed_acts(tool: &str, opens: &str) -> BTreeSet<String> {
+    read(tool)
+        .lines()
+        .filter_map(|line| line.strip_prefix(opens))
+        .map(|rest| rest[..rest.find('"').expect("the act's name closes")].to_owned())
+        .collect()
+}
+
+/// **No act of the three tools reaches `main`, a release branch, a tag, a forced push or a
+/// branch outside the branch model — whatever it is handed** (the coordinator's seventh
+/// group of the pass that followed the core's review). The deny rules of
+/// `.claude/settings.json` hold an agent's typed `git push`; they see no push a tool makes
+/// inside itself. So before those tools are allowed without a prompt, they hold the same
+/// line themselves ([release.md](../implementation/release.md) → *What agents may not do*),
+/// and this test pins it act by act ([`REACH`]):
+///
+/// - **(a) `main`** — as a name, as `refs/heads/main`, as a refspec's right-hand side, or by
+///   an act being run while `main` is checked out: never pushed, committed on, merged
+///   into, reset or deleted. **`sync-main` reads `origin/main` and merges it INTO the run's
+///   branch: that direction is allowed, and stays.**
+/// - **(b)** a `release-plz-*` branch is never pushed, **(c)** no tag is pushed, created or
+///   deleted, **(d)** no push is forced in any spelling and no remote branch deleted,
+///   **(e)** no branch `dev/branch-name` refuses is pushed — or worked on at all.
+///
+/// The record script and the probe tool run no git command that moves a ref of this
+/// repository: read from their sources, by the subcommands they spell. For the step tool
+/// every branch flag of every act is handed each hostile name — and after EACH call the
+/// bare remote and the clone's own refs are what they were.
+#[test]
+fn no_act_reaches_main_a_release_branch_a_tag_or_a_branch_outside_the_model() {
+    // ONE ROW PER ACT, in both directions, for each of the three tools.
+    for (tool, opens) in [
+        (TOOL, "    act(\""),
+        (RECORD, "    command(\""),
+        (PROBE_TOOL, "    act(\""),
+    ] {
+        let rows: BTreeSet<String> = REACH
+            .iter()
+            .filter(|(of, _, _)| *of == tool)
+            .map(|(_, act, _)| (*act).to_owned())
+            .collect();
+        assert_eq!(
+            rows,
+            parsed_acts(tool, opens),
+            "the acts this suite says what they reach (left) are the acts {tool} has (right)"
+        );
+    }
+    // THE RECORD SCRIPT AND THE PROBE TOOL move no ref of this repository: the record script
+    // asks git five reads of it and commits only into the throwaway repository of a scan,
+    // and the probe tool runs git in its own throwaway repository and nowhere else.
+    let code = python_code(&read(RECORD));
+    let reads: BTreeSet<&str> = code
+        .split("asked_of_git([\"")
+        .skip(1)
+        .map(|rest| &rest[..rest.find('"').expect("a subcommand")])
+        .collect();
+    assert_eq!(
+        reads,
+        BTreeSet::from(["cat-file", "diff-tree", "log", "ls-tree", "rev-list"]),
+        "what {RECORD} asks git of the repository"
+    );
+    let roads: Vec<&str> = code
+        .lines()
+        .filter(|line| line.contains("[\"git\"]") || line.contains("tools[\"git\"]"))
+        .map(str::trim)
+        .collect();
+    assert_eq!(
+        roads,
+        [
+            "out = ran([tools[\"git\"]] + argv, \"git\")",
+            "out = subprocess.run([\"git\"] + argv, cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True)",
+        ],
+        "the two roads of {RECORD} to git: a scan's throwaway repository, and a read of this one"
+    );
+    assert!(
+        code.contains("            (\"init\", [\"init\", \"-q\", \"--template=\"]),\n            (\"add\", [\"add\", \"--\"] + [rel for rel, _ in files]),\n")
+            && code.matches("out = ran([tools[\"git\"]] + argv, \"git\")").count() == 1,
+        "what {RECORD} runs in a scan's throwaway repository is init, add and one commit"
+    );
+    let code = python_code(&read(PROBE_TOOL));
+    let run: BTreeSet<&str> = code
+        .split("[\"git\", \"")
+        .skip(1)
+        .map(|rest| &rest[..rest.find('"').expect("a subcommand")])
+        .collect();
+    assert_eq!(
+        run,
+        BTreeSet::from(["add", "commit", "config", "init", "rev-parse"]),
+        "the git commands {PROBE_TOOL} runs, each in its own throwaway repository"
+    );
+    assert_eq!(
+        code.matches("[\"git\", \"").count(),
+        code.matches("in_rig(repo, [\"git\", \"").count(),
+        "and nowhere else"
+    );
+
+    // THE STEP TOOL. An act that can move a ref takes the branch it moves as an argument.
+    let acts = acts();
+    let naming = |flags: &[String]| -> Vec<String> {
+        flags
+            .iter()
+            .filter(|flag| ["loop", "branch", "rounds", "prefix"].contains(&flag.as_str()))
+            .cloned()
+            .collect()
+    };
+    for (_, act, reach) in REACH.iter().filter(|(tool, _, _)| *tool == TOOL) {
+        if *reach != "no-ref" {
+            assert!(
+                !naming(&acts[*act]).is_empty(),
+                "`{act}` is said to move a ref and takes no branch"
+            );
+        }
+    }
+
+    let rig = StepRig::new("reach");
+    let scratch = rig.scratch.display().to_string();
+    let head = rig.rev("HEAD");
+    let refs = |at: &Path| -> String {
+        let out = rig.git_at(at, &["for-each-ref", "--format=%(refname) %(objectname)"]);
+        assert!(out.status.success(), "list the refs: {out:?}");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let call = |act: &str, with: &dyn Fn(&str) -> Option<String>| -> Stepped {
+        let mut args = vec![act.to_owned()];
+        for flag in &acts[act] {
+            args.push(format!("--{flag}"));
+            args.push(with(flag).unwrap_or_else(|| valid(flag, &scratch)));
+        }
+        if act == "carry" {
+            args.push(head.clone());
+        }
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        rig.step(&args)
+    };
+
+    // (a)-(e), AS AN ARGUMENT: every branch flag of every act, each hostile name — refused
+    // before the act runs, with no git command run, and nothing moved here or there.
+    let hostile = [
+        // (a) main, in every spelling a name can have.
+        "main",
+        "refs/heads/main",
+        "heads/main",
+        "origin/main",
+        // (b) the release tool's branches.
+        "release-plz-2026-10-07",
+        "release-plz-a/b",
+        // (c) a tag.
+        "refs/tags/v1",
+        "tags/v1",
+        // (d) a forced push, a deletion, a refspec.
+        "+fix/rc24",
+        ":fix/rc24",
+        "fix/rc24:main",
+        "fix/rc24:refs/heads/main",
+        "--force",
+        "-f",
+        // (e) a branch the branch model refuses.
+        "feat/x",
+        "stabilize/rc24",
+        "fix/a/b",
+        "milestone/rc24",
+    ];
+    let (here, there) = (refs(&rig.root), refs(&rig.origin));
+    let mut driven = 0;
+    for (act, flags) in &acts {
+        for flag in naming(flags) {
+            for name in hostile {
+                let seen = call(act, &|asked| (asked == flag).then(|| name.to_owned()));
+                seen.refused("usage");
+                assert!(
+                    seen.trace.is_empty(),
+                    "`{act} --{flag} {name}` ran git: {:?}",
+                    seen.trace
+                );
+                assert_eq!(
+                    (refs(&rig.root), refs(&rig.origin), rig.rev("HEAD")),
+                    (here.clone(), there.clone(), head.clone()),
+                    "`{act} --{flag} {name}`: nothing moved, here or on the bare remote"
+                );
+                driven += 1;
+            }
+        }
+    }
+    assert!(
+        driven >= 200,
+        "every branch flag of every act was handed every name: {driven}"
+    );
+
+    // (b) AND (e), WITH THE BRANCH REALLY THERE, checked out and ahead: the acts that would
+    // push it or commit on it refuse before they read it.
+    for name in ["feat/x", "release-plz-a/b"] {
+        rig.git(&["switch", "-q", "-c", name, LOOP]);
+        rig.change(
+            "crates/a.txt",
+            "changed\n",
+            "fix: a change on a branch no step works on",
+        );
+        let (here, there) = (refs(&rig.root), refs(&rig.origin));
+        for act in [
+            "push",
+            "record",
+            "discard",
+            "open-round",
+            "land",
+            "sync-main",
+        ] {
+            let flag = if acts[act].contains(&"branch".to_owned()) {
+                "branch"
+            } else {
+                "loop"
+            };
+            let seen = call(act, &|asked| (asked == flag).then(|| name.to_owned()));
+            seen.refused("usage");
+            assert!(
+                seen.trace.is_empty(),
+                "`{act} --{flag} {name}` ran git: {:?}",
+                seen.trace
+            );
+            assert_eq!(
+                (refs(&rig.root), refs(&rig.origin)),
+                (here.clone(), there.clone()),
+                "`{act} --{flag} {name}`, checked out and ahead: nothing moved, and the bare remote holds no such branch"
+            );
+        }
+        rig.git(&["switch", "-q", LOOP]);
+    }
+
+    // (a) RUN WHILE `main` IS CHECKED OUT, with the arguments a stage would hand it: whatever
+    // each act answers, `main` is where it was — here and on the remote — and nothing new
+    // is on the remote.
+    rig.git(&["switch", "-q", "main"]);
+    let main = rig.rev("main");
+    let there = refs(&rig.origin);
+    for (act, flags) in &acts {
+        if naming(flags).is_empty() {
+            continue;
+        }
+        call(act, &|_| None);
+        assert_eq!(
+            (rig.rev("main"), refs(&rig.origin)),
+            (main.clone(), there.clone()),
+            "`{act}`, run while `main` is checked out: `main` and the bare remote are where they were"
+        );
+        rig.git(&["switch", "-q", "main"]);
+    }
+    rig.git(&["switch", "-q", LOOP]);
+
+    // (c) A TAG OF THE BRANCH'S OWN NAME: git reads the name as the tag. A push by name was
+    // refused by git as ambiguous; the push of a sha is one git would make, so the tool
+    // holds the name to the branch's own ref before it reads a commit off it — and no tag,
+    // and no commit, reaches the remote.
+    rig.change(
+        &format!("{RUN_DIR}/note.md"),
+        "a note\n",
+        "docs(record): a note",
+    );
+    rig.git(&["tag", LOOP]);
+    let there = refs(&rig.origin);
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    seen.refused("push-rejected");
+    assert!(
+        !seen.trace.iter().any(|call| call.starts_with("push ")),
+        "no push was tried: {:?}",
+        seen.trace
+    );
+    assert_eq!(
+        refs(&rig.origin),
+        there,
+        "no tag and no commit reached the bare remote"
+    );
+    rig.git(&["tag", "-d", LOOP]);
+
+    // A RULE THAT CANNOT BE ASKED IS NEVER A PASS: without dev/branch-name beside the tool,
+    // an act that is handed a branch refuses, and one that is handed none is as it was.
+    fs::remove_file(rig.root.join(BRANCH_RULE)).expect("take the rule away");
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    seen.refused("usage");
+    assert!(seen.trace.is_empty(), "no git ran: {:?}", seen.trace);
+    assert_eq!(refs(&rig.origin), there, "and nothing was pushed");
+    rig.step(&["table"]).done("table", "listed");
+}
+
 #[test]
 fn the_tools_header_its_statuses_and_this_suites_table_agree() {
     let source = read(TOOL);
@@ -5016,9 +6100,6 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "--no-merges",
             "--merges",
             "--reverse",
-            // The commits no branch of the remote holds yet: which of them is no record's.
-            "--not",
-            "--remotes=origin",
             "--",
         ],
     ),
@@ -5029,7 +6110,11 @@ const ALLOWED: &[(&str, &[&str])] = &[
         &["--stat", "--format=%s", "--name-only", "--format=", "--"],
     ),
     // `--git-path`: where git's own lock would lie, which the tool names and never removes.
-    ("rev-parse", &["--verify", "--quiet", "--git-path"]),
+    (
+        "rev-parse",
+        // `--symbolic-full-name`: the push holds a branch's name to the branch's own ref.
+        &["--verify", "--quiet", "--git-path", "--symbolic-full-name"],
+    ),
     (
         "rev-list",
         &[
@@ -5038,8 +6123,10 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "--parents",
             "-n",
             "--reverse",
-            "--not",
-            "--remotes=origin",
+            // Which of the commits the remote's heads stand at this clone holds too: what
+            // a range leaves out is what the remote said, and no remote-tracking ref.
+            "--no-walk",
+            "--ignore-missing",
         ],
     ),
     ("diff", &["--name-only", "--diff-filter=U", "--quiet", "--"]),
@@ -5099,6 +6186,41 @@ const OPENS: &[(&str, usize)] = &[
     ),
 ];
 
+/// **Every file the tool opens THROUGH ITS OWN TWO HELPERS** (the core review's `F7`):
+/// `whole` reads the path it is handed and `kept_once` writes the one it is handed, so
+/// [`OPENS`] — which lists each helper's own line, once — says nothing about WHICH files
+/// they open. This does: every call of either, by the function it stands in and the path
+/// as written. A caller that is not here is a file the tool opens somewhere else, and a
+/// row whose call is gone is a file it no longer reads or writes; both are red.
+const THROUGH: &[(&str, &str, &str)] = &[
+    // What a held command leaves, written once each: the job, how it ended, its verdict.
+    (
+        "kept_once",
+        "hold_start",
+        "os.path.join(home, \"job.json\")",
+    ),
+    (
+        "kept_once",
+        "supervise",
+        "os.path.join(home, \"exit.json\")",
+    ),
+    ("kept_once", "stands", "kept"),
+    // And read back: the job, how it ended, the verdict; the command's output, by the
+    // reader of its kind; the binary a build made, and the one a verdict hashes again;
+    // a file whose hash is asked of the tool.
+    ("whole", "read_job", "os.path.join(home, \"job.json\")"),
+    ("whole", "stands", "os.path.join(home, \"exit.json\")"),
+    ("whole", "stands", "kept"),
+    // The command's output once more, hashed into the verdict that is kept of it.
+    ("whole", "stands", "output"),
+    ("whole", "judged_regression", "output"),
+    ("whole", "judged_build", "output"),
+    ("whole", "judged_build", "path"),
+    ("whole", "judged_probe", "output"),
+    ("whole", "build", "made"),
+    ("whole", "hash_file", "path"),
+];
+
 /// The commands a held kind may run, as `held_command` returns them: each opens with one of
 /// the tool's own constants — the gate, the regression set, this tool, the probe tool.
 const HELD_PROGRAMS: [&str; 4] = [
@@ -5116,7 +6238,9 @@ const CHANGING: &[(&str, &[&str])] = &[
         "switch",
         &["switch <branch>", "switch --no-track -c <branch> <branch>"],
     ),
-    ("push", &["push origin <branch>"]),
+    // THE ONE PUSH: of the commit that was vetted, by its sha, into the branch's own ref —
+    // never of a name, which is whatever the branch stands at when git reads it.
+    ("push", &["push origin <vetted>"]),
     (
         "merge",
         &["merge --no-ff --no-edit <target>", "merge --abort"],
@@ -5137,7 +6261,17 @@ const CHANGING: &[(&str, &[&str])] = &[
 const BRANCH_NAMES: [&str; 3] = ["args.loop", "args.branch", "branch"];
 
 /// The pieces of text the tool may join a name to, inside a git call.
-const JOINED: [&str; 5] = ["origin/", "refs/heads/", "*", "/opening.md", ":(exclude)"];
+const JOINED: [&str; 7] = [
+    "origin/",
+    "refs/heads/",
+    // The right-hand side of the one push's refspec: the vetted sha, into the branch's ref.
+    ":refs/heads/",
+    "*",
+    "/opening.md",
+    ":(exclude)",
+    // A file of the applied batch as HEAD holds it: whether the batch's commit is made.
+    "HEAD:",
+];
 
 #[derive(Debug, Clone, PartialEq)]
 enum Arg {
@@ -5377,6 +6511,11 @@ fn offences(source: &str) -> Vec<String> {
                             }
                             ("<target>", Arg::Expression(name)) => name == "target",
                             ("<sha>", Arg::Expression(name)) => name == "sha",
+                            // The one push's refspec, whole: the vetted commit, then the
+                            // ref of the branch it was read from, and no other pair.
+                            ("<vetted>", Arg::Expression(name)) => {
+                                name == "tip + \":refs/heads/\" + branch"
+                            }
                             // The record's commit: the subject its batch carries, and
                             // the run's pending paths, each by name.
                             ("<subject>", Arg::Expression(name)) => name == "subject",
@@ -5571,6 +6710,8 @@ fn offences(source: &str) -> Vec<String> {
         };
         let known = (call.within == "git" && program == "[\"git\"] + list(argv)")
             || program == "[MERGE_LOGS]"
+            // The branch model's rule, asked of a branch an act is handed before it runs.
+            || (call.within == "in_the_model" && program == "[BRANCH_RULE, name]")
             || program.starts_with("[RECORD, \"state\", ")
             || program.starts_with("[RECORD, \"check-reports\"] + ")
             || program.starts_with("[RECORD, \"pending\", ")
@@ -5625,6 +6766,41 @@ fn offences(source: &str) -> Vec<String> {
             "the tool opens a file somewhere else than its help, the kept state, a commit step's kept answer, the file a digest names and a held command's own files: {strange:#?}; not as often as listed: {miscounted:#?}"
         ));
     }
+    // AND THROUGH ITS TWO HELPERS that open a path handed to them: every call of either
+    // is a row of [`THROUGH`], and every row a call — held as two sorted lists, so a new
+    // caller and a site that is gone are each named.
+    let mut through: Vec<(String, String, String)> = calls(&code, &["whole", "kept_once"])
+        .iter()
+        .map(|call| {
+            let path = match call.args.first() {
+                Some(Arg::Literal(text) | Arg::Expression(text)) => text.clone(),
+                None => String::new(),
+            };
+            (call.name.clone(), call.within.clone(), path)
+        })
+        .collect();
+    through.sort();
+    let mut listed: Vec<(String, String, String)> = THROUGH
+        .iter()
+        .map(|(helper, within, path)| {
+            (
+                (*helper).to_owned(),
+                (*within).to_owned(),
+                (*path).to_owned(),
+            )
+        })
+        .collect();
+    listed.sort();
+    if through != listed {
+        let unlisted: Vec<_> = through
+            .iter()
+            .filter(|call| !listed.contains(call))
+            .collect();
+        let gone: Vec<_> = listed.iter().filter(|row| !through.contains(row)).collect();
+        found.push(format!(
+            "the tool opens a file through `whole` or `kept_once` somewhere else than listed — {unlisted:?} — or a listed site is gone — {gone:?} — or one stands more often than it is listed"
+        ));
+    }
     found
 }
 
@@ -5673,8 +6849,8 @@ fn the_tool_runs_no_git_command_an_agent_may_not() {
         .collect();
     assert_eq!(
         pushes,
-        ["push origin branch in push"],
-        "one push, by name, in one helper"
+        ["push origin tip + \":refs/heads/\" + branch in push"],
+        "one push, of the vetted commit by its sha, in one helper"
     );
 }
 
@@ -5726,6 +6902,47 @@ fn a_planted_offender_reddens_the_scan() {
             "a shape the tool does not have",
         ),
         ("git(\"push\", \"--all\", \"origin\")", "`--all`"),
+        // What the remote lacks is asked of the remote: a range read off the remote-tracking
+        // refs, in either read of a push, is one the tool no longer makes.
+        (
+            "said(\"rev-list\", \"--reverse\", args.branch, \"--not\", \"--remotes=origin\")",
+            "`--remotes=origin`",
+        ),
+        (
+            "said(\"log\", \"--format=%H\", args.branch, \"--not\", \"--remotes=origin\")",
+            "`--remotes=origin`",
+        ),
+        (
+            "git(\"push\", \"origin\", \"HEAD\")",
+            "a shape the tool does not have",
+        ),
+        // THE PUSH NAMES THE COMMIT THAT WAS VETTED: a push by name — the shape the tool
+        // had — publishes whatever the branch stands at when git reads it; and a refspec
+        // is the vetted sha into the ref of the branch it was read from, or it is none.
+        (
+            "git(\"push\", \"origin\", args.branch)",
+            "a shape the tool does not have",
+        ),
+        (
+            "git(\"push\", \"origin\", args.branch + \":refs/heads/\" + args.branch)",
+            "a shape the tool does not have",
+        ),
+        (
+            "git(\"push\", \"origin\", tip + \":refs/heads/\" + args.loop)",
+            "a shape the tool does not have",
+        ),
+        (
+            "git(\"push\", \"origin\", tip + \":refs/heads/main\")",
+            "joined to \":refs/heads/main\"",
+        ),
+        (
+            "git(\"push\", \"origin\", tip + \":refs/tags/\" + branch)",
+            "joined to \":refs/tags/\"",
+        ),
+        (
+            "git(\"push\", \"origin\", \":refs/heads/\" + args.branch)",
+            "a shape the tool does not have",
+        ),
         ("git(\"push\", \"--tags\", \"origin\")", "`--tags`"),
         ("git(\"rebase\", args.branch)", "`git rebase`"),
         ("git(\"reset\", \"--hard\", \"HEAD\")", "`git reset`"),
@@ -5813,6 +7030,14 @@ fn a_planted_offender_reddens_the_scan() {
             "git(\"archive\", \"--remote=origin\", args.branch)",
             "`--remote=origin`",
         ),
+        // A FILE OPENED IN THE TOOL'S OWN WAY (the core review's `F7`): the two helpers
+        // open whatever path they are handed, so a new caller of either is a file the
+        // tool opens — one written inside the repository, one read from anywhere.
+        (
+            "kept_once(os.path.join(ROOT, \"planted.txt\"), \"x\")",
+            "through `whole` or `kept_once`",
+        ),
+        ("whole(args.branch)", "through `whole` or `kept_once`"),
     ];
     for (line, names) in planted {
         let mutant = source.replacen(anchor, &format!("{anchor}    {line}\n"), 1);
@@ -5820,6 +7045,24 @@ fn a_planted_offender_reddens_the_scan() {
         assert!(
             found.iter().any(|offence| offence.contains(names)),
             "the scan must name `{line}` ({names}); it found: {found:#?}"
+        );
+    }
+    // AND THE OTHER DIRECTION: a listed site of the two helpers that is gone — the
+    // supervisor no longer writing how the command ended, a build no longer hashed.
+    for (site, instead) in [
+        (
+            "        kept_once(os.path.join(home, \"exit.json\"), ",
+            "        print(os.path.join(home, \"exit.json\"), ",
+        ),
+        ("    data = whole(made)\n", "    data = bytes(made)\n"),
+    ] {
+        assert_eq!(source.matches(site).count(), 1, "`{site}` stands once");
+        let found = offences(&source.replacen(site, instead, 1));
+        assert!(
+            found
+                .iter()
+                .any(|offence| offence.contains("through `whole` or `kept_once`")),
+            "the scan must miss the site `{site}`; it found: {found:#?}"
         );
     }
     // And the grammar a name is checked against: a branch without a prefix, or a name
@@ -7209,6 +8452,7 @@ fn the_state_digest_at_the_real_runs_shape_is_a_few_kilobytes() {
     assert_eq!(state["facts"]["previous-commit"], "9".repeat(40).as_str());
     assert_eq!(state["blockers"], 0);
     assert_eq!(state["reverify"], json!([]));
+    assert_eq!(state["regression_unknown"], json!([]));
     // What forbids closing, by kind: the clauses that are not green by name, the findings
     // that are not recorded as a count, and whether the candidate is untested.
     assert_eq!(
@@ -7232,6 +8476,8 @@ fn the_state_digest_at_the_real_runs_shape_is_a_few_kilobytes() {
         "doors": [document["doors"]["included"][0], document["doors"]["included"][1], document["doors"]["included"][2]],
     }});
     document["human_list"][3]["why"] = json!("ungraded-after-retry");
+    // And the findings a verifier confirmed without knowing whether each is a regression.
+    document["regression_unknown"] = json!(["row-002", "row-007"]);
     let forged = json!({"act": "state", "status": "read", "branch": LOOP, "state": document});
     let digest = rig.projected(&forged.to_string());
     assert_eq!(digest["unfit"], json!([]), "{digest}");
@@ -7242,6 +8488,11 @@ fn the_state_digest_at_the_real_runs_shape_is_a_few_kilobytes() {
         "{digest}"
     );
     assert_eq!(digest["state"]["reverify"], json!(["row-004"]));
+    assert_eq!(
+        digest["state"]["regression_unknown"],
+        json!(["row-002", "row-007"]),
+        "the keys, as the document names them: {digest}"
+    );
     assert_eq!(digest["state"]["human_list"], 20);
 }
 

@@ -3367,7 +3367,15 @@ fn an_instrument_that_never_ran_to_its_end_is_not_turned_green_by_a_later_round_
     );
 
     // The hunt runs to its end on the candidate, as attempt 2 of round 1: now it closes.
-    rerun(&rig, 1, 2, "review-setup", "green").must(OK, "the hunt's re-run");
+    // A re-run is an attempt of the round that selected the item, ON THAT ROUND'S CANDIDATE:
+    // on the candidate a later round tested it is refused, and nothing is written.
+    let before = rig.snapshot();
+    rerun(&rig, 1, 2, "review-setup", "green").refused(
+        BAD_VALUE,
+        "a re-run of round 1's item on the candidate round 2 tested",
+    );
+    assert_eq!(rig.snapshot(), before);
+    rerun(&rig, 1, 1, "review-setup", "green").must(OK, "the hunt's re-run");
     let read = rig.state();
     assert_eq!(
         (&read["next"], &read["forbids_close"], &read["round"]),
@@ -4315,6 +4323,153 @@ fn row_at(key: &str, door: &str) -> Value {
     entry
 }
 
+/// **A confirmed finding whose regression fact is unknown is recorded so, routed as a
+/// confirmed one, and named** (the coordinator's eighth group of the pass that followed the
+/// core's review, ruled by the orchestrator: *record more, trust less*). A verifier can
+/// confirm a finding and not know whether it is a regression — the previous release's
+/// binary was not handed to it, the door is one that release does not have, its return
+/// lacks that binary's hash. `triage-set` refused such an entry, and with it the whole
+/// batch: the stage halted at its record after every instrument ran — or the harness wrote
+/// `no`, a false fact. Now `regression` absent, or null, is taken with `confirmed`, the
+/// cell is `-`, and the state NAMES the finding (`regression_unknown`) for as long as it is
+/// not recorded: it is never read as *not a regression*. It is routed by its grade and its
+/// door exactly as a confirmed non-regression is, and it forbids `close` as that one does
+/// and no longer: the missing fact is an attribute of a finding, not a missing verdict.
+#[test]
+fn a_confirmed_finding_whose_regression_fact_is_unknown_is_recorded_so_and_named() {
+    let rig = Rig::new("regression-unknown");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "round 1's scope");
+    let rows = json!([
+        row_at("f-absent", INSIDE),
+        row_at("f-out", EXCLUDED),
+        row_at("f-known", INSIDE),
+        row_at("f-null", INSIDE),
+        row_at("f-yes", EXCLUDED),
+    ]);
+    rig.run(&ledger_add(RUN), &rows.to_string())
+        .must(OK, "the round's findings");
+
+    // STILL REFUSED, and nothing written: a regression that is neither a boolean nor
+    // nothing — a word, a number, a list.
+    let before = rig.snapshot();
+    for wrong in [json!("unknown"), json!("no"), json!(0), json!([])] {
+        let entry = json!([{"key": "f-absent", "grade": "breaks", "verdict": "confirmed", "regression": wrong}]);
+        rig.run(&triage_set(RUN, "1"), &entry.to_string()).refused(
+            BAD_VALUE,
+            "a regression that is neither a boolean nor nothing",
+        );
+    }
+    assert_eq!(rig.snapshot(), before);
+
+    let entries = json!([
+        {"key": "f-absent", "grade": "breaks", "verdict": "confirmed"},
+        {"key": "f-out", "grade": "breaks", "verdict": "confirmed"},
+        {"key": "f-known", "grade": "breaks", "verdict": "confirmed", "regression": false},
+        {"key": "f-null", "grade": "unclear", "verdict": "confirmed", "regression": null},
+        {"key": "f-yes", "grade": "breaks", "verdict": "confirmed", "regression": true},
+    ]);
+    rig.run(&triage_set(RUN, "1"), &entries.to_string()).must(
+        OK,
+        "three confirmed findings whose regression fact is unknown, beside two known",
+    );
+    let cells: BTreeMap<String, (String, String)> =
+        table(&rig.read(&triage_path("1")), &TRIAGE_COLUMNS)
+            .into_iter()
+            .map(|row| {
+                (
+                    row[0].trim_matches('`').to_owned(),
+                    (row[3].clone(), row[4].clone()),
+                )
+            })
+            .collect();
+    let cell = |key: &str| (cells[key].0.as_str(), cells[key].1.as_str());
+    assert_eq!(
+        [
+            cell("f-absent"),
+            cell("f-out"),
+            cell("f-null"),
+            cell("f-known"),
+            cell("f-yes")
+        ],
+        [
+            ("confirmed", "-"),
+            ("confirmed", "-"),
+            ("confirmed", "-"),
+            ("confirmed", "no"),
+            ("confirmed", "yes")
+        ],
+        "the cell that means unknown, and the two that are facts"
+    );
+
+    // THE STATE: routed by its grade and its door as a confirmed non-regression is — fixed
+    // unasked inside the test set, the human's outside it — its fact read as null, never as
+    // false; and NAMED, in the ledger's order.
+    let read = rig.state();
+    let of = |key: &str| -> Value {
+        let finding = read["ledger"]
+            .as_array()
+            .expect("the ledger")
+            .iter()
+            .find(|finding| finding["key"] == key)
+            .unwrap_or_else(|| panic!("the finding {key}"));
+        json!([
+            finding["grade"],
+            finding["route"],
+            finding["why"],
+            finding["triage"]["regression"]
+        ])
+    };
+    assert_eq!(of("f-known"), json!(["confirmed", "fix", "inside", false]));
+    assert_eq!(of("f-absent"), json!(["confirmed", "fix", "inside", null]));
+    assert_eq!(of("f-null"), json!(["confirmed", "fix", "inside", null]));
+    assert_eq!(of("f-out"), json!(["confirmed", "human", "outside", null]));
+    assert_eq!(
+        of("f-yes"),
+        json!(["regression", "fix", "regression", true])
+    );
+    assert_eq!(
+        read["regression_unknown"],
+        json!(["f-absent", "f-out", "f-null"]),
+        "{read}"
+    );
+
+    // IT FORBIDS `close` AS ANY OPEN FINDING DOES, AND NO LONGER: once the human has ruled
+    // the findings, nothing of the missing fact stands in the way, and nothing is named.
+    let forbidding = |read: &Value| -> Vec<String> {
+        read["forbids_close"]
+            .as_array()
+            .expect("what forbids closing")
+            .iter()
+            .filter_map(|entry| entry["finding"].as_str().map(str::to_owned))
+            .collect()
+    };
+    assert!(
+        ["f-absent", "f-out", "f-null"]
+            .iter()
+            .all(|key| forbidding(&read).contains(&(*key).to_owned())),
+        "{read}"
+    );
+    let ruled = json!([
+        {"key": "f-absent", "disposition": "later"},
+        {"key": "f-out", "disposition": "later"},
+        {"key": "f-null", "disposition": "later"},
+    ]);
+    rig.run(&ledger_set(RUN), &ruled.to_string())
+        .must(OK, "the human's ruling on the three");
+    let read = rig.state();
+    assert_eq!(read["regression_unknown"], json!([]), "{read}");
+    assert!(
+        !["f-absent", "f-out", "f-null"]
+            .iter()
+            .any(|key| forbidding(&read).contains(&(*key).to_owned())),
+        "{read}"
+    );
+}
+
 #[test]
 fn a_rounds_triage_is_recorded_with_inside_computed_from_the_rounds_doors() {
     let rig = Rig::new("triage");
@@ -4597,12 +4752,16 @@ fn a_rounds_triage_is_recorded_with_inside_computed_from_the_rounds_doors() {
             "a grade outside the vocabulary",
         ),
         (
-            entry(json!({"verdict": "confirmed"})),
-            "confirmed, with no word on regression",
-        ),
-        (
             entry(json!({"verdict": "confirmed", "regression": "yes"})),
             "a regression that is not a boolean",
+        ),
+        (
+            entry(json!({"verdict": "confirmed", "regression": "unknown"})),
+            "a regression that is a word, where not knowing is saying nothing",
+        ),
+        (
+            entry(json!({"verdict": "refuted", "regression": null})),
+            "a regression, even an unknown one, of a refuted finding",
         ),
         (
             entry(json!({"verdict": "refuted", "regression": false})),
@@ -4717,6 +4876,7 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
             "uncovered": [],
             "ledger": [],
             "blockers": [],
+            "regression_unknown": [],
             "human_list": [],
             "human_stages": [],
             "candidate": {"round": null, "commit": null, "current": false},
@@ -5036,6 +5196,7 @@ fn state_is_the_runs_committed_state_as_one_json_document() {
                 },
             ],
             "blockers": ["audit-f3"],
+            "regression_unknown": [],
             "human_list": [],
             "human_stages": [],
             // Round 1 is the latest that tested a candidate, and round 2 is begun.
@@ -10282,6 +10443,100 @@ fn a_record_commits_gate_is_held_to_what_the_candidates_gate_showed_red() {
     .refused(CORRUPT, "a candidate's gate that is not the script's");
 }
 
+/// **The gate on record as the candidate's is the gate of the round's candidate** (the
+/// review of the core for three dangers, `F3` — the cell the pass derived from it: *every
+/// writer that takes a commit for a round's evidence*). `gate-set` takes a commit while the
+/// round is not tested, and held it only to an earlier gate of the round; the candidate was
+/// held to the round's results and to nothing else. So a round could hold the gate of one
+/// commit and the candidate of another — and a record commit's gate is then held to what
+/// another tree showed red (`gate-check` named that commit as `candidate`). The candidate
+/// is held to the gate where it is written, as it is to the results: alone, and in a batch.
+#[test]
+fn the_gate_on_record_as_the_candidates_is_the_gate_of_the_rounds_candidate() {
+    let a = "jigc::g_a suite::one";
+    let rig = Rig::new("gate-candidate");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "the round's scope");
+    let red = rig.summary("candidate", &["test"], &[a]);
+    rig.run(&gate_set(RUN, "1", &sha('a'), &red), "")
+        .must(OK, "the gate of a commit");
+    let before = rig.snapshot();
+    let refused = rig.run(
+        &round_set(RUN, "1"),
+        &json!({"candidate": sha('b')}).to_string(),
+    );
+    refused.refused(
+        BAD_VALUE,
+        "a candidate that is not the commit the gate on record is of",
+    );
+    assert!(
+        refused.stderr.contains(&sha('a'))
+            && refused.stderr.contains(&sha('b'))
+            && refused.stderr.contains(&gate_path("1")),
+        "it names both commits, and the gate's file: {}",
+        refused.stderr
+    );
+    assert_eq!(rig.snapshot(), before, "nothing was written");
+
+    // MUST NOT REFUSE: the candidate the gate is of — and a record commit's gate is then
+    // held to the candidate's own.
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"candidate": sha('a')}).to_string(),
+    )
+    .must(OK, "the candidate the gate is of");
+    let held = rig.run(&gate_check(RUN, Some("1"), &red), "");
+    held.must(OK, "the same red, on the tree with the records");
+    assert_eq!(held.json()["candidate"], json!(sha('a')));
+
+    // IN ONE BATCH, as a stage's record writes them: the gate of one commit and the
+    // candidate of another are refused together, and nothing is written.
+    let rig = Rig::new("gate-candidate-batch");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "the round's scope");
+    let green = rig.summary("candidate", &[], &[]);
+    let before = rig.snapshot();
+    let batch = |candidate: char| {
+        json!([
+            call(gate_set(RUN, "1", &sha('a'), &green), ""),
+            call(
+                round_set(RUN, "1"),
+                &json!({"candidate": sha(candidate)}).to_string()
+            ),
+        ])
+    };
+    let refused = rig.run(&apply(RUN, Some("1")), &batch('b').to_string());
+    refused.refused(BAD_VALUE, "a batch whose gate and candidate differ");
+    assert!(
+        refused.stderr.contains("call 2 of the batch (`round-set`)"),
+        "{}",
+        refused.stderr
+    );
+    assert_eq!(rig.snapshot(), before, "a refused batch writes nothing");
+    // MUST NOT REFUSE: the batch whose gate is the candidate's.
+    rig.run(&apply(RUN, Some("1")), &batch('a').to_string())
+        .must(OK, "a batch whose gate is the candidate's");
+
+    // MUST NOT REFUSE: a round that holds no gate — a candidate needs none on record.
+    let rig = Rig::new("gate-candidate-none");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "the round's scope");
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"candidate": sha('b')}).to_string(),
+    )
+    .must(OK, "a candidate of a round with no gate on record");
+}
+
 // ---------------------------------------------------------------------------
 // Nothing the script is handed ends in a traceback
 // ---------------------------------------------------------------------------
@@ -13184,6 +13439,151 @@ fn regression_verdict(rig: &Rig, verdict: &str, why: Option<&str>, commit: &str)
     })
 }
 
+/// **A held check that left no verdict is void, and says why in a word** (the coordinator's
+/// sixth group of the pass that followed the core's review; the harness's `K11`, item 8: *the
+/// record script owes a word*). A held check can end with no verdict's file to hand in — its
+/// job is dead, its start was refused, the stage ended while it ran, a gate is not held
+/// again off the candidate's tree — and `result-set` took a held item's result from that
+/// file alone: the item got no row, stayed due, and `next` stayed `retest` for a re-run the
+/// harness had to refuse. A state the stage could not leave. So `void`, and only `void`, is
+/// taken as a word for a held item — with its reason in a DECLARED SHAPE, a word and
+/// optionally a key (`<word>` or `<word>:<key>`): never a sentence. `green` and `red` are
+/// still the tool's verdict or nothing. Such a void is void like any item's: it forbids
+/// `close`, it is owed its re-run, and after two it is the human's.
+#[test]
+fn a_held_check_that_left_no_verdict_is_void_by_a_word_and_nothing_else_is_a_word() {
+    let rig = Rig::new("held-void");
+    fs::create_dir_all(rig.tmp.join("scratch/hold/regression-r1-a1/work"))
+        .expect("the scratch root a stage hands its writers");
+    rig.run(
+        &run_set(RUN),
+        &format!(r#"{{{BOUNDED}, {RELEASE}, "clauses": ["clause-a"]}}"#),
+    )
+    .must(OK, "the run's facts");
+    let held = json!({"item": "regression-set", "kind": "held-regression", "clause": "clause-a",
+                      "runs": "every-candidate",
+                      "brief": "the regression set, held and judged by dev/stabilize-step"});
+    rig.run(&item_set(RUN), &json!([held]).to_string())
+        .must(OK, "a held check");
+    rig.run(&scope_set(RUN, "1"), &scope(&[INSIDE], &[]).to_string())
+        .must(OK, "round 1's scope");
+    let commit = sha('a');
+    let scratch = rig.tmp.join("scratch").display().to_string();
+    let result = |rows: Value| {
+        let mut args = result_set(RUN, "1", &commit);
+        args.push(format!("--scratch={scratch}"));
+        rig.run(&args, &rows.to_string())
+    };
+    let void =
+        |reason: &str| json!([{"item": "regression-set", "outcome": "void", "reason": reason}]);
+
+    // STILL REFUSED, each with nothing written: green and red as words; a void whose reason
+    // is no word of the shape — a sentence, a path, a character outside ASCII, nothing.
+    let before = rig.snapshot();
+    let seen = result(json!([{"item": "regression-set", "outcome": "green"}]));
+    seen.refused(BAD_VALUE, "green, as a word, for a held check");
+    assert!(
+        seen.stderr
+            .contains("No outcome word is taken from a caller"),
+        "{}",
+        seen.stderr
+    );
+    for reason in [
+        "the supervisor was killed",
+        "dead: regression-r1-a1",
+        "Dead",
+        "dead:",
+        ":regression-r1-a1",
+        "dead:a/b",
+        "dead:regression-r1-a1:again",
+        "d\u{e9}ad",
+        "-",
+        &"a".repeat(201),
+    ] {
+        let seen = result(void(reason));
+        seen.refused(BAD_VALUE, &format!("a void whose reason is {reason:?}"));
+        assert!(
+            seen.stderr.contains("says why in a word"),
+            "{reason:?}: {}",
+            seen.stderr
+        );
+    }
+    assert_eq!(rig.snapshot(), before, "a refused result writes nothing");
+
+    // TAKEN: void, with a word and a key.
+    let seen = result(void("dead:regression-r1-a1"));
+    seen.must(OK, "a held check that left no verdict");
+    assert_eq!(
+        seen.json()["recorded"],
+        json!([{"item": "regression-set", "attempt": 1, "outcome": "void"}])
+    );
+    assert_eq!(
+        table(&rig.read(&results_path("1")), &RESULT_COLUMNS),
+        [[
+            "`regression-set`",
+            "1",
+            format!("`{commit}`").as_str(),
+            "void",
+            "without a verdict: dead:regression-r1-a1"
+        ]]
+    );
+    assert!(
+        !rig.run_dir().join("r1/checks").exists(),
+        "no verdict was read, and none is written on record"
+    );
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"candidate": commit}).to_string(),
+    )
+    .must(OK, "the round's candidate");
+
+    // IT IS VOID LIKE ANY ITEM'S: the clause is void, `close` is forbidden by it, and the
+    // item is owed its re-run — which is taken, as a word again or as the tool's verdict.
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            read["next"],
+            read["forbids_close"],
+            read["clauses"][0]["status"],
+            read["retest"]
+        ]),
+        json!(["retest", [{"clause": "clause-a", "status": "void"}], "void", ["clause-a"]]),
+        "{read}"
+    );
+    // A verdict's file planted for the attempt that left none is refused: the result says
+    // there was none.
+    let planted = rig.run_dir().join("r1/checks/regression-set.a1.json");
+    fs::create_dir_all(planted.parent().expect("the checks directory")).expect("create checks/");
+    fs::write(
+        &planted,
+        json!({"item": "regression-set", "attempt": 1, "round": 1, "verdict": "green"}).to_string(),
+    )
+    .expect("plant a verdict");
+    rig.run(&state(RUN), "")
+        .refused(CORRUPT, "a verdict on record for a run that left none");
+    fs::remove_file(&planted).expect("take the planted verdict away");
+    fs::remove_dir(planted.parent().expect("the checks directory")).expect("remove checks/");
+
+    // MUST NOT CHANGE: the re-run's result from the tool's verdict file, as ever.
+    let green = verdict_file(
+        &rig,
+        "green",
+        &regression_verdict(&rig, "green", None, &commit),
+    );
+    let seen = result(json!([{"item": "regression-set", "verdict": green}]));
+    seen.must(OK, "the re-run, judged by the tool");
+    assert_eq!(
+        seen.json()["recorded"],
+        json!([{"item": "regression-set", "attempt": 2, "outcome": "green"}])
+    );
+    let read = rig.state();
+    assert_eq!(
+        json!([read["forbids_close"], read["clauses"][0]["status"]]),
+        json!([[], "green"]),
+        "{read}"
+    );
+}
+
 /// **A scripted check's result is the tool's verdict, and no outcome word is taken from the
 /// caller** (the second repair plan's `K10`; the re-review's `R-M8`). An item of a kind that
 /// begins `held-` is a check whose command `dev/stabilize-step` holds and judges. Its
@@ -13237,9 +13637,15 @@ fn a_scripted_checks_result_is_the_tools_verdict() {
             "No outcome word is taken from a caller",
         ),
         (
-            "a void, with its reason",
-            json!({"item": "regression-set", "outcome": "void", "reason": "it did not run"}),
+            "a red, as a word — with what a red run brings",
+            json!({"item": "regression-set", "outcome": "red", "doctype": "jigc-feedback",
+                   "door": "jigc setup", "repro": "it was red"}),
             "No outcome word is taken from a caller",
+        ),
+        (
+            "a void whose reason is a sentence, and no word",
+            json!({"item": "regression-set", "outcome": "void", "reason": "it did not run"}),
+            "says why in a word",
         ),
         (
             "a verdict's file, and a word beside it",
