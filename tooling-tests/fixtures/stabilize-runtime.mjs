@@ -19,7 +19,8 @@
 // reporters that return another hash than the one they were handed: a driver that drove
 // something else; `wrongPrevious` the verifiers that return another hash for the previous
 // release's binary. `omits` names, by an agent's label, the fields it LEAVES OUT of its
-// return — whatever its stand-in would have put there; where the call's schema requires
+// return — whatever its stand-in would have put there; a dotted path names a field
+// BENEATH an object (`ran_on.previous`), and that field alone; where the call's schema requires
 // such a field, what the runtime then does is not known to this stand-in and is the
 // scenario's to say, as `violation`: `handed` (the script is handed the return as it is),
 // `nothing` (it is handed nothing, on every try) or `throws` (the call throws, on every
@@ -562,10 +563,16 @@ async function agent(prompt, opts) {
     if (did.code !== 0) fail('what the scenario has somebody do while `' + o.label + '` ran failed: ' + did.stderr)
   }
   if (ends === 'dies-after-report' || (ends === 'acts-and-dies-once' && firstTry)) return null
-  // A field the scenario has this agent leave out — whatever its stand-in put there.
+  // A field the scenario has this agent leave out — whatever its stand-in put there. A
+  // dotted path is a field beneath an object: that field alone leaves, the object stays.
   const left = omits[o.label] || []
   if (left.length) used.add(o.label)
-  for (const name of left) delete back[name]
+  for (const name of left) {
+    const path = name.split('.')
+    const last = path.pop()
+    const within = path.reduce((at, part) => (at == null ? at : at[part]), back)
+    if (within != null) delete within[last]
+  }
   const why = conforms(o.schema, back, 'the return of `' + o.label + '`')
   // A return that lacks a field its schema REQUIRES, by a scripted omission: what the
   // runtime does then is what a probe exists to find out, so the scenario says it.

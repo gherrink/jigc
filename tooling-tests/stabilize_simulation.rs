@@ -119,13 +119,14 @@
 //! no fact of the round — and the invocations the state asks no re-run of.
 //!
 //! **A return that lacks a field the stage needs of its role** (the second repair plan's
-//! `X1`; the re-review's `R-H2`) is driven per cell of the harness's `NEEDS` that voids
+//! `X1`; the re-review's `R-H2`) is driven per cell of the harness's `NEEDS`
 //! ([`ABSENT_ARMS`], which the fence holds to that table): the field left out — and, for a
 //! hash, returned wrong — voids the item, leaves the finding unverified or the fork off the
-//! record, and the stage reaches its record. **One pin is left by that task, and named:**
-//! a confirmed verdict whose hash of the previous release's binary is not the one handed
-//! over still halts the stage (`L11`, below) — the cell the plan's `X1b` turns, once the
-//! record script takes a confirmed verdict with its regression fact unknown.
+//! record, and the stage reaches its record. **The two cells that task left halting are
+//! turned (the plan's `X1b`):** a confirmed verdict that does not say whether the finding
+//! is a regression, or whose hash of the previous release's binary is absent or another
+//! (`L11`, below), is recorded as CONFIRMED WITH ITS REGRESSION FACT UNKNOWN — never as
+//! unverified and never as *not a regression* — and the state names the finding.
 //!
 //! **The `fix` stage refuses to start**, and that is all that is asserted of it; the rig,
 //! the scenario and the stand-in are shaped so that its half's tasks add its agents here.
@@ -3693,7 +3694,10 @@ fn a_return_is_held_to_its_keys_its_binaries_and_its_commit_before_it_is_taken()
     );
 
     // L11 — a confirmed verdict that is NO regression drove the previous release's binary
-    // too: another hash for it is a verifier that drove something else.
+    // too: another hash for it is a verifier that drove something else THERE. TURNED by the
+    // second repair plan's `X1b` — it halted the stage: the verdict about the candidate
+    // stands, on the binary the verifier asserted, and what it said of the previous release
+    // is a fact nobody established — confirmed, its regression fact UNKNOWN, never `no`.
     let sim = Sim::opened("wrong-previous", &one_area());
     let ran = sim.invoke(
         sim.args("test", json!({})),
@@ -3702,11 +3706,18 @@ fn a_return_is_held_to_its_keys_its_binaries_and_its_commit_before_it_is_taken()
                           format!("verify:{key}"): verdict(key, "confirmed")},
                "wrongPrevious": [format!("verify:{key}")]}),
     );
-    assert_eq!(ran.result["status"], "halted", "L11: {}", ran.result);
+    assert_eq!(ran.result["status"], "triaged", "L11: {}", ran.result);
+    let state = sim.state();
     assert_eq!(
-        ran.result["halted"]["phase"], "binary",
-        "L11: {}",
-        ran.result
+        json!([
+            ran.result["unverified"],
+            state["ledger"][0]["triage"]["verdict"],
+            state["ledger"][0]["triage"]["regression"],
+            state["regression_unknown"],
+            ran.result["named"]["regression_unknown"]
+        ]),
+        json!([[], "confirmed", null, [key], 1]),
+        "L11: the verifier said `regression: false` on another binary of the previous release — the record holds no `no`: {state}"
     );
 
     // M7 — a reviewer is handed the candidate's binary and returns the hash it asserted:
@@ -3775,7 +3786,7 @@ fn a_return_is_held_to_its_keys_its_binaries_and_its_commit_before_it_is_taken()
 // ---------------------------------------------------------------------------
 
 /// The `(role, field)` pairs this suite drives with the field ABSENT: every cell of the
-/// harness's `NEEDS` whose word is not `halts`. `stabilize_harness_fence`, arm (t), holds
+/// harness's `NEEDS` whose word is not `halts` — and none is. `stabilize_harness_fence`, arm (t), holds
 /// this list to that table in both directions — so a field a stage comes to need of a
 /// role has its arm here, or is named there as owed to a task.
 pub(crate) const ABSENT_ARMS: &[(&str, &str)] = &[
@@ -3785,6 +3796,9 @@ pub(crate) const ABSENT_ARMS: &[(&str, &str)] = &[
     ("verify", "asserted_sha256"),
     ("advocate", "asserted_sha256"),
     ("proposal", "asserted_sha256"),
+    // The two cells `X1` left halting, turned by `X1b`: the verdict stands, the fact is unknown.
+    ("verify", "regression"),
+    ("verify", "ran_on.previous"),
 ];
 
 /// **A return that lacks a field the stage needs of that role is that item's fact, and
@@ -3798,10 +3812,18 @@ pub(crate) const ABSENT_ARMS: &[(&str, &str)] = &[
 /// `next` as the state computes it. Beside each, the control with the field there. AND A
 /// HASH THAT CAME BACK WRONG IS THE SAME CELL as one that did not come back: what that one
 /// agent drove is no evidence about the candidate, and nothing of the stage waits on it.
+/// AND A CONFIRMED VERDICT WITHOUT ITS REGRESSION FACT — no `regression`, or no hash of the
+/// previous release's binary behind it — IS NOT A VOID AT ALL (the plan's `X1b`): the
+/// verdict stands with its fork, the record holds it as confirmed with the fact UNKNOWN,
+/// never as *not a regression*, the finding is not counted unverified, and the state names
+/// it — which the stage's return counts beside what no round selected.
 ///
-/// The arms of `roles`, and the control they stand beside: three tests share this, so
+/// The arms of `pairs`, and the control they stand beside: four tests share this, so
 /// that no one test is a dozen stages long.
-fn a_needed_field_left_out_voids_what_its_reporter_was_launched_for(roles: &[&str], fork: bool) {
+fn a_needed_field_left_out_voids_what_its_reporter_was_launched_for(
+    pairs: &[(&str, &str)],
+    fork: bool,
+) {
     if !can_run() {
         return;
     }
@@ -3902,6 +3924,23 @@ fn a_needed_field_left_out_voids_what_its_reporter_was_launched_for(roles: &[&st
             3,
             "it is contested, and the independent drive of the advocate's proposal",
         ),
+        // The whole road of the fork is scripted: the verdict is TAKEN, so its fork is driven.
+        (
+            "verify",
+            "regression",
+            format!("verify:{key}"),
+            format!("verify-p1-{key}"),
+            3,
+            "",
+        ),
+        (
+            "verify",
+            "ran_on.previous",
+            format!("verify:{key}"),
+            format!("verify-p1-{key}"),
+            3,
+            "",
+        ),
     ];
     assert_eq!(
         arms.iter().map(|arm| (arm.0, arm.1)).collect::<Vec<_>>(),
@@ -3909,10 +3948,8 @@ fn a_needed_field_left_out_voids_what_its_reporter_was_launched_for(roles: &[&st
         "one arm per pair the fence holds this suite to"
     );
     assert!(
-        roles
-            .iter()
-            .all(|role| ABSENT_ARMS.iter().any(|(of, _)| of == role)),
-        "{roles:?} are roles the fence holds an arm for"
+        !pairs.is_empty() && pairs.iter().all(|pair| ABSENT_ARMS.contains(pair)),
+        "{pairs:?} are pairs the fence holds an arm for"
     );
 
     // EVERY ARM IS RUN AND EVERY ARM'S FAULT IS SAID — never the first one alone: an arm that
@@ -3936,15 +3973,20 @@ fn a_needed_field_left_out_voids_what_its_reporter_was_launched_for(roles: &[&st
             None => faults.push(format!("the control of the fork: {unsound}")),
             Some((sim, ran)) => {
                 let state = sim.state();
+                // … and its regression fact as the verifier returned it, backed by the
+                // previous release's binary: `false` on record, and nothing named unknown.
                 let seen = json!([
                     ran.result["status"],
                     ran.result["unverified"],
                     ran.result["forks"].as_array().map(Vec::len),
                     state["ledger"][0]["triage"]["verdict"],
-                    state["ledger"][0]["triage"]["fork"]
+                    state["ledger"][0]["triage"]["fork"],
+                    state["ledger"][0]["triage"]["regression"],
+                    state["regression_unknown"],
+                    ran.result["named"]["regression_unknown"]
                 ]);
                 if seen
-                    != json!(["triaged", [], 1, "confirmed", {"kind": "contested", "case": "robust-now", "drive": "holds"}])
+                    != json!(["triaged", [], 1, "confirmed", {"kind": "contested", "case": "robust-now", "drive": "holds"}, false, [], 0])
                 {
                     faults.push(format!("the control of the fork: {seen}"));
                 }
@@ -4024,7 +4066,7 @@ fn a_needed_field_left_out_voids_what_its_reporter_was_launched_for(roles: &[&st
     }
 
     for (role, field, label, reporter, upto, opens) in
-        arms.iter().filter(|arm| roles.contains(&arm.0))
+        arms.iter().filter(|arm| pairs.contains(&(arm.0, arm.1)))
     {
         // The field ABSENT — and, where it is the hash, RETURNED AND WRONG: the same cell.
         // (A driver's and a reviewer's wrong hash are the two tests that halted on one.)
@@ -4074,6 +4116,30 @@ fn a_needed_field_left_out_voids_what_its_reporter_was_launched_for(roles: &[&st
                     result["next"], state["next"]
                 ),
             );
+            if ["regression", "ran_on.previous"].contains(field) {
+                // A CONFIRMED VERDICT WHOSE REGRESSION FACT NOBODY KNOWS: THE VERDICT STANDS.
+                // The finding is confirmed and NOT unverified, its fork is on record with
+                // it, the record's cell for the fact is empty — never `no` — the state
+                // names the finding, and the return counts it.
+                let seen = json!([
+                    result["unverified"],
+                    result["counts"]["voided"],
+                    result["forks"].as_array().map(Vec::len),
+                    state["ledger"][0]["triage"]["verdict"],
+                    state["ledger"][0]["triage"]["regression"],
+                    state["ledger"][0]["triage"]["fork"]["drive"],
+                    state["untriaged"],
+                    state["regression_unknown"],
+                    result["named"]["regression_unknown"]
+                ]);
+                hold(
+                    seen == json!([[], [], 1, "confirmed", null, "holds", [], [key], 1]),
+                    format!(
+                        "the finding is not on record as confirmed with its regression fact unknown, named by the state and counted by the return: {seen}"
+                    ),
+                );
+                continue;
+            }
             let said = if mode == "absent" {
                 format!("{opens} ({reporter}) returned no `{field}` — ")
             } else {
@@ -4185,21 +4251,24 @@ fn a_needed_field_left_out_voids_what_its_reporter_was_launched_for(roles: &[&st
 
 #[test]
 fn a_reviewer_or_a_driver_that_returns_no_hash_voids_its_item_and_the_stage_records() {
-    a_needed_field_left_out_voids_what_its_reporter_was_launched_for(&["review", "drive"], false);
+    a_needed_field_left_out_voids_what_its_reporter_was_launched_for(&ABSENT_ARMS[..2], false);
 }
 
 #[test]
 fn a_verifier_that_returns_no_verdict_or_no_hash_leaves_the_finding_unverified_and_the_stage_records()
  {
-    a_needed_field_left_out_voids_what_its_reporter_was_launched_for(&["verify"], true);
+    a_needed_field_left_out_voids_what_its_reporter_was_launched_for(&ABSENT_ARMS[2..4], true);
 }
 
 #[test]
 fn an_advocate_or_an_independent_drive_that_returns_no_hash_is_no_fork_and_the_stage_records() {
-    a_needed_field_left_out_voids_what_its_reporter_was_launched_for(
-        &["advocate", "proposal"],
-        true,
-    );
+    a_needed_field_left_out_voids_what_its_reporter_was_launched_for(&ABSENT_ARMS[4..6], true);
+}
+
+#[test]
+fn a_confirmed_verdict_without_its_regression_fact_is_recorded_as_confirmed_with_the_fact_unknown()
+{
+    a_needed_field_left_out_voids_what_its_reporter_was_launched_for(&ABSENT_ARMS[6..], true);
 }
 
 // ---------------------------------------------------------------------------
@@ -5569,8 +5638,8 @@ fn a_held_check_is_started_by_the_stage_and_recorded_from_the_tools_verdict_file
 
 /// HOW A HELD COMMAND CAN END, each with its cell. A step that asks after one and dies is
 /// followed by another THAT TAKES THE WAIT OVER — the command ran once. A held check whose
-/// supervisor was killed is DEAD: it has no result, the stage goes on and records, and the
-/// state asks for it again. A command still running when nobody is left to ask after it
+/// supervisor was killed is DEAD: it left no verdict, so it is VOID BY A WORD — the stage
+/// goes on and records that run, with the job's name. A command still running when nobody is left to ask after it
 /// halts the stage and NAMES THE JOB, with the one call that answers once it is over. A
 /// candidate's gate whose output holds no verdict, and a commit that does not build, halt
 /// the stage before any instrument runs.
@@ -5638,11 +5707,33 @@ fn a_held_command_that_is_taken_over_dead_left_running_void_or_red_has_its_cell(
         json!(["dead", "no-exit"]),
         "{of}"
     );
+    // TURNED — it had no result on record, and nothing counted its run: A HELD CHECK THAT
+    // LEFT NO VERDICT IS VOID BY A WORD (the record script's `result-set`, for a held item:
+    // `void` and nothing else), the word the tool answered with and the job's name.
     let state = sim.state();
     assert_eq!(
         standing(&state, "regression-set"),
-        json!(["void", "not-run"]),
-        "a dead check has NO result on record: {state}"
+        json!(["void", "void"]),
+        "a dead check is a void RUN on record: {state}"
+    );
+    assert_eq!(
+        results(&state, 1)
+            .into_iter()
+            .find(|row| row[0] == "regression-set"),
+        Some(json!([
+            "regression-set",
+            1,
+            "void",
+            "without a verdict: dead:regression-set-c1-a1"
+        ])),
+        "by the word and the job's name, in the shape the record script takes: {state}"
+    );
+    assert!(
+        dead.result["counts"]["voided"]
+            .as_array()
+            .is_some_and(|voided| voided.contains(&json!("regression-set"))),
+        "the return names it void: {}",
+        dead.result
     );
     assert_eq!(standing(&state, "gate"), json!(["green", null]));
     assert!(
@@ -5651,6 +5742,46 @@ fn a_held_command_that_is_taken_over_dead_left_running_void_or_red_has_its_cell(
             .join(format!("{RUN_DIR}/r1/checks/regression-set.a1.json"))
             .exists(),
         "and no verdict's file"
+    );
+
+    // ITS START REFUSED: a command of another kind stands under the held check's name, so
+    // the tool refuses the start (`taken`) and starts nothing. The check is void BY THE
+    // TOOL'S OWN WORD, with the name — and the stage records.
+    let sim = Sim::opened("held-taken", &with_held_checks(&["regression-set"]));
+    let scratch_taken = sim.rig.scratch.display().to_string();
+    let other = sim.step(&[
+        "hold-start",
+        "--scratch",
+        &scratch_taken,
+        "--name",
+        "regression-set-c1-a1",
+        "--kind",
+        "probe",
+        "--seconds",
+        "1",
+    ]);
+    assert_eq!(other["status"], "started", "{other}");
+    let taken = sim.invoke(sim.args("test", json!({})), small_stage(json!({})));
+    assert_eq!(taken.result["status"], "triaged", "{}", taken.result);
+    assert_eq!(
+        results(&sim.state(), 1)
+            .into_iter()
+            .find(|row| row[0] == "regression-set"),
+        Some(json!([
+            "regression-set",
+            1,
+            "void",
+            "without a verdict: taken:regression-set-c1-a1"
+        ])),
+        "a refused start is a void run, by the tool's word: {}",
+        taken.result
+    );
+    assert!(
+        !taken
+            .agents()
+            .contains(&"git:hold-wait:regression-set-c1-a1"),
+        "nobody asks after a command that was not started: {:?}",
+        taken.agents()
     );
 
     // LEFT RUNNING: nobody is left to ask after the candidate's gate.
@@ -5860,6 +5991,140 @@ fn a_held_regression_that_was_void_is_run_again_in_a_rerun_on_the_rounds_candida
         4,
         "the candidate's gate once, and one gate per record — the stage's, the ruling's, the re-run's: {:?}",
         sim.long_commands()
+    );
+}
+
+/// A HELD GATE THAT IS DUE AGAIN IS VOID BY A WORD, AND `next` LEAVES `retest` (the harness
+/// task `K11`'s item 8, finished: the record script takes `void` as the one word of a held
+/// check, and the harness composes it). A gate reads the working tree, which in a re-run is
+/// no longer the round's candidate — so it is not held again inside its round. Until this
+/// nothing could be recorded for it: a re-run in which it alone was due was refused before
+/// any agent ran, and `next` stayed `retest` for a clause no invocation could move. THE
+/// ROAD THERE is the one that will come: the candidate's gate is red, its red is a finding,
+/// the finding is confirmed, the human rules it *later*, and gives the go.
+#[test]
+fn a_held_gate_that_is_due_again_is_recorded_void_by_a_word_and_next_leaves_retest() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::opened("held-gate-rerun", &with_held_checks(&[]));
+    let candidate = sim.rig.rev("HEAD");
+    let first = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"gate": red(&[KNOWN])})),
+    );
+    assert_eq!(
+        json!([first.result["status"], first.result["next"]]),
+        json!(["triaged", "triage"]),
+        "the candidate's gate is red, and its red is a finding nobody graded yet: {}",
+        first.result
+    );
+    assert_eq!(standing(&sim.state(), "gate"), json!(["red", null]));
+    let lap = sim.invoke(
+        sim.args("test", json!({})),
+        json!({"agents": {
+            "triage:p1": graded(&[again("red-gate", "the held check `gate`", "working-product", "breaks")], &["ledger"]),
+            "verify:red-gate": verdict("red-gate", "confirmed"),
+        }}),
+    );
+    assert_eq!(lap.result["next"], "rule", "{}", lap.result);
+    let ruled = sim.invoke(
+        sim.args(
+            "test",
+            json!({"rulings": [{"key": "red-gate", "ruling": "later", "note": "for the next release"}]}),
+        ),
+        json!({}),
+    );
+    assert_eq!(ruled.result["next"], "stop", "{}", ruled.result);
+    let go = sim.invoke(
+        sim.args("test", json!({"rulings": [{"go": true}]})),
+        json!({}),
+    );
+    assert_eq!(
+        json!([go.result["next"], sim.state()["retest"]]),
+        json!(["retest", ["working-product"]]),
+        "the state asks for the red gate again: {}",
+        go.result
+    );
+    assert_ne!(
+        sim.rig.rev("HEAD"),
+        candidate,
+        "record commits moved the tip"
+    );
+    let gates = sim
+        .long_commands()
+        .iter()
+        .filter(|c| *c == "gate --keep-going")
+        .count();
+
+    // THE RE-RUN: the gate is NOT HELD AGAIN — the tree is not the round's candidate — and
+    // it is RECORDED, void by the one word the record script takes of a held check: a run
+    // that counts, on the round's candidate.
+    let again = sim.invoke(
+        sim.args("test", json!({"clause": "working-product"})),
+        json!({}),
+    );
+    assert_eq!(again.result["status"], "triaged", "{}", again.result);
+    assert!(
+        !again
+            .agents()
+            .iter()
+            .any(|a| a.starts_with("git:hold-start:gate-")),
+        "no gate of the candidate's is held in a re-run: {:?}",
+        again.agents()
+    );
+    assert_eq!(
+        sim.long_commands()
+            .iter()
+            .filter(|c| *c == "gate --keep-going")
+            .count(),
+        gates + 1,
+        "one gate ran: the re-run's own record's"
+    );
+    let state = sim.state();
+    assert_eq!(
+        results(&state, 1)
+            .into_iter()
+            .filter(|row| row[0] == "gate")
+            .collect::<Vec<_>>(),
+        [
+            json!(["gate", 1, "red", null]),
+            json!(["gate", 2, "void", "without a verdict: off-tree"])
+        ],
+        "the gate's re-run is a run on record, void by a word: {state}"
+    );
+    assert!(
+        state["rounds"][0]["results"]
+            .as_array()
+            .is_some_and(|rows| rows.iter().all(|row| row["commit"] == candidate.as_str())),
+        "and names the round's candidate: {state}"
+    );
+    assert_eq!(
+        json!([
+            again.result["counts"]["voided"],
+            again.result["held"][0]["item"],
+            again.result["held"][0]["ends"]
+        ]),
+        json!([["gate"], "gate", "not-run"]),
+        "the return names it: {}",
+        again.result
+    );
+    // `next` LEAVES `retest`: the clause was run twice inside its round and is not green,
+    // so it is the human's — settled by the next round, whose candidate is the tip.
+    assert_eq!(
+        json!([
+            again.result["next"],
+            state["next"],
+            state["retest"],
+            state["human_clauses"]
+        ]),
+        json!([
+            "rule",
+            "rule",
+            [],
+            [{"clause": "working-product", "why": "not-green-after-its-rerun"}]
+        ]),
+        "{state}"
     );
 }
 

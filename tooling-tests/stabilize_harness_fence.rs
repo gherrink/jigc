@@ -2719,9 +2719,10 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
     let named = function(&full, "namedOf");
     assert!(
         named.contains("never_selected: state.never_selected || []")
+            && named.contains("regression_unknown: (state.regression_unknown || []).length")
             && named.contains("document: state.document || null")
             && named.contains("(state.uncovered || []).find((u) => u.round === within)"),
-        "every return names the items no round selected, the doors of the round no item names, and the file"
+        "every return names the items no round selected, the doors of the round no item names, how many confirmed findings have their regression fact unknown, and the file"
     );
     assert!(
         function(&full, "halt").contains("named: namedOf(lastState),"),
@@ -2826,6 +2827,28 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
         function(&full, "resultRows")
             .contains("if (unit.verdict) return { item: unit.item, verdict: unit.verdict }"),
         "a held check's result is the verdict's file, and no word"
+    );
+    // THE ONE WORD OF A HELD CHECK THAT LEFT NO VERDICT has one shape, and it is the record
+    // script's: the harness's pattern is that script's, character for character — so no
+    // row the harness composes of one is a row its batch is refused for.
+    let theirs = record
+        .lines()
+        .find_map(|line| line.strip_prefix("HELD_VOID = re.compile(r\""))
+        .and_then(|rest| rest.strip_suffix("\")"))
+        .expect("the record script declares the shape of a held void's reason");
+    let ours = source
+        .lines()
+        .find_map(|line| line.strip_prefix("const HELD_VOID_RE = /^"))
+        .and_then(|rest| rest.strip_suffix("$/"))
+        .expect("the harness declares the shape of a held void's reason");
+    assert_eq!(
+        ours, theirs,
+        "the shape of the word a held check is void by (left: the harness's) is the record script's (right)"
+    );
+    assert!(
+        function(&full, "runTest")
+            .contains("{ item: h.item, status: 'void', reason: heldVoid(h) }"),
+        "a held check that left no verdict is recorded void, by that word"
     );
 }
 
@@ -3778,23 +3801,14 @@ const NOT_NEEDED: &[(&str, &str, &str)] = &[
 /// not turn it. A `halts` cell that is not here is red, and so is a row here whose cell is
 /// gone or turned: the task that turns it adds its arm to the simulation's `ABSENT_ARMS`
 /// and takes its row out of this list in the same commit.
-const OWED: &[(&str, &str, &str, &str)] = &[
-    (
-        "verify",
-        "regression",
-        "X1b",
-        "a confirmed verdict with no regression fact is recorded as confirmed with that fact unknown — a cell `dev/stabilize-record triage-set` does not take yet: it refuses `confirmed` without a boolean `regression`, and its change is on another branch",
-    ),
-    (
-        "verify",
-        "ran_on.previous",
-        "X1b",
-        "the hash of the previous release's binary is what backs a regression fact: without it the fact is unknown, the verdict stands — the same cell of the record script, owed with the row above",
-    ),
-];
+///
+/// NONE IS OWED TODAY: the two that were — a verifier's `regression` and its
+/// `ran_on.previous`, with `confirmed` — were turned by the second repair plan's `X1b` into
+/// the cell `unknown`, and each has its arm.
+const OWED: &[(&str, &str, &str, &str)] = &[];
 
 /// The words a cell of `NEEDS` may hold: what the absence of the field does.
-const CELLS: [&str; 4] = ["void", "unverified", "no-fork", "halts"];
+const CELLS: [&str; 5] = ["void", "unverified", "no-fork", "unknown", "halts"];
 
 /// The row of the stage's stated halts that exists only while a cell is owed.
 const OWED_HALT: &str = "regression-fact";
@@ -4160,7 +4174,7 @@ fn t_a_field_a_stage_needs_has_its_cell_and_what_halts_after_an_instrument_is_a_
     assert_eq!(
         of(false),
         arms,
-        "every (role, field) whose absence voids what the role was launched for (left) is driven absent by the simulation (right: its ABSENT_ARMS)"
+        "every (role, field) whose absence voids what the role was launched for, or leaves a fact unknown (left), is driven absent by the simulation (right: its ABSENT_ARMS)"
     );
     assert_eq!(
         of(true),
@@ -4175,7 +4189,7 @@ fn t_a_field_a_stage_needs_has_its_cell_and_what_halts_after_an_instrument_is_a_
     }
     assert_eq!(
         rows.contains(OWED_HALT),
-        !OWED.is_empty(),
+        !owed.is_empty(),
         "the row `{OWED_HALT}` of the stated list stands exactly as long as a cell is owed"
     );
     assert_eq!(

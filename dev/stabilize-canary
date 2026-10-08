@@ -189,10 +189,14 @@
 # chains, TWO STEPS PER HELD COMMAND — and the suite's simulated stage goes red where the
 # harness launches another number. `args` is the stage's argument object. WHAT THE
 # SESSION NEEDS, beside this line: an allow rule for each of the three tools a prompt of
-# the harness names a command of — dev/stabilize-step, dev/stabilize-record and, for a
-# probe, dev/stabilize-probe — which the committed settings carry into the clone; what
-# a role runs of its own craft (a reviewer's rig, a driver's commands on the binary, the
-# trial image) is under the session's permission mode, and a prompt can appear there.
+# the harness names a command of — `Bash(dev/stabilize-step *)`,
+# `Bash(dev/stabilize-record *)` and, for a probe, `Bash(dev/stabilize-probe *)`. THIS
+# TOOL WRITES NONE: a clone carries the settings the commit it was made of holds, so the
+# rules travel into it where that commit's .claude/settings.json has them and are the
+# session's own to add where it has not — without one, a step's first call of a tool
+# asks for a permission. What a role runs of its own craft (a reviewer's rig, a driver's
+# commands on the binary, the trial image) is under the session's permission mode
+# either way, and a prompt can appear there.
 #
 # TO DISPOSE OF IT. Nothing is to be removed inside this repository: the tool writes no
 # file of it. The canary is ROOT, a directory under a temp or scratch directory, and goes
