@@ -3,6 +3,11 @@
     "rust-analyzer-lsp@claude-plugins-official": true
   },
   "permissions": {
+    "allow": [
+      "Bash(dev/stabilize-step *)",
+      "Bash(dev/stabilize-record *)",
+      "Bash(dev/stabilize-probe *)"
+    ],
     "deny": [
       "Bash(git *push * main*)",
       "Bash(git *push *:main*)",
