@@ -756,8 +756,8 @@ fn a_setup_leaves_a_clone_whose_one_remote_is_the_bare_repository_beside_it_and_
         .collect();
     assert_eq!(
         pushes,
-        [format!("push origin {LOOP}")],
-        "the step tool's pushes"
+        [format!("push origin {head}:refs/heads/{LOOP}")],
+        "the step tool's pushes: the opening's commit, by its sha, into the loop branch's ref"
     );
     let source_before = canary.snapshot();
     fs::write(clone.join(RUN_DIR).join("a-note.md"), "a note\n").expect("write a note");

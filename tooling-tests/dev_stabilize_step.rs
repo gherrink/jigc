@@ -765,21 +765,24 @@ fn lines(list: &[&str]) -> Vec<String> {
 
 /// **The git calls of the tool's one push**, in its order (the tool's header: *What a push
 /// publishes*): the remote is ASKED what it holds, and which of those commits this clone
-/// holds too; the branch's commit is read once; the range is that commit less what the
-/// remote holds, by sha; after the vet both are asked again; then the push, and the remote
-/// read back. `held` is what the remote's heads stood at before the call
+/// holds too; the name is held to the branch's own ref, and the branch's commit is read
+/// once; the range is that commit less what the remote holds, by sha; after the vet both
+/// are asked again; then the push — OF THAT COMMIT, BY ITS SHA, into the branch's ref — the
+/// remote read back, and the branch read once more. `held` is what the remote's heads stood at before the call
 /// ([`StepRig::remote_heads`]) and `tip` the commit the branch stood at.
 fn push_calls(branch: &str, tip: &str, held: &[String]) -> Vec<String> {
     let held = held.join(" ");
     vec![
         "ls-remote --heads origin".to_owned(),
         format!("rev-list --no-walk --ignore-missing {held}"),
+        format!("rev-parse --symbolic-full-name {branch}"),
         format!("rev-parse {branch}"),
         format!("rev-list --reverse {tip} --not {held}"),
         "ls-remote --heads origin".to_owned(),
         format!("rev-parse {branch}"),
-        format!("push origin {branch}"),
+        format!("push origin {tip}:refs/heads/{branch}"),
         format!("ls-remote --exit-code --heads origin {branch}"),
+        format!("rev-parse {branch}"),
     ]
 }
 
@@ -1296,7 +1299,7 @@ fn open_round_opens_the_branch_from_the_loop_branch_or_switches_to_it() {
 }
 
 #[test]
-fn push_pushes_the_branch_by_name_and_reads_the_remote_back() {
+fn push_pushes_the_vetted_commit_by_its_sha_and_reads_the_remote_back() {
     let rig = StepRig::new("push");
     let branch = rig.round(1);
     let push = ["push", "--branch", branch.as_str()];
@@ -1386,7 +1389,7 @@ fn push_refuses_where_its_list_halted() {
             .filter(|call| call.starts_with("push "))
             .count(),
         1,
-        "one push, by name, and no second try: {:?}",
+        "one push, of the vetted commit, and no second try: {:?}",
         seen.trace
     );
 
@@ -1404,6 +1407,31 @@ fn push_refuses_where_its_list_halted() {
     );
     rig.step(&["push", "--branch", LOOP])
         .refused("remote-differs");
+
+    // A TAG OF THE BRANCH'S OWN NAME, at another commit: git reads a short name as the tag,
+    // so every read of the branch would be of the tag's commit — and a push of a sha is not
+    // one git refuses as ambiguous. The name is held to the branch's own ref: no push.
+    let rig = StepRig::new("push-tagged");
+    let pushed = rig.rev("HEAD");
+    let note = rig.change(
+        &format!("{RUN_DIR}/note.md"),
+        "a record\n",
+        "docs(record): a note",
+    );
+    rig.git(&["tag", LOOP, &pushed]);
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    seen.refused("push-rejected");
+    assert!(
+        !seen.trace.iter().any(|call| call.starts_with("push ")),
+        "no push is tried: {:?}",
+        seen.trace
+    );
+    assert_eq!(rig.remote(LOOP), Some(pushed));
+    // MUST NOT REFUSE: the same branch once the name is its own again.
+    rig.git(&["tag", "-d", LOOP]);
+    let seen = rig.step(&["push", "--branch", LOOP]);
+    assert_eq!(seen.done("push", "ready")["vetted"], json!([note]));
+    assert_eq!(rig.remote(LOOP), Some(note));
 }
 
 // ---------------------------------------------------------------------------
@@ -3404,6 +3432,113 @@ fn a_commit_that_lands_while_the_range_is_vetted_is_not_published() {
     let seen = rig.step(&["push", "--branch", LOOP]);
     assert_eq!(seen.done("push", "ready")["vetted"], json!([note]));
     assert_eq!(rig.remote(LOOP), Some(note));
+}
+
+/// **Something that happens BETWEEN THE VET AND THE PUSH** — after the tool's last read of
+/// the branch, before git's own: the rig's `git` becomes one that — the first time it is
+/// asked to push — runs `during`, a shell text, and then pushes exactly as it was asked. It
+/// writes down the tool's calls as the rig's own `git` does. It stands in for a second
+/// committer in the one process start between the two reads.
+fn while_the_push_starts(rig: &StepRig, during: &str) {
+    let flag = sh_quoted(&rig.dir().join("pushed-once"));
+    let shim = GIT_SHIM.replace("@GIT@", &real_git().display().to_string());
+    let (traced, runs) = shim
+        .split_once("exec ")
+        .expect("the rig's git ends by running the real one");
+    rig.on_path(
+        "git",
+        &format!(
+            "{traced}if [ \"$1\" = push ] && [ ! -e '{flag}' ]; then : >'{flag}'\n( {during} ) >/dev/null 2>&1\nfi\nexec {runs}"
+        ),
+    );
+}
+
+/// **A push names the commit that was vetted, and publishes nothing later** (the core
+/// review's `F1`, finished). The vet is of one commit, by its sha; the push was still `git
+/// push origin <branch>`, so a commit that landed between the tool's last read of the
+/// branch and git's own — one process start — was published, vetted by nothing, and only
+/// NAMED by the read-back. The push is now of that sha (`<sha>:refs/heads/<branch>`): what
+/// lands in the window is NOT ON THE REMOTE, and the act says what it did not publish —
+/// for the push a record is owed (`git-state`) and for `push`, through the tool's one push.
+#[test]
+fn a_commit_that_lands_between_the_vet_and_the_push_is_not_published_and_is_named() {
+    let product = product();
+    let state = git_state("test", &product);
+    let acts: [(&str, &[&str], &str); 2] = [
+        ("the push a record is owed", &state, "foreign-commit"),
+        ("a push", &PUSH, "unvetted"),
+    ];
+    for (what, act, again) in acts {
+        let rig = StepRig::new("push-raced");
+        let note = rig.change(
+            &format!("{RUN_DIR}/note.md"),
+            "a note\n",
+            "docs(record): a note",
+        );
+        while_the_push_starts(
+            &rig,
+            &format!(
+                "cd '{}' && mkdir -p docs-x && printf '%s raced\\n' {DENY_TERM} >docs-x/raced.md && git add docs-x/raced.md && git commit -q -m 'docs: landed while the push started'",
+                sh_quoted(&rig.root)
+            ),
+        );
+        let seen = rig.step(act);
+        let said = seen.refused("remote-differs");
+        let raced = rig.rev("HEAD");
+        assert_ne!(raced, note, "{what}: a commit landed as the push started");
+        // THE COMMIT THAT WAS VETTED IS PUBLISHED, AND NOTHING LATER — asked of the bare
+        // remote, which does not hold what landed.
+        assert_eq!(
+            rig.remote(LOOP),
+            Some(note.clone()),
+            "{what}: the remote stands at the commit that was vetted: {}",
+            seen.raw
+        );
+        assert!(
+            !rig.git_at(&rig.origin, &["cat-file", "-e", &raced])
+                .status
+                .success(),
+            "{what}: THE BARE REMOTE DOES NOT HOLD {raced}"
+        );
+        let pushes: Vec<&String> = seen
+            .trace
+            .iter()
+            .filter(|call| call.starts_with("push "))
+            .collect();
+        assert_eq!(
+            pushes,
+            [&format!("push origin {note}:refs/heads/{LOOP}")],
+            "{what}: one push, of the vetted commit by its sha"
+        );
+        // THE ACT SAYS WHAT IT DID NOT PUBLISH: the commit that is on the remote, and the
+        // one that is not, each by its sha.
+        assert_eq!(
+            json!([said["vetted"], said["remote_head"]]),
+            json!([[note], note]),
+            "{what}: {}",
+            seen.raw
+        );
+        assert!(
+            said["halt"]["root_cause"].as_str().is_some_and(|cause| {
+                cause.contains(&format!("{note}, is published"))
+                    && cause.contains(&format!("NOT on the remote: {raced}"))
+            }),
+            "{what}: what was published and what was not are named: {}",
+            seen.raw
+        );
+        // THE EXIT: asked again, the step meets what landed as it meets any commit — and
+        // publishes none of it.
+        let seen = rig.step(act);
+        let said = seen.refused(again);
+        if again == "unvetted" {
+            assert_eq!(said["vet"]["commits"], json!([raced]), "{}", seen.raw);
+        }
+        assert_eq!(
+            rig.remote(LOOP),
+            Some(note),
+            "{what}: nothing more was pushed"
+        );
+    }
 }
 
 /// **What a commit says is held to what its files are held to** (the core review's `F6`) —
@@ -5842,8 +5977,10 @@ fn no_act_reaches_main_a_release_branch_a_tag_or_a_branch_outside_the_model() {
     }
     rig.git(&["switch", "-q", LOOP]);
 
-    // (c) A TAG OF THE BRANCH'S OWN NAME: git refuses the push as ambiguous, the tool
-    // answers that, and no tag — and no commit — reaches the remote.
+    // (c) A TAG OF THE BRANCH'S OWN NAME: git reads the name as the tag. A push by name was
+    // refused by git as ambiguous; the push of a sha is one git would make, so the tool
+    // holds the name to the branch's own ref before it reads a commit off it — and no tag,
+    // and no commit, reaches the remote.
     rig.change(
         &format!("{RUN_DIR}/note.md"),
         "a note\n",
@@ -5852,7 +5989,12 @@ fn no_act_reaches_main_a_release_branch_a_tag_or_a_branch_outside_the_model() {
     rig.git(&["tag", LOOP]);
     let there = refs(&rig.origin);
     let seen = rig.step(&["push", "--branch", LOOP]);
-    assert_ne!(seen.code, 0, "the push is refused: {}", seen.raw);
+    seen.refused("push-rejected");
+    assert!(
+        !seen.trace.iter().any(|call| call.starts_with("push ")),
+        "no push was tried: {:?}",
+        seen.trace
+    );
     assert_eq!(
         refs(&rig.origin),
         there,
@@ -5968,7 +6110,11 @@ const ALLOWED: &[(&str, &[&str])] = &[
         &["--stat", "--format=%s", "--name-only", "--format=", "--"],
     ),
     // `--git-path`: where git's own lock would lie, which the tool names and never removes.
-    ("rev-parse", &["--verify", "--quiet", "--git-path"]),
+    (
+        "rev-parse",
+        // `--symbolic-full-name`: the push holds a branch's name to the branch's own ref.
+        &["--verify", "--quiet", "--git-path", "--symbolic-full-name"],
+    ),
     (
         "rev-list",
         &[
@@ -6092,7 +6238,9 @@ const CHANGING: &[(&str, &[&str])] = &[
         "switch",
         &["switch <branch>", "switch --no-track -c <branch> <branch>"],
     ),
-    ("push", &["push origin <branch>"]),
+    // THE ONE PUSH: of the commit that was vetted, by its sha, into the branch's own ref —
+    // never of a name, which is whatever the branch stands at when git reads it.
+    ("push", &["push origin <vetted>"]),
     (
         "merge",
         &["merge --no-ff --no-edit <target>", "merge --abort"],
@@ -6113,9 +6261,11 @@ const CHANGING: &[(&str, &[&str])] = &[
 const BRANCH_NAMES: [&str; 3] = ["args.loop", "args.branch", "branch"];
 
 /// The pieces of text the tool may join a name to, inside a git call.
-const JOINED: [&str; 6] = [
+const JOINED: [&str; 7] = [
     "origin/",
     "refs/heads/",
+    // The right-hand side of the one push's refspec: the vetted sha, into the branch's ref.
+    ":refs/heads/",
     "*",
     "/opening.md",
     ":(exclude)",
@@ -6361,6 +6511,11 @@ fn offences(source: &str) -> Vec<String> {
                             }
                             ("<target>", Arg::Expression(name)) => name == "target",
                             ("<sha>", Arg::Expression(name)) => name == "sha",
+                            // The one push's refspec, whole: the vetted commit, then the
+                            // ref of the branch it was read from, and no other pair.
+                            ("<vetted>", Arg::Expression(name)) => {
+                                name == "tip + \":refs/heads/\" + branch"
+                            }
                             // The record's commit: the subject its batch carries, and
                             // the run's pending paths, each by name.
                             ("<subject>", Arg::Expression(name)) => name == "subject",
@@ -6694,8 +6849,8 @@ fn the_tool_runs_no_git_command_an_agent_may_not() {
         .collect();
     assert_eq!(
         pushes,
-        ["push origin branch in push"],
-        "one push, by name, in one helper"
+        ["push origin tip + \":refs/heads/\" + branch in push"],
+        "one push, of the vetted commit by its sha, in one helper"
     );
 }
 
@@ -6759,6 +6914,33 @@ fn a_planted_offender_reddens_the_scan() {
         ),
         (
             "git(\"push\", \"origin\", \"HEAD\")",
+            "a shape the tool does not have",
+        ),
+        // THE PUSH NAMES THE COMMIT THAT WAS VETTED: a push by name — the shape the tool
+        // had — publishes whatever the branch stands at when git reads it; and a refspec
+        // is the vetted sha into the ref of the branch it was read from, or it is none.
+        (
+            "git(\"push\", \"origin\", args.branch)",
+            "a shape the tool does not have",
+        ),
+        (
+            "git(\"push\", \"origin\", args.branch + \":refs/heads/\" + args.branch)",
+            "a shape the tool does not have",
+        ),
+        (
+            "git(\"push\", \"origin\", tip + \":refs/heads/\" + args.loop)",
+            "a shape the tool does not have",
+        ),
+        (
+            "git(\"push\", \"origin\", tip + \":refs/heads/main\")",
+            "joined to \":refs/heads/main\"",
+        ),
+        (
+            "git(\"push\", \"origin\", tip + \":refs/tags/\" + branch)",
+            "joined to \":refs/tags/\"",
+        ),
+        (
+            "git(\"push\", \"origin\", \":refs/heads/\" + args.branch)",
             "a shape the tool does not have",
         ),
         ("git(\"push\", \"--tags\", \"origin\")", "`--tags`"),

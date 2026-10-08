@@ -42,12 +42,14 @@
 #                   switches to the one it names first. (`sync-main` reads `origin/main`
 #                   and merges it INTO the run's branch — that direction, and no other.)
 #   release-plz-*   a branch of the release tool's is refused by its prefix (usage).
-#   a tag           no act names one: the tool runs no `git tag`, its one push names a
-#                   branch — which git refuses where a tag of the same name makes it
-#                   ambiguous — and `refs/tags/...` is refused by the branch model's rule.
-#   a forced push,  in no spelling: the one push is `git push origin <branch>`, the
-#   a deletion      source scan holds its shape, and `+name`, `:name`, `a:b` and a flag
-#                   are no branch names (usage).
+#   a tag           no act names one: the tool runs no `git tag`, its one push writes
+#                   `refs/heads/<branch>` in full — never a ref git could read as a tag
+#                   — and is not made at all where a tag answers to the branch's name
+#                   (push-rejected); `refs/tags/...` is refused by the branch model's rule.
+#   a forced push,  in no spelling: the one push is `git push origin
+#   a deletion      <sha>:refs/heads/<branch>` — the vetted commit, the branch it was
+#                   read from — the source scan holds that shape, and `+name`, `:name`,
+#                   `a:b` and a flag are no branch names (usage).
 #   a branch the    EVERY BRANCH AN ACT IS HANDED — --loop, --branch, and the prefixes
 #   model refuses   --rounds and --prefix — is asked of dev/branch-name, the rule CI
 #                   holds every pushed branch to, before the act runs: before any write,
@@ -128,12 +130,15 @@
 #       created}.
 #
 #   dev/stabilize-step push --branch B [--run-dir D]
-#       B pushed by name. B is checked out — wrong-branch; the pushed B has no commit
+#       B pushed: THE COMMIT THAT WAS VETTED, BY ITS SHA, into B's ref on the remote, and
+#       nothing later. B is checked out — wrong-branch; the pushed B has no commit
 #       the local one lacks — remote-ahead; EVERY COMMIT THE PUSH WOULD PUBLISH IS VETTED
 #       (the third boundary, and WHAT A PUSH PUBLISHES, below) — unvetted, and nothing is
 #       pushed; the remote and B still stand where the vet saw them — remote-differs,
 #       and nothing is pushed; the remote takes it — push-rejected — and then stands at
-#       the commit that was vetted — remote-differs. With --run-dir it is A RECORD'S
+#       the commit that was vetted — remote-differs; and B gained nothing while it was
+#       pushed — remote-differs, the vetted commit published and what landed since
+#       named, unpublished. With --run-dir it is A RECORD'S
 #       PUSH: every commit it would publish changes only D and is no merge —
 #       foreign-commit, and nothing is pushed. Asked again, it publishes nothing and
 #       says where the remote stands. Prints {status: ready, branch, head, remote_head:
@@ -415,19 +420,29 @@
 #       makes it the whole history, `git fetch origin` is the human's, and the step is
 #       asked for again.
 #   the commit is read ONCE — `git rev-parse <branch>` — and the vet is of that commit,
-#       by its sha: what the branch gains while the scanners run is no part of it.
+#       by its sha: what the branch gains while the scanners run is no part of it. THE
+#       NAME IS HELD TO THE BRANCH'S OWN REF FIRST (`git rev-parse --symbolic-full-name`):
+#       git reads a short name as a tag before a branch, and a push of a sha is not one
+#       git refuses as ambiguous — so beside a tag of the branch's name no push is made
+#       (push-rejected), as none was while the push was by name and git refused it.
 #   BOTH ARE ASKED AGAIN after the vet: a remote that lists other heads than before, or
 #       a branch that no longer stands at the vetted commit, is refused (remote-differs)
 #       and NOTHING IS PUSHED — the step asked again vets what the remote lacks then.
+#   THE PUSH NAMES THE COMMIT THAT WAS VETTED — `git push origin
+#       <sha>:refs/heads/<branch>` — and never the branch: what git would read of the
+#       branch at that moment is not what it sends. A commit that lands between the
+#       second read of the branch and the push, a window of one process start, is NOT
+#       PUBLISHED. (Until this, the push was by name, and such a commit was published
+#       unvetted and only named afterwards.)
 #   the remote is read back after the push: it stands at the commit that was vetted, or
-#       the act is refused (remote-differs) and says what stands there instead.
-# DECLARED, NOT CLOSED: the push itself is still `git push origin <branch>`, by name —
-# what git reads of the branch at that moment is what it publishes. A commit that lands
-# between the second read of the branch and git's own, a window of one process start, is
-# published unvetted, and the read-back NAMES it (remote-differs, with what to read).
-# The push that names the vetted commit — `<sha>:refs/heads/<branch>` — closes that, and
-# is one line here and one assertion of the canary's suite, which holds the push's
-# words and is turned with it.
+#       the act is refused (remote-differs) and says what stands there instead — a
+#       commit past it is another push's, never this one's.
+#   the branch is read once more: where it gained a commit since the vet's last read,
+#       the act is refused (remote-differs) and SAYS WHAT IT DID NOT PUBLISH — the
+#       vetted commit is on the remote, the later ones are named and are not; the step
+#       asked again vets them, and one that is no record's is met by its first read.
+# NOT CLOSED BY ANY PUSH WITHOUT FORCE: the remote is moved forward from where git's own
+# handshake finds it, which nothing here can hold to the position the vet saw.
 #
 # THE DIGEST (the second repair plan of the `test` half, P3 and its task K9; DECISIONS.md ->
 # 2026-10-07, "A line holds what the harness acts on"). Observed on 2026-10-07: a line
@@ -538,10 +553,13 @@
 #   12  merge-differs  the merge commit is not the one the act names; nothing is undone
 #   13  pick-stopped   a cherry-pick stopped; it is aborted
 #   14  carry-differs  what was carried is not what the act names; nothing is undone
-#   15  push-rejected  the remote did not take the push
+#   15  push-rejected  the remote did not take the push — or none was made: the
+#                      branch's name is a tag's too, or another ref's
 #   16  remote-differs the remote, or the branch, does not stand where a push holds it:
 #                      one of them moved while the range was vetted — nothing was pushed
-#                      — or after the push the remote does not stand at the vetted commit
+#                      — or after the push the remote does not stand at the vetted
+#                      commit, or the branch gained a commit while the vetted one was
+#                      pushed — that one is published, and nothing later
 #   17  record         dev/stabilize-record refused, failed or printed no JSON, or its
 #                      journal names an act this tool has no phases for
 #   18  git            a git command failed where the act expects none to
@@ -978,11 +996,19 @@ def set_aside(run_name, paths, scratch, undone):
 def push(branch, facts):
     """THE ONE PUSH OF THE TOOL (the header: WHAT A PUSH PUBLISHES): the branch's commit
     published once every commit the remote lacks of it is vetted — the remote asked what it
-    holds, the vet made of that commit by its sha, and the push made only where the remote
-    and the branch still stand where the vet saw them. The remote is read back: the sha it
-    stands at is the commit that was vetted."""
+    holds, the vet made of that commit by its sha, the push made only where the remote
+    and the branch still stand where the vet saw them, AND MADE OF THAT SHA, never of the
+    branch's name. The remote is read back: the sha it stands at is the commit that was
+    vetted; and the branch is read once more: what it gained since is named, unpublished."""
     # 1. What the remote holds now, and THE COMMIT THIS PUSH PUBLISHES: read once, here.
+    #    THE NAME IS THE BRANCH'S ALONE: git reads a short name as a tag before it reads it
+    #    as a branch, so beside a tag of the same name every read below would be of the
+    #    tag's commit — and a push of a sha, unlike a push by name, is not one git refuses
+    #    as ambiguous.
     reach = remote_holds()
+    named = said("rev-parse", "--symbolic-full-name", branch)
+    if named != "refs/heads/" + branch:
+        refuse("push-rejected", "`%s` is not the name of that branch alone in this repository — a tag, or another ref, answers to it too — so the commit a push would publish is not known to be the branch's: no push was made" % branch, "`git rev-parse --symbolic-full-name %s` printed `%s`, not `refs/heads/%s`" % (branch, named or "(nothing: the name is ambiguous)", branch), "the human looks at `git for-each-ref` for the other ref of that name — a tag is his to delete, never a step's; then the step is asked for again. Nothing was vetted, and nothing reached the remote")
     tip = said("rev-parse", branch)
     lacks = lacking(tip, reach)
     # 2. Every commit of it the remote lacks, vetted — the range by the commit's sha, so
@@ -1003,14 +1029,23 @@ def push(branch, facts):
     moved = said("rev-parse", branch)
     if moved != tip:
         refuse("remote-differs", "`%s` moved while it was vetted: the vet was of %s, and the branch stands at %s — a commit landed meanwhile, and nothing vetted it" % (branch, tip, moved), "`git rev-parse %s` printed %s before the vet and %s after it" % (branch, tip, moved), then)
-    # 4. The push, and the remote read back: it stands at the commit that was vetted.
-    pushing = git("push", "origin", branch)
+    # 4. The push — OF THE COMMIT THAT WAS VETTED, by its sha, into the branch's own ref:
+    #    whatever the branch gained since the last read of it is no part of what git sends.
+    #    And the remote read back: it stands at that commit.
+    pushing = git("push", "origin", tip + ":refs/heads/" + branch)
     if pushing.code != 0:
         refuse("push-rejected", "the remote did not take `%s`" % branch, pushing.shown(), "the human looks at the remote; a push is never forced")
     listed = said("ls-remote", "--exit-code", "--heads", "origin", branch)
     if heads(listed, branch) != [tip]:
-        refuse("remote-differs", "after the push origin's `%s` does not stand at the commit that was vetted, %s" % (branch, tip), "`git ls-remote` printed: %s" % (listed or "(nothing)"), "the human looks at the remote: where it stands at a commit past %s, that commit landed between the last read of the branch and the push, and IS PUBLISHED, vetted by nothing — it is named by `git log %s..origin/%s` after a fetch, and what it holds is his to judge (implementation/public-hygiene.md)" % (tip, tip, branch))
+        refuse("remote-differs", "after the push origin's `%s` does not stand at the commit that was vetted, %s" % (branch, tip), "`git ls-remote` printed: %s" % (listed or "(nothing)"), "the human looks at the remote: this step published %s and nothing later, so a commit past it that stands there was pushed by somebody else, since — it is named by `git log %s..origin/%s` after a fetch, and what it holds is his to judge (implementation/public-hygiene.md)" % (tip, tip, branch))
     facts["remote_head"] = tip
+    # 5. The branch, read once more: a commit that landed on it since the vet's last read
+    #    is NOT PUBLISHED — the push was of a sha — and the act says so, by name.
+    stands = said("rev-parse", branch)
+    if stands != tip:
+        since = tip + ".." + stands
+        landed = lines(said("rev-list", "--reverse", since))
+        refuse("remote-differs", "`%s` moved while it was pushed: the commit that was vetted, %s, is published, and nothing later — the branch stands at %s, and %d commit(s) of it are NOT on the remote: %s" % (branch, tip, stands, len(landed), ", ".join(landed) or "(none: the branch was moved back)"), "`git rev-list --reverse %s`, after `git push origin %s:refs/heads/%s`" % (since, tip, branch), "nothing unvetted was published, and nothing is lost: the step is asked for again, and vets what the remote lacks then — a commit that landed meanwhile is met by its first read")
 
 
 def pending_of(run_name):
