@@ -1,0 +1,79 @@
+{
+ "what": "the value the second invocation returned, read from the runtime's own task output after the session ended; the session never wrote results/then.json",
+ "agentCount": 324,
+ "totalToolCalls": 1098,
+ "log_lines": 698,
+ "log_lines_by_shape": [
+  {
+   "count": 297,
+   "line": "[verify:<key>] failed: You've hit your session limit"
+  },
+  {
+   "count": 99,
+   "line": "null return on verify:<key> (attempt 1/3)"
+  },
+  {
+   "count": 99,
+   "line": "null return on verify:<key> (attempt 2/3)"
+  },
+  {
+   "count": 99,
+   "line": "null return on verify:<key> (attempt 3/3)"
+  },
+  {
+   "count": 99,
+   "line": "exhausted 3 attempts on verify:<key> (agent returned null)"
+  },
+  {
+   "count": 1,
+   "line": "round 1: the test stage left its triage unfinished \u2014 118 row(s) are graded and verified now, attempt 2; no instrument runs"
+  },
+  {
+   "count": 1,
+   "line": "triage pass 1: 118 finding(s) from 1 reporter(s)"
+  },
+  {
+   "count": 1,
+   "line": "verify-real, pass 1: 118 finding(s)"
+  },
+  {
+   "count": 1,
+   "line": "TWO different agents exhausted their retries (verify:<key>, verify:<key>) \u2014 the shape of an account-level rate limit, not of a fault in the run. No further agent is spawned."
+  },
+  {
+   "count": 1,
+   "line": "rate-limit breaker is tripped \u2014 NOT spawning git:check-reports:p1"
+  }
+ ],
+ "result": {
+  "status": "halted",
+  "stage": "test",
+  "run": "canary-one",
+  "halted": {
+   "phase": "triage",
+   "reason": "the report check could not be read",
+   "transient": true,
+   "halt": null,
+   "step": null,
+   "branch": "fix/canary-one"
+  },
+  "arrived": {
+   "found": [],
+   "finished": [],
+   "owed": []
+  },
+  "named": {
+   "never_selected": [],
+   "uncovered": {
+    "round": 1,
+    "doors": 0
+   },
+   "regression_unknown": 0,
+   "document": {
+    "file": "<canary>/scratch/state/test-1.json",
+    "sha256": "ec6270745ae129b46c32c45d3442e9ee8d80c92e34316eb5e0e118a59ffef17e"
+   }
+  },
+  "message": "stabilize test of `canary-one` HALTED at triage: the report check could not be read The rate-limit breaker is tripped (verify:r1-p4-staging-area-writers-undriven-doors, verify:r1-p4-hook-git-dir-export-validate-children-not-examined, verify:r1-p4-staging-area-enumeration-bound-and-other-readers, verify:r1-p4-setup-bare-repository-pointer-installs-outside-work-tree, verify:r1-p4-setup-separate-git-dir-refusal-route-not-driven, verify:r1-p4-hook-layouts-undriven-cells-and-previous-release, verify:r1-p4-setup-writability-route-undriven-causes, verify:r1-p4-uninstall-writability-sentence-other-causes-not-driven, verify:r1-p4-uninstall-six-other-teardown-refusals-same-route-shape, verify:r1-p4-two-installs-one-hook-other-layouts-not-driven, verify:r1-p4-setup-over-compiled-program-hook-not-driven, verify:r1-p4-uninstall-refusal-leaves-teardown-half-done, verify:r1-p4-uninstall-ignores-installed-hook-after-hookspath-change, verify:r1-p4-uninstall-writes-through-outward-hook-link, verify:r1-p4-uninstall-removes-hook-link-leaves-block-at-links-end, verify:r1-p4-uninstall-writability-refusal-undriven-causes, verify:r1-p4-uninstall-warning-outward-link-outside-file-not-driven, verify:r1-p4-setup-separate-git-dir-commits-into-enclosing-repository, verify:r1-p4-uninstall-kept-hook-sentence-not-tested, verify:r1-p4-display-hook-path-undriven-states, verify:r1-p4-setup-make-executable-failure-not-driven-on-candidate, verify:r1-p4-setup-hook-linked-to-dev-null-route-names-dev-null, verify:r1-p4-setup-install-hook-undriven-sites, verify:r1-p4-setup-writability-route-directory-or-unreadable-hook, verify:r1-p4-doc-list-over-orphan-absent-from-work-tree-not-driven, verify:r1-p4-validate-unreadable-orphan-ownership-root-linux-not-driven, verify:r1-p4-doc-list-over-unreadable-orphan-not-driven, verify:r1-p4-migration-of-upper-case-file-stage-failed-route-refuses, verify:r1-p4-ingest-case-rename-route-not-driven, verify:r1-p4-conflict-block-route-after-failed-migration-not-driven, verify:r1-p4-migration-source-equals-destination-undriven-states, verify:r1-p4-doc-list-prints-id-no-door-takes-seen-again, verify:r1-p4-two-case-spellings-side-by-side-not-driven, verify:r1-p4-address-doors-case-sensitive-volume-not-driven, verify:r1-p4-doc-show-lowercase-ignorecase-mismatch-and-linux-not-driven, verify:r1-p4-doc-show-not-found-route-task-read-not-driven, verify:r1-p4-finalize-exit-0-commits-without-doc-lowercase-address, verify:r1-p4-finalize-base-mismatch-after-ingest-case-rename, verify:r1-p4-lowercase-address-six-doors-not-driven, verify:r1-p4-hook-rename-block-absent-in-linked-worktree, verify:r1-p4-copy-in-records-baseline-under-spelling-no-file-has, verify:r1-p4-identity-change-route-doc-rename-exits-1-over-foreign-file, verify:r1-p4-non-reparseable-route-names-neither-broken-thing, verify:r1-p4-refused-doc-author-leaves-file-state-lock, verify:r1-p4-provenance-row-of-rolled-back-doc-survives, verify:r1-p4-doc-author-nothing-persisted-undriven-cells, verify:r1-p4-refused-doc-rename-conformant-foreign-file-not-driven, verify:r1-p4-doc-list-task-reports-foreign-file-managed, verify:r1-p4-refused-doc-rename-undriven-volume-and-previous-release, verify:r1-p4-rename-moves-and-rewrites-unadopted-file, verify:r1-p4-rename-refusal-undriven-volume-and-previous-release, verify:r1-p4-unreachable-blob-lifetime-not-driven, verify:r1-p4-source-untracked-route-cures-one-of-two-reasons, verify:r1-p4-staged-source-edited-after-git-add-not-driven, verify:r1-p4-staged-source-adoption-no-deletion-row-seen-again, verify:r1-p4-adoption-chain-upper-previous-release-not-driven, verify:r1-p4-setup-install-commit-carries-settings-entries-json, verify:r1-p4-adoption-route-upper-other-platform-not-driven, verify:r1-p4-unregistered-doc-never-adopted-after-reset-strand, verify:r1-p4-doc-create-over-strand-second-doc-seen-again, verify:r1-p4-not-staged-route-create-or-author-gate-blocked, verify:r1-p4-config-set-root-knob-moves-nothing-non-utf8-entry, verify:r1-p4-reconciliation-rename-routes-unmanage-of-staged-path, verify:r1-p4-validate-silent-about-strand-under-non-utf8-entry, verify:r1-p4-unregistered-doc-route-names-moved-away-path, verify:r1-p4-finalize-after-unmanage-arms-of-show-route-not-driven, verify:r1-p4-doc-show-stale-unmanage-offer-placement-and-json, verify:r1-p4-live-task-finalize-after-migrate-route-not-driven, verify:r1-p4-orientation-run-directives-not-driven-non-utf8-entry, verify:r1-p4-unregistered-doc-route-undriven-cells, verify:r1-p4-ref-resolves-route-create-arm-gate-blocked, verify:r1-p4-unregistered-doc-route-placement-fallback-json-not-driven, verify:r1-p4-finalize-after-orphaned-doc-route-remaining-arms, verify:r1-p4-finalize-ref-resolves-over-stranded-target-names-no-strand, verify:r1-p4-ingest-after-hand-move-keeps-prior-file-state-keys, verify:r1-p4-unmanage-stranded-placement-doc-edges-not-exercised, verify:r1-p4-finalize-after-placement-strand-arms-not-driven, verify:r1-p4-rename-mention-scan-other-quoted-names-not-driven, verify:r1-p4-migration-approve-commits-staged-file-not-the-migrations, verify:r1-p4-migration-finalize-capture-helper-callers-not-enumerated, verify:r1-p4-line-oriented-git-listing-consumers-not-traced, verify:r1-p4-amend-refusal-route-preview-door-not-driven, verify:r1-p4-finalize-non-utf8-text-file-undriven-shapes, verify:r1-p4-finalize-doors-refuse-staged-non-utf8-name, verify:r1-p4-amend-refusal-route-undriven-name-shapes, verify:r1-p4-amend-arm-no-file-state-record-when-note-fires, verify:r1-p4-landed-summary-c-quoted-name-and-no-hash-record, verify:r1-p4-milestone-finalize-removes-worktree-with-untracked-file, verify:r1-p4-post-commit-capture-real-host-previous-release-not-driven, verify:r1-p4-amend-arm-drops-co-author-trailer-undecodable-message, verify:r1-p4-milestone-finalize-exits-1-after-commits-latin1-log-output, verify:r1-p4-milestone-aggregate-subject-site-not-reached, verify:r1-p4-amend-empty-commit-frame-says-fix-the-hooks-complaint, verify:r1-p4-commit-encoding-non-utf8-not-driven, verify:r1-p4-task-finalize-exits-1-after-commit-latin1-log-output, verify:r1-p4-superproject-submodule-undriven-orders, verify:r1-p4-staged-doc-ids-plant-reach-not-driven, verify:r1-p4-uninstall-submodule-refusal-first-route-does-not-clear, verify:r1-p4-staged-doc-ids-other-plants-linux-root-not-driven): wait for the window before invoking again. What was committed stands; a report a reporter wrote and no record step committed is still untracked under completions/artifacts/canary-one/ and stays there. Once the cause is dealt with, invoke the stage again with the same args: it reads the state as it stands and works the next attempt."
+ }
+}

@@ -1,0 +1,559 @@
+diff --git a/crates/cli/src/repo.rs b/crates/cli/src/repo.rs
+index 14cbbae8..12598a0f 100644
+--- a/crates/cli/src/repo.rs
++++ b/crates/cli/src/repo.rs
+@@ -88,6 +88,28 @@ use std::path::{Path, PathBuf};
+ /// **outside** a worktree (byte-identical, by construction — both return the
+ /// `.git`-bearing ancestor directly); inside a linked worktree it returns the *main*
+ /// checkout. `None` when no `.git` is found walking up from `start`.
++///
++/// **A home is a checkout, or it is not the home.** `dirname(git-common-dir)` is the main
++/// checkout only where one stands there, and three layouts keep `.git` as a file with none:
++/// a worktree of a **bare** repository (beside it, or behind a bare `.git`), a
++/// **`--separate-git-dir`** checkout and a **submodule**. There that directory is no work
++/// tree at all — the folder that holds the bare repository, the parent of the relocated git
++/// dir, `<super>/.git/modules/…` — and a home resolved to it sent the install outside the
++/// repository (into the superproject's git dir and its `pre-commit` hook, in a submodule),
++/// put every question a door asks git *at its home* to no repository, and read the doc
++/// store where the checkout does not keep it: driven on `1.0.0-rc.24`, one doc landed and
++/// the next finalize blocked on it as missing. So the candidate is **asked of git**
++/// ([`is_a_checkout_of`]), and where it is no checkout the home is the standing checkout —
++/// the only one this repository has there, and the ordinary single-checkout case from
++/// then on.
++///
++/// One checkout stands between the two: jigc's **own fan-out worktree**, which `milestone
++/// provision` cuts at `<home>/.jigc/worktrees/<id>`. Where no main checkout exists, the
++/// home it was cut from is read off that path and held to the same question
++/// ([`provisioning_checkout`]).
++///
++/// **A probe git cannot answer reads as the standing checkout** — the direction this
++/// function already took when git could not name the common dir.
+ pub fn jigc_home(start: &Path) -> Option<PathBuf> {
+     let repo_root = discover_repo_root(start)?;
+     // Only a *linked worktree* keeps `.git` as a FILE (a `gitdir:` pointer); its
+@@ -98,7 +120,15 @@ pub fn jigc_home(start: &Path) -> Option<PathBuf> {
+     if !repo_root.join(".git").is_file() {
+         return Some(repo_root);
+     }
+-    git_common_dir_parent(&repo_root).or(Some(repo_root))
++    let Some(common) = git_common_dir(&repo_root) else {
++        return Some(repo_root);
++    };
++    if let Some(main) = common.parent()
++        && is_a_checkout_of(main, &common)
++    {
++        return Some(main.to_path_buf());
++    }
++    Some(provisioning_checkout(&repo_root, &common).unwrap_or(repo_root))
+ }
+ 
+ /// Walk up from `start` until a directory containing a `.git` entry is found,
+@@ -122,9 +152,10 @@ pub fn discover_repo_root(start: &Path) -> Option<PathBuf> {
+         .map(PathBuf::from)
+ }
+ 
+-/// `dirname(git -C <repo_root> rev-parse --path-format=absolute --git-common-dir)` —
+-/// the *main* checkout behind a linked worktree. `None` if git fails or returns empty.
+-fn git_common_dir_parent(repo_root: &Path) -> Option<PathBuf> {
++/// `git -C <repo_root> rev-parse --path-format=absolute --git-common-dir` — the git dir a
++/// repository's checkouts share; behind a linked worktree its parent is the *main*
++/// checkout. `None` if git fails or returns empty.
++fn git_common_dir(repo_root: &Path) -> Option<PathBuf> {
+     let out = std::process::Command::new("git")
+         .arg("-C")
+         .arg(repo_root)
+@@ -138,7 +169,54 @@ fn git_common_dir_parent(repo_root: &Path) -> Option<PathBuf> {
+     if common.is_empty() {
+         return None;
+     }
+-    Path::new(&common).parent().map(PathBuf::from)
++    Some(PathBuf::from(common))
++}
++
++/// **Is `dir` the top of a work tree of the repository whose common git dir is `common`?**
++/// — one question to git, asked at `dir`: `rev-parse --show-toplevel` succeeds and names
++/// `dir` (it fails in a bare repository, inside a git dir and outside any repository, and
++/// names an ancestor when `dir` merely sits inside some other checkout), and
++/// `--git-common-dir` there is `common`. A probe that cannot answer reads as `false`.
++fn is_a_checkout_of(dir: &Path, common: &Path) -> bool {
++    let real = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
++    let Some(out) = std::process::Command::new("git")
++        .arg("-C")
++        .arg(dir)
++        .args([
++            "rev-parse",
++            "--path-format=absolute",
++            "--show-toplevel",
++            "--git-common-dir",
++        ])
++        .output()
++        .ok()
++        .filter(|out| out.status.success())
++    else {
++        return false;
++    };
++    let said = String::from_utf8_lossy(&out.stdout);
++    let mut lines = said.lines().map(|line| real(Path::new(line)));
++    matches!(
++        (lines.next(), lines.next(), lines.next()),
++        (Some(toplevel), Some(at_dir), None) if toplevel == real(dir) && at_dir == real(common)
++    )
++}
++
++/// The checkout a jigc fan-out worktree was provisioned from: read off the path
++/// [`engine::milestone::worktree_path`] mints (`<home>/.jigc/worktrees/<id>`), asked of the
++/// production constant rather than restated here, and confirmed by git
++/// ([`is_a_checkout_of`]). `None` for any other directory.
++fn provisioning_checkout(repo_root: &Path, common: &Path) -> Option<PathBuf> {
++    let id = repo_root.file_name()?.to_str()?;
++    let minted = engine::milestone::worktree_path(id);
++    if !repo_root.ends_with(&minted) {
++        return None;
++    }
++    let mut home = repo_root;
++    for _ in minted.components() {
++        home = home.parent()?;
++    }
++    is_a_checkout_of(home, common).then(|| home.to_path_buf())
+ }
+ 
+ /// **Is `home` itself a checkout of the repository `standing` belongs to?** — the question
+@@ -165,35 +243,7 @@ fn git_common_dir_parent(repo_root: &Path) -> Option<PathBuf> {
+ /// guard silent and the door doing what rc.24 did there. The other direction would refuse a
+ /// write over a claim about a checkout nobody could confirm exists.
+ pub fn home_is_a_checkout(home: &Path, standing: &Path) -> bool {
+-    let real = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+-    let ask = |dir: &Path, what: &[&str]| -> Option<Vec<PathBuf>> {
+-        let out = std::process::Command::new("git")
+-            .arg("-C")
+-            .arg(dir)
+-            .args(["rev-parse", "--path-format=absolute"])
+-            .args(what)
+-            .output()
+-            .ok()
+-            .filter(|out| out.status.success())?;
+-        Some(
+-            String::from_utf8_lossy(&out.stdout)
+-                .lines()
+-                .map(|line| real(Path::new(line)))
+-                .collect(),
+-        )
+-    };
+-    let Some(at_home) = ask(home, &["--show-toplevel", "--git-common-dir"]) else {
+-        return false;
+-    };
+-    let Some(at_standing) = ask(standing, &["--git-common-dir"]) else {
+-        return false;
+-    };
+-    match (at_home.as_slice(), at_standing.as_slice()) {
+-        ([toplevel, common], [standing_common]) => {
+-            *toplevel == real(home) && common == standing_common
+-        }
+-        _ => false,
+-    }
++    git_common_dir(standing).is_some_and(|common| is_a_checkout_of(home, &common))
+ }
+ 
+ /// One member of the **repository-posture family** — the three states a door that commits
+@@ -1527,4 +1577,129 @@ mod tests {
+             "a fake .git must NOT shell out and bind to the real ancestor repo",
+         );
+     }
++
++    fn seeded(dir: &Path) {
++        git(dir, &["config", "user.email", "t@t"]);
++        git(dir, &["config", "user.name", "t"]);
++        git(dir, &["commit", "-q", "--allow-empty", "-m", "init"]);
++    }
++
++    /// The four layouts that keep `.git` as a file with no main checkout behind it, each
++    /// as `(name, the one checkout)`, built under `root`.
++    fn checkouts_with_no_main_checkout(root: &Path) -> Vec<(&'static str, PathBuf)> {
++        let utf8 = |path: &Path| path.to_str().expect("a UTF-8 path").to_string();
++        let mut layouts = Vec::new();
++
++        let beside = root.join("beside");
++        std::fs::create_dir_all(&beside).expect("create");
++        git(&beside, &["init", "-q", "--bare", "store.git"]);
++        git(
++            &beside.join("store.git"),
++            &["worktree", "add", "-q", "--orphan", "-b", "main", "../wt"],
++        );
++        seeded(&beside.join("wt"));
++        layouts.push(("a worktree beside a bare repository", beside.join("wt")));
++
++        let behind = root.join("behind");
++        std::fs::create_dir_all(&behind).expect("create");
++        git(&behind, &["init", "-q", "--bare", ".git"]);
++        git(
++            &behind.join(".git"),
++            &["worktree", "add", "-q", "--orphan", "-b", "main", "../wt"],
++        );
++        seeded(&behind.join("wt"));
++        layouts.push(("a worktree behind a bare `.git`", behind.join("wt")));
++
++        let separate = root.join("separate/checkout");
++        std::fs::create_dir_all(&separate).expect("create");
++        git(
++            &separate,
++            &[
++                "init",
++                "-q",
++                "--separate-git-dir",
++                &utf8(&root.join("separate/elsewhere.git")),
++            ],
++        );
++        seeded(&separate);
++        layouts.push(("a `--separate-git-dir` checkout", separate));
++
++        let library = root.join("library");
++        std::fs::create_dir_all(&library).expect("create");
++        git(&library, &["init", "-q"]);
++        seeded(&library);
++        let superproject = root.join("super");
++        std::fs::create_dir_all(&superproject).expect("create");
++        git(&superproject, &["init", "-q"]);
++        seeded(&superproject);
++        git(
++            &superproject,
++            &[
++                "-c",
++                "protocol.file.allow=always",
++                "submodule",
++                "add",
++                "-q",
++                &utf8(&library),
++                "vendor/lib",
++            ],
++        );
++        layouts.push(("a submodule", superproject.join("vendor/lib")));
++        layouts
++    }
++
++    /// (d) Where `.git` is a file and no main checkout stands behind it, the home is the
++    /// standing checkout — never `dirname(git-common-dir)`, which is no work tree there.
++    #[test]
++    fn jigc_home_is_the_standing_checkout_where_no_main_checkout_exists() {
++        let root = TempDir::new();
++        let real = |path: &Path| std::fs::canonicalize(path).expect("canonicalize");
++        for (name, checkout) in checkouts_with_no_main_checkout(root.path()) {
++            assert!(checkout.join(".git").is_file(), "{name}: `.git` is a file");
++            let home = jigc_home(&checkout).expect("a home");
++            assert_eq!(real(&home), real(&checkout), "{name}");
++            let common = git_common_dir(&checkout).expect("a common dir");
++            assert!(
++                !is_a_checkout_of(common.parent().expect("a parent"), &common),
++                "{name}: the directory the home used to resolve to is no checkout",
++            );
++        }
++    }
++
++    /// (e) …and a fan-out worktree cut from such a checkout resolves to the checkout it
++    /// was cut from, as one cut from a main checkout does — while a worktree of the same
++    /// repository at any other path is a home of its own.
++    #[test]
++    fn jigc_home_of_a_fan_out_worktree_is_the_checkout_it_was_cut_from() {
++        let root = TempDir::new();
++        let real = |path: &Path| std::fs::canonicalize(path).expect("canonicalize");
++        let layouts = checkouts_with_no_main_checkout(root.path());
++        for (index, (name, checkout)) in layouts.into_iter().enumerate() {
++            let cut = checkout.join(engine::milestone::worktree_path("a-sub-task"));
++            git(
++                &checkout,
++                &["worktree", "add", "-q", "--detach", cut.to_str().unwrap()],
++            );
++            let home = jigc_home(&cut).expect("a home");
++            assert_eq!(real(&home), real(&checkout), "{name}: the fan-out worktree");
++
++            let elsewhere = root.path().join(format!("elsewhere-{index}"));
++            git(
++                &checkout,
++                &[
++                    "worktree",
++                    "add",
++                    "-q",
++                    "--detach",
++                    elsewhere.to_str().unwrap(),
++                ],
++            );
++            let home = jigc_home(&elsewhere).expect("a home");
++            assert_eq!(
++                real(&home),
++                real(&elsewhere),
++                "{name}: a worktree elsewhere"
++            );
++        }
++    }
+ }
+diff --git a/crates/cli/tests/linked_worktree_doc_home.rs b/crates/cli/tests/linked_worktree_doc_home.rs
+index a5833799..cc734b36 100644
+--- a/crates/cli/tests/linked_worktree_doc_home.rs
++++ b/crates/cli/tests/linked_worktree_doc_home.rs
+@@ -2153,9 +2153,16 @@ fn homeless_layouts(rig: &Rig, root: &Path, source: &Path) -> Vec<HomelessLayout
+ ///
+ /// Each cell walks the whole of what rc.24 did there — setup, a doc-only mint, the create,
+ /// the finalize — to the doc in `HEAD`, and asserts the guard said nothing on the way: no
+-/// `checkout:` block, no finding, no served-from note. `jigc setup` exits 1 in two of the
+-/// layouts on rc.24 too (`setup.install-hook`, the hooks dir asked of a directory that is
+-/// no repository) and leaves the project layer behind, so its exit is not the cell's claim.
++/// `checkout:` block, no finding, no served-from note.
++///
++/// **And it walks past the first doc**, which is where rc.24 stopped working there. Its
++/// home was `dirname(git-common-dir)`, a directory that is no work tree, so the store was
++/// read where the checkout does not keep it: the doc just committed was listed nowhere,
++/// reported missing, and blocked every later finalize (`reconciliation.rename`), `jigc
++/// setup` stopped at its hook step in two of the layouts, and `jigc milestone create` and
++/// `jigc uninstall` refused in all of them. The home is the standing checkout now
++/// (`cli::repo::jigc_home`), so each of those is held here: setup lands, the first doc is
++/// listed, a second one lands, the sweep is clean and the teardown runs.
+ #[test]
+ fn a_layout_whose_doc_home_is_no_checkout_lands_a_doc_as_it_did_before_the_guard() {
+     let rig = Rig::never_adopted();
+@@ -2165,11 +2172,16 @@ fn a_layout_whose_doc_home_is_no_checkout_lands_a_doc_as_it_did_before_the_guard
+         let name = format!("{} ({:?})", layout.name, layout.conversion);
+         let (name, here) = (name.as_str(), layout.checkout.as_path());
+         let setup = rig.run(here, &["setup"]);
++        assert_ok(&setup, &format!("{name}: `jigc setup`"));
+         assert!(
+             !both(&setup).contains(CODE),
+             "{name}: `jigc setup` never raises the guard; got:\n{}",
+             both(&setup),
+         );
++        assert!(
++            here.join(".jigc/config").is_dir(),
++            "{name}: the install is in the checkout the command was typed in",
++        );
+ 
+         let mint = rig.run(
+             here,
+@@ -2231,5 +2243,97 @@ fn a_layout_whose_doc_home_is_no_checkout_lands_a_doc_as_it_did_before_the_guard
+                 .any(|path| path == "docs/decisions/cache.md"),
+             "{name}: the created doc is in HEAD, as on rc.24",
+         );
++
++        // The store is read where the checkout keeps it: the doc is listed…
++        let listed = rig.run(here, &["doc", "list"]);
++        assert_ok(&listed, &format!("{name}: `jigc doc list`"));
++        assert!(
++            text(&listed.stdout).contains("adr:cache"),
++            "{name}: the committed doc is listed; got:\n{}",
++            both(&listed),
++        );
++
++        // …and a second doc lands. On rc.24 this finalize blocked on the first doc as
++        // missing, with a route that restored a file that was there.
++        let mint = rig.run(
++            here,
++            &["start", "--workflow", "record-decision", "record the queue"],
++        );
++        assert_ok(&mint, &format!("{name}: the second mint"));
++        let task = minted(&text(&mint.stdout));
++        assert_ok(
++            &rig.run(
++                here,
++                &["doc", "create", "adr", "--title", "Queue", "--task", &task],
++            ),
++            &format!("{name}: the second `jigc doc create adr`"),
++        );
++        for slot in ["context", "decision", "consequences"] {
++            assert_ok(
++                &rig.run_stdin(
++                    here,
++                    &[
++                        "doc",
++                        "set-slot",
++                        &format!("adr:queue#{slot}"),
++                        "--from-file",
++                        "-",
++                        "--task",
++                        &task,
++                    ],
++                    "Prose.\n",
++                ),
++                &format!("{name}: authoring adr:queue#{slot}"),
++            );
++        }
++        rig.fill_commit(here, &task, "record the queue");
++        let landed = rig.run(here, &["task", "finalize", &task]);
++        assert_ok(&landed, &format!("{name}: the second `jigc task finalize`"));
++        assert!(
++            !both(&landed).contains("reconciliation.rename"),
++            "{name}: the first doc is not reported missing; got:\n{}",
++            both(&landed),
++        );
++        let sweep = rig.run(here, &["validate"]);
++        assert_ok(&sweep, &format!("{name}: `jigc validate`"));
++        assert!(
++            !both(&sweep).contains("blocking"),
++            "{name}: the sweep reports no blocking finding over two landed docs; got:\n{}",
++            both(&sweep),
++        );
++
++        // The fan-out, whose first verb refused here on rc.24. A sub-task's worktree is
++        // cut below the checkout's own workbench, and from inside it the home is the
++        // checkout it was cut from — where the task list and the join are.
++        for args in [
++            &["milestone", "create", "Ship it"][..],
++            &["milestone", "add-task", "ship-it", "alpha part"],
++            &["milestone", "provision", "ship-it"],
++        ] {
++            assert_ok(&rig.run(here, args), &format!("{name}: `jigc {args:?}`"));
++        }
++        let cut = here.join(".jigc/worktrees/alpha-part");
++        fs::write(cut.join("alpha.txt"), "alpha\n").expect("write code in the fan-out worktree");
++        rig.git(&cut, &["add", "alpha.txt"]);
++        assert_ok(
++            &rig.run(&cut, &["start", "--task", "alpha-part"]),
++            &format!("{name}: the sub-task's compose, typed in its fan-out worktree"),
++        );
++        assert_ok(
++            &rig.run(here, &["milestone", "finalize", "ship-it"]),
++            &format!("{name}: `jigc milestone finalize`"),
++        );
++        assert!(
++            rig.git(here, &["show", "--format=", "--name-only", "HEAD"])
++                .lines()
++                .any(|path| path == "alpha.txt"),
++            "{name}: the sub-task's staged code is in the boundary commit",
++        );
++
++        // And the teardown, which refused here on rc.24 with a route that led back to it.
++        assert_ok(
++            &rig.run(here, &["uninstall"]),
++            &format!("{name}: `jigc uninstall`"),
++        );
+     }
+ }
+diff --git a/crates/cli/tests/setup_install_pathspec_guard.rs b/crates/cli/tests/setup_install_pathspec_guard.rs
+index c9f73afc..57c96dab 100644
+--- a/crates/cli/tests/setup_install_pathspec_guard.rs
++++ b/crates/cli/tests/setup_install_pathspec_guard.rs
+@@ -3381,15 +3381,18 @@ fn where_git_cannot_answer_setup_refuses_before_its_first_write() {
+ ///
+ /// - **`git status` walks a submodule**: a superproject with a healthy one, and a clone of
+ ///   it whose submodule was never initialised. A first install lands and a re-run is clean.
+-/// - **The install home is no work tree at all**: the submodule's own checkout, a
+-///   `--separate-git-dir` checkout, and a worktree of a bare repository (beside a sibling
+-///   `proj.git`, and behind a bare `.git`). `git status` exits 128 at that home too — and
+-///   means something else: git **has** answered, there is no work tree there. The door does
+-///   there what `1.0.0-rc.24` does — exit 0 inside a submodule and behind a bare `.git`,
+-///   and in the other two the working area is written and the run stops at its hook step
+-///   — and the guard says nothing. Refusing these as *git could not answer* would be the
+-///   regression the completion audit's first HIGH was: a guard firing where `.git` is a
+-///   file and no second checkout exists.
++/// - **`.git` is a file and no main checkout stands behind it**: the submodule's own
++///   checkout, a `--separate-git-dir` checkout, and a worktree of a bare repository (beside
++///   a sibling `proj.git`, and behind a bare `.git`). The home there is the standing
++///   checkout — the one checkout the repository has (`cli::repo::jigc_home`) — so the
++///   install lands **in it**, is committed, and a re-run is clean, exactly as in a plain
++///   checkout; the hook goes to the hooks dir git names from there, and nothing is written
++///   beside the checkout. `1.0.0-rc.24` resolved the home to `dirname(git-common-dir)`,
++///   which is no work tree in any of them: it wrote the install into the folder holding
++///   the bare repository, the parent of the relocated git dir or `<super>/.git/modules/…`,
++///   stopped at its hook step in two of them with a route that led back to the same
++///   refusal, and in the submodule rewrote the **superproject's** `pre-commit` hook. The
++///   guard still says nothing here: there is a work tree, and git answers in it.
+ ///
+ /// (A plain checkout, a fresh clone and a linked worktree are cells (37) and (40), under
+ /// every conversion.)
+@@ -3448,8 +3451,32 @@ fn git_that_answers_is_never_refused_as_git_that_does_not() {
+         }
+     }
+ 
+-    // The three other homes that are no work tree, each with what `1.0.0-rc.24` does there
+-    // (driven on the published binary): the hook step's refusal, or a landed install.
++    // A `setup` typed in the submodule installs into the submodule: its project layer is in
++    // its own checkout and its hook in the hooks dir git names from there — not under
++    // `<super>/.git/modules/`, and not in the superproject's hooks dir, which holds the
++    // superproject's own install here and would hide a second write of the same bytes.
++    assert!(
++        inside.join(".jigc/config").is_dir(),
++        "inside the submodule: the install is in the submodule's own checkout",
++    );
++    let own_hooks = git(
++        &inside,
++        &["rev-parse", "--path-format=absolute", "--git-path", "hooks"],
++    );
++    assert!(
++        Path::new(own_hooks.trim()).join("pre-commit").is_file(),
++        "inside the submodule: the hook is in the submodule's own hooks dir ({own_hooks})",
++    );
++    assert!(
++        !superproject
++            .path()
++            .join(".git/modules/vendor/.jigc")
++            .exists(),
++        "inside the submodule: nothing is installed inside the superproject's git dir",
++    );
++
++    // The three other checkouts with no main checkout behind them: the install lands in
++    // the checkout, committed, and nothing is written beside it.
+     let seed = |repo: &Path| {
+         identify(repo);
+         write(repo, "README.md", "hello\n");
+@@ -3488,15 +3515,30 @@ fn git_that_answers_is_never_refused_as_git_that_does_not() {
+         &["worktree", "add", "-q", "--orphan", "-b", "main", "../wt"],
+     );
+     seed(&behind.join("wt"));
+-    for (what, repo, lands) in [
+-        ("--separate-git-dir", separate, false),
+-        (
+-            "a worktree beside a bare repository",
+-            beside.join("wt"),
+-            false,
+-        ),
+-        ("a worktree behind a bare `.git`", behind.join("wt"), true),
++    for (what, repo) in [
++        ("--separate-git-dir", separate),
++        ("a worktree beside a bare repository", beside.join("wt")),
++        ("a worktree behind a bare `.git`", behind.join("wt")),
+     ] {
++        let beside_it = |dir: &Path| -> Vec<String> {
++            let mut names: Vec<String> = fs::read_dir(dir)
++                .expect("list")
++                .map(|entry| {
++                    entry
++                        .expect("entry")
++                        .file_name()
++                        .to_string_lossy()
++                        .into_owned()
++                })
++                .collect();
++            names.sort();
++            names
++        };
++        let outer = repo
++            .parent()
++            .expect("the folder the checkout stands in")
++            .to_path_buf();
++        let before = beside_it(&outer);
+         for run in ["the first run", "the re-run"] {
+             let out = jigc(&repo, home, &["setup"]);
+             let said_out = said(&out);
+@@ -3507,14 +3549,20 @@ fn git_that_answers_is_never_refused_as_git_that_does_not() {
+             );
+             assert_eq!(
+                 (out.status.code(), said_out.contains("setup.install-hook")),
+-                if lands {
+-                    (Some(0), false)
+-                } else {
+-                    (Some(1), true)
+-                },
+-                "{what}, {run}: the door does what `1.0.0-rc.24` does here: {said_out}"
++                (Some(0), false),
++                "{what}, {run}: the install lands in the one checkout there is: {said_out}"
+             );
++            assert_eq!(git(&repo, &["status", "--porcelain"]), "", "{what}, {run}");
+         }
++        assert!(
++            repo.join(".jigc/config").is_dir(),
++            "{what}: the project layer is in the checkout"
++        );
++        assert_eq!(
++            beside_it(&outer),
++            before,
++            "{what}: nothing is written beside the checkout"
++        );
+     }
+ }
+ 

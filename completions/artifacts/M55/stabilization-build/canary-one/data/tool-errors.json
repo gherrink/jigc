@@ -1,0 +1,43 @@
+{
+ "tool_results_flagged_as_errors": 89,
+ "plain_nonzero_exits_of_an_agents_own_command": 84,
+ "by_exit_code": {
+  "1": 80,
+  "2": 3,
+  "98": 1
+ },
+ "blocked_before_running": [
+  {
+   "attempt": 2,
+   "agent": "verify:r1-p4-not-staged-block-other-unservable-states-not-enumerated",
+   "agent_type": "finding-verifier",
+   "text": "This command passes a shell -c script that runs rm, and Claude Code could not check the script for dangerous removals. Approve only if you have read the script."
+  },
+  {
+   "attempt": 2,
+   "agent": "verify:r1-p4-finalize-approve-read-only-destination-raw-os-error",
+   "agent_type": "finding-verifier",
+   "text": "This command passes a shell -c script that runs rm, and Claude Code could not check the script for dangerous removals. Approve only if you have read the script."
+  },
+  {
+   "attempt": 1,
+   "agent": "row-doc-list:source",
+   "agent_type": "milestone-code-reviewer",
+   "text": "PreToolUse:Bash hook error: [<home>/.local/bin/claude-shell-guard]: Blocked: `git worktree` writes into a pipe, so the exit status you get back is the *last* command's, not its own. A pipeline reports only its final command's status — POSIX, in every shell — so a failure here would look exactly like success.\n\nRun it bare: `git worktree` on its own. The exit status is then correct by construction, and lacon trims the "
+  },
+  {
+   "attempt": 1,
+   "agent": "row-doc-list:driver",
+   "agent_type": "milestone-e2e-tester",
+   "text": "PreToolUse:Bash hook error: [<home>/.local/bin/claude-shell-guard]: Blocked: `git worktree` writes into a pipe, so the exit status you get back is the *last* command's, not its own. A pipeline reports only its final command's status — POSIX, in every shell — so a failure here would look exactly like success.\n\nRun it bare: `git worktree` on its own. The exit status is then correct by construction, and lacon trims the "
+  },
+  {
+   "attempt": 1,
+   "agent": "verify:r1-adoption-route-for-non-doc-id-name-not-run",
+   "agent_type": "finding-verifier",
+   "text": "This command passes a shell -c script that runs rm, and Claude Code could not check the script for dangerous removals. Approve only if you have read the script."
+  }
+ ],
+ "permission_denials_of_the_three_tools": 0,
+ "timeouts": 0
+}

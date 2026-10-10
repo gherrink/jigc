@@ -1,0 +1,156 @@
+[
+ {
+  "name": "build-c1-a1",
+  "kind": "build",
+  "asked": {
+   "commit": "eeffe347324f83a51d1ae83d5f254e73c3f1ea3a",
+   "to": "bin/c1.a1/jigc"
+  },
+  "began_utc": "2026-10-08T06:49:24Z",
+  "ended_utc": "2026-10-08T06:49:52Z",
+  "seconds": 28,
+  "exit": 0,
+  "verdict": "green",
+  "why": null,
+  "detail": "jigc 1.0.0-rc.24, sha256 dded1facfd8986baa3c0bcb8c2389d873fdc0b5806f0e1d148a916c1b8beadfc",
+  "facts": {
+   "commit": "eeffe347324f83a51d1ae83d5f254e73c3f1ea3a",
+   "binary": "bin/c1.a1/jigc",
+   "bytes": 15795744,
+   "content_sha256": "dded1facfd8986baa3c0bcb8c2389d873fdc0b5806f0e1d148a916c1b8beadfc",
+   "version": "1.0.0-rc.24",
+   "resolves": true
+  },
+  "read_by": "stabilize-step",
+  "verdict_sha256": "f5b2678ce9c2d7a984159162da4a9e4f93a56f18fdc95bb7652b96aa49be6daf",
+  "output_sha256": "3239cb173a44c3e71b19946601735477f0aa7108238f160d26596220c288f14f"
+ },
+ {
+  "name": "build-c1-a2",
+  "kind": "build",
+  "asked": {
+   "commit": "eeffe347324f83a51d1ae83d5f254e73c3f1ea3a",
+   "to": "bin/c1.a2/jigc"
+  },
+  "began_utc": "2026-10-08T15:20:54Z",
+  "ended_utc": "2026-10-08T15:21:24Z",
+  "seconds": 30,
+  "exit": 0,
+  "verdict": "green",
+  "why": null,
+  "detail": "jigc 1.0.0-rc.24, sha256 dded1facfd8986baa3c0bcb8c2389d873fdc0b5806f0e1d148a916c1b8beadfc",
+  "facts": {
+   "commit": "eeffe347324f83a51d1ae83d5f254e73c3f1ea3a",
+   "binary": "bin/c1.a2/jigc",
+   "bytes": 15795744,
+   "content_sha256": "dded1facfd8986baa3c0bcb8c2389d873fdc0b5806f0e1d148a916c1b8beadfc",
+   "version": "1.0.0-rc.24",
+   "resolves": true
+  },
+  "read_by": "stabilize-step",
+  "verdict_sha256": "74e3d695e6f0786d2021cd8a6792c7183f1f83592ea5afb93f13992c5a0ae193",
+  "output_sha256": "1cb63f53ea5c08c85eb672dbe1f6618f81e8dbe32778402e1f8dc5b3963f2828"
+ },
+ {
+  "name": "build-previous-91834b5e011d",
+  "kind": "build",
+  "asked": {
+   "commit": "91834b5e011de2c36e2be2b79e96c0b9f60a803c",
+   "to": "bin/previous-91834b5e011d/jigc",
+   "version": "1.0.0-rc.24"
+  },
+  "began_utc": "2026-10-08T06:50:04Z",
+  "ended_utc": "2026-10-08T06:50:31Z",
+  "seconds": 26,
+  "exit": 0,
+  "verdict": "green",
+  "why": null,
+  "detail": "jigc 1.0.0-rc.24, sha256 accf3996ae4a66d13adb4bb03253606e0037b5ddb7be653a314a908f6b88ab5d",
+  "facts": {
+   "commit": "91834b5e011de2c36e2be2b79e96c0b9f60a803c",
+   "binary": "bin/previous-91834b5e011d/jigc",
+   "bytes": 15240064,
+   "content_sha256": "accf3996ae4a66d13adb4bb03253606e0037b5ddb7be653a314a908f6b88ab5d",
+   "version": "1.0.0-rc.24",
+   "resolves": true
+  },
+  "read_by": "stabilize-step",
+  "verdict_sha256": "b42c2f6b9bac68ad08ddda4246cfacb006e91c7ceea8fb4eec1e558706a83658",
+  "output_sha256": "f440adea62975f54c0322021eba2da04f659f5eaf03e127613029dac1fd760ba"
+ },
+ {
+  "name": "gate-c1-a1",
+  "kind": "gate",
+  "asked": {
+   "run": "canary-one"
+  },
+  "began_utc": "2026-10-08T06:50:41Z",
+  "ended_utc": "2026-10-08T07:13:52Z",
+  "seconds": 1390,
+  "exit": 0,
+  "verdict": "green",
+  "why": null,
+  "detail": "tests   passed=4966 failed=0  (over 18 test binaries)",
+  "facts": {
+   "passed": 4966,
+   "failed": 0,
+   "binaries": 18,
+   "steps": [],
+   "tests": 0
+  },
+  "read_by": "stabilize-step",
+  "verdict_sha256": "4d975696fc95190b2e40b273fe70eb7f80fa47e20381cc99e62527d3d4e7447f",
+  "output_sha256": "65c60917714012e3b8d811d824345e0f28681b9d76aa219941d945aa1b064e4f"
+ },
+ {
+  "name": "record-test-r1-a1-1",
+  "kind": "gate",
+  "asked": {
+   "run": "canary-one"
+  },
+  "began_utc": "2026-10-08T14:51:40Z",
+  "ended_utc": "2026-10-08T15:14:09Z",
+  "seconds": 1348,
+  "exit": 0,
+  "verdict": "green",
+  "why": null,
+  "detail": "tests   passed=4966 failed=0  (over 18 test binaries)",
+  "facts": {
+   "passed": 4966,
+   "failed": 0,
+   "binaries": 18,
+   "steps": [],
+   "tests": 0
+  },
+  "read_by": "stabilize-step",
+  "verdict_sha256": "26fb52b7a3ec13ba24df6fb437e594d14236c2bb1140aa7b6092fea87c466888",
+  "output_sha256": "54262dbf5ba8f81d84e42e51d28c054dd185f44603d3d76a1a640a6c766f57c2"
+ },
+ {
+  "name": "regression-set-c1-a1",
+  "kind": "regression",
+  "asked": {
+   "previous": "91834b5e011de2c36e2be2b79e96c0b9f60a803c",
+   "candidate": "eeffe347324f83a51d1ae83d5f254e73c3f1ea3a",
+   "list": "completions/artifacts/M55/stabilization-build/regression-set/intended-changes.tsv"
+  },
+  "began_utc": "2026-10-08T07:14:16Z",
+  "ended_utc": "2026-10-08T07:36:16Z",
+  "seconds": 1319,
+  "exit": 0,
+  "verdict": "green",
+  "why": null,
+  "detail": "22 difference(s), 0 of them off the list; 11 test(s) excluded by a row",
+  "facts": {
+   "status": "green",
+   "differences": 22,
+   "not_on_list": 0,
+   "excluded": 11,
+   "excluded_by_no_row": 0,
+   "list_sha256": "bfdad1af90dace76d92ee5bebfe807797d92ca894f89f0d4e9aa4f52a5c0c20c"
+  },
+  "read_by": "stabilize-step",
+  "verdict_sha256": "4225b61e3490d2be1489d1ff390a979e3a32a3bc8fbf84c86f9dde3df02c7092",
+  "output_sha256": "81f25eef1039324bc79f534834ff3177c6ea96bd65831ec564070ddeaef2b2f9"
+ }
+]

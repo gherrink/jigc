@@ -1,0 +1,419 @@
+{
+ "passes": [
+  {
+   "attempt": 1,
+   "pass": "p1",
+   "findings_in": 54,
+   "reporters": 9,
+   "findings_in_by_reporter": [
+    {
+     "reporter": "row-doc-list-source",
+     "count": 7
+    },
+    {
+     "reporter": "row-doc-list-driver",
+     "count": 7
+    },
+    {
+     "reporter": "row-doc-list-reconciler",
+     "count": 16
+    },
+    {
+     "reporter": "cross-cutting-review",
+     "count": 4
+    },
+    {
+     "reporter": "arm-control-rehearse",
+     "count": 5
+    },
+    {
+     "reporter": "arm-control-run",
+     "count": 3
+    },
+    {
+     "reporter": "arm-control-score",
+     "count": 5
+    },
+    {
+     "reporter": "scope",
+     "count": 6
+    },
+    {
+     "reporter": "ledger",
+     "count": 1
+    }
+   ],
+   "merged": 20,
+   "found_again": 1,
+   "entries": 34,
+   "by_grade": {
+    "breaks": 1,
+    "unclear": 9,
+    "no-break": 23,
+    "needs-bound": 1
+   },
+   "to_verify": 10,
+   "verifiers_run": 10,
+   "verdicts": {
+    "refuted": 9,
+    "confirmed": 1
+   },
+   "left_open_returned": 40,
+   "entries_naming_the_round_door": 16,
+   "to_verify_naming_the_round_door": 4,
+   "triage_return_bytes": 26336
+  },
+  {
+   "attempt": 1,
+   "pass": "p2",
+   "findings_in": 60,
+   "reporters": 11,
+   "findings_in_by_reporter": [
+    {
+     "reporter": "verify-p1-r1-doc-list-unreadable-entry-fails-listing",
+     "count": 6
+    },
+    {
+     "reporter": "verify-p1-r1-doc-list-staged-arm-unreadable-entry",
+     "count": 5
+    },
+    {
+     "reporter": "verify-p1-r1-setup-installs-outside-work-tree",
+     "count": 5
+    },
+    {
+     "reporter": "advocate-p1-r1-setup-installs-outside-work-tree",
+     "count": 11
+    },
+    {
+     "reporter": "proposal-p1-r1-setup-installs-outside-work-tree",
+     "count": 9
+    },
+    {
+     "reporter": "verify-p1-r1-validate-non-utf8-path-drops-blocking-orphan",
+     "count": 3
+    },
+    {
+     "reporter": "verify-p1-r1-doc-list-prints-id-doc-show-refuses",
+     "count": 5
+    },
+    {
+     "reporter": "verify-p1-r1-non-utf8-path-other-orphan-walk-consumers",
+     "count": 7
+    },
+    {
+     "reporter": "verify-p1-r1-finalize-may-commit-redirected-log-record",
+     "count": 4
+    },
+    {
+     "reporter": "verify-p1-r1-uninstall-log-append-through-live-link",
+     "count": 3
+    },
+    {
+     "reporter": "verify-p1-r1-scope-other-registries-unread-two-changed",
+     "count": 2
+    }
+   ],
+   "merged": 4,
+   "found_again": 0,
+   "entries": 56,
+   "by_grade": {
+    "no-break": 25,
+    "needs-bound": 18,
+    "unclear": 13
+   },
+   "to_verify": 13,
+   "verifiers_run": 13,
+   "verdicts": {
+    "refuted": 10,
+    "confirmed": 3
+   },
+   "left_open_returned": 88,
+   "entries_naming_the_round_door": 13,
+   "to_verify_naming_the_round_door": 2,
+   "triage_return_bytes": 55648
+  },
+  {
+   "attempt": 1,
+   "pass": "p3",
+   "findings_in": 88,
+   "reporters": 13,
+   "findings_in_by_reporter": [
+    {
+     "reporter": "verify-p2-r1-doc-list-unreadable-entry-undriven-shapes-and-consumers",
+     "count": 11
+    },
+    {
+     "reporter": "verify-p2-r1-staging-area-writers-not-enumerated",
+     "count": 7
+    },
+    {
+     "reporter": "verify-p2-r1-staged-doc-ids-other-callers-not-driven",
+     "count": 6
+    },
+    {
+     "reporter": "verify-p2-r1-superproject-hook-effect-not-established",
+     "count": 7
+    },
+    {
+     "reporter": "verify-p2-r1-setup-install-hook-route-other-causes-unexamined",
+     "count": 8
+    },
+    {
+     "reporter": "verify-p2-r1-validate-unreadable-orphan-variant-not-driven",
+     "count": 7
+    },
+    {
+     "reporter": "verify-p2-r1-doc-show-lowercase-address-prints-path-no-file-has",
+     "count": 5
+    },
+    {
+     "reporter": "verify-p2-r1-adoption-route-for-non-doc-id-name-not-run",
+     "count": 8
+    },
+    {
+     "reporter": "verify-p2-r1-doc-show-stranded-doc-not-found-route",
+     "count": 7
+    },
+    {
+     "reporter": "verify-p2-r1-orphaned-doc-route-after-strand-not-run",
+     "count": 7
+    },
+    {
+     "reporter": "verify-p2-r1-orphan-walk-consumers-previous-release-not-driven",
+     "count": 6
+    },
+    {
+     "reporter": "verify-p2-r1-git-capture-other-callers-not-enumerated",
+     "count": 8
+    },
+    {
+     "reporter": "verify-p2-r1-promote-clobber-route-commits-staged-blob",
+     "count": 1
+    }
+   ],
+   "merged": 15,
+   "found_again": 0,
+   "entries": 73,
+   "by_grade": {
+    "needs-bound": 15,
+    "unclear": 36,
+    "no-break": 20,
+    "breaks": 2
+   },
+   "to_verify": 38,
+   "verifiers_run": 38,
+   "verdicts": {
+    "confirmed": 8,
+    "refuted": 29,
+    "halted": 1
+   },
+   "left_open_returned": 238,
+   "entries_naming_the_round_door": 5,
+   "to_verify_naming_the_round_door": 3,
+   "triage_return_bytes": 67683
+  },
+  {
+   "attempt": 1,
+   "pass": "p4",
+   "findings_in": 235,
+   "reporters": 36,
+   "findings_in_by_reporter": [
+    {
+     "reporter": "verify-p3-r1-p3-not-staged-route-task-less-read-refuses",
+     "count": 3
+    },
+    {
+     "reporter": "verify-p3-r1-p3-unreadable-entry-class-door-list-traced-by-hand",
+     "count": 6
+    },
+    {
+     "reporter": "verify-p3-r1-p3-unreadable-entry-undriven-platform-shapes-and-doors",
+     "count": 10
+    },
+    {
+     "reporter": "verify-p3-r1-p3-doc-list-tracked-dangling-link-raw-os-error",
+     "count": 6
+    },
+    {
+     "reporter": "verify-p3-r1-p3-milestone-merged-area-writer-follows-a-link",
+     "count": 6
+    },
+    {
+     "reporter": "verify-p3-r1-p3-staging-area-writers-undriven-and-unread-remainder",
+     "count": 7
+    },
+    {
+     "reporter": "verify-p3-r1-p3-staged-doc-ids-orientation-and-milestone-callers",
+     "count": 10
+    },
+    {
+     "reporter": "verify-p3-r1-p3-superproject-with-own-install-shared-hook-not-driven",
+     "count": 8
+    },
+    {
+     "reporter": "verify-p3-r1-p3-hook-in-another-repository-layouts-not-enumerated",
+     "count": 8
+    },
+    {
+     "reporter": "verify-p3-r1-p3-setup-writability-route-printed-for-other-causes",
+     "count": 4
+    },
+    {
+     "reporter": "verify-p3-r1-p3-uninstall-writability-route-not-driven",
+     "count": 6
+    },
+    {
+     "reporter": "verify-p3-r1-p3-display-hook-path-other-callers-not-driven",
+     "count": 6
+    },
+    {
+     "reporter": "verify-p3-r1-p3-setup-install-hook-undriven-producers-and-causes",
+     "count": 7
+    },
+    {
+     "reporter": "verify-p3-r1-p3-validate-clean-over-orphan-absent-from-work-tree",
+     "count": 7
+    },
+    {
+     "reporter": "verify-p3-r1-p3-validate-unreadable-orphan-platforms-and-variants",
+     "count": 7
+    },
+    {
+     "reporter": "verify-p3-r1-p3-migration-destination-is-source-on-case-folding-volume",
+     "count": 6
+    },
+    {
+     "reporter": "verify-p3-r1-p3-doc-show-lowercase-address-case-sensitive-volume",
+     "count": 6
+    },
+    {
+     "reporter": "verify-p3-r1-p3-lowercase-address-other-doors-not-driven",
+     "count": 9
+    },
+    {
+     "reporter": "verify-p3-r1-p3-doc-author-nothing-persisted-yet-task-bound",
+     "count": 7
+    },
+    {
+     "reporter": "verify-p3-r1-p3-refused-doc-rename-leaves-staged-foreign-copy",
+     "count": 7
+    },
+    {
+     "reporter": "verify-p3-r1-p3-rename-bare-git-mv-error-no-code-no-route",
+     "count": 6
+    },
+    {
+     "reporter": "verify-p3-r1-p3-adoption-of-staged-source-no-deletion-row",
+     "count": 8
+    },
+    {
+     "reporter": "verify-p3-r1-p3-adoption-route-title-upper-undriven-cells",
+     "count": 5
+    },
+    {
+     "reporter": "verify-p3-r1-p3-doc-show-task-no-committed-copy-of-stranded-doc",
+     "count": 4
+    },
+    {
+     "reporter": "verify-p3-r1-p3-second-doc-of-one-identity-beside-stranded-doc",
+     "count": 4
+    },
+    {
+     "reporter": "verify-p3-r1-p3-doc-list-omits-stranded-doc",
+     "count": 4
+    },
+    {
+     "reporter": "verify-p3-r1-p3-start-orientation-host-temp-path-findings-unknown",
+     "count": 5
+    },
+    {
+     "reporter": "verify-p3-r1-p3-doc-show-offers-unmanage-after-unmanage",
+     "count": 6
+    },
+    {
+     "reporter": "verify-p3-r1-p3-unregistered-doc-route-after-unmanage-not-run",
+     "count": 8
+    },
+    {
+     "reporter": "verify-p3-r1-p3-finalize-after-orphaned-doc-route-arms-not-driven",
+     "count": 5
+    },
+    {
+     "reporter": "verify-p3-r1-p3-orphaned-doc-placement-arm-and-json-not-driven",
+     "count": 7
+    },
+    {
+     "reporter": "verify-p3-r1-p3-task-finalize-refuses-staged-non-utf8-text-file",
+     "count": 6
+    },
+    {
+     "reporter": "verify-p3-r1-p3-rename-mention-advisory-silent-undecodable-listing",
+     "count": 6
+    },
+    {
+     "reporter": "verify-p3-r1-p3-amend-refusal-route-spells-c-quoted-name-as-path",
+     "count": 6
+    },
+    {
+     "reporter": "verify-p3-r1-p3-post-commit-capture-sites-host-that-holds-the-name",
+     "count": 8
+    },
+    {
+     "reporter": "verify-p3-r1-p3-git-capture-commit-message-sites-not-driven",
+     "count": 11
+    }
+   ],
+   "merged": 26,
+   "found_again": 0,
+   "entries": 209,
+   "by_grade": {
+    "unclear": 113,
+    "needs-bound": 13,
+    "no-break": 79,
+    "breaks": 4
+   },
+   "to_verify": 117,
+   "verifiers_run": 0,
+   "verdicts": {},
+   "left_open_returned": 0,
+   "entries_naming_the_round_door": 16,
+   "to_verify_naming_the_round_door": 10,
+   "triage_return_bytes": 124209
+  },
+  {
+   "attempt": 2,
+   "pass": "p1",
+   "findings_in": 118,
+   "reporters": 1,
+   "findings_in_by_reporter": [
+    {
+     "reporter": "ledger",
+     "count": 118
+    }
+   ],
+   "merged": 0,
+   "found_again": 118,
+   "entries": 118,
+   "by_grade": {
+    "unclear": 115,
+    "breaks": 3
+   },
+   "to_verify": 118,
+   "verifiers_run": 19,
+   "verifiers_died_at_the_limit": 99,
+   "verdicts": {
+    "halted": 3,
+    "confirmed": 6,
+    "refuted": 10
+   },
+   "left_open_returned": 99,
+   "triage_return_bytes": 81757
+  }
+ ],
+ "beside_the_verifiers": {
+  "advocate_left_open": 11,
+  "independent_drive_left_open": 9,
+  "scope_left_open": 6
+ }
+}

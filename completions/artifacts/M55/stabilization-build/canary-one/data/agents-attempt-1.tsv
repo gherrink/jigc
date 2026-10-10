@@ -1,0 +1,101 @@
+seq	label	phase	agent_type	model	start_utc	end_utc	minutes	output_tokens	tokens_all_kinds	tool_calls	tool_errors	ended	returned_status	verdict
+1	git:state	State	build-git	sonnet	2026-10-08T06:47:35Z	2026-10-08T06:47:45Z	0.2	608	58220	2	0	result	ran	
+2	git:state:test-1	State	build-git	sonnet	2026-10-08T06:47:45Z	2026-10-08T06:47:56Z	0.2	1392	59802	2	0	result	ran	
+3	git:begin	State	build-git	sonnet	2026-10-08T06:47:56Z	2026-10-08T06:48:05Z	0.1	632	58454	2	0	result	ran	
+4	preflight	Preflight and scope	stabilize-preflight	opus	2026-10-08T06:48:06Z	2026-10-08T06:49:19Z	1.2	7482	370165	20	0	result	ready	
+5	scope	Preflight and scope	stabilize-scope	opus	2026-10-08T06:48:06Z	2026-10-08T06:58:16Z	10.2	54400	3518522	43	0	result	written	
+6	git:hold-start:build-c1-a1	Preflight and scope	build-git	sonnet	2026-10-08T06:49:19Z	2026-10-08T06:49:28Z	0.1	647	58524	2	0	result	ran	
+7	git:hold-wait:build-c1-a1	Preflight and scope	build-git	sonnet	2026-10-08T06:49:28Z	2026-10-08T06:49:59Z	0.5	758	58902	2	0	result	ran	
+8	git:hold-start:build-previous-91834b5e011d	Preflight and scope	build-git	sonnet	2026-10-08T06:49:59Z	2026-10-08T06:50:08Z	0.1	290	58268	2	0	result	ran	
+9	git:hold-wait:build-previous-91834b5e011d	Preflight and scope	build-git	sonnet	2026-10-08T06:50:08Z	2026-10-08T06:50:37Z	0.5	297	58517	2	0	result	ran	
+10	git:hold-start:gate-c1-a1	Preflight and scope	build-git	sonnet	2026-10-08T06:50:38Z	2026-10-08T06:50:45Z	0.1	518	58196	2	0	result	ran	
+11	git:hold-wait:gate-c1-a1	Preflight and scope	build-git	sonnet	2026-10-08T06:50:45Z	2026-10-08T07:13:58Z	23.2	3871	523761	16	0	result	ran	
+12	git:state:test-2	State	build-git	sonnet	2026-10-08T07:13:58Z	2026-10-08T07:14:11Z	0.2	268	58742	2	0	result	ran	
+13	git:hold-start:regression-set-c1-a1	Preflight and scope	build-git	sonnet	2026-10-08T07:14:11Z	2026-10-08T07:14:20Z	0.1	40	58044	2	0	result	ran	
+14	git:hold-wait:regression-set-c1-a1	Preflight and scope	build-git	sonnet	2026-10-08T07:14:20Z	2026-10-08T07:36:27Z	22.1	3858	491395	15	0	result	ran	
+15	preflight-second	Preflight and scope	stabilize-preflight	opus	2026-10-08T07:36:27Z	2026-10-08T08:01:12Z	24.7	12392	1134006	38	0	result	ready	
+16	row-doc-list:source	Instruments	milestone-code-reviewer	opus	2026-10-08T08:01:13Z	2026-10-08T08:16:34Z	15.4	69152	12033034	85	2	result	reported	
+17	row-doc-list:driver	Instruments	milestone-e2e-tester	opus	2026-10-08T08:01:13Z	2026-10-08T08:26:25Z	25.2	76668	8797236	72	2	result	reported	
+18	arm-control:rehearse	Instruments	milestone-e2e-tester	opus	2026-10-08T08:01:14Z	2026-10-08T08:09:37Z	8.4	25835	3632089	52	0	result	reported	
+19	cross-cutting:review	Instruments	milestone-code-reviewer	opus	2026-10-08T08:01:15Z	2026-10-08T08:16:02Z	14.8	66675	7962208	66	0	result	reported	
+20	arm-control:run	Instruments	milestone-e2e-tester	opus	2026-10-08T08:09:37Z	2026-10-08T08:17:16Z	7.6	32961	2832037	37	1	result	reported	
+21	arm-control:score	Instruments	milestone-e2e-tester	opus	2026-10-08T08:17:16Z	2026-10-08T08:25:04Z	7.8	43595	3537952	40	3	result	reported	
+22	row-doc-list:reconciler	Instruments	milestone-e2e-tester	opus	2026-10-08T08:26:25Z	2026-10-08T08:45:03Z	18.6	95553	7222824	56	1	result	reported	
+23	git:check-reports	Instruments	build-git	sonnet	2026-10-08T08:45:03Z	2026-10-08T08:45:13Z	0.2	594	58424	2	0	result	ran	
+24	triage:p1	Triage	finding-triage	opus	2026-10-08T08:45:13Z	2026-10-08T09:03:43Z	18.5	118289	5476773	39	0	result	graded	
+25	verify:canary-seeded-claim	Triage	finding-verifier	opus	2026-10-08T09:03:43Z	2026-10-08T09:06:12Z	2.5	12366	879563	21	0	result	verified	refuted
+26	verify:r1-doc-list-unreadable-entry-fails-listing	Triage	finding-verifier	opus	2026-10-08T09:03:44Z	2026-10-08T09:11:57Z	8.2	41473	3325626	43	0	result	verified	refuted
+27	verify:r1-doc-list-staged-arm-unreadable-entry	Triage	finding-verifier	opus	2026-10-08T09:03:44Z	2026-10-08T09:09:05Z	5.3	27310	2307036	35	0	result	verified	refuted
+28	verify:r1-setup-installs-outside-work-tree	Triage	finding-verifier	opus	2026-10-08T09:03:44Z	2026-10-08T09:11:26Z	7.7	43044	2580558	42	2	result	verified	confirmed
+29	verify:r1-validate-non-utf8-path-drops-blocking-orphan	Triage	finding-verifier	opus	2026-10-08T09:03:44Z	2026-10-08T09:10:06Z	6.4	30876	1857868	38	0	result	verified	refuted
+30	verify:r1-doc-list-prints-id-doc-show-refuses	Triage	finding-verifier	opus	2026-10-08T09:03:44Z	2026-10-08T09:11:13Z	7.5	41595	2382706	41	1	result	verified	refuted
+31	verify:r1-non-utf8-path-other-orphan-walk-consumers	Triage	finding-verifier	opus	2026-10-08T09:03:44Z	2026-10-08T09:14:42Z	11.0	58530	3547114	53	0	result	verified	refuted
+32	verify:r1-finalize-may-commit-redirected-log-record	Triage	finding-verifier	opus	2026-10-08T09:03:44Z	2026-10-08T09:08:44Z	5.0	26483	1951171	36	0	result	verified	refuted
+33	verify:r1-uninstall-log-append-through-live-link	Triage	finding-verifier	opus	2026-10-08T09:06:12Z	2026-10-08T09:10:27Z	4.3	23232	1324203	31	1	result	verified	refuted
+34	verify:r1-scope-other-registries-unread-two-changed	Triage	finding-verifier	opus	2026-10-08T09:08:44Z	2026-10-08T09:18:50Z	10.1	57660	4429038	61	2	result	verified	refuted
+35	advocate:r1-setup-installs-outside-work-tree	Triage	robust-advocate	opus	2026-10-08T09:18:50Z	2026-10-08T10:42:29Z	83.7	195388	29392119	139	1	result	argued	robust-now
+36	proposal:r1-setup-installs-outside-work-tree	Triage	general-purpose	opus	2026-10-08T10:42:29Z	2026-10-08T11:37:08Z	54.6	99964	12356709	84	0	result	driven	
+37	git:check-reports:p1	Triage	build-git	sonnet	2026-10-08T11:37:08Z	2026-10-08T11:37:21Z	0.2	898	59634	2	0	result	ran	
+38	triage:p2	Triage	finding-triage	opus	2026-10-08T11:37:21Z	2026-10-08T12:03:11Z	25.8	157831	7142368	50	0	result	graded	
+39	verify:r1-doc-list-unreadable-entry-undriven-shapes-and-consumers	Triage	finding-verifier	opus	2026-10-08T12:03:11Z	2026-10-08T12:37:15Z	34.1	135104	11751431	76	3	result	verified	refuted
+40	verify:r1-staging-area-writers-not-enumerated	Triage	finding-verifier	opus	2026-10-08T12:03:13Z	2026-10-08T12:16:50Z	13.6	68356	7796913	60	1	result	verified	refuted
+41	verify:r1-staged-doc-ids-other-callers-not-driven	Triage	finding-verifier	opus	2026-10-08T12:03:13Z	2026-10-08T12:13:58Z	10.7	39941	3631864	45	2	result	verified	refuted
+42	verify:r1-superproject-hook-effect-not-established	Triage	finding-verifier	opus	2026-10-08T12:03:13Z	2026-10-08T12:09:25Z	6.2	35143	2048643	38	0	result	verified	refuted
+43	verify:r1-setup-install-hook-route-other-causes-unexamined	Triage	finding-verifier	opus	2026-10-08T12:03:13Z	2026-10-08T12:14:52Z	11.7	63880	4305447	46	1	result	verified	confirmed
+44	verify:r1-validate-unreadable-orphan-variant-not-driven	Triage	finding-verifier	opus	2026-10-08T12:03:13Z	2026-10-08T12:09:00Z	5.8	25592	1530163	27	0	result	verified	refuted
+45	verify:r1-doc-show-lowercase-address-prints-path-no-file-has	Triage	finding-verifier	opus	2026-10-08T12:03:13Z	2026-10-08T12:11:18Z	8.1	46630	2114670	33	2	result	verified	confirmed
+46	verify:r1-adoption-route-for-non-doc-id-name-not-run	Triage	finding-verifier	opus	2026-10-08T12:03:13Z	2026-10-08T12:15:48Z	12.6	73140	4790849	52	1	result	verified	confirmed
+47	verify:r1-doc-show-stranded-doc-not-found-route	Triage	finding-verifier	opus	2026-10-08T12:09:00Z	2026-10-08T12:17:41Z	8.7	45266	2791523	40	1	result	verified	refuted
+48	verify:r1-orphaned-doc-route-after-strand-not-run	Triage	finding-verifier	opus	2026-10-08T12:09:25Z	2026-10-08T12:17:04Z	7.6	33071	2921758	42	0	result	verified	refuted
+49	verify:r1-orphan-walk-consumers-previous-release-not-driven	Triage	finding-verifier	opus	2026-10-08T12:11:18Z	2026-10-08T12:19:15Z	7.9	38837	2062740	32	0	result	verified	refuted
+50	verify:r1-git-capture-other-callers-not-enumerated	Triage	finding-verifier	opus	2026-10-08T12:13:58Z	2026-10-08T12:31:32Z	17.6	89006	7613301	62	1	result	verified	refuted
+51	verify:r1-promote-clobber-route-commits-staged-blob	Triage	finding-verifier	opus	2026-10-08T12:14:52Z	2026-10-08T12:19:44Z	4.9	25350	2266876	34	1	result	verified	refuted
+52	git:check-reports:p2	Triage	build-git	sonnet	2026-10-08T12:37:15Z	2026-10-08T12:37:32Z	0.3	1352	61266	2	0	result	ran	
+53	triage:p3	Triage	finding-triage	opus	2026-10-08T12:37:32Z	2026-10-08T13:03:12Z	25.7	169109	5508945	35	0	result	graded	
+54	verify:r1-p3-not-staged-route-task-less-read-refuses	Triage	finding-verifier	opus	2026-10-08T13:03:12Z	2026-10-08T13:09:50Z	6.6	33254	2351481	40	1	result	verified	confirmed
+55	verify:r1-p3-unreadable-entry-class-door-list-traced-by-hand	Triage	finding-verifier	opus	2026-10-08T13:03:14Z	2026-10-08T13:36:14Z	33.0	153369	18978619	106	0	result	verified	refuted
+56	verify:r1-p3-doc-list-tracked-dangling-link-raw-os-error	Triage	finding-verifier	opus	2026-10-08T13:03:14Z	2026-10-08T13:10:22Z	7.1	37991	2830574	40	1	result	verified	refuted
+57	verify:r1-p3-milestone-merged-area-writer-follows-a-link	Triage	finding-verifier	opus	2026-10-08T13:03:14Z	2026-10-08T13:12:48Z	9.6	45958	4184740	46	0	result	verified	refuted
+58	verify:r1-p3-discard-uninstall-plants-linux-and-root-not-driven	Triage	finding-verifier	opus	2026-10-08T13:03:14Z	2026-10-08T13:10:18Z	7.1	28491	1580029	29	0	result	halted	
+59	verify:r1-p3-unreadable-entry-undriven-platform-shapes-and-doors	Triage	finding-verifier	opus	2026-10-08T13:03:14Z	2026-10-08T13:35:01Z	31.8	121852	10792485	72	4	result	verified	refuted
+60	verify:r1-p3-staged-doc-ids-orientation-and-milestone-callers	Triage	finding-verifier	opus	2026-10-08T13:03:14Z	2026-10-08T13:18:20Z	15.1	52821	4718975	53	0	result	verified	refuted
+61	verify:r1-p3-staging-area-writers-undriven-and-unread-remainder	Triage	finding-verifier	opus	2026-10-08T13:03:14Z	2026-10-08T13:21:59Z	18.8	94225	8189811	66	1	result	verified	refuted
+62	verify:r1-p3-superproject-with-own-install-shared-hook-not-driven	Triage	finding-verifier	opus	2026-10-08T13:09:50Z	2026-10-08T13:17:09Z	7.3	41325	1993239	31	0	result	verified	refuted
+63	verify:r1-p3-hook-in-another-repository-layouts-not-enumerated	Triage	finding-verifier	opus	2026-10-08T13:10:18Z	2026-10-08T13:33:50Z	23.5	94254	5881546	50	1	result	verified	refuted
+64	verify:r1-p3-setup-writability-route-printed-for-other-causes	Triage	finding-verifier	opus	2026-10-08T13:10:22Z	2026-10-08T13:18:48Z	8.4	31663	1876886	30	0	result	verified	confirmed
+65	verify:r1-p3-uninstall-writability-route-not-driven	Triage	finding-verifier	opus	2026-10-08T13:12:48Z	2026-10-08T13:22:37Z	9.8	54681	3146240	37	2	result	verified	confirmed
+66	verify:r1-p3-display-hook-path-other-callers-not-driven	Triage	finding-verifier	opus	2026-10-08T13:17:09Z	2026-10-08T13:25:36Z	8.4	43728	2521374	38	1	result	verified	refuted
+67	verify:r1-p3-setup-install-hook-undriven-producers-and-causes	Triage	finding-verifier	opus	2026-10-08T13:18:20Z	2026-10-08T13:30:07Z	11.8	46449	2802441	40	1	result	verified	confirmed
+68	verify:r1-p3-validate-clean-over-orphan-absent-from-work-tree	Triage	finding-verifier	opus	2026-10-08T13:18:48Z	2026-10-08T13:26:14Z	7.4	34441	1669764	34	1	result	verified	refuted
+69	verify:r1-p3-validate-unreadable-orphan-platforms-and-variants	Triage	finding-verifier	opus	2026-10-08T13:21:59Z	2026-10-08T13:27:26Z	5.4	29745	865269	21	1	result	verified	refuted
+70	verify:r1-p3-migrate-case-variant-path-says-git-holds-no-copy	Triage	finding-verifier	opus	2026-10-08T13:22:37Z	2026-10-08T13:28:15Z	5.6	28706	1705709	38	2	result	verified	confirmed
+71	verify:r1-p3-migration-destination-is-source-on-case-folding-volume	Triage	finding-verifier	opus	2026-10-08T13:25:36Z	2026-10-08T13:34:11Z	8.6	44553	3084186	43	1	result	verified	refuted
+72	verify:r1-p3-doc-show-lowercase-address-case-sensitive-volume	Triage	finding-verifier	opus	2026-10-08T13:26:14Z	2026-10-08T13:31:23Z	5.2	28421	1260472	25	0	result	verified	refuted
+73	verify:r1-p3-lowercase-address-other-doors-not-driven	Triage	finding-verifier	opus	2026-10-08T13:27:26Z	2026-10-08T13:47:05Z	19.7	79490	5506574	54	0	result	verified	confirmed
+74	verify:r1-p3-doc-author-nothing-persisted-yet-task-bound	Triage	finding-verifier	opus	2026-10-08T13:28:15Z	2026-10-08T13:42:05Z	13.8	72883	6606812	64	1	result	verified	refuted
+75	verify:r1-p3-refused-doc-rename-leaves-staged-foreign-copy	Triage	finding-verifier	opus	2026-10-08T13:30:07Z	2026-10-08T13:36:18Z	6.2	34277	2164168	38	0	result	verified	refuted
+76	verify:r1-p3-rename-bare-git-mv-error-no-code-no-route	Triage	finding-verifier	opus	2026-10-08T13:31:23Z	2026-10-08T13:39:14Z	7.9	43056	3631796	44	2	result	verified	refuted
+77	verify:r1-p3-adoption-of-staged-source-no-deletion-row	Triage	finding-verifier	opus	2026-10-08T13:33:50Z	2026-10-08T13:40:32Z	6.7	36853	2253043	33	0	result	verified	refuted
+78	verify:r1-p3-adoption-route-title-upper-undriven-cells	Triage	finding-verifier	opus	2026-10-08T13:34:11Z	2026-10-08T13:44:36Z	10.4	57216	3565297	47	2	result	verified	refuted
+79	verify:r1-p3-doc-show-task-no-committed-copy-of-stranded-doc	Triage	finding-verifier	opus	2026-10-08T13:35:01Z	2026-10-08T13:44:38Z	9.6	50400	3725788	45	1	result	verified	confirmed
+80	verify:r1-p3-second-doc-of-one-identity-beside-stranded-doc	Triage	finding-verifier	opus	2026-10-08T13:36:14Z	2026-10-08T13:44:40Z	8.4	45192	3472400	41	2	result	verified	refuted
+81	verify:r1-p3-doc-list-omits-stranded-doc	Triage	finding-verifier	opus	2026-10-08T13:36:18Z	2026-10-08T13:45:48Z	9.5	48932	3705968	50	4	result	verified	refuted
+82	verify:r1-p3-start-orientation-host-temp-path-findings-unknown	Triage	finding-verifier	opus	2026-10-08T13:39:14Z	2026-10-08T13:44:03Z	4.8	25933	1706572	31	0	result	verified	refuted
+83	verify:r1-p3-doc-show-offers-unmanage-after-unmanage	Triage	finding-verifier	opus	2026-10-08T13:40:32Z	2026-10-08T13:49:50Z	9.3	39482	3051538	38	1	result	verified	refuted
+84	verify:r1-p3-unregistered-doc-route-after-unmanage-not-run	Triage	finding-verifier	opus	2026-10-08T13:42:05Z	2026-10-08T13:49:00Z	6.9	33588	3427197	43	1	result	verified	refuted
+85	verify:r1-p3-finalize-after-orphaned-doc-route-arms-not-driven	Triage	finding-verifier	opus	2026-10-08T13:44:03Z	2026-10-08T13:55:52Z	11.8	46826	3919397	41	2	result	verified	refuted
+86	verify:r1-p3-orphaned-doc-placement-arm-and-json-not-driven	Triage	finding-verifier	opus	2026-10-08T13:44:36Z	2026-10-08T13:57:39Z	13.1	55469	3974959	43	0	result	verified	refuted
+87	verify:r1-p3-task-finalize-refuses-staged-non-utf8-text-file	Triage	finding-verifier	opus	2026-10-08T13:44:38Z	2026-10-08T13:54:44Z	10.1	46873	3960533	49	1	result	verified	refuted
+88	verify:r1-p3-rename-mention-advisory-silent-undecodable-listing	Triage	finding-verifier	opus	2026-10-08T13:44:40Z	2026-10-08T13:51:41Z	7.0	31723	1526534	32	0	result	verified	refuted
+89	verify:r1-p3-amend-refusal-route-spells-c-quoted-name-as-path	Triage	finding-verifier	opus	2026-10-08T13:45:48Z	2026-10-08T13:52:09Z	6.4	21921	1681915	39	0	result	verified	confirmed
+90	verify:r1-p3-post-commit-capture-sites-host-that-holds-the-name	Triage	finding-verifier	opus	2026-10-08T13:47:05Z	2026-10-08T14:04:27Z	17.4	88403	5928920	53	3	result	verified	refuted
+91	verify:r1-p3-git-capture-commit-message-sites-not-driven	Triage	finding-verifier	opus	2026-10-08T13:49:00Z	2026-10-08T14:03:13Z	14.2	73505	5984034	60	2	result	verified	refuted
+92	git:check-reports:p3	Triage	build-git	sonnet	2026-10-08T14:04:27Z	2026-10-08T14:04:51Z	0.4	2496	65974	2	0	result	ran	
+93	triage:p4	Triage	finding-triage	opus	2026-10-08T14:04:51Z	2026-10-08T14:37:49Z	33.0	159852	5424020	35	0	result	graded	
+94	git:check-reports:p4	Triage	build-git	sonnet	2026-10-08T14:37:49Z	2026-10-08T14:38:14Z	0.4	2593	66178	2	0	result	ran	
+95	record:test:r1	Record	build-executor	opus	2026-10-08T14:38:14Z	2026-10-08T14:51:37Z	13.4	118460	847663	3	0	result	applied	
+96	git:hold-start:record-test-r1-a1-1	Record	build-git	sonnet	2026-10-08T14:51:37Z	2026-10-08T14:51:44Z	0.1	607	58542	2	0	result	ran	
+97	git:hold-wait:record-test-r1-a1-1	Record	build-git	sonnet	2026-10-08T14:51:44Z	2026-10-08T15:14:14Z	22.5	4523	528803	16	0	result	ran	
+98	git:record:test:r1	Record	build-git	sonnet	2026-10-08T15:14:14Z	2026-10-08T15:14:50Z	0.6	811	59198	2	0	result	ran	
+99	git:push	Record	build-git	sonnet	2026-10-08T15:14:50Z	2026-10-08T15:15:09Z	0.3	469	57716	2	0	result	ran	
+100	git:state:test-3	State	build-git	sonnet	2026-10-08T15:15:09Z	2026-10-08T15:15:40Z	0.5	1550	59964	2	0	result	ran	

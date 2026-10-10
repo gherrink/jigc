@@ -1,0 +1,28 @@
+seq	label	phase	agent_type	model	start_utc	end_utc	minutes	output_tokens	tokens_all_kinds	tool_calls	tool_errors	ended	returned_status	verdict
+1	git:state	State	build-git	sonnet	2026-10-08T15:18:54Z	2026-10-08T15:19:04Z	0.2	593	58036	2	0	result	ran	
+2	git:state:test-1	State	build-git	sonnet	2026-10-08T15:19:04Z	2026-10-08T15:19:19Z	0.3	1551	59966	2	0	result	ran	
+3	git:begin	State	build-git	sonnet	2026-10-08T15:19:19Z	2026-10-08T15:19:38Z	0.3	553	58142	2	0	result	ran	
+4	preflight	Triage	stabilize-preflight	opus	2026-10-08T15:19:38Z	2026-10-08T15:20:47Z	1.2	7105	377798	20	0	result	ready	
+5	git:hold-start:build-c1-a2	Triage	build-git	sonnet	2026-10-08T15:20:47Z	2026-10-08T15:21:08Z	0.3	269	57982	2	0	result	ran	
+6	git:hold-wait:build-c1-a2	Triage	build-git	sonnet	2026-10-08T15:21:08Z	2026-10-08T15:21:31Z	0.4	758	58838	2	0	result	ran	
+7	git:hold-start:build-previous-91834b5e011d	Triage	build-git	sonnet	2026-10-08T15:21:31Z	2026-10-08T15:21:43Z	0.2	935	59113	2	0	result	ran	
+8	triage:p1	Triage	finding-triage	opus	2026-10-08T15:21:43Z	2026-10-08T15:36:10Z	14.5	98105	4102294	40	1	result	graded	
+9	verify:r1-p3-discard-uninstall-plants-linux-and-root-not-driven	Triage	finding-verifier	opus	2026-10-08T15:36:10Z	2026-10-08T15:41:32Z	5.4	25003	1162548	24	0	result	halted	
+10	verify:r1-p4-unparseable-adoption-route-refuses-untracked-source	Triage	finding-verifier	opus	2026-10-08T15:36:12Z	2026-10-08T15:42:25Z	6.2	30916	2542153	37	1	result	verified	confirmed
+11	verify:r1-p4-not-staged-route-mode-000-repro-b-not-redriven	Triage	finding-verifier	opus	2026-10-08T15:36:12Z	2026-10-08T15:41:56Z	5.7	29334	1812903	35	0	result	verified	confirmed
+12	verify:r1-p4-not-staged-block-other-unservable-states-not-enumerated	Triage	finding-verifier	opus	2026-10-08T15:36:12Z	2026-10-08T15:42:46Z	6.6	33036	2414337	37	1	result	verified	confirmed
+13	verify:r1-p4-nothing-staged-route-git-add-fails-unreadable-file	Triage	finding-verifier	opus	2026-10-08T15:36:12Z	2026-10-08T15:47:20Z	11.1	51647	3218629	37	0	result	verified	confirmed
+14	verify:r1-p4-relocate-parks-untracked-entry-at-destination	Triage	finding-verifier	opus	2026-10-08T15:36:12Z	2026-10-08T15:50:33Z	14.4	79910	5584583	47	1	result	verified	refuted
+15	verify:r1-p4-unreadable-entry-class-linux-root-remaining-cells-not-driven	Triage	finding-verifier	opus	2026-10-08T15:36:12Z	2026-10-08T15:43:50Z	7.6	43029	2027059	33	0	result	halted	
+16	verify:r1-p4-not-found-not-staged-routes-loop-at-resume-door	Triage	finding-verifier	opus	2026-10-08T15:36:12Z	2026-10-08T15:44:53Z	8.7	40363	3502531	49	1	result	verified	confirmed
+17	verify:r1-p4-reconciliation-rename-route-jigc-rename-not-found	Triage	finding-verifier	opus	2026-10-08T15:41:32Z	2026-10-08T15:51:59Z	10.4	53309	2939320	38	0	result	verified	confirmed
+18	verify:r1-p4-doc-list-dangling-link-reach-by-jigc-verb-not-driven	Triage	finding-verifier	opus	2026-10-08T15:41:56Z	2026-10-08T15:51:40Z	9.7	54949	2455575	35	0	result	verified	refuted
+19	verify:r1-p4-doc-list-dangling-link-undriven-cells	Triage	finding-verifier	opus	2026-10-08T15:42:25Z	2026-10-08T16:05:03Z	22.6	78437	6149072	58	3	result	verified	refuted
+20	verify:r1-p4-milestone-merged-link-plant-undriven-cells	Triage	finding-verifier	opus	2026-10-08T15:42:46Z	2026-10-08T15:56:45Z	14.0	78167	4599399	45	0	result	verified	refuted
+21	verify:r1-p4-following-writes-class-not-walked	Triage	finding-verifier	opus	2026-10-08T15:43:50Z	2026-10-08T15:54:45Z	10.9	57030	4113931	44	0	result	verified	refuted
+22	verify:r1-p4-staging-area-writers-root-and-linux-not-driven	Triage	finding-verifier	opus	2026-10-08T15:44:53Z	2026-10-08T15:53:43Z	8.8	49105	2601498	35	0	result	halted	
+23	verify:r1-p4-finalize-refuses-tracked-link-home-previous-release-landed	Triage	finding-verifier	opus	2026-10-08T15:47:20Z	2026-10-08T15:53:38Z	6.3	31453	2401069	36	1	result	verified	refuted
+24	verify:r1-p4-finalize-approve-read-only-destination-raw-os-error	Triage	finding-verifier	opus	2026-10-08T15:50:33Z	2026-10-08T16:00:16Z	9.7	50580	4652258	48	2	result	verified	refuted
+25	verify:r1-p4-tracked-path-under-task-staging-area-git-writer	Triage	finding-verifier	opus	2026-10-08T15:51:40Z	2026-10-08T16:08:06Z	16.4	92091	5120255	51	1	result	verified	refuted
+28	verify:r1-p4-milestone-staged-prose-route-not-staged-unreadable-doc	Triage	finding-verifier	opus	2026-10-08T15:53:43Z	2026-10-08T16:04:11Z	10.5	48204	3855445	51	3	result	verified	refuted
+29	verify:r1-p4-milestone-finalize-missing-provenance-route-no-command	Triage	finding-verifier	opus	2026-10-08T15:54:45Z	2026-10-08T16:09:11Z	14.4	64491	4529782	50	1	result	verified	refuted

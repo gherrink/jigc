@@ -1,0 +1,319 @@
+[
+ {
+  "attempt": "attempt 1",
+  "role": "advocate",
+  "agent_type": "robust-advocate",
+  "model": "opus",
+  "launched": 1,
+  "ended": {
+   "result:argued": 1
+  },
+  "agent_minutes": 83.7,
+  "input": 246,
+  "cache_write": 1076520,
+  "cache_read": 28119965,
+  "output": 195388,
+  "turns": 123,
+  "tool_calls": 139,
+  "tool_errors": 1
+ },
+ {
+  "attempt": "attempt 1",
+  "role": "independent drive",
+  "agent_type": "general-purpose",
+  "model": "opus",
+  "launched": 1,
+  "ended": {
+   "result:driven": 1
+  },
+  "agent_minutes": 54.6,
+  "input": 140,
+  "cache_write": 754061,
+  "cache_read": 11502544,
+  "output": 99964,
+  "turns": 69,
+  "tool_calls": 84,
+  "tool_errors": 0
+ },
+ {
+  "attempt": "attempt 1",
+  "role": "instrument reporter",
+  "agent_type": "milestone-code-reviewer",
+  "model": "opus",
+  "launched": 2,
+  "ended": {
+   "result:reported": 2
+  },
+  "agent_minutes": 30.1,
+  "input": 248,
+  "cache_write": 493865,
+  "cache_read": 19365302,
+  "output": 135827,
+  "turns": 124,
+  "tool_calls": 151,
+  "tool_errors": 2
+ },
+ {
+  "attempt": "attempt 1",
+  "role": "instrument reporter",
+  "agent_type": "milestone-e2e-tester",
+  "model": "opus",
+  "launched": 5,
+  "ended": {
+   "result:reported": 5
+  },
+  "agent_minutes": 67.7,
+  "input": 406,
+  "cache_write": 862363,
+  "cache_read": 24884757,
+  "output": 274612,
+  "turns": 203,
+  "tool_calls": 257,
+  "tool_errors": 7
+ },
+ {
+  "attempt": "attempt 1",
+  "role": "preflight",
+  "agent_type": "stabilize-preflight",
+  "model": "opus",
+  "launched": 2,
+  "ended": {
+   "result:ready": 2
+  },
+  "agent_minutes": 26.0,
+  "input": 54,
+  "cache_write": 256747,
+  "cache_read": 1227496,
+  "output": 19874,
+  "turns": 27,
+  "tool_calls": 58,
+  "tool_errors": 0
+ },
+ {
+  "attempt": "attempt 1",
+  "role": "record executor",
+  "agent_type": "build-executor",
+  "model": "opus",
+  "launched": 1,
+  "ended": {
+   "result:applied": 1
+  },
+  "agent_minutes": 13.4,
+  "input": 6,
+  "cache_write": 447165,
+  "cache_read": 282032,
+  "output": 118460,
+  "turns": 3,
+  "tool_calls": 3,
+  "tool_errors": 0
+ },
+ {
+  "attempt": "attempt 1",
+  "role": "scope",
+  "agent_type": "stabilize-scope",
+  "model": "opus",
+  "launched": 1,
+  "ended": {
+   "result:written": 1
+  },
+  "agent_minutes": 10.2,
+  "input": 68,
+  "cache_write": 156114,
+  "cache_read": 3307940,
+  "output": 54400,
+  "turns": 34,
+  "tool_calls": 43,
+  "tool_errors": 0
+ },
+ {
+  "attempt": "attempt 1",
+  "role": "tool step (other)",
+  "agent_type": "build-git",
+  "model": "sonnet",
+  "launched": 17,
+  "ended": {
+   "result:ran": 17
+  },
+  "agent_minutes": 4.3,
+  "input": 68,
+  "cache_write": 461418,
+  "cache_read": 537895,
+  "output": 15765,
+  "turns": 34,
+  "tool_calls": 34,
+  "tool_errors": 0
+ },
+ {
+  "attempt": "attempt 1",
+  "role": "tool step: hold-wait",
+  "agent_type": "build-git",
+  "model": "sonnet",
+  "launched": 5,
+  "ended": {
+   "result:ran": 5
+  },
+  "agent_minutes": 68.8,
+  "input": 102,
+  "cache_write": 142011,
+  "cache_read": 1505958,
+  "output": 13307,
+  "turns": 51,
+  "tool_calls": 51,
+  "tool_errors": 0
+ },
+ {
+  "attempt": "attempt 1",
+  "role": "triage",
+  "agent_type": "finding-triage",
+  "model": "opus",
+  "launched": 4,
+  "ended": {
+   "result:graded": 4
+  },
+  "agent_minutes": 103.0,
+  "input": 236,
+  "cache_write": 2782465,
+  "cache_read": 20164324,
+  "output": 605081,
+  "turns": 118,
+  "tool_calls": 159,
+  "tool_errors": 0
+ },
+ {
+  "attempt": "attempt 1",
+  "role": "verifier",
+  "agent_type": "finding-verifier",
+  "model": "opus",
+  "launched": 61,
+  "ended": {
+   "result:verified": 60,
+   "result:halted": 1
+  },
+  "agent_minutes": 641.1,
+  "input": 4190,
+  "cache_write": 9295919,
+  "cache_read": 218078403,
+  "output": 3059834,
+  "turns": 2095,
+  "tool_calls": 2672,
+  "tool_errors": 58
+ },
+ {
+  "attempt": "attempt 1",
+  "role": "TOTAL",
+  "launched": 100,
+  "input": 5764,
+  "cache_write": 16728648,
+  "cache_read": 328976616,
+  "output": 4592512,
+  "turns": 2881,
+  "tool_calls": 3651,
+  "tool_errors": 68,
+  "agent_minutes": 1102.8
+ },
+ {
+  "attempt": "attempt 2",
+  "role": "preflight",
+  "agent_type": "stabilize-preflight",
+  "model": "opus",
+  "launched": 1,
+  "ended": {
+   "result:ready": 1
+  },
+  "agent_minutes": 1.2,
+  "input": 16,
+  "cache_write": 57863,
+  "cache_read": 312814,
+  "output": 7105,
+  "turns": 8,
+  "tool_calls": 20,
+  "tool_errors": 0
+ },
+ {
+  "attempt": "attempt 2",
+  "role": "tool step (other)",
+  "agent_type": "build-git",
+  "model": "sonnet",
+  "launched": 5,
+  "ended": {
+   "result:ran": 5
+  },
+  "agent_minutes": 1.3,
+  "input": 20,
+  "cache_write": 121966,
+  "cache_read": 167352,
+  "output": 3901,
+  "turns": 10,
+  "tool_calls": 10,
+  "tool_errors": 0
+ },
+ {
+  "attempt": "attempt 2",
+  "role": "tool step: hold-wait",
+  "agent_type": "build-git",
+  "model": "sonnet",
+  "launched": 1,
+  "ended": {
+   "result:ran": 1
+  },
+  "agent_minutes": 0.4,
+  "input": 4,
+  "cache_write": 24460,
+  "cache_read": 33616,
+  "output": 758,
+  "turns": 2,
+  "tool_calls": 2,
+  "tool_errors": 0
+ },
+ {
+  "attempt": "attempt 2",
+  "role": "triage",
+  "agent_type": "finding-triage",
+  "model": "opus",
+  "launched": 1,
+  "ended": {
+   "result:graded": 1
+  },
+  "agent_minutes": 14.5,
+  "input": 64,
+  "cache_write": 228522,
+  "cache_read": 3775603,
+  "output": 98105,
+  "turns": 32,
+  "tool_calls": 40,
+  "tool_errors": 1
+ },
+ {
+  "attempt": "attempt 2",
+  "role": "verifier",
+  "agent_type": "finding-verifier",
+  "model": "opus",
+  "launched": 316,
+  "ended": {
+   "result:halted": 3,
+   "result:verified": 16,
+   "failed:None": 297
+  },
+  "agent_minutes": 268.7,
+  "input": 1588,
+  "cache_write": 3791767,
+  "cache_read": 79055823,
+  "output": 1229394,
+  "turns": 1091,
+  "tool_calls": 1026,
+  "tool_errors": 20
+ },
+ {
+  "attempt": "attempt 2",
+  "role": "TOTAL",
+  "launched": 324,
+  "input": 1692,
+  "cache_write": 4224578,
+  "cache_read": 83345208,
+  "output": 1339263,
+  "turns": 1143,
+  "tool_calls": 1098,
+  "tool_errors": 21,
+  "agent_minutes": 286.0
+ }
+]

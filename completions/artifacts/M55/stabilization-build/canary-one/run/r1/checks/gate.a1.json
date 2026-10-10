@@ -1,0 +1,28 @@
+{
+ "item": "gate",
+ "attempt": 1,
+ "round": 1,
+ "commit": "eeffe347324f83a51d1ae83d5f254e73c3f1ea3a",
+ "kind": "gate",
+ "verdict": "green",
+ "why": null,
+ "detail": "tests passed=4966 failed=0 (over 18 test binaries)",
+ "name": "gate-c1-a1",
+ "asked": {
+  "run": "canary-one"
+ },
+ "exit": 0,
+ "seconds": 1390,
+ "facts": {
+  "passed": 4966,
+  "failed": 0,
+  "binaries": 18,
+  "steps": [],
+  "tests": 0
+ },
+ "evidence": {
+  "totals": "tests   passed=4966 failed=0  (over 18 test binaries)",
+  "red": []
+ },
+ "output_sha256": "65c60917714012e3b8d811d824345e0f28681b9d76aa219941d945aa1b064e4f"
+}

@@ -1,0 +1,5 @@
+start 2026-10-08T06:47:25Z
+Ignoring 3 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["<canary>/clone"].hasTrustDialogAccepted: true in <home>/.claude.json.
+You've hit your session limit
+session rc=1
+end 2026-10-08T16:10:24Z

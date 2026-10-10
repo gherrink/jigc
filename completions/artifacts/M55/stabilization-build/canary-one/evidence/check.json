@@ -1,0 +1,61 @@
+{
+ "act": "check",
+ "status": "checked",
+ "root": "<canary>",
+ "run": "canary-one",
+ "loop": "fix/canary-one",
+ "branch": "fix/canary-one",
+ "remotes": [
+  "origin"
+ ],
+ "fetch_url": "<canary>/origin.git",
+ "push_url": "<canary>/origin.git",
+ "head": "126a85311a54e73e9f9798f3d034d24f14e3ea7c",
+ "remote_head": "126a85311a54e73e9f9798f3d034d24f14e3ea7c",
+ "pushed": true,
+ "records": 1,
+ "pending": 22,
+ "state": {
+  "next": "triage",
+  "round": 1,
+  "attempt": 3
+ },
+ "not_ready": [],
+ "items": [
+  {
+   "item": "row-doc-list",
+   "kind": "review-row",
+   "selected": true
+  },
+  {
+   "item": "cross-cutting",
+   "kind": "audit-cross-cutting",
+   "selected": true
+  },
+  {
+   "item": "arm-control",
+   "kind": "trial-arm",
+   "selected": true
+  },
+  {
+   "item": "gate",
+   "kind": "held-gate",
+   "selected": true
+  },
+  {
+   "item": "regression-set",
+   "kind": "held-regression",
+   "selected": true
+  }
+ ],
+ "ledger": {
+  "rows": 372,
+  "moved_to": "data/ledger-as-checked.tsv",
+  "why": "the rows are byte for byte the four cells check printed; they stand in a table because the secret scanner reads a JSON pair of the word key and a long slug as a credential"
+ },
+ "returned": {
+  "first": true,
+  "then": false
+ },
+ "sha256_of_the_original_line": "see data/originals.json"
+}
