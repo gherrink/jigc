@@ -8504,6 +8504,126 @@ fn the_state_digest_at_the_real_runs_shape_is_a_few_kilobytes() {
     assert_eq!(digest["state"]["human_list"], 20);
 }
 
+/// **The state's digest carries the queue as keys and counts** (the build plan of the
+/// reshaped `test` stage, `T2a`: *the digest carries its first keys and its length by
+/// class*). A run whose opening holds an `order` is a run with a queue, and its digest says
+/// `queue`: the budget and how many items a verifier hands on, as the opening wrote them,
+/// how long the queue is, its FIRST keys — as many as one wave launches, and never the
+/// queue — and its length class by class, in the order's own order. The whole queue is in
+/// the document the digest names. A run that holds an order and neither number says so
+/// with two nulls; and A RUN WITHOUT AN ORDER HAS NO QUEUE: the field is there, and null,
+/// which is how the harness tells the two kinds of run apart.
+#[test]
+fn the_state_digest_carries_the_queue_as_keys_and_counts() {
+    let order = ["route under-confirmed", "route hunt", "behaviour hunt"];
+    let opened = |label: &str, facts: Value| {
+        let rig = StepRig::new(label);
+        rig.wrote(&format!("run-set --run {RUN}"), &facts.to_string());
+        rig
+    };
+    let rig = opened(
+        "digest-queue",
+        json!({"stop": "every-round", "clauses": ["audit-clean"], "budget": 30, "hand-on": 2,
+               "order": order}),
+    );
+    rig.wrote(
+        &format!("scope-set --run {RUN} --round 1"),
+        &json!({"included": [{"door": "jigc setup", "registry": "verbs", "derivation": HOSTILE}],
+                "excluded": []})
+        .to_string(),
+    );
+    // Eleven route items and two behaviour items of the hunt, a seed whose class is off the
+    // order, and a lead — the behaviour items first in the ledger, and last in the queue.
+    let found = |key: String, kind: &str, origin: &str| {
+        let mut row = json!({"key": key, "doctype": "jigc-feedback", "round": 1, "source": HOSTILE,
+                             "door": "jigc setup", "clause": "audit-clean", "repro": HOSTILE,
+                             "kind": kind, "origin": origin});
+        match kind {
+            "route" => row["route"] = json!(HOSTILE),
+            "behaviour" => row["commands"] = json!(HOSTILE),
+            _ => {}
+        }
+        row
+    };
+    let mut rows: Vec<Value> = (1..=2)
+        .map(|n| found(format!("behaves-{n:02}"), "behaviour", "hunt"))
+        .collect();
+    rows.extend((1..=11).map(|n| found(format!("route-{n:02}"), "route", "hunt")));
+    rows.push(found("seeded".to_owned(), "route", "seed"));
+    rows.push(found("a-lead".to_owned(), "lead", "hunt"));
+    let sent_on: Vec<Value> = rows
+        .iter()
+        .map(|row| json!({"key": row["key"], "grade": "breaks"}))
+        .collect();
+    rig.wrote(&format!("ledger-add --run {RUN}"), &json!(rows).to_string());
+    rig.wrote(
+        &format!("triage-set --run {RUN} --round 1"),
+        &json!(sent_on).to_string(),
+    );
+    let (seen, document) = rig.state_digest("test-1");
+    assert_eq!(
+        seen.line["state"]["queue"],
+        json!({"budget": 30, "hand_on": 2, "length": 13,
+               "first": ["route-01", "route-02", "route-03", "route-04", "route-05", "route-06",
+                         "route-07", "route-08"],
+               "classes": [{"kind": "route", "origin": "under-confirmed", "length": 0},
+                           {"kind": "route", "origin": "hunt", "length": 11},
+                           {"kind": "behaviour", "origin": "hunt", "length": 2}]}),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(seen.line["unfit"], json!([]), "{}", seen.raw);
+    // The control: the document holds the queue whole, and the digest's keys are its first.
+    let ranked: Vec<&str> = document["queue"]["ranked"]
+        .as_array()
+        .expect("the queue, in the document")
+        .iter()
+        .map(|entry| entry["key"].as_str().expect("a key"))
+        .collect();
+    assert_eq!(ranked.len(), 13, "{}", document["queue"]);
+    assert_eq!(
+        json!(ranked[..8]),
+        seen.line["state"]["queue"]["first"],
+        "the first keys are the queue's first"
+    );
+    assert_eq!(ranked[11..], ["behaves-01", "behaves-02"]);
+    assert_eq!(
+        json!([seen.line["state"]["ledger"], document["facts"]["order"]]),
+        json!([15, order]),
+        "fifteen rows, thirteen of them queued: {}",
+        seen.raw
+    );
+
+    // An order, and neither number: a queue, and two nulls.
+    let bare = opened(
+        "digest-queue-bare",
+        json!({"stop": "every-round", "order": ["route hunt"]}),
+    );
+    assert_eq!(
+        bare.state_digest("test-1").0.line["state"]["queue"],
+        json!({"budget": null, "hand_on": null, "length": 0, "first": [],
+               "classes": [{"kind": "route", "origin": "hunt", "length": 0}]})
+    );
+
+    // NO ORDER, NO QUEUE — whatever else the opening wrote: the field is there, and null.
+    let plain = opened(
+        "digest-queue-none",
+        json!({"stop": "every-round", "budget": 30, "hand-on": 2}),
+    );
+    let (seen, document) = plain.state_digest("test-1");
+    let state = seen.line["state"].as_object().expect("the state's digest");
+    assert!(
+        state.contains_key("queue") && state["queue"].is_null(),
+        "a run without an order has no queue, and its digest says so: {}",
+        seen.raw
+    );
+    assert!(
+        document.get("queue").is_none(),
+        "the control: the document of such a run says nothing of one"
+    );
+    assert_eq!(seen.line["unfit"], json!([]), "{}", seen.raw);
+}
+
 /// **What a line leaves out is in a file it names** — by its path under the root the flag
 /// names, and by its hash: the document for the state, and for every other act the line
 /// the act prints unasked, a refusal's halt report in it. And **without the flag every

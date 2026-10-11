@@ -30,7 +30,9 @@
 #                                           this script's
 #   run.md                                  the run's facts: its stop mode, its two bounds,
 #                                           the previous release, the default scope and
-#                                           the clauses of its closing condition (run-set)
+#                                           the clauses of its closing condition — and,
+#                                           where its opening wrote them, what its queue is
+#                                           bounded and ranked by (run-set)
 #                                           — and the census of the ledger, which this
 #                                           script counts (ledger-add, result-set)
 #   ledger.md                               one row per finding          (ledger-add, ledger-set,
@@ -136,6 +138,12 @@
 #       A cell of a class without a kind is refused (bad-value). With a kind the call also
 #       prints "classes" — the table's path — and "leads": the keys it entered as a lead
 #       for lack of their kind's evidence.
+#       IN A RUN WITH AN ORDER (run-set: order) A ROW WITHOUT A KIND IS REFUSED (bad-value),
+#       and nothing of its call is written: such a run has a queue, the queue is ranked by
+#       a row's class, and a row takes its class here and never later. A finding found
+#       again is sent as a row too, and names its kind like any. So every row of such a
+#       run's ledger carries a class — and `state` refuses (corrupt) one whose class row is
+#       gone, naming it: what is deleted is missed.
 #       THE LEDGER'S CENSUS: every key a call adds is named in the run's own record
 #       (run.md: findings), in the same batch. A row the census names is a row the ledger
 #       has, whoever deleted it: `state` and every writer of the ledger refuse (corrupt) a
@@ -203,12 +211,15 @@
 #                      routed, ruled or fixed like any other. A key the ledger holds keeps
 #                      its row, as a finding found again does; but a row that says `fixed`
 #                      is OPEN again: the item is red after its fix.
-#                      IN A RUN WHOSE ROWS CARRY A CLASS (ledger-add: its ledger holds a
-#                      row with one) THE ROW IS FILED WITH ITS OWN — `behaviour`, `hunt`,
-#                      computed and never supplied — its evidence the verdict on record
-#                      for a held check (r<N>/checks/…), and for any other what the call
-#                      brings as `repro`, which is where the preflight's report is named.
-#                      In a run that holds no class the row is filed as it always was.
+#                      IN A RUN WITH AN ORDER (run-set: order — a run with a queue, whose
+#                      every row carries a class) THE ROW IS FILED WITH ITS OWN —
+#                      `behaviour`, `hunt`, computed and never supplied — its evidence the
+#                      verdict on record for a held check (r<N>/checks/…), and for any
+#                      other what the call brings as `repro`, which is where the
+#                      preflight's report is named. So it is whatever the ledger holds
+#                      by then: a record's batch records its results before it adds its
+#                      findings. In a run without an order the row is filed as it always
+#                      was, whatever its ledger holds.
 #       THE ATTEMPT IS COMPUTED, never supplied: an item's runs in a round are numbered from
 #       1. While round N is NOT TESTED, a result is the run of its test stage, and an item
 #       has one (exists). Once it IS tested, a result is A RE-RUN — an attempt inside the
@@ -484,6 +495,31 @@
 #                      refused whole (bad-value): the clause is typed twice at an opening
 #                      — here, and in every item's row — and the two are held to each
 #                      other in both orders of writing (item-set).
+#         budget       THE OPENING'S NUMBERS, AND THE ORDER (the build plan of the reshaped
+#         hand-on      `test` stage, T2a; the rulings of 2026-10-10, 1, and of 2026-10-11,
+#         order        2). budget: how many verdicts a round's `test` stage may spend.
+#                      hand-on: how many items a verifier hands on to the queue. Each a
+#                      positive whole number. order: THE ORDER OF CLASSES THE QUEUE IS
+#                      RANKED BY (state: THE QUEUE) — a non-empty array of classes, none
+#                      twice, each `<kind> <origin>`: a kind that can be verified (route |
+#                      behaviour) and where the item comes from (hunt | seed |
+#                      under-confirmed | under-not-a-break), as a row's class has them
+#                      (ledger-add). It is the human's to set, and this script ships none.
+#                      TWO CLASSES ARE IN NO ORDER, because neither is ever verified: a
+#                      lead, and an item handed on under a parent that did not reproduce
+#                      (`… under-no-repro`); naming one is refused (bad-value).
+#                      ALL THREE ARE OPTIONAL: nothing owes one yet, and a run that holds
+#                      none is answered, by every call, as a run was before there was a
+#                      queue — its facts are printed without them, and its files hold no
+#                      byte more. A RUN THAT HOLDS AN `order` IS A RUN WITH A QUEUE, and
+#                      says so in its state; the two numbers alone make none.
+#                      Each is written ONCE (exists) — what changes a budget or an order
+#                      at a stop is a ruling's to write, and is not built here. AND AN
+#                      ORDER IS TAKEN ONLY WHILE EVERY ROW OF THE LEDGER CARRIES A CLASS
+#                      (bad-value): a run with a queue holds no row its queue cannot rank,
+#                      and a row takes its class when it is added and never later — so
+#                      the order is written at the opening, before the ledger's first row
+#                      that names no kind.
 #       THIS IS HOW THE OPENING'S MACHINE-READ FACTS GET IN. opening.md stays the
 #       human-led step's prose, which this script neither writes nor reads; the step
 #       that writes it calls run-set before its one commit. A run that lacks them is NOT
@@ -500,7 +536,8 @@
 #         facts        {stop, rounds, cycles, previous, previous-commit, scope, clauses}
 #                      as run-set wrote them (null where it did not; the bound on a
 #                      round's cycles is three where it is null), and findings: the
-#                      ledger's census
+#                      ledger's census — and, ONLY WHERE THE RUN HOLDS IT, each of budget,
+#                      hand-on and order: a run that holds none has no such field
 #         not_ready    what the opening still owes, or []: no-clause-row (the census names
 #                      no clause, so the clause table has no row) · no-stop-mode ·
 #                      no-round-bound (the mode is at-the-bound, and no number is written)
@@ -591,6 +628,10 @@
 #                      cycle-bound, round, then}
 #         position     {test, fix} — what an invocation of each stage would work on
 #                      (below)
+#         queue        ONLY IN A RUN WITH AN ORDER — a run with a queue; a run without
+#                      one has no such field: {ranked: [{key, kind, origin}] — THE QUEUE
+#                      (below), first to last — and classes: [{kind, origin, length}], how
+#                      many of it are of each class of the order, in the order's order}
 #       A cell is given as the table holds it, a `|` unescaped; `-` for none is null
 #       where the cell is not free text. A table that is not this script's, a cell
 #       outside its vocabulary, a triage record that disagrees with the doors it was
@@ -645,6 +686,28 @@
 #           confirmed            fix (inside) when the latest round that triaged it
 #                                has its door among the included; human (outside)
 #                                when not; human (untriaged) when no round placed it
+#
+#       THE QUEUE, in a run with an order — a pure function of that order and the ledger's
+#       rows, each with its class (the build plan of the reshaped `test` stage, T2a; the
+#       ruling of 2026-10-10, 1: "the queue is ranked by what the item is about"). It is
+#       THE UNVERIFIED ROWS WHOSE CLASS IS ON THE ORDER, RANKED BY IT, ties by the ledger's
+#       order. A row's class is its kind and where it comes from, as its row was added
+#       (ledger-add); a class the order does not name is in no queue, and so is a lead and
+#       an item handed on under a parent that did not reproduce, which no order can name.
+#       UNVERIFIED is one of two things, and nothing else:
+#         triage sent the finding on (breaks, unclear) and no verdict is on record for it
+#           — the row the route calls `triage (unverified)`, however many records have
+#           left it so;
+#         a verifier handed the item on (its class names a parent) and nobody graded it —
+#           what is handed on enters without a grade.
+#       So a row nobody graded and nobody handed on is NOT in it: it is triage's first.
+#       Nor is a row that is verified, undrivable, ruled, forked, or graded no break, out
+#       of scope or in need of a bound: triage's grade still decides what is verified of
+#       what triage saw. NOTHING ELSE RANKS — not the refusal's code, not the site, not
+#       how often either is named, not the order a triage recorded its entries in.
+#       What follows from the queue — a route, the next step, a budget that is spent — is
+#       not computed from it yet (the plan's T2b): `route`, `next` and `position` are
+#       today's, in every run.
 #
 #       THE CANDIDATE, AND WHEN A FIX STAGE IS ON RECORD. A round whose record names its
 #       candidate is TESTED. A FIX STAGE IS ON RECORD in a round whose record counts a
@@ -1108,7 +1171,10 @@
 #   asked       the facts go, granted, reverify and again: only while the state asks the
 #               human for exactly that (round-set).
 #   once        the run's stop mode, previous release, default scope and clauses: where
-#               the run does not hold them yet, and then never again.
+#               the run does not hold them yet, and then never again. And the queue's
+#               three — budget, hand-on, order — the same, until a ruling can change one
+#               (the plan's T2b); the order, in addition, only while every row of the
+#               ledger carries a class (run-set).
 #   raised      the run's two bounds: at the opening, and then only at the stop that
 #               names the bound.
 #   counted     ran, awaiting, recorded and the run's findings: never from a caller.
@@ -1223,7 +1289,8 @@
 #    5  outside       a link below the run directory: the write would land outside it
 #    6  exists        the report's path is taken — pass the next attempt; or a round's
 #                     scope, a fact of its record, the run's stop mode, previous
-#                     release, default scope or clauses are written once and stand; or
+#                     release, default scope or clauses — or its budget, its hand-on
+#                     number or its order — are written once and stand; or
 #                     an item has its result in a round that is not tested yet; or an
 #                     item a round has run or owes a run keeps its clause, runs, doors
 #                     and registries; or a row that has a verdict keeps its kind
@@ -1237,7 +1304,8 @@
 #                     grant, a raised bound or the re-run of an item nobody is asked
 #                     for; a result for an item the round's scope does not select; an
 #                     item of a clause the census does not name, or a census that does
-#                     not name a clause an item judges
+#                     not name a clause an item judges; in a run with an order, a row
+#                     that names no kind — and an order over a ledger that holds one
 #    8  no-such-row   ledger-set names a key the ledger lacks, or result-set an item the
 #                     test set lacks; a row is handed on under a parent the ledger lacks
 #    9  fence         the file would redden a standing fence, which is named
@@ -1419,7 +1487,7 @@ UNDER_CONFIRMED = "under-confirmed"
 REFUTATIONS = {"does-not-reproduce": "under-no-repro", "intended": "under-not-a-break", "breaks-no-clause": "under-not-a-break"}
 # The verdict for a finding nobody here can drive: it says why in a word.
 UNDRIVABLE = "undrivable"
-# What a red run's finding is filed as, in a run whose rows carry a class.
+# What a red run's finding is filed as, in a run with an order.
 RED_CLASS = ("behaviour", "hunt")
 CLAUSE_COLUMNS = ("clause", "instrument", "last commit", "scope", "status")
 BOUND_COLUMNS = ("bound", "reach", "ruling", "pin")
@@ -1470,16 +1538,33 @@ GO = re.compile(r"c(0|[1-9][0-9]{0,5})")
 OUTCOMES = ("dropped", "part")
 # The run's facts, in the order their table holds them, and when a run stops for the
 # human of its own accord.
-RUN_FACTS = ("stop", "rounds", "cycles", "previous", "previous-commit", "scope", "clauses", "findings")
+RUN_FACTS = ("stop", "rounds", "cycles", "previous", "previous-commit", "scope", "clauses", "budget", "hand-on", "order", "findings")
 STOP_MODES = ("every-round", "at-the-bound")
+# THE OPENING'S NUMBERS, AND THE ORDER (the build plan of the reshaped `test` stage, T2a):
+# how many verdicts a round's `test` stage may spend, how many items a verifier hands on,
+# and the order of classes the queue is ranked by. OPTIONAL — nothing owes one yet (the
+# plan's T12 makes them owed) — and a fact of these three is A FACT ONLY WHERE THE RUN HOLDS
+# IT: a run that holds none prints the facts it always printed, and no key more. A run that
+# holds an `order` is A RUN WITH A QUEUE.
+RUN_QUEUE = ("budget", "hand-on", "order")
 # The facts written once: when a run stops, the release it measures against, its default
-# scope and the clauses it must satisfy do not change under it.
-RUN_ONCE = ("stop", "previous", "previous-commit", "scope", "clauses")
+# scope and the clauses it must satisfy do not change under it — and, until a ruling can
+# change one (the plan's T2b), the three of the queue.
+RUN_ONCE = ("stop", "previous", "previous-commit", "scope", "clauses") + RUN_QUEUE
 # The two bounds, which only go up, and the stop at which the human raises each.
 RUN_BOUNDS = {"rounds": "round-bound", "cycles": "cycle-bound"}
+# The facts that are a positive whole number.
+RUN_NUMBERS = tuple(RUN_BOUNDS) + ("budget", "hand-on")
 # What this script counts for itself: the census of the ledger.
 RUN_COUNTED = ("findings",)
-RUN_LISTS = ("clauses", "findings")
+RUN_LISTS = ("clauses", "order", "findings")
+# A CLASS, AS AN ORDER NAMES ONE: `<kind> <origin>` — a kind that can be verified, and where
+# the item comes from. Two things no order names, because neither is ever verified: a lead,
+# and an item handed on under a parent that did not reproduce.
+NEVER_QUEUED = REFUTATIONS["does-not-reproduce"]
+QUEUED_KINDS = tuple(kind for kind, evidence in KINDS.items() if evidence)
+QUEUED_ORIGINS = SAID_ORIGINS + (UNDER_CONFIRMED,) + tuple(sorted(set(REFUTATIONS.values()) - {NEVER_QUEUED}))
+CLASS = re.compile(r"(%s) (%s)" % ("|".join(QUEUED_KINDS), "|".join(QUEUED_ORIGINS)))
 # A released version, as the previous release's fact names it.
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?")
 # The scope a round is started with when its invocation names none.
@@ -1569,6 +1654,10 @@ RUN_TAKES = {
     "previous-commit": "once",
     "scope": "once",
     "clauses": "once",
+    "budget": "once",
+    "hand-on": "once",
+    # … and an order only while every row of the ledger carries a class (run-set).
+    "order": "once",
     "rounds": "raised",
     "cycles": "raised",
     "findings": "counted",
@@ -2281,6 +2370,13 @@ def read_classes(run_dir):
     )
 
 
+def unclassed(run_dir, keys):
+    """The keys among `keys` — the ledger's — that carry no class."""
+    classes_rel, _, class_rows = read_classes(run_dir)
+    classed = unique_rows(classes_rel, class_rows)
+    return [key for key in keys if key not in classed]
+
+
 def verdict_cells(run_dir, key):
     """The verdict cells the rounds' triage records hold for a finding, in the rounds'
     order — `-` where a round triaged it and recorded no verdict."""
@@ -2427,8 +2523,9 @@ def read_run(run_dir):
 
 def run_facts(rel, rows):
     """The run's rows as {fact: value}, both facts named — None where the table does not
-    hold it. A row that is not this script's is refused."""
-    facts = dict.fromkeys(RUN_FACTS)
+    hold it; and of the queue's three (RUN_QUEUE) only those it holds. A row that is not
+    this script's is refused."""
+    held = {}
     for name, row in zip(unique_rows(rel, rows), rows):
         value = untick(row[1])
         listed = value.split(ITEMS_BREAK)
@@ -2441,17 +2538,34 @@ def run_facts(rel, rows):
             "previous-commit": FULL_SHA.fullmatch(value),
             "scope": value in DEFAULT_SCOPES,
             "clauses": slugs,
+            "budget": NUMBER.fullmatch(value),
+            "hand-on": NUMBER.fullmatch(value),
+            "order": all(CLASS.fullmatch(entry) for entry in listed) and len(set(listed)) == len(listed),
             "findings": slugs,
         }
         if not holds.get(name):
             spoiled(rel, "gives the fact %s the value %s, which this script does not write" % (shown(name), shown(value)))
-        facts[name] = int(value) if name in RUN_BOUNDS else listed if name in RUN_LISTS else value
-    return facts
+        held[name] = int(value) if name in RUN_NUMBERS else listed if name in RUN_LISTS else value
+    return in_order(held)
+
+
+def in_order(held):
+    """The run's facts in the order their table holds them: every fact named, None where
+    the run does not hold it — but of the queue's three, which nothing owes, only what the
+    run holds. So a run that holds none of them says what it always said."""
+    return {name: held.get(name) for name in RUN_FACTS if name in held or name not in RUN_QUEUE}
+
+
+def has_queue(run_dir):
+    """Whether the run is A RUN WITH A QUEUE: its opening holds an `order`. It is the one
+    switch between what a run was answered before the reshaped `test` stage and what it is
+    answered now (the build plan's Phase A): a run without an order is answered as it was."""
+    return run_facts(*read_run(run_dir)[::2]).get("order") is not None
 
 
 def run_rows(facts):
     """The run's facts as the rows of their table."""
-    return [[tick(name), tick(ITEMS_BREAK.join(facts[name]) if name in RUN_LISTS else str(facts[name]))] for name in RUN_FACTS if facts[name] is not None]
+    return [[tick(name), tick(ITEMS_BREAK.join(facts[name]) if name in RUN_LISTS else str(facts[name]))] for name in RUN_FACTS if facts.get(name) is not None]
 
 
 def round_facts(rel, rows):
@@ -2657,6 +2771,11 @@ def ledger_add(args):
     scratch = scratch_roots(args)
     given = [ledger_row(row, scratch) for row in json_rows("ledger row")]
     one_writer(run_dir)
+    # IN A RUN WITH AN ORDER EVERY ROW NAMES ITS KIND: the queue is ranked by a row's class,
+    # and a row takes its class here and never later.
+    bare = [key for key, _, made in given if made is None]
+    if bare and has_queue(run_dir):
+        refuse("bad-value", "row %s: it names no `kind` (%s), and the run holds an order — it has a queue, which is ranked by a row's class: in such a run every row is added with its kind, its kind's evidence, and where it comes from (`origin`, or `parent`), a finding found again too. Nothing was written" % (", ".join(bare), ", ".join(KINDS)))
     hold_to_the_list(run_dir, [("row %s" % key, cells[6]) for key, cells, _ in given])
     rel, above, rows = read_ledger(run_dir)
     keys = unique_rows(rel, rows)
@@ -2877,12 +2996,11 @@ def result_set(args):
         publish(run_dir, ["ledger.md"], render_table(ledger_above, LEDGER_COLUMNS, ledger_rows), replace=True)
     if added:
         census(run_dir, added)
-        # A RED RUN'S ROW IS FILED WITH ITS CLASS — in a run whose rows carry one. THE
-        # SWITCH IS THIS LINE: until a run's opening can say that it has a queue (the plan's
-        # T2a: a run that holds an `order`), what says so is that its ledger holds a row
-        # with a class. A run that holds none files the row as it always did.
-        classes_rel, classes_above, class_rows = read_classes(run_dir)
-        if unique_rows(classes_rel, class_rows):
+        # A RED RUN'S ROW IS FILED WITH ITS CLASS — in a run with a queue, where every row
+        # carries one. A run without an order files the row as it always did.
+        if has_queue(run_dir):
+            classes_rel, classes_above, class_rows = read_classes(run_dir)
+            unique_rows(classes_rel, class_rows)
             publish(run_dir, ["classes.md"], render_table(classes_above, CLASS_COLUMNS, class_rows + classing), replace=True)
     render_view(run_dir)
     say(json.dumps({"results": rel, "recorded": recorded, "findings": filed}))
@@ -3164,9 +3282,11 @@ def run_set(args):
     fields(given, (), tuple(name for name in RUN_FACTS if name not in RUN_COUNTED), "a run's facts")
     if "stop" in given:
         one_of(given["stop"], STOP_MODES, "stop")
-    for name in RUN_BOUNDS:
+    for name in RUN_NUMBERS:
         if name in given and (isinstance(given[name], bool) or not isinstance(given[name], int) or not NUMBER.fullmatch(str(given[name]))):
             refuse("bad-value", "%s is a positive whole number, not %s" % (name, shown(given[name])))
+    if "order" in given:
+        an_order(given["order"])
     for name, shape, means in (("previous", VERSION, "a released version, as `1.2.3` or `1.2.3-rc.4`"), ("previous-commit", FULL_SHA, "a full sha of 40 hex digits")):
         if name in given and not (isinstance(given[name], str) and shape.fullmatch(given[name])):
             refuse("bad-value", "%s is %s, not %s" % (name, means, shown(given[name])))
@@ -3181,8 +3301,16 @@ def run_set(args):
     rel, above, rows = read_run(run_dir)
     facts = run_facts(rel, rows)
     for name in RUN_ONCE:
-        if name in given and facts[name] not in (None, given[name]):
-            refuse("exists", "%s holds %s %s — when a run stops, the release it measures against, its default scope and the clauses it must satisfy are written once, at its opening; nothing was written" % (rel, name, ITEMS_BREAK.join(facts[name]) if name == "clauses" else facts[name]))
+        if name in given and facts.get(name) not in (None, given[name]):
+            refuse("exists", "%s holds %s %s — when a run stops, the release it measures against, its default scope, the clauses it must satisfy, and what its queue is ranked and bounded by are written once, at its opening; nothing was written" % (rel, name, ITEMS_BREAK.join(facts[name]) if name in RUN_LISTS else facts[name]))
+    if "order" in given and facts.get("order") is None:
+        # A RUN WITH AN ORDER IS A RUN WITH A QUEUE, and the queue is ranked by a row's
+        # class: every row of the ledger carries one from then on (ledger-add), so the
+        # order is taken only while every row the ledger already holds does.
+        ledger_rel, _, ledger_rows = read_ledger(run_dir)
+        bare = unclassed(run_dir, unique_rows(ledger_rel, ledger_rows))
+        if bare:
+            refuse("bad-value", "order: the ledger (%s) holds %s, which %s no kind — a run with an order has a queue, the queue is ranked by a row's class, and a row takes its class when it is added and never later (ledger-add): the order is written at the run's opening, before its first row that names no kind. Nothing was written" % (ledger_rel, ", ".join(bare), "name" if len(bare) > 1 else "names"))
     if "clauses" in given:
         # The other order of writing: the test set first. A census is written once, so one
         # that leaves an item judging nothing is not written at all.
@@ -3201,10 +3329,28 @@ def run_set(args):
         opening = not read["rounds"] or bool(read["not_ready"])
         if not opening and not (read["stop"] and read["stop"]["why"] == stop):
             not_asked("the bound `%s`" % name, read, "it is written at the run's opening, and raised only while the run is stopped at it (`%s`)" % stop)
-    facts.update(given)
+    facts = in_order({**facts, **given})
     publish(run_dir, ["run.md"], render_table(above, ROUND_COLUMNS, run_rows(facts)), replace=True)
     render_view(run_dir)
     say(json.dumps({"run": rel, "facts": facts}))
+
+
+def an_order(given):
+    """Refuse an order that is not one: a non-empty list of classes, each `<kind> <origin>`
+    — a kind that can be verified, and where the item comes from — and none twice. Two
+    classes are in no order, because neither is ever verified: a lead, and an item handed
+    on under a parent that did not reproduce."""
+    if not isinstance(given, list) or not given or not all(isinstance(entry, str) for entry in given):
+        refuse("bad-value", "order is the order of classes the queue is ranked by, a non-empty array of texts, each `<kind> <origin>`, not %s" % shown(given))
+    for entry in given:
+        kind, _, origin = entry.partition(" ")
+        if kind == "lead":
+            refuse("bad-value", "order: %s — a lead is in no queue: it names no printed route and carries no commands that show a misbehaviour, so it is listed, and not verified" % shown(entry))
+        if origin == NEVER_QUEUED:
+            refuse("bad-value", "order: %s — an item handed on under a parent that did not reproduce is never verified, so no order names that class" % shown(entry))
+        if not CLASS.fullmatch(entry):
+            refuse("bad-value", "order: %s is no class — a class is `<kind> <origin>`: a kind of %s, and where the item comes from, one of %s" % (shown(entry), ", ".join(QUEUED_KINDS), ", ".join(QUEUED_ORIGINS)))
+    distinct(given, "order: the class")
 
 
 def triage_entry(entry):
@@ -3602,6 +3748,31 @@ def render_view(run_dir):
     rel, above, rows, derived, _ = the_view(run_dir)
     if rows != derived:
         publish(run_dir, ["clauses.md"], render_table(above, CLAUSE_COLUMNS, derived), replace=True)
+
+
+def queue_of(order, findings):
+    """THE QUEUE of a run with an order (the header's section of that name): the unverified
+    rows whose class is on the order, RANKED by where the class stands on it, ties by the
+    ledger's order — and how long it is class by class, in the order's own order. A pure
+    function of the order and the ledger's rows as the state has them, each with its class.
+    UNVERIFIED is: triage sent the finding on and the round holds no verdict for it — or a
+    verifier handed the item on, and nobody graded it: what is handed on enters without a
+    grade. So a row nobody graded and nobody handed on is not in it (it is triage's first),
+    nor is one that is verified, undrivable, ruled, forked or no break. NOTHING ELSE RANKS:
+    not the refusal's code, not the site, not how often either is named."""
+    ranked = []
+    for finding in findings:
+        awaits, held = finding["awaits"], finding["class"]
+        word = "%s %s" % (held["kind"], held["origin"])
+        if word in order and awaits is not None and (awaits["why"] == "unverified" or held["parent"] is not None):
+            ranked.append((order.index(word), finding["key"], held))
+    # The sort is stable: within a class, the ledger's own order.
+    ranked.sort(key=lambda entry: entry[0])
+    lengths = [sum(1 for at, _, _ in ranked if at == rank) for rank in range(len(order))]
+    return {
+        "ranked": [{"key": key, "kind": held["kind"], "origin": held["origin"]} for _, key, held in ranked],
+        "classes": [dict(zip(("kind", "origin"), word.split(" ")), length=length) for word, length in zip(order, lengths)],
+    }
 
 
 def over(rounds, findings):
@@ -4079,6 +4250,15 @@ def document(run_dir, run):
             finding["class"] = classes[key]
         findings.append(finding)
     hold_census(run_dir, ledger_rel, keys)
+    # A RUN WITH AN ORDER HAS A QUEUE, and every row of its ledger carries a class: no
+    # writer leaves one without, so a row that lacks its class had it deleted — and what is
+    # deleted is missed.
+    queue = None
+    if facts.get("order") is not None:
+        bare = [key for key in keys if key not in classes]
+        if bare:
+            spoiled(classes_rel, "lacks the class of %s — the run holds an order, and in such a run every row of the ledger (%s) is added with its class: a class is written with its row and removed by nobody. Take the file back from the commit that holds it" % (", ".join(bare), ledger_rel))
+        queue = queue_of(facts["order"], findings)
     items = [
         {
             "item": untick(row[0]),
@@ -4148,6 +4328,8 @@ def document(run_dir, run):
         "human_stages": human_stages,
         **following,
         "position": position,
+        # … and of a queue only a run that has one says anything.
+        **({} if queue is None else {"queue": queue}),
     }
 
 

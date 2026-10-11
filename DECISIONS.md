@@ -2,6 +2,76 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The opening's numbers, and the queue: a run that holds an order has a queue and says so, every row of such a run carries a class, the queue is its unverified rows ranked by the order — and a run without an order holds the bytes it held (the plan's `T2a`; the builder's choices inside it)
+
+**What.** [`dev/stabilize-record`](dev/stabilize-record) takes three more facts of a run and computes the queue of a `test` stage; [`dev/stabilize-step`](dev/stabilize-step) carries it in the state's digest ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §4, `T2a`, the migration order's Phase A; ruling 1 of *2026-10-10 — The reshaped `test` stage, corrected by a count the same day*; ruling 2 of *2026-10-11 — The reshaped `test` stage's three open questions, ruled*). The two scripts' headers are the contract; in one place:
+
+- **Three facts get in through `run-set`** — `budget` (how many verdicts a round's `test` stage may spend), `hand-on` (how many items a verifier hands on) and `order` (the classes the queue is ranked by) — **each optional**: nothing owes one until `T12`.
+- **A run that holds an `order` is a run with a queue, and says so**: its state has `queue` — `ranked`, the queue from first to last as `{key, kind, origin}`, and `classes`, how many of it are of each class of the order, in the order's order. The two numbers alone make no queue.
+- **The queue is the script's**: the unverified rows whose class is on the order, ranked by where the class stands on it, ties by the ledger's order.
+- **In a run with an order a row without a kind is refused**, and every row of such a run's ledger carries a class.
+- **The state's digest carries the queue as keys and counts**: `queue` is null for a run without an order, and for a run with one `{budget, hand_on, length, first, classes}`.
+- **What `T1` left is done**: a red run's row is filed with its class in a run with an order — whatever its ledger holds by then — and in a run without one as it always was. `T1`'s stand-in, *the ledger already holds a row with a class*, is gone.
+
+**Chosen where the plan left it to the builder — and what was rejected.**
+
+- **A class, as an order names one, is one text: `<kind> <origin>`** — `route under-confirmed`, `behaviour hunt` — spelled as the round's record spells every entry of two words (`<item> a<K>`). The order is a non-empty list of them, none twice. *Rejected:* an object per class (the table holds a cell, and a second spelling of it); an order of kinds and one of origins (the ruling ranks pairs: a route item under a confirmed parent goes ahead of a route item of the hunt, which goes ahead of a behaviour item under a confirmed parent).
+- **Two classes are in no order, and nothing else is held of one.** A lead, and an item handed on under a parent that did not reproduce (`… under-no-repro`), are refused by name, each with why: neither is ever verified. **The ruling's outline — route items first, those under a confirmed parent ahead of the rest — is not held**: *the order stands in the run's opening record … so the human reorders it on the run's own numbers*, and a script that held the outline would refuse the reordering the ruling asks for. The script ships no order.
+- **Unverified is one of two things.** Triage sent the finding on and no verdict is on record for it; or a verifier handed the item on and nobody graded it — what is handed on enters without a grade. So a row nobody graded and nobody handed on is **not** queued: it is triage's first (the plan review's `B1`). *Rejected:* reading the route. A finding two records in a row have left unverified is routed to the human today (`unverified-after-retry`), and in a stage that records twice that is every row the budget did not reach; the queue is read off the row's grade and its verdict, **however many records have left it so**. What that count becomes is `T2b`'s.
+- **Every row of a run with an order carries a class — held three ways.** `ledger-add` refuses a row that names no kind, a finding found again too; the state refuses (`corrupt`) a ledger with a row whose class is gone, naming it, which is where `T1` said a class row deleted by hand could be held; and **an order is taken only while every row the ledger already holds carries a class**, so no write makes a run with a queue and a row the queue cannot rank. *Rejected:* a run with a queue that tolerates rows without a class — every later task would have to say what such a row is, in the queue, in a route and in a hit rate; a class given later by a patch — `T1` pinned that a kind is written with its row.
+- **A fact of the three is a fact only where the run holds it.** A run that holds none prints the eight facts it printed, and its state says nothing of a queue. `T1`'s choice for a row's class, for `T1`'s reason: three nulls in every run's facts would change what `run-set` and `state` answer a stage of today, and the Phase A arm prints both.
+- **Each of the three is written once — for now.** A second, different value is refused (`exists`); said again as it stands, it changes nothing. *Rejected:* a fact a caller rewrites at will — once `T2b` reads the budget, a rewrite would lift a stop nobody has seen; building the ruling's write here — it is `T2b`'s (*a budget and an order the human changes are facts a ruling writes*).
+- **Both numbers are positive whole numbers.** A `hand-on` of nothing is not taken: an opening that wants nothing handed on leaves the handed-on classes off its order.
+- **The digest.** `queue: null` says *no queue*, and an object says *a queue*, an empty one too — that field is what the harness's Phase B chooses its path by. The opening's two numbers ride inside it (`budget`, `hand_on` — spelled as a name a script reads, null where the opening wrote none), and the digest's `facts` are untouched. **`first` is the queue's first eight keys**: as many as one wave of verifiers launches (the plan's `E15`), a constant of the step tool, and the queue itself is in the document the digest names. `classes` has at most eight entries, because that is how many classes an order can name. *Rejected:* an empty object for a run without an order (it reads as an empty queue); the whole queue in the digest (it would grow with the ledger, which is what a digest exists not to do).
+
+**Phase A, shown.** `a_run_without_an_order_holds_the_bytes_it_held` is green **unmodified**: one whole stage's calls, every answer and every file. And the new arm for the facts holds what `run-set` prints for a run without an order to its bytes, not to its value.
+
+**Red first.** The plan's five arms, the digest's, `T1`'s arm rewritten for the order, the arm for the case its stand-in got wrong and three rows of the writers' table were written before either script took a fact, and run on the parent's scripts: nine red, one green. Five were red at their first call that needs a fact — *a run's facts has no field "order"*, *no field "budget", "hand-on"* — and the one for the facts only after its first part had held: what a run without an order prints, to the byte. The two arms for what no order may name were refused there too, for want of the field and not for the reason; what each is worth is the mutants'. `T1`'s arm was red **at the stand-in**: in a run without an order whose ledger held a row with a class, the two red runs were filed with one — three class rows where one was expected. The table's arm was red at its rows: the script named no such fact. And `a_run_without_an_order_holds_the_bytes_it_held` was green, as what it holds says it must be.
+
+**Mutants of the finished scripts** — nineteen, each one edit (two where one alone only moved a refusal's sentence), the task's nine arms run on each, and the writers' table on the one it reaches; none survived.
+
+| The edit | Arms that went red |
+|---|---|
+| a red run's class is filed where the ledger holds a row with one — `T1`'s stand-in, back | `a_red_result_filed_before_any_row_of_a_run_with_an_order_has_its_class` · `a_red_results_row_has_its_class_when_it_is_filed` |
+| a red run's row is filed with a class whatever the run holds | `a_run_without_an_order_holds_the_bytes_it_held` · `a_red_results_row_has_its_class_when_it_is_filed` |
+| the queue is not ranked by the order | `the_queue_is_the_order_of_the_opening_record_and_a_class_off_it_is_not_in_it` · the digest's arm |
+| ties are broken by the key, not by the ledger's order | the queue's arm · `a_lead_is_in_no_queue` |
+| a row whose class is off the order is queued, last | the queue's arm · `a_lead_is_in_no_queue` · `an_item_under_a_parent_that_did_not_reproduce_is_never_queued` · the digest's arm |
+| a row nobody graded and nobody handed on is queued | the queue's arm · two more |
+| an item a verifier handed on is not queued until somebody grades it | the queue's arm · `an_item_under_a_parent_that_did_not_reproduce_is_never_queued` |
+| an order may name the class under a parent that did not reproduce | `an_item_under_a_parent_that_did_not_reproduce_is_never_queued` |
+| an order may name a lead | `a_lead_is_in_no_queue` |
+| a row that names no kind is taken in a run with an order | `in_a_run_with_an_order_a_row_without_a_kind_is_refused` |
+| an order is taken over a ledger that holds a row without a class | the same · the writers' table |
+| a class row that is gone is not missed | `in_a_run_with_an_order_a_row_without_a_kind_is_refused` |
+| the three facts are printed by every run, null where it holds none | `a_run_without_an_order_holds_the_bytes_it_held` · `a_run_with_an_order_says_that_it_has_a_queue_and_one_without_answers_as_it_did` |
+| every run says a queue, an empty one where it has no order | the same two · the digest's arm |
+| the three facts are written as often as a caller likes | `a_run_with_an_order_says_that_it_has_a_queue_and_one_without_answers_as_it_did` |
+| the two numbers alone make a queue | the same · two more |
+| the digest names the whole queue, not its first keys | `dev_stabilize_step::the_state_digest_carries_the_queue_as_keys_and_counts` |
+| the digest says a queue for a run that has none | the same |
+| the digest's queue leaves the opening's two numbers out | the same |
+
+**The assertions this task carried.** **None outside the two suites of its write-set.** The whole `g_tooling` target ran on the finished scripts — 452 tests, all green: the simulation's scenarios, the canary's suite, the probe's suite and the harness's fence among them — and none of them pins a text this task moved. The step suite's three digest arms and the probe's size bounds stand **unmodified** with the one field more: `"queue":null`, thirteen bytes, in the digest of every run without an order. In the record suite, two: `a_red_results_row_has_its_class_when_it_is_filed`, `T1`'s arm — its run *whose rows carry a class* is now a run with an order, and a third rig holds that a ledger with a classed row and no order files a red run as it always did; and `every_writer_and_every_fact_is_taken_only_where_the_state_asks_for_it`, which holds a row for every fact the script names: `run-set budget`, `run-set hand-on`, `run-set order`.
+
+**What `T2b` owes because of this.**
+
+- **A budget and an order the human changes.** All three facts are `once` in the script's table, and two arms say so: `a_run_with_an_order_says_that_it_has_a_queue_and_one_without_answers_as_it_did` (another budget, another order: `exists`) and the writers' table (`run-set budget` and `run-set hand-on` taken anywhere the run does not hold one, `run-set order` nowhere, because every place of that table holds a row without a kind). A changed order needs no new hold: the hold is on the rows, not on which classes are named.
+- **The route and `next` for what is in the queue.** They are today's in every run: a queued row is routed `triage`, an item handed on is `triage (ungraded)`, and a row left unverified twice is the human's while it is still in the queue. `T2b` makes the three agree.
+- **Spent.** The budget is stored and nothing counts against it.
+
+**What is not established.**
+
+- **Nothing of a stage reads any of it.** The harness reads no `queue`; no scenario of the simulation opens a run with an order.
+- **`hand-on` is a number on record and no more.** Nothing counts what a verifier hands on, and an item beyond the number is queued like any other until `T3a` says how it is told apart.
+- **How a verdict reaches an item that was handed on.** A triage entry takes a verdict only beside a grade of `breaks` or `unclear`, and an item handed on has no grade. It is `T3a`'s and `T3b`'s; the arm that takes rows out of the queue does so for graded rows only.
+- **Putting a row into the queue by key** — the human's, by the ruling on `Q3` — is built by no task read for this one.
+- **Eight first keys** is the plan's wave, not a measurement; `T6a` builds the wave.
+- **A run that holds a row without a kind never gets an order.** That is the hold above, and it means the order is written at the opening, before the first such row: a run in flight is not turned into a run with a queue.
+- **Only the state misses a class row that is gone.** `ledger-add` and `ledger-set` read no state and append to such a run; every stage reads the state first.
+- **That an order names a class any row has** is held by nothing: a class no row carries has length nought, and shows.
+- **The full `g_tooling` run was made on a machine under load** (a load average of 50 to 100): 452 of 452, 81 of them slow, none at the runner's bound. It was made before two rows of one fixture were renamed, so that the ledger's order is not the keys' — the mutant *ties by the key* asked for it — and before `rustfmt`; the commit's gate is the measure.
+
 ## 2026-10-11 — A row can carry what the queue is ranked by: a class in a table beside the ledger, a red run's row filed with its own, a refutation that says which of three it is, a verdict for *nobody here can drive it*, and one row read by its key — and a run that names no kind holds the bytes it held (the plan's `T1`; the builder's choices inside it)
 
 **What.** [`dev/stabilize-record`](dev/stabilize-record) grows what the reshaped `test` stage ranks and counts by, and nothing a stage is answered today changes ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §4, `T1`, the migration order's Phase A; ruling 1 of *2026-10-10 — The reshaped `test` stage, corrected by a count the same day*; the rows `wf-verify-fan-out` and `wf-unverifiable-relaunch`). The script's header is the contract; in one place:

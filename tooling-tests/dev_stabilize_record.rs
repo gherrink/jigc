@@ -11962,6 +11962,26 @@ const HERE: &[Taken] = &[
         call: |rig, _, _| fact_of_run(rig, json!({"cycles": 4})),
     },
     Taken {
+        // The queue's two numbers are written once, where the run does not hold them yet:
+        // no place of this table holds either.
+        name: "run-set budget",
+        takes: ANYWHERE,
+        call: |rig, _, _| fact_of_run(rig, json!({"budget": 30})),
+    },
+    Taken {
+        name: "run-set hand-on",
+        takes: ANYWHERE,
+        call: |rig, _, _| fact_of_run(rig, json!({"hand-on": 2})),
+    },
+    Taken {
+        // An order is taken while every row of the ledger carries a class, and every
+        // place of this table holds `prop`, which names no kind: where it IS taken is
+        // `a_run_with_an_order_says_that_it_has_a_queue_and_one_without_answers_as_it_did`.
+        name: "run-set order",
+        takes: NOWHERE,
+        call: |rig, _, _| fact_of_run(rig, json!({"order": ["route hunt"]})),
+    },
+    Taken {
         name: "run-set findings",
         takes: NOWHERE,
         call: |rig, _, _| fact_of_run(rig, json!({"findings": ["prop"]})),
@@ -15074,19 +15094,21 @@ fn red_runs(rig: &Rig) -> Seen {
     )
 }
 
-/// **A red result's row has its class when it is filed** (`T1`; the plan review's `B1`: *a
-/// row that appears after the one triage has no grader*). The call that records a red run
-/// files its finding, as ever — and, in a run whose rows carry a class, files it WITH ITS
-/// CLASS: `behaviour`, `hunt`, its evidence the tool's verdict on record for a held check
-/// and what the call brings of the preflight's report for one that is not held. No caller
-/// says it. And in a run none of whose rows carries a class the row is filed as it always
-/// was: no class, no table — inert there, never an error.
+/// **A red result's row has its class when it is filed** (`T1`, and `T2a` for what says
+/// so; the plan review's `B1`: *a row that appears after the one triage has no grader*). The
+/// call that records a red run files its finding, as ever — and, IN A RUN WITH AN ORDER,
+/// files it WITH ITS CLASS: `behaviour`, `hunt`, its evidence the tool's verdict on record
+/// for a held check and what the call brings of the preflight's report for one that is not
+/// held. No caller says it. And in a run without an order the row is filed as it always
+/// was: no class — inert there, never an error — **whatever its ledger holds**: a row with
+/// a class in it is not what makes a run one with a queue (it was `T1`'s stand-in for the
+/// order, and is none any more).
 #[test]
 fn a_red_results_row_has_its_class_when_it_is_filed() {
-    // A RUN NONE OF WHOSE ROWS CARRIES A CLASS: the finding as it was filed before.
+    // A RUN WITHOUT AN ORDER: the finding as it was filed before.
     let plain = checks_run("red-class-none");
     plain.seed_rows(&["seeded"]);
-    red_runs(&plain).must(OK, "two red runs, in a run without a class");
+    red_runs(&plain).must(OK, "two red runs, in a run without an order");
     assert!(
         !plain.root.join(classes_path()).exists(),
         "no table beside the ledger"
@@ -15099,12 +15121,36 @@ fn a_red_results_row_has_its_class_when_it_is_filed() {
         );
     }
 
-    // A RUN WHOSE ROWS CARRY ONE.
+    // … AND SO IN ONE WHOSE LEDGER HOLDS A ROW WITH A CLASS: no order, no class.
+    let mixed = checks_run("red-class-no-order");
+    mixed
+        .run(
+            &ledger_add(RUN),
+            &evident("seeded", "route", "seed").to_string(),
+        )
+        .must(OK, "a row with a class, in a run without an order");
+    red_runs(&mixed).must(OK, "two red runs, in a run without an order");
+    assert_eq!(
+        classes(&mixed).len(),
+        1,
+        "the table beside the ledger holds the one row that named a kind"
+    );
+    let read = mixed.state();
+    for key in ["red-regression-set", "red-ci"] {
+        assert!(
+            finding(&read, key).get("class").is_none(),
+            "`{key}`: {read}"
+        );
+    }
+
+    // A RUN WITH AN ORDER.
     let rig = checks_run("red-class");
-    let mut seed = classed("seeded", INSIDE, "route", "seed");
-    seed["route"] = json!("Run: jigc setup --repair");
-    rig.run(&ledger_add(RUN), &seed.to_string())
-        .must(OK, "a row with a class");
+    ordered(&rig, &ORDER);
+    rig.run(
+        &ledger_add(RUN),
+        &evident("seeded", "route", "seed").to_string(),
+    )
+    .must(OK, "a row with a class");
     let seen = red_runs(&rig);
     seen.must(OK, "two red runs");
     assert_eq!(
@@ -15802,4 +15848,795 @@ fn a_row_is_read_whole_by_its_key() {
     rig.run(&read_row(RUN, "Not A Slug"), "")
         .refused(BAD_ID, "a key that is no id");
     assert_eq!(rig.snapshot(), before, "the reads wrote nothing");
+}
+
+// ---------------------------------------------------------------------------
+// The opening's numbers, and the queue (the build plan of the reshaped `test` stage, T2a)
+// ---------------------------------------------------------------------------
+
+/// Every class a queue can hold, in the outline the ruling of 2026-10-10 fixes: route items
+/// first, those under a confirmed parent ahead of the rest, then behaviour items. An arm
+/// that ranks by another order writes its own — the script ships none.
+const ORDER: [&str; 8] = [
+    "route under-confirmed",
+    "route under-not-a-break",
+    "route hunt",
+    "route seed",
+    "behaviour under-confirmed",
+    "behaviour under-not-a-break",
+    "behaviour hunt",
+    "behaviour seed",
+];
+
+/// The run's order of classes, written as an opening writes it: the run then has a queue.
+fn ordered(rig: &Rig, order: &[&str]) {
+    rig.run(&run_set(RUN), &json!({"order": order}).to_string())
+        .must(OK, "the run's order of classes");
+}
+
+/// A ledger row inside round 1's test set that carries a class WITH its kind's evidence: a
+/// route line for a route item, commands for a behaviour item — and none for a lead.
+fn evident(key: &str, kind: &str, origin: &str) -> Value {
+    let mut entry = classed(key, INSIDE, kind, origin);
+    match kind {
+        "route" => entry["route"] = json!(format!("Run: jigc setup --repair {key}")),
+        "behaviour" => entry["commands"] = json!(format!("jigc setup\njigc doc show {key}")),
+        _ => {}
+    }
+    entry
+}
+
+/// An item a verifier handed on under `parent`, with its kind's evidence.
+fn handed_on(key: &str, kind: &str, parent: &str) -> Value {
+    let mut entry = evident(key, kind, "hunt");
+    entry.as_object_mut().expect("a row").remove("origin");
+    entry["parent"] = json!(parent);
+    entry
+}
+
+/// A triage entry that sends a finding on to a verifier, and holds no verdict.
+fn sent_on(key: &str) -> Value {
+    json!({"key": key, "grade": "breaks"})
+}
+
+/// The keys of the queue, in its order, as a state document has them.
+fn queued(read: &Value) -> Vec<String> {
+    read["queue"]["ranked"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the run has a queue: {read}"))
+        .iter()
+        .map(|entry| entry["key"].as_str().expect("a key").to_owned())
+        .collect()
+}
+
+/// Round 1's scope, with [`INSIDE`] inside it.
+fn scoped(rig: &Rig) {
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "round 1's scope");
+}
+
+/// **A run with an order says that it has a queue, and one without answers as it did**
+/// (the build plan of the reshaped `test` stage, `T2a`, and the migration order's Phase A;
+/// the ruling of 2026-10-10, 1: *the order stands in the run's opening record … one budget
+/// per stage*; the ruling of 2026-10-11, 2: *N stands in the run's opening record beside
+/// the budget*). Three facts of the run — `budget`, `hand-on` and `order` — get in through
+/// `run-set`, each optional: nothing owes one yet. A run that holds an `order` is A RUN
+/// WITH A QUEUE: its state says `queue`, and its facts the three. A run that holds none
+/// says nothing of a queue and holds no fact it did not hold — and the two numbers alone
+/// make none. Each of the three is written once; an order is a non-empty list of classes,
+/// each a kind that can be verified and where the item comes from, none twice.
+#[test]
+fn a_run_with_an_order_says_that_it_has_a_queue_and_one_without_answers_as_it_did() {
+    let facts_as_they_were = r#"{"stop": "every-round", "rounds": null, "cycles": null, "previous": null, "previous-commit": null, "scope": null, "clauses": null, "findings": null}"#;
+
+    // WITHOUT AN ORDER: the facts a run held, in the bytes it printed them in, and no queue.
+    let plain = Rig::new("queue-none");
+    let seen = plain.run(&run_set(RUN), &json!({"stop": "every-round"}).to_string());
+    seen.must(OK, "a fact of a run without an order");
+    assert_eq!(
+        seen.stdout,
+        format!(
+            "{{\"run\": \"{}\", \"facts\": {facts_as_they_were}}}\n",
+            run_path()
+        ),
+        "the call prints the eight facts it printed, and no ninth"
+    );
+    let read = plain.state();
+    assert!(
+        read.get("queue").is_none(),
+        "a run without an order says nothing of a queue: {read}"
+    );
+    assert_eq!(
+        read["facts"],
+        serde_json::from_str::<Value>(facts_as_they_were).expect("the facts"),
+        "{read}"
+    );
+
+    // THE TWO NUMBERS ALONE MAKE NO QUEUE: what makes one is the order.
+    let seen = plain.run(
+        &run_set(RUN),
+        &json!({"hand-on": 2, "budget": 30}).to_string(),
+    );
+    seen.must(OK, "a budget, and how many items a verifier hands on");
+    assert_eq!(
+        seen.stdout,
+        format!(
+            "{{\"run\": \"{}\", \"facts\": {}, \"budget\": 30, \"hand-on\": 2, \"findings\": null}}}}\n",
+            run_path(),
+            facts_as_they_were.trim_end_matches(r#", "findings": null}"#)
+        ),
+        "the facts, in the table's own order whatever order they came in"
+    );
+    let read = plain.state();
+    assert!(
+        read.get("queue").is_none() && read["facts"].get("order").is_none(),
+        "{read}"
+    );
+    assert_eq!(
+        json!([read["facts"]["budget"], read["facts"]["hand-on"]]),
+        json!([30, 2])
+    );
+    plain
+        .run(&ledger_add(RUN), &row("plain").to_string())
+        .must(OK, "a row that names no kind, in a run without an order");
+
+    // WITH AN ORDER: the run has a queue, and says so.
+    let rig = Rig::new("queue");
+    let order = ["route under-confirmed", "route hunt", "behaviour hunt"];
+    let seen = rig.run(
+        &run_set(RUN),
+        &json!({"order": order, "hand-on": 2, "stop": "every-round", "budget": 30}).to_string(),
+    );
+    seen.must(OK, "an opening that writes the order");
+    assert_eq!(
+        seen.stdout,
+        format!(
+            "{{\"run\": \"{}\", \"facts\": {}, \"budget\": 30, \"hand-on\": 2, \"order\": [\"route under-confirmed\", \"route hunt\", \"behaviour hunt\"], \"findings\": null}}}}\n",
+            run_path(),
+            facts_as_they_were.trim_end_matches(r#", "findings": null}"#)
+        )
+    );
+    assert_eq!(
+        table(&rig.read(&run_path()), &ROUND_COLUMNS),
+        [
+            ["`stop`", "`every-round`"],
+            ["`budget`", "`30`"],
+            ["`hand-on`", "`2`"],
+            [
+                "`order`",
+                "`route under-confirmed, route hunt, behaviour hunt`"
+            ],
+        ],
+        "the three facts, in the run's own record"
+    );
+    let read = rig.state();
+    assert_eq!(
+        read["queue"],
+        json!({"ranked": [], "classes": [
+            {"kind": "route", "origin": "under-confirmed", "length": 0},
+            {"kind": "route", "origin": "hunt", "length": 0},
+            {"kind": "behaviour", "origin": "hunt", "length": 0}]}),
+        "a run with an order has a queue — an empty one, class by class, before its first row: {read}"
+    );
+    assert_eq!(
+        json!([
+            read["facts"]["order"],
+            read["facts"]["budget"],
+            read["facts"]["hand-on"]
+        ]),
+        json!([order, 30, 2])
+    );
+    assert_eq!(
+        read["not_ready"],
+        json!(["no-clause-row", "no-previous-release", "no-default-scope"]),
+        "and none of the three is owed: what an opening owes is what it owed"
+    );
+    // The order alone is a queue too: a run may hold it and neither number.
+    let bare = Rig::new("queue-bare");
+    ordered(&bare, &order);
+    let read = bare.state();
+    assert!(
+        read["queue"]["ranked"].is_array() && read["facts"].get("budget").is_none(),
+        "{read}"
+    );
+
+    // EACH IS WRITTEN ONCE — and said again as it stands, changes nothing.
+    let before = rig.snapshot();
+    for (given, why) in [
+        (json!({"order": ["route hunt"]}), "another order"),
+        (json!({"budget": 31}), "another budget"),
+        (json!({"hand-on": 3}), "another number of items handed on"),
+        (
+            json!({"budget": 30, "order": order.iter().rev().collect::<Vec<_>>()}),
+            "the same classes in another order, beside a fact as it stands",
+        ),
+    ] {
+        rig.run(&run_set(RUN), &given.to_string())
+            .refused(EXISTS, why);
+    }
+    // … AND IS OF ITS SHAPE, or nothing is written.
+    for (given, why) in [
+        (json!({"budget": 0}), "a budget of nothing"),
+        (json!({"budget": "30"}), "a budget that is text"),
+        (json!({"budget": 2.5}), "half a verdict"),
+        (json!({"budget": true}), "a budget that is a truth value"),
+        (json!({"hand-on": 0}), "nothing handed on, as a number"),
+        (json!({"hand-on": "2"}), "a number of items that is text"),
+        (json!({"order": []}), "an order of no class"),
+        (json!({"order": "route hunt"}), "an order that is no list"),
+        (json!({"order": [3]}), "a class that is a number"),
+        (
+            json!({"order": ["route"]}),
+            "a kind, and not where the item comes from",
+        ),
+        (json!({"order": ["hunt route"]}), "a class said backwards"),
+        (json!({"order": ["route  hunt"]}), "a class of three words"),
+        (json!({"order": ["rumour hunt"]}), "a kind nobody defined"),
+        (
+            json!({"order": ["route nowhere"]}),
+            "an origin nobody defined",
+        ),
+        (
+            json!({"order": ["route hunt", "behaviour hunt", "route hunt"]}),
+            "a class named twice",
+        ),
+    ] {
+        rig.run(&run_set(RUN), &given.to_string())
+            .refused(BAD_VALUE, why);
+    }
+    assert_eq!(rig.snapshot(), before, "a refused fact writes nothing");
+    rig.run(
+        &run_set(RUN),
+        &json!({"order": order, "budget": 30, "hand-on": 2}).to_string(),
+    )
+    .must(OK, "the three, said again as they stand");
+    assert_eq!(rig.snapshot(), before, "and nothing moved");
+
+    // An order a hand bent is not read.
+    let held = rig.read(&run_path());
+    fs::write(
+        rig.root.join(run_path()),
+        held.replace("route hunt, ", "route nowhere, "),
+    )
+    .expect("bend a class");
+    let seen = rig.run(&state(RUN), "");
+    seen.refused(CORRUPT, "a class this script does not write");
+    assert!(seen.stderr.contains("run.md"), "{}", seen.stderr);
+}
+
+/// **In a run with an order a row without a kind is refused** (`T2a`; `T1` left it here:
+/// *a class row deleted by hand is missed by nothing*). The queue is ranked by a row's
+/// class, so in a run that has one EVERY row of the ledger carries a class: `ledger-add`
+/// refuses a row that names no kind — alone, in a list, and for a key the ledger holds —
+/// the state refuses a ledger with a row whose class is gone, naming it, and an order is
+/// taken only while every row carries a class, so no write makes such a run. In a run
+/// without an order a row that names no kind is the row it always was: inert there.
+#[test]
+fn in_a_run_with_an_order_a_row_without_a_kind_is_refused() {
+    let rig = Rig::new("kind-owed");
+    ordered(&rig, &ORDER);
+    let before = rig.snapshot();
+    let seen = rig.run(&ledger_add(RUN), &row("plain").to_string());
+    seen.refused(
+        BAD_VALUE,
+        "a row that names no kind, in a run with an order",
+    );
+    assert!(
+        seen.stderr.contains("`kind`") && seen.stderr.contains("order"),
+        "it says what the row lacks, and why this run asks for it: {}",
+        seen.stderr
+    );
+    rig.run(
+        &ledger_add(RUN),
+        &json!([evident("r-1", "route", "hunt"), row("plain")]).to_string(),
+    )
+    .refused(BAD_VALUE, "such a row among rows that name theirs");
+    assert_eq!(rig.snapshot(), before, "a refused row writes nothing");
+    rig.run(
+        &ledger_add(RUN),
+        &evident("r-1", "route", "hunt").to_string(),
+    )
+    .must(OK, "the row, with its kind");
+
+    // A FINDING FOUND AGAIN is sent as a row too, and names its kind like any.
+    let before = rig.snapshot();
+    rig.run(&ledger_add(RUN), &row_at("r-1", INSIDE).to_string())
+        .refused(
+            BAD_VALUE,
+            "a key the ledger holds, sent again without a kind",
+        );
+    let seen = rig.run(
+        &ledger_add(RUN),
+        &evident("r-1", "route", "hunt").to_string(),
+    );
+    seen.must(OK, "the finding found again, with its kind");
+    assert_eq!(seen.json()["existing"], json!(["r-1"]));
+    assert_eq!(rig.snapshot(), before, "and it keeps its row");
+
+    // WHAT IS DELETED IS MISSED: a class row a hand removed is named, and nothing is read.
+    let held = rig.read(&classes_path());
+    let gone: String = held
+        .lines()
+        .filter(|line| !line.starts_with("| `r-1` |"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    assert_ne!(gone, held, "the control: the row was there");
+    fs::write(rig.root.join(classes_path()), gone).expect("delete a class row");
+    let seen = rig.run(&state(RUN), "");
+    seen.refused(CORRUPT, "a ledger row whose class is gone");
+    assert!(
+        seen.stderr.contains("r-1") && seen.stderr.contains("classes.md"),
+        "{}",
+        seen.stderr
+    );
+    fs::write(rig.root.join(classes_path()), held).expect("the table again");
+    assert_eq!(queued(&rig.state()), Vec::<String>::new());
+
+    // AN ORDER IS TAKEN ONLY WHILE EVERY ROW CARRIES A CLASS — so no write makes a run with
+    // a queue and a row the queue cannot rank.
+    let late = Rig::new("kind-owed-late");
+    late.run(
+        &ledger_add(RUN),
+        &json!([evident("r-1", "route", "hunt"), row("plain")]).to_string(),
+    )
+    .must(
+        OK,
+        "a row with a kind and one without, in a run without an order",
+    );
+    let before = late.snapshot();
+    let seen = late.run(&run_set(RUN), &json!({"order": ORDER}).to_string());
+    seen.refused(BAD_VALUE, "an order over a row that names no kind");
+    assert!(seen.stderr.contains("plain"), "{}", seen.stderr);
+    late.run(
+        &run_set(RUN),
+        &json!({"budget": 30, "order": ORDER}).to_string(),
+    )
+    .refused(BAD_VALUE, "the same, beside a fact that would be taken");
+    assert_eq!(late.snapshot(), before, "a refused order writes nothing");
+    // The two numbers are taken there: they make no queue, and the run takes rows as it did.
+    late.run(
+        &run_set(RUN),
+        &json!({"budget": 30, "hand-on": 2}).to_string(),
+    )
+    .must(OK, "the two numbers");
+    late.run(&ledger_add(RUN), &row("another").to_string())
+        .must(OK, "a row that names no kind, in a run without an order");
+
+    // … and a run whose rows all carry one takes its order then.
+    let classed_first = Rig::new("kind-owed-classed");
+    classed_first
+        .run(
+            &ledger_add(RUN),
+            &evident("r-1", "route", "hunt").to_string(),
+        )
+        .must(OK, "a row with a kind");
+    ordered(&classed_first, &ORDER);
+    assert!(classed_first.state()["queue"].is_object());
+}
+
+/// The run [`the_queue_is_the_order_of_the_opening_record_and_a_class_off_it_is_not_in_it`]
+/// ranks: nine findings of a hunt in an order that is not their rank, the one triage —
+/// recorded in the entries' order, or in reverse — and three items handed on.
+fn a_ranked_run(label: &str, order: &[&str], reversed: bool) -> Rig {
+    let rig = Rig::new(label);
+    ordered(&rig, order);
+    scoped(&rig);
+    let found = json!([
+        evident("b-hunt-1", "behaviour", "hunt"),
+        evident("r-hunt-z", "route", "hunt"),
+        evident("r-seed", "route", "seed"),
+        evident("p-confirmed", "route", "hunt"),
+        evident("p-intended", "route", "hunt"),
+        evident("r-hunt-a", "route", "hunt"),
+        evident("b-hunt-2", "behaviour", "hunt"),
+        evident("r-ungraded", "route", "hunt"),
+        evident("r-no-break", "route", "hunt"),
+    ]);
+    rig.run(&ledger_add(RUN), &found.to_string())
+        .must(OK, "what the hunt found");
+    let mut triaged = vec![
+        sent_on("b-hunt-1"),
+        sent_on("r-hunt-z"),
+        sent_on("r-seed"),
+        json!({"key": "p-confirmed", "grade": "breaks", "verdict": "confirmed"}),
+        json!({"key": "p-intended", "grade": "unclear", "verdict": "refuted",
+               "refutation": "intended"}),
+        sent_on("r-hunt-a"),
+        sent_on("b-hunt-2"),
+        json!({"key": "r-no-break", "grade": "no-break"}),
+    ];
+    if reversed {
+        triaged.reverse();
+    }
+    rig.run(&triage_set(RUN, "1"), &json!(triaged).to_string())
+        .must(OK, "the one triage");
+    let handed = json!([
+        handed_on("c-intended", "route", "p-intended"),
+        handed_on("c-behaviour", "behaviour", "p-confirmed"),
+        handed_on("c-confirmed", "route", "p-confirmed"),
+    ]);
+    rig.run(&ledger_add(RUN), &handed.to_string())
+        .must(OK, "what two verifiers handed on");
+    rig
+}
+
+/// **The queue is the order of the opening record, and a class off it is not in it**
+/// (`T2a`; the ruling of 2026-10-10, 1: *the queue is ranked by what the item is about …
+/// the order stands in the run's opening record*). THE QUEUE is the script's: the
+/// unverified rows whose class is on the run's order — a finding triage sent on that has no
+/// verdict, and an item a verifier handed on, which enters without a grade — RANKED by
+/// where its class stands on the order, ties by the ledger's order. Not in it: a row whose
+/// class the order does not name, a row nobody graded that nobody handed on (it is
+/// triage's first), and what is verified, ruled, or no break. The order is data: the same
+/// rows under another order are another queue, and the script ships none. And the rank is
+/// the order's and the ledger's and nothing else's — the order a triage recorded its
+/// entries in changes no byte of the state.
+#[test]
+fn the_queue_is_the_order_of_the_opening_record_and_a_class_off_it_is_not_in_it() {
+    let routes_first = ["route under-confirmed", "route hunt", "behaviour hunt"];
+    let rig = a_ranked_run("ranked", &routes_first, false);
+    let read = rig.state();
+    assert_eq!(
+        read["queue"],
+        json!({"ranked": [
+            {"key": "c-confirmed", "kind": "route", "origin": "under-confirmed"},
+            {"key": "r-hunt-z", "kind": "route", "origin": "hunt"},
+            {"key": "r-hunt-a", "kind": "route", "origin": "hunt"},
+            {"key": "b-hunt-1", "kind": "behaviour", "origin": "hunt"},
+            {"key": "b-hunt-2", "kind": "behaviour", "origin": "hunt"}],
+        "classes": [
+            {"kind": "route", "origin": "under-confirmed", "length": 1},
+            {"kind": "route", "origin": "hunt", "length": 2},
+            {"kind": "behaviour", "origin": "hunt", "length": 2}]}),
+        "ranked by the order, ties by the ledger's own — which holds `b-hunt-1` first, `r-hunt-z` before `r-hunt-a`, and `c-confirmed` last: {read}"
+    );
+    // The control: every row that is NOT in it is in the ledger, with the class and the
+    // grade that keep it out.
+    let of = |key: &str| {
+        let row = finding(&read, key);
+        json!([
+            row["class"]["kind"],
+            row["class"]["origin"],
+            row["grade"],
+            row["route"]
+        ])
+    };
+    for (key, held, why) in [
+        (
+            "r-seed",
+            json!(["route", "seed", "breaks", "triage"]),
+            "sent on and unverified, and its class is off the order",
+        ),
+        (
+            "c-intended",
+            json!(["route", "under-not-a-break", "ungraded", "triage"]),
+            "handed on, and its class is off the order",
+        ),
+        (
+            "c-behaviour",
+            json!(["behaviour", "under-confirmed", "ungraded", "triage"]),
+            "handed on, and its class is off the order",
+        ),
+        (
+            "r-ungraded",
+            json!(["route", "hunt", "ungraded", "triage"]),
+            "its class is on the order, and nobody graded it: it is triage's first",
+        ),
+        (
+            "r-no-break",
+            json!(["route", "hunt", "no-break", "recorded"]),
+            "triage's grade still decides what is verified of what triage saw",
+        ),
+        (
+            "p-confirmed",
+            json!(["route", "hunt", "confirmed", "fix"]),
+            "verified",
+        ),
+        (
+            "p-intended",
+            json!(["route", "hunt", "refuted", "recorded"]),
+            "verified",
+        ),
+    ] {
+        assert_eq!(of(key), held, "`{key}` is not queued — {why}: {read}");
+    }
+
+    // THE ORDER IS DATA: the same rows, another order, another queue.
+    let behaviour_first = ["behaviour hunt", "route hunt", "route under-confirmed"];
+    assert_eq!(
+        queued(&a_ranked_run("ranked-otherwise", &behaviour_first, false).state()),
+        [
+            "b-hunt-1",
+            "b-hunt-2",
+            "r-hunt-z",
+            "r-hunt-a",
+            "c-confirmed"
+        ]
+    );
+
+    // AND NOTHING ELSE RANKS: the same triage recorded in reverse leaves the state it left,
+    // to the byte.
+    let reversed = a_ranked_run("ranked-reversed", &routes_first, true);
+    let whole = |rig: &Rig| rig.run(&state(RUN), "").stdout;
+    assert_ne!(
+        rig.read(&triage_path("1")),
+        reversed.read(&triage_path("1")),
+        "the control: the two records hold their rows in two orders"
+    );
+    assert!(
+        whole(&rig).contains("\"queue\": {\"ranked\": [{\"key\": \"c-confirmed\""),
+        "the control: the state prints the queue"
+    );
+    assert_eq!(
+        whole(&rig),
+        whole(&reversed),
+        "the state, the queue in it, whatever order the triage recorded its entries in"
+    );
+
+    // A VERDICT, AND THE HUMAN'S RULING, EACH TAKE A ROW OUT; nothing else moves.
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!([
+            {"key": "r-hunt-z", "grade": "breaks", "verdict": "refuted",
+             "refutation": "does-not-reproduce"},
+            {"key": "b-hunt-1", "grade": "breaks", "verdict": "undrivable", "reason": "needs-linux"},
+        ])
+        .to_string(),
+    )
+    .must(OK, "two verdicts");
+    rig.run(
+        &ledger_set(RUN),
+        &json!({"key": "r-hunt-a", "disposition": "later"}).to_string(),
+    )
+    .must(OK, "the human's ruling");
+    let read = rig.state();
+    assert_eq!(queued(&read), ["c-confirmed", "b-hunt-2"], "{read}");
+    assert_eq!(
+        read["queue"]["classes"],
+        json!([
+            {"kind": "route", "origin": "under-confirmed", "length": 1},
+            {"kind": "route", "origin": "hunt", "length": 0},
+            {"kind": "behaviour", "origin": "hunt", "length": 1}])
+    );
+}
+
+/// **An item under a parent that did not reproduce is never queued** (`T2a`; the ruling of
+/// 2026-10-10, 1: *a follow-up of a finding that did not reproduce is never verified* — 0
+/// of 11 in the canary). No order can name that class, for either kind; and with every
+/// class a queue can hold on the order, an item handed on under such a parent is recorded
+/// as what it is — a route item stays a route item — and is in no queue, while the one
+/// handed on beside it under a confirmed parent is. A later grade does not put it there.
+#[test]
+fn an_item_under_a_parent_that_did_not_reproduce_is_never_queued() {
+    let rig = Rig::new("no-repro");
+    let before = rig.snapshot();
+    for class in ["route under-no-repro", "behaviour under-no-repro"] {
+        let seen = rig.run(
+            &run_set(RUN),
+            &json!({"order": ["route hunt", class]}).to_string(),
+        );
+        seen.refused(BAD_VALUE, class);
+        assert!(
+            seen.stderr.contains("did not reproduce"),
+            "it says why no order names `{class}`: {}",
+            seen.stderr
+        );
+    }
+    assert_eq!(rig.snapshot(), before, "a refused order writes nothing");
+
+    ordered(&rig, &ORDER);
+    scoped(&rig);
+    rig.run(
+        &ledger_add(RUN),
+        &json!([
+            evident("p-no-repro", "route", "hunt"),
+            evident("p-confirmed", "route", "hunt")
+        ])
+        .to_string(),
+    )
+    .must(OK, "two findings of the hunt");
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!([
+            {"key": "p-no-repro", "grade": "breaks", "verdict": "refuted",
+             "refutation": "does-not-reproduce"},
+            {"key": "p-confirmed", "grade": "breaks", "verdict": "confirmed"},
+        ])
+        .to_string(),
+    )
+    .must(OK, "their verdicts");
+    rig.run(
+        &ledger_add(RUN),
+        &json!([
+            handed_on("c-no-repro", "route", "p-no-repro"),
+            handed_on("c-no-repro-b", "behaviour", "p-no-repro"),
+            handed_on("c-confirmed", "route", "p-confirmed"),
+        ])
+        .to_string(),
+    )
+    .must(OK, "three items handed on");
+    let read = rig.state();
+    assert_eq!(queued(&read), ["c-confirmed"], "{read}");
+    assert_eq!(
+        json!([
+            finding(&read, "c-no-repro")["class"]["kind"],
+            finding(&read, "c-no-repro")["class"]["origin"],
+            finding(&read, "c-no-repro-b")["class"]["kind"],
+            finding(&read, "c-no-repro-b")["class"]["origin"]
+        ]),
+        json!(["route", "under-no-repro", "behaviour", "under-no-repro"]),
+        "each is on record as what it is: {read}"
+    );
+
+    // A grade does not queue it: where it comes from stands, and that is what keeps it out.
+    rig.run(&triage_set(RUN, "1"), &sent_on("c-no-repro").to_string())
+        .must(OK, "a triage that sends it on");
+    let read = rig.state();
+    assert_eq!(finding(&read, "c-no-repro")["grade"], "breaks");
+    assert_eq!(queued(&read), ["c-confirmed"], "{read}");
+}
+
+/// **A lead is in no queue** (`T2a`; the ruling of 2026-10-10, 1: *a lead … listed, not
+/// verified*). No order can name a lead, wherever it comes from; and with every class a
+/// queue can hold on the order, a lead that triage sent on is not queued — a row entered as
+/// a lead, one given a kind without its evidence, and one a verifier handed on — while the
+/// route item beside them is. A lead that turns out to quote a route is a route item from
+/// then on, and is queued.
+#[test]
+fn a_lead_is_in_no_queue() {
+    let rig = Rig::new("lead-queue");
+    let before = rig.snapshot();
+    for class in ["lead hunt", "lead seed", "lead under-confirmed"] {
+        let seen = rig.run(
+            &run_set(RUN),
+            &json!({"order": ["route hunt", class]}).to_string(),
+        );
+        seen.refused(BAD_VALUE, class);
+        assert!(
+            seen.stderr.contains("a lead is"),
+            "it says why no order names `{class}`: {}",
+            seen.stderr
+        );
+    }
+    assert_eq!(rig.snapshot(), before, "a refused order writes nothing");
+
+    ordered(&rig, &ORDER);
+    scoped(&rig);
+    rig.run(
+        &ledger_add(RUN),
+        &json!([
+            evident("a-lead", "lead", "hunt"),
+            classed("given-route", INSIDE, "route", "hunt"),
+            evident("a-route", "route", "hunt"),
+            evident("parent", "route", "seed"),
+        ])
+        .to_string(),
+    )
+    .must(
+        OK,
+        "a lead, a route item without its line, a route item, a parent",
+    );
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!([
+            sent_on("a-lead"),
+            sent_on("given-route"),
+            sent_on("a-route"),
+            {"key": "parent", "grade": "breaks", "verdict": "confirmed"},
+        ])
+        .to_string(),
+    )
+    .must(OK, "the one triage");
+    rig.run(
+        &ledger_add(RUN),
+        &handed_on("c-lead", "lead", "parent").to_string(),
+    )
+    .must(OK, "a lead a verifier handed on");
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            finding(&read, "a-lead")["class"]["kind"],
+            finding(&read, "given-route")["class"]["kind"],
+            finding(&read, "c-lead")["class"]["kind"],
+            finding(&read, "c-lead")["class"]["origin"],
+            finding(&read, "a-lead")["grade"]
+        ]),
+        json!(["lead", "lead", "lead", "under-confirmed", "breaks"]),
+        "the control: three leads, one of them sent on by triage: {read}"
+    );
+    assert_eq!(queued(&read), ["a-route"], "{read}");
+
+    // A LEAD THAT TURNED OUT TO QUOTE A ROUTE is a route item, and is queued.
+    rig.run(
+        &ledger_set(RUN),
+        &json!({"key": "given-route", "kind": "route", "route": "Run: jigc setup --force"})
+            .to_string(),
+    )
+    .must(OK, "the route line it lacked");
+    assert_eq!(queued(&rig.state()), ["given-route", "a-route"]);
+}
+
+/// **A red result filed first, in a run with an order, has its class** (`T2a`; the case
+/// `T1`'s stand-in got wrong, and said so). The record's batch records the results BEFORE
+/// it adds the findings; `T1` filed a red run's row with its class *where the ledger
+/// already held a row with one*, so in a run with an order and an empty ledger the first
+/// red row would have been filed without — a row no queue can rank, in a run that has one.
+/// What says so is the run's order: the batch below is the harness's, in its order, on a
+/// ledger that holds nothing.
+#[test]
+fn a_red_result_filed_before_any_row_of_a_run_with_an_order_has_its_class() {
+    let rig = checks_run("red-class-first");
+    ordered(&rig, &ORDER);
+    assert!(
+        !rig.root.join(ledger_path()).exists() && !rig.root.join(classes_path()).exists(),
+        "the control: no row, and no table beside the ledger"
+    );
+    let commit = sha('a');
+    let scratch = format!("--scratch={}", rig.tmp.join("scratch").display());
+    let within = |mut args: Vec<String>| {
+        args.push(scratch.clone());
+        args
+    };
+    let red = verdict_file(&rig, "red", &regression_verdict(&rig, "red", None, &commit));
+    let mut ci = ran("ci", "red");
+    ci["repro"] = json!(PREFLIGHT_SAYS);
+    let batch = json!([
+        call(
+            within(result_set(RUN, "1", &commit)),
+            &json!([{"item": "regression-set", "verdict": red}, ci]).to_string()
+        ),
+        call(
+            within(ledger_add(RUN)),
+            &evident("review-f1", "route", "hunt").to_string()
+        ),
+    ]);
+    rig.run(&within(apply(RUN, Some("1"))), &batch.to_string())
+        .must(OK, "the record's batch: the results, then the findings");
+    let on_record = format!("completions/artifacts/{RUN}/r1/checks/regression-set.a1.json");
+    assert_eq!(
+        classes(&rig),
+        [
+            [
+                "`red-regression-set`",
+                "behaviour",
+                "hunt",
+                "-",
+                "-",
+                "-",
+                on_record.as_str()
+            ],
+            [
+                "`red-ci`",
+                "behaviour",
+                "hunt",
+                "-",
+                "-",
+                "-",
+                PREFLIGHT_SAYS
+            ],
+            [
+                "`review-f1`",
+                "route",
+                "hunt",
+                "-",
+                "-",
+                "-",
+                "Run: jigc setup --repair review-f1"
+            ],
+        ],
+        "the first rows of the run's ledger are the red runs', each with its class"
+    );
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            finding(&read, "red-regression-set")["class"]["kind"],
+            finding(&read, "red-ci")["class"]["origin"],
+            read["queue"]["ranked"]
+        ]),
+        json!(["behaviour", "hunt", []]),
+        "and the state reads the run: every row carries a class, and none is graded yet — {read}"
+    );
 }

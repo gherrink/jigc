@@ -494,8 +494,16 @@
 #       regression_unknown (the keys of the findings confirmed without anybody knowing
 #       whether each is a regression),
 #       human_clauses, human_stages, retest, unsettled, forbids_close {clauses: [{clause,
-#       status}], no_clauses, findings: how many, candidate}. It grows with the test set
-#       and with nothing else: no brief, no door, no derivation, no ledger row is in it.
+#       status}], no_clauses, findings: how many, candidate}, and queue — null for A RUN
+#       WITHOUT AN ORDER, which has no queue, and for a run with one (the record script's
+#       `run-set`: order; its state: THE QUEUE) {budget, hand_on: the opening's two
+#       numbers, each null where it wrote none, length: how many rows the queue holds,
+#       first: its first keys, in its order — at most eight, as many as one wave of
+#       verifiers launches, and the queue itself is in the document — classes: [{kind,
+#       origin, length}], how many of it are of each class of the order, in the order's
+#       own order}. That field is how the harness tells the two kinds of run apart. It
+#       grows with the test set and with nothing else: no brief, no door, no derivation,
+#       no ledger row is in it.
 #
 # A HELD COMMAND (the second repair plan of the `test` half, P3 and its task K10;
 # DECISIONS.md -> 2026-10-07, "A long command is started, waited for and judged by the
@@ -2025,6 +2033,10 @@ STATES = ["word", 20]
 VET = {"ok": "flag", "refused": "count", "subject": "flag", "stale": "count"}
 ASIDE = [{"path": "path", "why": "word"}, 200]
 STANDS = {"item": "id", "kind": "id", "clause": "id", "runs": "word", "selected": "flag?", "doors": "count?", "round": "count?", "attempt": "count?", "standing": "word?", "why": "word?", "rerun": "word?"}
+# THE QUEUE'S FIRST KEYS (the build plan of the reshaped `test` stage, T2a): how many keys
+# of a run's queue its digest names — as many as ONE WAVE of verifiers launches (the plan's
+# E15: at most eight, the queue read again after each). The queue itself is in the document.
+QUEUE_FIRST = 8
 PLACE = {"refused": "word", "round": "count?", "attempt": "count", "cycle": "count", "land": "flag", "triage": "flag", "rerun": {"clause": "id", "round": "count", "items": [{"item": "id", "attempt": "count", "doors": "count"}, 200]}}
 STATE = {
     "run": "id",
@@ -2054,6 +2066,7 @@ STATE = {
     "retest": ["id", 50],
     "unsettled": [{"cell": "word", "clauses": ["id", 50]}, 10],
     "forbids_close": {"clauses": [{"clause": "id", "status": "word"}, 50], "no_clauses": "flag", "findings": "count", "candidate": "flag"},
+    "queue": (NULL, {"budget": "count?", "hand_on": "count?", "length": "count", "first": ["id", QUEUE_FIRST], "classes": [{"kind": "word", "origin": "word", "length": "count"}, 8]}),
 }
 # What every digest opens with, and each act's own fields, in the order they are printed.
 # A field that is not here is in no digest: it is in the file the digest names.
@@ -2124,6 +2137,8 @@ def state_brief(document):
             bare[within] = bare.get(within, 0) + 1
     whys = [entry["why"] for entry in document["untriaged"]]
     forbids = document["forbids_close"]
+    # A RUN WITH A QUEUE says so in its document, and a run without one says nothing: null.
+    queue = document.get("queue")
     brief = {name: document[name] for name in ("run", "opened", "next", "not_ready", "stop", "round", "fix_rounds", "candidate", "facts", "never_selected", "human_clauses", "human_stages", "retest", "unsettled", "regression_unknown")}
     brief.update(
         position={stage: placed(at) for stage, at in document["position"].items()},
@@ -2140,6 +2155,9 @@ def state_brief(document):
         # The findings the human may grant one more triage: the record script's own suffix.
         reverify=[finding["key"] for finding in document["human_list"] if finding["why"].endswith("-after-retry")],
         forbids_close={"clauses": [entry for entry in forbids if "clause" in entry], "no_clauses": any("clauses" in entry for entry in forbids), "findings": sum("finding" in entry for entry in forbids), "candidate": any("candidate" in entry for entry in forbids)},
+        # The queue as keys and counts: what bounds it, how long it is, its first keys, and
+        # its length class by class, in the order's own order. No row of it is here.
+        queue=queue and {"budget": document["facts"].get("budget"), "hand_on": document["facts"].get("hand-on"), "length": len(queue["ranked"]), "first": [entry["key"] for entry in queue["ranked"][:QUEUE_FIRST]], "classes": queue["classes"]},
     )
     return brief
 
