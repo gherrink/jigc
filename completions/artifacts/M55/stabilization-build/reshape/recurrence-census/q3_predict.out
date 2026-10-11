@@ -1,0 +1,122 @@
+A. key = codes of the row text; count = distinct agents with a row naming the code, up to the horizon (the item's own reporter is 1)
+| band | runs | confirmed | reproduced, no break | did not reproduce | halted |
+|---|---:|---:|---:|---:|---:|
+| no code | 63 | 9 | 40 | 10 | 4 |
+| 1 | 9 | 3 | 6 | 0 | 0 |
+| 2 | 3 | 2 | 1 | 0 | 0 |
+| 3+ | 5 | 4 | 1 | 0 | 0 |
+
+A'. the same, counting rows instead of agents
+| band | runs | confirmed | reproduced, no break | did not reproduce | halted |
+|---|---:|---:|---:|---:|---:|
+| no code | 63 | 9 | 40 | 10 | 4 |
+| 1 | 10 | 3 | 7 | 0 | 0 |
+| 2 | 3 | 3 | 0 | 0 | 0 |
+| 3+ | 4 | 3 | 1 | 0 | 0 |
+
+B. key = codes of row text + the reporter's bullet; count over the same depth, distinct agents
+| band | runs | confirmed | reproduced, no break | did not reproduce | halted |
+|---|---:|---:|---:|---:|---:|
+| no code | 57 | 8 | 37 | 8 | 4 |
+| 1 | 14 | 4 | 8 | 2 | 0 |
+| 2 | 3 | 1 | 2 | 0 | 0 |
+| 3+ | 6 | 5 | 1 | 0 | 0 |
+
+B'. the same, counting rows
+| band | runs | confirmed | reproduced, no break | did not reproduce | halted |
+|---|---:|---:|---:|---:|---:|
+| no code | 57 | 8 | 37 | 8 | 4 |
+| 1 | 15 | 4 | 9 | 2 | 0 |
+| 2 | 3 | 2 | 1 | 0 | 0 |
+| 3+ | 5 | 4 | 1 | 0 | 0 |
+
+C. key = codes of row text + re-drive line (what the verifier was handed); count over row text + bullet, distinct agents
+| band | runs | confirmed | reproduced, no break | did not reproduce | halted |
+|---|---:|---:|---:|---:|---:|
+| no code | 58 | 9 | 38 | 7 | 4 |
+| 1 | 13 | 3 | 7 | 3 | 0 |
+| 2 | 3 | 1 | 2 | 0 | 0 |
+| 3+ | 6 | 5 | 1 | 0 | 0 |
+
+D. strict: distinct agents with a row naming the code in an EARLIER pass than the horizon (0 = nobody before this pass); key = row text + bullet
+| band | runs | confirmed | reproduced, no break | did not reproduce | halted |
+|---|---:|---:|---:|---:|---:|
+| no code | 57 | 8 | 37 | 8 | 4 |
+| 0 | 16 | 4 | 10 | 2 | 0 |
+| 1 | 3 | 2 | 1 | 0 | 0 |
+| 2 | 4 | 4 | 0 | 0 | 0 |
+| 3+ | 0 | 0 | 0 | 0 | 0 |
+
+E. report level: distinct agents whose WHOLE report (returned before the horizon's triage) names the code; key = row text + bullet
+| band | runs | confirmed | reproduced, no break | did not reproduce | halted |
+|---|---:|---:|---:|---:|---:|
+| no code | 57 | 8 | 37 | 8 | 4 |
+| 1 | 8 | 1 | 5 | 2 | 0 |
+| 2 | 4 | 2 | 2 | 0 | 0 |
+| 3+ | 11 | 7 | 4 | 0 | 0 |
+
+E, finer bands: {'1-2': '3 / 12', '3-5': '3 / 5', '6+': '4 / 6'}
+
+RAW — every run whose row carries a code (row text + bullet):
+| run | key | hop | horizon | codes (row text; +bullet marked ^) | rows / agents naming it at launch (per code) | reports naming it at launch | verdict |
+|---|---|---:|---:|---|---|---|---|
+| v05 | `r1-validate-non-utf8-path-drops-blocking-orphan` | 0 | 1 | `schema-conformance.orphaned-instance` | 1 / 1 | 1 | reproduced, no break |
+| v06 | `r1-doc-list-prints-id-doc-show-refuses` | 0 | 1 | `store.malformed-slug` | 1 / 2 | 1 | reproduced, no break |
+| v15 | `r1-setup-install-hook-route-other-causes-unexamined` | 1 | 2 | `setup.install-hook` | 1 / 1 | 4 | confirmed |
+| v17 | `r1-doc-show-lowercase-address-prints-path-no-file-has` | 1 | 2 | `store.unparseable` | 1 / 1 | 1 | confirmed |
+| v18 | `r1-adoption-route-for-non-doc-id-name-not-run` | 1 | 2 | `conformance.section-missing`^, `ingest.unaddressable-identity`^ | 1 / 1, 1 / 1 | 3, 1 | confirmed |
+| v19 | `r1-doc-show-stranded-doc-not-found-route` | 1 | 2 | `store.not-found` | 1 / 1 | 2 | reproduced, no break |
+| v20 | `r1-orphaned-doc-route-after-strand-not-run` | 1 | 2 | `file-state.orphaned-doc`^ | 1 / 1 | 1 | did not reproduce |
+| v23 | `r1-promote-clobber-route-commits-staged-blob` | 1 | 2 | `finalize.promote-clobber` | 1 / 1 | 1 | reproduced, no break |
+| v28 | `r1-p3-milestone-merged-area-writer-follows-a-link` | 2 | 3 | `finalize.no-task`^ | 1 / 1 | 6 | reproduced, no break |
+| v35 | `r1-p3-uninstall-writability-route-not-driven` | 2 | 3 | `uninstall.remove-precommit` | 2 / 3 | 2 | confirmed |
+| v37 | `r1-p3-setup-install-hook-undriven-producers-and-causes` | 2 | 3 | `setup.install-hook` | 2 / 2 | 5 | confirmed |
+| v44 | `r1-p3-doc-author-nothing-persisted-yet-task-bound` | 2 | 3 | `write.non-reparseable` | 1 / 1 | 1 | reproduced, no break |
+| v45 | `r1-p3-refused-doc-rename-leaves-staged-foreign-copy` | 2 | 3 | `conformance.section-missing`^ | 2 / 2 | 5 | reproduced, no break |
+| v47 | `r1-p3-adoption-of-staged-source-no-deletion-row` | 2 | 3 | `migrate.source-untracked`^ | 1 / 1 | 2 | reproduced, no break |
+| v54 | `r1-p3-unregistered-doc-route-after-unmanage-not-run` | 2 | 3 | `file-state.unregistered-doc`^ | 1 / 1 | 1 | did not reproduce |
+| w02 | `r1-p4-unparseable-adoption-route-refuses-untracked-source` | 3 | 4 | `migrate.source-untracked`, `store.unparseable` | 4 / 4, 2 / 2 | 8, 8 | confirmed |
+| w03 | `r1-p4-not-staged-route-mode-000-repro-b-not-redriven` | 3 | 4 | `store.not-found` | 6 / 5 | 18 | confirmed |
+| w05 | `r1-p4-nothing-staged-route-git-add-fails-unreadable-file` | 3 | 4 | `finalize.nothing-staged` | 1 / 1 | 2 | confirmed |
+| w08 | `r1-p4-not-found-not-staged-routes-loop-at-resume-door` | 3 | 4 | `store.not-found`, `store.not-staged` | 6 / 5, 3 / 3 | 18, 9 | confirmed |
+| w09 | `r1-p4-reconciliation-rename-route-jigc-rename-not-found` | 3 | 4 | `reconciliation.rename`, `store.not-found` | 3 / 3, 6 / 5 | 8, 18 | confirmed |
+| w15 | `r1-p4-finalize-refuses-tracked-link-home-previous-release-landed` | 3 | 4 | `store.home-not-regular-file` | 1 / 1 | 5 | reproduced, no break |
+| w18 | `r1-p4-milestone-staged-prose-route-not-staged-unreadable-doc` | 3 | 4 | `milestone.staged-prose`, `store.not-staged` | 1 / 1, 3 / 3 | 1, 9 | reproduced, no break |
+| w19 | `r1-p4-milestone-finalize-missing-provenance-route-no-command` | 3 | 4 | `join.missing-provenance` | 1 / 1 | 1 | reproduced, no break |
+
+REVERSE — the 18 confirmed and the 10 that did not reproduce: the codes the verifier's basis names (known only after the verdict),
+and how often each had been named before launch
+| verdict | run | key | hop | row's own codes before launch (row / +re-drive / +bullet) | basis codes | per basis code: rows / distinct agents (row+bullet) at launch — excluding this row | per basis code: whole reports at launch |
+|---|---|---|---:|---|---|---|---|
+| confirmed | v04 | `r1-setup-installs-outside-work-tree` | 0 | 0 / 0 / 0 | `setup.install-hook` | 0 / 0 | 3 |
+| confirmed | v15 | `r1-setup-install-hook-route-other-causes-unexamined` | 1 | 1 / 1 / 1 | none | - | - |
+| confirmed | v17 | `r1-doc-show-lowercase-address-prints-path-no-file-has` | 1 | 1 / 1 / 1 | `migrate.source-untracked`, `store.unparseable` | 0 / 0, 0 / 0 | 0, 1 |
+| confirmed | v18 | `r1-adoption-route-for-non-doc-id-name-not-run` | 1 | 0 / 0 / 2 | `write.non-reparseable` | 0 / 0 | 0 |
+| confirmed | v24 | `r1-p3-not-staged-route-task-less-read-refuses` | 2 | 0 / 0 / 0 | `store.not-staged`, `store.unparseable` | 0 / 0, 1 / 1 | 4, 3 |
+| confirmed | v34 | `r1-p3-setup-writability-route-printed-for-other-causes` | 2 | 0 / 0 / 0 | none | - | - |
+| confirmed | v35 | `r1-p3-uninstall-writability-route-not-driven` | 2 | 1 / 1 / 1 | `uninstall.remove-precommit` | 1 / 2 | 2 |
+| confirmed | v37 | `r1-p3-setup-install-hook-undriven-producers-and-causes` | 2 | 1 / 1 / 1 | none | - | - |
+| confirmed | v40 | `r1-p3-migrate-case-variant-path-says-git-holds-no-copy` | 2 | 0 / 0 / 0 | `migrate.source-untracked` | 1 / 1 | 2 |
+| confirmed | v43 | `r1-p3-lowercase-address-other-doors-not-driven` | 2 | 0 / 0 / 0 | `finalize.commit-rejected` | 0 / 0 | 0 |
+| confirmed | v49 | `r1-p3-doc-show-task-no-committed-copy-of-stranded-doc` | 2 | 0 / 0 / 0 | `store.not-staged` | 0 / 0 | 4 |
+| confirmed | v59 | `r1-p3-amend-refusal-route-spells-c-quoted-name-as-path` | 2 | 0 / 0 / 0 | `finalize.amend-index-dirty` | 0 / 0 | 1 |
+| confirmed | w02 | `r1-p4-unparseable-adoption-route-refuses-untracked-source` | 3 | 2 / 2 / 2 | `migrate.source-untracked`, `store.unparseable` | 3 / 3, 1 / 1 | 8, 8 |
+| confirmed | w03 | `r1-p4-not-staged-route-mode-000-repro-b-not-redriven` | 3 | 1 / 1 / 1 | `store.not-found`, `store.not-staged` | 5 / 4, 3 / 3 | 18, 9 |
+| confirmed | w04 | `r1-p4-not-staged-block-other-unservable-states-not-enumerated` | 3 | 0 / 0 / 0 | `store.not-found`, `store.not-staged`, `store.unparseable` | 6 / 5, 3 / 3, 2 / 2 | 18, 9, 8 |
+| confirmed | w05 | `r1-p4-nothing-staged-route-git-add-fails-unreadable-file` | 3 | 1 / 1 / 1 | `finalize.nothing-staged` | 0 / 0 | 2 |
+| confirmed | w08 | `r1-p4-not-found-not-staged-routes-loop-at-resume-door` | 3 | 2 / 2 / 2 | `store.not-found`, `store.not-staged` | 5 / 5, 2 / 2 | 18, 9 |
+| confirmed | w09 | `r1-p4-reconciliation-rename-route-jigc-rename-not-found` | 3 | 2 / 2 / 2 | `reconciliation.rename`, `store.not-found` | 2 / 2, 5 / 5 | 8, 18 |
+| did not reproduce | v01 | `canary-seeded-claim` | 0 | 0 / 0 / 0 | none | - | - |
+| did not reproduce | v08 | `r1-finalize-may-commit-redirected-log-record` | 0 | 0 / 0 / 0 | none | - | - |
+| did not reproduce | v12 | `r1-staging-area-writers-not-enumerated` | 1 | 0 / 0 / 0 | none | - | - |
+| did not reproduce | v20 | `r1-orphaned-doc-route-after-strand-not-run` | 1 | 0 / 1 / 1 | `file-state.orphaned-doc` | 0 / 0 | 1 |
+| did not reproduce | v29 | `r1-p3-staging-area-writers-undriven-and-unread-remainder` | 2 | 0 / 0 / 0 | none | - | - |
+| did not reproduce | v42 | `r1-p3-doc-show-lowercase-address-case-sensitive-volume` | 2 | 0 / 0 / 0 | `store.not-found` | 2 / 2 | 7 |
+| did not reproduce | v48 | `r1-p3-adoption-route-title-upper-undriven-cells` | 2 | 0 / 0 / 0 | none | - | - |
+| did not reproduce | v54 | `r1-p3-unregistered-doc-route-after-unmanage-not-run` | 2 | 0 / 1 / 1 | `file-state.unregistered-doc` | 0 / 0 | 1 |
+| did not reproduce | v55 | `r1-p3-finalize-after-orphaned-doc-route-arms-not-driven` | 2 | 0 / 1 / 0 | `file-state.un-baselined`, `schema-conformance.ref-resolves` | 0 / 0, 0 / 0 | 1, 0 |
+| did not reproduce | v56 | `r1-p3-orphaned-doc-placement-arm-and-json-not-driven` | 2 | 0 / 0 / 0 | `file-state.orphaned-doc` | 2 / 2 | 3 |
+
+confirmed · n 18 · basis names a code: 15 · the row itself carried a code before launch: 10 · some OTHER row had named a basis code before launch: 8 (by 1 agent: 2, by 2: 1, by 3+: 5) · some earlier report had named it: 13 (median reports 2)
+did not reproduce · n 10 · basis names a code: 5 · the row itself carried a code before launch: 2 · some OTHER row had named a basis code before launch: 2 (by 1 agent: 0, by 2: 2, by 3+: 0) · some earlier report had named it: 5 (median reports 1)
+reproduced, no break · n 48 · basis names a code: 14 · the row itself carried a code: 11 · some OTHER row had named a basis code: 4 · some earlier report: 11

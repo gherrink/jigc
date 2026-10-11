@@ -1,0 +1,172 @@
+== the key at row depth: 9 pairs of verified rows share a key · 9 of 80 runs are in a pair · 5 runs were launched after a row of the same key had its verdict · 4 pairs were launched in one batch
+   verdict pairs: {('confirmed', 'confirmed'): 5, ('confirmed', 'reproduced, no break'): 4}
+== the key at row depth + door verb: 3 pairs of verified rows share a key · 6 of 80 runs are in a pair · 3 runs were launched after a row of the same key had its verdict · 0 pairs were launched in one batch
+   verdict pairs: {('confirmed', 'confirmed'): 2, ('confirmed', 'reproduced, no break'): 1}
+
+== row + bullet: 11 pairs of verified rows share a key · 12 of 80 runs are in a pair · 6 runs were launched after a row of the same key had its verdict · 4 pairs were launched in one batch
+   verdict pairs: {('confirmed', 'confirmed'): 5, ('confirmed', 'reproduced, no break'): 6}
+   - v15 `r1-setup-install-hook-route-other-causes-unexamined` [confirmed, hop 1] ~ v37 `r1-p3-setup-install-hook-undriven-producers-and-causes` [confirmed, hop 2] — shared ['setup.install-hook'] — the second after the first's verdict
+   - v17 `r1-doc-show-lowercase-address-prints-path-no-file-has` [confirmed, hop 1] ~ w02 `r1-p4-unparseable-adoption-route-refuses-untracked-source` [confirmed, hop 3] — shared ['store.unparseable'] — the second after the first's verdict
+   - v18 `r1-adoption-route-for-non-doc-id-name-not-run` [confirmed, hop 1] ~ v45 `r1-p3-refused-doc-rename-leaves-staged-foreign-copy` [reproduced, no break, hop 2] — shared ['conformance.section-missing'] — the second after the first's verdict
+   - v19 `r1-doc-show-stranded-doc-not-found-route` [reproduced, no break, hop 1] ~ w03 `r1-p4-not-staged-route-mode-000-repro-b-not-redriven` [confirmed, hop 3] — shared ['store.not-found'] — the second after the first's verdict
+   - v19 `r1-doc-show-stranded-doc-not-found-route` [reproduced, no break, hop 1] ~ w08 `r1-p4-not-found-not-staged-routes-loop-at-resume-door` [confirmed, hop 3] — shared ['store.not-found'] — the second after the first's verdict
+   - v19 `r1-doc-show-stranded-doc-not-found-route` [reproduced, no break, hop 1] ~ w09 `r1-p4-reconciliation-rename-route-jigc-rename-not-found` [confirmed, hop 3] — shared ['store.not-found'] — the second after the first's verdict
+   - v47 `r1-p3-adoption-of-staged-source-no-deletion-row` [reproduced, no break, hop 2] ~ w02 `r1-p4-unparseable-adoption-route-refuses-untracked-source` [confirmed, hop 3] — shared ['migrate.source-untracked'] — the second after the first's verdict
+   - w03 `r1-p4-not-staged-route-mode-000-repro-b-not-redriven` [confirmed, hop 3] ~ w08 `r1-p4-not-found-not-staged-routes-loop-at-resume-door` [confirmed, hop 3] — shared ['store.not-found'] — one batch
+   - w03 `r1-p4-not-staged-route-mode-000-repro-b-not-redriven` [confirmed, hop 3] ~ w09 `r1-p4-reconciliation-rename-route-jigc-rename-not-found` [confirmed, hop 3] — shared ['store.not-found'] — one batch
+   - w08 `r1-p4-not-found-not-staged-routes-loop-at-resume-door` [confirmed, hop 3] ~ w09 `r1-p4-reconciliation-rename-route-jigc-rename-not-found` [confirmed, hop 3] — shared ['store.not-found'] — one batch
+   - w08 `r1-p4-not-found-not-staged-routes-loop-at-resume-door` [confirmed, hop 3] ~ w18 `r1-p4-milestone-staged-prose-route-not-staged-unreadable-doc` [reproduced, no break, hop 3] — shared ['store.not-staged'] — one batch
+== row + bullet + door verb: 3 pairs of verified rows share a key · 6 of 80 runs are in a pair · 3 runs were launched after a row of the same key had its verdict · 0 pairs were launched in one batch
+   verdict pairs: {('confirmed', 'confirmed'): 2, ('confirmed', 'reproduced, no break'): 1}
+   - v15 `r1-setup-install-hook-route-other-causes-unexamined` [confirmed, hop 1] ~ v37 `r1-p3-setup-install-hook-undriven-producers-and-causes` [confirmed, hop 2] — shared [('setup.install-hook', 'setup')] — the second after the first's verdict
+   - v17 `r1-doc-show-lowercase-address-prints-path-no-file-has` [confirmed, hop 1] ~ w02 `r1-p4-unparseable-adoption-route-refuses-untracked-source` [confirmed, hop 3] — shared [('store.unparseable', 'doc show')] — the second after the first's verdict
+   - v19 `r1-doc-show-stranded-doc-not-found-route` [reproduced, no break, hop 1] ~ w03 `r1-p4-not-staged-route-mode-000-repro-b-not-redriven` [confirmed, hop 3] — shared [('store.not-found', 'doc show')] — the second after the first's verdict
+
+== what triage merged: 65 of 437 findings handed in (20+4+15+26), all inside one pass; across passes it could mark none `found again` (its reports say the ledger it was handed held one row)
+  merge by code (row depth): 19 rows fold into an earlier row (10 inside one pass, 9 across passes) · 15 of them were to be verified · 7 were verified
+     by pass: {3: 4, 4: 15}
+     verified & folded: `r1-p3-uninstall-writability-route-not-driven` [a1 confirmed] -> `r1-uninstall-refuses-and-force-half-removes-no-work-tree-home` [not verified (needs-bound)]
+     verified & folded: `r1-p3-setup-install-hook-undriven-producers-and-causes` [a1 confirmed] -> `r1-setup-install-hook-route-other-causes-unexamined` [a1 confirmed]
+     verified & folded: `r1-p4-unparseable-adoption-route-refuses-untracked-source` [a2 confirmed] -> `r1-doc-show-lowercase-address-prints-path-no-file-has` [a1 confirmed]
+     verified & folded: `r1-p4-not-staged-route-mode-000-repro-b-not-redriven` [a2 confirmed] -> `r1-doc-show-stranded-doc-not-found-route` [a1 reproduced, no break]
+     verified & folded: `r1-p4-not-found-not-staged-routes-loop-at-resume-door` [a2 confirmed] -> `r1-doc-show-stranded-doc-not-found-route` [a1 reproduced, no break]
+     verified & folded: `r1-p4-reconciliation-rename-route-jigc-rename-not-found` [a2 confirmed] -> `r1-doc-show-stranded-doc-not-found-route` [a1 reproduced, no break]
+     verified & folded: `r1-p4-milestone-staged-prose-route-not-staged-unreadable-doc` [a2 reproduced, no break] -> `r1-p4-not-found-not-staged-routes-loop-at-resume-door` [a2 confirmed]
+  merge by code + door verb (row depth): 12 rows fold into an earlier row (3 inside one pass, 9 across passes) · 8 of them were to be verified · 4 were verified
+     by pass: {3: 4, 4: 8}
+     verified & folded: `r1-p3-uninstall-writability-route-not-driven` [a1 confirmed] -> `r1-uninstall-refuses-and-force-half-removes-no-work-tree-home` [not verified (needs-bound)]
+     verified & folded: `r1-p3-setup-install-hook-undriven-producers-and-causes` [a1 confirmed] -> `r1-setup-install-hook-route-other-causes-unexamined` [a1 confirmed]
+     verified & folded: `r1-p4-unparseable-adoption-route-refuses-untracked-source` [a2 confirmed] -> `r1-doc-show-lowercase-address-prints-path-no-file-has` [a1 confirmed]
+     verified & folded: `r1-p4-not-staged-route-mode-000-repro-b-not-redriven` [a2 confirmed] -> `r1-doc-show-stranded-doc-not-found-route` [a1 reproduced, no break]
+  merge by code (row + bullet): 34 rows fold into an earlier row (20 inside one pass, 14 across passes) · 25 of them were to be verified · 8 were verified
+     by pass: {3: 6, 4: 28}
+     verified & folded: `r1-p3-uninstall-writability-route-not-driven` [a1 confirmed] -> `r1-uninstall-refuses-and-force-half-removes-no-work-tree-home` [not verified (needs-bound)]
+     verified & folded: `r1-p3-setup-install-hook-undriven-producers-and-causes` [a1 confirmed] -> `r1-setup-install-hook-route-other-causes-unexamined` [a1 confirmed]
+     verified & folded: `r1-p3-refused-doc-rename-leaves-staged-foreign-copy` [a1 reproduced, no break] -> `r1-adoption-route-for-non-doc-id-name-not-run` [a1 confirmed]
+     verified & folded: `r1-p4-unparseable-adoption-route-refuses-untracked-source` [a2 confirmed] -> `r1-doc-show-lowercase-address-prints-path-no-file-has` [a1 confirmed]
+     verified & folded: `r1-p4-not-staged-route-mode-000-repro-b-not-redriven` [a2 confirmed] -> `r1-doc-show-stranded-doc-not-found-route` [a1 reproduced, no break]
+     verified & folded: `r1-p4-not-found-not-staged-routes-loop-at-resume-door` [a2 confirmed] -> `r1-doc-show-stranded-doc-not-found-route` [a1 reproduced, no break]
+     verified & folded: `r1-p4-reconciliation-rename-route-jigc-rename-not-found` [a2 confirmed] -> `r1-doc-show-stranded-doc-not-found-route` [a1 reproduced, no break]
+     verified & folded: `r1-p4-milestone-staged-prose-route-not-staged-unreadable-doc` [a2 reproduced, no break] -> `r1-p4-not-found-not-staged-routes-loop-at-resume-door` [a2 confirmed]
+  merge by code + door verb (row + bullet): 20 rows fold into an earlier row (7 inside one pass, 13 across passes) · 13 of them were to be verified · 4 were verified
+     by pass: {3: 5, 4: 15}
+     verified & folded: `r1-p3-uninstall-writability-route-not-driven` [a1 confirmed] -> `r1-uninstall-refuses-and-force-half-removes-no-work-tree-home` [not verified (needs-bound)]
+     verified & folded: `r1-p3-setup-install-hook-undriven-producers-and-causes` [a1 confirmed] -> `r1-setup-install-hook-route-other-causes-unexamined` [a1 confirmed]
+     verified & folded: `r1-p4-unparseable-adoption-route-refuses-untracked-source` [a2 confirmed] -> `r1-doc-show-lowercase-address-prints-path-no-file-has` [a1 confirmed]
+     verified & folded: `r1-p4-not-staged-route-mode-000-repro-b-not-redriven` [a2 confirmed] -> `r1-doc-show-stranded-doc-not-found-route` [a1 reproduced, no break]
+
+== groups of rows sharing a code (row + bullet), for the reading in the census
+### store.not-found — 6 rows
+   - p2 v07 `r1-doc-show-stranded-doc-not-found-route` @ jigc doc show [a1 reproduced, no break] — A refusal whose route - create the referenced doc, or fix the reference - is printed for a doc that exists, at its prior home: "A sentence for a human; not run", and not driven on the previous release. Whether the route works as p
+   - p3 v11 `r1-p3-not-found-over-unreadable-file-routes-in-a-loop` @ jigc doc show [not verified (needs-bound)] — '`store.not-found` over a file that exists and cannot be read ... with item 2 the two refusals route to each other' - a route loop that exists only over a mode-000 file, under no declared bound.
+   - p4 v24 `r1-p4-not-staged-route-mode-000-repro-b-not-redriven` @ jigc doc show [a2 confirmed] — the handed block's repro-b (a mode-000 file) was not re-driven
+   - p4 v26 `r1-p4-not-found-not-staged-routes-loop-at-resume-door` @ jigc start [a2 confirmed] — two refusals route to each other over a doc nobody may read; its reporter says read the other way it is confirmed
+   - p4 v26 `r1-p4-reconciliation-rename-route-jigc-rename-not-found` @ jigc validate [a2 confirmed] — with no plant, reconciliation.rename's first alternative exits 1 store.not-found; the other alternative works
+   - p4 v42 `r1-p4-doc-show-not-found-route-task-read-not-driven` @ jigc doc show [not verified (unclear)] — the store.not-found route's placeholder command was not driven with an open task
+### file-state.unregistered-doc — 5 rows
+   - p3 v20 `r1-p3-unregistered-doc-route-after-unmanage-not-run` @ jigc validate [a1 did not reproduce] — '`jigc migrate <the doc's absolute path> --as research`, or ignore it. Not run'; the finding lacks a repro block.
+   - p4 v50 `r1-p4-unregistered-doc-never-adopted-after-reset-strand` @ jigc validate [not verified (unclear)] — validate says never adopted of a doc jigc created and relocated; the advisory's route was not run
+   - p4 v53 `r1-p4-unregistered-doc-says-never-adopted-after-unmanage` @ jigc validate [not verified (no-break)] — an untrue diagnosis in an advisory whose route was run and works; wording
+   - p4 v53 `r1-p4-unregistered-doc-route-names-moved-away-path` @ jigc validate [not verified (unclear)] — the route names a file no longer on disk; the route was not run
+   - p4 v55 `r1-p4-finalize-after-orphaned-doc-route-remaining-arms` @ jigc task finalize [not verified (unclear)] — the remaining arms and cells its list names were not driven
+### setup.install-hook — 4 rows
+   - p2 v04 `r1-setup-install-hook-route-other-causes-unexamined` @ jigc setup [a1 confirmed] — No block - "Whether the same route is printed, and is as wrong, for other causes of that code was not looked at". A refusal under setup.install-hook in an ordinary checkout whose route does not work as printed would break the seco
+   - p3 v15 `r1-p3-setup-install-hook-undriven-producers-and-causes` @ jigc setup [a1 confirmed] — 'Not driven: P1; ... `make_executable` failing; a hook that is a directory or unreadable; an outward link written relatively; `--force`; the route as `--format json` renders it'; the finding lacks a repro block.
+   - p4 v37 `r1-p4-setup-install-hook-refusal-after-install-files-written` @ jigc setup [not verified (no-break)] — the refusal comes after jigc's own install files are written; the next successful run commits them
+   - p4 v37 `r1-p4-setup-install-hook-undriven-sites` @ jigc setup [not verified (unclear)] — not driven: the current_exe site, resolve_hooks_dir failures, a special file, other layouts
+### migrate.source-untracked — 4 rows
+   - p3 v18 `r1-p3-adoption-of-staged-source-no-deletion-row` @ jigc task finalize [a1 reproduced, no break] — '*1 file committed*, the foreign file gone from the worktree ... I did not examine it against `no-lost-files`'.
+   - p4 v24 `r1-p4-unparseable-adoption-route-refuses-untracked-source` @ jigc doc show [a2 confirmed] — the adoption route store.unparseable prints exits 1 for an untracked file; candidate only, not read against its design
+   - p4 v47 `r1-p4-source-untracked-route-cures-one-of-two-reasons` @ jigc migrate [not verified (unclear)] — the refusal gives two reasons and its route cures one; whether that is a false surface claim under the M51 ruling is ungraded
+   - p4 v48 `r1-p4-staged-source-adoption-no-deletion-row-seen-again` @ jigc task finalize [not verified (unclear)] — seen again in four rigs and not examined here against the clause
+### file-state.orphaned-doc — 3 rows
+   - p2 v07 `r1-orphaned-doc-route-after-strand-not-run` @ jigc validate [a1 did not reproduce] — No block - once the entry is gone "the strand is seen, and nothing I ran moves it", and "That advisory's own route was not run": whether any printed route lands the stranded doc at the new root is not settled, and the stranded sto
+   - p3 v20 `r1-p3-orphaned-doc-route-unmanage-without-path` @ jigc validate [not verified (no-break)] — '`file-state.orphaned-doc` is an advisory at exit 0, not a refusal ... The path is one line above, on `at:`, and with it the arm works' - a verb named in a prose advisory is not read here as a route that fails as printed; the same
+   - p4 v51 `r1-p4-validate-silent-about-strand-under-non-utf8-entry` @ jigc validate [not verified (unclear)] — validate is silent about the strand while the entry stands; its reporter says it may already be a row
+### write.non-reparseable — 3 rows
+   - p3 v18 `r1-p3-doc-author-nothing-persisted-yet-task-bound` @ jigc doc author [a1 reproduced, no break] — '`write.non-reparseable` says *nothing was persisted*, and the task is bound afterwards ... Whether that binding is what the sentence disclaims is the design's to say'.
+   - p4 v44 `r1-p4-non-reparseable-route-names-neither-broken-thing` @ jigc doc author [not verified (unclear)] — the route names neither broken thing; the task started over meets the same refusal
+   - p4 v44 `r1-p4-nothing-was-persisted-sentence-unpinned` @ jigc doc author [not verified (no-break)] — a coverage gap
+### store.not-staged — 3 rows
+   - p4 v26 `r1-p4-not-found-not-staged-routes-loop-at-resume-door` @ jigc start [a2 confirmed] — two refusals route to each other over a doc nobody may read; its reporter says read the other way it is confirmed
+   - p4 v30 `r1-p4-milestone-staged-prose-route-not-staged-unreadable-doc` @ jigc milestone discard [a2 reproduced, no break] — milestone.staged-prose's route exits 1 store.not-staged; a route that fails, in a planted state
+   - p4 v49 `r1-p4-not-staged-route-create-or-author-gate-blocked` @ jigc doc show [not verified (breaks)] — store.not-staged's route is printed for a task whose workflow grants no create; both acts exit 1 create.gate-blocked
+### reconciliation.rename — 3 rows
+   - p4 v26 `r1-p4-reconciliation-rename-route-jigc-rename-not-found` @ jigc validate [a2 confirmed] — with no plant, reconciliation.rename's first alternative exits 1 store.not-found; the other alternative works
+   - p4 v33 `r1-p4-hook-rename-block-absent-in-linked-worktree` @ the pre-commit hook jigc setup installs  [not verified (unclear)] — a bare git mv of a managed doc lands unrefused in a linked worktree; open whether the backstop is meant to see it
+   - p4 v50 `r1-p4-reconciliation-rename-routes-unmanage-of-staged-path` @ jigc task validate and jigc task finaliz [not verified (unclear)] — the advisory routes jigc unmanage of a path this task stages a copy of; the route was not run
+### schema-conformance.unadopted-instance — 3 rows
+   - p4 v45 `r1-p4-task-validate-one-file-two-readings-after-refused-rename` @ jigc task validate [not verified (no-break)] — advisories; candidate only
+   - p4 v46 `r1-p4-rename-moves-and-rewrites-unadopted-file` @ jigc rename [not verified (unclear)] — rename moved, rewrote and committed a file jigc never adopted, at exit 0; candidate only
+   - p4 v47 `r1-p4-unadopted-instance-advisory-miscalls-file` @ jigc validate and jigc task finalize [not verified (no-break)] — the advisory miscalls the file and is printed for the file the same call retires; wording
+### schema-conformance.orphaned-instance — 2 rows
+   - p1 h03 `r1-validate-non-utf8-path-drops-blocking-orphan` @ jigc validate [a1 reproduced, no break] — RC-9: one index entry with a non-UTF-8 name turns `jigc validate` from exit 1 with a blocking finding into exit 0 and 'the committed store validates clean'; the reporter names no clause, and whether a gate that says clean over a b
+   - p3 v11 `r1-p3-ingest-route-fails-beside-unreadable-entry` @ jigc validate [not verified (needs-bound)] — The orphaned-instance route's `jigc ingest` is 'exit 0 in the control and exit 1 beside an unreadable sibling ... Under the other reading of the clause's second half this is a route that fails as printed' - only beside a file nobo
+### store.malformed-slug — 2 rows
+   - p1 h02 `r1-doc-list-prints-id-doc-show-refuses` @ jigc doc list [a1 reproduced, no break] — RC-12: the listing prints `research:UPPER`, `jigc doc show` refuses it as store.malformed-slug and routes back at the listing - 'Triage may read the second clause's "every refusal's route works as printed" more strictly than this'
+   - p4 v42 `r1-p4-doc-list-prints-id-no-door-takes-seen-again` @ jigc doc list [not verified (unclear)] — doc list prints an id no door takes, and doc show's refusal routes back to doc list; no design text read settles it
+### uninstall.remove-precommit — 2 rows
+   - p2 a01 `r1-uninstall-refuses-and-force-half-removes-no-work-tree-home` @ jigc uninstall [not verified (needs-bound)] — The refusal is routed at conditions "both of which already hold", and `jigc uninstall --force` exits 1 in two layouts at uninstall.remove-precommit "after .jigc/ is removed", its route looping - refusals whose routes fail as print
+   - p3 v15 `r1-p3-uninstall-writability-route-not-driven` @ jigc uninstall [a1 confirmed] — '`jigc uninstall` prints the same writability sentence under `uninstall.remove-precommit` ... Not driven'; the finding lacks a repro block.
+### store.unparseable — 2 rows
+   - p2 v06 `r1-doc-show-lowercase-address-prints-path-no-file-has` @ jigc doc show [a1 confirmed] — No block - `jigc doc show research:upper` "exits 1 with store.unparseable, saying that research:upper at docs/research/upper.md does not parse; the only file there is UPPER.md": a refusal that names a path no file has, its route n
+   - p4 v24 `r1-p4-unparseable-adoption-route-refuses-untracked-source` @ jigc doc show [a2 confirmed] — the adoption route store.unparseable prints exits 1 for an untracked file; candidate only, not read against its design
+### conformance.section-missing — 2 rows
+   - p2 v06 `r1-adoption-route-for-non-doc-id-name-not-run` @ jigc validate [a1 confirmed] — No block - the way out of the pair is the route `jigc migrate <path> --as research`, which `jigc validate` (exit 1) and `jigc ingest` both print, and "Whether that migrate lands such a file under an addressable name is undriven": 
+   - p3 v18 `r1-p3-refused-doc-rename-leaves-staged-foreign-copy` @ jigc doc rename [a1 reproduced, no break] — 'After step 7's exit 1 the task's working area holds `research:upper.md` (the foreign bytes)' - a refused verb that leaves a staged copy under a managed identity; what it does to a later finalize is not settled; it has no repro bl
+### finalize.no-task — 2 rows
+   - p3 v12 `r1-p3-milestone-merged-area-writer-follows-a-link` @ unlisted: the milestone merged area's wr [a1 reproduced, no break] — 'writes each merged body with `std::fs::write`, which follows a link at its destination ... Read, not driven with a plant' - whether anything can leave a link there, and where the write then lands, is not settled; the finding lack
+   - p4 v61 `r1-p4-task-finalize-exits-1-after-commit-latin1-log-output` @ jigc task finalize [not verified (unclear)] — exits 1 after its commit landed with nothing planted but one git setting; both binaries
+### reconciliation.conflict-block — 2 rows
+   - p4 v41 `r1-p4-migration-of-upper-case-file-stage-failed-route-refuses` @ jigc task finalize [not verified (breaks)] — the migration cannot land and finalize.stage-failed's printed re-run refuses again at exit 3; both binaries
+   - p4 v41 `r1-p4-conflict-block-route-after-failed-migration-not-driven` @ jigc task finalize [not verified (unclear)] — conflict-block's routes on the re-run were not driven
+### file-state.baseline-adopt — 2 rows
+   - p4 v43 `r1-p4-copy-in-records-baseline-under-spelling-no-file-has` @ jigc doc set-slot [not verified (unclear)] — candidate only: a file-state baseline under a spelling no file has; the previous release writes none
+   - p4 v43 `r1-p4-task-validate-two-spellings-clean-before-failing-finalize` @ jigc task validate [not verified (no-break)] — advisories at exit 0; no refusal
+### file-state.staged-copy — 2 rows
+   - p4 v43 `r1-p4-task-validate-two-spellings-clean-before-failing-finalize` @ jigc task validate [not verified (no-break)] — advisories at exit 0; no refusal
+   - p4 v45 `r1-p4-task-validate-one-file-two-readings-after-refused-rename` @ jigc task validate [not verified (no-break)] — advisories; candidate only
+### create.gate-blocked — 2 rows
+   - p4 v49 `r1-p4-not-staged-route-create-or-author-gate-blocked` @ jigc doc show [not verified (breaks)] — store.not-staged's route is printed for a task whose workflow grants no create; both acts exit 1 create.gate-blocked
+   - p4 v55 `r1-p4-ref-resolves-route-create-arm-gate-blocked` @ jigc task finalize [not verified (unclear)] — one arm of the refusal's prose route exits 1 in this task; another arm works; both binaries
+
+== triage's own notes of a row that restates an earlier row (its judgment; never folded): 37 pairs {'p2': 10, 'p3': 17, 'p4': 8, 'a2': 2}
+   p2 `r1-validate-clean-over-docs-stranded-by-root-knob` [not verified (no-break)] ~ `r1-validate-non-utf8-path-drops-blocking-orphan` [a1 reproduced, no break] · share a code: no · share a door verb: yes · codes [] | ['schema-conformance.orphaned-instance']
+   p2 `r1-setup-separate-git-dir-not-driven-by-verifier` [not verified (no-break)] ~ `r1-setup-installs-outside-work-tree` [a1 confirmed] · share a code: no · share a door verb: yes · codes [] | []
+   p2 `r1-root-knob-lands-over-undecodable-git-listing` [not verified (needs-bound)] ~ `r1-non-utf8-path-other-orphan-walk-consumers` [a1 reproduced, no break] · share a code: no · share a door verb: no · codes [] | []
+   p2 `r1-orphan-walk-consumers-previous-release-not-driven` [a1 reproduced, no break] ~ `r1-non-utf8-path-other-orphan-walk-consumers` [a1 reproduced, no break] · share a code: no · share a door verb: no · codes [] | []
+   p2 `r1-route-clause-reading-refusal-without-route` [not verified (needs-bound)] ~ `r1-doc-list-unreadable-entry-fails-listing` [a1 reproduced, no break] · share a code: no · share a door verb: yes · codes [] | []
+   p2 `r1-route-clause-reading-refusal-without-route` [not verified (needs-bound)] ~ `r1-doc-list-staged-arm-unreadable-entry` [a1 reproduced, no break] · share a code: no · share a door verb: yes · codes [] | []
+   p2 `r1-route-clause-reading-refusal-without-route` [not verified (needs-bound)] ~ `r1-validate-non-utf8-path-drops-blocking-orphan` [a1 reproduced, no break] · share a code: no · share a door verb: no · codes [] | ['schema-conformance.orphaned-instance']
+   p2 `r1-working-product-reading-false-green-of-validate` [not verified (needs-bound)] ~ `r1-doc-list-unreadable-entry-fails-listing` [a1 reproduced, no break] · share a code: no · share a door verb: no · codes [] | []
+   p2 `r1-working-product-reading-false-green-of-validate` [not verified (needs-bound)] ~ `r1-doc-list-staged-arm-unreadable-entry` [a1 reproduced, no break] · share a code: no · share a door verb: no · codes [] | []
+   p2 `r1-working-product-reading-false-green-of-validate` [not verified (needs-bound)] ~ `r1-validate-non-utf8-path-drops-blocking-orphan` [a1 reproduced, no break] · share a code: no · share a door verb: yes · codes [] | ['schema-conformance.orphaned-instance']
+   p3 `r1-p3-doc-list-tracked-dangling-link-raw-os-error` [a1 reproduced, no break] ~ `r1-doc-list-unreadable-entry-fails-listing` [a1 reproduced, no break] · share a code: no · share a door verb: yes · codes [] | []
+   p3 `r1-p3-doc-list-drops-unreadable-stamped-orphan-silently` [not verified (needs-bound)] ~ `r1-doc-list-unreadable-entry-undriven-shapes-and-consumers` [a1 reproduced, no break] · share a code: no · share a door verb: yes · codes [] | []
+   p3 `r1-p3-unreadable-entry-stops-commit-boundaries-no-route` [not verified (no-break)] ~ `r1-doc-list-unreadable-entry-undriven-shapes-and-consumers` [a1 reproduced, no break] · share a code: no · share a door verb: no · codes [] | []
+   p3 `r1-p3-umask-masking-owner-read-unreadable-staged-doc` [not verified (needs-bound)] ~ `r1-staging-area-writers-not-enumerated` [a1 did not reproduce] · share a code: no · share a door verb: yes · codes [] | []
+   p3 `r1-p3-staging-area-writers-undriven-and-unread-remainder` [a1 did not reproduce] ~ `r1-staging-area-writers-not-enumerated` [a1 did not reproduce] · share a code: no · share a door verb: yes · codes [] | []
+   p3 `r1-p3-forced-doors-name-no-staged-docs-under-dangling-link` [not verified (no-break)] ~ `r1-staged-doc-ids-other-callers-not-driven` [a1 reproduced, no break] · share a code: no · share a door verb: yes · codes [] | []
+   p3 `r1-p3-setup-in-submodule-no-backstop-install-elsewhere` [not verified (needs-bound)] ~ `r1-setup-installs-outside-work-tree` [a1 confirmed] · share a code: no · share a door verb: yes · codes [] | []
+   p3 `r1-p3-validate-in-submodule-runs-at-git-dir` [not verified (needs-bound)] ~ `r1-setup-installs-outside-work-tree` [a1 confirmed] · share a code: no · share a door verb: no · codes [] | []
+   p3 `r1-p3-setup-writability-route-printed-for-other-causes` [a1 confirmed] ~ `r1-setup-install-hook-route-other-causes-unexamined` [a1 confirmed] · share a code: no · share a door verb: yes · codes [] | ['setup.install-hook']
+   p3 `r1-p3-validate-clean-over-unreadable-orphan-reading-and-layout` [not verified (needs-bound)] ~ `r1-validate-unreadable-orphan-variant-not-driven` [a1 reproduced, no break] · share a code: no · share a door verb: yes · codes [] | []
+   p3 `r1-p3-migrate-case-variant-path-says-git-holds-no-copy` [a1 confirmed] ~ `r1-doc-show-lowercase-address-prints-path-no-file-has` [a1 confirmed] · share a code: no · share a door verb: no · codes [] | ['store.unparseable']
+   p3 `r1-p3-doc-author-nothing-persisted-yet-task-bound` [a1 reproduced, no break] ~ `r1-adoption-route-for-non-doc-id-name-not-run` [a1 confirmed] · share a code: no · share a door verb: no · codes ['write.non-reparseable'] | ['conformance.section-missing', 'ingest.unaddressable-identity']
+   p3 `r1-p3-rename-bare-git-mv-error-no-code-no-route` [a1 reproduced, no break] ~ `r1-adoption-route-for-non-doc-id-name-not-run` [a1 confirmed] · share a code: no · share a door verb: no · codes [] | ['conformance.section-missing', 'ingest.unaddressable-identity']
+   p3 `r1-p3-doc-show-stranded-generic-route-non-utf8-layout` [not verified (needs-bound)] ~ `r1-doc-show-stranded-doc-not-found-route` [a1 reproduced, no break] · share a code: no · share a door verb: yes · codes [] | ['store.not-found']
+   p3 `r1-p3-root-knob-doors-non-utf8-name-no-lost-files-reading` [not verified (needs-bound)] ~ `r1-non-utf8-path-other-orphan-walk-consumers` [a1 reproduced, no break] · share a code: no · share a door verb: no · codes [] | []
+   p3 `r1-p3-git-capture-callers-enumerated-by-neighbouring-report` [not verified (no-break)] ~ `r1-git-capture-other-callers-not-enumerated` [a1 reproduced, no break] · share a code: no · share a door verb: no · codes [] | []
+   p3 `r1-p3-orphan-walk-aftermath-on-previous-release` [not verified (no-break)] ~ `r1-orphaned-doc-route-after-strand-not-run` [a1 did not reproduce] · share a code: no · share a door verb: no · codes [] | ['file-state.orphaned-doc']
+   p4 `r1-p4-staged-source-adoption-no-deletion-row-seen-again` [not verified (unclear)] ~ `r1-p3-adoption-of-staged-source-no-deletion-row` [a1 reproduced, no break] · share a code: yes · share a door verb: yes · codes ['migrate.source-untracked'] | ['migrate.source-untracked']
+   p4 `r1-p4-doc-create-over-strand-second-doc-seen-again` [not verified (unclear)] ~ `r1-p3-second-doc-of-one-identity-beside-stranded-doc` [a1 reproduced, no break] · share a code: no · share a door verb: yes · codes [] | []
+   p4 `r1-p4-doc-list-prints-id-no-door-takes-seen-again` [not verified (unclear)] ~ `r1-doc-list-prints-id-doc-show-refuses` [a1 reproduced, no break] · share a code: yes · share a door verb: yes · codes ['store.malformed-slug'] | ['store.malformed-slug']
+   p4 `r1-p4-uninstall-writability-sentence-other-causes-not-driven` [not verified (unclear)] ~ `r1-p3-uninstall-writability-route-not-driven` [a1 confirmed] · share a code: no · share a door verb: yes · codes [] | ['uninstall.remove-precommit']
+   p4 `r1-p4-doc-show-stale-unmanage-offer-placement-and-json` [not verified (unclear)] ~ `r1-p3-doc-show-offers-unmanage-after-unmanage` [a1 reproduced, no break] · share a code: no · share a door verb: yes · codes [] | []
+   p4 `r1-p4-staged-doc-ids-plant-reach-not-driven` [not verified (unclear)] ~ `r1-p3-staging-area-writers-undriven-and-unread-remainder` [a1 did not reproduce] · share a code: no · share a door verb: no · codes [] | []
+   p4 `r1-p4-setup-bare-repository-pointer-installs-outside-work-tree` [not verified (unclear)] ~ `r1-setup-installs-outside-work-tree` [a1 confirmed] · share a code: no · share a door verb: yes · codes [] | []
+   p4 `r1-p4-setup-ack-local-to-this-checkout-of-shared-hook` [not verified (no-break)] ~ `r1-setup-installs-outside-work-tree` [a1 confirmed] · share a code: no · share a door verb: yes · codes [] | []
+   a2 `r1-p4-identity-change-route-doc-rename-exits-1-over-foreign-file` [not verified (breaks)] ~ `r1-adoption-route-for-non-doc-id-name-not-run` [a1 confirmed] · share a code: no · share a door verb: no · codes ['write.identity-change'] | ['conformance.section-missing', 'ingest.unaddressable-identity']
+   a2 `r1-p4-setup-hook-linked-to-dev-null-route-names-dev-null` [not verified (breaks)] ~ `r1-p3-setup-install-hook-undriven-producers-and-causes` [a1 confirmed] · share a code: no · share a door verb: yes · codes [] | ['setup.install-hook']
+   share a code (row + bullet): 2 of 37 · share a door verb: 22 · both: 2 · either row carries a code at all: 14
+   both rows verified: 7 pairs · verdict pairs: {('reproduced, no break', 'reproduced, no break'): 2, ('did not reproduce', 'did not reproduce'): 1, ('confirmed', 'confirmed'): 2, ('confirmed', 'reproduced, no break'): 2}

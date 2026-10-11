@@ -1,0 +1,65 @@
+verifier reports: 80 (61 + 19). Sent for = the row the verifier was handed carries the code (row + re-drive, or row + bullet).
+
+| code | sites.tsv command | verifier reports naming it | of them sent for it | not sent for it | … of those, handed a row at a different door verb than any row carrying the code | rows naming it (row + bullet) | reports naming it per row naming it | where the not-sent reports name it (lines: left open · repro block · verdict · other) |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| `store.not-found` | doc read | 24 | 4 | 20 | 10 | 6 | 4.0 | 11 · 21 · 2 · 56 |
+| `store.not-staged` | (not listed) | 14 | 2 | 12 | 5 | 3 | 4.7 | 9 · 26 · 4 · 49 |
+| `schema-conformance.unadopted-instance` | task finalize | 12 | 0 | 12 | 6 | 3 | 4.0 | 3 · 3 · 0 · 11 |
+| `store.unparseable` | (not listed) | 11 | 2 | 9 | 5 | 2 | 5.5 | 3 · 9 · 3 · 17 |
+| `file-state.orphaned-doc` | task finalize | 10 | 1 | 9 | 7 | 3 | 3.3 | 3 · 13 · 1 · 21 |
+| `migrate.source-untracked` | migrate | 9 | 2 | 7 | 3 | 4 | 2.2 | 4 · 7 · 0 · 20 |
+| `store.home-not-regular-file` | doc read | 8 | 1 | 7 | 7 | 1 | 8.0 | 1 · 5 · 0 · 18 |
+| `reconciliation.rename` | task finalize | 8 | 1 | 7 | 4 | 3 | 2.7 | 4 · 3 · 0 · 11 |
+| `conformance.section-missing` | task finalize | 7 | 2 | 5 | 4 | 2 | 3.5 | 1 · 0 · 0 · 5 |
+| `finalize.no-task` | task finalize | 7 | 0 | 7 | 5 | 2 | 3.5 | 4 · 3 · 0 · 12 |
+| `write.identity-change` | doc write | 7 | 0 | 7 | 6 | 1 | 7.0 | 1 · 6 · 0 · 18 |
+| `file-state.staged-copy` | task finalize | 7 | 0 | 7 | 7 | 2 | 3.5 | 2 · 0 · 0 · 8 |
+| `file-state.unregistered-doc` | task finalize | 7 | 1 | 6 | 2 | 5 | 1.4 | 7 · 6 · 0 · 11 |
+| `setup.install-hook` | setup | 6 | 2 | 4 | 0 | 4 | 1.5 | 1 · 6 · 1 · 11 |
+
+share of the verifiers handed a row at a door whose report names the code (runs with one door verb; doors with >= 4 runs):
+| code | doc list (12) | validate (10) | task finalize (10) | doc show (9) | setup (6) | all 80 |
+|---|---:|---:|---:|---:|---:|---:|
+| `store.not-found` | 2 | 5 | 1 | 8 | 0 | 24 |
+| `store.not-staged` | 2 | 0 | 0 | 6 | 0 | 14 |
+| `schema-conformance.unadopted-instance` | 1 | 2 | 2 | 3 | 0 | 12 |
+| `store.unparseable` | 2 | 0 | 0 | 6 | 0 | 11 |
+| `file-state.orphaned-doc` | 1 | 3 | 1 | 3 | 0 | 10 |
+| `migrate.source-untracked` | 0 | 2 | 1 | 4 | 0 | 9 |
+| `store.home-not-regular-file` | 3 | 0 | 1 | 0 | 0 | 8 |
+| `reconciliation.rename` | 2 | 1 | 0 | 0 | 2 | 8 |
+| `conformance.section-missing` | 1 | 2 | 0 | 3 | 0 | 7 |
+| `finalize.no-task` | 3 | 0 | 1 | 0 | 0 | 7 |
+| `write.identity-change` | 1 | 2 | 0 | 0 | 0 | 7 |
+| `file-state.staged-copy` | 0 | 1 | 1 | 1 | 0 | 7 |
+| `file-state.unregistered-doc` | 1 | 3 | 1 | 1 | 0 | 7 |
+| `setup.install-hook` | 0 | 0 | 0 | 0 | 5 | 6 |
+
+inheritance — each row naming a code (row + bullet), by whether its own reporter had been handed that code:
+   row-occurrences: 75 · the reporter had been handed the code: 8 · had not: 65 · from an instrument (no parent): 2
+   per code with >= 3 distinct agents (handed · not handed · instrument): {'store.malformed-slug': (0, 1, 1), 'setup.install-hook': (3, 1, 0), 'uninstall.remove-precommit': (0, 2, 0), 'store.not-found': (0, 6, 0), 'file-state.orphaned-doc': (1, 2, 0), 'migrate.source-untracked': (1, 3, 0), 'file-state.unregistered-doc': (0, 5, 0), 'store.not-staged': (0, 3, 0), 'reconciliation.rename': (0, 3, 0), 'schema-conformance.unadopted-instance': (0, 3, 0)}
+
+the six runs in band 3+ (row + bullet, distinct agents):
+   v35 `r1-p3-uninstall-writability-route-not-driven` · door ['uninstall'] · root `r1-setup-installs-outside-work-tree` · confirmed · reports naming its codes at launch: {'uninstall.remove-precommit': 2} · parent's verdict: confirmed
+   w02 `r1-p4-unparseable-adoption-route-refuses-untracked-source` · door ['doc show'] · root `r1-doc-list-unreadable-entry-fails-listing` · confirmed · reports naming its codes at launch: {'migrate.source-untracked': 8, 'store.unparseable': 8} · parent's verdict: confirmed
+   w03 `r1-p4-not-staged-route-mode-000-repro-b-not-redriven` · door ['doc show'] · root `r1-doc-list-unreadable-entry-fails-listing` · confirmed · reports naming its codes at launch: {'store.not-found': 18} · parent's verdict: confirmed
+   w08 `r1-p4-not-found-not-staged-routes-loop-at-resume-door` · door ['start'] · root `r1-doc-list-unreadable-entry-fails-listing` · confirmed · reports naming its codes at launch: {'store.not-found': 18, 'store.not-staged': 9} · parent's verdict: nab
+   w09 `r1-p4-reconciliation-rename-route-jigc-rename-not-found` · door ['validate'] · root `r1-doc-list-unreadable-entry-fails-listing` · confirmed · reports naming its codes at launch: {'reconciliation.rename': 8, 'store.not-found': 18} · parent's verdict: nab
+   w18 `r1-p4-milestone-staged-prose-route-not-staged-unreadable-doc` · door ['milestone discard'] · root `r1-doc-list-staged-arm-unreadable-entry` · nab · reports naming its codes at launch: {'milestone.staged-prose': 1, 'store.not-staged': 9} · parent's verdict: nab
+
+codes named per verifier report: median 3.0 · mean 3.4 · max 10 · reports naming none: 5
+codes a verifier report names that its handed row did not carry: median 3.0
+   confirmed: median codes in the report 3.0 (n 18)
+   nab: median codes in the report 3.0 (n 48)
+   dnr: median codes in the report 4.5 (n 10)
+   halted: median codes in the report 2.5 (n 4)
+
+fixture named in the report (`refs-post-hoc`, `fresh`, `bare`, ...) against naming the code:
+   store.not-found                          refs-post-hoc 18/42 · fresh 23/78 · bare 22/65 · committed-singletons 1/4
+   store.not-staged                         refs-post-hoc 14/42 · fresh 13/78 · bare 12/65 · committed-singletons 0/4
+   schema-conformance.unadopted-instance    refs-post-hoc 4/42 · fresh 11/78 · bare 12/65 · committed-singletons 0/4
+   store.unparseable                        refs-post-hoc 8/42 · fresh 11/78 · bare 11/65 · committed-singletons 0/4
+   file-state.orphaned-doc                  refs-post-hoc 10/42 · fresh 10/78 · bare 10/65 · committed-singletons 1/4
+   migrate.source-untracked                 refs-post-hoc 3/42 · fresh 9/78 · bare 9/65 · committed-singletons 0/4
+   store.home-not-regular-file              refs-post-hoc 6/42 · fresh 8/78 · bare 5/65 · committed-singletons 0/4
+   reconciliation.rename                    refs-post-hoc 5/42 · fresh 8/78 · bare 7/65 · committed-singletons 1/4

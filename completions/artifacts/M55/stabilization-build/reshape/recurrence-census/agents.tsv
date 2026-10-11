@@ -1,0 +1,91 @@
+id	reporter (the record's own name)
+a01	advocate-p1-r1-setup-installs-outside-work-tree
+d01	proposal-p1-r1-setup-installs-outside-work-tree
+h01	row-doc-list-source
+h02	row-doc-list-driver
+h03	row-doc-list-reconciler
+h04	cross-cutting-review
+h05	arm-control-rehearse
+h06	arm-control-run
+h07	arm-control-score
+s01	scope
+v01	verify-p1-canary-seeded-claim
+v02	verify-p1-r1-doc-list-unreadable-entry-fails-listing
+v03	verify-p1-r1-doc-list-staged-arm-unreadable-entry
+v04	verify-p1-r1-setup-installs-outside-work-tree
+v05	verify-p1-r1-validate-non-utf8-path-drops-blocking-orphan
+v06	verify-p1-r1-doc-list-prints-id-doc-show-refuses
+v07	verify-p1-r1-non-utf8-path-other-orphan-walk-consumers
+v08	verify-p1-r1-finalize-may-commit-redirected-log-record
+v09	verify-p1-r1-uninstall-log-append-through-live-link
+v10	verify-p1-r1-scope-other-registries-unread-two-changed
+v11	verify-p2-r1-doc-list-unreadable-entry-undriven-shapes-and-consumers
+v12	verify-p2-r1-staging-area-writers-not-enumerated
+v13	verify-p2-r1-staged-doc-ids-other-callers-not-driven
+v14	verify-p2-r1-superproject-hook-effect-not-established
+v15	verify-p2-r1-setup-install-hook-route-other-causes-unexamined
+v16	verify-p2-r1-validate-unreadable-orphan-variant-not-driven
+v17	verify-p2-r1-doc-show-lowercase-address-prints-path-no-file-has
+v18	verify-p2-r1-adoption-route-for-non-doc-id-name-not-run
+v19	verify-p2-r1-doc-show-stranded-doc-not-found-route
+v20	verify-p2-r1-orphaned-doc-route-after-strand-not-run
+v21	verify-p2-r1-orphan-walk-consumers-previous-release-not-driven
+v22	verify-p2-r1-git-capture-other-callers-not-enumerated
+v23	verify-p2-r1-promote-clobber-route-commits-staged-blob
+v24	verify-p3-r1-p3-not-staged-route-task-less-read-refuses
+v25	verify-p3-r1-p3-unreadable-entry-class-door-list-traced-by-hand
+v26	verify-p3-r1-p3-unreadable-entry-undriven-platform-shapes-and-doors
+v27	verify-p3-r1-p3-doc-list-tracked-dangling-link-raw-os-error
+v28	verify-p3-r1-p3-milestone-merged-area-writer-follows-a-link
+v29	verify-p3-r1-p3-staging-area-writers-undriven-and-unread-remainder
+v30	verify-p3-r1-p3-staged-doc-ids-orientation-and-milestone-callers
+v31	verify-p3-r1-p3-discard-uninstall-plants-linux-and-root-not-driven
+v32	verify-p3-r1-p3-superproject-with-own-install-shared-hook-not-driven
+v33	verify-p3-r1-p3-hook-in-another-repository-layouts-not-enumerated
+v34	verify-p3-r1-p3-setup-writability-route-printed-for-other-causes
+v35	verify-p3-r1-p3-uninstall-writability-route-not-driven
+v36	verify-p3-r1-p3-display-hook-path-other-callers-not-driven
+v37	verify-p3-r1-p3-setup-install-hook-undriven-producers-and-causes
+v38	verify-p3-r1-p3-validate-clean-over-orphan-absent-from-work-tree
+v39	verify-p3-r1-p3-validate-unreadable-orphan-platforms-and-variants
+v40	verify-p3-r1-p3-migrate-case-variant-path-says-git-holds-no-copy
+v41	verify-p3-r1-p3-migration-destination-is-source-on-case-folding-volume
+v42	verify-p3-r1-p3-doc-show-lowercase-address-case-sensitive-volume
+v43	verify-p3-r1-p3-lowercase-address-other-doors-not-driven
+v44	verify-p3-r1-p3-doc-author-nothing-persisted-yet-task-bound
+v45	verify-p3-r1-p3-refused-doc-rename-leaves-staged-foreign-copy
+v46	verify-p3-r1-p3-rename-bare-git-mv-error-no-code-no-route
+v47	verify-p3-r1-p3-adoption-of-staged-source-no-deletion-row
+v48	verify-p3-r1-p3-adoption-route-title-upper-undriven-cells
+v49	verify-p3-r1-p3-doc-show-task-no-committed-copy-of-stranded-doc
+v50	verify-p3-r1-p3-second-doc-of-one-identity-beside-stranded-doc
+v51	verify-p3-r1-p3-doc-list-omits-stranded-doc
+v52	verify-p3-r1-p3-start-orientation-host-temp-path-findings-unknown
+v53	verify-p3-r1-p3-doc-show-offers-unmanage-after-unmanage
+v54	verify-p3-r1-p3-unregistered-doc-route-after-unmanage-not-run
+v55	verify-p3-r1-p3-finalize-after-orphaned-doc-route-arms-not-driven
+v56	verify-p3-r1-p3-orphaned-doc-placement-arm-and-json-not-driven
+v57	verify-p3-r1-p3-task-finalize-refuses-staged-non-utf8-text-file
+v58	verify-p3-r1-p3-rename-mention-advisory-silent-undecodable-listing
+v59	verify-p3-r1-p3-amend-refusal-route-spells-c-quoted-name-as-path
+v60	verify-p3-r1-p3-post-commit-capture-sites-host-that-holds-the-name
+v61	verify-p3-r1-p3-git-capture-commit-message-sites-not-driven
+w01	verify-p1-r1-p3-discard-uninstall-plants-linux-and-root-not-driven (attempt 2)
+w02	verify-p1-r1-p4-unparseable-adoption-route-refuses-untracked-source (attempt 2)
+w03	verify-p1-r1-p4-not-staged-route-mode-000-repro-b-not-redriven (attempt 2)
+w04	verify-p1-r1-p4-not-staged-block-other-unservable-states-not-enumerated (attempt 2)
+w05	verify-p1-r1-p4-nothing-staged-route-git-add-fails-unreadable-file (attempt 2)
+w06	verify-p1-r1-p4-relocate-parks-untracked-entry-at-destination (attempt 2)
+w07	verify-p1-r1-p4-unreadable-entry-class-linux-root-remaining-cells-not-driven (attempt 2)
+w08	verify-p1-r1-p4-not-found-not-staged-routes-loop-at-resume-door (attempt 2)
+w09	verify-p1-r1-p4-reconciliation-rename-route-jigc-rename-not-found (attempt 2)
+w10	verify-p1-r1-p4-doc-list-dangling-link-reach-by-jigc-verb-not-driven (attempt 2)
+w11	verify-p1-r1-p4-doc-list-dangling-link-undriven-cells (attempt 2)
+w12	verify-p1-r1-p4-milestone-merged-link-plant-undriven-cells (attempt 2)
+w13	verify-p1-r1-p4-following-writes-class-not-walked (attempt 2)
+w14	verify-p1-r1-p4-staging-area-writers-root-and-linux-not-driven (attempt 2)
+w15	verify-p1-r1-p4-finalize-refuses-tracked-link-home-previous-release-landed (attempt 2)
+w16	verify-p1-r1-p4-finalize-approve-read-only-destination-raw-os-error (attempt 2)
+w17	verify-p1-r1-p4-tracked-path-under-task-staging-area-git-writer (attempt 2)
+w18	verify-p1-r1-p4-milestone-staged-prose-route-not-staged-unreadable-doc (attempt 2)
+w19	verify-p1-r1-p4-milestone-finalize-missing-provenance-route-no-command (attempt 2)

@@ -1,0 +1,50 @@
+## vocabularies
+sites.tsv rows 261 · distinct codes 177 · rows whose code is `dynamic` 26
+code-shaped string literals in crates/cli/src + crates/engine/src: 466 · minus file-name shapes: 332 · of those not in sites.tsv: 155
+
+| item class (text) | items | any code-shaped token | … not a file name | a code of the vocabulary | of sites.tsv | source-only |
+|---|---:|---:|---:|---:|---:|---:|
+hunt ids resolved 47 of 47 []
+| hunt findings, the reporter's own section (47 ids) | 47 | 32 | 15 | **12** (26%) | 9 | 3 |
+| triage rows, pass 1 (hunt, scope, seed) — row text | 34 | 7 | 2 | **2** (6%) | 2 | 0 |
+| triage rows, all — row text, dotted tokens only | 372 | 66 | 38 | **36** (10%) | 30 | 6 |
+| triage rows, all — THE KEY (dotted tokens, or the code spelled with hyphens in the row's key) | 372 | | | **41** (11%) | 34 | 7 |
+| triage rows, all — the key + the reporter's bullet | 372 | | | **65** (17%) | 58 | 7 |
+rows the key-slug form adds: [('r1-p3-finalize-left-out-hint-over-unreadable-file', ['finalize.left-out']), ('r1-p3-setup-install-hook-undriven-producers-and-causes', ['setup.install-hook']), ('r1-p4-setup-install-hook-undriven-sites', ['setup.install-hook']), ('r1-p4-setup-install-commit-carries-settings-entries-json', ['setup.install-commit']), ('r1-p4-milestone-provision-failed-says-0-landed-worktree-registered', ['milestone.provision-failed'])]
+| follow-up rows — row text | 338 | 59 | 36 | **34** (10%) | 28 | 6 |
+| follow-up rows — row text + the reporter's bullet (where resolved) | 338 | 94 | 65 | **59** (17%) | 53 | 6 |
+| follow-up rows whose bullet resolved — the bullet alone | 216 | 66 | 55 | **49** (23%) | 46 | 3 |
+| left-open bullets as written, attempt 1 | 335 | 85 | 69 | **63** (19%) | 56 | 7 |
+| left-open bullets as written, attempt 2 | 89 | 24 | 17 | **17** (19%) | 14 | 3 |
+| the 80 verifier runs — row text | 80 | 23 | 16 | **16** (20%) | 14 | 2 |
+| the 80 verifier runs — row text + re-drive line | 80 | 30 | 21 | **21** (26%) | 19 | 2 |
+| the 80 verifier runs — the verifier's basis (after the verdict) | 80 | 39 | 34 | **34** (42%) | 28 | 6 |
+| whole reports (90 agents) | 90 | 90 | 85 | **81** (90%) | 78 | 3 |
+
+distinct code-shaped tokens in the 372 rows' text: 56
+  sites: 19 distinct, 31 row-occurrences — store.not-found×6, uninstall.remove-precommit×2, store.malformed-slug×2, setup.install-hook×2, schema-conformance.orphaned-instance×2, reconciliation.rename×2, migrate.source-untracked×2, create.gate-blocked×2, write.identity-change×1, store.home-not-regular-file×1, milestone.staged-prose×1, join.missing-provenance×1, finalize.stage-failed×1, finalize.promote-clobber×1, finalize.nothing-staged×1, finalize.no-task×1, finalize.empty-commit×1, finalize.base-mismatch×1, file-state.orphaned-doc×1
+  source-only: 6 distinct, 11 row-occurrences — write.non-reparseable×3, store.not-staged×3, store.unparseable×2, write.wrong-shape×1, write.target-escape×1, finalize.rollback-conflict×1
+  file-name: 29 distinct, 38 row-occurrences — upper.md×3, proposal-p1-r1-setup-installs-outside-work-tree.a1.md×3, x.md×2, verify-p1-r1-uninstall-log-append-through-live-link.a1.md×2, relocate.rs×2, doc.rs×2, advocate-p1-r1-setup-installs-outside-work-tree.a1.md×2, walk.py×1, verify-p1-r1-validate-non-utf8-path-drops-blocking-orphan.a1.md×1, verify-p1-r1-setup-installs-outside-work-tree.a1.md×1, verify-p1-r1-scope-other-registries-unread-two-changed.a1.md×1, verify-p1-r1-non-utf8-path-other-orphan-walk-consumers.a1.md×1, verify-p1-r1-finalize-may-commit-redirected-log-record.a1.md×1, verify-p1-r1-doc-list-unreadable-entry-fails-listing.a1.md×1, verify-p1-r1-doc-list-staged-arm-unreadable-entry.a1.md×1, verify-p1-r1-doc-list-prints-id-doc-show-refuses.a1.md×1, run.py×1, row-doc-list-reconciler.a1.md×1, orphan.rs×1, orient.rs×1, old.md×1, milestone.rs×1, manifest.yaml×1, main.rs×1, legacy.txt×1, kept.md×1, index.rs×1, file-state.json.lock×1, config.rs×1
+  other: 2 distinct, 2 row-occurrences — mig.ascii×1, core.ignorecase×1
+distinct code-shaped tokens in the 90 reports: 443 {'file-name': 275, 'other': 89, 'sites': 56, 'source-only': 23}
+
+rows whose door cell spells >=1 leaf verb: 335 · exactly one: 298 · several: 37
+rows whose text spells >=1 `jigc <leaf verb>`: 337 · distinct verbs named: 27
+rows with a code AND a door verb: 41 of 41
+door cell agrees with sites.tsv's command for the code (row has one door verb and a sites code):
+  agree 24 differ 10 [('schema-conformance.orphaned-instance', ['task finalize'], 'validate'), ('schema-conformance.orphaned-instance', ['task finalize'], 'validate'), ('file-state.orphaned-doc', ['task finalize'], 'validate'), ('migrate.source-untracked', ['migrate'], 'doc show'), ('store.not-found', ['doc read'], 'start'), ('reconciliation.rename', ['task finalize'], 'validate'), ('store.not-found', ['doc read'], 'validate'), ('store.home-not-regular-file', ['doc read'], 'task finalize'), ('create.gate-blocked', ['doc write'], 'doc show'), ('create.gate-blocked', ['doc write'], 'task finalize')]
+
+route-named runs (the earlier census's sort; made after the verdicts were read):
+  row text         names a route: 15 of 30 carry a code · no route: 2 of 50
+  row + re-drive   names a route: 18 of 30 carry a code · no route: 4 of 50
+  row + bullet     names a route: 18 of 30 carry a code · no route: 5 of 50
+  by its two groups (row + re-drive): {'behaviour, no route': '3 of 18', 'not driven, no route named': '1 of 28', 'record': '0 of 1', 'refusal with no route': '0 of 3', 'route: not run / other causes': '10 of 15', 'route: said to fail or loop': '8 of 15'}
+blind proxies over all 372 rows: key contains `route` -> 22 of 62 carry a code; does not -> 19 of 310
+   triage's line contains `route` -> 26 of 109 ; does not -> 15 of 263
+carries a code vs verdict (row + re-drive): {'confirmed': '9 of 18', 'nab': '10 of 48', 'dnr': '3 of 10', 'halted': '0 of 4'}
+carries a code vs verdict (row text): {'confirmed': '9 of 18', 'nab': '8 of 48', 'dnr': '0 of 10', 'halted': '0 of 4'}
+carries a code vs verdict (row + bullet): {'confirmed': '10 of 18', 'nab': '11 of 48', 'dnr': '2 of 10', 'halted': '0 of 4'}
+confirm rate: code (row text) 9 / 17 · no code 9 / 63
+confirm rate: code (row+redrive) 9 / 22 · no code 9 / 58
+confirm rate: code (row+bullet) 10 / 23 · no code 8 / 57
+route x code (row+redrive): {(True, True): '9 / 18', (True, False): '6 / 12', (False, True): '0 / 4', (False, False): '3 / 46'}

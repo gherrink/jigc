@@ -1,0 +1,7 @@
+entries 372
+source refs 442 unparsed []
+refs by pass Counter({4: 235, 3: 88, 2: 65, 1: 54})
+no triage entry text [] 0
+with redrive text Counter({(4, False): 117, (3, True): 38, (2, False): 13, (1, True): 10})
+verified a1 61 a2 19
+median chars: return why 113.0 triage entry 314.5
