@@ -36,6 +36,11 @@
 #   ledger.md                               one row per finding          (ledger-add, ledger-set,
 #                                                                         triage-set: the grade,
 #                                                                         result-set: a red run)
+#   classes.md                              one row per finding that carries A CLASS — what
+#                                           the queue is ranked by — beside the ledger, and
+#                                           there only from the first row that carries one
+#                                           (ledger-add, ledger-set: a kind; result-set: a
+#                                           red run)
 #   clauses.md                              one row per clause — RENDERED from the results,
 #                                           and written by no caller     (THE CLAUSE TABLE)
 #   bounds.md                               one row per declared bound   (bound-set)
@@ -91,8 +96,46 @@
 #         key, doctype (jigc-feedback | inconsistency), round (0 is the opening),
 #         source, door, clause, repro            — required; the last four are text
 #         grade, graded_by, bound, disposition, detail — optional, as for ledger-set
+#         kind, origin or parent, route or commands, code, site — optional: A CLASS (below)
 #       A key the ledger already holds is not appended again and keeps its row: a
 #       finding found again inherits it. Prints {"ledger", "appended", "existing"}.
+#       A ROW MAY CARRY A CLASS — what the queue of a `test` stage is ranked by, and what a
+#       hit rate is given per (the build plan of the reshaped `test` stage, T1): a kind,
+#       and where the item comes from. It is held in a table BESIDE the ledger
+#       (classes.md), which a run has from its first row with a class and not before: a
+#       row that names no kind is the row it always was, the call prints what it always
+#       printed, and a run none of whose rows names one holds no such table.
+#         kind         route | behaviour | lead — what the item is about: it QUOTES THE
+#                      ROUTE LINE A REFUSAL PRINTED; it CARRIES THE COMMANDS that show a
+#                      misbehaviour; neither.
+#         route        with kind route: the route line, as it was printed  } text. A KIND
+#         commands     with kind behaviour: the commands                   } WITHOUT ITS
+#                      EVIDENCE IS A LEAD: a row given either kind without that field is
+#                      entered as a lead — its cell says so (`lead: given as route`), and
+#                      so does the call (`leads`). The other kind's field, and either for
+#                      a lead, are refused (bad-value).
+#         origin       hunt | seed — where the item comes from, as a caller says it: an
+#                      instrument's own finding, a red check, the scope step's; or a row
+#                      the opening seeded.
+#         parent       for AN ITEM A VERIFIER HANDED ON: the row it was handed on under,
+#                      a row of the ledger (no-such-row). Its origin is COMPUTED — from the
+#                      verdict the latest round that triaged the parent has on record —
+#                      and no caller says it: under-confirmed · under-no-repro (refuted as
+#                      does-not-reproduce) · under-not-a-break (refuted as intended, or as
+#                      breaks-no-clause). A parent with no such verdict gives none: it was
+#                      never triaged, is not verified, is undrivable, or was refuted
+#                      without the word that says which of three (bad-value). A class
+#                      names an origin or a parent, never both and never neither
+#                      (bad-value); it is written with the row, and stands.
+#         code, site   the refusal's code, where the refusal has one, and the id of the
+#                      refusal site the item names, where it names one (an id of
+#                      crates/cli/tests/route_catalog/sites.tsv). TEXT, AND NOTHING MORE:
+#                      neither is held to a vocabulary, no row is refused for lacking one,
+#                      and nothing here ranks, merges or counts on either — they are on
+#                      the row so that a count can be read off it.
+#       A cell of a class without a kind is refused (bad-value). With a kind the call also
+#       prints "classes" — the table's path — and "leads": the keys it entered as a lead
+#       for lack of their kind's evidence.
 #       THE LEDGER'S CENSUS: every key a call adds is named in the run's own record
 #       (run.md: findings), in the same batch. A row the census names is a row the ledger
 #       has, whoever deleted it: `state` and every writer of the ledger refuse (corrupt) a
@@ -114,6 +157,19 @@
 #         disposition  open | fixed | admitted | bound | later | no-action
 #         detail       fixed: the fix's sha · bound: its reach · admitted, later,
 #                      no-action: a note, optional · open: none
+#         kind         route | behaviour | lead, with its evidence (`route`, `commands`)
+#                      and optionally `code` and `site`, as ledger-add takes them: THE KIND
+#                      OF A ROW THAT CARRIES A CLASS, CHANGED — a lead that turned out to
+#                      quote a route. Without its evidence the new kind is a lead; a code
+#                      or a site the patch does not name stands; where the row comes from
+#                      stands always. A row that carries no class takes none by a patch
+#                      (bad-value): a kind is written with its row. AND A KIND STANDS ONCE
+#                      ITS ROW HAS A VERDICT — once a round's triage record holds one for
+#                      it: confirmed, refuted, undrivable — with its evidence, its code
+#                      and its site: a patch that would change one is refused (exists),
+#                      because a hit rate per kind is honest only if the kind was on
+#                      record before the verdict. Said again as it stands, it is taken.
+#       A patch names a grade, a disposition or a kind (bad-value).
 #       A key the ledger lacks is refused (no-such-row). Prints {"ledger", "updated"}.
 #
 #   dev/stabilize-record result-set --run R --round N --commit SHA [--scratch DIR]...
@@ -147,6 +203,12 @@
 #                      routed, ruled or fixed like any other. A key the ledger holds keeps
 #                      its row, as a finding found again does; but a row that says `fixed`
 #                      is OPEN again: the item is red after its fix.
+#                      IN A RUN WHOSE ROWS CARRY A CLASS (ledger-add: its ledger holds a
+#                      row with one) THE ROW IS FILED WITH ITS OWN — `behaviour`, `hunt`,
+#                      computed and never supplied — its evidence the verdict on record
+#                      for a held check (r<N>/checks/…), and for any other what the call
+#                      brings as `repro`, which is where the preflight's report is named.
+#                      In a run that holds no class the row is filed as it always was.
 #       THE ATTEMPT IS COMPUTED, never supplied: an item's runs in a round are numbered from
 #       1. While round N is NOT TESTED, a result is the run of its test stage, and an item
 #       has one (exists). Once it IS tested, a result is A RE-RUN — an attempt inside the
@@ -245,7 +307,17 @@
 #         grade        triage's: breaks | unclear | no-break | out-of-scope | needs-bound
 #         bound        with out-of-scope and only with it: a row of bounds.md
 #         verdict      the verifier's, of a finding graded breaks or unclear:
-#                      confirmed | refuted. Without one, the finding awaits it.
+#                      confirmed | refuted | undrivable. Without one, the finding awaits it.
+#         refutation   with refuted and only with it, optional: WHICH OF THREE IT IS —
+#                      does-not-reproduce | intended | breaks-no-clause, the verifier's
+#                      own words. The record's verdict cell says it (`refuted: intended`);
+#                      the finding is refuted either way.
+#         reason       with undrivable, and only with it: why NOBODY HERE CAN DRIVE THE
+#                      FINDING — it asks for another platform, another caller — as a
+#                      word: a-z0-9 words joined by single `-` (bad-value). The verifier
+#                      established nothing of the finding, so its grade stays triage's;
+#                      the record says `undrivable: <reason>`, and the finding is the
+#                      human's at once (THE ROUTE).
 #         regression   with confirmed and only with it: true when the repro is green on
 #                      the previous release's binary, false when it is red there too —
 #                      the verifier's fact. ABSENT, OR null, WHERE THE VERIFIER DOES NOT
@@ -269,7 +341,8 @@
 #       computed here — its ledger row's door is one of the round's included doors, as
 #       scope-set wrote them — and is never supplied; a round with no scope is refused
 #       (no-scope). The entry's row in r<N>/triage.md says: inside | outside: excluded
-#       | outside: unlisted, triage's grade, the verdict, the regression, the
+#       | outside: unlisted, triage's grade, the verdict — with the word it says beside
+#       itself, where it says one — the regression, the
 #       disposition the ledger row carried when the round recorded it ("found with"),
 #       and the fork (`<kind>: <case>, <drive>`, or `-`).
 #       An entry recorded again replaces its row — that is how a verdict arrives later,
@@ -472,13 +545,20 @@
 #                        triage  the row's entry in the latest round that triaged it:
 #                                {round, inside, door: included | excluded | unlisted,
 #                                grade, bound, verdict, regression, found_with, fork:
-#                                {kind, case, drive} or null}, or null
+#                                {kind, case, drive} or null}, or null — and, only where
+#                                the verdict says one, `refutation` (which of three) or
+#                                `reason` (why nobody here can drive it)
 #                        reopened  whether its fix did not hold: it is open again
 #                        route   fix | human | triage | recorded, and `why`
 #                        awaits  null — or, for a finding the round's triage has not
 #                                finished, {why: ungraded | unverified, passes: how many
 #                                triage records of the latest round in a row left it so,
 #                                retry: due | spent}
+#                        class   ONLY ON A ROW THAT CARRIES ONE (ledger-add): {kind, given
+#                                — what a lead was given as without its evidence, or null
+#                                — origin, parent, code, site, evidence}; null where the
+#                                row names none of the last four. A row without a class
+#                                has no such field.
 #         blockers     the keys routed fix
 #         regression_unknown  the keys of the findings a verifier CONFIRMED WITHOUT
 #                      KNOWING WHETHER EACH IS A REGRESSION (triage-set: regression absent
@@ -551,6 +631,12 @@
 #                                (reverify), the route is human (ungraded-after-retry,
 #                                unverified-after-retry). The human rules it — admitted,
 #                                bound, later — or grants one more triage.
+#                                BUT human (undrivable), for breaks and unclear, where
+#                                the latest round that triaged the finding recorded that
+#                                NOBODY HERE CAN DRIVE IT (triage-set: undrivable) — at
+#                                once, by the first record that says so, and counted as
+#                                no pass: it is no triage's to finish, and the human rules
+#                                it as above.
 #           no-break, refuted    recorded (not-a-break)
 #           out-of-scope         recorded (out-of-scope) while its bound is on the
 #                                list; human (bound-not-listed) when it is not
@@ -844,6 +930,7 @@
 #   dev/stabilize-record item --run R --item I
 #   dev/stabilize-record item-doors --run R --round N --item I
 #   dev/stabilize-record untriaged --run R
+#   dev/stabilize-record row --run R --key K
 #       WHAT AN AGENT OF A STAGE READS BY KEY (the second repair plan of the `test` half,
 #       K9): each one line of JSON, each from the state as `state` reads it, each writing
 #       nothing. The harness reads a digest of the state and no sentence of it
@@ -864,6 +951,10 @@
 #                      ledger's order, each with why (`ungraded`, `unverified`):
 #                      {"run", "count", "untriaged": [...]} — the rows the state's
 #                      `untriaged` names by key, and a stage's triage is handed.
+#         row          ONE ROW OF THE LEDGER, WHOLE, by its key: as the state's `ledger`
+#                      has it — its cells, its triage, its route, and its class where it
+#                      carries one: {"run", "row": {...}}. A key the ledger lacks is
+#                      refused (no-such-row).
 #
 #   dev/stabilize-record pending --run R
 #       What of the run is written and in no commit yet, AS THIS SCRIPT KNOWS IT; writes
@@ -1135,7 +1226,7 @@
 #                     release, default scope or clauses are written once and stand; or
 #                     an item has its result in a round that is not tested yet; or an
 #                     item a round has run or owes a run keeps its clause, runs, doors
-#                     and registries
+#                     and registries; or a row that has a verdict keeps its kind
 #    7  bad-value     a value outside its vocabulary, a malformed row, a report that is
 #                     not text; a file named by --from that cannot be read, or that is
 #                     not the file --sha256 names; an outcome word for a held check —
@@ -1148,7 +1239,7 @@
 #                     item of a clause the census does not name, or a census that does
 #                     not name a clause an item judges
 #    8  no-such-row   ledger-set names a key the ledger lacks, or result-set an item the
-#                     test set lacks
+#                     test set lacks; a row is handed on under a parent the ledger lacks
 #    9  fence         the file would redden a standing fence, which is named
 #   10  host-path     a host path the placeholders could not replace
 #   11  hygiene       the public-hygiene scan found a hit
@@ -1302,6 +1393,34 @@ LEDGER_COLUMNS = (
     "disposition",
     "repro pointer",
 )
+# WHAT THE QUEUE IS RANKED BY (the build plan of the reshaped `test` stage, T1): a row of
+# the ledger may carry a CLASS — a kind, and where the item comes from — and, as data and
+# nothing more, the refusal's code and the id of the site the item names. They are held in
+# a table BESIDE the ledger (classes.md), a row per finding that carries one, written from
+# the first such row and never before: a run none of whose rows names a kind holds the
+# files it held.
+CLASS_COLUMNS = ("key", "kind", "origin", "parent", "code", "site", "evidence")
+# A kind, and the field of a row its evidence is given in: the route line a refusal
+# printed, the commands that show the misbehaviour — and a lead has neither.
+KINDS = {"route": "route", "behaviour": "commands", "lead": None}
+# How the kind cell says that a row was given a kind without its evidence, and is a lead.
+GIVEN = "lead: given as "
+# What a row or a patch may say of a class; and what a patch may: where a row comes from
+# is written with it.
+CLASS_FIELDS = ("kind", "origin", "parent", "route", "commands", "code", "site")
+KIND_FIELDS = ("kind", "route", "commands", "code", "site")
+# Where an item comes from, as a caller says it — what an instrument found, what the
+# opening seeded. For an item a verifier handed on it is COMPUTED, from the verdict on its
+# parent's row: confirmed, or refuted by one of the three words below.
+SAID_ORIGINS = ("hunt", "seed")
+UNDER_CONFIRMED = "under-confirmed"
+# Why a finding was refuted, in the verifier's own three words, and where an item handed on
+# under such a parent comes from.
+REFUTATIONS = {"does-not-reproduce": "under-no-repro", "intended": "under-not-a-break", "breaks-no-clause": "under-not-a-break"}
+# The verdict for a finding nobody here can drive: it says why in a word.
+UNDRIVABLE = "undrivable"
+# What a red run's finding is filed as, in a run whose rows carry a class.
+RED_CLASS = ("behaviour", "hunt")
 CLAUSE_COLUMNS = ("clause", "instrument", "last commit", "scope", "status")
 BOUND_COLUMNS = ("bound", "reach", "ruling", "pin")
 SCOPE_COLUMNS = ("door", "test set", "registry", "derivation")
@@ -1426,7 +1545,7 @@ WRITERS = {
     "item-set": "anywhere",
     "apply": "by-call",
 }
-READERS = ("state", "item", "item-doors", "untriaged", "pending", "check-reports", "check-ledger", "gate-check", "vet")
+READERS = ("state", "item", "item-doors", "untriaged", "row", "pending", "check-reports", "check-ledger", "gate-check", "vet")
 KEEPERS = ("discard", "settle", "recover", "set-aside")
 ROUND_TAKES = {
     "candidate": "untested",
@@ -2130,12 +2249,68 @@ def set_cells(row, what, scratch):
     return cells
 
 
+def kind_cells(row, what, scratch):
+    """The [kind, code, site, evidence] cells a row or a patch names — code and site None
+    where it names none — or None where it names no kind. A KIND WITHOUT ITS EVIDENCE IS A
+    LEAD: a route item brings the route line the refusal printed, a behaviour item its
+    commands, and a row given either kind without that is entered as a lead, whose cell
+    says what it was given as. The code and the site are text and nothing more: neither is
+    held to a vocabulary."""
+    if "kind" not in row:
+        stray = [name for name in CLASS_FIELDS if name in row]
+        if stray:
+            refuse("bad-value", "%s: %s — a cell of a class belongs to a kind, and this names none (`kind`: %s)" % (what, ", ".join(stray), ", ".join(KINDS)))
+        return None
+    kind = one_of(row["kind"], tuple(KINDS), what + ": kind")
+    for other, field in KINDS.items():
+        if field in row and other != kind:
+            refuse("bad-value", "%s: `%s` is the evidence of kind %s, and the row's kind is %s — %s" % (what, field, other, kind, "its evidence is `%s`" % KINDS[kind] if KINDS[kind] else "a lead quotes no route and carries no commands"))
+    evidence = text_of(row, KINDS[kind], what, scratch) if KINDS[kind] in row else "-"
+    if KINDS[kind] and evidence == "-":
+        kind = GIVEN + kind
+    return [kind] + [said(row, name, what, scratch) if name in row else None for name in ("code", "site")] + [evidence]
+
+
+def read_classes(run_dir):
+    return table_file(
+        run_dir,
+        ["classes.md"],
+        CLASS_COLUMNS,
+        "what the queue is ranked by",
+        "One row per finding of the ledger that carries a class: its kind — `route`, `behaviour` or `lead`, and a lead that was given another kind without its evidence says which — where it comes from, the finding it was handed on under, the refusal's code and the site it names where it names them, and the kind's evidence: the route line a refusal printed, or the commands that show the misbehaviour. Written by `dev/stabilize-record` and never by hand; a finding without a row here carries no class.",
+    )
+
+
+def verdict_cells(run_dir, key):
+    """The verdict cells the rounds' triage records hold for a finding, in the rounds'
+    order — `-` where a round triaged it and recorded no verdict."""
+    cells = []
+    for number_ in numbered(run_dir, [], "r"):
+        cells += [row[3] for row in read_triage(run_dir, number_)[2] if untick(row[0]) == key]
+    return cells
+
+
+def origin_under(run_dir, parent, what):
+    """Where an item handed on under `parent` comes from: COMPUTED from the verdict the
+    latest round that triaged the parent has on record, and said by no caller."""
+    verdict, _, word = (verdict_cells(run_dir, parent) or ["-"])[-1].partition(": ")
+    if verdict == "confirmed":
+        return UNDER_CONFIRMED
+    if verdict == "refuted" and word in REFUTATIONS:
+        return REFUTATIONS[word]
+    if verdict == "refuted":
+        refuse("bad-value", "%s: its parent %s was refuted, and the record does not say which of three it is (%s) — where an item handed on under it comes from is computed from that word; nothing was written" % (what, parent, ", ".join(REFUTATIONS)))
+    refuse("bad-value", "%s: its parent %s has no verdict on record to compute where the item comes from — it was never triaged, is not verified, or nobody could drive it — and an item is handed on by the verifier that gave its parent a verdict; nothing was written" % (what, parent))
+
+
 LEDGER_REQUIRED = ("key", "doctype", "round", "source", "door", "clause", "repro")
 LEDGER_SET = ("grade", "graded_by", "bound", "disposition", "detail")
 
 
 def ledger_row(row, scratch):
-    fields(row, LEDGER_REQUIRED, LEDGER_SET, "a ledger row")
+    """(key, the row's cells, its class's cells or None). Of a class, where the item comes
+    from is still as the caller named it — an origin, or a parent: the writer settles it."""
+    fields(row, LEDGER_REQUIRED, LEDGER_SET + CLASS_FIELDS, "a ledger row")
     what = "row %s" % shown(row["key"])
     key = slug(row["key"], "key")
     one_of(row["doctype"], DOCTYPES, what + ": doctype")
@@ -2146,7 +2321,17 @@ def ledger_row(row, scratch):
     cells += ["ungraded", "-", "open", text_of(row, "repro", what, scratch)]
     for at, text in set_cells(row, what, scratch):
         cells[at] = text
-    return key, cells
+    made = kind_cells(row, what, scratch)
+    if made is None:
+        return key, cells, None
+    origin, parent = row.get("origin"), row.get("parent")
+    if (origin is None) == (parent is None):
+        refuse("bad-value", "%s: a class is a kind and where the item comes from — `origin` (%s) for what an instrument found or the opening seeded, or `parent` for an item a verifier handed on, whose origin is computed from its parent's verdict and which no caller says: name one of the two, and never both" % (what, ", ".join(SAID_ORIGINS)))
+    if parent is not None:
+        slug(parent, what + ": parent")
+    else:
+        one_of(origin, SAID_ORIGINS, what + ": origin")
+    return key, cells, [tick(key), made[0], origin, parent, made[1] or "-", made[2] or "-", made[3]]
 
 
 def table_file(run_dir, parts, columns, title, says):
@@ -2472,22 +2657,43 @@ def ledger_add(args):
     scratch = scratch_roots(args)
     given = [ledger_row(row, scratch) for row in json_rows("ledger row")]
     one_writer(run_dir)
-    hold_to_the_list(run_dir, [("row %s" % key, cells[6]) for key, cells in given])
+    hold_to_the_list(run_dir, [("row %s" % key, cells[6]) for key, cells, _ in given])
     rel, above, rows = read_ledger(run_dir)
     keys = unique_rows(rel, rows)
     hold_census(run_dir, rel, keys)
-    appended, existing = [], []
-    for key, cells in given:
+    classes_rel, classes_above, class_rows = read_classes(run_dir)
+    unique_rows(classes_rel, class_rows)
+    appended, existing, classed, leads = [], [], [], []
+    for key, cells, made in given:
         if key in keys:
             existing.append(key)
-        else:
-            keys.append(key)
-            rows.append(cells)
-            appended.append(key)
+            continue
+        if made is not None:
+            if made[3] is None:
+                made[3] = "-"
+            else:
+                # AN ITEM A VERIFIER HANDED ON: where it comes from is its parent's verdict.
+                if made[3] not in keys:
+                    refuse("no-such-row", "row %s: the ledger has no row %s to hand it on under; nothing was written" % (key, made[3]))
+                made[2], made[3] = origin_under(run_dir, made[3], "row %s" % key), tick(made[3])
+            class_rows.append(made)
+            classed.append(key)
+            if made[1].startswith(GIVEN):
+                leads.append(key)
+        keys.append(key)
+        rows.append(cells)
+        appended.append(key)
     if appended:
         publish(run_dir, ["ledger.md"], render_table(above, LEDGER_COLUMNS, rows), replace=True)
         census(run_dir, appended)
-    say(json.dumps({"ledger": rel, "appended": appended, "existing": existing}))
+    if classed:
+        publish(run_dir, ["classes.md"], render_table(classes_above, CLASS_COLUMNS, class_rows), replace=True)
+    printed = {"ledger": rel, "appended": appended, "existing": existing}
+    if any(made is not None for _, _, made in given):
+        # A call that names a kind says where the classes lie, and which rows it ENTERED AS
+        # A LEAD for lack of their kind's evidence.
+        printed.update(classes=classes_rel, leads=leads)
+    say(json.dumps(printed))
 
 
 def hold_census(run_dir, ledger_rel, keys):
@@ -2514,24 +2720,41 @@ def ledger_set(args):
     scratch = scratch_roots(args)
     patches = []
     for patch in json_rows("ledger patch"):
-        fields(patch, ("key",), LEDGER_SET, "a ledger patch")
+        fields(patch, ("key",), LEDGER_SET + KIND_FIELDS, "a ledger patch")
         key = slug(patch["key"], "key")
         cells = set_cells(patch, "patch %s" % key, scratch)
-        if not cells:
-            refuse("bad-value", "patch %s sets neither a grade nor a disposition" % key)
-        patches.append((key, cells))
+        made = kind_cells(patch, "patch %s" % key, scratch)
+        if not cells and made is None:
+            refuse("bad-value", "patch %s sets neither a grade, nor a disposition, nor a kind" % key)
+        patches.append((key, cells, made))
     one_writer(run_dir)
-    hold_to_the_list(run_dir, [("patch %s" % key, text) for key, cells in patches for at, text in cells if at == 6])
+    hold_to_the_list(run_dir, [("patch %s" % key, text) for key, cells, _ in patches for at, text in cells if at == 6])
     rel, above, rows = read_ledger(run_dir)
     keys = unique_rows(rel, rows)
     hold_census(run_dir, rel, keys)
-    for key, cells in patches:
+    classes_rel, classes_above, class_rows = read_classes(run_dir)
+    classed, changed = unique_rows(classes_rel, class_rows), False
+    for key, cells, made in patches:
         if key not in keys:
             refuse("no-such-row", "the ledger has no row %s; nothing was written" % key)
         for at, text in cells:
             rows[keys.index(key)][at] = text
+        if made is None:
+            continue
+        if key not in classed:
+            refuse("bad-value", "patch %s: the row carries no class — a kind is written with its row (ledger-add), and a patch changes the kind of a row that has one; nothing was written" % key)
+        held = class_rows[classed.index(key)]
+        now = [held[0], made[0], held[2], held[3], made[1] or held[4], made[2] or held[5], made[3]]
+        # A KIND STANDS ONCE ITS ROW HAS A VERDICT: a hit rate per kind is honest only if
+        # the kind was on record before the verdict.
+        if now != held and any(cell != "-" for cell in verdict_cells(run_dir, key)):
+            refuse("exists", "patch %s: the row has a verdict on record, and from then on its kind, the kind's evidence, its code and its site stand (%s holds them) — what kind of item a verifier judged is not changed after it judged; nothing was written" % (key, classes_rel))
+        changed = changed or now != held
+        class_rows[classed.index(key)] = now
     publish(run_dir, ["ledger.md"], render_table(above, LEDGER_COLUMNS, rows), replace=True)
-    say(json.dumps({"ledger": rel, "updated": [key for key, _ in patches]}))
+    if changed:
+        publish(run_dir, ["classes.md"], render_table(classes_above, CLASS_COLUMNS, class_rows), replace=True)
+    say(json.dumps({"ledger": rel, "updated": [key for key, _, _ in patches]}))
 
 
 def result_set(args):
@@ -2588,7 +2811,7 @@ def result_set(args):
     due = [(entry["item"], entry["round"]) for clause in read["clauses"] for entry in clause["items"] if entry["rerun"] == "due"] if read["next"] == "retest" else []
     ledger, ledger_above, ledger_rows = read_ledger(run_dir)
     keys = unique_rows(ledger, ledger_rows)
-    recorded, filed, added = [], [], []
+    recorded, filed, added, classing = [], [], [], []
     for name, outcome, detail, finding, verdict in given:
         if name not in items:
             refuse("no-such-row", "the test set has no item %s; nothing was written" % name)
@@ -2624,6 +2847,9 @@ def result_set(args):
         recorded.append({"item": name, "attempt": attempt, "outcome": outcome})
         if finding is None:
             continue
+        # What shows the misbehaviour of a red run: the tool's verdict on record for a held
+        # check, and what the call brings of the preflight's report for one that is not.
+        evidence = "/".join(ARTIFACTS + (args.run,) + tuple(parts)) if verdict is not None else finding[3]
         # A red run is a finding: its row in the ledger, under a key of the item's own, so
         # that the next triage grades it and it is routed like any other. A row that says
         # `fixed` does not inherit that: the item is red after its fix.
@@ -2639,6 +2865,7 @@ def result_set(args):
             ledger_rows.append(finding[:2] + [round_number, source, finding[2], untick(item[2]), "ungraded", "-", "open", finding[3]])
             filed.append(key)
             added.append(key)
+            classing.append([finding[0], RED_CLASS[0], RED_CLASS[1], "-", "-", "-", evidence])
     publish(run_dir, ["r" + round_number, "results.md"], render_table(above, RESULT_COLUMNS, rows), replace=True)
     # How many runs of each item the round now holds, in the round's own record: a result
     # that is gone later is missed there (state).
@@ -2650,6 +2877,13 @@ def result_set(args):
         publish(run_dir, ["ledger.md"], render_table(ledger_above, LEDGER_COLUMNS, ledger_rows), replace=True)
     if added:
         census(run_dir, added)
+        # A RED RUN'S ROW IS FILED WITH ITS CLASS — in a run whose rows carry one. THE
+        # SWITCH IS THIS LINE: until a run's opening can say that it has a queue (the plan's
+        # T2a: a run that holds an `order`), what says so is that its ledger holds a row
+        # with a class. A run that holds none files the row as it always did.
+        classes_rel, classes_above, class_rows = read_classes(run_dir)
+        if unique_rows(classes_rel, class_rows):
+            publish(run_dir, ["classes.md"], render_table(classes_above, CLASS_COLUMNS, class_rows + classing), replace=True)
     render_view(run_dir)
     say(json.dumps({"results": rel, "recorded": recorded, "findings": filed}))
 
@@ -2976,7 +3210,7 @@ def run_set(args):
 def triage_entry(entry):
     """(key, the entry's cells in the triage record after `inside`, the ledger's grade and
     grader). Nothing of an entry says where the finding was found: that is computed."""
-    fields(entry, ("key", "grade"), ("bound", "verdict", "regression", "fork"), "a triage entry")
+    fields(entry, ("key", "grade"), ("bound", "verdict", "regression", "fork", "refutation", "reason"), "a triage entry")
     what = "entry %s" % shown(entry["key"])
     key = slug(entry["key"], "key")
     grade = one_of(entry["grade"], TRIAGE_GRADES, what + ": grade")
@@ -2991,16 +3225,31 @@ def triage_entry(entry):
         refuse("bad-value", "%s: out-of-scope cites a declared bound as `bound`, and no other grade does" % what)
     if "bound" in entry:
         grade = OUT_OF_SCOPE + slug(entry["bound"], what + ": bound")
+    verdict = entry.get("verdict")
+    if "refutation" in entry and verdict != "refuted":
+        refuse("bad-value", "%s: a refutation is why the verifier refuted a finding — one of %s, beside the verdict `refuted` and beside no other" % (what, ", ".join(REFUTATIONS)))
+    if "reason" in entry and verdict != UNDRIVABLE:
+        refuse("bad-value", "%s: a reason is why nobody here can drive a finding — beside the verdict `%s` and beside no other" % (what, UNDRIVABLE))
     if "verdict" not in entry:
         if "regression" in entry:
             refuse("bad-value", "%s: a regression is the verifier's fact about a finding it confirmed" % what)
         return key, [grade, "-", "-", fork], (grade, "triage")
     if grade not in SENT_ON:
         refuse("bad-value", "%s: a verdict is the verifier's, and the verifier is sent %s — not %s" % (what, " and ".join(SENT_ON), grade))
-    if one_of(entry["verdict"], VERDICTS, what + ": verdict") == "refuted":
-        if "regression" in entry:
-            refuse("bad-value", "%s: a regression is the verifier's fact about a finding it confirmed" % what)
-        return key, [grade, "refuted", "-", fork], ("refuted", "verify-real")
+    if one_of(verdict, VERDICTS + (UNDRIVABLE,), what + ": verdict") != "confirmed" and "regression" in entry:
+        refuse("bad-value", "%s: a regression is the verifier's fact about a finding it confirmed" % what)
+    if verdict == UNDRIVABLE:
+        # NOBODY HERE CAN DRIVE IT — the finding asks for another platform, another caller.
+        # The verifier established nothing of it, so triage's grade stands; the record
+        # holds that it was tried, and why in a word, and the finding is the human's.
+        reason = entry.get("reason")
+        if not isinstance(reason, str) or len(reason) > SLUG_MAX or not SLUG.fullmatch(reason):
+            refuse("bad-value", "%s: %s says why nobody here can drive the finding, as `reason` — a word: a-z0-9 words joined by single `-`, at most %d characters — not %s" % (what, UNDRIVABLE, SLUG_MAX, shown(reason)))
+        return key, [grade, "%s: %s" % (UNDRIVABLE, reason), "-", fork], (grade, "triage")
+    if verdict == "refuted":
+        # Which of three it is, where the verifier says so; `refuted` alone where not.
+        word = ": " + one_of(entry["refutation"], tuple(REFUTATIONS), what + ": refutation") if "refutation" in entry else ""
+        return key, [grade, "refuted" + word, "-", fork], ("refuted", "verify-real")
     regression = entry.get("regression")
     if regression is not None and not isinstance(regression, bool):
         refuse("bad-value", "%s: confirmed says whether the finding is a regression where its verifier knows — `regression` is true when the repro is green on the previous release, false when it is red there too — and says nothing (the field absent, or null) where it does not: %s is none of the three" % (what, shown(regression)))
@@ -3079,7 +3328,7 @@ def grade_read(rel, key, text):
 def stands(entry):
     """Whether a round's triage of a finding leaves it standing: confirmed, in need of a
     bound, or sent to the verifier and not refuted."""
-    return entry["verdict"] == "confirmed" or (entry["verdict"] is None and entry["grade"] in SENT_ON + ("needs-bound",))
+    return entry["verdict"] == "confirmed" or (entry["verdict"] in (None, UNDRIVABLE) and entry["grade"] in SENT_ON + ("needs-bound",))
 
 
 def fix_held(finding, triage):
@@ -3118,6 +3367,11 @@ def route_of(finding, triage, listed):
     if grade == "ungraded":
         return "triage", "ungraded"
     if grade in SENT_ON:
+        # NOBODY HERE CAN DRIVE IT: the verifier that was sent said so, on record. It is no
+        # triage's to finish — a second verifier is handed the same two binaries — and is
+        # the human's at once, by the first record that says it.
+        if triage is not None and triage["verdict"] == UNDRIVABLE:
+            return "human", UNDRIVABLE
         return "triage", "unverified"
     if grade in ("no-break", "refuted"):
         return "recorded", "not-a-break"
@@ -3667,6 +3921,16 @@ def untriaged(args):
     say(json.dumps({"run": args.run, "count": len(rows), "untriaged": rows}))
 
 
+def read_row(args):
+    """ONE ROW OF THE LEDGER, WHOLE, BY ITS KEY: as the state has it — its triage, its
+    route, and its class where it carries one."""
+    _, held = read_by_key(args.run)
+    rows = [finding for finding in held["ledger"] if finding["key"] == slug(args.key, "key")]
+    if not rows:
+        refuse("no-such-row", "the ledger of run %s has no row %s" % (args.run, shown(args.key)))
+    say(json.dumps({"run": args.run, "row": rows[0]}))
+
+
 def interrupted(run_dir, run):
     """Refuse to read a run one of whose writes was killed between its files. The reader
     holds the shared lock, so the write is not alive: its journal is what is left."""
@@ -3704,7 +3968,11 @@ def document(run_dir, run):
             side = placed(ledger_rows[keys.index(key)][4], scope)
             grade, bound = grade_read(rel, key, row[2])
             fork = FORK.fullmatch(row[6])
-            if row[1] != inside_cell(side) or grade not in TRIAGE_GRADES or row[3] not in VERDICTS + ("-",) or row[4] not in ("yes", "no", "-") or (fork is None) != (row[6] == "-") or (fork is not None and row[3] == "-"):
+            # The verdict, and the word it may say beside itself: which of three a
+            # refutation is, why nobody here can drive the finding.
+            verdict, _, word = row[3].partition(": ")
+            known = row[3] == "-" or (verdict in VERDICTS and not word) or (verdict == "refuted" and word in REFUTATIONS) or (verdict == UNDRIVABLE and bool(SLUG.fullmatch(word)))
+            if row[1] != inside_cell(side) or grade not in TRIAGE_GRADES or not known or row[4] not in ("yes", "no", "-") or (fork is None) != (row[6] == "-") or (fork is not None and row[3] == "-"):
                 spoiled(rel, "holds a row for %s that does not follow from the round's doors and the triage vocabulary" % key)
             triage[key] = {
                 "round": number_,
@@ -3712,11 +3980,13 @@ def document(run_dir, run):
                 "door": side,
                 "grade": grade,
                 "bound": bound,
-                "verdict": None if row[3] == "-" else row[3],
+                "verdict": None if row[3] == "-" else verdict,
                 "regression": None if row[4] == "-" else row[4] == "yes",
                 "found_with": as_data(row[5]),
                 "fork": dict(zip(FORK_FIELDS, fork.groups())) if fork else None,
             }
+            if word:
+                triage[key]["refutation" if verdict == "refuted" else "reason"] = word
             # Found again with a fix on its row, and standing: that fix did not hold.
             if row[5].startswith("fixed: ") and stands(triage[key]):
                 reopened.append(key)
@@ -3755,6 +4025,17 @@ def document(run_dir, run):
     # further ones the human granted there.
     passes = by_name(rounds[-1]["facts"]["awaiting"]) if rounds else {}
     again = rounds[-1]["facts"]["reverify"] if rounds else []
+    # THE CLASSES, by the finding each is the class of: a row of the table beside the ledger
+    # is one this script wrote, of a finding the ledger has.
+    classes_rel, _, class_rows = read_classes(run_dir)
+    classes = {}
+    for key, row in zip(unique_rows(classes_rel, class_rows), class_rows):
+        given = row[1][len(GIVEN):] if row[1].startswith(GIVEN) else None
+        parent = None if row[3] == "-" else untick(row[3])
+        under = row[2] == UNDER_CONFIRMED or row[2] in REFUTATIONS.values()
+        if key not in keys or not (row[1] in KINDS or KINDS.get(given)) or not (under or row[2] in SAID_ORIGINS) or under != (parent is not None) or (parent is not None and parent not in keys):
+            spoiled(classes_rel, "holds a row for %s that this script does not write, or that names a finding the ledger lacks" % key)
+        classes[key] = {"kind": "lead" if given else row[1], "given": given, "origin": row[2], "parent": parent, **{name: None if text == "-" else as_data(text) for name, text in zip(("code", "site", "evidence"), row[4:])}}
     for held in rounds:
         for key in by_name(held["facts"]["awaiting"]):
             if key not in keys:
@@ -3794,6 +4075,8 @@ def document(run_dir, run):
             finding["awaits"] = {"why": finding["why"], "passes": count, "retry": "due" if due else "spent"}
             if not due:
                 finding["route"], finding["why"] = "human", finding["why"] + AFTER_RETRY
+        if key in classes:
+            finding["class"] = classes[key]
         findings.append(finding)
     hold_census(run_dir, ledger_rel, keys)
     items = [
@@ -4534,6 +4817,7 @@ def arguments(argv):
     command("item", read_item, [("item", True)])
     command("item-doors", item_doors, [("round", True), ("item", True)])
     command("untriaged", untriaged, [])
+    command("row", read_row, [("key", True)])
     command("gate-set", gate_set, [("round", True), ("commit", True), ("summary", True)], writes=True)
     command("gate-check", gate_check, [("round", False), ("summary", True)], writes=True)
     command("apply", apply, [("round", False), ("subject", True), ("from", False), ("sha256", False)], writes=True)

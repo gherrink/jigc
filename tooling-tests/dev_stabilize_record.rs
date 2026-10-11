@@ -51,8 +51,10 @@
 //! - *The writers.* Ten subcommands write a file ([`WRITERS`]), and seven of them put a
 //!   caller's free text into it: a report's body, a ledger row's cells as it is added and
 //!   as it is set, a void run's reason, a bound's, a door's derivation, a test-set item's
-//!   brief. The scanner that could not run and the killed write are driven through all
-//!   ten; the host-path replacement and the hygiene stop through the seven. The list is
+//!   brief — and the evidence of a row's kind, as the row is added and as its kind is set
+//!   (two rows of the list). The scanner that could not run and the killed write are
+//!   driven through all of them; the host-path replacement and the hygiene stop through
+//!   those that take a text. The list is
 //!   held to the script's
 //!   own parser — every subcommand it names is a writer on the list or one of the three
 //!   that write nothing ([`every_subcommand_is_a_listed_writer_or_a_check`]) — so a writer
@@ -230,6 +232,22 @@
 //! `close` over an item whose door is mistyped** — a declared bound, which
 //! [`an_in_scope_item_no_tested_round_selected_is_named_and_so_is_a_door_no_item_names`]
 //! and a row of [`ROUNDS`] hold as the answer `close`, with the item and the door named.
+//!
+//! **And on ten more, for what a row can carry** (the build plan of the reshaped `test`
+//! stage, `T1`; section 32). The arms were written before the script took a kind, and nine
+//! of the ten were red on its parent — a ledger row and a triage entry *have no field* of
+//! that name. The tenth, [`a_run_without_an_order_holds_the_bytes_it_held`], is green on
+//! the parent by what it holds: it drives one whole stage as the harness makes its calls
+//! and holds every answer and every file to [`A_STAGE_AS_IT_WAS`], which was taken from
+//! the parent's script before a line of it changed. Its teeth are the first two mutants.
+//! Each one edit, the ten arms run on each, none survived: a red run's row filed with a
+//! class whatever the run holds; every row of the state saying a class, `null` where it
+//! carries none; a handed-on item's origin not computed from its parent's verdict; an
+//! origin a caller says beside a parent taken; a kind changed whatever verdict its row
+//! has; a kind without its evidence keeping its kind; an undrivable finding routed as an
+//! unverified one, and a fix standing over one; a refutation's word not written beside its
+//! verdict; a held check's red run given what the call says for evidence, and not the
+//! verdict on record.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -1238,6 +1256,33 @@ const WRITERS: &[Writer] = &[
         },
     },
     Writer {
+        name: "ledger-add (a classed row's evidence)",
+        free_text: true,
+        prepare: |_| {},
+        call: |rig, text, extra| {
+            let mut entry = classed("audit-f3", "jigc setup", "behaviour", "hunt");
+            entry["commands"] = json!(text);
+            let mut args = ledger_add(RUN);
+            args.extend_from_slice(extra);
+            (rig.run(&args, &entry.to_string()), classes_path())
+        },
+    },
+    Writer {
+        name: "ledger-set (the evidence of a kind)",
+        free_text: true,
+        prepare: |rig| {
+            let entry = classed("audit-f3", "jigc setup", "lead", "hunt");
+            rig.run(&ledger_add(RUN), &entry.to_string())
+                .must(OK, "a row with a class");
+        },
+        call: |rig, text, extra| {
+            let patch = json!({"key": "audit-f3", "kind": "route", "route": text});
+            let mut args = ledger_set(RUN);
+            args.extend_from_slice(extra);
+            (rig.run(&args, &patch.to_string()), classes_path())
+        },
+    },
+    Writer {
         name: "apply (a row's `source` cell, in a batch of one call)",
         free_text: true,
         prepare: |_| {},
@@ -1255,7 +1300,7 @@ const WRITERS: &[Writer] = &[
 ];
 
 /// The subcommands that write nothing.
-const READERS: [&str; 9] = [
+const READERS: [&str; 10] = [
     "check-reports",
     "check-ledger",
     "state",
@@ -1265,6 +1310,7 @@ const READERS: [&str; 9] = [
     "item",
     "item-doors",
     "untriaged",
+    "row",
 ];
 
 /// The subcommands that settle a batch and take no text of a caller's: they finish a write
@@ -1724,6 +1770,26 @@ const ID_SITES: &[IdSite] = &[
         numeric: false,
         call: |rig, v| rig.run(&run_set(v), &json!({"rounds": 3}).to_string()),
     },
+    IdSite {
+        name: "ledger-add, the parent a row was handed on under",
+        numeric: false,
+        call: |rig, v| {
+            let mut given = row("audit-f3");
+            given["kind"] = json!("lead");
+            given["parent"] = json!(v);
+            rig.run(&ledger_add(RUN), &given.to_string())
+        },
+    },
+    IdSite {
+        name: "row --run",
+        numeric: false,
+        call: |rig, v| rig.run(&read_row(v, "seeded"), ""),
+    },
+    IdSite {
+        name: "row --key",
+        numeric: false,
+        call: |rig, v| rig.run(&read_row(RUN, v), ""),
+    },
 ];
 
 #[test]
@@ -1843,6 +1909,7 @@ fn every_subcommand(rig: &Rig, run: &str) -> Vec<(&'static str, Seen)> {
             rig.run(&read_doors(run, "1", "row-setup"), ""),
         ),
         ("untriaged", rig.run(&keeper("untriaged", run), "")),
+        ("row", rig.run(&read_row(run, "seeded"), "")),
     ]
 }
 
@@ -13807,4 +13874,1932 @@ fn a_scripted_checks_result_is_the_tools_verdict() {
         "{}",
         seen.stdout
     );
+}
+
+// ---------------------------------------------------------------------------
+// 32 · A row carries what the queue is ranked by
+// ---------------------------------------------------------------------------
+
+/// What the tool keeps of a candidate's gate that ran to its end green.
+fn gate_verdict(commit: &str) -> Value {
+    json!({
+        "tool": "stabilize-step", "name": "gate-r1-a1", "kind": "gate",
+        "asked": {"commit": commit}, "exit": 0, "seconds": 1400,
+        "verdict": "green", "why": null, "detail": "GATE: PASS",
+        "facts": {"verdict": "pass", "failed": 0},
+        "evidence": {"totals": "tests   passed=4700 failed=0  (over 15 test binaries)"},
+        "output": "hold/gate-r1-a1/output", "output_sha256": sha256('4'),
+    })
+}
+
+/// **One whole `test` stage, as the harness makes its calls today** — the opening's writes,
+/// the attempt's marker, the scope and the reports from files, the reads an agent makes by
+/// key, the report check and the vet, the record's ONE batch from a file held to its hash
+/// (the report check, the candidate's gate, a result per item — a held check green, a held
+/// check red, a check an agent read red, a hunt green — the findings, their triage with a
+/// verdict of each kind, the round's facts, the ledger check), what is pending, the vet of
+/// the commit, the settle; and then the invocation that finishes the round's triage.
+/// Returns what every call printed, in order, and every file the run's directory then
+/// holds: the answers and the bytes.
+fn a_stage_as_the_harness_makes_its_calls(rig: &Rig) -> String {
+    let scratch = rig.tmp.join("scratch");
+    fs::create_dir_all(scratch.join("hold/regression-r1-a1/work"))
+        .expect("the scratch root a stage hands its writers");
+    let under_scratch = format!("--scratch={}", scratch.display());
+    let commit = sha('a');
+    let mut told = String::new();
+    let mut call_ = |label: &str, mut args: Vec<String>, writes: bool, stdin: &str| -> Value {
+        if writes {
+            args.push(under_scratch.clone());
+        }
+        let seen = rig.run(&args, stdin);
+        seen.must(OK, label);
+        assert!(seen.stderr.is_empty(), "{label}: {}", seen.stderr);
+        told.push_str(&format!("== {label}\n{}", seen.stdout));
+        if seen.stdout.trim().starts_with(['{', '[']) {
+            seen.json()
+        } else {
+            Value::Null
+        }
+    };
+    let fed = |name: &str, text: &str| {
+        let path = scratch.join(name);
+        fs::write(&path, text).expect("write what an agent hands a writer");
+        path
+    };
+    let reported = |reporter: &str, attempt: &str, says: &str| {
+        let body = format!("# {reporter}\n\n{says}\n\n{ENDS}\n");
+        let file = fed(&format!("{reporter}.a{attempt}.md"), &body);
+        from_file(report(RUN, "1", reporter, attempt), &file)
+    };
+    let batch_of = |name: &str, calls: Value| {
+        let text = format!("{calls}\n");
+        let mut args = from_file(apply(RUN, Some("1")), &fed(name, &text));
+        args.push(format!("--sha256={}", sha256_of(&text)));
+        args
+    };
+    let within = |mut args: Vec<String>| {
+        args.push(under_scratch.clone());
+        args
+    };
+
+    // THE OPENING: the run's facts, a declared bound, the test set, the ledger's rows.
+    call_(
+        "the opening: run-set",
+        run_set(RUN),
+        false,
+        &format!(r#"{{{BOUNDED}, {RELEASE}, "clauses": ["no-lost-files", "routes-work"]}}"#),
+    );
+    call_(
+        "the opening: bound-set",
+        bound_set(RUN, "non-jigc-writer", &BOUND),
+        true,
+        "",
+    );
+    let unit = |id: &str, kind: &str, clause: &str, runs: &str, doors: &[&str]| {
+        json!({"item": id, "kind": kind, "clause": clause, "runs": runs, "doors": doors,
+               "brief": format!("the brief of `{id}`, as the opening record names it")})
+    };
+    let items = json!([
+        unit("gate", "held-gate", "no-lost-files", "every-candidate", &[]),
+        unit(
+            "regression-set",
+            "held-regression",
+            "no-lost-files",
+            "every-candidate",
+            &[]
+        ),
+        unit("ci", "check", "routes-work", "every-candidate", &[]),
+        unit(
+            "review-setup",
+            "review-row",
+            "routes-work",
+            "in-scope",
+            &[INSIDE]
+        ),
+        unit(
+            "review-show",
+            "review-row",
+            "routes-work",
+            "in-scope",
+            &[EXCLUDED]
+        ),
+    ]);
+    call_(
+        "the opening: item-set",
+        item_set(RUN),
+        true,
+        &items.to_string(),
+    );
+    let mut seeded = row_at("seed-hook", INSIDE);
+    seeded["round"] = json!(0);
+    seeded["source"] = json!("the canary's ledger, row 4");
+    let mut old = row_at("seed-old", UNLISTED);
+    old["round"] = json!(0);
+    call_(
+        "the opening: ledger-add",
+        ledger_add(RUN),
+        true,
+        &json!([seeded, old]).to_string(),
+    );
+    call_("the opening: state", state(RUN), false, "");
+
+    // THE STAGE: its attempt's marker, its scope, the reads by key, its reports.
+    call_(
+        "the attempt's marker",
+        reported("attempt", "1", "round 1, attempt 1, begun"),
+        true,
+        "",
+    );
+    let doors = scope(&[INSIDE], &[EXCLUDED]).to_string();
+    call_(
+        "the scope, from a file",
+        from_file(scope_set(RUN, "1"), &fed("scope.json", &doors)),
+        true,
+        "",
+    );
+    call_(
+        "a read by key: item",
+        read_item(RUN, "review-setup"),
+        false,
+        "",
+    );
+    call_(
+        "a read by key: item-doors",
+        read_doors(RUN, "1", "review-setup"),
+        false,
+        "",
+    );
+    for (reporter, says) in [
+        ("preflight", "ci: red — the workflow's `lint` job failed."),
+        ("review-setup", "Three findings, each with its block."),
+    ] {
+        call_(
+            &format!("a report, from a file: {reporter}"),
+            reported(reporter, "1", says),
+            true,
+            "",
+        );
+    }
+    call_(
+        "the reports, checked",
+        check_reports(RUN, "1", "1", &["attempt", "preflight", "review-setup"]),
+        false,
+        "",
+    );
+    let pending = call_("what is pending", keeper("pending", RUN), false, "");
+    let once: Vec<&str> = pending["once"]
+        .as_array()
+        .expect("the files written once")
+        .iter()
+        .map(|path| path.as_str().expect("a path"))
+        .collect();
+    call_(
+        "the vet of what is written once",
+        vet(RUN, None, &once),
+        false,
+        "",
+    );
+    call_(
+        "a read by key: untriaged",
+        keeper("untriaged", RUN),
+        false,
+        "",
+    );
+    for (reporter, says) in [
+        ("triage-p1", "Five findings graded."),
+        (
+            "verify-seed-hook",
+            "Confirmed; green on the previous release.",
+        ),
+        ("verify-review-f1", "Refuted: it does not reproduce."),
+        ("verify-review-f2", "Confirmed."),
+    ] {
+        call_(
+            &format!("a report, from a file: {reporter}"),
+            reported(reporter, "1", says),
+            true,
+            "",
+        );
+    }
+
+    // THE RECORD: one batch, from a file held to its hash.
+    let launched = [
+        "attempt",
+        "preflight",
+        "review-setup",
+        "triage-p1",
+        "verify-seed-hook",
+        "verify-review-f1",
+        "verify-review-f2",
+    ];
+    let green = verdict_file(rig, "gate", &gate_verdict(&commit));
+    let red = verdict_file(
+        rig,
+        "regression",
+        &regression_verdict(rig, "red", None, &commit),
+    );
+    let results = json!([
+        {"item": "gate", "verdict": green},
+        {"item": "regression-set", "verdict": red},
+        {"item": "ci", "outcome": "red", "doctype": "jigc-feedback", "door": "the check `ci`",
+         "repro": "the preflight's report: the workflow's `lint` job failed"},
+        {"item": "review-setup", "outcome": "green"},
+    ]);
+    let found = json!([
+        row_at("review-f1", INSIDE),
+        row_at("review-f2", EXCLUDED),
+        row_at("review-f3", INSIDE),
+    ]);
+    let triaged = json!([
+        {"key": "seed-hook", "grade": "breaks", "verdict": "confirmed", "regression": true},
+        {"key": "seed-old", "grade": "out-of-scope", "bound": "non-jigc-writer"},
+        {"key": "review-f1", "grade": "unclear", "verdict": "refuted"},
+        {"key": "review-f2", "grade": "breaks", "verdict": "confirmed"},
+        {"key": "review-f3", "grade": "no-break"},
+    ]);
+    let summary = rig.summary("candidate", &[], &[]);
+    let record = json!([
+        call(check_reports(RUN, "1", "1", &launched), ""),
+        call(within(gate_set(RUN, "1", &commit, &summary)), ""),
+        call(within(result_set(RUN, "1", &commit)), &results.to_string()),
+        call(within(ledger_add(RUN)), &found.to_string()),
+        call(triage_set(RUN, "1"), &triaged.to_string()),
+        call(
+            round_set(RUN, "1"),
+            &json!({"candidate": commit, "base": sha('b'), "binary": sha256('c')}).to_string()
+        ),
+        call(
+            check_ledger(
+                RUN,
+                &[
+                    "seed-hook",
+                    "seed-old",
+                    "review-f1",
+                    "review-f2",
+                    "review-f3"
+                ]
+            ),
+            ""
+        ),
+    ]);
+    call_(
+        "the record's batch",
+        batch_of("record.json", record),
+        true,
+        "",
+    );
+    let pending = call_("the batch, pending", keeper("pending", RUN), false, "");
+    let batch: Vec<&str> = pending["batch"]["files"]
+        .as_object()
+        .expect("the batch's files")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    call_(
+        "the vet of the record's commit",
+        vet(RUN, Some("docs(record): a record step"), &batch),
+        false,
+        "",
+    );
+    call_("the batch, settled", keeper("settle", RUN), false, "");
+    call_("the state after the record", state(RUN), false, "");
+
+    // THE INVOCATION THAT FINISHES THE ROUND'S TRIAGE: the two red runs are graded, one of
+    // them verified.
+    call_(
+        "the second attempt's marker",
+        reported("attempt", "2", "round 1, attempt 2, begun: the triage"),
+        true,
+        "",
+    );
+    call_(
+        "the untriaged rows, again",
+        keeper("untriaged", RUN),
+        false,
+        "",
+    );
+    for (reporter, says) in [
+        ("triage-p1", "Two red runs graded."),
+        (
+            "verify-red-ci",
+            "Confirmed; red on the previous release too.",
+        ),
+    ] {
+        call_(
+            &format!("a report of the second attempt: {reporter}"),
+            reported(reporter, "2", says),
+            true,
+            "",
+        );
+    }
+    let lap =
+        json!([
+        call(check_reports(RUN, "1", "2", &["attempt", "triage-p1", "verify-red-ci"]), ""),
+        call(
+            triage_set(RUN, "1"),
+            &json!([
+                {"key": "red-ci", "grade": "breaks", "verdict": "confirmed", "regression": false},
+                {"key": "red-regression-set", "grade": "unclear"},
+            ])
+            .to_string()
+        ),
+        call(check_ledger(RUN, &["red-ci", "red-regression-set"]), ""),
+    ]);
+    call_(
+        "the second record's batch",
+        batch_of("lap.json", lap),
+        true,
+        "",
+    );
+    call_(
+        "the second batch, settled",
+        keeper("settle", RUN),
+        false,
+        "",
+    );
+    call_("the state at the end", state(RUN), false, "");
+
+    // AND THE BYTES: every file the run's directory holds.
+    let mut files = BTreeMap::new();
+    walk(&rig.run_dir(), &rig.run_dir(), &rig.tmp, &mut files);
+    for (path, holds) in files {
+        if let Some(text) = holds.strip_prefix("file: ") {
+            told.push_str(&format!("-- {path}\n{text}"));
+        }
+    }
+    told
+}
+
+/// What [`a_stage_as_the_harness_makes_its_calls`] printed and left ON THE PARENT OF THE
+/// COMMIT THAT GAVE A ROW ITS CLASS: taken from that script, before a line of it changed.
+const A_STAGE_AS_IT_WAS: &str = r#"== the opening: run-set
+{"run": "completions/artifacts/rc24/run.md", "facts": {"stop": "at-the-bound", "rounds": 3, "cycles": null, "previous": "1.0.0-rc.24", "previous-commit": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "scope": "delta", "clauses": ["no-lost-files", "routes-work"], "findings": null}}
+== the opening: bound-set
+{"bounds": "completions/artifacts/rc24/bounds.md", "bound": "non-jigc-writer"}
+== the opening: item-set
+{"test_set": "completions/artifacts/rc24/test-set.md", "written": ["gate", "regression-set", "ci", "review-setup", "review-show"]}
+== the opening: ledger-add
+{"ledger": "completions/artifacts/rc24/ledger.md", "appended": ["seed-hook", "seed-old"], "existing": []}
+== the opening: state
+{"run": "rc24", "opened": true, "facts": {"stop": "at-the-bound", "rounds": 3, "cycles": null, "previous": "1.0.0-rc.24", "previous-commit": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "scope": "delta", "clauses": ["no-lost-files", "routes-work"], "findings": ["seed-hook", "seed-old"]}, "not_ready": [], "rounds": [], "round": null, "begins": 1, "doors": null, "bounds": [{"bound": "non-jigc-writer", "reach": "races against a writer that is not jigc", "ruling": "the opening record, declared bounds", "pin": "unpinned"}], "clauses": [{"clause": "no-lost-files", "instrument": "`gate` \u2014 not selected by any tested round: it owes nothing<br>`regression-set` \u2014 not selected by any tested round: it owes nothing", "commit": null, "scope": "-", "status": "void", "round": null, "behind": null, "retry": "never-selected", "items": [{"item": "gate", "runs": "every-candidate", "round": null, "attempt": null, "commit": null, "outcome": null, "reason": null, "standing": "not-selected", "why": null, "rerun": null}, {"item": "regression-set", "runs": "every-candidate", "round": null, "attempt": null, "commit": null, "outcome": null, "reason": null, "standing": "not-selected", "why": null, "rerun": null}]}, {"clause": "routes-work", "instrument": "`ci` \u2014 not selected by any tested round: it owes nothing<br>`review-setup` \u2014 not selected by any tested round: it owes nothing<br>`review-show` \u2014 not selected by any tested round: it owes nothing", "commit": null, "scope": "-", "status": "void", "round": null, "behind": null, "retry": "never-selected", "items": [{"item": "ci", "runs": "every-candidate", "round": null, "attempt": null, "commit": null, "outcome": null, "reason": null, "standing": "not-selected", "why": null, "rerun": null}, {"item": "review-setup", "runs": "in-scope", "round": null, "attempt": null, "commit": null, "outcome": null, "reason": null, "standing": "not-selected", "why": null, "rerun": null}, {"item": "review-show", "runs": "in-scope", "round": null, "attempt": null, "commit": null, "outcome": null, "reason": null, "standing": "not-selected", "why": null, "rerun": null}]}], "items": [{"item": "gate", "kind": "held-gate", "clause": "no-lost-files", "runs": "every-candidate", "doors": [], "registries": [], "brief": "the brief of `gate`, as the opening record names it", "selected": true}, {"item": "regression-set", "kind": "held-regression", "clause": "no-lost-files", "runs": "every-candidate", "doors": [], "registries": [], "brief": "the brief of `regression-set`, as the opening record names it", "selected": true}, {"item": "ci", "kind": "check", "clause": "routes-work", "runs": "every-candidate", "doors": [], "registries": [], "brief": "the brief of `ci`, as the opening record names it", "selected": true}, {"item": "review-setup", "kind": "review-row", "clause": "routes-work", "runs": "in-scope", "doors": ["jigc setup"], "registries": [], "brief": "the brief of `review-setup`, as the opening record names it", "selected": null}, {"item": "review-show", "kind": "review-row", "clause": "routes-work", "runs": "in-scope", "doors": ["jigc doc show"], "registries": [], "brief": "the brief of `review-show`, as the opening record names it", "selected": null}], "never_selected": ["review-setup", "review-show"], "uncovered": [], "ledger": [{"key": "seed-hook", "doctype": "jigc-feedback", "round": 0, "source": "the canary's ledger, row 4", "door": "jigc setup", "clause": "no-lost-files", "grade": "ungraded", "bound": null, "graded_by": null, "disposition": "open", "detail": null, "repro": "r1/reports/test/audit-install.a1.md, the third block", "triage": null, "reopened": false, "route": "triage", "why": "ungraded", "awaits": {"why": "ungraded", "passes": 0, "retry": "due"}}, {"key": "seed-old", "doctype": "jigc-feedback", "round": 0, "source": "audit-install, finding 3", "door": "jigc rename", "clause": "no-lost-files", "grade": "ungraded", "bound": null, "graded_by": null, "disposition": "open", "detail": null, "repro": "r1/reports/test/audit-install.a1.md, the third block", "triage": null, "reopened": false, "route": "triage", "why": "ungraded", "awaits": {"why": "ungraded", "passes": 0, "retry": "due"}}], "blockers": [], "regression_unknown": [], "human_list": [], "human_stages": [], "candidate": {"round": null, "commit": null, "current": false}, "fix_rounds": 0, "untriaged": [{"key": "seed-hook", "why": "ungraded"}, {"key": "seed-old", "why": "ungraded"}], "retest": [], "human_clauses": [], "unsettled": [], "forbids_close": [{"clause": "no-lost-files", "status": "void"}, {"clause": "routes-work", "status": "void"}, {"finding": "seed-hook", "route": "triage"}, {"finding": "seed-old", "route": "triage"}, {"candidate": "not-tested", "round": null}], "next": "test", "stop": null, "position": {"test": {"round": 1, "attempt": 1}, "fix": {"refused": "no-round", "round": null}}}
+== the attempt's marker
+completions/artifacts/rc24/r1/reports/test/attempt.a1.md
+== the scope, from a file
+{"scope": "completions/artifacts/rc24/r1/scope.md", "included": 1, "excluded": 1}
+== a read by key: item
+{"run": "rc24", "item": {"item": "review-setup", "kind": "review-row", "clause": "routes-work", "runs": "in-scope", "doors": ["jigc setup"], "registries": [], "brief": "the brief of `review-setup`, as the opening record names it", "selected": true}}
+== a read by key: item-doors
+{"run": "rc24", "round": 1, "item": "review-setup", "doors": [{"door": "jigc setup", "registry": "the verb table", "derivation": "a changed symbol is read by `jigc setup`"}]}
+== a report, from a file: preflight
+completions/artifacts/rc24/r1/reports/test/preflight.a1.md
+== a report, from a file: review-setup
+completions/artifacts/rc24/r1/reports/test/review-setup.a1.md
+== the reports, checked
+{"check": "reports", "ok": true, "dir": "completions/artifacts/rc24/r1/reports/test", "attempt": 1, "missing": [], "extra": [], "other_attempts": [], "reports": {"attempt.a1.md": "52e95aaeccba51300d19fd0786de2bef4ed57bd4d8c2f6629a08d902b772035c", "preflight.a1.md": "4541a4af3985d3f60486a6706f715acfa170067c06caea9f799106a9d2d09abf", "review-setup.a1.md": "7886367d0f69f8134947e4e2ac98afc52930818ab0f4e084491c0a4aaee4a8ec"}}
+== what is pending
+{"run": "rc24", "opened": true, "journal": "completions/artifacts/rc24/.pending.json", "interrupted": false, "batch": null, "once": ["completions/artifacts/rc24/r1/scope.md", "completions/artifacts/rc24/r1/reports/test/attempt.a1.md", "completions/artifacts/rc24/r1/reports/test/preflight.a1.md", "completions/artifacts/rc24/r1/reports/test/review-setup.a1.md"], "temporaries": []}
+== the vet of what is written once
+{"check": "vet", "ok": true, "vetted": {"completions/artifacts/rc24/r1/scope.md": "f2885c2a842ec782827a741fa1ff452675aabc580e18f53f6b1e1e236581234f", "completions/artifacts/rc24/r1/reports/test/attempt.a1.md": "52e95aaeccba51300d19fd0786de2bef4ed57bd4d8c2f6629a08d902b772035c", "completions/artifacts/rc24/r1/reports/test/preflight.a1.md": "4541a4af3985d3f60486a6706f715acfa170067c06caea9f799106a9d2d09abf", "completions/artifacts/rc24/r1/reports/test/review-setup.a1.md": "7886367d0f69f8134947e4e2ac98afc52930818ab0f4e084491c0a4aaee4a8ec"}, "refused": [], "subject": null, "stale": []}
+== a read by key: untriaged
+{"run": "rc24", "count": 2, "untriaged": [{"key": "seed-hook", "doctype": "jigc-feedback", "round": 0, "source": "the canary's ledger, row 4", "door": "jigc setup", "clause": "no-lost-files", "grade": "ungraded", "bound": null, "graded_by": null, "disposition": "open", "detail": null, "repro": "r1/reports/test/audit-install.a1.md, the third block", "triage": null, "reopened": false, "route": "triage", "why": "ungraded", "awaits": {"why": "ungraded", "passes": 0, "retry": "due"}}, {"key": "seed-old", "doctype": "jigc-feedback", "round": 0, "source": "audit-install, finding 3", "door": "jigc rename", "clause": "no-lost-files", "grade": "ungraded", "bound": null, "graded_by": null, "disposition": "open", "detail": null, "repro": "r1/reports/test/audit-install.a1.md, the third block", "triage": null, "reopened": false, "route": "triage", "why": "ungraded", "awaits": {"why": "ungraded", "passes": 0, "retry": "due"}}]}
+== a report, from a file: triage-p1
+completions/artifacts/rc24/r1/reports/test/triage-p1.a1.md
+== a report, from a file: verify-seed-hook
+completions/artifacts/rc24/r1/reports/test/verify-seed-hook.a1.md
+== a report, from a file: verify-review-f1
+completions/artifacts/rc24/r1/reports/test/verify-review-f1.a1.md
+== a report, from a file: verify-review-f2
+completions/artifacts/rc24/r1/reports/test/verify-review-f2.a1.md
+== the record's batch
+{"applied": 7, "files": ["completions/artifacts/rc24/r1/gate.md", "completions/artifacts/rc24/r1/checks/gate.a1.json", "completions/artifacts/rc24/r1/checks/regression-set.a1.json", "completions/artifacts/rc24/r1/results.md", "completions/artifacts/rc24/r1/round.md", "completions/artifacts/rc24/ledger.md", "completions/artifacts/rc24/run.md", "completions/artifacts/rc24/r1/triage.md", "completions/artifacts/rc24/clauses.md"], "results": [{"check": "reports", "ok": true, "dir": "completions/artifacts/rc24/r1/reports/test", "attempt": 1, "missing": [], "extra": [], "other_attempts": [], "reports": {"attempt.a1.md": "52e95aaeccba51300d19fd0786de2bef4ed57bd4d8c2f6629a08d902b772035c", "preflight.a1.md": "4541a4af3985d3f60486a6706f715acfa170067c06caea9f799106a9d2d09abf", "review-setup.a1.md": "7886367d0f69f8134947e4e2ac98afc52930818ab0f4e084491c0a4aaee4a8ec", "triage-p1.a1.md": "b83c6a16129ce190e627c9bef884cd99b2a175b50567c8136eb88dbc7369e684", "verify-seed-hook.a1.md": "4bd767a0fcc72769a24717e17bf769f7ae63cac9fc09156fdc9415191cea6689", "verify-review-f1.a1.md": "e95405a7fab97f4b7b849dc27c178fc80db12fbf6104796f74b717c48963ad00", "verify-review-f2.a1.md": "3ffe2b1d283452c2bfe1f6f5d3246a208e7d0058985c8e78e52e53a7420f08ed"}}, {"gate": "completions/artifacts/rc24/r1/gate.md", "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "verdict": "pass", "red": 0}, {"results": "completions/artifacts/rc24/r1/results.md", "recorded": [{"item": "gate", "attempt": 1, "outcome": "green"}, {"item": "regression-set", "attempt": 1, "outcome": "red"}, {"item": "ci", "attempt": 1, "outcome": "red"}, {"item": "review-setup", "attempt": 1, "outcome": "green"}], "findings": ["red-regression-set", "red-ci"]}, {"ledger": "completions/artifacts/rc24/ledger.md", "appended": ["review-f1", "review-f2", "review-f3"], "existing": []}, {"triage": "completions/artifacts/rc24/r1/triage.md", "ledger": "completions/artifacts/rc24/ledger.md", "recorded": ["seed-hook", "seed-old", "review-f1", "review-f2", "review-f3"]}, {"round": "completions/artifacts/rc24/r1/round.md", "facts": {"candidate": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "binary": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "cycles": 0, "outcome": null, "go": false, "granted": [], "reverify": [], "again": [], "cross-model": [], "cross-model-void": [], "ran": ["gate a1", "regression-set a1", "ci a1", "review-setup a1"], "awaiting": ["red-regression-set ungraded 1", "red-ci ungraded 1"], "recorded": []}}, {"check": "ledger", "ok": true, "missing": [], "duplicated": []}]}
+== the batch, pending
+{"run": "rc24", "opened": true, "journal": "completions/artifacts/rc24/.pending.json", "interrupted": false, "batch": {"act": "record", "round": 1, "subject": "docs(record): a record step", "calls": 7, "checks": [{"check": "reports", "ok": true, "dir": "completions/artifacts/rc24/r1/reports/test", "attempt": 1, "missing": [], "extra": [], "other_attempts": [], "reports": {"attempt.a1.md": "52e95aaeccba51300d19fd0786de2bef4ed57bd4d8c2f6629a08d902b772035c", "preflight.a1.md": "4541a4af3985d3f60486a6706f715acfa170067c06caea9f799106a9d2d09abf", "review-setup.a1.md": "7886367d0f69f8134947e4e2ac98afc52930818ab0f4e084491c0a4aaee4a8ec", "triage-p1.a1.md": "b83c6a16129ce190e627c9bef884cd99b2a175b50567c8136eb88dbc7369e684", "verify-seed-hook.a1.md": "4bd767a0fcc72769a24717e17bf769f7ae63cac9fc09156fdc9415191cea6689", "verify-review-f1.a1.md": "e95405a7fab97f4b7b849dc27c178fc80db12fbf6104796f74b717c48963ad00", "verify-review-f2.a1.md": "3ffe2b1d283452c2bfe1f6f5d3246a208e7d0058985c8e78e52e53a7420f08ed"}}, {"check": "ledger", "ok": true, "missing": [], "duplicated": []}], "files": {"completions/artifacts/rc24/r1/gate.md": "1933f0273b720414db3e242cb394b9b19c65ef137bd50730862b3eb4ce78de7a", "completions/artifacts/rc24/r1/checks/gate.a1.json": "1fd0bc5265fb84024484a2a9683e8d288a30808d8454831088f98e385262f45c", "completions/artifacts/rc24/r1/checks/regression-set.a1.json": "7ef23366ca58252f7bb04ccd2fd23c1e7076fe24e6f68d297aaa39def806d467", "completions/artifacts/rc24/r1/results.md": "b188a38c6802cb725592de626b78de96b8f9cf94e72c3d427c359d4849289b37", "completions/artifacts/rc24/r1/round.md": "0d14bcc59e41e88d8cd49c1c963b1b51c599d8d390008a211fd11f0b323721f6", "completions/artifacts/rc24/ledger.md": "bbf86958677b723ca7303469c745005520f4766610507edfe9c9c1c929a5ff41", "completions/artifacts/rc24/run.md": "766bbc7e40c0c1aaddae0102f40000824f40e4b1f41ddb9db0b7c6ccc68eef30", "completions/artifacts/rc24/r1/triage.md": "63eaa759b0eaf5ab9447e9173d5d96d86afdaef31f40782441fdf1f222ffaf8f", "completions/artifacts/rc24/clauses.md": "433264ae4c19e46409ee09dcaaa97a74808b0a1dc42ff7c9dcc6a755e46f7478"}, "altered": [], "discarding": false}, "once": ["completions/artifacts/rc24/r1/scope.md", "completions/artifacts/rc24/r1/reports/test/attempt.a1.md", "completions/artifacts/rc24/r1/reports/test/preflight.a1.md", "completions/artifacts/rc24/r1/reports/test/review-setup.a1.md", "completions/artifacts/rc24/r1/reports/test/triage-p1.a1.md", "completions/artifacts/rc24/r1/reports/test/verify-review-f1.a1.md", "completions/artifacts/rc24/r1/reports/test/verify-review-f2.a1.md", "completions/artifacts/rc24/r1/reports/test/verify-seed-hook.a1.md"], "temporaries": []}
+== the vet of the record's commit
+{"check": "vet", "ok": true, "vetted": {"completions/artifacts/rc24/clauses.md": "433264ae4c19e46409ee09dcaaa97a74808b0a1dc42ff7c9dcc6a755e46f7478", "completions/artifacts/rc24/ledger.md": "bbf86958677b723ca7303469c745005520f4766610507edfe9c9c1c929a5ff41", "completions/artifacts/rc24/r1/checks/gate.a1.json": "1fd0bc5265fb84024484a2a9683e8d288a30808d8454831088f98e385262f45c", "completions/artifacts/rc24/r1/checks/regression-set.a1.json": "7ef23366ca58252f7bb04ccd2fd23c1e7076fe24e6f68d297aaa39def806d467", "completions/artifacts/rc24/r1/gate.md": "1933f0273b720414db3e242cb394b9b19c65ef137bd50730862b3eb4ce78de7a", "completions/artifacts/rc24/r1/results.md": "b188a38c6802cb725592de626b78de96b8f9cf94e72c3d427c359d4849289b37", "completions/artifacts/rc24/r1/round.md": "0d14bcc59e41e88d8cd49c1c963b1b51c599d8d390008a211fd11f0b323721f6", "completions/artifacts/rc24/r1/triage.md": "63eaa759b0eaf5ab9447e9173d5d96d86afdaef31f40782441fdf1f222ffaf8f", "completions/artifacts/rc24/run.md": "766bbc7e40c0c1aaddae0102f40000824f40e4b1f41ddb9db0b7c6ccc68eef30"}, "refused": [], "subject": null, "stale": []}
+== the batch, settled
+{"settled": ["completions/artifacts/rc24/clauses.md", "completions/artifacts/rc24/ledger.md", "completions/artifacts/rc24/r1/checks/gate.a1.json", "completions/artifacts/rc24/r1/checks/regression-set.a1.json", "completions/artifacts/rc24/r1/gate.md", "completions/artifacts/rc24/r1/results.md", "completions/artifacts/rc24/r1/round.md", "completions/artifacts/rc24/r1/triage.md", "completions/artifacts/rc24/run.md"]}
+== the state after the record
+{"run": "rc24", "opened": true, "facts": {"stop": "at-the-bound", "rounds": 3, "cycles": null, "previous": "1.0.0-rc.24", "previous-commit": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "scope": "delta", "clauses": ["no-lost-files", "routes-work"], "findings": ["seed-hook", "seed-old", "red-regression-set", "red-ci", "review-f1", "review-f2", "review-f3"]}, "not_ready": [], "rounds": [{"round": 1, "scope": true, "triage": true, "record": true, "facts": {"candidate": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "binary": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "cycles": 0, "outcome": null, "go": false, "granted": [], "reverify": [], "again": [], "cross-model": [], "cross-model-void": [], "ran": ["gate a1", "regression-set a1", "ci a1", "review-setup a1"], "awaiting": ["red-regression-set ungraded 1", "red-ci ungraded 1"], "recorded": ["test a1"]}, "results": [{"item": "gate", "attempt": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "green", "reason": null, "finding": null}, {"item": "regression-set", "attempt": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "red", "reason": null, "finding": "red-regression-set"}, {"item": "ci", "attempt": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "red", "reason": null, "finding": "red-ci"}, {"item": "review-setup", "attempt": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "green", "reason": null, "finding": null}], "reopened": [], "test_reports": 7, "test_attempt": 1, "test_unrecorded": 0, "fix_cycles": []}], "round": 1, "begins": null, "doors": {"included": [{"door": "jigc setup", "registry": "the verb table", "derivation": "a changed symbol is read by `jigc setup`"}], "excluded": [{"door": "jigc doc show", "registry": "the verb table", "derivation": "a changed symbol is read by `jigc doc show`"}]}, "bounds": [{"bound": "non-jigc-writer", "reach": "races against a writer that is not jigc", "ruling": "the opening record, declared bounds", "pin": "unpinned"}], "clauses": [{"clause": "no-lost-files", "instrument": "`gate` \u2014 green (round 1, attempt 1)<br>`regression-set` \u2014 red (round 1, attempt 1), filed as `red-regression-set`", "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "scope": "round 1", "status": "red", "round": 1, "behind": 0, "retry": "due", "items": [{"item": "gate", "runs": "every-candidate", "round": 1, "attempt": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "green", "reason": null, "standing": "green", "why": null, "rerun": null}, {"item": "regression-set", "runs": "every-candidate", "round": 1, "attempt": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "red", "reason": null, "standing": "red", "why": null, "rerun": "due"}]}, {"clause": "routes-work", "instrument": "`ci` \u2014 red (round 1, attempt 1), filed as `red-ci`<br>`review-setup` \u2014 green (round 1, attempt 1)<br>`review-show` \u2014 not selected by any tested round: it owes nothing", "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "scope": "round 1", "status": "red", "round": 1, "behind": 0, "retry": "due", "items": [{"item": "ci", "runs": "every-candidate", "round": 1, "attempt": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "red", "reason": null, "standing": "red", "why": null, "rerun": "due"}, {"item": "review-setup", "runs": "in-scope", "round": 1, "attempt": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "green", "reason": null, "standing": "green", "why": null, "rerun": null}, {"item": "review-show", "runs": "in-scope", "round": null, "attempt": null, "commit": null, "outcome": null, "reason": null, "standing": "not-selected", "why": null, "rerun": null}]}], "items": [{"item": "gate", "kind": "held-gate", "clause": "no-lost-files", "runs": "every-candidate", "doors": [], "registries": [], "brief": "the brief of `gate`, as the opening record names it", "selected": true}, {"item": "regression-set", "kind": "held-regression", "clause": "no-lost-files", "runs": "every-candidate", "doors": [], "registries": [], "brief": "the brief of `regression-set`, as the opening record names it", "selected": true}, {"item": "ci", "kind": "check", "clause": "routes-work", "runs": "every-candidate", "doors": [], "registries": [], "brief": "the brief of `ci`, as the opening record names it", "selected": true}, {"item": "review-setup", "kind": "review-row", "clause": "routes-work", "runs": "in-scope", "doors": ["jigc setup"], "registries": [], "brief": "the brief of `review-setup`, as the opening record names it", "selected": true}, {"item": "review-show", "kind": "review-row", "clause": "routes-work", "runs": "in-scope", "doors": ["jigc doc show"], "registries": [], "brief": "the brief of `review-show`, as the opening record names it", "selected": false}], "never_selected": ["review-show"], "uncovered": [], "ledger": [{"key": "seed-hook", "doctype": "jigc-feedback", "round": 0, "source": "the canary's ledger, row 4", "door": "jigc setup", "clause": "no-lost-files", "grade": "regression", "bound": null, "graded_by": "verify-real", "disposition": "open", "detail": null, "repro": "r1/reports/test/audit-install.a1.md, the third block", "triage": {"round": 1, "inside": true, "door": "included", "grade": "breaks", "bound": null, "verdict": "confirmed", "regression": true, "found_with": "open", "fork": null}, "reopened": false, "route": "fix", "why": "regression", "awaits": null}, {"key": "seed-old", "doctype": "jigc-feedback", "round": 0, "source": "audit-install, finding 3", "door": "jigc rename", "clause": "no-lost-files", "grade": "out-of-scope", "bound": "non-jigc-writer", "graded_by": "triage", "disposition": "open", "detail": null, "repro": "r1/reports/test/audit-install.a1.md, the third block", "triage": {"round": 1, "inside": false, "door": "unlisted", "grade": "out-of-scope", "bound": "non-jigc-writer", "verdict": null, "regression": null, "found_with": "open", "fork": null}, "reopened": false, "route": "recorded", "why": "out-of-scope", "awaits": null}, {"key": "red-regression-set", "doctype": "jigc-feedback", "round": 1, "source": "the item `regression-set` of the test set, red in round 1 (attempt 1)", "door": "the held check `regression-set`", "clause": "no-lost-files", "grade": "ungraded", "bound": null, "graded_by": null, "disposition": "open", "detail": null, "repro": "the held command `regression`, judged red by dev/stabilize-step from its own output: 22 difference(s), 1 of them off the list; 11 test(s) excluded by a row \u2014 the verdict on record: completions/artifacts/rc24/r1/checks/regression-set.a1.json", "triage": null, "reopened": false, "route": "triage", "why": "ungraded", "awaits": {"why": "ungraded", "passes": 1, "retry": "due"}}, {"key": "red-ci", "doctype": "jigc-feedback", "round": 1, "source": "the item `ci` of the test set, red in round 1 (attempt 1)", "door": "the check `ci`", "clause": "routes-work", "grade": "ungraded", "bound": null, "graded_by": null, "disposition": "open", "detail": null, "repro": "the preflight's report: the workflow's `lint` job failed", "triage": null, "reopened": false, "route": "triage", "why": "ungraded", "awaits": {"why": "ungraded", "passes": 1, "retry": "due"}}, {"key": "review-f1", "doctype": "jigc-feedback", "round": 1, "source": "audit-install, finding 3", "door": "jigc setup", "clause": "no-lost-files", "grade": "refuted", "bound": null, "graded_by": "verify-real", "disposition": "open", "detail": null, "repro": "r1/reports/test/audit-install.a1.md, the third block", "triage": {"round": 1, "inside": true, "door": "included", "grade": "unclear", "bound": null, "verdict": "refuted", "regression": null, "found_with": "open", "fork": null}, "reopened": false, "route": "recorded", "why": "not-a-break", "awaits": null}, {"key": "review-f2", "doctype": "jigc-feedback", "round": 1, "source": "audit-install, finding 3", "door": "jigc doc show", "clause": "no-lost-files", "grade": "confirmed", "bound": null, "graded_by": "verify-real", "disposition": "open", "detail": null, "repro": "r1/reports/test/audit-install.a1.md, the third block", "triage": {"round": 1, "inside": false, "door": "excluded", "grade": "breaks", "bound": null, "verdict": "confirmed", "regression": null, "found_with": "open", "fork": null}, "reopened": false, "route": "human", "why": "outside", "awaits": null}, {"key": "review-f3", "doctype": "jigc-feedback", "round": 1, "source": "audit-install, finding 3", "door": "jigc setup", "clause": "no-lost-files", "grade": "no-break", "bound": null, "graded_by": "triage", "disposition": "open", "detail": null, "repro": "r1/reports/test/audit-install.a1.md, the third block", "triage": {"round": 1, "inside": true, "door": "included", "grade": "no-break", "bound": null, "verdict": null, "regression": null, "found_with": "open", "fork": null}, "reopened": false, "route": "recorded", "why": "not-a-break", "awaits": null}], "blockers": ["seed-hook"], "regression_unknown": ["review-f2"], "human_list": [{"key": "review-f2", "why": "outside"}], "human_stages": [], "candidate": {"round": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "current": true}, "fix_rounds": 0, "untriaged": [{"key": "red-regression-set", "why": "ungraded"}, {"key": "red-ci", "why": "ungraded"}], "retest": [], "human_clauses": [], "unsettled": [], "forbids_close": [{"clause": "no-lost-files", "status": "red"}, {"clause": "routes-work", "status": "red"}, {"finding": "seed-hook", "route": "fix"}, {"finding": "red-regression-set", "route": "triage"}, {"finding": "red-ci", "route": "triage"}, {"finding": "review-f2", "route": "human"}], "next": "triage", "stop": null, "position": {"test": {"round": 1, "attempt": 2, "triage": true}, "fix": {"round": 1, "cycle": 1, "attempt": 1, "land": false}}}
+== the second attempt's marker
+completions/artifacts/rc24/r1/reports/test/attempt.a2.md
+== the untriaged rows, again
+{"run": "rc24", "count": 2, "untriaged": [{"key": "red-regression-set", "doctype": "jigc-feedback", "round": 1, "source": "the item `regression-set` of the test set, red in round 1 (attempt 1)", "door": "the held check `regression-set`", "clause": "no-lost-files", "grade": "ungraded", "bound": null, "graded_by": null, "disposition": "open", "detail": null, "repro": "the held command `regression`, judged red by dev/stabilize-step from its own output: 22 difference(s), 1 of them off the list; 11 test(s) excluded by a row \u2014 the verdict on record: completions/artifacts/rc24/r1/checks/regression-set.a1.json", "triage": null, "reopened": false, "route": "triage", "why": "ungraded", "awaits": {"why": "ungraded", "passes": 1, "retry": "due"}}, {"key": "red-ci", "doctype": "jigc-feedback", "round": 1, "source": "the item `ci` of the test set, red in round 1 (attempt 1)", "door": "the check `ci`", "clause": "routes-work", "grade": "ungraded", "bound": null, "graded_by": null, "disposition": "open", "detail": null, "repro": "the preflight's report: the workflow's `lint` job failed", "triage": null, "reopened": false, "route": "triage", "why": "ungraded", "awaits": {"why": "ungraded", "passes": 1, "retry": "due"}}]}
+== a report of the second attempt: triage-p1
+completions/artifacts/rc24/r1/reports/test/triage-p1.a2.md
+== a report of the second attempt: verify-red-ci
+completions/artifacts/rc24/r1/reports/test/verify-red-ci.a2.md
+== the second record's batch
+{"applied": 3, "files": ["completions/artifacts/rc24/r1/triage.md", "completions/artifacts/rc24/ledger.md", "completions/artifacts/rc24/r1/round.md"], "results": [{"check": "reports", "ok": true, "dir": "completions/artifacts/rc24/r1/reports/test", "attempt": 2, "missing": [], "extra": [], "other_attempts": ["attempt.a1.md", "preflight.a1.md", "review-setup.a1.md", "triage-p1.a1.md", "verify-review-f1.a1.md", "verify-review-f2.a1.md", "verify-seed-hook.a1.md"], "reports": {"attempt.a2.md": "707199a1e5549b4ddbce4c1f7b368c3c85a3350b38c10006a737909d86029c95", "triage-p1.a2.md": "d9b7eec2c96527a6e95e657b19df0864f4e76ed259ecd13e9ea413ec2764d334", "verify-red-ci.a2.md": "966726726229d24ecf0358056f64db81853f89054db8ee23da8d47327b42a9bd"}}, {"triage": "completions/artifacts/rc24/r1/triage.md", "ledger": "completions/artifacts/rc24/ledger.md", "recorded": ["red-ci", "red-regression-set"]}, {"check": "ledger", "ok": true, "missing": [], "duplicated": []}]}
+== the second batch, settled
+{"settled": ["completions/artifacts/rc24/ledger.md", "completions/artifacts/rc24/r1/round.md", "completions/artifacts/rc24/r1/triage.md"]}
+== the state at the end
+{"run": "rc24", "opened": true, "facts": {"stop": "at-the-bound", "rounds": 3, "cycles": null, "previous": "1.0.0-rc.24", "previous-commit": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "scope": "delta", "clauses": ["no-lost-files", "routes-work"], "findings": ["seed-hook", "seed-old", "red-regression-set", "red-ci", "review-f1", "review-f2", "review-f3"]}, "not_ready": [], "rounds": [{"round": 1, "scope": true, "triage": true, "record": true, "facts": {"candidate": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "binary": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "cycles": 0, "outcome": null, "go": false, "granted": [], "reverify": [], "again": [], "cross-model": [], "cross-model-void": [], "ran": ["gate a1", "regression-set a1", "ci a1", "review-setup a1"], "awaiting": ["red-regression-set unverified 1"], "recorded": ["test a2"]}, "results": [{"item": "gate", "attempt": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "green", "reason": null, "finding": null}, {"item": "regression-set", "attempt": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "red", "reason": null, "finding": "red-regression-set"}, {"item": "ci", "attempt": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "red", "reason": null, "finding": "red-ci"}, {"item": "review-setup", "attempt": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "green", "reason": null, "finding": null}], "reopened": [], "test_reports": 10, "test_attempt": 2, "test_unrecorded": 0, "fix_cycles": []}], "round": 1, "begins": null, "doors": {"included": [{"door": "jigc setup", "registry": "the verb table", "derivation": "a changed symbol is read by `jigc setup`"}], "excluded": [{"door": "jigc doc show", "registry": "the verb table", "derivation": "a changed symbol is read by `jigc doc show`"}]}, "bounds": [{"bound": "non-jigc-writer", "reach": "races against a writer that is not jigc", "ruling": "the opening record, declared bounds", "pin": "unpinned"}], "clauses": [{"clause": "no-lost-files", "instrument": "`gate` \u2014 green (round 1, attempt 1)<br>`regression-set` \u2014 red (round 1, attempt 1), filed as `red-regression-set`", "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "scope": "round 1", "status": "red", "round": 1, "behind": 0, "retry": "due", "items": [{"item": "gate", "runs": "every-candidate", "round": 1, "attempt": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "green", "reason": null, "standing": "green", "why": null, "rerun": null}, {"item": "regression-set", "runs": "every-candidate", "round": 1, "attempt": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "red", "reason": null, "standing": "red", "why": null, "rerun": "due"}]}, {"clause": "routes-work", "instrument": "`ci` \u2014 red (round 1, attempt 1), filed as `red-ci`<br>`review-setup` \u2014 green (round 1, attempt 1)<br>`review-show` \u2014 not selected by any tested round: it owes nothing", "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "scope": "round 1", "status": "red", "round": 1, "behind": 0, "retry": "due", "items": [{"item": "ci", "runs": "every-candidate", "round": 1, "attempt": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "red", "reason": null, "standing": "red", "why": null, "rerun": "due"}, {"item": "review-setup", "runs": "in-scope", "round": 1, "attempt": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "outcome": "green", "reason": null, "standing": "green", "why": null, "rerun": null}, {"item": "review-show", "runs": "in-scope", "round": null, "attempt": null, "commit": null, "outcome": null, "reason": null, "standing": "not-selected", "why": null, "rerun": null}]}], "items": [{"item": "gate", "kind": "held-gate", "clause": "no-lost-files", "runs": "every-candidate", "doors": [], "registries": [], "brief": "the brief of `gate`, as the opening record names it", "selected": true}, {"item": "regression-set", "kind": "held-regression", "clause": "no-lost-files", "runs": "every-candidate", "doors": [], "registries": [], "brief": "the brief of `regression-set`, as the opening record names it", "selected": true}, {"item": "ci", "kind": "check", "clause": "routes-work", "runs": "every-candidate", "doors": [], "registries": [], "brief": "the brief of `ci`, as the opening record names it", "selected": true}, {"item": "review-setup", "kind": "review-row", "clause": "routes-work", "runs": "in-scope", "doors": ["jigc setup"], "registries": [], "brief": "the brief of `review-setup`, as the opening record names it", "selected": true}, {"item": "review-show", "kind": "review-row", "clause": "routes-work", "runs": "in-scope", "doors": ["jigc doc show"], "registries": [], "brief": "the brief of `review-show`, as the opening record names it", "selected": false}], "never_selected": ["review-show"], "uncovered": [], "ledger": [{"key": "seed-hook", "doctype": "jigc-feedback", "round": 0, "source": "the canary's ledger, row 4", "door": "jigc setup", "clause": "no-lost-files", "grade": "regression", "bound": null, "graded_by": "verify-real", "disposition": "open", "detail": null, "repro": "r1/reports/test/audit-install.a1.md, the third block", "triage": {"round": 1, "inside": true, "door": "included", "grade": "breaks", "bound": null, "verdict": "confirmed", "regression": true, "found_with": "open", "fork": null}, "reopened": false, "route": "fix", "why": "regression", "awaits": null}, {"key": "seed-old", "doctype": "jigc-feedback", "round": 0, "source": "audit-install, finding 3", "door": "jigc rename", "clause": "no-lost-files", "grade": "out-of-scope", "bound": "non-jigc-writer", "graded_by": "triage", "disposition": "open", "detail": null, "repro": "r1/reports/test/audit-install.a1.md, the third block", "triage": {"round": 1, "inside": false, "door": "unlisted", "grade": "out-of-scope", "bound": "non-jigc-writer", "verdict": null, "regression": null, "found_with": "open", "fork": null}, "reopened": false, "route": "recorded", "why": "out-of-scope", "awaits": null}, {"key": "red-regression-set", "doctype": "jigc-feedback", "round": 1, "source": "the item `regression-set` of the test set, red in round 1 (attempt 1)", "door": "the held check `regression-set`", "clause": "no-lost-files", "grade": "unclear", "bound": null, "graded_by": "triage", "disposition": "open", "detail": null, "repro": "the held command `regression`, judged red by dev/stabilize-step from its own output: 22 difference(s), 1 of them off the list; 11 test(s) excluded by a row \u2014 the verdict on record: completions/artifacts/rc24/r1/checks/regression-set.a1.json", "triage": {"round": 1, "inside": false, "door": "unlisted", "grade": "unclear", "bound": null, "verdict": null, "regression": null, "found_with": "open", "fork": null}, "reopened": false, "route": "triage", "why": "unverified", "awaits": {"why": "unverified", "passes": 1, "retry": "due"}}, {"key": "red-ci", "doctype": "jigc-feedback", "round": 1, "source": "the item `ci` of the test set, red in round 1 (attempt 1)", "door": "the check `ci`", "clause": "routes-work", "grade": "confirmed", "bound": null, "graded_by": "verify-real", "disposition": "open", "detail": null, "repro": "the preflight's report: the workflow's `lint` job failed", "triage": {"round": 1, "inside": false, "door": "unlisted", "grade": "breaks", "bound": null, "verdict": "confirmed", "regression": false, "found_with": "open", "fork": null}, "reopened": false, "route": "human", "why": "outside", "awaits": null}, {"key": "review-f1", "doctype": "jigc-feedback", "round": 1, "source": "audit-install, finding 3", "door": "jigc setup", "clause": "no-lost-files", "grade": "refuted", "bound": null, "graded_by": "verify-real", "disposition": "open", "detail": null, "repro": "r1/reports/test/audit-install.a1.md, the third block", "triage": {"round": 1, "inside": true, "door": "included", "grade": "unclear", "bound": null, "verdict": "refuted", "regression": null, "found_with": "open", "fork": null}, "reopened": false, "route": "recorded", "why": "not-a-break", "awaits": null}, {"key": "review-f2", "doctype": "jigc-feedback", "round": 1, "source": "audit-install, finding 3", "door": "jigc doc show", "clause": "no-lost-files", "grade": "confirmed", "bound": null, "graded_by": "verify-real", "disposition": "open", "detail": null, "repro": "r1/reports/test/audit-install.a1.md, the third block", "triage": {"round": 1, "inside": false, "door": "excluded", "grade": "breaks", "bound": null, "verdict": "confirmed", "regression": null, "found_with": "open", "fork": null}, "reopened": false, "route": "human", "why": "outside", "awaits": null}, {"key": "review-f3", "doctype": "jigc-feedback", "round": 1, "source": "audit-install, finding 3", "door": "jigc setup", "clause": "no-lost-files", "grade": "no-break", "bound": null, "graded_by": "triage", "disposition": "open", "detail": null, "repro": "r1/reports/test/audit-install.a1.md, the third block", "triage": {"round": 1, "inside": true, "door": "included", "grade": "no-break", "bound": null, "verdict": null, "regression": null, "found_with": "open", "fork": null}, "reopened": false, "route": "recorded", "why": "not-a-break", "awaits": null}], "blockers": ["seed-hook"], "regression_unknown": ["review-f2"], "human_list": [{"key": "red-ci", "why": "outside"}, {"key": "review-f2", "why": "outside"}], "human_stages": [], "candidate": {"round": 1, "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "current": true}, "fix_rounds": 0, "untriaged": [{"key": "red-regression-set", "why": "unverified"}], "retest": [], "human_clauses": [], "unsettled": [], "forbids_close": [{"clause": "no-lost-files", "status": "red"}, {"clause": "routes-work", "status": "red"}, {"finding": "seed-hook", "route": "fix"}, {"finding": "red-regression-set", "route": "triage"}, {"finding": "red-ci", "route": "human"}, {"finding": "review-f2", "route": "human"}], "next": "triage", "stop": null, "position": {"test": {"round": 1, "attempt": 3, "triage": true}, "fix": {"round": 1, "cycle": 1, "attempt": 1, "land": false}}}
+-- bounds.md
+# rc24 — the declared bounds
+
+One row per declared bound: its reach, where the human ruled it, and the test that pins it or `unpinned`. A bound is always the human's ruling, and a row is the record of one. Written by `dev/stabilize-record` and never by hand. A grade of `out-of-scope` cites a row of this list, or is refused.
+
+| bound | reach | ruling | pin |
+|---|---|---|---|
+| `non-jigc-writer` | races against a writer that is not jigc | the opening record, declared bounds | unpinned |
+-- clauses.md
+# rc24 — the closing condition, clause by clause
+
+One row per clause of the closing condition, RENDERED by `dev/stabilize-record` from the results of the test set's items (each round's `results.md`) and written by no caller, never by hand: the items that judge the clause and where each one's run stands, the commit and the round of the latest of those runs, and `green`, `red` or `void` — not reached, could not run, or no longer current. A void row forbids closing; a row that differs from what the results give, or is missing, is refused the next time the state is read.
+
+| clause | instrument | last commit | scope | status |
+|---|---|---|---|---|
+| `no-lost-files` | `gate` — green (round 1, attempt 1)<br>`regression-set` — red (round 1, attempt 1), filed as `red-regression-set` | `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` | round 1 | red |
+| `routes-work` | `ci` — red (round 1, attempt 1), filed as `red-ci`<br>`review-setup` — green (round 1, attempt 1)<br>`review-show` — not selected by any tested round: it owes nothing | `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` | round 1 | red |
+-- ledger.md
+# rc24 — the findings ledger
+
+One row per finding of this stabilization run. Written by `dev/stabilize-record` and never by hand; its header states the columns and the vocabularies of `grade`, `graded by` and `disposition`.
+
+| key | doctype | round | source | door | clause broken | grade | graded by | disposition | repro pointer |
+|---|---|---|---|---|---|---|---|---|---|
+| `seed-hook` | `jigc-feedback` | 0 | the canary's ledger, row 4 | jigc setup | no-lost-files | regression | verify-real | open | r1/reports/test/audit-install.a1.md, the third block |
+| `seed-old` | `jigc-feedback` | 0 | audit-install, finding 3 | jigc rename | no-lost-files | out-of-scope: non-jigc-writer | triage | open | r1/reports/test/audit-install.a1.md, the third block |
+| `red-regression-set` | `jigc-feedback` | 1 | the item `regression-set` of the test set, red in round 1 (attempt 1) | the held check `regression-set` | no-lost-files | unclear | triage | open | the held command `regression`, judged red by dev/stabilize-step from its own output: 22 difference(s), 1 of them off the list; 11 test(s) excluded by a row — the verdict on record: completions/artifacts/rc24/r1/checks/regression-set.a1.json |
+| `red-ci` | `jigc-feedback` | 1 | the item `ci` of the test set, red in round 1 (attempt 1) | the check `ci` | routes-work | confirmed | verify-real | open | the preflight's report: the workflow's `lint` job failed |
+| `review-f1` | `jigc-feedback` | 1 | audit-install, finding 3 | jigc setup | no-lost-files | refuted | verify-real | open | r1/reports/test/audit-install.a1.md, the third block |
+| `review-f2` | `jigc-feedback` | 1 | audit-install, finding 3 | jigc doc show | no-lost-files | confirmed | verify-real | open | r1/reports/test/audit-install.a1.md, the third block |
+| `review-f3` | `jigc-feedback` | 1 | audit-install, finding 3 | jigc setup | no-lost-files | no-break | triage | open | r1/reports/test/audit-install.a1.md, the third block |
+-- opening.md
+# the opening record
+-- r1/checks/gate.a1.json
+{
+ "item": "gate",
+ "attempt": 1,
+ "round": 1,
+ "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "kind": "gate",
+ "verdict": "green",
+ "why": null,
+ "detail": "GATE: PASS",
+ "name": "gate-r1-a1",
+ "asked": {
+  "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+ },
+ "exit": 0,
+ "seconds": 1400,
+ "facts": {
+  "failed": 0,
+  "verdict": "pass"
+ },
+ "evidence": {
+  "totals": "tests   passed=4700 failed=0  (over 15 test binaries)"
+ },
+ "output_sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+}
+-- r1/checks/regression-set.a1.json
+{
+ "item": "regression-set",
+ "attempt": 1,
+ "round": 1,
+ "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "kind": "regression",
+ "verdict": "red",
+ "why": null,
+ "detail": "22 difference(s), 1 of them off the list; 11 test(s) excluded by a row",
+ "name": "regression-r1-a1",
+ "asked": {
+  "candidate": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "list": "lists/intended-changes.tsv",
+  "previous": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+ },
+ "exit": 1,
+ "seconds": 2100,
+ "facts": {
+  "candidate": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "differences": 22,
+  "excluded": 11,
+  "list_sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+  "not_on_list": 1,
+  "previous": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "status": "red"
+ },
+ "evidence": {
+  "line": {
+   "candidate": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+   },
+   "evidence": "<scratch>/hold/regression-r1-a1/work/evidence",
+   "excluded": [
+    {
+     "binary": "jigc::g_flow",
+     "change": "fails on its own binary",
+     "pointer": "excluded:records/run-2.json",
+     "test": "flow01::a"
+    }
+   ],
+   "list": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "path": "lists/intended-changes.tsv",
+    "rows": 33,
+    "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+   },
+   "not_on_list": [
+    {
+     "binary": "jigc::g_doc",
+     "test": "doc::b — a name"
+    }
+   ],
+   "previous": {
+    "commit": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+   },
+   "status": "red",
+   "tool": "regression-set",
+   "work": "<scratch>/hold/regression-r1-a1/work"
+  }
+ },
+ "output_sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+}
+-- r1/gate.md
+# rc24 — round 1, the candidate's gate
+
+What the full gate showed on the candidate this round tests, before any record of the round was written: its verdict, and every step and every test it showed red. A record commit of this round is accepted when its own gate shows nothing red that is not a row here. Written by `dev/stabilize-record` from the gate's own output, and never by hand.
+
+| what | value |
+|---|---|
+| commit | `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` |
+| verdict | pass |
+| totals | `tests   passed=4700 failed=0  (over 15 test binaries)` |
+-- r1/reports/test/attempt.a1.md
+# attempt
+
+round 1, attempt 1, begun
+
+<!-- end of report -->
+-- r1/reports/test/attempt.a2.md
+# attempt
+
+round 1, attempt 2, begun: the triage
+
+<!-- end of report -->
+-- r1/reports/test/preflight.a1.md
+# preflight
+
+ci: red — the workflow's `lint` job failed.
+
+<!-- end of report -->
+-- r1/reports/test/review-setup.a1.md
+# review-setup
+
+Three findings, each with its block.
+
+<!-- end of report -->
+-- r1/reports/test/triage-p1.a1.md
+# triage-p1
+
+Five findings graded.
+
+<!-- end of report -->
+-- r1/reports/test/triage-p1.a2.md
+# triage-p1
+
+Two red runs graded.
+
+<!-- end of report -->
+-- r1/reports/test/verify-red-ci.a2.md
+# verify-red-ci
+
+Confirmed; red on the previous release too.
+
+<!-- end of report -->
+-- r1/reports/test/verify-review-f1.a1.md
+# verify-review-f1
+
+Refuted: it does not reproduce.
+
+<!-- end of report -->
+-- r1/reports/test/verify-review-f2.a1.md
+# verify-review-f2
+
+Confirmed.
+
+<!-- end of report -->
+-- r1/reports/test/verify-seed-hook.a1.md
+# verify-seed-hook
+
+Confirmed; green on the previous release.
+
+<!-- end of report -->
+-- r1/results.md
+# rc24 — round 1, the results
+
+One row per run of an item of the test set that this round's scope selected: which attempt of it in this round, the commit it ran on, and its outcome — `green`, `red` with the ledger key of the finding the red is filed under, or `void` with why it did not run to its end. Written by `dev/stabilize-record` and never by hand. A clause's status is derived from these rows and written by nobody.
+
+| item | attempt | commit | outcome | detail |
+|---|---|---|---|---|
+| `gate` | 1 | `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` | green | - |
+| `regression-set` | 1 | `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` | red | `red-regression-set` |
+| `ci` | 1 | `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` | red | `red-ci` |
+| `review-setup` | 1 | `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` | green | - |
+-- r1/round.md
+# rc24 — round 1, the round record
+
+One row per fact of the round: the candidate it tests, the commit its change is measured from, the hash of the one binary the candidate was driven as, how many fix cycles are recorded, for a round that did not land whole its outcome, the human's go after it, and the runs of an item the human granted beyond the one re-run that is automatic. Written by `dev/stabilize-record` and never by hand.
+
+| fact | value |
+|---|---|
+| `candidate` | `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` |
+| `base` | `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb` |
+| `binary` | `cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc` |
+| `ran` | `gate a1, regression-set a1, ci a1, review-setup a1` |
+| `awaiting` | `red-regression-set unverified 1` |
+| `recorded` | `test a2` |
+-- r1/scope.md
+# rc24 — round 1, the test set
+
+One row per door the round's scope step resolved: whether it is `included` in the round's test set or `excluded` from it, the registry it comes from, and how it was derived. Written once, by `dev/stabilize-record`, and never by hand. A finding is inside the test set when its door is an included row here.
+
+| door | test set | registry | derivation |
+|---|---|---|---|
+| jigc setup | included | the verb table | a changed symbol is read by `jigc setup` |
+| jigc doc show | excluded | the verb table | a changed symbol is read by `jigc doc show` |
+-- r1/triage.md
+# rc24 — round 1, the triage record
+
+One row per finding this round triaged: whether its door is inside the round's test set (computed from `scope.md`, never supplied), triage's grade, the verifier's verdict, whether it is a regression, and the disposition its ledger row carried when the round recorded it. Written by `dev/stabilize-record` and never by hand.
+
+| key | inside | triage | verdict | regression | found with | fork |
+|---|---|---|---|---|---|---|
+| `seed-hook` | inside | breaks | confirmed | yes | open | - |
+| `seed-old` | outside: unlisted | out-of-scope: non-jigc-writer | - | - | open | - |
+| `review-f1` | inside | unclear | refuted | - | open | - |
+| `review-f2` | outside: excluded | breaks | confirmed | - | open | - |
+| `review-f3` | inside | no-break | - | - | open | - |
+| `red-ci` | outside: unlisted | breaks | confirmed | no | open | - |
+| `red-regression-set` | outside: unlisted | unclear | - | - | open | - |
+-- run.md
+# rc24 — the run's facts
+
+One row per fact the run's opening settled for every stage to read: when the run stops for the human of its own accord — after every round, or at the bound — and the bound across rounds, which only the human raises — the release it measures against, its default scope, and the clauses of its closing condition, which are written once. Written by `dev/stabilize-record` and never by hand.
+
+| fact | value |
+|---|---|
+| `stop` | `at-the-bound` |
+| `rounds` | `3` |
+| `previous` | `1.0.0-rc.24` |
+| `previous-commit` | `eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee` |
+| `scope` | `delta` |
+| `clauses` | `no-lost-files, routes-work` |
+| `findings` | `seed-hook, seed-old, red-regression-set, red-ci, review-f1, review-f2, review-f3` |
+-- test-set.md
+# rc24 — the test set
+
+One row per instrument item: its kind, the clause of the closing condition it judges, whether it runs on every candidate or only in a round whose test set reaches it, the doors and the registries it covers, and its brief. Written by `dev/stabilize-record` and never by hand. The harness runs a fixed chain of agents per kind; which items a round runs is computed from this table and the round's doors.
+
+| item | kind | clause | runs | doors | registries | brief |
+|---|---|---|---|---|---|---|
+| `gate` | `held-gate` | `no-lost-files` | every-candidate | - | - | the brief of `gate`, as the opening record names it |
+| `regression-set` | `held-regression` | `no-lost-files` | every-candidate | - | - | the brief of `regression-set`, as the opening record names it |
+| `ci` | `check` | `routes-work` | every-candidate | - | - | the brief of `ci`, as the opening record names it |
+| `review-setup` | `review-row` | `routes-work` | in-scope | jigc setup | - | the brief of `review-setup`, as the opening record names it |
+| `review-show` | `review-row` | `routes-work` | in-scope | jigc doc show | - | the brief of `review-show`, as the opening record names it |
+"#;
+
+/// **A run without an order holds the bytes it held** (the build plan of the reshaped
+/// `test` stage, `T1` and the migration order's Phase A:
+/// [plan.md](../completions/artifacts/M55/stabilization-build/reshape/plan.md) §4). The
+/// scripts grow before the harness does, and until the harness asks for the new, a run is
+/// answered as it was: every call a stage makes today prints what it printed, and the run's
+/// directory holds no byte it did not hold — no table beside the ledger, no cell in a row,
+/// no word in a verdict's cell, no key in the state.
+#[test]
+fn a_run_without_an_order_holds_the_bytes_it_held() {
+    let rig = Rig::new("phase-a");
+    let told = a_stage_as_the_harness_makes_its_calls(&rig);
+    assert!(
+        told == A_STAGE_AS_IT_WAS,
+        "a stage's answers and files are not the ones the script gave before a row could carry a class — what it gives now:\n{told}"
+    );
+}
+
+/// The table beside the ledger: one row per finding that carries a class.
+const CLASS_COLUMNS: [&str; 7] = [
+    "key", "kind", "origin", "parent", "code", "site", "evidence",
+];
+
+fn classes_path() -> String {
+    format!("completions/artifacts/{RUN}/classes.md")
+}
+
+/// The rows of the table beside the ledger.
+fn classes(rig: &Rig) -> Vec<Vec<String>> {
+    table(&rig.read(&classes_path()), &CLASS_COLUMNS)
+}
+
+/// The read of one ledger row, whole, by its key.
+fn read_row(run: &str, key: &str) -> Vec<String> {
+    vec![
+        "row".to_owned(),
+        format!("--run={run}"),
+        format!("--key={key}"),
+    ]
+}
+
+/// A ledger row at `door` that carries a class: its kind, and where it comes from as a
+/// caller says it. Its kind's evidence is the arm's to add.
+fn classed(key: &str, door: &str, kind: &str, origin: &str) -> Value {
+    let mut entry = row_at(key, door);
+    entry["kind"] = json!(kind);
+    entry["origin"] = json!(origin);
+    entry
+}
+
+/// The row of the finding `key`, as a state document has it.
+fn finding<'a>(read: &'a Value, key: &str) -> &'a Value {
+    read["ledger"]
+        .as_array()
+        .expect("the ledger")
+        .iter()
+        .find(|finding| finding["key"] == key)
+        .unwrap_or_else(|| panic!("the finding `{key}` in {read}"))
+}
+
+/// A class as the state gives it, for a row a caller gave where it comes from.
+fn class(kind: &str, given: Option<&str>, origin: &str, evidence: Option<&str>) -> Value {
+    json!({"kind": kind, "given": given, "origin": origin, "parent": null, "code": null,
+           "site": null, "evidence": evidence})
+}
+
+/// **A kind without its evidence is a lead** (the build plan of the reshaped `test` stage,
+/// `T1`; the ruling of 2026-10-10, 1: *a lead is an item that names no printed route and
+/// carries no commands that show a misbehaviour*). A row may carry a class — a kind, and
+/// where the item comes from — in a table BESIDE the ledger; a row of kind `route` brings
+/// the route line the refusal printed, one of kind `behaviour` its commands, and a row that
+/// is given either kind without that evidence is ENTERED AS A LEAD, and both the row and the
+/// call say so. A lead that brings evidence, the evidence of the other kind, a kind outside
+/// the three, half a class and a cell of a class without a kind are refused. And a row that
+/// names no kind is the row it always was: no class, and no table beside the ledger.
+#[test]
+fn a_kind_without_its_evidence_is_a_lead() {
+    let rig = Rig::new("lead");
+    let mut quoted = classed("r-quoted", INSIDE, "route", "hunt");
+    quoted["route"] = json!("Run: jigc setup --repair");
+    let bare = classed("r-bare", INSIDE, "route", "hunt");
+    let mut blank = classed("b-blank", INSIDE, "behaviour", "seed");
+    blank["commands"] = json!("  \n ");
+    let plain = classed("l-plain", INSIDE, "lead", "hunt");
+
+    // REFUSED, each with nothing written.
+    let with = |row: &Value, field: &str, value: Value| {
+        let mut row = row.clone();
+        row[field] = value;
+        row
+    };
+    let without = |row: &Value, field: &str| {
+        let mut row = row.clone();
+        row.as_object_mut().expect("a row").remove(field);
+        row
+    };
+    let before = rig.snapshot();
+    for (what, row) in [
+        (
+            "a lead that brings a route line",
+            with(&plain, "route", json!("Run: jigc setup")),
+        ),
+        (
+            "a route item that brings commands",
+            with(&quoted, "commands", json!("jigc setup")),
+        ),
+        (
+            "a behaviour item that brings a route line",
+            with(&blank, "route", json!("Run: jigc setup")),
+        ),
+        ("evidence that is no text", with(&quoted, "route", json!(3))),
+        (
+            "a kind outside the three",
+            with(&quoted, "kind", json!("regression")),
+        ),
+        (
+            "a kind, and nothing of where the item comes from",
+            without(&quoted, "origin"),
+        ),
+        ("an origin, and no kind", without(&plain, "kind")),
+        (
+            "a route line, and no kind",
+            with(
+                &row_at("u-route", INSIDE),
+                "route",
+                json!("Run: jigc setup"),
+            ),
+        ),
+        (
+            "a code, and no kind",
+            with(
+                &row_at("u-code", INSIDE),
+                "code",
+                json!("setup.install-hook"),
+            ),
+        ),
+    ] {
+        rig.run(&ledger_add(RUN), &row.to_string())
+            .refused(BAD_VALUE, what);
+    }
+    assert_eq!(rig.snapshot(), before, "a refused row writes nothing");
+
+    // TAKEN: a route item with its line; a route and a behaviour item without their
+    // evidence, each entered as a lead; a lead; and a row that names no kind.
+    let seen = rig.run(
+        &ledger_add(RUN),
+        &json!([quoted, bare, blank, plain, row_at("u-plain", INSIDE)]).to_string(),
+    );
+    seen.must(OK, "five rows, four of them with a class");
+    assert_eq!(
+        seen.json(),
+        json!({"ledger": ledger_path(),
+               "appended": ["r-quoted", "r-bare", "b-blank", "l-plain", "u-plain"],
+               "existing": [], "classes": classes_path(), "leads": ["r-bare", "b-blank"]}),
+        "the call says which rows it entered as a lead for lack of their evidence"
+    );
+    assert_eq!(
+        classes(&rig),
+        [
+            [
+                "`r-quoted`",
+                "route",
+                "hunt",
+                "-",
+                "-",
+                "-",
+                "Run: jigc setup --repair"
+            ],
+            [
+                "`r-bare`",
+                "lead: given as route",
+                "hunt",
+                "-",
+                "-",
+                "-",
+                "-"
+            ],
+            [
+                "`b-blank`",
+                "lead: given as behaviour",
+                "seed",
+                "-",
+                "-",
+                "-",
+                "-"
+            ],
+            ["`l-plain`", "lead", "hunt", "-", "-", "-", "-"],
+        ],
+        "the row says so too"
+    );
+    assert_eq!(
+        table(&rig.read(&ledger_path()), &LEDGER_COLUMNS).len(),
+        5,
+        "the ledger's own table holds its ten columns, and a row each"
+    );
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            finding(&read, "r-quoted")["class"],
+            finding(&read, "r-bare")["class"],
+            finding(&read, "b-blank")["class"],
+            finding(&read, "l-plain")["class"]
+        ]),
+        json!([
+            class("route", None, "hunt", Some("Run: jigc setup --repair")),
+            class("lead", Some("route"), "hunt", None),
+            class("lead", Some("behaviour"), "seed", None),
+            class("lead", None, "hunt", None)
+        ]),
+        "{read}"
+    );
+    assert!(
+        finding(&read, "u-plain").get("class").is_none(),
+        "a row that names no kind carries no class, and says nothing of one: {read}"
+    );
+
+    // A table a hand bent is not read.
+    let held = rig.read(&classes_path());
+    fs::write(
+        rig.root.join(classes_path()),
+        held.replace("| lead |", "| rumour |"),
+    )
+    .expect("bend a kind");
+    let seen = rig.run(&state(RUN), "");
+    seen.refused(CORRUPT, "a kind this script does not write");
+    assert!(seen.stderr.contains("classes.md"), "{}", seen.stderr);
+    fs::write(rig.root.join(classes_path()), held).expect("the table again");
+    rig.state();
+
+    // A RUN NONE OF WHOSE ROWS NAMES A KIND holds no table beside its ledger, and the call
+    // answers as it always did.
+    let other = Rig::new("lead-none");
+    let seen = other.run(&ledger_add(RUN), &row("audit-f3").to_string());
+    seen.must(OK, "a row that names no kind");
+    assert_eq!(
+        seen.json(),
+        json!({"ledger": ledger_path(), "appended": ["audit-f3"], "existing": []})
+    );
+    assert!(
+        !other.root.join(classes_path()).exists(),
+        "no table beside the ledger"
+    );
+}
+
+/// **A route item quotes the route line the refusal printed, with the code where the
+/// refusal has one** (`T1`; the ruling of 2026-10-10, 1: *route items first*) — and an item
+/// of kind `behaviour` carries its commands. The evidence is the caller's text as a cell
+/// holds any text: one cell, its pipes escaped, a host path its public placeholder. A route
+/// item with a code and one without are both route items.
+#[test]
+fn a_route_item_quotes_its_printed_route_with_or_without_a_code() {
+    let rig = Rig::new("route");
+    let scratch = format!("{}/agent/scratchpad", rig.tmp.display());
+    let mut coded = classed("with-code", INSIDE, "route", "hunt");
+    coded["route"] = json!("  → run `jigc setup --force` to replace the hook | or remove it");
+    coded["code"] = json!("setup.install-hook");
+    let mut codeless = classed("without-code", INSIDE, "route", "seed");
+    codeless["route"] = json!("Run: jigc uninstall\nthen: jigc setup");
+    let mut shown = classed("behaves", INSIDE, "behaviour", "hunt");
+    shown["commands"] = json!(format!("cd {scratch}/rig\njigc setup | tee out"));
+
+    let mut args = ledger_add(RUN);
+    args.push(format!("--scratch={scratch}"));
+    let before = rig.snapshot();
+    for (what, code) in [
+        ("a code that says nothing", json!(" ")),
+        ("a code that is no text", json!(7)),
+    ] {
+        let mut row = coded.clone();
+        row["code"] = code;
+        rig.run(&args, &row.to_string()).refused(BAD_VALUE, what);
+    }
+    assert_eq!(rig.snapshot(), before);
+
+    let seen = rig.run(&args, &json!([coded, codeless, shown]).to_string());
+    seen.must(OK, "two route items and a behaviour item");
+    assert_eq!(seen.json()["leads"], json!([]), "each brought its evidence");
+    let route = "→ run `jigc setup --force` to replace the hook | or remove it";
+    assert_eq!(
+        classes(&rig),
+        [
+            [
+                "`with-code`",
+                "route",
+                "hunt",
+                "-",
+                "setup.install-hook",
+                "-",
+                route
+            ],
+            [
+                "`without-code`",
+                "route",
+                "seed",
+                "-",
+                "-",
+                "-",
+                "Run: jigc uninstall<br>then: jigc setup"
+            ],
+            [
+                "`behaves`",
+                "behaviour",
+                "hunt",
+                "-",
+                "-",
+                "-",
+                "cd <scratch>/rig<br>jigc setup | tee out"
+            ],
+        ]
+    );
+    let written = rig.read(&classes_path());
+    assert!(
+        !written.contains(&rig.tmp.display().to_string()),
+        "a host path is its public placeholder, as in every file of a run: {written}"
+    );
+    let read = rig.state();
+    let of = |key: &str| {
+        let class = &finding(&read, key)["class"];
+        json!([
+            class["kind"],
+            class["given"],
+            class["code"],
+            class["evidence"]
+        ])
+    };
+    assert_eq!(
+        of("with-code"),
+        json!(["route", null, "setup.install-hook", route]),
+        "the line as it was printed, its pipe unescaped: {read}"
+    );
+    assert_eq!(
+        of("without-code"),
+        json!([
+            "route",
+            null,
+            null,
+            "Run: jigc uninstall<br>then: jigc setup"
+        ]),
+        "a route item without a code is a route item"
+    );
+    assert_eq!(
+        of("behaves"),
+        json!([
+            "behaviour",
+            null,
+            null,
+            "cd <scratch>/rig<br>jigc setup | tee out"
+        ])
+    );
+}
+
+/// **A row keeps the refusal's code where the refusal has one, and the site id where the
+/// item names one — and nothing is done with either** (the human's ruling of 2026-10-11 on
+/// how often something appears: *the stage records and prints … how many distinct agents
+/// named each code — and each site, where an item names one … nothing is ranked, promoted
+/// or merged on it*). Both are data on the row: an item of any kind may name them, neither
+/// is held to a vocabulary — a code no list holds and a site that is none are taken as they
+/// are — no row is refused for lacking one, and two rows that name the same code and the
+/// same site are two rows, routed as any other.
+#[test]
+fn a_row_keeps_the_refusals_code_and_the_site_it_names_and_is_held_to_neither() {
+    let rig = Rig::new("code-site");
+    let site = "crates/cli/src/setup.rs::install_hook::setup.install-hook#1";
+    let mut both = classed("both", INSIDE, "route", "hunt");
+    both["route"] = json!("Run: jigc setup --repair");
+    both["code"] = json!("setup.install-hook");
+    both["site"] = json!(site);
+    let mut twin = both.clone();
+    twin["key"] = json!("twin");
+    let mut sited = classed("site-only", INSIDE, "behaviour", "hunt");
+    sited["commands"] = json!("jigc setup");
+    sited["site"] = json!("a site no list holds :: #9");
+    let mut coded = classed("code-only", INSIDE, "lead", "seed");
+    coded["code"] = json!("No.Such-Code, as it was printed");
+    let mut neither = classed("neither", INSIDE, "route", "hunt");
+    neither["route"] = json!("Run: jigc uninstall");
+
+    let before = rig.snapshot();
+    for (what, field, value) in [
+        ("a site that says nothing", "site", json!("")),
+        ("a site that is no text", "site", json!(["a", "b"])),
+    ] {
+        let mut row = both.clone();
+        row[field] = value;
+        rig.run(&ledger_add(RUN), &row.to_string())
+            .refused(BAD_VALUE, what);
+    }
+    assert_eq!(rig.snapshot(), before);
+
+    let seen = rig.run(
+        &ledger_add(RUN),
+        &json!([both, twin, sited, coded, neither]).to_string(),
+    );
+    seen.must(OK, "rows with a code, a site, both and neither");
+    assert_eq!(
+        seen.json()["appended"],
+        json!(["both", "twin", "site-only", "code-only", "neither"]),
+        "no row is refused for lacking one, and none is folded into another"
+    );
+    let cells: Vec<(String, String, String)> = classes(&rig)
+        .into_iter()
+        .map(|row| (row[0].clone(), row[4].clone(), row[5].clone()))
+        .collect();
+    let cell =
+        |key: &str, code: &str, site: &str| (key.to_owned(), code.to_owned(), site.to_owned());
+    assert_eq!(
+        cells,
+        [
+            cell("`both`", "setup.install-hook", site),
+            cell("`twin`", "setup.install-hook", site),
+            cell("`site-only`", "-", "a site no list holds :: #9"),
+            cell("`code-only`", "No.Such-Code, as it was printed", "-"),
+            cell("`neither`", "-", "-"),
+        ]
+    );
+    let read = rig.state();
+    let of = |key: &str| {
+        let row = finding(&read, key);
+        json!([
+            row["class"]["code"],
+            row["class"]["site"],
+            row["route"],
+            row["why"]
+        ])
+    };
+    assert_eq!(
+        of("both"),
+        json!(["setup.install-hook", site, "triage", "ungraded"])
+    );
+    assert_eq!(
+        of("twin"),
+        of("both"),
+        "the same code and site, and a row of its own"
+    );
+    assert_eq!(
+        of("site-only"),
+        json!([null, "a site no list holds :: #9", "triage", "ungraded"])
+    );
+    assert_eq!(
+        of("code-only"),
+        json!([
+            "No.Such-Code, as it was printed",
+            null,
+            "triage",
+            "ungraded"
+        ])
+    );
+    assert_eq!(of("neither"), json!([null, null, "triage", "ungraded"]));
+    assert_eq!(
+        read["untriaged"]
+            .as_array()
+            .expect("the untriaged rows")
+            .iter()
+            .map(|row| row["key"].clone())
+            .collect::<Vec<_>>(),
+        ["both", "twin", "site-only", "code-only", "neither"],
+        "the ledger's order: nothing is ranked on a code or a site"
+    );
+    // Both are read off the row, by its key.
+    let seen = rig.run(&read_row(RUN, "both"), "");
+    seen.must(OK, "the row, read by its key");
+    assert_eq!(
+        json!([
+            seen.json()["row"]["class"]["code"],
+            seen.json()["row"]["class"]["site"]
+        ]),
+        json!(["setup.install-hook", site])
+    );
+}
+
+/// A run with a held check and a check an agent reads, its round 1 scoped: what a red run
+/// of either is recorded in.
+fn checks_run(label: &str) -> Rig {
+    let rig = Rig::new(label);
+    fs::create_dir_all(rig.tmp.join("scratch/hold/regression-r1-a1/work"))
+        .expect("the scratch root a stage hands its writers");
+    rig.run(
+        &run_set(RUN),
+        &format!(r#"{{{BOUNDED}, {RELEASE}, "clauses": ["clause-a"]}}"#),
+    )
+    .must(OK, "the run's facts");
+    let held = json!({"item": "regression-set", "kind": "held-regression", "clause": "clause-a",
+                      "runs": "every-candidate",
+                      "brief": "the regression set, held and judged by dev/stabilize-step"});
+    let mut plain = held.clone();
+    plain["item"] = json!("ci");
+    plain["kind"] = json!("check");
+    rig.run(&item_set(RUN), &json!([held, plain]).to_string())
+        .must(OK, "a held check, and a check an agent reads");
+    rig.run(&scope_set(RUN, "1"), &scope(&[INSIDE], &[]).to_string())
+        .must(OK, "round 1's scope");
+    rig
+}
+
+/// What the preflight's report says of the check an agent read red.
+const PREFLIGHT_SAYS: &str = "r1/reports/test/preflight.a1.md: the `lint` job failed";
+
+/// Both checks of [`checks_run`], red in round 1: the held one by the tool's verdict, the
+/// other by what the preflight read.
+fn red_runs(rig: &Rig) -> Seen {
+    let commit = sha('a');
+    let red = verdict_file(rig, "red", &regression_verdict(rig, "red", None, &commit));
+    let mut args = result_set(RUN, "1", &commit);
+    args.push(format!("--scratch={}", rig.tmp.join("scratch").display()));
+    let mut ci = ran("ci", "red");
+    ci["repro"] = json!(PREFLIGHT_SAYS);
+    rig.run(
+        &args,
+        &json!([{"item": "regression-set", "verdict": red}, ci]).to_string(),
+    )
+}
+
+/// **A red result's row has its class when it is filed** (`T1`; the plan review's `B1`: *a
+/// row that appears after the one triage has no grader*). The call that records a red run
+/// files its finding, as ever — and, in a run whose rows carry a class, files it WITH ITS
+/// CLASS: `behaviour`, `hunt`, its evidence the tool's verdict on record for a held check
+/// and what the call brings of the preflight's report for one that is not held. No caller
+/// says it. And in a run none of whose rows carries a class the row is filed as it always
+/// was: no class, no table — inert there, never an error.
+#[test]
+fn a_red_results_row_has_its_class_when_it_is_filed() {
+    // A RUN NONE OF WHOSE ROWS CARRIES A CLASS: the finding as it was filed before.
+    let plain = checks_run("red-class-none");
+    plain.seed_rows(&["seeded"]);
+    red_runs(&plain).must(OK, "two red runs, in a run without a class");
+    assert!(
+        !plain.root.join(classes_path()).exists(),
+        "no table beside the ledger"
+    );
+    let read = plain.state();
+    for key in ["red-regression-set", "red-ci"] {
+        assert!(
+            finding(&read, key).get("class").is_none(),
+            "`{key}`: {read}"
+        );
+    }
+
+    // A RUN WHOSE ROWS CARRY ONE.
+    let rig = checks_run("red-class");
+    let mut seed = classed("seeded", INSIDE, "route", "seed");
+    seed["route"] = json!("Run: jigc setup --repair");
+    rig.run(&ledger_add(RUN), &seed.to_string())
+        .must(OK, "a row with a class");
+    let seen = red_runs(&rig);
+    seen.must(OK, "two red runs");
+    assert_eq!(
+        seen.json()["findings"],
+        json!(["red-regression-set", "red-ci"])
+    );
+    let on_record = format!("completions/artifacts/{RUN}/r1/checks/regression-set.a1.json");
+    assert_eq!(
+        classes(&rig)[1..],
+        [
+            [
+                "`red-regression-set`",
+                "behaviour",
+                "hunt",
+                "-",
+                "-",
+                "-",
+                on_record.as_str()
+            ],
+            [
+                "`red-ci`",
+                "behaviour",
+                "hunt",
+                "-",
+                "-",
+                "-",
+                PREFLIGHT_SAYS
+            ],
+        ],
+        "filed with its class, its evidence the verdict on record and the preflight's report"
+    );
+    assert!(
+        rig.root.join(&on_record).is_file(),
+        "the evidence of the held check is the verdict the same call put on record"
+    );
+    let read = rig.state();
+    let of = |key: &str| {
+        let row = finding(&read, key);
+        json!([row["class"], row["grade"], row["route"], row["why"]])
+    };
+    assert_eq!(
+        of("red-regression-set"),
+        json!([
+            class("behaviour", None, "hunt", Some(on_record.as_str())),
+            "ungraded",
+            "triage",
+            "ungraded"
+        ]),
+        "a class grades nothing: the row is still somebody's to grade — {read}"
+    );
+    assert_eq!(
+        of("red-ci"),
+        json!([
+            class("behaviour", None, "hunt", Some(PREFLIGHT_SAYS)),
+            "ungraded",
+            "triage",
+            "ungraded"
+        ])
+    );
+}
+
+/// **A handed-on item's origin is its parent's verdict, and no caller says it** (`T1`; the
+/// ruling of 2026-10-10, 1: *those under a confirmed parent ahead of the rest … a
+/// follow-up of a finding that did not reproduce is never verified*). An item a verifier
+/// hands on names its `parent`, and where it comes from is COMPUTED from the verdict the
+/// parent's row has on record: `under-confirmed` (a regression is confirmed),
+/// `under-no-repro` for a parent refuted as `does-not-reproduce`, `under-not-a-break` for
+/// one refuted as `intended` or `breaks-no-clause`. A caller that says an origin beside a
+/// parent, or one of those three words without one, is refused; so is a parent that has no
+/// verdict to compute from — never triaged, not verified, undrivable, or refuted without the
+/// word that says which of three. It is written with the row, and stands.
+#[test]
+fn a_handed_on_items_origin_is_its_parents_verdict_and_no_caller_says_it() {
+    let rig = Rig::new("handed-on");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "round 1's scope");
+    rig.seed_rows(&[
+        "p-confirmed",
+        "p-regression",
+        "p-no-repro",
+        "p-intended",
+        "p-no-clause",
+        "p-bare",
+        "p-open",
+        "p-undrivable",
+        "p-untriaged",
+    ]);
+    let verdicts = json!([
+        {"key": "p-confirmed", "grade": "breaks", "verdict": "confirmed"},
+        {"key": "p-regression", "grade": "breaks", "verdict": "confirmed", "regression": true},
+        {"key": "p-no-repro", "grade": "unclear", "verdict": "refuted",
+         "refutation": "does-not-reproduce"},
+        {"key": "p-intended", "grade": "unclear", "verdict": "refuted", "refutation": "intended"},
+        {"key": "p-no-clause", "grade": "breaks", "verdict": "refuted",
+         "refutation": "breaks-no-clause"},
+        {"key": "p-bare", "grade": "unclear", "verdict": "refuted"},
+        {"key": "p-open", "grade": "unclear"},
+        {"key": "p-undrivable", "grade": "unclear", "verdict": "undrivable",
+         "reason": "needs-linux"},
+    ]);
+    rig.run(&triage_set(RUN, "1"), &verdicts.to_string())
+        .must(OK, "the parents' verdicts");
+    let child = |key: &str, parent: &str| {
+        let mut entry = row_at(key, INSIDE);
+        entry["kind"] = json!("route");
+        entry["route"] = json!(format!("Run: jigc setup --after {parent}"));
+        entry["parent"] = json!(parent);
+        entry
+    };
+
+    // NO CALLER SAYS IT, and a parent without a verdict gives none: refused, nothing written.
+    let before = rig.snapshot();
+    let mut said = child("c-said", "p-confirmed");
+    said["origin"] = json!("under-confirmed");
+    let seen = rig.run(&ledger_add(RUN), &said.to_string());
+    seen.refused(BAD_VALUE, "an origin said beside a parent");
+    assert!(seen.stderr.contains("no caller"), "{}", seen.stderr);
+    rig.run(
+        &ledger_add(RUN),
+        &classed("c-alone", INSIDE, "lead", "under-confirmed").to_string(),
+    )
+    .refused(BAD_VALUE, "a parent's word for an origin, and no parent");
+    for (parent, says) in [
+        ("p-bare", "which of three"),
+        ("p-open", "no verdict"),
+        ("p-undrivable", "no verdict"),
+        ("p-untriaged", "no verdict"),
+    ] {
+        let seen = rig.run(&ledger_add(RUN), &child("c-refused", parent).to_string());
+        seen.refused(BAD_VALUE, &format!("an item handed on under `{parent}`"));
+        assert!(seen.stderr.contains(says), "`{parent}`: {}", seen.stderr);
+    }
+    rig.run(
+        &ledger_add(RUN),
+        &child("c-orphan", "no-such-row").to_string(),
+    )
+    .refused(NO_SUCH_ROW, "a parent the ledger lacks");
+    assert_eq!(rig.snapshot(), before, "a refused row writes nothing");
+
+    // COMPUTED, from the verdict on the parent's row.
+    let handed = json!([
+        child("c-confirmed", "p-confirmed"),
+        child("c-regression", "p-regression"),
+        child("c-no-repro", "p-no-repro"),
+        child("c-intended", "p-intended"),
+        child("c-no-clause", "p-no-clause"),
+    ]);
+    rig.run(&ledger_add(RUN), &handed.to_string())
+        .must(OK, "five items handed on");
+    let under: Vec<(String, String, String)> = classes(&rig)
+        .into_iter()
+        .map(|row| (row[0].clone(), row[2].clone(), row[3].clone()))
+        .collect();
+    let cell = |key: &str, origin: &str, parent: &str| {
+        (key.to_owned(), origin.to_owned(), parent.to_owned())
+    };
+    assert_eq!(
+        under,
+        [
+            cell("`c-confirmed`", "under-confirmed", "`p-confirmed`"),
+            cell("`c-regression`", "under-confirmed", "`p-regression`"),
+            cell("`c-no-repro`", "under-no-repro", "`p-no-repro`"),
+            cell("`c-intended`", "under-not-a-break", "`p-intended`"),
+            cell("`c-no-clause`", "under-not-a-break", "`p-no-clause`"),
+        ]
+    );
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            finding(&read, "c-no-repro")["class"]["origin"],
+            finding(&read, "c-no-repro")["class"]["parent"],
+            finding(&read, "c-no-repro")["class"]["kind"]
+        ]),
+        json!(["under-no-repro", "p-no-repro", "route"]),
+        "{read}"
+    );
+
+    // WRITTEN WITH THE ROW, AND IT STANDS: the parent's entry recorded again, without its
+    // verdict, changes nothing of the item it was handed on under.
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "p-confirmed", "grade": "breaks"}).to_string(),
+    )
+    .must(OK, "the parent, recorded again without a verdict");
+    assert_eq!(
+        finding(&rig.state(), "c-confirmed")["class"]["origin"],
+        "under-confirmed"
+    );
+}
+
+/// **A kind is refused a change once its row has a verdict** (`T1`; the plan's §2.12: *a
+/// hit rate per kind is honest only if the kind is on record before the verdict*). Until a
+/// verifier's verdict is on record a patch may change a row's kind — with the new kind's
+/// evidence, or it is a lead — and its code and site; where the row comes from stands. Once
+/// a round's triage record holds a verdict for the row — confirmed, refuted, undrivable —
+/// the kind, its evidence, the code and the site stand: a patch that would change one is
+/// refused, one that says them as they stand changes nothing, and a grade or a disposition
+/// is set as ever.
+#[test]
+fn a_kind_is_refused_a_change_once_its_row_has_a_verdict() {
+    let rig = Rig::new("kind-stands");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "round 1's scope");
+    let with_commands = |key: &str| {
+        let mut entry = classed(key, INSIDE, "behaviour", "hunt");
+        entry["commands"] = json!("jigc setup");
+        entry
+    };
+    let rows = json!([
+        classed("f-open", INSIDE, "lead", "seed"),
+        with_commands("f-confirmed"),
+        with_commands("f-refuted"),
+        with_commands("f-undrivable"),
+        row_at("f-plain", INSIDE),
+    ]);
+    rig.run(&ledger_add(RUN), &rows.to_string())
+        .must(OK, "four rows with a class, and one without");
+    let kind_of = |key: &str| -> Vec<String> {
+        classes(&rig)
+            .into_iter()
+            .find(|row| row[0] == format!("`{key}`"))
+            .unwrap_or_else(|| panic!("the class of `{key}`"))[1..]
+            .to_vec()
+    };
+    let patch = |patch: Value| rig.run(&ledger_set(RUN), &patch.to_string());
+
+    // BEFORE A VERDICT a kind is changed: with its evidence, and its code — where the row
+    // comes from stands; without its evidence it is a lead.
+    patch(
+        json!({"key": "f-open", "kind": "route", "route": "Run: jigc setup --repair",
+                 "code": "setup.install-hook"}),
+    )
+    .must(OK, "a lead that turned out to quote a route");
+    assert_eq!(
+        kind_of("f-open"),
+        [
+            "route",
+            "seed",
+            "-",
+            "setup.install-hook",
+            "-",
+            "Run: jigc setup --repair"
+        ]
+    );
+    patch(json!({"key": "f-open", "kind": "behaviour"}))
+        .must(OK, "a kind given without its evidence");
+    assert_eq!(
+        kind_of("f-open"),
+        [
+            "lead: given as behaviour",
+            "seed",
+            "-",
+            "setup.install-hook",
+            "-",
+            "-"
+        ],
+        "a lead, which says what it was given as; the code it named stands"
+    );
+    // Graded, and not verified: still no verdict.
+    let triaged = json!([
+        {"key": "f-open", "grade": "unclear"},
+        {"key": "f-confirmed", "grade": "breaks", "verdict": "confirmed"},
+        {"key": "f-refuted", "grade": "unclear", "verdict": "refuted", "refutation": "intended"},
+        {"key": "f-undrivable", "grade": "unclear", "verdict": "undrivable", "reason": "needs-root"},
+    ]);
+    rig.run(&triage_set(RUN, "1"), &triaged.to_string())
+        .must(OK, "the round's triage: three verdicts, and a grade alone");
+    patch(json!({"key": "f-open", "kind": "route", "route": "Run: jigc uninstall"}))
+        .must(OK, "a graded row without a verdict");
+    assert_eq!(kind_of("f-open")[0], "route");
+
+    // ONCE THE ROW HAS A VERDICT the kind stands — whichever verdict it is.
+    let before = rig.snapshot();
+    for key in ["f-confirmed", "f-refuted", "f-undrivable"] {
+        for (what, change) in [
+            (
+                "another kind",
+                json!({"kind": "route", "route": "Run: jigc setup"}),
+            ),
+            (
+                "the kind, without its evidence",
+                json!({"kind": "behaviour"}),
+            ),
+            (
+                "other evidence",
+                json!({"kind": "behaviour", "commands": "jigc setup --force"}),
+            ),
+            (
+                "a code",
+                json!({"kind": "behaviour", "commands": "jigc setup", "code": "setup.x"}),
+            ),
+            (
+                "a site",
+                json!({"kind": "behaviour", "commands": "jigc setup", "site": "a::b#1"}),
+            ),
+        ] {
+            let mut given = change;
+            given["key"] = json!(key);
+            let seen = patch(given);
+            seen.refused(EXISTS, &format!("`{key}`: {what}"));
+            assert!(seen.stderr.contains("verdict"), "{}", seen.stderr);
+        }
+    }
+    // Said again as it stands, it changes nothing.
+    patch(json!({"key": "f-confirmed", "kind": "behaviour", "commands": "jigc setup"}))
+        .must(OK, "the kind, said as it stands");
+    assert_eq!(
+        rig.snapshot(),
+        before,
+        "nothing of a row with a verdict changed"
+    );
+    // A grade and a disposition are set as ever.
+    patch(json!({"key": "f-confirmed", "disposition": "later"}))
+        .must(OK, "the human's ruling on a row whose kind stands");
+
+    // A kind is written with its row: a row that carries no class takes none by a patch;
+    // and a cell of a class belongs to a kind.
+    let before = rig.snapshot();
+    patch(json!({"key": "f-plain", "kind": "lead"}))
+        .refused(BAD_VALUE, "a kind for a row that carries no class");
+    patch(json!({"key": "f-open", "route": "Run: jigc setup"}))
+        .refused(BAD_VALUE, "a route line, and no kind");
+    patch(json!({"key": "f-open", "kind": "route", "origin": "hunt"}))
+        .refused(BAD_VALUE, "where a row comes from, in a patch");
+    patch(json!({"key": "f-open"})).refused(BAD_VALUE, "a patch that sets nothing");
+    assert_eq!(rig.snapshot(), before);
+}
+
+/// **A refutation says which of three it is** (`T1`; the plan's fact `F3`: *a triage row
+/// has no word for why a finding was refuted*). A refuted finding's entry may say why, in
+/// the verifier's own three words — `does-not-reproduce`, `intended`, `breaks-no-clause` —
+/// and the round's record holds the word beside the verdict. The finding is refuted either
+/// way: graded, routed and recorded as before. A fourth word, and a word beside any other
+/// verdict, are refused; and an entry that says none is the entry it always was.
+#[test]
+fn a_refutation_says_which_of_three_it_is() {
+    let rig = Rig::new("refutation");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "round 1's scope");
+    rig.seed_rows(&["f-no-repro", "f-intended", "f-no-clause", "f-bare"]);
+
+    let before = rig.snapshot();
+    for (what, entry) in [
+        (
+            "a fourth word",
+            json!({"key": "f-bare", "grade": "unclear", "verdict": "refuted",
+                   "refutation": "out-of-luck"}),
+        ),
+        (
+            "a refutation that is no text",
+            json!({"key": "f-bare", "grade": "unclear", "verdict": "refuted", "refutation": 3}),
+        ),
+        (
+            "a refutation of a confirmed finding",
+            json!({"key": "f-bare", "grade": "unclear", "verdict": "confirmed",
+                   "refutation": "intended"}),
+        ),
+        (
+            "a refutation, and no verdict",
+            json!({"key": "f-bare", "grade": "unclear", "refutation": "intended"}),
+        ),
+    ] {
+        rig.run(&triage_set(RUN, "1"), &entry.to_string())
+            .refused(BAD_VALUE, what);
+    }
+    assert_eq!(rig.snapshot(), before, "a refused entry writes nothing");
+
+    let entries = json!([
+        {"key": "f-no-repro", "grade": "unclear", "verdict": "refuted",
+         "refutation": "does-not-reproduce"},
+        {"key": "f-intended", "grade": "breaks", "verdict": "refuted", "refutation": "intended"},
+        {"key": "f-no-clause", "grade": "unclear", "verdict": "refuted",
+         "refutation": "breaks-no-clause"},
+        {"key": "f-bare", "grade": "unclear", "verdict": "refuted"},
+    ]);
+    rig.run(&triage_set(RUN, "1"), &entries.to_string())
+        .must(OK, "four refutations, three of them with their word");
+    let verdicts: Vec<String> = table(&rig.read(&triage_path("1")), &TRIAGE_COLUMNS)
+        .into_iter()
+        .map(|row| row[3].clone())
+        .collect();
+    assert_eq!(
+        verdicts,
+        [
+            "refuted: does-not-reproduce",
+            "refuted: intended",
+            "refuted: breaks-no-clause",
+            "refuted"
+        ]
+    );
+    let read = rig.state();
+    for (key, word) in [
+        ("f-no-repro", json!("does-not-reproduce")),
+        ("f-intended", json!("intended")),
+        ("f-no-clause", json!("breaks-no-clause")),
+    ] {
+        let row = finding(&read, key);
+        assert_eq!(
+            json!([
+                row["grade"],
+                row["graded_by"],
+                row["route"],
+                row["why"],
+                row["triage"]["verdict"],
+                row["triage"]["refutation"]
+            ]),
+            json!([
+                "refuted",
+                "verify-real",
+                "recorded",
+                "not-a-break",
+                "refuted",
+                word
+            ]),
+            "`{key}`: refuted as ever, and it says which of three — {read}"
+        );
+    }
+    let bare = finding(&read, "f-bare");
+    assert_eq!(
+        json!([bare["grade"], bare["route"], bare["triage"]["verdict"]]),
+        json!(["refuted", "recorded", "refuted"])
+    );
+    assert!(
+        bare["triage"].get("refutation").is_none(),
+        "an entry that says no word is the entry it always was: {bare}"
+    );
+
+    // A word a hand wrote into the record is not read.
+    let held = rig.read(&triage_path("1"));
+    fs::write(
+        rig.root.join(triage_path("1")),
+        held.replace("refuted: intended", "refuted: because"),
+    )
+    .expect("bend a refutation");
+    rig.run(&state(RUN), "")
+        .refused(CORRUPT, "a fourth word, written by hand");
+}
+
+/// **An undrivable finding is the human's at once** (`T1`; the row `wf-unverifiable-relaunch`:
+/// *a finding no verifier can drive is launched again on every lap*). A verifier that
+/// cannot drive a finding here — it asks for another platform, another caller — says so as
+/// its verdict, `undrivable`, with why in a word. That is a recorded ending: the finding
+/// keeps triage's grade, is no triage's to finish any more — it is not among the untriaged
+/// rows, and no pass is counted against it — and is routed to the human by the first record
+/// that says it, where a finding left unverified waits for its second. It forbids `close`
+/// until the human rules it — and a fix that was on its row does not stand over it: found
+/// again and not driven, it was refuted by nobody. A reason that is no word, a reason beside another verdict and
+/// `undrivable` for a finding the verifier is not sent are refused.
+#[test]
+fn an_undrivable_finding_is_the_humans_at_once() {
+    let rig = census_run("undrivable", &["no-lost-files"]);
+    rig.run(&item_set(RUN), &gate_item().to_string())
+        .must(OK, "the test set");
+    rig.run(&scope_set(RUN, "1"), &scope(&[INSIDE], &[]).to_string())
+        .must(OK, "round 1's scope");
+    rig.run(
+        &result_set(RUN, "1", &candidate(1)),
+        &ran("gate", "green").to_string(),
+    )
+    .must(OK, "the gate's run");
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"candidate": candidate(1)}).to_string(),
+    )
+    .must(OK, "round 1's candidate");
+    rig.seed_rows(&["f-undrivable", "f-open", "f-closed"]);
+    let mut fixed = row_at("f-fixed", INSIDE);
+    fixed["disposition"] = json!("fixed");
+    fixed["detail"] = json!(sha('f'));
+    rig.run(&ledger_add(RUN), &fixed.to_string())
+        .must(OK, "a finding with a fix on its row");
+
+    let before = rig.snapshot();
+    let undrivable = |more: Value| {
+        let mut entry = json!({"key": "f-undrivable", "grade": "unclear", "verdict": "undrivable"});
+        for (field, value) in more.as_object().expect("the entry's other fields") {
+            entry[field] = value.clone();
+        }
+        entry
+    };
+    for (what, entry) in [
+        ("undrivable, and no reason", undrivable(json!({}))),
+        (
+            "a reason that is a sentence",
+            undrivable(json!({"reason": "it needs Linux and a root caller"})),
+        ),
+        ("a reason that is no text", undrivable(json!({"reason": 3}))),
+        (
+            "a reason that says nothing",
+            undrivable(json!({"reason": ""})),
+        ),
+        (
+            "undrivable, and a regression",
+            undrivable(json!({"reason": "needs-linux", "regression": true})),
+        ),
+        (
+            "undrivable, for a finding the verifier is not sent",
+            undrivable(json!({"reason": "needs-linux", "grade": "no-break"})),
+        ),
+        (
+            "a reason beside another verdict",
+            undrivable(json!({"reason": "needs-linux", "verdict": "confirmed"})),
+        ),
+    ] {
+        rig.run(&triage_set(RUN, "1"), &entry.to_string())
+            .refused(BAD_VALUE, what);
+    }
+    assert_eq!(rig.snapshot(), before, "a refused entry writes nothing");
+
+    // ONE RECORD: a finding nobody here can drive, and one that is left unverified.
+    let entries = json!([
+        undrivable(json!({"reason": "needs-linux-and-root"})),
+        {"key": "f-open", "grade": "unclear"},
+        {"key": "f-closed", "grade": "no-break"},
+        {"key": "f-fixed", "grade": "breaks", "verdict": "undrivable", "reason": "needs-root"},
+    ]);
+    rig.run(&triage_set(RUN, "1"), &entries.to_string())
+        .must(OK, "the round's first triage record");
+    assert_eq!(
+        table(&rig.read(&triage_path("1")), &TRIAGE_COLUMNS)[0][2..5],
+        ["unclear", "undrivable: needs-linux-and-root", "-"]
+    );
+    assert_eq!(
+        table(&rig.read(&ledger_path()), &LEDGER_COLUMNS)[0][6..8],
+        ["unclear", "triage"],
+        "the finding keeps triage's grade: its verifier established nothing of it"
+    );
+    let read = rig.state();
+    let row = finding(&read, "f-undrivable");
+    assert_eq!(
+        json!([
+            row["route"],
+            row["why"],
+            row["awaits"],
+            row["triage"]["verdict"],
+            row["triage"]["reason"]
+        ]),
+        json!([
+            "human",
+            "undrivable",
+            null,
+            "undrivable",
+            "needs-linux-and-root"
+        ]),
+        "the human's by the first record that says it: {read}"
+    );
+    assert_eq!(
+        json!([
+            read["human_list"],
+            read["untriaged"],
+            read["rounds"][0]["facts"]["awaiting"],
+            finding(&read, "f-open")["route"]
+        ]),
+        json!([
+            [{"key": "f-undrivable", "why": "undrivable"}, {"key": "f-fixed", "why": "undrivable"}],
+            [{"key": "f-open", "why": "unverified"}],
+            ["f-open unverified 1"],
+            "triage"
+        ]),
+        "it is no triage's to finish: not among the untriaged rows, and no pass is counted against it — {read}"
+    );
+    assert_eq!(
+        json!([
+            finding(&read, "f-fixed")["reopened"],
+            finding(&read, "f-fixed")["route"]
+        ]),
+        json!([true, "human"]),
+        "found again and not driven, a fix on its row does not stand: nobody refuted the finding — {read}"
+    );
+    let untriaged = rig.run(&keeper("untriaged", RUN), "").json();
+    assert_eq!(
+        json!([untriaged["count"], untriaged["untriaged"][0]["key"]]),
+        json!([1, "f-open"]),
+        "what a stage's triage is handed does not hold it: nothing launches it again"
+    );
+
+    // With the other finding settled, the step is the human's; and it forbids `close`
+    // until it is ruled.
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "f-open", "grade": "unclear", "verdict": "refuted"}).to_string(),
+    )
+    .must(OK, "the other finding, refuted");
+    let read = rig.state();
+    assert_eq!(
+        asks(&read),
+        json!(["rule", [{"finding": "f-undrivable", "route": "human"},
+                        {"finding": "f-fixed", "route": "human"}]]),
+        "{read}"
+    );
+    rig.run(
+        &ledger_set(RUN),
+        &json!([{"key": "f-undrivable", "disposition": "later"},
+                {"key": "f-fixed", "disposition": "later"}])
+        .to_string(),
+    )
+    .must(OK, "the human's rulings");
+    let read = rig.state();
+    assert_eq!(asks(&read), json!(["close", []]), "{read}");
+    assert_eq!(
+        json!([
+            finding(&read, "f-undrivable")["route"],
+            finding(&read, "f-undrivable")["why"]
+        ]),
+        json!(["recorded", "ruled"])
+    );
+}
+
+/// **A row is read whole by its key** (`T1`; the plan's `T6a`: *each is handed a key and the
+/// read that prints its row*). One line of JSON, writing nothing: the ledger's row as the
+/// state has it — its cells, its triage, its route, and its class where it carries one, the
+/// evidence, the code, the site and the parent in it. A key the ledger lacks is refused.
+#[test]
+fn a_row_is_read_whole_by_its_key() {
+    let rig = Rig::new("row");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "round 1's scope");
+    let line = "Run: jigc setup \u{2014} \u{201c}repair\u{201d} | then again";
+    let mut parent = classed("parent", INSIDE, "route", "seed");
+    parent["route"] = json!(line);
+    parent["code"] = json!("setup.install-hook");
+    parent["site"] = json!("crates/cli/src/setup.rs::install_hook::setup.install-hook#1");
+    rig.run(
+        &ledger_add(RUN),
+        &json!([parent, row_at("plain", EXCLUDED)]).to_string(),
+    )
+    .must(OK, "a row with a class, and one without");
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "parent", "grade": "breaks", "verdict": "confirmed", "regression": true})
+            .to_string(),
+    )
+    .must(OK, "the parent's verdict");
+    let mut child = row_at("child", INSIDE);
+    child["kind"] = json!("behaviour");
+    child["commands"] = json!("jigc setup\njigc setup --repair");
+    child["parent"] = json!("parent");
+    rig.run(&ledger_add(RUN), &child.to_string())
+        .must(OK, "an item handed on under it");
+
+    let before = rig.snapshot();
+    let read = rig.state();
+    for row in read["ledger"].as_array().expect("the ledger") {
+        let key = row["key"].as_str().expect("a key");
+        let seen = rig.run(&read_row(RUN, key), "");
+        seen.must(OK, "a row, by its key");
+        assert_eq!(seen.json(), json!({"run": RUN, "row": row}), "`{key}`");
+        assert_eq!(seen.stdout.lines().count(), 1, "one line: {}", seen.stdout);
+    }
+    let whole = rig.run(&read_row(RUN, "parent"), "").json();
+    assert_eq!(
+        whole["row"]["class"],
+        json!({"kind": "route", "given": null, "origin": "seed", "parent": null,
+               "code": "setup.install-hook",
+               "site": "crates/cli/src/setup.rs::install_hook::setup.install-hook#1",
+               "evidence": line}),
+        "the class, its evidence as it was written: {whole}"
+    );
+    assert_eq!(
+        json!([
+            whole["row"]["grade"],
+            whole["row"]["route"],
+            whole["row"]["triage"]["regression"]
+        ]),
+        json!(["regression", "fix", true])
+    );
+    let handed = rig.run(&read_row(RUN, "child"), "").json();
+    assert_eq!(
+        handed["row"]["class"],
+        json!({"kind": "behaviour", "given": null, "origin": "under-confirmed",
+               "parent": "parent", "code": null, "site": null,
+               "evidence": "jigc setup<br>jigc setup --repair"})
+    );
+    assert!(
+        rig.run(&read_row(RUN, "plain"), "").json()["row"]
+            .get("class")
+            .is_none(),
+        "a row without a class says nothing of one"
+    );
+
+    rig.run(&read_row(RUN, "no-such-row"), "")
+        .refused(NO_SUCH_ROW, "a key the ledger lacks");
+    rig.run(&read_row(RUN, "Not A Slug"), "")
+        .refused(BAD_ID, "a key that is no id");
+    assert_eq!(rig.snapshot(), before, "the reads wrote nothing");
 }

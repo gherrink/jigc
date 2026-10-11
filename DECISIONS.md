@@ -2,6 +2,70 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — A row can carry what the queue is ranked by: a class in a table beside the ledger, a red run's row filed with its own, a refutation that says which of three it is, a verdict for *nobody here can drive it*, and one row read by its key — and a run that names no kind holds the bytes it held (the plan's `T1`; the builder's choices inside it)
+
+**What.** [`dev/stabilize-record`](dev/stabilize-record) grows what the reshaped `test` stage ranks and counts by, and nothing a stage is answered today changes ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §4, `T1`, the migration order's Phase A; ruling 1 of *2026-10-10 — The reshaped `test` stage, corrected by a count the same day*; the rows `wf-verify-fan-out` and `wf-unverifiable-relaunch`). The script's header is the contract; in one place:
+
+- **A ledger row may carry a class** — a *kind* (`route` · `behaviour` · `lead`) and where the item comes from — with the kind's evidence: the route line a refusal printed, or the commands that show the misbehaviour. **A kind without its evidence is a lead**: the row is entered, its cell says `lead: given as route`, and the call names it (`leads`).
+- **Where a handed-on item comes from is computed.** A row names an `origin` (`hunt` · `seed`) or a `parent`, never both; under a parent the origin is the parent's verdict on record — `under-confirmed` · `under-no-repro` · `under-not-a-break` — and a caller that says it is refused.
+- **A red run's row is filed with its class** — `behaviour`, `hunt` — by the call that files it, its evidence the verdict on record for a held check and what the call brings as `repro` for one that is not held.
+- **A triage entry may say why a finding was refuted**, in the verifier's own three words (`does-not-reproduce` · `intended` · `breaks-no-clause`, as [finding-verifier.md](.claude/agents/finding-verifier.md) has them), and **there is a third verdict, `undrivable`**, with why in a word: the finding keeps triage's grade and is routed to the human by the first record that says so.
+- **A kind is refused a change once its row has a verdict** (the plan's §2.12).
+- **One row is read whole by its key**: `dev/stabilize-record row --run R --key K`.
+- **A row keeps the refusal's code and the site id where the item names them** (the human's ruling of 2026-10-11 on how often something appears, the entry below): text on the row, of any kind of item, held to no vocabulary; no row is refused for lacking one, and nothing ranks, merges or counts on either. `T4` reads both off the row.
+
+**Where the cells are held: a table beside the ledger, `classes.md` — and what was rejected.** One row per finding that carries a class (`key · kind · origin · parent · code · site · evidence`), written from the first row that names a kind and never before.
+
+- *Rejected: six more columns in `ledger.md`.* Every ledger of every run would change its bytes, which is what Phase A forbids; a header that grows only once a row names a kind is two layouts of one table and a rewrite of every row at the switch.
+- *Rejected: the cells inside a cell the ledger has.* A second grammar inside `source` or `repro`, read back by a pattern.
+- *Rejected: a census of the classed keys in `run.md`*, as the ledger's own rows have. It would put one more fact into the state of every run, and so change an answer a stage is given today. **So a class row deleted by hand is missed by nothing in this task** — said below.
+
+**The state says a class only where there is one.** A row's `class`, a triage entry's `refutation` and `reason` are keys that exist only on a row that holds them; a row without them is printed as it was, to the byte. A uniform shape with `null` everywhere was the other choice, and it is the same objection: the answer for a run that uses none of this would change.
+
+**The switch, in this task — and what `T2a` owes it.** The plan's switch is *a run whose opening holds an `order`*, and the order is `T2a`'s fact: no call of this task's script can make such a run. One sentence of `T1` needs a switch all the same. A held check's result is `{item, verdict}` *and nothing else*, so nothing in that call can ask for a class, and a red run filed with one in every run would give a run of today a file it never held. **Chosen: a red run's row is filed with its class in a run whose ledger already holds a row with a class** — one line of `result_set`, marked there. **It is a stand-in and it is not right for a real stage**: the harness's record batch calls `result-set` before `ledger-add`, so in a run with an order and no seeded row the first red row would be filed without a class. `T2a` replaces that line's condition by the run's order; its own arm for a row without a kind is where it shows. *Rejected:* writing the `order` fact here (it is `T2a`'s, with its shape); a flag on `result-set` (a second switch beside the order, wrong the day the order exists); halting the task over one line whose owner is the next task.
+
+**Pinned, as an engineer.**
+
+- **An origin is written with the row and stands.** It is computed once, at the write, from the latest round that triaged the parent — and not at every read, because a triage entry recorded again replaces its row, and a class that moved with it would move the hit rate it is counted in. **A parent with no verdict to compute from refuses the row**: never triaged, graded and not verified, undrivable, or refuted without the word that says which of three. No origin is guessed.
+- **The evidence is the kind's own and nothing else's.** `route` with kind route, `commands` with kind behaviour; the other kind's field, and either beside `lead`, are refused. A field that is there and says nothing is no evidence.
+- **A kind is changed by `ledger-set`, with its evidence, code and site — never where the row comes from**, and only on a row that carries a class: a kind is written with its row. *A verdict* is any verdict a round's triage record holds for the row, `undrivable` among them, in any round. Said again as it stands, a kind is taken.
+- **`undrivable` leaves the ledger's grade alone.** The verifier established nothing of the finding, so the row stays `breaks` or `unclear` by triage, and the route reads the round's entry: `human`, `undrivable`. It is not among the untriaged rows and no pass is counted against it, which is what stops the relaunch. **`next_of` is not touched**: `rule` follows from a finding on the human's list as it does for any other. A fix that was on the row does not stand over it — *not refuted* is what a standing finding is.
+- **A reason is a word of the slug grammar, and no list**: why a finding cannot be driven here is the verifier's to say. A refutation's word is one of the three or is refused.
+- **`row` is a read like `item`**: under the shared lock, the state's own entry, one line.
+
+**Phase A, shown.** `a_run_without_an_order_holds_the_bytes_it_held` drives one whole `test` stage as the harness makes its calls today — the opening's four writes, the attempt's marker, the scope and ten reports from files, the reads by key, the report check, the vet, the record's batch from a file held to its hash (a held check green, a held check red, a check an agent read red, a hunt green, three findings, five triage entries — a regression, a confirmed finding, a refuted one, two grades without a verdict), what is pending, the vet of the commit, the settle, and the invocation that finishes the round's triage — and holds **every answer and every file** to one text: 31 calls and 23 files, 51,914 bytes. **The text was taken from the parent's script** — the arm was written first, run against the tree's unchanged script with an empty reference, and what it printed is the reference; the arm was then green on that script before a line of it changed, and the embedded text is held equal to that capture. *What does change for a caller of today:* the sentence a malformed row, patch or entry is refused with names the fields and the verdicts there now are; no refusal changes its class or its status, and no call a stage makes is refused that was taken.
+
+**Red first.** The ten arms were written before the script took a kind. On the parent, nine were red, each at its first call that is taken today — *a ledger row has no field "kind"*, *a triage entry has no field "refutation"* — and the tenth green, as what it holds says it must be. The refusals an arm asks for before that call were refused on the parent too, for want of the field; what each is worth is the mutants'. Six arms of the suites' own tables were red on the parent as well: the subcommand list, the identifier sites, the run that was never opened, two of the writers' axes, and the step suite's table of what each act reaches.
+
+**Mutants of the finished script** — ten, each one edit, the ten arms run on each; none survived.
+
+| The edit | Arms that went red |
+|---|---|
+| a red run's row is filed with a class whatever the run holds | `a_run_without_an_order_holds_the_bytes_it_held` · `a_red_results_row_has_its_class_when_it_is_filed` |
+| every row of the state says a class, `null` where it carries none | `a_run_without_an_order_holds_the_bytes_it_held` · three more |
+| a handed-on item's origin is not computed from its parent's verdict | `a_handed_on_items_origin_is_its_parents_verdict_and_no_caller_says_it` |
+| an origin a caller says beside a parent is taken | the same |
+| a kind is changed whatever verdict its row has | `a_kind_is_refused_a_change_once_its_row_has_a_verdict` |
+| a kind without its evidence keeps its kind | `a_kind_without_its_evidence_is_a_lead` · the arm above |
+| an undrivable finding is routed as an unverified one | `an_undrivable_finding_is_the_humans_at_once` |
+| a fix on the row stands over a finding nobody could drive | the same |
+| a refutation's word is not written beside the verdict | `a_refutation_says_which_of_three_it_is` · the handed-on arm |
+| a held check's red run takes what the call says for its evidence | `a_red_results_row_has_its_class_when_it_is_filed` |
+
+**The assertions this task carried.** One outside its own suite: `dev_stabilize_step::no_act_reaches_main_a_release_branch_a_tag_or_a_branch_outside_the_model` holds a row for every act of the record script, and `row` is one more (`no-ref`). In its own suite the tables that are held to the script's parser grew by what it grew: the readers, the call of every subcommand on a run that was never opened, three identifier sites, and two rows of the writers' list — a classed row's evidence as it is added and as its kind is set — so that the host-path, hygiene, scanner and killed-write axes drive the new cells. Nothing else in `tooling-tests/` pinned a text this task moved: the whole `g_tooling` target was run on the finished tree, 445 tests.
+
+**What is not established.**
+
+- **Nothing of a stage calls any of it.** No harness path, no agent's definition, no digest of the step tool reads a class, a refutation's word, `undrivable` or `row`. The simulation and the canary's suite ran unchanged, which is Phase A's check and no test of the new.
+- **The switch for a red run's class is the stand-in above** until `T2a`.
+- **A class row deleted by hand is missed by nothing.** The state refuses a class row it did not write, one for a finding the ledger lacks and one whose parent is gone; a row that is simply gone leaves a finding without a class. `T2a`'s rule — in a run with an order a row without a kind is refused — is where that can be held.
+- **What a cell says is held to nothing**: that a `route` is a line a refusal printed, that `commands` are commands, that a code is a code of the product or a site an id of [the site list](crates/cli/tests/route_catalog/sites.tsv). The plan leaves it a row (`wf-evidence-held`); the script cannot know its caller either, so who says a kind is the harness's to hold.
+- **The freeze reads the records as they stand.** A triage entry recorded again without its verdict is no verdict, as it is for the route; the row's kind is then changeable again.
+- **An undrivable finding that a later round triages again, without that verdict, is unverified again.** Whether a later round should launch it is `wf-round-two-queue`'s question.
+- **`ledger-set` gives no class to a row that carries none, and clears no code.** A row filed without a class — a red run, before the run's first row with one — keeps none. No caller needs either yet.
+- **The full `g_tooling` run was made on a machine under load** (a load average of 30 to 50): 443 of 445 passed and two ran into the runner's eight-minute bound — `dev_stabilize_step::no_act_reaches_main_…` and one scenario of the simulation — and both pass alone, in about ninety seconds each. The commit's gate is the measure.
+- `wf-unverifiable-relaunch` is built on the script's side only; its discharge in [decisions-pending.md](implementation/decisions-pending.md) is `T10`'s, with `T6a`.
+
 ## 2026-10-11 — The reshaped `test` stage's three open questions, ruled: a stage records twice, a verifier hands on at most two, and only a queued route item holds the close (the human's rulings; the plan's step `O1`)
 
 **What was open.** The build's [plan](completions/artifacts/M55/stabilization-build/reshape/plan.md) (§6) left three questions with the human, each forced by a fact of the canary and each depending on the one before. They were put one at a time, with the options and their measured costs, and are ruled as recommended.
