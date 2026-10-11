@@ -136,6 +136,16 @@
 //! with the dirty gate, whose route says to move a file out of its path: the runner moves
 //! it, as it moves a directory out of the way ([`a_file_is_moved_out_of_its_path`]).
 //!
+//! **And every case on another binary** — one ignored arm, run by hand
+//! ([`the_cases_are_followed_on_the_binary_a_variable_names`]; the plan's step `P5`): it
+//! follows the whole catalog on the binary a variable names, each case from the state that
+//! binary built, and prints what the case came to there beside what it came to on this
+//! tree's — with how the refusing command ended, what became of the witnesses and whether
+//! the two printed the same route, which a classification alone does not say. It asserts
+//! that it ran. What a difference between two releases is, it does not say, and neither
+//! does this suite ([`the_table_follows_each_binary_with_the_state_that_binary_built`]
+//! holds the table to its binaries).
+//!
 //! **The fence** (the plan's step `P2`) holds the catalog to the refusal sites of the
 //! families [`CATALOGUED`] names. It scans nothing for itself — the sites are
 //! [`support::refusal_sites`](crate::support::refusal_sites)' scan, which
@@ -947,16 +957,22 @@ fn every_table_has_its_arm_and_every_arm_its_table() {
 /// The configuration of the runner `dev/gate` runs the suite under, as committed.
 const RUNNER: &str = include_str!("../../../.config/nextest.toml");
 
-/// **Every way a nextest configuration leaves the tests under `arms` free to run beside
-/// each other.** `arms` is the path the arms stand under, with its last `::`. What holds
-/// them to one at a time is an override of `[profile.default]` — the profile every other
-/// one inherits — whose filter names every test under that path, by the path and by no
-/// arm's own name, and whose test group is one thread wide. The filter's terms may be
-/// joined by ` | ` and by nothing else: a term narrowed by an `&` is not the path's. And
-/// the override sets nothing else — a key of the profile written below the override's
-/// header is read as the override's, and the profile loses it without a word.
-fn unbounded(config: &str, arms: &str) -> Vec<String> {
-    let term = format!("test(/^{arms}/)");
+/// The term of a nextest filter that names every test under `arms` — a path with its last
+/// `::` — and no test by its own name.
+fn under(arms: &str) -> String {
+    format!("test(/^{arms}/)")
+}
+
+/// **Every way a nextest configuration leaves the tests `term` names free to run beside
+/// the others of their group.** `term` is one term of a nextest filter — the path the arms
+/// stand under, as [`under`] writes it, or one test by its name. What holds its tests to
+/// one at a time is an override of `[profile.default]` — the profile every other one
+/// inherits — whose filter has that term, and whose test group is one thread wide. The
+/// filter's terms may be joined by ` | ` and by nothing else: a term narrowed by an `&` is
+/// not the one asked for. And the override sets nothing else — a key of the profile
+/// written below the override's header is read as the override's, and the profile loses
+/// it without a word.
+fn unbounded(config: &str, term: &str) -> Vec<String> {
     let config: toml::Table = match config.parse() {
         Ok(config) => config,
         Err(why) => return vec![format!("the runner's configuration is no TOML: {why}")],
@@ -1025,9 +1041,15 @@ fn unbounded(config: &str, arms: &str) -> Vec<String> {
 /// test group of one thread in `.config/nextest.toml`, over every test under [`FOLLOWED`]
 /// — named by the module, so that no arm is in it by its own name and none can be left
 /// out. On planted configurations, fault by fault; then the committed one.
+///
+/// **And the arm that follows every case on a named binary is in the same group**, by its
+/// own name — it is one test, ignored, and follows the whole catalog twice: asked for
+/// together with the others, it waits for them like one of them. The harness is asked
+/// that a test of that name is there, so the term names something.
 #[test]
 fn the_arms_that_follow_cases_run_one_at_a_time_under_the_gates_runner() {
-    const ARMS: &str = "s::followed::";
+    let arms = under("s::followed::");
+    let arms = arms.as_str();
     let config = |groups: &str, filter: &str, group: &str| {
         format!(
             "[test-groups]\n{groups}\n[profile.default]\ntest-threads = 16\n\
@@ -1037,13 +1059,13 @@ fn the_arms_that_follow_cases_run_one_at_a_time_under_the_gates_runner() {
     let one = "one-at-a-time = { max-threads = 1 }";
     let in_it = "test-group = 'one-at-a-time'";
     says(
-        &unbounded(&config(one, "test(/^s::followed::/)", in_it), ARMS),
+        &unbounded(&config(one, "test(/^s::followed::/)", in_it), arms),
         &[],
     );
     says(
         &unbounded(
             &config(one, "test(=s::other) | test(/^s::followed::/)", in_it),
-            ARMS,
+            arms,
         ),
         &[],
     );
@@ -1077,12 +1099,12 @@ fn the_arms_that_follow_cases_run_one_at_a_time_under_the_gates_runner() {
         ),
     ] {
         says(
-            &unbounded(&config(groups, filter, group), ARMS),
+            &unbounded(&config(groups, filter, group), arms),
             &[("`test(/^s::followed::/)`", said)],
         );
     }
     says(
-        &unbounded("[profile.default]\ntest-threads = 16\n", ARMS),
+        &unbounded("[profile.default]\ntest-threads = 16\n", arms),
         &[("`test(/^s::followed::/)`", "in no test group")],
     );
     // The profile's own key, written below the override's header.
@@ -1093,16 +1115,23 @@ fn the_arms_that_follow_cases_run_one_at_a_time_under_the_gates_runner() {
                 "test(/^s::followed::/)",
                 "test-group = 'one-at-a-time'\nslow-timeout = '60s'",
             ),
-            ARMS,
+            arms,
         ),
         &[("`test(/^s::followed::/)`", "also sets `slow-timeout`")],
     );
     says(
-        &unbounded("[profile.default", ARMS),
+        &unbounded("[profile.default", arms),
         &[("the runner's configuration", "is no TOML")],
     );
 
-    let wrong = unbounded(RUNNER, &format!("{}::{FOLLOWED}::", suite()));
+    let on_a_named_binary = format!("{}::{ON_A_NAMED_BINARY}", suite());
+    assert!(
+        route_case::harness_tests().contains(&on_a_named_binary),
+        "the harness lists no test `{on_a_named_binary}`: the term that puts the arm on a \
+         named binary into the group names nothing",
+    );
+    let mut wrong = unbounded(RUNNER, &under(&format!("{}::{FOLLOWED}::", suite())));
+    wrong.extend(unbounded(RUNNER, &format!("test(={on_a_named_binary})")));
     assert!(
         wrong.is_empty(),
         "`.config/nextest.toml` and the arms that follow cases:\n\n  {}",
@@ -3862,4 +3891,555 @@ fn what_is_gone_what_still_stands_and_what_was_not_touched() {
             Classification::WitnessChanged,
         ),
     ]);
+}
+
+// ---------------------------------------------------------------------------
+// The cases on a binary a variable names
+// ---------------------------------------------------------------------------
+
+/// The variable that names the binary [`the_cases_are_followed_on_the_binary_a_variable_names`]
+/// follows every case on, by an absolute path.
+const NAMED_BINARY: &str = "JIGC_ROUTE_CATALOG_BINARY";
+
+/// That arm, as the harness names it inside this suite.
+const ON_A_NAMED_BINARY: &str = "the_cases_are_followed_on_the_binary_a_variable_names";
+
+/// What one case came to on one binary: a classification — or, where the frame could not
+/// follow it there, why.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum CameTo {
+    Classified(Classification),
+    /// **The case could not be followed on that binary, for a reason that is the frame's**:
+    /// a state one of its steps could not build there — a step that runs the binary under
+    /// test and did not exit 0 — or a case that does not fit the route that binary printed
+    /// — an act names a span the route does not have. The first line of what the frame
+    /// said, with the machine's temporary directory written `<tmp>`.
+    NotFollowed(String),
+}
+
+impl fmt::Display for CameTo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CameTo::Classified(classification) => write!(f, "{classification}"),
+            CameTo::NotFollowed(why) => write!(f, "not followed: {why}"),
+        }
+    }
+}
+
+/// One case on one binary.
+struct On {
+    came: CameTo,
+    /// The route that binary printed, with the case's sandbox written `<sandbox>` — where
+    /// the case was followed and a route was printed.
+    route: Option<String>,
+    /// What the runner did, step by step — or all of what the frame said, where it could
+    /// not follow the case.
+    detail: String,
+}
+
+/// One case on two binaries.
+struct Beside<'a> {
+    case: &'a Case,
+    /// On the binary handed in as the named one.
+    there: On,
+    /// On the other — this tree's, in the arm.
+    here: On,
+}
+
+/// **Follow `case` on `binary` — its state built by that binary — and say what it came
+/// to.** A case the frame cannot follow there is no failure of the caller's: the frame
+/// says why by a fault it hands back, or by a panic of the runner's where a state's step
+/// did not do what the state needs, and either is what the case came to on that binary.
+fn came_to(binary: &Path, case: &Case, limit: std::time::Duration) -> On {
+    let not_followed = |said: &str| {
+        // The machine's temporary directory, as it resolves and as it is spelled — read
+        // so that it can be written `<tmp>`; nothing is made in it.
+        let roots = [
+            std::env::temp_dir().canonicalize().ok(),
+            Some(std::env::temp_dir()),
+        ];
+        let line = roots.iter().flatten().fold(
+            said.lines().next().unwrap_or_default().to_string(),
+            |line, root| line.replace(root.to_string_lossy().trim_end_matches('/'), "<tmp>"),
+        );
+        On {
+            came: CameTo::NotFollowed(line),
+            route: None,
+            detail: said.to_string(),
+        }
+    };
+    match std::panic::catch_unwind(|| route_case::follow_within(binary, case, limit)) {
+        Ok(Ok(followed)) => On {
+            came: CameTo::Classified(followed.classification),
+            route: followed
+                .route
+                .map(|route| route.replace(&followed.sandbox.display().to_string(), "<sandbox>")),
+            detail: followed.detail,
+        },
+        Ok(Err(fault)) => not_followed(&fault),
+        Err(panic) => not_followed(
+            panic
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| panic.downcast_ref::<&str>().copied())
+                .unwrap_or("the runner stopped and said nothing"),
+        ),
+    }
+}
+
+/// **Every case of `cases` on two binaries, side by side** — each binary handed the case
+/// whole, so the state it is asked in is the state it built. `expected` is the list the
+/// `here` binary's known holds are read from; on the named binary nothing is known, and a
+/// command there is waited for under the standing limit.
+fn on_two_binaries<'a>(
+    there: &Path,
+    here: &Path,
+    cases: &[&'a Case],
+    expected: &[ExpectedRed],
+) -> Vec<Beside<'a>> {
+    route_case::pooled(route_case::width(), cases, |case| Beside {
+        case,
+        there: came_to(there, case, route_case::LIMIT),
+        here: came_to(here, case, route_case::limit_of(expected, case)),
+    })
+}
+
+/// Whether a case follows its route by an object or a command the route does not print:
+/// the marked form, or the refusing command run again. Read off the acts as they print
+/// themselves, so an act added to the frame later is read without a list of acts here.
+fn operand_implied(case: &Case) -> bool {
+    let acts = format!("{:?}", case.acts);
+    acts.contains("Unprinted(") || acts.contains("Rerun")
+}
+
+/// **What became of a case's witnesses on one binary**, read off what the runner said:
+/// `changed` where it named one that is not what it was, `as they were` where it named
+/// none, and `-` where the case was not followed there and nothing was compared.
+///
+/// *Why beside the classification.* The frame reads *not provoked* ahead of a changed
+/// witness: a command that exits 0 and prints no refusal has no route to follow, and the
+/// classification says that and no more. On a binary that has no such refusal yet, the
+/// command may have written the file a later release refuses over — and a table of
+/// classifications alone would hold `not provoked` there beside `a witness changed` here,
+/// as if nothing had happened to the file on the first.
+fn witnesses(on: &On) -> &'static str {
+    let named_one = |line: &str| line.starts_with("the witness ") && line.contains(" changed: ");
+    match on.came {
+        CameTo::Classified(_) if on.detail.lines().any(named_one) => "changed",
+        CameTo::Classified(_) => "as they were",
+        CameTo::NotFollowed(_) => "-",
+    }
+}
+
+/// **How the refusing command ended on one binary**, in the runner's own words — `exit 0`,
+/// `exit 1`, *did not end within … and was ended* — and `-` where the case was not followed
+/// there.
+///
+/// *Why beside the classification.* *Not provoked* is a command that exited 0 and a command
+/// that refused under another code alike: the case's own code was not printed at a
+/// non-zero exit, and the frame says no more. On a binary that lacks a refusal the two are
+/// different things — it went on and did the work, or another refusal answered first.
+fn refusing_ended(on: &On) -> &str {
+    // The runner's first line: `jigc <argv>`: <how it ended>, `<code>` printed | not printed
+    let ended = || {
+        let (ran, _) = on.detail.lines().next()?.rsplit_once(", `")?;
+        Some(ran.rsplit_once("`: ")?.1)
+    };
+    match on.came {
+        CameTo::Classified(_) => ended().unwrap_or("-"),
+        CameTo::NotFollowed(_) => "-",
+    }
+}
+
+/// **Whether the two binaries printed the same route**, byte for byte once each sandbox's
+/// own root is written `<sandbox>`: `the same`, `not the same`, and `-` where one of them
+/// printed none — it refused nothing, or the case was not followed there.
+///
+/// *Why the table says it.* A case's acts name spans by index, and were written by reading
+/// the route this tree prints. Where another binary prints another route under the same
+/// code, the same indices are other words: what the case came to there is those acts done
+/// to that route, and not that route followed as somebody read it.
+fn routes(row: &Beside) -> &'static str {
+    match (&row.here.route, &row.there.route) {
+        (Some(here), Some(there)) if here == there => "the same",
+        (Some(_), Some(_)) => "not the same",
+        _ => "-",
+    }
+}
+
+/// **The table: a line a case, tab-separated** — the case, its site, whether its route
+/// prints the operand of every act (`printed`) or the case names one (`implied`), whether
+/// it rests on a doubtful reading, the key it is listed red under on this tree; then for
+/// this tree's binary and for the named one what the case came to, how its refusing
+/// command ended ([`refusing_ended`]) and what became of its witnesses ([`witnesses`]);
+/// and whether the two printed the same route ([`routes`]). It says what happened on
+/// each, and nothing about what a difference is.
+fn table(rows: &[Beside], expected: &[ExpectedRed]) -> String {
+    let mut out = String::from(
+        "case\tsite\toperand\tdoubt\tkey\t\
+         this tree's binary\tits refusing command\tits witnesses\t\
+         the named binary\tits refusing command\tits witnesses\tthe two routes\n",
+    );
+    for row in rows {
+        let key = expected
+            .iter()
+            .find(|entry| entry.case == row.case.name)
+            .map_or("-", |entry| entry.key);
+        out.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{key}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+            row.case.name,
+            row.case.site,
+            if operand_implied(row.case) {
+                "implied"
+            } else {
+                "printed"
+            },
+            if row.case.doubt.is_some() {
+                "doubt"
+            } else {
+                "-"
+            },
+            row.here.came,
+            refusing_ended(&row.here),
+            witnesses(&row.here),
+            row.there.came,
+            refusing_ended(&row.there),
+            witnesses(&row.there),
+            routes(row),
+        ));
+    }
+    out
+}
+
+/// **How many cases came to each pair** — what a case came to on this tree's binary, what
+/// it came to on the named one, and the number of cases of that pair; a line a pair, in
+/// the order of the words. A count, and no word about a pair.
+fn pairs(rows: &[Beside]) -> String {
+    let mut counted: BTreeMap<(String, String), usize> = BTreeMap::new();
+    for row in rows {
+        *counted
+            .entry((row.here.came.to_string(), row.there.came.to_string()))
+            .or_default() += 1;
+    }
+    let mut out = String::from("cases\tthis tree's binary\tthe named binary\n");
+    for ((here, there), cases) in counted {
+        out.push_str(&format!("{cases}\t{here}\t{there}\n"));
+    }
+    out
+}
+
+/// A reason's word.
+fn word(why: &Why) -> &'static str {
+    match why {
+        Why::NotConstructible(_) => "not-constructible",
+        Why::Platform(_) => "platform",
+        Why::NoRoutePrinted => "no-route-printed",
+    }
+}
+
+/// **The catalog's own numbers, a line a site**: the command's file, the site, the causes
+/// its reading counts, how many of them have a reason and no case, how many ways out of
+/// its route are not followed, its cases, how many of those the expected-red list holds,
+/// and how the count of causes was derived. A site with a reason and no case has no
+/// reading: its line carries the reason where the derivation would stand.
+fn sites(expected: &[ExpectedRed]) -> String {
+    let mut out = String::from(
+        "file\tsite\tcauses\twith a reason\tways not followed\tcases\tlisted red\tderivation\n",
+    );
+    for table in TABLES {
+        let cases: Vec<&Case> = table.cases.iter().flat_map(|group| group.iter()).collect();
+        for reading in table.readings {
+            let of_site = || cases.iter().filter(|case| case.site == reading.site);
+            let red = of_site()
+                .filter(|case| expected.iter().any(|entry| entry.case == case.name))
+                .count();
+            out.push_str(&format!(
+                "{}\t{}\t{}\t{}\t{}\t{}\t{red}\t{}\n",
+                table.file,
+                reading.site,
+                reading.causes,
+                reading.without_case.len(),
+                reading.not_followed.len(),
+                of_site().count(),
+                reading.derivation,
+            ));
+        }
+        for reason in table.reasons {
+            out.push_str(&format!(
+                "{}\t{}\t-\t-\t-\t0\t0\t{}\n",
+                table.file, reason.site, reason.why,
+            ));
+        }
+    }
+    out
+}
+
+/// **The reasons, by word**: how many sites, causes and ways out have a reason of each of
+/// the three words, a line a kind and a word.
+fn reasons() -> String {
+    let mut counted: BTreeMap<(&str, &str), usize> = BTreeMap::new();
+    for table in TABLES {
+        for reason in table.reasons {
+            *counted.entry(("a site", word(&reason.why))).or_default() += 1;
+        }
+        for reading in table.readings {
+            for (_, why) in reading.without_case {
+                *counted.entry(("a cause", word(why))).or_default() += 1;
+            }
+            for (_, why) in reading.not_followed {
+                *counted.entry(("a way out", word(why))).or_default() += 1;
+            }
+        }
+    }
+    let mut out = String::from("what has the reason\tword\thow many\n");
+    for ((what, word), many) in counted {
+        out.push_str(&format!("{what}\t{word}\t{many}\n"));
+    }
+    out
+}
+
+/// **The cases that rest on a doubtful reading**, a line a case: what it came to on each
+/// binary, and the two readings in the case's own words.
+fn doubts(rows: &[Beside]) -> String {
+    let mut out = String::from("case\tthis tree's binary\tthe named binary\tthe two readings\n");
+    for row in rows {
+        if let Some(doubt) = row.case.doubt {
+            out.push_str(&format!(
+                "{}\t{}\t{}\t{doubt}\n",
+                row.case.name, row.here.came, row.there.came
+            ));
+        }
+    }
+    out
+}
+
+/// **The table follows each binary with the state that binary built.** Two shells stand in
+/// for two releases, and a planted case tells them apart by the name each was started
+/// under: its state's step writes that name down, and its refusing command refuses only
+/// where the name written is its own — with a route that holds under one shell and fails
+/// under the other. So each column is what its own binary did from the state it made: a
+/// table that drove one binary for both columns would print one classification twice, and
+/// one that built the state with one binary and asked the other would print *not provoked*.
+/// Handed the two the other way round, the columns change places.
+///
+/// And three things a table of two classifications would drop, each a planted case: a case
+/// whose state a binary cannot build is a line that says so in the frame's words — never a
+/// line that is missing, and never the end of the table; a binary that refuses nothing and
+/// writes the case's witness is *not provoked* on a line that still says the witness
+/// changed; and two binaries that print one route, each with its own sandbox's path in it,
+/// are said to print the same route — as two that print different ones are not.
+///
+/// The source half: the ignored arm hands the variable's value, and this suite's binary,
+/// to the function this arm holds.
+#[test]
+fn the_table_follows_each_binary_with_the_state_that_binary_built() {
+    const WHICH: &str = "case \"$(cat built-by 2>/dev/null):$0\" in \
+         /bin/sh:/bin/sh) printf '%s\\n' 'blocking · setup.install-hook — refused' \
+         '  route: re-run `jigc -c true`'; exit 1;; \
+         /bin/bash:/bin/bash) printf '%s\\n' 'blocking · setup.install-hook — refused' \
+         '  route: re-run `jigc -c false`'; exit 1;; \
+         esac";
+    let answers = Case {
+        name: "planted-two-binaries-that-answer-differently",
+        state: &[Step::Jigc(&["-c", "echo \"$0\" > built-by"])],
+        refusing: &["-c", WHICH],
+        acts: &[Act::Run(0)],
+        ..PLANTED
+    };
+    let one_builds = Case {
+        name: "planted-a-state-one-binary-cannot-build",
+        state: &[Step::Jigc(&["-c", "test \"$0\" = /bin/bash"])],
+        refusing: &[
+            "-c",
+            "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             '  route: re-run `jigc -c true`'; exit 1",
+        ],
+        acts: &[Act::Run(0)],
+        doubt: Some("planted: (a) one reading; (b) the other"),
+        ..PLANTED
+    };
+    let writes = Case {
+        name: "planted-a-binary-that-refuses-nothing-and-writes-a-witness",
+        state: &[Step::File(Place::Outside("theirs"), "theirs\n")],
+        refusing: &[
+            "-c",
+            "case \"$0\" in /bin/sh) echo ours >> ../outside/theirs; exit 0;; esac; \
+             printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             '  route: re-run `jigc -c true`'; exit 1",
+        ],
+        acts: &[Act::Run(0)],
+        witnesses: &["theirs"],
+        ..PLANTED
+    };
+    let one_route = Case {
+        name: "planted-two-binaries-that-print-one-route",
+        state: &[Step::File(Place::Repo("in-the-way"), "theirs\n")],
+        refusing: &[
+            "-c",
+            "test -e in-the-way || exit 0; \
+             printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             \"  route: remove \\`$PWD/in-the-way\\`, then re-run \\`jigc -c true\\`\"; exit 1",
+        ],
+        acts: &[Act::Remove(Operand::Span(0)), Act::Run(1)],
+        ..PLANTED
+    };
+    let (sh, bash) = (Path::new("/bin/sh"), Path::new("/bin/bash"));
+    let cases = [&answers, &one_builds, &writes, &one_route];
+    let holds = CameTo::Classified(Classification::Holds);
+    let fails = CameTo::Classified(Classification::AnotherFailure);
+
+    let rows = on_two_binaries(sh, bash, &cases, &[]);
+    let came: Vec<(&CameTo, &CameTo)> = rows
+        .iter()
+        .map(|row| (&row.there.came, &row.here.came))
+        .collect();
+    assert_eq!(
+        came[0],
+        (&holds, &fails),
+        "the planted case on `/bin/sh` and on `/bin/bash`, each from the state it built:\n{}\n\n{}",
+        rows[0].there.detail,
+        rows[0].here.detail,
+    );
+    assert!(
+        matches!(came[1].0, CameTo::NotFollowed(why) if why.contains("as a state's step"))
+            && *came[1].1 == holds,
+        "a state `/bin/sh` cannot build is a line that says so, and `/bin/bash` is still \
+         asked: {:?}",
+        came[1],
+    );
+    let turned = on_two_binaries(bash, sh, &cases[..1], &[]);
+    assert_eq!(
+        (&turned[0].there.came, &turned[0].here.came),
+        (&fails, &holds),
+        "handed the two binaries the other way round, the columns change places",
+    );
+
+    let listed = [ExpectedRed {
+        case: answers.name,
+        key: "r1-a-key",
+        classification: Classification::AnotherFailure,
+    }];
+    let printed = table(&rows, &listed);
+    let lines: Vec<&str> = printed.lines().collect();
+    assert_eq!(
+        (lines.len(), lines[1]),
+        (
+            5,
+            "planted-two-binaries-that-answer-differently\t\
+             crates/cli/src/setup.rs::hook_link_refusal::setup.install-hook#1\tprinted\t-\t\
+             r1-a-key\tfollowed, another failure\texit 1\tas they were\t\
+             followed, holds\texit 1\tas they were\tnot the same",
+        ),
+        "a line a case — this tree's columns, then the named binary's, then the routes:\n\
+         {printed}",
+    );
+    assert!(
+        lines[2].starts_with("planted-a-state-one-binary-cannot-build\t")
+            && lines[2].contains(
+                "\tprinted\tdoubt\t-\tfollowed, holds\texit 1\tas they were\tnot followed: "
+            )
+            && lines[2].ends_with("\t-\t-\t-"),
+        "the case that could not be followed has its line, and no word on an exit, a \
+         witness or a route nobody saw:\n{printed}",
+    );
+    assert!(
+        lines[3]
+            .ends_with("\tfollowed, holds\texit 1\tas they were\tnot provoked\texit 0\tchanged\t-"),
+        "a binary that refuses nothing and writes the witness is `not provoked`, and the \
+         line still says that it exited 0 and that the witness changed:\n{printed}",
+    );
+    assert!(
+        lines[4].ends_with(
+            "\tfollowed, holds\texit 1\tas they were\t\
+                 followed, holds\texit 1\tas they were\tthe same"
+        ),
+        "one route printed by two binaries, each with its own sandbox's path in it, is the \
+         same route:\n{printed}",
+    );
+    assert_eq!(
+        pairs(&rows),
+        format!(
+            "cases\tthis tree's binary\tthe named binary\n\
+             1\tfollowed, another failure\tfollowed, holds\n\
+             1\tfollowed, holds\tfollowed, holds\n\
+             1\tfollowed, holds\t{}\n\
+             1\tfollowed, holds\tnot provoked\n",
+            rows[1].there.came
+        ),
+    );
+    assert_eq!(doubts(&rows).lines().count(), 2, "{}", doubts(&rows));
+    let said = [printed, pairs(&rows), doubts(&rows), sites(&[]), reasons()].concat();
+    assert!(
+        !said.to_lowercase().contains("regress"),
+        "what the arm prints says what each binary did, and nothing about what a \
+         difference is",
+    );
+
+    let suite = rust_source::code_only(include_str!("route_catalog.rs"));
+    let arm = body_of(&suite, &format!("fn {ON_A_NAMED_BINARY}() {{"));
+    assert!(
+        arm.contains("std::env::var_os(NAMED_BINARY)")
+            && arm.contains("on_two_binaries(named, binary(), "),
+        "the ignored arm follows the cases on the binary the variable names, beside this \
+         suite's own",
+    );
+}
+
+/// **Every case of the catalog on the binary a variable names, beside what it came to on
+/// this tree's** — a table, run by hand and by no gate:
+///
+/// ```text
+/// JIGC_ROUTE_CATALOG_BINARY=<an absolute path> \
+///     cargo test -p jigc --test g_migration route_catalog::the_cases_are_followed_on_the_binary_a_variable_names -- --ignored --exact --nocapture
+/// ```
+///
+/// Every case is followed twice, once on each binary, **the state built by the binary that
+/// is then asked** ([`the_table_follows_each_binary_with_the_state_that_binary_built`]). A
+/// case the frame cannot follow on the named binary — a state it cannot build there, a
+/// route with fewer spans than the case's acts name — keeps its line, which says why.
+///
+/// It prints five blocks, each tab-separated under a line `== <name> ==`: `cases`, the
+/// table; `pairs`, how many cases came to each pair of outcomes; `sites` and `reasons`,
+/// the catalog's own numbers, which need no binary; `doubts`, the cases that rest on a
+/// reading nobody has given; and then, for a reader of the run, what the runner did in
+/// every case whose two outcomes are not the same words.
+///
+/// **It asserts that it ran** — a binary was named, and every case has its line — and
+/// nothing about what a case came to on either binary or about a pair: whether a
+/// difference between two releases is anything is not this suite's to say.
+#[test]
+#[ignore = "a table, not a fence: every case on the binary JIGC_ROUTE_CATALOG_BINARY names"]
+fn the_cases_are_followed_on_the_binary_a_variable_names() {
+    let named = std::env::var_os(NAMED_BINARY).unwrap_or_else(|| {
+        panic!("`{NAMED_BINARY}` names the binary to follow the cases on, and is not set")
+    });
+    let named = Path::new(&named);
+    assert!(
+        named.is_absolute() && named.is_file(),
+        "`{NAMED_BINARY}` is `{}`: the absolute path of a binary — a case is started in a \
+         directory of its own",
+        named.display(),
+    );
+    let (cases, expected) = (cases(), expected_red());
+    let rows = on_two_binaries(named, binary(), &cases, &expected);
+
+    println!("== cases ==\n{}", table(&rows, &expected));
+    println!("== pairs ==\n{}", pairs(&rows));
+    println!("== sites ==\n{}", sites(&expected));
+    println!("== reasons ==\n{}", reasons());
+    println!("== doubts ==\n{}", doubts(&rows));
+    println!("== what the runner did, where the two outcomes are not the same words ==");
+    for row in rows.iter().filter(|row| row.here.came != row.there.came) {
+        println!(
+            "\n`{}` ({})\n-- the named binary: {}\n{}\n-- this tree's binary: {}\n{}",
+            row.case.name,
+            row.case.cause,
+            row.there.came,
+            row.there.detail.trim_end(),
+            row.here.came,
+            row.here.detail.trim_end(),
+        );
+    }
+
+    assert_eq!(rows.len(), cases.len(), "every case has its line");
 }

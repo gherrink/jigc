@@ -36,8 +36,10 @@
 # module the arms stand in, never an arm: the arm of a command's file that is added later
 # is in the group the day it is made, and
 # `route_catalog::the_arms_that_follow_cases_run_one_at_a_time_under_the_gates_runner`
-# holds this file to that. Under `cargo test` — CI, the runner-faithful container — a
-# group's tests are threads of one process and the suite's own gate is the bound.
+# holds this file to that. The filter's second term is the one arm that follows every case
+# on a binary a variable names: ignored, run by hand, and in the group for the run that
+# asks for it beside the others. Under `cargo test` — CI, the runner-faithful container —
+# a group's tests are threads of one process and the suite's own gate is the bound.
 [test-groups]
 route-catalog-cases = { max-threads = 1 }
 
@@ -57,7 +59,7 @@ final-status-level = "slow"
 # the override's. Overrides of the default profile reach every other profile, the ones
 # `dev/gate` writes per run included.
 [[profile.default.overrides]]
-filter = 'test(/^route_catalog::the_cases_are_followed_and_the_expected_red_list_is_exact::/)'
+filter = 'test(/^route_catalog::the_cases_are_followed_and_the_expected_red_list_is_exact::/) | test(=route_catalog::the_cases_are_followed_on_the_binary_a_variable_names)'
 test-group = 'route-catalog-cases'
 
 [profile.ci]

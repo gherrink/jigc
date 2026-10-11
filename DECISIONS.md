@@ -2,6 +2,50 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The route catalog on the previous release's binary, and the pilot's numbers: one ignored arm follows every case on a binary a variable names, from the state that binary built; 159 of 353 lines differ from this tree's, 132 of them because `rc.24` does not refuse there — and a record that decides nothing (the plan's step `P5`, second commit; ruling 3 of 2026-10-10)
+
+**What.** One ignored arm and the arm that holds it, in [route_catalog.rs](crates/cli/tests/route_catalog.rs); its name as a second term of the runner's one-at-a-time group ([.config/nextest.toml](.config/nextest.toml)); the pilot's record, [route-catalog-pilot.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot.md), with two blocks of the arm's output committed beside it as printed ([cases](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot-cases.tsv), [sites](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot-sites.tsv)); and one section of [pinning.md](implementation/pinning.md), §6. No product source changes, nothing is fixed, no case is added or changed, the frame ([route_case.rs](crates/cli/tests/support/route_case.rs)) is not touched, and the pilot's findings file is as it was: a line of the table is a line of the table.
+
+**The arm** — `route_catalog::the_cases_are_followed_on_the_binary_a_variable_names`, ignored, run by hand with `JIGC_ROUTE_CATALOG_BINARY` naming a binary by an absolute path. It follows every case twice — on the named binary and on the suite's own — **each from the state that binary built**, and prints what the case came to on each, side by side. **It asserts that it ran**: a binary was named, and every case has its line. It prints no word about what a difference between two releases is, and the arm that holds it reads what it prints for the word.
+
+**Pinned, as an engineer — the plan left each open.**
+
+- **The line says three things beside the two classifications, because a classification alone misleads on a binary that lacks the refusal.** Seen in the first runs, before any of the three was built:
+  - *How the refusing command ended.* The frame reads *not provoked* where the case's own code was not printed at a non-zero exit. On `rc.24` that is 132 lines, and they are two different things: 75 where the command exited 0 and did its work, 57 where another refusal answered first.
+  - *What became of the witnesses.* The frame reads *not provoked* ahead of a changed witness — with no refusal there is no route to follow. So the four cases that are *a witness changed* on this tree stood beside *not provoked* on `rc.24`, where the outside script's bytes had changed as well: the install wrote through the link at exit 0. A witness changed on `rc.24` in 66 lines, every one of them *not provoked*.
+  - *Whether the two printed the same route.* A case's acts name spans by index and were written by reading this tree's route. Under the same code `rc.24` prints another route in 25 lines, and there the case's acts are done to other words — `setup-version-stamp-a-directory-moved` moves `.jigc/` out of the way, because span 0 of `rc.24`'s route is `.jigc/`. *Followed, …* on such a line is not that route followed as somebody read it, and the column says which lines those are. Compared byte for byte once each sandbox's own root is written `<sandbox>`.
+- **A case the frame cannot follow on the named binary keeps its line, and the frame is not changed for it.** The runner panics where a state's step does not exit 0, and hands back a fault where an act names a span the route does not have. The suite catches both around one case (`catch_unwind`) and prints the first line of the frame's own words, the machine's temporary directory written `<tmp>`. 12 lines on `rc.24`: 11 whose acts name a span its route does not have, and one state it cannot build — the settings record, a file its install does not write.
+- **On the named binary a command is waited for under the standing limit.** The five seconds are for a case *listed* as one that does not end, and nothing is listed for a binary nobody has followed the cases on. On the suite's own binary the list holds, as in the gate's arms.
+- **This tree's column is followed in the same run, not read from the expected-red list**: the list does not say which of the two that hold a green case is.
+- **The same arm prints the catalog's own numbers** — a line a site with its causes and their derivation, the reasons by word, the doubts with their readings — so that the record's counts are one command's. *Why not by hand:* an entry of this stream counted its red cases one too many (*78* for 77), and the record is what the human decides the other families on.
+- ***Operand implied* is read off a case's acts as they print themselves** (`Unprinted(`, `Rerun`), so an act added to the frame later is read without a list of acts in the suite.
+- **The arm is in the runner's group by its own name**, the filter's second term: one test, ignored, that follows the catalog twice. The arm of the entry below now holds two terms, and asks the harness that a test of that name is there.
+- **Two blocks are committed as printed**, not retyped: the table of 353 lines and the sites with their derivations. Every other number of the record is an `awk` over one of them, or names the entry or the commit it was read from.
+- **`pinning.md` gains §6 and one sentence in its opening** that points at it — the opening counts the mechanics, and said three.
+
+**A control, because the two binaries differ by more than their source.** `rc.24` is a release build and the suite's binary a debug build, which carries the route fences a release build does not have. So the arm was run with the variable naming **this tree's own release build**: all 353 lines came out the same on both, in three runs — and in the two that print them, the same in how the refusing command ended, in the witnesses, and in the route of the 346 that print one. No difference of the table is the build profile's.
+
+**What the table came to** — counted in the record, §8, and judged nowhere. Of 353 lines, 194 have the same classification on both binaries and 159 do not: 132 are *not provoked* on `rc.24`, 12 could not be followed there, 3 are *the command did not end* there where this tree refuses at once, and 12 are followed on both to another outcome — in 2 of those under the same printed route. 149 of the 159 are cases of `jigc setup`, 10 of `jigc uninstall`. Four runs gave the same count by pair, under load averages between 5 and 47; the last, on the tree of this commit, printed the committed table byte for byte.
+
+**The binary.** `jigc 1.0.0-rc.24` from its release commit `91834b5e011de2c36e2be2b79e96c0b9f60a803c`: `git archive` into `<scratch>/rc24-tree.XhX18W/src`, `cargo build --release` there with a target directory of its own, the archive's `Cargo.lock` unchanged by the build, rustc 1.95.0. sha256 `accf3996ae4a66d13adb4bb03253606e0037b5ddb7be653a314a908f6b88ab5d`; `--version` prints `jigc 1.0.0-rc.24` — as this tree's binary does, the branch not having moved the version, so the line does not tell them apart.
+
+**Red first — each piece against a tree that declared it and did nothing** (`route_catalog::the_table_follows_each_binary_with_the_state_that_binary_built`; two shells stand in for two releases, told apart by the name each was started under).
+
+- *The variable read and the suite's own binary driven all the same*: `left: (Classified(AnotherFailure), Classified(AnotherFailure))  right: (Classified(Holds), Classified(AnotherFailure))` — one classification twice, where the planted binary answers differently.
+- *The witnesses said to be as they were*: the planted binary that refuses nothing and writes the witness came out `not provoked	as they were`.
+- *The two routes compared as printed*: one route printed by two binaries, each with its own sandbox's path in it, came out `not the same`.
+- *The refusing command's end not read*: `-` where `exit 1` and `exit 0` were planted.
+- *The group's second term*, by data: `no override of [profile.default] has test(=route_catalog::the_cases_are_followed_on_the_binary_a_variable_names) as a term of its filter`.
+
+**Not established.**
+
+- **That a line that differs is a regression, or is not.** The arm, the suite and the record count.
+- **What `rc.24` does in a state this tree does not refuse in.** The cases are this tree's refusals.
+- **A quiet machine's seconds.** The record, §9, has every number with its load, three of this task's among them.
+- **Linux, for this commit**: the run follows it — the tool runs a committed revision — and its line is in the task's return.
+- **That `/bin/bash` stands beside `/bin/sh` wherever the suite runs.** The arm that holds the table needs two programs that take `-c` and can be told apart; it stands on macOS and in the runner's image.
+- **The usage numbers of the record's §2**: they are the orchestrating session's, total subagent tokens and wall seconds, and this task has not measured them.
+
 ## 2026-10-11 — The route catalog's arms that follow cases run one at a time under the gate's runner: a test group of one thread, named by the arms' module and by no arm — and the suite holds the runner's file to it (the plan's step `P5`, first commit; ruling 3 of 2026-10-10)
 
 **What.** A test group in [.config/nextest.toml](.config/nextest.toml) — `route-catalog-cases`, `max-threads = 1` — and one override of `[profile.default]` that puts every test under `route_catalog::the_cases_are_followed_and_the_expected_red_list_is_exact::` into it; one arm in [route_catalog.rs](crates/cli/tests/route_catalog.rs) that holds that file to the group. No case changes, no product source changes.
