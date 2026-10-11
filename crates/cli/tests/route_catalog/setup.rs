@@ -1,23 +1,29 @@
 //! The route catalog's cases for `jigc setup` — the family's table, declared by
 //! `crates/cli/tests/route_catalog.rs`, which says what a case is held to.
 //!
-//! **What stands here.** The hook's link refusal, from the frame's first proof; and the two
-//! refusals beside it that the install raises before its first write — over an entry in the
-//! way of a file it **replaces** (`replaced_path_refusal`, six codes) and over a link at a
-//! file it **merges into** that leads where it will not follow (`merged_through_links`, four
-//! codes). Each of those ten sites has a row of [`READINGS`]: the functions that were read
-//! to count its causes, the count, and every cause that has no case with why.
+//! **What stands here.** The hook's link refusal; and the two refusals beside it that the
+//! install raises before its first write — over an entry in the way of a file it
+//! **replaces** (`replaced_path_refusal`, six codes) and over a link at a file it **merges
+//! into** that leads where it will not follow (`merged_through_links`, four codes). Each of
+//! those eleven sites has a row of [`READINGS`]: the functions that were read to count its
+//! causes, the count, every cause that has no case with why, and every way out of its
+//! route that is not followed with why.
 //!
 //! **A cause is one way through the callee to the constructor**: which entry is in the way
 //! — the file's own path, or a directory on the way to it — what that entry is, and, for a
-//! link the install would follow, which of the ends it refuses. Whether git tracks the entry
-//! is no branch of either callee; the route's prose turns on it (*committing the removal
-//! where git tracks the entry*), so one case a function follows that clause, under the cause
-//! of the case beside it. Two cases of one cause carry the same [`Case::cause`] to the
-//! letter — that is how [`READINGS`] is held to the cases.
+//! link the install would follow, which of the ends it refuses. Two cases of one cause
+//! carry the same [`Case::cause`] to the letter — that is how [`READINGS`] is held to the
+//! cases.
+//!
+//! **A cause is followed every way its route offers.** A route here offers up to two acts
+//! (*remove the link, or point it at a regular file inside this repository*) and a clause
+//! that turns on git (*committing the change where git tracks the link*); neither is a
+//! branch of a callee, and every red case of the first ten sites was on one of them. So the
+//! cases of a cause are a small table of ways — one macro a shape of route, below — and a
+//! way that cannot be followed at a site is a row of that site's reading.
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{Act, Case, Check, Operand, Place, Step};
+use crate::support::route_case::{Act, Case, Check, Operand, Place, SCRIPT, Step};
 
 /// The hook `jigc setup` installs, from the repository root.
 pub const HOOK: &str = ".git/hooks/pre-commit";
@@ -54,13 +60,10 @@ const IGNORE: &str =
 // The install's members, from the repository root.
 const AGENT_MD: &str = ".jigc/AGENT.md";
 const VERSION: &str = ".jigc/version";
-const GITKEEP: &str = ".jigc/config/.gitkeep";
-const PACKS_YAML: &str = ".jigc/config/packs.yaml";
-const SETTINGS_RECORD: &str = ".jigc/settings-entries.json";
+const GUIDE_MD: &str = ".claude/skills/jigc/SKILL.md";
 const CLAUDE_MD: &str = "CLAUDE.md";
 const SETTINGS_JSON: &str = ".claude/settings.json";
 const ROOT_GITIGNORE: &str = ".gitignore";
-const JIGC_GITIGNORE: &str = ".jigc/.gitignore";
 
 /// What every case of `jigc setup` shares. A case states its acts itself: one that leaves
 /// them empty under a printed route is refused by the runner.
@@ -78,7 +81,8 @@ const SETUP: Case = Case {
 
 // **The acts.** Every route here prints the entry in the way as its first span and the
 // re-run as the one after the entries — `--force`, the span after that, is named to say it
-// changes nothing, and no case runs it.
+// changes nothing, and no case runs it. `…_AND_COMMIT` follows the clause *committing the
+// change where git tracks the entry*, and stands where the case's state committed it.
 const REMOVE: &[Act] = &[Act::Remove(Operand::Span(0)), Act::Run(1)];
 const REMOVE_AND_COMMIT: &[Act] = &[
     Act::Remove(Operand::Span(0)),
@@ -86,7 +90,17 @@ const REMOVE_AND_COMMIT: &[Act] = &[
     Act::Run(1),
 ];
 const MOVE_AWAY: &[Act] = &[Act::MoveAway(Operand::Span(0)), Act::Run(1)];
+const MOVE_AWAY_AND_COMMIT: &[Act] = &[
+    Act::MoveAway(Operand::Span(0)),
+    Act::Commit(Operand::Span(0)),
+    Act::Run(1),
+];
 const MAKE_DIRECTORY: &[Act] = &[Act::ReplaceWithDirectory(Operand::Span(0)), Act::Run(1)];
+const MAKE_DIRECTORY_AND_COMMIT: &[Act] = &[
+    Act::ReplaceWithDirectory(Operand::Span(0)),
+    Act::Commit(Operand::Span(0)),
+    Act::Run(1),
+];
 const REMOVE_BOTH: &[Act] = &[
     Act::Remove(Operand::Span(0)),
     Act::Remove(Operand::Span(1)),
@@ -104,9 +118,16 @@ const POINT_AT_NEW_AND_COMMIT: &[Act] = &[
     Act::Commit(Operand::Span(0)),
     Act::Run(1),
 ];
+const POINT_AT_SCRIPT: &[Act] = &[Act::PointAtScript(Operand::Span(0)), Act::Run(1)];
 
-/// A file of somebody's outside the repository — the witness of most cases.
-const THEIRS: Step = Step::File(Place::Outside("theirs"), "theirs\n");
+// The same, where one route joins the acts of two entries: two operands, then the re-run.
+const REMOVE_BOTH_AND_COMMIT: &[Act] = &[
+    Act::Remove(Operand::Span(0)),
+    Act::Remove(Operand::Span(1)),
+    Act::Commit(Operand::Span(0)),
+    Act::Commit(Operand::Span(1)),
+    Act::Run(2),
+];
 
 /// Commit everything the steps before it planted.
 const COMMIT_IT: [Step; 2] = [
@@ -118,119 +139,512 @@ const COMMIT_IT: [Step; 2] = [
 /// seeds the root `.gitignore`.
 const UNBORN: Step = Step::Git(&["update-ref", "-d", "HEAD"]);
 
-// The causes, to the letter — two cases of one cause carry the same words.
-const AGENT_A_LINK: &str = "`.jigc/AGENT.md` is a link";
-const HOST_LEADS_OUT: &str = "`CLAUDE.md` is a link to a file outside the repository";
-const SETTINGS_LEADS_OUT: &str =
-    "`.claude/settings.json` is a link to a file outside the repository";
-const SEED_LEADS_OUT: &str =
-    "on an unborn `HEAD`, the root `.gitignore` is a link to a file outside the repository";
+/// A script of the repository's own, where the runner points a link that a route says to
+/// point at *a script inside this repository* — committed by the steps behind it.
+const A_SCRIPT: Step = Step::Script(Place::Repo(SCRIPT), "#!/bin/sh\nexit 0\n");
 
 /// The two readings of *a regular file inside this repository*.
 const WHICH_FILE: &str = "*point it at a regular file inside this repository*: (a) any regular \
                           file in the checkout, one written a moment ago and in no commit \
                           included — followed here; (b) a file the repository already holds \
-                          committed — the case `setup-host-committed-link-pointed-at-a-committed-file`";
+                          committed — the case beside this one that ends \
+                          `-committed-and-pointed-at-a-committed-file`";
 
-/// The cases of `jigc setup`. A case follows one way out of its route: where a route offers two —
-/// *remove the link, or point it at a script inside this repository* — the other way is a
-/// case of its own.
-pub const CASES: &[Case] = &[
+/// The two readings of *a script inside this repository*.
+const WHICH_SCRIPT: &str = "*point it at a script inside this repository*: (a) any script in \
+                            the checkout, one written a moment ago and in no commit included \
+                            — followed here; (b) a script the repository already holds \
+                            committed — the case beside this one that ends \
+                            `-pointed-at-a-committed-script`";
+
+// ---------------------------------------------------------------------------
+// The shapes of route, each followed every way it offers
+// ---------------------------------------------------------------------------
+
+/// **A hook that is a link, followed the three ways its route can be read**: the link
+/// removed; pointed at a script inside the repository that is new; pointed at one the
+/// repository holds committed. `installed` is what stands once the first way is followed.
+macro_rules! hook_ways {
+    (
+        $prefix:literal, $cause:expr,
+        plant: [$($plant:expr),* $(,)?],
+        installed: [$($installed:expr),* $(,)?],
+        witnesses: [$($witness:literal),* $(,)?],
+        doubt: $doubt:expr $(,)?
+    ) => {
+        [
+            Case {
+                name: concat!($prefix, "-removed"),
+                site: HOOK_LINK_SITE,
+                cause: $cause,
+                state: &[$($plant,)*],
+                acts: REMOVE,
+                holds: &[$($installed,)*],
+                witnesses: &[$($witness,)*],
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-pointed-at-a-new-script"),
+                site: HOOK_LINK_SITE,
+                cause: $cause,
+                state: &[$($plant,)*],
+                acts: POINT_AT_SCRIPT,
+                holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+                witnesses: &[$($witness,)*],
+                doubt: $doubt,
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-pointed-at-a-committed-script"),
+                site: HOOK_LINK_SITE,
+                cause: $cause,
+                state: &[A_SCRIPT, COMMIT_IT[0], COMMIT_IT[1], $($plant,)*],
+                acts: POINT_AT_SCRIPT,
+                holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+                witnesses: &[$($witness,)*],
+                ..SETUP
+            },
+        ]
+    };
+}
+
+/// **An entry to remove, where git does not track it and where it is committed** — a link
+/// or a special file at a replaced member's path, or a link at the one merged-into member
+/// the install never follows one at. `$member` is a regular file once the route is followed.
+macro_rules! removed_ways {
+    (
+        $prefix:literal, $site:expr, $cause:expr, $member:literal,
+        plant: [$($plant:expr),* $(,)?],
+        witnesses: [$($witness:literal),* $(,)?] $(,)?
+    ) => {
+        [
+            Case {
+                name: concat!($prefix, "-removed"),
+                site: $site,
+                cause: $cause,
+                state: &[$($plant,)*],
+                acts: REMOVE,
+                holds: &[Check::RegularFile(Place::Repo($member))],
+                witnesses: &[$($witness,)*],
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-committed-and-removed"),
+                site: $site,
+                cause: $cause,
+                state: &[$($plant,)* COMMIT_IT[0], COMMIT_IT[1]],
+                acts: REMOVE_AND_COMMIT,
+                holds: &[Check::RegularFile(Place::Repo($member))],
+                witnesses: &[$($witness,)*],
+                ..SETUP
+            },
+        ]
+    };
+}
+
+/// **A link at a replaced member's path**, to a file of somebody's outside the repository
+/// with this body.
+macro_rules! replaced_link {
+    ($prefix:literal, $site:expr, $cause:expr, $member:literal, $body:literal) => {
+        removed_ways!(
+            $prefix, $site, $cause, $member,
+            plant: [
+                Step::File(Place::Outside("theirs"), $body),
+                Step::Link(Place::Repo($member), Place::Outside("theirs")),
+            ],
+            witnesses: ["theirs"],
+        )
+    };
+}
+
+/// **A directory at a replaced member's path**, holding a file: moved out of the way, where
+/// git does not track it and where it is committed.
+macro_rules! replaced_directory {
+    ($prefix:literal, $site:expr, $cause:expr, $member:literal) => {
+        [
+            Case {
+                name: concat!($prefix, "-moved"),
+                site: $site,
+                cause: $cause,
+                state: &[Step::File(Place::Repo(concat!($member, "/kept")), "kept\n")],
+                acts: MOVE_AWAY,
+                holds: &[
+                    Check::RegularFile(Place::Repo($member)),
+                    Check::RegularFile(Place::Moved(concat!($member, "/kept"))),
+                ],
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-committed-and-moved"),
+                site: $site,
+                cause: $cause,
+                state: &[
+                    Step::File(Place::Repo(concat!($member, "/kept")), "kept\n"),
+                    COMMIT_IT[0],
+                    COMMIT_IT[1],
+                ],
+                acts: MOVE_AWAY_AND_COMMIT,
+                holds: &[
+                    Check::RegularFile(Place::Repo($member)),
+                    Check::RegularFile(Place::Moved(concat!($member, "/kept"))),
+                ],
+                ..SETUP
+            },
+        ]
+    };
+}
+
+/// **A link standing in for a directory on the way to a member**: replaced by a real
+/// directory, where git does not track the link and where it is committed. `installed` is
+/// what stands afterwards beside the directory itself.
+macro_rules! linked_way {
+    (
+        $prefix:literal, $site:expr, $cause:expr, $link:literal,
+        plant: [$($plant:expr),* $(,)?],
+        installed: [$($installed:expr),* $(,)?],
+        witnesses: [$($witness:literal),* $(,)?] $(,)?
+    ) => {
+        [
+            Case {
+                name: concat!($prefix, "-replaced"),
+                site: $site,
+                cause: $cause,
+                state: &[$($plant,)*],
+                acts: MAKE_DIRECTORY,
+                holds: &[Check::Directory(Place::Repo($link)), $($installed,)*],
+                witnesses: &[$($witness,)*],
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-committed-and-replaced"),
+                site: $site,
+                cause: $cause,
+                state: &[$($plant,)* COMMIT_IT[0], COMMIT_IT[1]],
+                acts: MAKE_DIRECTORY_AND_COMMIT,
+                holds: &[Check::Directory(Place::Repo($link)), $($installed,)*],
+                witnesses: &[$($witness,)*],
+                ..SETUP
+            },
+        ]
+    };
+}
+
+/// **A link at a merged-into member on a born `HEAD`, followed the six ways its route can
+/// be read**: removed, or pointed at a regular file inside the repository that is committed
+/// or new — each where git does not track the link, and where it is committed and the
+/// change is committed as the route's clause says. `kept` is what the link led to inside
+/// the repository, which must still stand.
+macro_rules! link_ways {
+    (
+        $prefix:literal, $site:expr, $cause:expr, $member:expr,
+        plant: [$($plant:expr),* $(,)?],
+        kept: [$($kept:expr),* $(,)?],
+        witnesses: [$($witness:literal),* $(,)?] $(,)?
+    ) => {
+        [
+            Case {
+                name: concat!($prefix, "-removed"),
+                site: $site,
+                cause: $cause,
+                state: &[$($plant,)*],
+                acts: REMOVE,
+                holds: &[Check::RegularFile(Place::Repo($member)), $($kept,)*],
+                witnesses: &[$($witness,)*],
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-committed-and-removed"),
+                site: $site,
+                cause: $cause,
+                state: &[$($plant,)* COMMIT_IT[0], COMMIT_IT[1]],
+                acts: REMOVE_AND_COMMIT,
+                holds: &[Check::RegularFile(Place::Repo($member)), $($kept,)*],
+                witnesses: &[$($witness,)*],
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-pointed-at-a-committed-file"),
+                site: $site,
+                cause: $cause,
+                state: &[$($plant,)*],
+                acts: POINT_AT_COMMITTED,
+                holds: &[Check::RegularFile(Place::Repo(AGENT_MD)), $($kept,)*],
+                witnesses: &[$($witness,)*],
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-pointed-at-a-new-file"),
+                site: $site,
+                cause: $cause,
+                state: &[$($plant,)*],
+                acts: POINT_AT_NEW,
+                holds: &[Check::RegularFile(Place::Repo(AGENT_MD)), $($kept,)*],
+                witnesses: &[$($witness,)*],
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-committed-and-pointed-at-a-committed-file"),
+                site: $site,
+                cause: $cause,
+                state: &[$($plant,)* COMMIT_IT[0], COMMIT_IT[1]],
+                acts: POINT_AT_COMMITTED_AND_COMMIT,
+                holds: &[Check::RegularFile(Place::Repo(AGENT_MD)), $($kept,)*],
+                witnesses: &[$($witness,)*],
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-committed-and-pointed-at-a-new-file"),
+                site: $site,
+                cause: $cause,
+                state: &[$($plant,)* COMMIT_IT[0], COMMIT_IT[1]],
+                acts: POINT_AT_NEW_AND_COMMIT,
+                holds: &[Check::RegularFile(Place::Repo(AGENT_MD)), $($kept,)*],
+                witnesses: &[$($witness,)*],
+                doubt: Some(WHICH_FILE),
+                ..SETUP
+            },
+        ]
+    };
+}
+
+/// **A link at the root `.gitignore` on an unborn `HEAD`, followed the three ways its route
+/// can be there**: removed; pointed at a new regular file inside the repository; and the
+/// same where the link is staged and the change committed, as the route's clause says of a
+/// link git tracks. Each holds only if git then ignores `.env` — the floor the member is
+/// seeded for.
+macro_rules! seeded_link_ways {
+    (
+        $prefix:literal, $cause:expr,
+        plant: [$($plant:expr),* $(,)?],
+        kept: [$($kept:expr),* $(,)?],
+        witnesses: [$($witness:literal),* $(,)?] $(,)?
+    ) => {
+        [
+            Case {
+                name: concat!($prefix, "-removed"),
+                site: SEED,
+                cause: $cause,
+                state: &[UNBORN, $($plant,)*],
+                acts: REMOVE,
+                holds: &[
+                    Check::RegularFile(Place::Repo(ROOT_GITIGNORE)),
+                    Check::GitIgnores(".env"),
+                    $($kept,)*
+                ],
+                witnesses: &[$($witness,)*],
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-pointed-at-a-new-file"),
+                site: SEED,
+                cause: $cause,
+                state: &[UNBORN, $($plant,)*],
+                acts: POINT_AT_NEW,
+                holds: &[
+                    Check::RegularFile(Place::Repo(AGENT_MD)),
+                    Check::GitIgnores(".env"),
+                    $($kept,)*
+                ],
+                witnesses: &[$($witness,)*],
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-staged-and-pointed-at-a-new-file"),
+                site: SEED,
+                cause: $cause,
+                state: &[UNBORN, $($plant,)* Step::Git(&["add", ".gitignore"])],
+                acts: POINT_AT_NEW_AND_COMMIT,
+                holds: &[
+                    Check::RegularFile(Place::Repo(AGENT_MD)),
+                    Check::GitIgnores(".env"),
+                    $($kept,)*
+                ],
+                witnesses: &[$($witness,)*],
+                ..SETUP
+            },
+        ]
+    };
+}
+
+// ---------------------------------------------------------------------------
+// `hook_link_refusal` · `setup.install-hook`
+// ---------------------------------------------------------------------------
+
+/// The hook's own script, outside the repository — what a route must not take.
+const OUR_HOOK: Step = Step::Script(Place::Outside("pre-commit"), "#!/bin/sh\necho ours\n");
+
+/// `core.hooksPath` as a directory inside the repository, and as one outside it.
+const HOOKS_IN_THE_REPOSITORY: Step = Step::Git(&["config", "core.hooksPath", ".githooks"]);
+const HOOKS_OUTSIDE: Step = Step::Git(&["config", "core.hooksPath", "../outside/hooks"]);
+
+/// The first case of the catalog — the hook a link to an existing script outside the
+/// repository — and the two other ways out of its route.
+pub const HOOK_OUT: [Case; 3] = hook_ways!(
+    "setup-hook-link-out-to-a-script",
+    "the `pre-commit` hook is a link to an existing script outside the repository",
+    plant: [OUR_HOOK, Step::Link(Place::Repo(HOOK), Place::Outside("pre-commit"))],
+    installed: [Check::RegularFile(Place::Repo(HOOK))],
+    witnesses: ["pre-commit"],
+    doubt: None,
+);
+const HOOK_TO_NOTHING: [Case; 3] = hook_ways!(
+    "setup-hook-link-to-nothing",
+    "the `pre-commit` hook is a link to a path outside the repository that holds nothing",
+    plant: [Step::Link(Place::Repo(HOOK), Place::Outside("pre-commit"))],
+    installed: [Check::RegularFile(Place::Repo(HOOK))],
+    witnesses: ["pre-commit"],
+    doubt: Some(WHICH_SCRIPT),
+);
+const HOOK_OUT_RELATIVELY: [Case; 3] = hook_ways!(
+    "setup-hook-relative-link-out-to-a-script",
+    "the `pre-commit` hook is a link, spelled relatively, to an existing script outside the \
+     repository",
+    plant: [OUR_HOOK, Step::LinkTo(Place::Repo(HOOK), "../../../outside/pre-commit")],
+    installed: [Check::RegularFile(Place::Repo(HOOK))],
+    witnesses: ["pre-commit"],
+    doubt: None,
+);
+const HOOK_OUT_TO_A_DIRECTORY: [Case; 3] = hook_ways!(
+    "setup-hook-link-out-to-a-directory",
+    "the `pre-commit` hook is a link to a directory outside the repository",
+    plant: [
+        Step::File(Place::Outside("hooks/theirs"), "theirs\n"),
+        Step::Link(Place::Repo(HOOK), Place::Outside("hooks")),
+    ],
+    installed: [Check::RegularFile(Place::Repo(HOOK))],
+    witnesses: ["hooks/theirs"],
+    doubt: None,
+);
+const HOOK_TO_A_DEVICE: [Case; 3] = hook_ways!(
+    "setup-hook-link-to-dev-null",
+    "the `pre-commit` hook is a link to `/dev/null`",
+    plant: [Step::LinkTo(Place::Repo(HOOK), "/dev/null")],
+    installed: [Check::RegularFile(Place::Repo(HOOK))],
+    witnesses: [],
+    doubt: None,
+);
+const HOOKS_PATH_INSIDE_TO_NOTHING: [Case; 3] = hook_ways!(
+    "setup-hooks-path-inside-link-to-nothing",
+    "`core.hooksPath` names a directory inside the repository, and the hook there is a link \
+     to a path that holds nothing",
+    plant: [
+        HOOKS_IN_THE_REPOSITORY,
+        Step::Link(Place::Repo(".githooks/pre-commit"), Place::Outside("pre-commit")),
+    ],
+    installed: [Check::RegularFile(Place::Repo(".githooks/pre-commit"))],
+    witnesses: ["pre-commit"],
+    doubt: Some(WHICH_SCRIPT),
+);
+const HOOKS_PATH_INSIDE_OUT: [Case; 3] = hook_ways!(
+    "setup-hooks-path-inside-link-out-to-a-script",
+    "`core.hooksPath` names a directory inside the repository, and the hook there is a link \
+     to an existing script outside the repository",
+    plant: [
+        HOOKS_IN_THE_REPOSITORY,
+        OUR_HOOK,
+        Step::Link(Place::Repo(".githooks/pre-commit"), Place::Outside("pre-commit")),
+    ],
+    installed: [Check::RegularFile(Place::Repo(".githooks/pre-commit"))],
+    witnesses: ["pre-commit"],
+    doubt: None,
+);
+const HOOKS_PATH_OUTSIDE_TO_NOTHING: [Case; 3] = hook_ways!(
+    "setup-hooks-path-outside-link-to-nothing",
+    "`core.hooksPath` names a directory outside the repository, and the hook there is a link \
+     to a path that holds nothing",
+    plant: [
+        HOOKS_OUTSIDE,
+        Step::Link(Place::Outside("hooks/pre-commit"), Place::Outside("nothing")),
+    ],
+    installed: [Check::RegularFile(Place::Outside("hooks/pre-commit"))],
+    witnesses: ["nothing"],
+    doubt: Some(WHICH_SCRIPT),
+);
+const HOOKS_PATH_OUTSIDE_OUT: [Case; 3] = hook_ways!(
+    "setup-hooks-path-outside-link-out-of-it-to-a-script",
+    "`core.hooksPath` names a directory outside the repository, and the hook there is a link \
+     to an existing script in neither",
+    plant: [
+        HOOKS_OUTSIDE,
+        OUR_HOOK,
+        Step::Link(Place::Outside("hooks/pre-commit"), Place::Outside("pre-commit")),
+    ],
+    installed: [Check::RegularFile(Place::Outside("hooks/pre-commit"))],
+    witnesses: ["pre-commit"],
+    doubt: None,
+);
+
+/// The one way the hook's route does not name and a repository can still be in: the link
+/// under an in-repository hooks directory is committed. The route has no clause for it.
+const HOOKS_PATH_INSIDE_COMMITTED: [Case; 1] = [Case {
+    name: "setup-hooks-path-inside-committed-link-to-nothing-removed",
+    site: HOOK_LINK_SITE,
+    cause: "`core.hooksPath` names a directory inside the repository, and the hook there is a \
+            link to a path that holds nothing",
+    state: &[
+        HOOKS_IN_THE_REPOSITORY,
+        Step::Link(
+            Place::Repo(".githooks/pre-commit"),
+            Place::Outside("pre-commit"),
+        ),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+    ],
+    acts: REMOVE,
+    holds: &[Check::RegularFile(Place::Repo(".githooks/pre-commit"))],
+    witnesses: &["pre-commit"],
+    ..SETUP
+}];
+
+// ---------------------------------------------------------------------------
+// `replaced_path_refusal`
+// ---------------------------------------------------------------------------
+
+const AGENT_A_LINK: [Case; 2] = replaced_link!(
+    "setup-bootstrap-file-a-link",
+    BOOTSTRAP,
+    "`.jigc/AGENT.md` is a link",
+    ".jigc/AGENT.md",
+    "theirs\n"
+);
+const AGENT_A_DIRECTORY: [Case; 2] = replaced_directory!(
+    "setup-bootstrap-file-a-directory",
+    BOOTSTRAP,
+    "`.jigc/AGENT.md` is a directory",
+    ".jigc/AGENT.md"
+);
+const WORKBENCH_A_LINK: [Case; 2] = linked_way!(
+    "setup-workbench-a-link",
+    BOOTSTRAP,
+    "`.jigc`, on the way to `.jigc/AGENT.md`, is a link to a directory outside the repository",
+    ".jigc",
+    plant: [
+        Step::File(Place::Outside("store/theirs"), "theirs\n"),
+        Step::Link(Place::Repo(".jigc"), Place::Outside("store")),
+    ],
+    installed: [Check::RegularFile(Place::Repo(AGENT_MD))],
+    witnesses: ["store/theirs", "store/AGENT.md", "store/version"],
+);
+const AGENT_A_FIFO: [Case; 1] = [Case {
+    name: "setup-bootstrap-file-a-special-file",
+    site: BOOTSTRAP,
+    cause: "`.jigc/AGENT.md` is a FIFO",
+    state: &[Step::Fifo(Place::Repo(AGENT_MD))],
+    acts: REMOVE,
+    holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+    ..SETUP
+}];
+
+/// Several entries in the way at once: one finding, one route that joins their acts.
+const TWO_REPLACED: &str = "two replaced files are in the way at once — `.jigc/AGENT.md` and \
+                            `.jigc/version` are both links — and the route joins their acts";
+const TWO_REPLACED_LINKS: [Case; 2] = [
     Case {
-        name: "setup-hook-linked-to-a-script-outside",
-        site: HOOK_LINK_SITE,
-        cause: "the `pre-commit` hook is a link to an existing script outside the repository",
+        name: "setup-two-replaced-files-links-removed",
+        site: BOOTSTRAP,
+        cause: TWO_REPLACED,
         state: &[
-            Step::Script(Place::Outside("pre-commit"), "#!/bin/sh\necho ours\n"),
-            Step::Link(Place::Repo(HOOK), Place::Outside("pre-commit")),
-        ],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(HOOK))],
-        witnesses: &["pre-commit"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-hook-linked-to-nothing",
-        site: HOOK_LINK_SITE,
-        cause: "the `pre-commit` hook is a link to a path outside the repository that holds \
-                nothing",
-        state: &[Step::Link(Place::Repo(HOOK), Place::Outside("pre-commit"))],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(HOOK))],
-        witnesses: &["pre-commit"],
-        ..SETUP
-    },
-    // ---- `replaced_path_refusal` · `setup.write-bootstrap` · `.jigc/AGENT.md` ----
-    Case {
-        name: "setup-bootstrap-file-a-link",
-        site: BOOTSTRAP,
-        cause: AGENT_A_LINK,
-        state: &[THEIRS, Step::Link(Place::Repo(AGENT_MD), Place::Outside("theirs"))],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
-        witnesses: &["theirs"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-bootstrap-file-a-committed-link",
-        site: BOOTSTRAP,
-        cause: AGENT_A_LINK,
-        state: &[
-            THEIRS,
-            Step::Link(Place::Repo(AGENT_MD), Place::Outside("theirs")),
-            COMMIT_IT[0],
-            COMMIT_IT[1],
-        ],
-        acts: REMOVE_AND_COMMIT,
-        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
-        witnesses: &["theirs"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-bootstrap-file-a-directory",
-        site: BOOTSTRAP,
-        cause: "`.jigc/AGENT.md` is a directory",
-        state: &[Step::File(Place::Repo(".jigc/AGENT.md/kept"), "kept\n")],
-        acts: MOVE_AWAY,
-        holds: &[
-            Check::RegularFile(Place::Repo(AGENT_MD)),
-            Check::RegularFile(Place::Moved(".jigc/AGENT.md/kept")),
-        ],
-        ..SETUP
-    },
-    Case {
-        name: "setup-bootstrap-file-a-special-file",
-        site: BOOTSTRAP,
-        cause: "`.jigc/AGENT.md` is a FIFO",
-        state: &[Step::Fifo(Place::Repo(AGENT_MD))],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
-        ..SETUP
-    },
-    Case {
-        name: "setup-workbench-a-link",
-        site: BOOTSTRAP,
-        cause: "`.jigc`, on the way to `.jigc/AGENT.md`, is a link to a directory outside the \
-                repository",
-        state: &[
-            Step::File(Place::Outside("store/theirs"), "theirs\n"),
-            Step::Link(Place::Repo(".jigc"), Place::Outside("store")),
-        ],
-        acts: MAKE_DIRECTORY,
-        holds: &[
-            Check::Directory(Place::Repo(".jigc")),
-            Check::RegularFile(Place::Repo(AGENT_MD)),
-        ],
-        witnesses: &["store/theirs", "store/AGENT.md", "store/version"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-two-replaced-files-links",
-        site: BOOTSTRAP,
-        cause: "two replaced files are in the way at once — `.jigc/AGENT.md` and \
-                `.jigc/version` are both links — and the route joins their acts",
-        state: &[
-            THEIRS,
+            Step::File(Place::Outside("theirs"), "theirs\n"),
             Step::File(Place::Outside("also-theirs"), "also theirs\n"),
             Step::Link(Place::Repo(AGENT_MD), Place::Outside("theirs")),
             Step::Link(Place::Repo(VERSION), Place::Outside("also-theirs")),
@@ -243,329 +657,249 @@ pub const CASES: &[Case] = &[
         witnesses: &["theirs", "also-theirs"],
         ..SETUP
     },
-    // ---- `replaced_path_refusal` · `setup.version-stamp` · `.jigc/version` ----
     Case {
-        name: "setup-version-stamp-a-link",
-        site: STAMP,
-        cause: "`.jigc/version` is a link",
-        state: &[THEIRS, Step::Link(Place::Repo(VERSION), Place::Outside("theirs"))],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(VERSION))],
-        witnesses: &["theirs"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-version-stamp-a-directory",
-        site: STAMP,
-        cause: "`.jigc/version` is a directory",
-        state: &[Step::File(Place::Repo(".jigc/version/kept"), "kept\n")],
-        acts: MOVE_AWAY,
+        name: "setup-two-replaced-files-links-committed-and-removed",
+        site: BOOTSTRAP,
+        cause: TWO_REPLACED,
+        state: &[
+            Step::File(Place::Outside("theirs"), "theirs\n"),
+            Step::File(Place::Outside("also-theirs"), "also theirs\n"),
+            Step::Link(Place::Repo(AGENT_MD), Place::Outside("theirs")),
+            Step::Link(Place::Repo(VERSION), Place::Outside("also-theirs")),
+            COMMIT_IT[0],
+            COMMIT_IT[1],
+        ],
+        acts: REMOVE_BOTH_AND_COMMIT,
         holds: &[
+            Check::RegularFile(Place::Repo(AGENT_MD)),
             Check::RegularFile(Place::Repo(VERSION)),
-            Check::RegularFile(Place::Moved(".jigc/version/kept")),
         ],
+        witnesses: &["theirs", "also-theirs"],
         ..SETUP
     },
+];
+
+const STAMP_A_LINK: [Case; 2] = replaced_link!(
+    "setup-version-stamp-a-link",
+    STAMP,
+    "`.jigc/version` is a link",
+    ".jigc/version",
+    "theirs\n"
+);
+const STAMP_A_DIRECTORY: [Case; 2] = replaced_directory!(
+    "setup-version-stamp-a-directory",
+    STAMP,
+    "`.jigc/version` is a directory",
+    ".jigc/version"
+);
+const STAMP_A_FIFO: [Case; 1] = [Case {
+    name: "setup-version-stamp-a-special-file",
+    site: STAMP,
+    cause: "`.jigc/version` is a FIFO",
+    state: &[Step::Fifo(Place::Repo(VERSION))],
+    acts: REMOVE,
+    holds: &[Check::RegularFile(Place::Repo(VERSION))],
+    ..SETUP
+}];
+
+const LAYER_UNDER_A_LINK: [Case; 2] = linked_way!(
+    "setup-project-layer-a-link",
+    LAYER,
+    "`.jigc/config`, on the way to `.jigc/config/.gitkeep`, is a link to a directory outside \
+     the repository",
+    ".jigc/config",
+    plant: [
+        Step::File(Place::Outside("config/theirs"), "theirs\n"),
+        Step::Link(Place::Repo(".jigc/config"), Place::Outside("config")),
+    ],
+    installed: [Check::RegularFile(Place::Repo(".jigc/config/.gitkeep"))],
+    witnesses: ["config/theirs", "config/.gitkeep", "config/packs.yaml"],
+);
+const LAYER_A_LINK: [Case; 2] = replaced_link!(
+    "setup-layer-marker-a-link",
+    LAYER,
+    "`.jigc/config/.gitkeep` is a link",
+    ".jigc/config/.gitkeep",
+    "theirs\n"
+);
+const LAYER_A_DIRECTORY: [Case; 2] = replaced_directory!(
+    "setup-layer-marker-a-directory",
+    LAYER,
+    "`.jigc/config/.gitkeep` is a directory",
+    ".jigc/config/.gitkeep"
+);
+const LAYER_A_FIFO: [Case; 1] = [Case {
+    name: "setup-layer-marker-a-special-file",
+    site: LAYER,
+    cause: "`.jigc/config/.gitkeep` is a FIFO",
+    state: &[Step::Fifo(Place::Repo(".jigc/config/.gitkeep"))],
+    acts: REMOVE,
+    holds: &[Check::RegularFile(Place::Repo(".jigc/config/.gitkeep"))],
+    ..SETUP
+}];
+
+const MARKER_A_LINK: [Case; 2] = replaced_link!(
+    "setup-compose-marker-a-link",
+    MARKER,
+    "`.jigc/config/packs.yaml` is a link",
+    ".jigc/config/packs.yaml",
+    "packs: []\n"
+);
+const MARKER_A_DIRECTORY: [Case; 2] = replaced_directory!(
+    "setup-compose-marker-a-directory",
+    MARKER,
+    "`.jigc/config/packs.yaml` is a directory",
+    ".jigc/config/packs.yaml"
+);
+/// **Held.** `jigc setup` reads this path before it reaches the refusal, and the read of a
+/// FIFO does not return.
+const MARKER_A_FIFO: [Case; 1] = [Case {
+    name: "setup-compose-marker-a-special-file",
+    site: MARKER,
+    cause: "`.jigc/config/packs.yaml` is a FIFO",
+    state: &[Step::Fifo(Place::Repo(".jigc/config/packs.yaml"))],
+    acts: REMOVE,
+    holds: &[Check::RegularFile(Place::Repo(".jigc/config/packs.yaml"))],
+    ..SETUP
+}];
+
+const RECORD_A_LINK: [Case; 2] = replaced_link!(
+    "setup-settings-record-a-link",
+    RECORD,
+    "`.jigc/settings-entries.json` is a link",
+    ".jigc/settings-entries.json",
+    "{}\n"
+);
+const RECORD_A_DIRECTORY: [Case; 2] = replaced_directory!(
+    "setup-settings-record-a-directory",
+    RECORD,
+    "`.jigc/settings-entries.json` is a directory",
+    ".jigc/settings-entries.json"
+);
+const RECORD_A_FIFO: [Case; 1] = [Case {
+    name: "setup-settings-record-a-special-file",
+    site: RECORD,
+    cause: "`.jigc/settings-entries.json` is a FIFO",
+    state: &[Step::Fifo(Place::Repo(".jigc/settings-entries.json"))],
+    acts: REMOVE,
+    holds: &[Check::RegularFile(Place::Repo(".jigc/settings-entries.json"))],
+    ..SETUP
+}];
+
+const GUIDE_UNDER_A_LINKED_ASSISTANT_DIRECTORY: [Case; 2] = linked_way!(
+    "setup-guide-under-a-linked-assistant-directory",
+    GUIDE,
+    "`.claude`, on the way to the guide, is a link to a directory outside the repository \
+     that holds no guide",
+    ".claude",
+    plant: [
+        Step::File(Place::Outside("dotclaude/theirs"), "theirs\n"),
+        Step::Link(Place::Repo(".claude"), Place::Outside("dotclaude")),
+    ],
+    installed: [Check::RegularFile(Place::Repo(GUIDE_MD))],
+    witnesses: [
+        "dotclaude/theirs",
+        "dotclaude/settings.json",
+        "dotclaude/skills/jigc/SKILL.md",
+    ],
+);
+const GUIDE_UNDER_A_LINKED_SKILLS_DIRECTORY: [Case; 2] = linked_way!(
+    "setup-guide-under-a-linked-skills-directory",
+    GUIDE,
+    "`.claude/skills`, on the way to the guide, is a link to a directory outside the \
+     repository",
+    ".claude/skills",
+    plant: [
+        Step::File(Place::Outside("skills/theirs"), "theirs\n"),
+        Step::Link(Place::Repo(".claude/skills"), Place::Outside("skills")),
+    ],
+    installed: [Check::RegularFile(Place::Repo(GUIDE_MD))],
+    witnesses: ["skills/theirs", "skills/jigc/SKILL.md"],
+);
+const GUIDE_UNDER_A_LINKED_SKILL_DIRECTORY: [Case; 2] = linked_way!(
+    "setup-guide-under-a-linked-skill-directory",
+    GUIDE,
+    "`.claude/skills/jigc`, on the way to the guide, is a link to a directory outside the \
+     repository",
+    ".claude/skills/jigc",
+    plant: [
+        Step::File(Place::Outside("skill/theirs"), "theirs\n"),
+        Step::Link(Place::Repo(".claude/skills/jigc"), Place::Outside("skill")),
+    ],
+    installed: [Check::RegularFile(Place::Repo(GUIDE_MD))],
+    witnesses: ["skill/theirs", "skill/SKILL.md"],
+);
+/// **Held.** `guide_ownership` reads the guide's path before the refusal is reached.
+const GUIDE_A_FIFO: [Case; 1] = [Case {
+    name: "setup-guide-a-special-file",
+    site: GUIDE,
+    cause: "the guide's own path is a FIFO",
+    state: &[Step::Fifo(Place::Repo(GUIDE_MD))],
+    acts: REMOVE,
+    holds: &[Check::RegularFile(Place::Repo(GUIDE_MD))],
+    ..SETUP
+}];
+
+// ---------------------------------------------------------------------------
+// `merged_through_links`
+// ---------------------------------------------------------------------------
+
+const HOST_TO_NOTHING: [Case; 6] = link_ways!(
+    "setup-host-link-to-nothing",
+    HOST,
+    "`CLAUDE.md` is a link to a path that holds nothing",
+    CLAUDE_MD,
+    plant: [Step::Link(Place::Repo(CLAUDE_MD), Place::Outside("nothing"))],
+    kept: [],
+    witnesses: ["nothing"],
+);
+const HOST_OUT: [Case; 6] = link_ways!(
+    "setup-host-link-out-of-the-repository",
+    HOST,
+    "`CLAUDE.md` is a link to a file outside the repository",
+    CLAUDE_MD,
+    plant: [
+        Step::File(Place::Outside("theirs"), "theirs\n"),
+        Step::Link(Place::Repo(CLAUDE_MD), Place::Outside("theirs")),
+    ],
+    kept: [],
+    witnesses: ["theirs"],
+);
+const HOST_TO_A_DIRECTORY: [Case; 6] = link_ways!(
+    "setup-host-link-to-a-directory",
+    HOST,
+    "`CLAUDE.md` is a link to a directory inside the repository",
+    CLAUDE_MD,
+    plant: [
+        Step::Dir(Place::Repo("docs")),
+        Step::Link(Place::Repo(CLAUDE_MD), Place::Repo("docs")),
+    ],
+    kept: [Check::Directory(Place::Repo("docs"))],
+    witnesses: [],
+);
+const HOST_INTO_GITS_DIRECTORY: [Case; 6] = link_ways!(
+    "setup-host-link-into-gits-directory",
+    HOST,
+    "`CLAUDE.md` is a link to a file inside git's own directory",
+    CLAUDE_MD,
+    plant: [
+        Step::File(Place::Repo(".git/theirs"), "theirs\n"),
+        Step::Link(Place::Repo(CLAUDE_MD), Place::Repo(".git/theirs")),
+    ],
+    kept: [Check::RegularFile(Place::Repo(".git/theirs"))],
+    witnesses: [],
+);
+/// Two links the install will not follow at once: one finding, one route that joins
+/// their acts — followed by its first way, where git tracks neither link and where both
+/// are committed.
+const TWO_MERGED: &str = "two merged-into files are links the install will not follow at once \
+                          — `CLAUDE.md` and `.claude/settings.json` — and the route joins \
+                          their acts";
+const TWO_MERGED_LINKS: [Case; 2] = [
     Case {
-        name: "setup-version-stamp-a-special-file",
-        site: STAMP,
-        cause: "`.jigc/version` is a FIFO",
-        state: &[Step::Fifo(Place::Repo(VERSION))],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(VERSION))],
-        ..SETUP
-    },
-    // ---- `replaced_path_refusal` · `setup.init-project-layer` · `.jigc/config/.gitkeep` ----
-    Case {
-        name: "setup-project-layer-a-link",
-        site: LAYER,
-        cause: "`.jigc/config`, on the way to `.jigc/config/.gitkeep`, is a link to a \
-                directory outside the repository",
-        state: &[
-            Step::File(Place::Outside("config/theirs"), "theirs\n"),
-            Step::Link(Place::Repo(".jigc/config"), Place::Outside("config")),
-        ],
-        acts: MAKE_DIRECTORY,
-        holds: &[
-            Check::Directory(Place::Repo(".jigc/config")),
-            Check::RegularFile(Place::Repo(GITKEEP)),
-        ],
-        witnesses: &["config/theirs", "config/.gitkeep", "config/packs.yaml"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-layer-marker-a-link",
-        site: LAYER,
-        cause: "`.jigc/config/.gitkeep` is a link",
-        state: &[THEIRS, Step::Link(Place::Repo(GITKEEP), Place::Outside("theirs"))],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(GITKEEP))],
-        witnesses: &["theirs"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-layer-marker-a-directory",
-        site: LAYER,
-        cause: "`.jigc/config/.gitkeep` is a directory",
-        state: &[Step::File(Place::Repo(".jigc/config/.gitkeep/kept"), "kept\n")],
-        acts: MOVE_AWAY,
-        holds: &[
-            Check::RegularFile(Place::Repo(GITKEEP)),
-            Check::RegularFile(Place::Moved(".jigc/config/.gitkeep/kept")),
-        ],
-        ..SETUP
-    },
-    Case {
-        name: "setup-layer-marker-a-special-file",
-        site: LAYER,
-        cause: "`.jigc/config/.gitkeep` is a FIFO",
-        state: &[Step::Fifo(Place::Repo(GITKEEP))],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(GITKEEP))],
-        ..SETUP
-    },
-    // ---- `replaced_path_refusal` · `setup.compose-marker` · `.jigc/config/packs.yaml` ----
-    Case {
-        name: "setup-compose-marker-a-link",
-        site: MARKER,
-        cause: "`.jigc/config/packs.yaml` is a link",
-        state: &[
-            Step::File(Place::Outside("theirs"), "packs: []\n"),
-            Step::Link(Place::Repo(PACKS_YAML), Place::Outside("theirs")),
-        ],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(PACKS_YAML))],
-        witnesses: &["theirs"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-compose-marker-a-directory",
-        site: MARKER,
-        cause: "`.jigc/config/packs.yaml` is a directory",
-        state: &[Step::File(Place::Repo(".jigc/config/packs.yaml/kept"), "kept\n")],
-        acts: MOVE_AWAY,
-        holds: &[
-            Check::RegularFile(Place::Repo(PACKS_YAML)),
-            Check::RegularFile(Place::Moved(".jigc/config/packs.yaml/kept")),
-        ],
-        ..SETUP
-    },
-    // ---- `replaced_path_refusal` · `setup.inject-allowlist` · `.jigc/settings-entries.json` ----
-    Case {
-        name: "setup-settings-record-a-link",
-        site: RECORD,
-        cause: "`.jigc/settings-entries.json` is a link",
-        state: &[
-            Step::File(Place::Outside("theirs"), "{}\n"),
-            Step::Link(Place::Repo(SETTINGS_RECORD), Place::Outside("theirs")),
-        ],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(SETTINGS_RECORD))],
-        witnesses: &["theirs"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-settings-record-a-directory",
-        site: RECORD,
-        cause: "`.jigc/settings-entries.json` is a directory",
-        state: &[Step::File(
-            Place::Repo(".jigc/settings-entries.json/kept"),
-            "kept\n",
-        )],
-        acts: MOVE_AWAY,
-        holds: &[
-            Check::RegularFile(Place::Repo(SETTINGS_RECORD)),
-            Check::RegularFile(Place::Moved(".jigc/settings-entries.json/kept")),
-        ],
-        ..SETUP
-    },
-    Case {
-        name: "setup-settings-record-a-special-file",
-        site: RECORD,
-        cause: "`.jigc/settings-entries.json` is a FIFO",
-        state: &[Step::Fifo(Place::Repo(SETTINGS_RECORD))],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(SETTINGS_RECORD))],
-        ..SETUP
-    },
-    // ---- `replaced_path_refusal` · `setup.write-guide` · `.claude/skills/jigc/SKILL.md` ----
-    Case {
-        name: "setup-guide-under-a-linked-assistant-directory",
-        site: GUIDE,
-        cause: "`.claude`, on the way to the guide, is a link to a directory outside the \
-                repository that holds no guide",
-        state: &[
-            Step::File(Place::Outside("dotclaude/theirs"), "theirs\n"),
-            Step::Link(Place::Repo(".claude"), Place::Outside("dotclaude")),
-        ],
-        acts: MAKE_DIRECTORY,
-        holds: &[
-            Check::Directory(Place::Repo(".claude")),
-            Check::RegularFile(Place::Repo(".claude/skills/jigc/SKILL.md")),
-        ],
-        witnesses: &[
-            "dotclaude/theirs",
-            "dotclaude/settings.json",
-            "dotclaude/skills/jigc/SKILL.md",
-        ],
-        ..SETUP
-    },
-    Case {
-        name: "setup-guide-under-a-linked-skills-directory",
-        site: GUIDE,
-        cause: "`.claude/skills`, on the way to the guide, is a link to a directory outside the \
-                repository",
-        state: &[
-            Step::File(Place::Outside("skills/theirs"), "theirs\n"),
-            Step::Link(Place::Repo(".claude/skills"), Place::Outside("skills")),
-        ],
-        acts: MAKE_DIRECTORY,
-        holds: &[
-            Check::Directory(Place::Repo(".claude/skills")),
-            Check::RegularFile(Place::Repo(".claude/skills/jigc/SKILL.md")),
-        ],
-        witnesses: &["skills/theirs", "skills/jigc/SKILL.md"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-guide-under-a-linked-skill-directory",
-        site: GUIDE,
-        cause: "`.claude/skills/jigc`, on the way to the guide, is a link to a directory \
-                outside the repository",
-        state: &[
-            Step::File(Place::Outside("skill/theirs"), "theirs\n"),
-            Step::Link(Place::Repo(".claude/skills/jigc"), Place::Outside("skill")),
-        ],
-        acts: MAKE_DIRECTORY,
-        holds: &[
-            Check::Directory(Place::Repo(".claude/skills/jigc")),
-            Check::RegularFile(Place::Repo(".claude/skills/jigc/SKILL.md")),
-        ],
-        witnesses: &["skill/theirs", "skill/SKILL.md"],
-        ..SETUP
-    },
-    // ---- `merged_through_links` · `setup.inject-reference` · `CLAUDE.md` ----
-    Case {
-        name: "setup-host-a-link-to-nothing",
+        name: "setup-two-merged-files-links-removed",
         site: HOST,
-        cause: "`CLAUDE.md` is a link to a path that holds nothing",
-        state: &[Step::Link(Place::Repo(CLAUDE_MD), Place::Outside("nothing"))],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(CLAUDE_MD))],
-        witnesses: &["nothing"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-host-a-link-out-of-the-repository",
-        site: HOST,
-        cause: HOST_LEADS_OUT,
-        state: &[THEIRS, Step::Link(Place::Repo(CLAUDE_MD), Place::Outside("theirs"))],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(CLAUDE_MD))],
-        witnesses: &["theirs"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-host-a-committed-link-out-of-the-repository",
-        site: HOST,
-        cause: HOST_LEADS_OUT,
-        state: &[
-            THEIRS,
-            Step::Link(Place::Repo(CLAUDE_MD), Place::Outside("theirs")),
-            COMMIT_IT[0],
-            COMMIT_IT[1],
-        ],
-        acts: REMOVE_AND_COMMIT,
-        holds: &[Check::RegularFile(Place::Repo(CLAUDE_MD))],
-        witnesses: &["theirs"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-host-link-pointed-at-a-committed-file",
-        site: HOST,
-        cause: HOST_LEADS_OUT,
-        state: &[THEIRS, Step::Link(Place::Repo(CLAUDE_MD), Place::Outside("theirs"))],
-        acts: POINT_AT_COMMITTED,
-        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
-        witnesses: &["theirs"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-host-link-pointed-at-a-new-file",
-        site: HOST,
-        cause: HOST_LEADS_OUT,
-        state: &[THEIRS, Step::Link(Place::Repo(CLAUDE_MD), Place::Outside("theirs"))],
-        acts: POINT_AT_NEW,
-        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
-        witnesses: &["theirs"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-host-committed-link-pointed-at-a-committed-file",
-        site: HOST,
-        cause: HOST_LEADS_OUT,
-        state: &[
-            THEIRS,
-            Step::Link(Place::Repo(CLAUDE_MD), Place::Outside("theirs")),
-            COMMIT_IT[0],
-            COMMIT_IT[1],
-        ],
-        acts: POINT_AT_COMMITTED_AND_COMMIT,
-        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
-        witnesses: &["theirs"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-host-committed-link-pointed-at-a-new-file",
-        site: HOST,
-        cause: HOST_LEADS_OUT,
-        state: &[
-            THEIRS,
-            Step::Link(Place::Repo(CLAUDE_MD), Place::Outside("theirs")),
-            COMMIT_IT[0],
-            COMMIT_IT[1],
-        ],
-        acts: POINT_AT_NEW_AND_COMMIT,
-        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
-        witnesses: &["theirs"],
-        doubt: Some(WHICH_FILE),
-        ..SETUP
-    },
-    Case {
-        name: "setup-host-a-link-to-a-directory",
-        site: HOST,
-        cause: "`CLAUDE.md` is a link to a directory inside the repository",
-        state: &[
-            Step::Dir(Place::Repo("docs")),
-            Step::Link(Place::Repo(CLAUDE_MD), Place::Repo("docs")),
-        ],
-        acts: REMOVE,
-        holds: &[
-            Check::RegularFile(Place::Repo(CLAUDE_MD)),
-            Check::Directory(Place::Repo("docs")),
-        ],
-        ..SETUP
-    },
-    Case {
-        name: "setup-host-a-link-into-gits-directory",
-        site: HOST,
-        cause: "`CLAUDE.md` is a link to a file inside git's own directory",
-        state: &[
-            Step::File(Place::Repo(".git/theirs"), "theirs\n"),
-            Step::Link(Place::Repo(CLAUDE_MD), Place::Repo(".git/theirs")),
-        ],
-        acts: REMOVE,
-        holds: &[
-            Check::RegularFile(Place::Repo(CLAUDE_MD)),
-            Check::RegularFile(Place::Repo(".git/theirs")),
-        ],
-        ..SETUP
-    },
-    Case {
-        name: "setup-two-merged-files-links",
-        site: HOST,
-        cause: "two merged-into files are links the install will not follow at once — \
-                `CLAUDE.md` and `.claude/settings.json` — and the route joins their acts",
+        cause: TWO_MERGED,
         state: &[
             Step::Link(Place::Repo(CLAUDE_MD), Place::Outside("nothing")),
             Step::Link(Place::Repo(SETTINGS_JSON), Place::Outside("nothing-either")),
@@ -578,235 +912,241 @@ pub const CASES: &[Case] = &[
         witnesses: &["nothing", "nothing-either"],
         ..SETUP
     },
-    // ---- `merged_through_links` · `setup.inject-allowlist` · `.claude/settings.json` ----
     Case {
-        name: "setup-settings-a-link-to-nothing",
-        site: SETTINGS,
-        cause: "`.claude/settings.json` is a link to a path that holds nothing",
-        state: &[Step::Link(Place::Repo(SETTINGS_JSON), Place::Outside("nothing"))],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(SETTINGS_JSON))],
-        witnesses: &["nothing"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-settings-a-link-out-of-the-repository",
-        site: SETTINGS,
-        cause: SETTINGS_LEADS_OUT,
+        name: "setup-two-merged-files-links-committed-and-removed",
+        site: HOST,
+        cause: TWO_MERGED,
         state: &[
-            Step::File(Place::Outside("theirs"), "{}\n"),
-            Step::Link(Place::Repo(SETTINGS_JSON), Place::Outside("theirs")),
+            Step::Link(Place::Repo(CLAUDE_MD), Place::Outside("nothing")),
+            Step::Link(Place::Repo(SETTINGS_JSON), Place::Outside("nothing-either")),
+            COMMIT_IT[0],
+            COMMIT_IT[1],
         ],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(SETTINGS_JSON))],
-        witnesses: &["theirs"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-settings-link-pointed-at-a-new-file",
-        site: SETTINGS,
-        cause: SETTINGS_LEADS_OUT,
-        state: &[
-            Step::File(Place::Outside("theirs"), "{}\n"),
-            Step::Link(Place::Repo(SETTINGS_JSON), Place::Outside("theirs")),
-        ],
-        acts: POINT_AT_NEW,
-        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
-        witnesses: &["theirs"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-settings-a-link-to-a-directory",
-        site: SETTINGS,
-        cause: "`.claude/settings.json` is a link to a directory inside the repository",
-        state: &[
-            Step::Dir(Place::Repo("conf")),
-            Step::Link(Place::Repo(SETTINGS_JSON), Place::Repo("conf")),
-        ],
-        acts: REMOVE,
+        acts: REMOVE_BOTH_AND_COMMIT,
         holds: &[
-            Check::RegularFile(Place::Repo(SETTINGS_JSON)),
-            Check::Directory(Place::Repo("conf")),
-        ],
-        ..SETUP
-    },
-    Case {
-        name: "setup-settings-a-link-into-gits-directory",
-        site: SETTINGS,
-        cause: "`.claude/settings.json` is a link to a file inside git's own directory",
-        state: &[
-            Step::File(Place::Repo(".git/theirs"), "{}\n"),
-            Step::Link(Place::Repo(SETTINGS_JSON), Place::Repo(".git/theirs")),
-        ],
-        acts: REMOVE,
-        holds: &[
-            Check::RegularFile(Place::Repo(SETTINGS_JSON)),
-            Check::RegularFile(Place::Repo(".git/theirs")),
-        ],
-        ..SETUP
-    },
-    Case {
-        name: "setup-settings-under-a-link-that-holds-none",
-        site: SETTINGS,
-        cause: "`.claude`, on the way to `.claude/settings.json`, is a link to a directory \
-                outside the repository that holds a guide of somebody's and no settings file",
-        state: &[
-            Step::File(Place::Outside("dotclaude/skills/jigc/SKILL.md"), "theirs\n"),
-            Step::Link(Place::Repo(".claude"), Place::Outside("dotclaude")),
-        ],
-        acts: MAKE_DIRECTORY,
-        holds: &[
-            Check::Directory(Place::Repo(".claude")),
+            Check::RegularFile(Place::Repo(CLAUDE_MD)),
             Check::RegularFile(Place::Repo(SETTINGS_JSON)),
         ],
-        witnesses: &["dotclaude/skills/jigc/SKILL.md", "dotclaude/settings.json"],
+        witnesses: &["nothing", "nothing-either"],
         ..SETUP
     },
-    Case {
-        name: "setup-settings-under-a-link-out-of-the-repository",
-        site: SETTINGS,
-        cause: "`.claude`, on the way to `.claude/settings.json`, is a link to a directory \
-                outside the repository that holds a guide of somebody's and a settings file",
-        state: &[
-            Step::File(Place::Outside("dotclaude/skills/jigc/SKILL.md"), "theirs\n"),
-            Step::File(Place::Outside("dotclaude/settings.json"), "{}\n"),
-            Step::Link(Place::Repo(".claude"), Place::Outside("dotclaude")),
-        ],
-        acts: MAKE_DIRECTORY,
-        holds: &[
-            Check::Directory(Place::Repo(".claude")),
-            Check::RegularFile(Place::Repo(SETTINGS_JSON)),
-        ],
-        witnesses: &["dotclaude/skills/jigc/SKILL.md", "dotclaude/settings.json"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-settings-under-a-link-to-a-directory-there",
-        site: SETTINGS,
-        cause: "`.claude`, on the way to `.claude/settings.json`, is a link to a directory \
-                inside the repository where `settings.json` is a directory",
-        state: &[
-            Step::File(Place::Repo("dotclaude/skills/jigc/SKILL.md"), "theirs\n"),
-            Step::Dir(Place::Repo("dotclaude/settings.json")),
-            Step::Link(Place::Repo(".claude"), Place::Repo("dotclaude")),
-        ],
-        acts: MAKE_DIRECTORY,
-        holds: &[
-            Check::Directory(Place::Repo(".claude")),
-            Check::RegularFile(Place::Repo(SETTINGS_JSON)),
-            Check::RegularFile(Place::Repo("dotclaude/skills/jigc/SKILL.md")),
-        ],
-        ..SETUP
-    },
-    Case {
-        name: "setup-settings-under-a-link-into-gits-directory",
-        site: SETTINGS,
-        cause: "`.claude`, on the way to `.claude/settings.json`, is a link to a directory \
-                inside git's own directory",
-        state: &[
-            Step::File(Place::Repo(".git/dotclaude/skills/jigc/SKILL.md"), "theirs\n"),
-            Step::File(Place::Repo(".git/dotclaude/settings.json"), "{}\n"),
-            Step::Link(Place::Repo(".claude"), Place::Repo(".git/dotclaude")),
-        ],
-        acts: MAKE_DIRECTORY,
-        holds: &[
-            Check::Directory(Place::Repo(".claude")),
-            Check::RegularFile(Place::Repo(SETTINGS_JSON)),
-            Check::RegularFile(Place::Repo(".git/dotclaude/settings.json")),
-        ],
-        ..SETUP
-    },
-    // ---- `merged_through_links` · `setup.secrets-gitignore` · the root `.gitignore` ----
-    Case {
-        name: "setup-seeded-ignore-a-link-to-nothing",
-        site: SEED,
-        cause: "on an unborn `HEAD`, the root `.gitignore` is a link to a path that holds \
-                nothing",
-        state: &[
-            UNBORN,
-            Step::Link(Place::Repo(ROOT_GITIGNORE), Place::Outside("nothing")),
-        ],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(ROOT_GITIGNORE))],
-        witnesses: &["nothing"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-seeded-ignore-a-link-out-of-the-repository",
-        site: SEED,
-        cause: SEED_LEADS_OUT,
-        state: &[
-            UNBORN,
-            THEIRS,
-            Step::Link(Place::Repo(ROOT_GITIGNORE), Place::Outside("theirs")),
-        ],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(ROOT_GITIGNORE))],
-        witnesses: &["theirs"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-seeded-ignore-link-pointed-at-a-new-file",
-        site: SEED,
-        cause: SEED_LEADS_OUT,
-        state: &[
-            UNBORN,
-            THEIRS,
-            Step::Link(Place::Repo(ROOT_GITIGNORE), Place::Outside("theirs")),
-        ],
-        acts: POINT_AT_NEW,
-        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
-        witnesses: &["theirs"],
-        ..SETUP
-    },
-    Case {
-        name: "setup-seeded-ignore-a-link-to-a-directory",
-        site: SEED,
-        cause: "on an unborn `HEAD`, the root `.gitignore` is a link to a directory inside \
-                the repository",
-        state: &[
-            UNBORN,
-            Step::Dir(Place::Repo("docs")),
-            Step::Link(Place::Repo(ROOT_GITIGNORE), Place::Repo("docs")),
-        ],
-        acts: REMOVE,
-        holds: &[
-            Check::RegularFile(Place::Repo(ROOT_GITIGNORE)),
-            Check::Directory(Place::Repo("docs")),
-        ],
-        ..SETUP
-    },
-    Case {
-        name: "setup-seeded-ignore-a-link-into-gits-directory",
-        site: SEED,
-        cause: "on an unborn `HEAD`, the root `.gitignore` is a link to a file inside git's \
-                own directory",
-        state: &[
-            UNBORN,
-            Step::File(Place::Repo(".git/theirs"), "theirs\n"),
-            Step::Link(Place::Repo(ROOT_GITIGNORE), Place::Repo(".git/theirs")),
-        ],
-        acts: REMOVE,
-        holds: &[
-            Check::RegularFile(Place::Repo(ROOT_GITIGNORE)),
-            Check::RegularFile(Place::Repo(".git/theirs")),
-        ],
-        ..SETUP
-    },
-    // ---- `merged_through_links` · `setup.init-project-layer` · `.jigc/.gitignore` ----
-    Case {
-        name: "setup-workbench-ignore-a-link",
-        site: IGNORE,
-        cause: "`.jigc/.gitignore` is a link",
-        state: &[
-            THEIRS,
-            Step::Link(Place::Repo(JIGC_GITIGNORE), Place::Outside("theirs")),
-        ],
-        acts: REMOVE,
-        holds: &[Check::RegularFile(Place::Repo(JIGC_GITIGNORE))],
-        witnesses: &["theirs"],
-        ..SETUP
-    },
+];
+
+const SETTINGS_TO_NOTHING: [Case; 6] = link_ways!(
+    "setup-settings-link-to-nothing",
+    SETTINGS,
+    "`.claude/settings.json` is a link to a path that holds nothing",
+    SETTINGS_JSON,
+    plant: [Step::Link(Place::Repo(SETTINGS_JSON), Place::Outside("nothing"))],
+    kept: [],
+    witnesses: ["nothing"],
+);
+const SETTINGS_OUT: [Case; 6] = link_ways!(
+    "setup-settings-link-out-of-the-repository",
+    SETTINGS,
+    "`.claude/settings.json` is a link to a file outside the repository",
+    SETTINGS_JSON,
+    plant: [
+        Step::File(Place::Outside("theirs"), "{}\n"),
+        Step::Link(Place::Repo(SETTINGS_JSON), Place::Outside("theirs")),
+    ],
+    kept: [],
+    witnesses: ["theirs"],
+);
+const SETTINGS_TO_A_DIRECTORY: [Case; 6] = link_ways!(
+    "setup-settings-link-to-a-directory",
+    SETTINGS,
+    "`.claude/settings.json` is a link to a directory inside the repository",
+    SETTINGS_JSON,
+    plant: [
+        Step::Dir(Place::Repo("conf")),
+        Step::Link(Place::Repo(SETTINGS_JSON), Place::Repo("conf")),
+    ],
+    kept: [Check::Directory(Place::Repo("conf"))],
+    witnesses: [],
+);
+const SETTINGS_INTO_GITS_DIRECTORY: [Case; 6] = link_ways!(
+    "setup-settings-link-into-gits-directory",
+    SETTINGS,
+    "`.claude/settings.json` is a link to a file inside git's own directory",
+    SETTINGS_JSON,
+    plant: [
+        Step::File(Place::Repo(".git/theirs"), "{}\n"),
+        Step::Link(Place::Repo(SETTINGS_JSON), Place::Repo(".git/theirs")),
+    ],
+    kept: [Check::RegularFile(Place::Repo(".git/theirs"))],
+    witnesses: [],
+);
+
+/// A guide that is not jigc's, at the end of a `.claude` that is a link: the install then
+/// leaves the guide alone, and the link is `.claude/settings.json`'s to answer for.
+const SETTINGS_UNDER_A_LINK_THAT_HOLDS_NONE: [Case; 2] = linked_way!(
+    "setup-settings-under-a-link-that-holds-none",
+    SETTINGS,
+    "`.claude`, on the way to `.claude/settings.json`, is a link to a directory outside the \
+     repository that holds a guide of somebody's and no settings file",
+    ".claude",
+    plant: [
+        Step::File(Place::Outside("dotclaude/skills/jigc/SKILL.md"), "theirs\n"),
+        Step::Link(Place::Repo(".claude"), Place::Outside("dotclaude")),
+    ],
+    installed: [Check::RegularFile(Place::Repo(SETTINGS_JSON))],
+    witnesses: ["dotclaude/skills/jigc/SKILL.md", "dotclaude/settings.json"],
+);
+const SETTINGS_UNDER_A_LINK_OUT: [Case; 2] = linked_way!(
+    "setup-settings-under-a-link-out-of-the-repository",
+    SETTINGS,
+    "`.claude`, on the way to `.claude/settings.json`, is a link to a directory outside the \
+     repository that holds a guide of somebody's and a settings file",
+    ".claude",
+    plant: [
+        Step::File(Place::Outside("dotclaude/skills/jigc/SKILL.md"), "theirs\n"),
+        Step::File(Place::Outside("dotclaude/settings.json"), "{}\n"),
+        Step::Link(Place::Repo(".claude"), Place::Outside("dotclaude")),
+    ],
+    installed: [Check::RegularFile(Place::Repo(SETTINGS_JSON))],
+    witnesses: ["dotclaude/skills/jigc/SKILL.md", "dotclaude/settings.json"],
+);
+const SETTINGS_UNDER_A_LINK_TO_A_DIRECTORY_THERE: [Case; 2] = linked_way!(
+    "setup-settings-under-a-link-to-a-directory-there",
+    SETTINGS,
+    "`.claude`, on the way to `.claude/settings.json`, is a link to a directory inside the \
+     repository where `settings.json` is a directory",
+    ".claude",
+    plant: [
+        Step::File(Place::Repo("dotclaude/skills/jigc/SKILL.md"), "theirs\n"),
+        Step::Dir(Place::Repo("dotclaude/settings.json")),
+        Step::Link(Place::Repo(".claude"), Place::Repo("dotclaude")),
+    ],
+    installed: [
+        Check::RegularFile(Place::Repo(SETTINGS_JSON)),
+        Check::RegularFile(Place::Repo("dotclaude/skills/jigc/SKILL.md")),
+    ],
+    witnesses: [],
+);
+const SETTINGS_UNDER_A_LINK_INTO_GITS_DIRECTORY: [Case; 2] = linked_way!(
+    "setup-settings-under-a-link-into-gits-directory",
+    SETTINGS,
+    "`.claude`, on the way to `.claude/settings.json`, is a link to a directory inside git's \
+     own directory",
+    ".claude",
+    plant: [
+        Step::File(Place::Repo(".git/dotclaude/skills/jigc/SKILL.md"), "theirs\n"),
+        Step::File(Place::Repo(".git/dotclaude/settings.json"), "{}\n"),
+        Step::Link(Place::Repo(".claude"), Place::Repo(".git/dotclaude")),
+    ],
+    installed: [
+        Check::RegularFile(Place::Repo(SETTINGS_JSON)),
+        Check::RegularFile(Place::Repo(".git/dotclaude/settings.json")),
+    ],
+    witnesses: [],
+);
+
+const SEED_TO_NOTHING: [Case; 3] = seeded_link_ways!(
+    "setup-seeded-ignore-link-to-nothing",
+    "on an unborn `HEAD`, the root `.gitignore` is a link to a path that holds nothing",
+    plant: [Step::Link(Place::Repo(ROOT_GITIGNORE), Place::Outside("nothing"))],
+    kept: [],
+    witnesses: ["nothing"],
+);
+const SEED_OUT: [Case; 3] = seeded_link_ways!(
+    "setup-seeded-ignore-link-out-of-the-repository",
+    "on an unborn `HEAD`, the root `.gitignore` is a link to a file outside the repository",
+    plant: [
+        Step::File(Place::Outside("theirs"), "theirs\n"),
+        Step::Link(Place::Repo(ROOT_GITIGNORE), Place::Outside("theirs")),
+    ],
+    kept: [],
+    witnesses: ["theirs"],
+);
+const SEED_TO_A_DIRECTORY: [Case; 3] = seeded_link_ways!(
+    "setup-seeded-ignore-link-to-a-directory",
+    "on an unborn `HEAD`, the root `.gitignore` is a link to a directory inside the \
+     repository",
+    plant: [
+        Step::Dir(Place::Repo("docs")),
+        Step::Link(Place::Repo(ROOT_GITIGNORE), Place::Repo("docs")),
+    ],
+    kept: [Check::Directory(Place::Repo("docs"))],
+    witnesses: [],
+);
+const SEED_INTO_GITS_DIRECTORY: [Case; 3] = seeded_link_ways!(
+    "setup-seeded-ignore-link-into-gits-directory",
+    "on an unborn `HEAD`, the root `.gitignore` is a link to a file inside git's own \
+     directory",
+    plant: [
+        Step::File(Place::Repo(".git/theirs"), "theirs\n"),
+        Step::Link(Place::Repo(ROOT_GITIGNORE), Place::Repo(".git/theirs")),
+    ],
+    kept: [Check::RegularFile(Place::Repo(".git/theirs"))],
+    witnesses: [],
+);
+
+const WORKBENCH_IGNORE_A_LINK: [Case; 2] = removed_ways!(
+    "setup-workbench-ignore-a-link",
+    IGNORE,
+    "`.jigc/.gitignore` is a link",
+    ".jigc/.gitignore",
+    plant: [
+        Step::File(Place::Outside("theirs"), "theirs\n"),
+        Step::Link(Place::Repo(".jigc/.gitignore"), Place::Outside("theirs")),
+    ],
+    witnesses: ["theirs"],
+);
+
+/// The cases of `jigc setup`, a group a cause — and, within a group, a case a way out of
+/// the cause's route.
+pub const CASES: &[&[Case]] = &[
+    &HOOK_OUT,
+    &HOOK_TO_NOTHING,
+    &HOOK_OUT_RELATIVELY,
+    &HOOK_OUT_TO_A_DIRECTORY,
+    &HOOK_TO_A_DEVICE,
+    &HOOKS_PATH_INSIDE_TO_NOTHING,
+    &HOOKS_PATH_INSIDE_COMMITTED,
+    &HOOKS_PATH_INSIDE_OUT,
+    &HOOKS_PATH_OUTSIDE_TO_NOTHING,
+    &HOOKS_PATH_OUTSIDE_OUT,
+    &AGENT_A_LINK,
+    &AGENT_A_DIRECTORY,
+    &WORKBENCH_A_LINK,
+    &AGENT_A_FIFO,
+    &TWO_REPLACED_LINKS,
+    &STAMP_A_LINK,
+    &STAMP_A_DIRECTORY,
+    &STAMP_A_FIFO,
+    &LAYER_UNDER_A_LINK,
+    &LAYER_A_LINK,
+    &LAYER_A_DIRECTORY,
+    &LAYER_A_FIFO,
+    &MARKER_A_LINK,
+    &MARKER_A_DIRECTORY,
+    &MARKER_A_FIFO,
+    &RECORD_A_LINK,
+    &RECORD_A_DIRECTORY,
+    &RECORD_A_FIFO,
+    &GUIDE_UNDER_A_LINKED_ASSISTANT_DIRECTORY,
+    &GUIDE_UNDER_A_LINKED_SKILLS_DIRECTORY,
+    &GUIDE_UNDER_A_LINKED_SKILL_DIRECTORY,
+    &GUIDE_A_FIFO,
+    &HOST_TO_NOTHING,
+    &HOST_OUT,
+    &HOST_TO_A_DIRECTORY,
+    &HOST_INTO_GITS_DIRECTORY,
+    &TWO_MERGED_LINKS,
+    &SETTINGS_TO_NOTHING,
+    &SETTINGS_OUT,
+    &SETTINGS_TO_A_DIRECTORY,
+    &SETTINGS_INTO_GITS_DIRECTORY,
+    &SETTINGS_UNDER_A_LINK_THAT_HOLDS_NONE,
+    &SETTINGS_UNDER_A_LINK_OUT,
+    &SETTINGS_UNDER_A_LINK_TO_A_DIRECTORY_THERE,
+    &SETTINGS_UNDER_A_LINK_INTO_GITS_DIRECTORY,
+    &SEED_TO_NOTHING,
+    &SEED_OUT,
+    &SEED_TO_A_DIRECTORY,
+    &SEED_INTO_GITS_DIRECTORY,
+    &WORKBENCH_IGNORE_A_LINK,
 ];
 
 /// The sites of `jigc setup` that have no case, each with why.
@@ -824,12 +1164,20 @@ const SHARED: [&str; 4] = [
 /// Why a link at `.jigc` is no case of a site but the first replacing member's.
 const WORKBENCH_LINK_IS_THE_BOOTSTRAP_FILES: Why = Why::NotConstructible(
     "a link at `.jigc` is in the way of `.jigc/AGENT.md` first, and the refusal is raised \
-     under the first blocked member's code — `setup.write-bootstrap`, the case \
-     `setup-workbench-a-link`",
+     under the first blocked member's code — `setup.write-bootstrap`, the cases \
+     `setup-workbench-a-link-…`",
+);
+
+/// Why the clause *committing the removal where git tracks the entry* is not followed over
+/// a special file.
+const GIT_TRACKS_NO_FIFO: (&str, Why) = (
+    "the special file committed, and its removal committed",
+    Why::NotConstructible("git tracks regular files and links: a FIFO is in no index"),
 );
 
 /// **What was read for each site, and how many causes it holds** — a hand count, with its
-/// derivation; and the causes that have no case, each with why.
+/// derivation; the causes that have no case, each with why; and the ways out of its route
+/// that are not followed, each with why.
 ///
 /// The count is of ways through the callee, as this file's head says. One thing it leaves
 /// to one site a function: **several entries in the way at once**, which either callee
@@ -837,18 +1185,38 @@ const WORKBENCH_LINK_IS_THE_BOOTSTRAP_FILES: Why = Why::NotConstructible(
 /// acts. The join is the same code whichever member is first, so it is counted — and
 /// followed — at the first member of each function (`.jigc/AGENT.md`, `CLAUDE.md`) and at no
 /// other site.
+///
+/// **Where a replaced member's link leads is no input of its refusal or of its route** —
+/// `replaced_path_refusal` asks what the entry is, and its one act removes it — so such a
+/// link is followed at one end, the one with a file to lose. A merged-into member's link is
+/// followed at each of the four ends `link_end` refuses, since there the end is asked.
 pub const READINGS: &[Reading] = &[
     Reading {
         site: HOOK_LINK_SITE,
-        read: &["crates/cli/src/setup.rs::hook_link_refusal"],
-        causes: 2,
-        derivation: "the two arms of its `canonicalize`: the link leads to nothing, or leads \
-                     out of the repository and its hooks directory. `display_hook_path`, \
-                     which words the path the route names, and `resolve_hooks_dir` were not \
-                     read for this count: how the link is spelled, what stands at its end \
-                     and where `core.hooksPath` puts the hooks directory are states inside \
-                     the second arm, and none has a case of its own",
+        read: &[
+            "crates/cli/src/setup.rs::hook_link_refusal",
+            "crates/cli/src/setup.rs::display_hook_path — which path the route names as the link",
+            "crates/cli/src/setup.rs::resolve_hooks_dir and precommit_hook_in — where the hook is",
+        ],
+        causes: 9,
+        derivation: "`hook_link_refusal` has two arms — the link leads to nothing, or leads \
+                     out of the repository and its hooks directory — and `display_hook_path` \
+                     words the path the route names by resolving the link: where it leads \
+                     to nothing the route names the link, and where it leads anywhere it \
+                     names **the end**. So what stands at the end decides what a reader is \
+                     told to remove: a script (spelled absolutely, or relatively — the \
+                     canary's second key), a directory, a device. `resolve_hooks_dir` asks \
+                     git, so `core.hooksPath` moves the hook: into the repository, or out \
+                     of it; each with the two arms. Five states of the default hooks \
+                     directory and two of each `core.hooksPath`",
         without_case: &[],
+        not_followed: &[(
+            "the link committed, at any hooks directory but one inside the repository",
+            Why::NotConstructible(
+                "git tracks nothing under its own directory, where the default hooks \
+                 directory is, and nothing outside the repository",
+            ),
+        )],
     },
     Reading {
         site: BOOTSTRAP,
@@ -865,6 +1233,7 @@ pub const READINGS: &[Reading] = &[
                      special file, and — counted here for the function — several entries can \
                      be in the way at once. Where a link leads is not asked",
         without_case: &[],
+        not_followed: &[GIT_TRACKS_NO_FIFO],
     },
     Reading {
         site: STAMP,
@@ -882,6 +1251,7 @@ pub const READINGS: &[Reading] = &[
             "`.jigc`, on the way to `.jigc/version`, is a link",
             WORKBENCH_LINK_IS_THE_BOOTSTRAP_FILES,
         )],
+        not_followed: &[GIT_TRACKS_NO_FIFO],
     },
     Reading {
         site: LAYER,
@@ -900,6 +1270,7 @@ pub const READINGS: &[Reading] = &[
             "`.jigc`, on the way to `.jigc/config/.gitkeep`, is a link",
             WORKBENCH_LINK_IS_THE_BOOTSTRAP_FILES,
         )],
+        not_followed: &[GIT_TRACKS_NO_FIFO],
     },
     Reading {
         site: MARKER,
@@ -924,20 +1295,12 @@ pub const READINGS: &[Reading] = &[
                 Why::NotConstructible(
                     "a link at `.jigc/config` is in the way of `.jigc/config/.gitkeep` \
                      first, the member written before this one — the refusal is raised \
-                     under `setup.init-project-layer`, the case `setup-project-layer-a-link`",
-                ),
-            ),
-            (
-                "`.jigc/config/packs.yaml` is a special file",
-                Why::NotConstructible(
-                    "the one special file the frame plants is a FIFO, and `jigc setup` \
-                     reads this path before it reaches the refusal — a read that does not \
-                     return. Written as a case it came out *not provoked*: the command had \
-                     printed nothing when the runner ended it at its limit of two minutes, \
-                     which is two minutes of every run of the suite, so it is no case",
+                     under `setup.init-project-layer`, the cases \
+                     `setup-project-layer-a-link-…`",
                 ),
             ),
         ],
+        not_followed: &[GIT_TRACKS_NO_FIFO],
     },
     Reading {
         site: RECORD,
@@ -955,6 +1318,7 @@ pub const READINGS: &[Reading] = &[
             "`.jigc`, on the way to `.jigc/settings-entries.json`, is a link",
             WORKBENCH_LINK_IS_THE_BOOTSTRAP_FILES,
         )],
+        not_followed: &[GIT_TRACKS_NO_FIFO],
     },
     Reading {
         site: GUIDE,
@@ -988,17 +1352,8 @@ pub const READINGS: &[Reading] = &[
                      leaves the member table as for a link — driven, exit 0",
                 ),
             ),
-            (
-                "the guide's own path is a special file",
-                Why::NotConstructible(
-                    "`guide_ownership` reads the entry before this refusal is reached, and \
-                     the read of a FIFO does not return: driven by hand, `jigc setup` \
-                     printed nothing for ten seconds and ended only when the FIFO was opened \
-                     for writing. A case would cost every run of the suite the runner's \
-                     limit, so there is none",
-                ),
-            ),
         ],
+        not_followed: &[GIT_TRACKS_NO_FIFO],
     },
     Reading {
         site: HOST,
@@ -1016,6 +1371,16 @@ pub const READINGS: &[Reading] = &[
                      several links can be refused at once. An entry there that is no link is \
                      not this function's",
         without_case: &[],
+        not_followed: &[(
+            "the joined route of two links, by its second way out",
+            Why::NotConstructible(
+                "the runner has one committed file and one new file to point a link at, and \
+                 the join's two links are the reference host and the settings file: pointed \
+                 at one file, the install's own writes meet in it — driven, the settings \
+                 merge refuses the file the reference was appended to — which says nothing \
+                 of the route. Each link's second way out is followed at its own site",
+            ),
+        )],
     },
     Reading {
         site: SETTINGS,
@@ -1033,6 +1398,7 @@ pub const READINGS: &[Reading] = &[
                      the one directory on its way, and either is refused at each of \
                      `link_end`'s four ends",
         without_case: &[],
+        not_followed: &[],
     },
     Reading {
         site: SEED,
@@ -1049,6 +1415,23 @@ pub const READINGS: &[Reading] = &[
         derivation: "the root `.gitignore`, a member where `HEAD` is unborn: only its own \
                      path can be a link, refused at each of `link_end`'s four ends",
         without_case: &[],
+        not_followed: &[
+            (
+                "the link pointed at a file the repository holds committed",
+                Why::NotConstructible(
+                    "the site is reached on an unborn `HEAD` only, where no file is in a \
+                     commit",
+                ),
+            ),
+            (
+                "the link staged, removed, and the removal committed",
+                Why::NotConstructible(
+                    "a link that was staged and never committed leaves no removal to \
+                     commit: `git commit` over its path answers that the pathspec matches \
+                     nothing — driven",
+                ),
+            ),
+        ],
     },
     Reading {
         site: IGNORE,
@@ -1066,9 +1449,10 @@ pub const READINGS: &[Reading] = &[
             "`.jigc`, on the way to `.jigc/.gitignore`, is a link",
             Why::NotConstructible(
                 "`replaced_path_refusal` is asked before this function and answers for a \
-                 link at `.jigc` under `setup.write-bootstrap` — the case \
-                 `setup-workbench-a-link`",
+                 link at `.jigc` under `setup.write-bootstrap` — the cases \
+                 `setup-workbench-a-link-…`",
             ),
         )],
+        not_followed: &[],
     },
 ];

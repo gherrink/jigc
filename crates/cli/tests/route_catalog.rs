@@ -1,6 +1,6 @@
-//! **The route catalog** — one case per refusal site and cause: the state that provokes the
-//! refusal, the refusing command, the route lifted from the printed bytes and followed, and
-//! what must hold afterwards (`DECISIONS.md` → 2026-10-10, ruling 3; the plan's step `P1`,
+//! **The route catalog** — a case per refusal site, cause and way out of its route: the
+//! state that provokes the refusal, the refusing command, the route lifted from the printed
+//! bytes and followed, and what must hold afterwards (`DECISIONS.md` → 2026-10-10, ruling 3; the plan's step `P1`,
 //! `completions/artifacts/M55/stabilization-build/reshape/plan.md`).
 //!
 //! The exit rule says *every refusal's route works as printed*, and until this suite
@@ -31,20 +31,26 @@
 //! (`completions/artifacts/M55/stabilization-build/canary-one/findings.md`), and no ledger
 //! holds it yet. The tie becomes a real one when a run's opening seeds its rows.
 //!
-//! **What the catalog holds today** is the frame's first proof — the one site whose cause
-//! an existing test planted and passed over, in the cause that destroys a file and in its
-//! control — and the first ten sites of `jigc setup` (the plan's step `P3`, its first part):
-//! the two refusals the install raises before its first write over an entry in the way of a
-//! file it replaces or merges into. Every other blocking site of `setup` and `uninstall` is
-//! a row of [`OWED`], under the task that owes its case.
+//! **What the catalog holds today** is eleven sites of `jigc setup` (the plan's step `P3`,
+//! so far): the hook's link refusal — the site whose cause an existing test planted and
+//! passed over — and the two refusals the install raises before its first write over an
+//! entry in the way of a file it replaces or merges into. Every other blocking site of
+//! `setup` and `uninstall` is a row of [`OWED`], under the task that owes its case.
 //!
 //! **A site with a case says what was read to count its causes**
-//! ([`Reading`], a command's `READINGS`): the functions, the count with its derivation, and
-//! every cause that has no case with why. A fence can hold sites and never causes, so the
-//! count is a hand count —
-//! [`every_site_with_a_case_says_what_was_read_and_every_cause_is_answered`] holds it to
+//! ([`Reading`], a command's `READINGS`): the functions, the count with its derivation,
+//! every cause that has no case with why, and every way out of its route that no case
+//! follows with why. A fence can hold sites and never causes, so the count is a hand count
+//! — [`every_site_with_a_case_says_what_was_read_and_every_cause_is_answered`] holds it to
 //! the cases: the causes the cases follow and the causes given a reason are together the
 //! count, and no more.
+//!
+//! **A cause is followed every way its route offers.** A route can offer two acts and a
+//! clause that turns on git — *remove the link, or point it at a regular file inside this
+//! repository — committing the change where git tracks the link* — and every red case of
+//! the first ten sites stood on the second act or on the clause, where one case a cause
+//! had looked. So a command's cases are groups, a group a cause, and within it a case a
+//! way.
 //!
 //! **A doubtful reading of a route's prose is marked, never decided**
 //! ([`Case::doubt`](crate::support::route_case::Case::doubt)): the case follows the printed
@@ -59,7 +65,12 @@
 //! bound for each new act ([`no_file_act_is_done_outside_the_sandbox`]), and the limit a
 //! child is waited for ([`a_command_that_does_not_end_is_ended_and_the_case_says_so`]) —
 //! a limit that is the commands' under test and never the sandbox's own setup's
-//! ([`the_handed_limit_ends_the_command_under_test_and_never_the_sandboxs_setup`]).
+//! ([`the_handed_limit_ends_the_command_under_test_and_never_the_sandboxs_setup`]). **A
+//! command that does not end is a classification of its own**, the eighth
+//! ([`the_classifications_in_their_order`]): *not provoked* could not tell a command that
+//! held from one that exited 0 and said nothing, and the list is strict by classification.
+//! A case listed under it is waited for seconds, so a known hold is no two minutes of
+//! every run.
 //!
 //! **The fence** (the plan's step `P2`) holds the catalog to the refusal sites of the
 //! families [`CATALOGUED`] names. It scans nothing for itself — the sites are
@@ -108,7 +119,8 @@ struct Table {
     file: &'static str,
     /// Its source, for the arm that holds a case to being data.
     source: &'static str,
-    cases: &'static [Case],
+    /// The cases, a group a cause.
+    cases: &'static [&'static [Case]],
     reasons: &'static [Reason],
     readings: &'static [Reading],
 }
@@ -145,45 +157,172 @@ use setup::{HOOK, HOOK_LINK_SITE};
 
 /// Every case of every command's file.
 fn cases() -> Vec<&'static Case> {
-    TABLES.iter().flat_map(|table| table.cases).collect()
+    TABLES
+        .iter()
+        .flat_map(|table| table.cases)
+        .flat_map(|group| group.iter())
+        .collect()
 }
 
-/// The cases that are red, each under the key of the finding it reproduces. The first key
-/// is the first row of §1, *The two blockers*, of
-/// `completions/artifacts/M55/stabilization-build/canary-one/findings.md`; the other two
-/// are no finding of the canary's and were minted with the cases, in
+/// **The cases that are red, by the key of the finding each reproduces** — a row a key and
+/// a classification, with the cases that come out so. The keys of the hook's rows are the
+/// small canary's (`completions/artifacts/M55/stabilization-build/canary-one/findings.md`,
+/// §1 and §3); the others are no finding of the canary's and were minted with the cases, in
 /// `completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md`.
-const EXPECTED_RED: &[ExpectedRed] = &[
-    ExpectedRed {
-        case: "setup-hook-linked-to-a-script-outside",
-        key: "r1-setup-install-hook-route-other-causes-unexamined",
-        classification: Classification::WitnessChanged,
-    },
-    ExpectedRed {
-        case: "setup-host-link-pointed-at-a-committed-file",
-        key: REPOINTED_LINK,
-        classification: Classification::AnotherFailure,
-    },
-    ExpectedRed {
-        case: "setup-host-link-pointed-at-a-new-file",
-        key: REPOINTED_LINK,
-        classification: Classification::AnotherFailure,
-    },
-    ExpectedRed {
-        case: "setup-settings-link-pointed-at-a-new-file",
-        key: REPOINTED_LINK,
-        classification: Classification::AnotherFailure,
-    },
-    ExpectedRed {
-        case: "setup-host-committed-link-pointed-at-a-new-file",
-        key: "r1-setup-link-pointed-at-uncommitted-file-draws-dirty-install-path",
-        classification: Classification::AnotherFailure,
-    },
+const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
+    (
+        HOOK_END,
+        Classification::SameRefusalAgain,
+        &[
+            "setup-hook-link-out-to-a-directory-pointed-at-a-committed-script",
+            "setup-hook-link-out-to-a-directory-pointed-at-a-new-script",
+            "setup-hook-link-out-to-a-directory-removed",
+            "setup-hook-link-out-to-a-script-pointed-at-a-committed-script",
+            "setup-hook-link-out-to-a-script-pointed-at-a-new-script",
+            "setup-hooks-path-inside-link-out-to-a-script-pointed-at-a-committed-script",
+            "setup-hooks-path-inside-link-out-to-a-script-pointed-at-a-new-script",
+            "setup-hooks-path-outside-link-out-of-it-to-a-script-pointed-at-a-committed-script",
+            "setup-hooks-path-outside-link-out-of-it-to-a-script-pointed-at-a-new-script",
+        ],
+    ),
+    (
+        HOOK_END,
+        Classification::WitnessChanged,
+        &[
+            "setup-hook-link-out-to-a-script-removed",
+            "setup-hooks-path-inside-link-out-to-a-script-removed",
+            "setup-hooks-path-outside-link-out-of-it-to-a-script-removed",
+        ],
+    ),
+    (
+        HOOK_RELATIVE,
+        Classification::SameRefusalAgain,
+        &[
+            "setup-hook-relative-link-out-to-a-script-pointed-at-a-committed-script",
+            "setup-hook-relative-link-out-to-a-script-pointed-at-a-new-script",
+        ],
+    ),
+    (
+        HOOK_RELATIVE,
+        Classification::WitnessChanged,
+        &["setup-hook-relative-link-out-to-a-script-removed"],
+    ),
+    (
+        HOOK_DEVICE,
+        Classification::SameRefusalAgain,
+        &[
+            "setup-hook-link-to-dev-null-pointed-at-a-committed-script",
+            "setup-hook-link-to-dev-null-pointed-at-a-new-script",
+            "setup-hook-link-to-dev-null-removed",
+        ],
+    ),
+    (
+        NEW_SCRIPT,
+        Classification::AnotherFailure,
+        &[
+            "setup-hook-link-to-nothing-pointed-at-a-new-script",
+            "setup-hooks-path-inside-link-to-nothing-pointed-at-a-new-script",
+            "setup-hooks-path-outside-link-to-nothing-pointed-at-a-new-script",
+        ],
+    ),
+    (
+        UNTRACKED_LINK,
+        Classification::AnotherFailure,
+        &[
+            "setup-host-link-into-gits-directory-pointed-at-a-committed-file",
+            "setup-host-link-into-gits-directory-pointed-at-a-new-file",
+            "setup-host-link-out-of-the-repository-pointed-at-a-committed-file",
+            "setup-host-link-out-of-the-repository-pointed-at-a-new-file",
+            "setup-host-link-to-a-directory-pointed-at-a-committed-file",
+            "setup-host-link-to-a-directory-pointed-at-a-new-file",
+            "setup-host-link-to-nothing-pointed-at-a-committed-file",
+            "setup-host-link-to-nothing-pointed-at-a-new-file",
+            "setup-settings-link-into-gits-directory-pointed-at-a-committed-file",
+            "setup-settings-link-into-gits-directory-pointed-at-a-new-file",
+            "setup-settings-link-out-of-the-repository-pointed-at-a-committed-file",
+            "setup-settings-link-out-of-the-repository-pointed-at-a-new-file",
+            "setup-settings-link-to-a-directory-pointed-at-a-committed-file",
+            "setup-settings-link-to-a-directory-pointed-at-a-new-file",
+            "setup-settings-link-to-nothing-pointed-at-a-committed-file",
+            "setup-settings-link-to-nothing-pointed-at-a-new-file",
+        ],
+    ),
+    (
+        NEW_FILE,
+        Classification::AnotherFailure,
+        &[
+            "setup-host-link-into-gits-directory-committed-and-pointed-at-a-new-file",
+            "setup-host-link-out-of-the-repository-committed-and-pointed-at-a-new-file",
+            "setup-host-link-to-a-directory-committed-and-pointed-at-a-new-file",
+            "setup-host-link-to-nothing-committed-and-pointed-at-a-new-file",
+            "setup-settings-link-into-gits-directory-committed-and-pointed-at-a-new-file",
+            "setup-settings-link-out-of-the-repository-committed-and-pointed-at-a-new-file",
+            "setup-settings-link-to-a-directory-committed-and-pointed-at-a-new-file",
+            "setup-settings-link-to-nothing-committed-and-pointed-at-a-new-file",
+        ],
+    ),
+    (
+        NO_FLOOR,
+        Classification::AnotherFailure,
+        &[
+            "setup-seeded-ignore-link-into-gits-directory-pointed-at-a-new-file",
+            "setup-seeded-ignore-link-into-gits-directory-staged-and-pointed-at-a-new-file",
+            "setup-seeded-ignore-link-out-of-the-repository-pointed-at-a-new-file",
+            "setup-seeded-ignore-link-out-of-the-repository-staged-and-pointed-at-a-new-file",
+            "setup-seeded-ignore-link-to-a-directory-pointed-at-a-new-file",
+            "setup-seeded-ignore-link-to-a-directory-staged-and-pointed-at-a-new-file",
+            "setup-seeded-ignore-link-to-nothing-pointed-at-a-new-file",
+            "setup-seeded-ignore-link-to-nothing-staged-and-pointed-at-a-new-file",
+        ],
+    ),
+    (
+        HELD,
+        Classification::DidNotEnd,
+        &[
+            "setup-compose-marker-a-special-file",
+            "setup-guide-a-special-file",
+        ],
+    ),
 ];
 
+// The canary's keys — the route of the hook's link refusal names where the link leads, and
+// not the link.
+const HOOK_END: &str = "r1-setup-install-hook-route-other-causes-unexamined";
+const HOOK_RELATIVE: &str = "r1-p3-setup-install-hook-undriven-producers-and-causes";
+const HOOK_DEVICE: &str = "r1-p4-setup-hook-linked-to-dev-null-route-names-dev-null";
+
+// The pilot's keys.
 /// A link git does not track, pointed at a regular file inside the repository as the route
 /// says: the re-run refuses it as uncommitted work.
-const REPOINTED_LINK: &str = "r1-setup-untracked-link-repointed-draws-dirty-install-path";
+const UNTRACKED_LINK: &str = "r1-setup-untracked-link-repointed-draws-dirty-install-path";
+/// A committed link pointed at a file in no commit, the link's change committed: the
+/// re-run refuses over the file. Rests on a reading — every case under it is marked.
+const NEW_FILE: &str = "r1-setup-link-pointed-at-uncommitted-file-draws-dirty-install-path";
+/// The hook's link pointed at a script in no commit: the re-run writes and stages the
+/// install, splices its block into the script, and then refuses to commit. Rests on a
+/// reading — every case under it is marked.
+const NEW_SCRIPT: &str =
+    "r1-setup-hook-link-pointed-at-uncommitted-script-draws-dirty-install-path";
+/// On an unborn `HEAD`, the root `.gitignore`'s route followed by its second way out: the
+/// re-run exits 0 and git ignores nothing the secrets floor lists.
+const NO_FLOOR: &str = "r1-setup-seeded-ignore-route-followed-leaves-no-secrets-floor";
+/// A FIFO at an install path `jigc setup` reads before it refuses: the command does not
+/// end.
+const HELD: &str = "r1-setup-fifo-at-install-path-holds-the-command";
+
+/// [`EXPECTED_RED`], an entry a case.
+fn expected_red() -> Vec<ExpectedRed> {
+    EXPECTED_RED
+        .iter()
+        .flat_map(|(key, classification, cases)| {
+            cases.iter().map(|case| ExpectedRed {
+                case,
+                key,
+                classification: *classification,
+            })
+        })
+        .collect()
+}
 
 fn binary() -> &'static Path {
     Path::new(env!("CARGO_BIN_EXE_jigc"))
@@ -200,10 +339,15 @@ fn binary() -> &'static Path {
 #[test]
 fn the_catalog_is_followed_and_the_expected_red_list_is_exact() {
     let cases = cases();
+    let expected = expected_red();
     let followed: Vec<Result<Followed, String>> = std::thread::scope(|scope| {
         let arms: Vec<_> = cases
             .iter()
-            .map(|case| scope.spawn(move || route_case::follow(binary(), case)))
+            .map(|case| {
+                // A case listed as one whose command does not end is waited for seconds.
+                let limit = route_case::limit_of(&expected, case);
+                scope.spawn(move || route_case::follow_within(binary(), case, limit))
+            })
             .collect();
         arms.into_iter()
             .map(|arm| arm.join().expect("a case's runner panicked"))
@@ -234,7 +378,7 @@ fn the_catalog_is_followed_and_the_expected_red_list_is_exact() {
             )),
         }
     }
-    wrong.extend(route_case::differences(EXPECTED_RED, &results));
+    wrong.extend(route_case::differences(&expected, &results));
     assert!(
         wrong.is_empty(),
         "the route catalog and its expected-red list disagree:\n\n  {}\n\nwhat each case \
@@ -325,6 +469,10 @@ pub struct Reading {
     pub derivation: &'static str,
     /// The causes among them that have no case, each with why.
     pub without_case: &'static [(&'static str, Why)],
+    /// **The ways out of the site's route that no case follows**, each with why. A route
+    /// can offer two acts and a clause that turns on git; a cause is followed every such
+    /// way, and a way that cannot be followed at this site is said here.
+    pub not_followed: &'static [(&'static str, Why)],
 }
 
 /// **A code, and the `dynamic` site that mints it.** The list holds that site under no
@@ -1374,7 +1522,7 @@ fn no_act_takes_a_path_and_the_marked_form_is_refused_where_a_path_is_printed() 
     let planted = Case {
         name: "planted-the-links-own-path-by-a-constant",
         acts: &[Act::Remove(Operand::Unprinted(HOOK)), Act::Run(1)],
-        ..setup::CASES[0]
+        ..setup::HOOK_OUT[0]
     };
     match route_case::follow(binary(), &planted) {
         Err(fault) => assert!(
@@ -1490,11 +1638,14 @@ blocking (gates at finalize) · setup.wanted — refused over `a/b`
     assert_eq!(route("setup"), None, "a code is matched whole");
 }
 
-/// The seven classifications, and the order they are read in: nothing is *followed* that
+/// The eight classifications, and the order they are read in: nothing is *followed* that
 /// was not provoked or printed no route; a changed witness outranks a repeated refusal,
-/// which outranks any other failure; and the marked form holds only as *operand implied*.
+/// which outranks any other failure; the marked form holds only as *operand implied*; and
+/// a command that did not end is said where it stopped the case — ahead of *not provoked*
+/// for the refusing command, behind a changed witness and ahead of everything else for a
+/// command of the route.
 #[test]
-fn the_seven_classifications_in_their_order() {
+fn the_classifications_in_their_order() {
     let provoked = Seen {
         provoked: true,
         ..Seen::default()
@@ -1514,6 +1665,15 @@ fn the_seven_classifications_in_their_order() {
         (
             Seen {
                 provoked: false,
+                did_not_end: true,
+                ..everything
+            },
+            Classification::DidNotEnd,
+            "the command did not end",
+        ),
+        (
+            Seen {
+                provoked: false,
                 ..everything
             },
             Classification::NotProvoked,
@@ -1528,9 +1688,21 @@ fn the_seven_classifications_in_their_order() {
             "provoked, no route printed",
         ),
         (
-            everything,
+            Seen {
+                did_not_end: true,
+                ..everything
+            },
             Classification::WitnessChanged,
             "followed, a witness changed",
+        ),
+        (
+            Seen {
+                witness_changed: false,
+                did_not_end: true,
+                ..everything
+            },
+            Classification::DidNotEnd,
+            "the command did not end",
         ),
         (
             Seen {
@@ -1679,6 +1851,14 @@ fn miscounted(cases: &[(&str, &str)], readings: &[Reading]) -> Vec<String> {
             .filter(|(of, _)| *of == site)
             .map(|(_, cause)| *cause)
             .collect();
+        for (way, why) in reading.not_followed {
+            if way.is_empty() || matches!(why, Why::NotConstructible("") | Why::Platform("")) {
+                out.push(format!(
+                    "`{site}`: a way out that is not followed — \"{way}\", `{why}` — does not \
+                     say which, or why"
+                ));
+            }
+        }
         for (cause, why) in reading.without_case {
             if followed.contains(cause) {
                 out.push(format!(
@@ -1717,6 +1897,7 @@ fn every_site_with_a_case_says_what_was_read_and_every_cause_is_answered() {
         causes,
         derivation: "one arm a cause",
         without_case,
+        not_followed: &[],
     };
     // Two cases of one cause follow two ways out of its route, and are one cause.
     let cases = [
@@ -1779,12 +1960,29 @@ fn every_site_with_a_case_says_what_was_read_and_every_cause_is_answered() {
             ("`second`", "does not say what was read"),
         ],
     );
+    says(
+        &miscounted(
+            &cases,
+            &[
+                Reading {
+                    not_followed: &[
+                        ("the link committed", Why::NotConstructible("")),
+                        ("the link pointed elsewhere", Why::Platform("another")),
+                    ],
+                    ..in_order[0]
+                },
+                in_order[1],
+            ],
+        ),
+        &[("`first`", "\"the link committed\"")],
+    );
 
     let mut wrong = Vec::new();
     for table in TABLES {
         let cases: Vec<(&str, &str)> = table
             .cases
             .iter()
+            .flat_map(|group| group.iter())
             .map(|case| (case.site, case.cause))
             .collect();
         wrong.extend(miscounted(&cases, table.readings));
@@ -1936,7 +2134,7 @@ fn a_state_step_plants_what_it_names_and_a_file_act_does_what_the_route_says() {
         },
     ];
     let mut wrong = Vec::new();
-    for case in &planted {
+    for case in planted.iter().chain(&PLANTED_LATER) {
         match route_case::follow(Path::new("/bin/sh"), case) {
             Ok(followed) if followed.classification == Classification::Holds => {}
             Ok(followed) => wrong.push(format!(
@@ -1954,14 +2152,109 @@ fn a_state_step_plants_what_it_names_and_a_file_act_does_what_the_route_says() {
     );
 }
 
+/// The planted cases of the vocabulary the hook's site and the seeded `.gitignore` added: a
+/// link whose target is spelled to the letter; a link pointed at the repository's script —
+/// one the runner writes, and one the case's state planted; and a path git ignores.
+const PLANTED_LATER: [Case; 4] = [
+    Case {
+        name: "planted-a-link-spelled-relatively",
+        state: &[
+            Step::File(Place::Outside("theirs"), "theirs\n"),
+            Step::LinkTo(Place::Repo("relative"), "../outside/theirs"),
+        ],
+        refusing: &[
+            "-c",
+            "test -L relative && test -f relative \
+             && test \"$(readlink relative)\" = ../outside/theirs || exit 0; \
+             printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             '  route: remove the link at `relative`, then re-run \
+             `jigc -c \"test ! -L relative\"`'; exit 1",
+        ],
+        acts: &[Act::Remove(Operand::Span(0)), Act::Run(1)],
+        witnesses: &["theirs"],
+        ..PLANTED
+    },
+    Case {
+        name: "planted-a-link-to-point-at-a-script-the-runner-writes",
+        state: &[Step::Link(Place::Repo("hook"), Place::Outside("nothing"))],
+        refusing: &[
+            "-c",
+            "test -L hook || exit 0; \
+             printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             '  route: point the link at `hook` at a script inside this repository, then \
+             re-run `jigc -c \"test -L hook && test -x hook && ./hook\"`'; exit 1",
+        ],
+        acts: &[Act::PointAtScript(Operand::Span(0)), Act::Run(1)],
+        witnesses: &["nothing"],
+        ..PLANTED
+    },
+    Case {
+        name: "planted-a-link-to-point-at-the-script-the-state-planted",
+        state: &[
+            Step::Script(Place::Repo(route_case::SCRIPT), "#!/bin/sh\nexit 7\n"),
+            Step::Link(Place::Repo("hook"), Place::Outside("nothing")),
+        ],
+        refusing: &[
+            "-c",
+            "test -L hook || exit 0; \
+             printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             '  route: point the link at `hook` at a script inside this repository, then \
+             re-run `jigc -c \"test -L hook && test -x hook && ! ./hook\"`'; exit 1",
+        ],
+        acts: &[Act::PointAtScript(Operand::Span(0)), Act::Run(1)],
+        witnesses: &["nothing"],
+        ..PLANTED
+    },
+    Case {
+        name: "planted-a-path-git-ignores",
+        state: &[Step::File(Place::Repo(".gitignore"), ".env\n")],
+        refusing: &[
+            "-c",
+            "test -f .gitignore || exit 0; \
+             printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             '  route: re-run `jigc -c true`'; exit 1",
+        ],
+        acts: &[Act::Run(0)],
+        holds: &[Check::GitIgnores(".env")],
+        ..PLANTED
+    },
+];
+
+/// **A check that git ignores a path fails where git does not** — the other half of the
+/// planted case above, so that the check is not one that always holds.
+#[test]
+fn a_path_git_does_not_ignore_does_not_hold() {
+    let planted = Case {
+        name: "planted-a-path-git-does-not-ignore",
+        refusing: &[
+            "-c",
+            "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             '  route: re-run `jigc -c true`'; exit 1",
+        ],
+        acts: &[Act::Run(0)],
+        holds: &[Check::GitIgnores(".env")],
+        ..PLANTED
+    };
+    let followed = route_case::follow(Path::new("/bin/sh"), &planted)
+        .expect("the planted case is one the runner follows");
+    assert!(
+        followed.classification == Classification::AnotherFailure
+            && followed.detail.contains("git does not ignore `.env`"),
+        "{}:\n{}",
+        followed.classification,
+        followed.detail,
+    );
+}
+
 /// Every act that takes an operand, with the marked form naming the directory the planted
 /// refusals below are about.
-const MARKED: [&[Act]; 6] = [
+const MARKED: [&[Act]; 7] = [
     &[Act::Remove(Operand::Unprinted("in/the-way"))],
     &[Act::MoveAway(Operand::Unprinted("in/the-way"))],
     &[Act::ReplaceWithDirectory(Operand::Unprinted("in/the-way"))],
     &[Act::PointAtCommitted(Operand::Unprinted("in/the-way"))],
     &[Act::PointAtNew(Operand::Unprinted("in/the-way"))],
+    &[Act::PointAtScript(Operand::Unprinted("in/the-way"))],
     &[Act::Commit(Operand::Unprinted("in/the-way"))],
 ];
 
@@ -2043,6 +2336,7 @@ fn no_file_act_is_done_outside_the_sandbox() {
             Act::ReplaceWithDirectory(Operand::Span(1)),
             Act::PointAtCommitted(Operand::Span(1)),
             Act::PointAtNew(Operand::Span(1)),
+            Act::PointAtScript(Operand::Span(1)),
             Act::Commit(Operand::Span(0)),
         ],
         ..PLANTED
@@ -2057,8 +2351,8 @@ fn no_file_act_is_done_outside_the_sandbox() {
                 .matches("not done — it names nothing inside")
                 .count()
         ),
-        (Classification::AnotherFailure, 5),
-        "all five acts are refused, and the case is red for it:\n{}",
+        (Classification::AnotherFailure, 6),
+        "all six acts are refused, and the case is red for it:\n{}",
         followed.detail,
     );
 }
@@ -2067,8 +2361,8 @@ fn no_file_act_is_done_outside_the_sandbox() {
 /// child no longer than its limit: a product that holds — on a read of a FIFO, say, which
 /// held this suite for ten minutes the first time a case planted one where `jigc setup`
 /// reads before it refuses — is a red case with its reason, and never a suite that does
-/// not come back. The refusing command held is *not provoked*; a command of the route held
-/// is *another failure*. That each was ended at the limit, and did not end by itself after
+/// not come back. Either way the case comes out *the command did not end*, whether it was
+/// the refusing command or one the route prints. That each was ended at the limit, and did not end by itself after
 /// its twenty seconds, is what *did not end* says — the runner says it of a child it ended
 /// and of no other — so the arm reads no clock of its own.
 #[test]
@@ -2089,21 +2383,46 @@ fn a_command_that_does_not_end_is_ended_and_the_case_says_so() {
         acts: &[Act::Run(0)],
         ..PLANTED
     };
-    for (case, expected) in [
-        (held_at_the_door, Classification::NotProvoked),
-        (held_on_the_route, Classification::AnotherFailure),
-    ] {
+    for case in [held_at_the_door, held_on_the_route] {
         let followed = route_case::follow_within(Path::new("/bin/sh"), &case, limit)
             .expect("the planted case is one the runner follows");
         assert!(
-            followed.classification == expected && followed.detail.contains("did not end"),
-            "`{}`: {expected}, and the detail says the command did not end — it came out \
-             {}:\n{}",
+            followed.classification == Classification::DidNotEnd
+                && followed.detail.contains("did not end within 1s"),
+            "`{}`: the command did not end, and the detail says at which limit — it came \
+             out {}:\n{}",
             case.name,
             followed.classification,
             followed.detail,
         );
     }
+
+    // A case that is listed as one whose command does not end is waited for seconds, and
+    // every other case for the standing limit.
+    let listed = [
+        ExpectedRed {
+            case: held_at_the_door.name,
+            key: "r1-a-key",
+            classification: Classification::DidNotEnd,
+        },
+        ExpectedRed {
+            case: held_on_the_route.name,
+            key: "r1-a-key",
+            classification: Classification::AnotherFailure,
+        },
+    ];
+    assert_eq!(
+        (
+            route_case::limit_of(&listed, &held_at_the_door),
+            route_case::limit_of(&listed, &held_on_the_route),
+            route_case::limit_of(&[], &held_at_the_door),
+        ),
+        (
+            route_case::EXPECTED_HOLD,
+            route_case::LIMIT,
+            route_case::LIMIT
+        ),
+    );
 }
 
 /// **The limit a caller hands the runner ends the command under test, and never the
@@ -2127,7 +2446,7 @@ fn the_handed_limit_ends_the_command_under_test_and_never_the_sandboxs_setup() {
     )
     .expect("the planted case is one the runner follows");
     assert!(
-        followed.classification == Classification::NotProvoked
+        followed.classification == Classification::DidNotEnd
             && followed.detail.contains("did not end within 1s"),
         "the state was planted and the refusing command ended at the handed limit — it came \
          out {}:\n{}",

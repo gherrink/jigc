@@ -30,7 +30,7 @@
 //! placed by a child process, as that section's Linux rule asks of a file that may be
 //! executed. The refusing argv runs on the binary **handed in** — the frame names no
 //! binary of its own, so the same case runs on another release's. Then the acts, then the
-//! checks, then the witnesses, and one of seven [`Classification`]s.
+//! checks, then the witnesses, and one of eight [`Classification`]s.
 //!
 //! **Where a route names an act and not its object, the runner owns the object.** *Move
 //! the directory out of the way* says where from and never where to; *point it at a regular
@@ -40,15 +40,20 @@
 //! re-pointed at one of two files of the runner's, the one the sandbox's repository holds
 //! committed ([`COMMITTED`]) or one written new, in no commit ([`NEW_FILE`]). Which of the
 //! two a route means is a reading, and a case says which it followed
-//! ([`Act::PointAtCommitted`], [`Act::PointAtNew`]).
+//! ([`Act::PointAtCommitted`], [`Act::PointAtNew`]). Where the route asks for *a script*,
+//! the file is [`SCRIPT`] ([`Act::PointAtScript`]): the one the case's state planted there,
+//! committed or not, or one the runner writes new.
 //!
 //! **An act never leaves the sandbox.** The runner does what a route says with a path the
 //! product printed; a route that names a path outside the sandbox is not followed there —
 //! the act is recorded as failed and says why.
 //!
 //! **A child is waited for no longer than a limit** ([`LIMIT`]). A product that holds —
-//! on a read of a FIFO, which does not return — is ended and the case says so: the refusing
-//! command held is *not provoked*, a command of the route held is *another failure*. **A
+//! on a read of a FIFO, which does not return — is ended and the case says so, with a
+//! classification of its own: *the command did not end*, whether it was the refusing
+//! command or one a route prints. A case that is **listed** as one that does not end is
+//! waited for no longer than [`EXPECTED_HOLD`] ([`limit_of`]), so a known hold costs a run
+//! seconds and not the standing limit. **A
 //! limit a caller hands in ([`follow_within`]) is the limit of the commands under test** —
 //! the refusing command and the commands a route prints — and of nothing else: the
 //! sandbox's own `git` children, a state's and an act's included, are the runner's and are
@@ -82,16 +87,23 @@ pub enum Place {
 }
 
 /// The one file the sandbox's repository holds committed before a case's state is planted,
-/// from the repository root — what [`Act::PointAtCommitted`] points a link at.
+/// from the repository root — what [`Act::PointAtCommitted`] points a link at. Its body is
+/// [`BODY`].
 pub const COMMITTED: &str = "README.md";
 
 /// The file [`Act::PointAtNew`] writes and points a link at, from the repository root: a
 /// regular file inside the repository that is in no commit.
 pub const NEW_FILE: &str = "route-case-new-file";
 
-/// The body of [`NEW_FILE`] — one that is valid wherever a route can ask for *a regular
-/// file inside this repository*: an empty JSON object, which is also a line of text.
-const NEW_BODY: &str = "{}\n";
+/// The body of [`COMMITTED`] and of [`NEW_FILE`] — one that is valid wherever a route can
+/// ask for *a regular file inside this repository*: an empty JSON object, which is also a
+/// line of text.
+const BODY: &str = "{}\n";
+
+/// The script [`Act::PointAtScript`] points a link at, from the repository root. A case's
+/// state may plant it — and commit it; where none stands, the runner writes one that exits
+/// 0.
+pub const SCRIPT: &str = "route-case-script";
 
 /// One file act of a case's **state** — what stands before the refusing command runs. A
 /// state names its paths itself; only an [`Act`] may not.
@@ -102,6 +114,9 @@ pub enum Step {
     /// A symbolic link at the first place whose target is the second place's absolute
     /// path. The target need not exist.
     Link(Place, Place),
+    /// A symbolic link at the place whose target is these bytes, to the letter — a
+    /// relative target, or a path that is no place of the sandbox.
+    LinkTo(Place, &'static str),
     /// A regular file with this body, not executable.
     File(Place, &'static str),
     /// A directory, with those on the way to it.
@@ -148,8 +163,11 @@ pub enum Act {
     /// Point the link the operand names at a regular file inside the repository that is
     /// new — [`NEW_FILE`], which the runner writes and no commit holds.
     PointAtNew(Operand),
-    /// Commit the change at the path the operand names, and at no other path — what a
-    /// route asks for with *committing the removal where git tracks the entry*.
+    /// Point the link the operand names at a script inside the repository — [`SCRIPT`]:
+    /// the one the case's state planted there, or one the runner writes where none stands.
+    PointAtScript(Operand),
+    /// Commit the change at the path the operand names — what a route asks for with
+    /// *committing the removal where git tracks the entry*.
     Commit(Operand),
 }
 
@@ -162,6 +180,7 @@ impl Act {
             | Act::ReplaceWithDirectory(operand)
             | Act::PointAtCommitted(operand)
             | Act::PointAtNew(operand)
+            | Act::PointAtScript(operand)
             | Act::Commit(operand) => Some(operand),
             Act::Run(_) => None,
         }
@@ -175,6 +194,9 @@ pub enum Check {
     RegularFile(Place),
     /// The entry at this place is a directory — not a link to one.
     Directory(Place),
+    /// git ignores this path, from the repository root — asked of git itself
+    /// (`git check-ignore`), which is what says whether an ignore file is in force.
+    GitIgnores(&'static str),
 }
 
 /// One case of the catalog: one refusal site in one cause.
@@ -230,6 +252,7 @@ pub enum Classification {
     SameRefusalAgain,
     WitnessChanged,
     AnotherFailure,
+    DidNotEnd,
 }
 
 impl Classification {
@@ -242,6 +265,7 @@ impl Classification {
             Classification::SameRefusalAgain => "followed, the same refusal again",
             Classification::WitnessChanged => "followed, a witness changed",
             Classification::AnotherFailure => "followed, another failure",
+            Classification::DidNotEnd => "the command did not end",
         }
     }
 
@@ -278,19 +302,29 @@ pub struct Seen {
     pub failed: bool,
     /// An act took the marked form.
     pub implied: bool,
+    /// A command under test — the refusing command, or one the route prints — had not
+    /// ended at its limit and was ended by the runner.
+    pub did_not_end: bool,
 }
 
 /// The one classification of what was seen. **The order is the rule**: a witness that
 /// changed outranks everything a followed route can otherwise come to — a lost file is
 /// the worst of them, and the refusal that usually follows it would hide it — and a
-/// repeated refusal outranks any other failure.
+/// repeated refusal outranks any other failure. **A command that did not end is said
+/// where it stopped the case**: the refusing command held says nothing of a refusal, so
+/// it is read before *not provoked*; a command of the route held is read behind a changed
+/// witness, which it must not hide, and ahead of everything else a followed route comes to.
 pub fn classify(seen: &Seen) -> Classification {
-    if !seen.provoked {
+    if seen.did_not_end && !seen.provoked {
+        Classification::DidNotEnd
+    } else if !seen.provoked {
         Classification::NotProvoked
     } else if !seen.route_printed {
         Classification::NoRoutePrinted
     } else if seen.witness_changed {
         Classification::WitnessChanged
+    } else if seen.did_not_end {
+        Classification::DidNotEnd
     } else if seen.same_refusal {
         Classification::SameRefusalAgain
     } else if seen.failed {
@@ -309,6 +343,26 @@ pub struct ExpectedRed {
     pub case: &'static str,
     pub key: &'static str,
     pub classification: Classification,
+}
+
+/// How long a case **listed** as one whose command does not end is waited for. A known
+/// hold is then seconds of a run and not the standing limit. Its price, declared: on a
+/// machine so loaded that a command which *would* end takes longer than this, a fixed hold
+/// still reads as held — a fix is masked there, and no green case is ever turned red by it,
+/// since an unlisted case has the standing limit.
+pub const EXPECTED_HOLD: Duration = Duration::from_secs(5);
+
+/// The limit `case`'s commands under test are waited for: [`EXPECTED_HOLD`] where
+/// `expected` lists it as [`Classification::DidNotEnd`], and [`LIMIT`] otherwise.
+pub fn limit_of(expected: &[ExpectedRed], case: &Case) -> Duration {
+    let held = |entry: &ExpectedRed| {
+        entry.case == case.name && entry.classification == Classification::DidNotEnd
+    };
+    if expected.iter().any(held) {
+        EXPECTED_HOLD
+    } else {
+        LIMIT
+    }
 }
 
 /// Every way `expected` and what the cases came to disagree — empty when the list is
@@ -503,7 +557,7 @@ impl Sandbox {
         sandbox.git(&["config", "user.name", "Route Case"]);
         sandbox.git(&["config", "user.email", "route-case@example.com"]);
         sandbox.git(&["config", "user.useConfigOnly", "true"]);
-        fs::write(sandbox.repo().join(COMMITTED), "a repository\n").expect("write a file");
+        fs::write(sandbox.repo().join(COMMITTED), BODY).expect("write a file");
         sandbox.git(&["add", COMMITTED]);
         sandbox.git(&["commit", "-q", "-m", "initial"]);
         sandbox
@@ -606,30 +660,19 @@ impl Sandbox {
         for (at, step) in state.iter().enumerate() {
             match *step {
                 Step::Script(place, body) => {
-                    let path = self.at(place);
-                    fs::create_dir_all(path.parent().expect("a script has a parent"))
-                        .expect("create the script's directory");
-                    // The Linux rule: a file that may be executed is written by a child
-                    // process, so no thread of this one ever holds its write handle and
-                    // no sibling's fork can inherit one (`tooling-tests/placed_executable.rs`).
-                    let staged = self.staging().join(format!("step-{at}"));
-                    fs::write(&staged, body).expect("stage the script");
-                    let placed = Command::new("cp")
-                        .arg("--")
-                        .arg(&staged)
-                        .arg(&path)
-                        .stdin(Stdio::null())
-                        .status()
-                        .expect("run cp");
-                    assert!(placed.success(), "cp to place {}", path.display());
-                    fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
-                        .expect("make the script executable");
+                    self.place_script(&self.at(place), body, &format!("step-{at}"));
                 }
                 Step::Link(link, target) => {
                     let path = self.at(link);
                     fs::create_dir_all(path.parent().expect("a link has a parent"))
                         .expect("create the link's directory");
                     symlink(self.at(target), &path).expect("plant the link");
+                }
+                Step::LinkTo(link, target) => {
+                    let path = self.at(link);
+                    fs::create_dir_all(path.parent().expect("a link has a parent"))
+                        .expect("create the link's directory");
+                    symlink(target, &path).expect("plant the link");
                 }
                 Step::File(place, body) => {
                     let path = self.at(place);
@@ -654,6 +697,27 @@ impl Sandbox {
                 Step::Git(args) => self.git(args),
             }
         }
+    }
+
+    /// Place an executable script at `path`, as the Linux rule asks of a file that may be
+    /// executed: written by a child process, so no thread of this one ever holds its write
+    /// handle and no sibling's fork can inherit one (`tooling-tests/placed_executable.rs`).
+    /// `tag` names the staged copy.
+    fn place_script(&self, path: &Path, body: &str, tag: &str) {
+        fs::create_dir_all(path.parent().expect("a script has a parent"))
+            .expect("create the script's directory");
+        let staged = self.staging().join(tag);
+        fs::write(&staged, body).expect("stage the script");
+        let placed = Command::new("cp")
+            .arg("--")
+            .arg(&staged)
+            .arg(path)
+            .stdin(Stdio::null())
+            .status()
+            .expect("run cp");
+        assert!(placed.success(), "cp to place {}", path.display());
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+            .expect("make the script executable");
     }
 
     fn witnesses(&self, names: &[&str]) -> Vec<Option<Vec<u8>>> {
@@ -705,6 +769,7 @@ impl Sandbox {
                     format!("point the link `{named}` at `{COMMITTED}` ({how})")
                 }
                 Act::PointAtNew(_) => format!("point the link `{named}` at `{NEW_FILE}` ({how})"),
+                Act::PointAtScript(_) => format!("point the link `{named}` at `{SCRIPT}` ({how})"),
                 Act::Commit(_) => format!("commit the change at `{named}` ({how})"),
                 Act::Run(_) => unreachable!("a run takes no operand"),
             };
@@ -728,9 +793,16 @@ impl Sandbox {
                 Act::PointAtNew(_) => self
                     .a_link(&path)
                     .and_then(|()| {
-                        fs::write(self.repo().join(NEW_FILE), NEW_BODY).map_err(|e| e.to_string())
+                        fs::write(self.repo().join(NEW_FILE), BODY).map_err(|e| e.to_string())
                     })
                     .and_then(|()| self.point(&path, NEW_FILE)),
+                Act::PointAtScript(_) => self.a_link(&path).and_then(|()| {
+                    let script = self.repo().join(SCRIPT);
+                    if fs::symlink_metadata(&script).is_err() {
+                        self.place_script(&script, "#!/bin/sh\nexit 0\n", "the-runners-script");
+                    }
+                    self.point(&path, SCRIPT)
+                }),
                 Act::Commit(_) => self.commit(named),
                 Act::Run(_) => unreachable!("a run takes no operand"),
             };
@@ -761,15 +833,16 @@ impl Sandbox {
         if ran.success() {
             return Ok(format!("run `{line}` (span {at}): exit 0"));
         }
-        Ok(
-            if ran.held.is_none() && refusal_in(&ran.said, code).is_some() {
-                seen.same_refusal = true;
-                format!("run `{line}` (span {at}): {}, `{code}` again", ran.exit())
-            } else {
-                seen.failed = true;
-                format!("run `{line}` (span {at}): {}\n{}", ran.exit(), ran.said)
-            },
-        )
+        Ok(if ran.held.is_some() {
+            seen.did_not_end = true;
+            format!("run `{line}` (span {at}): {}\n{}", ran.exit(), ran.said)
+        } else if refusal_in(&ran.said, code).is_some() {
+            seen.same_refusal = true;
+            format!("run `{line}` (span {at}): {}, `{code}` again", ran.exit())
+        } else {
+            seen.failed = true;
+            format!("run `{line}` (span {at}): {}\n{}", ran.exit(), ran.said)
+        })
     }
 
     /// `Ok` where the entry at `path` is a link, asked without following it.
@@ -809,12 +882,33 @@ impl Sandbox {
         Ok("the link leads there now".to_string())
     }
 
-    /// Commit the change at the path `named`, and at no other path.
+    /// Commit the change at the path `named`: the index's entries there are dropped, what
+    /// stands there now is added, and the index is committed.
+    ///
+    /// **Three plain steps, and no pathspec on the commit.** `git add --all -- <path>` and
+    /// `git commit -- <path>` both read the path afresh against the entry the index had, and
+    /// where a committed link was replaced by a directory git takes the directory for a
+    /// repository of its own — *does not have a commit checked out* — or does not, by the
+    /// timestamps of the moment (driven: the same steps failed and passed). Dropping the
+    /// entry first leaves nothing to compare with. The price: the commit carries whatever
+    /// else the index held, which in a case's sandbox is nothing but the sandbox's own first
+    /// file where a state made `HEAD` unborn.
     fn commit(&self, named: &str) -> Result<String, String> {
-        for args in [
-            &["add", "--all", "--", named][..],
-            &["commit", "-q", "-m", "follow the route", "--", named][..],
-        ] {
+        let mut steps: Vec<Vec<&str>> = vec![vec![
+            "rm",
+            "-q",
+            "-r",
+            "-f",
+            "--cached",
+            "--ignore-unmatch",
+            "--",
+            named,
+        ]];
+        if fs::symlink_metadata(self.repo().join(named)).is_ok() {
+            steps.push(vec!["add", "--", named]);
+        }
+        steps.push(vec!["commit", "-q", "-m", "follow the route"]);
+        for args in &steps {
             let ran = self.run(self.child(Path::new("git")).args(args), LIMIT);
             if !ran.success() {
                 return Err(format!("git {args:?}: {}\n{}", ran.exit(), ran.said));
@@ -839,6 +933,18 @@ impl Sandbox {
                     Ok(())
                 } else {
                     Err(format!("`{}` is no directory", path.display()))
+                }
+            }
+            Check::GitIgnores(path) => {
+                let ran = self.run(
+                    self.child(Path::new("git"))
+                        .args(["check-ignore", "-q", "--", path]),
+                    LIMIT,
+                );
+                if ran.success() {
+                    Ok(())
+                } else {
+                    Err(format!("git does not ignore `{path}` ({})", ran.exit()))
                 }
             }
         }
@@ -874,6 +980,7 @@ pub fn follow_within(binary: &Path, case: &Case, under_test: Duration) -> Result
     let found = refusal_in(&refused.said, code);
     let mut seen = Seen {
         provoked: found.is_some() && refused.held.is_none() && !refused.success(),
+        did_not_end: refused.held.is_some(),
         ..Seen::default()
     };
     let mut detail = vec![format!(
@@ -917,7 +1024,7 @@ pub fn follow_within(binary: &Path, case: &Case, under_test: Duration) -> Result
             let done = sandbox.perform(binary, *act, &spans, code, &mut seen)?;
             detail.push(done);
         }
-        if !seen.same_refusal && !seen.failed {
+        if !seen.same_refusal && !seen.failed && !seen.did_not_end {
             for check in case.holds {
                 if let Err(why) = sandbox.check(*check) {
                     seen.failed = true;

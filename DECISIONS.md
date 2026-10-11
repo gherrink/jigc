@@ -2,6 +2,50 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The route catalog follows a cause every way its route offers: 138 cases over eleven sites of `setup`, 55 of them red; the hook's site in full; a command that does not end is a classification of its own; and no new site (the plan's step `P3`, second part; ruling 3 of 2026-10-10)
+
+**What.** [route_catalog/setup.rs](crates/cli/tests/route_catalog/setup.rs) rewritten as groups — a group a cause, a case a way out of its route; the frame grown again ([route_case.rs](crates/cli/tests/support/route_case.rs)); the arms and the expected-red list in [route_catalog.rs](crates/cli/tests/route_catalog.rs); the findings file rewritten ([route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md)). No product source changes and nothing is fixed. **The owed list is unchanged — 25 rows under `P3`**: the three things below filled the commit before a new site was whole.
+
+**1 — The ways out, at the ten sites already done.** Every red case of the first part stood on a route's second act or on its clause about git, and both had been followed at one end of one site. Now each cause is followed every way its route offers:
+
+- **a link at a merged-into file** (`CLAUDE.md`, `.claude/settings.json`), at each of the four ends `link_end` refuses, **six ways**: removed, pointed at the repository's committed file, pointed at a new file — each with the link untracked, and with it committed and the change committed;
+- **the root `.gitignore` on an unborn `HEAD`**, at the four ends, **three ways**: removed, pointed at a new file, and the same with the link staged and the change committed;
+- **an entry in the way of a replaced file**, and a link on the way to one: by its one act, untracked and committed.
+
+The ten sites go from 46 cases to **110**: 62 more by ways, 2 for the holds below. Red among the 110: **34** (4 before) — 16 under `r1-setup-untracked-link-repointed-draws-dirty-install-path`, 8 under `r1-setup-link-pointed-at-uncommitted-file-draws-dirty-install-path` (every one marked `doubt`), 8 under the floor's key, 2 held. **None is on a first way out**: removing the entry holds everywhere it was driven, committed or not. Not followed, with the reason in the site's reading: a FIFO committed (git tracks none); the joined route of two links by its second way (the runner has one file of each kind to point at, and two links pointed at one file make the install's own writes meet in it — driven); a committed file to point at on an unborn `HEAD` (there is none); a staged link removed and *the removal committed* (nothing to commit — driven). **A replaced file's link is followed at one end**: the callee asks what the entry is and never where it leads.
+
+**2 — The hook's site in full: 2 causes become 9, 2 cases become 28, 21 red.** Read now: `display_hook_path`, `resolve_hooks_dir`, `precommit_hook_in`. **`display_hook_path` resolves the link before it words the path**, so the route names the link only where the link leads to nothing; wherever it leads anywhere, the route names **the end** as *the link*. Causes: the default hooks directory with the link leading to nothing, to a script (spelled absolutely, and relatively), to a directory, to `/dev/null`; and `core.hooksPath` inside the repository and outside it, each with the link leading to nothing and out to a script. Each is followed three ways — removed, pointed at a new script, pointed at a committed one. Under the canary's three keys: 18 (the first key 12, the relative link 3, `/dev/null` 3). Under a new one, 3, marked `doubt`: `r1-setup-hook-link-pointed-at-uncommitted-script-draws-dirty-install-path` — the link pointed at a script in no commit, and the re-run **writes and stages the install, splices its block into the script, and then refuses to commit**.
+
+**3 — The two things seen with no case.**
+
+- **A command that does not end is a classification, the eighth: *the command did not end*.** *Why:* the expected-red list is strict by classification, and *not provoked* could not tell a command that held from one that exited 0 and said nothing — a fix that turned the hold into a silent exit would have left the entry satisfied. It is read ahead of *not provoked* for the refusing command, and behind a changed witness and ahead of everything else for a command of the route. **A case listed under it is waited for five seconds, not two minutes** (`EXPECTED_HOLD`), so a known hold costs a run seconds. *The price, declared:* on a machine where a command that would end takes longer than five seconds, a fixed hold still reads as held — a fix is masked there; no green case can be turned red by it, since an unlisted case keeps the standing limit. Two cases, under a new key, `r1-setup-fifo-at-install-path-holds-the-command`; the canary's `r1-p4-named-pipe-at-managed-home-holds-reading-doors` is kin at another door, and is about a managed home, which neither of these paths is.
+- **The secrets floor through a link is a case: `Check::GitIgnores`.** After the route of the seeded `.gitignore` is followed, git must ignore `.env` — asked of git itself. No route prints that; it is the outcome the refused member exists for, as *the install's file is a regular file* is for every other case. Red, 8 cases, under `r1-setup-seeded-ignore-route-followed-leaves-no-secrets-floor` — by two roads: git reads no ignore file through a link, and where the route's own commit clause is followed the repository's first commit is made, `HEAD` is born and nothing is seeded at all.
+
+**Doubts, for the human — two readings each, eleven cases.**
+
+- *A regular file inside this repository* (8 cases): any regular file in the checkout, one in no commit included (followed: red) — or one the repository already holds committed (the case beside each: green).
+- *A script inside this repository* (3 cases): the same two readings, of a script.
+
+**The frame, grown — each piece red first** (against a runner that declared it and did nothing; run on a copy of this tree while the previous commit's gate held the worktree).
+
+- A link whose target is spelled to the letter; a link pointed at the repository's script; the check that git ignores a path, with an arm that it fails where git does not.
+- **The runner's committed file is an empty JSON object**, as its new file already was: valid wherever a route asks for *a regular file inside this repository*, a settings file included.
+- **An act's commit is three plain steps with no pathspec on the commit** — drop the index's entries at the path, add what stands there, commit the index. `git add --all -- <path>` and `git commit -- <path>` read the path against the entry the index had, and over a committed link replaced by a directory git answered *does not have a commit checked out* — or did not, by the timestamps of the moment: the same steps failed in one run and passed in the next.
+- A reading names the ways out that no case follows, each with why; and a command's cases are groups.
+
+**Not done, and why: the next sites.** The list's next two are `locate_finding`'s — outside a repository, and `$HOME` unset. Read, not written: a case there needs the frame to run a command somewhere other than the repository, to take a variable out of a child's environment, to run the refusing command again where a route says *run jigc* and prints no command line, and to give a repository made by the route's own `git init` an identity the mask does not carry. Four pieces, each owed a red arm; none is in this commit. The four profile sites behind them look reachable through `JIGC_ADAPTERS_DIR` — by reading `load_profile`, not driven — which needs the second of those pieces too.
+
+**The suite's seconds.** `cargo test -p jigc --test g_migration route_catalog::`, 20 arms, 138 cases: 33 s and 64 s on this machine with other lanes' runs loading it (load average 60 and above). No quiet run was to be had; the first part's 8.7 s for 48 cases was a quiet one, so the two are not comparable.
+
+**Not established.**
+
+- **Linux**, for this commit: the two runs follow it.
+- **The previous release.**
+- **A quiet machine's seconds**, and whether five seconds masks a fix on a loaded one.
+- **A linked worktree's hooks directory**, and a hooks directory git cannot resolve — neither was driven.
+- **That the floor's second road is a defect and not the design**: on a born `HEAD` `jigc setup` seeds no floor on purpose. The case says that the route's own clause is what makes `HEAD` born.
+- **Which reading the eleven doubts want.**
+
 ## 2026-10-11 — The route catalog's runner: a handed limit ends the command under test and never the sandbox's own setup; and the Linux lines of the first ten sites
 
 **What.** [route_case.rs](crates/cli/tests/support/route_case.rs): the limit a caller hands `follow_within` is the limit of the **commands under test** — the refusing command and the commands a route prints. Every other child is the runner's own — the sandbox's `git` setup, a state's `git` step, an act's commit — and is waited for under the standing two minutes. One arm in [route_catalog.rs](crates/cli/tests/route_catalog.rs) holds it.
