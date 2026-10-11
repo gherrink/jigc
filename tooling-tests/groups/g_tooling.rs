@@ -52,6 +52,8 @@ mod placed_executable;
 mod record_foreign_arm;
 #[path = "../release_pipeline_fence.rs"]
 mod release_pipeline_fence;
+#[path = "../rig_processes.rs"]
+mod rig_processes;
 #[path = "../seed_ledger.rs"]
 mod seed_ledger;
 #[path = "../stabilize_harness_fence.rs"]

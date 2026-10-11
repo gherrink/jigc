@@ -1,0 +1,56 @@
+| confirmed: run | key | hop | code (* = named only by the verifier's basis) | other rows naming it at launch | other agents | whole reports naming it at launch |
+|---|---|---:|---|---:|---:|---:|
+| v04 | `r1-setup-installs-outside-work-tree` | 0 | `setup.install-hook`* | 0 | 0 | 3 |
+| v15 | `r1-setup-install-hook-route-other-causes-unexamined` | 1 | `setup.install-hook` | 0 | 0 | 4 |
+| v17 | `r1-doc-show-lowercase-address-prints-path-no-file-has` | 1 | `store.unparseable` | 0 | 0 | 1 |
+|  |  |  | `migrate.source-untracked`* | 0 | 0 | 0 |
+| v18 | `r1-adoption-route-for-non-doc-id-name-not-run` | 1 | `conformance.section-missing` | 0 | 0 | 3 |
+|  |  |  | `ingest.unaddressable-identity` | 0 | 0 | 1 |
+|  |  |  | `write.non-reparseable`* | 0 | 0 | 0 |
+| v24 | `r1-p3-not-staged-route-task-less-read-refuses` | 2 | `store.not-staged`* | 0 | 0 | 4 |
+|  |  |  | `store.unparseable`* | 1 | 1 | 3 |
+| v34 | `r1-p3-setup-writability-route-printed-for-other-causes` | 2 | none | - | - | - |
+| v35 | `r1-p3-uninstall-writability-route-not-driven` | 2 | `uninstall.remove-precommit` | 1 | 2 | 2 |
+| v37 | `r1-p3-setup-install-hook-undriven-producers-and-causes` | 2 | `setup.install-hook` | 1 | 1 | 5 |
+| v40 | `r1-p3-migrate-case-variant-path-says-git-holds-no-copy` | 2 | `migrate.source-untracked`* | 1 | 1 | 2 |
+| v43 | `r1-p3-lowercase-address-other-doors-not-driven` | 2 | `finalize.commit-rejected`* | 0 | 0 | 0 |
+| v49 | `r1-p3-doc-show-task-no-committed-copy-of-stranded-doc` | 2 | `store.not-staged`* | 0 | 0 | 4 |
+| v59 | `r1-p3-amend-refusal-route-spells-c-quoted-name-as-path` | 2 | `finalize.amend-index-dirty`* | 0 | 0 | 1 |
+| w02 | `r1-p4-unparseable-adoption-route-refuses-untracked-source` | 3 | `migrate.source-untracked` | 3 | 3 | 8 |
+|  |  |  | `store.unparseable` | 1 | 1 | 8 |
+| w03 | `r1-p4-not-staged-route-mode-000-repro-b-not-redriven` | 3 | `store.not-found` | 5 | 4 | 18 |
+|  |  |  | `store.not-staged`* | 3 | 3 | 9 |
+| w04 | `r1-p4-not-staged-block-other-unservable-states-not-enumerated` | 3 | `store.not-found`* | 6 | 4 | 18 |
+|  |  |  | `store.not-staged`* | 3 | 3 | 9 |
+|  |  |  | `store.unparseable`* | 2 | 1 | 8 |
+| w05 | `r1-p4-nothing-staged-route-git-add-fails-unreadable-file` | 3 | `finalize.nothing-staged` | 0 | 0 | 2 |
+| w08 | `r1-p4-not-found-not-staged-routes-loop-at-resume-door` | 3 | `store.not-found` | 5 | 4 | 18 |
+|  |  |  | `store.not-staged` | 2 | 2 | 9 |
+| w09 | `r1-p4-reconciliation-rename-route-jigc-rename-not-found` | 3 | `reconciliation.rename` | 2 | 2 | 8 |
+|  |  |  | `store.not-found` | 5 | 4 | 18 |
+
+| did not reproduce: run | key | hop | code (* = named only by the verifier's basis) | other rows naming it at launch | other agents | whole reports naming it at launch |
+|---|---|---:|---|---:|---:|---:|
+| v01 | `canary-seeded-claim` | 0 | none | - | - | - |
+| v08 | `r1-finalize-may-commit-redirected-log-record` | 0 | none | - | - | - |
+| v12 | `r1-staging-area-writers-not-enumerated` | 1 | none | - | - | - |
+| v20 | `r1-orphaned-doc-route-after-strand-not-run` | 1 | `file-state.orphaned-doc` | 0 | 0 | 1 |
+| v29 | `r1-p3-staging-area-writers-undriven-and-unread-remainder` | 2 | none | - | - | - |
+| v42 | `r1-p3-doc-show-lowercase-address-case-sensitive-volume` | 2 | `store.not-found`* | 2 | 2 | 7 |
+| v48 | `r1-p3-adoption-route-title-upper-undriven-cells` | 2 | none | - | - | - |
+| v54 | `r1-p3-unregistered-doc-route-after-unmanage-not-run` | 2 | `file-state.unregistered-doc` | 0 | 0 | 1 |
+| v55 | `r1-p3-finalize-after-orphaned-doc-route-arms-not-driven` | 2 | `file-state.un-baselined` | 0 | 0 | 1 |
+|  |  |  | `schema-conformance.ref-resolves`* | 0 | 0 | 0 |
+| v56 | `r1-p3-orphaned-doc-placement-arm-and-json-not-driven` | 2 | `file-state.orphaned-doc`* | 2 | 1 | 3 |
+
+| verdict | runs | row carried a code before launch | a code by row or basis | another agent's row had named one of its codes before launch: none | 1 agent | 2 | 3+ | an earlier whole report had named one |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| confirmed | 18 | 10 | 17 | 9 | 3 | 1 | 5 | 16 |
+| did not reproduce | 10 | 3 | 5 | 8 | 1 | 1 | 0 | 5 |
+| reproduced, no break | 48 | 12 | 17 | 44 | 2 | 2 | 0 | 14 |
+| halted | 4 | 0 | 0 | 4 | 0 | 0 | 0 | 0 |
+
+rows carrying a code by hop (row text / row + bullet): {0: '2 / 2 of 34', 1: '5 / 7 of 56', 2: '7 / 11 of 73', 3: '27 / 45 of 209'}
+rows carrying a code by grade (row + bullet): {'breaks': '3 of 7', 'unclear': '46 of 171', 'needs-bound': '3 of 47', 'no-break': '13 of 147'}
+codes: row depth 28 (in sites.tsv 21) · row + bullet 40 (in sites.tsv 33)
+refs-post-hoc named in verifier reports: 42 of 80; store.not-found named in 18 of those and 6 of the rest

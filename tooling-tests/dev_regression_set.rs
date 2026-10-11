@@ -1929,6 +1929,7 @@ fn what_a_call_names_wrongly_is_refused_with_its_word() {
     let absent = format!("{scratch}/absent");
     let inside = inside.to_str().expect("a UTF-8 path");
     let repo = rig.root.to_str().expect("a UTF-8 path");
+    let kept_inside = format!("{repo}/kept");
     let run = |previous, candidate, scratch| {
         vec![
             "run",
@@ -2003,6 +2004,20 @@ fn what_a_call_names_wrongly_is_refused_with_its_word() {
             "scratch",
             "lies inside the repository",
         ),
+        (
+            [run(previous, candidate, scratch), vec!["--baseline"]].concat(),
+            "usage",
+            "--baseline",
+        ),
+        (
+            [
+                run(previous, candidate, scratch),
+                vec!["--baseline", &kept_inside],
+            ]
+            .concat(),
+            "scratch",
+            "the directory of the kept baseline",
+        ),
     ];
     for (args, word, saying) in rows {
         let called = rig.tool(&args);
@@ -2021,6 +2036,10 @@ fn what_a_call_names_wrongly_is_refused_with_its_word() {
         0,
         "a refused run mints nothing"
     );
+    assert!(
+        !Path::new(&kept_inside).exists(),
+        "and makes no directory for a baseline it refused to keep there"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -2035,7 +2054,9 @@ fn what_a_call_names_wrongly_is_refused_with_its_word() {
 ///
 /// *A run* is where it is faithful to what was measured. **A run that is not made from
 /// the recorded build copies `deps/jigc-…` back over `debug/jigc`** — cargo finds the unit
-/// fresh and uplifts it again. Then the report: **chosen by the bytes at the path**,
+/// fresh and uplifts it again. A run that is made from it reads the target directory out
+/// of the record it is handed, as the runner does: on a kept baseline this call built
+/// nothing. Then the report: **chosen by the bytes at the path**,
 /// `on-previous.xml` or `on-candidate.xml` of the directory `FAKE_CARGO` names, written
 /// where the tool config's store says — which it reads as a strict string, so a path the
 /// tool did not escape is a run with no report.
@@ -2044,6 +2065,9 @@ fn what_a_call_names_wrongly_is_refused_with_its_word() {
 /// `same-binary`, `unnamed`, `disturbed` — another file at the path from the candidate's
 /// build until the baseline's run puts the right one back — and `put-back` — the previous
 /// release's binary copied back during the candidate's run, whatever path the run took.
+///
+/// *Asked what the runner is* it says what `FAKE_RUNNER` holds — a call only a run that
+/// names a kept baseline makes.
 const FAKE_CARGO: &str = r#"#!/usr/bin/env python3
 import json, os, shutil, sys
 
@@ -2110,6 +2134,8 @@ elif argv[:2] == ["nextest", "list"]:
     }))
 elif argv[:1] == ["metadata"]:
     print("{}")
+elif argv == ["nextest", "--version"]:
+    print(os.environ["FAKE_RUNNER"])
 elif argv[:1] == ["build"]:
     if "fail-candidate" in mode:
         fail("jigc")
@@ -2120,10 +2146,15 @@ elif argv[:1] == ["build"]:
         with open(os.path.join(built(), "debug", "jigc"), "wb") as binary:
             binary.write(b"something else\n")
 elif argv[:2] == ["nextest", "run"]:
-    baked = os.path.join(built(), "debug", "jigc")
+    if "--binaries-metadata" in argv:
+        with open(flag("--binaries-metadata")) as handed:
+            recorded = json.load(handed)["rust-build-meta"]["target-directory"]
+    else:
+        recorded = built()
+    baked = os.path.join(recorded, "debug", "jigc")
     put_back = "put-back" in mode and flag("--profile") == "regression-candidate"
     if "--binaries-metadata" not in argv or put_back or "disturbed" in mode:
-        shutil.copyfile(os.path.join(built(), "debug", "deps", "jigc-0f0f"), baked)
+        shutil.copyfile(os.path.join(recorded, "debug", "deps", "jigc-0f0f"), baked)
     store = None
     for line in open(flag("--tool-config-file").split(":", 1)[1]):
         if line.startswith("dir = "):
@@ -2146,25 +2177,62 @@ struct Driven {
     calls: Vec<String>,
 }
 
+/// A stand-in for the compiler: it says what `FAKE_RUSTC` holds, and writes down beside
+/// cargo's calls that it was asked, and in which directory — only a run that names a kept
+/// baseline asks, and it asks in the previous release's tree, where that tree's toolchain
+/// file is what resolves the compiler.
+const FAKE_RUSTC: &str =
+    "#!/bin/sh\necho \"rustc $* in ${PWD##*/}\" >> \"$FAKE_CARGO/calls\"\necho \"$FAKE_RUSTC\"\n";
+
+/// What the two stand-ins say of themselves unless an arm says otherwise.
+const RUNNER: &str = "cargo-nextest 0.9.143 (60fa45f63 2026-08-04)";
+const COMPILER: &str = "rustc 1.95.0 (59807616e 2026-04-14)";
+
+/// How one call of `run` under the stand-ins is made.
+struct Asked {
+    previous: String,
+    list: String,
+    mode: String,
+    more: Vec<String>,
+    runner: String,
+    compiler: String,
+}
+
 impl Rig {
     /// `run`, with the stand-in first on `PATH`, over a suite whose reports the stand-in
     /// hands out by the binary it finds at the path — the candidate the one that holds a
     /// list of this text.
     fn run(&self, suite: &[Ran], list: &str, mode: &str, more: &[&str]) -> Driven {
+        self.ask(
+            suite,
+            &Asked {
+                previous: self.previous.clone(),
+                list: list.to_owned(),
+                mode: mode.to_owned(),
+                more: more.iter().map(|flag| (*flag).to_owned()).collect(),
+                runner: RUNNER.to_owned(),
+                compiler: COMPILER.to_owned(),
+            },
+        )
+    }
+
+    /// `run` as `asked`, over `suite`.
+    fn ask(&self, suite: &[Ran], asked: &Asked) -> Driven {
         let bin = self.dir.path().join("bin");
         placed_executable::write(&bin.join("cargo"), FAKE_CARGO);
         placed_executable::write(&bin.join("cargo-nextest"), "#!/bin/sh\nexit 2\n");
+        placed_executable::write(&bin.join("rustc"), FAKE_RUSTC);
         let state = self.dir.path().join("fake-cargo");
         let _ = fs::remove_dir_all(&state);
         fs::create_dir_all(&state).expect("create the stand-in's directory");
         let (on_previous, on_candidate) = reports(suite);
         fs::write(state.join("on-previous.xml"), on_previous).expect("write a report");
         fs::write(state.join("on-candidate.xml"), on_candidate).expect("write a report");
-        let candidate = self.candidate_with(list);
+        let candidate = self.candidate_with(&asked.list);
         let mut args = vec![
             "run",
             "--previous",
-            &self.previous,
+            &asked.previous,
             "--candidate",
             &candidate,
             "--list",
@@ -2172,11 +2240,13 @@ impl Rig {
             "--scratch",
             self.scratch.to_str().expect("a UTF-8 path"),
         ];
-        args.extend_from_slice(more);
+        args.extend(asked.more.iter().map(String::as_str));
         let called = self.tool_as(&args, |command| {
             command
                 .env("FAKE_CARGO", &state)
-                .env("FAKE_CARGO_MODE", mode);
+                .env("FAKE_CARGO_MODE", &asked.mode)
+                .env("FAKE_RUNNER", &asked.runner)
+                .env("FAKE_RUSTC", &asked.compiler);
         });
         let calls = fs::read_to_string(state.join("calls"))
             .unwrap_or_default()
@@ -2520,6 +2590,891 @@ fn a_list_that_is_refused_costs_no_build() {
         0,
         "and nothing was minted"
     );
+}
+
+// ---------------------------------------------------------------------------
+// A kept baseline
+// ---------------------------------------------------------------------------
+//
+// `run --baseline DIR` builds the previous release in DIR and keeps what the baseline is
+// made of there — the tree, the built tests, the record of that build, the report — and a
+// later run against the same previous release uses it instead of building. **It is of the
+// class that records falsely**: a baseline that is not the one this run would have made,
+// used as if it were, is a comparison against nothing. So what is held here is the guard:
+// the key the baseline is kept with, member by member, and that nothing is used because a
+// directory is there.
+
+/// The directory a call names for the baseline — shell-hostile, like the rig's other two.
+const HOSTILE_KEPT: &str = "a \"kept\" it's #3";
+
+/// What the tool owns in that directory: the baseline, and the lock two runs do not share
+/// it under.
+const KEPT: &str = "regression-set.kept";
+const LOCK: &str = "regression-set.lock";
+
+/// The path the stand-in's tests name, inside the kept baseline.
+const BAKED: &str = "target-previous/debug/jigc";
+
+/// The two binaries the stand-in for cargo builds.
+const PREVIOUS_BINARY: &[u8] = b"the previous release's binary\n";
+const CANDIDATE_BINARY: &[u8] = b"the candidate's binary\n";
+
+impl Rig {
+    /// The directory the rig's baseline is kept in, as the tool names it: resolved.
+    fn kept(&self) -> PathBuf {
+        self.scratch
+            .parent()
+            .expect("the scratch directory lies in the rig's")
+            .join(HOSTILE_KEPT)
+    }
+
+    /// A file of the kept baseline.
+    fn in_kept(&self, rel: &str) -> PathBuf {
+        self.kept().join(KEPT).join(rel)
+    }
+
+    /// A call of `run` that names the directory `kept`, over a list of this text.
+    fn keeping_in(&self, kept: &Path, list: &str) -> Asked {
+        Asked {
+            previous: self.previous.clone(),
+            list: list.to_owned(),
+            mode: String::new(),
+            more: vec![
+                "--baseline".to_owned(),
+                kept.to_str().expect("a UTF-8 path").to_owned(),
+            ],
+            runner: RUNNER.to_owned(),
+            compiler: COMPILER.to_owned(),
+        }
+    }
+
+    /// A call of `run` that names the rig's kept baseline, over a list of this text.
+    fn keeping(&self, list: &str) -> Asked {
+        self.keeping_in(&self.kept(), list)
+    }
+
+    /// The rig's copy of the tool with one more line of comment: the same tool, and other
+    /// bytes.
+    fn another_tool(&self) {
+        let path = self.root.join(TOOL);
+        let mut source = fs::read(&path).expect("read the rig's copy of the tool");
+        source.extend_from_slice(b"# one more line\n");
+        placed_executable::write(&path, source);
+    }
+
+    /// Another git first on the rig's `PATH`: the host's own in everything but what it says
+    /// of itself.
+    fn another_git(&self) {
+        let real = std::env::var("PATH")
+            .expect("a UTF-8 PATH")
+            .split(':')
+            .map(|dir| Path::new(dir).join("git"))
+            .find(|candidate| candidate.is_file())
+            .expect("git is on PATH");
+        placed_executable::write(
+            &self.dir.path().join("bin/git"),
+            format!(
+                "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'git version 0.0.0 (another)'; exit 0; fi\nexec '{}' \"$@\"\n",
+                real.display()
+            ),
+        );
+    }
+}
+
+impl Driven {
+    /// What the line says of the kept baseline, held to its form: the directory, whether
+    /// the baseline there was used, the word one was refused with and its sentence, and the
+    /// key of the baseline the run left there.
+    fn baseline(&self) -> &Value {
+        let said = &self.called.line["baseline"];
+        let fields: Vec<&str> = said
+            .as_object()
+            .unwrap_or_else(|| {
+                panic!(
+                    "the line says what became of the baseline: {}",
+                    self.called.raw
+                )
+            })
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            fields,
+            ["detail", "dir", "key", "refused", "used"],
+            "{}",
+            self.called.raw
+        );
+        said
+    }
+
+    /// The key of the baseline the run left in the directory: a sha256.
+    fn key(&self) -> String {
+        let key = self.baseline()["key"]
+            .as_str()
+            .unwrap_or_else(|| panic!("the run left a kept baseline: {}", self.called.raw));
+        assert!(
+            key.len() == 64 && key.bytes().all(|b| b.is_ascii_hexdigit()),
+            "a key is named by a sha256: {key}"
+        );
+        key.to_owned()
+    }
+
+    /// Whether cargo was asked to build the previous release's tests, and to run them on
+    /// their own binary.
+    fn built_the_previous_release(&self) -> bool {
+        let asked = |saying: &str| self.calls.iter().any(|call| call.contains(saying));
+        asked("--no-run") && asked("--profile regression-baseline")
+    }
+
+    /// The run used the baseline kept in `kept` under `key`: nothing was refused, and the
+    /// previous release was neither built nor run.
+    fn used(&self, kept: &Path, key: &str) {
+        assert_eq!(
+            self.baseline(),
+            &json!({"dir": kept, "used": true, "refused": null, "detail": null, "key": key}),
+            "the kept baseline is used: {}",
+            self.called.raw
+        );
+        assert!(
+            !self.calls.iter().any(|call| {
+                call.contains("--no-run")
+                    || call.contains("regression-baseline")
+                    || call.starts_with("nextest list")
+                    || call.starts_with("metadata")
+            }),
+            "the previous release is not built and its baseline is not run again: {:?}",
+            self.calls
+        );
+    }
+
+    /// The run refused the baseline kept in `kept` with `word`, said `saying` of it, built
+    /// the previous release afresh — and kept that in its place.
+    fn refused_for(&self, kept: &Path, word: &str, saying: &str) {
+        let said = self.baseline();
+        assert_eq!(
+            (&said["dir"], &said["used"], said["refused"].as_str()),
+            (&json!(kept), &json!(false), Some(word)),
+            "the kept baseline is refused with `{word}`: {}",
+            self.called.raw
+        );
+        let detail = said["detail"].as_str().expect("a refusal has its sentence");
+        assert!(
+            detail.contains(saying),
+            "refused `{word}` says `{saying}`: {detail}"
+        );
+        assert!(
+            self.built_the_previous_release(),
+            "what is refused is built afresh: {:?}",
+            self.calls
+        );
+        self.key();
+    }
+
+    /// Cargo's calls, with the run's own directory named `<work>`.
+    fn steps(&self) -> Vec<String> {
+        let work = self.called.line["work"]
+            .as_str()
+            .expect("the line names its directory");
+        self.calls
+            .iter()
+            .map(|call| call.replace(work, "<work>"))
+            .collect()
+    }
+}
+
+/// What a line says of the two commits — the line without what is of the run that printed
+/// it: its directory, its seconds, and what it says of a kept baseline.
+fn said(line: &Value) -> Value {
+    let mut said = line.clone();
+    let fields = said.as_object_mut().expect("the line is an object");
+    for of_the_run in ["work", "evidence", "seconds", "baseline"] {
+        fields.remove(of_the_run);
+    }
+    said["proof"]
+        .as_object_mut()
+        .expect("the line carries its proof")
+        .remove("baked_path");
+    said
+}
+
+/// The second run of the stand-in's suite, made from the record: what a run on a kept
+/// baseline asks cargo for, after the two things it asks for the key.
+fn the_candidates_run() -> [String; 2] {
+    [
+        "build -p jigc --locked".to_owned(),
+        "nextest run --no-fail-fast --retries 1 \
+         --binaries-metadata <work>/evidence/binaries-metadata.json \
+         --cargo-metadata <work>/evidence/cargo-metadata.json \
+         --tool-config-file regression-set:<work>/evidence/nextest.toml \
+         --profile regression-candidate"
+            .to_owned(),
+    ]
+}
+
+/// What a run that names a kept baseline asks before anything else: what the runner is,
+/// and what the compiler is — in the previous release's tree.
+const ASKED_FOR_THE_KEY: [&str; 2] = ["nextest --version", "rustc -vV in previous"];
+
+#[test]
+fn a_kept_baseline_is_used_and_the_previous_release_is_not_built_again() {
+    let rig = Rig::new();
+    let list = both_rows(&rig);
+    let kept = rig.kept();
+    let unkept = rig.run(&a_run(), &list, "", &[]);
+    unkept.called.verdict("green");
+
+    // Nothing is kept there yet: the run asks what the key is made of, builds the previous
+    // release in the directory as a run builds it anywhere, and keeps the baseline.
+    let first = rig.ask(&a_run(), &rig.keeping(&list));
+    first.called.verdict("green");
+    let key = first.key();
+    assert_eq!(
+        first.baseline(),
+        &json!({"dir": kept, "used": false, "refused": null, "detail": null, "key": key}),
+        "nothing was kept, so nothing is refused: {}",
+        first.called.raw
+    );
+    assert_eq!(first.steps()[..2], ASKED_FOR_THE_KEY);
+    assert_eq!(
+        first.steps()[2..],
+        unkept.steps()[..],
+        "the run that keeps asks cargo for what a run that keeps nothing asks"
+    );
+
+    // The second run: the candidate's binary, the swap and the candidate's run — and
+    // nothing of the previous release.
+    let second = rig.ask(&a_run(), &rig.keeping(&list));
+    let line = second.called.verdict("green");
+    second.used(&kept, &key);
+    assert_eq!(
+        second.steps(),
+        [
+            &ASKED_FOR_THE_KEY.map(str::to_owned)[..],
+            &the_candidates_run()[..]
+        ]
+        .concat(),
+        "what a run on a kept baseline asks cargo for"
+    );
+    for step in ["unpack-previous", "build-previous", "baseline"] {
+        assert_eq!(
+            line["seconds"][step],
+            Value::Null,
+            "a run on a kept baseline spends nothing on `{step}`: {}",
+            second.called.raw
+        );
+    }
+
+    // The three lines say the same of the two commits: the verdict, the counts, every test
+    // named, the list, the two binaries, and the four hashes of the proof.
+    assert_eq!(said(&first.called.line), said(&unkept.called.line));
+    assert_eq!(said(line), said(&unkept.called.line));
+    let baked = rig.in_kept(BAKED);
+    assert_eq!(
+        line["proof"]["baked_path"].as_str(),
+        baked.to_str(),
+        "the path the tests name lies in the kept baseline"
+    );
+
+    // The evidence of the run is whole — the baseline's report and the record of the build
+    // lie in it, and the kept record beside them — and `verdict` says the same over it.
+    let work = PathBuf::from(line["work"].as_str().expect("the line names its directory"));
+    for held in [
+        "run.json",
+        "baseline-junit.xml",
+        "candidate-junit.xml",
+        "binaries-metadata.json",
+        "cargo-metadata.json",
+        "baseline.json",
+    ] {
+        assert!(
+            work.join("evidence").join(held).is_file(),
+            "the evidence of a run on a kept baseline holds `{held}`"
+        );
+    }
+    let again = rig.verdict_over(
+        line["evidence"]
+            .as_str()
+            .expect("the line names its evidence"),
+    );
+    assert_eq!(said(again.verdict("green")), said(line));
+    assert_eq!(again.line["baseline"], line["baseline"]);
+    assert!(
+        !work.join("previous").exists() && !work.join("target-previous").exists(),
+        "the previous release lies in the kept baseline, not in the run's directory"
+    );
+    assert!(rig.in_kept("previous/Cargo.toml").is_file());
+
+    // At rest the kept baseline is as its own baseline left it: the previous release's
+    // binary at the path the tests name.
+    assert_eq!(
+        fs::read(&baked).expect("the file at the path"),
+        PREVIOUS_BINARY
+    );
+
+    // And it is the previous release's, not a candidate's: another candidate is judged
+    // against the same kept baseline, on its own list.
+    let other = rig.ask(
+        &a_run(),
+        &rig.keeping(&rig.row("jigc::g_flow", "setup::refuses_a_seeded_file")),
+    );
+    let line = other.called.verdict("red");
+    other.used(&kept, &key);
+    assert_eq!(
+        pairs(&line["not_on_list"]),
+        ["jigc::g_migrate uninstall::says_dropped"]
+    );
+}
+
+/// **A run that names no baseline is the run it was** — the line, byte for byte but for
+/// the run's own directory and its seconds; what it asks cargo for; and where it writes.
+#[test]
+fn a_run_that_names_no_baseline_is_byte_for_byte_what_it_was() {
+    let rig = Rig::new();
+    let list = both_rows(&rig);
+    let run = rig.run(&a_run(), &list, "", &[]);
+    let work = run.called.line["work"]
+        .as_str()
+        .expect("the line names its directory");
+    // The directory as the line spells it, and the seconds, which are a clock's.
+    let spelled = serde_json::to_string(work).expect("a path is a string");
+    let line = run
+        .called
+        .raw
+        .replace(&spelled[1..spelled.len() - 1], "<work>");
+    let seconds = line
+        .find("\"seconds\": {")
+        .expect("the line has its seconds");
+    let end = seconds + line[seconds..].find('}').expect("the seconds close");
+    let line = format!(
+        "{}\"seconds\": <seconds>{}",
+        &line[..seconds],
+        &line[end + 1..]
+    );
+
+    let old = sha256_of(PREVIOUS_BINARY);
+    let new = sha256_of(CANDIDATE_BINARY);
+    let candidate = rig.candidate_with(&list);
+    let row = |binary: &str, test: &str| {
+        format!(
+            "{{\"binary\": \"{binary}\", \"test\": \"{test}\", \"change\": \"it refuses now\", \"pointer\": \"commit:{}\"}}",
+            rig.intended
+        )
+    };
+    assert_eq!(
+        line,
+        format!(
+            "{{\"tool\": \"regression-set\", \"status\": \"green\", \"reason\": null, \"detail\": null, \
+             \"list\": {{\"path\": \"{LIST}\", \"commit\": \"{candidate}\", \"sha256\": \"{}\", \"rows\": 2}}, \
+             \"previous\": {{\"commit\": \"{}\", \"sha256\": \"{old}\"}}, \
+             \"candidate\": {{\"commit\": \"{candidate}\", \"sha256\": \"{new}\"}}, \
+             \"seconds\": <seconds>, \
+             \"proof\": {{\"baked_path\": \"<work>/target-previous/debug/jigc\", \"named_by\": 1, \
+             \"baseline_after\": \"{old}\", \"baseline_before\": \"{old}\", \
+             \"candidate_after\": \"{new}\", \"candidate_before\": \"{new}\"}}, \
+             \"excluded_by_no_row\": [], \
+             \"counts\": {{\"tests\": 22, \"baseline_passed\": 22, \"baseline_failed\": 0, \
+             \"candidate_passed\": 20, \"candidate_failed\": 2, \"differences\": 2, \"on_list\": 2, \
+             \"not_on_list\": 0, \"excluded\": 0, \"excluded_by_no_row\": 0, \"stale\": 0, \"fixed\": 0}}, \
+             \"not_on_list\": [], \"on_list\": [{}, {}], \"excluded\": [], \"stale\": [], \
+             \"flaky\": {{\"baseline\": [], \"candidate\": []}}, \
+             \"evidence\": \"<work>/evidence\", \"work\": \"<work>\"}}\n",
+            sha256_of(list.as_bytes()),
+            rig.previous,
+            row("jigc::g_flow", "setup::refuses_a_seeded_file"),
+            row("jigc::g_migrate", "uninstall::says_dropped"),
+        ),
+        "the line of a run that names no baseline"
+    );
+    assert_eq!(run.called.stderr, "", "and it says nothing beside its line");
+
+    // It asks nothing for a key, and nobody but cargo is asked anything.
+    assert_eq!(run.steps().len(), 6, "{:?}", run.calls);
+    assert!(
+        !run.calls
+            .iter()
+            .any(|call| call.contains("--version") || call.starts_with("rustc")),
+        "a run that keeps nothing asks for no key: {:?}",
+        run.calls
+    );
+
+    // It writes in the directory it minted under the scratch directory, and nowhere else.
+    let minted: Vec<PathBuf> = fs::read_dir(&rig.scratch)
+        .expect("read the scratch directory")
+        .map(|entry| entry.expect("an entry").path())
+        .collect();
+    assert_eq!(minted, [PathBuf::from(work)]);
+    assert!(!rig.kept().exists(), "no baseline is kept unasked");
+    let facts: Value = serde_json::from_str(
+        &fs::read_to_string(Path::new(work).join("evidence/run.json")).expect("read run.json"),
+    )
+    .expect("run.json is JSON");
+    assert_eq!(
+        facts["baseline"],
+        Value::Null,
+        "and its evidence says nothing of one"
+    );
+}
+
+/// **The key, member by member.** A kept baseline is used only while each of the eight
+/// things it was kept with is what it was. One arm a member: a baseline is kept, the member
+/// changes, and the next run refuses the baseline by that member's word, says what it was
+/// kept with and what it is now, builds the previous release afresh and keeps that in its
+/// place — which the run after it uses.
+#[test]
+fn a_kept_baseline_is_refused_for_each_thing_it_was_kept_with() {
+    type Differs = fn(&Rig, &mut Asked);
+    let members: [(&str, &str, Differs); 8] = [
+        ("previous", "the previous release's commit", |rig, asked| {
+            asked.previous = rig.before.clone()
+        }),
+        ("exclusions", "the list's exclusion rows", |rig, asked| {
+            asked
+                .list
+                .push_str(&rig.excluding("jigc-engine", "unit::holds_0"));
+        }),
+        ("tool", "the tool's own bytes", |rig, _| rig.another_tool()),
+        ("runner", "`cargo-nextest 0.9.144 (another)`", |_, asked| {
+            asked.runner = "cargo-nextest 0.9.144 (another)".to_owned()
+        }),
+        ("compiler", "`rustc 1.96.0 (another)`", |_, asked| {
+            asked.compiler = "rustc 1.96.0 (another)".to_owned()
+        }),
+        ("git", "`git version 0.0.0 (another)`", |rig, _| {
+            rig.another_git()
+        }),
+        ("tests", "the test binary `jigc::g_flow`", |rig, _| {
+            let test = rig.in_kept("target-previous/debug/deps/g_flow-1a1a");
+            let mut bytes = fs::read(&test).expect("read the kept test binary");
+            bytes.push(b'\n');
+            fs::write(&test, bytes).expect("write the kept test binary");
+        }),
+        ("jigc", "the baseline's own `jigc`", |rig, _| {
+            fs::write(rig.in_kept(BAKED), "something else\n").expect("write at the path")
+        }),
+    ];
+    for (word, saying, differs) in members {
+        let rig = Rig::new();
+        let kept = rig.kept();
+        let mut asked = rig.keeping(&both_rows(&rig));
+        let first = rig.ask(&a_run(), &asked);
+        first.called.verdict("green");
+        let key = first.key();
+
+        differs(&rig, &mut asked);
+        let refused = rig.ask(&a_run(), &asked);
+        // Refused is not void: the run builds what it could not use, and gives its verdict.
+        let line = refused.called.verdict("green");
+        refused.refused_for(&kept, word, saying);
+        assert_eq!(
+            (&line["counts"]["differences"], &line["counts"]["on_list"]),
+            (&json!(2), &json!(2)),
+            "{word}: {}",
+            refused.called.raw
+        );
+        // What the tests and the binary are is what the build made them: those two are
+        // the members a fresh build of the same commit gives again.
+        let rebuilt = refused.key();
+        assert_eq!(
+            rebuilt == key,
+            matches!(word, "tests" | "jigc"),
+            "{word}: the key of what was built afresh, against the refused one"
+        );
+
+        let next = rig.ask(&a_run(), &asked);
+        next.called.verdict("green");
+        next.used(&kept, &rebuilt);
+    }
+}
+
+/// **A change that is no member of the key refuses nothing**: another candidate, a row of
+/// the list that is no exclusion row — and a file in the kept tree that the previous
+/// release's commit does not hold, which is what its own tests leave there.
+#[test]
+fn a_kept_baseline_is_held_to_its_key_and_to_nothing_else() {
+    let rig = Rig::new();
+    let kept = rig.kept();
+    let first = rig.ask(&a_run(), &rig.keeping(""));
+    first.called.verdict("red");
+    let key = first.key();
+    fs::create_dir_all(rig.in_kept("previous/target")).expect("a directory in the tree");
+    fs::write(
+        rig.in_kept("previous/target/CACHEDIR.TAG"),
+        "left by a run\n",
+    )
+    .expect("a file in the tree");
+    // The list gains its two rows — rows for changes — and the candidate is another commit.
+    let next = rig.ask(&a_run(), &rig.keeping(&both_rows(&rig)));
+    next.called.verdict("green");
+    next.used(&kept, &key);
+}
+
+/// **The baseline's own binary.** At rest a kept baseline holds the previous release's
+/// binary at the path its tests name, as its baseline left it, and a copy of it. A file
+/// there that is another one — what a run killed after its swap leaves, the candidate's —
+/// refuses the baseline, and so does a copy that is another file.
+#[test]
+fn a_kept_baseline_whose_binary_was_replaced_is_refused() {
+    let rig = Rig::new();
+    let kept = rig.kept();
+    let asked = rig.keeping(&both_rows(&rig));
+    let baked = rig.in_kept(BAKED);
+    let old = sha256_of(PREVIOUS_BINARY);
+    let new = sha256_of(CANDIDATE_BINARY);
+    let first = rig.ask(&a_run(), &asked);
+    first.called.verdict("green");
+    let key = first.key();
+
+    // The same bytes written again are the same binary: it is held by its hash.
+    fs::write(&baked, PREVIOUS_BINARY).expect("write at the path");
+    rig.ask(&a_run(), &asked).used(&kept, &key);
+
+    // The candidate's binary at the path.
+    fs::write(&baked, CANDIDATE_BINARY).expect("write at the path");
+    let run = rig.ask(&a_run(), &asked);
+    let line = run.called.verdict("green");
+    run.refused_for(
+        &kept,
+        "jigc",
+        &format!("the file at the path the tests name is sha256 `{new}`, and the baseline was kept with `{old}`"),
+    );
+    assert_eq!(
+        (
+            &line["proof"]["baseline_before"],
+            &line["proof"]["baseline_after"]
+        ),
+        (&json!(old), &json!(old)),
+        "the baseline was made again, on the previous release's binary: {}",
+        run.called.raw
+    );
+    assert_eq!(
+        fs::read(&baked).expect("the file at the path"),
+        PREVIOUS_BINARY,
+        "and the baseline built afresh is at rest"
+    );
+    rig.ask(&a_run(), &asked).used(&kept, &key);
+
+    // The copy the path is restored from.
+    fs::write(rig.in_kept("jigc"), "something else\n").expect("write the copy");
+    let run = rig.ask(&a_run(), &asked);
+    run.called.verdict("green");
+    run.refused_for(&kept, "jigc", "the kept copy of it is sha256 `");
+    rig.ask(&a_run(), &asked).used(&kept, &key);
+}
+
+/// **A baseline that was not finished is not used.** The record is written last, and a
+/// directory without one — a run that ended, or was killed, before its baseline held — is
+/// refused and built afresh. So is one whose record is not what the tool wrote, or whose
+/// files are not the ones the record names: the report above all, which is the baseline.
+#[test]
+fn a_kept_baseline_that_was_not_finished_is_refused_and_built_afresh() {
+    let rig = Rig::new();
+    let kept = rig.kept();
+    // Red on this list: one of the two differences is on no row.
+    let list = rig.row("jigc::g_flow", "setup::refuses_a_seeded_file");
+    let unlisted = ["jigc::g_migrate uninstall::says_dropped"];
+
+    // A run that ends before its baseline is made keeps none: the tree and the build lie
+    // in the directory, and no record.
+    let mut failing = rig.keeping(&list);
+    failing.mode = "fail-candidate".to_owned();
+    let ended = rig.ask(&a_run(), &failing);
+    ended.called.void("build-candidate", "exited 101");
+    assert_eq!(
+        ended.baseline(),
+        &json!({"dir": kept, "used": false, "refused": null, "detail": null, "key": null}),
+        "{}",
+        ended.called.raw
+    );
+    assert!(rig.in_kept(BAKED).is_file() && !rig.in_kept("baseline.json").exists());
+
+    // Nor does a run whose baseline did not hold — the file at the path was another one
+    // before it: what it found unfinished it built afresh, and it left that unfinished too.
+    let mut disturbed = rig.keeping(&list);
+    disturbed.mode = "disturbed".to_owned();
+    let ended = rig.ask(&a_run(), &disturbed);
+    ended.called.void(
+        "baseline",
+        "not the previous release's binary before the baseline",
+    );
+    assert_eq!(
+        (&ended.baseline()["refused"], &ended.baseline()["key"]),
+        (&json!("incomplete"), &Value::Null),
+        "{}",
+        ended.called.raw
+    );
+    assert!(rig.in_kept(BAKED).is_file() && !rig.in_kept("baseline.json").exists());
+
+    let asked = rig.keeping(&list);
+    let run = rig.ask(&a_run(), &asked);
+    run.called.verdict("red");
+    run.refused_for(&kept, "incomplete", "no finished record");
+    let key = run.key();
+    rig.ask(&a_run(), &asked).used(&kept, &key);
+
+    // The candidate's report: in it both tests fail. Taken for the baseline's, both would
+    // have failed on their own binary and the run would name no difference at all.
+    let (_, on_candidate) = reports(&a_run());
+    type Undoes<'a> = Box<dyn Fn() + 'a>;
+    let record = rig.in_kept("baseline.json");
+    let rows: Vec<(&str, Undoes, &str, &str)> = vec![
+        (
+            "its record is cut off",
+            Box::new(|| {
+                let whole = fs::read(&record).expect("read the record");
+                fs::write(&record, &whole[..whole.len() / 2]).expect("write the record");
+            }),
+            "incomplete",
+            "no finished record",
+        ),
+        (
+            "its record is gone",
+            Box::new(|| fs::remove_file(&record).expect("remove the record")),
+            "incomplete",
+            "no finished record",
+        ),
+        (
+            "its record is another tool's",
+            Box::new(|| {
+                let whole = fs::read_to_string(&record).expect("read the record");
+                let named = "\"tool\": \"regression-set\"";
+                assert!(whole.contains(named), "the record names its tool: {whole}");
+                fs::write(&record, whole.replace(named, "\"tool\": \"another\""))
+                    .expect("write the record");
+            }),
+            "incomplete",
+            "no finished record",
+        ),
+        (
+            "the report is another one",
+            Box::new(|| {
+                fs::write(rig.in_kept("baseline-junit.xml"), &on_candidate)
+                    .expect("write a report");
+            }),
+            "record",
+            "`baseline-junit.xml` is not the file",
+        ),
+        (
+            "the report is gone",
+            Box::new(|| {
+                fs::remove_file(rig.in_kept("baseline-junit.xml")).expect("remove the report");
+            }),
+            "record",
+            "`baseline-junit.xml` is not the file",
+        ),
+        (
+            "the record of the build is another one",
+            Box::new(|| {
+                let path = rig.in_kept("binaries-metadata.json");
+                let mut bytes = fs::read(&path).expect("read the recorded build");
+                bytes.push(b'\n');
+                fs::write(&path, bytes).expect("write the recorded build");
+            }),
+            "record",
+            "`binaries-metadata.json` is not the file",
+        ),
+        (
+            "the previous release's tree is gone",
+            Box::new(|| fs::remove_dir_all(rig.in_kept("previous")).expect("remove the tree")),
+            "record",
+            "the previous release's tree does not hold `Cargo.toml`",
+        ),
+        (
+            "a file of the tree is another one",
+            Box::new(|| {
+                fs::write(rig.in_kept("previous/README.md"), "another product\n")
+                    .expect("write a file of the tree");
+            }),
+            "record",
+            "the previous release's tree does not hold `README.md` as the commit",
+        ),
+    ];
+    for (what, undoes, word, saying) in rows {
+        undoes();
+        let run = rig.ask(&a_run(), &asked);
+        let line = run.called.verdict("red");
+        assert_eq!(pairs(&line["not_on_list"]), unlisted, "{what}");
+        run.refused_for(&kept, word, saying);
+        // Built afresh it is the same baseline, and finished: the next row starts from it.
+        assert_eq!(run.key(), key, "{what}");
+    }
+    rig.ask(&a_run(), &asked).used(&kept, &key);
+
+    // A kept baseline is used where it was built: its tests name a path in it. Moved, it
+    // is refused — the directory's name is nothing it is trusted by.
+    let moved = kept.with_file_name("moved");
+    fs::rename(&kept, &moved).expect("move the kept baseline");
+    let run = rig.ask(&a_run(), &rig.keeping_in(&moved, &list));
+    run.called.verdict("red");
+    run.refused_for(&moved, "record", "is used where it was built");
+}
+
+/// A process that holds the lock of a kept baseline's directory, as a run of the tool
+/// holds it, until its stdin closes — which a test that ends, however it ends, does for it.
+fn holding(lock: &Path) -> std::process::Child {
+    use std::io::{BufRead, BufReader};
+    use std::process::Stdio;
+    fs::create_dir_all(lock.parent().expect("a lock lies in a directory"))
+        .expect("create the directory of the lock");
+    let mut holder = Command::new("python3")
+        .args([
+            "-c",
+            "import fcntl, sys\nheld = open(sys.argv[1], 'a')\nfcntl.flock(held, fcntl.LOCK_EX)\nprint('held', flush=True)\nsys.stdin.read()\n",
+        ])
+        .arg(lock)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn python3");
+    let mut said = String::new();
+    BufReader::new(holder.stdout.as_mut().expect("the holder's stdout"))
+        .read_line(&mut said)
+        .expect("read the holder's line");
+    assert_eq!(said, "held\n", "the holder holds the lock");
+    holder
+}
+
+/// The holder lets go, and is gone.
+fn released(mut holder: std::process::Child) {
+    drop(holder.stdin.take());
+    assert!(holder.wait().expect("wait for the holder").success());
+}
+
+/// **Two runs do not share one kept baseline at a time.** A run swaps the candidate's
+/// binary in at a path inside the kept baseline, so a second run there would drive the
+/// first one's candidate. The directory has a lock; a run that does not get it says so in
+/// its line and runs as a run that names no baseline runs — in its own directory, with a
+/// build of its own, writing nothing where the other one works.
+#[test]
+fn a_kept_baseline_another_run_holds_is_not_shared() {
+    let rig = Rig::new();
+    let kept = rig.kept();
+    let list = both_rows(&rig);
+    let asked = rig.keeping(&list);
+    let unkept = rig.run(&a_run(), &list, "", &[]);
+    let shut_out = |holder: std::process::Child| {
+        let run = rig.ask(&a_run(), &asked);
+        let line = run.called.verdict("green");
+        let of_it = run.baseline();
+        assert_eq!(
+            (
+                &of_it["dir"],
+                &of_it["used"],
+                &of_it["refused"],
+                &of_it["key"]
+            ),
+            (&json!(kept), &json!(false), &json!("locked"), &Value::Null),
+            "{}",
+            run.called.raw
+        );
+        assert!(
+            of_it["detail"]
+                .as_str()
+                .is_some_and(|detail| detail.contains("another run holds")),
+            "{}",
+            run.called.raw
+        );
+        assert_eq!(
+            run.steps(),
+            unkept.steps(),
+            "a run shut out is a run that names no baseline"
+        );
+        let work = Path::new(line["work"].as_str().expect("the line names its directory"));
+        assert_eq!(
+            line["proof"]["baked_path"].as_str(),
+            work.join(BAKED).to_str(),
+            "it builds in its own directory"
+        );
+        assert_eq!(said(line), said(&unkept.called.line));
+        released(holder);
+    };
+
+    // Nothing is kept yet: the run shut out keeps nothing, and the directory holds the
+    // lock and nothing else.
+    shut_out(holding(&kept.join(LOCK)));
+    let held: Vec<String> = fs::read_dir(&kept)
+        .expect("read the directory")
+        .map(|entry| {
+            entry
+                .expect("an entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    assert_eq!(held, [LOCK]);
+
+    // A baseline is kept: the run shut out leaves every file of it as it was.
+    let first = rig.ask(&a_run(), &asked);
+    first.called.verdict("green");
+    let key = first.key();
+    let record = fs::read(rig.in_kept("baseline.json")).expect("read the record");
+    shut_out(holding(&kept.join(LOCK)));
+    assert_eq!(
+        fs::read(rig.in_kept(BAKED)).expect("the file at the path"),
+        PREVIOUS_BINARY
+    );
+    assert_eq!(
+        fs::read(rig.in_kept("baseline.json")).expect("read the record"),
+        record
+    );
+
+    // The lock is the holder's while it lives, and nobody's after: the next run uses the
+    // baseline.
+    rig.ask(&a_run(), &asked).used(&kept, &key);
+}
+
+/// **The swap and its proof are on a kept baseline what they are on a fresh one.** The
+/// previous release's binary put back during the candidate's run is void by the hash taken
+/// after it, and a candidate that is byte for byte the previous release is void before any
+/// run — and neither costs the kept baseline, which the next run uses.
+#[test]
+fn the_swap_is_proven_on_a_kept_baseline_as_on_a_fresh_one() {
+    let rig = Rig::new();
+    let kept = rig.kept();
+    let list = both_rows(&rig);
+    let first = rig.ask(&a_run(), &rig.keeping(&list));
+    first.called.verdict("green");
+    let key = first.key();
+
+    let mut put_back = rig.keeping(&list);
+    put_back.mode = "put-back".to_owned();
+    let run = rig.ask(&a_run(), &put_back);
+    let line = run
+        .called
+        .void("swap", "the previous release's binary, put back");
+    run.used(&kept, &key);
+    assert_eq!(
+        (
+            &line["proof"]["candidate_before"],
+            &line["proof"]["candidate_after"]
+        ),
+        (
+            &json!(sha256_of(CANDIDATE_BINARY)),
+            &json!(sha256_of(PREVIOUS_BINARY))
+        ),
+        "{}",
+        run.called.raw
+    );
+
+    let mut same = rig.keeping(&list);
+    same.mode = "same-binary".to_owned();
+    let run = rig.ask(&a_run(), &same);
+    run.called
+        .void("swap", "byte for byte the previous release's");
+    run.used(&kept, &key);
+    assert_eq!(
+        run.steps(),
+        [
+            &ASKED_FOR_THE_KEY.map(str::to_owned)[..],
+            &the_candidates_run()[..1]
+        ]
+        .concat(),
+        "no run is made of a candidate no hash tells from the previous release"
+    );
+
+    let next = rig.ask(&a_run(), &rig.keeping(&list));
+    next.called.verdict("green");
+    next.used(&kept, &key);
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,52 @@
+per code (row + bullet): distinct agents over the whole run · verified rows carrying it, in launch order (C confirmed, n reproduced/no break, d did not reproduce) with the agent count at each launch
+| code | distinct agents, whole run | verified rows: agents-at-launch → verdict |
+|---|---:|---|
+| `file-state.unregistered-doc` | 6 | 1→d (v54) |
+| `store.not-found` | 5 | 1→n (v19) · 5→C (w03) · 5→C (w08) · 5→C (w09) |
+| `migrate.source-untracked` | 4 | 1→n (v47) · 4→C (w02) |
+| `store.malformed-slug` | 3 | 2→n (v06) |
+| `setup.install-hook` | 3 | 1→C (v15) · 2→C (v37) |
+| `file-state.orphaned-doc` | 3 | 1→d (v20) |
+| `uninstall.remove-precommit` | 3 | 3→C (v35) |
+| `store.not-staged` | 3 | 3→C (w08) · 3→n (w18) |
+| `reconciliation.rename` | 3 | 3→C (w09) |
+| `schema-conformance.orphaned-instance` | 2 | 1→n (v05) |
+| `store.unparseable` | 2 | 1→C (v17) · 2→C (w02) |
+| `conformance.section-missing` | 2 | 1→C (v18) · 2→n (v45) |
+| `finalize.no-task` | 2 | 1→n (v28) |
+| `write.non-reparseable` | 2 | 1→n (v44) |
+| `ingest.unaddressable-identity` | 1 | 1→C (v18) |
+| `finalize.promote-clobber` | 1 | 1→n (v23) |
+| `finalize.nothing-staged` | 1 | 1→C (w05) |
+| `store.home-not-regular-file` | 1 | 1→n (w15) |
+| `milestone.staged-prose` | 1 | 1→n (w18) |
+| `join.missing-provenance` | 1 | 1→n (w19) |
+codes with at least one verified row: 20 · with a confirmed row, by distinct agents over the whole run: {'1': '2 of 6', '2': '2 of 5', '3+': '6 of 9'}
+codes no verified row carried: 20 · of them noticed by 3+ agents: ['schema-conformance.unadopted-instance']
+
+route control (the earlier census's sort): confirm rate by band (row + bullet, distinct agents at launch)
+   names a route: True — {'no code': '5 / 12', '1': '4 / 10', '2': '1 / 2', '3+': '5 / 6'}
+   names a route: False — {'no code': '3 / 45', '1': '0 / 4', '2': '0 / 1'}
+
+by invocation: band x verdict
+   a1 — {'no code': '7 / 46', '1': '3 / 11', '2': '1 / 3', '3+': '1 / 1'}
+   a2 — {'no code': '1 / 11', '1': '1 / 3', '3+': '4 / 5'}
+
+the 118 unverified rows in ledger order; positions of the 19 that returned in the second invocation: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21] of 118
+   by root: the 19 — {'r1-doc-list-staged-arm-unreadable-entry': 11, 'r1-doc-list-unreadable-entry-fails-listing': 8}
+   by root: all 118 — {'r1-doc-list-staged-arm-unreadable-entry': 15, 'r1-doc-list-unreadable-entry-fails-listing': 8, 'r1-setup-installs-outside-work-tree': 25, 'r1-validate-non-utf8-path-drops-blocking-orphan': 3, 'r1-doc-list-prints-id-doc-show-refuses': 30, 'r1-non-utf8-path-other-orphan-walk-consumers': 37}
+   carrying a code (row + bullet): the 19: 8 · the other 99: 26
+   the 99 never verified, by band at pass 4: {'no code': 73, '3+': 13, '1': 9, '2': 4}
+
+first-invocation verifiers whose left-open items were handed on: 58 · items in their returns: 363 · bullets in their reports' `Left open` sections: 315 · reporters where the two counts agree: 26
+all first-invocation reports with a `Left open` section: 64 reports, 335 bullets; second invocation: 19 reports, 89 bullets (their returns: 99)
+source references in the ledger: 442 · rows: 372 · findings handed to triage: 437
+
+second invocation, by root and band (row + bullet, distinct agents at launch):
+   r1-doc-list-staged-arm-unreadable-entry · band 1 · 0 / 2
+   r1-doc-list-staged-arm-unreadable-entry · band 3+ · 0 / 1
+   r1-doc-list-staged-arm-unreadable-entry · band no code · 0 / 8
+   r1-doc-list-unreadable-entry-fails-listing · band 1 · 1 / 1
+   r1-doc-list-unreadable-entry-fails-listing · band 3+ · 4 / 4
+   r1-doc-list-unreadable-entry-fails-listing · band no code · 1 / 3
+first invocation, band 2 and 3+ runs: [('v06', 'r1-doc-list-prints-id-doc-show-refuses', 'nab'), ('v35', 'r1-p3-uninstall-writability-route-not-driven', 'confirmed'), ('v37', 'r1-p3-setup-install-hook-undriven-producers-and-causes', 'confirmed'), ('v45', 'r1-p3-refused-doc-rename-leaves-staged-foreign-copy', 'nab')]

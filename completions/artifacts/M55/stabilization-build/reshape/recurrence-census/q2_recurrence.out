@@ -1,0 +1,119 @@
+== row text: 28 codes over 41 rows (47 row-occurrences)
+  codes by rows naming them:       once 17 · twice 7 · three times 2 · more 2
+  codes by distinct agents:        once 16 · twice 7 · three times 4 · more 1
+  codes by distinct own reporters: once 17 · twice 8 · three times 2 · more 1
+  codes by distinct roots (the instrument finding the chain starts from): once 22 · twice 4 · three times 2 · more 0
+  codes where one agent names it in two or more of its own rows: 3
+  occurrences by hop (pass-1): {0: 2, 1: 5, 2: 7, 3: 33} · rows per hop: {0: 34, 1: 56, 2: 73, 3: 209}
+  rows with one code: 35 · two: 6 · three or more: 0
+
+| code | in sites.tsv | rows | distinct agents | agents | hops of the rows | distinct roots | whole reports naming it (of 90) |
+|---|---|---:|---:|---|---|---:|---:|
+| `store.not-found` | yes | 6 | 5 | v07 v11 v24 v26 v42 | 1 2 3 3 3 3 | 3 | 24 |
+| `setup.install-hook` | yes | 4 | 3 | v04 v15 v37 | 1 2 3 3 | 1 | 9 |
+| `store.not-staged` | no | 3 | 3 | v26 v30 v49 | 3 3 3 | 3 | 15 |
+| `store.malformed-slug` | yes | 2 | 3 | h02 h03 v42 | 0 3 | 1 | 5 |
+| `uninstall.remove-precommit` | yes | 2 | 3 | a01 d01 v15 | 1 2 | 1 | 3 |
+| `write.non-reparseable` | no | 3 | 2 | v18 v44 | 2 3 3 | 1 | 6 |
+| `create.gate-blocked` | yes | 2 | 2 | v49 v55 | 3 3 | 1 | 6 |
+| `migrate.source-untracked` | yes | 2 | 2 | v24 v47 | 3 3 | 2 | 9 |
+| `reconciliation.rename` | yes | 2 | 2 | v26 v50 | 3 3 | 2 | 10 |
+| `schema-conformance.orphaned-instance` | yes | 2 | 2 | h03 v11 | 0 2 | 2 | 7 |
+| `store.unparseable` | no | 2 | 2 | v06 v24 | 1 3 | 2 | 11 |
+| `setup.install-commit` | yes | 1 | 2 | v48 v56 | 3 | 1 | 0 |
+| `file-state.orphaned-doc` | yes | 1 | 1 | v20 | 2 | 1 | 10 |
+| `finalize.base-mismatch` | yes | 1 | 1 | v43 | 3 | 1 | 3 |
+| `finalize.empty-commit` | yes | 1 | 1 | v57 | 3 | 1 | 3 |
+| `finalize.left-out` | no | 1 | 1 | v11 | 2 | 1 | 0 |
+| `finalize.no-task` | yes | 1 | 1 | v61 | 3 | 1 | 12 |
+| `finalize.nothing-staged` | yes | 1 | 1 | v25 | 3 | 1 | 3 |
+| `finalize.promote-clobber` | yes | 1 | 1 | v10 | 1 | 1 | 2 |
+| `finalize.rollback-conflict` | no | 1 | 1 | v41 | 3 | 1 | 1 |
+| `finalize.stage-failed` | yes | 1 | 1 | v41 | 3 | 1 | 2 |
+| `join.missing-provenance` | yes | 1 | 1 | v30 | 3 | 1 | 3 |
+| `milestone.provision-failed` | yes | 1 | 1 | v61 | 3 | 1 | 1 |
+| `milestone.staged-prose` | yes | 1 | 1 | v30 | 3 | 1 | 3 |
+| `store.home-not-regular-file` | yes | 1 | 1 | v29 | 3 | 1 | 8 |
+| `write.identity-change` | yes | 1 | 1 | v44 | 3 | 1 | 7 |
+| `write.target-escape` | no | 1 | 1 | v44 | 3 | 1 | 1 |
+| `write.wrong-shape` | no | 1 | 1 | v44 | 3 | 1 | 1 |
+
+  code + command: 36 pairs · by rows: once 29 · twice 4 · three times 1 · more 2 · by distinct agents: once 28 · twice 4 · three times 3 · more 1
+     setup.install-hook @ setup: rows 4, agents ['v04', 'v15', 'v37'], hops [1, 2, 3, 3]
+     store.not-found @ doc show: rows 4, agents ['v07', 'v11', 'v24', 'v42'], hops [1, 2, 3, 3]
+     write.non-reparseable @ doc author: rows 3, agents ['v18', 'v44'], hops [2, 3, 3]
+     schema-conformance.orphaned-instance @ validate: rows 2, agents ['h03', 'v11'], hops [0, 2]
+     store.malformed-slug @ doc list: rows 2, agents ['h02', 'h03', 'v42'], hops [0, 3]
+     uninstall.remove-precommit @ uninstall: rows 2, agents ['a01', 'd01', 'v15'], hops [1, 2]
+     store.unparseable @ doc show: rows 2, agents ['v06', 'v24'], hops [1, 3]
+
+== row text + the reporter's bullet: 40 codes over 65 rows (75 row-occurrences)
+  codes by rows naming them:       once 21 · twice 10 · three times 5 · more 4
+  codes by distinct agents:        once 22 · twice 8 · three times 6 · more 4
+  codes by distinct own reporters: once 23 · twice 9 · three times 5 · more 3
+  codes by distinct roots (the instrument finding the chain starts from): once 33 · twice 4 · three times 3 · more 0
+  codes where one agent names it in two or more of its own rows: 6
+  occurrences by hop (pass-1): {0: 2, 1: 8, 2: 11, 3: 54} · rows per hop: {0: 34, 1: 56, 2: 73, 3: 209}
+  rows with one code: 55 · two: 10 · three or more: 0
+
+| code | in sites.tsv | rows | distinct agents | agents | hops of the rows | distinct roots | whole reports naming it (of 90) |
+|---|---|---:|---:|---|---|---:|---:|
+| `file-state.unregistered-doc` | yes | 5 | 6 | v20 v50 v51 v53 v54 v55 | 2 3 3 3 3 | 1 | 7 |
+| `store.not-found` | yes | 6 | 5 | v07 v11 v24 v26 v42 | 1 2 3 3 3 3 | 3 | 24 |
+| `migrate.source-untracked` | yes | 4 | 4 | v18 v24 v47 v48 | 2 3 3 3 | 2 | 9 |
+| `schema-conformance.unadopted-instance` | yes | 3 | 4 | v45 v46 v47 v48 | 3 3 3 | 1 | 12 |
+| `setup.install-hook` | yes | 4 | 3 | v04 v15 v37 | 1 2 3 3 | 1 | 9 |
+| `file-state.orphaned-doc` | yes | 3 | 3 | v07 v20 v51 | 1 2 3 | 1 | 10 |
+| `reconciliation.rename` | yes | 3 | 3 | v26 v33 v50 | 3 3 3 | 3 | 10 |
+| `store.not-staged` | no | 3 | 3 | v26 v30 v49 | 3 3 3 | 3 | 15 |
+| `store.malformed-slug` | yes | 2 | 3 | h02 h03 v42 | 0 3 | 1 | 5 |
+| `uninstall.remove-precommit` | yes | 2 | 3 | a01 d01 v15 | 1 2 | 1 | 3 |
+| `write.non-reparseable` | no | 3 | 2 | v18 v44 | 2 3 3 | 1 | 6 |
+| `conformance.section-missing` | yes | 2 | 2 | v06 v18 | 1 2 | 1 | 9 |
+| `create.gate-blocked` | yes | 2 | 2 | v49 v55 | 3 3 | 1 | 6 |
+| `file-state.staged-copy` | yes | 2 | 2 | v43 v45 | 3 3 | 1 | 7 |
+| `finalize.no-task` | yes | 2 | 2 | v12 v61 | 2 3 | 2 | 12 |
+| `schema-conformance.orphaned-instance` | yes | 2 | 2 | h03 v11 | 0 2 | 2 | 7 |
+| `store.unparseable` | no | 2 | 2 | v06 v24 | 1 3 | 2 | 11 |
+| `setup.install-commit` | yes | 1 | 2 | v48 v56 | 3 | 1 | 0 |
+| `file-state.baseline-adopt` | yes | 2 | 1 | v43 | 3 3 | 1 | 3 |
+| `reconciliation.conflict-block` | yes | 2 | 1 | v41 | 3 3 | 1 | 1 |
+| `file-state.hash-matches` | yes | 1 | 1 | v43 | 3 | 1 | 1 |
+| `file-state.un-baselined` | yes | 1 | 1 | v53 | 3 | 1 | 4 |
+| `finalize.base-mismatch` | yes | 1 | 1 | v43 | 3 | 1 | 3 |
+| `finalize.empty-commit` | yes | 1 | 1 | v57 | 3 | 1 | 3 |
+| `finalize.left-out` | no | 1 | 1 | v11 | 2 | 1 | 0 |
+| `finalize.nothing-staged` | yes | 1 | 1 | v25 | 3 | 1 | 3 |
+| `finalize.promote-clobber` | yes | 1 | 1 | v10 | 1 | 1 | 2 |
+| `finalize.rollback-conflict` | no | 1 | 1 | v41 | 3 | 1 | 1 |
+| `finalize.stage-failed` | yes | 1 | 1 | v41 | 3 | 1 | 2 |
+| `ingest.unaddressable-identity` | yes | 1 | 1 | v06 | 1 | 1 | 4 |
+| `join.missing-provenance` | yes | 1 | 1 | v30 | 3 | 1 | 3 |
+| `milestone.provision-failed` | yes | 1 | 1 | v61 | 3 | 1 | 1 |
+| `milestone.staged-prose` | yes | 1 | 1 | v30 | 3 | 1 | 3 |
+| `milestone.terminal` | yes | 1 | 1 | v61 | 3 | 1 | 2 |
+| `store.home-not-regular-file` | yes | 1 | 1 | v29 | 3 | 1 | 8 |
+| `task-discard.foreign-bytes` | yes | 1 | 1 | v30 | 3 | 1 | 4 |
+| `uninstall.remove-jigc` | yes | 1 | 1 | v35 | 3 | 1 | 1 |
+| `write.identity-change` | yes | 1 | 1 | v44 | 3 | 1 | 7 |
+| `write.target-escape` | no | 1 | 1 | v44 | 3 | 1 | 1 |
+| `write.wrong-shape` | no | 1 | 1 | v44 | 3 | 1 | 1 |
+
+  code + command: 57 pairs · by rows: once 45 · twice 7 · three times 2 · more 3 · by distinct agents: once 43 · twice 8 · three times 4 · more 2
+     setup.install-hook @ setup: rows 4, agents ['v04', 'v15', 'v37'], hops [1, 2, 3, 3]
+     store.not-found @ doc show: rows 4, agents ['v07', 'v11', 'v24', 'v42'], hops [1, 2, 3, 3]
+     file-state.unregistered-doc @ validate: rows 4, agents ['v20', 'v50', 'v51', 'v53', 'v54'], hops [2, 3, 3, 3]
+     file-state.orphaned-doc @ validate: rows 3, agents ['v07', 'v20', 'v51'], hops [1, 2, 3]
+     write.non-reparseable @ doc author: rows 3, agents ['v18', 'v44'], hops [2, 3, 3]
+     schema-conformance.orphaned-instance @ validate: rows 2, agents ['h03', 'v11'], hops [0, 2]
+     store.malformed-slug @ doc list: rows 2, agents ['h02', 'h03', 'v42'], hops [0, 3]
+     uninstall.remove-precommit @ uninstall: rows 2, agents ['a01', 'd01', 'v15'], hops [1, 2]
+     store.unparseable @ doc show: rows 2, agents ['v06', 'v24'], hops [1, 3]
+     migrate.source-untracked @ task finalize: rows 2, agents ['v18', 'v48'], hops [2, 3]
+     reconciliation.conflict-block @ task finalize: rows 2, agents ['v41'], hops [3, 3]
+     file-state.staged-copy @ task validate: rows 2, agents ['v43', 'v45'], hops [3, 3]
+
+== whole reports: 79 codes named by at least one of 90 reports; by number of reports: once 25 · twice 16 · three times 9 · more 29
+   top: store.not-found×24, store.not-staged×15, finalize.no-task×12, schema-conformance.unadopted-instance×12, store.unparseable×11, file-state.orphaned-doc×10, reconciliation.rename×10, setup.install-hook×9, conformance.section-missing×9, migrate.source-untracked×9, store.home-not-regular-file×8, schema-conformance.orphaned-instance×7, write.identity-change×7, file-state.staged-copy×7, file-state.unregistered-doc×7, write.non-reparseable×6, create.gate-blocked×6, schema-conformance.repeatable-populated×5, store.malformed-slug×5, store.unknown-type×4
+   codes named in reports but in no row (row text): 53 · (row + bullet): 41
+rows with more than one source reference: 54 · of them carrying a code (row text): 3
