@@ -2,6 +2,135 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The record's batch is composed by a tool: plain words held to a hash in one canonical form, every row read from what is filed, both records of a stage composed — and a step of the tool that composes, answers again and says the record script's own word (the plan's `K3`; the builder's choices inside it)
+
+**What.** In a run with a queue no step types a `test` stage's record any more: [`dev/stabilize-record`](dev/stabilize-record) composes the batch from what the stage's agents filed and from plain words, and [`dev/stabilize-step`](dev/stabilize-step) has the step that asks for it ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §5, `K3`, the migration order's Phase A; the third count's candidate 3, [prebuild-census.md](completions/artifacts/M55/stabilization-build/reshape/prebuild-census.md): *the record's batch composed by a tool* — 118 k output tokens and 13.4 minutes a record, typed from a prompt that held it verbatim; ruling 1 of *2026-10-11 — The reshaped `test` stage's three open questions, ruled*: a stage records twice). The two scripts' headers are the contract; in one place:
+
+- **A new writer, `compose`**: `dev/stabilize-record compose --run R --round N --attempt A --subject TEXT --sha256 HASH [--scratch DIR]... [--] WORD...`. It composes the batch `apply` takes and applies it **in the same call**, by the function `apply` applies one with: the take of what was filed, the calls, the view, the journal. It prints what `apply` prints, and `composed`: `{record: first | later, calls, triage, words}`.
+- **The words** say what the script cannot read: `reporter=<reporter>` — a reporter the stage launched, at least one · `commit=<sha>` · `gate=<job>` — the held job of the candidate's gate · `item=<item>:green` · `item=<item>:red:<reporter>` · `item=<item>:void:<word>[:<key>]` · `item=<item>:held:<job>` · `fact=<name>:<value>` — `candidate`, `base`, `binary`, and `cross-model`, `cross-model-void` one word an item. **Nothing else is a word**: no row, no entry, no verdict, no view, no ruling and no fact of a `fix` stage.
+- **The words are held to a hash before one of them is read.** `HASH` is the sha256 of their canonical form; a difference is refused with a word of its own, `words` (exit 26), names both hashes and writes nothing.
+- **Which record it is, is read off the round's own record** (`round.md`: `recorded`) and said by no caller: the attempt's **first**, or a **later** one.
+- **A new act of the step tool, `compose`**: `dev/stabilize-step compose --branch B --run-dir D --round N --attempt A --subject TEXT --sha256 HASH --scratch DIR [--] WORD...` — the branch and git's lock first, a killed write finished, then that one call of the record script. Its refusal is the tool's `record`, with **the record script's own word as one more field, `refusal`**, in the digest too. **It is repeatable**: the journal keeps the hash with the applied batch, and the step asked again with the same words answers `applied` and writes nothing.
+
+**The canonical form — defined once**, in `words_text` of the record script, and printed by its help. These lines, each ended by **one line feed, the last too**, as UTF-8: `run=R`, `round=N`, `attempt=A`, `subject=TEXT`, then one line a word **in the order the words were handed**. Nothing is sorted, folded or trimmed; no key order, no number and no locale is in it — a caller with no file system joins the lines with `"\n"` and adds one more. An example, and its sha256 — computed by the script, by `shasum` over the same bytes, and by a JavaScript runtime's own sha256 over the joined lines:
+
+```text
+run=rc24
+round=1
+attempt=1
+subject=docs(record): rc24 r1 - the record of the test stage
+reporter=attempt
+reporter=triage
+                                    38653f65999e4d356ac8bb701f36c22fd6cf84bd3dc4b2c5ef969153a0be4c95
+```
+
+**What each of a stage's two records is composed from.**
+
+| | The first — the attempt has reached no record | A later one — the attempt has its record |
+|---|---|---|
+| `check-reports` | the launched reporters — **words** | the launched reporters, the verifiers among them — **words** |
+| `gate-set` | the candidate's gate, where a word names its job — `<scratch>/hold/<job>/output` | — |
+| `result-set` | a result an item — **words**; a held check's from `<scratch>/hold/<job>/verdict.json` | — |
+| `ledger-add` | every **new** entry of the rendering the attempt's triage left (`K2`) | — |
+| `triage-set` | **every** entry of it: key, grade, bound | **no entry is sent again** |
+| `round-set` | the round's facts — **words** | — |
+| `check-ledger` | the entries' keys | — |
+| taken by `apply` itself | every filed verdict that counts and that no record holds — none, in a stage's first attempt | **what was filed since**: the verdicts, the rows handed on |
+| written by `apply` itself | the round's view | the round's view |
+
+A later record composes a call for whatever other word it is handed, and the state takes it or refuses it as for any caller; that is where *whatever plain words changed* goes. **A later record composed when nothing was filed since the first is refused as a record that changes nothing** — `no-change`, today's `apply`, unchanged: an arm holds it, with the run as it was. A later attempt has a first record of its own, composed from that attempt's rendering and from no other.
+
+**Why a later record sends no entry again.** `triage-set` replaces the round's row of every entry it names. An entry recorded again without its verdict would take the verdict the batch had just taken from its filed file off that row. So the rendering is read once, by the record that puts its entries on record.
+
+**The states while a batch is composed, as the step tool holds them.** On the composed path the `record` act is four commands of the tool, which its table names in their order (`ACTS`: `record`, `composed`): `check-reports` · `compose` · `record` · `push`. The composing call reads, composes and scans before its first write, as `apply` does, so every state it can leave is a row the table already had:
+
+| Where the stage ended | State | What the next call does |
+|---|---|---|
+| before the call's first write | none: no temporary, no journal | the state before the batch. The step is asked again, and **the same words compose the same batch** |
+| in its write, before its journal | `stray-temporaries` | the next act removes them: the state before the batch |
+| between its files | `interrupted-write` | the next act puts the batch in place, whole: it is then applied |
+| after its write — the step's line was lost, or the stage ended | `applied`, owed to the stage | `git-state` names the batch with its calls and its checks; the gate, then `record`. The composing step asked again with the same words answers `applied`, with what it met in `found` |
+| a batch other words composed, or a typed one, is applied | `applied` | the composing step is refused `record`, `refusal: pending` |
+
+A stage killed while its batch is composed ends, within two reads, in one of two states: the state before the batch, or the record that was never interrupted, pushed. **The report check comes first**: a filed file that is no verdict refuses the composing call (`check`) and names that exit.
+
+**Every cell where a composed batch differs from the typed one.** The same stage recorded by a batch typed from the same entries and by the composed one is, for the first record and for the second, **the same run to the byte** — every file of the run's directory — where the typed batch says in its worded cells what the composed one computes. Typed as a step words them today, the two differ in these cells and in no other:
+
+| Cell | Typed today | Composed |
+|---|---|---|
+| `r<N>/results.md`, a void item's `detail` — and that reason again in `clauses.md`, which is rendered from the results | a sentence of the harness's, or an agent's (`it did not run to its end`, the preflight's evidence) | a word of the shape a held check's void has: `<word>` or `<word>:<key>` |
+| `ledger.md`, the `repro` of the row a check an agent read red is filed as | the preflight's own prose, and its report named inside it | that reporter's report, **by path** |
+| `classes.md`, the `evidence` of that row's class | the same prose | the same path |
+
+Three more differ from what the **old path's** typed batch held, and are `K2`'s and `T1`'s, not this task's: a row's `source` is the handed findings its entry folds (`K2`), where the old path wrote triage's free text; and every row carries its class.
+
+**Chosen where the plan left it to the builder — and what was rejected.**
+
+- **One call composes and applies.** *Rejected:* a composer that writes a batch file which `apply --from --sha256` then takes — a second hash to hold, a file between two commands, and a state *composed and not applied* for the step tool's table, for nothing: the composition is a pure read of what is filed.
+- **A step of the tool, and not the record script called by a prompt.** The harness reads a step's digest and no other line, and `T5b` may not touch a script: what makes a record *tool steps only* had to exist now.
+- **The record script's word rides as a field, `refusal`; the step's own word is `record`.** *Rejected:* new words in the step tool's `STATUS` — the harness's fence holds that table to the harness's own rows, which this task may not write.
+- **A word of its own for a hash that differs, `words`.** *Rejected:* `bad-value`, as `apply --from` has it — a harness could not tell a word a step typed wrong, which is asked again, from a word it composed wrong, which is a halt.
+- **The canonical form is lines, in the handed order.** *Rejected:* a JSON form — key order, escapes and separators are a second implementation's to match byte for byte; sorting — the order is content: it is the order of the results' rows and of the report check's reporters, and an arm holds that two words in another order are refused.
+- **The run, the round, the attempt and the subject are in the hash**, with the words: a step that types `--attempt 2` for `1` composes another record.
+- **The commit is a word**, not a flag: owed where an item or a gate is named, held to its shape by its place.
+- **A held job is named, and looked up under the one scratch root the call names.** *Rejected:* a path as a word — a host path in a hash and in an agent's typing. The record script now spells `<scratch>/hold/<job>/output` and `verdict.json`, whose home is the step tool's table of kept files: a second place, declared.
+- **A check an agent read red: `red:<reporter>`.** Its door is `` the check `<item>` `` — the item's own, spelled as the harness spells it today, so the tables are the typed ones — and its repro the report of that reporter at this attempt, by path; the reporter is one the words launched.
+- **A void's reason is a word for every item**, held to the shape `result-set` holds a held check's to.
+- **A fact is one the round's `test` stage writes** — read off the script's own table (`ROUND_TAKES`: `untested`), no list of this task's. A fact's value is held by `round-set`.
+- **An identifier in a word is refused as every identifier is** (`bad-id`), before the state is read: a reporter, an item, a held job — which becomes a path. Nine sites of the suite's axis.
+- **Two renderings among the launched reporters are refused.** A stage has one triage; the record guesses at none. A rendering of a reporter nobody launched is a report nobody named: `extra`.
+- **Refused in a run without an order** (`bad-value`), as `verdict` and `triage` are.
+- **Nothing holds the rendering between the composer's read and the batch's report check.** Both are in one process under the run's lock, which every writer of the script takes. A guard there would be code no arm can reach; the bound is said below.
+- **The step is asked again by the hash.** The journal keeps the hash with the batch (`pending`: `batch.words`), only for a composed batch — a typed batch's journal and `pending` are what they were.
+
+**Phase A, shown.** `a_run_without_an_order_holds_the_bytes_it_held` is green **unmodified**. In a run without an order the call is refused and writes nothing — the first arm drives that beside the run with a queue, and the writers' table holds `compose` refused at every one of its seventeen places. `apply` is the function it was up to the lock; the typed batch works beside the composed one, and two arms record one stage both ways.
+
+**Red first.** Eight arms — the plan's four and four of the builder's naming — were written before either script changed, and run on the parent's: eight red. Seven at their first call of the new writer or the new act, which the parent refuses as no subcommand and as no act — after the stage each stands on had been stood up on the parent through the scripts' own writers: the fullest stage, its entries handed over; the step arm's, begun, scoped and reported. The eighth, the kill arm, at the table: the parent's `record` act names no commands of a composed record. With the record script changed and the step tool still the parent's, the two step arms were red a second time, at the same places. **What followed its code, and says so:**
+
+- *The fourth file of the worded cells.* The arm said three files differ between a batch a step words and the composed one; the script showed four — the clause table is rendered from the results and repeats a void's reason — and the arm follows the script.
+- *Three values pinned from what the scripts printed:* how many files the step's digest counts, what a step asked again over an interrupted write found (three states, the batch's own temporaries among them), and the round and the attempt as numbers in the step's line.
+- *Cases added after the first green, each where a mutant about to be run would have survived as the arm stood:* a later attempt's first record; a status typed as no status, which is a word that differs and no word outside the grammar; a subject of two lines; a rendering of a reporter nobody launched; a commit that is no sha, by its place; nine identifier sites; the step asked again over an interrupted write; git's lock.
+- *Code taken out for the same reason:* three checks for a reporter, an item and an item of a list said twice, which the calls they are composed into already make.
+- *The rows of the suites' own tables*, added once the whole `g_tooling` target named them red.
+
+**Mutants of the finished scripts** — fifty-nine, each one edit, each run on the arm that names its property; three of them a second time, on the arm that holds two whole runs to each other. All died.
+
+| The edit | An arm that went red — the one that names it |
+|---|---|
+| a record is composed in a run without an order · a later record sends the entries again · no record is composed from the entries · once an attempt has its record every record is a later one · a rendering of another attempt is read · a finding found again is sent as a row · a lead given as a route is sent as a lead · the evidence of a kind is not sent · the code and the site are not sent · the source is not what the entry folds · the bound is not sent · a red run's repro is not its report by path · a red run's door is not the item's own · the results are composed in another order than the words' · the candidate's gate is not composed · the round's facts are not composed · the ledger check is not composed · a held check's verdict is read from the job's output · a composed batch says nothing of itself · the journal keeps no words · `pending` does not say them | `a_test_stages_batch_is_composed_from_what_is_filed_and_from_plain_words` — the writers' table too for the first, the kill arm for the last two; and `a_composed_batch_is_what_the_typed_one_was` for the second, the seventh and the twelfth |
+| the words are not held to their hash · the hash is of the words in any order · the subject is not in the hash · the attempt is not in it · the last line is not ended · the words are read before they are held · the subject is any text | `words_that_differ_from_their_hash_are_refused_and_nothing_is_written` |
+| a rendering of a reporter nobody launched is read · of two renderings both are taken · a red run's reporter is anybody · a held job is looked up under the first of several roots · a void says a sentence · a fact of a `fix` stage is a word · of a fact said twice the first stands · of two commits the first stands · a record names no reporter · an item needs no commit · a commit of any shape is a word · what an item did is anything · a word is of any kind | `the_launched_reporters_are_the_callers_and_a_word_outside_the_grammar_is_refused` |
+| an item · a reporter · the gate's job · a held check's job · a red run's reporter · an item of a list is not held to its grammar at the word | `a_hostile_identifier_is_refused_at_every_site_and_nothing_is_written` |
+| a killed write is not finished first · asked again, the step composes again · asked again, any applied batch is the one · the checks of the batch are not said · the table has the report check after the composing step · asked again, the step does not say where the batch stands | `dev_stabilize_step::a_stage_killed_while_its_batch_is_composed_ends_in_one_of_two_states` |
+| the branch is not asked · git's lock is not asked · the record script's word is not said | `dev_stabilize_step::the_composing_step_says_the_record_scripts_own_word_where_that_script_refuses` |
+| the digest holds no word of the record script's · does not say what was applied · names the files and not their number | `dev_stabilize_step::every_line_is_a_digest` |
+
+**Two arms were run on no mutant, and are pins:** `a_composed_record_is_refused_over_a_filed_file_that_is_no_verdict_and_names_the_report_check` and `a_composed_second_record_is_the_same_whatever_order_the_verifiers_filed_in` hold, through the new call, what `T3b` built into the take — a refusal that names its exit, and the state's own order. Both were red on the parent for want of the call, and nothing else.
+
+**The assertions this task carried.** In the harness's fence, one: `l_every_git_step_is_one_command_of_the_tool_but_the_recut_of_a_part` holds the tool's acts to the ones the harness asks for and the ones no stage asks for, and `compose` is one more of the second — a row of `NO_STAGES`, with its reason, which `T5b` takes away. In the step suite, four held to the two tools' own parsers: `no_act_reaches_main_a_release_branch_a_tag_or_a_branch_outside_the_model` — a row for the new act and one for the new subcommand, both `no-ref`; `the_tool_runs_no_git_command_an_agent_may_not` — the one call of the record script the new act makes; `no_act_takes_main_or_any_branch_without_a_prefix` — a value for each of the flags `subject` and `sha256`; and `every_line_is_a_digest`, which drives every act to its end as a digest — the composing step on a stage of its own, done and refused. In the record suite, the tables held to the script's parser grew by what it grew: the refusals' list (`words`), the writers' list — so the scanner, the hygiene and the killed-write axes drive a composed record — the call of every subcommand on a run that was never opened, nine identifier sites, the writers' table's row, and the module doc's count of writers. **Nothing else in `tooling-tests/` pinned a text this task moved**: the whole `g_tooling` target ran on the two scripts before those rows were written — 511 of 515, the four red the four tables named here that were not yet carried; the simulation's scenarios, the canary's suite and the probe's suite among the green. The commit's gate is the measure.
+
+**What the next tasks owe because of this.**
+
+- `K1a`: nothing of its read depends on this task. Its subcommand meets the tables this one met — the record suite's list of readers, the step suite's `REACH` — and the script's help now holds one more section in capitals, *THE CANONICAL FORM*, which is no report rule.
+- `T5b`, the first record: the step is `compose`, and the fence's `NO_STAGES` row for it goes. **The script computes the canonical form in JavaScript** — the five kinds of line joined by `"\n"`, one more at the end — and hands the hash as `--sha256`; the suite holds the form in Rust, and no arm holds a JavaScript one. The step's digest gives `applied {calls, checks}`, which the commit step is handed as `--calls` and `--checks`. `refusal`: `words` — the step is asked again, exactly; `check` — the report check did not come first, or a reporter is missing or extra; `pending`; `no-change`. **The reporter words are the reporters that left a report**: one the report check found missing is dropped, and its item is `void:<word>:<reporter>`. **Every void is a word**: the sentences the harness composes today (`no trial image: …`, a preflight's evidence) need a word each. A check the preflight read red names the preflight's reporter; its evidence no longer reaches the record through the harness. A held job is named by its name, the gate by `gate=<job>`. An empty `cross-model` list is no word.
+- `T6a`, the second record: the same step with **every reporter the attempt launched** — the first record's and the verifiers that left a report — and the second record's own subject. Composed when nothing was filed it is `refusal: no-change`, which is no halt. The wave's report check comes before it.
+- `T6b`: an invocation that continues is a later attempt, whose first record is composed from that attempt's rendering.
+- `T10`: the workflow's document says nothing of this yet. `T12`: the typed batch of a `test` stage goes with the old path; `apply` stays for the human's rulings and for `fix`.
+
+**What is not established.**
+
+- **Nothing of a stage calls any of it.** No harness path, no scenario of the simulation, no agent's definition.
+- **That a JavaScript caller computes the same bytes.** The form is held to a second, hand-written one in two Rust suites; the example above was hashed by three implementations, once, by hand.
+- **The saving.** 118 k output tokens and 13.4 minutes a record are the count's, for a typed batch; what a step spends typing forty to a hundred words exactly, and how often the hash sends it back, is the first supervised run's.
+- **A rendering swapped between the composer's read and the batch's report check** — in one process, under the run's lock — for another text that renders its own entries: the record is of the first, the commit holds the second. Who wrote a file is not holdable.
+- **A re-run inside a round, composed.** Its results are a later attempt's first record; no arm drives one through `compose`.
+- **A later record handed an item, a gate or a fact** composes the call and the state answers; no arm drives one.
+- **A commit word that nothing uses** — no item and no gate — is held to its shape and then to nothing.
+- **A finding found again whose verdict the same batch takes from its file** is graded again by the entry, and its row loses the verdict it was just given; a second filing for it in the round is then refused. It is so for a typed batch too, since `T3b` and `K2`, and no arm reaches it.
+- **The step asked again where the batch's commit is made and not settled** answers `applied` with `committed` in `found`; no arm drives it. The kill arm drives a stage's first record; a kill inside a later composed record is `T3b`'s arm, on `apply`.
+- **The real scanners over a composed batch**: the suite drives a stand-in for gitleaks.
+- **Not read whole for this task**: the record suite beyond its rig, its tables and the arms of `T1` to `K2`; the step suite beyond its rig, its `Stage`, its tables and the arms of the record act; the harness beyond how it composes a record's calls and names a held job; [stabilization-workflow.md](implementation/stabilization-workflow.md), [dev-workflow.md](implementation/dev-workflow.md) and [public-hygiene.md](implementation/public-hygiene.md) beyond what the project's instructions and the plan carry of them.
+
 ## 2026-10-11 — Triage types each entry once: one file of entries, the report rendered from it and holding it as data, the handed findings held to a partition — and who reported a row is kept in that file, and is what the stop's count reads (the plan's `K2`; the builder's choices inside it)
 
 **What.** [`dev/stabilize-record`](dev/stabilize-record) takes the entries of a stage's one triage as one file, and renders the triage's report from them ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §5, `K2`, the migration order's Phase A; the third count's candidate 2, [prebuild-census.md](completions/artifacts/M55/stabilization-build/reshape/prebuild-census.md): *triage types every entry twice*; and the decision `T4` brought back, taken by the orchestrating session as the faithful build of the ruling of this date on how often a code and a site are named). The script's header is the contract; in one place:

@@ -1663,6 +1663,13 @@ const NO_STAGES: &[(&str, &str)] = &[
         "table",
         "the tool's table of acts and arrival states, printed for a reader and for the tool's own suite",
     ),
+    // THE COMPOSING STEP (the build plan of the reshaped `test` stage, `K3`): the tool has it,
+    // and no stage asks for it YET — the harness's half is that plan's `T5b` (a stage's first
+    // record) and `T6a` (its second), which take this row away.
+    (
+        "compose",
+        "no stage asks for it yet: the tool composes a `test` stage's record from plain words since the plan's `K3`, and the harness's record step still hands an executor a typed batch until `T5b`",
+    ),
     // A HELD COMMAND (the second repair plan's `K10` and `K11`): `hold-start` and
     // `hold-wait` are steps of a stage. The two acts beside them are asked for by NO STEP:
     (

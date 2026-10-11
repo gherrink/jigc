@@ -48,7 +48,8 @@
 //!   a cycle, a reporter, an attempt, a ledger key, a cited bound, a clause, each name a
 //!   check is handed — is driven with every hostile value ([`HOSTILE_IDS`]): each is
 //!   refused as `bad-id` and leaves the tree as it was.
-//! - *The writers.* Fourteen subcommands write a file ([`WRITERS`]), and eleven of them put a
+//! - *The writers.* Fifteen subcommands write a file ([`WRITERS`]) — the last a record that
+//!   is composed, of plain words and of what was filed — and eleven of them put a
 //!   caller's free text into it: a report's body, a ledger row's cells as it is added and
 //!   as it is set, a void run's reason, a bound's, a door's derivation, a test-set item's
 //!   brief, a failing test's name in a gate's output, what a verifier files of an item it
@@ -312,6 +313,7 @@ const GATE_MISMATCH: i32 = 22;
 const FAULT: i32 = 23;
 const VET_MISMATCH: i32 = 24;
 const NO_CHANGE: i32 = 25;
+const WORDS: i32 = 26;
 
 /// Every refusal class with its status, as `--help` must list them.
 const REFUSALS: &[(i32, &str)] = &[
@@ -335,6 +337,7 @@ const REFUSALS: &[(i32, &str)] = &[
     (CHECK, "check"),
     (FAULT, "fault"),
     (NO_CHANGE, "no-change"),
+    (WORDS, "words"),
 ];
 
 const LEDGER_COLUMNS: [&str; 10] = [
@@ -1332,6 +1335,26 @@ const WRITERS: &[Writer] = &[
         },
     },
     Writer {
+        // A composed record: its plain words are identifiers and closed vocabularies, and
+        // the texts it writes were scanned when they were filed. Here: the report check of
+        // an attempt that launched its marker, which the round's record then names.
+        name: "compose (no free text)",
+        free_text: false,
+        prepare: |rig| {
+            ordered(rig, &ORDER);
+            scoped(rig);
+            begun_attempt(rig, "1");
+        },
+        call: |rig, _, extra| {
+            let words = ["reporter=attempt".to_owned()];
+            let hash = sha256_of(&canonical("1", "1", COMPOSED, &words));
+            let mut args = compose_args("1", "1", COMPOSED, &hash, &[], &words);
+            let at = args.len() - 2;
+            args.splice(at..at, extra.iter().cloned());
+            (rig.run(&args, ""), round_path("1"))
+        },
+    },
+    Writer {
         name: "apply (a row's `source` cell, in a batch of one call)",
         free_text: true,
         prepare: |_| {},
@@ -1939,6 +1962,66 @@ const ID_SITES: &[IdSite] = &[
             )
         },
     },
+    IdSite {
+        name: "compose --run",
+        numeric: false,
+        call: |rig, v| rig.run(&composing(v, "1", "1", &["reporter=attempt"]), ""),
+    },
+    IdSite {
+        name: "compose --round",
+        numeric: true,
+        call: |rig, v| rig.run(&composing(RUN, v, "1", &["reporter=attempt"]), ""),
+    },
+    IdSite {
+        name: "compose --attempt",
+        numeric: true,
+        call: |rig, v| rig.run(&composing(RUN, "1", v, &["reporter=attempt"]), ""),
+    },
+    IdSite {
+        name: "compose, a reporter the stage launched",
+        numeric: false,
+        call: |rig, v| rig.run(&composing(RUN, "1", "1", &[&format!("reporter={v}")]), ""),
+    },
+    IdSite {
+        name: "compose, an item",
+        numeric: false,
+        call: |rig, v| {
+            let words = ["reporter=attempt", &format!("item={v}:green")];
+            rig.run(&composing(RUN, "1", "1", &words), "")
+        },
+    },
+    IdSite {
+        name: "compose, the reporter whose report says an item is red",
+        numeric: false,
+        call: |rig, v| {
+            let words = ["reporter=attempt", &format!("item=ci:red:{v}")];
+            rig.run(&composing(RUN, "1", "1", &words), "")
+        },
+    },
+    IdSite {
+        name: "compose, a held check's job",
+        numeric: false,
+        call: |rig, v| {
+            let words = ["reporter=attempt", &format!("item=gate:held:{v}")];
+            rig.run(&composing(RUN, "1", "1", &words), "")
+        },
+    },
+    IdSite {
+        name: "compose, the job of the candidate's gate",
+        numeric: false,
+        call: |rig, v| {
+            let words = ["reporter=attempt", &format!("gate={v}")];
+            rig.run(&composing(RUN, "1", "1", &words), "")
+        },
+    },
+    IdSite {
+        name: "compose, an item of a list a fact holds",
+        numeric: false,
+        call: |rig, v| {
+            let words = ["reporter=attempt", &format!("fact=cross-model:{v}")];
+            rig.run(&composing(RUN, "1", "1", &words), "")
+        },
+    },
 ];
 
 #[test]
@@ -2073,7 +2156,24 @@ fn every_subcommand(rig: &Rig, run: &str) -> Vec<(&'static str, Seen)> {
                 &one_entry("audit-f3"),
             ),
         ),
+        (
+            "compose",
+            rig.run(&composing(run, "1", "1", &["reporter=attempt"]), ""),
+        ),
     ]
+}
+
+/// A composed record of the run `run` — which need not be the rig's — of `words`, held to
+/// the hash of exactly these words.
+fn composing(run: &str, round: &str, attempt: &str, words: &[&str]) -> Vec<String> {
+    let words: Vec<String> = words.iter().map(|word| (*word).to_owned()).collect();
+    let text = format!(
+        "run={run}\nround={round}\nattempt={attempt}\nsubject={COMPOSED}\n{}\n",
+        words.join("\n")
+    );
+    let mut args = compose_args(round, attempt, COMPOSED, &sha256_of(&text), &[], &words);
+    args[1] = format!("--run={run}");
+    args
 }
 
 #[test]
@@ -12015,6 +12115,19 @@ const HERE: &[Taken] = &[
             rig.run(
                 &triage_args(RUN, &round.to_string(), TRIAGE, "1", &[], &[("hunt-a", 1)]),
                 &one_entry("prop-triaged"),
+            )
+        },
+    },
+    Taken {
+        // A record is composed in a run with a queue, and no place of this table holds an
+        // order: where one IS composed is
+        // `a_test_stages_batch_is_composed_from_what_is_filed_and_from_plain_words`.
+        name: "compose",
+        takes: NOWHERE,
+        call: |rig, _, round| {
+            rig.run(
+                &composing(RUN, &round.to_string(), "1", &["reporter=prop"]),
+                "",
             )
         },
     },
@@ -22955,5 +23068,1393 @@ fn the_record_keeps_who_reported_a_row_and_a_finding_found_again_adds() {
             0
         )),
         "{read}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The record's batch is composed by a tool (the build plan of the reshaped `test` stage, K3)
+// ---------------------------------------------------------------------------
+
+/// The subject of a composed record's commit, in the arms below.
+const COMPOSED: &str = "docs(record): rc24 r1 - the record of the test stage";
+
+/// The names of the held jobs of [`a_stage_before_its_first_record`], under its scratch root:
+/// the candidate's gate, the regression set — and one that left no verdict.
+const GATE_JOB: &str = "gate-r1-a1";
+const REGRESSION_JOB: &str = "regression-r1-a1";
+const DEAD_JOB: &str = "regression-old-r1-a1";
+
+/// **THE CANONICAL FORM of the plain words a composed record is handed, as a caller computes
+/// it** — written out here a second time ON PURPOSE: it is what the harness computes with no
+/// file system, and every arm below hands the script the hash of THIS text. One line for the
+/// run, one for the round, one for the attempt, one for the subject, then one line a word, in
+/// the order the words are handed — each line ended by ONE line feed, the last too.
+fn canonical(round: &str, attempt: &str, subject: &str, words: &[String]) -> String {
+    let mut text = format!("run={RUN}\nround={round}\nattempt={attempt}\nsubject={subject}\n");
+    for word in words {
+        text.push_str(word);
+        text.push('\n');
+    }
+    text
+}
+
+/// `compose`: the call that composes a `test` stage's record and applies it — for a round and
+/// an attempt, under the subject of its commit, held to `hash`, with the plain words last.
+fn compose_args(
+    round: &str,
+    attempt: &str,
+    subject: &str,
+    hash: &str,
+    scratch: &[&Path],
+    words: &[String],
+) -> Vec<String> {
+    let mut args = vec![
+        "compose".to_owned(),
+        format!("--run={RUN}"),
+        format!("--round={round}"),
+        format!("--attempt={attempt}"),
+        format!("--subject={subject}"),
+        format!("--sha256={hash}"),
+    ];
+    args.extend(
+        scratch
+            .iter()
+            .map(|root| format!("--scratch={}", root.display())),
+    );
+    args.push("--".to_owned());
+    args.extend_from_slice(words);
+    args
+}
+
+/// A `test` stage of a run WITH A QUEUE, stood where its first record begins.
+struct Composing {
+    rig: Rig,
+    scratch: PathBuf,
+    commit: String,
+}
+
+impl Composing {
+    /// The record of round 1's attempt `attempt`, composed from `words` under [`COMPOSED`]
+    /// and the hash of their canonical form.
+    fn compose(&self, attempt: &str, words: &[String]) -> Seen {
+        let hash = sha256_of(&canonical("1", attempt, COMPOSED, words));
+        self.rig.run(
+            &compose_args("1", attempt, COMPOSED, &hash, &[&self.scratch], words),
+            "",
+        )
+    }
+
+    /// THE PLAIN WORDS OF THE STAGE'S FIRST RECORD: the reporters it launched, the commit its
+    /// items ran on, the held job of the candidate's gate, what each item did — a held check
+    /// by its job, a check an agent read red by the reporter whose report says so, a void by
+    /// a word — and the round's facts.
+    fn first_words(&self) -> Vec<String> {
+        let commit = &self.commit;
+        [
+            "reporter=attempt".to_owned(),
+            "reporter=preflight".to_owned(),
+            "reporter=review-setup".to_owned(),
+            format!("reporter={TRIAGE}"),
+            format!("commit={commit}"),
+            format!("gate={GATE_JOB}"),
+            format!("item=gate:held:{GATE_JOB}"),
+            format!("item=regression-set:held:{REGRESSION_JOB}"),
+            format!("item=regression-old:void:dead:{DEAD_JOB}"),
+            "item=ci:red:preflight".to_owned(),
+            "item=review-setup:green".to_owned(),
+            "item=hunt-setup:void:no-report:hunt-setup".to_owned(),
+            format!("fact=candidate:{commit}"),
+            "fact=base:bbbbbbb".to_owned(),
+            format!("fact=binary:{}", driven()),
+            "fact=cross-model:review-setup".to_owned(),
+            "fact=cross-model-void:hunt-setup".to_owned(),
+        ]
+        .to_vec()
+    }
+
+    /// THE PLAIN WORDS OF A LATER RECORD of the attempt: the reporters the stage launched —
+    /// the first record's, and the verifiers of `keys` — and nothing else.
+    fn later_words(keys: &[&str]) -> Vec<String> {
+        let mut words: Vec<String> = ["attempt", "preflight", "review-setup", TRIAGE]
+            .iter()
+            .map(|reporter| format!("reporter={reporter}"))
+            .collect();
+        words.extend(keys.iter().map(|key| format!("reporter=verify-{key}")));
+        words
+    }
+
+    /// The first record AS IT IS TYPED TODAY, for the same stage: the calls of one batch, the
+    /// rows and the entries read off [`the_stages_entries`] BY HAND — each new entry a ledger
+    /// row, every entry a triage entry — with `reason` for the void of the hunt and `repro`
+    /// for the check an agent read red: the two cells a typed batch words.
+    fn typed(&self, reason: &str, repro: &str) -> Value {
+        let under = format!("--scratch={}", self.scratch.display());
+        let within = |mut args: Vec<String>| {
+            args.push(under.clone());
+            args
+        };
+        let job = |name: &str, file: &str| self.scratch.join("hold").join(name).join(file);
+        let results = json!([
+            {"item": "gate", "verdict": job(GATE_JOB, "verdict.json")},
+            {"item": "regression-set", "verdict": job(REGRESSION_JOB, "verdict.json")},
+            {"item": "regression-old", "outcome": "void", "reason": format!("dead:{DEAD_JOB}")},
+            {"item": "ci", "outcome": "red", "doctype": "jigc-feedback",
+             "door": "the check `ci`", "repro": repro},
+            {"item": "review-setup", "outcome": "green"},
+            {"item": "hunt-setup", "outcome": "void", "reason": reason},
+        ]);
+        let found = |key: &str, folds: &str, kind: &str| {
+            json!({"key": key, "doctype": "jigc-feedback", "round": 1, "source": folds,
+                   "door": INSIDE, "clause": "clause-b",
+                   "repro": format!("the block of {key} in its reporter's report"),
+                   "kind": kind, "origin": "hunt"})
+        };
+        let mut first = found("review-f1", "`review-setup` 1, 2", "route");
+        first["route"] = json!("Run: jigc setup --repair review-f1");
+        first["code"] = json!(HOOK);
+        first["site"] = json!(HOOK_SITE);
+        let mut second = found("review-f2", "`review-setup` 3", "behaviour");
+        second["commands"] = json!("jigc setup; jigc doc show review-f2");
+        let hunch = found("review-f3", "`review-setup` 4", "route");
+        let triaged = json!([
+            {"key": "review-f1", "grade": "breaks"},
+            {"key": "review-f2", "grade": "unclear"},
+            {"key": "review-f3", "grade": "breaks"},
+            {"key": "seed-hook", "grade": "out-of-scope", "bound": "non-jigc-writer"},
+            {"key": "red-ci", "grade": "breaks"},
+            {"key": "red-regression-set", "grade": "unclear"},
+        ]);
+        let facts = json!({"candidate": self.commit, "base": "bbbbbbb", "binary": driven(),
+                           "cross-model": ["review-setup"], "cross-model-void": ["hunt-setup"]});
+        json!([
+            call(
+                check_reports(
+                    RUN,
+                    "1",
+                    "1",
+                    &["attempt", "preflight", "review-setup", TRIAGE]
+                ),
+                ""
+            ),
+            call(
+                within(gate_set(RUN, "1", &self.commit, &job(GATE_JOB, "output"))),
+                ""
+            ),
+            call(
+                within(result_set(RUN, "1", &self.commit)),
+                &results.to_string()
+            ),
+            call(
+                within(ledger_add(RUN)),
+                &json!([first, second, hunch]).to_string()
+            ),
+            call(triage_set(RUN, "1"), &triaged.to_string()),
+            call(round_set(RUN, "1"), &facts.to_string()),
+            call(
+                check_ledger(
+                    RUN,
+                    &[
+                        "review-f1",
+                        "review-f2",
+                        "review-f3",
+                        "seed-hook",
+                        "red-ci",
+                        "red-regression-set"
+                    ]
+                ),
+                ""
+            ),
+        ])
+    }
+
+    /// A typed batch, applied under the composed record's subject and scratch root.
+    fn apply(&self, batch: &Value) -> Seen {
+        let mut args = strings(&[
+            "apply",
+            &format!("--run={RUN}"),
+            "--round=1",
+            &format!("--subject={COMPOSED}"),
+        ]);
+        args.push(format!("--scratch={}", self.scratch.display()));
+        self.rig.run(&args, &batch.to_string())
+    }
+
+    /// Every file the run's directory holds, by its path below it — WITHOUT THE JOURNAL, which
+    /// is never committed and says of a composed batch the words it was composed of.
+    fn files(&self) -> BTreeMap<String, String> {
+        let mut files = BTreeMap::new();
+        walk(
+            &self.rig.run_dir(),
+            &self.rig.run_dir(),
+            &self.rig.tmp,
+            &mut files,
+        );
+        files.remove(".pending.json");
+        files
+    }
+
+    /// Two verifiers' whole acts, between the stage's two records: `review-f1` confirmed,
+    /// with one item handed on, and `review-f2` refuted.
+    fn verifies(&self) {
+        let mut confirmed = filing("review-f1", "confirmed");
+        confirmed["hands_on"] = json!([noticed("beside-f1", "route")]);
+        verified(&self.rig, "1", &confirmed);
+        verified(&self.rig, "1", &filing("review-f2", "refuted"));
+    }
+}
+
+/// The entries the stage's one triage hands over, and how many findings each source handed
+/// it: three new findings — a route item with its code and its site, a behaviour item, and
+/// one given as a route with no route line, which is a lead — the row the opening seeded,
+/// found again and out of scope under a declared bound, and the two red runs of the
+/// invocation, each under the key its result is filed with.
+fn the_stages_entries() -> ([(&'static str, u64); 4], Value) {
+    let mut first = new_entry(
+        "review-f1",
+        "route",
+        "breaks",
+        json!({"review-setup": [1, 2]}),
+    );
+    first["code"] = json!(HOOK);
+    first["site"] = json!(HOOK_SITE);
+    let second = new_entry(
+        "review-f2",
+        "behaviour",
+        "unclear",
+        json!({"review-setup": [3]}),
+    );
+    let mut hunch = new_entry("review-f3", "route", "breaks", json!({"review-setup": [4]}));
+    hunch.as_object_mut().expect("an entry").remove("route");
+    let mut seed = again_entry("seed-hook", "out-of-scope", json!({"untriaged": [1]}));
+    seed["bound"] = json!("non-jigc-writer");
+    (
+        [
+            ("review-setup", 4),
+            ("red-ci", 1),
+            ("red-regression-set", 1),
+            ("untriaged", 1),
+        ],
+        json!([
+            first,
+            second,
+            hunch,
+            seed,
+            again_entry("red-ci", "breaks", json!({"red-ci": [1]})),
+            again_entry(
+                "red-regression-set",
+                "unclear",
+                json!({"red-regression-set": [1]})
+            ),
+        ]),
+    )
+}
+
+/// What a held job left under a scratch root, as `dev/stabilize-step` keeps it: its output,
+/// and — where the tool read one — its verdict, ONE line that ends with its own sha256.
+fn held_job(scratch: &Path, name: &str, output: &str, verdict: Option<&Value>) {
+    let dir = scratch.join("hold").join(name);
+    fs::create_dir_all(&dir).expect("the held job's directory");
+    fs::write(dir.join("output"), output).expect("the held job's output");
+    if let Some(body) = verdict {
+        let text = body.to_string();
+        let line = format!(
+            "{}, \"sha256\": \"{}\"}}\n",
+            &text[..text.len() - 1],
+            sha256_of(&text)
+        );
+        fs::write(dir.join("verdict.json"), line).expect("the held job's verdict");
+    }
+}
+
+/// **The suite's fullest stage, stood where its first record begins** — through the script's
+/// own writers: a run with an order, a budget and the number a verifier hands on; a declared
+/// bound; six items — two held checks that left a verdict (the candidate's gate green, the
+/// regression set red), one that left none, a check an agent reads, and two hunts; a row the
+/// opening seeded; the attempt's marker, the round's scope, the reports of the preflight and
+/// of one hunt — the other left none; the held jobs under the scratch root; and the entries
+/// the one triage handed over ([`the_stages_entries`]). With `ordered` false the run holds NO
+/// ORDER, and so no entries: it is the run of today.
+fn a_stage_before_its_first_record(label: &str, ordered: bool) -> Composing {
+    let rig = Rig::new(label);
+    let scratch = rig.tmp.join("scratch");
+    let commit = sha('a');
+    let queue = if ordered {
+        format!(r#", "budget": 9, "hand-on": 2, "order": {}"#, json!(ORDER))
+    } else {
+        String::new()
+    };
+    rig.run(
+        &run_set(RUN),
+        &format!(r#"{{{BOUNDED}, {RELEASE}, "clauses": ["clause-a", "clause-b"]{queue}}}"#),
+    )
+    .must(OK, "the run's facts");
+    rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "")
+        .must(OK, "a declared bound");
+    let unit = |id: &str, kind: &str, clause: &str, runs: &str, doors: &[&str]| {
+        json!({"item": id, "kind": kind, "clause": clause, "runs": runs, "doors": doors,
+               "brief": format!("the brief of `{id}`")})
+    };
+    rig.run(
+        &item_set(RUN),
+        &json!([
+            unit("gate", "held-gate", "clause-a", "every-candidate", &[]),
+            unit(
+                "regression-set",
+                "held-regression",
+                "clause-a",
+                "every-candidate",
+                &[]
+            ),
+            unit(
+                "regression-old",
+                "held-regression",
+                "clause-a",
+                "every-candidate",
+                &[]
+            ),
+            unit("ci", "check", "clause-a", "every-candidate", &[]),
+            unit(
+                "review-setup",
+                "review-row",
+                "clause-b",
+                "in-scope",
+                &[INSIDE]
+            ),
+            unit(
+                "hunt-setup",
+                "review-row",
+                "clause-b",
+                "in-scope",
+                &[INSIDE]
+            ),
+        ])
+        .to_string(),
+    )
+    .must(OK, "the test set");
+    let mut seed = if ordered {
+        evident("seed-hook", "behaviour", "seed")
+    } else {
+        row_at("seed-hook", INSIDE)
+    };
+    seed["round"] = json!(0);
+    seed["source"] = json!("the opening");
+    rig.run(&ledger_add(RUN), &seed.to_string())
+        .must(OK, "a row the opening seeded");
+    scoped(&rig);
+    begun_attempt(&rig, "1");
+    for reporter in ["preflight", "review-setup"] {
+        rig.run(&report(RUN, "1", reporter, "1"), BODY)
+            .must(OK, "a report");
+    }
+    held_job(
+        &scratch,
+        GATE_JOB,
+        &gate_output(&[], &[]),
+        Some(&gate_verdict(&commit)),
+    );
+    held_job(
+        &scratch,
+        REGRESSION_JOB,
+        "",
+        Some(&regression_verdict(&rig, "red", None, &commit)),
+    );
+    held_job(&scratch, DEAD_JOB, "", None);
+    if ordered {
+        let (handed, entries) = the_stages_entries();
+        hand_over(&rig, "1", &handed, &entries).must(OK, "the entries of the one triage");
+    }
+    Composing {
+        rig,
+        scratch,
+        commit,
+    }
+}
+
+/// The cells of the row under `key` in a table of the run.
+fn row_of(stage: &Composing, rel: &str, columns: &[&str], key: &str) -> Vec<String> {
+    table(&stage.rig.read(rel), columns)
+        .into_iter()
+        .find(|row| row[0].trim_matches('`') == key)
+        .unwrap_or_else(|| panic!("no row `{key}` in {rel}"))
+}
+
+/// Where the preflight's report of round 1's first attempt lies: what a check an agent read
+/// red is filed with, by path.
+fn preflights_report() -> String {
+    report_path("1", "preflight", "1")
+}
+
+/// **A `test` stage's batch is composed from what is filed, and from plain words** (the build
+/// plan of the reshaped `test` stage, §5, `K3`: *a `test` stage's record is composed by the
+/// script from what is already filed with it — the reports on disk, triage's entries, the
+/// held checks' verdict files, the filed verdicts — and from plain words for the rest*; the
+/// ruling of 2026-10-11, 1: *a stage records twice*). The caller types no row: it says who it
+/// launched, what each item did and the round's facts, as words, and the script reads the
+/// rest from what the stage's agents filed. BOTH RECORDS ARE COMPOSED. THE FIRST — the
+/// attempt has no record yet — is the report check, the candidate's gate, a result an item,
+/// the new entries of the triage's rendering as rows, every entry of it as a triage entry,
+/// the round's facts and the ledger check. A LATER ONE — the attempt has its record — is the
+/// report check and nothing of the rendering: its entries are on record, and what was filed
+/// since is the take's. And a later one composed WHEN NOTHING WAS FILED SINCE is refused as a
+/// record that changes nothing. IN A RUN WITHOUT AN ORDER the call is refused and writes
+/// nothing: such a run's record is typed, as it always was.
+#[test]
+fn a_test_stages_batch_is_composed_from_what_is_filed_and_from_plain_words() {
+    // PHASE A: a run without an order takes no composed record, and holds what it held.
+    let plain = a_stage_before_its_first_record("composed-plain", false);
+    let before = plain.rig.snapshot();
+    let words = plain.first_words();
+    let seen = plain.compose("1", &words[..3]);
+    seen.refused(BAD_VALUE, "a composed record in a run without an order");
+    assert!(seen.stderr.contains("holds no order"), "{}", seen.stderr);
+    assert_eq!(plain.rig.snapshot(), before, "and nothing was written");
+
+    // THE FIRST RECORD.
+    let stage = a_stage_before_its_first_record("composed", true);
+    let rig = &stage.rig;
+    let words = stage.first_words();
+    let first = stage.compose("1", &words);
+    first.must(OK, "the first record, composed");
+    let said = first.json();
+    assert_eq!(
+        json!([said["applied"], said["composed"]]),
+        json!([
+            7,
+            {"record": "first",
+             "words": sha256_of(&canonical("1", "1", COMPOSED, &words)),
+             "calls": ["check-reports", "gate-set", "result-set", "ledger-add", "triage-set",
+                       "round-set", "check-ledger"],
+             "triage": report_path("1", TRIAGE, "1")}
+        ]),
+        "{said}"
+    );
+    // The journal says the words the batch was composed of.
+    let pending = rig.run(&keeper("pending", RUN), "");
+    pending.must(OK, "what is pending");
+    assert_eq!(
+        json!([
+            pending.json()["batch"]["words"],
+            pending.json()["batch"]["calls"],
+            pending.json()["batch"]["subject"]
+        ]),
+        json!([said["composed"]["words"], 7, COMPOSED])
+    );
+
+    // WHAT EACH ITEM DID — from the words, and from the held jobs' own files.
+    assert_eq!(
+        json!(table(&rig.read(&results_path("1")), &RESULT_COLUMNS)),
+        json!([
+            ["`gate`", "1", format!("`{}`", stage.commit), "green", "-"],
+            [
+                "`regression-set`",
+                "1",
+                format!("`{}`", stage.commit),
+                "red",
+                "`red-regression-set`"
+            ],
+            [
+                "`regression-old`",
+                "1",
+                format!("`{}`", stage.commit),
+                "void",
+                format!("without a verdict: dead:{DEAD_JOB}")
+            ],
+            [
+                "`ci`",
+                "1",
+                format!("`{}`", stage.commit),
+                "red",
+                "`red-ci`"
+            ],
+            [
+                "`review-setup`",
+                "1",
+                format!("`{}`", stage.commit),
+                "green",
+                "-"
+            ],
+            [
+                "`hunt-setup`",
+                "1",
+                format!("`{}`", stage.commit),
+                "void",
+                "no-report:hunt-setup"
+            ],
+        ])
+    );
+    // THE ROWS — the red runs', filed by their results, and then the triage's new entries, in
+    // the file's order: each from the entry as it was typed once.
+    assert_eq!(
+        ledger_keys(rig),
+        [
+            "seed-hook",
+            "red-regression-set",
+            "red-ci",
+            "review-f1",
+            "review-f2",
+            "review-f3"
+        ]
+    );
+    assert_eq!(
+        json!([
+            row_of(&stage, &ledger_path(), &LEDGER_COLUMNS, "review-f1"),
+            row_of(&stage, &ledger_path(), &LEDGER_COLUMNS, "red-ci"),
+        ]),
+        json!([
+            [
+                "`review-f1`",
+                "`jigc-feedback`",
+                "1",
+                "`review-setup` 1, 2",
+                INSIDE,
+                "clause-b",
+                "breaks",
+                "triage",
+                "open",
+                "the block of review-f1 in its reporter's report"
+            ],
+            // A CHECK AN AGENT READ RED brings no free text: its door is the item's own, its
+            // repro the report that says so, by path.
+            [
+                "`red-ci`",
+                "`jigc-feedback`",
+                "1",
+                "the item `ci` of the test set, red in round 1 (attempt 1)",
+                "the check `ci`",
+                "clause-a",
+                "breaks",
+                "triage",
+                "open",
+                preflights_report()
+            ],
+        ])
+    );
+    assert_eq!(
+        json!([
+            row_of(&stage, &classes_path(), &CLASS_COLUMNS, "review-f1"),
+            row_of(&stage, &classes_path(), &CLASS_COLUMNS, "review-f2"),
+            row_of(&stage, &classes_path(), &CLASS_COLUMNS, "review-f3"),
+            row_of(&stage, &classes_path(), &CLASS_COLUMNS, "red-ci"),
+        ]),
+        json!([
+            [
+                "`review-f1`",
+                "route",
+                "hunt",
+                "-",
+                HOOK,
+                HOOK_SITE,
+                "Run: jigc setup --repair review-f1"
+            ],
+            [
+                "`review-f2`",
+                "behaviour",
+                "hunt",
+                "-",
+                "-",
+                "-",
+                "jigc setup; jigc doc show review-f2"
+            ],
+            // Given as a route with no route line: sent as one, and the lead it was.
+            [
+                "`review-f3`",
+                "lead: given as route",
+                "hunt",
+                "-",
+                "-",
+                "-",
+                "-"
+            ],
+            [
+                "`red-ci`",
+                "behaviour",
+                "hunt",
+                "-",
+                "-",
+                "-",
+                preflights_report()
+            ],
+        ])
+    );
+    // THE TRIAGE RECORD — every entry, new and found again, with its grade and its bound.
+    let graded: Vec<Value> = triaged(rig)
+        .into_iter()
+        .map(|row| json!([row[0], row[2], row[3]]))
+        .collect();
+    assert_eq!(
+        json!(graded),
+        json!([
+            ["`review-f1`", "breaks", "-"],
+            ["`review-f2`", "unclear", "-"],
+            ["`review-f3`", "breaks", "-"],
+            ["`seed-hook`", "out-of-scope: non-jigc-writer", "-"],
+            ["`red-ci`", "breaks", "-"],
+            ["`red-regression-set`", "unclear", "-"],
+        ])
+    );
+    // THE ROUND'S FACTS, and that the attempt reached its record.
+    assert_eq!(
+        json!([
+            round_fact(rig, "candidate"),
+            round_fact(rig, "base"),
+            round_fact(rig, "binary"),
+            round_fact(rig, "cross-model"),
+            round_fact(rig, "cross-model-void"),
+            round_fact(rig, "recorded"),
+        ]),
+        json!([
+            stage.commit,
+            "bbbbbbb",
+            driven(),
+            "review-setup",
+            "hunt-setup",
+            "test a1"
+        ])
+    );
+    assert!(
+        rig.root.join(gate_path("1")).is_file(),
+        "the candidate's gate"
+    );
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            queued(&read),
+            read["budget"],
+            reporters_of(&read, "review-f1")
+        ]),
+        json!([
+            ["review-f1", "red-regression-set", "red-ci", "review-f2"],
+            {"limit": 9, "spent": 0, "left": 9},
+            ["r1 review-setup"]
+        ]),
+        "{read}"
+    );
+    settled(rig);
+
+    // BETWEEN ITS TWO RECORDS the stage verifies: two verdicts are filed.
+    stage.verifies();
+
+    // A LATER RECORD: the reporters, and nothing else. No entry of the rendering is sent a
+    // second time — an entry recorded again would take the verdict the batch just took off
+    // its row — and what was filed since is the take's.
+    let later = Composing::later_words(&["review-f1", "review-f2"]);
+    let second = stage.compose("1", &later);
+    second.must(OK, "the second record, composed");
+    let said = second.json();
+    assert_eq!(
+        json!([
+            said["applied"],
+            said["composed"]["record"],
+            said["composed"]["calls"],
+            said["composed"]["triage"],
+            said["filed"]
+                .as_array()
+                .expect("what the record took")
+                .iter()
+                .map(|took| json!([took["key"], took["verdict"], took["rows"]]))
+                .collect::<Vec<_>>(),
+        ]),
+        json!([
+            1,
+            "later",
+            ["check-reports"],
+            null,
+            [
+                ["review-f1", "confirmed", ["beside-f1"]],
+                ["review-f2", "refuted", []]
+            ]
+        ]),
+        "{said}"
+    );
+    let graded: Vec<Value> = triaged(rig)
+        .into_iter()
+        .map(|row| json!([row[0], row[2], row[3]]))
+        .collect();
+    assert_eq!(
+        json!(graded),
+        json!([
+            ["`review-f1`", "breaks", "confirmed"],
+            ["`review-f2`", "unclear", "refuted: intended"],
+            ["`review-f3`", "breaks", "-"],
+            ["`seed-hook`", "out-of-scope: non-jigc-writer", "-"],
+            ["`red-ci`", "breaks", "-"],
+            ["`red-regression-set`", "unclear", "-"],
+        ]),
+        "the verdicts are on their rows, and every other entry is as the first record left it"
+    );
+    assert_eq!(
+        ledger_keys(rig).last().map(String::as_str),
+        Some("beside-f1"),
+        "what was handed on is a row"
+    );
+    assert_eq!(rig.state()["budget"]["spent"], 2);
+    settled(rig);
+
+    // AND ONE MORE, WHEN NOTHING WAS FILED SINCE: a record that changes nothing is none.
+    let before = rig.snapshot();
+    let third = stage.compose("1", &later);
+    third.refused(NO_CHANGE, "a later record with nothing filed since");
+    assert_eq!(rig.snapshot(), before, "and nothing was written");
+
+    // A LATER ATTEMPT HAS A FIRST RECORD OF ITS OWN — an invocation that continues, and grades
+    // what no triage graded: it is composed from THAT attempt's rendering, and from no other.
+    begun_attempt(rig, "2");
+    hand_over(
+        rig,
+        "2",
+        &[("untriaged", 1)],
+        &json!([new_entry(
+            "late-f4",
+            "behaviour",
+            "breaks",
+            json!({"untriaged": [1]})
+        )]),
+    )
+    .must(OK, "the entries of the second attempt's triage");
+    let words = ["reporter=attempt".to_owned(), format!("reporter={TRIAGE}")];
+    let seen = stage.compose("2", &words);
+    seen.must(OK, "the first record of the second attempt");
+    let said = seen.json();
+    assert_eq!(
+        json!([
+            said["composed"]["record"],
+            said["composed"]["calls"],
+            said["composed"]["triage"],
+            round_fact(rig, "recorded"),
+            ledger_keys(rig).last(),
+        ]),
+        json!([
+            "first",
+            ["check-reports", "ledger-add", "triage-set", "check-ledger"],
+            report_path("1", TRIAGE, "2"),
+            "test a2",
+            "late-f4"
+        ]),
+        "{said}"
+    );
+}
+
+/// **Words that differ from their hash are refused, and nothing is written** (`K3`: *those
+/// words are held to a hash, as the typed batch is today: the harness computes a sha256 over
+/// their canonical form and passes it; the script computes it again over what it was handed
+/// and refuses a difference — a step agent that typed `green` for `void` is caught, not
+/// recorded*). One status changed, one reporter dropped, one fact changed — and a word added,
+/// two words in another order, another subject, another attempt: each is refused with a word
+/// of its own (`words`), names the hash of what it was handed — which is the hash of THIS
+/// suite's canonical form of it, so the two forms are one — and leaves the run as it was.
+/// The words as they were hashed are then taken.
+#[test]
+fn words_that_differ_from_their_hash_are_refused_and_nothing_is_written() {
+    let stage = a_stage_before_its_first_record("composed-words", true);
+    let rig = &stage.rig;
+    let words = stage.first_words();
+    let hash = sha256_of(&canonical("1", "1", COMPOSED, &words));
+    let before = rig.snapshot();
+    let typed = |round: &str, attempt: &str, subject: &str, typed: &[String]| {
+        let seen = rig.run(
+            &compose_args(round, attempt, subject, &hash, &[&stage.scratch], typed),
+            "",
+        );
+        (seen, sha256_of(&canonical(round, attempt, subject, typed)))
+    };
+    let swapped = |from: &str, to: &str| -> Vec<String> {
+        assert!(words.iter().any(|word| word == from), "`{from}` is a word");
+        words
+            .iter()
+            .map(|word| {
+                if word == from {
+                    to.to_owned()
+                } else {
+                    word.clone()
+                }
+            })
+            .collect()
+    };
+    let mut dropped = words.clone();
+    dropped.retain(|word| word != "reporter=preflight");
+    let mut added = words.clone();
+    added.push("fact=cross-model:ci".to_owned());
+    let mut reordered = words.clone();
+    reordered.swap(0, 1);
+    let binary = format!("fact=binary:{}", driven());
+    let cases: Vec<(&str, Vec<String>)> = vec![
+        (
+            "a status typed `green` for `void`",
+            swapped(
+                "item=hunt-setup:void:no-report:hunt-setup",
+                "item=hunt-setup:green",
+            ),
+        ),
+        ("a reporter dropped", dropped),
+        (
+            "a fact changed",
+            swapped(&binary, &format!("fact=binary:{}", sha256('c'))),
+        ),
+        ("a word added", added),
+        ("two words in another order", reordered),
+        // HELD BEFORE ONE OF THEM IS READ: a status typed as none at all is a word that
+        // differs, and never a word of the caller's that is outside the grammar.
+        (
+            "a status typed as no status",
+            swapped("item=review-setup:green", "item=review-setup:grean"),
+        ),
+    ];
+    for (what, handed) in &cases {
+        let (seen, has) = typed("1", "1", COMPOSED, handed);
+        seen.refused(WORDS, what);
+        assert!(
+            seen.stderr.contains(&has) && seen.stderr.contains(&hash),
+            "{what}: the refusal names the hash of what it was handed and the hash it was held to: {}",
+            seen.stderr
+        );
+        assert_eq!(rig.snapshot(), before, "{what}: nothing was written");
+    }
+    for (what, round, attempt, subject) in [
+        ("another subject", "1", "1", "docs(record): another"),
+        ("another attempt", "1", "2", COMPOSED),
+        ("another round", "2", "1", COMPOSED),
+    ] {
+        let (seen, has) = typed(round, attempt, subject, &words);
+        seen.refused(WORDS, what);
+        assert!(seen.stderr.contains(&has), "{what}: {}", seen.stderr);
+        assert_eq!(rig.snapshot(), before, "{what}: nothing was written");
+    }
+    // A hash is a hash, and a composed record names one.
+    rig.run(
+        &compose_args("1", "1", COMPOSED, "not-a-hash", &[&stage.scratch], &words),
+        "",
+    )
+    .refused(BAD_VALUE, "a hash of no shape");
+    let mut bare = compose_args("1", "1", COMPOSED, &hash, &[&stage.scratch], &words);
+    bare.retain(|arg| !arg.starts_with("--sha256="));
+    rig.run(&bare, "")
+        .refused(USAGE, "a composed record that names no hash");
+    // … and a subject is one line, as a batch's is: two lines hashed as two are refused.
+    let lines = "docs(record): one\nand a second line";
+    rig.run(
+        &compose_args(
+            "1",
+            "1",
+            lines,
+            &sha256_of(&canonical("1", "1", lines, &words)),
+            &[&stage.scratch],
+            &words,
+        ),
+        "",
+    )
+    .refused(BAD_VALUE, "a subject of two lines");
+    assert_eq!(rig.snapshot(), before);
+
+    // THE WORDS AS THEY WERE HASHED are taken — and the form is said in the script's help.
+    let (seen, has) = typed("1", "1", COMPOSED, &words);
+    assert_eq!(has, hash);
+    seen.must(OK, "the words that were hashed");
+    let help = rig.run(&strings(&["--help"]), "");
+    help.must(OK, "the help");
+    for line in [
+        "THE CANONICAL FORM",
+        "run=R",
+        "round=N",
+        "attempt=A",
+        "subject=TEXT",
+    ] {
+        assert!(
+            help.stdout.contains(line),
+            "the help says the canonical form (`{line}`)"
+        );
+    }
+}
+
+/// The files of two stages that differ, as `path: line n` of the first line that does.
+fn differing(left: &BTreeMap<String, String>, right: &BTreeMap<String, String>) -> Vec<String> {
+    let names: BTreeSet<&String> = left.keys().chain(right.keys()).collect();
+    names
+        .into_iter()
+        .filter(|name| left.get(*name) != right.get(*name))
+        .cloned()
+        .collect()
+}
+
+/// **A composed batch is what the typed one was** (`K3`: *on the suite's fixtures, the same
+/// tables as today's batch for the same stage*). The same stage is recorded twice over, in
+/// two rigs: by the batch a step would have typed — its rows and its entries read off the
+/// triage's entries by hand — and by the composed one. EVERY FILE OF THE RUN IS THE SAME, TO
+/// THE BYTE, for the first record and for the second, where the typed batch says in its two
+/// worded cells what the composed one computes. And typed as a step words them today — a
+/// sentence for a void, the preflight's prose for a check it read red — the two runs differ
+/// in THOSE CELLS AND IN NO OTHER: the void's reason in the results; and the red run's repro
+/// in the ledger, with the evidence of its class, which is the same text.
+#[test]
+fn a_composed_batch_is_what_the_typed_one_was() {
+    let composed = a_stage_before_its_first_record("composed-same", true);
+    composed
+        .compose("1", &composed.first_words())
+        .must(OK, "the first record, composed");
+
+    // TYPED WITH WHAT THE COMPOSED ONE COMPUTES in its two worded cells: the same bytes.
+    let typed = a_stage_before_its_first_record("typed-same", true);
+    typed
+        .apply(&typed.typed("no-report:hunt-setup", &preflights_report()))
+        .must(OK, "the first record, typed");
+    assert_eq!(
+        differing(&typed.files(), &composed.files()),
+        Vec::<String>::new(),
+        "the first record: every file of the run, to the byte"
+    );
+    assert!(
+        composed.files().len() >= 14 && composed.files().contains_key("r1/view.md"),
+        "the files compared are the run's: {:?}",
+        composed.files().keys()
+    );
+
+    // … and so is the second record: the report check, and what the take brings.
+    for stage in [&typed, &composed] {
+        settled(&stage.rig);
+        stage.verifies();
+    }
+    let launched = [
+        "attempt",
+        "preflight",
+        "review-setup",
+        TRIAGE,
+        "verify-review-f1",
+        "verify-review-f2",
+    ];
+    typed
+        .apply(&json!([call(check_reports(RUN, "1", "1", &launched), "")]))
+        .must(OK, "the second record, typed");
+    composed
+        .compose("1", &Composing::later_words(&["review-f1", "review-f2"]))
+        .must(OK, "the second record, composed");
+    assert_eq!(
+        differing(&typed.files(), &composed.files()),
+        Vec::<String>::new(),
+        "the second record: every file of the run, to the byte"
+    );
+
+    // TYPED AS A STEP WORDS THEM TODAY: the cells a typed batch's bytes depend on, and no other.
+    let worded = a_stage_before_its_first_record("typed-worded", true);
+    let (reason, repro) = (
+        "its chain returned and left no report",
+        "the workflow's `lint` job failed — the preflight's report: r1/reports/test/preflight.a1.md",
+    );
+    worded
+        .apply(&worded.typed(reason, repro))
+        .must(OK, "the first record, typed in a step's words");
+    let fresh = a_stage_before_its_first_record("composed-fresh", true);
+    fresh
+        .compose("1", &fresh.first_words())
+        .must(OK, "the first record, composed");
+    assert_eq!(
+        differing(&worded.files(), &fresh.files()),
+        ["classes.md", "clauses.md", "ledger.md", "r1/results.md"],
+        "the files that hold a worded cell"
+    );
+    let cell_of = |stage: &Composing, rel: &str, columns: &[&str], key: &str, column: usize| {
+        row_of(stage, rel, columns, key)[column].clone()
+    };
+    for (rel, columns, key, column, words_it, holds) in [
+        (
+            results_path("1"),
+            &RESULT_COLUMNS[..],
+            "hunt-setup",
+            4,
+            reason,
+            "no-report:hunt-setup".to_owned(),
+        ),
+        (
+            ledger_path(),
+            &LEDGER_COLUMNS[..],
+            "red-ci",
+            9,
+            repro,
+            preflights_report(),
+        ),
+        (
+            classes_path(),
+            &CLASS_COLUMNS[..],
+            "red-ci",
+            6,
+            repro,
+            preflights_report(),
+        ),
+    ] {
+        assert_eq!(
+            json!([
+                cell_of(&worded, &rel, columns, key, column),
+                cell_of(&fresh, &rel, columns, key, column)
+            ]),
+            json!([words_it, holds]),
+            "{rel}, `{key}`"
+        );
+    }
+    // Each of those texts stands ONCE in its file — in the clause table too, which is rendered
+    // from the results and says a void's reason after them — and that cell apart, the file is
+    // the same.
+    for (rel, words_it, holds) in [
+        (results_path("1"), reason, "no-report:hunt-setup".to_owned()),
+        (clauses_path(), reason, "no-report:hunt-setup".to_owned()),
+        (ledger_path(), repro, preflights_report()),
+        (classes_path(), repro, preflights_report()),
+    ] {
+        let (typed, composed) = (worded.rig.read(&rel), fresh.rig.read(&rel));
+        assert_eq!(
+            (
+                typed.matches(words_it).count(),
+                composed.matches(&holds).count()
+            ),
+            (1, 1),
+            "{rel}: one cell holds it"
+        );
+        assert_eq!(
+            typed.replace(words_it, "<the worded cell>"),
+            composed.replace(&holds, "<the worded cell>"),
+            "{rel}: no other cell differs"
+        );
+    }
+}
+
+/// **The launched reporters are the caller's, and a word outside the grammar is refused by
+/// name** (`K3`: *the list of launched reporters stays the harness's: a list derived from the
+/// disk would make* missing *and* extra *mean nothing*; *what it does not cover: a record of
+/// the human's rulings, and every record of `fix`*). A report on disk that no word names is
+/// EXTRA, a word whose reporter left none is MISSING, and either refuses the batch. And a
+/// word says a reporter, the commit, the gate's job, what an item did or a fact of the
+/// round's `test` stage — nothing else: no row, no entry, no verdict, no ruling, no fact of
+/// a fix stage. Each such word is refused, though its hash holds, and nothing is written.
+#[test]
+fn the_launched_reporters_are_the_callers_and_a_word_outside_the_grammar_is_refused() {
+    let stage = a_stage_before_its_first_record("composed-grammar", true);
+    let rig = &stage.rig;
+    let words = stage.first_words();
+    let before = rig.snapshot();
+    let without = |gone: &str| -> Vec<String> {
+        assert!(words.iter().any(|word| word == gone), "`{gone}` is a word");
+        words.iter().filter(|word| *word != gone).cloned().collect()
+    };
+    let with = |more: &[&str]| -> Vec<String> {
+        words
+            .iter()
+            .cloned()
+            .chain(more.iter().map(|word| (*word).to_owned()))
+            .collect()
+    };
+
+    // THE REPORTERS: a report nobody names is extra, a named reporter with no report missing.
+    let seen = stage.compose("1", &without("reporter=review-setup"));
+    seen.refused(CHECK, "a report on disk that no word names");
+    assert!(
+        seen.stderr.contains("\"extra\": [\"review-setup.a1.md\"]"),
+        "{}",
+        seen.stderr
+    );
+    let seen = stage.compose("1", &with(&["reporter=hunt-setup"]));
+    seen.refused(CHECK, "a launched reporter that left no report");
+    assert!(
+        seen.stderr.contains("\"missing\": [\"hunt-setup\"]"),
+        "{}",
+        seen.stderr
+    );
+    assert_eq!(rig.snapshot(), before);
+
+    // THE GRAMMAR, each refusal by the word's place and what it lacks.
+    for (what, handed, says) in [
+        ("a row", with(&["row=review-f9"]), "is no word"),
+        (
+            "a verdict",
+            with(&["verdict=review-f1:confirmed"]),
+            "is no word",
+        ),
+        (
+            "a ruling",
+            with(&["fact=go:true"]),
+            "no fact of a `test` stage's record",
+        ),
+        (
+            "a fix cycle",
+            with(&["fact=cycles:3"]),
+            "no fact of a `test` stage's record",
+        ),
+        (
+            "a round's outcome",
+            with(&["fact=outcome:dropped"]),
+            "no fact of a `test` stage's record",
+        ),
+        ("a status that is none", with(&["item=late:amber"]), "green"),
+        (
+            "a red whose reporter nobody launched",
+            without("item=ci:red:preflight")
+                .into_iter()
+                .chain(["item=ci:red:hunt-setup".to_owned()])
+                .collect(),
+            "is no reporter the stage launched",
+        ),
+        (
+            "a void that says a sentence",
+            with(&["item=late:void:it did not run"]),
+            "never a sentence",
+        ),
+        (
+            "a void whose reason is no word",
+            with(&["item=late:void:Not_A_Word"]),
+            "<word>",
+        ),
+        (
+            "an item said twice",
+            with(&["item=ci:green"]),
+            "more than once",
+        ),
+        (
+            "a reporter said twice",
+            with(&["reporter=attempt"]),
+            "more than once",
+        ),
+        (
+            "a commit said twice",
+            with(&["commit=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]),
+            "more than once",
+        ),
+        (
+            "a candidate said twice",
+            with(&["fact=candidate:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]),
+            "more than once",
+        ),
+        (
+            "an item, and no commit it ran on",
+            without(&format!("commit={}", stage.commit)),
+            "commit=<sha>",
+        ),
+        (
+            "a commit that is no sha",
+            without(&format!("commit={}", stage.commit))
+                .into_iter()
+                .chain(["commit=abc".to_owned()])
+                .collect(),
+            "word 17 (\"commit=abc\")",
+        ),
+        (
+            "no reporter at all",
+            words
+                .iter()
+                .filter(|word| !word.starts_with("reporter="))
+                .cloned()
+                .collect(),
+            "reporter=<reporter>",
+        ),
+    ] {
+        let seen = stage.compose("1", &handed);
+        seen.refused(BAD_VALUE, what);
+        assert!(
+            seen.stderr.contains(says),
+            "{what}: says `{says}`: {}",
+            seen.stderr
+        );
+        assert_eq!(rig.snapshot(), before, "{what}: nothing was written");
+    }
+
+    // A HELD JOB IS FOUND UNDER THE ONE SCRATCH ROOT the call names: with none, or with two,
+    // a word that names a job is refused.
+    let hash = sha256_of(&canonical("1", "1", COMPOSED, &words));
+    for (what, roots) in [
+        ("no scratch root", vec![]),
+        (
+            "two scratch roots",
+            vec![stage.scratch.as_path(), rig.tmp.as_path()],
+        ),
+    ] {
+        let seen = rig.run(&compose_args("1", "1", COMPOSED, &hash, &roots, &words), "");
+        seen.refused(BAD_VALUE, what);
+        assert!(
+            seen.stderr.contains("ONE `--scratch`"),
+            "{what}: {}",
+            seen.stderr
+        );
+        assert_eq!(rig.snapshot(), before, "{what}: nothing was written");
+    }
+
+    // TWO RENDERINGS AMONG THE LAUNCHED REPORTERS: a stage has one triage, and the record is
+    // composed from no guess at which.
+    hand_over_as(
+        rig,
+        "triage-again",
+        "1",
+        &[("review-setup", 1)],
+        &json!([again_entry(
+            "seed-hook",
+            "no-break",
+            json!({"review-setup": [1]})
+        )]),
+    )
+    .must(OK, "a second rendering of the attempt");
+    let before = rig.snapshot();
+    // (One the stage did not launch is a report nobody named, like any: extra.)
+    let seen = stage.compose("1", &words);
+    seen.refused(CHECK, "a rendering of a reporter nobody launched");
+    assert!(
+        seen.stderr.contains("\"extra\": [\"triage-again.a1.md\"]"),
+        "{}",
+        seen.stderr
+    );
+    let seen = stage.compose("1", &with(&["reporter=triage-again"]));
+    seen.refused(BAD_VALUE, "two renderings among the launched reporters");
+    assert!(
+        seen.stderr.contains("triage.a1.md") && seen.stderr.contains("triage-again.a1.md"),
+        "{}",
+        seen.stderr
+    );
+    assert_eq!(rig.snapshot(), before);
+}
+
+/// The triage of round 1 hands `entries` over under the reporter `reporter`.
+fn hand_over_as(
+    rig: &Rig,
+    reporter: &str,
+    attempt: &str,
+    handed: &[(&str, u64)],
+    entries: &Value,
+) -> Seen {
+    rig.run(
+        &triage_args(RUN, "1", reporter, attempt, &[], handed),
+        &entries.to_string(),
+    )
+}
+
+/// **A composed record meets a filed file that is no verdict as any record does, and names
+/// the report check** (`K3`; the plan's `T3b`: *a file among the filed verdicts that is no
+/// verdict the record takes refuses the batch, naming the file, why, and what takes it out
+/// of the way*). The report check comes BEFORE the record: it is what sets such a file aside.
+/// A composed record that meets one is refused (`check`) and names that exit; once the file
+/// has left the tree its finding is unverified again, and the same words are taken.
+#[test]
+fn a_composed_record_is_refused_over_a_filed_file_that_is_no_verdict_and_names_the_report_check() {
+    let stage = a_stage_before_its_first_record("composed-order", true);
+    let rig = &stage.rig;
+    stage
+        .compose("1", &stage.first_words())
+        .must(OK, "the first record");
+    settled(rig);
+    stage.verifies();
+    // The report of one verifier is rewritten after its filing: the filing counts no more.
+    let report = report_path("1", "verify-review-f2", "1");
+    let text = rig.read(&report);
+    fs::write(
+        rig.root.join(&report),
+        text.replace("Driven on both binaries.", "Driven on one."),
+    )
+    .expect("a report rewritten after its filing");
+    let later = Composing::later_words(&["review-f1", "review-f2"]);
+    let before = rig.snapshot();
+    let seen = stage.compose("1", &later);
+    seen.refused(CHECK, "a filed file that is no verdict");
+    assert!(
+        seen.stderr.contains(&filed_path("verify-review-f2", "1"))
+            && seen.stderr.contains("report-changed")
+            && seen.stderr.contains("dev/stabilize-step check-reports")
+            && seen.stderr.contains("set-aside"),
+        "the refusal names the file, why, and the report check: {}",
+        seen.stderr
+    );
+    assert_eq!(rig.snapshot(), before, "nothing of the batch was written");
+
+    // THE REPORT CHECK'S SET-ASIDE takes it out of the way; the same words are then taken.
+    let aside = rig.tmp.join("aside");
+    rig.run(
+        &strings(&[
+            "set-aside",
+            &format!("--run={RUN}"),
+            &format!("--to={}", aside.display()),
+            "--",
+            &filed_path("verify-review-f2", "1"),
+        ]),
+        "",
+    )
+    .must(OK, "the file leaves the tree");
+    let seen = stage.compose("1", &later);
+    seen.must(OK, "the same words, once the report check ran");
+    assert_eq!(
+        seen.json()["filed"]
+            .as_array()
+            .expect("what the record took")
+            .iter()
+            .map(|took| took["key"].clone())
+            .collect::<Vec<_>>(),
+        [json!("review-f1")]
+    );
+    assert_eq!(
+        finding(&rig.state(), "review-f2")["route"],
+        "verify",
+        "its finding is unverified again"
+    );
+}
+
+/// **A composed record is the same whatever order the verifiers filed in** — on the suite's
+/// fullest stage before its second record ([`a_verified_stage`]: six verifiers, every word of
+/// a verdict, items handed on within the number and beyond it). The record names no verdict
+/// and no row; what it takes, the script reads in the state's own order. So two stages whose
+/// verifiers filed in opposite orders are, once the same words composed their record, the
+/// same run to the byte — and the same as the stage whose record was typed.
+#[test]
+fn a_composed_second_record_is_the_same_whatever_order_the_verifiers_filed_in() {
+    let launched = [
+        "attempt",
+        "row-setup-source",
+        "row-setup-driver",
+        "verify-b-far",
+        "verify-b-none",
+        "verify-r-gone",
+        "verify-r-in",
+        "verify-r-meant",
+        "verify-r-out",
+    ];
+    let words: Vec<String> = launched
+        .iter()
+        .map(|reporter| format!("reporter={reporter}"))
+        .collect();
+    let hash = sha256_of(&canonical("1", "1", COMPOSED, &words));
+    let files = |rig: &Rig| {
+        let mut files = BTreeMap::new();
+        walk(&rig.run_dir(), &rig.run_dir(), &rig.tmp, &mut files);
+        files.remove(".pending.json");
+        files
+    };
+    let mut ends = Vec::new();
+    for (label, reversed) in [("composed-order-a", false), ("composed-order-b", true)] {
+        let rig = a_verified_stage(label, reversed);
+        let seen = rig.run(&compose_args("1", "1", COMPOSED, &hash, &[], &words), "");
+        seen.must(OK, "the second record, composed");
+        let said = seen.json();
+        assert_eq!(
+            json!([
+                said["composed"]["calls"],
+                said["filed"].as_array().map(Vec::len),
+                said["view"]["wrote"]
+            ]),
+            json!([["check-reports"], 6, true]),
+            "{said}"
+        );
+        ends.push(files(&rig));
+    }
+    assert_eq!(
+        differing(&ends[0], &ends[1]),
+        Vec::<String>::new(),
+        "the verifiers' order of filing is in no file of the run"
+    );
+    let typed = a_verified_stage("composed-order-typed", true);
+    let args = strings(&[
+        "apply",
+        &format!("--run={RUN}"),
+        "--round=1",
+        &format!("--subject={COMPOSED}"),
+    ]);
+    typed
+        .run(
+            &args,
+            &json!([call(check_reports(RUN, "1", "1", &launched), "")]).to_string(),
+        )
+        .must(OK, "the second record, typed");
+    assert_eq!(
+        differing(&files(&typed), &ends[0]),
+        Vec::<String>::new(),
+        "and it is the record a step would have typed"
     );
 }

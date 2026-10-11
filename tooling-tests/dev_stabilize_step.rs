@@ -5634,6 +5634,8 @@ fn valid(flag: &str, scratch: &str) -> String {
         "reporter" => "attempt".to_owned(),
         "commit" => "c".repeat(40),
         "gate" => format!("{scratch}/gate.txt"),
+        "subject" => "docs(record): a record".to_owned(),
+        "sha256" => "a".repeat(64),
         other => panic!("the suite has no value for the flag `--{other}`: give it one"),
     }
 }
@@ -5697,6 +5699,7 @@ const REACH: &[(&str, &str, &str)] = &[
     (TOOL, "record", "local"),
     (TOOL, "sync-main", "local"),
     (TOOL, "discard", "no-ref"),
+    (TOOL, "compose", "no-ref"),
     (TOOL, "find-round", "no-ref"),
     (TOOL, "round-commits", "no-ref"),
     (TOOL, "state", "no-ref"),
@@ -5729,6 +5732,7 @@ const REACH: &[(&str, &str, &str)] = &[
     (RECORD, "gate-set", "no-ref"),
     (RECORD, "gate-check", "no-ref"),
     (RECORD, "apply", "no-ref"),
+    (RECORD, "compose", "no-ref"),
     (RECORD, "pending", "no-ref"),
     (RECORD, "discard", "no-ref"),
     (RECORD, "settle", "no-ref"),
@@ -6746,6 +6750,12 @@ fn offences(source: &str) -> Vec<String> {
             || (call.within == "begin"
                 && program.starts_with(
                     "[RECORD, \"report\"] + stage_flags(args) + [\"--reporter\", args.reporter, ",
+                ))
+            // A `test` stage's record, composed and applied by the record script: by the
+            // act that stands where an agent typed a batch, with the words it was handed.
+            || (call.within == "compose"
+                && program.starts_with(
+                    "[RECORD, \"compose\", \"--run\", run_name, \"--round\", args.round, ",
                 ));
         if !known {
             found.push(format!(
@@ -7889,6 +7899,47 @@ fn every_line_is_a_digest() {
     );
     rig.change("README.md", "tuned\n", "docs: a tuning commit");
     refuse(&rig.digest(&state), rig, "foreign-commit");
+
+    // The composing step, on a stage of its own — a run with a queue, before its first
+    // record: done, and refused by the record script, whose own word is in the digest.
+    let composing = Stage::before_a_composed_record("digest-composed");
+    let words = composing.words();
+    let asked = |typed: &[String]| -> Vec<String> {
+        let mut args: Vec<String> = ["compose", "--branch", LOOP, "--run-dir", RUN_DIR]
+            .iter()
+            .map(|arg| (*arg).to_owned())
+            .collect();
+        args.extend(composing.composing(&words, typed));
+        args
+    };
+    let mut wrong = words.clone();
+    wrong.pop();
+    let typed = asked(&wrong);
+    let typed: Vec<&str> = typed.iter().map(String::as_str).collect();
+    let unheld = refuse(&composing.rig.digest(&typed), &composing.rig, "record");
+    assert_eq!(unheld["refusal"], "words", "{unheld}");
+    let typed = asked(&words);
+    let typed: Vec<&str> = typed.iter().map(String::as_str).collect();
+    let composed = ended(
+        &composing.rig.digest(&typed),
+        &composing.rig,
+        "compose",
+        "applied",
+    );
+    assert_eq!(
+        json!([
+            composed["branch"],
+            composed["round"],
+            composed["attempt"],
+            composed["record"],
+            composed["applied"],
+            composed["files"],
+            composed["filed"],
+            composed["found"]
+        ]),
+        json!([LOOP, 1, 1, "first", {"calls": 7, "checks": 2, "failed": 0}, 9, 0, []]),
+        "what the commit step is handed is in the digest, as counts: {composed}"
+    );
 
     // The acts of the `fix` half and of the close, on a rig of their own.
     let rig = StepRig::new("digest-rounds");
@@ -11602,4 +11653,502 @@ fn a_file_without_a_verdicts_name_among_the_filed_verdicts_strands_no_stage() {
     // A name of no plain segment is named by no read: the human's.
     rig.write(&format!("{RUN_DIR}/r1/verdicts/.notes"), "what I saw\n");
     stage.git_state().refused("dirty");
+}
+
+// ---------------------------------------------------------------------------
+// While a batch is composed (the build plan of the reshaped `test` stage, K3)
+// ---------------------------------------------------------------------------
+
+/// The subject of a composed record's commit — plain ASCII, as the harness makes one.
+const COMPOSED: &str = "docs(record): rc24 r1 - the record of the test stage";
+
+/// The held job of the candidate's gate, under the rig's scratch root.
+const GATE_JOB: &str = "gate-c1";
+
+/// The reporters of a stage whose record is composed: [`LAUNCHED`], and its one triage.
+const COMPOSED_BY: [&str; 4] = ["attempt", "scope", "review-setup", "triage"];
+
+/// The canonical form of a composed record's plain words, as a caller computes it (the
+/// record suite holds the script's own to this form, word by word): the run, the round, the
+/// attempt, the subject, then one line a word — each ended by one line feed.
+fn canonical(round: &str, attempt: &str, subject: &str, words: &[String]) -> String {
+    let mut text = format!("run={RUN}\nround={round}\nattempt={attempt}\nsubject={subject}\n");
+    for word in words {
+        text.push_str(word);
+        text.push('\n');
+    }
+    text
+}
+
+impl Stage {
+    /// A `test` stage of a run WITH A QUEUE, stood where its FIRST record begins — through
+    /// the two scripts, as a stage stands there: the opening's facts with an order, a budget
+    /// and the number a verifier hands on, committed and pushed; attempt 1 of round 1 begun;
+    /// the round's scope and two reports written; the candidate's gate held as a job under
+    /// the scratch root; the entries of the stage's one triage handed over — two findings —
+    /// and the gate that ran on the tree with the records in a file. ITS BATCH IS NOT TYPED:
+    /// what the stage holds of it is the plain words its record is composed of.
+    fn before_a_composed_record(label: &str) -> Self {
+        let rig = StepRig::new(label);
+        let scratch = rig.scratch.display().to_string();
+        rig.wrote(
+            &format!("run-set --run {RUN}"),
+            &json!({"stop": "at-the-bound", "rounds": 3, "previous": "1.0.0-rc.24",
+                    "previous-commit": "9".repeat(40), "scope": "delta",
+                    "clauses": ["clause-a"], "budget": 5, "hand-on": 2,
+                    "order": ["route under-not-a-break", "route hunt", "behaviour hunt"]})
+            .to_string(),
+        );
+        rig.wrote(
+            &format!("item-set --run {RUN}"),
+            &json!([
+                {"item": "gate", "kind": "check", "clause": "clause-a",
+                 "runs": "every-candidate", "brief": "the candidate's gate"},
+                {"item": "review-setup", "kind": "review-row", "clause": "clause-a",
+                 "runs": "in-scope", "doors": ["jigc setup"], "brief": "the setup door"},
+            ])
+            .to_string(),
+        );
+        rig.commit("docs(record): the opening's facts");
+        rig.git(&["push", "-q", "origin", LOOP]);
+        let candidate = rig.rev("HEAD");
+        rig.step(&[
+            "begin",
+            "--run",
+            RUN,
+            "--round",
+            "1",
+            "--stage",
+            "test",
+            "--attempt",
+            "1",
+            "--reporter",
+            "attempt",
+            "--commit",
+            &candidate,
+            "--scratch",
+            &scratch,
+        ])
+        .done("begin", "begun");
+        rig.wrote(
+            &format!("scope-set --run {RUN} --round 1"),
+            &json!({"included": [{"door": "jigc setup", "registry": "verbs",
+                                  "derivation": "the change reaches it"}],
+                    "excluded": []})
+            .to_string(),
+        );
+        for reporter in &LAUNCHED[1..] {
+            rig.wrote(
+                &format!(
+                    "report --run {RUN} --round 1 --stage test --reporter {reporter} --attempt 1"
+                ),
+                REPORT,
+            );
+        }
+        let green = "gate: mode   full, keep-going\ntests   passed=10 failed=0  (over 3 test binaries)\nGATE: PASS\n";
+        let held = rig.scratch.join("hold").join(GATE_JOB);
+        fs::create_dir_all(&held).expect("the held gate's directory");
+        fs::write(held.join("output"), green).expect("the candidate's gate, held");
+        let gate = format!("{scratch}/gate.txt");
+        fs::write(&gate, green).expect("write the gate's output");
+        let found = |key: &str, number: u32| {
+            json!({"key": key, "found": "new", "doctype": "jigc-feedback", "door": "jigc setup",
+                   "clause": "clause-a", "repro": "the report", "grade": "breaks",
+                   "kind": "route", "route": format!("Run: jigc setup --repair {key}"),
+                   "why": "the route it prints does not work",
+                   "folds": {"review-setup": [number]}})
+        };
+        rig.wrote(
+            &format!(
+                "triage --run {RUN} --round 1 --reporter triage --attempt 1 -- review-setup=2"
+            ),
+            &json!([found("f-1", 1), found("f-2", 2)]).to_string(),
+        );
+        let mut words: Vec<String> = COMPOSED_BY
+            .iter()
+            .map(|reporter| format!("reporter={reporter}"))
+            .collect();
+        words.extend([
+            format!("commit={candidate}"),
+            format!("gate={GATE_JOB}"),
+            "item=gate:green".to_owned(),
+            "item=review-setup:green".to_owned(),
+            format!("fact=candidate:{candidate}"),
+            format!("fact=binary:{}", "b".repeat(64)),
+        ]);
+        Stage {
+            rig,
+            gate,
+            batch: json!(words),
+        }
+    }
+
+    /// The plain words the stage's record is composed of.
+    fn words(&self) -> Vec<String> {
+        self.batch
+            .as_array()
+            .expect("the plain words")
+            .iter()
+            .map(|word| word.as_str().expect("a word").to_owned())
+            .collect()
+    }
+
+    /// What the composing call is handed after the run: the round, the attempt, the subject,
+    /// THE HASH OF `hashed` in its canonical form, the scratch root — and `typed`, the words
+    /// as a step typed them.
+    fn composing(&self, hashed: &[String], typed: &[String]) -> Vec<String> {
+        let mut args: Vec<String> = [
+            "--round",
+            "1",
+            "--attempt",
+            "1",
+            "--subject",
+            COMPOSED,
+            "--sha256",
+            &sha256(&canonical("1", "1", COMPOSED, hashed)),
+            "--scratch",
+            &self.rig.scratch.display().to_string(),
+            "--",
+        ]
+        .iter()
+        .map(|arg| (*arg).to_owned())
+        .collect();
+        args.extend_from_slice(typed);
+        args
+    }
+
+    /// The composing step, as a stage asks for it, with `typed` for the words that were
+    /// hashed as `hashed`.
+    fn compose_typed(&self, hashed: &[String], typed: &[String]) -> Stepped {
+        let rest = self.composing(hashed, typed);
+        let mut args = vec!["compose", "--branch", LOOP, "--run-dir", RUN_DIR];
+        args.extend(rest.iter().map(String::as_str));
+        self.rig.step(&args)
+    }
+
+    /// The composing step, with the stage's own words.
+    fn compose(&self) -> Stepped {
+        self.compose_typed(&self.words(), &self.words())
+    }
+
+    /// The record script's composing call — what the step runs — under the killer.
+    fn compose_under(&self, kill: (&str, &str)) -> Counted {
+        let rest = self.composing(&self.words(), &self.words());
+        let mut args = vec!["compose", "--run", RUN];
+        args.extend(rest.iter().map(String::as_str));
+        self.rig.wrapped("files", RECORD, &args, "", kill)
+    }
+
+    /// The composing step itself, under the killer: its child commands are its points.
+    fn compose_step_under(&self, kill: (&str, &str)) -> Counted {
+        let rest = self.composing(&self.words(), &self.words());
+        let mut args = vec!["compose", "--branch", LOOP, "--run-dir", RUN_DIR];
+        args.extend(rest.iter().map(String::as_str));
+        self.rig.wrapped("children", TOOL, &args, "", kill)
+    }
+
+    /// The report check of a stage whose record is composed, under the scratch root.
+    fn composed_check(&self) -> Stepped {
+        let root = self.rig.scratch.display().to_string();
+        let mut args = vec![
+            "check-reports",
+            "--run",
+            RUN,
+            "--round",
+            "1",
+            "--stage",
+            "test",
+            "--attempt",
+            "1",
+            "--scratch",
+            root.as_str(),
+            "--",
+        ];
+        args.extend(COMPOSED_BY);
+        self.rig.step(&args)
+    }
+}
+
+/// **A stage killed while its batch is composed ends in one of two states** (the build plan
+/// of the reshaped `test` stage, §5, `K3`: *the record's batch is composed by a tool*; the
+/// plan's `P1`). On the composed path a record is four commands of the tool — the report
+/// check, the composing step, the commit step, the push — and the tool's table says so, the
+/// report check FIRST. The composing step types no batch: it hands the record script the
+/// plain words and their hash, and that script composes the batch from what is filed and
+/// applies it, in ONE call. However a stage ends inside it — before each file operation of
+/// the record script's call, before each command of the step — the run is, within two reads,
+/// in ONE OF TWO STATES and no third: THE STATE BEFORE THE BATCH, where its journal was not
+/// yet written, from which the same words compose the same record; or THE STATE OF THE
+/// RECORD THAT WAS NEVER INTERRUPTED, pushed. And the step is REPEATABLE: asked again with
+/// the words its batch was composed of, while that batch is applied, it answers `applied`
+/// again and writes nothing.
+#[test]
+fn a_stage_killed_while_its_batch_is_composed_ends_in_one_of_two_states() {
+    let stage = Stage::before_a_composed_record("composed-kill");
+    let before = stage.end();
+
+    // THE TABLE: the commands that carry a record whose batch is composed, in their order.
+    let table = stage.rig.step(&["table"]);
+    let listed = table.done("table", "listed");
+    let record = listed["acts"]
+        .as_array()
+        .expect("the acts")
+        .iter()
+        .find(|act| act["act"] == "record")
+        .expect("the record act");
+    assert_eq!(
+        record["composed"],
+        json!([
+            "dev/stabilize-step check-reports",
+            "dev/stabilize-step compose",
+            "dev/stabilize-step record",
+            "dev/stabilize-step push"
+        ]),
+        "the report check comes before the composing step: {record}"
+    );
+
+    // THE STAGE THAT WAS NEVER KILLED.
+    let control = stage.copy("composed-kill-control");
+    control.composed_check().done("check-reports", "checked");
+    let composed = control.compose();
+    let line = composed.done("compose", "applied");
+    assert_eq!(
+        json!([
+            line["round"],
+            line["attempt"],
+            line["record"],
+            line["applied"]["calls"],
+            line["applied"]["checks"].as_array().map(Vec::len),
+            line["filed"],
+            line["found"],
+            line["branch"]
+        ]),
+        json!([1, 1, "first", 7, 2, [], [], LOOP]),
+        "{}",
+        composed.raw
+    );
+    control.record().done("record", "recorded");
+    control.rig.step(&PUSH).done("push", "ready");
+    let after = control.end();
+    assert_eq!(
+        (after.remote.as_deref(), after.status.as_str()),
+        (Some(after.head.as_str()), ""),
+        "the control ends pushed and clean"
+    );
+    assert!(
+        !after.files.contains_key(".pending.json") && before.head != after.head,
+        "and with one commit more, and no journal"
+    );
+    assert_eq!(
+        json!([after.state["next"], after.state["position"]["test"]]),
+        json!(["verify", {"round": 1, "attempt": 2, "verify": true}]),
+        "the composed record is the stage's first: it then verifies"
+    );
+
+    // 1. THE RECORD SCRIPT'S COMPOSING CALL, killed before each of its points.
+    let counted = stage
+        .copy("composed-kill-count")
+        .compose_under(("KILL_AT", "0"));
+    assert_eq!(counted.code, Some(0), "{}", counted.stderr);
+    let points = counted.points;
+    assert!(
+        points.len() >= 8,
+        "the composing call passes points: {points:?}"
+    );
+    let ends = std::sync::Mutex::new(Vec::new());
+    std::thread::scope(|threads| {
+        for n in 1..=points.len() {
+            let (stage, ends) = (&stage, &ends);
+            threads.spawn(move || {
+                let copy = stage.copy(&format!("composed-kill-{n}"));
+                let killed = copy.compose_under(("KILL_AT", &n.to_string()));
+                assert_eq!(killed.code, None, "point {n}: {}", killed.stderr);
+                let journaled = copy.rig.journal().is_some();
+                let end = copy.within_two_reads();
+                ends.lock().expect("the ends").push((n, journaled, end));
+            });
+        }
+    });
+    let (mut undone, mut finished, mut journaled_from) = (0, 0, usize::MAX);
+    for (n, journaled, end) in ends.into_inner().expect("the ends") {
+        let end = end.unwrap_or_else(|why| panic!("point {n} (`{}`): {why}", points[n - 1]));
+        if journaled {
+            assert_eq!(
+                end, after,
+                "point {n}: the record that was never interrupted"
+            );
+            finished += 1;
+            journaled_from = journaled_from.min(n);
+        } else {
+            assert_eq!(end, before, "point {n}: the state before the batch");
+            undone += 1;
+        }
+    }
+    assert!(
+        undone >= 3 && finished >= 5,
+        "both states are reached: {undone} before the batch, {finished} at the record"
+    );
+
+    // … AND WHERE THE CALL WAS KILLED BETWEEN ITS FILES, the step asked again finishes that
+    // write first, and answers that the batch is applied.
+    let halfway = stage.copy("composed-kill-halfway");
+    let killed = halfway.compose_under(("KILL_AT", &journaled_from.to_string()));
+    assert_eq!(killed.code, None, "{}", killed.stderr);
+    let asked = halfway.compose();
+    assert_eq!(
+        asked.done("compose", "applied")["found"],
+        json!(["interrupted-write", "stray-temporaries", "applied"]),
+        "the batch's files that were not placed yet are its temporaries: {}",
+        asked.raw
+    );
+    halfway.record().done("record", "recorded");
+    halfway.rig.step(&PUSH).done("push", "ready");
+    assert_eq!(halfway.end(), after);
+
+    // 2. FROM THE STATE BEFORE THE BATCH the same words compose the same record.
+    let again = stage.copy("composed-kill-again");
+    let killed = again.compose_under(("KILL_AT", "1"));
+    assert_eq!(killed.code, None, "{}", killed.stderr);
+    again.git_state().done("git-state", "ready");
+    again.compose().done("compose", "applied");
+    again.record().done("record", "recorded");
+    again.rig.step(&PUSH).done("push", "ready");
+    assert_eq!(again.end(), after, "composed again, it is the same record");
+
+    // 3. THE STEP ITSELF, killed before each of its commands: nothing of the batch is there.
+    let counted = stage
+        .copy("composed-kill-step-count")
+        .compose_step_under(("KILL_AT", "0"));
+    assert_eq!(counted.code, Some(0), "{}", counted.stderr);
+    assert!(
+        counted
+            .points
+            .last()
+            .is_some_and(|point| point.starts_with("stabilize-record compose")),
+        "the step's last command is the record script's composing call: {:?}",
+        counted.points
+    );
+    for n in 1..=counted.points.len() {
+        let copy = stage.copy(&format!("composed-kill-step-{n}"));
+        let killed = copy.compose_step_under(("KILL_AT", &n.to_string()));
+        assert_eq!(killed.code, None, "point {n}: {}", killed.stderr);
+        assert_eq!(
+            copy.within_two_reads(),
+            Ok(before.clone()),
+            "the step killed before its command {n} (`{}`)",
+            counted.points[n - 1]
+        );
+    }
+
+    // 4. ASKED AGAIN, THE STEP ANSWERS AGAIN: the batch these words compose is applied.
+    let twice = stage.copy("composed-kill-twice");
+    let first = twice.compose();
+    let first = first.done("compose", "applied").clone();
+    let journal = twice.rig.journal();
+    let second = twice.compose();
+    let second = second.done("compose", "applied").clone();
+    assert_eq!(
+        json!([
+            second["found"],
+            second["applied"]["calls"],
+            second["applied"]["checks"].as_array().map(Vec::len),
+            second["round"]
+        ]),
+        json!([["applied"], first["applied"]["calls"], 2, 1]),
+        "{second}"
+    );
+    assert_eq!(twice.rig.journal(), journal, "and nothing was written");
+    // … and a batch that other words composed is not the one these words compose.
+    let mut other = twice.words();
+    other.retain(|word| word != "item=review-setup:green");
+    let refused = twice.compose_typed(&other, &other);
+    assert_eq!(
+        refused.refused("record")["refusal"],
+        "pending",
+        "{}",
+        refused.raw
+    );
+    twice.record().done("record", "recorded");
+    twice.rig.step(&PUSH).done("push", "ready");
+    assert_eq!(twice.end(), after);
+}
+
+/// **The composing step says the record script's own word where that script refuses** (`K3`:
+/// *the script computes the hash again over what it was handed and refuses a difference — a
+/// step agent that typed `green` for `void` is caught, not recorded*). The step's refusal is
+/// the tool's `record`; what the record script refused with is one more word of the line —
+/// and of its digest: `words` where a word was typed wrong, `no-change` for a later record
+/// when nothing was filed since, `check` where the report check did not come first. A step
+/// refused so wrote nothing. And the wrong branch is refused before anything is read.
+#[test]
+fn the_composing_step_says_the_record_scripts_own_word_where_that_script_refuses() {
+    let stage = Stage::before_a_composed_record("composed-refused");
+    let before = stage.end();
+    let words = stage.words();
+
+    // ONE STATUS TYPED WRONG: the hash is of the words the harness composed.
+    let typed: Vec<String> = words
+        .iter()
+        .map(|word| word.replace("item=review-setup:green", "item=review-setup:void:dead"))
+        .collect();
+    assert_ne!(typed, words);
+    let seen = stage.compose_typed(&words, &typed);
+    assert_eq!(seen.refused("record")["refusal"], "words", "{}", seen.raw);
+    assert_eq!(stage.end(), before, "and nothing was written");
+
+    // A REPORT NOBODY LAUNCHED is the batch's own report check: `check`.
+    let mut fewer = words.clone();
+    fewer.retain(|word| word != "reporter=scope");
+    let seen = stage.compose_typed(&fewer, &fewer);
+    assert_eq!(seen.refused("record")["refusal"], "check", "{}", seen.raw);
+    assert_eq!(stage.end(), before, "and nothing was written");
+
+    // THE WRONG BRANCH, before anything is read or written.
+    let rest = stage.composing(&words, &words);
+    let mut args = vec!["compose", "--branch", "fix/another", "--run-dir", RUN_DIR];
+    args.extend(rest.iter().map(String::as_str));
+    let seen = stage.rig.step(&args);
+    seen.refused("wrong-branch");
+    assert_eq!(
+        seen.trace,
+        [
+            "branch --show-current",
+            "branch --show-current",
+            "status --porcelain"
+        ],
+        "nothing was read past the branch's name but what the halt report says of the tree"
+    );
+    assert_eq!(stage.end(), before, "and nothing was written");
+
+    // … AND GIT'S OWN LOCK, named and left.
+    let lock = stage.rig.root.join(".git/index.lock");
+    fs::write(&lock, "").expect("leave a lock");
+    stage.compose().refused("locked");
+    fs::remove_file(&lock).expect("the lock, removed by whoever left it");
+    assert_eq!(stage.end(), before, "and nothing was written");
+
+    // THE RECORD, MADE — and then ONE MORE, WHEN NOTHING WAS FILED SINCE: `no-change`.
+    stage.composed_check().done("check-reports", "checked");
+    stage.compose().done("compose", "applied");
+    stage.record().done("record", "recorded");
+    stage.rig.step(&PUSH).done("push", "ready");
+    let recorded = stage.end();
+    let later: Vec<String> = words
+        .iter()
+        .filter(|word| word.starts_with("reporter="))
+        .cloned()
+        .collect();
+    let seen = stage.compose_typed(&later, &later);
+    let line = seen.refused("record");
+    assert_eq!(
+        json!([line["refusal"], line["found"]]),
+        json!(["no-change", []]),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(
+        stage.end(),
+        recorded,
+        "a record that changes nothing wrote nothing"
+    );
 }

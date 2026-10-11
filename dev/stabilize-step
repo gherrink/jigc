@@ -219,6 +219,38 @@
 #       established — and an unvetted one {vet: <the vet's result>, discarded, aside:
 #       what left the tree}.
 #
+#   dev/stabilize-step compose --branch B --run-dir D --round N --attempt A --subject TEXT
+#                      --sha256 HASH --scratch DIR [--] WORD...
+#       A `test` STAGE'S RECORD, COMPOSED BY THE TOOL AND APPLIED (the build plan of the
+#       reshaped `test` stage, K3) — the step that stands where an agent typed a batch into
+#       a file: IN A RUN WITH A QUEUE the record script composes the batch from what the
+#       stage's agents filed and from the PLAIN WORDS this step is handed, and applies it
+#       (`dev/stabilize-record compose`, whose header owns the words' grammar, what each
+#       of a stage's two records is composed from, and THE CANONICAL FORM the words are
+#       hashed in). B is checked out — wrong-branch, before anything is read or written —
+#       and git's lock does not stand — locked; a write of the record script that was
+#       killed is finished first. Then ONE call of that script: the round, the attempt,
+#       the subject, HASH and the words, as they were handed. THE WORDS ARE HELD TO HASH
+#       BY THAT SCRIPT, and by nothing here: a word a step typed wrong is its refusal.
+#       A REFUSAL OF THAT SCRIPT IS THIS STEP'S `record`, AND SAYS THAT SCRIPT'S OWN WORD
+#       as one more field, `refusal` — in the digest too: `words` (the words are not the
+#       ones that were hashed: the step is asked again, exactly), `no-change` (every file
+#       the record would write is what the run holds: nothing was filed since the stage's
+#       last record), `check` (a check of the batch does not hold, or a file among the
+#       filed verdicts is no verdict — the stage's report check comes BEFORE this step),
+#       `pending` (another batch is applied), or any other of its words. Nothing was
+#       written by a step refused so.
+#       AND THE STEP IS REPEATABLE: asked again while the batch its words composed is
+#       applied and in no commit — the journal keeps HASH with the batch — it writes
+#       nothing and answers `applied` again, with what it met in `found` (`applied`,
+#       `staged`, `committed`). A batch other words composed, or a typed one, is not that
+#       batch: the record script refuses a second (`pending`).
+#       Prints {status: applied, branch, head, round, attempt, record: first | later,
+#       applied: {calls, checks}, files, filed: what the record took of the filed
+#       verdicts, found, finished} — `applied` is what the commit step is then handed as
+#       --calls and --checks; asked again, the round is the batch's own, and the line says
+#       no `attempt`, `record`, `files` or `filed`.
+#
 #   dev/stabilize-step discard --branch B --run-dir D
 #       THE APPLIED BATCH TAKEN BACK, BY THE ACT THAT ASKS GIT FIRST. B is checked out —
 #       wrong-branch — and git's lock does not stand — locked. A batch whose commit is
@@ -353,8 +385,9 @@
 # THE ACTS, THEIR PHASES, AND WHAT IS FOUND ON ARRIVAL (the second repair plan of the
 # `test` half, P1; DECISIONS.md -> 2026-10-07, "A record act is repeatable, and every
 # invocation reconciles first"). A record is three commands — `dev/stabilize-record
-# apply`, `record`, `push` — and a kill, a `git commit` that fails or a push the remote
-# does not take leaves the run BETWEEN two of them. Every such state has a name, and an
+# apply`, `record`, `push`; where the tool composes the batch, `compose` stands for the
+# first, after the report check (WHILE A BATCH IS COMPOSED, below) — and a kill, a `git
+# commit` that fails or a push the remote does not take leaves the run BETWEEN two of them. Every such state has a name, and an
 # answer, in ONE table that this script holds as data (ACTS, ARRIVALS), prints (`table`)
 # and answers from:
 #   an ACT     is a step that changes git or the record. Its PHASES are its sub-steps in
@@ -417,6 +450,30 @@
 # So a stage killed between a filing and its record ends, once it is invoked again and has
 # made its record, in ONE OF TWO STATES and no third: the state before the filing, or the
 # state of the record that took it, pushed.
+# WHILE A BATCH IS COMPOSED (the build plan of the reshaped `test` stage, K3). In a run with
+# a queue no agent types a record's batch: the `record` act is then carried by FOUR commands
+# of this tool, which the table names in their order (ACTS: `record`, `composed`) —
+# `check-reports`, `compose`, `record`, `push`. THE REPORT CHECK COMES FIRST: it is what
+# moves a file that is no report, and a filed file that is no verdict, out of the tree —
+# and the composing step, meeting one, is refused and names it. `compose` is ONE call of
+# the record script, which reads, composes, scans and only then writes — as `apply` does —
+# so a stage that ends inside it leaves a state the table already has a row for:
+#   before the script's first write      nothing: no temporary, no journal. The state is the
+#                                        one BEFORE THE BATCH; the stage invoked again asks
+#                                        for the step again, and THE SAME WORDS COMPOSE THE
+#                                        SAME BATCH — it is read from what is filed.
+#   in its write, before its journal     the script's own temporaries (stray-temporaries):
+#                                        removed by the next act. The state before the batch.
+#   between its files                    interrupted-write: the next act puts the batch in
+#                                        place, whole — it is then applied.
+#   after its write — the step's line    `applied`, owed to the stage: `git-state` names the
+#   was lost, or the stage ended         batch with its calls and its checks, the gate runs
+#                                        on the tree, and `record` commits it. The composing
+#                                        step, asked again with the same words, answers
+#                                        that it is applied, and writes nothing.
+# So a stage killed while its batch is composed ends, within two reads, in ONE OF TWO STATES
+# and no third: the state before the batch, or the state of the record that was never
+# interrupted, pushed.
 # WHAT THE TOOL PUSHES FOR ITSELF is a record's commit and nothing else: a commit on
 # the loop branch that changes a path outside the run's directory is its author's to
 # push, and until it is pushed no `test` stage starts.
@@ -775,6 +832,9 @@ ACTS = (
         "act": "record",
         "half": "test",
         "commands": ["dev/stabilize-record apply", "dev/stabilize-step record", "dev/stabilize-step push"],
+        # … and, in a run with a queue, where no agent types the batch (the plan's K3): the
+        # commands that carry the act when the tool composes it, THE REPORT CHECK FIRST.
+        "composed": ["dev/stabilize-step check-reports", "dev/stabilize-step compose", "dev/stabilize-step record", "dev/stabilize-step push"],
         "phases": [
             {"phase": "applied", "done": "the journal holds the batch, whole: no file of it is still to be placed", "resumes": "dev/stabilize-record recover", "by": "the tool: a batch whose journal was written is put in place, and one killed before its journal leaves nothing — the act is then not open"},
             {"phase": "committed", "done": "every file of the batch is in HEAD as the batch wrote it", "resumes": "dev/stabilize-step record", "by": "the stage: the full gate on the tree first, then the commit step, which is repeatable"},
@@ -783,6 +843,7 @@ ACTS = (
         ],
         "owes": "nothing",
     },
+    {"act": "compose", "half": "test", "phases": None, "commands": [], "owes": "nothing of its own: it is the command that opens `record` where the tool composes the batch (that act's `composed`) — ONE call of the record script, which writes its batch whole or not at all, so what a kill leaves is a row of that act: `stray-temporaries`, `interrupted-write` or `applied`. Asked again with the words its batch was composed of, it answers that the batch is applied"},
     {"act": "discard", "half": "test", "phases": None, "commands": [], "owes": "nothing: it undoes the `record` act where its phase is `applied`, and a discard that was killed is finished by `recover` (the arrival state `interrupted-write`)"},
     {"act": "push", "half": "both", "phases": None, "commands": [], "owes": "nothing for a record's push, which is the last phase of `record`; a round branch's push is " + FIX_OWES},
     {"act": "find-round", "half": "fix", "phases": None, "commands": [], "owes": A_READ},
@@ -1629,6 +1690,50 @@ def record(args, facts):
     facts.update(status="recorded")
 
 
+# The word `dev/stabilize-record` opens a refusal with, on the one line it prints on stderr.
+REFUSED_BY_RECORD = re.compile(r"stabilize-record: refused ([a-z][a-z0-9-]*): ")
+# What a composing step that the record script refused says is done about it, by that
+# script's word (the header: compose).
+COMPOSE_THEN = {
+    "words": "nothing was written. The words this step was handed are not the words that were hashed — one was altered, dropped, added or moved on its way: the step is asked for again, with the call exactly as it was composed",
+    "no-change": "nothing was written, and no batch is left: every file the record would write is what the run holds already — nothing was filed since the stage's last record, and there is nothing to commit",
+    "check": "nothing of the batch was written. A check of the batch does not hold, or a file among the filed verdicts is no verdict: the stage's report check (`dev/stabilize-step check-reports`) comes before this step — it says which launched reporter left no report, and moves a file that is no report or no verdict out of the tree — and the step is then asked for again, with the reporters the stage launched",
+    "pending": "nothing was written: another batch is applied and not committed. `dev/stabilize-step git-state` says where it stands; `dev/stabilize-step record` commits it, or `dev/stabilize-step discard` takes it back",
+}
+
+
+def compose(args, facts):
+    run_name = os.path.basename(args.run_dir)
+    facts.update(found=[], finished=[])
+    # 1. The branch — before anything else is read or written — and git's own lock.
+    current = checked_out(args.branch, facts)
+    unlocked(facts)
+    # 2. What a killed write of the record script left, finished; then the applied batch.
+    pending = arrived(args.run_dir, facts)
+    batch = pending.get("batch")
+    facts.update(branch=current, head=said("rev-parse", "HEAD"))
+    if batch and batch.get("words") == args.sha256:
+        # ASKED AGAIN: the batch these words composed is applied. Nothing is written; where
+        # it stands is said, and the commit step is what follows.
+        _, _, state = standing(pending, facts, branch=args.branch, run_dir=args.run_dir)
+        note(facts, state)
+        facts.update(status="applied", round=batch["round"], applied={"calls": batch["calls"], "checks": batch["checks"]})
+        return
+    # 3. The record script composes the batch and applies it: ONE call, which holds the
+    #    words to their hash before it reads one of them.
+    composing = run([RECORD, "compose", "--run", run_name, "--round", args.round, "--attempt", args.attempt, "--subject=" + args.subject, "--sha256", args.sha256, "--scratch", args.scratch, "--"] + args.names)
+    try:
+        printed = json.loads(composing.out) if composing.code == 0 else None
+    except ValueError:
+        printed = None
+    if not isinstance(printed, dict):
+        word = REFUSED_BY_RECORD.match(composing.err)
+        if word:
+            facts.update(refusal=word.group(1))
+        refuse("record", "dev/stabilize-record did not compose the stage's record%s" % (": it refused `%s`" % word.group(1) if word else ""), composing.shown(), COMPOSE_THEN.get(word.group(1) if word else None, "nothing was written: the refusal is the record script's, and its one line says what the call lacks"))
+    facts.update(status="applied", round=int(args.round), attempt=int(args.attempt), record=printed["composed"]["record"], applied={"calls": printed["applied"], "checks": [result for result in printed["results"] if isinstance(result, dict) and "check" in result]}, files=printed["files"], filed=printed.get("filed") or [])
+
+
 def discard(args, facts):
     run_name = os.path.basename(args.run_dir)
     facts.update(found=[], finished=[])
@@ -2169,6 +2274,7 @@ DIGEST = {
     "round-commits": {"all": ["sha", 200], "inside": ["sha", 200], "outside": ["sha", 200]},
     "carry": {**ON, **PUSHED, "picked": [{"from": "sha", "to": "sha"}, 200], **MET},
     "record": {**ON, "commit": "sha", "round": "count?", "paths": "count", "applied": {"calls": "count", "checks": "count", "failed": "count"}, "gate": {"ok": "flag", "verdict": "word", "red": "count", "known": "count", "new": "count", "candidate": "sha?"}, "vet": VET, "discarded": "flag", "aside": ASIDE, **MET},
+    "compose": {**ON, "round": "count?", "attempt": "count", "record": "word", "applied": {"calls": "count", "checks": "count", "failed": "count"}, "files": "count", "filed": "count", "refusal": "word", **MET},
     "discard": {**ON, "unstaged": "count", "discarded": "count", **MET},
     "table": {"acts": ["word", 50], "arrivals": ["word", 50], "kept": "count", "holds": ["word", 20], "slice": "count"},
     "sync-main": {"head": "sha", "origin_main": "sha", "resolved_logs": ["path", 10], **MET},
@@ -2284,6 +2390,8 @@ BRIEF = {
     "moved_outside": how_many,
     "unstaged": how_many,
     "discarded": how_many,
+    "files": how_many,
+    "filed": how_many,
     "kept": how_many,
     "pending": lambda batch: batch and dict(batch, checks=len(batch["checks"]), files=len(batch["files"])),
     "state": state_brief,
@@ -2480,6 +2588,8 @@ FLAGS = {
     "commit": full_sha,
     "head": full_sha,
     "digest": directory_outside,
+    "subject": str,
+    "sha256": grammar(re.compile(r"[0-9a-f]{64}"), "a sha256 of 64 hex digits"),
     "name": slug,
     "kind": grammar(re.compile("|".join(row["kind"] for row in HOLDS)), "a kind of held command: " + ", ".join(row["kind"] for row in HOLDS)),
     "previous": full_sha,
@@ -2526,6 +2636,7 @@ def arguments(argv):
     act("round-commits", round_commits, ["loop", "branch", "run-dir"])
     act("carry", carry, ["loop", "run-dir"], lists=["product"], names=("shas", argparse.ONE_OR_MORE, full_sha))
     act("record", record, ["branch", "run-dir", "gate", "calls", "checks"], optional=["scratch", "head"])
+    act("compose", compose, ["branch", "run-dir", "round", "attempt", "subject", "sha256", "scratch"], names=("names", argparse.ZERO_OR_MORE, str))
     act("discard", discard, ["branch", "run-dir"])
     act("table", table, [])
     act("sync-main", sync_main, ["loop"], lists=["log"])
