@@ -2,6 +2,62 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The route catalog's first ten sites of `setup`: the two refusals before the install's first write, 46 cases over 48 counted causes, four of them red — every one on a route's second way out; a site says what was read; and the runner ends a command that holds (the plan's step `P3`, first part; ruling 3 of 2026-10-10)
+
+**What.** Cases for ten sites of `jigc setup` in [route_catalog/setup.rs](crates/cli/tests/route_catalog/setup.rs), the frame grown by what they needed ([route_case.rs](crates/cli/tests/support/route_case.rs)), five arms in [route_catalog.rs](crates/cli/tests/route_catalog.rs), and the pilot's findings file ([route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md)). No product source changes and nothing is fixed. The owed list is ten rows shorter: 25 under `P3`, 18 under `P4`.
+
+**The ten sites** are the claimed codes of the two functions beside the hook's link refusal — the neighbours of the known regression. `replaced_path_refusal` refuses where an entry is in the way of a file the install replaces; `merged_through_links` where a file it merges into is a link it will not follow. Both answer before the first write, with one finding under the first blocked member's code.
+
+| site — code · member | causes counted | followed by a case | given a reason | cases | red |
+|---|---|---|---|---|---|
+| `replaced_path_refusal` — `setup.write-bootstrap` · `.jigc/AGENT.md` | 5 | 5 | 0 | 6 | 0 |
+| — `setup.version-stamp` · `.jigc/version` | 4 | 3 | 1 | 3 | 0 |
+| — `setup.init-project-layer` · `.jigc/config/.gitkeep` | 5 | 4 | 1 | 4 | 0 |
+| — `setup.compose-marker` · `.jigc/config/packs.yaml` | 5 | 2 | 3 | 2 | 0 |
+| — `setup.inject-allowlist` · `.jigc/settings-entries.json` | 4 | 3 | 1 | 3 | 0 |
+| — `setup.write-guide` · `.claude/skills/jigc/SKILL.md` | 6 | 3 | 3 | 3 | 0 |
+| `merged_through_links` — `setup.inject-reference` · `CLAUDE.md` | 5 | 5 | 0 | 10 | 3 |
+| — `setup.inject-allowlist` · `.claude/settings.json` | 8 | 8 | 0 | 9 | 1 |
+| — `setup.secrets-gitignore` · the root `.gitignore` | 4 | 4 | 0 | 5 | 0 |
+| — `setup.init-project-layer` · `.jigc/.gitignore` | 2 | 1 | 1 | 1 | 0 |
+| | **48** | **38** | **10** | **46** | **4** |
+
+**What a cause is — pinned, the plan left it open.** One way through the callee to the constructor: which entry is in the way (the member's own path, or a directory on the way to it), what it is (a link, a directory, a special file), and — for a link the install would follow — which of the four ends `link_end` refuses (nothing, out of the checkout, no regular file, git's own directory). Read for the count: the two functions, `link_end`, `regular_file::blocker` with `Blocker::clearing_act`, `engine::store::home_entry`, `install_tracked_paths` (the members and their order), `install` (the order of the checks), and `guide_ownership` and `is_fresh_repo` where they decide whether a member is in the table at all. **Several entries in the way at once** is one more way through either function — one finding, one route that joins the acts — and is counted and followed once a function, at its first member; the join is the same code whichever member is first.
+
+**More cases than causes, and that is where the red is.** Eight cases follow a cause a second time: by the route's second way out (*or point it at a regular file inside this repository*), or with the entry committed, where the route's clause *committing the removal where git tracks the entry* applies — git's tracking is no branch of either callee, only of the route's prose. **All four red cases are among those eight.** One case a cause, as ruling 3 words it, would have left these ten sites green.
+
+**Red — listed, not fixed.** Both keys are new; the canary has no row for either, so they are minted in the pilot's findings file, in the canary's key grammar.
+
+- `r1-setup-untracked-link-repointed-draws-dirty-install-path` — *followed, another failure*, three cases (`setup-host-link-pointed-at-a-committed-file`, `setup-host-link-pointed-at-a-new-file`, `setup-settings-link-pointed-at-a-new-file`). A link git does not track, pointed at a regular file inside the repository as the route says: the re-run refuses under `setup.dirty-install-path`, naming the link as work in no commit. The route's clause about committing reaches only a link git tracks.
+- `r1-setup-link-pointed-at-uncommitted-file-draws-dirty-install-path` — *followed, another failure*, one case (`setup-host-committed-link-pointed-at-a-new-file`), **marked `doubt`**. A committed link pointed at a file written a moment before, the link's change committed: the re-run refuses over the file.
+
+**One doubt, for the human.** *A regular file inside this repository*: (a) any regular file in the checkout, one in no commit included — followed by the case above, red; (b) a file the repository already holds committed — the case beside it, green. The frame marks it (`Case::doubt`) and decides nothing.
+
+**Ten reasons, all `not-constructible`.** Six causes are answered first under another member's code — a link at `.jigc` is `.jigc/AGENT.md`'s, a link at `.jigc/config` is `.gitkeep`'s, and `replaced_path_refusal` is asked before `merged_through_links`. Two cannot reach the refusal because `guide_ownership` reads a link or a directory at the guide's path as a copy that is not jigc's, and the guide leaves the member table: `jigc setup` exits 0 with the advisory. **Two are a command that holds**: a FIFO at `.jigc/config/packs.yaml` or at the guide's path is read before the refusal is reached, and the read does not return.
+
+**Seen, and no case** — both in the findings file, unkeyed. The hold above. And on an unborn `HEAD`, a root `.gitignore` pointed at a file inside the repository holds as a route — the re-run exits 0 — while git itself refuses to read an ignore file through a link, so the secrets floor merged there ignores nothing.
+
+**The frame, grown — each piece red first.**
+
+- **State:** a plain file, a directory, a FIFO, a `git` command line. **Acts:** move a directory out of the way, replace a link with a real directory, point a link at a file, commit the change at a path. **Check:** a directory. Red against a runner that declared them and did nothing.
+- **Where a route names an act and not its object, the runner owns the object.** *Out of the way* is the sandbox's `moved/`, under the path the directory had; *a regular file inside this repository* is one of two files of the runner's — the sandbox's committed `README.md`, or one it writes new. A case may not supply either: that would be a path of the case's own beside a printed one, which the frame's first rule refuses. So the two readings are two acts, and a case says which it followed.
+- **The marked form is refused for every act that takes an operand.** As built it was refused for the removal alone, the one act there was.
+- **A child is waited for no longer than two minutes.** The first run of the full table did not come back: the case over a FIFO at `packs.yaml` held `jigc setup`, and the suite with it, for ten minutes — until the FIFO was opened for writing by hand. The runner now sends a child's output to files, asks after it, and ends it at the limit; the same case then came out *not provoked* after 120 seconds, with every other case exact — which is why it is a reason and no case. Red against a runner that ignored the limit.
+- **A site with a case has a reading** — what was read, the count, its derivation, each cause without a case with why — and one arm holds the count to the cases: the causes the cases follow (two cases of one cause carry the same words) and the causes given a reason are the count. Red by data: the hook's site had cases and no reading.
+
+**The suite's seconds.** `cargo test -p jigc --test g_migration route_catalog::`, three runs on this machine with no other gate running: 8.73, 8.70 and 8.78 s for 18 arms in one process — 48 cases followed side by side in one of them. Under nextest, one process an arm, the fast pre-check's timing record has that arm at 2.3 s and the arm that holds the limit at 2.5 s, of which two seconds are its two waits.
+
+**Not established.**
+
+- **Linux.** The run in `dev/runner-faithful` follows this commit and is recorded with the next one.
+- **The previous release.** Every case ran on this tree's binary only.
+- **Which function printed a refusal.** A case holds that its site's code is printed in the state its function refuses; that this function and no other raised it is the claim's reading, as before.
+- **The hook's site in full.** Its reading counts the two arms of `hook_link_refusal` and says what was not read: how the link is spelled, what stands at its end, and where `core.hooksPath` puts the hooks directory are states the canary's second and third keys list, with no case.
+- **A special file that is no FIFO**, and an entry in the way that is committed and is no link: a socket's path is bounded shorter than a sandbox's, a device needs a root caller, and the committed directory was not written.
+- **The second way out at every end.** It is followed where the link led out of the repository, the one end with a file to lose — and toward a committed file at `CLAUDE.md` only: the sandbox's one committed file is no settings file.
+- **That two minutes is the right limit.** It is far above any command here and was not measured against a loaded runner.
+- **Cost per case apart from the frame**, beyond minutes by hand: the ten sites took about an hour together, a third of it the frame's growth and ten minutes of it the held run.
+
 ## 2026-10-11 — The route catalog's fence: every blocking site of `setup` and `uninstall` has a case, a reason or an owed row; the code vocabulary is held beside the call sites; and a code a dynamic site mints is a site once a row claims it (the plan's step `P2`; ruling 3 of 2026-10-10)
 
 **What.** Five arms in [route_catalog.rs](crates/cli/tests/route_catalog.rs) and the tables they hold. No product source changes, and no case is added — the cases are the next two tasks'.

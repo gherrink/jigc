@@ -32,9 +32,23 @@
 //! binary of its own, so the same case runs on another release's. Then the acts, then the
 //! checks, then the witnesses, and one of seven [`Classification`]s.
 //!
+//! **Where a route names an act and not its object, the runner owns the object.** *Move
+//! the directory out of the way* says where from and never where to; *point it at a regular
+//! file inside this repository* names no file. A case may not supply either — that would be
+//! a path of the case's own beside a printed one — so the runner does: a moved directory
+//! goes to the sandbox's `moved/` under the path it had ([`Place::Moved`]), and a link is
+//! re-pointed at one of two files of the runner's, the one the sandbox's repository holds
+//! committed ([`COMMITTED`]) or one written new, in no commit ([`NEW_FILE`]). Which of the
+//! two a route means is a reading, and a case says which it followed
+//! ([`Act::PointAtCommitted`], [`Act::PointAtNew`]).
+//!
 //! **An act never leaves the sandbox.** The runner does what a route says with a path the
 //! product printed; a route that names a path outside the sandbox is not followed there —
 //! the act is recorded as failed and says why.
+//!
+//! **A child is waited for no longer than a limit** ([`LIMIT`]). A product that holds —
+//! on a read of a FIFO, which does not return — is ended and the case says so: the refusing
+//! command held is *not provoked*, a command of the route held is *another failure*.
 //!
 //! **What it does not decide.** Whether a refusal *should* have been printed, what a route's
 //! prose means beyond the acts a case lists, and whether a red case is a regression — a
@@ -44,7 +58,9 @@ use std::fmt;
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use super::scratch::ScratchDir;
 
@@ -54,7 +70,23 @@ use super::scratch::ScratchDir;
 pub enum Place {
     Repo(&'static str),
     Outside(&'static str),
+    /// Under the sandbox's `moved/` — where [`Act::MoveAway`] puts what a route says to
+    /// move out of the way: what stood at the repository path `p` is afterwards at
+    /// `Moved(p)`. A check's place, never a state's.
+    Moved(&'static str),
 }
+
+/// The one file the sandbox's repository holds committed before a case's state is planted,
+/// from the repository root — what [`Act::PointAtCommitted`] points a link at.
+pub const COMMITTED: &str = "README.md";
+
+/// The file [`Act::PointAtNew`] writes and points a link at, from the repository root: a
+/// regular file inside the repository that is in no commit.
+pub const NEW_FILE: &str = "route-case-new-file";
+
+/// The body of [`NEW_FILE`] — one that is valid wherever a route can ask for *a regular
+/// file inside this repository*: an empty JSON object, which is also a line of text.
+const NEW_BODY: &str = "{}\n";
 
 /// One file act of a case's **state** — what stands before the refusing command runs. A
 /// state names its paths itself; only an [`Act`] may not.
@@ -65,6 +97,15 @@ pub enum Step {
     /// A symbolic link at the first place whose target is the second place's absolute
     /// path. The target need not exist.
     Link(Place, Place),
+    /// A regular file with this body, not executable.
+    File(Place, &'static str),
+    /// A directory, with those on the way to it.
+    Dir(Place),
+    /// A special file — a FIFO, made by a child `mkfifo`.
+    Fifo(Place),
+    /// A `git` command line in the repository, under the case's mask: to commit what the
+    /// steps before it planted, or to take the sandbox's one commit away again.
+    Git(&'static [&'static str]),
 }
 
 /// What an [`Act`] acts on.
@@ -89,6 +130,37 @@ pub enum Act {
     /// Run the span of this index as the command line it is, split by a real shell: a
     /// `jigc` line on the binary under test, a `git` line on git.
     Run(usize),
+    /// Move the directory the operand names out of the way: out of the repository, to the
+    /// sandbox's `moved/` under the path it had ([`Place::Moved`]), with everything in it.
+    /// A link to a directory is not one.
+    MoveAway(Operand),
+    /// Replace the link the operand names with a real directory: the link is removed —
+    /// never what it leads to — and an empty directory is made at its path.
+    ReplaceWithDirectory(Operand),
+    /// Point the link the operand names at a regular file inside the repository that the
+    /// repository holds committed — [`COMMITTED`].
+    PointAtCommitted(Operand),
+    /// Point the link the operand names at a regular file inside the repository that is
+    /// new — [`NEW_FILE`], which the runner writes and no commit holds.
+    PointAtNew(Operand),
+    /// Commit the change at the path the operand names, and at no other path — what a
+    /// route asks for with *committing the removal where git tracks the entry*.
+    Commit(Operand),
+}
+
+impl Act {
+    /// What the act acts on, where it takes an operand.
+    fn operand(self) -> Option<Operand> {
+        match self {
+            Act::Remove(operand)
+            | Act::MoveAway(operand)
+            | Act::ReplaceWithDirectory(operand)
+            | Act::PointAtCommitted(operand)
+            | Act::PointAtNew(operand)
+            | Act::Commit(operand) => Some(operand),
+            Act::Run(_) => None,
+        }
+    }
 }
 
 /// One thing that must hold once the route is followed.
@@ -96,6 +168,8 @@ pub enum Act {
 pub enum Check {
     /// The entry at this place is a regular file — not a link, not absent.
     RegularFile(Place),
+    /// The entry at this place is a directory — not a link to one.
+    Directory(Place),
 }
 
 /// One case of the catalog: one refusal site in one cause.
@@ -119,6 +193,10 @@ pub struct Case {
     /// Files under `outside/` whose bytes must be afterwards what they were before the
     /// refusing command ran. One that was absent must still be absent.
     pub witnesses: &'static [&'static str],
+    /// **A doubtful reading of the route's prose**, where the case rests on one: the two
+    /// readings, in words. The case follows the printed words most literally and decides
+    /// nothing; a marked case is listed for the human with its route.
+    pub doubt: Option<&'static str>,
 }
 
 impl Case {
@@ -360,19 +438,28 @@ pub struct Followed {
     pub detail: String,
 }
 
-/// stdout and stderr of one child, as text.
-fn said(out: &Output) -> String {
-    format!(
-        "{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    )
+/// What one child of a case came to.
+struct Ran {
+    /// Its exit code — `None` where a signal ended it, the runner's own included.
+    code: Option<i32>,
+    /// The limit it was ended at, where it did not end by itself.
+    held: Option<Duration>,
+    /// Its stdout, then its stderr, as text.
+    said: String,
 }
 
-fn exit(out: &Output) -> String {
-    match out.status.code() {
-        Some(code) => format!("exit {code}"),
-        None => "killed by a signal".to_string(),
+impl Ran {
+    fn success(&self) -> bool {
+        self.held.is_none() && self.code == Some(0)
+    }
+
+    /// How it ended, in words.
+    fn exit(&self) -> String {
+        match (self.held, self.code) {
+            (Some(limit), _) => format!("did not end within {limit:?} and was ended"),
+            (None, Some(code)) => format!("exit {code}"),
+            (None, None) => "killed by a signal".to_string(),
+        }
     }
 }
 
@@ -380,16 +467,22 @@ fn exit(out: &Output) -> String {
 struct Sandbox {
     /// The canonical root, so a path the product prints canonical compares equal.
     root: PathBuf,
+    /// How long a child may run before it is ended.
+    limit: Duration,
+    /// How many children have run — each writes to files of its own.
+    children: AtomicUsize,
     _scratch: ScratchDir,
 }
 
 impl Sandbox {
     /// A repository with one commit and no `jigc setup`, a `$HOME` and an `outside/`.
-    fn new(label: &str) -> Sandbox {
+    fn new(label: &str, limit: Duration) -> Sandbox {
         let scratch = ScratchDir::new(&format!("route-case-{label}"));
         let root = fs::canonicalize(scratch.path()).expect("the scratch root is there");
         let sandbox = Sandbox {
             root,
+            limit,
+            children: AtomicUsize::new(0),
             _scratch: scratch,
         };
         for dir in [
@@ -404,8 +497,8 @@ impl Sandbox {
         sandbox.git(&["config", "user.name", "Route Case"]);
         sandbox.git(&["config", "user.email", "route-case@example.com"]);
         sandbox.git(&["config", "user.useConfigOnly", "true"]);
-        fs::write(sandbox.repo().join("README.md"), "a repository\n").expect("write a file");
-        sandbox.git(&["add", "README.md"]);
+        fs::write(sandbox.repo().join(COMMITTED), "a repository\n").expect("write a file");
+        sandbox.git(&["add", COMMITTED]);
         sandbox.git(&["commit", "-q", "-m", "initial"]);
         sandbox
     }
@@ -426,10 +519,15 @@ impl Sandbox {
         self.root.join("staging")
     }
 
+    fn moved(&self) -> PathBuf {
+        self.root.join("moved")
+    }
+
     fn at(&self, place: Place) -> PathBuf {
         match place {
             Place::Repo(path) => self.repo().join(path),
             Place::Outside(path) => self.outside().join(path),
+            Place::Moved(path) => self.moved().join(path),
         }
     }
 
@@ -453,13 +551,50 @@ impl Sandbox {
         command
     }
 
+    /// **Run one child and wait for it — no longer than the limit.** Its output goes to
+    /// two files of its own under `staging/`, so a child that prints more than a pipe holds
+    /// is not kept waiting for a reader; one that has not ended at the limit is killed —
+    /// this child, by its handle — and says so ([`Ran::exit`]). A product that holds would
+    /// otherwise hold the suite: a read of a FIFO does not return.
+    fn run(&self, command: &mut Command) -> Ran {
+        let at = self.children.fetch_add(1, Ordering::Relaxed);
+        let (out, err) = (
+            self.staging().join(format!("child-{at}.out")),
+            self.staging().join(format!("child-{at}.err")),
+        );
+        let file = |path: &Path| fs::File::create(path).expect("create a child's output file");
+        let mut child = command
+            .stdout(file(&out))
+            .stderr(file(&err))
+            .spawn()
+            .expect("start a child of the case");
+        let started = Instant::now();
+        let (status, held) = loop {
+            if let Some(status) = child.try_wait().expect("ask after a child") {
+                break (status, None);
+            }
+            if started.elapsed() >= self.limit {
+                // Raced with its own end, the kill fails and the wait still answers.
+                let _ = child.kill();
+                break (
+                    child.wait().expect("wait for an ended child"),
+                    Some(self.limit),
+                );
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        let text =
+            |path: &Path| String::from_utf8_lossy(&fs::read(path).unwrap_or_default()).into_owned();
+        Ran {
+            code: status.code(),
+            held,
+            said: format!("{}{}", text(&out), text(&err)),
+        }
+    }
+
     fn git(&self, args: &[&str]) {
-        let out = self
-            .child(Path::new("git"))
-            .args(args)
-            .output()
-            .expect("run git");
-        assert!(out.status.success(), "git {args:?}: {}", said(&out));
+        let ran = self.run(self.child(Path::new("git")).args(args));
+        assert!(ran.success(), "git {args:?}: {}\n{}", ran.exit(), ran.said);
     }
 
     fn plant(&self, state: &[Step]) {
@@ -491,6 +626,27 @@ impl Sandbox {
                         .expect("create the link's directory");
                     symlink(self.at(target), &path).expect("plant the link");
                 }
+                Step::File(place, body) => {
+                    let path = self.at(place);
+                    fs::create_dir_all(path.parent().expect("a file has a parent"))
+                        .expect("create the file's directory");
+                    fs::write(&path, body).expect("plant the file");
+                }
+                Step::Dir(place) => {
+                    fs::create_dir_all(self.at(place)).expect("plant the directory");
+                }
+                Step::Fifo(place) => {
+                    let path = self.at(place);
+                    fs::create_dir_all(path.parent().expect("a FIFO has a parent"))
+                        .expect("create the FIFO's directory");
+                    let made = Command::new("mkfifo")
+                        .arg(&path)
+                        .stdin(Stdio::null())
+                        .status()
+                        .expect("run mkfifo");
+                    assert!(made.success(), "mkfifo {}", path.display());
+                }
+                Step::Git(args) => self.git(args),
             }
         }
     }
@@ -528,58 +684,138 @@ impl Sandbox {
                 )
             })
         };
-        match act {
-            Act::Remove(operand) => {
-                let (named, how) = match operand {
-                    Operand::Span(at) => (span(at)?, format!("span {at}")),
-                    Operand::Unprinted(path) => (path, "named by the case".to_string()),
-                };
-                let path = self.repo().join(named);
-                if !self.contains(&path) {
-                    seen.failed = true;
-                    return Ok(format!(
-                        "remove `{named}` ({how}): not done — it names nothing inside the \
-                         case's sandbox"
-                    ));
+        if let Some(operand) = act.operand() {
+            let (named, how) = match operand {
+                Operand::Span(at) => (span(at)?, format!("span {at}")),
+                Operand::Unprinted(path) => (path, "named by the case".to_string()),
+            };
+            let path = self.repo().join(named);
+            let what = match act {
+                Act::Remove(_) => format!("remove `{named}` ({how})"),
+                Act::MoveAway(_) => format!("move `{named}` out of the way ({how})"),
+                Act::ReplaceWithDirectory(_) => {
+                    format!("replace the link `{named}` with a real directory ({how})")
                 }
-                Ok(match fs::remove_file(&path) {
-                    Ok(()) => format!("remove `{named}` ({how}): removed"),
-                    Err(e) => {
-                        seen.failed = true;
-                        format!("remove `{named}` ({how}): {e}")
-                    }
-                })
+                Act::PointAtCommitted(_) => {
+                    format!("point the link `{named}` at `{COMMITTED}` ({how})")
+                }
+                Act::PointAtNew(_) => format!("point the link `{named}` at `{NEW_FILE}` ({how})"),
+                Act::Commit(_) => format!("commit the change at `{named}` ({how})"),
+                Act::Run(_) => unreachable!("a run takes no operand"),
+            };
+            if !self.contains(&path) {
+                seen.failed = true;
+                return Ok(format!(
+                    "{what}: not done — it names nothing inside the case's sandbox"
+                ));
             }
-            Act::Run(at) => {
-                let line = span(at)?;
-                let words = super::shell_words(line, &self.repo(), &self.home());
-                let program = match words.first().map(String::as_str) {
-                    Some("jigc") => binary,
-                    Some("git") => Path::new("git"),
-                    _ => {
-                        return Err(format!(
-                            "an act runs span {at}, `{line}`, which is no `jigc` or `git` \
-                             command line"
-                        ));
-                    }
-                };
-                let out = self
-                    .child(program)
-                    .args(&words[1..])
-                    .output()
-                    .expect("run the route's command");
-                if out.status.success() {
-                    return Ok(format!("run `{line}` (span {at}): exit 0"));
-                }
-                Ok(if refusal_in(&said(&out), code).is_some() {
-                    seen.same_refusal = true;
-                    format!("run `{line}` (span {at}): {}, `{code}` again", exit(&out))
-                } else {
+            let done = match act {
+                Act::Remove(_) => fs::remove_file(&path)
+                    .map(|()| "removed".to_string())
+                    .map_err(|e| e.to_string()),
+                Act::MoveAway(_) => self.move_away(&path),
+                Act::ReplaceWithDirectory(_) => self
+                    .a_link(&path)
+                    .and_then(|()| fs::remove_file(&path).map_err(|e| e.to_string()))
+                    .and_then(|()| fs::create_dir(&path).map_err(|e| e.to_string()))
+                    .map(|()| "the link is gone and a directory stands there".to_string()),
+                Act::PointAtCommitted(_) => self.point(&path, COMMITTED),
+                Act::PointAtNew(_) => self
+                    .a_link(&path)
+                    .and_then(|()| {
+                        fs::write(self.repo().join(NEW_FILE), NEW_BODY).map_err(|e| e.to_string())
+                    })
+                    .and_then(|()| self.point(&path, NEW_FILE)),
+                Act::Commit(_) => self.commit(named),
+                Act::Run(_) => unreachable!("a run takes no operand"),
+            };
+            return Ok(match done {
+                Ok(done) => format!("{what}: {done}"),
+                Err(why) => {
                     seen.failed = true;
-                    format!("run `{line}` (span {at}): {}\n{}", exit(&out), said(&out))
-                })
+                    format!("{what}: {why}")
+                }
+            });
+        }
+        let Act::Run(at) = act else {
+            unreachable!("every act but a run takes an operand");
+        };
+        let line = span(at)?;
+        let words = super::shell_words(line, &self.repo(), &self.home());
+        let program = match words.first().map(String::as_str) {
+            Some("jigc") => binary,
+            Some("git") => Path::new("git"),
+            _ => {
+                return Err(format!(
+                    "an act runs span {at}, `{line}`, which is no `jigc` or `git` \
+                     command line"
+                ));
+            }
+        };
+        let ran = self.run(self.child(program).args(&words[1..]));
+        if ran.success() {
+            return Ok(format!("run `{line}` (span {at}): exit 0"));
+        }
+        Ok(
+            if ran.held.is_none() && refusal_in(&ran.said, code).is_some() {
+                seen.same_refusal = true;
+                format!("run `{line}` (span {at}): {}, `{code}` again", ran.exit())
+            } else {
+                seen.failed = true;
+                format!("run `{line}` (span {at}): {}\n{}", ran.exit(), ran.said)
+            },
+        )
+    }
+
+    /// `Ok` where the entry at `path` is a link, asked without following it.
+    fn a_link(&self, path: &Path) -> Result<(), String> {
+        if fs::symlink_metadata(path).is_ok_and(|entry| entry.file_type().is_symlink()) {
+            Ok(())
+        } else {
+            Err("not done — no link stands there".to_string())
+        }
+    }
+
+    /// Move the directory at `path` to `moved/`, under the path it had from the repository
+    /// root — or under its own name, where it stood elsewhere in the sandbox.
+    fn move_away(&self, path: &Path) -> Result<String, String> {
+        if !fs::symlink_metadata(path).is_ok_and(|entry| entry.is_dir()) {
+            return Err("not done — no directory stands there".to_string());
+        }
+        let under = path
+            .strip_prefix(self.repo())
+            .ok()
+            .map(Path::to_path_buf)
+            .or_else(|| path.file_name().map(PathBuf::from))
+            .ok_or("not done — the path has no name to move it under")?;
+        let to = self.moved().join(under);
+        let parent = to.parent().expect("a place under `moved/` has a parent");
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        fs::rename(path, &to).map_err(|e| e.to_string())?;
+        Ok("moved out of the repository".to_string())
+    }
+
+    /// Point the link at `path` at the repository's file `target`: the link is removed and
+    /// planted again, and what it led to is not touched.
+    fn point(&self, path: &Path, target: &str) -> Result<String, String> {
+        self.a_link(path)?;
+        fs::remove_file(path).map_err(|e| e.to_string())?;
+        symlink(self.repo().join(target), path).map_err(|e| e.to_string())?;
+        Ok("the link leads there now".to_string())
+    }
+
+    /// Commit the change at the path `named`, and at no other path.
+    fn commit(&self, named: &str) -> Result<String, String> {
+        for args in [
+            &["add", "--all", "--", named][..],
+            &["commit", "-q", "-m", "follow the route", "--", named][..],
+        ] {
+            let ran = self.run(self.child(Path::new("git")).args(args));
+            if !ran.success() {
+                return Err(format!("git {args:?}: {}\n{}", ran.exit(), ran.said));
             }
         }
+        Ok("committed".to_string())
     }
 
     fn check(&self, check: Check) -> Result<(), String> {
@@ -592,6 +828,14 @@ impl Sandbox {
                     Err(format!("`{}` is no regular file", path.display()))
                 }
             }
+            Check::Directory(place) => {
+                let path = self.at(place);
+                if fs::symlink_metadata(&path).is_ok_and(|entry| entry.is_dir()) {
+                    Ok(())
+                } else {
+                    Err(format!("`{}` is no directory", path.display()))
+                }
+            }
         }
     }
 }
@@ -600,26 +844,33 @@ impl Sandbox {
 /// form where the printed route holds a path span, a span the route does not have, no act
 /// under a printed route — and is no classification: the catalog names it and fails.
 pub fn follow(binary: &Path, case: &Case) -> Result<Followed, String> {
+    follow_within(binary, case, LIMIT)
+}
+
+/// How long a child of a case may run before the runner ends it. A `jigc setup` over a
+/// sandbox takes a fraction of a second; the limit is two minutes so that a loaded machine
+/// never turns a slow command into a red case, and a command that holds is one red case
+/// after two minutes rather than a suite that does not come back.
+pub const LIMIT: Duration = Duration::from_secs(120);
+
+/// [`follow`], with the limit a child is ended at — for the arm that holds the limit
+/// itself, which cannot wait two minutes for it.
+pub fn follow_within(binary: &Path, case: &Case, limit: Duration) -> Result<Followed, String> {
     let code = case.code();
-    let sandbox = Sandbox::new(case.name);
+    let sandbox = Sandbox::new(case.name, limit);
     sandbox.plant(case.state);
     let before = sandbox.witnesses(case.witnesses);
 
-    let refused = sandbox
-        .child(binary)
-        .args(case.refusing)
-        .output()
-        .expect("run the refusing command");
-    let printed = said(&refused);
-    let found = refusal_in(&printed, code);
+    let refused = sandbox.run(sandbox.child(binary).args(case.refusing));
+    let found = refusal_in(&refused.said, code);
     let mut seen = Seen {
-        provoked: found.is_some() && !refused.status.success(),
+        provoked: found.is_some() && refused.held.is_none() && !refused.success(),
         ..Seen::default()
     };
     let mut detail = vec![format!(
         "`jigc {}`: {}, `{code}` {}",
         case.refusing.join(" "),
-        exit(&refused),
+        refused.exit(),
         if found.is_some() {
             "printed"
         } else {
@@ -627,7 +878,7 @@ pub fn follow(binary: &Path, case: &Case) -> Result<Followed, String> {
         }
     )];
     if !seen.provoked {
-        detail.push(printed);
+        detail.push(refused.said);
     }
 
     let route = found
@@ -641,7 +892,7 @@ pub fn follow(binary: &Path, case: &Case) -> Result<Followed, String> {
             return Err("a route is printed and the case follows it with no act".to_string());
         }
         for act in case.acts {
-            if let Act::Remove(Operand::Unprinted(named)) = act {
+            if let Some(Operand::Unprinted(named)) = act.operand() {
                 seen.implied = true;
                 if let Some(at) = path_spans(&spans, &sandbox.repo()).first() {
                     return Err(sandbox.shown(&format!(

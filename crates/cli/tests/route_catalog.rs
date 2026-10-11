@@ -31,10 +31,33 @@
 //! (`completions/artifacts/M55/stabilization-build/canary-one/findings.md`), and no ledger
 //! holds it yet. The tie becomes a real one when a run's opening seeds its rows.
 //!
-//! **What the catalog holds today** is the frame's first proof: the one site whose cause an
-//! existing test planted and passed over, in the cause that destroys a file and in its
-//! control. Every other blocking site of `setup` and `uninstall` is a row of [`OWED`],
-//! under the task that owes its case.
+//! **What the catalog holds today** is the frame's first proof — the one site whose cause
+//! an existing test planted and passed over, in the cause that destroys a file and in its
+//! control — and the first ten sites of `jigc setup` (the plan's step `P3`, its first part):
+//! the two refusals the install raises before its first write over an entry in the way of a
+//! file it replaces or merges into. Every other blocking site of `setup` and `uninstall` is
+//! a row of [`OWED`], under the task that owes its case.
+//!
+//! **A site with a case says what was read to count its causes**
+//! ([`Reading`], a command's `READINGS`): the functions, the count with its derivation, and
+//! every cause that has no case with why. A fence can hold sites and never causes, so the
+//! count is a hand count —
+//! [`every_site_with_a_case_says_what_was_read_and_every_cause_is_answered`] holds it to
+//! the cases: the causes the cases follow and the causes given a reason are together the
+//! count, and no more.
+//!
+//! **A doubtful reading of a route's prose is marked, never decided**
+//! ([`Case::doubt`](crate::support::route_case::Case::doubt)): the case follows the printed
+//! words most literally, says the two readings, and is listed for the human with whatever
+//! it came out as.
+//!
+//! **The frame grew with the cases**, and each piece has an arm that was red before it was
+//! built: the state steps and file acts
+//! ([`a_state_step_plants_what_it_names_and_a_file_act_does_what_the_route_says`]), the
+//! marked form's refusal for every act that takes an operand
+//! ([`the_marked_form_is_refused_for_every_act_that_takes_an_operand`]), the sandbox's
+//! bound for each new act ([`no_file_act_is_done_outside_the_sandbox`]), and the limit a
+//! child is waited for ([`a_command_that_does_not_end_is_ended_and_the_case_says_so`]).
 //!
 //! **The fence** (the plan's step `P2`) holds the catalog to the refusal sites of the
 //! families [`CATALOGUED`] names. It scans nothing for itself — the sites are
@@ -72,7 +95,8 @@ use std::path::Path;
 
 use crate::support::refusal_sites::{self, DYNAMIC, FAMILIES, Site, Source};
 use crate::support::route_case::{
-    self, Act, Case, Classification, ExpectedRed, Followed, Operand, Refusal, Seen,
+    self, Act, Case, Check, Classification, ExpectedRed, Followed, Operand, Place, Refusal, Seen,
+    Step,
 };
 use crate::support::rust_source;
 
@@ -84,13 +108,14 @@ struct Table {
     source: &'static str,
     cases: &'static [Case],
     reasons: &'static [Reason],
+    readings: &'static [Reading],
 }
 
 /// **A command's file is wired in by its declaration inside this macro's one call, and
 /// nowhere else.** The declaration is the `#[path]` line the registration fence reads
 /// (`test_target_registration.rs`), and the macro makes the same line the file's row of
 /// [`TABLES`] — its cases, its reasons and its source — so no arm of this suite names a
-/// command's file a second time. The file exports `CASES` and `REASONS`.
+/// command's file a second time. The file exports `CASES`, `REASONS` and `READINGS`.
 macro_rules! tables {
     ($(#[path = $file:literal] mod $name:ident;)*) => {
         $(
@@ -104,6 +129,7 @@ macro_rules! tables {
             source: include_str!($file),
             cases: $name::CASES,
             reasons: $name::REASONS,
+            readings: $name::READINGS,
         }),*];
     };
 }
@@ -120,14 +146,42 @@ fn cases() -> Vec<&'static Case> {
     TABLES.iter().flat_map(|table| table.cases).collect()
 }
 
-/// The cases that are red, each under the key of the finding it reproduces. The one key
-/// here is the first row of §1, *The two blockers*, of
-/// `completions/artifacts/M55/stabilization-build/canary-one/findings.md`.
-const EXPECTED_RED: &[ExpectedRed] = &[ExpectedRed {
-    case: "setup-hook-linked-to-a-script-outside",
-    key: "r1-setup-install-hook-route-other-causes-unexamined",
-    classification: Classification::WitnessChanged,
-}];
+/// The cases that are red, each under the key of the finding it reproduces. The first key
+/// is the first row of §1, *The two blockers*, of
+/// `completions/artifacts/M55/stabilization-build/canary-one/findings.md`; the other two
+/// are no finding of the canary's and were minted with the cases, in
+/// `completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md`.
+const EXPECTED_RED: &[ExpectedRed] = &[
+    ExpectedRed {
+        case: "setup-hook-linked-to-a-script-outside",
+        key: "r1-setup-install-hook-route-other-causes-unexamined",
+        classification: Classification::WitnessChanged,
+    },
+    ExpectedRed {
+        case: "setup-host-link-pointed-at-a-committed-file",
+        key: REPOINTED_LINK,
+        classification: Classification::AnotherFailure,
+    },
+    ExpectedRed {
+        case: "setup-host-link-pointed-at-a-new-file",
+        key: REPOINTED_LINK,
+        classification: Classification::AnotherFailure,
+    },
+    ExpectedRed {
+        case: "setup-settings-link-pointed-at-a-new-file",
+        key: REPOINTED_LINK,
+        classification: Classification::AnotherFailure,
+    },
+    ExpectedRed {
+        case: "setup-host-committed-link-pointed-at-a-new-file",
+        key: "r1-setup-link-pointed-at-uncommitted-file-draws-dirty-install-path",
+        classification: Classification::AnotherFailure,
+    },
+];
+
+/// A link git does not track, pointed at a regular file inside the repository as the route
+/// says: the re-run refuses it as uncommitted work.
+const REPOINTED_LINK: &str = "r1-setup-untracked-link-repointed-draws-dirty-install-path";
 
 fn binary() -> &'static Path {
     Path::new(env!("CARGO_BIN_EXE_jigc"))
@@ -162,8 +216,14 @@ fn the_catalog_is_followed_and_the_expected_red_list_is_exact() {
             Ok(followed) => {
                 results.push((case.name, followed.classification));
                 seen.push(format!(
-                    "`{}` ({}) — {}\n{}",
-                    case.name, case.cause, followed.classification, followed.detail
+                    "`{}` ({}) — {}\n{}{}",
+                    case.name,
+                    case.cause,
+                    followed.classification,
+                    followed.detail.trim_end(),
+                    case.doubt
+                        .map(|doubt| format!("\ndoubt: {doubt}"))
+                        .unwrap_or_default(),
                 ));
             }
             Err(fault) => wrong.push(format!(
@@ -246,6 +306,23 @@ pub struct Reason {
     /// The site's id, as a case names it.
     pub site: &'static str,
     pub why: Why,
+}
+
+/// **What was read to count one site's causes, and the count.** A command's file states
+/// one for every site it has a case of (`READINGS`), beside the cases.
+#[derive(Clone, Copy, Debug)]
+pub struct Reading {
+    /// The site's id, as a case names it.
+    pub site: &'static str,
+    /// The functions that were read, each as `file::function`, with what it was read for
+    /// where that is not the refusal itself.
+    pub read: &'static [&'static str],
+    /// How many causes they hold — a hand count.
+    pub causes: usize,
+    /// The count's derivation, in words.
+    pub derivation: &'static str,
+    /// The causes among them that have no case, each with why.
+    pub without_case: &'static [(&'static str, Why)],
 }
 
 /// **A code, and the `dynamic` site that mints it.** The list holds that site under no
@@ -359,16 +436,6 @@ const OWED: &[Owed] = &[
             "crates/cli/src/setup.rs::install::setup.inject-allowlist#1",
             "crates/cli/src/setup.rs::install::setup.profile-incomplete#1",
             "crates/cli/src/setup.rs::install::setup.spawn-template#1",
-            "crates/cli/src/setup.rs::merged_through_links::setup.init-project-layer#dynamic-1",
-            "crates/cli/src/setup.rs::merged_through_links::setup.inject-allowlist#dynamic-1",
-            "crates/cli/src/setup.rs::merged_through_links::setup.inject-reference#dynamic-1",
-            "crates/cli/src/setup.rs::merged_through_links::setup.secrets-gitignore#dynamic-1",
-            "crates/cli/src/setup.rs::replaced_path_refusal::setup.compose-marker#dynamic-1",
-            "crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1",
-            "crates/cli/src/setup.rs::replaced_path_refusal::setup.inject-allowlist#dynamic-1",
-            "crates/cli/src/setup.rs::replaced_path_refusal::setup.version-stamp#dynamic-1",
-            "crates/cli/src/setup.rs::replaced_path_refusal::setup.write-bootstrap#dynamic-1",
-            "crates/cli/src/setup.rs::replaced_path_refusal::setup.write-guide#dynamic-1",
             "crates/cli/src/setup.rs::run::setup.profile-load#1",
             "crates/cli/src/setup.rs::write_install_span::setup.compose-marker#1",
             "crates/cli/src/setup.rs::write_install_span::setup.init-project-layer#1",
@@ -1341,6 +1408,7 @@ fn an_act_is_not_done_outside_the_sandbox() {
         acts: &[Act::Remove(Operand::Span(0)), Act::Remove(Operand::Span(1))],
         holds: &[],
         witnesses: &[],
+        doubt: None,
     };
     let followed = route_case::follow(Path::new("/bin/sh"), &planted)
         .expect("the planted case is one the runner follows");
@@ -1564,4 +1632,478 @@ fn the_expected_red_list_is_strict_three_ways() {
         ],
     );
     assert_eq!(all.len(), 3, "every difference is reported: {all:?}");
+}
+
+// ---------------------------------------------------------------------------
+// The readings
+// ---------------------------------------------------------------------------
+
+/// **Every way the readings and the cases disagree.** `cases` is `(site, cause)`, one a
+/// case. A site with a case and no reading is named; so is a reading of a site that has no
+/// case, a second reading of one site, one that does not say what was read or how it was
+/// counted, a reason given for a cause a case follows, a reason that states nothing — and a
+/// count that is not the causes the cases follow and the causes given a reason, together.
+fn miscounted(cases: &[(&str, &str)], readings: &[Reading]) -> Vec<String> {
+    let mut out = Vec::new();
+    let sites: BTreeSet<&str> = cases.iter().map(|(site, _)| *site).collect();
+    for site in &sites {
+        if !readings.iter().any(|reading| reading.site == *site) {
+            out.push(format!(
+                "`{site}` has a case and no reading: which functions were read for its \
+                 causes, and how many they hold"
+            ));
+        }
+    }
+    for (at, reading) in readings.iter().enumerate() {
+        let site = reading.site;
+        if readings[..at].iter().any(|other| other.site == site) {
+            out.push(format!("`{site}` has two readings"));
+            continue;
+        }
+        if !sites.contains(site) {
+            out.push(format!(
+                "the reading of `{site}` is of a site that has no case"
+            ));
+            continue;
+        }
+        if reading.read.is_empty() || reading.derivation.is_empty() {
+            out.push(format!(
+                "the reading of `{site}` does not say what was read, or how its causes were \
+                 counted"
+            ));
+        }
+        let followed: BTreeSet<&str> = cases
+            .iter()
+            .filter(|(of, _)| *of == site)
+            .map(|(_, cause)| *cause)
+            .collect();
+        for (cause, why) in reading.without_case {
+            if followed.contains(cause) {
+                out.push(format!(
+                    "`{site}`: the cause \"{cause}\" has a case and the reason `{why}` for \
+                     having none — one of the two is wrong"
+                ));
+            }
+            if let Why::NotConstructible("") | Why::Platform("") = why {
+                out.push(format!(
+                    "`{site}`: the reason `{why}` for the cause \"{cause}\" states nothing"
+                ));
+            }
+        }
+        if followed.len() + reading.without_case.len() != reading.causes {
+            out.push(format!(
+                "`{site}`: the reading counts {} cause(s), and {} are answered — {} followed \
+                 by a case, {} given a reason",
+                reading.causes,
+                followed.len() + reading.without_case.len(),
+                followed.len(),
+                reading.without_case.len(),
+            ));
+        }
+    }
+    out
+}
+
+/// **A site with a case says what was read to count its causes, and every cause counted is
+/// answered** — followed by a case, or given a reason beside the cases. On a fixture, kind
+/// by kind; then every command's file.
+#[test]
+fn every_site_with_a_case_says_what_was_read_and_every_cause_is_answered() {
+    let reading = |site, causes, without_case| Reading {
+        site,
+        read: &["a/file.rs::the_callee"],
+        causes,
+        derivation: "one arm a cause",
+        without_case,
+    };
+    // Two cases of one cause follow two ways out of its route, and are one cause.
+    let cases = [
+        ("first", "one"),
+        ("first", "one"),
+        ("first", "two"),
+        ("second", "one"),
+    ];
+    const THREE: &[(&str, Why)] = &[("three", Why::Platform("another"))];
+    let in_order = [reading("first", 3, THREE), reading("second", 1, &[])];
+    says(&miscounted(&cases, &in_order), &[]);
+    says(
+        &miscounted(&cases, &[]),
+        &[
+            ("`first`", "a case and no reading"),
+            ("`second`", "a case and no reading"),
+        ],
+    );
+    says(
+        &miscounted(
+            &cases,
+            &[
+                in_order[0],
+                in_order[1],
+                in_order[0],
+                reading("third", 0, &[]),
+            ],
+        ),
+        &[
+            ("`first`", "has two readings"),
+            ("`third`", "a site that has no case"),
+        ],
+    );
+    // A cause nobody answers for, and one counted that is not there.
+    says(
+        &miscounted(
+            &cases,
+            &[reading("first", 4, THREE), reading("second", 0, &[])],
+        ),
+        &[
+            ("`first`", "counts 4 cause(s), and 3 are answered"),
+            ("`second`", "counts 0 cause(s), and 1 are answered"),
+        ],
+    );
+    const TWO_AGAIN: &[(&str, Why)] = &[("two", Why::NotConstructible(""))];
+    says(
+        &miscounted(
+            &cases,
+            &[
+                reading("first", 3, TWO_AGAIN),
+                Reading {
+                    read: &[],
+                    ..in_order[1]
+                },
+            ],
+        ),
+        &[
+            ("`first`", "has a case and the reason"),
+            ("`first`", "states nothing"),
+            ("`second`", "does not say what was read"),
+        ],
+    );
+
+    let mut wrong = Vec::new();
+    for table in TABLES {
+        let cases: Vec<(&str, &str)> = table
+            .cases
+            .iter()
+            .map(|case| (case.site, case.cause))
+            .collect();
+        wrong.extend(miscounted(&cases, table.readings));
+    }
+    assert!(
+        wrong.is_empty(),
+        "the catalog's readings and its cases disagree:\n\n  {}\n\na site's reading stands in \
+         its command's file beside the cases (`READINGS`). Two cases of one cause carry the \
+         same `cause`, to the letter.",
+        wrong.join("\n  "),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The frame's vocabulary, as the cases of `jigc setup` grew it
+// ---------------------------------------------------------------------------
+
+/// The planted cases of the three arms below. A shell stands in for the binary, as in
+/// [`an_act_is_not_done_outside_the_sandbox`]: it refuses only where the state is as
+/// planted, and the command its route prints exits 0 only where the act did what the route
+/// says.
+const PLANTED: Case = Case {
+    name: "",
+    site: HOOK_LINK_SITE,
+    cause: "a refusal a shell prints over a planted state",
+    state: &[],
+    refusing: &[],
+    acts: &[],
+    holds: &[],
+    witnesses: &[],
+    doubt: None,
+};
+
+/// **A state step plants what it names, and a file act does what the route says** — every
+/// step and act the cases of `jigc setup` added to the frame, each in a planted case that
+/// comes out *followed, holds* only if the state stood and the act was done: a file, a
+/// directory, a FIFO and a commit; a directory moved out of the repository with what it
+/// holds; a link replaced by a real directory, what it led to untouched; a link pointed at
+/// the repository's committed file and the change committed; a link pointed at a file that
+/// is new and in no commit.
+#[test]
+fn a_state_step_plants_what_it_names_and_a_file_act_does_what_the_route_says() {
+    let planted = [
+        Case {
+            name: "planted-a-file-a-directory-a-fifo-and-a-commit",
+            state: &[
+                Step::File(Place::Repo("a/file"), "body\n"),
+                Step::Dir(Place::Repo("a/dir")),
+                Step::Fifo(Place::Repo("a/pipe")),
+                Step::Git(&["add", "a/file"]),
+                Step::Git(&["commit", "-q", "-m", "a file"]),
+            ],
+            refusing: &[
+                "-c",
+                "grep -q body a/file && test ! -x a/file && test -d a/dir && test -p a/pipe \
+                 && git diff --quiet HEAD -- a/file \
+                 && git ls-files --error-unmatch a/file >/dev/null 2>&1 || exit 0; \
+                 printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                 '  route: remove the special file at `a/pipe`, then re-run \
+                 `jigc -c \"test ! -e a/pipe\"`'; exit 1",
+            ],
+            acts: &[Act::Remove(Operand::Span(0)), Act::Run(1)],
+            holds: &[
+                Check::RegularFile(Place::Repo("a/file")),
+                Check::Directory(Place::Repo("a/dir")),
+            ],
+            ..PLANTED
+        },
+        Case {
+            name: "planted-a-directory-to-move-out-of-the-way",
+            state: &[Step::File(Place::Repo("in/the-way/kept"), "kept\n")],
+            refusing: &[
+                "-c",
+                "test -d in/the-way || exit 0; \
+                 printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                 '  route: move the directory at `in/the-way` out of the way, then re-run \
+                 `jigc -c \"test ! -e in/the-way\"`'; exit 1",
+            ],
+            acts: &[Act::MoveAway(Operand::Span(0)), Act::Run(1)],
+            holds: &[
+                Check::Directory(Place::Moved("in/the-way")),
+                Check::RegularFile(Place::Moved("in/the-way/kept")),
+            ],
+            ..PLANTED
+        },
+        Case {
+            name: "planted-a-link-to-replace-with-a-directory",
+            state: &[
+                Step::File(Place::Outside("store/kept"), "kept\n"),
+                Step::Link(Place::Repo("linked"), Place::Outside("store")),
+            ],
+            refusing: &[
+                "-c",
+                "test -L linked || exit 0; \
+                 printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                 '  route: replace the link at `linked` with a real directory, then re-run \
+                 `jigc -c \"test -d linked && test ! -L linked && test ! -e linked/kept\"`'; \
+                 exit 1",
+            ],
+            acts: &[Act::ReplaceWithDirectory(Operand::Span(0)), Act::Run(1)],
+            holds: &[Check::Directory(Place::Repo("linked"))],
+            witnesses: &["store/kept"],
+            ..PLANTED
+        },
+        Case {
+            name: "planted-a-link-to-point-at-the-committed-file",
+            state: &[
+                Step::File(Place::Outside("theirs"), "theirs\n"),
+                Step::Link(Place::Repo("host"), Place::Outside("theirs")),
+                Step::Git(&["add", "host"]),
+                Step::Git(&["commit", "-q", "-m", "a link"]),
+            ],
+            refusing: &[
+                "-c",
+                "test -L host || exit 0; \
+                 printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                 '  route: point the link at `host` at a regular file inside this \
+                 repository, commit the change, then re-run \
+                 `jigc -c \"test -L host && test host -ef README.md \
+                 && git diff --quiet HEAD -- host\"`'; exit 1",
+            ],
+            acts: &[
+                Act::PointAtCommitted(Operand::Span(0)),
+                Act::Commit(Operand::Span(0)),
+                Act::Run(1),
+            ],
+            witnesses: &["theirs"],
+            ..PLANTED
+        },
+        Case {
+            name: "planted-a-link-to-point-at-a-new-file",
+            state: &[
+                Step::Link(Place::Repo("host"), Place::Outside("nothing")),
+                Step::Git(&["add", "host"]),
+                Step::Git(&["commit", "-q", "-m", "a link"]),
+            ],
+            refusing: &[
+                "-c",
+                "test -L host || exit 0; \
+                 printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                 '  route: point the link at `host` at a regular file inside this \
+                 repository, then re-run \
+                 `jigc -c \"test -L host && test -f host && ! test host -ef README.md \
+                 && git ls-files --others --exclude-standard | grep -q .\"`'; exit 1",
+            ],
+            acts: &[Act::PointAtNew(Operand::Span(0)), Act::Run(1)],
+            witnesses: &["nothing"],
+            ..PLANTED
+        },
+    ];
+    let mut wrong = Vec::new();
+    for case in &planted {
+        match route_case::follow(Path::new("/bin/sh"), case) {
+            Ok(followed) if followed.classification == Classification::Holds => {}
+            Ok(followed) => wrong.push(format!(
+                "`{}` — {}\n{}",
+                case.name, followed.classification, followed.detail
+            )),
+            Err(fault) => wrong.push(format!("`{}` cannot be followed: {fault}", case.name)),
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "a planted case comes out *followed, holds* where its state stood and its acts were \
+         done:\n\n{}",
+        wrong.join("\n\n"),
+    );
+}
+
+/// Every act that takes an operand, with the marked form naming the directory the planted
+/// refusals below are about.
+const MARKED: [&[Act]; 6] = [
+    &[Act::Remove(Operand::Unprinted("in/the-way"))],
+    &[Act::MoveAway(Operand::Unprinted("in/the-way"))],
+    &[Act::ReplaceWithDirectory(Operand::Unprinted("in/the-way"))],
+    &[Act::PointAtCommitted(Operand::Unprinted("in/the-way"))],
+    &[Act::PointAtNew(Operand::Unprinted("in/the-way"))],
+    &[Act::Commit(Operand::Unprinted("in/the-way"))],
+];
+
+/// **The marked form is refused for every act that takes an operand, wherever the printed
+/// route holds a path** — not for the removal alone, which was the one act the frame had
+/// when the rule was written. And where the route prints none, an act in the marked form
+/// leaves the case no better than *operand implied*, whichever act it is.
+#[test]
+fn the_marked_form_is_refused_for_every_act_that_takes_an_operand() {
+    let prints_the_path = Case {
+        name: "planted-the-marked-form-beside-a-printed-path",
+        state: &[Step::Dir(Place::Repo("in/the-way"))],
+        refusing: &[
+            "-c",
+            "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             '  route: move the directory at `in/the-way` out of the way'; exit 1",
+        ],
+        ..PLANTED
+    };
+    for acts in MARKED {
+        match route_case::follow(
+            Path::new("/bin/sh"),
+            &Case {
+                acts,
+                ..prints_the_path
+            },
+        ) {
+            Err(fault) => assert!(
+                fault.contains("the marked form") && fault.contains("span 0"),
+                "{acts:?}: the refusal names the marked form and the path span that forbids \
+                 it: {fault}",
+            ),
+            Ok(followed) => panic!(
+                "{acts:?} names its object by the marked form and was followed, where the \
+                 printed route names a path: {}\n{}",
+                followed.classification, followed.detail
+            ),
+        }
+    }
+
+    let prints_no_path = Case {
+        name: "planted-the-marked-form-where-no-path-is-printed",
+        state: &[Step::File(Place::Repo("in/the-way/kept"), "kept\n")],
+        refusing: &[
+            "-c",
+            "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             '  route: move what is in the way out of it, then re-run \
+             `jigc -c \"test ! -e in/the-way\"`'; exit 1",
+        ],
+        acts: &[Act::MoveAway(Operand::Unprinted("in/the-way")), Act::Run(0)],
+        holds: &[Check::RegularFile(Place::Moved("in/the-way/kept"))],
+        ..PLANTED
+    };
+    let followed = route_case::follow(Path::new("/bin/sh"), &prints_no_path)
+        .expect("where the route prints no path the marked form stands");
+    assert_eq!(
+        followed.classification,
+        Classification::HoldsOperandImplied,
+        "{}",
+        followed.detail,
+    );
+}
+
+/// **No file act is done outside the sandbox** — the rule
+/// [`an_act_is_not_done_outside_the_sandbox`] holds for the removal, for each act the cases
+/// of `jigc setup` added: a route that names a path above the sandbox, or `/dev/null`, has
+/// none of them done there, and nothing is written for the act that would write a file.
+#[test]
+fn no_file_act_is_done_outside_the_sandbox() {
+    let planted = Case {
+        name: "planted-file-acts-on-paths-outside-the-sandbox",
+        refusing: &[
+            "-c",
+            "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             '  route: move `../../elsewhere` and replace `/dev/null`'; exit 1",
+        ],
+        acts: &[
+            Act::MoveAway(Operand::Span(0)),
+            Act::ReplaceWithDirectory(Operand::Span(1)),
+            Act::PointAtCommitted(Operand::Span(1)),
+            Act::PointAtNew(Operand::Span(1)),
+            Act::Commit(Operand::Span(0)),
+        ],
+        ..PLANTED
+    };
+    let followed = route_case::follow(Path::new("/bin/sh"), &planted)
+        .expect("the planted case is one the runner follows");
+    assert_eq!(
+        (
+            followed.classification,
+            followed
+                .detail
+                .matches("not done — it names nothing inside")
+                .count()
+        ),
+        (Classification::AnotherFailure, 5),
+        "all five acts are refused, and the case is red for it:\n{}",
+        followed.detail,
+    );
+}
+
+/// **A command that does not end is ended, and the case says so.** The runner waits for a
+/// child no longer than its limit: a product that holds — on a read of a FIFO, say, which
+/// held this suite for ten minutes the first time a case planted one where `jigc setup`
+/// reads before it refuses — is a red case with its reason, and never a suite that does
+/// not come back. The refusing command held is *not provoked*; a command of the route held
+/// is *another failure*.
+#[test]
+fn a_command_that_does_not_end_is_ended_and_the_case_says_so() {
+    let limit = std::time::Duration::from_secs(1);
+    let started = std::time::Instant::now();
+    let held_at_the_door = Case {
+        name: "planted-a-refusing-command-that-does-not-end",
+        refusing: &["-c", "exec sleep 20"],
+        ..PLANTED
+    };
+    let held_on_the_route = Case {
+        name: "planted-a-route-whose-command-does-not-end",
+        refusing: &[
+            "-c",
+            "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             '  route: re-run `jigc -c \"exec sleep 20\"`'; exit 1",
+        ],
+        acts: &[Act::Run(0)],
+        ..PLANTED
+    };
+    for (case, expected) in [
+        (held_at_the_door, Classification::NotProvoked),
+        (held_on_the_route, Classification::AnotherFailure),
+    ] {
+        let followed = route_case::follow_within(Path::new("/bin/sh"), &case, limit)
+            .expect("the planted case is one the runner follows");
+        assert!(
+            followed.classification == expected && followed.detail.contains("did not end"),
+            "`{}`: {expected}, and the detail says the command did not end — it came out \
+             {}:\n{}",
+            case.name,
+            followed.classification,
+            followed.detail,
+        );
+    }
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(15),
+        "two commands that sleep twenty seconds were each ended at a limit of one: {:?}",
+        started.elapsed(),
+    );
 }
