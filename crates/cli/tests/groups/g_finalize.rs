@@ -97,6 +97,8 @@ mod promote_destination_shape;
 mod reconciliation_baseline_contrast;
 #[path = "../ref_edge_guidance.rs"]
 mod ref_edge_guidance;
+#[path = "../refusal_site_list.rs"]
+mod refusal_site_list;
 #[path = "../rename_rollback_conflict.rs"]
 mod rename_rollback_conflict;
 #[path = "../repo_posture.rs"]

@@ -28,6 +28,7 @@ pub mod install_line;
 pub mod leaf_argv;
 pub mod older_guide;
 pub mod pack_locator;
+pub mod refusal_sites;
 pub mod root_walk;
 pub mod route_spans;
 pub mod run_then_parse;
