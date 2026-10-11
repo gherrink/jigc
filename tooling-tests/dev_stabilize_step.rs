@@ -8722,6 +8722,144 @@ fn the_state_digest_says_what_the_budget_has_left_and_that_a_stage_continues() {
     assert_eq!(seen.line["unfit"], json!([]), "{}", seen.raw);
 }
 
+/// **The state's digest carries the stop's view as counts, a path and a hash** (the build
+/// plan of the reshaped `test` stage, `T4`: *the digest carries counts, the file's path and
+/// its hash*; `T7`: *the return carries … the hit rate's counts and the stop view's path and
+/// hash, and no list*). In a run with a queue the digest's `view` says which round it is
+/// of, where the file lies, the hash of the text the record script renders, whether the file
+/// on disk is that text — and, as counts and words and nothing else, the hit rate class by
+/// class, how long each list is, how many rows each word keeps out of the queue, and how
+/// many codes and sites are named. No key, no door, no code is in it: they are in the
+/// document, and in the file. Before a run's first round the field is null; and IN A RUN
+/// WITHOUT AN ORDER THE DIGEST HAS NO SUCH FIELD — byte for byte what it was.
+#[test]
+fn the_state_digest_carries_the_stops_view_as_counts_a_path_and_a_hash() {
+    let opened = |label: &str, facts: Value| {
+        let rig = StepRig::new(label);
+        rig.wrote(&format!("run-set --run {RUN}"), &facts.to_string());
+        rig
+    };
+    let rig = opened(
+        "digest-view",
+        json!({"stop": "every-round", "clauses": ["audit-clean"], "budget": 30, "hand-on": 2,
+               "order": ["route hunt", "behaviour hunt"]}),
+    );
+    assert!(
+        rig.state_digest("test-0").0.raw.contains("\"view\":null"),
+        "a run with a queue and no round yet: the field, and null"
+    );
+    rig.wrote(
+        &format!("scope-set --run {RUN} --round 1"),
+        &json!({"included": [{"door": "jigc setup", "registry": "verbs", "derivation": HOSTILE}],
+                "excluded": []})
+        .to_string(),
+    );
+    let found = |key: &str, door: &str, kind: &str, origin: &str| {
+        let mut row = json!({"key": key, "doctype": "jigc-feedback", "round": 1, "source": HOSTILE,
+                             "door": door, "clause": "audit-clean", "repro": HOSTILE,
+                             "kind": kind, "origin": origin});
+        match kind {
+            "route" => {
+                row["route"] = json!(HOSTILE);
+                row["code"] = json!("setup.install-hook");
+                row["site"] = json!(HOSTILE);
+            }
+            "behaviour" => row["commands"] = json!(HOSTILE),
+            _ => {}
+        }
+        row
+    };
+    let rows = json!([
+        found("route-in", "jigc setup", "route", "hunt"),
+        found("route-out", "jigc rename", "route", "hunt"),
+        found("route-not", "jigc setup", "route", "hunt"),
+        found("route-far", "jigc setup", "route", "hunt"),
+        found("route-wait", "jigc setup", "route", "hunt"),
+        found("behaves-wait", "jigc setup", "behaviour", "hunt"),
+        found("seeded", "jigc setup", "route", "seed"),
+        found("a-lead", HOSTILE, "lead", "hunt"),
+    ]);
+    rig.wrote(&format!("ledger-add --run {RUN}"), &rows.to_string());
+    let sent = |key: &str| json!({"key": key, "grade": "breaks"});
+    let said = |key: &str, verdict: Value| {
+        let mut entry = sent(key);
+        for (name, value) in verdict.as_object().expect("a verdict").iter() {
+            entry[name] = value.clone();
+        }
+        entry
+    };
+    rig.wrote(
+        &format!("triage-set --run {RUN} --round 1"),
+        &json!([
+            said(
+                "route-in",
+                json!({"verdict": "confirmed", "regression": true})
+            ),
+            said("route-out", json!({"verdict": "confirmed"})),
+            said(
+                "route-not",
+                json!({"verdict": "refuted", "refutation": "does-not-reproduce"})
+            ),
+            said(
+                "route-far",
+                json!({"verdict": "undrivable", "reason": "needs-linux"})
+            ),
+            sent("route-wait"),
+            sent("behaves-wait"),
+            sent("seeded"),
+            sent("a-lead"),
+        ])
+        .to_string(),
+    );
+    let (seen, document) = rig.state_digest("test-1");
+    let state = seen.line["state"].as_object().expect("the state's digest");
+    assert_eq!(
+        state["view"],
+        json!({"round": 1, "file": format!("{RUN_DIR}/r1/view.md"),
+               "sha256": document["view"]["sha256"], "on_disk": "absent",
+               "verified": 4, "confirmed": 2, "refuted": 1, "undrivable": 1,
+               "rates": [
+                   {"kind": "route", "origin": "hunt", "verified": 4, "confirmed": 2, "refuted": 1,
+                    "undrivable": 1, "queued": 1},
+                   {"kind": "behaviour", "origin": "hunt", "verified": 0, "confirmed": 0,
+                    "refuted": 0, "undrivable": 0, "queued": 1}],
+               "inside": 1, "outside": 1, "unreached": 2,
+               "listed": [{"why": "lead", "rows": 1}, {"why": "beyond-hand-on", "rows": 0},
+                          {"why": "parent-did-not-reproduce", "rows": 0},
+                          {"why": "class-off-the-order", "rows": 1}],
+               "other": 2, "codes": 1, "sites": 1}),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(seen.line["unfit"], json!([]), "{}", seen.raw);
+    assert_eq!(
+        document["view"]["sha256"].as_str().map(str::len),
+        Some(64),
+        "the control: the document's own hash of the text it renders"
+    );
+    // The lists are the document's, by key; the digest holds how long each is.
+    assert_eq!(
+        json!([
+            document["view"]["confirmed"]["inside"][0]["key"],
+            document["view"]["unreached"][0]["key"],
+            document["view"]["named"]["codes"][0]["code"]
+        ]),
+        json!(["route-in", "route-wait", "setup.install-hook"])
+    );
+
+    // NO ORDER, NO VIEW: the digest of such a run has no such field, and its document none.
+    let plain = opened(
+        "digest-view-none",
+        json!({"stop": "every-round", "budget": 30, "hand-on": 2}),
+    );
+    let (seen, document) = plain.state_digest("test-1");
+    assert!(
+        !seen.raw.contains("view") && document.get("view").is_none(),
+        "a run without an order says nothing of a view: {}",
+        seen.raw
+    );
+}
+
 /// **What a line leaves out is in a file it names** — by its path under the root the flag
 /// names, and by its hash: the document for the state, and for every other act the line
 /// the act prints unasked, a refusal's halt report in it. And **without the flag every

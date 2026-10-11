@@ -549,7 +549,20 @@
 #       order's own order, and after them of each class a row was put into the queue
 #       under by the human}. That field is how the harness tells the two kinds of run
 #       apart; in such a run `next` may be `verify` — a row of the queue is unverified and
-#       budget is left — and a position then carries `verify`, as it carries `triage`. It
+#       budget is left — and a position then carries `verify`, as it carries `triage`. AND
+#       view — WHAT A STOP SHOWS (the build plan of the reshaped `test` stage, T4), ONLY
+#       WHERE THE DOCUMENT SAYS IT, which a run with a queue does: the digest of a run
+#       without an order has no such field, and is byte for byte what it was. Null before
+#       the run's first round; else {round, file: where the round's view lies, sha256: of
+#       the text the record script renders — what that file must be — on_disk: written |
+#       behind | aside | absent, how the file stands to that text; verified, confirmed,
+#       refuted, undrivable: the round's hit rate in all, a refutation whichever word it
+#       says; rates: [{kind, origin, verified, confirmed, refuted, undrivable, queued}],
+#       the same class by class; inside, outside, unreached: how long each list is;
+#       listed: [{why, rows}], how many rows each word keeps out of the queue; other: how
+#       many rows are in no list; codes, sites: how many of each a row names} — counts, a
+#       path and a hash. No key, no door and no code is in it: the lists are in the
+#       document, and in the file. The digest
 #       grows with the test set and with nothing else: no brief, no door, no derivation,
 #       no ledger row is in it.
 #
@@ -2096,7 +2109,12 @@ QUEUE_FIRST = 8
 # that can be verified, four places an item comes from — and the two under a parent that
 # did not reproduce, which no order names and the human may put a row of into the queue.
 QUEUE_CLASSES = 10
-PLACE = {"refused": "word", "round": "count?", "attempt": "count", "cycle": "count", "land": "flag", "triage": "flag", "verify": "flag", "rerun": {"clause": "id", "round": "count", "items": [{"item": "id", "attempt": "count", "doors": "count"}, 200]}}
+# WHAT A STOP SHOWS, IN A DIGEST (T4): how many classes a round's hit rate can name — three
+# kinds, five places an item comes from — and how many words the record script's table of
+# what keeps a row out of the queue may hold before a digest stops naming them (four today).
+VIEW_CLASSES = 15
+VIEW_WORDS = 20
+PLACE ={"refused": "word", "round": "count?", "attempt": "count", "cycle": "count", "land": "flag", "triage": "flag", "verify": "flag", "rerun": {"clause": "id", "round": "count", "items": [{"item": "id", "attempt": "count", "doors": "count"}, 200]}}
 STATE = {
     "run": "id",
     "opened": "flag",
@@ -2126,6 +2144,7 @@ STATE = {
     "unsettled": [{"cell": "word", "clauses": ["id", 50]}, 10],
     "forbids_close": {"clauses": [{"clause": "id", "status": "word"}, 50], "no_clauses": "flag", "findings": "count", "candidate": "flag"},
     "queue": (NULL, {"budget": "count?", "hand_on": "count?", "spent": "count", "left": "count?", "length": "count", "first": ["id", QUEUE_FIRST], "classes": [{"kind": "word", "origin": "word", "length": "count"}, QUEUE_CLASSES]}),
+    "view": (NULL, {"round": "count", "file": "path", "sha256": "sha256", "on_disk": "word", "verified": "count", "confirmed": "count", "refuted": "count", "undrivable": "count", "rates": [{"kind": "word", "origin": "word", "verified": "count", "confirmed": "count", "refuted": "count", "undrivable": "count", "queued": "count"}, VIEW_CLASSES], "inside": "count", "outside": "count", "unreached": "count", "listed": [{"why": "word", "rows": "count"}, VIEW_WORDS], "other": "count", "codes": "count", "sites": "count"}),
 }
 # What every digest opens with, and each act's own fields, in the order they are printed.
 # A field that is not here is in no digest: it is in the file the digest names.
@@ -2219,7 +2238,35 @@ def state_brief(document):
         # own order. No row of it is here.
         queue=queue and {"budget": document["facts"].get("budget"), "hand_on": document["facts"].get("hand-on"), "spent": document["budget"]["spent"], "left": document["budget"]["left"], "length": len(queue["ranked"]), "first": [entry["key"] for entry in queue["ranked"][:QUEUE_FIRST]], "classes": queue["classes"]},
     )
+    # WHAT A STOP SHOWS — only where the document says `view`, which a run with a queue does:
+    # the digest of a run without an order has no such field, and is what it was.
+    if "view" in document:
+        brief["view"] = view_brief(document["view"])
     return brief
+
+
+def view_brief(shown):
+    """The round's view as counts, a path and a hash — or None before a run's first round:
+    which round, where the file lies, the hash of the text the record script renders and
+    how the file on disk stands to it; the hit rate class by class and in all, a refutation
+    whichever of its words it says; how long each list is, how many rows each word keeps
+    out of the queue, and how many codes and sites are named. No key, no door and no code:
+    they are in the document, and in the file."""
+    if shown is None:
+        return None
+    rates = [dict(rate, refuted=sum(rate["refuted"].values())) for rate in shown["rates"]]
+    return dict(
+        {name: shown[name] for name in ("round", "file", "sha256", "on_disk")},
+        **{name: sum(rate[name] for rate in rates) for name in ("verified", "confirmed", "refuted", "undrivable")},
+        rates=rates,
+        inside=len(shown["confirmed"]["inside"]),
+        outside=len(shown["confirmed"]["outside"]),
+        unreached=len(shown["unreached"]),
+        listed=[{"why": word["why"], "rows": len(word["rows"])} for word in shown["outside"]],
+        other=sum(entry["rows"] for entry in shown["other"]),
+        codes=len(shown["named"]["codes"]),
+        sites=len(shown["named"]["sites"]),
+    )
 
 
 def vet_brief(vet):

@@ -2,6 +2,84 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — What a stop shows: one rendered file of the round, written by every record that changes it from one read of the state — the hit rate class by class, every row in one list or counted with why, every word that keeps a row out of the queue with its keys, and how often a code and a site are named, from which nothing follows (the plan's `T4`; the builder's choices inside it)
+
+**What.** In a run with a queue a round has a view, and every record that changes it writes it ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §4, `T4`, the migration order's Phase A; ruling 1 of *2026-10-10 — The reshaped `test` stage, corrected by a count the same day*; ruling 3 and the appearance count of *2026-10-11 — The reshaped `test` stage's three open questions, ruled*). The two scripts' headers are the contract; in one place:
+
+- **[`dev/stabilize-record`](dev/stabilize-record) `state` says `view`** — in a run with a queue, of the latest round, null before the first: the view as data, where its file lies (`r<N>/view.md`), **the sha256 of the text the state renders** — what the file must be, never what it is — and `on_disk`, how the file stands to that text: `written` · `behind` · `aside` · `absent`.
+- **`apply` writes the file, last and from one read.** Once every call of the batch ran, the state is read as the batch leaves it, and the text it renders is one more file of the batch where the file on disk is not that text. The call prints `view`: `{file, sha256, was, wrote}`.
+- **[`dev/stabilize-step`](dev/stabilize-step)'s digest of the state carries it as counts, a path and a hash**: the round, the file, the hash, `on_disk`, the hit rate in all and class by class, how long each list is, how many rows each word keeps out of the queue, how many codes and sites are named. No key, no door, no code.
+
+**What the view holds**, in the order its file has it — each part a member of the state's `view`:
+
+| Part | What |
+|---|---|
+| `rates` | the hit rate class by class: verified, confirmed, refuted by each of the three words — and with no word said, which a triage entry may leave out — undrivable, and how many rows of the class the queue still holds. The order's classes in the order's order, then each class a verdict of the round or a row of the queue is of. **Of this round's `test` stage, and of no other round**; `verified` adds up to `budget.spent` |
+| `confirmed` | the findings confirmed in this round, inside the round's test set and outside it, each with its regression fact: yes, no, or not known |
+| `unreached` | the queue, **route items first**, within a kind in the queue's rank |
+| `outside` | **for every row of the table `OUTSIDE`**, in the table's order: the word, whether the human may put such a row into the queue, and its rows with kind and door. In the file: the count per kind, the keys, leads by door, and the write a key is put in by |
+| `other` | every row in none of those, **counted** by where it is routed and why |
+| `named` | per refusal code and per site: the distinct agents that reported a row carrying it, which they are, the rows, and the rows no agent is named for |
+
+**What the appearance count is a count of — and what it undercounts.** It counts **rows and who reported them**; it reads no report. Established from the code before it was built, as the brief asked: a row's code and site are cells of `classes.md`; who handed a row on is exact — `handed_on.by`, the filed file's `reporter`, with its round; **who reported any other row is on record only as free text**, the ledger's `source`, which triage writes and nothing holds to a form (the one real run wrote `<reporter> <finding id>; <reporter> <finding id>`, and its count split that cell by a script of its own). So:
+
+- **An agent is a reporter of a round**, `r<N> <reporter>`. For an item a verifier handed on: that verifier. For any other row: a reporter **with a report among the reports of the row's own round** whose name **opens** the row's `source`, or a part of it after `;`, `,`, a line break or `and`.
+- **Undercounted, by construction:** a reporter the source names any other way (the row is then `unnamed`, a column of the view — where an undercount shows); a second agent that found a row again, whose row keeps its first source; a code a report mentions and no row carries, which is what the census itself counted; two attempts of one reporter in a round, which are one agent; a code spelled two ways, or two codes in one cell, which are what their cell says.
+- **Not taken, and brought back:** an exact count needs **the reporters of a row as data** — a stored fact the ledger does not hold. `K2`'s entries are about to name, for each entry, *which handed findings it folds, each by its source and its number*; whether the record then keeps that per row is a decision, and was not made here.
+- **Nothing follows from the number.** The counts stand in the order of their names, never of their size; the queue, the lists and `next` read no member of `named`.
+
+**Chosen where the plan left it to the builder — and what was rejected.**
+
+- **One file a round, a file of the batch**, written over by each record that changes it. *Rejected:* a file written once per record — a name to mint for every record, and no state it would be reachable in that the batch's own journal does not already cover.
+- **Rendered after the batch's calls, not only after the take.** `T3b` owed *after the take, from the same read*; the stage's first record takes nothing, and what its view shows is what its own calls wrote. So the read is of the state as the batch leaves it. What `T3b` established still holds and is an arm: where a record only takes, the state rendered the same text before it.
+- **A view edited by hand is set aside, and that is a word of the state — nothing is refused, and nothing is moved.** The file ends with its seal, the sha256 of everything before that line; a file that does not bear its own seal is `aside`: no read takes it for the view, the hash the state says is still the rendered text's, and the next record writes over it and says so. *Rejected:* `corrupt`, as the clause table has it — no decision reads a view, and a state that cannot be read past one strands a stage on a file whose reader is a human at a stop; **moving it out of the tree** through `set-aside` — once a commit holds the view, moving it leaves a deleted tracked file, which is a tree no step starts from; **holding it to the rendered text at the commit's vet** — a verdict filed between `apply` and the commit moves the state, and the vet would take a good record back.
+- **So no exit had to be built, and the step tool's stand.** While the batch that wrote the view is applied and in no commit, a hand's edit is the batch's own `altered`, and `dev/stabilize-step discard` takes the batch back with its view. Once a commit holds it, an edit in the tree is `dirty` like any tracked file's. An edit that reached a commit is `aside`, and the next record's.
+- **`behind` is told from `aside`.** Between two records the state moves — a verdict is filed, a ruling written — and the file is the earlier record's, under its seal. That is every wave of a stage, and no anomaly.
+- **What is no text is written over by nothing** — a link, a directory, bytes that are no UTF-8: a batch keeps the text each file had, and has none to keep. The record is made without a view and says `wrote: false`. *Rejected:* letting the write refuse or fault — a record refused over a view.
+- **The lists.** *Confirmed* is confirmed **in this round**, whatever was ruled since. *Ranked and not reached* is the whole queue, the rows budget is still left for among them. *Leads, by door* are the rows the word `lead` keeps out — it is one of the table's words, not a list beside them. A lead triage closed, and every other row, is in `other` by its route. *Rejected:* keys in `other` — hundreds by round 3, and no act of the human's hangs on one.
+- **By kind and count is read off the rows**, and by door off the kind `lead`: no word of the table is named in the view's code, so a word added to the table is shown — an arm drives the script with one more row in that table and no other line changed.
+- **The digest has no `view` field for a run without an order**, where `T2a` gave `queue: null`: the document of such a run says nothing of a view, and its digest is byte for byte what it was.
+- **`apply` prints `view`**, beside `filed`: what it rendered, how the file stood before, whether it wrote.
+
+**Phase A, shown.** `a_run_without_an_order_holds_the_bytes_it_held` is green **unmodified**. In a run without an order the state says no `view`, a record writes and prints none, the digest has no such field, and a file a hand left at a view's path is read by nothing; `a_run_without_an_order_has_no_view` drives that beside the run with a queue, and the step suite's arm the digest.
+
+**Red first.** Eight arms — the plan's five, and three for what the rulings added — were written before either script changed and run on the parent's: eight red. Five at what the parent's state does not say (`view`); two at a record the parent refuses as changing nothing, where the arm asks for the view; one at a file that is not there. **What followed its code, and says so:** the whole text of the view as one arm holds it, taken from the script once it rendered; the assertion that a view holds what its own batch's calls wrote, the round an agent is a reporter of, and a record that changes a table and no view — each added where no arm named a mutant that was about to be run; and the arm for what is no text, written with that code.
+
+**Mutants of the finished scripts** — thirty-one, each one edit, the eight arms run on each. All died.
+
+| The edit | An arm that went red — the one that names it |
+|---|---|
+| the view is rendered before the batch's calls run · a run with a queue and no round says nothing of a view | `a_run_without_an_order_has_no_view` |
+| a verdict that is filed and in no record is in no rate · the record writes the view although the file is that text · the view is written without its seal · the hash the state says is the file's on disk · the call does not say what it wrote over | `the_stops_view_is_a_function_of_the_record` |
+| the hit rate is over the whole run · a refutation that says no word is counted by nothing · a class the order does not name has no rate · how many rows of a class the queue holds is not said | `the_hit_rate_is_per_class_and_adds_up_to_the_verdicts` |
+| the queue is listed in its rank, whatever the kind · a row in no list is counted by nothing · a confirmed finding is counted among the rest too · leads are listed in one line, by no door · a regression nobody knows of reads as none · inside and outside are swapped | `the_four_lists_hold_every_row_once_or_say_why_not` |
+| the words of the view are a list of its own · every word says that a row may be put in | `a_word_added_to_the_table_is_shown_without_a_change_of_the_view` |
+| a file that bears no seal reads as an earlier record's · every file that is not the text is set aside · the state refuses a view a hand wrote in · a record writes over what is no text · the call does not say whether it wrote | `a_view_edited_by_hand_is_set_aside` |
+| an agent is a reporter's name anywhere in the source · the verifier that handed a row on is read out of its source · the counts stand in the order of their size | `how_often_a_code_or_a_site_is_named_is_counted_and_nothing_follows_from_it` |
+| an agent is a reporter of any round | `the_hit_rate_…`, in its second round |
+| the digest says `view` of every run · the digest's refuted is one word's · the digest holds no view | `dev_stabilize_step::the_state_digest_carries_the_stops_view_as_counts_a_path_and_a_hash` |
+
+**The assertions this task carried.** One, in the record suite: `a_filed_verdict_gone_before_its_record_leaves_its_finding_unverified_and_its_launch_counted` pinned that a record with nothing filed changes nothing; such a record now writes the round's view, and the arm holds that it takes nothing and writes that one file. **Nothing outside the two suites pinned a text this task moved**: the whole `g_tooling` target ran on the changed scripts before that line was touched, and it was the one red.
+
+**What the next tasks owe because of this.**
+
+- `K2`: its entries name the sources each entry folds. **Whether the record keeps a row's reporters as data is a decision owed** — with it the count is exact; without it the count is what is said above.
+- `T6a`: the second record names no view; `apply` renders it. A verdict filed after that `apply` leaves the view `behind`, and the next record writes it again.
+- `T7`: the return takes the view from the state's digest — `file`, `sha256`, `on_disk` and the counts. **A file is the stop's view only where `on_disk` is `written`**, and whoever shows it holds it to that hash. **A ruling written beside no record leaves the view `behind`**: `run-set`'s `queued`, `budget` and `order` move the state and write no view, so the rulings' step makes them through a record.
+- `T10`: the workflow's document says nothing of the view yet.
+
+**What is not established.**
+
+- **Nothing of a stage calls any of it.** No harness path, no scenario of the simulation, no agent's definition.
+- **A view a hand edited and committed is published** like any table a hand edited: the push vets its text and not its seal. The state then says `aside`.
+- **A hand that seals its own text** reads `behind`, and never `written`; who wrote a file is not holdable.
+- **Between a stop and the next record there is no read that prints the view** where the file is not it: the state says the hash, and the text is rendered by `apply` alone.
+- **The step tool's rows for a view** — `altered` while its batch is applied, `dirty` once a commit holds it — are the rows of every file of a batch, and no arm of the step suite drives them on a view. The step suite's record arms commit and push one, through a batch that takes a filed verdict.
+- **The appearance count on a real stage.** Its one reading of `source` is the form the canary's triage wrote; a triage that writes another leaves rows `unnamed`. A route hunter's rows have not been through it.
+- **A second round's view over rows an earlier round left** — unreached, listed — shows them again: what a later round does with them is the human's before round 2's `test` (`wf-round-two-queue`). One arm reaches round 2, and holds only that its rates and its confirmed lists are its own.
+- **The real scanners over a view.** It is scanned with its batch; the suite drives a stand-in for gitleaks.
+- **Not read whole for this task**: the record suite beyond its rig, its tables and the arms of `T1` to `T3b`; the step suite beyond its rig, its digest arms and the arms of the record act; [stabilization-workflow.md](implementation/stabilization-workflow.md), [dev-workflow.md](implementation/dev-workflow.md) and [public-hygiene.md](implementation/public-hygiene.md) beyond what the project's instructions and the plan carry of them; the harness beyond how it composes a row's `source` and names an attempt's marker.
+
 ## 2026-10-11 — The record takes what was filed: a batch names no verdict, the script writes what the state already said of each filed file, the round's record names the files it took — and the states between a filing and its record are rows of the step tool's table (the plan's `T3b`; the builder's choices inside it)
 
 **What.** A `test` stage's record takes its verifiers' verdicts from the files they filed, and from no caller ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §4, `T3b`, the migration order's Phase A; ruling 4 of *2026-10-10 — The `test` stage, reshaped after the canary*; ruling 1 of *2026-10-11 — The reshaped `test` stage's three open questions, ruled*). The two scripts' headers are the contract; in one place:

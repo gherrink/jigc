@@ -70,7 +70,11 @@
 #                                           the stage's next record takes it — and it
 #                                           stays, the record of what was handed on
 #                                                                         (verdict; apply)
-#   .pending.json                           the journal (below) — never committed
+#   r<N>/view.md                            WHAT A STOP SHOWS of the round, in a run with a
+#                                           queue: RENDERED from the state by every record
+#                                           that changes it, and written by no caller
+#                                                                         (apply; state: view)
+#   .pending.json                          the journal (below) — never committed
 #   r<N>/reports/test/<reporter>.a<A>.md    a test-stage report          (report)
 #   r<N>/reports/fix/c<K>/<reporter>.a<A>.md  a fix-stage report, cycle K  (report)
 #
@@ -145,8 +149,10 @@
 #                      refusal site the item names, where it names one (an id of
 #                      crates/cli/tests/route_catalog/sites.tsv). TEXT, AND NOTHING MORE:
 #                      neither is held to a vocabulary, no row is refused for lacking one,
-#                      and nothing here ranks, merges or counts on either — they are on
-#                      the row so that a count can be read off it.
+#                      and nothing here ranks, promotes or merges on either — they are on
+#                      the row so that a count can be read off it, and one is: how many
+#                      agents reported a row that carries each, printed at every stop
+#                      (state: view, `named`), from which nothing follows.
 #       A cell of a class without a kind is refused (bad-value). With a kind the call also
 #       prints "classes" — the table's path — and "leads": the keys it entered as a lead
 #       for lack of their kind's evidence.
@@ -489,7 +495,8 @@
 #       WHO NAMED A CODE OR A SITE IS KEPT: the filed file says its reporter, and each
 #       item its code and its site — and the file stays where it is once a record took it.
 #       The file is the record of what was handed on, by whom and in which place (state: a
-#       row's `handed_on`); nothing is counted, ranked, promoted or merged on it here.
+#       row's `handed_on`); it is what a stop's view counts the verifier of such a row from
+#       (state: view, `named`), and nothing is ranked, promoted or merged on it.
 #       THE FILE is JSON, its members in one order — key, reporter, round, attempt,
 #       verdict, refutation, reason, regression, candidate, previous, report: {file,
 #       sha256}, hand_on: the opening's number as the filing found it, handed_on: [{key,
@@ -856,6 +863,86 @@
 #                      reported and filed nothing: its finding awaits its verdict again,
 #                      nothing is spent, what it handed on is no row, and THE LAUNCH IS
 #                      COUNTED (a row's `awaits`) — two of them and it is the human's.
+#         view         ONLY IN A RUN WITH AN ORDER: WHAT A STOP SHOWS (the build plan of the
+#                      reshaped `test` stage, T4; the ruling of 2026-10-10, 1: "every stop
+#                      shows the hit rate per class and four lists") — of the latest
+#                      round, or null before the run's first. A PURE FUNCTION OF THIS
+#                      DOCUMENT, in which no number is a caller's:
+#                        round, file   the round, and where its view lies: r<N>/view.md
+#                        sha256        of THE TEXT THIS STATE RENDERS — what the file must
+#                                      be, never what it is
+#                        on_disk       how the file stands to that text:
+#                                        written  it is that text, to the byte
+#                                        behind   it bears a view's seal and is another
+#                                                 text: the view of an earlier state — a
+#                                                 verdict was filed since, a ruling written
+#                                        aside    it is no view this script rendered: a
+#                                                 hand wrote in it, or what lies there is
+#                                                 no text at all — SET ASIDE (below)
+#                                        absent   no file
+#                        rates         THE HIT RATE, CLASS BY CLASS: [{kind, origin, verified,
+#                                      confirmed, refuted: {does-not-reproduce, intended,
+#                                      breaks-no-clause, no-word}, undrivable, queued}] — the
+#                                      verdicts OF THIS ROUND'S `test` stage and of no other
+#                                      round, on record or filed, by the class each row was
+#                                      added with; `queued` how many rows of the class the
+#                                      queue holds. The order's classes in the order's own
+#                                      order, then each class a verdict of the round or a
+#                                      row of the queue is of. `verified` adds up to
+#                                      `budget.spent`.
+#                        confirmed     {inside, outside}: each [{key, regression: true |
+#                                      false | null}] — the findings confirmed in this
+#                                      round, by whether the door is in its test set
+#                        unreached     [{key, kind, origin}] — the queue, ROUTE ITEMS FIRST,
+#                                      within each kind in the queue's rank
+#                        outside       FOR EVERY WORD THAT KEEPS A ROW OUT OF THE QUEUE (THE
+#                                      SECOND TABLE: lead, beyond-hand-on, parent-did-not-
+#                                      reproduce, class-off-the-order), in the table's
+#                                      order: [{why, may: whether the human may put such a
+#                                      row into the queue by key (run-set: queued), rows:
+#                                      [{key, kind, door}]}]. It is read off the table the
+#                                      routes and that write are built on, and off no list
+#                                      of its words: a word added there is shown here.
+#                        other         [{route, why, rows}] — every row in none of those,
+#                                      COUNTED by where it is routed and why. So every row
+#                                      of the ledger is in one list, once, or counted here.
+#                        named         HOW OFTEN A REFUSAL'S CODE AND A SITE ARE NAMED (the
+#                                      entry of 2026-10-11, "the reshaped `test` stage's
+#                                      three open questions, ruled"): {codes: [{code, agents,
+#                                      rows, unnamed}], sites: [{site, …}]} — per code and
+#                                      per site a row's class carries (ledger-add), the
+#                                      DISTINCT AGENTS that reported such a row in the run so
+#                                      far, the rows, and how many of them name no agent.
+#                                      AN AGENT is a reporter of a round, `r<N> <reporter>`:
+#                                      for an item a verifier handed on, that verifier, as
+#                                      its filed verdict names it (`handed_on.by`); for any
+#                                      other row, a reporter with a report among the
+#                                      reports of the row's round whose name OPENS the
+#                                      row's `source`, or a part of it after `;`, `,`, a
+#                                      line break or `and`. IT COUNTS ROWS AND WHO REPORTED
+#                                      THEM, AND READS NO REPORT: `source` is free text that
+#                                      nothing holds to a form, so a reporter it names any
+#                                      other way is not counted — the row is then `unnamed`,
+#                                      which is where an undercount shows — nor is a second
+#                                      agent that found a row again (the row keeps its
+#                                      source), nor a code a report only mentions; two
+#                                      attempts of one reporter in a round are one agent,
+#                                      and a code is its cell, spelled as it is. In the
+#                                      order of the names, never of the numbers: NOTHING IS
+#                                      RANKED, PROMOTED, MERGED OR ORDERED ON IT — not the
+#                                      queue, not a list, not `next`.
+#                      THE FILE is that data as text (apply writes it), and ends with ITS
+#                      SEAL: a last line that holds the sha256 of everything before it.
+#                      A VIEW EDITED BY HAND IS SET ASIDE: a file there that does not bear
+#                      its own seal is taken for the round's view by no read — `on_disk`
+#                      says `aside`, `sha256` still says what the view is, and NOTHING IS
+#                      REFUSED over it, because no decision reads a view and a state that
+#                      could not be read past one would strand a stage on it. The next
+#                      record writes the view over it, and says so (apply) — but over what
+#                      is no text at all, which stays until a hand removes it. Until then
+#                      the round has no view on disk, and whoever shows one holds the
+#                      file to this hash. (A hand that seals its own text is told from a writer by
+#                      nothing: such a file reads `behind`, and is still not the view.)
 #       A cell is given as the table holds it, a `|` unescaped; `-` for none is null
 #       where the cell is not free text. A table that is not this script's, a cell
 #       outside its vocabulary, a triage record that disagrees with the doors it was
@@ -1319,7 +1406,22 @@
 #       took with the sha256 of each (pending: batch.filed), and the vet holds them to
 #       the disk again where the batch is committed. A batch that is taken back took
 #       nothing: the files are filed, and no record holds them, as before it. In a run
-#       without an order nothing is read, and the call prints what it always printed. A
+#       without an order nothing is read, and the call prints what it always printed.
+#       AND THE RECORD WRITES WHAT A STOP SHOWS (the plan's T4) — in a run with a queue, and
+#       last: once every call of the batch ran, the latest round's view (state: view) is
+#       rendered from ONE read of the state as the batch leaves it, and r<N>/view.md is
+#       written as one more file of the batch WHERE THE FILE ON DISK IS NOT THAT TEXT. So
+#       the view cannot disagree with the record it is written beside; a record that
+#       changes nothing of it writes none; and it is taken back with its batch. A file
+#       there that is no view this script rendered — a view edited by hand, set aside — is
+#       written over, and the call says so (`was`). WHAT IS NO TEXT THERE IS WRITTEN OVER
+#       BY NOTHING — a link, a directory, bytes that are no text: a batch keeps the text
+#       each of its files had, and has none to keep; the record is then made without a
+#       view and says so (`wrote`: false), and NO RECORD IS REFUSED OVER A VIEW. While the
+#       batch is applied and in no commit, a hand's edit of the view is what it is for
+#       every file of a batch: the batch's own `altered` (pending), which
+#       `dev/stabilize-step discard` takes back.
+#       In a run without an order no view is rendered, written or printed. A
 #       BATCH THAT WOULD CHANGE NOTHING IS NO BATCH (no-change): where every file the
 #       calls wrote is already what the run holds — the same ruling, sent twice — nothing
 #       is written and no journal exists, because no commit could ever settle it. A
@@ -1329,7 +1431,11 @@
 #       attempts that left no record are counted from (state). Prints {"applied", "files",
 #       "results"} — one result per call, as that call prints it — and, in a run with a
 #       queue, "filed": what it took of the filed files, [{file, key, verdict, rows: the
-#       keys it appended}], in the state's order.
+#       keys it appended}], in the state's order, and "view": {file, sha256: of the text the
+#       state renders, was: how the file on disk stood to that text before this call —
+#       written, absent, behind or aside — and wrote: whether the call wrote the view:
+#       not where it was that text already, and not over what is no text} — or null where
+#       the run has begun no round.
 #
 #   dev/stabilize-record item --run R --item I
 #   dev/stabilize-record item-doors --run R --round N --item I
@@ -2004,6 +2110,23 @@ VERIFIER = "verify-"
 # about it in this run, or it is shown and holds nothing.
 VERIFY, LISTED, UNREACHED = "verify", "listed", "unreached"
 CLOSED = ("recorded", LISTED)
+# WHAT A STOP SHOWS (the build plan of the reshaped `test` stage, T4): the round's view, one
+# file of the round in a run with a queue, rendered by every record that changes it — and
+# the line it ends with, ITS SEAL: the sha256 of everything before that line. A file at
+# that path which does not bear its own seal is no text this script rendered.
+VIEW = "view.md"
+VIEW_SEAL = "<!-- rendered by dev/stabilize-record from the run's record, and never written by hand: sha256 %s -->\n"
+# How the file on disk stands to the text the state renders: it is that text; it is a view
+# this script rendered of an earlier state; it is no view this script rendered — SET ASIDE;
+# there is none.
+WRITTEN, BEHIND, ASIDE, ABSENT = "written", "behind", "aside", "absent"
+# A refutation that says none of the three words (triage-set takes one without).
+NO_WORD = "no-word"
+# WHERE A ROW'S `source` NAMES A REPORTER: where the cell opens, and after each of these —
+# as a slug that ends where a name does. The cell is free text, and this is all that is
+# read of it (state: view, `named`).
+SOURCE_BREAKS = re.compile(r";|,|<br>|\band\b")
+SOURCE_NAMES = re.compile(r"`?(%s)(?![A-Za-z0-9_-])" % SLUG.pattern)
 # A released version, as the previous release's fact names it.
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?")
 # The scope a round is started with when its invocation names none.
@@ -4606,6 +4729,245 @@ def queue_of(order, rows):
     }
 
 
+# --- what a stop shows --------------------------------------------------------------------
+
+
+def reporters_in(run_dir, number_):
+    """THE REPORTERS OF A ROUND: every reporter with a report among the round's reports — of
+    its `test` stage and of each of its fix cycles, under whatever attempt."""
+    name, found = "r%d" % number_, set()
+    for parts in [[name, "reports", "test"]] + [[name, "reports", "fix", "c%d" % cycle] for cycle in numbered(run_dir, [name, "reports", "fix"], "c")]:
+        directory = below(run_dir, parts)
+        for report_name in os.listdir(directory) if os.path.isdir(directory) else []:
+            named = REPORT_NAME.fullmatch(report_name)
+            if named and os.path.isfile(os.path.join(directory, report_name)):
+                found.add(named.group(1))
+    return found
+
+
+def named_by(finding, reporters):
+    """THE AGENTS THAT REPORTED A ROW, AS FAR AS THE RECORD NAMES THEM — each as `r<N>
+    <reporter>`, a reporter of a round. For an item a verifier handed on: that verifier, as
+    the filed verdict names it. For any other row: the reporters with a report in the row's
+    round (`reporters`) whose name OPENS the row's `source`, or a part of it. The cell is
+    free text and no vocabulary holds it; a reporter it names any other way is not read out
+    of it, and a row that names none this way has no agent here."""
+    mark = finding.get("handed_on")
+    if mark is not None:
+        return ["r%d %s" % (mark["round"], mark["by"])]
+    opens = [SOURCE_NAMES.match(part.strip()) for part in SOURCE_BREAKS.split(finding["source"])]
+    return sorted({"r%d %s" % (finding["round"], found.group(1)) for found in opens if found and found.group(1) in reporters.get(finding["round"], ())})
+
+
+def stop_view(findings, number_, order, queue, reporters):
+    """WHAT A STOP SHOWS OF A ROUND, as data (the header: state, `view`) — a pure function of
+    the rows as the state has them, the run's order, its queue and the reporters of its
+    rounds; no number of it is a caller's:
+      rates      THE HIT RATE, CLASS BY CLASS, of the verdicts of this round and of no other
+                 (the plan's T4: rates over the whole run are not rendered): the order's
+                 classes in the order's own order, and after them each class a verdict of
+                 the round, or a row of the queue, is of
+      confirmed  the findings confirmed in this round, inside the round's test set and
+                 outside it
+      unreached  the queue, route items first — within each, the queue's rank
+      outside    FOR EVERY ROW OF THE TABLE `OUTSIDE`, in the table's order: the rows it
+                 keeps out of the queue, and whether the human may put one in. Driven by the
+                 table and by no list of its words: a word added there is shown here.
+      other      every row in none of those lists, counted by where it is routed and why
+      named      HOW OFTEN A CODE AND A SITE ARE NAMED: per code and per site of a row's
+                 class, the distinct agents that reported a row carrying it (named_by), the
+                 rows, and the rows of them no agent is named for. In the order of the
+                 names, never of the numbers: NOTHING RANKS, PROMOTES, MERGES OR ORDERS ON IT.
+    Every row of the ledger is in exactly one of the three lists and the table's rows, or
+    counted in `other`."""
+    word_of = lambda finding: "%s %s" % (finding["class"]["kind"], finding["class"]["origin"])
+    in_round = lambda finding: finding["triage"] is not None and finding["triage"]["round"] == number_
+    judged = [finding for finding in findings if in_round(finding) and finding["triage"]["verdict"] is not None]
+    lengths = {"%s %s" % (entry["kind"], entry["origin"]): entry["length"] for entry in queue["classes"]}
+    classes = list(order) + list(dict.fromkeys(word for word in [word_of(finding) for finding in judged] + [word for word, length in lengths.items() if length] if word not in order))
+    rates = []
+    for word in classes:
+        entries = [finding["triage"] for finding in judged if word_of(finding) == word]
+        refuted = [entry for entry in entries if entry["verdict"] == "refuted"]
+        rates.append({
+            **dict(zip(("kind", "origin"), word.split(" "))),
+            "verified": len(entries),
+            "confirmed": sum(entry["verdict"] == "confirmed" for entry in entries),
+            "refuted": dict({name: sum(entry.get("refutation") == name for entry in refuted) for name in REFUTATIONS}, **{NO_WORD: sum("refutation" not in entry for entry in refuted)}),
+            UNDRIVABLE: sum(entry["verdict"] == UNDRIVABLE for entry in entries),
+            "queued": lengths.get(word, 0),
+        })
+    ranked = {entry["key"] for entry in queue["ranked"]}
+    confirmed, kept, other, named = {"inside": [], "outside": []}, {word: [] for word, _, _ in OUTSIDE}, {}, {"code": {}, "site": {}}
+    for finding in findings:
+        if in_round(finding) and finding["triage"]["verdict"] == "confirmed":
+            confirmed["inside" if finding["triage"]["inside"] else "outside"].append({"key": finding["key"], "regression": finding["triage"]["regression"]})
+        elif finding["key"] in ranked:
+            pass
+        elif finding["route"] == LISTED and finding["why"] in kept:
+            kept[finding["why"]].append({"key": finding["key"], "kind": finding["class"]["kind"], "door": finding["door"]})
+        else:
+            at = (finding["route"], finding["why"])
+            other[at] = other.get(at, 0) + 1
+        agents = None
+        for what, counts in named.items():
+            text = finding["class"][what]
+            if text is not None:
+                agents = named_by(finding, reporters) if agents is None else agents
+                entry = counts.setdefault(text, {"agents": set(), "rows": 0, "unnamed": 0})
+                entry["agents"].update(agents)
+                entry["rows"] += 1
+                entry["unnamed"] += not agents
+    return {
+        "round": number_,
+        "rates": rates,
+        "confirmed": confirmed,
+        # ROUTE ITEMS FIRST: a queued route item nobody reached holds the close.
+        "unreached": sorted(queue["ranked"], key=lambda entry: entry["kind"] != "route"),
+        "outside": [{"why": word, "may": may, "rows": kept[word]} for word, _, may in OUTSIDE],
+        "other": [{"route": route, "why": why, "rows": rows} for (route, why), rows in sorted(other.items())],
+        "named": {what + "s": [{what: text, "agents": sorted(entry["agents"]), "rows": entry["rows"], "unnamed": entry["unnamed"]} for text, entry in sorted(counts.items())] for what, counts in named.items()},
+    }
+
+
+def view_text(read):
+    """THE ROUND'S VIEW AS ITS FILE HOLDS IT — a pure function of the state document: its
+    `view`, its budget, the opening's number and the run's name. The same record gives the
+    same bytes. Every text that is not this script's own — a door, a code, a site — stands
+    behind a list's mark or inside a table's cell, so that no line of it opens with one. The
+    last line is the seal: the sha256 of everything before it."""
+    shown, budget, hand_on = read["view"], read["budget"], read["facts"].get("hand-on")
+    said = lambda rows: ", ".join(tick(row["key"]) for row in rows)
+    of_kind = lambda rows, kinds: [(kind, [row for row in rows if row["kind"] == kind]) for kind in kinds if any(row["kind"] == kind for row in rows)]
+
+    def counted_(rows):
+        """A heading's count, with how many of the rows are of each kind that can be verified."""
+        kinds = ", ".join("%s %d" % (kind, len(of)) for kind, of in of_kind(rows, QUEUED_KINDS))
+        return "%d%s" % (len(rows), ": " + kinds if kinds else "")
+
+    def listed(rows):
+        """Rows as lines, kind by kind: the keys of a kind that can be verified in one
+        line, and leads by door."""
+        lines = []
+        for kind, of in of_kind(rows, KINDS):
+            if KINDS[kind]:
+                lines.append("- %s (%d): %s" % (kind, len(of), said(of)))
+                continue
+            lines.append("- %s (%d), by door:" % (kind, len(of)))
+            lines += ["  - %s: %s" % (door, said([row for row in of if row["door"] == door])) for door in sorted({row["door"] for row in of})]
+        return lines or ["None."]
+
+    spent = "The run holds no budget: %d verdict(s) of this round are on record or filed, and nothing bounds them." % budget["spent"] if budget["limit"] is None else "The round's `test` stage has spent %d of its budget of %d verdict%s: %d %s left." % (budget["spent"], budget["limit"], "" if budget["limit"] == 1 else "s", budget["left"], "is" if budget["left"] == 1 else "are")
+    handed = "The opening wrote no number of items a verifier hands on: every item one hands on is beyond it." if hand_on is None else "A verifier hands on at most %d item%s to the queue." % (hand_on, "" if hand_on == 1 else "s")
+    lines = [
+        "# %s — round %d, what the stop shows" % (read["run"], shown["round"]),
+        "",
+        "Rendered by `dev/stabilize-record` from the run's record, by every record that changes it, and never written by hand: a file here that is not this text is not the round's view. No number of it is a caller's, and none of it ranks, promotes, merges or orders a row.",
+        "",
+        "%s %s" % (spent, handed),
+        "",
+        "## The hit rate, class by class — the verdicts of this round's `test` stage, and of no other round",
+        "",
+    ]
+    columns = ["class", "verified", "confirmed"] + ["refuted: " + name for name in REFUTATIONS] + ["refuted, no word", UNDRIVABLE, "in the queue"]
+    numbers = [[rate["verified"], rate["confirmed"]] + [rate["refuted"][name] for name in tuple(REFUTATIONS) + (NO_WORD,)] + [rate[UNDRIVABLE], rate["queued"]] for rate in shown["rates"]]
+    rows = [["%s %s" % (rate["kind"], rate["origin"])] + [str(n) for n in row] for rate, row in zip(shown["rates"], numbers)]
+    rows.append(["all"] + [str(sum(column)) for column in zip(*numbers)])
+    lines += header(columns) + ["| %s |" % " | ".join(row) for row in rows]
+    regression = {True: "a regression", False: "no regression: it is red on the previous release too", None: "whether it is a regression is not known"}
+    for side, title in (("inside", "Confirmed inside the round's test set"), ("outside", "Confirmed outside it")):
+        lines += ["", "## %s — %d" % (title, len(shown["confirmed"][side])), ""]
+        lines += ["- %s — %s" % (tick(row["key"]), regression[row["regression"]]) for row in shown["confirmed"][side]] or ["None."]
+    lines += [
+        "",
+        "## In the queue, and no verdict yet — %s" % counted_(shown["unreached"]),
+        "",
+        "Ranked by the run's order, route items first. Once the budget is spent, a route item nobody reached holds the close until it is verified or ruled; a behaviour item holds nothing.",
+        "",
+    ] + listed(shown["unreached"])
+    lines += [
+        "",
+        "## In no queue, and never verified — %d" % sum(len(word["rows"]) for word in shown["outside"]),
+        "",
+        "Shown at every stop and at the close, and holding nothing: each word is why its rows are in no queue, as `dev/stabilize-record --help` has it (IN A RUN WITH A QUEUE). Where a word's line says so, the human may put a row of it into the queue by its key — the run's fact `queued`, as a ruling writes it: `dev/stabilize-record run-set --run %s` with `{\"queued\": [\"<key>\"]}`, many keys in one call." % read["run"],
+    ]
+    for word in shown["outside"]:
+        lines += ["", "### %s — %s — %s" % (tick(word["why"]), counted_(word["rows"]), "the human may put a row into the queue by its key" if word["may"] else "never put into the queue"), ""] + listed(word["rows"])
+    rest = sum(entry["rows"] for entry in shown["other"])
+    lines += ["", "## Every other row, and why it is in none of the lists — %d of the ledger's %d rows" % (rest, len(read["ledger"])), ""]
+    lines += header(["where it is routed, and why", "rows"]) + ["| %s (%s) | %d |" % (entry["route"], entry["why"], entry["rows"]) for entry in shown["other"]] if shown["other"] else ["None."]
+    lines += [
+        "",
+        "## How often a refusal's code and a site are named — information, on which nothing is ranked, promoted, merged or ordered",
+        "",
+        "For each code and each site a row of the ledger carries: how many distinct agents reported such a row in the run so far, which, on how many rows — and on how many of those rows the record names no reporter. An agent is a reporter of a round: the verifier that handed the row on, as its filed verdict names it; for any other row, a reporter with a report in the row's round whose name opens the row's `source`, or a part of it. It counts rows and who reported them, and reads no report: a code a report only mentions is not in it.",
+    ]
+    for what in ("code", "site"):
+        counts = shown["named"][what + "s"]
+        lines += [""] + (header([what, "agents", "which", "rows", "of them, rows whose reporter the record does not name"]) + ["| %s | %d | %s | %d | %d |" % (cell(entry[what]), len(entry["agents"]), ", ".join(tick(agent) for agent in entry["agents"]) or "-", entry["rows"], entry["unnamed"]) for entry in counts] if counts else ["No row of the ledger %s." % ("carries a code" if what == "code" else "names a site")])
+    body = "\n".join(lines + [""]) + "\n"
+    return body + VIEW_SEAL % hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def sealed_view(text):
+    """Whether a text bears a view's seal: its last line is the seal, of every byte before
+    that line. A text a hand wrote in does not — unless the hand sealed it again, which
+    nothing here can tell: who wrote a file is not holdable."""
+    at = text.rfind("\n", 0, len(text) - 1) + 1
+    return at > 0 and text[at:] == VIEW_SEAL % hashlib.sha256(text[:at].encode("utf-8")).hexdigest()
+
+
+def view_held(run_dir, number_):
+    """What lies at a round's view: (whether anything does, its text) — the text None where
+    what lies there is no text at all: a link, a directory, bytes that are no UTF-8. Read
+    behind no refusal: a view is no table, and nothing is refused over one."""
+    path = os.path.join(run_dir, "r%d" % number_, VIEW)
+    if path in STAGED:
+        return True, STAGED[path][1]
+    if not os.path.lexists(path):
+        return False, None
+    try:
+        if os.path.islink(path) or not os.path.isfile(path):
+            return True, None
+        with open(path, "rb") as file:
+            return True, file.read().decode("utf-8")
+    except (OSError, ValueError):
+        return True, None
+
+
+def view_on_disk(run_dir, number_, text):
+    """HOW THE FILE AT A ROUND'S VIEW STANDS TO THE TEXT THE STATE RENDERS (`text`): written —
+    it is that text, to the byte; behind — it bears a view's seal, and is another text: a
+    view this script rendered of an earlier state; aside — it is no view this script
+    rendered: a hand wrote in it, or what lies there is no text at all; absent. NOTHING IS
+    REFUSED OVER IT: no decision reads a view, and a state that could not be read past one
+    would strand a stage on a file whose only reader is a human at a stop."""
+    there, held = view_held(run_dir, number_)
+    if not there:
+        return ABSENT
+    return WRITTEN if held == text else BEHIND if held is not None and sealed_view(held) else ASIDE
+
+
+def stage_view(run_dir, run):
+    """THE RECORD WRITES WHAT A STOP SHOWS (the header: apply; the plan's T4) — staged once
+    every call of the batch ran, from ONE read of the state as the batch leaves it: the
+    text the state renders, where the file on disk is not that text. So the view cannot
+    disagree with the record it is written beside, and a record that changes nothing of it
+    writes none. WHAT IS NO TEXT IS WRITTEN OVER BY NOTHING — a link, a directory, bytes
+    that are no text: a batch keeps the text each of its files had, and has none to keep
+    there. The record is made without a view, and says so; no record is refused over one.
+    Returns what the call prints of it — or None where the run has begun no round."""
+    read = document(run_dir, run)
+    shown = read["view"]
+    if shown is None:
+        return None
+    there, held = view_held(run_dir, shown["round"])
+    wrote = shown["on_disk"] != WRITTEN and not (there and held is None)
+    if wrote:
+        publish(run_dir, ["r%d" % shown["round"], VIEW], view_text(read), replace=True)
+    return {"file": shown["file"], "sha256": shown["sha256"], "was": shown["on_disk"], "wrote": wrote}
+
+
 def over(rounds, findings):
     """Whether the latest round is over: tested, and its outcome set or nothing open."""
     if not rounds or rounds[-1]["facts"]["candidate"] is None:
@@ -5266,7 +5628,7 @@ def read_state(run_dir, run):
     # THE ROUND A WRITE MAY BEGIN: the one a `test` stage is handed that no directory holds
     # yet — asked as if the opening were done, whose own order is not this script's to hold.
     free = position_of(rounds, findings, [], following["stop"], rerun)["test"]
-    return {
+    read = {
         "run": run,
         "opened": True,
         "facts": facts,
@@ -5293,7 +5655,25 @@ def read_state(run_dir, run):
         # … and of what is filed: every file among the rounds' filed verdicts, each with
         # whether it counts, why not, and whether a record holds its verdict.
         **({} if queue is None else {"queue": queue, "budget": budget, "filed": [{name: value for name, value in entry.items() if name != "record"} for entry in filings]}),
-    }, filings
+    }
+    if queue is not None:
+        # … AND OF WHAT A STOP SHOWS (the plan's T4): the latest round's view, as data — and
+        # where its file lies, the hash of the text this document renders, and how the file
+        # on disk stands to that text. None before the run's first round. The text is a
+        # function of this document (view_text), so the view and the state it is read
+        # beside are one read.
+        read["view"] = None
+        if rounds:
+            read["view"] = stop_view(findings, rounds[-1]["round"], order, queue, {held["round"]: reporters_in(run_dir, held["round"]) for held in rounds})
+            text = view_text(read)
+            read["view"] = {
+                "round": rounds[-1]["round"],
+                "file": "/".join(ARTIFACTS + (run, "r%d" % rounds[-1]["round"], VIEW)),
+                "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                "on_disk": view_on_disk(run_dir, rounds[-1]["round"], text),
+                **{name: value for name, value in read["view"].items() if name != "round"},
+            }
+    return read, filings
 
 
 def take_filed(run_dir, run):
@@ -5599,6 +5979,15 @@ def apply(args):
         marks = by_name(round_facts(*read_round(run_dir, round_)[::2])["recorded"])
         marks[stage_] = ("", max(attempt, marks.get(stage_, ("", 0))[1]))
         counted(run_dir, round_, "recorded", ["%s a%d" % (stage, held[1]) for stage, held in marks.items()])
+    # THE RECORD WRITES WHAT A STOP SHOWS — in a run with a queue, and last: from one read of
+    # the state as the batch's calls leave it (stage_view).
+    view = None
+    if filed is not None:
+        try:
+            view = stage_view(run_dir, args.run)
+        except Refusal as refusal:
+            STAGED.clear()
+            refuse(refusal.kind, "the round's view is rendered from the state as the batch leaves it, and that state is not read: %s — nothing of the batch was written" % refusal.detail)
     files = [staged[0] for staged in STAGED.values()]
     # A BATCH THAT WOULD CHANGE NOTHING IS NO BATCH: with every file of it already what the
     # run holds, its commit step would find nothing to commit, and the journal would keep a
@@ -5609,7 +5998,7 @@ def apply(args):
     # … and the applied batch names each filed file it took with the bytes it had: the vet
     # holds it to the disk again where the batch is committed (stale_checks).
     flush(run_dir, {"act": "record", "round": round_number, "subject": args.subject, "calls": len(given), "checks": checks, "files": {}, **({"filed": filed[1]} if filed and filed[1] else {})})
-    say(json.dumps({"applied": len(given), "files": files, "results": results, **({} if filed is None else {"filed": filed[0]})}))
+    say(json.dumps({"applied": len(given), "files": files, "results": results, **({} if filed is None else {"filed": filed[0], "view": view})}))
 
 
 def pending(args):

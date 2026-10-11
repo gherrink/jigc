@@ -20349,7 +20349,15 @@ fn a_filed_verdict_gone_before_its_record_leaves_its_finding_unverified_and_its_
         ]),
         "unverified again, and one launch that left no verdict: {read}"
     );
-    recorded(&rig, &["r-1"]).refused(NO_CHANGE, "a record with nothing filed");
+    // The record takes nothing for it: what it writes is the round's view (`T4`), and no table.
+    let seen = recorded(&rig, &["r-1"]);
+    seen.must(OK, "a record with nothing filed");
+    assert_eq!(
+        json!([seen.json()["filed"], seen.json()["files"]]),
+        json!([[], [view_path("1")]]),
+        "{}",
+        seen.stdout
+    );
 
     begun_attempt(&rig, "2");
     reported(&rig, "r-1", "2");
@@ -20433,4 +20441,1249 @@ fn a_key_a_filing_minted_is_taken_by_no_callers_row() {
         "one row a key"
     );
     assert_eq!(held(&rig), json!(["route", "r-1", "verify-r-1"]));
+}
+
+// ---------------------------------------------------------------------------
+// What a stop shows (the build plan of the reshaped `test` stage, T4)
+// ---------------------------------------------------------------------------
+
+/// The order the arms below rank by: three classes, so that a class a row can have is off it.
+const STOP_ORDER: [&str; 3] = ["route under-confirmed", "route hunt", "behaviour hunt"];
+
+/// A refusal's code, and the id of the site that mints it, as a row names them.
+const HOOK: &str = "setup.install-hook";
+const HOOK_SITE: &str = "crates/cli/src/setup.rs::install_hook::setup.install-hook#1";
+
+/// The columns of the view's hit-rate table.
+const RATE_COLUMNS: [&str; 9] = [
+    "class",
+    "verified",
+    "confirmed",
+    "refuted: does-not-reproduce",
+    "refuted: intended",
+    "refuted: breaks-no-clause",
+    "refuted, no word",
+    "undrivable",
+    "in the queue",
+];
+
+/// Where a round's view lies.
+fn view_path(round: &str) -> String {
+    format!("completions/artifacts/{RUN}/r{round}/view.md")
+}
+
+/// A door no round lists, whose text would redden the install-line fence at the start of a
+/// line, break a table row, and close a code span.
+fn fence_door() -> String {
+    format!("{INSTALL_COMMAND} --locked | a `door`")
+}
+
+/// The rows of the table under the header `columns`, in a text that holds more than one
+/// table: every line after the header's rule, up to the first that is no row.
+fn table_in(text: &str, columns: &[&str]) -> Vec<Vec<String>> {
+    let lines: Vec<&str> = text.lines().collect();
+    let at = lines
+        .iter()
+        .position(|line| line.starts_with('|') && cells(line) == columns)
+        .unwrap_or_else(|| panic!("no header row {columns:?} in:\n{text}"));
+    lines[at + 2..]
+        .iter()
+        .take_while(|line| line.starts_with('|'))
+        .map(|line| cells(line))
+        .collect()
+}
+
+/// A ready run WITH A QUEUE ranked by [`STOP_ORDER`], whose round 1 is tested, found nothing
+/// and names the binary its candidate was driven as: where a `test` stage stands after its
+/// first record.
+fn a_stop_run(label: &str, budget: Option<u64>, hand_on: Option<u64>) -> Rig {
+    let rig = two_clause_run(label, BOUNDED);
+    ordered(&rig, &STOP_ORDER);
+    for (fact, value) in [("budget", budget), ("hand-on", hand_on)] {
+        if let Some(value) = value {
+            rig.run(&run_set(RUN), &json!({fact: value}).to_string())
+                .must(OK, "one of the opening's two numbers");
+        }
+    }
+    tested_round(&rig, 1, true, &BOTH_GREEN, json!({"binary": driven()}));
+    rig
+}
+
+/// A `test` stage as it stands before its second record: what the hunt found and the
+/// opening seeded, the one triage — with two verdicts a caller recorded — the reports of two
+/// instruments, and SIX VERIFIERS THAT FILED, in the order of their keys or in the reverse of
+/// it. Every list of a stop's view has a row of it, every word that keeps a row out of the
+/// queue has one, and every word of a verdict.
+fn a_verified_stage(label: &str, reversed: bool) -> Rig {
+    let rig = a_stop_run(label, Some(9), Some(2));
+    let mut outside = evident("r-out", "route", "hunt");
+    outside["door"] = json!(EXCLUDED);
+    let mut waits = evident("r-wait", "route", "hunt");
+    waits["code"] = json!(HOOK);
+    waits["source"] = json!("row-setup-source S1; row-setup-driver D2");
+    let mut new = evident("r-new", "route", "hunt");
+    new["code"] = json!("store.unparseable");
+    new["source"] = json!("somebody saw it on the way");
+    rig.run(
+        &ledger_add(RUN),
+        &json!([
+            evident("r-in", "route", "hunt"),
+            outside,
+            evident("r-gone", "route", "hunt"),
+            evident("r-meant", "route", "hunt"),
+            evident("b-far", "behaviour", "hunt"),
+            evident("b-none", "behaviour", "hunt"),
+            evident("b-wait", "behaviour", "hunt"),
+            waits,
+            evident("s-off", "behaviour", "seed"),
+            classed("a-lead", INSIDE, "lead", "hunt"),
+            classed("b-lead", &fence_door(), "lead", "hunt"),
+            new,
+            evident("r-ok", "route", "hunt"),
+            evident("r-plain", "route", "hunt"),
+            evident("s-done", "behaviour", "seed"),
+        ])
+        .to_string(),
+    )
+    .must(OK, "what the hunt found, and two seeds");
+    let mut entries: Vec<Value> = [
+        "r-in", "r-out", "r-gone", "r-meant", "b-far", "b-none", "b-wait", "r-wait", "s-off",
+        "a-lead", "b-lead",
+    ]
+    .iter()
+    .map(|key| sent_on(key))
+    .collect();
+    entries.push(json!({"key": "r-ok", "grade": "no-break"}));
+    entries.push(json!({"key": "r-plain", "grade": "breaks", "verdict": "refuted"}));
+    entries.push(
+        json!({"key": "s-done", "grade": "breaks", "verdict": "confirmed", "regression": false}),
+    );
+    rig.run(&triage_set(RUN, "1"), &json!(entries).to_string())
+        .must(OK, "the one triage, and two verdicts a caller recorded");
+    begun_attempt(&rig, "1");
+    for reporter in ["row-setup-source", "row-setup-driver"] {
+        rig.run(&report(RUN, "1", reporter, "1"), BODY)
+            .must(OK, "an instrument's report");
+    }
+
+    let mut hook = noticed("first", "route");
+    hook["code"] = json!(HOOK);
+    hook["site"] = json!(HOOK_SITE);
+    let mut hunch = noticed("a-hunch", "route");
+    hunch.as_object_mut().expect("an item").remove("route");
+    let mut inside = filing("r-in", "confirmed");
+    inside["regression"] = json!(true);
+    inside["previous"] = json!(sha256('d'));
+    inside["hands_on"] = json!([
+        hook,
+        hunch,
+        noticed("second", "behaviour"),
+        noticed("third", "route"),
+        noticed("fourth", "behaviour"),
+    ]);
+    let mut gone = filing("r-gone", "refuted");
+    gone["refutation"] = json!("does-not-reproduce");
+    gone["hands_on"] = json!([noticed("under-gone", "route")]);
+    let mut meant = filing("r-meant", "refuted");
+    meant["hands_on"] = json!([noticed("under-meant", "route")]);
+    let mut none = filing("b-none", "refuted");
+    none["refutation"] = json!("breaks-no-clause");
+    let mut filings = vec![
+        filing("b-far", "undrivable"),
+        none,
+        gone,
+        inside,
+        meant,
+        filing("r-out", "confirmed"),
+    ];
+    if reversed {
+        filings.reverse();
+    }
+    for given in &filings {
+        verified(&rig, "1", given);
+    }
+    rig
+}
+
+/// The view the record of [`a_verified_stage`] renders, up to its seal — with one door named
+/// here and spelled by [`fence_door`], so that this file respells no line of that fence's.
+const A_STOPS_VIEW: &str = r##"# rc24 — round 1, what the stop shows
+
+Rendered by `dev/stabilize-record` from the run's record, by every record that changes it, and never written by hand: a file here that is not this text is not the round's view. No number of it is a caller's, and none of it ranks, promotes, merges or orders a row.
+
+The round's `test` stage has spent 8 of its budget of 9 verdicts: 1 is left. A verifier hands on at most 2 items to the queue.
+
+## The hit rate, class by class — the verdicts of this round's `test` stage, and of no other round
+
+| class | verified | confirmed | refuted: does-not-reproduce | refuted: intended | refuted: breaks-no-clause | refuted, no word | undrivable | in the queue |
+|---|---|---|---|---|---|---|---|---|
+| route under-confirmed | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 |
+| route hunt | 5 | 2 | 1 | 1 | 0 | 1 | 0 | 1 |
+| behaviour hunt | 2 | 0 | 0 | 0 | 1 | 0 | 1 | 1 |
+| behaviour seed | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| all | 8 | 3 | 1 | 1 | 1 | 1 | 1 | 3 |
+
+## Confirmed inside the round's test set — 2
+
+- `r-in` — a regression
+- `s-done` — no regression: it is red on the previous release too
+
+## Confirmed outside it — 1
+
+- `r-out` — whether it is a regression is not known
+
+## In the queue, and no verdict yet — 3: route 2, behaviour 1
+
+Ranked by the run's order, route items first. Once the budget is spent, a route item nobody reached holds the close until it is verified or ruled; a behaviour item holds nothing.
+
+- route (2): `first`, `r-wait`
+- behaviour (1): `b-wait`
+
+## In no queue, and never verified — 9
+
+Shown at every stop and at the close, and holding nothing: each word is why its rows are in no queue, as `dev/stabilize-record --help` has it (IN A RUN WITH A QUEUE). Where a word's line says so, the human may put a row of it into the queue by its key — the run's fact `queued`, as a ruling writes it: `dev/stabilize-record run-set --run rc24` with `{"queued": ["<key>"]}`, many keys in one call.
+
+### `lead` — 3 — never put into the queue
+
+- lead (3), by door:
+  - <the door that opens as the install line does>: `b-lead`
+  - jigc setup: `a-lead`, `a-hunch`
+
+### `beyond-hand-on` — 2: route 1, behaviour 1 — the human may put a row into the queue by its key
+
+- route (1): `third`
+- behaviour (1): `fourth`
+
+### `parent-did-not-reproduce` — 1: route 1 — the human may put a row into the queue by its key
+
+- route (1): `under-gone`
+
+### `class-off-the-order` — 3: route 1, behaviour 2 — the human may put a row into the queue by its key
+
+- route (1): `under-meant`
+- behaviour (2): `s-off`, `second`
+
+## Every other row, and why it is in none of the lists — 7 of the ledger's 22 rows
+
+| where it is routed, and why | rows |
+|---|---|
+| human (undrivable) | 1 |
+| recorded (not-a-break) | 5 |
+| triage (ungraded) | 1 |
+
+## How often a refusal's code and a site are named — information, on which nothing is ranked, promoted, merged or ordered
+
+For each code and each site a row of the ledger carries: how many distinct agents reported such a row in the run so far, which, on how many rows — and on how many of those rows the record names no reporter. An agent is a reporter of a round: the verifier that handed the row on, as its filed verdict names it; for any other row, a reporter with a report in the row's round whose name opens the row's `source`, or a part of it. It counts rows and who reported them, and reads no report: a code a report only mentions is not in it.
+
+| code | agents | which | rows | of them, rows whose reporter the record does not name |
+|---|---|---|---|---|
+| setup.install-hook | 3 | `r1 row-setup-driver`, `r1 row-setup-source`, `r1 verify-r-in` | 2 | 0 |
+| store.unparseable | 0 | - | 1 | 1 |
+
+| site | agents | which | rows | of them, rows whose reporter the record does not name |
+|---|---|---|---|---|
+| crates/cli/src/setup.rs::install_hook::setup.install-hook#1 | 1 | `r1 verify-r-in` | 1 | 0 |
+
+"##;
+
+/// The keys of the entries of a list of a view, in the list's order.
+fn keys_of(list: &Value) -> Vec<String> {
+    list.as_array()
+        .unwrap_or_else(|| panic!("a list of a view: {list}"))
+        .iter()
+        .map(|entry| entry["key"].as_str().expect("a key").to_owned())
+        .collect()
+}
+
+/// A view's seal, its last line: the sha256 of every byte before that line.
+fn sealed(text: &str) -> bool {
+    let Some(at) = text.trim_end_matches('\n').rfind('\n') else {
+        return false;
+    };
+    let (body, last) = text.split_at(at + 1);
+    last.starts_with("<!-- ") && last.contains(&format!("sha256 {} -->", sha256_of(body)))
+}
+
+/// **The stop's view is a function of the record** (the build plan of the reshaped `test`
+/// stage, `T4`; ruling 1 of 2026-10-10: *every stop shows the hit rate per class and four
+/// lists*; `T3b`: *the view is rendered in `apply` after the take, from the same read*). In a
+/// run with a queue every record that changes the round's view writes it — one file of the
+/// batch, `r<N>/view.md`, rendered from ONE read of the state as the batch leaves it — and
+/// the state says where it lies, the hash of the text it renders, and whether the file on
+/// disk is that text. THE SAME RECORD GIVES THE SAME BYTES: in whatever order the verifiers
+/// filed, and what the state said of the view before the record took the filed files is what
+/// it says after. A read writes nothing; a record that changes nothing of the view writes
+/// none; between two records the file is the earlier record's, and the state says so
+/// (`behind`); and the view is taken back with the batch that wrote it.
+#[test]
+fn the_stops_view_is_a_function_of_the_record() {
+    let rig = a_verified_stage("view-function", false);
+    let before = rig.state();
+    assert_eq!(
+        json!([
+            before["view"]["round"],
+            before["view"]["file"],
+            before["view"]["on_disk"]
+        ]),
+        json!([1, view_path("1"), "absent"]),
+        "the control: no record wrote a view yet, and the state says where one will lie: {before}"
+    );
+    let untouched = rig.snapshot();
+    rig.state();
+    assert_eq!(
+        rig.snapshot(),
+        untouched,
+        "a read of the state writes no view"
+    );
+
+    let seen = recorded(&rig, &["r-in"]);
+    seen.must(
+        OK,
+        "the record that takes what was filed, and writes the view",
+    );
+    let printed = seen.json();
+    let text = rig.read(&view_path("1"));
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            read["view"]["file"],
+            read["view"]["sha256"],
+            read["view"]["on_disk"],
+            printed["view"]
+        ]),
+        json!([
+            view_path("1"),
+            sha256_of(&text),
+            "written",
+            {"file": view_path("1"), "sha256": sha256_of(&text), "was": "absent", "wrote": true}
+        ]),
+        "the file is the text the state renders, and the call says what it wrote: {printed}"
+    );
+    assert!(sealed(&text), "the view ends with its own seal:\n{text}");
+    // WHAT THE HUMAN READS AT THE STOP, whole — every byte before the seal.
+    assert_eq!(
+        &text[..=text.trim_end().rfind('\n').expect("the seal's line")],
+        A_STOPS_VIEW.replace(
+            "<the door that opens as the install line does>",
+            &fence_door()
+        ),
+        "the view, as it is rendered:\n{text}"
+    );
+    assert!(
+        printed["files"]
+            .as_array()
+            .expect("the files of the batch")
+            .contains(&json!(view_path("1"))),
+        "it is a file of the batch: {printed}"
+    );
+    // FROM THE SAME READ: the record moved where the verdicts and the rows are held, and
+    // nothing the view says — the state rendered the same text before it.
+    assert_eq!(
+        before["view"]["sha256"], read["view"]["sha256"],
+        "what the state said of the view before the record is what it says after"
+    );
+
+    // THE ORDER THE VERIFIERS FILED IN IS NOTHING: the same record, the same bytes.
+    let other = a_verified_stage("view-function-reversed", true);
+    recorded(&other, &["r-in"]).must(OK, "the same record, filed in the reverse order");
+    assert_eq!(
+        other.read(&view_path("1")),
+        text,
+        "byte for byte, whatever order the verdicts were filed in"
+    );
+
+    // A RECORD THAT CHANGES NOTHING OF THE VIEW WRITES NONE — beside a table it does change,
+    // and alone, where it is then no record at all.
+    settled(&rig);
+    let seen = rig.run(
+        &apply(RUN, Some("1")),
+        &json!([call(bound_set(RUN, "a-bound", &BOUND), "")]).to_string(),
+    );
+    seen.must(OK, "a record that changes a table, and nothing a view says");
+    assert_eq!(
+        json!([seen.json()["files"], seen.json()["view"]["was"]]),
+        json!([[bounds_path()], "written"]),
+        "the view is no file of that batch: {}",
+        seen.stdout
+    );
+    assert_eq!(rig.read(&view_path("1")), text);
+    settled(&rig);
+    recorded(&rig, &["r-in"]).refused(NO_CHANGE, "a record that changes nothing, the view too");
+
+    // BETWEEN TWO RECORDS the state moves and the file stays: it is the earlier record's.
+    put_in(&rig, &["third"]).must(OK, "the human's ruling, written beside no record");
+    let moved = rig.state();
+    assert_eq!(moved["view"]["on_disk"], "behind", "{moved}");
+    assert_ne!(
+        moved["view"]["sha256"], read["view"]["sha256"],
+        "the state renders another text now"
+    );
+    assert_eq!(rig.read(&view_path("1")), text, "and the file is untouched");
+
+    // THE NEXT RECORD WRITES IT AGAIN — a batch whose one change is the view.
+    let again = recorded(&rig, &["r-in"]);
+    again.must(OK, "a record that changes the view, and nothing else");
+    let rendered = rig.read(&view_path("1"));
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            again.json()["view"]["was"],
+            again.json()["files"],
+            read["view"]["on_disk"],
+            read["view"]["sha256"],
+            moved["view"]["sha256"]
+        ]),
+        json!([
+            "behind",
+            [view_path("1")],
+            "written",
+            sha256_of(&rendered),
+            sha256_of(&rendered)
+        ]),
+        "{read}"
+    );
+
+    // TAKEN BACK WITH ITS BATCH: the file is the earlier record's again.
+    rig.run(&keeper("discard", RUN), "")
+        .must(OK, "the batch, taken back");
+    assert_eq!(rig.read(&view_path("1")), text);
+    assert_eq!(rig.state()["view"]["on_disk"], "behind");
+}
+
+/// **The hit rate is per class, and adds up to the verdicts** (`T4`; ruling 1 of 2026-10-10:
+/// *every stop shows the hit rate per class*; the plan's §2.12: *a hit rate per kind is honest
+/// only if the kind is on record before the verdict*). Class by class — the order's classes
+/// in the order's own order, and after them each class a verdict or a row of the queue is of
+/// — the view says how many findings the round's `test` stage verified, how many of them
+/// were confirmed, how many refuted BY EACH OF THE THREE WORDS (and how many with no word
+/// said), how many nobody here could drive, and how many are still in the queue. The classes
+/// add up to the verdicts the budget counts, and the file's table holds the same numbers.
+/// THEY ARE THE ROUND'S, AND NO OTHER ROUND'S: a later round's view counts none of them.
+#[test]
+fn the_hit_rate_is_per_class_and_adds_up_to_the_verdicts() {
+    let rig = a_verified_stage("view-rates", false);
+    recorded(&rig, &["r-in"]).must(OK, "the record");
+    let read = rig.state();
+    let rate = |kind: &str,
+                origin: &str,
+                verified: u64,
+                confirmed: u64,
+                refuted: [u64; 4],
+                undrivable: u64,
+                queued: u64| {
+        json!({"kind": kind, "origin": origin, "verified": verified, "confirmed": confirmed,
+               "refuted": {"does-not-reproduce": refuted[0], "intended": refuted[1],
+                           "breaks-no-clause": refuted[2], "no-word": refuted[3]},
+               "undrivable": undrivable, "queued": queued})
+    };
+    assert_eq!(
+        read["view"]["rates"],
+        json!([
+            rate("route", "under-confirmed", 0, 0, [0, 0, 0, 0], 0, 1),
+            rate("route", "hunt", 5, 2, [1, 1, 0, 1], 0, 1),
+            rate("behaviour", "hunt", 2, 0, [0, 0, 1, 0], 1, 1),
+            rate("behaviour", "seed", 1, 1, [0, 0, 0, 0], 0, 0),
+        ]),
+        "class by class: the order's three, and after them the class a verdict is of: {read}"
+    );
+    let rates = read["view"]["rates"].as_array().expect("the rates");
+    let count = |entry: &Value, name: &str| entry[name].as_u64().expect("a count");
+    for entry in rates {
+        let refuted: u64 = entry["refuted"]
+            .as_object()
+            .expect("the words of a refutation")
+            .values()
+            .map(|n| n.as_u64().expect("a count"))
+            .sum();
+        assert_eq!(
+            count(entry, "verified"),
+            count(entry, "confirmed") + refuted + count(entry, "undrivable"),
+            "a class's verdicts are its confirmed, its refuted and its undrivable: {entry}"
+        );
+    }
+    assert_eq!(
+        json!([
+            rates
+                .iter()
+                .map(|entry| count(entry, "verified"))
+                .sum::<u64>(),
+            read["budget"]
+        ]),
+        json!([8, {"limit": 9, "spent": 8, "left": 1}]),
+        "the classes add up to the verdicts the budget counts"
+    );
+
+    // THE FILE SAYS THE SAME NUMBERS, and their sum.
+    let text = rig.read(&view_path("1"));
+    assert_eq!(
+        table_in(&text, &RATE_COLUMNS),
+        [
+            [
+                "route under-confirmed",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "1"
+            ],
+            ["route hunt", "5", "2", "1", "1", "0", "1", "0", "1"],
+            ["behaviour hunt", "2", "0", "0", "0", "1", "0", "1", "1"],
+            ["behaviour seed", "1", "1", "0", "0", "0", "0", "0", "0"],
+            ["all", "8", "3", "1", "1", "1", "1", "1", "3"],
+        ],
+        "{text}"
+    );
+    assert!(
+        text.contains("has spent 8 of its budget of 9 verdicts: 1 is left"),
+        "and what the budget has left of them:\n{text}"
+    );
+
+    // OF THIS ROUND, AND OF NO OTHER: round 1 is left, round 2 is tested — and its view
+    // counts no verdict of round 1, and lists none of them as confirmed.
+    settled(&rig);
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"outcome": "dropped"}).to_string(),
+    )
+    .must(OK, "the human's exit from round 1");
+    tested_round(&rig, 2, true, &BOTH_GREEN, json!({"binary": driven()}));
+    let later = rig.state();
+    assert_eq!(
+        json!([
+            later["view"]["round"],
+            later["view"]["file"],
+            later["view"]["on_disk"],
+            later["view"]["rates"]
+                .as_array()
+                .expect("the rates")
+                .iter()
+                .map(|entry| count(entry, "verified"))
+                .collect::<Vec<_>>(),
+            later["view"]["confirmed"],
+            later["budget"]["spent"]
+        ]),
+        json!([2, view_path("2"), "absent", [0, 0, 0], {"inside": [], "outside": []}, 0]),
+        "a view is its round's: {later}"
+    );
+    assert_eq!(
+        rig.read(&view_path("1")),
+        text,
+        "and round 1's stays what its last record wrote"
+    );
+
+    // AND AN AGENT IS A REPORTER OF THE ROW'S OWN ROUND: a reporter whose one report lies in
+    // round 2 is the agent of a row of round 2 that names it, and of no row of round 1.
+    rig.run(&report(RUN, "2", "late-reporter", "1"), BODY)
+        .must(OK, "a report of round 2");
+    let late = |key: &str, round: u64| {
+        let mut row = evident(key, "route", "hunt");
+        row["round"] = json!(round);
+        row["source"] = json!("late-reporter X1");
+        row["code"] = json!("z.code");
+        row
+    };
+    rig.run(
+        &ledger_add(RUN),
+        &json!([late("z-early", 1), late("z-late", 2)]).to_string(),
+    )
+    .must(OK, "two rows that name the reporter, one of each round");
+    let named = rig.state()["view"]["named"]["codes"].clone();
+    assert!(
+        named.as_array().expect("the codes").contains(
+            &json!({"code": "z.code", "agents": ["r2 late-reporter"], "rows": 2, "unnamed": 1})
+        ),
+        "{named}"
+    );
+}
+
+/// **The four lists hold every row once, or say why not** (`T4`; ruling 1 of 2026-10-10: *four
+/// lists — confirmed inside the round's scope, confirmed outside it, ranked and not reached
+/// with route items first, leads by door*; ruling 3 of 2026-10-11: *a route item that is never
+/// to be verified is shown at every stop, by kind, with its count, and the human may put any
+/// of them into the queue by key*). Every row of the ledger is in exactly one list of the
+/// view — or is counted, by where it is routed and why, in the table of the rows that are in
+/// none. And FOR EVERY WORD THAT KEEPS A ROW OUT OF THE QUEUE the view says how many rows,
+/// of which kinds, by key, and whether the human may put one in: a key copied from a word
+/// that says so is taken by the ruling's write, and a lead is not.
+#[test]
+fn the_four_lists_hold_every_row_once_or_say_why_not() {
+    let rig = a_verified_stage("view-lists", false);
+    recorded(&rig, &["r-in"]).must(OK, "the record");
+    let read = rig.state();
+    let view = &read["view"];
+    assert_eq!(
+        json!([
+            view["confirmed"]["inside"],
+            view["confirmed"]["outside"],
+            view["unreached"]
+        ]),
+        json!([
+            [{"key": "r-in", "regression": true}, {"key": "s-done", "regression": false}],
+            [{"key": "r-out", "regression": null}],
+            [{"key": "first", "kind": "route", "origin": "under-confirmed"},
+             {"key": "r-wait", "kind": "route", "origin": "hunt"},
+             {"key": "b-wait", "kind": "behaviour", "origin": "hunt"}]
+        ]),
+        "confirmed inside the round's test set, confirmed outside it, ranked and not reached: {read}"
+    );
+    let row = |key: &str, kind: &str, door: &str| json!({"key": key, "kind": kind, "door": door});
+    assert_eq!(
+        view["outside"],
+        json!([
+            {"why": "lead", "may": false, "rows": [
+                row("a-lead", "lead", INSIDE), row("b-lead", "lead", &fence_door()),
+                row("a-hunch", "lead", INSIDE)]},
+            {"why": "beyond-hand-on", "may": true, "rows": [
+                row("third", "route", INSIDE), row("fourth", "behaviour", INSIDE)]},
+            {"why": "parent-did-not-reproduce", "may": true, "rows": [
+                row("under-gone", "route", INSIDE)]},
+            {"why": "class-off-the-order", "may": true, "rows": [
+                row("s-off", "behaviour", INSIDE), row("second", "behaviour", INSIDE),
+                row("under-meant", "route", INSIDE)]},
+        ]),
+        "every word that keeps a row out of the queue, with its rows and whether a row may be put in: {read}"
+    );
+    assert_eq!(
+        view["other"],
+        json!([
+            {"route": "human", "why": "undrivable", "rows": 1},
+            {"route": "recorded", "why": "not-a-break", "rows": 5},
+            {"route": "triage", "why": "ungraded", "rows": 1},
+        ]),
+        "and every other row, by where it is routed and why: {read}"
+    );
+
+    // EVERY ROW ONCE, OR COUNTED: the lists and the count of the rest are the ledger.
+    let mut listed = keys_of(&view["confirmed"]["inside"]);
+    listed.extend(keys_of(&view["confirmed"]["outside"]));
+    listed.extend(keys_of(&view["unreached"]));
+    for word in view["outside"].as_array().expect("the words") {
+        listed.extend(keys_of(&word["rows"]));
+    }
+    let rest: u64 = view["other"]
+        .as_array()
+        .expect("the rest")
+        .iter()
+        .map(|entry| entry["rows"].as_u64().expect("a count"))
+        .sum();
+    let ledger = ledger_keys(&rig);
+    assert_eq!(
+        json!([
+            listed.len(),
+            listed.iter().collect::<BTreeSet<_>>().len(),
+            rest,
+            ledger.len()
+        ]),
+        json!([15, 15, 7, 22]),
+        "fifteen rows in a list, each once, and seven beside them: {read}"
+    );
+    // … AND SO THE FILE: a key of a list stands in it once, a key of no list not at all.
+    let text = rig.read(&view_path("1"));
+    for key in &ledger {
+        assert_eq!(
+            text.matches(&format!("`{key}`")).count(),
+            usize::from(listed.contains(key)),
+            "`{key}` in the view:\n{text}"
+        );
+    }
+    assert_eq!(
+        table_in(&text, &["where it is routed, and why", "rows"]),
+        [
+            ["human (undrivable)", "1"],
+            ["recorded (not-a-break)", "5"],
+            ["triage (ungraded)", "1"]
+        ],
+        "{text}"
+    );
+    // BY KIND AND COUNT, route items first; leads by door — and a door's text opens no line.
+    for line in [
+        "## Confirmed inside the round's test set — 2",
+        "- `r-in` — a regression",
+        "- `s-done` — no regression: it is red on the previous release too",
+        "## Confirmed outside it — 1",
+        "- `r-out` — whether it is a regression is not known",
+        "## In the queue, and no verdict yet — 3: route 2, behaviour 1",
+        "- route (2): `first`, `r-wait`",
+        "- behaviour (1): `b-wait`",
+        "## In no queue, and never verified — 9",
+        "### `lead` — 3 — never put into the queue",
+        "- lead (3), by door:",
+        "  - jigc setup: `a-lead`, `a-hunch`",
+        "### `beyond-hand-on` — 2: route 1, behaviour 1 — the human may put a row into the queue by its key",
+        "- route (1): `third`",
+        "- behaviour (1): `fourth`",
+        "### `parent-did-not-reproduce` — 1: route 1 — the human may put a row into the queue by its key",
+        "### `class-off-the-order` — 3: route 1, behaviour 2 — the human may put a row into the queue by its key",
+        "- behaviour (2): `s-off`, `second`",
+        "## Every other row, and why it is in none of the lists — 7 of the ledger's 22 rows",
+    ] {
+        assert!(
+            text.lines().any(|said| said == line),
+            "the view has the line `{line}`:\n{text}"
+        );
+    }
+    assert!(
+        text.lines()
+            .any(|said| said == format!("  - {}: `b-lead`", fence_door())),
+        "a lead under its door, whatever the door's text:\n{text}"
+    );
+
+    // A KEY COPIED FROM THE VIEW IS TAKEN BY THE RULING'S WRITE, where its word says so —
+    // which the view spells — and a lead is not.
+    assert!(
+        text.contains(&format!("dev/stabilize-record run-set --run {RUN}"))
+            && text.contains(r#"{"queued": ["<key>"]}"#),
+        "the view spells the write a key is put in by:\n{text}"
+    );
+    settled(&rig);
+    for word in view["outside"].as_array().expect("the words") {
+        let keys = keys_of(&word["rows"]);
+        let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
+        let put = put_in(&rig, &keys);
+        if word["may"] == true {
+            put.must(OK, &format!("rows the view says may be put in: {word}"));
+        } else {
+            put.refused(BAD_VALUE, "rows the view says are never put in");
+        }
+    }
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            keys_of(&read["view"]["unreached"]),
+            read["view"]["outside"]
+                .as_array()
+                .expect("the words")
+                .iter()
+                .map(|word| json!([word["why"], keys_of(&word["rows"]).len()]))
+                .collect::<Vec<_>>()
+        ]),
+        json!([
+            [
+                "first",
+                "third",
+                "r-wait",
+                "under-gone",
+                "under-meant",
+                "b-wait",
+                "s-off",
+                "second",
+                "fourth"
+            ],
+            [
+                ["lead", 3],
+                ["beyond-hand-on", 0],
+                ["parent-did-not-reproduce", 0],
+                ["class-off-the-order", 0]
+            ]
+        ]),
+        "put in, each is in the queue — route items first — and its word holds none: {read}"
+    );
+}
+
+/// **A word added to the table is shown without a change of the view** (`T4`; `T2b`: *the
+/// ruling's write is built on this table and on no list of cases*). What keeps a row out of
+/// the queue is one table of the script, and the view is driven by it: THE SCRIPT WITH ONE
+/// MORE ROW IN THAT TABLE — and no other line changed — shows the word, its rows and whether
+/// the human may put one in, and the ruling's write takes the key.
+#[test]
+fn a_word_added_to_the_table_is_shown_without_a_change_of_the_view() {
+    let hunted_at_two_doors = |rig: &Rig| {
+        let mut left = evident("x-left", "route", "hunt");
+        left["door"] = json!(EXCLUDED);
+        rig.run(
+            &ledger_add(RUN),
+            &json!([left, evident("x-kept", "route", "hunt")]).to_string(),
+        )
+        .must(OK, "what the hunt found");
+        rig.run(
+            &triage_set(RUN, "1"),
+            &json!([sent_on("x-left"), sent_on("x-kept")]).to_string(),
+        )
+        .must(OK, "the one triage");
+        recorded(rig, &["x-left"]).must(OK, "a record");
+    };
+    let words = |read: &Value| -> Vec<Value> {
+        read["view"]["outside"]
+            .as_array()
+            .unwrap_or_else(|| panic!("the words of a view: {read}"))
+            .iter()
+            .map(|word| json!([word["why"], word["may"], keys_of(&word["rows"])]))
+            .collect()
+    };
+
+    // The control, on the script as it is: four words, and both rows in the queue.
+    let plain = a_stop_run("view-table-control", Some(9), Some(2));
+    hunted_at_two_doors(&plain);
+    let read = plain.state();
+    assert_eq!(
+        json!([words(&read), keys_of(&read["view"]["unreached"])]),
+        json!([
+            [
+                ["lead", false, []],
+                ["beyond-hand-on", true, []],
+                ["parent-did-not-reproduce", true, []],
+                ["class-off-the-order", true, []]
+            ],
+            ["x-left", "x-kept"]
+        ]),
+        "{read}"
+    );
+
+    // ONE MORE ROW OF THE TABLE, first in it: a row at a door is kept out, and may be put in.
+    let rig = a_stop_run("view-table", Some(9), Some(2));
+    let script = rig.read(SCRIPT);
+    let opens = "\nOUTSIDE = (\n";
+    assert_eq!(
+        script.matches(opens).count(),
+        1,
+        "the table of what keeps a row out of the queue opens once"
+    );
+    let row = format!(
+        "{opens}    (\"door-left-out\", lambda finding, order: finding[\"door\"] == \"{EXCLUDED}\", True),\n"
+    );
+    placed_executable::write(&rig.root.join(SCRIPT), script.replacen(opens, &row, 1));
+    hunted_at_two_doors(&rig);
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            words(&read),
+            keys_of(&read["view"]["unreached"]),
+            routed(&read, "x-left")
+        ]),
+        json!([
+            [
+                ["door-left-out", true, ["x-left"]],
+                ["lead", false, []],
+                ["beyond-hand-on", true, []],
+                ["parent-did-not-reproduce", true, []],
+                ["class-off-the-order", true, []]
+            ],
+            ["x-kept"],
+            at("listed", "door-left-out")
+        ]),
+        "the word, its row, and that the row may be put in: {read}"
+    );
+    let text = rig.read(&view_path("1"));
+    for line in [
+        "### `door-left-out` — 1: route 1 — the human may put a row into the queue by its key",
+        "- route (1): `x-left`",
+    ] {
+        assert!(
+            text.lines().any(|said| said == line),
+            "the view has the line `{line}`:\n{text}"
+        );
+    }
+    put_in(&rig, &["x-left"]).must(OK, "the key, copied from the view into the ruling's write");
+    assert_eq!(
+        keys_of(&rig.state()["view"]["unreached"]),
+        ["x-left", "x-kept"]
+    );
+}
+
+/// **A view edited by hand is set aside** (`T4`). The view is rendered, and ends with its
+/// own seal: a file at its path that is no text this script rendered — a hand wrote in it —
+/// is SET ASIDE: no read takes it for the round's view. The state names it (`aside`), still
+/// says the hash of the text it renders, and REFUSES NOTHING over it — no decision reads a
+/// view, so no stage is stranded on one; the next record writes the view over it, and says
+/// what it wrote over. Told apart from a view of an earlier state (`behind`) and from none
+/// (`absent`). And while the batch that wrote it is applied and in no commit, a hand's edit
+/// is what it is for every file of a batch: the batch's own `altered`, taken back with it.
+#[test]
+fn a_view_edited_by_hand_is_set_aside() {
+    let rig = a_verified_stage("view-aside", false);
+    recorded(&rig, &["r-in"]).must(OK, "the record");
+    let path = rig.root.join(view_path("1"));
+    let text = rig.read(&view_path("1"));
+
+    // WHILE THE BATCH IS APPLIED a hand's edit is the batch's own `altered` — and the
+    // batch taken back takes the view with it.
+    let edited = text.replacen("- `r-in` — a regression", "- `r-in` — no regression", 1);
+    assert_ne!(edited, text, "the control: the hand changed a line");
+    fs::write(&path, &edited).expect("a hand writes in the view");
+    let pending = rig.run(&keeper("pending", RUN), "").json();
+    assert_eq!(
+        pending["batch"]["altered"],
+        json!([view_path("1")]),
+        "the applied batch names the view as altered: {pending}"
+    );
+    rig.run(&keeper("discard", RUN), "")
+        .must(OK, "the batch, taken back");
+    assert!(!path.exists(), "the batch made the view, and took it back");
+    recorded(&rig, &["r-in"]).must(OK, "the record, again");
+    assert_eq!(
+        rig.read(&view_path("1")),
+        text,
+        "the same record, the same view"
+    );
+    settled(&rig);
+    let read = rig.state();
+    assert_eq!(read["view"]["on_disk"], "written", "the control: {read}");
+
+    // ONCE ITS COMMIT IS MADE: a hand changes a word and keeps the shape.
+    fs::write(&path, &edited).expect("a hand writes in the view");
+    let aside = rig.state();
+    assert_eq!(
+        json!([
+            aside["view"]["on_disk"],
+            aside["view"]["sha256"],
+            aside["view"]["file"]
+        ]),
+        json!(["aside", read["view"]["sha256"], view_path("1")]),
+        "set aside: it is not the view, and the state still says what the view is: {aside}"
+    );
+    let but_the_view = |read: &Value| {
+        let mut read = read.clone();
+        read["view"]["on_disk"] = json!(null);
+        read
+    };
+    assert_eq!(
+        but_the_view(&aside),
+        but_the_view(&read),
+        "and nothing else of the state moved: no step, no route, no refusal"
+    );
+
+    // NO FILE is `absent`; a view of an earlier state is `behind` — neither is set aside.
+    fs::remove_file(&path).expect("remove the view");
+    assert_eq!(rig.state()["view"]["on_disk"], "absent");
+    fs::write(&path, &text).expect("the view, as the record wrote it");
+    put_in(&rig, &["third"]).must(OK, "the record moves");
+    assert_eq!(rig.state()["view"]["on_disk"], "behind");
+    // — nor is a text a hand wrote UNDER A SEAL OF ITS OWN the view: who wrote a file is not
+    // holdable, and such a file reads as an earlier record's — never as the round's view.
+    let body = "# a view a hand wrote\n\nEverything was confirmed.\n";
+    let (rendered, seal) = text.split_at(text.trim_end().rfind('\n').expect("the seal") + 1);
+    let forged = format!(
+        "{body}{}",
+        seal.replace(&sha256_of(rendered), &sha256_of(body))
+    );
+    assert!(sealed(&forged), "the control: the hand's text bears a seal");
+    fs::write(&path, forged).expect("a view under a hand's own seal");
+    assert_eq!(rig.state()["view"]["on_disk"], "behind");
+
+    // THE NEXT RECORD WRITES THE VIEW OVER WHAT WAS SET ASIDE, and says so.
+    fs::write(&path, &edited).expect("a hand writes in the view");
+    assert_eq!(rig.state()["view"]["on_disk"], "aside");
+    let seen = recorded(&rig, &["r-in"]);
+    seen.must(OK, "the next record");
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            seen.json()["view"]["was"],
+            read["view"]["on_disk"],
+            read["view"]["sha256"]
+        ]),
+        json!(["aside", "written", sha256_of(&rig.read(&view_path("1")))]),
+        "{read}"
+    );
+    assert!(sealed(&rig.read(&view_path("1"))));
+
+    // WHAT IS NO TEXT AT ALL is set aside too, and the state is read all the same — and NO
+    // RECORD IS REFUSED OVER IT: a batch has no text of it to keep, so the record is made
+    // without a view, and says so. Once a hand removed it, the next record writes the view.
+    settled(&rig);
+    let rendered = rig.read(&view_path("1"));
+    for (what, plant) in [
+        ("bytes that are no text", 0),
+        ("a directory", 1),
+        ("a link", 2),
+    ] {
+        fs::remove_file(&path).expect("remove the view");
+        match plant {
+            0 => fs::write(&path, [0xff_u8, 0xfe, 0x00]).expect("bytes that are no text"),
+            1 => fs::create_dir(&path).expect("a directory"),
+            _ => symlink(rig.root.join(ledger_path()), &path).expect("a link"),
+        }
+        assert_eq!(rig.state()["view"]["on_disk"], "aside", "{what}");
+        let seen = rig.run(
+            &apply(RUN, Some("1")),
+            &json!([call(bound_set(RUN, &format!("bound-{plant}"), &BOUND), "")]).to_string(),
+        );
+        seen.must(OK, &format!("a record beside {what} at the view's path"));
+        assert_eq!(
+            json!([
+                seen.json()["view"]["was"],
+                seen.json()["view"]["wrote"],
+                seen.json()["files"]
+            ]),
+            json!(["aside", false, [bounds_path()]]),
+            "{what}: the record is made, and writes no view: {}",
+            seen.stdout
+        );
+        settled(&rig);
+        if plant == 1 {
+            fs::remove_dir(&path).expect("remove the directory");
+        } else {
+            fs::remove_file(&path).expect("remove what was planted");
+        }
+        fs::write(&path, &rendered).expect("the view, as the record wrote it");
+    }
+    fs::remove_file(&path).expect("a hand removes it");
+    let seen = recorded(&rig, &["r-in"]);
+    seen.must(OK, "the next record");
+    assert_eq!(
+        json!([seen.json()["view"]["was"], seen.json()["view"]["wrote"]]),
+        json!(["absent", true])
+    );
+    assert_eq!(rig.read(&view_path("1")), rendered);
+}
+
+/// **A run without an order has no view** (`T4`, and the migration order's Phase A: *the view
+/// is rendered only in a run with an order, so no record's file set moves*). In a run that
+/// holds no order the state says nothing of a view, a record writes none and prints none,
+/// and a file a hand left at a view's path is read by nothing — inert there, never an
+/// error. And a run with a queue that has begun no round has no round to show: its `view`
+/// is null, and its records write none.
+#[test]
+fn a_run_without_an_order_has_no_view() {
+    let views = |rig: &Rig| -> Vec<String> {
+        rig.snapshot()
+            .into_keys()
+            .filter(|path| path.ends_with("view.md"))
+            .collect()
+    };
+    let bare = two_clause_run("view-no-order", BOUNDED);
+    tested_round(&bare, 1, true, &BOTH_GREEN, json!({"binary": driven()}));
+    bare.run(&ledger_add(RUN), &row_at("r-1", INSIDE).to_string())
+        .must(OK, "a row");
+    bare.run(&triage_set(RUN, "1"), &sent_on("r-1").to_string())
+        .must(OK, "its triage");
+    let seen = bare.run(
+        &apply(RUN, Some("1")),
+        &json!([call(ledger_add(RUN), &row_at("r-9", INSIDE).to_string())]).to_string(),
+    );
+    seen.must(OK, "a record of a run without an order");
+    let read = bare.state();
+    assert_eq!(
+        json!([seen.json().get("view"), read.get("view"), views(&bare)]),
+        json!([null, null, []]),
+        "no view in the call, none in the state, none on disk: {}",
+        seen.stdout
+    );
+    // A FILE A HAND LEFT THERE is read by nothing.
+    fs::write(bare.root.join(view_path("1")), "# no view\n").expect("a file at a view's path");
+    assert_eq!(bare.state(), read, "the state of such a run reads no view");
+
+    // The same calls in a run WITH a queue, beside it: there the record writes the view.
+    let rig = a_stop_run("view-with-order", Some(9), Some(2));
+    hunted(&rig, &[("r-1", "route")]);
+    let seen = rig.run(
+        &apply(RUN, Some("1")),
+        &json!([call(
+            ledger_add(RUN),
+            &evident("r-9", "route", "hunt").to_string()
+        )])
+        .to_string(),
+    );
+    seen.must(OK, "the same record, of a run with a queue");
+    assert_eq!(
+        json!([seen.json()["view"]["was"], views(&rig).len()]),
+        json!(["absent", 1])
+    );
+    // … FROM THE STATE AS THE BATCH'S OWN CALLS LEAVE IT: the row the batch added is in it.
+    let read = rig.state();
+    assert_eq!(
+        json!([read["view"]["on_disk"], read["view"]["other"]]),
+        json!(["written", [{"route": "triage", "why": "ungraded", "rows": 1}]]),
+        "the view is of the record it is written beside: {read}"
+    );
+    assert!(
+        rig.read(&view_path("1"))
+            .contains("| triage (ungraded) | 1 |"),
+        "and its file says the row"
+    );
+
+    // A RUN WITH A QUEUE AND NO ROUND has no round to show.
+    let young = two_clause_run("view-no-round", BOUNDED);
+    ordered(&young, &STOP_ORDER);
+    let seen = young.run(
+        &apply(RUN, None),
+        &json!([call(
+            ledger_add(RUN),
+            &evident("seeded", "route", "seed").to_string()
+        )])
+        .to_string(),
+    );
+    seen.must(OK, "a record before any round");
+    let read = young.state();
+    assert!(
+        read.as_object().expect("a state").contains_key("view") && read["view"].is_null(),
+        "a run with a queue says `view`, and null before its first round: {read}"
+    );
+    assert_eq!(
+        json!([seen.json()["view"], views(&young)]),
+        json!([null, []]),
+        "{}",
+        seen.stdout
+    );
+}
+
+/// **How often a code or a site is named is counted, and nothing follows from it** (`T4`; the
+/// entry of 2026-10-11, *the reshaped `test` stage's three open questions, ruled*: *the stage
+/// records and prints, at every stop, how many distinct agents named each code — and each
+/// site … nothing is ranked, promoted or merged on it*; `wf-recurrence-count`). For every
+/// refusal's code and every site a row names, the view says how many DISTINCT AGENTS
+/// reported a row that carries it, in the run so far, which they are, on how many rows — and
+/// on how many of those rows the record names no reporter. An agent is a reporter of a
+/// round: the verifier that handed the row on, as its filed verdict names it; else a
+/// reporter with a report in the row's round whose name opens the row's `source`, or a part
+/// of it. AND NOTHING FOLLOWS FROM THE NUMBER: two runs that differ only in who reported
+/// their rows have the same queue, the same lists in the same order and the same next step
+/// — and the counts themselves stand in the order of their names, never of their size.
+#[test]
+fn how_often_a_code_or_a_site_is_named_is_counted_and_nothing_follows_from_it() {
+    let stage = |label: &str, sources: [&str; 5]| -> Rig {
+        let rig = a_stop_run(label, Some(9), Some(2));
+        let rows: Vec<Value> = sources
+            .iter()
+            .enumerate()
+            .map(|(n, source)| {
+                let mut row = evident(&format!("k-{}", n + 1), "route", "hunt");
+                row["source"] = json!(source);
+                row["code"] = json!(if n < 3 { "b.code" } else { "a.code" });
+                if n == 0 {
+                    row["site"] = json!(HOOK_SITE);
+                }
+                row
+            })
+            .collect();
+        rig.run(&ledger_add(RUN), &json!(rows).to_string())
+            .must(OK, "five rows, each with a code");
+        let sent: Vec<Value> = (1..=5).map(|n| sent_on(&format!("k-{n}"))).collect();
+        rig.run(&triage_set(RUN, "1"), &json!(sent).to_string())
+            .must(OK, "the one triage");
+        begun_attempt(&rig, "1");
+        for reporter in ["rep-a", "rep-b", "rep-c"] {
+            rig.run(&report(RUN, "1", reporter, "1"), BODY)
+                .must(OK, "a reporter's report");
+        }
+        recorded(&rig, &["k-1"]).must(OK, "a record");
+        rig
+    };
+    // Three agents name `b.code` and one `a.code` — a parenthesis that says `attempt`, the
+    // name of the reporter an attempt is begun under, names no agent —
+    let many = stage(
+        "named-by-many",
+        [
+            "rep-a F1 (attempt 1)",
+            "rep-b F2",
+            "`rep-c` F3",
+            "rep-a F4",
+            "rep-a F5",
+        ],
+    );
+    // — and here one names `b.code` and two `a.code`, two of them in one cell.
+    let few = stage(
+        "named-by-few",
+        [
+            "rep-a F1 (attempt 1)",
+            "rep-a F2",
+            "rep-a F3",
+            "rep-b F4; rep-c F9",
+            "rep-b F5",
+        ],
+    );
+    let (read, other) = (many.state(), few.state());
+    let named = |code: &str, agents: &[&str], rows: u64| json!({"code": code, "agents": agents, "rows": rows, "unnamed": 0});
+    assert_eq!(
+        json!([read["view"]["named"], other["view"]["named"]]),
+        json!([
+            {"codes": [named("a.code", &["r1 rep-a"], 2),
+                       named("b.code", &["r1 rep-a", "r1 rep-b", "r1 rep-c"], 3)],
+             "sites": [{"site": HOOK_SITE, "agents": ["r1 rep-a"], "rows": 1, "unnamed": 0}]},
+            {"codes": [named("a.code", &["r1 rep-b", "r1 rep-c"], 2),
+                       named("b.code", &["r1 rep-a"], 3)],
+             "sites": [{"site": HOOK_SITE, "agents": ["r1 rep-a"], "rows": 1, "unnamed": 0}]},
+        ]),
+        "the distinct agents of each code and site, in the order of the names: {read}"
+    );
+
+    // NOTHING FOLLOWS FROM IT: the same queue, the same lists in the same order, the same
+    // step — and the two files are one text up to the counts.
+    let but_the_counts = |read: &Value| {
+        let mut view = read["view"].clone();
+        view["named"] = json!(null);
+        view["sha256"] = json!(null);
+        json!([
+            view,
+            read["queue"],
+            read["next"],
+            read["budget"],
+            read["human_list"],
+            read["forbids_close"],
+            read["position"]
+        ])
+    };
+    assert_eq!(but_the_counts(&read), but_the_counts(&other));
+    assert_eq!(
+        keys_of(&read["view"]["unreached"]),
+        ["k-1", "k-2", "k-3", "k-4", "k-5"],
+        "the queue's own order: the ledger's, whatever is named how often"
+    );
+    let heading = "\n## How often a refusal's code and a site are named";
+    let (text, text_of_other) = (many.read(&view_path("1")), few.read(&view_path("1")));
+    let (lists, counts) = text
+        .split_once(heading)
+        .expect("the counts, last in the view");
+    let (lists_of_other, counts_of_other) = text_of_other
+        .split_once(heading)
+        .expect("the counts, last in the view");
+    assert_eq!(lists, lists_of_other, "one text, up to the counts");
+    assert_ne!(counts, counts_of_other, "the control: the counts differ");
+    let columns = [
+        "code",
+        "agents",
+        "which",
+        "rows",
+        "of them, rows whose reporter the record does not name",
+    ];
+    assert_eq!(
+        json!([
+            table_in(&text, &columns),
+            table_in(&text_of_other, &columns)
+        ]),
+        json!([
+            [
+                ["a.code", "1", "`r1 rep-a`", "2", "0"],
+                [
+                    "b.code",
+                    "3",
+                    "`r1 rep-a`, `r1 rep-b`, `r1 rep-c`",
+                    "3",
+                    "0"
+                ]
+            ],
+            [
+                ["a.code", "2", "`r1 rep-b`, `r1 rep-c`", "2", "0"],
+                ["b.code", "1", "`r1 rep-a`", "3", "0"]
+            ]
+        ]),
+        "the file says the same, in the order of the names:\n{text}"
+    );
+
+    // THE VERIFIER THAT HANDED A ROW ON is its agent, as its filed verdict names it — and a
+    // row whose source names no reporter with a report on record is counted as such.
+    settled(&many);
+    let mut handed = noticed("hook-loops", "route");
+    handed["code"] = json!("b.code");
+    let mut given = filing("k-1", "confirmed");
+    given["hands_on"] = json!([handed]);
+    verified(&many, "1", &given);
+    let mut stray = evident("k-6", "route", "hunt");
+    stray["code"] = json!("c.code");
+    stray["source"] = json!("rep-z F1, and what rep-a said beside it");
+    many.run(&ledger_add(RUN), &stray.to_string())
+        .must(OK, "a row whose source opens with no reporter on record");
+    let read = many.state();
+    assert_eq!(
+        read["view"]["named"]["codes"],
+        json!([
+            named("a.code", &["r1 rep-a"], 2),
+            named("b.code", &["r1 rep-a", "r1 rep-b", "r1 rep-c", "r1 verify-k-1"], 4),
+            {"code": "c.code", "agents": [], "rows": 1, "unnamed": 1},
+        ]),
+        "{read}"
+    );
 }
