@@ -481,8 +481,8 @@
 #       `untriaged`, `pending`.
 #       THE STATE'S DIGEST is {branch, state}, and `state` is: run, opened, next,
 #       not_ready, stop, round, fix_rounds, candidate {round, commit, current}, position
-#       {test, fix: each {refused | round, attempt, cycle, land, triage, rerun {clause,
-#       round, items: [{item, attempt, doors: how many}]}}}, facts {previous,
+#       {test, fix: each {refused | round, attempt, cycle, land, triage, verify, rerun
+#       {clause, round, items: [{item, attempt, doors: how many}]}}}, facts {previous,
 #       previous-commit, scope, rounds, cycles}, rounds [{round, candidate, cycles}], doors
 #       {included, excluded: how many} of the latest round with a scope, uncovered [{round,
 #       doors: how many of that round's doors no item names}], items [{item, kind, clause,
@@ -497,11 +497,16 @@
 #       status}], no_clauses, findings: how many, candidate}, and queue — null for A RUN
 #       WITHOUT AN ORDER, which has no queue, and for a run with one (the record script's
 #       `run-set`: order; its state: THE QUEUE) {budget, hand_on: the opening's two
-#       numbers, each null where it wrote none, length: how many rows the queue holds,
-#       first: its first keys, in its order — at most eight, as many as one wave of
-#       verifiers launches, and the queue itself is in the document — classes: [{kind,
-#       origin, length}], how many of it are of each class of the order, in the order's
-#       own order}. That field is how the harness tells the two kinds of run apart. It
+#       numbers, each null where it wrote none, spent: the verdicts on record in the
+#       latest round's `test` stage, left: what the budget has left of them — null where
+#       there is no budget, and then nothing is ever spent — length: how many rows the
+#       queue holds, first: its first keys, in its order — at most eight, as many as one
+#       wave of verifiers launches, and the queue itself is in the document — classes:
+#       [{kind, origin, length}], how many of it are of each class of the order, in the
+#       order's own order, and after them of each class a row was put into the queue
+#       under by the human}. That field is how the harness tells the two kinds of run
+#       apart; in such a run `next` may be `verify` — a row of the queue is unverified and
+#       budget is left — and a position then carries `verify`, as it carries `triage`. It
 #       grows with the test set and with nothing else: no brief, no door, no derivation,
 #       no ledger row is in it.
 #
@@ -2037,7 +2042,11 @@ STANDS = {"item": "id", "kind": "id", "clause": "id", "runs": "word", "selected"
 # of a run's queue its digest names — as many as ONE WAVE of verifiers launches (the plan's
 # E15: at most eight, the queue read again after each). The queue itself is in the document.
 QUEUE_FIRST = 8
-PLACE = {"refused": "word", "round": "count?", "attempt": "count", "cycle": "count", "land": "flag", "triage": "flag", "rerun": {"clause": "id", "round": "count", "items": [{"item": "id", "attempt": "count", "doors": "count"}, 200]}}
+# HOW MANY CLASSES A QUEUE CAN HOLD ROWS OF (T2b): the eight an order can name — two kinds
+# that can be verified, four places an item comes from — and the two under a parent that
+# did not reproduce, which no order names and the human may put a row of into the queue.
+QUEUE_CLASSES = 10
+PLACE = {"refused": "word", "round": "count?", "attempt": "count", "cycle": "count", "land": "flag", "triage": "flag", "verify": "flag", "rerun": {"clause": "id", "round": "count", "items": [{"item": "id", "attempt": "count", "doors": "count"}, 200]}}
 STATE = {
     "run": "id",
     "opened": "flag",
@@ -2066,7 +2075,7 @@ STATE = {
     "retest": ["id", 50],
     "unsettled": [{"cell": "word", "clauses": ["id", 50]}, 10],
     "forbids_close": {"clauses": [{"clause": "id", "status": "word"}, 50], "no_clauses": "flag", "findings": "count", "candidate": "flag"},
-    "queue": (NULL, {"budget": "count?", "hand_on": "count?", "length": "count", "first": ["id", QUEUE_FIRST], "classes": [{"kind": "word", "origin": "word", "length": "count"}, 8]}),
+    "queue": (NULL, {"budget": "count?", "hand_on": "count?", "spent": "count", "left": "count?", "length": "count", "first": ["id", QUEUE_FIRST], "classes": [{"kind": "word", "origin": "word", "length": "count"}, QUEUE_CLASSES]}),
 }
 # What every digest opens with, and each act's own fields, in the order they are printed.
 # A field that is not here is in no digest: it is in the file the digest names.
@@ -2155,9 +2164,10 @@ def state_brief(document):
         # The findings the human may grant one more triage: the record script's own suffix.
         reverify=[finding["key"] for finding in document["human_list"] if finding["why"].endswith("-after-retry")],
         forbids_close={"clauses": [entry for entry in forbids if "clause" in entry], "no_clauses": any("clauses" in entry for entry in forbids), "findings": sum("finding" in entry for entry in forbids), "candidate": any("candidate" in entry for entry in forbids)},
-        # The queue as keys and counts: what bounds it, how long it is, its first keys, and
-        # its length class by class, in the order's own order. No row of it is here.
-        queue=queue and {"budget": document["facts"].get("budget"), "hand_on": document["facts"].get("hand-on"), "length": len(queue["ranked"]), "first": [entry["key"] for entry in queue["ranked"][:QUEUE_FIRST]], "classes": queue["classes"]},
+        # The queue as keys and counts: what bounds it and what of that is spent and left,
+        # how long it is, its first keys, and its length class by class, in the order's
+        # own order. No row of it is here.
+        queue=queue and {"budget": document["facts"].get("budget"), "hand_on": document["facts"].get("hand-on"), "spent": document["budget"]["spent"], "left": document["budget"]["left"], "length": len(queue["ranked"]), "first": [entry["key"] for entry in queue["ranked"][:QUEUE_FIRST]], "classes": queue["classes"]},
     )
     return brief
 

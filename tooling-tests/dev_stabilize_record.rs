@@ -11962,8 +11962,9 @@ const HERE: &[Taken] = &[
         call: |rig, _, _| fact_of_run(rig, json!({"cycles": 4})),
     },
     Taken {
-        // The queue's two numbers are written once, where the run does not hold them yet:
-        // no place of this table holds either.
+        // The queue's two numbers are taken where the run does not hold them yet, and no
+        // place of this table holds either. Where a budget IS held it is raised only at its
+        // own stop: `a_budget_the_human_raises_reopens_the_queue`.
         name: "run-set budget",
         takes: ANYWHERE,
         call: |rig, _, _| fact_of_run(rig, json!({"budget": 30})),
@@ -11976,10 +11977,19 @@ const HERE: &[Taken] = &[
     Taken {
         // An order is taken while every row of the ledger carries a class, and every
         // place of this table holds `prop`, which names no kind: where it IS taken is
-        // `a_run_with_an_order_says_that_it_has_a_queue_and_one_without_answers_as_it_did`.
+        // `a_run_with_an_order_says_that_it_has_a_queue_and_one_without_answers_as_it_did`,
+        // and where it is changed `an_order_the_human_changes_is_the_queue_from_then_on`.
         name: "run-set order",
         takes: NOWHERE,
         call: |rig, _, _| fact_of_run(rig, json!({"order": ["route hunt"]})),
+    },
+    Taken {
+        // A row is put into the queue of a run that has one, and no place of this table
+        // holds an order: where it IS taken is
+        // `a_row_the_human_puts_into_the_queue_is_in_it_from_then_on_and_not_before`.
+        name: "run-set queued",
+        takes: NOWHERE,
+        call: |rig, _, _| fact_of_run(rig, json!({"queued": ["prop"]})),
     },
     Taken {
         name: "run-set findings",
@@ -15926,8 +15936,9 @@ fn scoped(rig: &Rig) {
 /// `run-set`, each optional: nothing owes one yet. A run that holds an `order` is A RUN
 /// WITH A QUEUE: its state says `queue`, and its facts the three. A run that holds none
 /// says nothing of a queue and holds no fact it did not hold — and the two numbers alone
-/// make none. Each of the three is written once; an order is a non-empty list of classes,
-/// each a kind that can be verified and where the item comes from, none twice.
+/// make none. How many items a verifier hands on is written once, and a budget is not
+/// rewritten where nothing is spent; an order is a non-empty list of classes, each a kind
+/// that can be verified and where the item comes from, none twice.
 #[test]
 fn a_run_with_an_order_says_that_it_has_a_queue_and_one_without_answers_as_it_did() {
     let facts_as_they_were = r#"{"stop": "every-round", "rounds": null, "cycles": null, "previous": null, "previous-commit": null, "scope": null, "clauses": null, "findings": null}"#;
@@ -16043,20 +16054,16 @@ fn a_run_with_an_order_says_that_it_has_a_queue_and_one_without_answers_as_it_di
         "{read}"
     );
 
-    // EACH IS WRITTEN ONCE — and said again as it stands, changes nothing.
+    // HOW MANY ITEMS A VERIFIER HANDS ON IS WRITTEN ONCE, and a budget is raised only at its
+    // own stop — here nothing is spent — and each, said again as it stands, changes nothing.
+    // (An order the human changes, and a budget he raises, are a ruling's writes since
+    // `T2b`: `an_order_the_human_changes_is_the_queue_from_then_on`,
+    // `a_budget_the_human_raises_reopens_the_queue`.)
     let before = rig.snapshot();
-    for (given, why) in [
-        (json!({"order": ["route hunt"]}), "another order"),
-        (json!({"budget": 31}), "another budget"),
-        (json!({"hand-on": 3}), "another number of items handed on"),
-        (
-            json!({"budget": 30, "order": order.iter().rev().collect::<Vec<_>>()}),
-            "the same classes in another order, beside a fact as it stands",
-        ),
-    ] {
-        rig.run(&run_set(RUN), &given.to_string())
-            .refused(EXISTS, why);
-    }
+    rig.run(&run_set(RUN), &json!({"hand-on": 3}).to_string())
+        .refused(EXISTS, "another number of items handed on");
+    rig.run(&run_set(RUN), &json!({"budget": 31}).to_string())
+        .refused(BAD_VALUE, "another budget, where none is spent");
     // … AND IS OF ITS SHAPE, or nothing is written.
     for (given, why) in [
         (json!({"budget": 0}), "a budget of nothing"),
@@ -16307,17 +16314,17 @@ fn the_queue_is_the_order_of_the_opening_record_and_a_class_off_it_is_not_in_it(
     for (key, held, why) in [
         (
             "r-seed",
-            json!(["route", "seed", "breaks", "triage"]),
+            json!(["route", "seed", "breaks", "listed"]),
             "sent on and unverified, and its class is off the order",
         ),
         (
             "c-intended",
-            json!(["route", "under-not-a-break", "ungraded", "triage"]),
+            json!(["route", "under-not-a-break", "ungraded", "listed"]),
             "handed on, and its class is off the order",
         ),
         (
             "c-behaviour",
-            json!(["behaviour", "under-confirmed", "ungraded", "triage"]),
+            json!(["behaviour", "under-confirmed", "ungraded", "listed"]),
             "handed on, and its class is off the order",
         ),
         (
@@ -16639,4 +16646,1441 @@ fn a_red_result_filed_before_any_row_of_a_run_with_an_order_has_its_class() {
         json!(["behaviour", "hunt", []]),
         "and the state reads the run: every row carries a class, and none is graded yet — {read}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// What follows from the queue and the budget (the build plan of the reshaped `test` stage,
+// T2b) — THE SECOND TABLE: the route, the next step and the position of a run with a queue
+// ---------------------------------------------------------------------------
+
+/// What both items of [`two_clause_run`] did in a round that found nothing red.
+const BOTH_GREEN: [(&str, &str); 2] = [("check-clause-a", "green"), ("row-clause-b", "green")];
+
+/// A ready run WITH A QUEUE whose round 1 is tested and found nothing: two clauses, both
+/// green on the round's candidate, the order — and a budget, where one is given.
+fn a_queue_run(label: &str, order: &[&str], budget: Option<u64>) -> Rig {
+    let rig = two_clause_run(label, BOUNDED);
+    ordered(&rig, order);
+    if let Some(budget) = budget {
+        rig.run(&run_set(RUN), &json!({"budget": budget}).to_string())
+            .must(OK, "the opening's budget");
+    }
+    tested_round(&rig, 1, true, &BOTH_GREEN, json!({}));
+    rig
+}
+
+/// What round 1's hunt found, each `(key, kind)` with its kind's evidence, and the one
+/// triage, which sends every one of them on.
+fn hunted(rig: &Rig, rows: &[(&str, &str)]) {
+    let found: Vec<Value> = rows
+        .iter()
+        .map(|(key, kind)| evident(key, kind, "hunt"))
+        .collect();
+    rig.run(&ledger_add(RUN), &json!(found).to_string())
+        .must(OK, "what the hunt found");
+    let sent: Vec<Value> = rows.iter().map(|(key, _)| sent_on(key)).collect();
+    rig.run(&triage_set(RUN, "1"), &json!(sent).to_string())
+        .must(OK, "the one triage");
+}
+
+/// A verdict of round 1's `test` stage, on record: the verifier refuted the finding.
+fn verdict(rig: &Rig, key: &str) {
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": key, "grade": "breaks", "verdict": "refuted", "refutation": "intended"})
+            .to_string(),
+    )
+    .must(OK, "a verdict of the round's `test` stage");
+}
+
+/// `(route, why)` as the table writes a cell.
+fn at(route: &str, why: &str) -> (String, String) {
+    (route.to_owned(), why.to_owned())
+}
+
+/// The keys the state names as open — what forbids the close, finding by finding.
+fn holding(read: &Value) -> Vec<String> {
+    read["forbids_close"]
+        .as_array()
+        .expect("what forbids the close")
+        .iter()
+        .filter_map(|entry| entry["finding"].as_str().map(str::to_owned))
+        .collect()
+}
+
+/// **Budget left and a ranked row unverified is `verify`** (the build plan of the reshaped
+/// `test` stage, `T2b`; its §3: *verify — a ranked row is unverified and budget is left: the
+/// next invocation continues*; `E16`). In a run with a queue a row of the queue is routed
+/// `verify`, the step is `verify` — ahead of the human's list and of a fixer, because the
+/// stage that left the queue finishes it — and the `test` stage's position says so. Without
+/// a budget nothing is ever spent. And IN A RUN WITHOUT AN ORDER nothing of it exists: the
+/// same row is routed and answered as it always was — inert there, never an error.
+#[test]
+fn budget_left_and_a_ranked_row_unverified_is_verify() {
+    let rig = a_queue_run("verify", &ORDER, Some(5));
+    let read = rig.state();
+    assert_eq!(
+        json!([read["next"], read["budget"]]),
+        json!(["close", {"limit": 5, "spent": 0, "left": 5}]),
+        "the control: nothing found, nothing spent — {read}"
+    );
+    hunted(&rig, &[("r-1", "route"), ("b-1", "behaviour")]);
+    let read = rig.state();
+    for key in ["r-1", "b-1"] {
+        assert_eq!(
+            routed(&read, key),
+            at("verify", "queued"),
+            "`{key}`: {read}"
+        );
+    }
+    assert_eq!(
+        finding(&read, "r-1")["awaits"],
+        json!({"why": "unverified", "passes": 0, "retry": "due"})
+    );
+    assert_eq!(read["next"], "verify", "{read}");
+    assert_eq!(
+        read["position"]["test"],
+        json!({"round": 1, "attempt": 1, "verify": true}),
+        "the stage that left the queue continues it, and runs no instrument: {read}"
+    );
+    assert_eq!(
+        json!([read["untriaged"], read["begins"]]),
+        json!([[], null]),
+        "no row is triage's, and no round is begun: {read}"
+    );
+    assert_eq!(holding(&read), ["r-1", "b-1"], "{read}");
+
+    // AHEAD OF THE HUMAN'S LIST AND OF A FIXER: the stage finishes its queue first.
+    let mut outside = evident("out-confirmed", "route", "hunt");
+    outside["door"] = json!(EXCLUDED);
+    rig.run(
+        &ledger_add(RUN),
+        &json!([outside, evident("in-confirmed", "route", "hunt")]).to_string(),
+    )
+    .must(OK, "two more of the hunt");
+    let confirmed = |key: &str| json!({"key": key, "grade": "breaks", "verdict": "confirmed", "regression": false});
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!([confirmed("out-confirmed"), confirmed("in-confirmed")]).to_string(),
+    )
+    .must(OK, "two verdicts");
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            routed(&read, "out-confirmed"),
+            routed(&read, "in-confirmed")
+        ]),
+        json!([at("human", "outside"), at("fix", "inside")])
+    );
+    assert_eq!(
+        json!([read["next"], read["budget"]]),
+        json!(["verify", {"limit": 5, "spent": 2, "left": 3}]),
+        "{read}"
+    );
+    // … and once the queue is empty, the step is the human's, as it was.
+    verdict(&rig, "r-1");
+    verdict(&rig, "b-1");
+    let read = rig.state();
+    assert_eq!(
+        json!([read["next"], queued(&read)]),
+        json!(["rule", []]),
+        "{read}"
+    );
+
+    // WITHOUT A BUDGET nothing is spent: the queue is verified to its end.
+    let unbounded = a_queue_run("verify-unbounded", &ORDER, None);
+    hunted(&unbounded, &[("r-1", "route"), ("r-2", "route")]);
+    verdict(&unbounded, "r-1");
+    let read = unbounded.state();
+    assert_eq!(
+        json!([read["next"], read["budget"], routed(&read, "r-2")]),
+        json!(["verify", {"limit": null, "spent": 1, "left": null}, at("verify", "queued")]),
+        "{read}"
+    );
+    // THE STAGE WHOSE STEP IT IS has its attempts counted like any: two that left reports
+    // and no record, and the step is the human's.
+    for attempt in ["1", "2"] {
+        unbounded
+            .run(&report(RUN, "1", "audit-install", attempt), BODY)
+            .must(OK, "an attempt's report, and no record");
+    }
+    let read = unbounded.state();
+    assert_eq!(
+        json!([
+            read["next"],
+            read["human_stages"][0]["stage"],
+            read["position"]["test"]
+        ]),
+        json!(["rule", "test", {"refused": "attempts-spent", "round": 1}]),
+        "{read}"
+    );
+
+    // WITHOUT AN ORDER: the row, the step and the position are the ones they always were,
+    // and the state says nothing of a budget — whatever number the run holds.
+    let plain = two_clause_run("verify-none", BOUNDED);
+    plain
+        .run(&run_set(RUN), &json!({"budget": 5}).to_string())
+        .must(OK, "a number, and no order");
+    tested_round(&plain, 1, true, &BOTH_GREEN, json!({}));
+    plain
+        .run(&ledger_add(RUN), &row_at("r-1", INSIDE).to_string())
+        .must(OK, "a row");
+    plain
+        .run(&triage_set(RUN, "1"), &sent_on("r-1").to_string())
+        .must(OK, "its triage");
+    let read = plain.state();
+    assert_eq!(routed(&read, "r-1"), at("triage", "unverified"), "{read}");
+    assert_eq!(
+        json!([read["next"], read["position"]["test"]]),
+        json!(["triage", {"round": 1, "attempt": 1, "triage": true}]),
+        "{read}"
+    );
+    assert!(
+        read.get("budget").is_none() && read.get("queue").is_none(),
+        "a run without an order says nothing of a budget or a queue: {read}"
+    );
+}
+
+/// **A spent budget ends in the human's step, and never in `verify`** (`T2b`; the plan's
+/// §2.10: *spent, the step is the human's*; the ruling of 2026-10-10, 1: *one budget per
+/// stage … a route item nobody reached holds the close until verified or ruled … other
+/// unreached items are shown with their counts*). SPENT is counted by the script: a verdict
+/// on record in the round's `test` stage, `undrivable` among them. Once the budget is
+/// spent no row is routed `verify`: a ROUTE item the queue still holds is the human's
+/// (`unreached`) and holds the close; a BEHAVIOUR item it still holds is listed, and holds
+/// nothing. Both stay in the queue, in their rank.
+#[test]
+fn a_spent_budget_ends_in_the_humans_step_and_never_in_verify() {
+    let rig = a_queue_run("spent", &ORDER, Some(2));
+    hunted(
+        &rig,
+        &[
+            ("r-1", "route"),
+            ("r-2", "route"),
+            ("r-3", "route"),
+            ("b-1", "behaviour"),
+        ],
+    );
+    assert_eq!(rig.state()["next"], "verify", "the control: budget is left");
+    verdict(&rig, "r-1");
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "r-2", "grade": "breaks", "verdict": "undrivable", "reason": "needs-linux"})
+            .to_string(),
+    )
+    .must(OK, "a finding nobody here can drive");
+    let read = rig.state();
+    assert_eq!(
+        read["budget"],
+        json!({"limit": 2, "spent": 2, "left": 0}),
+        "a refutation and an undrivable finding spend one each: {read}"
+    );
+    assert_eq!(routed(&read, "r-3"), at("human", "unreached"), "{read}");
+    assert_eq!(routed(&read, "b-1"), at("listed", "unreached"), "{read}");
+    assert_eq!(routed(&read, "r-2"), at("human", "undrivable"), "{read}");
+    assert_eq!(
+        queued(&read),
+        ["r-3", "b-1"],
+        "what nobody reached is still the queue, in its rank"
+    );
+    assert_eq!(read["next"], "rule", "{read}");
+    assert_eq!(
+        read["human_list"],
+        json!([{"key": "r-2", "why": "undrivable"}, {"key": "r-3", "why": "unreached"}])
+    );
+    assert_eq!(
+        read["position"]["test"],
+        json!({"refused": "round-open", "round": 1}),
+        "no `test` stage continues a spent budget: {read}"
+    );
+    assert_eq!(
+        holding(&read),
+        ["r-2", "r-3"],
+        "the route item nobody reached holds the close, and the behaviour item does not: {read}"
+    );
+    assert!(
+        read["ledger"]
+            .as_array()
+            .expect("the rows")
+            .iter()
+            .all(|row| row["route"] != "verify"),
+        "{read}"
+    );
+
+    // The human rules what holds: and with only a behaviour item unreached, nothing does.
+    rig.run(
+        &ledger_set(RUN),
+        &json!([{"key": "r-2", "disposition": "later"}, {"key": "r-3", "disposition": "later"}])
+            .to_string(),
+    )
+    .must(OK, "the human's rulings, by key");
+    let read = rig.state();
+    assert_eq!(
+        json!([read["next"], read["forbids_close"], queued(&read)]),
+        json!(["close", [], ["b-1"]]),
+        "{read}"
+    );
+    assert_eq!(routed(&read, "b-1"), at("listed", "unreached"));
+}
+
+/// **A row nobody graded is `triage`, whatever the queue holds** (`T2b`; the plan review's
+/// `B1`: *a row that appears after the one triage has no grader*). In a run with a queue
+/// `triage` is the step ONLY for a row no triage has graded and that no verifier handed on
+/// — and it is the step first, ahead of `verify` and of a spent budget's `rule`: a red row
+/// filed after the one triage, and a seed added between two invocations, each end in a
+/// step that grades it. What a verifier handed on is never triage's: it enters the queue
+/// without a grade. And a row two records in a row left ungraded is the human's, as ever.
+#[test]
+fn a_row_nobody_graded_is_triage_whatever_the_queue_holds() {
+    // A RED ROW FILED AFTER THE ONE TRIAGE, in the record that names the candidate.
+    let rig = two_clause_run("ungraded", BOUNDED);
+    ordered(&rig, &ORDER);
+    rig.run(&run_set(RUN), &json!({"budget": 1}).to_string())
+        .must(OK, "the budget");
+    scoped(&rig);
+    hunted(&rig, &[("r-1", "route"), ("r-2", "route")]);
+    rig.run(
+        &result_set(RUN, "1", &candidate(1)),
+        &json!([ran("check-clause-a", "green"), ran("row-clause-b", "red")]).to_string(),
+    )
+    .must(OK, "a red run, after the triage");
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"candidate": candidate(1)}).to_string(),
+    )
+    .must(OK, "the round's candidate");
+    let read = rig.state();
+    assert_eq!(
+        routed(&read, "red-row-clause-b"),
+        at("triage", "ungraded"),
+        "{read}"
+    );
+    assert_eq!(routed(&read, "r-1"), at("verify", "queued"), "{read}");
+    assert_eq!(
+        json!([read["next"], read["untriaged"], read["position"]["test"]]),
+        json!(["triage", [{"key": "red-row-clause-b", "why": "ungraded"}],
+               {"round": 1, "attempt": 1, "triage": true, "verify": true}]),
+        "the next invocation grades it first, and then continues the queue: {read}"
+    );
+    // WHATEVER THE QUEUE HOLDS: the budget spent, and a route item unreached.
+    verdict(&rig, "r-1");
+    let read = rig.state();
+    assert_eq!(routed(&read, "r-2"), at("human", "unreached"), "{read}");
+    assert_eq!(
+        json!([read["next"], read["position"]["test"]]),
+        json!(["triage", {"round": 1, "attempt": 1, "triage": true}]),
+        "{read}"
+    );
+    // The step that grades it: the row is then the queue's, like any row triage sent on.
+    rig.run(
+        &triage_set(RUN, "1"),
+        &sent_on("red-row-clause-b").to_string(),
+    )
+    .must(OK, "the row, graded");
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            read["next"],
+            routed(&read, "red-row-clause-b"),
+            queued(&read)
+        ]),
+        json!([
+            "rule",
+            at("listed", "unreached"),
+            ["r-2", "red-row-clause-b"]
+        ]),
+        "{read}"
+    );
+
+    // A SEED ADDED BETWEEN TWO INVOCATIONS.
+    rig.run(
+        &ledger_add(RUN),
+        &evident("seed-1", "route", "seed").to_string(),
+    )
+    .must(OK, "a seed, added at a stop");
+    let read = rig.state();
+    assert_eq!(
+        json!([read["next"], routed(&read, "seed-1")]),
+        json!(["triage", at("triage", "ungraded")]),
+        "{read}"
+    );
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "seed-1", "grade": "no-break"}).to_string(),
+    )
+    .must(OK, "the seed, graded");
+    assert_eq!(rig.state()["next"], "rule");
+
+    // WHAT A VERIFIER HANDED ON IS NOT TRIAGE'S: it enters the queue without a grade.
+    let handed = a_queue_run("ungraded-handed", &ORDER, None);
+    handed
+        .run(
+            &ledger_add(RUN),
+            &evident("p-1", "route", "hunt").to_string(),
+        )
+        .must(OK, "a finding of the hunt");
+    let parent =
+        json!({"key": "p-1", "grade": "breaks", "verdict": "confirmed", "regression": false});
+    handed
+        .run(&triage_set(RUN, "1"), &parent.to_string())
+        .must(OK, "its verdict");
+    handed
+        .run(
+            &ledger_add(RUN),
+            &handed_on("c-1", "route", "p-1").to_string(),
+        )
+        .must(OK, "what its verifier handed on");
+    let read = handed.state();
+    assert_eq!(
+        json!([
+            finding(&read, "c-1")["grade"],
+            routed(&read, "c-1"),
+            read["untriaged"],
+            read["next"]
+        ]),
+        json!(["ungraded", at("verify", "queued"), [], "verify"]),
+        "{read}"
+    );
+
+    // AND A ROW TWO RECORDS IN A ROW LEFT UNGRADED IS THE HUMAN'S, as in every run.
+    handed
+        .run(
+            &ledger_add(RUN),
+            &evident("seed-2", "route", "seed").to_string(),
+        )
+        .must(OK, "a seed nobody grades");
+    for _ in 0..2 {
+        handed
+            .run(&triage_set(RUN, "1"), &parent.to_string())
+            .must(OK, "a record that leaves the seed ungraded");
+    }
+    let read = handed.state();
+    assert_eq!(
+        routed(&read, "seed-2"),
+        at("human", "ungraded-after-retry"),
+        "{read}"
+    );
+}
+
+/// **A row nobody reached is not counted as left unverified** (`T2b`: *left unverified
+/// twice counts launches that left no verdict*; the plan's `F4` and §2.10). In a run
+/// without an order a finding two triage records in a row leave unverified is the human's;
+/// in a stage that records twice that would be every row the budget did not reach. In a
+/// run with a queue NO RECORD COUNTS AGAINST A QUEUED ROW: what counts is A LAUNCH THAT LEFT
+/// NO VERDICT — a report of the finding's verifier (`verify-<key>`) among the round's
+/// `test` reports, and no verdict on record. Two, and the row is the human's and out of the
+/// queue until one more is granted; it spends nothing.
+#[test]
+fn a_row_nobody_reached_is_not_counted_as_left_unverified() {
+    let rig = a_queue_run("unreached-uncounted", &ORDER, Some(5));
+    hunted(&rig, &[("r-1", "route"), ("r-2", "route")]);
+    for _ in 0..3 {
+        rig.run(
+            &triage_set(RUN, "1"),
+            &json!([sent_on("r-1"), sent_on("r-2")]).to_string(),
+        )
+        .must(OK, "a record that leaves both unverified");
+    }
+    let read = rig.state();
+    for key in ["r-1", "r-2"] {
+        assert_eq!(routed(&read, key), at("verify", "queued"), "{read}");
+        assert_eq!(
+            finding(&read, key)["awaits"],
+            json!({"why": "unverified", "passes": 0, "retry": "due"}),
+            "four records left `{key}` unverified, and no verifier was launched: {read}"
+        );
+    }
+    assert_eq!(
+        json!([read["next"], read["rounds"][0]["facts"]["awaiting"]]),
+        json!(["verify", []]),
+        "the round's record counts no pass against a row of the queue: {read}"
+    );
+
+    // The control, WITHOUT AN ORDER: two records, and the finding is the human's.
+    let plain = two_clause_run("unreached-plain", BOUNDED);
+    tested_round(&plain, 1, true, &BOTH_GREEN, json!({}));
+    plain
+        .run(&ledger_add(RUN), &row_at("r-1", INSIDE).to_string())
+        .must(OK, "a row");
+    for _ in 0..2 {
+        plain
+            .run(&triage_set(RUN, "1"), &sent_on("r-1").to_string())
+            .must(OK, "a record that leaves it unverified");
+    }
+    assert_eq!(
+        routed(&plain.state(), "r-1"),
+        at("human", "unverified-after-retry")
+    );
+
+    // A LAUNCH THAT LEFT NO VERDICT: the verifier's report, and its attempt on record.
+    let launch = |attempt: &str| {
+        rig.run(&report(RUN, "1", "verify-r-1", attempt), BODY)
+            .must(OK, "the verifier's report");
+        rig.run(
+            &apply(RUN, Some("1")),
+            &json!([call(check_reports(RUN, "1", attempt, &["verify-r-1"]), "")]).to_string(),
+        )
+        .must(OK, "the record of that attempt");
+        rig.run(&keeper("settle", RUN), "")
+            .must(OK, "its commit was made");
+    };
+    launch("1");
+    let read = rig.state();
+    assert_eq!(routed(&read, "r-1"), at("verify", "queued"), "{read}");
+    assert_eq!(
+        json!([
+            finding(&read, "r-1")["awaits"],
+            finding(&read, "r-2")["awaits"]["passes"]
+        ]),
+        json!([{"why": "unverified", "passes": 1, "retry": "due"}, 0]),
+        "one launch that left no verdict, and it is tried once more: {read}"
+    );
+    launch("2");
+    let read = rig.state();
+    assert_eq!(
+        routed(&read, "r-1"),
+        at("human", "unverified-after-retry"),
+        "{read}"
+    );
+    assert_eq!(
+        finding(&read, "r-1")["awaits"],
+        json!({"why": "unverified", "passes": 2, "retry": "spent"})
+    );
+    assert_eq!(
+        json!([
+            queued(&read),
+            read["next"],
+            read["budget"]["spent"],
+            read["human_stages"]
+        ]),
+        json!([["r-2"], "verify", 0, []]),
+        "it is out of the queue, the queue goes on, and nothing was spent: {read}"
+    );
+    // The human grants one more — and a verdict ends the count.
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"reverify": "r-1"}).to_string(),
+    )
+    .must(OK, "one more, granted");
+    let read = rig.state();
+    assert_eq!(
+        json!([routed(&read, "r-1"), queued(&read)]),
+        json!([at("verify", "queued"), ["r-1", "r-2"]]),
+        "{read}"
+    );
+    verdict(&rig, "r-1");
+    let read = rig.state();
+    assert_eq!(
+        json!([routed(&read, "r-1"), read["budget"]["spent"]]),
+        json!([at("recorded", "not-a-break"), 1]),
+        "{read}"
+    );
+}
+
+/// **The budget is counted across the invocations of one stage** (`T2b`; the plan's `E3`:
+/// *the round's `test` stage's — an invocation is not a stage, or a continuation would
+/// refill it*). Spent is read off the round's own record, so every invocation that records
+/// a verdict finds what the ones before it spent; a finding spends one, however often its
+/// verdict is recorded. And it is THE ROUND'S: a round that is begun has spent nothing, and
+/// what the last one did not reach is its queue's again.
+#[test]
+fn the_budget_is_counted_across_the_invocations_of_one_stage() {
+    let rig = a_queue_run("counted", &ORDER, Some(3));
+    hunted(
+        &rig,
+        &[
+            ("r-1", "route"),
+            ("r-2", "route"),
+            ("r-3", "route"),
+            ("r-4", "route"),
+            ("b-1", "behaviour"),
+        ],
+    );
+    let spent = |rig: &Rig| rig.state()["budget"].clone();
+    verdict(&rig, "r-1");
+    assert_eq!(spent(&rig), json!({"limit": 3, "spent": 1, "left": 2}));
+    verdict(&rig, "r-2");
+    assert_eq!(
+        spent(&rig),
+        json!({"limit": 3, "spent": 2, "left": 1}),
+        "a second invocation finds what the first spent"
+    );
+    verdict(&rig, "r-1");
+    assert_eq!(
+        spent(&rig)["spent"],
+        2,
+        "a verdict recorded again is the finding's one verdict"
+    );
+    assert_eq!(rig.state()["next"], "verify");
+    verdict(&rig, "r-3");
+    let read = rig.state();
+    assert_eq!(read["budget"], json!({"limit": 3, "spent": 3, "left": 0}));
+    assert_eq!(
+        json!([read["next"], routed(&read, "r-4"), routed(&read, "b-1")]),
+        json!(["rule", at("human", "unreached"), at("listed", "unreached")]),
+        "{read}"
+    );
+
+    // THE ROUND'S OWN: the next round's `test` stage has spent nothing.
+    rig.run(
+        &ledger_set(RUN),
+        &json!({"key": "r-4", "disposition": "later"}).to_string(),
+    )
+    .must(OK, "the human's ruling");
+    let read = rig.state();
+    assert_eq!(json!([read["next"], read["begins"]]), json!(["close", 2]));
+    rig.run(
+        &scope_set(RUN, "2"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "round 2, begun");
+    let read = rig.state();
+    assert_eq!(
+        json!([read["round"], read["budget"], routed(&read, "b-1")]),
+        json!([2, {"limit": 3, "spent": 0, "left": 3}, at("verify", "queued")]),
+        "{read}"
+    );
+}
+
+/// **A budget the human raises reopens the queue** (`T2b`: *a budget and an order the human
+/// changes are facts a ruling writes*). The budget is written at the opening, where the run
+/// holds none — and after that it is RAISED, by the same call, ONLY AT ITS OWN STOP: while
+/// it is spent and the queue holds a row nobody reached. Raised, every such row is routed
+/// `verify` again. It never goes down, it is not raised before it is spent or over an empty
+/// queue, said again as it stands it changes nothing — and a run without an order has no
+/// queue to ask.
+#[test]
+fn a_budget_the_human_raises_reopens_the_queue() {
+    let rig = a_queue_run("raised", &ORDER, Some(2));
+    hunted(
+        &rig,
+        &[
+            ("r-1", "route"),
+            ("r-2", "route"),
+            ("r-3", "route"),
+            ("b-1", "behaviour"),
+        ],
+    );
+    let before = rig.snapshot();
+    let seen = rig.run(&run_set(RUN), &json!({"budget": 5}).to_string());
+    seen.refused(BAD_VALUE, "a budget raised before it is spent");
+    assert!(
+        seen.stderr.contains("spent") && seen.stderr.contains("`verify`"),
+        "it says where a budget is raised, and what the run's step is: {}",
+        seen.stderr
+    );
+    assert_eq!(rig.snapshot(), before, "a refused raise writes nothing");
+    verdict(&rig, "r-1");
+    verdict(&rig, "r-2");
+    assert_eq!(rig.state()["next"], "rule", "the control: spent");
+
+    let before = rig.snapshot();
+    rig.run(&run_set(RUN), &json!({"budget": 1}).to_string())
+        .refused(BAD_VALUE, "a budget that goes down");
+    assert_eq!(rig.snapshot(), before);
+    rig.run(&run_set(RUN), &json!({"budget": 2}).to_string())
+        .must(OK, "the budget, said again as it stands");
+    assert_eq!(rig.snapshot(), before, "and nothing moved");
+
+    rig.run(&run_set(RUN), &json!({"budget": 4}).to_string())
+        .must(OK, "the budget, raised at its stop");
+    let read = rig.state();
+    assert_eq!(read["budget"], json!({"limit": 4, "spent": 2, "left": 2}));
+    assert_eq!(
+        json!([
+            read["next"],
+            routed(&read, "r-3"),
+            routed(&read, "b-1"),
+            read["facts"]["budget"]
+        ]),
+        json!(["verify", at("verify", "queued"), at("verify", "queued"), 4]),
+        "{read}"
+    );
+    assert!(
+        table(&rig.read(&run_path()), &ROUND_COLUMNS)
+            .contains(&vec!["`budget`".to_owned(), "`4`".to_owned()]),
+        "the raise is a fact of the run's own record"
+    );
+
+    // Spent, and the queue is empty: nothing asks for a raise.
+    verdict(&rig, "r-3");
+    verdict(&rig, "b-1");
+    let read = rig.state();
+    assert_eq!(
+        json!([read["budget"]["left"], queued(&read), read["next"]]),
+        json!([0, [], "close"])
+    );
+    rig.run(&run_set(RUN), &json!({"budget": 9}).to_string())
+        .refused(BAD_VALUE, "a raise over a queue that holds nothing");
+
+    // A run without an order: a number, and no queue to ask for another.
+    let plain = Rig::new("raised-none");
+    plain
+        .run(&run_set(RUN), &json!({"budget": 30}).to_string())
+        .must(OK, "a number, where the run holds none");
+    plain
+        .run(&run_set(RUN), &json!({"budget": 31}).to_string())
+        .refused(BAD_VALUE, "another number, in a run without a queue");
+}
+
+/// **An order the human changes is the queue from then on** (`T2b`: *a budget and an order
+/// the human changes are facts a ruling writes*; the ruling of 2026-10-10, 1: *the human
+/// reorders it on the run's own numbers*; of 2026-10-11, 3: *a class the human took off
+/// the order*). The order is written at the opening, and changed by the same call at any
+/// step: it is the human's ruling on the queue, as a disposition is his ruling on a
+/// finding. A class it names from then on is ranked, a class it drops is in no queue — and
+/// an unreached route item of a dropped class holds the close no longer. It stays an order.
+#[test]
+fn an_order_the_human_changes_is_the_queue_from_then_on() {
+    let rig = a_queue_run("reordered", &["route hunt", "behaviour hunt"], Some(1));
+    rig.run(
+        &ledger_add(RUN),
+        &json!([
+            evident("r-1", "route", "hunt"),
+            evident("b-1", "behaviour", "hunt"),
+            evident("s-1", "route", "seed"),
+        ])
+        .to_string(),
+    )
+    .must(OK, "three rows");
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!([sent_on("r-1"), sent_on("b-1"), sent_on("s-1")]).to_string(),
+    )
+    .must(OK, "the one triage");
+    let read = rig.state();
+    assert_eq!(
+        json!([queued(&read), routed(&read, "s-1"), read["next"]]),
+        json!([
+            ["r-1", "b-1"],
+            at("listed", "class-off-the-order"),
+            "verify"
+        ]),
+        "{read}"
+    );
+
+    // ANOTHER ORDER, at a step that is no stop of the human's.
+    let other = ["behaviour hunt", "route seed"];
+    rig.run(&run_set(RUN), &json!({"order": other}).to_string())
+        .must(OK, "the order, changed");
+    let read = rig.state();
+    assert_eq!(
+        json!([queued(&read), routed(&read, "r-1"), read["facts"]["order"]]),
+        json!([["b-1", "s-1"], at("listed", "class-off-the-order"), other]),
+        "{read}"
+    );
+    assert!(
+        table(&rig.read(&run_path()), &ROUND_COLUMNS).contains(&vec![
+            "`order`".to_owned(),
+            "`behaviour hunt, route seed`".to_owned()
+        ]),
+        "the order on record is the one that holds"
+    );
+
+    // A CLASS TAKEN OFF THE ORDER HOLDS THE CLOSE NO LONGER.
+    verdict(&rig, "b-1");
+    let read = rig.state();
+    assert_eq!(
+        json!([read["next"], routed(&read, "s-1"), holding(&read)]),
+        json!(["rule", at("human", "unreached"), ["s-1"]]),
+        "the control: spent, and a route item of the order unreached — {read}"
+    );
+    rig.run(
+        &run_set(RUN),
+        &json!({"order": ["behaviour hunt"]}).to_string(),
+    )
+    .must(OK, "its class, taken off the order");
+    let read = rig.state();
+    assert_eq!(
+        json!([read["next"], routed(&read, "s-1"), read["forbids_close"]]),
+        json!(["close", at("listed", "class-off-the-order"), []]),
+        "{read}"
+    );
+
+    // IT STAYS AN ORDER.
+    let before = rig.snapshot();
+    for (given, why) in [
+        (json!({"order": []}), "an order of no class"),
+        (json!({"order": ["lead hunt"]}), "a lead, named by a change"),
+        (
+            json!({"order": ["route under-no-repro"]}),
+            "the class that is never verified, named by a change",
+        ),
+        (
+            json!({"order": ["route hunt", "route hunt"]}),
+            "a class named twice",
+        ),
+    ] {
+        rig.run(&run_set(RUN), &given.to_string())
+            .refused(BAD_VALUE, why);
+    }
+    assert_eq!(rig.snapshot(), before, "a refused order writes nothing");
+}
+
+/// The run the three arms below rule on: a parent that did not reproduce and one that was
+/// confirmed, an item handed on under each, a row whose class the order does not name, a
+/// row of the queue, a lead, and a row nobody graded.
+fn a_run_with_rows_outside_its_queue(label: &str, budget: Option<u64>) -> Rig {
+    let order = ["route under-confirmed", "route hunt", "behaviour hunt"];
+    let rig = a_queue_run(label, &order, budget);
+    let mut lead = classed("a-lead", INSIDE, "lead", "hunt");
+    lead["grade"] = json!("breaks");
+    lead["graded_by"] = json!("triage");
+    rig.run(
+        &ledger_add(RUN),
+        &json!([
+            evident("p-gone", "route", "hunt"),
+            evident("p-kept", "route", "hunt"),
+            evident("r-1", "route", "hunt"),
+            evident("s-1", "behaviour", "seed"),
+            lead,
+            evident("r-ungraded", "route", "hunt"),
+        ])
+        .to_string(),
+    )
+    .must(OK, "what the hunt found, and a seed");
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!([
+            {"key": "p-gone", "grade": "breaks", "verdict": "refuted",
+             "refutation": "does-not-reproduce"},
+            {"key": "p-kept", "grade": "breaks", "verdict": "refuted", "refutation": "intended"},
+            sent_on("r-1"),
+            sent_on("s-1"),
+        ])
+        .to_string(),
+    )
+    .must(OK, "the one triage, and two verdicts");
+    rig.run(
+        &ledger_add(RUN),
+        &json!([
+            handed_on("c-gone", "route", "p-gone"),
+            handed_on("c-kept", "route", "p-kept"),
+        ])
+        .to_string(),
+    )
+    .must(OK, "what two verifiers handed on");
+    rig
+}
+
+/// `run-set` with the keys the human puts into the queue.
+fn put_in(rig: &Rig, keys: &[&str]) -> Seen {
+    rig.run(&run_set(RUN), &json!({"queued": keys}).to_string())
+}
+
+/// **A row the human puts into the queue is in it from then on, and not before** (`T2b`;
+/// the human's ruling of 2026-10-11, 3: *a route item that is never to be verified … is
+/// shown at every stop and at the close … and the human may put any of them into the queue
+/// by key*). A row that awaits a verdict and is in no queue says WHY — its parent did not
+/// reproduce, its class is off the order — and the ruling's write takes it by key, many in
+/// one call, FOR THAT REASON: whatever keeps a row out, but that it is a lead. Put in, the
+/// row is ranked like any row of its class — after every class of the order where the
+/// order does not name its own — is verified inside the budget, and its verdict takes it
+/// out like any row's.
+#[test]
+fn a_row_the_human_puts_into_the_queue_is_in_it_from_then_on_and_not_before() {
+    let rig = a_run_with_rows_outside_its_queue("put-in", Some(9));
+    let read = rig.state();
+    assert_eq!(queued(&read), ["r-1"], "the control, before: {read}");
+    assert_eq!(
+        json!([
+            routed(&read, "c-gone"),
+            routed(&read, "s-1"),
+            routed(&read, "c-kept")
+        ]),
+        json!([
+            at("listed", "parent-did-not-reproduce"),
+            at("listed", "class-off-the-order"),
+            at("listed", "class-off-the-order")
+        ]),
+        "each row outside the queue says why: {read}"
+    );
+    assert!(read["facts"].get("queued").is_none(), "{read}");
+
+    // THE RULING: two keys, one call.
+    let seen = put_in(&rig, &["c-gone", "s-1"]);
+    seen.must(OK, "two rows, put into the queue by key");
+    assert_eq!(seen.json()["facts"]["queued"], json!(["c-gone", "s-1"]));
+    let read = rig.state();
+    assert_eq!(
+        queued(&read),
+        ["r-1", "s-1", "c-gone"],
+        "after every class of the order, ties by the ledger's own order: {read}"
+    );
+    for key in ["s-1", "c-gone"] {
+        assert_eq!(routed(&read, key), at("verify", "queued"), "{read}");
+    }
+    assert_eq!(
+        read["queue"]["classes"],
+        json!([
+            {"kind": "route", "origin": "under-confirmed", "length": 0},
+            {"kind": "route", "origin": "hunt", "length": 1},
+            {"kind": "behaviour", "origin": "hunt", "length": 0},
+            {"kind": "behaviour", "origin": "seed", "length": 1},
+            {"kind": "route", "origin": "under-no-repro", "length": 1}]),
+        "the classes of the order, and after them each class a row was put in under: {read}"
+    );
+    assert_eq!(
+        json!([
+            routed(&read, "c-kept"),
+            read["facts"]["queued"],
+            read["next"]
+        ]),
+        json!([
+            at("listed", "class-off-the-order"),
+            ["c-gone", "s-1"],
+            "triage"
+        ]),
+        "a row nobody put in stays out; `r-ungraded` is triage's first: {read}"
+    );
+    assert!(
+        table(&rig.read(&run_path()), &ROUND_COLUMNS)
+            .contains(&vec!["`queued`".to_owned(), "`c-gone, s-1`".to_owned()]),
+        "the ruling is a fact of the run's own record"
+    );
+
+    // Said again, nothing moves; one more key adds to the list.
+    let before = rig.snapshot();
+    put_in(&rig, &["s-1"]).must(OK, "a key, said again");
+    assert_eq!(rig.snapshot(), before);
+    put_in(&rig, &["c-kept", "s-1"]).must(OK, "one more key, beside one that stands");
+    let read = rig.state();
+    assert_eq!(
+        json!([read["facts"]["queued"], queued(&read)]),
+        json!([
+            ["c-gone", "s-1", "c-kept"],
+            ["r-1", "s-1", "c-gone", "c-kept"]
+        ]),
+        "{read}"
+    );
+
+    // RANKED LIKE ANY ROW OF ITS CLASS, once the order names it.
+    rig.run(
+        &run_set(RUN),
+        &json!({"order": ["behaviour seed", "route under-not-a-break", "route hunt"]}).to_string(),
+    )
+    .must(OK, "an order that names two of the classes");
+    assert_eq!(
+        queued(&rig.state()),
+        ["s-1", "c-kept", "r-1", "c-gone"],
+        "by its class where the order names it, and last where it does not"
+    );
+
+    // ITS VERDICT TAKES IT OUT, AND SPENDS ONE.
+    let spent = rig.state()["budget"]["spent"].clone();
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "c-gone", "grade": "breaks", "verdict": "confirmed", "regression": false})
+            .to_string(),
+    )
+    .must(OK, "the verdict of a row that was put in");
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            spent,
+            read["budget"]["spent"],
+            queued(&read),
+            routed(&read, "c-gone")
+        ]),
+        json!([2, 3, ["s-1", "c-kept", "r-1"], at("fix", "inside")]),
+        "{read}"
+    );
+}
+
+/// **A lead is refused a place in the queue** (`T2b`; the ruling of 2026-10-10, 1: *a lead
+/// … listed, not verified*). A lead quotes no route and carries no commands: there is
+/// nothing to verify, so the ruling's write refuses it BY NAME — alone, and beside a key it
+/// would take, where nothing of the call is written.
+#[test]
+fn a_lead_is_refused_a_place_in_the_queue() {
+    let rig = a_run_with_rows_outside_its_queue("put-in-lead", Some(9));
+    let read = rig.state();
+    assert_eq!(routed(&read, "a-lead"), at("listed", "lead"), "{read}");
+    let before = rig.snapshot();
+    for keys in [vec!["a-lead"], vec!["c-gone", "a-lead"]] {
+        let seen = put_in(&rig, &keys);
+        seen.refused(BAD_VALUE, "a lead, put into the queue");
+        assert!(
+            seen.stderr.contains("a-lead") && seen.stderr.contains("a lead"),
+            "it names the row, and says what it is: {}",
+            seen.stderr
+        );
+    }
+    assert_eq!(rig.snapshot(), before, "nothing of either call is written");
+    // The control: the key beside it is one the write takes.
+    put_in(&rig, &["c-gone"]).must(OK, "the other key, alone");
+}
+
+/// **A key the ledger lacks is refused a place in the queue** (`T2b`) — and so is every row
+/// that is outside the queue for no reason the ruling answers: a row that is in it already,
+/// one that has its verdict, one nobody graded (it is triage's first). The write is built
+/// on WHY a row is outside the queue, so a row with no such reason has no place to be put.
+/// And a run without an order has no queue: there the fact is refused, and inert.
+#[test]
+fn a_key_the_ledger_lacks_is_refused_a_place_in_the_queue() {
+    let rig = a_run_with_rows_outside_its_queue("put-in-none", Some(9));
+    let before = rig.snapshot();
+    let seen = put_in(&rig, &["c-gone", "no-such-finding"]);
+    seen.refused(NO_SUCH_ROW, "a key the ledger lacks");
+    assert!(seen.stderr.contains("no-such-finding"), "{}", seen.stderr);
+    for (key, why) in [
+        ("r-1", "a row that is in the queue already"),
+        ("p-gone", "a row that has its verdict"),
+        (
+            "r-ungraded",
+            "a row nobody graded and nobody handed on: triage's",
+        ),
+    ] {
+        let seen = put_in(&rig, &[key]);
+        seen.refused(BAD_VALUE, why);
+        assert!(seen.stderr.contains(key), "{}", seen.stderr);
+    }
+    for (given, why) in [
+        (json!({"queued": []}), "no key at all"),
+        (json!({"queued": "c-gone"}), "a key that is no list"),
+        (json!({"queued": ["c-gone", "c-gone"]}), "a key given twice"),
+    ] {
+        rig.run(&run_set(RUN), &given.to_string())
+            .refused(BAD_VALUE, why);
+    }
+    rig.run(&run_set(RUN), &json!({"queued": ["Not A Key"]}).to_string())
+        .refused(BAD_ID, "a key outside the grammar");
+    assert_eq!(rig.snapshot(), before, "a refused ruling writes nothing");
+
+    // WITHOUT AN ORDER there is no queue to put a row into.
+    let plain = two_clause_run("put-in-plain", BOUNDED);
+    tested_round(&plain, 1, true, &BOTH_GREEN, json!({}));
+    plain
+        .run(&ledger_add(RUN), &row_at("r-1", INSIDE).to_string())
+        .must(OK, "a row");
+    let before = plain.snapshot();
+    let seen = put_in(&plain, &["r-1"]);
+    seen.refused(BAD_VALUE, "a row put into the queue of a run that has none");
+    assert!(
+        seen.stderr.contains("holds no order"),
+        "it says what the run lacks: {}",
+        seen.stderr
+    );
+    assert_eq!(plain.snapshot(), before);
+    assert!(plain.state()["facts"].get("queued").is_none());
+}
+
+/// **Only a route item in the queue holds the close** (`T2b`; the human's ruling of
+/// 2026-10-11, 3). With the budget spent, a route item that is in no queue is shown and
+/// holds nothing: the step is `close`. Put into the queue by the human, and unreached, it
+/// is the human's and holds the close until it is verified or ruled — and a behaviour item
+/// put in beside it holds nothing, in the queue or out of it.
+#[test]
+fn only_a_route_item_in_the_queue_holds_the_close() {
+    let rig = a_queue_run("close", &["route hunt"], Some(1));
+    rig.run(
+        &ledger_add(RUN),
+        &json!([
+            evident("r-1", "route", "hunt"),
+            evident("r-off", "route", "seed"),
+            evident("b-off", "behaviour", "seed"),
+        ])
+        .to_string(),
+    )
+    .must(OK, "three rows");
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!([sent_on("r-1"), sent_on("r-off"), sent_on("b-off")]).to_string(),
+    )
+    .must(OK, "the one triage");
+    verdict(&rig, "r-1");
+    let read = rig.state();
+    assert_eq!(read["budget"]["left"], 0, "the control: spent — {read}");
+    assert_eq!(
+        json!([
+            routed(&read, "r-off"),
+            routed(&read, "b-off"),
+            read["next"],
+            read["forbids_close"]
+        ]),
+        json!([
+            at("listed", "class-off-the-order"),
+            at("listed", "class-off-the-order"),
+            "close",
+            []
+        ]),
+        "a route item that is in no queue holds nothing: {read}"
+    );
+
+    put_in(&rig, &["r-off", "b-off"]).must(OK, "both, put into the queue");
+    let read = rig.state();
+    assert_eq!(
+        json!([routed(&read, "r-off"), routed(&read, "b-off"), read["next"]]),
+        json!([at("human", "unreached"), at("listed", "unreached"), "rule"]),
+        "{read}"
+    );
+    assert_eq!(
+        read["forbids_close"],
+        json!([{"finding": "r-off", "route": "human"}]),
+        "the route item nobody reached, and nothing else: {read}"
+    );
+    rig.run(
+        &ledger_set(RUN),
+        &json!({"key": "r-off", "disposition": "later"}).to_string(),
+    )
+    .must(OK, "the human's ruling");
+    let read = rig.state();
+    assert_eq!(
+        json!([read["next"], read["forbids_close"]]),
+        json!(["close", []])
+    );
+}
+
+/// One row of THE SECOND TABLE: a finding of a run with a queue — how it comes to stand in
+/// the run's records — and where it is routed while budget is left, and once it is spent.
+struct Queued {
+    key: &'static str,
+    /// The row as it is added: its class, its evidence, and where it comes from.
+    row: fn(&'static str) -> Value,
+    /// The round's triage entry, less its key.
+    triage: Option<Value>,
+    /// A ledger patch made afterwards, less its key.
+    then: Option<Value>,
+    /// Whether the human put the row into the queue.
+    put_in: bool,
+    left: (&'static str, &'static str),
+    spent: (&'static str, &'static str),
+}
+
+/// **The second table: the route of a finding in a run with a queue** — written by hand,
+/// cell by cell, beside [`findings`], which is the table of every other run and stands as
+/// it stood. The rows' order is the ledger's.
+fn queue_table() -> Vec<Queued> {
+    const FIX: (&str, &str) = ("fix", "inside");
+    const NOT_A_BREAK: (&str, &str) = ("recorded", "not-a-break");
+    const QUEUED: (&str, &str) = ("verify", "queued");
+    const HOLDS: (&str, &str) = ("human", "unreached");
+    const SHOWN: (&str, &str) = ("listed", "unreached");
+    const OFF: (&str, &str) = ("listed", "class-off-the-order");
+    const GONE: (&str, &str) = ("listed", "parent-did-not-reproduce");
+    const LEAD: (&str, &str) = ("listed", "lead");
+    let sent = || Some(json!({"grade": "unclear"}));
+    let row = |key, row: fn(&'static str) -> Value, triage, left, spent| Queued {
+        key,
+        row,
+        triage,
+        then: None,
+        put_in: false,
+        left,
+        spent,
+    };
+    vec![
+        // What is verified is routed as in every run: by its verdict, and its door.
+        row(
+            "p-confirmed",
+            |key| evident(key, "route", "hunt"),
+            Some(confirmed()),
+            FIX,
+            FIX,
+        ),
+        row(
+            "p-norepro",
+            |key| evident(key, "route", "hunt"),
+            Some(
+                json!({"grade": "breaks", "verdict": "refuted", "refutation": "does-not-reproduce"}),
+            ),
+            NOT_A_BREAK,
+            NOT_A_BREAK,
+        ),
+        // THE QUEUE: sent on by triage, or handed on by a verifier — verified while budget
+        // is left; unreached, a route item is the human's and a behaviour item is shown.
+        row(
+            "q-route",
+            |key| evident(key, "route", "hunt"),
+            sent(),
+            QUEUED,
+            HOLDS,
+        ),
+        row(
+            "q-behaviour",
+            |key| evident(key, "behaviour", "hunt"),
+            sent(),
+            QUEUED,
+            SHOWN,
+        ),
+        row(
+            "q-handed",
+            |key| handed_on(key, "route", "p-confirmed"),
+            None,
+            QUEUED,
+            HOLDS,
+        ),
+        // OUTSIDE IT, each for its reason, whatever the budget: shown, and holds nothing.
+        row(
+            "off-route",
+            |key| evident(key, "route", "seed"),
+            sent(),
+            OFF,
+            OFF,
+        ),
+        row(
+            "off-handed",
+            |key| handed_on(key, "behaviour", "p-confirmed"),
+            None,
+            OFF,
+            OFF,
+        ),
+        row(
+            "gone-handed",
+            |key| handed_on(key, "route", "p-norepro"),
+            None,
+            GONE,
+            GONE,
+        ),
+        row(
+            "a-lead",
+            |key| classed(key, INSIDE, "lead", "hunt"),
+            sent(),
+            LEAD,
+            LEAD,
+        ),
+        row(
+            "lead-handed",
+            |key| {
+                let mut entry = handed_on(key, "route", "p-confirmed");
+                entry.as_object_mut().expect("a row").remove("route");
+                entry
+            },
+            None,
+            LEAD,
+            LEAD,
+        ),
+        // NOBODY GRADED IT, AND NOBODY HANDED IT ON: triage's first.
+        row(
+            "ungraded",
+            |key| evident(key, "route", "hunt"),
+            None,
+            ("triage", "ungraded"),
+            ("triage", "ungraded"),
+        ),
+        // Triage's grade still decides what is verified of what triage saw.
+        row(
+            "no-break",
+            |key| evident(key, "route", "hunt"),
+            Some(graded("no-break")),
+            NOT_A_BREAK,
+            NOT_A_BREAK,
+        ),
+        row(
+            "needs-bound",
+            |key| evident(key, "route", "hunt"),
+            Some(graded("needs-bound")),
+            ("human", "needs-bound"),
+            ("human", "needs-bound"),
+        ),
+        row(
+            "undrivable",
+            |key| evident(key, "route", "hunt"),
+            Some(json!({"grade": "breaks", "verdict": "undrivable", "reason": "needs-linux"})),
+            ("human", "undrivable"),
+            ("human", "undrivable"),
+        ),
+        row(
+            "forked",
+            |key| evident(key, "route", "hunt"),
+            Some(forked(refuted())),
+            ("human", "fork"),
+            ("human", "fork"),
+        ),
+        // The human's ruling on a row of the queue records it.
+        Queued {
+            then: Some(disposed("later")),
+            ..row(
+                "ruled",
+                |key| evident(key, "route", "hunt"),
+                sent(),
+                ("recorded", "ruled"),
+                ("recorded", "ruled"),
+            )
+        },
+        // PUT INTO THE QUEUE BY THE HUMAN: a row of the queue, by its kind.
+        Queued {
+            put_in: true,
+            ..row(
+                "put-in-route",
+                |key| evident(key, "route", "seed"),
+                sent(),
+                QUEUED,
+                HOLDS,
+            )
+        },
+        Queued {
+            put_in: true,
+            ..row(
+                "put-in-behaviour",
+                |key| handed_on(key, "behaviour", "p-norepro"),
+                None,
+                QUEUED,
+                SHOWN,
+            )
+        },
+    ]
+}
+
+/// **In a run with a queue a finding is routed by its class, the order and the budget** —
+/// THE SECOND TABLE (`T2b`; the script's header: *IN A RUN WITH A QUEUE*), every cell stood
+/// up through the script's own writers under a budget that is left and under one that is
+/// spent, and read off the state. And the same rows IN A RUN WITHOUT AN ORDER are routed as
+/// rows always were: no `verify`, no `listed`, and the step is `triage` — the first table's
+/// arm stands beside this one, unmodified.
+#[test]
+fn in_a_run_with_a_queue_a_finding_is_routed_by_its_class_the_order_and_the_budget() {
+    let order = ["route under-confirmed", "route hunt", "behaviour hunt"];
+    let truth = queue_table();
+    // The verdicts the table's own rows spend: four.
+    let verdicts = truth
+        .iter()
+        .filter(|cell| {
+            cell.triage
+                .as_ref()
+                .is_some_and(|entry| entry.get("verdict").is_some())
+        })
+        .count();
+    assert_eq!(verdicts, 4, "the table's verdicts");
+    let stand = |label: &str, budget: Option<u64>, ordered_: bool| {
+        let rig = if ordered_ {
+            a_queue_run(label, &order, budget)
+        } else {
+            let rig = two_clause_run(label, BOUNDED);
+            tested_round(&rig, 1, true, &BOTH_GREEN, json!({}));
+            rig
+        };
+        let keyed = |fields: &Value, key: &str| {
+            let mut entry = fields.clone();
+            entry["key"] = json!(key);
+            entry
+        };
+        // The rows in the table's order — an item is handed on under a parent that has
+        // its verdict, so the triage of what the hunt found comes first.
+        let found: Vec<&Queued> = truth
+            .iter()
+            .filter(|cell| (cell.row)(cell.key).get("parent").is_none())
+            .collect();
+        let handed: Vec<&Queued> = truth
+            .iter()
+            .filter(|cell| (cell.row)(cell.key).get("parent").is_some())
+            .collect();
+        let rows = |cells: &[&Queued]| -> Vec<Value> {
+            cells.iter().map(|cell| (cell.row)(cell.key)).collect()
+        };
+        rig.run(&ledger_add(RUN), &json!(rows(&found)).to_string())
+            .must(OK, "what the hunt found");
+        let entries: Vec<Value> = truth
+            .iter()
+            .filter_map(|cell| Some(keyed(cell.triage.as_ref()?, cell.key)))
+            .collect();
+        rig.run(&triage_set(RUN, "1"), &json!(entries).to_string())
+            .must(OK, "the one triage, and the verdicts");
+        rig.run(&ledger_add(RUN), &json!(rows(&handed)).to_string())
+            .must(OK, "what the verifiers handed on");
+        let patches: Vec<Value> = truth
+            .iter()
+            .filter_map(|cell| Some(keyed(cell.then.as_ref()?, cell.key)))
+            .collect();
+        rig.run(&ledger_set(RUN), &json!(patches).to_string())
+            .must(OK, "the human's rulings");
+        if ordered_ {
+            let keys: Vec<&str> = truth
+                .iter()
+                .filter(|cell| cell.put_in)
+                .map(|cell| cell.key)
+                .collect();
+            put_in(&rig, &keys).must(OK, "the rows the human puts into the queue");
+        }
+        rig
+    };
+
+    let ranked = [
+        "q-handed",
+        "q-route",
+        "q-behaviour",
+        "put-in-route",
+        "put-in-behaviour",
+    ];
+    for (label, budget, spent) in [
+        ("queue-table-left", Some(50), false),
+        ("queue-table-unbounded", None, false),
+        ("queue-table-spent", Some(4), true),
+    ] {
+        let rig = stand(label, budget, true);
+        let read = rig.state();
+        for cell in &truth {
+            let wanted = if spent { cell.spent } else { cell.left };
+            assert_eq!(
+                routed(&read, cell.key),
+                at(wanted.0, wanted.1),
+                "the route of `{}` in `{label}`: {read}",
+                cell.key
+            );
+        }
+        assert_eq!(
+            queued(&read),
+            ranked,
+            "the queue is the same rows whatever is left: {read}"
+        );
+        assert_eq!(read["budget"]["spent"], 4, "{read}");
+        // THE NEXT STEP, by what the routes hold: a row nobody graded first; then the
+        // queue, while budget is left; then the human's list.
+        assert_eq!(read["next"], "triage", "{read}");
+        rig.run(
+            &triage_set(RUN, "1"),
+            &json!({"key": "ungraded", "grade": "no-break"}).to_string(),
+        )
+        .must(OK, "the row nobody graded, graded");
+        let read = rig.state();
+        assert_eq!(
+            read["next"],
+            if spent { "rule" } else { "verify" },
+            "`{label}`: {read}"
+        );
+        let open: BTreeSet<String> = truth
+            .iter()
+            .filter(|cell| {
+                let route = if spent { cell.spent.0 } else { cell.left.0 };
+                cell.key != "ungraded" && !["recorded", "listed"].contains(&route)
+            })
+            .map(|cell| cell.key.to_owned())
+            .collect();
+        assert_eq!(
+            holding(&read).into_iter().collect::<BTreeSet<String>>(),
+            open,
+            "what forbids the close is every row that is neither recorded nor listed: {read}"
+        );
+    }
+    assert!(
+        truth.len() >= 18,
+        "the table collapsed to {} cells",
+        truth.len()
+    );
+
+    // WITHOUT AN ORDER the same rows are routed as rows always were.
+    let plain = stand("queue-table-none", Some(4), false);
+    let read = plain.state();
+    let routes: BTreeSet<String> = truth.iter().map(|cell| routed(&read, cell.key).0).collect();
+    assert_eq!(
+        routes,
+        ["fix", "human", "recorded", "triage"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<BTreeSet<String>>(),
+        "no row of a run without an order is routed `verify` or `listed`: {read}"
+    );
+    assert_eq!(
+        json!([
+            routed(&read, "q-route"),
+            routed(&read, "a-lead"),
+            routed(&read, "q-handed")
+        ]),
+        json!([
+            at("triage", "unverified"),
+            at("triage", "unverified"),
+            at("triage", "ungraded")
+        ])
+    );
+    assert_eq!(read["next"], "triage", "{read}");
 }

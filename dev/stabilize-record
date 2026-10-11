@@ -32,7 +32,8 @@
 #                                           the previous release, the default scope and
 #                                           the clauses of its closing condition — and,
 #                                           where its opening wrote them, what its queue is
-#                                           bounded and ranked by (run-set)
+#                                           bounded and ranked by, and the rows the human
+#                                           put into it by key (run-set)
 #                                           — and the census of the ledger, which this
 #                                           script counts (ledger-add, result-set)
 #   ledger.md                               one row per finding          (ledger-add, ledger-set,
@@ -513,13 +514,45 @@
 #                      queue — its facts are printed without them, and its files hold no
 #                      byte more. A RUN THAT HOLDS AN `order` IS A RUN WITH A QUEUE, and
 #                      says so in its state; the two numbers alone make none.
-#                      Each is written ONCE (exists) — what changes a budget or an order
-#                      at a stop is a ruling's to write, and is not built here. AND AN
-#                      ORDER IS TAKEN ONLY WHILE EVERY ROW OF THE LEDGER CARRIES A CLASS
-#                      (bad-value): a run with a queue holds no row its queue cannot rank,
-#                      and a row takes its class when it is added and never later — so
-#                      the order is written at the opening, before the ledger's first row
-#                      that names no kind.
+#                      hand-on is written ONCE (exists). AND AN ORDER IS FIRST TAKEN ONLY
+#                      WHILE EVERY ROW OF THE LEDGER CARRIES A CLASS (bad-value): a run
+#                      with a queue holds no row its queue cannot rank, and a row takes
+#                      its class when it is added and never later — so the order is
+#                      written at the opening, before the ledger's first row that names
+#                      no kind.
+#                      A BUDGET AND AN ORDER THE HUMAN CHANGES ARE FACTS A RULING WRITES
+#                      (the plan's T2b) — by this call again, as a raised bound is:
+#                        order    ANOTHER ORDER is taken at any step, like a disposition:
+#                                 it is the human's ruling on the queue. From then on a
+#                                 class it names is ranked, and a class it drops is in no
+#                                 queue — its rows are listed, and hold nothing. It stays
+#                                 an order: non-empty, no class twice, no lead, no class
+#                                 under a parent that did not reproduce.
+#                        budget   RAISED ONLY AT ITS OWN STOP: while it is spent and the
+#                                 queue holds a row nobody reached (state: budget.left is
+#                                 0, queue.ranked is not empty) — anywhere else the raise
+#                                 is refused (bad-value), so it lifts no stop nobody has
+#                                 seen. It never goes down (bad-value). Raised, every row
+#                                 of the queue is routed `verify` again.
+#         queued       THE ROWS THE HUMAN PUTS INTO THE QUEUE, BY KEY (the ruling of
+#                      2026-10-11, 3: "a route item that is never to be verified … is
+#                      shown at every stop … and the human may put any of them into the
+#                      queue by key") — a non-empty array of ledger keys, many in one
+#                      call; the record holds the list, and a later call adds to it. A
+#                      row is taken FOR THE REASON IT IS OUTSIDE THE QUEUE — it awaits a
+#                      verdict, and its route is `listed` with why: parent-did-not-
+#                      reproduce, class-off-the-order (state: IN A RUN WITH A QUEUE) — and
+#                      for no other state of a row: one that is in the queue, has its
+#                      verdict, is ruled, or that nobody graded and nobody handed on is
+#                      refused (bad-value). A LEAD IS REFUSED BY NAME (bad-value): it has
+#                      no evidence to verify. A key the ledger lacks is refused
+#                      (no-such-row), and so is the fact in a run without an order
+#                      (bad-value). Every key of a call is held to the state as it stands
+#                      BEFORE the call. Put in, the row is ranked like any row of its
+#                      class — after every class of the order where the order does not
+#                      name its own — counts against the budget when it is verified, and,
+#                      a route item nobody reached, holds the close. Taken at any step:
+#                      it adds work, and lifts no stop.
 #       THIS IS HOW THE OPENING'S MACHINE-READ FACTS GET IN. opening.md stays the
 #       human-led step's prose, which this script neither writes nor reads; the step
 #       that writes it calls run-set before its one commit. A run that lacks them is NOT
@@ -537,7 +570,7 @@
 #                      as run-set wrote them (null where it did not; the bound on a
 #                      round's cycles is three where it is null), and findings: the
 #                      ledger's census — and, ONLY WHERE THE RUN HOLDS IT, each of budget,
-#                      hand-on and order: a run that holds none has no such field
+#                      hand-on, order and queued: a run that holds none has no such field
 #         not_ready    what the opening still owes, or []: no-clause-row (the census names
 #                      no clause, so the clause table has no row) · no-stop-mode ·
 #                      no-round-bound (the mode is at-the-bound, and no number is written)
@@ -586,11 +619,14 @@
 #                                the verdict says one, `refutation` (which of three) or
 #                                `reason` (why nobody here can drive it)
 #                        reopened  whether its fix did not hold: it is open again
-#                        route   fix | human | triage | recorded, and `why`
+#                        route   fix | human | triage | recorded, and `why` — and, IN A
+#                                RUN WITH A QUEUE only, verify | listed (the second table)
 #                        awaits  null — or, for a finding the round's triage has not
 #                                finished, {why: ungraded | unverified, passes: how many
 #                                triage records of the latest round in a row left it so,
-#                                retry: due | spent}
+#                                retry: due | spent} — and for A ROW OF THE QUEUE, in a run
+#                                that has one, `unverified` with passes: how many launches
+#                                of its verifier in the latest round left no verdict
 #                        class   ONLY ON A ROW THAT CARRIES ONE (ledger-add): {kind, given
 #                                — what a lead was given as without its evidence, or null
 #                                — origin, parent, code, site, evidence}; null where the
@@ -623,7 +659,7 @@
 #         forbids_close  [{clause, status} | {"clauses": "no row"} | {finding, route}
 #                      | {"candidate": "not-tested", round}]
 #         next         not-ready | test | triage | rule | fix | retest | close | stop
-#                      | unsettled
+#                      | unsettled — and, in a run with a queue only, verify
 #         stop         null — or, when next is stop, {why: every-round | round-bound |
 #                      cycle-bound, round, then}
 #         position     {test, fix} — what an invocation of each stage would work on
@@ -631,7 +667,12 @@
 #         queue        ONLY IN A RUN WITH AN ORDER — a run with a queue; a run without
 #                      one has no such field: {ranked: [{key, kind, origin}] — THE QUEUE
 #                      (below), first to last — and classes: [{kind, origin, length}], how
-#                      many of it are of each class of the order, in the order's order}
+#                      many of it are of each class of the order, in the order's order —
+#                      and after them of each class a row was put into the queue under}
+#         budget       ONLY IN A RUN WITH AN ORDER: {limit: the opening's budget, or null,
+#                      spent: the verdicts on record in the latest round's `test` stage,
+#                      left: what is left of the limit — 0 once it is spent, null where
+#                      there is none: then nothing is ever spent}
 #       A cell is given as the table holds it, a `|` unescaped; `-` for none is null
 #       where the cell is not free text. A table that is not this script's, a cell
 #       outside its vocabulary, a triage record that disagrees with the doors it was
@@ -693,7 +734,10 @@
 #       THE UNVERIFIED ROWS WHOSE CLASS IS ON THE ORDER, RANKED BY IT, ties by the ledger's
 #       order. A row's class is its kind and where it comes from, as its row was added
 #       (ledger-add); a class the order does not name is in no queue, and so is a lead and
-#       an item handed on under a parent that did not reproduce, which no order can name.
+#       an item handed on under a parent that did not reproduce, which no order can name
+#       — BUT A ROW THE HUMAN PUT INTO THE QUEUE BY KEY (run-set: queued), which is in it
+#       whatever kept it out, ranked by its class where the order names that class and
+#       after every class of the order where it does not, ties by the ledger's order.
 #       UNVERIFIED is one of two things, and nothing else:
 #         triage sent the finding on (breaks, unclear) and no verdict is on record for it
 #           — the row the route calls `triage (unverified)`, however many records have
@@ -703,11 +747,76 @@
 #       So a row nobody graded and nobody handed on is NOT in it: it is triage's first.
 #       Nor is a row that is verified, undrivable, ruled, forked, or graded no break, out
 #       of scope or in need of a bound: triage's grade still decides what is verified of
-#       what triage saw. NOTHING ELSE RANKS — not the refusal's code, not the site, not
-#       how often either is named, not the order a triage recorded its entries in.
-#       What follows from the queue — a route, the next step, a budget that is spent — is
-#       not computed from it yet (the plan's T2b): `route`, `next` and `position` are
-#       today's, in every run.
+#       what triage saw. Nor one whose verifier was launched twice and left no verdict:
+#       it is the human's, until he grants one more (below). NOTHING ELSE RANKS — not the
+#       refusal's code, not the site, not how often either is named, not the order a
+#       triage recorded its entries in.
+#
+#       IN A RUN WITH A QUEUE — THE SECOND TABLE (the build plan of the reshaped `test`
+#       stage, T2b; the rulings of 2026-10-10, 1, and of 2026-10-11, 3). The route, the
+#       next step and the position ABOVE AND BELOW are those of every run, and of a run
+#       without an order they are all there is. In a run with an order three things are
+#       added, and nothing else of the three tables moves:
+#       THE BUDGET is the round's `test` stage's (run-set: budget). SPENT is counted here,
+#       and by no caller: the verdicts on record in the latest round — one a finding,
+#       confirmed, refuted or undrivable, in however many invocations and records they
+#       arrived. A launch that left nothing spends nothing. LEFT is the budget less what
+#       is spent; a run that holds no budget never spends one.
+#       THE ROUTE of a row that AWAITS A VERDICT — triage sent it on (breaks, unclear) and
+#       no verdict is on record, or a verifier handed it on and nobody graded it — which
+#       the first table routes `triage`. Every other row is routed by the first table:
+#         in no queue            listed, with WHY it is in none — the first that holds:
+#                                  lead                      it quotes no route and carries
+#                                                            no commands: nothing to verify
+#                                  parent-did-not-reproduce  it was handed on under a
+#                                                            finding refuted as that
+#                                  class-off-the-order       the order does not name its
+#                                                            class
+#                                Shown at every stop and at the close, never verified, and
+#                                HOLDS NOTHING. The human may put such a row into the queue
+#                                by key, for any reason but the first (run-set: queued).
+#         in the queue           verify (queued) while budget is left.
+#                                ONCE THE BUDGET IS SPENT nobody reached the row, and
+#                                  a route item      human (unreached): it HOLDS THE CLOSE
+#                                                    until it is verified or ruled
+#                                  a behaviour item  listed (unreached): shown, and holds
+#                                                    nothing
+#                                — and both are still the queue, in their rank: a raised
+#                                budget routes them `verify` again.
+#         launched twice, no     human (unverified-after-retry), and out of the queue:
+#         verdict                LEFT UNVERIFIED COUNTS LAUNCHES THAT LEFT NO VERDICT, and
+#                                never a record — a record leaves every row unverified
+#                                that nobody reached. A launch is a report of the
+#                                finding's verifier, the reporter `verify-<key>`, among
+#                                the latest round's `test` reports; where two of them and
+#                                no verdict are on record and the human granted no further
+#                                one (round-set: reverify), the row is his. A launch that
+#                                left no report is counted by nothing.
+#         nobody graded it, and  triage (ungraded), as in the first table — ONCE MORE, and
+#         nobody handed it on    then the human's, by the round's triage records as there.
+#       A FINDING IS OPEN while its route is neither `recorded` nor `listed`: a listed row
+#       forbids no close, and a round with nothing else open is over.
+#       THE NEXT STEP gains one value, between `triage` and `rule`:
+#         triage     ONLY for a row nobody graded and nobody handed on — a red run filed
+#                    after the one triage, a seed added between two invocations — and
+#                    first, whatever the queue holds: the next invocation grades it
+#         verify     a row is routed verify: a row of the queue is unverified, and budget
+#                    is left. The stage that left the queue continues it — the filed
+#                    verdicts taken, only what is missing launched, no instrument run
+#                    again — ahead of the human's list and of a fixer
+#         rule       as in the first table — and so once the budget is spent with a route
+#                    item unreached, which is on the human's list
+#       — so a spent budget never ends in `verify`; with only behaviour items unreached it
+#       ends in whatever else the state asks, `close` among them.
+#       WHAT HOLDS THE CLOSE in such a run is therefore what forbids it in every run — a
+#       clause that is not green, a finding that is verified and neither fixed nor ruled,
+#       one on the human's list — and A ROUTE ITEM IN THE QUEUE THAT NOBODY REACHED. Not a
+#       behaviour item nobody reached, and not a route item that is in no queue.
+#       THE POSITION gains one flag, where the first table's says `triage: true`: the stage
+#       that left the round unfinished carries `triage: true` where a row is routed
+#       triage, `verify: true` where a row is routed verify, and both where both are —
+#       test {round R, attempt, verify: true} is THE INVOCATION THAT CONTINUES. With the
+#       budget spent and no row routed triage, test is refused (round-open) as ever.
 #
 #       THE CANDIDATE, AND WHEN A FIX STAGE IS ON RECORD. A round whose record names its
 #       candidate is TESTED. A FIX STAGE IS ON RECORD in a round whose record counts a
@@ -779,7 +888,8 @@
 #                    due             otherwise: an item's rerun is due
 #
 #       THE NEXT STEP, a pure function of the routes, the clause table, the rounds'
-#       records and the run's facts. A finding is OPEN while it is not routed recorded.
+#       records and the run's facts. A finding is OPEN while it is not routed recorded
+#       (nor, in a run with a queue, listed: the second table, above).
 #       The latest round R is OVER when it is tested and its outcome is set or nothing is
 #       open. The first that holds:
 #         not-ready  the opening owes something (not_ready), and no stage starts
@@ -1171,10 +1281,17 @@
 #   asked       the facts go, granted, reverify and again: only while the state asks the
 #               human for exactly that (round-set).
 #   once        the run's stop mode, previous release, default scope and clauses: where
-#               the run does not hold them yet, and then never again. And the queue's
-#               three — budget, hand-on, order — the same, until a ruling can change one
-#               (the plan's T2b); the order, in addition, only while every row of the
-#               ledger carries a class (run-set).
+#               the run does not hold them yet, and then never again. And how many items
+#               a verifier hands on (hand-on), the same.
+#   spent       the budget: where the run holds none; and after that RAISED, only while
+#               it is spent and the queue holds a row nobody reached — its own stop, as
+#               each bound has one. The raise is the human's answer to that stop.
+#   ruled       the order, and the rows put into the queue (queued): the human's rulings
+#               on the queue, held to no position, as a disposition is — a changed order
+#               and a row put in can add work or record a ruling, and what they lift is
+#               what a ruling lifts. What the run holds is held instead: an order is
+#               first taken only while every row of the ledger carries a class, and a row
+#               is put in only for the reason it is outside the queue (run-set).
 #   raised      the run's two bounds: at the opening, and then only at the stop that
 #               names the bound.
 #   counted     ran, awaiting, recorded and the run's findings: never from a caller.
@@ -1190,7 +1307,8 @@
 #
 # EVERY LOOP HAS A COUNTER ON RECORD AND AN EXIT TO THE HUMAN. Of the nine values of `next`
 # five hand over — not-ready, rule, unsettled, close, stop — and four are steps a stage
-# takes without asking: test, triage, fix, retest. A stage that takes one either REACHES
+# takes without asking: test, triage, fix, retest (and a fifth in a run with a queue:
+# verify, below). A stage that takes one either REACHES
 # ITS RECORD, and then one of these counters moved, or it does not, and then its attempt
 # is counted. So every pair of steps that can follow each other without the human is
 # bounded by what the step it ARRIVES at counts:
@@ -1204,6 +1322,15 @@
 #                inside a round, where the run stops (cycle-bound)
 #   … -> retest  an item's runs in its round are counted (results, ran): two, then its
 #                clause is the human's (human_clauses)
+#   … -> verify  (a run with a queue) the verdicts of the round's `test` stage are counted
+#                (budget.spent) and bounded by the budget, where the step is the human's
+#                or no row is routed verify any more; and the launches of a finding's
+#                verifier that left a report and no verdict are counted per finding: two,
+#                then the finding is the human's (unverified-after-retry). ONE THING HERE
+#                IS COUNTED BY NOTHING: a launch that left neither a report nor a verdict.
+#                What bounds a stage whose verifiers all die silently is the harness's —
+#                a wave with two silent calls is its last — and the count of the stage's
+#                own attempts that left no record, below.
 #   and x -> x without a record, for each of the four: the attempts of the stage that
 #                left no record are counted (unrecorded): two, then the stage is the
 #                human's (human_stages).
@@ -1289,8 +1416,8 @@
 #    5  outside       a link below the run directory: the write would land outside it
 #    6  exists        the report's path is taken — pass the next attempt; or a round's
 #                     scope, a fact of its record, the run's stop mode, previous
-#                     release, default scope or clauses — or its budget, its hand-on
-#                     number or its order — are written once and stand; or
+#                     release, default scope or clauses — or how many items a verifier
+#                     hands on — are written once and stand; or
 #                     an item has its result in a round that is not tested yet; or an
 #                     item a round has run or owes a run keeps its clause, runs, doors
 #                     and registries; or a row that has a verdict keeps its kind
@@ -1305,9 +1432,13 @@
 #                     for; a result for an item the round's scope does not select; an
 #                     item of a clause the census does not name, or a census that does
 #                     not name a clause an item judges; in a run with an order, a row
-#                     that names no kind — and an order over a ledger that holds one
+#                     that names no kind — and an order over a ledger that holds one; a
+#                     budget that goes down, or is raised where it is not spent with a
+#                     row of the queue unreached; a row put into the queue that is a
+#                     lead, or is not outside it, or in a run that has no queue
 #    8  no-such-row   ledger-set names a key the ledger lacks, or result-set an item the
-#                     test set lacks; a row is handed on under a parent the ledger lacks
+#                     test set lacks; a row is handed on under a parent the ledger lacks;
+#                     a key is put into the queue that the ledger lacks
 #    9  fence         the file would redden a standing fence, which is named
 #   10  host-path     a host path the placeholders could not replace
 #   11  hygiene       the public-hygiene scan found a hit
@@ -1538,26 +1669,27 @@ GO = re.compile(r"c(0|[1-9][0-9]{0,5})")
 OUTCOMES = ("dropped", "part")
 # The run's facts, in the order their table holds them, and when a run stops for the
 # human of its own accord.
-RUN_FACTS = ("stop", "rounds", "cycles", "previous", "previous-commit", "scope", "clauses", "budget", "hand-on", "order", "findings")
+RUN_FACTS = ("stop", "rounds", "cycles", "previous", "previous-commit", "scope", "clauses", "budget", "hand-on", "order", "queued", "findings")
 STOP_MODES = ("every-round", "at-the-bound")
 # THE OPENING'S NUMBERS, AND THE ORDER (the build plan of the reshaped `test` stage, T2a):
 # how many verdicts a round's `test` stage may spend, how many items a verifier hands on,
-# and the order of classes the queue is ranked by. OPTIONAL — nothing owes one yet (the
-# plan's T12 makes them owed) — and a fact of these three is A FACT ONLY WHERE THE RUN HOLDS
-# IT: a run that holds none prints the facts it always printed, and no key more. A run that
-# holds an `order` is A RUN WITH A QUEUE.
-RUN_QUEUE = ("budget", "hand-on", "order")
+# and the order of classes the queue is ranked by — AND THE ROWS THE HUMAN PUT INTO THE
+# QUEUE BY KEY (T2b; the ruling of 2026-10-11, 3). OPTIONAL — nothing owes one yet (the
+# plan's T12 makes the first three owed) — and a fact of these four is A FACT ONLY WHERE
+# THE RUN HOLDS IT: a run that holds none prints the facts it always printed, and no key
+# more. A run that holds an `order` is A RUN WITH A QUEUE.
+RUN_QUEUE = ("budget", "hand-on", "order", "queued")
 # The facts written once: when a run stops, the release it measures against, its default
-# scope and the clauses it must satisfy do not change under it — and, until a ruling can
-# change one (the plan's T2b), the three of the queue.
-RUN_ONCE = ("stop", "previous", "previous-commit", "scope", "clauses") + RUN_QUEUE
+# scope and the clauses it must satisfy do not change under it — nor how many items a
+# verifier hands on. (The budget and the order are the human's to change, by a ruling: T2b.)
+RUN_ONCE = ("stop", "previous", "previous-commit", "scope", "clauses", "hand-on")
 # The two bounds, which only go up, and the stop at which the human raises each.
 RUN_BOUNDS = {"rounds": "round-bound", "cycles": "cycle-bound"}
 # The facts that are a positive whole number.
 RUN_NUMBERS = tuple(RUN_BOUNDS) + ("budget", "hand-on")
 # What this script counts for itself: the census of the ledger.
 RUN_COUNTED = ("findings",)
-RUN_LISTS = ("clauses", "order", "findings")
+RUN_LISTS = ("clauses", "order", "queued", "findings")
 # A CLASS, AS AN ORDER NAMES ONE: `<kind> <origin>` — a kind that can be verified, and where
 # the item comes from. Two things no order names, because neither is ever verified: a lead,
 # and an item handed on under a parent that did not reproduce.
@@ -1565,6 +1697,28 @@ NEVER_QUEUED = REFUTATIONS["does-not-reproduce"]
 QUEUED_KINDS = tuple(kind for kind, evidence in KINDS.items() if evidence)
 QUEUED_ORIGINS = SAID_ORIGINS + (UNDER_CONFIRMED,) + tuple(sorted(set(REFUTATIONS.values()) - {NEVER_QUEUED}))
 CLASS = re.compile(r"(%s) (%s)" % ("|".join(QUEUED_KINDS), "|".join(QUEUED_ORIGINS)))
+# WHY A ROW THAT AWAITS A VERDICT IS IN NO QUEUE (the build plan of the reshaped `test`
+# stage, T2b; the ruling of 2026-10-11, 3) — the first that holds, each as (the word the
+# row's route says, what holds of the row as the state has it and of the run's order,
+# whether the human may put such a row into the queue by key). The ruling's write
+# (run-set: queued) is built on THIS TABLE and on no list of cases: it takes a row for any
+# reason here that says so, and a kind of row that is kept out for a new reason — an item
+# a verifier noticed beyond the number it may hand on (the plan's T3a) — is one more row.
+# A LEAD IS THE ONE THAT IS NOT PUT IN: it quotes no route and carries no commands, so
+# there is nothing to verify.
+OUTSIDE = (
+    ("lead", lambda finding, order: finding["class"]["kind"] == "lead", False),
+    ("parent-did-not-reproduce", lambda finding, order: finding["class"]["origin"] == NEVER_QUEUED, True),
+    ("class-off-the-order", lambda finding, order: "%s %s" % (finding["class"]["kind"], finding["class"]["origin"]) not in order, True),
+)
+# What a finding's verifier reports as (the plan's T3a: "the reporter's name is the key's"):
+# a report of that reporter among a round's `test` reports is A LAUNCH of the verifier.
+VERIFIER = "verify-"
+# The two routes of a run with a queue, and what a row of the queue says while the budget
+# has not reached it; and the routes that leave a finding CLOSED — nothing more is done
+# about it in this run, or it is shown and holds nothing.
+VERIFY, LISTED, UNREACHED = "verify", "listed", "unreached"
+CLOSED = ("recorded", LISTED)
 # A released version, as the previous release's fact names it.
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?")
 # The scope a round is started with when its invocation names none.
@@ -1614,6 +1768,11 @@ CHECKS = ("check-reports", "check-ledger")
 #   asked      only while the state asks the human for exactly this
 #   once       where the run does not hold it yet — the opening — and then never again
 #   raised     first at the opening; raised only at the stop that names it
+#   spent      the budget: first where the run holds none; raised only while it is spent
+#              and the queue holds a row nobody reached
+#   ruled      the human's ruling on the queue, held to no position: the order, first
+#              while every row carries a class and changed anywhere after; a row put into
+#              the queue by key, in a run that has one
 #   counted    never from a caller: this script counts it
 #   by-fact    by each fact the call names · by-call  by each call of the batch
 WRITERS = {
@@ -1654,10 +1813,10 @@ RUN_TAKES = {
     "previous-commit": "once",
     "scope": "once",
     "clauses": "once",
-    "budget": "once",
+    "budget": "spent",
     "hand-on": "once",
-    # … and an order only while every row of the ledger carries a class (run-set).
-    "order": "once",
+    "order": "ruled",
+    "queued": "ruled",
     "rounds": "raised",
     "cycles": "raised",
     "findings": "counted",
@@ -2523,7 +2682,7 @@ def read_run(run_dir):
 
 def run_facts(rel, rows):
     """The run's rows as {fact: value}, both facts named — None where the table does not
-    hold it; and of the queue's three (RUN_QUEUE) only those it holds. A row that is not
+    hold it; and of the queue's four (RUN_QUEUE) only those it holds. A row that is not
     this script's is refused."""
     held = {}
     for name, row in zip(unique_rows(rel, rows), rows):
@@ -2541,6 +2700,7 @@ def run_facts(rel, rows):
             "budget": NUMBER.fullmatch(value),
             "hand-on": NUMBER.fullmatch(value),
             "order": all(CLASS.fullmatch(entry) for entry in listed) and len(set(listed)) == len(listed),
+            "queued": slugs,
             "findings": slugs,
         }
         if not holds.get(name):
@@ -2551,7 +2711,7 @@ def run_facts(rel, rows):
 
 def in_order(held):
     """The run's facts in the order their table holds them: every fact named, None where
-    the run does not hold it — but of the queue's three, which nothing owes, only what the
+    the run does not hold it — but of the queue's four, which nothing owes, only what the
     run holds. So a run that holds none of them says what it always said."""
     return {name: held.get(name) for name in RUN_FACTS if name in held or name not in RUN_QUEUE}
 
@@ -3287,6 +3447,10 @@ def run_set(args):
             refuse("bad-value", "%s is a positive whole number, not %s" % (name, shown(given[name])))
     if "order" in given:
         an_order(given["order"])
+    if "queued" in given:
+        if not isinstance(given["queued"], list) or not given["queued"]:
+            refuse("bad-value", "queued is the rows the human puts into the queue, a non-empty array of ledger keys, not %s" % shown(given["queued"]))
+        distinct([slug(key, "a key put into the queue") for key in given["queued"]], "queued: the key")
     for name, shape, means in (("previous", VERSION, "a released version, as `1.2.3` or `1.2.3-rc.4`"), ("previous-commit", FULL_SHA, "a full sha of 40 hex digits")):
         if name in given and not (isinstance(given[name], str) and shape.fullmatch(given[name])):
             refuse("bad-value", "%s is %s, not %s" % (name, means, shown(given[name])))
@@ -3302,7 +3466,7 @@ def run_set(args):
     facts = run_facts(rel, rows)
     for name in RUN_ONCE:
         if name in given and facts.get(name) not in (None, given[name]):
-            refuse("exists", "%s holds %s %s — when a run stops, the release it measures against, its default scope, the clauses it must satisfy, and what its queue is ranked and bounded by are written once, at its opening; nothing was written" % (rel, name, ITEMS_BREAK.join(facts[name]) if name in RUN_LISTS else facts[name]))
+            refuse("exists", "%s holds %s %s — when a run stops, the release it measures against, its default scope, the clauses it must satisfy, and how many items a verifier hands on are written once, at its opening; nothing was written" % (rel, name, ITEMS_BREAK.join(facts[name]) if name in RUN_LISTS else facts[name]))
     if "order" in given and facts.get("order") is None:
         # A RUN WITH AN ORDER IS A RUN WITH A QUEUE, and the queue is ranked by a row's
         # class: every row of the ledger carries one from then on (ledger-add), so the
@@ -3311,6 +3475,18 @@ def run_set(args):
         bare = unclassed(run_dir, unique_rows(ledger_rel, ledger_rows))
         if bare:
             refuse("bad-value", "order: the ledger (%s) holds %s, which %s no kind — a run with an order has a queue, the queue is ranked by a row's class, and a row takes its class when it is added and never later (ledger-add): the order is written at the run's opening, before its first row that names no kind. Nothing was written" % (ledger_rel, ", ".join(bare), "name" if len(bare) > 1 else "names"))
+    if "budget" in given and facts.get("budget") not in (None, given["budget"]):
+        # THE BUDGET IS RAISED AT ITS OWN STOP, and nowhere else: while it is spent and the
+        # queue holds a row nobody reached. The raise is the human's answer to that stop, as
+        # a raised bound is to its own — it lifts no stop nobody has seen — and it only goes
+        # up: a budget below what is spent is no ruling this script has a form for.
+        if given["budget"] < facts["budget"]:
+            refuse("bad-value", "the budget is %d, and it never goes down to %d: only the human raises it, and what is still to be verified is taken out of the queue by its order or by a ruling on the row; nothing was written" % (facts["budget"], given["budget"]))
+        asks = read.get("budget")
+        if not (asks and asks["left"] == 0 and read["queue"]["ranked"]):
+            not_asked("the budget", read, "it is written at the run's opening, and raised only while it is spent and the queue holds a row nobody reached%s" % (" (%d of %d spent, %d in the queue)" % (asks["spent"], asks["limit"], len(read["queue"]["ranked"])) if asks else ": this run holds no order, and so has no queue"))
+    if "queued" in given:
+        given["queued"] = put_in(read, facts, given["queued"])
     if "clauses" in given:
         # The other order of writing: the test set first. A census is written once, so one
         # that leaves an item judging nothing is not written at all.
@@ -3333,6 +3509,32 @@ def run_set(args):
     publish(run_dir, ["run.md"], render_table(above, ROUND_COLUMNS, run_rows(facts)), replace=True)
     render_view(run_dir)
     say(json.dumps({"run": rel, "facts": facts}))
+
+
+def put_in(read, facts, keys):
+    """THE ROWS THE HUMAN PUTS INTO THE QUEUE BY KEY (the ruling of 2026-10-11, 3): the run's
+    list of them with `keys` added — or the refusal of the whole call. A row is taken FOR
+    THE REASON IT IS OUTSIDE THE QUEUE, as its route says it (OUTSIDE): whatever keeps a row
+    that awaits a verdict out, but that it is a lead. A row that is in the queue, has its
+    verdict, is ruled, or that nobody graded and nobody handed on has no such reason — and
+    a run without an order has no queue. `read` is the state as it stands before the call;
+    a key the list holds already is said again, and changes nothing."""
+    if facts.get("order") is None:
+        refuse("bad-value", "queued: the run holds no order, and so has no queue to put a row into (run-set: order); nothing was written")
+    held = facts.get("queued") or []
+    rows = {finding["key"]: finding for finding in read["ledger"]}
+    for key in keys:
+        if key not in rows:
+            refuse("no-such-row", "queued: the ledger has no row %s; nothing was written" % key)
+    for key in keys:
+        route, why = rows[key]["route"], rows[key]["why"]
+        if key in held:
+            continue
+        if (route, why) == (LISTED, "lead"):
+            refuse("bad-value", "queued: %s is a lead — it quotes no printed route and carries no commands that show a misbehaviour, so there is nothing to verify: a lead is listed, and is put into no queue. With its evidence it is a route or a behaviour item (ledger-set: kind). Nothing was written" % key)
+        if route != LISTED or why not in [word for word, _, may in OUTSIDE if may]:
+            refuse("bad-value", "queued: %s is not a row that awaits a verdict outside the queue — it is routed `%s` (%s). A row is put into the queue for the reason it is kept out of it: %s. Nothing was written" % (key, route, why, ", ".join(word for word, _, may in OUTSIDE if may)))
+    return held + [key for key in keys if key not in held]
 
 
 def an_order(given):
@@ -3444,10 +3646,14 @@ def triage_set(args):
     # THE PASSES ARE COUNTED HERE, never by an invocation: every finding this record leaves
     # without a grade or a verdict is named in the round's own record, with how many of the
     # round's triage records in a row have left it so. A finding it settles is named no more.
+    # IN A RUN WITH A QUEUE NO RECORD COUNTS AGAINST A ROW THAT AWAITS A VERDICT: a stage
+    # records twice, and a record leaves every row unverified that the budget did not reach.
+    # What counts there is a launch that left no verdict, which the state reads (document).
     left = by_name(round_facts(*read_round(run_dir, round_number)[::2])["awaiting"])
     awaiting = []
-    for finding in document(run_dir, args.run)["ledger"]:
-        if finding["awaits"] is not None:
+    held = document(run_dir, args.run)
+    for finding in held["ledger"]:
+        if finding["awaits"] is not None and not ("queue" in held and finding["awaits"]["why"] == "unverified"):
             why, passes = left.get(finding["key"], (None, 0))
             awaiting.append("%s %s %d" % (finding["key"], finding["awaits"]["why"], passes + 1 if why == finding["awaits"]["why"] else 1))
     counted(run_dir, round_number, "awaiting", awaiting)
@@ -3750,28 +3956,52 @@ def render_view(run_dir):
         publish(run_dir, ["clauses.md"], render_table(above, CLAUSE_COLUMNS, derived), replace=True)
 
 
-def queue_of(order, findings):
-    """THE QUEUE of a run with an order (the header's section of that name): the unverified
-    rows whose class is on the order, RANKED by where the class stands on it, ties by the
-    ledger's order — and how long it is class by class, in the order's own order. A pure
-    function of the order and the ledger's rows as the state has them, each with its class.
-    UNVERIFIED is: triage sent the finding on and the round holds no verdict for it — or a
-    verifier handed the item on, and nobody graded it: what is handed on enters without a
-    grade. So a row nobody graded and nobody handed on is not in it (it is triage's first),
-    nor is one that is verified, undrivable, ruled, forked or no break. NOTHING ELSE RANKS:
-    not the refusal's code, not the site, not how often either is named."""
-    ranked = []
-    for finding in findings:
-        awaits, held = finding["awaits"], finding["class"]
-        word = "%s %s" % (held["kind"], held["origin"])
-        if word in order and awaits is not None and (awaits["why"] == "unverified" or held["parent"] is not None):
-            ranked.append((order.index(word), finding["key"], held))
-    # The sort is stable: within a class, the ledger's own order.
-    ranked.sort(key=lambda entry: entry[0])
-    lengths = [sum(1 for at, _, _ in ranked if at == rank) for rank in range(len(order))]
+def outside(finding, order):
+    """WHY A ROW THAT AWAITS A VERDICT IS IN NO QUEUE — the word of the first row of OUTSIDE
+    that holds of it — or None: nothing keeps it out."""
+    return next((word for word, holds, _ in OUTSIDE if holds(finding, order)), None)
+
+
+def spent_in(triage, number_):
+    """WHAT A ROUND'S `test` STAGE HAS SPENT OF ITS BUDGET: the verdicts on record in that
+    round — one per finding, `undrivable` among them, however often an entry is recorded
+    again. `triage` holds each finding's entry in the latest round that triaged it, so the
+    entries of round `number_` are that round's own record. THIS IS THE ONE PLACE THE COUNT
+    IS MADE: a verdict that is filed and that no record holds yet (the plan's T3a) is added
+    here, and nowhere else."""
+    return sum(1 for entry in triage.values() if entry["round"] == number_ and entry["verdict"] is not None)
+
+
+def launched_in(run_dir, number_):
+    """THE LAUNCHES OF EACH FINDING'S VERIFIER IN A ROUND'S `test` STAGE, as {key: how
+    many}: the reports of the reporter `verify-<key>` among that round's `test` reports,
+    one an attempt. A launch that left nothing — no report — is counted by nothing."""
+    directory = below(run_dir, ["r%d" % number_, "reports", "test"])
+    launches = {}
+    for name in os.listdir(directory) if os.path.isdir(directory) else []:
+        named = REPORT_NAME.fullmatch(name)
+        if named and named.group(1).startswith(VERIFIER):
+            key = named.group(1)[len(VERIFIER):]
+            launches[key] = launches.get(key, 0) + 1
+    return launches
+
+
+def queue_of(order, rows):
+    """THE QUEUE of a run with an order (the header's section of that name), of `rows` —
+    the rows that are in it, in the ledger's order: RANKED by where each row's class stands
+    on the order, a row the human put in whose class the order does not name after every
+    class of it, ties by the ledger's order — and how long it is class by class: the
+    order's classes in the order's own order, and after them each class a row was put in
+    under. NOTHING ELSE RANKS: not the refusal's code, not the site, not how often either
+    is named."""
+    words = ["%s %s" % (finding["class"]["kind"], finding["class"]["origin"]) for finding in rows]
+    classes = list(order) + list(dict.fromkeys(word for word in words if word not in order))
+    # The sort is stable: within a class of the order, and among the rows after it, the
+    # ledger's own order.
+    ranked = sorted(zip(words, rows), key=lambda entry: order.index(entry[0]) if entry[0] in order else len(order))
     return {
-        "ranked": [{"key": key, "kind": held["kind"], "origin": held["origin"]} for _, key, held in ranked],
-        "classes": [dict(zip(("kind", "origin"), word.split(" ")), length=length) for word, length in zip(order, lengths)],
+        "ranked": [{"key": finding["key"], "kind": finding["class"]["kind"], "origin": finding["class"]["origin"]} for _, finding in ranked],
+        "classes": [dict(zip(("kind", "origin"), word.split(" ")), length=words.count(word)) for word in classes],
     }
 
 
@@ -3779,7 +4009,7 @@ def over(rounds, findings):
     """Whether the latest round is over: tested, and its outcome set or nothing open."""
     if not rounds or rounds[-1]["facts"]["candidate"] is None:
         return False
-    return rounds[-1]["facts"]["outcome"] is not None or all(finding["route"] == "recorded" for finding in findings)
+    return rounds[-1]["facts"]["outcome"] is not None or all(finding["route"] in CLOSED for finding in findings)
 
 
 def next_of(findings, clauses, rounds, facts, owed):
@@ -3789,7 +4019,9 @@ def next_of(findings, clauses, rounds, facts, owed):
     forbids = [{"clause": row["clause"], "status": row["status"]} for row in clauses if row["status"] != "green"]
     if not clauses:
         forbids.append({"clauses": "no row"})
-    still = [finding for finding in findings if finding["route"] != "recorded"]
+    # A finding is OPEN while its route is not a closed one: `recorded` — and, in a run
+    # with a queue, `listed`: shown at every stop, and holding nothing.
+    still = [finding for finding in findings if finding["route"] not in CLOSED]
     forbids += [{"finding": finding["key"], "route": finding["route"]} for finding in still]
     routes = {finding["route"] for finding in still}
     last = rounds[-1] if rounds else None
@@ -3811,6 +4043,9 @@ def next_of(findings, clauses, rounds, facts, owed):
         step = "test"
     elif "triage" in routes:
         step = "triage"
+    elif VERIFY in routes:
+        # A run with a queue only: a row of the queue is unverified, and budget is left.
+        step = VERIFY
     elif "human" in routes:
         step = "rule"
     elif "fix" in routes:
@@ -4023,14 +4258,17 @@ def position_of(rounds, findings, owed, stop, rerun):
     elif bound == "cycle-bound":
         # And so is one more fix cycle in this round.
         fix = refused("cycle-bound")
-    elif any(finding["route"] == "triage" for finding in findings):
-        # The round's triage is not finished: the stage that left it finishes it — the fix
-        # stage where one has left a counted cycle or a report in the round, else `test`.
+    elif any(finding["route"] in ("triage", VERIFY) for finding in findings):
+        # The round's triage is not finished — or, in a run with a queue, its queue is not:
+        # the stage that left it finishes it — the fix stage where one has left a counted
+        # cycle or a report in the round, else `test` — and the position says which of the
+        # two it finds: a row nobody graded (`triage`), a row of the queue (`verify`).
+        finishes = {word: True for word in ("triage", VERIFY) if any(finding["route"] == word for finding in findings)}
         if fixed_in(last) or any(held["reports"] for held in last["fix_cycles"]):
-            fix["triage"] = True
+            fix.update(finishes)
         else:
             attempt = attempted("test", last)
-            test = {"round": number_, "attempt": attempt, "triage": True} if attempt else refused("attempts-spent")
+            test = dict({"round": number_, "attempt": attempt}, **finishes) if attempt else refused("attempts-spent")
     return placed_(test, fix)
 
 
@@ -4211,6 +4449,24 @@ def document(run_dir, run):
         for key in by_name(held["facts"]["awaiting"]):
             if key not in keys:
                 spoiled(ledger_rel, "lacks %s, a finding round %d's record names as left without a grade or a verdict by its triage" % (key, held["round"]))
+    # A RUN WITH AN ORDER HAS A QUEUE, and every row of its ledger carries a class: no
+    # writer leaves one without, so a row that lacks its class had it deleted — and what is
+    # deleted is missed.
+    order = facts.get("order")
+    if order is not None:
+        bare = [key for key in keys if key not in classes]
+        if bare:
+            spoiled(classes_rel, "lacks the class of %s — the run holds an order, and in such a run every row of the ledger (%s) is added with its class: a class is written with its row and removed by nobody. Take the file back from the commit that holds it" % (", ".join(bare), ledger_rel))
+    # … AND A BUDGET, the round's `test` stage's: what it may spend, what the latest round
+    # has spent of it, and what is left — nothing is ever spent where the opening wrote no
+    # number. And the launches of each finding's verifier in that round, and the rows the
+    # human put into the queue.
+    spent = spent_in(triage, rounds[-1]["round"]) if rounds else 0
+    limit = facts.get("budget")
+    budget = {"limit": limit, "spent": spent, "left": None if limit is None else max(limit - spent, 0)}
+    launched = launched_in(run_dir, rounds[-1]["round"]) if rounds and order is not None else {}
+    ruled_in = facts.get("queued") or []
+    inside = []
     findings = []
     for key, row in zip(keys, ledger_rows):
         grade, bound = grade_read(ledger_rel, key, row[6])
@@ -4239,26 +4495,43 @@ def document(run_dir, run):
         # many triage records of the latest round in a row have left it so, and whether
         # the next one is due or — spent — the human's to rule or to grant.
         finding["awaits"] = None
-        if finding["route"] == "triage":
+        if key in classes:
+            finding["class"] = classes[key]
+        # IN A RUN WITH A QUEUE (the header's second table) a row AWAITS A VERDICT where
+        # triage sent it on and none is on record, or a verifier handed it on and nobody
+        # graded it — what is handed on enters without a grade. Such a row is no triage's.
+        if finding["route"] == "triage" and order is not None and (finding["why"] == "unverified" or classes[key]["parent"] is not None):
+            kept_out = outside(finding, order)
+            if kept_out is not None and not (key in ruled_in and kept_out in [word for word, _, may in OUTSIDE if may]):
+                # In no queue, and never to be verified: shown, with why, and holds nothing.
+                finding["route"], finding["why"] = LISTED, kept_out
+            else:
+                # LEFT UNVERIFIED counts the launches of its verifier that left no verdict —
+                # never a record, which leaves every row unverified that nobody reached.
+                count = launched.get(key, 0)
+                due = count < AUTOMATIC or "%s p%d" % (key, count + 1) in again
+                finding["awaits"] = {"why": "unverified", "passes": count, "retry": "due" if due else "spent"}
+                if not due:
+                    finding["route"], finding["why"] = "human", "unverified" + AFTER_RETRY
+                else:
+                    # A ROW OF THE QUEUE: verified while budget is left. Once it is spent
+                    # nobody reached the row: a route item is the human's, and holds the
+                    # close; a behaviour item is shown, and holds nothing.
+                    inside.append(finding)
+                    if budget["left"] != 0:
+                        finding["route"], finding["why"] = VERIFY, "queued"
+                    else:
+                        finding["route"], finding["why"] = ("human" if classes[key]["kind"] == "route" else LISTED), UNREACHED
+        elif finding["route"] == "triage":
             why, count = passes.get(key, (None, 0))
             count = count if why == finding["why"] else 0
             due = count < AUTOMATIC or "%s p%d" % (key, count + 1) in again
             finding["awaits"] = {"why": finding["why"], "passes": count, "retry": "due" if due else "spent"}
             if not due:
                 finding["route"], finding["why"] = "human", finding["why"] + AFTER_RETRY
-        if key in classes:
-            finding["class"] = classes[key]
         findings.append(finding)
     hold_census(run_dir, ledger_rel, keys)
-    # A RUN WITH AN ORDER HAS A QUEUE, and every row of its ledger carries a class: no
-    # writer leaves one without, so a row that lacks its class had it deleted — and what is
-    # deleted is missed.
-    queue = None
-    if facts.get("order") is not None:
-        bare = [key for key in keys if key not in classes]
-        if bare:
-            spoiled(classes_rel, "lacks the class of %s — the run holds an order, and in such a run every row of the ledger (%s) is added with its class: a class is written with its row and removed by nobody. Take the file back from the commit that holds it" % (", ".join(bare), ledger_rel))
-        queue = queue_of(facts["order"], findings)
+    queue = None if order is None else queue_of(order, inside)
     items = [
         {
             "item": untick(row[0]),
@@ -4297,7 +4570,7 @@ def document(run_dir, run):
     # spent, the step is the human's — who may grant one more (round-set: again).
     step = following["stop"]["then"] if following["stop"] else following["next"]
     finishing = "fix" if rounds and (fixed_in(rounds[-1]) or any(had["reports"] for had in rounds[-1]["fix_cycles"])) else "test"
-    stage = {"test": "test", "retest": "test", "fix": "fix", "triage": finishing}.get(step)
+    stage = {"test": "test", "retest": "test", "fix": "fix", "triage": finishing, VERIFY: finishing}.get(step)
     human_stages = [entry for entry in position.pop("spent") if entry["stage"] == stage and (position[stage].get("refused") == "attempts-spent" or (stage == "fix" and "refused" not in position["fix"]))]
     if human_stages:
         position[stage] = {"refused": "attempts-spent", "round": human_stages[0]["round"]}
@@ -4328,8 +4601,8 @@ def document(run_dir, run):
         "human_stages": human_stages,
         **following,
         "position": position,
-        # … and of a queue only a run that has one says anything.
-        **({} if queue is None else {"queue": queue}),
+        # … and of a queue, and of its budget, only a run that has one says anything.
+        **({} if queue is None else {"queue": queue, "budget": budget}),
     }
 
 

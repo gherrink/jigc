@@ -8563,7 +8563,7 @@ fn the_state_digest_carries_the_queue_as_keys_and_counts() {
     let (seen, document) = rig.state_digest("test-1");
     assert_eq!(
         seen.line["state"]["queue"],
-        json!({"budget": 30, "hand_on": 2, "length": 13,
+        json!({"budget": 30, "hand_on": 2, "spent": 0, "left": 30, "length": 13,
                "first": ["route-01", "route-02", "route-03", "route-04", "route-05", "route-06",
                          "route-07", "route-08"],
                "classes": [{"kind": "route", "origin": "under-confirmed", "length": 0},
@@ -8601,7 +8601,7 @@ fn the_state_digest_carries_the_queue_as_keys_and_counts() {
     );
     assert_eq!(
         bare.state_digest("test-1").0.line["state"]["queue"],
-        json!({"budget": null, "hand_on": null, "length": 0, "first": [],
+        json!({"budget": null, "hand_on": null, "spent": 0, "left": null, "length": 0, "first": [],
                "classes": [{"kind": "route", "origin": "hunt", "length": 0}]})
     );
 
@@ -8620,6 +8620,99 @@ fn the_state_digest_carries_the_queue_as_keys_and_counts() {
     assert!(
         document.get("queue").is_none(),
         "the control: the document of such a run says nothing of one"
+    );
+    assert_eq!(seen.line["unfit"], json!([]), "{}", seen.raw);
+}
+
+/// **The state's digest says what the budget has left, and that a stage continues** (the
+/// build plan of the reshaped `test` stage, `T2b`: *spent is counted by the script … `next`
+/// is `verify` while a ranked row is unverified and budget is left*). In a run with a queue
+/// the digest's `queue` carries `spent` — the verdicts on record in the round's `test`
+/// stage — and `left`, null where the opening wrote no budget; `next` is `verify` while a
+/// row of the queue is unverified and budget is left, and the `test` stage's position
+/// carries `verify`: the invocation that continues. Spent, the step is the human's, and no
+/// position says `verify`.
+#[test]
+fn the_state_digest_says_what_the_budget_has_left_and_that_a_stage_continues() {
+    let rig = StepRig::new("digest-budget");
+    rig.wrote(
+        &format!("run-set --run {RUN}"),
+        &json!({"stop": "at-the-bound", "rounds": 3, "clauses": ["audit-clean"],
+                "previous": "1.0.0-rc.24", "previous-commit": "e".repeat(40), "scope": "delta",
+                "budget": 2, "hand-on": 2, "order": ["route hunt"]})
+        .to_string(),
+    );
+    rig.wrote(
+        &format!("scope-set --run {RUN} --round 1"),
+        &json!({"included": [{"door": "jigc setup", "registry": "verbs", "derivation": HOSTILE}],
+                "excluded": []})
+        .to_string(),
+    );
+    let rows: Vec<Value> = (1..=3)
+        .map(|n| {
+            json!({"key": format!("route-{n:02}"), "doctype": "jigc-feedback", "round": 1,
+                   "source": HOSTILE, "door": "jigc setup", "clause": "audit-clean",
+                   "repro": HOSTILE, "kind": "route", "origin": "hunt", "route": HOSTILE})
+        })
+        .collect();
+    rig.wrote(&format!("ledger-add --run {RUN}"), &json!(rows).to_string());
+    let verdict = |key: &str| json!({"key": key, "grade": "breaks", "verdict": "refuted"});
+    rig.wrote(
+        &format!("triage-set --run {RUN} --round 1"),
+        &json!([verdict("route-01"), {"key": "route-02", "grade": "breaks"},
+                {"key": "route-03", "grade": "breaks"}])
+        .to_string(),
+    );
+    rig.wrote(
+        &format!("round-set --run {RUN} --round 1"),
+        &json!({"candidate": "c".repeat(40)}).to_string(),
+    );
+    let (seen, document) = rig.state_digest("test-1");
+    let state = &seen.line["state"];
+    assert_eq!(
+        state["queue"],
+        json!({"budget": 2, "hand_on": 2, "spent": 1, "left": 1, "length": 2,
+               "first": ["route-02", "route-03"],
+               "classes": [{"kind": "route", "origin": "hunt", "length": 2}]}),
+        "{}",
+        seen.raw
+    );
+    assert_eq!(
+        json!([
+            state["next"],
+            state["position"]["test"],
+            state["untriaged"]["count"]
+        ]),
+        json!(["verify", {"round": 1, "attempt": 1, "verify": true}, 0]),
+        "the stage continues its queue, and no row is triage's: {}",
+        seen.raw
+    );
+    assert_eq!(seen.line["unfit"], json!([]), "{}", seen.raw);
+    assert_eq!(
+        document["budget"],
+        json!({"limit": 2, "spent": 1, "left": 1}),
+        "the control: the document's own count"
+    );
+
+    // Spent: the step is the human's, and nothing says `verify`.
+    rig.wrote(
+        &format!("triage-set --run {RUN} --round 1"),
+        &verdict("route-02").to_string(),
+    );
+    let (seen, _) = rig.state_digest("test-2");
+    let state = &seen.line["state"];
+    assert_eq!(
+        json!([
+            state["next"],
+            state["queue"]["spent"],
+            state["queue"]["left"],
+            state["queue"]["first"],
+            state["human_list"],
+            state["position"]["test"]
+        ]),
+        json!(["rule", 2, 0, ["route-03"], 1, {"refused": "round-open", "round": 1}]),
+        "{}",
+        seen.raw
     );
     assert_eq!(seen.line["unfit"], json!([]), "{}", seen.raw);
 }

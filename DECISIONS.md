@@ -2,6 +2,116 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — What follows from the queue and the budget: a row of the queue is verified while budget is left, a spent budget is the human's step, only a queued route item holds the close — and the human's three rulings on the queue: a budget raised, another order, a row put in by key (the plan's `T2b`; the builder's choices inside it)
+
+**What.** [`dev/stabilize-record`](dev/stabilize-record) computes the route, the next step and the position of a run with a queue from its queue and its budget, and takes the three writes by which the human rules on that queue; [`dev/stabilize-step`](dev/stabilize-step) carries what is spent and left, and that a stage continues, in the state's digest ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §4, `T2b`, the migration order's Phase A; ruling 1 of *2026-10-10 — The reshaped `test` stage, corrected by a count the same day*; ruling 3 of *2026-10-11 — The reshaped `test` stage's three open questions, ruled*). The record script's header holds it as **a second table** — *IN A RUN WITH A QUEUE* — beside the one of every other run, which stands as it stood. In one place:
+
+- **A row that awaits a verdict** — triage sent it on and no verdict is on record, or a verifier handed it on and nobody graded it — is no longer triage's. In the queue it is routed `verify` (`queued`) while budget is left. In no queue it is routed `listed`, and its `why` says what keeps it out: `lead` · `parent-did-not-reproduce` · `class-off-the-order`.
+- **Spent is counted by the script**: the verdicts on record in the latest round — one a finding, `undrivable` among them, across however many invocations. The state says `budget: {limit, spent, left}`; a run that holds no budget never spends one.
+- **Once the budget is spent no row is routed `verify`.** A route item the queue still holds is the human's (`human`, `unreached`) and holds the close; a behaviour item is `listed` (`unreached`) and holds nothing. Both are still the queue, in their rank.
+- **`next`** gains `verify`, between `triage` and `rule`. `triage` is the step only for a row nobody graded and nobody handed on, and it is the step first, whatever the queue holds. A finding is open while its route is neither `recorded` nor `listed`.
+- **The position** of the stage that left the round unfinished carries `verify: true` where a row is routed `verify`, beside `triage: true` where one is routed `triage` — both where both are.
+- **Left unverified twice counts launches that left no verdict**, never a record: a report of the finding's verifier among the latest round's `test` reports, and no verdict. Two, and the row is the human's (`unverified-after-retry`) and out of the queue until he grants one more.
+- **Three writes of a ruling**, all `run-set`, as a raised bound is: a `budget` raised; another `order`; and `queued`, the keys of the rows the human puts into the queue.
+
+**The second table, as a caller reads it.**
+
+| A row that awaits a verdict | Budget left | Budget spent |
+|---|---|---|
+| in the queue, a route item | `verify` · `queued` | `human` · `unreached` — holds the close |
+| in the queue, a behaviour item | `verify` · `queued` | `listed` · `unreached` — holds nothing |
+| in no queue: a lead | `listed` · `lead` | the same |
+| in no queue: handed on under a parent that did not reproduce | `listed` · `parent-did-not-reproduce` | the same |
+| in no queue: its class is off the order | `listed` · `class-off-the-order` | the same |
+| its verifier was launched twice and left no verdict | `human` · `unverified-after-retry`, out of the queue | the same |
+| nobody graded it and nobody handed it on | `triage` · `ungraded` — once more, then the human's | the same |
+
+Every other row is routed by the first table. `next`, the first that holds: `not-ready` · `test` · **`triage`** (a row is routed `triage`) · **`verify`** (a row is routed `verify`) · `rule` · `fix` · and the clause table's four as before. The position: `test {round, attempt, verify: true}` is the invocation that continues, `{…, triage: true, verify: true}` one that grades first, and with the budget spent and nothing to grade `test` is refused `round-open`, as ever.
+
+**Chosen where the plan left it to the builder — and what was rejected.**
+
+- **Two new words for a route, `verify` and `listed`.** *Rejected:* keeping `triage (unverified)` for a queued row and deriving the step from the queue — `untriaged` and the read of that name would hand a stage's one triage every row of the queue again, which is the second grading the ruling ends; `recorded` for a row that is shown — a row the human may still put into the queue, or that a raised budget reaches, is not one about which *nothing more is done*.
+- **`verify` goes ahead of the human's list and of a fixer; `triage` ahead of `verify`.** The plan says *while a ranked row is unverified and budget is left*, without a condition; and its `B1` says the row nobody graded is graded first.
+- **A budget is raised only at its own stop, and never goes down.** Taken where the run holds none, as `T2a` left it; where it holds one, only while it is spent and the queue holds a row nobody reached — the state's `budget.left` is 0 and `queue.ranked` is not empty — and only upward. It is the precedent of the two bounds (*raised only at the stop that names it … the raise is the go*) and what `T2a` asked for: a raise lifts no stop nobody has seen. *Rejected:* a raise at any step (it pre-empts a stop); a raise only while `next` is the human's — with a fixer's finding open and only behaviour items unreached the step is `fix`, and the human could not reach them; a budget that goes down — at its own stop every lower number is at or below what is spent, which the plan leaves a row (`wf-stop-view-later`). To stop verifying early the human takes classes off the order, or rules the rows.
+- **Another order is taken at any step.** It is the human's ruling on the queue as a disposition is his ruling on a finding, and the writers' table has that row already: it can add work or record a ruling. A class it drops is in no queue from then on, and an unreached route item of it holds the close no longer — the ruling of 2026-10-11, 3, names *a class the human took off the order* among what is shown and not verified. *Rejected:* holding it to a stop — the ruling has the human reorder *on the run's own numbers*, and the first of those are on record after the stage's first record, where the step is `verify`.
+- **A row is put into the queue as a fact of the run, `queued`**, a list the record adds to. *Rejected:* a cell of the row's class — `classes.md` is `T1`'s table and a kind stands once its row has a verdict; a fact of the round — the queue is the run's, and what a later round does with an earlier round's rows is the human's before round 2 (`wf-round-two-queue`).
+- **The write is built on why a row is outside the queue** — one table of the script, `OUTSIDE`: the word, what holds of the row, and whether the human may put such a row in. The row's route says the word; the write takes a row whose route is `listed` for a reason that table allows, and refuses every other row — one that is in the queue already, has its verdict, is ruled, or is triage's — and a lead by name. Each key of a call is held to the state as it stands before the call.
+- **A row put in whose class the order does not name is ranked after every class of the order**, ties by the ledger's order; one whose class the order names — now, or after a later reordering — is ranked like any row of that class. The queue's lengths list the order's classes and, after them, each class a row was put in under.
+- **A launch is a report of the reporter `verify-<key>`** among the latest round's `test` reports — the name the plan fixes for a verifier in `T3a`'s acceptance. It is what the script can see of a launch without a caller's word. *Rejected:* counting triage records, as every other run does — a stage that records twice leaves every row unverified that the budget did not reach (`T2a`'s entry); counting an entry recorded again without a verdict — the stage's first record names every row triage graded, and an item handed on has no entry at all.
+- **A row that is the human's after two launches is out of the queue** until one more is granted (`reverify`, the fact that exists): the queue is what a verifier is launched for.
+- **The state says `budget` beside `queue`, not inside it**: the queue is rows, the budget what bounds them; `queue` keeps the two fields `T2a` gave it.
+- **In a run with a queue no triage record counts a pass against a row that awaits a verdict**: `triage-set` names only the rows nobody graded in the round's `awaiting`.
+
+**Where the plan's §3 and the ruling differ, and the ruling wins.** §3 says *rule (budget spent with route items unreached …)* and that *nothing under a parent that did not reproduce is verified*. By the ruling on `Q3` only a route item **in the queue** holds the close, and a row under such a parent **is** verified where the human put it into the queue by key. Both are built as the ruling has them.
+
+**Phase A, shown.** `a_run_without_an_order_holds_the_bytes_it_held` is green **unmodified**, and so are the first table's two arms — `every_finding_is_routed_by_its_grade_its_disposition_and_the_rounds_doors`, `the_next_step_is_computed_from_the_runs_recorded_state` — and the position's. Every arm of this task that drives a run with a queue drives the same rows in a run without an order beside it: there the row is routed `triage`, the step is `triage`, the state says nothing of a budget, and `queued` is refused.
+
+**Red first.** The thirteen arms were written before either script changed and run on the parent's: thirteen red. Ten at an assertion on what the parent answers — a queued row routed `triage (unverified)`, the step `triage`, no `budget` in the state, a row left by two records routed `human` — and three at a call the parent answers otherwise: `run-set {"queued": …}`, which it refuses for want of the field (*a run's facts has no field "queued"*) where one arm asks for `no-such-row` and one for the write, and a second `budget`, which it refused as written once where the arm asks for a refusal as not asked for. What the later parts of each arm are worth is the mutants'.
+
+**Mutants of the finished scripts** — thirty, each one edit, the task's thirteen arms and four of the arms beside them run on each; none survived. The arm named is the first that went red, by name.
+
+| The edit | Arms that went red |
+|---|---|
+| verify is not ahead of the human's list | `a_row_nobody_reached_is_not_counted_as_left_unverified` · two more |
+| a row of the queue is the step before a row nobody graded | `a_row_nobody_graded_is_triage_whatever_the_queue_holds` · two more |
+| a spent budget still routes verify | `a_budget_the_human_raises_reopens_the_queue` · seven more |
+| an unreached behaviour item is the human's too | `a_row_nobody_graded_is_triage_whatever_the_queue_holds` · four more |
+| an unreached route item is only listed | `a_budget_the_human_raises_reopens_the_queue` · seven more |
+| a listed row is open | `a_spent_budget_ends_in_the_humans_step_and_never_in_verify` · four more |
+| an undrivable finding spends nothing | `a_spent_budget_ends_in_the_humans_step_and_never_in_verify` · one more |
+| spent is counted over every round | `the_budget_is_counted_across_the_invocations_of_one_stage` |
+| a record counts against a row of the queue | `a_row_nobody_reached_is_not_counted_as_left_unverified` |
+| a launch that left no verdict is not counted | `a_row_nobody_reached_is_not_counted_as_left_unverified` |
+| a row that is the human's after two launches stays in the queue | `a_row_nobody_reached_is_not_counted_as_left_unverified` |
+| a budget is raised wherever a caller likes | `a_budget_the_human_raises_reopens_the_queue` · one more |
+| a budget is raised over an empty queue once it is spent | `a_budget_the_human_raises_reopens_the_queue` |
+| a budget goes down | `a_budget_the_human_raises_reopens_the_queue` |
+| a lead is refused like any row, and not by name | `a_lead_is_refused_a_place_in_the_queue` |
+| a lead may be put in | `a_lead_is_refused_a_place_in_the_queue` · one more |
+| any row is put into the queue, whatever its route | `a_key_the_ledger_lacks_is_refused_a_place_in_the_queue` |
+| a row is put into the queue of a run without an order | `a_key_the_ledger_lacks_is_refused_a_place_in_the_queue` |
+| a row put in is ranked first | `a_row_the_human_puts_into_the_queue_is_in_it_from_then_on_and_not_before` · one more |
+| a row put in is not in the queue | `a_row_the_human_puts_into_the_queue_is_in_it_from_then_on_and_not_before` · two more |
+| a row under a parent that did not reproduce is not put in | `a_lead_is_refused_a_place_in_the_queue` · two more |
+| the queue's lengths leave out the classes a row was put in under | `a_row_the_human_puts_into_the_queue_is_in_it_from_then_on_and_not_before` |
+| an order is written once | `a_row_the_human_puts_into_the_queue_is_in_it_from_then_on_and_not_before` · one more |
+| an item a verifier handed on is triage's | `a_lead_is_refused_a_place_in_the_queue` · four more |
+| the position does not say that a stage continues | `a_row_nobody_graded_is_triage_whatever_the_queue_holds` · two more |
+| the attempts of a stage that verifies are not counted | `budget_left_and_a_ranked_row_unverified_is_verify` |
+| a run without an order says a budget | `a_budget_the_human_raises_reopens_the_queue` · two more |
+| a run without an order routes by the second table | `in_a_run_with_a_queue_a_finding_is_routed_by_its_class_the_order_and_the_budget` |
+| the digest leaves out what is spent and left | `dev_stabilize_step::the_state_digest_carries_the_queue_as_keys_and_counts` · one more |
+| the digest's position drops that a stage continues | `dev_stabilize_step::the_state_digest_says_what_the_budget_has_left_and_that_a_stage_continues` |
+
+**The assertions this task carried.** In the record suite, three of `T2a`'s: `a_run_with_an_order_says_that_it_has_a_queue_and_one_without_answers_as_it_did` — another order is no longer refused (it moved to this task's arm for it), another budget is refused as not asked for and no longer as written once, and `hand-on` stands as it stood; `the_queue_is_the_order_of_the_opening_record_and_a_class_off_it_is_not_in_it` — three rows that are in no queue are routed `listed`, where they were `triage`; and `every_writer_and_every_fact_is_taken_only_where_the_state_asks_for_it`, which holds a row for every fact the script names: `run-set queued`, refused at every place of that table, none of which holds an order — the rows of `budget`, `hand-on` and `order` stand, with their comments. In the step suite, one: `the_state_digest_carries_the_queue_as_keys_and_counts` — the digest's `queue` has `spent` and `left`. **Nothing outside the two suites**: no other suite of `g_tooling` pins a text this task moved, by the commit's gate, which runs that target whole.
+
+**What `T3a` owes because of this.**
+
+- **A filed verdict is spent in one place**: `spent_in` of the record script. A verdict that is filed and that no record holds yet is added there, and nowhere else.
+- **An item a verifier noticed beyond the opening's `hand-on` number is one more row of `OUTSIDE`** — its word, what holds of the row as the state has it, and `True` — placed where it is the first that holds of such a row. The ruling's write then takes it by key with no change of its own, and its rank and its route follow. What marks such a row on record is `T3a`'s.
+- **The verifier's reporter is `verify-<key>`**: it is what a launch is counted by.
+- **How a verdict reaches an item that was handed on** is still open (`T2a`'s entry); this task's arms give such a row its verdict by a triage entry that grades it in the same breath.
+
+**What later tasks owe.**
+
+- `T5b`: the stage's first record names the round's candidate, or the state answers `test` and never `verify`.
+- `T6a`, `T6b`: a launch that left neither a report nor a verdict is counted by nothing here; what bounds a stage whose verifiers die silently is the wave's own rule and the count of the stage's attempts.
+- `T7`: `hand-on` is written once and no ruling changes it; a budget is raised only at its own stop, which the digest shows as `queue.left` 0 with a `length` above 0; and `queued` — by key, many in one invocation — is a ruling about the run that no task of the plan names.
+- `T4`: what a stop shows is on every row — `listed` with why, `human` with `unreached`.
+
+**What is not established.**
+
+- **Nothing of a stage reads any of it.** No harness path, no scenario of the simulation.
+- **A launch that left nothing is counted by nothing**, as above.
+- **Every verdict the latest round's triage record holds is spent** — a fix stage's too, in a round that has one: the `fix` half's verify shape is a row (`wf-fix-verify-shape`).
+- **The budget that routes is the latest round's.** A re-run inside an earlier round records in that round; what it spends is counted there, and the state's `budget` does not show it. `T6b` has an arm for it.
+- **A key stays on the `queued` list** once its row is verified, ruled, or turned into a lead; the list is what the human asked for, and the queue is computed.
+- **A budget cannot be corrected downward**, at the opening either.
+- **No place of the writers' table holds an order**: where the three writes are taken and refused is this task's own arms.
+- **The workflow's document** says nothing of this yet; it is `T10`'s.
+- **Not read whole for this task**: the record suite beyond its rig, its tables and the arms of `T1` and `T2a`; [dev-workflow.md](implementation/dev-workflow.md), [stabilization-workflow.md](implementation/stabilization-workflow.md) and [public-hygiene.md](implementation/public-hygiene.md) beyond what the project's instructions carry of them.
+- **The two suites of the write-set ran whole on the finished scripts, on a machine under load**: 189 of 190, the one red `dev_stabilize_step::what_a_test_holds_is_ended_by_its_rig_however_the_test_ends` — an arm about how a held command ends, which this task does not touch — and it passes alone. That run was made before the header's text, two assertions the mutants asked for and `rustfmt`; the commit's gate is the measure.
+
 ## 2026-10-11 — The opening's numbers, and the queue: a run that holds an order has a queue and says so, every row of such a run carries a class, the queue is its unverified rows ranked by the order — and a run without an order holds the bytes it held (the plan's `T2a`; the builder's choices inside it)
 
 **What.** [`dev/stabilize-record`](dev/stabilize-record) takes three more facts of a run and computes the queue of a `test` stage; [`dev/stabilize-step`](dev/stabilize-step) carries it in the state's digest ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §4, `T2a`, the migration order's Phase A; ruling 1 of *2026-10-10 — The reshaped `test` stage, corrected by a count the same day*; ruling 2 of *2026-10-11 — The reshaped `test` stage's three open questions, ruled*). The two scripts' headers are the contract; in one place:
