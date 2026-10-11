@@ -63,6 +63,10 @@
 #   r<N>/checks/<item>.a<A>.json            a held check's verdict, as dev/stabilize-step
 #                                           judged its command — written once, with the
 #                                           result of that run           (result-set)
+#   r<N>/verdicts/<reporter>.a<A>.json      A FILED VERDICT: what a finding's verifier found,
+#                                           and what it hands on — written once, the
+#                                           moment it returns, and held by no table until
+#                                           the stage's next record       (verdict)
 #   .pending.json                           the journal (below) — never committed
 #   r<N>/reports/test/<reporter>.a<A>.md    a test-stage report          (report)
 #   r<N>/reports/fix/c<K>/<reporter>.a<A>.md  a fix-stage report, cycle K  (report)
@@ -372,6 +376,113 @@
 #       and one that changes from ungraded to unverified starts at 1 (state: `awaits`).
 #       Prints {"triage", "ledger", "recorded"}.
 #
+#   dev/stabilize-record verdict --run R --round N --reporter verify-<KEY> --attempt A
+#                        [--scratch DIR]... <filing.json
+#   dev/stabilize-record verdict … --from FILE
+#       A VERIFIER FILES ITS VERDICT THE MOMENT IT RETURNS (the build plan of the reshaped
+#       `test` stage, T3a; ruling 4 of 2026-10-10: "a verdict is recorded when it returns,
+#       never only at the stage's end"; the ruling of 2026-10-11, 1: a stage records twice,
+#       and between its two records each verifier files its verdict through this script).
+#       The filing on stdin — or, with --from, the file the verifier wrote it to (A WRITER
+#       FED FROM A FILE, below) — is one JSON object:
+#         key          the finding the verdict is for — required
+#         verdict      confirmed | refuted | undrivable — required
+#         candidate    the sha256 of the candidate's binary the verifier drove — required
+#         refutation   beside refuted, and required there: does-not-reproduce | intended |
+#                      breaks-no-clause
+#         reason       beside undrivable, and required there: why, in a word
+#         regression   beside confirmed: true | false, or not said where the verifier does
+#                      not know
+#         previous     the sha256 of the previous release's binary, where it drove one
+#         hands_on     WHAT IT HANDS ON, an array, in the verifier's own order — each
+#                      {key: what the item's key is MINTED from, doctype, door, clause,
+#                      repro, kind — required — and route or commands, code, site, as a
+#                      row's class has them (ledger-add)}
+#       It is written to r<N>/verdicts/<reporter>.a<A>.json — ONE FILE, WRITTEN ONCE, AND
+#       NOTHING OF A TABLE: no row, no grade, no count moves, and a filed verdict is on
+#       this machine's disk, in no commit, until the stage's next record takes it (the
+#       plan's T3b). Its text goes through the one write every writer's goes through (WHAT
+#       A WRITER DOES TO ITS TEXT, below): host paths replaced, the public-hygiene scan
+#       hard — a filing with a hit is refused whole, and the filings beside it stand.
+#       WHAT MAKES A FILED VERDICT COUNT, each held here by its own refusal, and — what the
+#       disk can change afterwards — again by every read of the state (state: filed):
+#         (i)   THE REPORT FIRST. The report of the same reporter and attempt is on disk
+#               among the round's `test` reports (bad-value), AND THE FILING STORES ITS
+#               sha256: a report of a dead attempt is held by no report check, so this is
+#               what holds it — a report that changed since, or is gone, and the filing is
+#               no verdict.
+#         (ii)  THE REPORTER'S NAME IS THE KEY'S: `verify-<key>`, the name a launch of the
+#               finding's verifier is counted by (bad-value). The file is named for its
+#               reporter and attempt, and says both.
+#         (iii) THE ATTEMPT IS ONE THE ROUND HAS BEGUN ON RECORD: a report of that attempt
+#               under a reporter that is no finding's verifier lies among the round's
+#               `test` reports — the marker dev/stabilize-step writes before any agent of
+#               an attempt is launched (bad-value). A verifier's own report begins none.
+#         (iv)  THE BINARY IS THE ROUND'S: `candidate` is the hash the round's record names
+#               (round-set: binary), or the filing is refused (bad-value) — a verdict on
+#               another binary is no verdict. AND A REGRESSION IS A FACT ONLY WITH THE
+#               PREVIOUS RELEASE'S BINARY BEHIND IT: without `previous`, or with the
+#               candidate's own hash there, the filing is taken and the fact is UNKNOWN —
+#               filed as not said, never as `no` (the call prints why: `unknown`).
+#         (v)   ONCE IS ONCE PER KEY PER ROUND: a second filing for the finding — under
+#               whatever attempt — and one for a finding whose verdict the round's triage
+#               record holds are refused (exists).
+#       AND THE ROW: the key is a row of the state's ledger — of the ledger, or an item a
+#       filed verdict handed on (no-such-row) — that AWAITS A VERDICT (state: IN A RUN WITH
+#       A QUEUE): triage sent it on, or a verifier handed it on, in the queue or outside
+#       it, reached by the budget or not. A row triage graded no break, out of scope or in
+#       need of a bound, a row nobody graded and nobody handed on, and a row that has its
+#       verdict take none (bad-value). The round is the run's latest, and its record names
+#       the binary (bad-value); and THE RUN HAS A QUEUE — in a run without an order no
+#       verdict is filed (bad-value), and nothing reads one.
+#       WHAT THIS SCRIPT CANNOT HOLD IS WHO CALLED IT — a declared bound, the same as for
+#       a report (WHAT THIS SCRIPT CANNOT KNOW, below). The harness narrows it: it takes a
+#       verdict of its own invocation only where the word and the path a verifier returns
+#       agree with what this call printed.
+#       WHAT IT HANDS ON (the human's ruling of 2026-10-11, 2: "a verifier hands on at
+#       most N … each handed-on item carries the route line the verifier saw printed, or
+#       its commands, and enters the ranked queue without a triage; what the verifier
+#       noticed beyond N is recorded as what it is — a route item stays a route item — and
+#       is in no queue"). Each item is A ROW, of the state at once and of the ledger once
+#       a record takes the filing:
+#         its key    MINTED HERE from what the verifier proposes: its letters and digits
+#                    as a slug, cut to 93 characters — so that `verify-<key>`, the name
+#                    the item's own verifier reports under, is still a slug of at most
+#                    100 — and unique among the ledger's keys and every key a filing
+#                    minted, by a number at its end. A proposal without a letter or a
+#                    digit is refused (bad-value).
+#         its class  its kind as the verifier says it WITH ITS EVIDENCE — and A KIND
+#                    WITHOUT ITS EVIDENCE IS A LEAD, as for any row; where it comes from
+#                    COMPUTED from this filing's own verdict (under-confirmed · under-no-
+#                    repro · under-not-a-break), never said; its parent this filing's
+#                    finding; the refusal's code and the site where the verifier names
+#                    them, text and no more. A verifier that could not drive its finding
+#                    established nothing, and hands nothing on (bad-value).
+#         its place  THE FIRST N ITEMS THAT CARRY THEIR KIND'S EVIDENCE ARE HANDED ON, N
+#                    the opening's number (run-set: hand-on), in the verifier's own
+#                    order; every later one is BEYOND THE NUMBER: it keeps its kind, is
+#                    in no queue, is listed with why (beyond-hand-on) and holds nothing —
+#                    until the human puts it into the queue by key (run-set: queued). A
+#                    lead takes no place of the N. IN A RUN WHOSE OPENING WROTE NO NUMBER
+#                    NOTHING IS HANDED ON TO THE QUEUE: every item is beyond it — the
+#                    number is what bounds a verifier, and a run without one never
+#                    multiplies by default.
+#       WHO NAMED A CODE OR A SITE IS KEPT: the filed file says its reporter, and each
+#       item its code and its site — and the file stays where it is once a record took it.
+#       The file is the record of what was handed on, by whom and in which place (state: a
+#       row's `handed_on`); nothing is counted, ranked, promoted or merged on it here.
+#       THE FILE is JSON, its members in one order — key, reporter, round, attempt,
+#       verdict, refutation, reason, regression, candidate, previous, report: {file,
+#       sha256}, hand_on: the opening's number as the filing found it, handed_on: [{key,
+#       proposed, place, beyond, doctype, source, door, clause, repro, kind, given, origin,
+#       code, site, evidence}] — and, last, sha256: THE SEAL, the hash of the text without
+#       it. A file that is not that text to the byte, under its own seal, is no filed
+#       verdict (vet; state: filed).
+#       Prints {"verdict": the path, "sha256": the hash of the file's bytes, "key", "word":
+#       the verdict, "regression": true | false | null, "unknown": why a regression that
+#       was said is not kept, or null, "handed_on": [{key, proposed, kind, origin,
+#       beyond}], "leads": the keys of the items entered as a lead}.
+#
 #   dev/stabilize-record item-set --run R [--scratch DIR]... <items.json
 #       The run's test set, item by item — one JSON object per instrument item, or an
 #       array of them:
@@ -617,7 +728,13 @@
 #                                grade, bound, verdict, regression, found_with, fork:
 #                                {kind, case, drive} or null}, or null — and, only where
 #                                the verdict says one, `refutation` (which of three) or
-#                                `reason` (why nobody here can drive it)
+#                                `reason` (why nobody here can drive it). WHERE THE
+#                                VERDICT IS FILED AND NO RECORD HOLDS IT (a run with a
+#                                queue), the entry is what the record that takes the
+#                                file would leave — the verdict and its word, `grade`
+#                                null on a row nobody graded — and says `filed`: the
+#                                file; and the row's own `grade` and `graded_by` are
+#                                the verifier's, as a recorded verdict leaves them
 #                        reopened  whether its fix did not hold: it is open again
 #                        route   fix | human | triage | recorded, and `why` — and, IN A
 #                                RUN WITH A QUEUE only, verify | listed (the second table)
@@ -627,6 +744,14 @@
 #                                retry: due | spent} — and for A ROW OF THE QUEUE, in a run
 #                                that has one, `unverified` with passes: how many launches
 #                                of its verifier in the latest round left no verdict
+#                        handed_on  ONLY ON AN ITEM A FILED VERDICT HANDED ON: {by: the
+#                                reporter that named it, round, attempt, place: its
+#                                place among the items of that filing, beyond: whether
+#                                that is beyond the number a verifier hands on, file:
+#                                the filed verdict, recorded: whether the ledger holds
+#                                the row yet}. Until it does, the row is the state's
+#                                alone: read by its key (row), in the queue by its class,
+#                                and in no table
 #                        class   ONLY ON A ROW THAT CARRIES ONE (ledger-add): {kind, given
 #                                — what a lead was given as without its evidence, or null
 #                                — origin, parent, code, site, evidence}; null where the
@@ -670,9 +795,32 @@
 #                      many of it are of each class of the order, in the order's order —
 #                      and after them of each class a row was put into the queue under}
 #         budget       ONLY IN A RUN WITH AN ORDER: {limit: the opening's budget, or null,
-#                      spent: the verdicts on record in the latest round's `test` stage,
+#                      spent: the verdicts on record in the latest round's `test` stage
+#                      and those filed in it, a finding counted once,
 #                      left: what is left of the limit — 0 once it is spent, null where
 #                      there is none: then nothing is ever spent}
+#         filed        ONLY IN A RUN WITH AN ORDER: WHAT IS FILED — every file among the
+#                      rounds' filed verdicts (verdict), in the rounds' order and by
+#                      reporter and attempt within one: [{round, file, reporter, attempt,
+#                      key, verdict, sha256: of the file's bytes, counts, why, recorded,
+#                      handed_on: the keys of the items it hands on}]. `counts` is whether
+#                      the state reads it as a verdict; where it does not, `why`:
+#                        no-verdicts-name  a file there that has no filed verdict's name
+#                        not-a-filing      not the text the writer left under that name,
+#                                          or not under its own seal
+#                        report-gone, report-changed   the report it was filed beside
+#                        another-binary    not the binary the round's record names
+#                        no-such-row       its key is no row — of the ledger, or handed
+#                                          on by a filing that counts
+#                        second-filing     the round holds an earlier filing for the key
+#                      A FILE THAT DOES NOT COUNT IS NAMED AND COUNTED BY NOTHING — never
+#                      refused: its finding is unverified again, nothing is spent, and
+#                      what it handed on is no row. `recorded` is whether that round's
+#                      triage record holds a verdict for the key: the record took the
+#                      file (the plan's T3b), and the row is then read from the record.
+#                      THE FILES OF A ROUND THAT NO RECORD HOLDS are those with `counts`
+#                      and not `recorded`; the items no record holds yet are the rows
+#                      whose `handed_on` says `recorded: false`.
 #       A cell is given as the table holds it, a `|` unescaped; `-` for none is null
 #       where the cell is not free text. A table that is not this script's, a cell
 #       outside its vocabulary, a triage record that disagrees with the doors it was
@@ -760,14 +908,26 @@
 #       THE BUDGET is the round's `test` stage's (run-set: budget). SPENT is counted here,
 #       and by no caller: the verdicts on record in the latest round — one a finding,
 #       confirmed, refuted or undrivable, in however many invocations and records they
-#       arrived. A launch that left nothing spends nothing. LEFT is the budget less what
-#       is spent; a run that holds no budget never spends one.
+#       arrived — AND THE VERDICTS FILED in it that count (verdict), a finding whose
+#       verdict is filed and recorded counted once. A launch that left nothing spends
+#       nothing. LEFT is the budget less what is spent; a run that holds no budget never
+#       spends one.
+#       A VERDICT COUNTS FROM THE MOMENT IT IS FILED: the state reads the filed files no
+#       record holds, and a finding whose verdict is filed is verified — routed by the
+#       first table as a recorded verdict routes it, out of the queue, its kind standing
+#       (ledger-set). AND AN ITEM HANDED ON, WHICH NOBODY GRADED, IS VERIFIED BY ITS FILED
+#       VERDICT ALONE: a filing is no triage entry, and needs no grade beside it —
+#       confirmed, it is routed by whether its door is inside the round's test set;
+#       refuted, recorded; undrivable, the human's at once (undrivable), never queued again.
 #       THE ROUTE of a row that AWAITS A VERDICT — triage sent it on (breaks, unclear) and
 #       no verdict is on record, or a verifier handed it on and nobody graded it — which
 #       the first table routes `triage`. Every other row is routed by the first table:
 #         in no queue            listed, with WHY it is in none — the first that holds:
 #                                  lead                      it quotes no route and carries
 #                                                            no commands: nothing to verify
+#                                  beyond-hand-on            a verifier noticed it beyond
+#                                                            the number it may hand on
+#                                                            (verdict): it keeps its kind
 #                                  parent-did-not-reproduce  it was handed on under a
 #                                                            finding refuted as that
 #                                  class-off-the-order       the order does not name its
@@ -1136,8 +1296,8 @@
 #       placed, or one being taken back; the applied batch — {act, round, subject, calls,
 #       checks, files: {path: sha256}, altered: the files of it whose content is no
 #       longer what the batch wrote, discarding: that it is being taken back} — or null;
-#       the files on disk that are written once and never rewritten: every report, and
-#       each round's scope; and THIS SCRIPT'S OWN TEMPORARIES that a killed write left
+#       the files on disk that are written once and never rewritten: every report,
+#       each round's scope, and every filed verdict; and THIS SCRIPT'S OWN TEMPORARIES that a killed write left
 #       (the read holds the shared lock, so none of them is a live writer's). Whether a
 #       file is in a commit is git's to say, and this script reads no git:
 #       dev/stabilize-step holds a tree to this answer, and has `recover` finish what
@@ -1172,7 +1332,10 @@
 #       WRITER DOES TO ITS TEXT, below) by the writers' own functions: it lies below the
 #       run's directory behind no link, a file beside the reports has a report's name,
 #       and one beside the verdicts of the held checks a verdict's — and is the verdict
-#       its result was written from (result-set); it is text; a report ends with its last line; NO HOST PATH IS LEFT IN IT —
+#       its result was written from (result-set); a file among a round's FILED VERDICTS
+#       has a filed verdict's name (bad-id) and IS VETTED AS ONE (bad-value): the text the
+#       writer left there, under its own seal, beside the report whose hash it keeps, on
+#       the binary the round's record names (verdict); it is text; a report ends with its last line; NO HOST PATH IS LEFT IN IT —
 #       the text is what the placeholder replacement leaves, so the public placeholders
 #       themselves pass; no line reddens a standing fence; and the public-hygiene scan,
 #       ONE scan over all of them and the subject. --subject is the subject of the commit
@@ -1213,11 +1376,12 @@
 #
 #   dev/stabilize-record set-aside --run R [--to DIR] [--] PATH...
 #       A FILE THAT IS NO REPORT LEAVES THE TREE. Every PATH is one of the run's files
-#       that are written once — a report, a round's scope — and is vetted as `vet` does;
+#       that are written once — a report, a round's scope, a filed verdict — and is vetted as `vet` does;
 #       each that is refused is MOVED to DIR, a directory outside the repository (one is
 #       minted under the system temp directory where none is named), under its path with
 #       `/` as `__`. A file that passes stays. The launched reporter whose file left has
-#       then left no report, which `check-reports` says and a stage has a row for. A
+#       then left no report, which `check-reports` says and a stage has a row for; and a
+#       finding whose filed verdict left is unverified again, which the state says. A
 #       table is never set aside: a batch is taken back whole (discard). Prints {"aside":
 #       [{path, why, detail, to}], "vetted": {path: sha256}}.
 #
@@ -1245,7 +1409,8 @@
 # agent composed — a here-document, or a redirect: a command no permission rule can
 # name. With --from the agent writes the text to a file with its file tool, and the call
 # is ONE plain invocation: `report` (its report), `scope-set` (the round's scope) and
-# `apply` (a record's batch, with --sha256). The file is read as stdin would be — the
+# `apply` (a record's batch, with --sha256) — and a fourth since, `verdict` (a verifier's
+# filing). The file is read as stdin would be — the
 # same bytes give the same write, and every rule of the writer holds — and stdin is not
 # read. A file that cannot be read is refused (bad-value). The other writers are called
 # by nobody but a batch, which carries their text.
@@ -1295,6 +1460,11 @@
 #   raised      the run's two bounds: at the opening, and then only at the stop that
 #               names the bound.
 #   counted     ran, awaiting, recorded and the run's findings: never from a caller.
+#   filed       verdict: in the latest round of a run with a queue, once that round's
+#               record names the binary its candidate was driven as, and for a row that
+#               awaits a verdict — between the two records of a `test` stage. It writes
+#               one file and no table, so it lifts no stop: what it changes is what the
+#               state reads of that file, and a file that stops counting changes it back.
 #   anywhere    ledger-add, ledger-set, bound-set, item-set: the ledger, the declared
 #               bounds and the test set are held to no position. A finding is added by
 #               whichever stage finds it, and at the opening; a disposition is a fixer's
@@ -1420,7 +1590,8 @@
 #                     hands on — are written once and stand; or
 #                     an item has its result in a round that is not tested yet; or an
 #                     item a round has run or owes a run keeps its clause, runs, doors
-#                     and registries; or a row that has a verdict keeps its kind
+#                     and registries; or a row that has a verdict keeps its kind; or a
+#                     finding has its filed verdict in the round, or a recorded one
 #    7  bad-value     a value outside its vocabulary, a malformed row, a report that is
 #                     not text; a file named by --from that cannot be read, or that is
 #                     not the file --sha256 names; an outcome word for a held check —
@@ -1435,10 +1606,14 @@
 #                     that names no kind — and an order over a ledger that holds one; a
 #                     budget that goes down, or is raised where it is not spent with a
 #                     row of the queue unreached; a row put into the queue that is a
-#                     lead, or is not outside it, or in a run that has no queue
+#                     lead, or is not outside it, or in a run that has no queue; a
+#                     filing without its report, under a reporter that is not the key's,
+#                     of an attempt nobody began, on another binary, for a row that
+#                     awaits no verdict, or in a run without an order
 #    8  no-such-row   ledger-set names a key the ledger lacks, or result-set an item the
 #                     test set lacks; a row is handed on under a parent the ledger lacks;
-#                     a key is put into the queue that the ledger lacks
+#                     a key is put into the queue that the ledger lacks; a verdict is
+#                     filed for a key that is no row
 #    9  fence         the file would redden a standing fence, which is named
 #   10  host-path     a host path the placeholders could not replace
 #   11  hygiene       the public-hygiene scan found a hit
@@ -1527,6 +1702,19 @@ CHECK_NAME = re.compile(r"(%s)\.a([1-9][0-9]{0,5})\.json" % SLUG.pattern)
 # of command dev/stabilize-step holds and judges (its HOLDS: `gate`, `regression`). It is
 # the one kind this script reads: such an item's result is that tool's verdict.
 HELD = "held-"
+# A FILED VERDICT (the build plan of the reshaped `test` stage, T3a):
+# r<N>/verdicts/<reporter>.a<attempt>.json — a directory of its own, because a file beside
+# the reports is counted as a report nobody launched, and one beside the held checks'
+# verdicts is what the result of an item is read from. And its members, and those of an item
+# it hands on, in the order the file holds them: a file is the one this script wrote, to
+# the byte, or it is none.
+VERDICT_NAME = re.compile(r"(%s)\.a([1-9][0-9]{0,5})\.json" % SLUG.pattern)
+FILED_FIELDS = ("key", "reporter", "round", "attempt", "verdict", "refutation", "reason", "regression", "candidate", "previous", "report", "hand_on", "handed_on")
+HANDED_FIELDS = ("key", "proposed", "place", "beyond", "doctype", "source", "door", "clause", "repro", "kind", "given", "origin", "code", "site", "evidence")
+# What a verifier says of an item it hands on: what its ledger row needs, and its kind —
+# with the kind's evidence, the refusal's code and the site, as a row's class has them.
+HANDED_REQUIRED = ("key", "doctype", "door", "clause", "repro", "kind")
+HANDED_OPTIONAL = ("route", "commands", "code", "site")
 # The tool whose verdict that is, as its verdict's file names it.
 HOLDER = "stabilize-step"
 # A HELD CHECK THAT LEFT NO VERDICT is void by a word (result-set): why, in a declared shape
@@ -1706,8 +1894,13 @@ CLASS = re.compile(r"(%s) (%s)" % ("|".join(QUEUED_KINDS), "|".join(QUEUED_ORIGI
 # a verifier noticed beyond the number it may hand on (the plan's T3a) — is one more row.
 # A LEAD IS THE ONE THAT IS NOT PUT IN: it quotes no route and carries no commands, so
 # there is nothing to verify.
+BEYOND = "beyond-hand-on"
 OUTSIDE = (
     ("lead", lambda finding, order: finding["class"]["kind"] == "lead", False),
+    # AN ITEM A VERIFIER NOTICED BEYOND THE NUMBER IT MAY HAND ON (the plan's T3a; the ruling
+    # of 2026-10-11, 2): it keeps its kind, and what marks it is the filed verdict that
+    # handed it on — its place among the items of that filing (state: handed_on).
+    (BEYOND, lambda finding, order: finding.get("handed_on", {}).get("beyond", False), True),
     ("parent-did-not-reproduce", lambda finding, order: finding["class"]["origin"] == NEVER_QUEUED, True),
     ("class-off-the-order", lambda finding, order: "%s %s" % (finding["class"]["kind"], finding["class"]["origin"]) not in order, True),
 )
@@ -1774,6 +1967,9 @@ CHECKS = ("check-reports", "check-ledger")
 #              while every row carries a class and changed anywhere after; a row put into
 #              the queue by key, in a run that has one
 #   counted    never from a caller: this script counts it
+#   filed      a verdict: in the latest round of a run with a queue, once that round's
+#              record names the binary its candidate was driven as, for a row that awaits
+#              a verdict — between the two records of a `test` stage
 #   by-fact    by each fact the call names · by-call  by each call of the batch
 WRITERS = {
     "report": "a-round",
@@ -1788,6 +1984,7 @@ WRITERS = {
     "bound-set": "anywhere",
     "item-set": "anywhere",
     "apply": "by-call",
+    "verdict": "filed",
 }
 READERS = ("state", "item", "item-doors", "untriaged", "row", "pending", "check-reports", "check-ledger", "gate-check", "vet")
 KEEPERS = ("discard", "settle", "recover", "set-aside")
@@ -3013,6 +3210,9 @@ def ledger_set(args):
     hold_census(run_dir, rel, keys)
     classes_rel, classes_above, class_rows = read_classes(run_dir)
     classed, changed = unique_rows(classes_rel, class_rows), False
+    # The findings a filed verdict that counts is for — in a run with a queue, the one
+    # that files any.
+    filed_keys = {entry["key"] for entry in filed_in(run_dir, numbered(run_dir, [], "r"), keys, {}) if entry["counts"]} if has_queue(run_dir) else set()
     for key, cells, made in patches:
         if key not in keys:
             refuse("no-such-row", "the ledger has no row %s; nothing was written" % key)
@@ -3026,8 +3226,8 @@ def ledger_set(args):
         now = [held[0], made[0], held[2], held[3], made[1] or held[4], made[2] or held[5], made[3]]
         # A KIND STANDS ONCE ITS ROW HAS A VERDICT: a hit rate per kind is honest only if
         # the kind was on record before the verdict.
-        if now != held and any(cell != "-" for cell in verdict_cells(run_dir, key)):
-            refuse("exists", "patch %s: the row has a verdict on record, and from then on its kind, the kind's evidence, its code and its site stand (%s holds them) — what kind of item a verifier judged is not changed after it judged; nothing was written" % (key, classes_rel))
+        if now != held and (any(cell != "-" for cell in verdict_cells(run_dir, key)) or key in filed_keys):
+            refuse("exists", "patch %s: the row has a verdict on record, or filed, and from then on its kind, the kind's evidence, its code and its site stand (%s holds them) — what kind of item a verifier judged is not changed after it judged; nothing was written" % (key, classes_rel))
         changed = changed or now != held
         class_rows[classed.index(key)] = now
     publish(run_dir, ["ledger.md"], render_table(above, LEDGER_COLUMNS, rows), replace=True)
@@ -3660,6 +3860,127 @@ def triage_set(args):
     say(json.dumps({"triage": rel, "ledger": ledger, "recorded": [key for key, _, _ in given]}))
 
 
+def verdict(args):
+    """A VERIFIER FILES ITS VERDICT (the header: verdict): one file of the round, written
+    once — and nothing of a table. What makes it count is held here, each by its own
+    refusal, and again by every read of the state (filed_in)."""
+    run_dir = open_run(args.run)
+    round_number = number(args.round, "round")
+    reporter = slug(args.reporter, "reporter")
+    attempt = number(args.attempt, "attempt")
+    scratch = scratch_roots(args)
+    given = json_stdin()
+    if not isinstance(given, dict):
+        refuse("bad-value", "stdin must be one filing as a JSON object: the finding's key, the verifier's verdict, the hash of the binary it drove, and what it hands on")
+    fields(given, ("key", "verdict", "candidate"), ("refutation", "reason", "regression", "previous", "hands_on"), "a filing")
+    key = slug(given["key"], "key")
+    what = "the filing of %s" % key
+    word = one_of(given["verdict"], VERDICTS + (UNDRIVABLE,), what + ": verdict")
+    if ("refutation" in given) != (word == "refuted"):
+        refuse("bad-value", "%s: a refutation is why the verifier refuted a finding — one of %s, beside the verdict `refuted`, where a filing always says which, and beside no other" % (what, ", ".join(REFUTATIONS)))
+    refutation = one_of(given["refutation"], tuple(REFUTATIONS), what + ": refutation") if word == "refuted" else None
+    reason = given.get("reason")
+    if ("reason" in given) != (word == UNDRIVABLE) or (word == UNDRIVABLE and (not isinstance(reason, str) or len(reason) > SLUG_MAX or not SLUG.fullmatch(reason))):
+        refuse("bad-value", "%s: %s says why nobody here can drive the finding, as `reason` — a word: a-z0-9 words joined by single `-`, at most %d characters — and no other verdict does" % (what, UNDRIVABLE, SLUG_MAX))
+    regression = given.get("regression")
+    if regression is not None and (word != "confirmed" or not isinstance(regression, bool)):
+        refuse("bad-value", "%s: a regression is the verifier's fact about a finding it confirmed — true, false, or not said — not %s beside `%s`" % (what, shown(regression), word))
+    candidate, previous = given["candidate"], given.get("previous")
+    for name, value in (("candidate", candidate), ("previous", previous)):
+        if not (isinstance(value, str) and SHA256.fullmatch(value)) and not (name == "previous" and value is None):
+            refuse("bad-value", "%s: %s is the sha256 of a binary the verifier drove, 64 hex digits — the candidate's, and the previous release's where it drove one — not %s" % (what, name, shown(value)))
+    # (ii) THE REPORTER'S NAME IS THE KEY'S: the name a launch of the verifier is counted by.
+    if reporter != VERIFIER + key:
+        refuse("bad-value", "%s: it is filed under the reporter %s, and the verifier of %s reports as %s%s — a verdict is filed by the verifier of its own finding; nothing was written" % (what, reporter, key, VERIFIER, key))
+    # WHERE WHAT IT HANDS ON COMES FROM is its own verdict, and no caller says it.
+    origin = UNDER_CONFIRMED if word == "confirmed" else REFUTATIONS[refutation] if word == "refuted" else None
+    hands = given.get("hands_on", [])
+    if not isinstance(hands, list) or not all(isinstance(item, dict) for item in hands):
+        refuse("bad-value", "%s: hands_on is the items the verifier hands on, an array of JSON objects, not %s" % (what, shown(hands)))
+    if hands and origin is None:
+        refuse("bad-value", "%s: nobody could drive the finding, so nothing was established to hand an item on under — an item is handed on by the verifier that gave its parent a verdict; nothing was written" % what)
+    items = []
+    for n, item in enumerate(hands, 1):
+        its = "%s: item %d it hands on" % (what, n)
+        fields(item, HANDED_REQUIRED, HANDED_OPTIONAL, "an item handed on")
+        if not isinstance(item["key"], str) or not re.search(r"[A-Za-z0-9]", item["key"]):
+            refuse("bad-value", "%s: it proposes no key — `key` is what the item's key is minted from, a text with a letter or a digit in it, not %s" % (its, shown(item["key"])))
+        doctype = one_of(item["doctype"], DOCTYPES, its + ": doctype")
+        texts = {name: as_data(said(item, name, its, scratch)) for name in ("door", "clause", "repro")}
+        # A KIND WITHOUT ITS EVIDENCE IS A LEAD, as for any row (kind_cells).
+        made = kind_cells(item, its, scratch)
+        given_as = made[0][len(GIVEN):] if made[0].startswith(GIVEN) else None
+        items.append({"proposed": as_data(cell(public(item["key"], scratch))), "doctype": doctype, **texts, "kind": "lead" if given_as else made[0], "given": given_as, "origin": origin, "code": made[1] and as_data(made[1]), "site": made[2] and as_data(made[2]), "evidence": None if made[3] == "-" else as_data(made[3])})
+    one_writer(run_dir)
+    # The state as it stands before the write. The lock is held from here to the write: a
+    # key is minted against what every earlier filing minted.
+    read = standing(run_dir, args.run)
+    if "queue" not in read:
+        refuse("bad-value", "%s: the run holds no order, and so has no queue — a verdict is filed between the two records of a `test` stage of a run with a queue (run-set: order), and in any other run a verdict is a triage entry's; nothing was written" % what)
+    binary = next((held["facts"]["binary"] for held in read["rounds"] if held["round"] == int(round_number)), None)
+    if read["round"] != int(round_number) or binary is None:
+        not_asked(what, read, "a verdict is filed in the run's latest round, once that round's record names the binary its candidate was driven as (round-set: binary) — and round %s is %s" % (round_number, "not that round" if read["round"] != int(round_number) else "tested by no record that names one"))
+    # (i) THE REPORT FIRST: the report of the same reporter and attempt is on disk among the
+    # round's `test` reports, and the filing keeps its sha256.
+    parts = ["r" + round_number, "reports", "test"]
+    report_rel = "/".join(ARTIFACTS + (args.run,) + tuple(parts) + ("%s.a%s.md" % (reporter, attempt),))
+    report_path = below(run_dir, parts + ["%s.a%s.md" % (reporter, attempt)])
+    if not os.path.isfile(report_path):
+        refuse("bad-value", "%s: its report is not on disk — %s: a verifier writes its report first (report), and files its verdict beside it, under the same reporter and attempt; nothing was written" % (what, report_rel))
+    with open(report_path, "rb") as file:
+        report_digest = hashlib.sha256(file.read()).hexdigest()
+    # (iii) THE ATTEMPT IS ONE THE ROUND HAS BEGUN ON RECORD: its marker — a report of that
+    # attempt under a reporter that is no finding's verifier, written before any agent of
+    # the attempt is launched (dev/stabilize-step begin). A verifier's own report begins none.
+    directory = below(run_dir, parts)
+    begun = [REPORT_NAME.fullmatch(name) for name in os.listdir(directory)]
+    if not any(named and named.group(2) == attempt and not named.group(1).startswith(VERIFIER) for named in begun):
+        refuse("bad-value", "%s: attempt %s of round %s's `test` stage is not begun on record — no report of that attempt under a reporter that is no finding's verifier lies in %s, and an attempt's first write is its marker (dev/stabilize-step begin); nothing was written" % (what, attempt, round_number, "/".join(ARTIFACTS + (args.run,) + tuple(parts))))
+    # (v) ONCE IS ONCE PER KEY PER ROUND: no second file, under whatever attempt — and none
+    # beside a verdict the round's record holds.
+    filed_parts = ["r" + round_number, "verdicts"]
+    directory = below(run_dir, filed_parts)
+    for name in sorted(os.listdir(directory)) if os.path.isdir(directory) else []:
+        named = VERDICT_NAME.fullmatch(name)
+        if named and named.group(1) == reporter:
+            refuse("exists", "%s exists — a verdict is filed once per finding and round, under whatever attempt; nothing was written" % "/".join(ARTIFACTS + (args.run,) + tuple(filed_parts) + (name,)))
+    rows = {finding["key"]: finding for finding in read["ledger"]}
+    if key not in rows:
+        refuse("no-such-row", "%s: the ledger has no row %s, and no filed verdict handed one on — a verdict belongs to a row; nothing was written" % (what, key))
+    row = rows[key]
+    if row["triage"] is not None and row["triage"]["round"] == int(round_number) and row["triage"]["verdict"] is not None:
+        refuse("exists", "%s: round %s's triage record holds a verdict for it (%s) — a verdict is filed once per finding and round; nothing was written" % (what, round_number, row["triage"]["verdict"]))
+    # A VERDICT IS FILED FOR A ROW THAT AWAITS ONE (the second table's rows): triage sent it
+    # on, or a verifier handed it on — in the queue or outside it, reached or not.
+    if not (row["route"] in (VERIFY, LISTED) or (row["route"] == "human" and row["why"] in (UNREACHED, "unverified" + AFTER_RETRY))):
+        refuse("bad-value", "%s: the row awaits no verdict — it is routed `%s` (%s). A verdict is the verifier's, and a verifier is launched for a row triage sent on (%s) or a verifier handed on, that has none; nothing was written" % (what, row["route"], row["why"], ", ".join(SENT_ON)))
+    # (iv) THE BINARY IT DROVE IS THE ROUND'S — and a regression is a fact only with the
+    # previous release's binary behind it: else it is UNKNOWN, and never `no`.
+    if candidate != binary:
+        refuse("bad-value", "%s: it asserts the candidate's binary %s, and round %s's record names %s — a verdict on another binary is no verdict of this round; nothing was written" % (what, candidate, round_number, binary))
+    unknown = None
+    if regression is not None and previous in (None, candidate):
+        regression, unknown = None, "no-previous-hash" if previous is None else "previous-is-the-candidate"
+    # WHAT IT HANDS ON: each item's key minted; the first N that carry their kind's evidence
+    # are handed on — N the opening's number, and none where it wrote no number — and every
+    # later one is kept as what it is, beyond the number, in no queue. A lead takes no place.
+    allowed = read["facts"].get("hand-on")
+    taken = set(rows)
+    for entry in filed_in(run_dir, [held["round"] for held in read["rounds"]], [], {}):
+        taken.update(item["key"] for item in (entry["record"] or {}).get("handed_on", []))
+    handed, places = [], 0
+    for n, item in enumerate(items, 1):
+        item["key"] = minted(item["proposed"], taken)
+        taken.add(item["key"])
+        places += item["kind"] != "lead"
+        item.update(place=n, beyond=item["kind"] != "lead" and places > (allowed or 0), source=as_data(cell("handed on by `%s`, the verifier of `%s`, in round %s (attempt %s)" % (reporter, key, round_number, attempt))))
+        handed.append({name: item[name] for name in HANDED_FIELDS})
+    record = dict(zip(FILED_FIELDS, (key, reporter, int(round_number), int(attempt), word, refutation, reason if word == UNDRIVABLE else None, regression, candidate, previous, {"file": report_rel, "sha256": report_digest}, allowed, handed)))
+    text = filed_text(record)
+    rel = publish(run_dir, filed_parts + ["%s.a%s.json" % (reporter, attempt)], text, replace=False, taken="a verdict is filed once per finding and round")
+    say(json.dumps({"verdict": rel, "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(), "key": key, "word": word, "regression": regression, "unknown": unknown, "handed_on": [{name: item[name] for name in ("key", "proposed", "kind", "origin", "beyond")} for item in handed], "leads": [item["key"] for item in handed if item["kind"] == "lead"]}))
+
+
 # --- the state, and what follows from it ----------------------------------------------
 
 
@@ -3962,14 +4283,17 @@ def outside(finding, order):
     return next((word for word, holds, _ in OUTSIDE if holds(finding, order)), None)
 
 
-def spent_in(triage, number_):
+def spent_in(triage, filings, number_):
     """WHAT A ROUND'S `test` STAGE HAS SPENT OF ITS BUDGET: the verdicts on record in that
     round — one per finding, `undrivable` among them, however often an entry is recorded
-    again. `triage` holds each finding's entry in the latest round that triaged it, so the
-    entries of round `number_` are that round's own record. THIS IS THE ONE PLACE THE COUNT
-    IS MADE: a verdict that is filed and that no record holds yet (the plan's T3a) is added
-    here, and nowhere else."""
-    return sum(1 for entry in triage.values() if entry["round"] == number_ and entry["verdict"] is not None)
+    again — AND THE VERDICTS THAT ARE FILED in it and count (the plan's T3a). `triage` holds
+    each finding's entry in the latest round that triaged it, so the entries of round
+    `number_` are that round's own record; `filings` is what the state read of the filed
+    files (filed_in). THIS IS THE ONE PLACE THE COUNT IS MADE, AND IT COUNTS FINDINGS: a
+    verdict that is filed and that the round's record holds too — the record took the file
+    (the plan's T3b) — is one finding, and is spent once."""
+    recorded = {key for key, entry in triage.items() if entry["round"] == number_ and entry["verdict"] is not None}
+    return len(recorded | {entry["key"] for entry in filings if entry["counts"] and entry["round"] == number_})
 
 
 def launched_in(run_dir, number_):
@@ -3984,6 +4308,161 @@ def launched_in(run_dir, number_):
             key = named.group(1)[len(VERIFIER):]
             launches[key] = launches.get(key, 0) + 1
     return launches
+
+
+def filed_text(record):
+    """A filed verdict as it is written: its members in their order (FILED_FIELDS), and —
+    the last one — the sha256 of the text without it. A file a hand changed does not bear
+    its own seal, and is no filed verdict."""
+    body = {name: record[name] for name in FILED_FIELDS}
+    seal = hashlib.sha256(json.dumps(body, indent=1, ensure_ascii=False).encode("utf-8")).hexdigest()
+    return json.dumps(dict(body, sha256=seal), indent=1, ensure_ascii=False) + "\n"
+
+
+def sealed(text):
+    """The record of a filed verdict's text — or None where the text is not one this script
+    wrote: not that JSON to the byte, not under its own seal, or of another shape."""
+    try:
+        record = json.loads(text)
+        if not isinstance(record, dict) or tuple(record) != FILED_FIELDS + ("sha256",) or filed_text(record) != text:
+            return None
+        report, items = record["report"], record["handed_on"]
+        shaped = (
+            isinstance(record["key"], str)
+            and bool(SLUG.fullmatch(record["key"]))
+            and record["reporter"] == VERIFIER + record["key"]
+            and type(record["round"]) is int
+            and type(record["attempt"]) is int
+            and record["verdict"] in VERDICTS + (UNDRIVABLE,)
+            and (record["verdict"] == "refuted") == (isinstance(record["refutation"], str) and record["refutation"] in REFUTATIONS)
+            and (record["verdict"] == UNDRIVABLE) == isinstance(record["reason"], str)
+            and (record["regression"] is None or (isinstance(record["regression"], bool) and record["verdict"] == "confirmed"))
+            and isinstance(record["candidate"], str)
+            and bool(SHA256.fullmatch(record["candidate"]))
+            and isinstance(report, dict)
+            and tuple(report) == ("file", "sha256")
+            and all(isinstance(report[name], str) for name in report)
+            and isinstance(items, list)
+        )
+        for item in items if shaped else []:
+            shaped = shaped and (
+                isinstance(item, dict)
+                and tuple(item) == HANDED_FIELDS
+                and all(isinstance(item[name], str) for name in ("key", "proposed", "doctype", "source", "door", "clause", "repro", "kind", "origin"))
+                and bool(SLUG.fullmatch(item["key"]))
+                and len(item["key"]) <= SLUG_MAX - len(VERIFIER)
+                and item["doctype"] in DOCTYPES
+                and item["kind"] in KINDS
+                and (item["origin"] == UNDER_CONFIRMED or item["origin"] in REFUTATIONS.values())
+                and type(item["place"]) is int
+                and isinstance(item["beyond"], bool)
+                and all(item[name] is None or isinstance(item[name], str) for name in ("given", "code", "site", "evidence"))
+            )
+    except (ValueError, KeyError, TypeError, AttributeError, RecursionError):
+        return None
+    return record if shaped else None
+
+
+def filing_of(run_dir, number_, name):
+    """ONE FILE WITH A FILED VERDICT'S NAME, held to what makes a filed verdict count as
+    far as the file and the disk can say it (the plan's T3a, its acceptance): (its record,
+    the sha256 of its bytes, why it does not count) — the record None where the file is not
+    one this script filed there (`not-a-filing`: another text, another seal, another name
+    than its own reporter, attempt and round say), and the word None where nothing is wrong:
+      report-gone, report-changed   (i)  the report of the same reporter and attempt is on
+                                         disk among the round's `test` reports, and is the
+                                         file whose sha256 the filing stored
+      another-binary                (iv) the hash of the candidate's binary it asserted is
+                                         the one the round's record names
+    What a file cannot say alone — that its key is a row, and that it is the round's one
+    filing for it — is the state's (filed_in)."""
+    shaped = VERDICT_NAME.fullmatch(name)
+    path = below(run_dir, ["r%d" % number_, "verdicts", name])
+    try:
+        with open(path, "rb") as file:
+            data = file.read()
+        text = data.decode("utf-8")
+    except (OSError, ValueError):
+        return None, None, "not-a-filing"
+    digest = hashlib.sha256(data).hexdigest()
+    record = sealed(text)
+    parts = ["r%d" % number_, "reports", "test", "%s.a%s.md" % (shaped.group(1), shaped.group(2))]
+    if record is None or (record["reporter"], record["attempt"], record["round"]) != (shaped.group(1), int(shaped.group(2)), number_) or record["report"]["file"] != "/".join(ARTIFACTS + (os.path.basename(run_dir),) + tuple(parts)):
+        return None, digest, "not-a-filing"
+    report = below(run_dir, parts)
+    if not os.path.isfile(report):
+        return record, digest, "report-gone"
+    with open(report, "rb") as file:
+        if hashlib.sha256(file.read()).hexdigest() != record["report"]["sha256"]:
+            return record, digest, "report-changed"
+    if record["candidate"] != round_facts(*read_round(run_dir, number_)[::2])["binary"]:
+        return record, digest, "another-binary"
+    return record, digest, None
+
+
+def filed_in(run_dir, numbers, keys, on_record):
+    """THE FILED VERDICTS of the rounds `numbers`, as the state reads them (the header:
+    state, `filed`): every file among a round's filed verdicts, in the rounds' order and by
+    reporter and attempt within one, each with WHETHER IT COUNTS and, where it does not,
+    why. A file counts where it is a filing whose report and binary hold (filing_of), its
+    key is a row — of the ledger (`keys`), or an item a filing that counts handed on — and
+    it is the round's first filing for that key: ONCE IS ONCE PER KEY PER ROUND. Nothing
+    here is refused: a file that does not count is named, and counted by nothing — a
+    verdict whose report changed is no verdict. `on_record` is, per round, the findings
+    whose verdict that round's triage record holds: a filing of one of them is `recorded`.
+    Each entry carries its record (`record`), which the state document leaves out."""
+    found = []
+    for number_ in numbers:
+        parts = ["r%d" % number_, "verdicts"]
+        directory = below(run_dir, parts)
+        rel = "/".join(ARTIFACTS + (os.path.basename(run_dir),) + tuple(parts))
+        within = []
+        for name in os.listdir(directory) if os.path.isdir(directory) else []:
+            path = os.path.join(directory, name)
+            if TEMPORARY.fullmatch(name) and os.path.isfile(path) and not os.path.islink(path):
+                # This script's own temporary: a filing in flight, or what a killed one left.
+                continue
+            shaped = VERDICT_NAME.fullmatch(name)
+            entry = {"round": number_, "file": "%s/%s" % (rel, name), "reporter": shaped and shaped.group(1), "attempt": shaped and int(shaped.group(2)), "key": None, "verdict": None, "sha256": None, "counts": False, "why": "no-verdicts-name", "recorded": False, "handed_on": [], "record": None}
+            if shaped:
+                entry["record"], entry["sha256"], entry["why"] = filing_of(run_dir, number_, name)
+            if entry["record"]:
+                entry.update(key=entry["record"]["key"], verdict=entry["record"]["verdict"])
+            within.append(entry)
+        found += sorted(within, key=lambda entry: (entry["reporter"] or "", entry["attempt"] or 0, entry["file"]))
+    # WHICH COUNT. A filing may be for an item another filing handed on, so the rows are
+    # found in as many passes as there are hops: a filing counts once its key is a row.
+    known, taken, moved = set(keys), set(), True
+    while moved:
+        moved = False
+        for entry in found:
+            if entry["why"] is not None or entry["counts"] or entry["key"] not in known:
+                continue
+            moved = True
+            if (entry["round"], entry["key"]) in taken:
+                entry["why"] = "second-filing"
+                continue
+            taken.add((entry["round"], entry["key"]))
+            entry.update(counts=True, recorded=entry["key"] in on_record.get(entry["round"], ()), handed_on=[item["key"] for item in entry["record"]["handed_on"]])
+            known.update(entry["handed_on"])
+    for entry in found:
+        if entry["why"] is None and not entry["counts"]:
+            entry["why"] = "no-such-row"
+    return found
+
+
+def minted(proposed, taken):
+    """THE KEY OF AN ITEM A VERIFIER HANDS ON, MINTED from what the verifier proposes: its
+    letters and digits as a slug, cut so that the item's own verifier can report under it
+    (`verify-<key>` is a slug of at most SLUG_MAX characters), and made unique among
+    `taken` — the ledger's keys and every key a filing minted — by a number at its end."""
+    limit = SLUG_MAX - len(VERIFIER)
+    base = "-".join(re.findall(r"[a-z0-9]+", proposed.lower()))[:limit].rstrip("-")
+    key, n = base, 1
+    while key in taken:
+        n += 1
+        key = base[: limit - len("-%d" % n)].rstrip("-") + "-%d" % n
+    return key
 
 
 def queue_of(order, rows):
@@ -4362,7 +4841,7 @@ def document(run_dir, run):
     keys = unique_rows(ledger_rel, ledger_rows)
 
     # Each round's records, and each finding's entry in the latest round that triaged it.
-    rounds, doors, triage, scope = [], None, {}, None
+    rounds, doors, triage, scope, on_record = [], None, {}, None, {}
     for held in grounded:
         number_, scope = held["round"], held["doors"]
         name = "r%d" % number_
@@ -4396,6 +4875,8 @@ def document(run_dir, run):
             }
             if word:
                 triage[key]["refutation" if verdict == "refuted" else "reason"] = word
+            if row[3] != "-":
+                on_record.setdefault(number_, set()).add(key)
             # Found again with a fix on its row, and standing: that fix did not hold.
             if row[5].startswith("fixed: ") and stands(triage[key]):
                 reopened.append(key)
@@ -4461,18 +4942,69 @@ def document(run_dir, run):
     # has spent of it, and what is left — nothing is ever spent where the opening wrote no
     # number. And the launches of each finding's verifier in that round, and the rows the
     # human put into the queue.
-    spent = spent_in(triage, rounds[-1]["round"]) if rounds else 0
+    # … AND WHAT IS FILED (the plan's T3a): between a stage's two records a verifier files
+    # its verdict, and the state reads the files no record holds. A filing that counts
+    # VERIFIES ITS FINDING — the row is read as the record that takes the file would leave
+    # it: the verdict in its entry of the round (`judged`), the grade a verifier's verdict
+    # gives — and WHAT IT HANDS ON IS A ROW: of the ledger once the record took it, and
+    # until then of the state alone (`handed`), with its class. A filing is NO TRIAGE ENTRY:
+    # it counts on a row nobody graded, which an item handed on is.
+    filings = filed_in(run_dir, [held["round"] for held in rounds], keys, on_record) if order is not None else []
+    scopes = {held["round"]: held["doors"] for held in grounded}
+    judged, verified, marks, handed = dict(triage), {}, {}, []
+    for entry in filings:
+        if not entry["counts"]:
+            continue
+        record = entry["record"]
+        for item in record["handed_on"]:
+            mark = {"by": record["reporter"], "round": entry["round"], "attempt": record["attempt"], "place": item["place"], "beyond": item["beyond"], "file": entry["file"], "recorded": item["key"] in keys}
+            if item["key"] not in keys:
+                handed.append([tick(item["key"]), tick(item["doctype"]), str(entry["round"])] + [cell(item[name]) for name in ("source", "door", "clause")] + ["ungraded", "-", "open", cell(item["repro"])])
+                classes[item["key"]] = {"kind": item["kind"], "given": item["given"], "origin": item["origin"], "parent": record["key"], "code": item["code"], "site": item["site"], "evidence": item["evidence"]}
+                marks[item["key"]] = mark
+            elif classes.get(item["key"], {}).get("parent") == record["key"]:
+                marks[item["key"]] = mark
+        base = triage.get(entry["key"])
+        if entry["recorded"] or (base is not None and base["round"] > entry["round"]):
+            # The record holds it, or a later round triaged the finding again: the record's.
+            continue
+        verified[entry["key"]] = entry
+    rows = dict(zip(keys + [untick(row[0]) for row in handed], ledger_rows + handed))
+    for key, entry in verified.items():
+        record, base = entry["record"], triage.get(key)
+        side = placed(rows[key][4], scopes[entry["round"]] or [])
+        judged[key] = {
+            "round": entry["round"],
+            "inside": side == "included",
+            "door": side,
+            "grade": base and base["grade"],
+            "bound": base and base["bound"],
+            "verdict": record["verdict"],
+            "regression": record["regression"],
+            "found_with": base["found_with"] if base else as_data(rows[key][8]),
+            "fork": None,
+            **({"refutation": record["refutation"]} if record["refutation"] else {}),
+            **({"reason": record["reason"]} if record["reason"] else {}),
+            "filed": entry["file"],
+        }
+    spent = spent_in(triage, filings, rounds[-1]["round"]) if rounds else 0
     limit = facts.get("budget")
     budget = {"limit": limit, "spent": spent, "left": None if limit is None else max(limit - spent, 0)}
     launched = launched_in(run_dir, rounds[-1]["round"]) if rounds and order is not None else {}
     ruled_in = facts.get("queued") or []
     inside = []
     findings = []
-    for key, row in zip(keys, ledger_rows):
+    for key, row in rows.items():
         grade, bound = grade_read(ledger_rel, key, row[6])
         disposition, _, detail = row[8].partition(": ")
         if disposition not in DISPOSITIONS or not re.fullmatch(r"[0-9]{1,6}", row[2]) or row[7] not in ("-",) + tuple(GRADERS):
             spoiled(ledger_rel, "holds a row for %s with a cell this script does not write" % key)
+        grader = None if row[7] == "-" else row[7]
+        if key in verified and verified[key]["verdict"] != UNDRIVABLE:
+            # A FILED VERDICT GRADES ITS ROW as a recorded one does: the verifier's word —
+            # and nothing, where nobody could drive the finding: the grade it had stands.
+            said_ = verified[key]["record"]
+            grade, bound, grader = ("regression" if said_["regression"] else said_["verdict"]), None, "verify-real"
         finding = {
             "key": key,
             "doctype": untick(row[1]),
@@ -4482,14 +5014,14 @@ def document(run_dir, run):
             "clause": as_data(row[5]),
             "grade": grade,
             "bound": bound,
-            "graded_by": None if row[7] == "-" else row[7],
+            "graded_by": grader,
             "disposition": disposition,
             "detail": as_data(detail) or None,
             "repro": as_data(row[9]),
-            "triage": triage.get(key),
+            "triage": judged.get(key),
         }
-        finding["reopened"] = disposition == "fixed" and not fix_held(finding, triage.get(key))
-        finding["route"], finding["why"] = route_of(finding, triage.get(key), listed)
+        finding["reopened"] = disposition == "fixed" and not fix_held(finding, judged.get(key))
+        finding["route"], finding["why"] = route_of(finding, judged.get(key), listed)
         # A finding the round's triage has not finished is tried once more without the
         # human, and then it is the human's: `awaits` says which of the two it lacks, how
         # many triage records of the latest round in a row have left it so, and whether
@@ -4497,10 +5029,18 @@ def document(run_dir, run):
         finding["awaits"] = None
         if key in classes:
             finding["class"] = classes[key]
+        if key in marks:
+            # WHO HANDED IT ON, and where that is held: the filed verdict that minted its key.
+            finding["handed_on"] = marks[key]
         # IN A RUN WITH A QUEUE (the header's second table) a row AWAITS A VERDICT where
         # triage sent it on and none is on record, or a verifier handed it on and nobody
         # graded it — what is handed on enters without a grade. Such a row is no triage's.
-        if finding["route"] == "triage" and order is not None and (finding["why"] == "unverified" or classes[key]["parent"] is not None):
+        if finding["route"] == "triage" and order is not None and key in verified:
+            # An item a verifier handed on, which nobody graded, and NOBODY HERE CAN DRIVE
+            # IT (a filed verdict says so): the human's at once, as the first table has a
+            # graded row — it awaits no verdict, and is launched for no more.
+            finding["route"], finding["why"] = "human", UNDRIVABLE
+        elif finding["route"] == "triage" and order is not None and (finding["why"] == "unverified" or classes[key]["parent"] is not None):
             kept_out = outside(finding, order)
             if kept_out is not None and not (key in ruled_in and kept_out in [word for word, _, may in OUTSIDE if may]):
                 # In no queue, and never to be verified: shown, with why, and holds nothing.
@@ -4602,7 +5142,9 @@ def document(run_dir, run):
         **following,
         "position": position,
         # … and of a queue, and of its budget, only a run that has one says anything.
-        **({} if queue is None else {"queue": queue, "budget": budget}),
+        # … and of what is filed: every file among the rounds' filed verdicts, each with
+        # whether it counts, why not, and whether a record holds its verdict.
+        **({} if queue is None else {"queue": queue, "budget": budget, "filed": [{name: value for name, value in entry.items() if name != "record"} for entry in filings]}),
     }
 
 
@@ -4847,6 +5389,11 @@ def pending(args):
             for report_name in sorted(os.listdir(directory)) if os.path.isdir(directory) else []:
                 if REPORT_NAME.fullmatch(report_name) and os.path.isfile(below(run_dir, parts + [report_name])):
                     once.append("/".join([prefix] + parts + [report_name]))
+        # … and the round's filed verdicts, each written once (the plan's T3a).
+        directory = below(run_dir, [name, "verdicts"])
+        for filed_name in sorted(os.listdir(directory)) if os.path.isdir(directory) else []:
+            if VERDICT_NAME.fullmatch(filed_name) and os.path.isfile(below(run_dir, [name, "verdicts", filed_name])):
+                once.append("/".join([prefix, name, "verdicts", filed_name]))
     batch = held["batch"]
     if batch is not None:
         altered = []
@@ -4902,7 +5449,8 @@ def recover_(args):
 
 def run_file(prefix, rel):
     """The segments of a file of the run below its directory, and whether a writer would
-    have written it as a report, as a round's scope, or as neither."""
+    have written it as a report, as a round's scope, as a held check's verdict, as a filed
+    verdict — or as none of them."""
     parts = rel[len(prefix):].split("/") if isinstance(rel, str) and rel.startswith(prefix) else []
     if not parts or not all(SEGMENT.fullmatch(part) for part in parts):
         refuse("outside", "%s is not a path below the run's directory, of plain segments" % shown(rel))
@@ -4912,7 +5460,10 @@ def run_file(prefix, rel):
     check = len(parts) > 2 and bool(ROUND_DIR.fullmatch(parts[0])) and parts[1] == "checks"
     if check and not (len(parts) == 3 and CHECK_NAME.fullmatch(parts[2])):
         refuse("bad-id", "%s lies beside the verdicts of the held checks and has no verdict's name" % rel)
-    return parts, report, len(parts) == 2 and bool(ROUND_DIR.fullmatch(parts[0])) and parts[1] == "scope.md", check
+    filed = len(parts) > 2 and bool(ROUND_DIR.fullmatch(parts[0])) and parts[1] == "verdicts"
+    if filed and not (len(parts) == 3 and VERDICT_NAME.fullmatch(parts[2])):
+        refuse("bad-id", "%s lies among the filed verdicts and has no filed verdict's name" % rel)
+    return parts, report, len(parts) == 2 and bool(ROUND_DIR.fullmatch(parts[0])) and parts[1] == "scope.md", check, filed
 
 
 def held_to_the_rules(text, report):
@@ -4974,7 +5525,7 @@ def vet_files(run_dir, run, names, subject):
     vetted, refused, clean = {}, [], []
     for rel in distinct(names, "path"):
         try:
-            parts, report, _, check = run_file(prefix, rel)
+            parts, report, _, check, filed = run_file(prefix, rel)
             path = below(run_dir, parts)
             if not os.path.isfile(path):
                 refused.append({"path": rel, "why": "gone", "detail": "no such file"})
@@ -4994,6 +5545,12 @@ def vet_files(run_dir, run, names, subject):
                 _, word = verdict_on_record(run_dir, parts[0][1:], found.group(1), int(found.group(2)))
                 if not ran or word != ran[0]["outcome"]:
                     refuse("bad-value", "it is not the verdict the result of attempt %s of %s was written from: %s" % (found.group(2), found.group(1), "the round's results hold no such run" if not ran else "the result says %s, and the file %s" % (ran[0]["outcome"], "is no verdict of that run" if word is None else "says %s" % word)))
+            if filed:
+                # A FILED VERDICT IS VETTED AS ONE: the file this script filed there, under
+                # its own seal, beside the report it was filed with, on the round's binary.
+                _, _, why = filing_of(run_dir, int(parts[0][1:]), parts[2])
+                if why:
+                    refuse("bad-value", "it is no verdict as this script files one (%s): %s" % (why, {"not-a-filing": "not the text the writer left under that name, or not under its own seal", "report-gone": "the report it was filed beside is gone", "report-changed": "the report it was filed beside is no longer the file whose hash it keeps", "another-binary": "the binary it asserts is not the one the round's record names"}[why]))
         except Refusal as refusal:
             if refusal.kind in ("did-not-run", "usage"):
                 raise
@@ -5157,7 +5714,7 @@ def vet_range(revs):
             touched = True
             mode, kind, blob = listed.split("\t")[0].split(" ")
             try:
-                _, report, _, _ = run_file(prefix + run + "/", name)
+                _, report, _, _, filed = run_file(prefix + run + "/", name)
                 if mode == "120000" or kind != "blob":
                     refuse("outside", "it is a link, or no file: a write there would land outside the run directory")
                 try:
@@ -5165,6 +5722,8 @@ def vet_range(revs):
                 except ValueError:
                     refuse("bad-value", "it is not UTF-8 text")
                 held_to_the_rules(text, report)
+                if filed and sealed(text) is None:
+                    refuse("bad-value", "it is no verdict as this script files one: not the text the writer leaves, or not under its own seal")
             except Refusal as refusal:
                 if refusal.kind in ("did-not-run", "usage"):
                     raise
@@ -5205,16 +5764,17 @@ def vet(args):
 
 def set_aside(args):
     """A file that is no report leaves the tree: each of the named written-once files that
-    `vet` refuses is moved out of the repository, and its reporter has then left none."""
+    `vet` refuses is moved out of the repository, and its reporter has then left none — a
+    filed verdict too, whose finding is then unverified again."""
     run_dir = open_run(args.run)
     prefix = "/".join(ARTIFACTS + (args.run,)) + "/"
     to = args.to
     if to is not None and (not os.path.isabs(to) or (os.path.realpath(to) + "/").startswith(os.path.realpath(ROOT) + "/")):
         refuse("bad-value", "--to %s is not an absolute directory outside the repository: what is set aside leaves the tree" % shown(to))
     for rel in args.names:
-        _, report, scope, _ = run_file(prefix, rel)
-        if not report and not scope:
-            refuse("bad-value", "%s is no report and no round's scope: only a file that is written once is set aside — a table of a batch is taken back whole (`discard`)" % rel)
+        _, report, scope, _, filed = run_file(prefix, rel)
+        if not report and not scope and not filed:
+            refuse("bad-value", "%s is no report, no round's scope and no filed verdict: only a file that is written once is set aside — a table of a batch is taken back whole (`discard`)" % rel)
     one_writer(run_dir)
     vetted, refused, _ = vet_files(run_dir, args.run, args.names, None)
     aside = []
@@ -5265,6 +5825,7 @@ def arguments(argv):
     command("bound-set", bound_set, [("bound", True), ("reach", False), ("ruling", False), ("pin", False)], writes=True)
     command("scope-set", scope_set, [("round", True), ("from", False)], writes=True)
     command("triage-set", triage_set, [("round", True)])
+    command("verdict", verdict, [("round", True), ("reporter", True), ("attempt", True), ("from", False)], writes=True)
     command("item-set", item_set, [], writes=True)
     command("round-set", round_set, [("round", True)])
     command("run-set", run_set, [])

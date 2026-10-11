@@ -2,6 +2,119 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — A verdict is filed when it returns: one written-once file of the round, held to five things before it counts, read by the state before any record holds it — and what a verifier hands on is a row from that moment, at most the opening's number of them in the queue (the plan's `T3a`; the builder's choices inside it)
+
+**What.** [`dev/stabilize-record`](dev/stabilize-record) takes a verifier's verdict the moment it returns, as a file of the round, and its state reads the filed files no record holds ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §4, `T3a`, the migration order's Phase A; ruling 4 of *2026-10-10 — The `test` stage, reshaped after the canary*; rulings 1 and 2 of *2026-10-11 — The reshaped `test` stage's three open questions, ruled*). The script's header is the contract; in one place:
+
+- **A new writer, `verdict`**: `dev/stabilize-record verdict --run R --round N --reporter verify-<key> --attempt A`, the filing on stdin or, with `--from`, the file the verifier wrote. It writes **one file and no table** — `r<N>/verdicts/<reporter>.a<A>.json` — through the one write every writer goes through: host paths replaced by the report writer's own function, the public-hygiene scan hard. A filing with a hit is refused whole and leaves nothing; the filings beside it stand.
+- **What makes it count, each held by its own refusal**: (i) the report of the same reporter and attempt is on disk among the round's `test` reports, and the filing stores its sha256; (ii) the reporter is `verify-<key>`, the one name a launch is counted by; (iii) the attempt is begun on record; (iv) the binary it asserts is the one the round's record names, and a regression fact stands only with the previous release's hash behind it — else it is filed as *not said*, and the call says why; (v) once per key per round — no second file under any attempt, and none beside a verdict the round's triage record holds.
+- **The state reads what is filed** — in a run with a queue, and there only. A filing that counts **verifies its finding**: the row is read as the record that takes the file would leave it, routed by the first table, out of the queue, its kind standing. **Spent** counts it, in `spent_in` and nowhere else. And the state says `filed`: every file among the rounds' filed verdicts, with whether it counts, why not, and whether a record holds its verdict.
+- **What a filing hands on is a row at once** — of the state alone until a record takes it: key minted, class from the filing, ranked by the order, routed `verify`, graded by nobody, read by its key like any row.
+- **An item beyond the opening's number** keeps its kind, is in no queue and is routed `listed` with its own word, `beyond-hand-on` — one more row of `T2b`'s table `OUTSIDE`, so the human's put-in write takes it by key unchanged.
+- **`vet` and `set-aside` know the class**: a file among the filed verdicts has a filed verdict's name or is refused (`bad-id`), is vetted *as one*, and leaves the tree like a file that is no report. `pending` names the filed files among what is written once.
+
+**The filed file.** JSON, its members in one order: `key · reporter · round · attempt · verdict · refutation · reason · regression · candidate · previous · report {file, sha256} · hand_on · handed_on [ … ] · sha256`. `hand_on` is the opening's number as the filing found it. Each handed-on item: `key · proposed · place · beyond · doctype · source · door · clause · repro · kind · given · origin · code · site · evidence` — everything a ledger row and its class need. The last member is **a seal**: the sha256 of the text without it.
+
+**What the state says of a round that holds filed files no record holds** — the fields `T3b` and the harness read:
+
+| Where | What |
+|---|---|
+| `filed` (a run with a queue) | `[{round, file, reporter, attempt, key, verdict, sha256, counts, why, recorded, handed_on}]`, by round, reporter and attempt. **No record holds it** where `counts` and not `recorded` |
+| a row's `triage` | the entry as the record would leave it — verdict, its word, `regression`, `inside` from the round's doors, `grade` null on a row nobody graded — and `filed`, the file |
+| a row's `grade`, `graded_by` | the verifier's (`confirmed` · `regression` · `refuted`, `verify-real`); unchanged where the verdict is `undrivable` |
+| a handed-on row's `handed_on` | `{by, round, attempt, place, beyond, file, recorded}` — `recorded` false while the ledger does not hold the row |
+| `budget.spent`, `queue`, `next`, `position` | as if the verdicts were on record |
+
+`why` is one of `no-verdicts-name` · `not-a-filing` · `report-gone` · `report-changed` · `another-binary` · `no-such-row` · `second-filing`.
+
+**The table `OUTSIDE`, as it now stands** — why a row that awaits a verdict is in no queue, the first that holds:
+
+| Word | Holds of a row | May the human put it in |
+|---|---|---|
+| `lead` | its kind is lead | no |
+| `beyond-hand-on` | a filed verdict handed it on beyond the number | yes |
+| `parent-did-not-reproduce` | its origin is `under-no-repro` | yes |
+| `class-off-the-order` | the order does not name its class | yes |
+
+**Chosen where the plan left it to the builder — and what was rejected.**
+
+- **Nothing of a table moves at a filing; the state overlays.** A filed verdict, and every row it hands on, exist in the file alone until the record. *Rejected:* writing the rows and the grade at the filing — that is `Q1`'s option (c), a ledger changed and uncommitted between two records, which the ruling turned down.
+- **A file that does not count is named, and never refused.** The state stays readable over a filed file a hand changed, a report that was rewritten, a stray file: the finding is unverified again, nothing is spent, what it handed on is no row. *Rejected:* `corrupt` — it would stop the stage at its first read, before the step that sets such a file aside can run.
+- **A seal in the file.** The tool's own verdict line has the same shape. It makes *changed by a hand* a fact the vet can hold for an edit that keeps the JSON's shape. A hand that recomputes it passes: who wrote a file is not holdable, as for a report.
+- **(iii), as the script can see it:** a report of that attempt under a reporter that is no finding's verifier. The marker `dev/stabilize-step begin` writes is one — its name is the harness's, and this script does not know it. *Rejected:* the highest attempt a report carries — the verifier's own report would begin its attempt.
+- **A verdict is filed only for a row that awaits one** — the second table's rows: triage sent it on, or a verifier handed it on; in the queue or outside it, reached by the budget or not. A row triage graded no break, one nobody graded and nobody handed on, one that has its verdict take none. Not in the plan's list; without it a filing would have to be given a meaning on a row triage closed.
+- **Only in the run's latest round, once its record names the binary, and only beside a `test` report.** The fix half's verify shape is a row.
+- **A refutation's word is owed in a filing.** A triage entry may leave it out; a verifier always knows which of three, and where a handed-on item comes from is computed from it.
+- **The previous hash is held to its shape, and to not being the candidate's.** The run records no hash of the previous release's binary to hold it to.
+- **The first N items that carry their kind's evidence are handed on; a lead takes no place.** The ceiling the ruling wants — N queue entries a verdict — holds, and no place is spent on an item that is in no queue whatever its place. *Rejected:* the first N by position.
+- **In a run whose opening wrote no number, nothing is handed on to the queue**: every item is beyond it, listed, the human's to put in by key. *Rejected:* unbounded — the multiplication the ruling ends, as a default; refusing the filing — a verdict lost for an opening's omission.
+- **What marks an item beyond the number is the filed file**: its place there, and `beyond`, decided at the filing with the number as it stood. The state puts it on the row as `handed_on`. *Rejected:* a column of `classes.md` — every such table would change its bytes; a word in the origin cell — a route item stays a route item, under the parent it has.
+- **`beyond-hand-on` stands second in `OUTSIDE`**, after `lead`: a lead is never put in, whoever noticed it; of the rest, what the verifier's own choice says comes first.
+- **The key is a slug of the proposal**, cut to 93 characters, unique among the state's rows and every key any filed file minted — one that counts no more too — by a number at its end. *Rejected:* the parent's key in front of it — every key moved toward the cut, where two items differ only in what is cut.
+- **A text of a handed-on item is stored as a table cell would hold it**, so the row reads the same before and after the record takes it.
+- **A filing holds the run's lock from its read of the state to its write**, the scan included: a key is minted against every earlier filing. Filings of one wave are one scan each, in turn. A report lets go of the lock before its scan; a report mints nothing.
+- **Who named a code or a site is held in the filed file** — its `reporter`, and each item's `code` and `site` — and shown on the row as `handed_on.by`. Nothing counts, ranks or merges on it.
+- **A verdict that is filed and recorded is counted once** because spent counts findings: the keys with a verdict in the round's record, united with the keys of the round's filings that count. Where both exist the row is read from the record.
+
+**Phase A, shown.** `a_run_without_an_order_holds_the_bytes_it_held` is green **unmodified**, and so are the first table's arms. In a run without an order the writer is refused (`bad-value`), the state reads no filed file and says nothing of one; `a_verdict_is_filed_only_for_a_row_that_awaits_one` drives that beside the run with a queue, and the writers' table holds `verdict` refused at every one of its seventeen places.
+
+**Red first.** Seventeen arms — the plan's thirteen and four of the builder's naming — and the rows of the suite's own tables were written before the script took a filing, and run on the parent's: 24 red. Sixteen of the seventeen at their first call of the writer, which the parent refuses as no subcommand where the arm asks for a write or for another refusal; `a_filed_verdict_counts_before_any_record_holds_it` at its control, the state's `filed`. Seven arms of the tables were red with them: the subcommand list, the run that was never opened, the identifier sites, the writers' table, and three of the writers' axes. What the later parts of each arm are worth is the mutants'.
+
+**Mutants of the finished script** — thirty-nine, each one edit, the seventeen arms run on each. Thirty-five died at once. **Four survived, and each showed an arm that did not reach what it named**; the arm was sharpened and the mutant then died.
+
+| The edit | An arm that went red — the one that names it |
+|---|---|
+| a filed verdict spends nothing · a filing that does not count is spent all the same | `a_filing_keeps_its_reports_hash_and_a_report_that_changed_since_is_no_verdict` |
+| a verdict that is filed and recorded is spent twice · the record's verdict is still read from the file | `a_verdict_that_is_filed_and_recorded_is_counted_once` |
+| a report that changed, or is gone, still holds its filing · a filing that does not count verifies · a filing names no report hash | the report-hash arm |
+| a filing is taken under any reporter | `a_filing_under_a_reporter_that_is_not_the_keys_is_refused` |
+| any report of the attempt begins it | `a_filing_for_an_attempt_the_round_has_not_begun_is_refused` |
+| a filing is taken beside a verdict the round's record holds | `a_second_filing_for_a_key_in_the_round_is_refused` |
+| **survived:** a second filing is refused only under the same attempt | the same arm, once it files beside a filing that counts no more |
+| a verdict is filed whatever the row awaits · in a run without an order | `a_verdict_is_filed_only_for_a_row_that_awaits_one` |
+| **survived:** a filing is taken in a round that names no binary | the same arm, once it reads what the refusal says is lacking |
+| a verdict on another binary is filed · a regression stands without the previous hash · the candidate's own hash stands for it | `a_verdict_on_another_binary_is_no_verdict_…` |
+| a filed verdict does not grade its row · a kind is changed while the verdict is only filed · `pending` leaves the files out | `a_filed_verdict_counts_before_any_record_holds_it` — and four more for the first |
+| what a filing hands on is no row · where it comes from is always a confirmed parent · a verifier that could not drive hands on · a kind without its evidence keeps its kind | `a_handed_on_item_enters_the_queue_with_its_class_and_no_grade` — and four more for the first |
+| an item beyond the number is queued · is not the human's to put in · a lead takes a place · the first item beyond is handed on too | `an_item_handed_on_beyond_the_openings_number_keeps_its_kind_and_is_in_no_queue` |
+| an opening that wrote no number bounds nothing | `in_a_run_that_says_no_number_nothing_a_verifier_hands_on_enters_the_queue` |
+| an item nobody could drive, handed on, is queued again | `a_handed_on_item_is_filed_a_verdict_and_is_verified_with_no_grade_on_record` |
+| a minted key is not made unique · is as long as any slug | `a_handed_on_item_gets_a_key_its_verifiers_name_can_carry` |
+| **survived:** a key minted by a filing that counts no more is not taken | the same arm, once it mints beside such a filing |
+| a host path in a filing is not replaced | `a_text_with_a_denylisted_term_refuses_that_filing_and_no_other` |
+| a file there needs no verdict's name · a filed verdict is vetted as any text · is never set aside | `a_file_among_the_filed_verdicts_without_a_verdicts_name_is_refused` |
+| **survived:** a filed verdict needs no seal | the same arm, once the hand's edit keeps the file's shape |
+
+**The assertions this task carried.** One outside its own suite: `dev_stabilize_step::no_act_reaches_main_a_release_branch_a_tag_or_a_branch_outside_the_model` holds a row for every act of the record script, and `verdict` is one more (`no-ref`). In its own suite the tables held to the script's parser grew by what it grew: the writers' list (so the host-path, hygiene, scanner and killed-write axes drive a filing), the call of every subcommand on a run that was never opened, five identifier sites, and the writers' table's row. **Nothing else in `tooling-tests/` pinned a text this task moved**: the whole `g_tooling` target ran on the finished script before that one row was added — 481 of 482, that arm the one red.
+
+**What `T3b` owes because of this.**
+
+- **The record takes from the files**: the verdicts of `filed` where `counts` and not `recorded`, and the rows whose `handed_on` says `recorded: false`, each from its file's `handed_on` entry. It holds each to the report hash the filing stored; the state does at every read.
+- **How the record holds a verdict for a row nobody graded.** A triage entry still takes a verdict only beside `breaks` or `unclear`. The state already reads such a row with `grade` null in its entry; what the table holds is the record's to say.
+- **The parent's verdict before the child's row.** `ledger-add` computes where a handed-on row comes from out of the triage records, and reads no filed file; the file holds the origin it was filed with.
+- **The ledger's order.** The state ranks rows no record holds by round, reporter, attempt and place. A record that appends them otherwise moves the queue's ties at the record.
+- **What is deleted is missed.** Nothing misses a filed file that is gone: before its record the verdict is lost and the finding unverified again; after it, a row beyond the number loses its mark and is in the queue. The record names what it took, or the mark moves onto the table.
+- **A key the ledger gains between a filing and its record.** `ledger-add` does not know what a filing minted; the state then reads the ledger's row and attaches the mark only where that row names the filing's finding as its parent.
+- **The step tool.** `pending` names the filed files, so the report check's vet and its `set-aside` reach them unchanged; the table of states between two commands, the commit's paths and the push have no row for the class.
+
+**What later tasks owe.**
+
+- `T6a`, `T6b`, and the verifier's definition: a verifier writes its report, then its filing, then returns the path and the word this call printed; its own two stand first among what it hands on; a filing that is refused wrote nothing and is corrected and filed again. The marker is what begins an attempt.
+- `T4`, and the count of who named a code or a site: `handed_on.by`, and a row's `class`. The step tool's digest carries nothing of `filed` yet.
+- `T5b`: a filing carries no fork. A contested verdict has no shape here.
+- `T12`: once `hand-on` is owed, the answer for a run that says no number goes.
+
+**What is not established.**
+
+- **Nothing of a stage calls any of it.** No harness path, no scenario of the simulation, no agent's definition.
+- **The verdicts can exceed the budget by what was in flight when it was spent.** A verdict that arrives for a row nobody reached is taken; `left` stays at 0.
+- **`second-filing` is reached by no arm**: the writer refuses the second file first, and a second file with its own seal is not written by a test.
+- **A filing in a round that is not the latest and names a binary** is driven by no arm; the arm's round has no record at all.
+- **(iii) is held at the write and not at the read**; an instrument's report of the attempt begins it as the marker does.
+- **The real scanners over a filed file.** The suite drives a stand-in for gitleaks; whether a rule of the real one fires on the hashes a filing carries is not driven.
+- **Not read whole for this task**: [dev-workflow.md](implementation/dev-workflow.md), [stabilization-workflow.md](implementation/stabilization-workflow.md) and [decisions-pending.md](implementation/decisions-pending.md) beyond what the project's instructions and the plan carry of them; the record script's header beyond the sections this task changes or cites; the record suite beyond its rig, its tables and the arms of `T1`, `T2a` and `T2b`; the step tool beyond how it begins an attempt and reads `pending`.
+- **The workflow's document** says nothing of this yet; it is `T10`'s.
+
 ## 2026-10-11 — What follows from the queue and the budget: a row of the queue is verified while budget is left, a spent budget is the human's step, only a queued route item holds the close — and the human's three rulings on the queue: a budget raised, another order, a row put in by key (the plan's `T2b`; the builder's choices inside it)
 
 **What.** [`dev/stabilize-record`](dev/stabilize-record) computes the route, the next step and the position of a run with a queue from its queue and its budget, and takes the three writes by which the human rules on that queue; [`dev/stabilize-step`](dev/stabilize-step) carries what is spent and left, and that a stage continues, in the state's digest ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §4, `T2b`, the migration order's Phase A; ruling 1 of *2026-10-10 — The reshaped `test` stage, corrected by a count the same day*; ruling 3 of *2026-10-11 — The reshaped `test` stage's three open questions, ruled*). The record script's header holds it as **a second table** — *IN A RUN WITH A QUEUE* — beside the one of every other run, which stands as it stood. In one place:
