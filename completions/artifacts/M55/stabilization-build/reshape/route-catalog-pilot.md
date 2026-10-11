@@ -204,6 +204,8 @@ No site, cause or way has the reason `no-route-printed`: every one of the 346 ca
 
 These are the gate's own: the two arms that follow the cases hold the expected-red list to exactly these 170, by case, key and classification.
 
+**[2026-10-11, after the first doubt was read by the surface contract (§7, question 1): the list holds 165.** Five cases that were *a printed line no shell can split* hold — one of `setup`, *holds, operand implied*, and four of `uninstall`, *holds* — and a sixth, of `setup`, is *the same refusal again* under a key of its own. So on this tree's binary: 188 hold (156, and 32 with the operand implied), 99 are the same refusal again, 1 is a printed line no shell can split, and the other rows are as above; `setup` has 120 red cases of 268 and `uninstall` 45 of 85. The keys are 27 still: the pilot's `r1-setup-unborn-dirty-route-unstaging-line-is-no-command-line` holds no case, `r1-setup-unborn-dirty-route-unstaging-line-refused-behind-the-installs-writes` is new and holds 1, and `r1-uninstall-routes-print-lines-with-a-placeholder-for-the-id` holds 1 of its 5. The tables of this section are `P5`'s, as counted then.**]**
+
 **The keys — 27, over the 170 red cases.** Seven are the small canary's ([canary-one/findings.md](../canary-one/findings.md)), 78 cases; twenty were minted by the pilot ([route-catalog-findings.md](route-catalog-findings.md)), 92 cases. **No ledger holds any of them**: until a stabilization run is opened a key certifies itself.
 
 | the canary's key | cases | as |
@@ -254,7 +256,7 @@ These are the gate's own: the two arms that follow the cases hold the expected-r
 | — followed, a printed line no shell can split | 1 | 0 | 1 |
 | — the command did not end, so no route was reached | 1 | 1 | 2 |
 
-So of the 74 cases in which a route was reached that prints no operand for an act, **31 hold when the natural act is done** and 43 do not. Of the 43, 40 are *the same refusal again*, by key (`awk` over columns 3, 5 and 6): 18 under the two writability keys, where the route names one entry in words — *the repo's git hooks directory*, *the repository root* — and another cause refused; 18 under the two profile keys, where the route prints no command and the refusing command was run again; and 4 under three other keys.
+So of the 74 cases in which a route was reached that prints no operand for an act, **31 hold when the natural act is done** and 43 do not. **[2026-10-11: 32 and 42 — the one case of this table that was *a printed line no shell can split* holds, operand implied, once its line is filled (§7); the operand it implies is the path of a move, as before.]** Of the 43, 40 are *the same refusal again*, by key (`awk` over columns 3, 5 and 6): 18 under the two writability keys, where the route names one entry in words — *the repo's git hooks directory*, *the repository root* — and another cause refused; 18 under the two profile keys, where the route prints no command and the refusing command was run again; and 4 under three other keys.
 
 **Whether *followed, holds, operand implied* is *works as printed* is not decided here.** It is the human's, and the number it is decided on is this one: **31 of the 183 cases that hold, hold with an operand the case had to supply.** The frame guards the form two ways — it is refused wherever the route prints a path, or prints a `jigc` line — so none of the 31 stands in for an operand the route did print.
 
@@ -270,6 +272,20 @@ So of the 74 cases in which a route was reached that prints no operand for an ac
 | 4 | *run `git …` to see what git reports, resolve that, then re-run* | the printed `git` line is a step, held to exit 0 like every printed command | it is there to show git's words; the steps are *resolve that* and the re-run | 2 | another failure, 2 |
 | 5 | *spawn template missing the required `jigc workflow … --task …` invocation* | the backticked `jigc` line is a command to run | it is the shape the template must hold, and the route prints nothing to run | 1 | another failure, 1 |
 | 6 | *remove the worktrees yourself (`git worktree list`, then `git worktree remove`)* | two command lines to run as printed | the names of two git verbs, the second run once for each path the first lists | 1 | the same refusal again, 1 |
+
+**[2026-10-11 — question 1 was not put to the human: the design of record decides it.** [surface-contract.md](../../../../../design/surface-contract.md) says of every backticked `git …` / `jigc …` span that *a `<placeholder>` the reader fills is legal* — reading (b). It asks for a concrete value only where a placeholder is derivable from a finding's own target on a mechanical route, which none of these lines is; and it does not say where a reader takes any other value from ([DECISIONS.md](../../../../../DECISIONS.md) → 2026-10-11, *The route catalog's first doubt, read by the surface contract*, has its lines). So the frame fills a placeholder with a value the refusal's own output lists, by index, and the seven cases were followed again:
+
+| case | now |
+|---|---|
+| `setup-unborn-staged-file-at-an-install-path-unstaged-as-printed-and-moved` | followed, holds, operand implied |
+| `setup-unborn-install-path-staged-and-deleted-unstaged-as-printed` | followed, the same refusal again — the filled line is refused by git behind the install's writes; a finding, under a key of its own, and no doubt |
+| `uninstall-staged-doc-read-and-discarded-as-printed` | followed, holds |
+| `uninstall-staged-doc-finalized-as-printed` | followed, holds — from the state the way is offered to: the doc complete, a change staged |
+| `uninstall-untracked-workbench-file-added-as-printed` | followed, holds |
+| `uninstall-workbench-files-one-ignored-moved-out-and-one-added-as-printed` | followed, holds |
+| `uninstall-fan-out-worktree-uncommitted-work-milestone-abandoned-as-printed` | a printed line no shell can split, **still marked** |
+
+**What is left of question 1 is one case and another question.** `jigc milestone discard <milestone-id> --force` stands over a refusal that lists the worktree's path and no milestone, so the line cannot be filled from what was printed. The contract is silent on where the id comes from: (a) from the refusal's own output, as every other value a route needs — then the route owes it and the case is red as it stands; (b) from somewhere else the reader knows of — then the frame has no case. **So 19 cases are marked, not 25**: 1, 11, 3, 2, 1 and 1 by question; the 14 of questions 1, 2 and 4 stand on no declared bound.**]**
 
 **What reading (b) would come to, where a case shows it.** Question 2: the case beside each marked one points the link at a committed file or script and **holds** — 11 cases. Question 4: the two `…-resolved` cases **hold, operand implied**. Question 1: filled in by hand, both `uninstall` routes hold (entry, `31d0fdd4`); no case runs a filled-in line. Questions 3 and 6 were not driven under (b). Question 5 is red either way: under (b) it is one more *the same refusal again*.
 
@@ -293,7 +309,7 @@ So of the 74 cases in which a route was reached that prints no operand for an ac
 | 5 | 1 | 1 | a state only `JIGC_ADAPTERS_DIR` reaches |
 | 6 | 1 | 1 | a permission bit changed by hand — `.jigc/worktrees` of mode 000 |
 
-So the readings that can still decide whether a case blocks are those of questions 1, 2 and 4: 20 cases.**]**
+So the readings that can still decide whether a case blocks are those of questions 1, 2 and 4: 20 cases — 14, once question 1 was read by the surface contract (the note below).**]**
 
 The two readings of each, in the case's own words, are the last column of the block the arm prints; the routes as printed are in [route-catalog-findings.md](route-catalog-findings.md) under each key.
 
@@ -302,6 +318,8 @@ The two readings of each, in the case's own words, are the last column of the bl
 **The table is [route-catalog-pilot-cases.tsv](route-catalog-pilot-cases.tsv)** — the arm's `cases` block, as printed. A line is a case: its name, its site, `printed` or `implied`, `doubt` or `-`, the key it is listed under on this tree; then for this tree's binary and for the named one **what the case came to**, **how its refusing command ended**, and **what became of its witnesses**; and whether the two binaries printed **the same route**.
 
 **This section counts and does not judge.** Whether a row that differs is a regression, an improvement, or neither is not said by the arm, by the suite or by this record.
+
+**[2026-10-11: six lines of the committed table are not what this tree prints any more** — the six cases of §7's first question that were followed again with their line filled. The table and the counts of this section are `P5`'s, as printed then, and are left so. On `rc.24`, from one run of the arm on the tree of the commit that carries this note (270.0 s; load average 10.1 at its start, 4.4 at its end): the two discarded-and-finalized staged-doc cases and the added workbench file are *followed, holds* there as here, under the same route; the two-file case is *a printed line no shell can split* there, under another route; and the two cases of `setup` are *not followed* there — `rc.24`'s route under that code has `git stash -u` where the case fills a line, and the frame says so. Every other line of the run is the committed table's, byte for byte.**]**
 
 ### The two binaries
 
@@ -525,6 +543,17 @@ Read across:
 - **73 red cases stand on a bound**: 47 on a permission bit, 7 on a FIFO, 19 on the override — the count's own three numbers, which the function reaches by reading the states. 69 of them do not block; the 4 under the admitted key do.
 - **Ten keys lie wholly inside the bounds and block nothing** — 41 cases; the eleventh the count names, the admitted key, is wholly inside them and blocks by name. Three keys hold both kinds: 28 bounded cases beside 32 that can block.
 - **Of the 183 cases that hold, 16 stand on a bound**: 12 on a permission bit and 4 on a FIFO. No case that holds stands on the override.
+
+**[2026-10-11, after the first doubt was read by the surface contract (§7): three lines of the table moved, and no bound's column.** As the arm printed them on the tree of the commit that carries this note:
+
+| key | red cases | can block | a permission bit changed by hand | a FIFO or a device node planted | a state only `JIGC_ADAPTERS_DIR` reaches | admitted |
+|---|---|---|---|---|---|---|
+| `r1-setup-unborn-dirty-route-unstaging-line-refused-behind-the-installs-writes` — new, where `…-unstaging-line-is-no-command-line` stood with 2 and 2 | 1 | 1 | 0 | 0 | 0 | - |
+| `r1-uninstall-routes-print-lines-with-a-placeholder-for-the-id` — was 5 and 5 | 1 | 1 | 0 | 0 | 0 | - |
+| **every key (27), of which 17 can block** | **165** | **96** | **47** | **7** | **19** | **1** |
+| **the cases no entry lists** | **188** | **-** | **12** | **4** | **0** | **-** |
+
+None of the seven cases stands on a bound, so the five that hold now come off the cases that could block: **96 of 165 red cases can block, under 17 of 27 keys.]**
 
 **What a bound does not do.** It takes no case off the expected-red list, moves no classification and makes no case green: the list is what it was at §5, strict three ways, and the 73 are in it. And the human may admit a bounded case by its key at any stop of a run; the table of admitted keys is one constant of the suite (`ADMITTED`).
 

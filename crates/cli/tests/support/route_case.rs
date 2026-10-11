@@ -105,6 +105,19 @@
 //! ([`Classification::UnsplittableLine`]) — a route that cannot be run as printed is what
 //! the catalog is there to show, and never a fault that ends the arm.
 //!
+//! **A printed line with a word in angle brackets is a shape the reader fills, and the
+//! runner fills it with what the refusal lists** ([`Act::RunFilled`], [`listed_in`]). The
+//! surface contract says so (`design/surface-contract.md` → the span fence: *a
+//! `<placeholder>` the reader fills is legal bare or as a quoted span*), so such a line is
+//! not a command to run as it stands. The value that fills a placeholder is **a value the
+//! refusal's own output lists, by index** — bytes the product printed, as every other
+//! operand is, and never a word of the case's: the listing is the indented lines of the
+//! refusal's finding that are not its route, a backticked span one value and every other
+//! word one, the colon or comma that sets a word off dropped. A placeholder for which the
+//! refusal lists no value cannot be filled; a case that runs such a line as printed comes
+//! out *a printed line no shell can split*, as before. A value that is a path out of the
+//! sandbox is not handed to any command.
+//!
 //! **No more chains run at once in one process than the machine is wide** ([`Gate`]).
 //! A case is one child process at a time; [`pooled`] bounds how many cases one caller
 //! follows at once, and every case followed in this process — by whichever arm, through a
@@ -231,6 +244,14 @@ pub enum Operand {
     Unprinted(&'static str),
 }
 
+/// A printed line and what fills it — indices only: the line is a span of the printed
+/// route, and each value one the refusal's own output lists ([`listed_in`]).
+#[derive(Clone, Copy, Debug)]
+pub struct Filled {
+    pub line: usize,
+    pub with: &'static [usize],
+}
+
 /// One thing a reader does to follow a route.
 #[derive(Clone, Copy, Debug)]
 pub enum Act {
@@ -240,6 +261,11 @@ pub enum Act {
     /// Run the span of this index as the command line it is, split by a real shell: a
     /// `jigc` line on the binary under test, a `git` line on git.
     Run(usize),
+    /// **Run a printed line whose `<placeholder>` words are filled with values the refusal
+    /// lists** ([`Filled`]) — what a reader does with a line the route prints as a shape.
+    /// Every placeholder of the line is filled, in the line's order, each as one word of
+    /// the command line; then the line is run as [`Act::Run`] runs one.
+    RunFilled(Filled),
     /// Move the directory the operand names out of the way: out of the repository, to the
     /// sandbox's `moved/` under the path it had ([`Place::Moved`]), with everything in it.
     /// A link to a directory is not one.
@@ -303,7 +329,7 @@ impl Act {
             | Act::Mend(operand)
             | Act::MakeReadable(operand)
             | Act::MakeWritable(operand) => Some(operand),
-            Act::Run(_) | Act::Rerun | Act::RerunInTheRepository => None,
+            Act::Run(_) | Act::RunFilled(_) | Act::Rerun | Act::RerunInTheRepository => None,
         }
     }
 }
@@ -755,6 +781,67 @@ pub fn refusal_in(said: &str, code: &str) -> Option<Refusal> {
     Some(Refusal { route })
 }
 
+/// **What the refusal of `code` lists**, in order: the values of the indented lines of its
+/// finding that are not its `route:` line — between the finding's first line and the next
+/// finding's, as [`refusal_in`] reads a route. A backticked span is one value, its bytes as
+/// printed; every other word is one, without the colon or the comma that sets it off. A
+/// line that is not indented is the message's prose and lists nothing.
+pub fn listed_in(said: &str, code: &str) -> Vec<String> {
+    let mut lines = said
+        .lines()
+        .skip_while(|line| head_code(line) != Some(code));
+    if lines.next().is_none() {
+        return Vec::new();
+    }
+    lines
+        .take_while(|line| head_code(line).is_none())
+        .filter(|line| line.starts_with(char::is_whitespace))
+        .filter(|line| !line.trim_start().starts_with("route: "))
+        .flat_map(|line| {
+            line.split('`').enumerate().flat_map(|(at, piece)| {
+                if at % 2 == 1 {
+                    vec![piece]
+                } else {
+                    piece
+                        .split_whitespace()
+                        .map(|word| word.trim_end_matches([':', ',']))
+                        .filter(|word| !word.is_empty())
+                        .collect()
+                }
+            })
+        })
+        .map(str::to_string)
+        .collect()
+}
+
+/// The `<placeholder>` words of a printed line, as byte ranges, in order: an angle
+/// bracket, bytes that are neither, and the bracket that closes it.
+fn placeholders(line: &str) -> Vec<(usize, usize)> {
+    let mut found = Vec::new();
+    let mut from = 0;
+    while let Some(open) = line[from..].find('<').map(|at| from + at) {
+        match line[open + 1..].find(['<', '>']) {
+            Some(len) if len > 0 && line[open + 1 + len..].starts_with('>') => {
+                found.push((open, open + len + 2));
+                from = open + len + 2;
+            }
+            _ => from = open + 1,
+        }
+    }
+    found
+}
+
+/// `value` as one word of a command line: as it is where every byte of it is inert to a
+/// shell, and single-quoted otherwise — a reader types a listed path as one word.
+fn one_word(value: &str) -> String {
+    let inert = |c: char| c.is_ascii_alphanumeric() || "._-/:@%+=,".contains(c);
+    if !value.is_empty() && value.chars().all(inert) {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
+}
+
 /// The backticked spans of a route, in order — the odd pieces of a split on `` ` ``. An
 /// unpaired last backtick opens no span.
 pub fn spans(route: &str) -> Vec<&str> {
@@ -1093,6 +1180,7 @@ impl Sandbox {
         case: &Case,
         act: Act,
         spans: &[&str],
+        listed: &[String],
         seen: &mut Seen,
     ) -> Result<String, String> {
         let code = case.code();
@@ -1127,7 +1215,7 @@ impl Sandbox {
                 Act::Mend(_) => format!("mend the file `{named}` ({how})"),
                 Act::MakeReadable(_) => format!("make `{named}` readable ({how})"),
                 Act::MakeWritable(_) => format!("make `{named}` writable ({how})"),
-                Act::Run(_) | Act::Rerun | Act::RerunInTheRepository => {
+                Act::Run(_) | Act::RunFilled(_) | Act::Rerun | Act::RerunInTheRepository => {
                     unreachable!("a run takes no operand")
                 }
             };
@@ -1174,7 +1262,7 @@ impl Sandbox {
                 }
                 Act::MakeReadable(_) => self.permit(&path, 0o400, "its owner may read it"),
                 Act::MakeWritable(_) => self.permit(&path, 0o200, "its owner may write it"),
-                Act::Run(_) | Act::Rerun | Act::RerunInTheRepository => {
+                Act::Run(_) | Act::RunFilled(_) | Act::Rerun | Act::RerunInTheRepository => {
                     unreachable!("a run takes no operand")
                 }
             };
@@ -1187,15 +1275,70 @@ impl Sandbox {
             });
         }
         let (what, ran) = match act {
-            Act::Run(at) => {
-                let line = span(at)?;
+            Act::Run(_) | Act::RunFilled(_) => {
+                let (at, line, how) = match act {
+                    Act::RunFilled(filled) => {
+                        let printed = span(filled.line)?;
+                        let holes = placeholders(printed);
+                        if holes.is_empty() {
+                            return Err(format!(
+                                "an act fills span {}, `{printed}`, which holds no \
+                                 placeholder: a line that is a command as it stands is run \
+                                 as printed",
+                                filled.line
+                            ));
+                        }
+                        if holes.len() != filled.with.len() {
+                            return Err(format!(
+                                "an act fills span {}, `{printed}`, which holds {} \
+                                 placeholders, with {} values: every placeholder of a line \
+                                 is filled, in the line's order",
+                                filled.line,
+                                holes.len(),
+                                filled.with.len()
+                            ));
+                        }
+                        let (mut line, mut how, mut end) = (String::new(), Vec::new(), 0);
+                        for ((from, to), at) in holes.iter().zip(filled.with) {
+                            let value = listed.get(*at).ok_or_else(|| {
+                                format!(
+                                    "an act fills a placeholder with listed value {at}, and \
+                                     the refusal lists {}",
+                                    listed.len()
+                                )
+                            })?;
+                            if !self.stays(&stand, value) {
+                                seen.failed = true;
+                                return Ok(format!(
+                                    "run `{printed}` (span {}) with `{}` filled by `{value}` \
+                                     (listed value {at}): not done — it names nothing inside \
+                                     the case's sandbox",
+                                    filled.line,
+                                    &printed[*from..*to]
+                                ));
+                            }
+                            line.push_str(&printed[end..*from]);
+                            line.push_str(&one_word(value));
+                            how.push(format!(
+                                "`{}` filled by listed value {at}",
+                                &printed[*from..*to]
+                            ));
+                            end = *to;
+                        }
+                        line.push_str(&printed[end..]);
+                        (filled.line, line, format!(", {}", how.join(", ")))
+                    }
+                    Act::Run(at) => (at, span(at)?.to_string(), String::new()),
+                    _ => unreachable!("the two acts that run a printed line"),
+                };
+                let line = line.as_str();
                 let words = match super::shell_words_or(line, &stand, &self.home()) {
                     Ok(words) => words,
                     Err(said) => {
                         seen.unsplit = true;
                         return Ok(format!(
-                            "run `{line}` (span {at}): not run — no shell splits it into \
-                             words\n{}",
+                            "run `{line}` (span {at}{how}): not run — no shell splits it \
+                             into words\n{}",
                             said.trim_end()
                         ));
                     }
@@ -1211,7 +1354,7 @@ impl Sandbox {
                     }
                 };
                 (
-                    format!("run `{line}` (span {at})"),
+                    format!("run `{line}` (span {at}{how})"),
                     self.run(
                         self.tested(case, program, &stand).args(&words[1..]),
                         self.under_test,
@@ -1251,6 +1394,19 @@ impl Sandbox {
             seen.failed = true;
             format!("{what}: {}\n{}", ran.exit(), ran.said)
         })
+    }
+
+    /// Whether `value`, filled into a printed line, is no path out of this sandbox — read
+    /// from where the case stands. Where the directory that would hold it is there, it is
+    /// asked as every act's path is ([`Self::contains`]); where it is not — an id, an
+    /// address, a path whose directory is gone — the value may not be absolute and may not
+    /// climb.
+    fn stays(&self, stand: &Path, value: &str) -> bool {
+        let path = stand.join(value);
+        match path.parent().map(fs::canonicalize) {
+            Some(Ok(parent)) => parent.starts_with(&self.root),
+            _ => !Path::new(value).is_absolute() && value.split('/').all(|part| part != ".."),
+        }
     }
 
     /// Give the owner of the entry at `path` the permission `bit` — of the entry itself: a
@@ -1648,7 +1804,7 @@ fn followed(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed
         }
     )];
     if !seen.provoked {
-        detail.push(refused.said);
+        detail.push(refused.said.clone());
     }
 
     let route = found
@@ -1687,8 +1843,9 @@ fn followed(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed
                 }
             }
         }
+        let listed = listed_in(&refused.said, code);
         for act in case.acts {
-            let done = sandbox.perform(binary, case, *act, &spans, &mut seen)?;
+            let done = sandbox.perform(binary, case, *act, &spans, &listed, &mut seen)?;
             detail.push(done);
         }
         if !seen.same_refusal && !seen.failed && !seen.did_not_end && !seen.unsplit {

@@ -39,12 +39,14 @@
 //!
 //! **A route here often prints a line with a word in angle brackets** —
 //! `jigc task discard <task-id> --force` — where the id is in the refusal's listing and not
-//! in the route. Followed as printed, no shell splits such a line; filled in, it would be a
-//! line of the case's own, which the frame does not run. Every such case is marked `doubt`
-//! with the two readings ([`WHICH_LINE`]).
+//! in the route. Such a line is a shape the reader fills (the surface contract's span
+//! fence), and a case fills it with the value the refusal lists, by index
+//! ([`Act::RunFilled`]). One route prints `<milestone-id>` over a refusal that lists no
+//! milestone: that line cannot be filled, and its case is marked `doubt`
+//! ([`WHERE_THE_ID_COMES_FROM`]).
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{Act, Case, Check, Operand, Over, Place, Step, Var};
+use crate::support::route_case::{Act, Case, Check, Filled, Operand, Over, Place, Step, Var};
 
 // The sites, as the committed list of refusal sites and the suite's claims name them.
 const NOT_IN_A_REPOSITORY: &str =
@@ -174,16 +176,21 @@ macro_rules! shut {
     };
 }
 
-/// The two readings of a printed line that holds a word in angle brackets.
-const WHICH_LINE: &str = "a backticked line with a word in angle brackets — \
-                          `jigc task discard <task-id> --force`, `jigc milestone discard \
-                          <milestone-id> --force`: (a) a command to run as printed, like \
-                          every line a route prints between backticks — followed here: no \
-                          shell splits it, the bracketed word being a redirection from a \
-                          file that is not there; (b) a shape to fill in with the id the \
-                          refusal lists above its route — then the route prints no line a \
-                          reader can run as it stands, and the frame has no case for it: a \
-                          filled-in line would be the case's own";
+/// The two readings of a printed line whose placeholder the refusal lists no value for.
+const WHERE_THE_ID_COMES_FROM: &str = "*abandon the milestone with `jigc milestone discard \
+                                       <milestone-id> --force`*, over a refusal that lists \
+                                       the worktree's path and no milestone. The surface \
+                                       contract decides that the line is a shape the reader \
+                                       fills (the span fence: *a `<placeholder>` the reader \
+                                       fills is legal*) and declares `<milestone-id>` not \
+                                       derivable from a finding's target; it does not say \
+                                       where the reader takes the id from. (a) from the \
+                                       refusal's own output, as every other value a route \
+                                       needs — followed here: the output lists none, the \
+                                       line cannot be filled, and run as printed no shell \
+                                       splits it; (b) from somewhere else the reader knows \
+                                       of — then the frame has no case: an id of the case's \
+                                       own is no operand";
 
 /// The two readings of *make sure … is readable*.
 const WHICH_READABLE: &str = "*make sure `.jigc/…` is readable*: (a) the entry the route \
@@ -415,7 +422,7 @@ const A_LIVE_FAN_OUT_WORKTREE: [Case; 3] = [
         acts: &[Act::Run(1), Act::Run(2)],
         holds: torn_down![],
         untouched: &["README.md", "notes.md", SUB_TASK_WORK],
-        doubt: Some(WHICH_LINE),
+        doubt: Some(WHERE_THE_ID_COMES_FROM),
         ..UNINSTALL
     },
     Case {
@@ -576,7 +583,6 @@ const THE_WORKTREES_ROOT_UNREADABLE: [Case; 3] = [
 /// An open task, minted by the binary under test: its working area is
 /// `.jigc/tasks/write-a-note/`, with its staged `commit:write-a-note` doc.
 const A_TASK: Step = Step::Jigc(&["start", "--workflow", "decided-task", "write a note"]);
-const STAGED_DOC: &str = ".jigc/tasks/write-a-note/docs/commit:write-a-note.md";
 
 /// **A byte jigc did not write, where the route prints no path of it** — the route says
 /// *the paths above* and prints `.jigc/displaced/`, so the one way a case can follow is the
@@ -706,29 +712,80 @@ const THE_WORKBENCH_UNSEARCHABLE: [Case; 2] = unlisted_ways!(
 
 /// **An open task's staged doc, followed the three ways its route offers**: read and
 /// thrown away, by the two lines the route prints for that; landed, by the line it prints
-/// for that; and the consent. The first two hold `<task-id>` where the id belongs.
+/// for that; and the consent. The first two hold `<task-id>` — and the first of them
+/// `<address>` — where the refusal's listing has the id and the doc's address: `<task>:
+/// <address>`, its first and its second listed value.
+///
+/// *Landed* is the route's way **once its doc is complete**, and it says the line refuses
+/// while a required slot is empty. So that case's state is the task with its doc complete
+/// and a change of its own staged — the one state the way's words are about; a state that
+/// left the doc as minted would follow a way the route does not offer it.
 const A_STAGED_DOC: &str = "an open task stages a doc that no commit has a copy of";
+/// The open task's doc made complete, and a change of the task's own staged: the type and
+/// the summary the `commit` doc requires, set through the binary under test, and a new file.
+const ITS_DOC_COMPLETE_AND_A_CHANGE_STAGED: [Step; 5] = [
+    Step::Jigc(&[
+        "doc",
+        "set-field",
+        "commit:write-a-note#header/type",
+        "--task",
+        "write-a-note",
+        "--value",
+        "docs",
+    ]),
+    Step::File(Place::Outside("summary"), "write a note\n"),
+    Step::Jigc(&[
+        "doc",
+        "set-slot",
+        "commit:write-a-note#summary",
+        "--task",
+        "write-a-note",
+        "--from-file",
+        "../outside/summary",
+    ]),
+    Step::File(Place::Repo("note.md"), "a note\n"),
+    Step::Git(&["add", "note.md"]),
+];
 const AN_OPEN_TASKS_STAGED_DOC: [Case; 3] = [
     Case {
         name: "uninstall-staged-doc-read-and-discarded-as-printed",
         site: STAGED_PROSE,
         cause: A_STAGED_DOC,
         state: installed![A_TASK],
-        acts: &[Act::Run(0), Act::Run(1), Act::Run(3)],
+        acts: &[
+            Act::RunFilled(Filled {
+                line: 0,
+                with: &[1, 0],
+            }),
+            Act::RunFilled(Filled {
+                line: 1,
+                with: &[0],
+            }),
+            Act::Run(3),
+        ],
         holds: torn_down![],
-        untouched: &["README.md", "notes.md", STAGED_DOC],
-        doubt: Some(WHICH_LINE),
         ..UNINSTALL
     },
     Case {
         name: "uninstall-staged-doc-finalized-as-printed",
         site: STAGED_PROSE,
         cause: A_STAGED_DOC,
-        state: installed![A_TASK],
-        acts: &[Act::Run(2), Act::Run(3)],
-        holds: torn_down![],
-        untouched: &["README.md", "notes.md", STAGED_DOC],
-        doubt: Some(WHICH_LINE),
+        state: installed![
+            A_TASK,
+            ITS_DOC_COMPLETE_AND_A_CHANGE_STAGED[0],
+            ITS_DOC_COMPLETE_AND_A_CHANGE_STAGED[1],
+            ITS_DOC_COMPLETE_AND_A_CHANGE_STAGED[2],
+            ITS_DOC_COMPLETE_AND_A_CHANGE_STAGED[3],
+            ITS_DOC_COMPLETE_AND_A_CHANGE_STAGED[4],
+        ],
+        acts: &[
+            Act::RunFilled(Filled {
+                line: 2,
+                with: &[0],
+            }),
+            Act::Run(3),
+        ],
+        holds: torn_down![Check::RegularFile(Place::Repo("note.md"))],
         ..UNINSTALL
     },
     Case {
@@ -793,10 +850,14 @@ const A_FILE_NO_INDEX_HAS: [Case; 4] = [
         site: UNTRACKED_WORKBENCH,
         cause: NEVER_TRACKED,
         state: installed![A_LOCAL_CONFIG],
-        acts: &[Act::Run(0), Act::Run(2)],
+        acts: &[
+            Act::RunFilled(Filled {
+                line: 0,
+                with: &[0],
+            }),
+            Act::Run(2),
+        ],
         holds: torn_down![],
-        untouched: &["README.md", "notes.md", LOCAL_CONFIG],
-        doubt: Some(WHICH_LINE),
         ..UNINSTALL
     },
     Case {
@@ -894,10 +955,15 @@ const AN_IGNORED_FILE_AND_ONE_GIT_TAKES: [Case; 2] = [
             A_LOCAL_CONFIG,
             Step::File(Place::Repo(".jigc/config/other.yaml"), "mine: 2\n"),
         ],
-        acts: &[Act::MoveOut(Operand::Span(3)), Act::Run(1), Act::Run(0)],
+        acts: &[
+            Act::MoveOut(Operand::Span(3)),
+            Act::RunFilled(Filled {
+                line: 1,
+                with: &[1],
+            }),
+            Act::Run(0),
+        ],
         holds: torn_down![Check::RegularFile(Place::Moved(LOCAL_CONFIG))],
-        untouched: &["README.md", "notes.md", ".jigc/config/other.yaml"],
-        doubt: Some(WHICH_LINE),
         ..UNINSTALL
     },
     Case {
@@ -1559,7 +1625,8 @@ pub const READINGS: &[Reading] = &[
                 Why::NotConstructible(
                     "one arm, one line — `jigc milestone discard <milestone-id> --force` — \
                      whatever the registered path is held for: followed at the live \
-                     worktree, where no shell splits it",
+                     worktree, where the refusal lists no milestone to fill it with and no \
+                     shell splits it as printed",
                 ),
             ),
             (

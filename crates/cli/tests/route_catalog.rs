@@ -119,6 +119,15 @@
 //! ([`a_printed_line_no_shell_can_split_is_a_red_case_and_stops_no_arm`]). The frame's
 //! reader of a printed line used to end the whole arm over one.
 //!
+//! **And a printed line with a word in angle brackets is a shape the reader fills** — the
+//! surface contract's reading, taken from the design of record and asked of nobody
+//! (`DECISIONS.md` → 2026-10-11, *The route catalog's first doubt, read by the surface
+//! contract*). The runner fills each placeholder with a value the refusal's own output
+//! lists, by index, and runs the line
+//! ([`a_printed_line_is_filled_with_what_the_refusal_lists_and_with_nothing_else`]); the
+//! arms that hold the marked form and the sandbox's bound hold the new act too. A
+//! placeholder the refusal lists no value for cannot be filled.
+//!
 //! **And with the sites behind those**, each piece again with an arm that was red first: a
 //! case stands where it says, in the environment it says
 //! ([`a_case_stands_where_it_says_in_the_environment_it_says`]); the refusing command is run
@@ -191,8 +200,8 @@ use std::path::Path;
 
 use crate::support::refusal_sites::{self, DYNAMIC, FAMILIES, Site, Source};
 use crate::support::route_case::{
-    self, Act, Bound, Case, Check, Classification, ExpectedRed, Followed, Operand, Over, Place,
-    Refusal, Seen, Standing, Step, Var,
+    self, Act, Bound, Case, Check, Classification, ExpectedRed, Filled, Followed, Operand, Over,
+    Place, Refusal, Seen, Standing, Step, Var,
 };
 use crate::support::rust_source;
 
@@ -508,12 +517,9 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         ],
     ),
     (
-        A_SHAPE_FOR_A_LINE,
-        Classification::UnsplittableLine,
-        &[
-            "setup-unborn-install-path-staged-and-deleted-unstaged-as-printed",
-            "setup-unborn-staged-file-at-an-install-path-unstaged-as-printed-and-moved",
-        ],
+        UNSTAGING_LINE_REFUSED,
+        Classification::SameRefusalAgain,
+        &["setup-unborn-install-path-staged-and-deleted-unstaged-as-printed"],
     ),
     (
         HOME_UNSET,
@@ -532,13 +538,7 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
     (
         PLACEHOLDER_LINE,
         Classification::UnsplittableLine,
-        &[
-            "uninstall-fan-out-worktree-uncommitted-work-milestone-abandoned-as-printed",
-            "uninstall-staged-doc-finalized-as-printed",
-            "uninstall-staged-doc-read-and-discarded-as-printed",
-            "uninstall-untracked-workbench-file-added-as-printed",
-            "uninstall-workbench-files-one-ignored-moved-out-and-one-added-as-printed",
-        ],
+        &["uninstall-fan-out-worktree-uncommitted-work-milestone-abandoned-as-printed"],
     ),
     (
         FORCE_OVER_UNREADABLE,
@@ -692,15 +692,22 @@ const FORCE_CANNOT_COMMIT: &str = "r1-setup-force-over-skip-worktree-path-cannot
 /// on a reading — every case under it is marked.
 const THE_QUESTION_THAT_FAILED: &str =
     "r1-setup-unverified-route-opens-with-the-question-that-failed";
-/// Where there is no commit yet, the dirty route's line to unstage a file is printed with
-/// `<path>` standing where the path belongs: no shell splits it. Rests on a reading — every
-/// case under it is marked.
-const A_SHAPE_FOR_A_LINE: &str = "r1-setup-unborn-dirty-route-unstaging-line-is-no-command-line";
+/// Where there is no commit yet and the refusal comes behind the install's writes, the
+/// dirty route's line to unstage a file — `git -C <repo> rm --cached -- <path>`, filled
+/// with the path the refusal lists — is refused by git: the staged bytes differ from the
+/// file the install wrote there and from `HEAD`, and git asks for `-f`. (The key the pilot
+/// minted for that line read it as a command to run as printed,
+/// `r1-setup-unborn-dirty-route-unstaging-line-is-no-command-line`; the surface contract
+/// reads it as a shape the reader fills, and no case stands under that key any more.)
+const UNSTAGING_LINE_REFUSED: &str =
+    "r1-setup-unborn-dirty-route-unstaging-line-refused-behind-the-installs-writes";
 
 // The pilot's keys for `jigc uninstall`.
-/// A route prints, between backticks, a line with a word in angle brackets where an id the
-/// refusal lists belongs: no shell splits it. Rests on a reading — every case under it is
-/// marked.
+/// A route prints, between backticks, a line with `<milestone-id>` where an id belongs that
+/// the refusal lists nowhere: the line cannot be filled from what was printed, and as
+/// printed no shell splits it. Rests on a reading — the case under it is marked. (Until
+/// the surface contract was read for it, the key held four more cases, whose placeholders
+/// the refusal does list a value for: filled, each holds.)
 const PLACEHOLDER_LINE: &str = "r1-uninstall-routes-print-lines-with-a-placeholder-for-the-id";
 /// The consent, `jigc uninstall --force`, over a directory of the workbench that may not be
 /// read or searched: the removal of `.jigc/` fails part-way, under another code.
@@ -2130,7 +2137,8 @@ fn suite_files() -> Vec<(&'static str, &'static str)> {
 /// **No act takes a path, and the marked form is refused where a path is printed.**
 ///
 /// The source half reads the frame, this file and every command's. An [`Act`] carries an
-/// [`Operand`], a span's index or nothing at all — never a path, a word or a command of
+/// [`Operand`], a span's index, a line with the indices of the listed values that fill it
+/// ([`Filled`]), or nothing at all — never a path, a word or a command of
 /// the case's own; an operand is a span's index or the one
 /// marked form; a [`Case`] holds no function, so it cannot act around the runner; and
 /// neither this file nor a command's names a filesystem or a process API at all — what the
@@ -2148,10 +2156,18 @@ fn no_act_takes_a_path_and_the_marked_form_is_refused_where_a_path_is_printed() 
         assert!(
             variant.ends_with("(Operand)")
                 || variant.ends_with("(usize)")
+                || variant.ends_with("(Filled)")
                 || !variant.contains('('),
-            "the act `{variant}` takes something that is neither an operand nor a span's index",
+            "the act `{variant}` takes something that is neither an operand, a span's index \
+             nor a line with the indices of what fills it",
         );
     }
+    assert_eq!(
+        variants(body_of(&frame, "pub struct Filled {")),
+        ["pub line: usize", "pub with: &'static [usize]"],
+        "what fills a printed line is named by index and by nothing else: the line a span \
+         of the route, each value one the refusal lists",
+    );
     assert_eq!(
         variants(body_of(&frame, "pub enum Operand {")),
         ["Span(usize)", "Unprinted(&'static str)"],
@@ -3038,6 +3054,42 @@ fn no_file_act_is_done_outside_the_sandbox() {
         "all ten acts are refused, and the case is red for it:\n{}",
         followed.detail,
     );
+
+    // And a value filled into a printed line: a refusal that lists `/dev/null` and a path
+    // above the sandbox has neither handed to the command its route prints.
+    let listed_outside = Case {
+        name: "planted-a-line-filled-with-paths-outside-the-sandbox",
+        refusing: &[
+            "-c",
+            "printf '%s\\n' 'blocking · setup.install-hook — refused over:' '  `/dev/null`' \
+             '  ../../elsewhere' '  route: add them with `git -C . add -- <path>`'; exit 1",
+        ],
+        acts: &[
+            Act::RunFilled(Filled {
+                line: 0,
+                with: &[0],
+            }),
+            Act::RunFilled(Filled {
+                line: 0,
+                with: &[1],
+            }),
+        ],
+        ..PLANTED
+    };
+    let followed = route_case::follow(Path::new("/bin/sh"), &listed_outside)
+        .expect("the planted case is one the runner follows");
+    assert_eq!(
+        (
+            followed.classification,
+            followed
+                .detail
+                .matches("not done — it names nothing inside")
+                .count()
+        ),
+        (Classification::AnotherFailure, 2),
+        "neither listed path is filled into the line, and the case is red for it:\n{}",
+        followed.detail,
+    );
 }
 
 /// **A command that does not end is ended, and the case says so.** The runner waits for a
@@ -3698,6 +3750,123 @@ fn a_printed_line_no_shell_can_split_is_a_red_case_and_stops_no_arm() {
         followed.classification,
         followed.detail,
     );
+}
+
+/// A shell that stands in for a refusal which lists three values — beside another
+/// finding's listing, a line of prose and its own route — and prints a line that holds
+/// three placeholders: the line exits 0 only where each was filled with its own value, as
+/// one word, and removes the file the second names.
+const LISTS: &str = r#"test -e 'kept here' || exit 0
+cat <<'END'
+advisory · setup.other — another finding lists:
+  not-this
+blocking · setup.install-hook — refused over two entries:
+  first: `kept here`, second
+prose that is not indented lists nothing: stray
+  route: remove it with `jigc -c 'rm -- "$2" && test "$1-$3" = first-second' x <id> <path> <id>`, then re-run `jigc -c "test ! -e 'kept here'"`
+END
+exit 1"#;
+
+/// **A printed line is filled with what the refusal lists, and with nothing else.** A
+/// route prints a line with a word in angle brackets — a shape the reader fills, by the
+/// surface contract — and the value belongs to the refusal's own output: its listing. So
+/// the act names the line by its span and each value by its index in what the refusal
+/// lists; the runner puts each in as one word and runs the line.
+///
+/// *What a refusal lists*: the indented lines of its own finding that are not its route —
+/// a backticked span one value, every other word one, the colon or comma that sets a word
+/// off dropped; never another finding's lines, a line of prose, or the route.
+///
+/// *What the act may not do*: leave a placeholder unfilled or fill one that is not there,
+/// name a value the refusal does not list, or stand in for a line that is a command as
+/// printed. And a line with a placeholder that is run as printed is what it was before:
+/// one no shell can split.
+#[test]
+fn a_printed_line_is_filled_with_what_the_refusal_lists_and_with_nothing_else() {
+    let said = "\
+advisory · setup.other — another finding lists:
+  not-this
+blocking · setup.install-hook — refused over two entries:
+  first: `kept here`, second
+prose that is not indented lists nothing: stray
+  route: remove `a-span-of-the-route` and re-run
+blocking · setup.later — the next finding lists:
+  nor-this
+";
+    assert_eq!(
+        route_case::listed_in(said, "setup.install-hook"),
+        ["first", "kept here", "second"],
+        "the listing of the finding that carries the code, and of no other",
+    );
+    assert_eq!(route_case::listed_in(said, "setup.other"), ["not-this"]);
+    assert!(route_case::listed_in(said, "setup.absent").is_empty());
+
+    const AS_LISTED: &[Act] = &[
+        Act::RunFilled(Filled {
+            line: 0,
+            with: &[0, 1, 2],
+        }),
+        Act::Run(1),
+    ];
+    const OUT_OF_ORDER: &[Act] = &[
+        Act::RunFilled(Filled {
+            line: 0,
+            with: &[2, 1, 0],
+        }),
+        Act::Run(1),
+    ];
+    const AS_PRINTED: &[Act] = &[Act::Run(0), Act::Run(1)];
+    const ONE_UNFILLED: &[Act] = &[Act::RunFilled(Filled {
+        line: 0,
+        with: &[0, 1],
+    })];
+    const NOT_LISTED: &[Act] = &[Act::RunFilled(Filled {
+        line: 0,
+        with: &[0, 1, 7],
+    })];
+    const NOTHING_TO_FILL: &[Act] = &[Act::RunFilled(Filled { line: 1, with: &[] })];
+    let sh = Path::new("/bin/sh");
+    let planted = |acts: &'static [Act]| Case {
+        name: "planted-a-line-filled-with-what-the-refusal-lists",
+        state: &[Step::File(Place::Repo("kept here"), "mine\n")],
+        refusing: &["-c", LISTS],
+        acts,
+        ..PLANTED
+    };
+    let followed = route_case::follow(sh, &planted(AS_LISTED))
+        .expect("the planted case is one the runner follows");
+    assert!(
+        followed.classification == Classification::Holds
+            && followed.detail.contains(
+                "x first 'kept here' second` (span 0, `<id>` filled by listed value 0, \
+                 `<path>` filled by listed value 1, `<id>` filled by listed value 2): exit 0"
+            ),
+        "each placeholder is filled with its listed value, as one word, and the line is \
+         run — it came out {}:\n{}",
+        followed.classification,
+        followed.detail,
+    );
+
+    come_out(&[
+        // The values arrive in the order the act gives them, and in no other.
+        (planted(OUT_OF_ORDER), Classification::AnotherFailure),
+        // Run as printed, the line is what it was before: no shell splits it.
+        (planted(AS_PRINTED), Classification::UnsplittableLine),
+    ]);
+
+    for (acts, says) in [
+        (ONE_UNFILLED, "holds 3 placeholders, with 2 values"),
+        (NOT_LISTED, "the refusal lists 3"),
+        (NOTHING_TO_FILL, "holds no placeholder"),
+    ] {
+        match route_case::follow(sh, &planted(acts)) {
+            Err(fault) => assert!(fault.contains(says), "{says}: {fault}"),
+            Ok(followed) => panic!(
+                "{says}: the case was followed — {}\n{}",
+                followed.classification, followed.detail
+            ),
+        }
+    }
 }
 
 /// **No more chains run at once in one process than the machine is wide** — counted, never

@@ -40,7 +40,9 @@
 //! way that cannot be followed at a site is a row of that site's reading.
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{Act, Case, Check, Operand, Over, Place, SCRIPT, Step, Var};
+use crate::support::route_case::{
+    Act, Case, Check, Filled, Operand, Over, Place, SCRIPT, Step, Var,
+};
 
 /// The hook `jigc setup` installs, from the repository root.
 pub const HOOK: &str = ".git/hooks/pre-commit";
@@ -2630,21 +2632,20 @@ const AN_UNTRACKED_REPLACED_FILE_ON_AN_UNBORN_HEAD: [Case; 3] = [
     },
 ];
 
-/// The two readings of the unborn route's unstaging line.
-const WHICH_UNSTAGING_LINE: &str = "*`git -C <repo> rm --cached -- <path>` first where you \
-                                    had staged one*: (a) a command to run as printed, like \
-                                    every line a route prints between backticks — followed \
-                                    here: no shell splits it, `<path>` being a redirection \
-                                    with nothing behind it; (b) a shape to fill in with the \
-                                    staged file's path — then the route prints no line a \
-                                    reader can run as it stands, and the frame has no case \
-                                    for it: a filled-in line would be the case's own";
+/// **The unborn route's unstaging line, with its path filled in** —
+/// `git -C <repo> rm --cached -- <path>`: a shape the reader fills, by the surface
+/// contract, and the path is the one the refusal lists above its route (its first listed
+/// value, the one path of these cases).
+const UNSTAGE_THE_LISTED_PATH: Act = Act::RunFilled(Filled {
+    line: 0,
+    with: &[0],
+});
 
 /// **A staged file at an install path, where there is no commit yet.** A staged file rides
 /// no first commit, whatever the install does with the path. The route's first way — the
 /// file moved out of its path — opens with a line to unstage it *first where you had staged
-/// one*, and here one is staged: the line run as printed, then the file moved out, then
-/// the command again.
+/// one*, and here one is staged: the line run with the listed path filled in, then the
+/// file moved out, then the command again.
 const UNBORN_STAGED: &str = "there is no commit yet, and a file is staged at an install \
                              path";
 const A_STAGED_FILE_ON_AN_UNBORN_HEAD: [Case; 3] = [
@@ -2658,7 +2659,7 @@ const A_STAGED_FILE_ON_AN_UNBORN_HEAD: [Case; 3] = [
             Step::Git(&["add", "CLAUDE.md"]),
         ],
         acts: &[
-            Act::Run(0),
+            UNSTAGE_THE_LISTED_PATH,
             Act::MoveOut(Operand::Unprinted(CLAUDE_MD)),
             Act::Run(1),
         ],
@@ -2666,7 +2667,6 @@ const A_STAGED_FILE_ON_AN_UNBORN_HEAD: [Case; 3] = [
             Check::RegularFile(Place::Repo(AGENT_MD)),
             Check::RegularFile(Place::Moved(CLAUDE_MD)),
         ],
-        doubt: Some(WHICH_UNSTAGING_LINE),
         ..SETUP
     },
     Case {
@@ -2752,9 +2752,8 @@ const STAGED_AND_GONE_ON_AN_UNBORN_HEAD: [Case; 3] = [
             Step::Git(&["add", "CLAUDE.md"]),
             Step::Git(&["-c", "alias.drop=!rm CLAUDE.md", "drop"]),
         ],
-        acts: &[Act::Run(0), Act::Run(1)],
+        acts: &[UNSTAGE_THE_LISTED_PATH, Act::Run(1)],
         holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
-        doubt: Some(WHICH_UNSTAGING_LINE),
         ..SETUP
     },
     Case {
