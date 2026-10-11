@@ -42,7 +42,7 @@
 # Usage — every call prints ONE line of JSON on stdout, whatever it exits with:
 #
 #   dev/regression-set run --previous SHA --candidate SHA --list PATH --scratch DIR
-#                      [--keep]
+#                      [--keep] [--baseline DIR]
 #       The whole check. SHA is a full commit sha, and the two are two commits; the
 #       candidate and the previous release are built from `git archive` of their commits,
 #       never from the working tree. PATH is the list's path in the repository: it is read
@@ -61,7 +61,9 @@
 #         6. the verdict, as `verdict` gives it over what the run left.
 #       A step that cannot be done ends the run there, void. Unless --keep is given, the
 #       two source trees and the two target directories are removed at the end; the
-#       evidence stays.
+#       evidence stays. With --baseline DIR what steps 2 and 4 make is KEPT in DIR, and a
+#       later run that names DIR uses it in their place (A KEPT BASELINE, below). Without
+#       it nothing is kept, nothing is asked for a key, and the run is the one above.
 #
 #   dev/regression-set verdict --evidence DIR --list PATH
 #       The verdict over the evidence a run left, and no build and no test: the same
@@ -151,6 +153,74 @@
 # exclusion row: `no-such-test`, `passed-on-its-own-binary`. Stale rows do not change the
 # verdict; they are reported so that a list cannot quietly outlive what it excuses.
 #
+# A KEPT BASELINE. About half of a run depends on the previous release's commit alone:
+# its tree, its built tests, and their run on their own binary. `run --baseline DIR`
+# keeps those in DIR — a directory outside the repository, made if it is not there — and
+# a later run that names DIR builds the candidate's binary, swaps it in at the path inside
+# the kept baseline, and makes the second run alone. The swap and its proof are the same:
+# the two hashes around the baseline's run are the ones taken when it was made, the two
+# around the candidate's run are this run's, and the evidence of the run is as whole as a
+# fresh run's — the baseline's report and the record of the build are copied into it.
+#
+# IT IS OF THE CLASS THAT RECORDS FALSELY. A baseline that is not the one this run would
+# have made, used as if it were, is a comparison against nothing. So a kept baseline is
+# never used because a directory is there, or is named for it: it is kept WITH A KEY, in a
+# record that is written last, and used only while every member of the key is what it was
+# kept with. They are held in this order, and the first that differs refuses it:
+#
+#   previous    the previous release's commit
+#   exclusions  the list's exclusion rows, in no order. Each says that a test fails on
+#               its own binary, which is a claim about the baseline's run: other claims
+#               are held to a run of their own, never to a report made before them
+#   tool        this file's bytes: what a baseline is and how it is held is written here
+#   runner      what `cargo nextest --version` says: the runner made the report
+#   compiler    what `rustc -vV` says IN THE PREVIOUS RELEASE'S TREE — the compiler as that
+#               tree resolves it today, which is not what its toolchain file asks for
+#   git         what `git --version` says, of the git the tests are run with: they drive
+#               it, and which of them fail on their own binary depends on it
+#   tests       the sha256 of every test binary the recorded build names: the second run
+#               is made with these files, and is compared with what the same files did
+#   jigc        the sha256 of the baseline's own binary — of the file at the path the
+#               tests name, and of the kept copy that path is put back from
+#
+# And two words stand before the key, for a directory that is no finished baseline at
+# all: `incomplete` — it holds no finished record of this tool's: a run ended, or was
+# killed, before its baseline held; `record` — the kept tree does not hold a file of the
+# commit the baseline was kept for as git holds it, a kept file (the baseline's report,
+# the two records of the build) is not the bytes it was kept with, or the recorded build
+# names a path outside this directory: the tests have their binary's path compiled in, so
+# a kept baseline is used where it was built.
+#
+# REFUSED IS NOT VOID. A baseline that is refused is removed, the previous release is
+# built afresh in its place, in the same run, and that baseline is kept; the run gives its
+# verdict as any run does. So DIR holds one baseline, the last one a run held.
+#
+# AT REST a kept baseline is as its own baseline left it, with the previous release's
+# binary at the path the tests name: a run puts it back there when it is over, after the
+# last hash of its proof is taken. A run that is killed after its swap leaves the
+# candidate's binary there, and the next run refuses the baseline by `jigc`.
+#
+# TWO RUNS DO NOT SHARE ONE KEPT BASELINE AT A TIME — the second would drive the first
+# one's candidate. DIR has a lock, held by a run from its start to its end and let go by
+# the system when its process is gone. A run that does not get it says `locked`, and is
+# the run it would be without --baseline: a build of its own, in its own directory, and
+# nothing read or written in DIR.
+#
+# WHAT THE LINE SAYS OF IT — `baseline: {dir, used, refused, detail, key}`, in the line of
+# a run that names DIR and in no other: `used`, whether the baseline kept there was used
+# and the previous release not built; `refused`, the word by which a baseline that was
+# there was not used — a member of the key, `incomplete`, `record` or `locked` — with its
+# sentence in `detail`, which says what the member is now and what the baseline was kept
+# with; `key`, the sha256 of the key of the baseline the run left in DIR, null where it
+# left none. The evidence holds the record itself, `baseline.json`, and the line's
+# `seconds` what holding the key and keeping took, as `kept`.
+#
+# WHAT A KEPT BASELINE IS NOT HELD TO. The environment beside these: a variable the build
+# or a test reads, the system under them. The runner and git by more than what they say of
+# themselves. A file in the kept tree that the commit does not hold — what a test left
+# there — and the target directory beyond the test binaries and the one `jigc`. And the
+# record itself, which is what everything else is held to.
+#
 # The line: {tool, status, reason, detail, previous: {commit, sha256}, candidate:
 # {commit, sha256}, list: {path, commit, sha256, rows}, counts: {tests, baseline_passed,
 # baseline_failed, candidate_passed, candidate_failed, differences, on_list, not_on_list,
@@ -158,9 +228,10 @@
 # [{binary, test, change, pointer}], excluded: [{binary, test, change, pointer}],
 # excluded_by_no_row: [{binary, test}], stale: [{binary, test, pointer, why}], flaky:
 # {baseline: [...], candidate: [...]}, proof: {baked_path, named_by, baseline_before,
-# baseline_after, candidate_before, candidate_after}, seconds, evidence, work}. A void
-# line carries what was established before it — and `excluded_by_no_row`, where that is
-# what voided it; a refusal prints {tool, status: refused, refused: WORD, detail}.
+# baseline_after, candidate_before, candidate_after}, seconds, evidence, work} — and
+# `baseline`, as above, where the run named a directory for one. A void line carries what
+# was established before it — and `excluded_by_no_row`, where that is what voided it; a
+# refusal prints {tool, status: refused, refused: WORD, detail}.
 #
 # WHAT A GREEN RESULT ESTABLISHES, AND WHAT IT CANNOT SEE. Green says: nothing the
 # previous release's suite pinned THROUGH THE BINARY moved, but for the listed rows. It
@@ -187,8 +258,8 @@
 #                        form, or a row points at nothing
 #    4  commit           a commit named is not the full sha of a commit this repository
 #                        holds, or the two commits are one
-#    5  scratch          the scratch directory does not exist, or lies inside the
-#                        repository
+#    5  scratch          the scratch directory does not exist, or it or the directory
+#                        of a kept baseline lies inside the repository
 #   10  did-not-run      void, as above — and so each of the next six
 #   11  build-previous
 #   12  build-candidate
@@ -197,11 +268,13 @@
 #   15  incomplete
 #   16  evidence
 #
-# Needs python3 and git; `run` needs cargo, cargo-nextest and tar beside them. It finds
-# its repository from where it lies, never from where it was called.
+# Needs python3 and git; `run` needs cargo, cargo-nextest and tar beside them, and rustc
+# where it names a kept baseline. It finds its repository from where it lies, never from
+# where it was called.
 # tooling-tests/dev_regression_set.rs drives it.
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -230,6 +303,37 @@ VOIDS = {
 # The package whose binary the tests drive, and that binary's name.
 PACKAGE = "jigc"
 BINARY = "jigc"
+
+# A KEPT BASELINE: what the tool owns in the directory `--baseline` names — the baseline,
+# and the lock two runs do not share it under; the files of a run's evidence that are kept
+# with it; and what each of the three tools a baseline is kept with is asked to say of
+# itself.
+KEPT = PROG + ".kept"
+LOCK = PROG + ".lock"
+RECORD = "baseline.json"
+KEPT_FILES = ("binaries-metadata.json", "cargo-metadata.json", "baseline-junit.xml")
+SAYS = {
+    "runner": ["cargo", "nextest", "--version"],
+    "compiler": ["rustc", "-vV"],
+    "git": ["git", "--version"],
+}
+# The two moments around the baseline's run at which the file at the path is hashed.
+AROUND = ("baseline_before", "baseline_after")
+# THE KEY: its members in the order they are held, each with the sentence that refuses a
+# kept baseline by it — what the member is now, and what the baseline was kept with.
+MEMBERS = {
+    "previous": "the previous release's commit is `%s`, and the baseline was kept with `%s`",
+    "exclusions": "the list's exclusion rows are sha256 `%s`, and the baseline was kept with"
+                  " `%s`",
+    "tool": "the tool's own bytes are sha256 `%s`, and the baseline was kept with `%s`",
+    "runner": "the test runner says `%s` of itself, and the baseline was kept with `%s`",
+    "compiler": "the compiler says `%s` of itself in the previous release's tree, and the"
+                " baseline was kept with `%s`",
+    "git": "the host's git says `%s` of itself, and the baseline was kept with `%s`",
+    "tests": "the test binary `%s` is sha256 `%s`, and the baseline was kept with `%s`",
+    "jigc": "the baseline's own `jigc` is another file: %s is sha256 `%s`, and the baseline"
+            " was kept with `%s`",
+}
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
@@ -539,7 +643,7 @@ def judge(evidence, the_list):
             raise Void("evidence", "no readable `run.json`: %s" % one_line(error))
         if not isinstance(facts, dict):
             raise Void("evidence", "`run.json` is not an object")
-        for key in ("previous", "candidate", "seconds"):
+        for key in ("previous", "candidate", "seconds", "baseline"):
             if isinstance(facts.get(key), dict):
                 line[key] = facts[key]
         if facts.get("baked_path") is not None:
@@ -694,16 +798,27 @@ class Run:
         self.save()
         return status
 
+    def timed(self, step, did, *args):
+        """What `did` returns, its seconds under `step`."""
+        began = time.time()
+        try:
+            return did(*args)
+        finally:
+            self.facts["seconds"][step] = self.facts["seconds"].get(step, 0) + round(
+                time.time() - began)
+            self.save()
+
     def must(self, reason, step, log, argv, cwd, **how):
         status = self.command(step, log, argv, cwd, **how)
         if status != 0:
             raise Void(reason, "`%s` exited %d — its output is `%s` of the evidence"
                        % (" ".join(argv[:4]), status, log))
 
-    def unpack(self, reason, commit, name):
-        """The tree of `commit`, from `git archive`, as the directory `name`."""
-        tree = self.path(name)
-        os.mkdir(tree)
+    def unpack(self, reason, commit, name, home=None):
+        """The tree of `commit`, from `git archive`, as the directory `name` — of the
+        run's own directory, or of `home`."""
+        tree = os.path.join(home or self.work, name)
+        os.makedirs(tree)
         tar = self.path(name + ".tar")
         log = "build-%s.log" % name
         self.must(reason, "unpack-" + name, log,
@@ -753,35 +868,281 @@ def names(path, needle):
         return needle in handle.read()
 
 
-def drive(run, previous, candidate):
-    for tool in ("cargo", "cargo-nextest", "tar"):
+class NotUsed(Exception):
+    """A kept baseline that is not used: the word of what it failed on, and a sentence."""
+
+    def __init__(self, word, detail):
+        super().__init__(detail)
+        self.word = word
+        self.detail = detail
+
+
+def digest(value):
+    """The sha256 of a value's canonical JSON."""
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def hash_at(path):
+    """The sha256 of the file at `path`, or None where no file can be read there."""
+    try:
+        return sha256_of(path)
+    except OSError:
+        return None
+
+
+class Kept:
+    """The baseline kept in the directory a caller names, and the key it is held to.
+
+    It lies in one directory the tool owns there, `KEPT`: the previous release's tree, its
+    target directory, the files of `KEPT_FILES`, a copy of the baseline's own binary, and
+    the record — the key, the kept files' hashes, and the two hashes taken around the
+    baseline's run — WRITTEN LAST, so that a directory without one is a baseline nobody
+    finished. What the line says of it is `said`, which the run's facts hold from the
+    start."""
+
+    def __init__(self, directory, run, previous, the_list):
+        self.base = os.path.join(directory, KEPT)
+        self.run = run
+        # A row moved is no row changed: the exclusion rows are held in no order.
+        rows = sorted([row[name] for name in FIELDS]
+                      for row in the_list["rows"] if excludes(row))
+        self.key = {"previous": previous, "exclusions": digest(rows),
+                    "tool": sha256_of(os.path.realpath(__file__))}
+        self.said = {"dir": directory, "used": False, "refused": None, "detail": None,
+                     "key": None}
+        run.facts["baseline"] = self.said
+        # THE LOCK. A run swaps the candidate's binary in at a path inside the kept
+        # baseline, so two runs do not share one: the lock is this process's from here to
+        # its end, and a run that does not get it keeps nothing and uses nothing.
+        try:
+            self.lock = open(os.path.join(directory, LOCK), "a")
+            fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.held = True
+        except OSError as error:
+            self.held = False
+            self.said.update(refused="locked", detail=(
+                "the directory's lock, `%s`, is not this run's (%s): another run holds it,"
+                " and this run keeps no baseline and uses none" % (LOCK, one_line(error))))
+        run.save()
+
+    def path(self, *parts):
+        return os.path.join(self.base, *parts)
+
+    def says(self, member, tree):
+        """What a tool says of itself, as one line: asked in the previous release's tree,
+        where that tree's toolchain file is what resolves a compiler."""
+        argv = SAYS[member]
+        asked = subprocess.run(argv, cwd=tree, env=self.run.env, stdin=subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        said = one_line(asked.stdout.decode("utf-8", errors="replace"))
+        if asked.returncode != 0 or not said:
+            raise Void("did-not-run", "`%s` exited %d and said `%s`: a baseline is kept with"
+                       " what it says of itself" % (" ".join(argv), asked.returncode, said))
+        return said
+
+    def ask(self, tree):
+        """The members of the key that are asked for — before anything is built."""
+        for member in SAYS:
+            self.key[member] = self.says(member, tree)
+
+    def taken(self):
+        """What a run needs of the kept baseline — where one is there, and every member of
+        its key is what it was kept with. What is there and is not that is REFUSED, the
+        line says by which word, and REMOVED: the run builds afresh in its place."""
+        if not os.path.lexists(self.base):
+            return None
+        try:
+            return self.read()
+        except NotUsed as refused:
+            self.said.update(refused=refused.word, detail=one_line(refused.detail))
+            self.run.save()
+            try:
+                shutil.rmtree(self.base)
+            except OSError as error:
+                raise Void("build-previous", "the kept baseline `%s` was refused (%s) and"
+                           " could not be removed: %s" % (self.base, refused.word,
+                                                          one_line(error)))
+            return None
+
+    def hold_tree(self, tree, commit):
+        """The kept tree is the tree of the commit the baseline was kept for: every file
+        that commit holds, as git holds it — by its blob's name, so by nothing kept."""
+        listed = git("ls-tree", "-r", "-z", commit)
+        if listed.returncode != 0:
+            raise NotUsed("record", "git lists no files of the commit `%s` the baseline was"
+                          " kept for" % commit)
+        for entry in listed.stdout.split(b"\0")[:-1]:
+            meta, name = entry.split(b"\t", 1)
+            mode, kind, blob = meta.split()
+            if kind != b"blob":
+                continue
+            at = os.path.join(os.fsencode(tree), name)
+            try:
+                if mode == b"120000":
+                    held = os.readlink(at)
+                else:
+                    with open(at, "rb") as handle:
+                        held = handle.read()
+            except OSError:
+                held = None
+            if held is None or hashlib.sha1(
+                    b"blob %d\0" % len(held) + held).hexdigest().encode() != blob:
+                raise NotUsed("record", "the previous release's tree does not hold `%s` as"
+                              " the commit `%s` holds it" % (os.fsdecode(name), commit))
+
+    def read(self):
+        # A finished record of this tool's, with a whole key.
+        try:
+            record = json.load(open(self.path(RECORD), encoding="utf-8"))
+            if record["tool"] != PROG:
+                raise ValueError("it does not say `tool: %s`" % PROG)
+            then, files, around = record["key"], record["files"], record["at_baked_path"]
+            if (set(then) != set(MEMBERS) or set(files) != set(KEPT_FILES)
+                    or not FULL_SHA.fullmatch(then["previous"])
+                    or not isinstance(then["tests"], dict)
+                    or not all(isinstance(around[moment], str) for moment in AROUND)):
+                raise ValueError("it is of another form")
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise NotUsed("incomplete", "the directory holds no finished record `%s` of a"
+                          " kept baseline — a run ended before its baseline held, or the"
+                          " record is not this tool's: %s" % (RECORD, one_line(error)))
+
+        # The tree is the commit's, and the files are the ones the record was written
+        # beside, where it was written.
+        tree = self.path("previous")
+        self.hold_tree(tree, then["previous"])
+        for name in KEPT_FILES:
+            found = hash_at(self.path(name))
+            if found != files[name]:
+                raise NotUsed("record", "`%s` is not the file the baseline was kept with:"
+                              " sha256 `%s`, kept with `%s`" % (name, found, files[name]))
+        try:
+            metadata = json.load(open(self.path(KEPT_FILES[0]), encoding="utf-8"))
+            baked, relative, tests = baked_path(metadata)
+            binaries = sorted(metadata["rust-binaries"].items())
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+            raise NotUsed("record", "the recorded build does not name the one `%s` binary:"
+                          " %s" % (BINARY, one_line(error)))
+        here = self.path("target-previous", relative)
+        if os.path.realpath(baked) != os.path.realpath(here):
+            raise NotUsed("record", "the recorded build names the path `%s`, and in this"
+                          " directory it is `%s`: a kept baseline is used where it was built"
+                          % (baked, here))
+
+        # THE KEY, member by member, in its order: the first that differs refuses.
+        def held(member, now, *what):
+            if now != then[member]:
+                raise NotUsed(member, MEMBERS[member] % (what + (now, then[member])))
+
+        for member in ("previous", "exclusions", "tool"):
+            held(member, self.key[member])
+        for member in SAYS:
+            held(member, self.says(member, tree))
+        now = {name: hash_at(test["binary-path"]) for name, test in binaries}
+        for name in sorted(set(now) | set(then["tests"])):
+            if now.get(name) != then["tests"].get(name):
+                raise NotUsed("tests", MEMBERS["tests"] % (name, now.get(name),
+                                                           then["tests"].get(name)))
+        held("jigc", hash_at(baked), "the file at the path the tests name")
+        held("jigc", hash_at(self.path(BINARY)), "the kept copy of it")
+        self.key = then
+        return {"baked": baked, "relative": relative, "tests": tests, "around": around}
+
+    def use(self, record):
+        """The kept baseline, as this run's: what its run established in this run's facts,
+        its files and its record in this run's evidence — as whole as a fresh run's."""
+        run = self.run
+        run.facts["baked_path"] = record["baked"]
+        run.facts["named_by"] = sum(
+            1 for test in record["tests"] if names(test, os.fsencode(record["baked"])))
+        run.facts["previous"]["sha256"] = self.key["jigc"]
+        for moment in AROUND:
+            run.facts["at_baked_path"][moment] = record["around"][moment]
+        for name in KEPT_FILES + (RECORD,):
+            shutil.copyfile(self.path(name), os.path.join(run.evidence, name))
+        self.said.update(used=True, key=digest(self.key))
+        run.save()
+
+    def keep(self, binaries):
+        """THE BASELINE HELD, and is kept: the record is written last, by a rename."""
+        run = self.run
+        shutil.copy2(run.facts["baked_path"], self.path(BINARY))
+        files = {}
+        for name in KEPT_FILES:
+            shutil.copyfile(os.path.join(run.evidence, name), self.path(name))
+            files[name] = sha256_of(self.path(name))
+        self.key["tests"] = {name: sha256_of(test["binary-path"]) for name, test in binaries}
+        self.key["jigc"] = run.facts["previous"]["sha256"]
+        staged = self.path(RECORD + ".new")
+        with open(staged, "w", encoding="utf-8") as handle:
+            json.dump({"tool": PROG, "key": self.key, "files": files,
+                       "at_baked_path": {moment: run.facts["at_baked_path"][moment]
+                                         for moment in AROUND}},
+                      handle, indent=1, sort_keys=True)
+            handle.write("\n")
+        os.replace(staged, self.path(RECORD))
+        shutil.copyfile(self.path(RECORD), os.path.join(run.evidence, RECORD))
+        self.said["key"] = digest(self.key)
+        run.save()
+
+    def rest(self):
+        """AT REST a kept baseline is as its own baseline left it: the previous release's
+        binary at the path its tests name. It is put there when the run is over — after
+        the last hash of the proof is taken. A run killed before that leaves the
+        candidate's binary there, and the next run refuses the baseline by `jigc`."""
+        if self.said["key"] is None:
+            return
+        try:
+            staged = self.run.facts["baked_path"] + ".rest"
+            shutil.copy2(self.path(BINARY), staged)
+            os.replace(staged, self.run.facts["baked_path"])
+        except OSError:
+            pass
+
+
+def drive(run, previous, candidate, kept=None):
+    for tool in ("cargo", "cargo-nextest", "tar") + (("rustc",) if kept else ()):
         if shutil.which(tool, path=run.env.get("PATH")) is None:
             raise Void("did-not-run", "%s is not on PATH" % tool)
 
-    # The previous release's tests, built once and recorded.
-    old = run.unpack("build-previous", previous, "previous")
-    target = run.path("target-previous")
-    run.must("build-previous", "build-previous", "build-previous.log",
-             ["cargo", "nextest", "run", "--workspace", "--locked", "--no-run"], old,
-             target=target)
+    # A kept baseline that holds is used, and the previous release is not built.
+    record = run.timed("kept", kept.taken) if kept else None
+    home = kept.base if kept else run.work
     recorded = os.path.join(run.evidence, "binaries-metadata.json")
-    run.must("build-previous", "build-previous", "build-previous.log",
-             ["cargo", "nextest", "list", "--workspace", "--locked", "--list-type",
-              "binaries-only", "--message-format", "json"], old, target=target, stdout=recorded)
-    run.must("build-previous", "build-previous", "build-previous.log",
-             ["cargo", "metadata", "--format-version=1", "--all-features", "--locked"], old,
-             target=target, stdout=os.path.join(run.evidence, "cargo-metadata.json"))
-    try:
-        baked, relative, tests = baked_path(json.load(open(recorded, encoding="utf-8")))
-    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
-        raise Void("build-previous", "the recorded build does not name the one `%s` binary: %s"
-                   % (BINARY, one_line(error)))
-    if not os.path.isfile(baked):
-        raise Void("build-previous", "the recorded build names `%s`, and no file is there" % baked)
-    run.facts["baked_path"] = baked
-    run.facts["named_by"] = sum(1 for test in tests if names(test, os.fsencode(baked)))
-    run.facts["previous"]["sha256"] = sha256_of(baked)
-    run.save()
+    if record is not None:
+        old = os.path.join(home, "previous")
+        baked, relative = record["baked"], record["relative"]
+        kept.use(record)
+    else:
+        # The previous release's tests, built once and recorded.
+        old = run.unpack("build-previous", previous, "previous", home)
+        if kept:
+            kept.ask(old)
+        target = os.path.join(home, "target-previous")
+        run.must("build-previous", "build-previous", "build-previous.log",
+                 ["cargo", "nextest", "run", "--workspace", "--locked", "--no-run"], old,
+                 target=target)
+        run.must("build-previous", "build-previous", "build-previous.log",
+                 ["cargo", "nextest", "list", "--workspace", "--locked", "--list-type",
+                  "binaries-only", "--message-format", "json"], old, target=target,
+                 stdout=recorded)
+        run.must("build-previous", "build-previous", "build-previous.log",
+                 ["cargo", "metadata", "--format-version=1", "--all-features", "--locked"], old,
+                 target=target, stdout=os.path.join(run.evidence, "cargo-metadata.json"))
+        try:
+            metadata = json.load(open(recorded, encoding="utf-8"))
+            baked, relative, tests = baked_path(metadata)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+            raise Void("build-previous", "the recorded build does not name the one `%s`"
+                       " binary: %s" % (BINARY, one_line(error)))
+        if not os.path.isfile(baked):
+            raise Void("build-previous", "the recorded build names `%s`, and no file is"
+                       " there" % baked)
+        run.facts["baked_path"] = baked
+        run.facts["named_by"] = sum(1 for test in tests if names(test, os.fsencode(baked)))
+        run.facts["previous"]["sha256"] = sha256_of(baked)
+        run.save()
     hold_path(run.facts)
 
     # The candidate's binary, in the same profile.
@@ -802,11 +1163,14 @@ def drive(run, previous, candidate):
         for which in ("baseline", "candidate"):
             config.write('[profile.regression-%s.junit]\npath = "junit.xml"\n' % which)
 
-    # The baseline: the previous release's tests on the previous release's binary.
-    run.hashed("baseline_before")
-    run.suite("baseline", old)
-    run.hashed("baseline_after")
+    if record is None:
+        # The baseline: the previous release's tests on the previous release's binary.
+        run.hashed("baseline_before")
+        run.suite("baseline", old)
+        run.hashed("baseline_after")
     hold_baseline(run.facts, run.evidence)
+    if record is None and kept:
+        run.timed("kept", kept.keep, sorted(metadata["rust-binaries"].items()))
 
     # The swap: a new file renamed over the path, never a write into the old one.
     staged = baked + ".swap"
@@ -826,13 +1190,29 @@ def act_run(args):
         refuse("scratch", "the scratch directory `%s` does not exist" % args.scratch)
     if os.path.commonpath([scratch, os.path.realpath(ROOT)]) == os.path.realpath(ROOT):
         refuse("scratch", "the scratch directory `%s` lies inside the repository" % args.scratch)
+    directory = None
+    if args.baseline is not None:
+        directory = os.path.realpath(args.baseline)
+        if os.path.commonpath([directory, os.path.realpath(ROOT)]) == os.path.realpath(ROOT):
+            refuse("scratch", "the directory of the kept baseline `%s` lies inside the"
+                   " repository" % args.baseline)
+        try:
+            os.makedirs(directory, exist_ok=True)
+        except OSError as error:
+            refuse("scratch", "the directory of the kept baseline `%s` cannot be made: %s"
+                   % (args.baseline, one_line(error)))
     work = tempfile.mkdtemp(prefix=PROG + ".", dir=scratch)
     run = Run(work, previous, candidate, the_list)
+    kept = Kept(directory, run, previous, the_list) if directory else None
+    if kept and not kept.held:
+        kept = None
     try:
-        drive(run, previous, candidate)
+        drive(run, previous, candidate, kept)
     except Void as void:
         run.facts["failed"] = {"reason": void.reason, "detail": one_line(void.detail)}
         run.save()
+    if kept:
+        kept.rest()
     line = judge(run.evidence, the_list)
     line["work"] = work
     if not args.keep:
@@ -880,8 +1260,9 @@ def arguments(argv):
         sub.set_defaults(does=does)
         return sub
 
-    act("run", act_run, "--previous", "--candidate", "--list", "--scratch").add_argument(
-        "--keep", action="store_true")
+    run = act("run", act_run, "--previous", "--candidate", "--list", "--scratch")
+    run.add_argument("--keep", action="store_true")
+    run.add_argument("--baseline")
     act("verdict", act_verdict, "--evidence", "--list")
     act("check-list", act_check_list, "--previous", "--candidate", "--list")
     return parser.parse_args(argv)
