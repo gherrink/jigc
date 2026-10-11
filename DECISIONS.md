@@ -2,6 +2,30 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The route catalog's runner: a handed limit ends the command under test and never the sandbox's own setup; and the Linux lines of the first ten sites
+
+**What.** [route_case.rs](crates/cli/tests/support/route_case.rs): the limit a caller hands `follow_within` is the limit of the **commands under test** — the refusing command and the commands a route prints. Every other child is the runner's own — the sandbox's `git` setup, a state's `git` step, an act's commit — and is waited for under the standing two minutes. One arm in [route_catalog.rs](crates/cli/tests/route_catalog.rs) holds it.
+
+**Why.** The arm that holds the limit hands the runner one second, and as first built that second bound every child of the sandbox, its `git init` included. On a loaded machine a `git init` takes longer. The first run of the committed suite in `dev/runner-faithful` failed on exactly that — `git ["init", "-q", "-b", "main"]: did not end within 1s and was ended` — and the second run of the same command, minutes later, passed. A defect of the arm, in the frame; no case differed.
+
+**The Linux lines of the first ten sites** — `dev/runner-faithful --commit 14dbd326 cargo test -p jigc --test g_migration route_catalog::`, linux/aarch64, 8 CPUs, git 2.43.0, twice, another lane's regression set running on the machine beside both:
+
+```text
+test result: FAILED. 17 passed; 1 failed; 0 ignored; 0 measured; 89 filtered out; finished in 15.81s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 89 filtered out; finished in 14.91s
+```
+
+The one failure is the arm above. The arm that follows the 48 cases passed in both, its expected-red list exact: no case is green on one platform and red on the other.
+
+**Red first, by construction and not by load.** `the_handed_limit_ends_the_command_under_test_and_never_the_sandboxs_setup` plants a state step that takes two seconds whatever the machine does — a git alias that sleeps — under a handed limit of one. Against the runner as committed it failed with `git ["-c", "alias.wait=!sleep 2", "wait"]: did not end within 1s and was ended`; now the step is waited for and the refusing command behind it is still ended at one second.
+
+**Pinned.**
+
+- **No arm of the frame reads a clock of its own.** The earlier arm also asserted that its two held commands were over within fifteen seconds; that sentence is gone. That a child was ended at the limit is what the runner's *did not end* says — it says so of a child it ended and of no other — and a bound in wall-clock seconds is one more thing a loaded machine can turn red.
+- **An act's commit is the runner's child, not a command under test.** The route says *commit*; the `git` lines are the runner's wording of it.
+
+**Not established.** That two minutes is enough for the runner's own children on every machine — it is the same limit as before, now for more of them.
+
 ## 2026-10-11 — The route catalog's first ten sites of `setup`: the two refusals before the install's first write, 46 cases over 48 counted causes, four of them red — every one on a route's second way out; a site says what was read; and the runner ends a command that holds (the plan's step `P3`, first part; ruling 3 of 2026-10-10)
 
 **What.** Cases for ten sites of `jigc setup` in [route_catalog/setup.rs](crates/cli/tests/route_catalog/setup.rs), the frame grown by what they needed ([route_case.rs](crates/cli/tests/support/route_case.rs)), five arms in [route_catalog.rs](crates/cli/tests/route_catalog.rs), and the pilot's findings file ([route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md)). No product source changes and nothing is fixed. The owed list is ten rows shorter: 25 under `P3`, 18 under `P4`.

@@ -48,7 +48,12 @@
 //!
 //! **A child is waited for no longer than a limit** ([`LIMIT`]). A product that holds —
 //! on a read of a FIFO, which does not return — is ended and the case says so: the refusing
-//! command held is *not provoked*, a command of the route held is *another failure*.
+//! command held is *not provoked*, a command of the route held is *another failure*. **A
+//! limit a caller hands in ([`follow_within`]) is the limit of the commands under test** —
+//! the refusing command and the commands a route prints — and of nothing else: the
+//! sandbox's own `git` children, a state's and an act's included, are the runner's and are
+//! waited for under the standing limit, so a short limit never ends a setup that a loaded
+//! machine made slow.
 //!
 //! **What it does not decide.** Whether a refusal *should* have been printed, what a route's
 //! prose means beyond the acts a case lists, and whether a red case is a regression — a
@@ -467,8 +472,9 @@ impl Ran {
 struct Sandbox {
     /// The canonical root, so a path the product prints canonical compares equal.
     root: PathBuf,
-    /// How long a child may run before it is ended.
-    limit: Duration,
+    /// How long a command under test — the refusing command, a command a route prints —
+    /// may run before it is ended. The runner's own children have [`LIMIT`].
+    under_test: Duration,
     /// How many children have run — each writes to files of its own.
     children: AtomicUsize,
     _scratch: ScratchDir,
@@ -476,12 +482,12 @@ struct Sandbox {
 
 impl Sandbox {
     /// A repository with one commit and no `jigc setup`, a `$HOME` and an `outside/`.
-    fn new(label: &str, limit: Duration) -> Sandbox {
+    fn new(label: &str, under_test: Duration) -> Sandbox {
         let scratch = ScratchDir::new(&format!("route-case-{label}"));
         let root = fs::canonicalize(scratch.path()).expect("the scratch root is there");
         let sandbox = Sandbox {
             root,
-            limit,
+            under_test,
             children: AtomicUsize::new(0),
             _scratch: scratch,
         };
@@ -551,12 +557,12 @@ impl Sandbox {
         command
     }
 
-    /// **Run one child and wait for it — no longer than the limit.** Its output goes to
+    /// **Run one child and wait for it — no longer than `limit`.** Its output goes to
     /// two files of its own under `staging/`, so a child that prints more than a pipe holds
     /// is not kept waiting for a reader; one that has not ended at the limit is killed —
     /// this child, by its handle — and says so ([`Ran::exit`]). A product that holds would
     /// otherwise hold the suite: a read of a FIFO does not return.
-    fn run(&self, command: &mut Command) -> Ran {
+    fn run(&self, command: &mut Command, limit: Duration) -> Ran {
         let at = self.children.fetch_add(1, Ordering::Relaxed);
         let (out, err) = (
             self.staging().join(format!("child-{at}.out")),
@@ -573,13 +579,10 @@ impl Sandbox {
             if let Some(status) = child.try_wait().expect("ask after a child") {
                 break (status, None);
             }
-            if started.elapsed() >= self.limit {
+            if started.elapsed() >= limit {
                 // Raced with its own end, the kill fails and the wait still answers.
                 let _ = child.kill();
-                break (
-                    child.wait().expect("wait for an ended child"),
-                    Some(self.limit),
-                );
+                break (child.wait().expect("wait for an ended child"), Some(limit));
             }
             std::thread::sleep(Duration::from_millis(5));
         };
@@ -592,8 +595,10 @@ impl Sandbox {
         }
     }
 
+    /// A `git` child of the runner's own — the sandbox's setup, a state's step — under
+    /// the standing limit, whatever limit the commands under test have.
     fn git(&self, args: &[&str]) {
-        let ran = self.run(self.child(Path::new("git")).args(args));
+        let ran = self.run(self.child(Path::new("git")).args(args), LIMIT);
         assert!(ran.success(), "git {args:?}: {}\n{}", ran.exit(), ran.said);
     }
 
@@ -752,7 +757,7 @@ impl Sandbox {
                 ));
             }
         };
-        let ran = self.run(self.child(program).args(&words[1..]));
+        let ran = self.run(self.child(program).args(&words[1..]), self.under_test);
         if ran.success() {
             return Ok(format!("run `{line}` (span {at}): exit 0"));
         }
@@ -810,7 +815,7 @@ impl Sandbox {
             &["add", "--all", "--", named][..],
             &["commit", "-q", "-m", "follow the route", "--", named][..],
         ] {
-            let ran = self.run(self.child(Path::new("git")).args(args));
+            let ran = self.run(self.child(Path::new("git")).args(args), LIMIT);
             if !ran.success() {
                 return Err(format!("git {args:?}: {}\n{}", ran.exit(), ran.said));
             }
@@ -853,15 +858,19 @@ pub fn follow(binary: &Path, case: &Case) -> Result<Followed, String> {
 /// after two minutes rather than a suite that does not come back.
 pub const LIMIT: Duration = Duration::from_secs(120);
 
-/// [`follow`], with the limit a child is ended at — for the arm that holds the limit
-/// itself, which cannot wait two minutes for it.
-pub fn follow_within(binary: &Path, case: &Case, limit: Duration) -> Result<Followed, String> {
+/// [`follow`], with the limit a **command under test** is ended at — the refusing command
+/// and the commands a route prints — for the arm that holds the limit itself, which cannot
+/// wait two minutes for it. The runner's own children keep [`LIMIT`].
+pub fn follow_within(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed, String> {
     let code = case.code();
-    let sandbox = Sandbox::new(case.name, limit);
+    let sandbox = Sandbox::new(case.name, under_test);
     sandbox.plant(case.state);
     let before = sandbox.witnesses(case.witnesses);
 
-    let refused = sandbox.run(sandbox.child(binary).args(case.refusing));
+    let refused = sandbox.run(
+        sandbox.child(binary).args(case.refusing),
+        sandbox.under_test,
+    );
     let found = refusal_in(&refused.said, code);
     let mut seen = Seen {
         provoked: found.is_some() && refused.held.is_none() && !refused.success(),

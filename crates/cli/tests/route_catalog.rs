@@ -57,7 +57,9 @@
 //! marked form's refusal for every act that takes an operand
 //! ([`the_marked_form_is_refused_for_every_act_that_takes_an_operand`]), the sandbox's
 //! bound for each new act ([`no_file_act_is_done_outside_the_sandbox`]), and the limit a
-//! child is waited for ([`a_command_that_does_not_end_is_ended_and_the_case_says_so`]).
+//! child is waited for ([`a_command_that_does_not_end_is_ended_and_the_case_says_so`]) —
+//! a limit that is the commands' under test and never the sandbox's own setup's
+//! ([`the_handed_limit_ends_the_command_under_test_and_never_the_sandboxs_setup`]).
 //!
 //! **The fence** (the plan's step `P2`) holds the catalog to the refusal sites of the
 //! families [`CATALOGUED`] names. It scans nothing for itself — the sites are
@@ -2066,11 +2068,12 @@ fn no_file_act_is_done_outside_the_sandbox() {
 /// held this suite for ten minutes the first time a case planted one where `jigc setup`
 /// reads before it refuses — is a red case with its reason, and never a suite that does
 /// not come back. The refusing command held is *not provoked*; a command of the route held
-/// is *another failure*.
+/// is *another failure*. That each was ended at the limit, and did not end by itself after
+/// its twenty seconds, is what *did not end* says — the runner says it of a child it ended
+/// and of no other — so the arm reads no clock of its own.
 #[test]
 fn a_command_that_does_not_end_is_ended_and_the_case_says_so() {
     let limit = std::time::Duration::from_secs(1);
-    let started = std::time::Instant::now();
     let held_at_the_door = Case {
         name: "planted-a-refusing-command-that-does-not-end",
         refusing: &["-c", "exec sleep 20"],
@@ -2101,9 +2104,34 @@ fn a_command_that_does_not_end_is_ended_and_the_case_says_so() {
             followed.detail,
         );
     }
+}
+
+/// **The limit a caller hands the runner ends the command under test, and never the
+/// sandbox's own setup.** A state step here takes two seconds by construction — a git
+/// alias that sleeps — under a handed limit of one: the step is waited for, under the
+/// standing limit, and the refusing command behind it is still ended at the handed one.
+/// As first built, the handed limit bound every child of the sandbox, its `git init`
+/// included, so the arm above failed whenever a loaded machine took a second over one.
+#[test]
+fn the_handed_limit_ends_the_command_under_test_and_never_the_sandboxs_setup() {
+    let slow_to_plant = Case {
+        name: "planted-a-state-step-slower-than-the-handed-limit",
+        state: &[Step::Git(&["-c", "alias.wait=!sleep 2", "wait"])],
+        refusing: &["-c", "exec sleep 20"],
+        ..PLANTED
+    };
+    let followed = route_case::follow_within(
+        Path::new("/bin/sh"),
+        &slow_to_plant,
+        std::time::Duration::from_secs(1),
+    )
+    .expect("the planted case is one the runner follows");
     assert!(
-        started.elapsed() < std::time::Duration::from_secs(15),
-        "two commands that sleep twenty seconds were each ended at a limit of one: {:?}",
-        started.elapsed(),
+        followed.classification == Classification::NotProvoked
+            && followed.detail.contains("did not end within 1s"),
+        "the state was planted and the refusing command ended at the handed limit — it came \
+         out {}:\n{}",
+        followed.classification,
+        followed.detail,
     );
 }
