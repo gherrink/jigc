@@ -1,13 +1,23 @@
 //! The route catalog's cases for `jigc uninstall` — the family's table, declared by
 //! `crates/cli/tests/route_catalog.rs`, which says what a case is held to.
 //!
-//! **What stands here.** The refusals a teardown meets before it removes anything: no
-//! repository to tear down in, or no `$HOME` (`locate_finding`, two sites); the adapter
-//! profile not loaded (reached through `JIGC_ADAPTERS_DIR` and no other way); and three of
-//! the four guards over what `.jigc/` holds the only copy of, each with the refusal it
-//! raises where it could not look: a path under `.jigc/worktrees/` that holds content, a
-//! byte jigc did not write inside a working area or the parking home, and an open task's
-//! staged doc. Each of those nine sites has a row of [`READINGS`].
+//! **What stands here** is every blocking site of `jigc uninstall`, eighteen. The
+//! refusals a teardown meets before it removes anything: no repository to tear down in, or
+//! no `$HOME` (`locate_finding`, two sites); the adapter profile not loaded (reached
+//! through `JIGC_ADAPTERS_DIR` and no other way); and the four guards over what `.jigc/`
+//! holds the only copy of, each with the refusal it raises where it could not look — a
+//! path under `.jigc/worktrees/` that holds content, a byte jigc did not write inside a
+//! working area or the parking home, an open task's staged doc, and any other file under
+//! `.jigc/` that no index has a copy of. Then the seven steps that remove, each a site:
+//! `.jigc/` itself, the reference in `CLAUDE.md`, the three kinds of entry in the settings
+//! file, the `pre-commit` hook, the guide. Each of the eighteen has a row of [`READINGS`].
+//!
+//! **A step that removes has one route for every error of its callee** — *ensure … is
+//! writable* over one entry it names — so its causes are the callee's errors, and a case
+//! follows the one act the route offers. **And the first step removes `.jigc/`**: a
+//! refusal at any step behind it finds the workbench — and the install's record of the
+//! settings entries it added — gone, and the route's re-run is a second teardown over what
+//! the first left.
 //!
 //! **Every case starts from somebody's repository with an install that stands**
 //! ([`installed!`]): their own `CLAUDE.md`, their own settings file with a permit of their
@@ -54,6 +64,8 @@ const STAGED_PROSE: &str =
     "crates/cli/src/setup.rs::staged_prose_finding::uninstall.staged-prose#1";
 const UNVERIFIED_PROSE: &str =
     "crates/cli/src/task.rs::unverified_prose_finding::uninstall.staged-prose#1";
+const UNTRACKED_WORKBENCH: &str = "crates/cli/src/setup.rs::untracked_workbench_finding::uninstall.untracked-workbench-file#1";
+const UNVERIFIED_WORKBENCH: &str = "crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1";
 
 // The files the install is merged into or adds, from the repository root.
 const CLAUDE_MD: &str = "CLAUDE.md";
@@ -62,18 +74,19 @@ const HOOK: &str = ".git/hooks/pre-commit";
 const GUIDE_MD: &str = ".claude/skills/jigc/SKILL.md";
 const WORKBENCH: &str = ".jigc";
 
+/// Their settings file: one permit, and theirs.
+const THEIR_SETTINGS: &str =
+    "{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(mine:*)\"\n    ]\n  }\n}\n";
+
 /// **Somebody's repository, and then an install that stands**: their instruction file,
-/// their settings with a permit of their own, their `pre-commit` hook, a file jigc never
-/// writes, and a file outside the repository — committed — and `jigc setup` over it, run by
-/// the binary under test. The steps a case adds follow.
-macro_rules! installed {
-    ($($plant:expr),* $(,)?) => {
+/// their settings — this file — their `pre-commit` hook, a file jigc never writes, and a
+/// file outside the repository — committed — and `jigc setup` over it, run by the binary
+/// under test. The steps a case adds follow.
+macro_rules! installed_over {
+    ($settings:expr $(, $plant:expr)* $(,)?) => {
         &[
             Step::File(Place::Repo(CLAUDE_MD), "mine\n"),
-            Step::File(
-                Place::Repo(SETTINGS_JSON),
-                "{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(mine:*)\"\n    ]\n  }\n}\n",
-            ),
+            Step::File(Place::Repo(SETTINGS_JSON), $settings),
             Step::Script(Place::Repo(HOOK), "#!/bin/sh\necho mine\n"),
             Step::File(Place::Repo("notes.md"), "mine\n"),
             Step::File(Place::Outside("theirs"), "theirs\n"),
@@ -82,6 +95,14 @@ macro_rules! installed {
             Step::Jigc(&["setup"]),
             $($plant,)*
         ]
+    };
+}
+
+/// [`installed_over!`] their settings with a permit of their own and nothing of jigc's —
+/// the state every case starts from but the two that need a record of another shape.
+macro_rules! installed {
+    ($($plant:expr),* $(,)?) => {
+        installed_over![THEIR_SETTINGS $(, $plant)*]
     };
 }
 
@@ -751,6 +772,564 @@ const A_STAGED_ENTRY_THAT_CANNOT_BE_ASKED_ABOUT: [Case; 2] = [
     },
 ];
 
+// ---------------------------------------------------------------------------
+// `untracked_workbench_finding` · `uninstall.untracked-workbench-file` — the fourth guard
+// ---------------------------------------------------------------------------
+
+const LOCAL_CONFIG: &str = ".jigc/config/local.yaml";
+const A_LOCAL_CONFIG: Step = Step::File(Place::Repo(LOCAL_CONFIG), "mine: 1\n");
+const PACKS_YAML: &str = ".jigc/config/packs.yaml";
+
+/// **A file under `.jigc/` that git takes and no index has, followed the four ways its
+/// route offers**: put where it can be recovered — by the `git add` line the route prints,
+/// which holds `<path>`, and by a commit, which is where *recovered* is beyond doubt —
+/// deleted, and the consent. The route prints no path, so the file is the case's to name.
+const NEVER_TRACKED: &str = "a file under `.jigc/`, outside the transient directories, is in \
+                             no index, and git does not ignore it";
+const A_FILE_NO_INDEX_HAS: [Case; 4] = [
+    Case {
+        name: "uninstall-untracked-workbench-file-added-as-printed",
+        site: UNTRACKED_WORKBENCH,
+        cause: NEVER_TRACKED,
+        state: installed![A_LOCAL_CONFIG],
+        acts: &[Act::Run(0), Act::Run(2)],
+        holds: torn_down![],
+        untouched: &["README.md", "notes.md", LOCAL_CONFIG],
+        doubt: Some(WHICH_LINE),
+        ..UNINSTALL
+    },
+    Case {
+        name: "uninstall-untracked-workbench-file-committed",
+        site: UNTRACKED_WORKBENCH,
+        cause: NEVER_TRACKED,
+        state: installed![A_LOCAL_CONFIG],
+        acts: &[Act::Commit(Operand::Unprinted(LOCAL_CONFIG)), Act::Run(2)],
+        holds: torn_down![],
+        ..UNINSTALL
+    },
+    Case {
+        name: "uninstall-untracked-workbench-file-deleted",
+        site: UNTRACKED_WORKBENCH,
+        cause: NEVER_TRACKED,
+        state: installed![A_LOCAL_CONFIG],
+        acts: &[Act::Remove(Operand::Unprinted(LOCAL_CONFIG)), Act::Run(2)],
+        holds: torn_down![],
+        ..UNINSTALL
+    },
+    Case {
+        name: "uninstall-untracked-workbench-file-forced",
+        site: UNTRACKED_WORKBENCH,
+        cause: NEVER_TRACKED,
+        state: installed![A_LOCAL_CONFIG],
+        acts: &[Act::Run(3)],
+        holds: torn_down![],
+        ..UNINSTALL
+    },
+];
+
+/// The classifier's second leg: the index lists the path and carries other bytes.
+const EDITED: &str = "a file of the install that git tracks under `.jigc/` is edited, and \
+                      the edit is not staged";
+const A_TRACKED_FILE_EDITED: [Case; 2] = [
+    Case {
+        name: "uninstall-edited-workbench-file-committed",
+        site: UNTRACKED_WORKBENCH,
+        cause: EDITED,
+        state: installed![Step::File(Place::Repo(PACKS_YAML), "# mine\n")],
+        acts: &[Act::Commit(Operand::Unprinted(PACKS_YAML)), Act::Run(2)],
+        holds: torn_down![],
+        ..UNINSTALL
+    },
+    Case {
+        name: "uninstall-edited-workbench-file-forced",
+        site: UNTRACKED_WORKBENCH,
+        cause: EDITED,
+        state: installed![Step::File(Place::Repo(PACKS_YAML), "# mine\n")],
+        acts: &[Act::Run(3)],
+        holds: torn_down![],
+        ..UNINSTALL
+    },
+];
+
+/// Their own ignore rule, committed, and a file it covers.
+const AN_IGNORE_RULE_OF_THEIRS: [Step; 3] = [
+    Step::File(Place::Repo(".jigc/config/.gitignore"), "local.yaml\n"),
+    Step::Git(&["add", "--all"]),
+    Step::Git(&["commit", "-q", "-m", "their ignore rule"]),
+];
+
+/// **Every listed path is one git ignores** — the route prints `.jigc/` and no path of the
+/// file, so the one way a case can follow is the consent.
+const AN_IGNORED_FILE: [Case; 1] = [Case {
+    name: "uninstall-ignored-workbench-file-forced",
+    site: UNTRACKED_WORKBENCH,
+    cause: "a file under `.jigc/` is in no index, and a rule of the repository's own \
+            ignores it — every listed path is ignored",
+    state: installed![
+        AN_IGNORE_RULE_OF_THEIRS[0],
+        AN_IGNORE_RULE_OF_THEIRS[1],
+        AN_IGNORE_RULE_OF_THEIRS[2],
+        A_LOCAL_CONFIG,
+    ],
+    acts: &[Act::Run(3)],
+    holds: torn_down![],
+    ..UNINSTALL
+}];
+
+/// **An ignored path and one git takes, together** — the one arm that prints a listed
+/// path: the ignored file, moved out by its span; the other is left to the `git add` line,
+/// which holds `<path>`.
+const BOTH_LISTED: &str = "two files under `.jigc/` are in no index, and git ignores one of \
+                           them";
+const AN_IGNORED_FILE_AND_ONE_GIT_TAKES: [Case; 2] = [
+    Case {
+        name: "uninstall-workbench-files-one-ignored-moved-out-and-one-added-as-printed",
+        site: UNTRACKED_WORKBENCH,
+        cause: BOTH_LISTED,
+        state: installed![
+            AN_IGNORE_RULE_OF_THEIRS[0],
+            AN_IGNORE_RULE_OF_THEIRS[1],
+            AN_IGNORE_RULE_OF_THEIRS[2],
+            A_LOCAL_CONFIG,
+            Step::File(Place::Repo(".jigc/config/other.yaml"), "mine: 2\n"),
+        ],
+        acts: &[Act::MoveOut(Operand::Span(3)), Act::Run(1), Act::Run(0)],
+        holds: torn_down![Check::RegularFile(Place::Moved(LOCAL_CONFIG))],
+        untouched: &["README.md", "notes.md", ".jigc/config/other.yaml"],
+        doubt: Some(WHICH_LINE),
+        ..UNINSTALL
+    },
+    Case {
+        name: "uninstall-workbench-files-one-ignored-forced",
+        site: UNTRACKED_WORKBENCH,
+        cause: BOTH_LISTED,
+        state: installed![
+            AN_IGNORE_RULE_OF_THEIRS[0],
+            AN_IGNORE_RULE_OF_THEIRS[1],
+            AN_IGNORE_RULE_OF_THEIRS[2],
+            A_LOCAL_CONFIG,
+            Step::File(Place::Repo(".jigc/config/other.yaml"), "mine: 2\n"),
+        ],
+        acts: &[Act::Run(6)],
+        holds: torn_down![],
+        ..UNINSTALL
+    },
+];
+
+/// **The invocation log, with its knob still on** — the route opens with an order: switch
+/// it off, stage the config change that makes, and then the paths. The log is one git
+/// ignores and the route prints no path of it, so the order is followed by its two printed
+/// lines and ended by the consent.
+const THE_LOG_WITH_ITS_KNOB_ON: [Case; 1] = [Case {
+    name: "uninstall-invocation-log-switched-off-as-printed-and-forced",
+    site: UNTRACKED_WORKBENCH,
+    cause: "the opt-in invocation log is listed, and the knob that writes it is still on",
+    state: installed![
+        Step::Jigc(&["config", "set", "invocation-log", "true"]),
+        Step::Git(&["add", ".jigc/config"]),
+        Step::Git(&["commit", "-q", "-m", "the log on"]),
+        Step::Jigc(&["validate"]),
+    ],
+    acts: &[Act::Run(0), Act::Run(1), Act::Run(5)],
+    holds: torn_down![],
+    ..UNINSTALL
+}];
+
+// ---------------------------------------------------------------------------
+// `unverified_workbench_finding` · `uninstall.untracked-workbench-file` — could not look
+// ---------------------------------------------------------------------------
+
+/// **The fourth guard could not look, followed the two ways its route offers**: the
+/// `.jigc/` the route names made readable, and the consent.
+macro_rules! unasked_ways {
+    ($prefix:literal, $cause:expr, plant: [$($plant:expr),* $(,)?] $(,)?) => {
+        [
+            Case {
+                name: concat!($prefix, "-made-readable"),
+                site: UNVERIFIED_WORKBENCH,
+                cause: $cause,
+                state: installed![$($plant,)*],
+                acts: &[Act::MakeReadable(Operand::Span(1)), Act::Run(2)],
+                holds: torn_down![],
+                ..UNINSTALL
+            },
+            Case {
+                name: concat!($prefix, "-forced"),
+                site: UNVERIFIED_WORKBENCH,
+                cause: $cause,
+                state: installed![$($plant,)*],
+                acts: &[Act::Run(3)],
+                holds: torn_down![],
+                ..UNINSTALL
+            },
+        ]
+    };
+}
+
+const THE_WORKBENCH_UNLISTABLE: [Case; 2] = unasked_ways!(
+    "uninstall-workbench-unlistable",
+    "`.jigc` may be searched and not listed",
+    plant: [shut!("300", ".jigc")],
+);
+const GITS_INDEX_UNREADABLE: [Case; 2] = unasked_ways!(
+    "uninstall-git-index-unreadable",
+    "`git ls-files` fails — here over an index that is not one",
+    plant: [Step::File(Place::Repo(".git/index"), "no index\n")],
+);
+/// An index entry whose name is not UTF-8 exists on this platform only through git's
+/// plumbing: the name is written by `git update-index --cacheinfo`.
+const GITS_LISTING_UNDECODABLE: [Case; 2] = unasked_ways!(
+    "uninstall-git-listing-undecodable",
+    "git lists a path under `.jigc/` whose name is not UTF-8",
+    plant: [Step::Git(&[
+        "-c",
+        "alias.plant=!git update-index --add --cacheinfo \
+         \"100644,$(git hash-object -w README.md),.jigc/config/$(printf '\\377').yaml\"",
+        "plant",
+    ])],
+);
+
+// ---------------------------------------------------------------------------
+// `uninstall` — the seven steps that remove, each a site
+// ---------------------------------------------------------------------------
+
+const REMOVE_JIGC: &str = "crates/cli/src/setup.rs::uninstall::uninstall.remove-jigc#1";
+const UNWIRE: &str = "crates/cli/src/setup.rs::uninstall::uninstall.unwire-reference#1";
+const REMOVE_ALLOWLIST: &str =
+    "crates/cli/src/setup.rs::uninstall::uninstall.remove-allowlist#1";
+const REMOVE_HOOK: &str = "crates/cli/src/setup.rs::uninstall::uninstall.remove-hook#1";
+const REMOVE_DENY: &str = "crates/cli/src/setup.rs::uninstall::uninstall.remove-deny#1";
+const REMOVE_PRECOMMIT: &str =
+    "crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1";
+const REMOVE_GUIDE: &str = "crates/cli/src/setup.rs::uninstall::uninstall.remove-guide#1";
+
+/// **A step of the teardown that refuses, followed the one way its route offers**: the
+/// entry the route names made writable, and the command again. Each step words every
+/// error of its callee under that one route. **The first step removes `.jigc/`**, so
+/// every refusal behind it finds the workbench gone: the witnesses are their files alone.
+macro_rules! step_refused {
+    ($name:literal, $site:expr, $cause:expr, plant: [$($plant:expr),* $(,)?] $(,)?) => {
+        [Case {
+            name: $name,
+            site: $site,
+            cause: $cause,
+            state: installed![$($plant,)*],
+            acts: &[Act::MakeWritable(Operand::Span(0)), Act::Run(1)],
+            holds: torn_down![],
+            ..UNINSTALL
+        }]
+    };
+}
+
+/// Run a shell line at the repository's root — a `git` alias, where a state has no step
+/// for what it needs: an entry swapped for another kind, bytes that are no text.
+macro_rules! sh {
+    ($line:literal) => {
+        Step::Git(&["-c", concat!("alias.plant=!", $line), "plant"])
+    };
+}
+
+// --- `uninstall.remove-jigc`
+
+const WORKBENCH_READ_ONLY: [Case; 1] = step_refused!(
+    "uninstall-workbench-read-only",
+    REMOVE_JIGC,
+    "`.jigc` itself may not be written, so nothing can be taken out of it",
+    plant: [shut!("555", ".jigc")],
+);
+const A_WORKBENCH_DIRECTORY_READ_ONLY: [Case; 1] = step_refused!(
+    "uninstall-workbench-directory-read-only",
+    REMOVE_JIGC,
+    "a directory under `.jigc` may not be written — `.jigc/config` — while `.jigc` may",
+    plant: [shut!("555", ".jigc/config")],
+);
+const ROOT_READ_ONLY: [Case; 1] = step_refused!(
+    "uninstall-workbench-under-a-read-only-root",
+    REMOVE_JIGC,
+    "the repository root may not be written, so the emptied `.jigc` cannot be removed \
+     from it",
+    plant: [shut!("555", ".")],
+);
+/// The one cause the guards keep from every run but a consenting one: the refusing command
+/// is `jigc uninstall --force`, and the route's re-run is `jigc uninstall`.
+const FORCED_OVER_AN_UNREADABLE_DIRECTORY: [Case; 1] = [Case {
+    name: "uninstall-forced-workbench-directory-unreadable-made-writable",
+    site: REMOVE_JIGC,
+    cause: "a directory under `.jigc` may not be read, and the teardown was told \
+            `--force` — the guards refuse it from every other run",
+    state: installed![
+        Step::Dir(Place::Repo(".jigc/worktrees")),
+        shut!("000", ".jigc/worktrees"),
+    ],
+    refusing: &["uninstall", "--force"],
+    acts: &[Act::MakeWritable(Operand::Span(0)), Act::Run(1)],
+    holds: torn_down![],
+    ..UNINSTALL
+}];
+
+// --- `uninstall.unwire-reference`
+
+const HOST_READ_ONLY: [Case; 1] = step_refused!(
+    "uninstall-reference-host-read-only",
+    UNWIRE,
+    "`CLAUDE.md` holds the reference and may not be written",
+    plant: [shut!("444", "CLAUDE.md")],
+);
+const HOST_A_DIRECTORY: [Case; 1] = step_refused!(
+    "uninstall-reference-host-a-directory",
+    UNWIRE,
+    "a directory stands at `CLAUDE.md`",
+    plant: [sh!("rm CLAUDE.md && mkdir CLAUDE.md")],
+);
+const HOST_NOT_TEXT: [Case; 1] = step_refused!(
+    "uninstall-reference-host-not-utf-8",
+    UNWIRE,
+    "`CLAUDE.md` is not UTF-8",
+    plant: [sh!("printf '\\377\\376' > CLAUDE.md")],
+);
+const HOST_UNREADABLE: [Case; 1] = step_refused!(
+    "uninstall-reference-host-unreadable",
+    UNWIRE,
+    "`CLAUDE.md` may not be read",
+    plant: [shut!("000", "CLAUDE.md")],
+);
+/// **Held.** The step reads `CLAUDE.md` with no limit, behind the removal of `.jigc/`.
+const HOST_A_FIFO: [Case; 1] = step_refused!(
+    "uninstall-reference-host-a-special-file",
+    UNWIRE,
+    "a special file stands at `CLAUDE.md`",
+    plant: [sh!("rm CLAUDE.md"), Step::Fifo(Place::Repo(CLAUDE_MD))],
+);
+/// The reference's host is a link to a file of somebody's outside the repository — a copy
+/// of the host as the install left it — that may not be written. The file is a witness.
+const HOST_A_LINK_OUT: [Case; 1] = [Case {
+    name: "uninstall-reference-host-a-link-to-a-read-only-file-outside",
+    site: UNWIRE,
+    cause: "`CLAUDE.md` is a link to a file outside the repository that holds the \
+            reference and may not be written",
+    state: installed![sh!(
+        "cp CLAUDE.md ../outside/CLAUDE.md && rm CLAUDE.md && ln -s \
+         \"$PWD/../outside/CLAUDE.md\" CLAUDE.md && chmod 444 ../outside/CLAUDE.md"
+    )],
+    acts: &[Act::MakeWritable(Operand::Span(0)), Act::Run(1)],
+    holds: torn_down![],
+    witnesses: &["theirs", "CLAUDE.md"],
+    ..UNINSTALL
+}];
+// --- `uninstall.remove-allowlist`
+
+const SETTINGS_READ_ONLY: [Case; 1] = step_refused!(
+    "uninstall-settings-read-only",
+    REMOVE_ALLOWLIST,
+    "the settings file holds the permits and may not be written",
+    plant: [shut!("444", ".claude/settings.json")],
+);
+const SETTINGS_A_DIRECTORY: [Case; 1] = step_refused!(
+    "uninstall-settings-a-directory",
+    REMOVE_ALLOWLIST,
+    "a directory stands at the settings file's path",
+    plant: [sh!("rm .claude/settings.json && mkdir .claude/settings.json")],
+);
+const SETTINGS_NOT_TEXT: [Case; 1] = step_refused!(
+    "uninstall-settings-not-utf-8",
+    REMOVE_ALLOWLIST,
+    "the settings file is not UTF-8",
+    plant: [sh!("printf '\\377\\376' > .claude/settings.json")],
+);
+const SETTINGS_NOT_JSON: [Case; 1] = step_refused!(
+    "uninstall-settings-not-json",
+    REMOVE_ALLOWLIST,
+    "the settings file is no JSON",
+    plant: [Step::File(Place::Repo(SETTINGS_JSON), "{\n")],
+);
+const SETTINGS_UNREADABLE: [Case; 1] = step_refused!(
+    "uninstall-settings-unreadable",
+    REMOVE_ALLOWLIST,
+    "the settings file may not be read",
+    plant: [shut!("000", ".claude/settings.json")],
+);
+/// **Held.** The step reads the settings file with no limit, behind the removal of
+/// `.jigc/` and the unwiring of the reference.
+const SETTINGS_A_FIFO: [Case; 1] = step_refused!(
+    "uninstall-settings-a-special-file",
+    REMOVE_ALLOWLIST,
+    "a special file stands at the settings file's path",
+    plant: [
+        sh!("rm .claude/settings.json"),
+        Step::Fifo(Place::Repo(SETTINGS_JSON)),
+    ],
+);
+
+// --- `uninstall.remove-hook` and `uninstall.remove-deny`
+
+/// **Their settings, where they held both of jigc's permits before `jigc setup`**: the
+/// install's record then lists no permit, the allowlist step has nothing to take and writes
+/// nothing, and the session hook's step is the first to write the settings file.
+const THEIR_PERMITS: &str = "{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(mine:*)\",\n      \
+                             \"Bash(jigc:*)\",\n      \"Bash(git add:*)\"\n    ]\n  }\n}\n";
+/// **And where they held the session hook as well**: the record lists neither permit nor
+/// hook, and the deny floor's step is the first to write.
+const THEIR_PERMITS_AND_HOOK: &str = "{\n  \"hooks\": {\n    \"SessionStart\": [\n      {\n        \
+                                      \"hooks\": [\n          {\n            \"command\": \
+                                      \"jigc start\",\n            \"type\": \"command\"\n          \
+                                      }\n        ]\n      }\n    ]\n  },\n  \"permissions\": {\n    \
+                                      \"allow\": [\n      \"Bash(mine:*)\",\n      \
+                                      \"Bash(jigc:*)\",\n      \"Bash(git add:*)\"\n    ]\n  }\n}\n";
+
+const HOOK_FIRST_TO_WRITE: [Case; 1] = [Case {
+    name: "uninstall-session-hook-settings-read-only",
+    site: REMOVE_HOOK,
+    cause: "the settings file may not be written, and the install's record lists no \
+            permit: the session hook's removal is the first write",
+    state: installed_over![THEIR_PERMITS, shut!("444", ".claude/settings.json")],
+    acts: &[Act::MakeWritable(Operand::Span(0)), Act::Run(1)],
+    holds: &[
+        Check::Absent(Place::Repo(WORKBENCH)),
+        Check::Lacks(Place::Repo(SETTINGS_JSON), "jigc start"),
+        Check::Lacks(Place::Repo(SETTINGS_JSON), "jigc uninstall"),
+        Check::Contains(Place::Repo(SETTINGS_JSON), "\"Bash(jigc:*)\""),
+        Check::Contains(Place::Repo(SETTINGS_JSON), "\"Bash(mine:*)\""),
+    ],
+    ..UNINSTALL
+}];
+const DENY_FIRST_TO_WRITE: [Case; 1] = [Case {
+    name: "uninstall-deny-floor-settings-read-only",
+    site: REMOVE_DENY,
+    cause: "the settings file may not be written, and the install's record lists neither \
+            permit nor hook: the deny floor's removal is the first write",
+    state: installed_over![
+        THEIR_PERMITS_AND_HOOK,
+        shut!("444", ".claude/settings.json")
+    ],
+    acts: &[Act::MakeWritable(Operand::Span(0)), Act::Run(1)],
+    holds: &[
+        Check::Absent(Place::Repo(WORKBENCH)),
+        Check::Lacks(Place::Repo(SETTINGS_JSON), "jigc uninstall"),
+        Check::Contains(Place::Repo(SETTINGS_JSON), "jigc start"),
+        Check::Contains(Place::Repo(SETTINGS_JSON), "\"Bash(mine:*)\""),
+    ],
+    ..UNINSTALL
+}];
+
+// --- `uninstall.remove-precommit`
+
+/// **The hook's removal refused, followed the one way its route offers.** The route names
+/// *the repo's git hooks directory* and prints no path, so the directory is the case's to
+/// name: the one git resolves.
+macro_rules! hook_refused {
+    ($name:literal, $cause:expr, $hooks:literal, plant: [$($plant:expr),* $(,)?] $(,)?) => {
+        [Case {
+            name: $name,
+            site: REMOVE_PRECOMMIT,
+            cause: $cause,
+            state: installed![$($plant,)*],
+            acts: &[Act::MakeWritable(Operand::Unprinted($hooks)), Act::Run(0)],
+            holds: torn_down![],
+            ..UNINSTALL
+        }]
+    };
+}
+
+const HOOKS_PATH_EMPTY: [Case; 1] = hook_refused!(
+    "uninstall-hook-hooks-path-empty",
+    "`core.hooksPath` is the empty string, which git refuses to resolve",
+    ".git/hooks",
+    plant: [Step::Git(&["config", "core.hooksPath", ""])],
+);
+const HOOKS_PATH_A_FILE: [Case; 1] = hook_refused!(
+    "uninstall-hook-hooks-path-a-file",
+    "`core.hooksPath` names a regular file",
+    "../outside/hooks-file",
+    plant: [
+        Step::File(Place::Outside("hooks-file"), "theirs\n"),
+        Step::Git(&["config", "core.hooksPath", "../outside/hooks-file"]),
+    ],
+);
+const HOOKS_PATH_A_DEVICE: [Case; 1] = hook_refused!(
+    "uninstall-hook-hooks-path-dev-null",
+    "`core.hooksPath` names `/dev/null`",
+    "/dev/null",
+    plant: [Step::Git(&["config", "core.hooksPath", "/dev/null"])],
+);
+const HOOK_A_DIRECTORY: [Case; 1] = hook_refused!(
+    "uninstall-hook-a-directory",
+    "a directory stands at the hook's path",
+    ".git/hooks",
+    plant: [sh!("rm .git/hooks/pre-commit && mkdir .git/hooks/pre-commit")],
+);
+const HOOK_NOT_TEXT: [Case; 1] = hook_refused!(
+    "uninstall-hook-not-utf-8",
+    "the hook is not UTF-8",
+    ".git/hooks",
+    plant: [sh!("printf '\\377\\376' > .git/hooks/pre-commit")],
+);
+const HOOK_UNREADABLE: [Case; 1] = hook_refused!(
+    "uninstall-hook-unreadable",
+    "the hook may not be read",
+    ".git/hooks",
+    plant: [shut!("000", ".git/hooks/pre-commit")],
+);
+/// **Held.** The step reads the hook with no limit, behind every other removal but the
+/// guide's.
+const HOOK_A_FIFO: [Case; 1] = hook_refused!(
+    "uninstall-hook-a-special-file",
+    "a special file stands at the hook's path",
+    ".git/hooks",
+    plant: [sh!("rm .git/hooks/pre-commit"), Step::Fifo(Place::Repo(HOOK))],
+);
+const HOOK_READ_ONLY: [Case; 1] = hook_refused!(
+    "uninstall-hook-read-only",
+    "the hook holds their lines beside jigc's block and may not be written, in a hooks \
+     directory that may",
+    ".git/hooks",
+    plant: [shut!("444", ".git/hooks/pre-commit")],
+);
+/// The hook is a link to a script of somebody's outside the repository — a copy of the hook
+/// as the install left it — that may not be written. The script is a witness.
+const HOOK_A_LINK_OUT: [Case; 1] = [Case {
+    name: "uninstall-hook-a-link-to-a-read-only-script-outside",
+    site: REMOVE_PRECOMMIT,
+    cause: "the hook is a link to a script outside the repository that holds jigc's block \
+            and may not be written",
+    state: installed![sh!(
+        "cp .git/hooks/pre-commit ../outside/pre-commit && rm .git/hooks/pre-commit && ln -s \
+         \"$PWD/../outside/pre-commit\" .git/hooks/pre-commit && chmod 444 \
+         ../outside/pre-commit"
+    )],
+    acts: &[Act::MakeWritable(Operand::Unprinted(".git/hooks")), Act::Run(0)],
+    holds: torn_down![],
+    witnesses: &["theirs", "pre-commit"],
+    ..UNINSTALL
+}];
+/// **The one state the route's words are true of**: an install over a repository with no
+/// hook of its own, so the hook is jigc's whole and the step removes the file — from a
+/// hooks directory that may not be written.
+const A_HOOK_OF_JIGCS_IN_A_READ_ONLY_HOOKS_DIRECTORY: [Case; 1] = [Case {
+    name: "uninstall-hook-of-jigcs-own-hooks-directory-read-only",
+    site: REMOVE_PRECOMMIT,
+    cause: "the hook is jigc's whole, so the step removes the file, and the hooks \
+            directory may not be written",
+    state: &[Step::Jigc(&["setup"]), shut!("555", ".git/hooks")],
+    acts: &[Act::MakeWritable(Operand::Unprinted(".git/hooks")), Act::Run(0)],
+    holds: &[
+        Check::Absent(Place::Repo(WORKBENCH)),
+        Check::Absent(Place::Repo(HOOK)),
+        Check::Absent(Place::Repo(GUIDE_MD)),
+    ],
+    witnesses: &[],
+    untouched: &["README.md"],
+    ..UNINSTALL
+}];
+
+// --- `uninstall.remove-guide`
+
+const GUIDE_IN_A_READ_ONLY_DIRECTORY: [Case; 1] = step_refused!(
+    "uninstall-guide-directory-read-only",
+    REMOVE_GUIDE,
+    "the guide is jigc's, and the directory that holds it may not be written",
+    plant: [shut!("555", ".claude/skills/jigc")],
+);
+
 /// The cases of `jigc uninstall`, a group a cause — and, within a group, a case a way out
 /// of the cause's route.
 pub const CASES: &[&[Case]] = &[
@@ -778,9 +1357,47 @@ pub const CASES: &[&[Case]] = &[
     &THE_WORKBENCH_UNSEARCHABLE,
     &AN_OPEN_TASKS_STAGED_DOC,
     &A_STAGED_ENTRY_THAT_CANNOT_BE_ASKED_ABOUT,
+    &A_FILE_NO_INDEX_HAS,
+    &A_TRACKED_FILE_EDITED,
+    &AN_IGNORED_FILE,
+    &AN_IGNORED_FILE_AND_ONE_GIT_TAKES,
+    &THE_LOG_WITH_ITS_KNOB_ON,
+    &THE_WORKBENCH_UNLISTABLE,
+    &GITS_INDEX_UNREADABLE,
+    &GITS_LISTING_UNDECODABLE,
+    &WORKBENCH_READ_ONLY,
+    &A_WORKBENCH_DIRECTORY_READ_ONLY,
+    &ROOT_READ_ONLY,
+    &FORCED_OVER_AN_UNREADABLE_DIRECTORY,
+    &HOST_READ_ONLY,
+    &HOST_A_DIRECTORY,
+    &HOST_NOT_TEXT,
+    &HOST_UNREADABLE,
+    &HOST_A_FIFO,
+    &HOST_A_LINK_OUT,
+    &SETTINGS_READ_ONLY,
+    &SETTINGS_A_DIRECTORY,
+    &SETTINGS_NOT_TEXT,
+    &SETTINGS_NOT_JSON,
+    &SETTINGS_UNREADABLE,
+    &SETTINGS_A_FIFO,
+    &HOOK_FIRST_TO_WRITE,
+    &DENY_FIRST_TO_WRITE,
+    &HOOKS_PATH_EMPTY,
+    &HOOKS_PATH_A_FILE,
+    &HOOKS_PATH_A_DEVICE,
+    &HOOK_A_DIRECTORY,
+    &HOOK_NOT_TEXT,
+    &HOOK_UNREADABLE,
+    &HOOK_A_FIFO,
+    &HOOK_READ_ONLY,
+    &HOOK_A_LINK_OUT,
+    &A_HOOK_OF_JIGCS_IN_A_READ_ONLY_HOOKS_DIRECTORY,
+    &GUIDE_IN_A_READ_ONLY_DIRECTORY,
 ];
 
-/// The sites of `jigc uninstall` that have no case, each with why. None yet.
+/// The sites of `jigc uninstall` that have no case, each with why: none — every blocking
+/// site of the command is reached by a state the runner can plant.
 pub const REASONS: &[Reason] = &[];
 
 /// Why the consent is the one way a case follows where a route defers to the refusal's
@@ -797,6 +1414,22 @@ const PRINTS_ANOTHER_PATH: Why = Why::NotConstructible(
      parking home, `.jigc/displaced/`. The frame refuses the marked form wherever the \
      printed route holds a path, so a case may not name the listed file there, and no act \
      on it can be written",
+);
+
+/// Why no step's failed write of bytes has a case.
+const BYTES_CANNOT_BE_WRITTEN: (&str, Why) = (
+    "the file is opened and its bytes cannot be written",
+    Why::NotConstructible(
+        "a write that fails on an open file is a full disk or a failing one: no state of a \
+         sandbox",
+    ),
+);
+
+/// Why a settings file that cannot be read is no cause of the two steps behind the first.
+const THE_STEP_BEFORE_READS: Why = Why::NotConstructible(
+    "the allowlist step reads the same file first, through the same reader, and refuses \
+     under `uninstall.remove-allowlist` — the cases `uninstall-settings-…`. Nothing writes \
+     the file between the steps but a step that has just read it",
 );
 
 /// **What was read for each site, and how many causes it holds** — a hand count, with its
@@ -1050,6 +1683,217 @@ pub const READINGS: &[Reading] = &[
                 ),
             ),
         ],
+        not_followed: &[],
+    },
+    Reading {
+        site: UNTRACKED_WORKBENCH,
+        read: &[
+            "crates/cli/src/setup.rs::untracked_workbench_finding — four routes, by which listed paths git ignores, and the order it puts in front where the log's knob is on",
+            "crates/cli/src/setup.rs::untracked_workbench_files, classify_workbench_paths and workbench_paths — which files are asked about, and the two legs of *no index has a copy*",
+            "crates/cli/src/setup.rs::ignored_among — what is asked of git about each listed path",
+            "crates/cli/src/setup.rs::own_transient_leaves — the invocation log, the one member inside a transient directory",
+        ],
+        causes: 6,
+        derivation: "`classify_workbench_paths` lists a path on either of two legs — the \
+                     index does not list it, or lists it with other bytes — and the route \
+                     then turns on `ignored_among`: none of the listed paths ignored, all of \
+                     them, some of them, or git could not say. With the invocation log \
+                     listed and its knob on, an order is put in front. Two legs under the \
+                     first route, then the three other answers, then the order: six",
+        without_case: &[(
+            "git could not say which of the listed paths it ignores",
+            Why::NotConstructible(
+                "`git check-ignore` is asked a moment after `git ls-files` and `git status` \
+                 answered in the same repository: no state was found that fails the third \
+                 question and neither of the two before it",
+            ),
+        )],
+        not_followed: &[
+            (
+                "an ignored file moved out of `.jigc/`, or deleted, where every listed path \
+                 is ignored — the log among them",
+                Why::NotConstructible(
+                    "the route says *move what you need out of `.jigc/`* and prints the \
+                     workbench's path and not the file's. The frame refuses the marked form \
+                     wherever the printed route holds a path, so a case may not name the \
+                     file there — which is also why the order over the log is ended by the \
+                     consent and not by the move",
+                ),
+            ),
+            (
+                "the file restored after the teardown — `git checkout -- <path>`",
+                Why::NotConstructible(
+                    "the line is printed to say what the index's copy is good for, behind \
+                     the teardown: no step of the way out",
+                ),
+            ),
+        ],
+    },
+    Reading {
+        site: UNVERIFIED_WORKBENCH,
+        read: &[
+            "crates/cli/src/setup.rs::unverified_workbench_finding",
+            "crates/cli/src/setup.rs::workbench_paths — the listings of the walk",
+            "crates/cli/src/setup.rs::classify_workbench_paths and git_capture_untrimmed; crates/cli/src/task.rs::git_capture — the two questions asked of git, and the ways each has no answer",
+        ],
+        causes: 5,
+        derivation: "the probe fails where a directory of the walk cannot be listed; where \
+                     `git` cannot be run; where `git ls-files` fails; where `git status` \
+                     fails; and where what git printed is not UTF-8. The first is one arm \
+                     whichever directory it was, followed at `.jigc` itself",
+        without_case: &[
+            (
+                "`git` cannot be run",
+                Why::NotConstructible(
+                    "reached with no `git` on `PATH`; the route's way out is to put it \
+                     there, and a case's environment is one for all its commands — the \
+                     frame has no act that changes a variable between the refusing command \
+                     and the route's, and its own `git` children would not start",
+                ),
+            ),
+            (
+                "`git status` fails where `git ls-files` answered",
+                Why::NotConstructible(
+                    "both read the same index: no state was found that fails the second \
+                     and not the first",
+                ),
+            ),
+        ],
+        not_followed: &[],
+    },
+    Reading {
+        site: REMOVE_JIGC,
+        read: &[
+            "crates/cli/src/setup.rs::uninstall — step 1, and the guards that decide what state reaches it",
+            "std::fs::remove_dir_all — every error of it is worded under one route",
+        ],
+        causes: 4,
+        derivation: "the removal of `.jigc/` fails where an entry cannot be taken out of \
+                     its directory: out of `.jigc` itself, out of a directory under it, or \
+                     `.jigc` out of the repository's root — three places a write bit can be \
+                     missing — and where a directory under it cannot be read at all, which \
+                     the guards refuse first from every run but one told `--force`",
+        without_case: &[],
+        not_followed: &[],
+    },
+    Reading {
+        site: UNWIRE,
+        read: &[
+            "crates/cli/src/setup.rs::uninstall — step 2, behind the removal of `.jigc/`",
+            "crates/cli/src/adapter.rs::unwire_reference — the read, the two shapes of host it takes the reference out of, and the write or the removal",
+        ],
+        causes: 8,
+        derivation: "`unwire_reference` reads `CLAUDE.md` through whatever stands there — a \
+                     directory, bytes that are no text, a file that may not be read, a \
+                     special file — then writes the host back without the reference, or \
+                     removes a host that held nothing else. The write fails over a file \
+                     that may not be written, the host's own or the one a link leads to, \
+                     and over bytes a disk will not take; the removal over a root that may \
+                     not be written",
+        without_case: &[
+            (
+                "the host held the reference and nothing else, and the root it is to be \
+                 removed from may not be written",
+                Why::NotConstructible(
+                    "the step before needs the same permission to take `.jigc/` out of the \
+                     root, and refuses first under `uninstall.remove-jigc` — the case \
+                     `uninstall-workbench-under-a-read-only-root`",
+                ),
+            ),
+            BYTES_CANNOT_BE_WRITTEN,
+        ],
+        not_followed: &[],
+    },
+    Reading {
+        site: REMOVE_ALLOWLIST,
+        read: &[
+            "crates/cli/src/setup.rs::uninstall — steps 0b and 3: which entries are taken, and the first read of the settings file",
+            "crates/cli/src/setup.rs::SettingsClaim::read — what the install's record says, read before `.jigc/` goes",
+            "crates/cli/src/adapter.rs::remove_allowlist, drop_entries, read_settings and write_settings",
+        ],
+        causes: 7,
+        derivation: "`remove_allowlist` is the first step to read the settings file: a \
+                     directory there, bytes that are no text, no JSON, a file that may not \
+                     be read, a special file. It writes only where it took a permit out: \
+                     over a file that may not be written, and over bytes a disk will not \
+                     take. A settings file of another shape than the merge's is no error \
+                     here — the step finds no permit and writes nothing",
+        without_case: &[BYTES_CANNOT_BE_WRITTEN],
+        not_followed: &[(
+            "the write refused through a link to a file outside the repository",
+            Why::NotConstructible(
+                "one arm — the write fails — followed at the file that may not be written; \
+                 a link out is followed at the reference's host, the step before",
+            ),
+        )],
+    },
+    Reading {
+        site: REMOVE_HOOK,
+        read: &[
+            "crates/cli/src/setup.rs::uninstall — step 4",
+            "crates/cli/src/adapter.rs::remove_hook, read_settings and write_settings",
+            "crates/cli/src/adapter.rs::remove_allowlist — the step before reads the same file, and writes it only where it took a permit",
+        ],
+        causes: 2,
+        derivation: "the step reads the settings file and writes it back. The read was the \
+                     allowlist step's first; the write is this step's first only where that \
+                     step took nothing out — an install whose record lists no permit",
+        without_case: &[(
+            "the settings file cannot be read, or is no JSON",
+            THE_STEP_BEFORE_READS,
+        )],
+        not_followed: &[],
+    },
+    Reading {
+        site: REMOVE_DENY,
+        read: &[
+            "crates/cli/src/setup.rs::uninstall — step 5",
+            "crates/cli/src/adapter.rs::remove_deny, read_settings and write_settings",
+            "crates/cli/src/adapter.rs::remove_allowlist and remove_hook — the two steps before read the same file, and each writes it only where it took something",
+        ],
+        causes: 2,
+        derivation: "as the step before: the read was another's first, and the write is \
+                     this step's first only where neither of the two before took anything \
+                     out — an install whose record lists neither permit nor hook",
+        without_case: &[(
+            "the settings file cannot be read, or is no JSON",
+            THE_STEP_BEFORE_READS,
+        )],
+        not_followed: &[],
+    },
+    Reading {
+        site: REMOVE_PRECOMMIT,
+        read: &[
+            "crates/cli/src/setup.rs::uninstall — step 6",
+            "crates/cli/src/setup.rs::remove_precommit_hook, resolve_hooks_dir and precommit_hook_in — where the hook is, the read, and the removal or the write",
+            "crates/cli/src/setup.rs::classify_precommit_for_teardown — which of the two the step does",
+        ],
+        causes: 11,
+        derivation: "`remove_precommit_hook` asks git for the hooks directory — refused \
+                     where `core.hooksPath` is the empty string — and reads the hook \
+                     through whatever stands there: a path under a `core.hooksPath` that is \
+                     a regular file or a device, a directory, bytes that are no text, a \
+                     file that may not be read, a special file. A hook that is jigc's whole \
+                     is removed — refused by a hooks directory that may not be written; \
+                     one that holds their lines too is written back without jigc's block — \
+                     refused by a hook that may not be written, its own file or the one a \
+                     link leads to, and by bytes a disk will not take. A hook jigc cannot \
+                     find its block in is no error: it is left and named",
+        without_case: &[BYTES_CANNOT_BE_WRITTEN],
+        not_followed: &[],
+    },
+    Reading {
+        site: REMOVE_GUIDE,
+        read: &[
+            "crates/cli/src/setup.rs::uninstall — step 7",
+            "crates/cli/src/setup.rs::guide_ownership — a guide that is not jigc's is kept and named, not removed",
+        ],
+        causes: 1,
+        derivation: "the step removes one regular file, and a file's removal is its \
+                     directory's permission: the one error is a directory that may not be \
+                     written. A special file or a directory at the guide's path is no file \
+                     to the step, which passes it by",
+        without_case: &[],
         not_followed: &[],
     },
 ];

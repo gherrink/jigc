@@ -6,7 +6,7 @@ What a case of the route catalog ([route_catalog.rs](../../../../../crates/cli/t
 
 **Three of the keys are about a state only a variable reaches** — `JIGC_ADAPTERS_DIR` for two, `$HOME` taken away for one. Whether a route owes anything there is not said here.
 
-**The cases are those of every blocking site of `jigc setup`** — thirty-six sites, four of them with a reason and no case — **and of nine of the eighteen blocking sites of `jigc uninstall`** (§4): the door, and three of the four guards over what `.jigc/` holds the only copy of.
+**The cases are those of every blocking site of `jigc setup`** — thirty-six sites, four of them with a reason and no case — **and of every blocking site of `jigc uninstall`** (§4), eighteen, each with a case: the door, the four guards over what `.jigc/` holds the only copy of, and the seven steps that remove.
 
 **A case's name says its cause and its way.** The cases of one cause are a group, and a name ends with the way the route was followed: `-removed`, `-pointed-at-a-committed-file`, `-pointed-at-a-new-file`, and each of those again with `-committed-and-` in front where the link was committed and the change was committed as the route's clause says.
 
@@ -254,7 +254,7 @@ Where the settings path leads to `CLAUDE.md`, the re-run is refused under the sa
 
 ## 4. `jigc uninstall` — keyed, cases listed under each
 
-Every case starts from one state: somebody's repository — their `CLAUDE.md`, their settings file with a permit of their own, their `pre-commit` hook, a file jigc never writes, all committed — and an install the binary under test made over it. **What every case holds still:** a file outside the repository, and inside it the files the command has no business touching (`README.md`, `notes.md`); where a route leads to no teardown at all, every file of the install as well. **What must hold where a route leads to a teardown:** `.jigc/` and the guide are gone, jigc's lines are out of `CLAUDE.md`, the settings file and the hook, and their owner's lines are still in each.
+Every case starts from one state: somebody's repository — their `CLAUDE.md`, their settings file with a permit of their own, their `pre-commit` hook, a file jigc never writes, all committed — and an install the binary under test made over it. (Three start beside it: two from a settings file that already held jigc's own entries, one from a repository with no hook of its own.) **What every case holds still:** a file outside the repository, and inside it the files the command has no business touching (`README.md`, `notes.md`); where a route leads to no teardown at all, every file of the install as well. **What must hold where a route leads to a teardown:** `.jigc/` and the guide are gone, jigc's lines are out of `CLAUDE.md`, the settings file and the hook, and their owner's lines are still in each.
 
 **No case of this section came out *a witness changed*.**
 
@@ -340,3 +340,68 @@ Every case starts from one state: somebody's repository — their `CLAUDE.md`, t
 - **What went wrong:** the second line is no command as printed, and no worktree removal reaches the cause the route's own first clause names — the directory cannot be listed. The re-run refuses the same way.
 - **The two readings:** (a) two command lines to run as printed — followed here; (b) the names of two git verbs, the second to be run for each path the first lists — then the route prints no line, and in this state there is nothing for it to be run on.
 - **Beside it, and green:** the route's first way, `uninstall-worktrees-root-unreadable-made-readable`.
+
+### Under the canary's `r1-p3-uninstall-writability-route-not-driven` — the seven steps that remove
+
+Not minted here. The canary's row is the hook's step: *ensure the repo's git hooks directory is writable* while that path is already writable — under `core.hooksPath` naming a file or `/dev/null`, a read-only wrapped hook, a non-UTF-8 hook, a hook linked to a read-only outside script. **The same defect at six more steps**: each of the seven steps of `uninstall` words every error of its callee under one route, *ensure … is writable* over one entry it names, whatever the error was. *Why the same defect and no neighbour:* it is the canary's own site with four more causes, and its six sibling `map_err`s in the same function, shaped the same way. Twenty cases, each ***the same refusal again*** — the entry the route names was given its owner's write bit, and the command was run again:
+
+| step — `jigc uninstall`, exit 1 | printed route | the causes it was printed for, a case each |
+|---|---|---|
+| `uninstall.remove-jigc` | ``route: ensure `.jigc/` is writable, then re-run `jigc uninstall` `` | a directory under `.jigc` may not be written while `.jigc` may (`uninstall-workbench-directory-read-only`) · the repository root may not be written (`uninstall-workbench-under-a-read-only-root`) |
+| `uninstall.unwire-reference` | ``route: ensure `CLAUDE.md` is writable, then re-run `jigc uninstall` `` | a directory stands at `CLAUDE.md` (`uninstall-reference-host-a-directory`) · it is not UTF-8 (`-not-utf-8`) · it may not be read (`-unreadable`) · it is a link to a file outside the repository that may not be written (`-a-link-to-a-read-only-file-outside`) |
+| `uninstall.remove-allowlist` | ``route: ensure `.claude/settings.json` is writable, then re-run `jigc uninstall` `` | a directory stands at the settings file's path (`uninstall-settings-a-directory`) · it is not UTF-8 (`-not-utf-8`) · it is no JSON (`-not-json`) · it may not be read (`-unreadable`) |
+| `uninstall.remove-precommit` | ``route: ensure the repo's git hooks directory is writable, then re-run `jigc uninstall` `` | the canary's five — `core.hooksPath` names a regular file (`uninstall-hook-hooks-path-a-file`), names `/dev/null` (`-hooks-path-dev-null`), the wrapped hook may not be written in a hooks directory that may (`uninstall-hook-read-only`), is not UTF-8 (`-not-utf-8`), is a link to a read-only script outside (`-a-link-to-a-read-only-script-outside`) — and three it did not drive: `core.hooksPath` is the empty string (`-hooks-path-empty`), a directory stands at the hook's path (`-a-directory`), the hook may not be read (`-unreadable`) |
+| `uninstall.remove-guide` | ``route: ensure `.claude/skills/jigc/SKILL.md` is writable, then re-run `jigc uninstall` `` | the directory that holds the guide may not be written (`uninstall-guide-directory-read-only`) — a file's removal is its directory's permission, so this route's words are true of no state |
+
+**And one *another failure*, under the same key:** `uninstall-forced-workbench-directory-unreadable-made-writable`. `jigc uninstall --force` over a `.jigc/worktrees` of mode 000 refuses under `uninstall.remove-jigc`, routed *ensure `.jigc/` is writable, then re-run `jigc uninstall`*: it is writable, and the re-run — which the route prints without the consent — refuses under `uninstall.dirty-worktree`.
+
+**Every refusal behind the first step finds `.jigc/` gone.** The first step removes the workbench; a refusal at the reference, the settings file, the hook or the guide leaves the rest of the install standing beside no `.jigc/`.
+
+**Beside them, and green — the state each route's words are true of:** `uninstall-workbench-read-only` (`.jigc` itself may not be written) and `uninstall-hook-of-jigcs-own-hooks-directory-read-only` (an install over a repository with no hook of its own, and a hooks directory that may not be written — *holds, operand implied*: the route prints no path for the directory). Two more states the words are true of are red under the next key.
+
+### `r1-uninstall-refusal-behind-the-workbench-rerun-leaves-the-settings-entries`
+
+- **Classification:** followed, another failure — the re-run exits 0, and what must hold afterwards does not: the settings file still holds jigc's entries. **Four cases:** `uninstall-reference-host-read-only` (`uninstall.unwire-reference`), `uninstall-settings-read-only` (`uninstall.remove-allowlist`), `uninstall-session-hook-settings-read-only` (`uninstall.remove-hook`), `uninstall-deny-floor-settings-read-only` (`uninstall.remove-deny`).
+- **State:** the install, and the file the step writes may not be written — `CLAUDE.md` of mode 444, or the settings file of mode 444. For the last two, their settings file held jigc's permits (and the session hook) before `jigc setup`, so the install's record lists none of them and the step named is the first to write the file.
+- **Refusing command:** `jigc uninstall` — exit 1, with `.jigc/` already removed.
+- **Printed routes:**
+
+  ```text
+  route: ensure `CLAUDE.md` is writable, then re-run `jigc uninstall`
+  route: ensure `.claude/settings.json` is writable, then re-run `jigc uninstall`
+  ```
+
+- **What was done:** the named file given its owner's write bit — these are the states the route's words are true of; `jigc uninstall` again — exit 0.
+- **What went wrong:** the teardown the re-run completes leaves every entry of jigc's in the settings file — 25 of them in the first two cases, the permits, the deny floor and the session hook — and says so: *left 25 entries … no record git tracks lists what `jigc setup` added … so jigc cannot tell its entries from yours and removed none*. The record that says which entries are jigc's is `.jigc/settings-entries.json`; the refused run read it and then removed `.jigc/`, and the re-run has none to read. So a refusal behind the first step turns *re-run `jigc uninstall`* into a teardown that takes less than the one that was refused would have.
+- **Kin:** `r1-setup-settings-record-refused-rerun-installs-without-the-record` — the install's side of the same record; and the canary's `r1-uninstall-refuses-and-force-half-removes-no-work-tree-home`, another refusal behind the removal of `.jigc/`.
+
+### `r1-uninstall-fifo-at-a-file-the-teardown-reads-holds-the-command`
+
+- **Classification:** the command did not end. **Three cases:** `uninstall-reference-host-a-special-file` (`CLAUDE.md`), `uninstall-settings-a-special-file` (`.claude/settings.json`), `uninstall-hook-a-special-file` (`.git/hooks/pre-commit`).
+- **State:** the install, and a FIFO where the file stood.
+- **Refusing command:** `jigc uninstall` — it does not end; the runner ends it at its limit. No refusal and no route is printed.
+- **What went wrong:** each step reads its file with no limit, and the read of a FIFO with no writer does not return — **behind the removal of `.jigc/`**: the command holds with the workbench gone, and at the hook with the reference and the settings entries taken out as well.
+- **Why a key of its own and not `r1-setup-fifo-at-install-path-holds-the-command`:** another command and other reads — `unwire_reference`, the teardown's `read_settings`, `remove_precommit_hook` — and what the hold leaves behind is a half-removed install, not a half-written one. Kin.
+
+### Under the canary's `r1-p3-uninstall-force-names-nothing-undecodable-listing` — the fourth guard, where git has no answer
+
+Not minted here. The canary's row is the fourth guard over a listing of git's that cannot be decoded: its route says *make sure `git` is on PATH and the `.jigc/` tree is readable*, and both already hold. **Two cases, each *the same refusal again*** — `.jigc/` given its owner's read bit, the command again:
+
+| case | refusing — `jigc uninstall`, exit 1, `uninstall.untracked-workbench-file` | the cause |
+|---|---|---|
+| `uninstall-git-listing-undecodable-made-readable` | *`git` produced non-UTF-8 output* | the canary's: the index holds an entry under `.jigc/` whose name is not UTF-8 |
+| `uninstall-git-index-unreadable-made-readable` | *`git ls-files …` failed: … index file smaller than expected* | the same route over another answer git could not give — the same site, the same arm, the same words: `.git/index` is no index |
+
+**The half of the canary's row the catalog does not see:** that `--force` then destroys an untracked file and names nothing. The consent from both states exits 0 and the teardown is whole (`…-forced`, green); what it says while it does so is no case's business.
+
+**Beside them, and green:** `uninstall-workbench-unlistable-made-readable` — `.jigc` may be searched and not listed, the one state the route's second clause is true of.
+
+### More cases under two keys of this section
+
+- **`r1-uninstall-routes-print-lines-with-a-placeholder-for-the-id`** — 2 more, *a printed line no shell can split*, marked `doubt`: `uninstall-untracked-workbench-file-added-as-printed` and `uninstall-workbench-files-one-ignored-moved-out-and-one-added-as-printed`. The fourth guard's route prints `` `git -C <sandbox>/repo add -- <path>` is enough ``, with the repository's path in full and `<path>` where the listed file's belongs. *Why the same defect:* the same shape — a backticked line with a bracketed word whose value the refusal lists above its route — at another site. **By the route's other words the same state holds**: the file committed (*put them where they can be recovered*), or deleted (`…-committed`, `…-deleted`, green).
+- **`r1-uninstall-force-over-unreadable-workbench-fails-part-way`** — 1 more, *another failure*: `uninstall-workbench-unlistable-forced`, the consent over a `.jigc` that may be searched and not listed, from the fourth guard's route.
+
+### Seen, and no case — nothing refuses, so there is no route to follow
+
+- **`jigc uninstall` writes through a link, to a file outside the repository, at exit 0.** With `CLAUDE.md` a link to a file outside that holds the reference, the teardown takes the reference out of *that file*; with the `pre-commit` hook a link to a script outside that holds jigc's block, it writes the script back without the block. Driven by hand: both files' bytes change, the link at `CLAUDE.md` stays, and the summary says *unwired bootstrap reference ← CLAUDE.md* and *removed pre-commit hook*. What is written is the file less jigc's lines. Where the outside file may not be written, the step refuses — the two `…-a-link-to-a-read-only-…-outside` cases above — and its route says to make `CLAUDE.md`, or the hooks directory, writable; a reader who does so through the link has the outside file rewritten by the re-run. The frame gives no permission through a link, so no case shows that, and the outside files of both cases are witnesses that did not change.
+- **After a clean `jigc uninstall` the settings file is not what it was before the install**: an emptied `"SessionStart": []` under `"hooks"` and an empty `"deny": []` stay behind in a file that had neither.

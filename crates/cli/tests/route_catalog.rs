@@ -49,12 +49,13 @@
 //! cannot find its repository; the four over the adapter profile; the dirty gate, and the
 //! refusal where git cannot answer it; the settings file's question before the first write;
 //! the fourteen steps of the write span; and the two of the install commit. Four of the
-//! thirty-six have a reason and no case. **And nine of the eighteen blocking sites of
-//! `jigc uninstall`** (the plan's step `P4`): the two of a command that cannot find its
-//! repository, the profile not loaded, and three of the four guards over what `.jigc/`
-//! holds the only copy of — a worktree path with content, a byte jigc did not write, an
-//! open task's staged doc — each with the refusal it raises where it could not look. The
-//! other nine are rows of [`OWED`], under the task that owes their cases.
+//! thirty-six have a reason and no case. **And every blocking site of `jigc uninstall`,
+//! eighteen** (the plan's step `P4`): the two of a command that cannot find its repository,
+//! the profile not loaded, the four guards over what `.jigc/` holds the only copy of — a
+//! worktree path with content, a byte jigc did not write, an open task's staged doc, a file
+//! no index has — each with the refusal it raises where it could not look, and the seven
+//! steps that remove. Every one of the eighteen has a case. **Nothing is owed**: the list
+//! of sites a task of the plan still owed a case is empty, and gone with its type.
 //!
 //! **A site with a case says what was read to count its causes**
 //! ([`Reading`], a command's `READINGS`): the functions, the count with its derivation,
@@ -140,9 +141,9 @@
 //! `refusal_site_list.rs` holds byte-equal to the committed list, and the literals are
 //! [`support::rust_source`](crate::support::rust_source)'s. Two arms:
 //!
-//!   * [`every_refusal_site_of_the_catalogued_families_has_a_case_a_reason_or_an_owed_row`]
-//!     — a blocking site has exactly one answer: a case in its command's file, a
-//!     [`Reason`] there, or a row of [`OWED`].
+//!   * [`every_refusal_site_of_the_catalogued_families_has_a_case_or_a_reason`] — a
+//!     blocking site has exactly one answer: a case in its command's file, or a [`Reason`]
+//!     there.
 //!   * [`every_code_of_a_catalogued_prefix_is_a_listed_sites_or_is_claimed`] — the list
 //!     says where a finding is constructed, and a code that reaches its constructor
 //!     through a `match`, a parameter or a table stands in no row of its family. So the
@@ -515,6 +516,8 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "uninstall-fan-out-worktree-uncommitted-work-milestone-abandoned-as-printed",
             "uninstall-staged-doc-finalized-as-printed",
             "uninstall-staged-doc-read-and-discarded-as-printed",
+            "uninstall-untracked-workbench-file-added-as-printed",
+            "uninstall-workbench-files-one-ignored-moved-out-and-one-added-as-printed",
         ],
     ),
     (
@@ -523,6 +526,7 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &[
             "uninstall-staged-docs-unsearchable-forced",
             "uninstall-task-areas-unlistable-forced",
+            "uninstall-workbench-unlistable-forced",
             "uninstall-workbench-unsearchable-forced",
             "uninstall-worktree-path-unreadable-forced",
             "uninstall-worktrees-root-unreadable-forced",
@@ -546,6 +550,63 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         WORKTREE_REMOVE_NO_PATH,
         Classification::SameRefusalAgain,
         &["uninstall-worktrees-root-unreadable-worktrees-removed-as-printed"],
+    ),
+    (
+        UNINSTALL_PERMISSION_ROUTE,
+        Classification::SameRefusalAgain,
+        &[
+            "uninstall-guide-directory-read-only",
+            "uninstall-hook-a-directory",
+            "uninstall-hook-a-link-to-a-read-only-script-outside",
+            "uninstall-hook-hooks-path-a-file",
+            "uninstall-hook-hooks-path-dev-null",
+            "uninstall-hook-hooks-path-empty",
+            "uninstall-hook-not-utf-8",
+            "uninstall-hook-read-only",
+            "uninstall-hook-unreadable",
+            "uninstall-reference-host-a-directory",
+            "uninstall-reference-host-a-link-to-a-read-only-file-outside",
+            "uninstall-reference-host-not-utf-8",
+            "uninstall-reference-host-unreadable",
+            "uninstall-settings-a-directory",
+            "uninstall-settings-not-json",
+            "uninstall-settings-not-utf-8",
+            "uninstall-settings-unreadable",
+            "uninstall-workbench-directory-read-only",
+            "uninstall-workbench-under-a-read-only-root",
+        ],
+    ),
+    (
+        UNINSTALL_PERMISSION_ROUTE,
+        Classification::AnotherFailure,
+        &["uninstall-forced-workbench-directory-unreadable-made-writable"],
+    ),
+    (
+        COULD_NOT_ASK_GIT,
+        Classification::SameRefusalAgain,
+        &[
+            "uninstall-git-index-unreadable-made-readable",
+            "uninstall-git-listing-undecodable-made-readable",
+        ],
+    ),
+    (
+        LATE_REFUSAL,
+        Classification::AnotherFailure,
+        &[
+            "uninstall-deny-floor-settings-read-only",
+            "uninstall-reference-host-read-only",
+            "uninstall-session-hook-settings-read-only",
+            "uninstall-settings-read-only",
+        ],
+    ),
+    (
+        UNINSTALL_HELD,
+        Classification::DidNotEnd,
+        &[
+            "uninstall-hook-a-special-file",
+            "uninstall-reference-host-a-special-file",
+            "uninstall-settings-a-special-file",
+        ],
     ),
 ];
 
@@ -636,6 +697,23 @@ const MOVE_ASIDE_UNREADABLE: &str = "r1-uninstall-worktree-route-move-aside-over
 /// remove`, printed with no path. Rests on a reading — the case under it is marked.
 const WORKTREE_REMOVE_NO_PATH: &str =
     "r1-uninstall-worktrees-route-prints-git-worktree-remove-without-a-path";
+/// The canary's key for the teardown's hook step: *ensure the repo's git hooks directory is
+/// writable* over causes that are no such thing. The same defect at the six other steps
+/// that remove — each words every error of its callee as *ensure … is writable* over one
+/// entry it names, whatever the error was.
+const UNINSTALL_PERMISSION_ROUTE: &str = "r1-p3-uninstall-writability-route-not-driven";
+/// The canary's key for the fourth guard where git's listing cannot be decoded: its route
+/// says to put `git` on `PATH` and make `.jigc/` readable, and both already hold. The same
+/// route over another answer git could not give.
+const COULD_NOT_ASK_GIT: &str = "r1-p3-uninstall-force-names-nothing-undecodable-listing";
+/// A step behind the removal of `.jigc/` refuses over a file that may not be written, and
+/// its route — make it writable, run again — leads to a teardown that leaves every settings
+/// entry of jigc's in place: the record that says they are jigc's went with `.jigc/`.
+const LATE_REFUSAL: &str =
+    "r1-uninstall-refusal-behind-the-workbench-rerun-leaves-the-settings-entries";
+/// A FIFO at a file the teardown reads — `CLAUDE.md`, the settings file, the hook: the
+/// command does not end, with `.jigc/` already removed.
+const UNINSTALL_HELD: &str = "r1-uninstall-fifo-at-a-file-the-teardown-reads-holds-the-command";
 
 /// [`EXPECTED_RED`], an entry a case.
 fn expected_red() -> Vec<ExpectedRed> {
@@ -963,8 +1041,7 @@ struct Claim {
 }
 
 impl Claim {
-    /// The id the claimed site goes by — what a case, a reason or an owed row names it
-    /// with: `file::function::<code>#dynamic-<ordinal>`. The code stands where a listed
+    /// The id the claimed site goes by — what a case or a reason names it with: `file::function::<code>#dynamic-<ordinal>`. The code stands where a listed
     /// site's does, so a case reads its code the same way; `dynamic-` keeps the id apart
     /// from every listed one, whose ordinal is a number. `None` where `minted_at` is no
     /// dynamic site's id.
@@ -1040,32 +1117,6 @@ const MERGED_THROUGH: &str = "crates/cli/src/setup.rs::merged_through_links::dyn
 /// with why — a file name, say. None on this tree.
 const NO_CODE: &[(&str, &str)] = &[];
 
-/// The sites one task owes a case, a reason, or both in turn.
-struct Owed {
-    task: &'static str,
-    sites: &'static [&'static str],
-}
-
-/// **The owed list: every blocking site of a catalogued family that has neither a case nor
-/// a reason yet, under the plan's task that owes it** — `P4`, the sites of `jigc uninstall`;
-/// `P3` owed those of `jigc setup` and owes none. A row goes in the commit that brings its
-/// site's case or reason; a row that stays beside one is named. After `P4` the list is
-/// empty and is deleted, with this type and the `owed` field of [`Rows`].
-const OWED: &[Owed] = &[Owed {
-    task: "P4",
-    sites: &[
-        "crates/cli/src/setup.rs::uninstall::uninstall.remove-allowlist#1",
-        "crates/cli/src/setup.rs::uninstall::uninstall.remove-deny#1",
-        "crates/cli/src/setup.rs::uninstall::uninstall.remove-guide#1",
-        "crates/cli/src/setup.rs::uninstall::uninstall.remove-hook#1",
-        "crates/cli/src/setup.rs::uninstall::uninstall.remove-jigc#1",
-        "crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1",
-        "crates/cli/src/setup.rs::uninstall::uninstall.unwire-reference#1",
-        "crates/cli/src/setup.rs::untracked_workbench_finding::uninstall.untracked-workbench-file#1",
-        "crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1",
-    ],
-}];
-
 // ---------------------------------------------------------------------------
 // The fence — what it reads, and what it says
 // ---------------------------------------------------------------------------
@@ -1134,8 +1185,6 @@ struct Rows {
     /// The site of every case.
     cases: Vec<&'static str>,
     reasons: Vec<Reason>,
-    /// `(site, task)`.
-    owed: Vec<(&'static str, &'static str)>,
     claims: Vec<Claim>,
     /// `(literal, why it is no finding's code)`.
     no_code: Vec<(&'static str, &'static str)>,
@@ -1149,10 +1198,6 @@ fn rows() -> Rows {
             .iter()
             .flat_map(|table| table.reasons)
             .copied()
-            .collect(),
-        owed: OWED
-            .iter()
-            .flat_map(|owed| owed.sites.iter().map(|site| (*site, owed.task)))
             .collect(),
         claims: CLAIMS.to_vec(),
         no_code: NO_CODE.to_vec(),
@@ -1204,31 +1249,23 @@ fn owing(read: &Read, claims: &[Claim]) -> Vec<Owing> {
     out
 }
 
-/// **Every site that does not have exactly one answer** — a case, a reason or an owed row.
-/// None is named; so is a case beside a reason, an owed row beside either, and
-/// `no-route-printed` given to a site whose route the list reads at its call.
+/// **Every site that does not have exactly one answer** — a case or a reason. None is
+/// named; so is a case beside a reason, and `no-route-printed` given to a site whose route
+/// the list reads at its call.
 fn uncovered(read: &Read, rows: &Rows) -> Vec<String> {
     let mut out = Vec::new();
     for site in owing(read, &rows.claims) {
         let id = &site.id;
         let case = rows.cases.contains(&id.as_str());
         let reason = rows.reasons.iter().find(|reason| reason.site == id);
-        let owed = rows.owed.iter().find(|(owed, _)| owed == id);
-        match (case, reason, owed) {
-            (false, None, None) => {
-                out.push(format!("`{id}` has no case, no reason and no owed row"))
-            }
-            (true, Some(reason), _) => out.push(format!(
+        match (case, reason) {
+            (false, None) => out.push(format!("`{id}` has no case and no reason")),
+            (true, Some(reason)) => out.push(format!(
                 "`{id}` has a case and the reason `{}` for having none — one of the two is \
                  wrong",
                 reason.why
             )),
-            (true, None, Some((_, task))) | (false, Some(_), Some((_, task))) => out.push(format!(
-                "`{id}` has a {} and is still owed by `{task}` — the row goes in the commit \
-                 that brings the answer",
-                if case { "case" } else { "reason" }
-            )),
-            (false, Some(reason), None)
+            (false, Some(reason))
                 if matches!(reason.why, Why::NoRoutePrinted)
                     && matches!(
                         site.route,
@@ -1277,28 +1314,14 @@ fn unclaimed(read: &Read, rows: &Rows) -> Vec<String> {
     out
 }
 
-/// **Every row that is about nothing**: an owed row or a reason whose site owes no case —
-/// gone, renamed, or never blocking — a claim whose site the list does not hold as a
+/// **Every row that is about nothing**: a reason whose site owes no case — gone, renamed,
+/// or never blocking — a claim whose site the list does not hold as a
 /// dynamic one or whose code no production source spells, a row for a literal that is no
 /// longer spelled; and a row that is there twice, or says nothing where it must say why.
 fn idle_rows(read: &Read, rows: &Rows) -> Vec<String> {
     let owing = owing(read, &rows.claims);
     let owes = |id: &str| owing.iter().any(|site| site.id == id);
     let mut out = Vec::new();
-
-    for (at, (site, task)) in rows.owed.iter().enumerate() {
-        if task.is_empty() {
-            out.push(format!("the owed row for `{site}` names no task"));
-        }
-        if !owes(site) {
-            out.push(format!(
-                "the owed list (`{task}`) names `{site}`, which is no blocking site of a \
-                 catalogued family: it is gone, renamed, or was never one"
-            ));
-        } else if rows.owed[..at].iter().any(|(other, _)| other == site) {
-            out.push(format!("`{site}` is on the owed list twice"));
-        }
-    }
 
     for (at, reason) in rows.reasons.iter().enumerate() {
         let site = reason.site;
@@ -1446,16 +1469,16 @@ fn fixture() -> Read {
 /// The fixture's one claim.
 const BY_A_MATCH: Claim = claim("setup.by-a-match", MINTED);
 
-/// The fixture's tables with nothing wrong: a case, a reason and an owed row, one site
-/// each; the claim; and the literal that is no code.
+/// The fixture's tables with nothing wrong: a case for the site that spells its code and
+/// for the one a claim makes, a reason for the third; the claim; and the literal that is no
+/// code.
 fn in_order() -> Rows {
     Rows {
-        cases: vec![SPELLED],
+        cases: vec![SPELLED, CLAIMED],
         reasons: vec![Reason {
             site: ROUTELESS,
             why: Why::NoRoutePrinted,
         }],
-        owed: vec![(CLAIMED, "P3")],
         claims: vec![BY_A_MATCH],
         no_code: vec![("setup.rs", "a file's name")],
     }
@@ -1473,12 +1496,13 @@ fn says(said: &[String], expected: &[(&str, &str)]) {
     }
 }
 
-/// **Every blocking site of the catalogued families has a case, a reason or an owed row —
-/// exactly one.** On a fixture: the advisory site and the other family's owe nothing, a
+/// **Every blocking site of the catalogued families has a case or a reason — exactly
+/// one.** (Until the cases of `jigc uninstall` were in, a third answer stood beside the two:
+/// a row of a list of what a task of the plan still owed. The list is empty and gone.) On a fixture: the advisory site and the other family's owe nothing, a
 /// claim makes the code at its dynamic site owe like a listed one, and two answers for one
 /// site are named as none is. Then this tree, against the tables this suite holds.
 #[test]
-fn every_refusal_site_of_the_catalogued_families_has_a_case_a_reason_or_an_owed_row() {
+fn every_refusal_site_of_the_catalogued_families_has_a_case_or_a_reason() {
     let fixture = fixture();
     says(
         &uncovered(&fixture, &Rows::default()),
@@ -1519,19 +1543,6 @@ fn every_refusal_site_of_the_catalogued_families_has_a_case_a_reason_or_an_owed_
         );
     }
 
-    says(
-        &uncovered(
-            &fixture,
-            &Rows {
-                owed: vec![(SPELLED, "P3"), (ROUTELESS, "P4"), (CLAIMED, "P3")],
-                ..in_order()
-            },
-        ),
-        &[
-            (SPELLED, "a case and is still owed by `P3`"),
-            (ROUTELESS, "a reason and is still owed by `P4`"),
-        ],
-    );
     let both = Reason {
         site: SPELLED,
         why: Why::NotConstructible("nothing reaches it"),
@@ -1558,7 +1569,7 @@ fn every_refusal_site_of_the_catalogued_families_has_a_case_a_reason_or_an_owed_
         &uncovered(
             &fixture,
             &Rows {
-                cases: vec![],
+                cases: vec![CLAIMED],
                 reasons: vec![routeless(SPELLED), routeless(ROUTELESS)],
                 ..in_order()
             },
@@ -1572,9 +1583,8 @@ fn every_refusal_site_of_the_catalogued_families_has_a_case_a_reason_or_an_owed_
         wrong.is_empty(),
         "the route catalog does not answer for {} of the {} blocking refusal sites of the \
          families {CATALOGUED:?}:\n\n  {}\n\na site is answered by a case in its command's \
-         file under `route_catalog/`, by a reason there, or — until the task that owes it \
-         lands — by a row of `OWED`; a code that a dynamic site mints is a site once \
-         `CLAIMS` holds it.",
+         file under `route_catalog/`, or by a reason there; a code that a dynamic site mints \
+         is a site once `CLAIMS` holds it.",
         wrong.len(),
         owing(&read, CLAIMS).len(),
         wrong.join("\n  "),
@@ -1640,35 +1650,13 @@ fn every_code_of_a_catalogued_prefix_is_a_listed_sites_or_is_claimed() {
 }
 
 /// **A row for a site that is gone is named** — and so is every other row that is about
-/// nothing: one for a site that never owed a case, a claim for a site that is not dynamic
+/// nothing: a reason for a site that never owed a case, a claim for a site that is not dynamic
 /// or a code nothing spells, a row that is there twice, a row that does not say why. On a
 /// fixture, kind by kind; then this tree's tables.
 #[test]
 fn a_row_for_a_site_that_is_gone_is_named() {
     let fixture = fixture();
     says(&idle_rows(&fixture, &in_order()), &[]);
-
-    says(
-        &idle_rows(
-            &fixture,
-            &Rows {
-                owed: vec![
-                    (CLAIMED, "P3"),
-                    (GONE, "P3"),
-                    (ADVISED, "P3"),
-                    (CLAIMED, "P4"),
-                    (ROUTELESS, ""),
-                ],
-                ..in_order()
-            },
-        ),
-        &[
-            (GONE, "the owed list (`P3`) names"),
-            (ADVISED, "no blocking site of a catalogued family"),
-            (CLAIMED, "on the owed list twice"),
-            (ROUTELESS, "names no task"),
-        ],
-    );
 
     let reason = |site, why| Reason { site, why };
     says(
@@ -1678,6 +1666,7 @@ fn a_row_for_a_site_that_is_gone_is_named() {
                 reasons: vec![
                     reason(ROUTELESS, Why::NoRoutePrinted),
                     reason(GONE, Why::Platform("another")),
+                    reason(ADVISED, Why::Platform("another")),
                     reason(ROUTELESS, Why::NotConstructible("")),
                 ],
                 ..in_order()
@@ -1685,23 +1674,29 @@ fn a_row_for_a_site_that_is_gone_is_named() {
         ),
         &[
             (GONE, "the reason `platform: another` names"),
+            (ADVISED, "no blocking site of a catalogued family"),
             (ROUTELESS, "states nothing"),
             (ROUTELESS, "is given two reasons"),
         ],
     );
 
-    // A claim that names no dynamic site makes no site, so the row owed under it is idle
+    // A claim that names no dynamic site makes no site, so a reason given under it is idle
     // with it.
     says(
         &idle_rows(
             &fixture,
             &Rows {
+                cases: vec![SPELLED],
+                reasons: vec![
+                    in_order().reasons[0],
+                    reason(CLAIMED, Why::Platform("another")),
+                ],
                 claims: vec![claim("setup.by-a-match", GONE)],
                 ..in_order()
             },
         ),
         &[
-            (CLAIMED, "the owed list (`P3`) names"),
+            (CLAIMED, "the reason `platform: another` names"),
             (GONE, "which the list does not hold"),
         ],
     );
@@ -1791,7 +1786,7 @@ fn every_file_of_the_catalogs_directory_is_a_table_the_suite_reads() {
 ///   * every catalogued prefix is a family of the list and the prefix of a listed site;
 ///   * the vocabulary's reader sees what the scan sees — the code of every listed site of a
 ///     catalogued family that is spelled at its call is among the literals, in that file;
-///   * handed no case, no reason and no owed row, the fence names every site that owes
+///   * handed no case and no reason, the fence names every site that owes
 ///     one, listed and claimed, and there are both;
 ///   * handed no claim, it names every code no listed site carries.
 #[test]
@@ -1842,7 +1837,7 @@ fn the_fence_is_not_vacuous() {
     assert_eq!(
         named.len(),
         owing.len(),
-        "handed no case, no reason and no owed row, the fence names every site that owes \
+        "handed no case and no reason, the fence names every site that owes \
          one: {named:#?}",
     );
 
