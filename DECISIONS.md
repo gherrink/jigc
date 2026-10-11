@@ -2,6 +2,38 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The route catalog's frame, grown for the sites behind the install's first refusals: a case stands where it says in the environment it says, the refusing command is run again only where a route prints no command line, and every repository of a sandbox has the sandbox's identity (the plan's step `P3`, third part; ruling 3 of 2026-10-10)
+
+**What.** [route_case.rs](crates/cli/tests/support/route_case.rs) and three arms in [route_catalog.rs](crates/cli/tests/route_catalog.rs). No case of the catalog is added or changed, and the 138 came out as they were listed. No product source changes.
+
+**Why.** The owed list's next rows are `locate_finding`'s — outside a repository; `$HOME` not set — and the four profile refusals behind them. The builder before read them and stopped at four things the frame could not say. Built now, **and a fifth**: the profile refusals are reached through `JIGC_ADAPTERS_DIR`, which has to be *set*, to a directory of the sandbox — taking a variable out does not get there.
+
+**1 — A case stands where it says** (`Case::from`). The refusing command and every command its route has run are started in the case's directory, which need be no repository; a path the route prints is read from there. The runner's own children — the sandbox's setup, a state's step, an act's commit, a check — stay in the repository.
+
+**2 and 5 — in the environment it says** (`Case::env`, `Var`): a variable taken out of the environment, or set to the absolute path of a place of the sandbox. Of the commands under test and of nothing else: a state's `git` step still has the `$HOME` a case takes away, and the arm holds that.
+
+**3 — The refusing command is run again where the route prints no command line, and only there** (`Act::Rerun`; `Act::RerunInTheRepository` for *run jigc from inside the target git repository*, the repository being the runner's as every object is that a route names and does not print). **The rule, settled:**
+
+- **A re-run takes nothing from the case.** No span, no path, no word: it is the argv the case already stated as its refusing command and the runner already ran, on the same binary, in the case's environment. So the frame's first rule stands as written — an act's operand is a span of the printed route — because a re-run has no operand, and the arm that reads the frame's source now says an act carries an operand, a span's index **or nothing**.
+- **It is the marked form's sibling and is held the same way.** A case with a re-run comes out no better than *followed, holds, operand implied* — the plan's classification for exactly this — and **the runner refuses it, before any act, wherever the printed route holds a command line of the product**: a span whose first word is `jigc`. There the command is the route's to give, by its span; a case that ran its own in its place would pass over a route that prints a wrong one, which is the existing test's mistake with a command where that had a path.
+- **What the refusal costs, declared.** A route may print a `jigc` span that is no command to run — *missing the required `jigc workflow … --task …` invocation* does. A case there cannot re-run; it runs the span, as the words most literally read, and is marked `doubt`. The rule is not loosened for it: which spans are commands is a reading, and the frame does not make one.
+- A refusal under the case's own code is *the same refusal again*, as for a printed command.
+
+**4 — Every repository of a sandbox has the sandbox's identity, and no other.** The mask leaves git no identity to read and none to invent, and the runner wrote one into the one repository it made. A repository made by a route's own `git init` had none — and on this machine git made one up from the account's name, so a case there would have passed on an identity **read from the machine**. The identity is now in the environment of every child, as configuration git reads from there (`GIT_CONFIG_COUNT`, with `user.useConfigOnly`); it is written into no repository, and the sandbox's own keeps only `user.useConfigOnly`. A case takes the identity away with the variable that carries it, and then git has none and invents none. *Why the environment and not a second `git config` after the route's command:* that would be the runner noticing a `git init`, one command at a time; the environment is every repository, however it was made.
+
+**Red first — each against a runner that declared the piece and did nothing**, on a copy of this tree while the previous commit's gate held the worktree. With only the declarations: all eight planted cases red — the six that stand elsewhere or change the environment came out *not provoked*, the re-run was `not done`. With `from` and `env` built: the first arm green; the route-made repository `followed, another failure` on the identity; the two re-runs `followed, holds` where *operand implied* was planted. With the re-run built and its refusal not: `Rerun ran the case's own command where the printed route holds a command line`. Then all green, and the catalog's 138 exact with the identity in the environment.
+
+**Pinned.**
+
+- **A printed command's shell words are split with the sandbox's `$HOME`, whatever the case took away** — the split is the runner's, the run is the case's.
+- **An act's commit is in the sandbox's repository**, wherever the case stands.
+
+**Not established.**
+
+- **Linux**, for this commit: the runs follow the task's last commit.
+- **`GIT_CONFIG_COUNT` under a git older than 2.31**, which does not read it. The container has 2.43.
+- **A product that clears its children's environment** would lose the identity; `jigc` does not, as the 138 cases show.
+
 ## 2026-10-11 — The route catalog's cases are followed through a bounded pool: no more at once than the machine has cores, counted and never timed (the plan's step `P3`, third part; ruling 3 of 2026-10-10)
 
 **What.** [route_case.rs](crates/cli/tests/support/route_case.rs): `pooled(width, items, job)` runs a job over every item, no more than `width` at once, and hands the results back in the items' order; `width()` is how wide the catalog's pool is. [route_catalog.rs](crates/cli/tests/route_catalog.rs): the arm that follows the cases hands them to the pool, and one new arm holds the pool. No case changes, no product source changes; the report's order and *one arm reports every difference* are as they were.

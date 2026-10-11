@@ -73,6 +73,8 @@ const SETUP: Case = Case {
     cause: "",
     state: &[],
     refusing: &["setup"],
+    from: Place::Repo(""),
+    env: &[],
     acts: &[],
     holds: &[],
     witnesses: &[],

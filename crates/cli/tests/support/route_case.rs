@@ -25,8 +25,8 @@
 //! scratch root — holds a repository with one commit and no `jigc setup`, built under the
 //! faithful mask ([dev-workflow.md](../../../../implementation/dev-workflow.md) → Gate:
 //! every system source of git's configuration dropped, no global file, no invented
-//! identity) with `$HOME` in the sandbox and no inherited `JIGC_PACK_DIR`; every child of
-//! the case runs under the same mask. The case's [`Step`]s plant its state; a script is
+//! identity) with `$HOME` in the sandbox, the sandbox's own identity and no inherited
+//! `JIGC_PACK_DIR`; every child of the case runs under the same mask. The case's [`Step`]s plant its state; a script is
 //! placed by a child process, as that section's Linux rule asks of a file that may be
 //! executed. The refusing argv runs on the binary **handed in** — the frame names no
 //! binary of its own, so the same case runs on another release's. Then the acts, then the
@@ -43,6 +43,33 @@
 //! ([`Act::PointAtCommitted`], [`Act::PointAtNew`]). Where the route asks for *a script*,
 //! the file is [`SCRIPT`] ([`Act::PointAtScript`]): the one the case's state planted there,
 //! committed or not, or one the runner writes new.
+//!
+//! **A case stands where it says, in the environment it says** ([`Case::from`],
+//! [`Case::env`]). The refusing command and every command its route has run are started in
+//! the case's directory — the repository's root for most, a directory that is no repository
+//! for a refusal about that — with the case's variables taken out of the environment or set
+//! to a place of the sandbox ([`Var`]); a path the route prints is read from where the case
+//! stands. The runner's own children are not the case's: the sandbox's setup, a state's
+//! step, an act's commit and a check run in the repository under the mask as it stands.
+//!
+//! **Where a route says *run it again* and prints no command line, the command is the one
+//! the case already stated** ([`Act::Rerun`], [`Act::RerunInTheRepository`]). *Run jigc from
+//! inside the target git repository* and *reinstall jigc* name an act and no line to run;
+//! what follows them is the refusing command once more. A re-run takes nothing from the
+//! case — no span, no path, no word: it is the argv the runner provoked the refusal with,
+//! on the same binary, in the case's environment. It is the marked form's sibling and is
+//! held the same way: the case comes out no better than
+//! [`Classification::HoldsOperandImplied`], and [`follow`] **refuses it wherever the
+//! printed route holds a command line of the product** ([`command_spans`]) — there the
+//! command is the route's to give, by [`Act::Run`], and a case that ran its own in its
+//! place would pass over a route that prints a wrong one.
+//!
+//! **Every repository of a sandbox has the sandbox's identity, and no other.** The mask
+//! leaves git no identity to read and none to invent, so the runner supplies one — in the
+//! environment of every child, as configuration git reads from there (`GIT_CONFIG_COUNT`),
+//! never written into one repository's own. A repository a route's `git init` makes
+//! therefore has it too, as a reader's would have theirs; and a case takes it away with
+//! the variable that carries it ([`Var::Unset`]), after which there is none.
 //!
 //! **An act never leaves the sandbox.** The runner does what a route says with a path the
 //! product printed; a route that names a path outside the sandbox is not followed there —
@@ -128,14 +155,25 @@ pub enum Step {
     Git(&'static [&'static str]),
 }
 
+/// One variable of the environment a case's **commands under test** run in — the refusing
+/// command and every command the route has run. The runner's own children — the sandbox's
+/// setup, a state's step, an act's commit, a check — run under the mask as it stands.
+#[derive(Clone, Copy, Debug)]
+pub enum Var {
+    /// The variable is taken out of the environment.
+    Unset(&'static str),
+    /// The variable is set to the absolute path of this place of the sandbox.
+    Path(&'static str, Place),
+}
+
 /// What an [`Act`] acts on.
 #[derive(Clone, Copy, Debug)]
 pub enum Operand {
     /// The printed route's backticked span of this index, counted from 0 — its bytes as
-    /// printed, read as a path from the repository root.
+    /// printed, read as a path from where the case stands ([`Case::from`]).
     Span(usize),
     /// **The marked form**: an object the route does not print, named by the case as a
-    /// path from the repository root. Refused wherever the printed route holds a path
+    /// path from where it stands. Refused wherever the printed route holds a path
     /// span; where it stands, the case can come out no better than
     /// [`Classification::HoldsOperandImplied`].
     Unprinted(&'static str),
@@ -169,6 +207,16 @@ pub enum Act {
     /// Commit the change at the path the operand names — what a route asks for with
     /// *committing the removal where git tracks the entry*.
     Commit(Operand),
+    /// **Run the refusing command again**, where the case stands — what *re-run* and *run
+    /// jigc* ask for where the route prints no command line. It takes nothing from the
+    /// case; it is refused wherever the printed route holds a command line of the product
+    /// ([`command_spans`]), and where it stands the case can come out no better than
+    /// [`Classification::HoldsOperandImplied`].
+    Rerun,
+    /// [`Act::Rerun`], inside the sandbox's repository — what *run jigc from inside the
+    /// target git repository* asks of a reader who stands outside one. The repository is
+    /// the runner's, as every object is that a route names and does not print.
+    RerunInTheRepository,
 }
 
 impl Act {
@@ -182,7 +230,7 @@ impl Act {
             | Act::PointAtNew(operand)
             | Act::PointAtScript(operand)
             | Act::Commit(operand) => Some(operand),
-            Act::Run(_) => None,
+            Act::Run(_) | Act::Rerun | Act::RerunInTheRepository => None,
         }
     }
 }
@@ -213,6 +261,12 @@ pub struct Case {
     pub state: &'static [Step],
     /// The refusing command, without the binary.
     pub refusing: &'static [&'static str],
+    /// **Where the case stands**: the directory the refusing command is started in, and
+    /// every command the route has run — and from which a path the route prints is read.
+    /// `Place::Repo("")` is the repository's root.
+    pub from: Place,
+    /// What the environment of those commands differs by from the mask's.
+    pub env: &'static [Var],
     /// The acts that follow the printed route, in the route's order.
     pub acts: &'static [Act],
     /// What must hold once they are done — beside every [`Act::Run`] exiting 0.
@@ -487,6 +541,18 @@ pub fn path_spans(spans: &[&str], repo: &Path) -> Vec<usize> {
         .collect()
 }
 
+/// The indices of the spans that are **command lines of the product**: a span whose first
+/// word is `jigc`. Where a printed route holds one, the command to run is the route's to
+/// give ([`Act::Run`]) and a case may not run its own in its place ([`Act::Rerun`]).
+pub fn command_spans(spans: &[&str]) -> Vec<usize> {
+    spans
+        .iter()
+        .enumerate()
+        .filter(|(_, span)| span.split_whitespace().next() == Some("jigc"))
+        .map(|(at, _)| at)
+        .collect()
+}
+
 /// One case, followed.
 #[derive(Clone, Debug)]
 pub struct Followed {
@@ -554,8 +620,6 @@ impl Sandbox {
             fs::create_dir_all(&dir).expect("create a sandbox directory");
         }
         sandbox.git(&["init", "-q", "-b", "main"]);
-        sandbox.git(&["config", "user.name", "Route Case"]);
-        sandbox.git(&["config", "user.email", "route-case@example.com"]);
         sandbox.git(&["config", "user.useConfigOnly", "true"]);
         fs::write(sandbox.repo().join(COMMITTED), BODY).expect("write a file");
         sandbox.git(&["add", COMMITTED]);
@@ -598,7 +662,9 @@ impl Sandbox {
     }
 
     /// A child in the repository, under the faithful mask: no system source of git's
-    /// configuration, no global file, `$HOME` in the sandbox, and the embedded packs.
+    /// configuration, no global file, `$HOME` in the sandbox, and the embedded packs —
+    /// **and the sandbox's identity**, as configuration git reads from the environment, so
+    /// that it holds in every repository under the sandbox and none is invented in any.
     fn child(&self, program: &Path) -> Command {
         let mut command = Command::new(program);
         command
@@ -606,8 +672,30 @@ impl Sandbox {
             .env("HOME", self.home())
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_COUNT", "3")
+            .env("GIT_CONFIG_KEY_0", "user.name")
+            .env("GIT_CONFIG_VALUE_0", "Route Case")
+            .env("GIT_CONFIG_KEY_1", "user.email")
+            .env("GIT_CONFIG_VALUE_1", "route-case@example.com")
+            .env("GIT_CONFIG_KEY_2", "user.useConfigOnly")
+            .env("GIT_CONFIG_VALUE_2", "true")
             .env_remove("JIGC_PACK_DIR")
             .stdin(Stdio::null());
+        command
+    }
+
+    /// **A command under test** — the refusing command, or one the route has run: a child
+    /// under the mask, started in `at`, with the case's variables taken out of its
+    /// environment or set to a place of the sandbox.
+    fn tested(&self, case: &Case, program: &Path, at: &Path) -> Command {
+        let mut command = self.child(program);
+        command.current_dir(at);
+        for var in case.env {
+            match *var {
+                Var::Unset(name) => command.env_remove(name),
+                Var::Path(name, place) => command.env(name, self.at(place)),
+            };
+        }
         command
     }
 
@@ -740,11 +828,13 @@ impl Sandbox {
     fn perform(
         &self,
         binary: &Path,
+        case: &Case,
         act: Act,
         spans: &[&str],
-        code: &str,
         seen: &mut Seen,
     ) -> Result<String, String> {
+        let code = case.code();
+        let stand = self.at(case.from);
         let span = |at: usize| {
             spans.get(at).copied().ok_or_else(|| {
                 format!(
@@ -758,7 +848,7 @@ impl Sandbox {
                 Operand::Span(at) => (span(at)?, format!("span {at}")),
                 Operand::Unprinted(path) => (path, "named by the case".to_string()),
             };
-            let path = self.repo().join(named);
+            let path = stand.join(named);
             let what = match act {
                 Act::Remove(_) => format!("remove `{named}` ({how})"),
                 Act::MoveAway(_) => format!("move `{named}` out of the way ({how})"),
@@ -771,7 +861,9 @@ impl Sandbox {
                 Act::PointAtNew(_) => format!("point the link `{named}` at `{NEW_FILE}` ({how})"),
                 Act::PointAtScript(_) => format!("point the link `{named}` at `{SCRIPT}` ({how})"),
                 Act::Commit(_) => format!("commit the change at `{named}` ({how})"),
-                Act::Run(_) => unreachable!("a run takes no operand"),
+                Act::Run(_) | Act::Rerun | Act::RerunInTheRepository => {
+                    unreachable!("a run takes no operand")
+                }
             };
             if !self.contains(&path) {
                 seen.failed = true;
@@ -804,7 +896,9 @@ impl Sandbox {
                     self.point(&path, SCRIPT)
                 }),
                 Act::Commit(_) => self.commit(named),
-                Act::Run(_) => unreachable!("a run takes no operand"),
+                Act::Run(_) | Act::Rerun | Act::RerunInTheRepository => {
+                    unreachable!("a run takes no operand")
+                }
             };
             return Ok(match done {
                 Ok(done) => format!("{what}: {done}"),
@@ -814,34 +908,60 @@ impl Sandbox {
                 }
             });
         }
-        let Act::Run(at) = act else {
-            unreachable!("every act but a run takes an operand");
-        };
-        let line = span(at)?;
-        let words = super::shell_words(line, &self.repo(), &self.home());
-        let program = match words.first().map(String::as_str) {
-            Some("jigc") => binary,
-            Some("git") => Path::new("git"),
-            _ => {
-                return Err(format!(
-                    "an act runs span {at}, `{line}`, which is no `jigc` or `git` \
-                     command line"
-                ));
+        let (what, ran) = match act {
+            Act::Run(at) => {
+                let line = span(at)?;
+                let words = super::shell_words(line, &stand, &self.home());
+                let program = match words.first().map(String::as_str) {
+                    Some("jigc") => binary,
+                    Some("git") => Path::new("git"),
+                    _ => {
+                        return Err(format!(
+                            "an act runs span {at}, `{line}`, which is no `jigc` or `git` \
+                             command line"
+                        ));
+                    }
+                };
+                (
+                    format!("run `{line}` (span {at})"),
+                    self.run(
+                        self.tested(case, program, &stand).args(&words[1..]),
+                        self.under_test,
+                    ),
+                )
             }
+            Act::Rerun | Act::RerunInTheRepository => {
+                let (at, wording) = if matches!(act, Act::Rerun) {
+                    (stand, "where the case stands")
+                } else {
+                    (self.repo(), "inside the sandbox's repository")
+                };
+                (
+                    format!(
+                        "run the refusing command again, `jigc {}`, {wording} (no command \
+                         line is printed)",
+                        case.refusing.join(" ")
+                    ),
+                    self.run(
+                        self.tested(case, binary, &at).args(case.refusing),
+                        self.under_test,
+                    ),
+                )
+            }
+            _ => unreachable!("every other act takes an operand"),
         };
-        let ran = self.run(self.child(program).args(&words[1..]), self.under_test);
         if ran.success() {
-            return Ok(format!("run `{line}` (span {at}): exit 0"));
+            return Ok(format!("{what}: exit 0"));
         }
         Ok(if ran.held.is_some() {
             seen.did_not_end = true;
-            format!("run `{line}` (span {at}): {}\n{}", ran.exit(), ran.said)
+            format!("{what}: {}\n{}", ran.exit(), ran.said)
         } else if refusal_in(&ran.said, code).is_some() {
             seen.same_refusal = true;
-            format!("run `{line}` (span {at}): {}, `{code}` again", ran.exit())
+            format!("{what}: {}, `{code}` again", ran.exit())
         } else {
             seen.failed = true;
-            format!("run `{line}` (span {at}): {}\n{}", ran.exit(), ran.said)
+            format!("{what}: {}\n{}", ran.exit(), ran.said)
         })
     }
 
@@ -1028,8 +1148,9 @@ pub fn follow_within(binary: &Path, case: &Case, under_test: Duration) -> Result
     sandbox.plant(case.state);
     let before = sandbox.witnesses(case.witnesses);
 
+    let stand = sandbox.at(case.from);
     let refused = sandbox.run(
-        sandbox.child(binary).args(case.refusing),
+        sandbox.tested(case, binary, &stand).args(case.refusing),
         sandbox.under_test,
     );
     let found = refusal_in(&refused.said, code);
@@ -1065,7 +1186,7 @@ pub fn follow_within(binary: &Path, case: &Case, under_test: Duration) -> Result
         for act in case.acts {
             if let Some(Operand::Unprinted(named)) = act.operand() {
                 seen.implied = true;
-                if let Some(at) = path_spans(&spans, &sandbox.repo()).first() {
+                if let Some(at) = path_spans(&spans, &stand).first() {
                     return Err(sandbox.shown(&format!(
                         "an act names `{named}` by the marked form, and the printed route \
                          holds a path — span {at}, `{}`. Where a route prints a path, the \
@@ -1076,7 +1197,20 @@ pub fn follow_within(binary: &Path, case: &Case, under_test: Duration) -> Result
             }
         }
         for act in case.acts {
-            let done = sandbox.perform(binary, *act, &spans, code, &mut seen)?;
+            if matches!(act, Act::Rerun | Act::RerunInTheRepository) {
+                seen.implied = true;
+                if let Some(at) = command_spans(&spans).first() {
+                    return Err(sandbox.shown(&format!(
+                        "an act runs the refusing command again, and the printed route \
+                         holds a command line — span {at}, `{}`. Where a route prints the \
+                         command, the command is the route's to give: nothing was done",
+                        spans[*at]
+                    )));
+                }
+            }
+        }
+        for act in case.acts {
+            let done = sandbox.perform(binary, case, *act, &spans, &mut seen)?;
             detail.push(done);
         }
         if !seen.same_refusal && !seen.failed && !seen.did_not_end {

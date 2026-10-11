@@ -79,6 +79,14 @@
 //! ([`no_more_cases_run_at_once_than_the_pool_is_wide`]). Neither this file nor a command's
 //! starts a thread of its own.
 //!
+//! **And with the sites behind those**, each piece again with an arm that was red first: a
+//! case stands where it says, in the environment it says
+//! ([`a_case_stands_where_it_says_in_the_environment_it_says`]); the refusing command is run
+//! again where a route prints no command line, and nowhere else
+//! ([`the_refusing_command_is_run_again_only_where_the_route_prints_no_command_line`]); and
+//! every repository of a sandbox has the sandbox's identity, one a route's own `git init`
+//! makes included ([`a_repository_a_route_makes_has_the_sandboxs_identity_and_no_other`]).
+//!
 //! **The fence** (the plan's step `P2`) holds the catalog to the refusal sites of the
 //! families [`CATALOGUED`] names. It scans nothing for itself — the sites are
 //! [`support::refusal_sites`](crate::support::refusal_sites)' scan, which
@@ -116,7 +124,7 @@ use std::path::Path;
 use crate::support::refusal_sites::{self, DYNAMIC, FAMILIES, Site, Source};
 use crate::support::route_case::{
     self, Act, Case, Check, Classification, ExpectedRed, Followed, Operand, Place, Refusal, Seen,
-    Step,
+    Step, Var,
 };
 use crate::support::rust_source;
 
@@ -1483,7 +1491,8 @@ fn suite_files() -> Vec<(&'static str, &'static str)> {
 /// **No act takes a path, and the marked form is refused where a path is printed.**
 ///
 /// The source half reads the frame, this file and every command's. An [`Act`] carries an
-/// [`Operand`] or a span's index and nothing else; an operand is a span's index or the one
+/// [`Operand`], a span's index or nothing at all — never a path, a word or a command of
+/// the case's own; an operand is a span's index or the one
 /// marked form; a [`Case`] holds no function, so it cannot act around the runner; and
 /// neither this file nor a command's names a filesystem or a process API at all — what the
 /// existing test did by hand (`fs::remove_file` on a path it spelled) has no place to be
@@ -1498,7 +1507,9 @@ fn no_act_takes_a_path_and_the_marked_form_is_refused_where_a_path_is_printed() 
     let frame = rust_source::code_only(include_str!("support/route_case.rs"));
     for variant in variants(body_of(&frame, "pub enum Act {")) {
         assert!(
-            variant.ends_with("(Operand)") || variant.ends_with("(usize)"),
+            variant.ends_with("(Operand)")
+                || variant.ends_with("(usize)")
+                || !variant.contains('('),
             "the act `{variant}` takes something that is neither an operand nor a span's index",
         );
     }
@@ -1561,6 +1572,8 @@ fn an_act_is_not_done_outside_the_sandbox() {
             "printf '%s\\n' 'blocking · setup.install-hook — refused' \
              '  route: remove `/dev/null` and `../../elsewhere`'; exit 1",
         ],
+        from: Place::Repo(""),
+        env: &[],
         acts: &[Act::Remove(Operand::Span(0)), Act::Remove(Operand::Span(1))],
         holds: &[],
         witnesses: &[],
@@ -2016,6 +2029,8 @@ const PLANTED: Case = Case {
     cause: "a refusal a shell prints over a planted state",
     state: &[],
     refusing: &[],
+    from: Place::Repo(""),
+    env: &[],
     acts: &[],
     holds: &[],
     witnesses: &[],
@@ -2551,4 +2566,232 @@ fn no_more_cases_run_at_once_than_the_pool_is_wide() {
             );
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// The frame's vocabulary, as the sites behind the install's first refusals grew it
+// ---------------------------------------------------------------------------
+
+/// Each planted case of `planted` comes out as the classification beside it; every one that
+/// does not is said, with what it did.
+fn come_out(planted: &[(Case, Classification)]) {
+    let mut wrong = Vec::new();
+    for (case, expected) in planted {
+        match route_case::follow(Path::new("/bin/sh"), case) {
+            Ok(followed) if followed.classification == *expected => {}
+            Ok(followed) => wrong.push(format!(
+                "`{}` — {}, where `{expected}` was planted\n{}",
+                case.name, followed.classification, followed.detail
+            )),
+            Err(fault) => wrong.push(format!("`{}` cannot be followed: {fault}", case.name)),
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n\n"));
+}
+
+/// **A case stands where it says, in the environment it says.** The refusing command and
+/// every command its route has run are started in the case's own directory — which need be
+/// no repository — with the case's variables taken out of the environment or set to a place
+/// of the sandbox; a path the route prints is read from where the case stands. And the
+/// runner's own children are not the case's: a state's `git` step still has the variable a
+/// case takes away.
+#[test]
+fn a_case_stands_where_it_says_in_the_environment_it_says() {
+    come_out(&[
+        (
+            Case {
+                name: "planted-a-command-run-outside-the-repository",
+                state: &[Step::File(Place::Outside("in-the-way"), "theirs\n")],
+                refusing: &[
+                    "-c",
+                    "test -e in-the-way && test ! -e .git || exit 0; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: remove `in-the-way`, then re-run \
+                     `jigc -c \"test ! -e in-the-way && test ! -e .git\"`'; exit 1",
+                ],
+                from: Place::Outside(""),
+                acts: &[Act::Remove(Operand::Span(0)), Act::Run(1)],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+        (
+            Case {
+                name: "planted-a-variable-taken-out-of-the-environment",
+                state: &[Step::Git(&[
+                    "-c",
+                    "alias.home=!env | grep -q ^HOME=",
+                    "home",
+                ])],
+                refusing: &[
+                    "-c",
+                    "env | grep -q ^HOME= && exit 0; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: re-run `jigc -c \"! env | grep -q ^HOME=\"`'; exit 1",
+                ],
+                env: &[Var::Unset("HOME")],
+                acts: &[Act::Run(0)],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+        (
+            Case {
+                name: "planted-a-variable-set-to-a-place-of-the-sandbox",
+                state: &[Step::File(Place::Outside("there/kept"), "kept\n")],
+                refusing: &[
+                    "-c",
+                    "test -f \"$ROUTE_CASE_PLACE/kept\" || exit 0; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: re-run `jigc -c \"env | grep -q ^ROUTE_CASE_PLACE=/\"`'; exit 1",
+                ],
+                env: &[Var::Path("ROUTE_CASE_PLACE", Place::Outside("there"))],
+                acts: &[Act::Run(0)],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+    ]);
+}
+
+/// The two acts that run the refusing command again.
+const AGAIN: [Act; 2] = [Act::Rerun, Act::RerunInTheRepository];
+
+/// **The refusing command is run again where the route prints no command line — and only
+/// there.** *Run jigc from inside the repository* and *reinstall jigc* name an act and print
+/// no line to run; the act that follows them is the refusing command once more, which the
+/// case already stated and the runner already ran. So a re-run takes nothing from the case:
+/// no span, no path, no word. It comes out no better than *operand implied*, where it
+/// stands or inside the sandbox's repository; a refusal under the case's code is *the same
+/// refusal again*, as for a printed command. **And it is refused wherever the printed route
+/// holds a `jigc` command line** — there the command is the route's to give, and a case
+/// that ran its own in its place would be the marked form's mistake over again, with a
+/// command where that had a path.
+#[test]
+fn the_refusing_command_is_run_again_only_where_the_route_prints_no_command_line() {
+    come_out(&[
+        (
+            Case {
+                name: "planted-a-route-that-prints-no-command-line",
+                state: &[Step::File(Place::Repo("in-the-way"), "theirs\n")],
+                refusing: &[
+                    "-c",
+                    "test -e in-the-way || { : > ran-again; exit 0; }; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: remove `in-the-way`, then run jigc again'; exit 1",
+                ],
+                acts: &[Act::Remove(Operand::Span(0)), Act::Rerun],
+                holds: &[Check::RegularFile(Place::Repo("ran-again"))],
+                ..PLANTED
+            },
+            Classification::HoldsOperandImplied,
+        ),
+        (
+            Case {
+                name: "planted-a-route-that-says-where-to-run-it",
+                refusing: &[
+                    "-c",
+                    "test -e .git && { : > ran-in-the-repository; exit 0; }; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: run jigc from inside the target git repository'; exit 1",
+                ],
+                from: Place::Outside(""),
+                acts: &[Act::RerunInTheRepository],
+                holds: &[Check::RegularFile(Place::Repo("ran-in-the-repository"))],
+                ..PLANTED
+            },
+            Classification::HoldsOperandImplied,
+        ),
+        (
+            Case {
+                name: "planted-a-route-whose-act-changes-nothing",
+                refusing: &[
+                    "-c",
+                    "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: reinstall jigc'; exit 1",
+                ],
+                acts: &[Act::Rerun],
+                ..PLANTED
+            },
+            Classification::SameRefusalAgain,
+        ),
+    ]);
+
+    let prints_the_command = Case {
+        name: "planted-a-re-run-beside-a-printed-command-line",
+        refusing: &[
+            "-c",
+            "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             '  route: mind `--force`, then re-run `jigc -c true`'; exit 1",
+        ],
+        ..PLANTED
+    };
+    for again in &AGAIN {
+        match route_case::follow(
+            Path::new("/bin/sh"),
+            &Case {
+                acts: std::slice::from_ref(again),
+                ..prints_the_command
+            },
+        ) {
+            Err(fault) => assert!(
+                fault.contains("runs the refusing command again") && fault.contains("span 1"),
+                "{again:?}: the refusal names the re-run and the command line that forbids \
+                 it: {fault}",
+            ),
+            Ok(followed) => panic!(
+                "{again:?} ran the case's own command where the printed route holds a command \
+                 line: {}\n{}",
+                followed.classification, followed.detail
+            ),
+        }
+    }
+}
+
+/// **Every repository of a sandbox has the sandbox's identity — one a route's own
+/// `git init` makes included — and no other.** The mask leaves git no identity to find
+/// and none to invent, and until this arm the runner wrote one into the one repository it
+/// made itself; a repository made by a command of the route had none, and on a machine
+/// whose account has a name git made one up from it. The identity is in the environment of
+/// every child now, as configuration git reads from there, so it is the same in every
+/// repository under the sandbox and is read from no machine. A case takes it away with the
+/// variable that carries it, and then there is none: git invents nothing.
+#[test]
+fn a_repository_a_route_makes_has_the_sandboxs_identity_and_no_other() {
+    come_out(&[
+        (
+            Case {
+                name: "planted-a-repository-made-by-the-routes-own-git-init",
+                refusing: &[
+                    "-c",
+                    "test -e .git && exit 0; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: `git init -q` here first, then re-run \
+                     `jigc -c \"git commit -q --allow-empty -m first \
+                     && git log -1 --format=%an/%ae \
+                     | grep -qx Route.Case/route-case@example.com\"`'; exit 1",
+                ],
+                from: Place::Outside(""),
+                acts: &[Act::Run(0), Act::Run(1)],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+        (
+            Case {
+                name: "planted-the-identity-taken-away",
+                refusing: &[
+                    "-c",
+                    "git commit -q --allow-empty -m no-one >/dev/null 2>&1 && exit 0; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: re-run \
+                     `jigc -c \"! git commit -q --allow-empty -m no-one\"`'; exit 1",
+                ],
+                env: &[Var::Unset("GIT_CONFIG_COUNT")],
+                acts: &[Act::Run(0)],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+    ]);
 }
