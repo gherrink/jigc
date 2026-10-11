@@ -154,14 +154,14 @@ use serde_json::{Value, json};
 
 use crate::support::child_stdin;
 use crate::support::goldens::update_mode;
-use crate::support::scratch::ScratchDir;
 
 use super::dev_stabilize_record::DENY_TERM;
 use super::dev_stabilize_step::{
-    GATE_KIND, Held, LOOP, RUN, RUN_DIR, StepRig, as_recorded, failing_commit, harness_pure,
-    node_or_skip, sha256,
+    GATE_KIND, Held, LONG_COMMAND, LOOP, RUN, RUN_DIR, StepRig, as_recorded, failing_commit,
+    harness_pure, node_or_skip, sha256,
 };
 use super::placed_executable;
+use super::rig_processes::RigDir;
 use super::stabilize_harness_fence::prompt_faults;
 
 const HARNESS: &str = ".claude/workflows/stabilize.js";
@@ -298,19 +298,6 @@ struct Sim {
     rig: StepRig,
     invocations: Cell<u32>,
 }
-
-/// A stand-in for a long command a stage holds — `dev/gate`, `dev/regression-set` — placed
-/// where the step tool finds the real one. It writes down that it ran, with its pid and
-/// its arguments; runs until the suite releases it — a file, never a number of seconds —
-/// OR UNTIL THE RIG IS GONE, so that a command a failed test never released does not run
-/// on after it; prints what the runtime's stand-in handed the ONE call that started it; and
-/// exits as it is told. **The step tool that starts it, waits for it and judges it is real.**
-pub(crate) const LONG_COMMAND: &str = r#"#!/bin/sh
-printf '%s %s %s\n' "$$" "$(basename "$0")" "$*" >>"$HOLD_RAN"
-while [ ! -e "$HOLD_RELEASE" ] && [ -d "${HOLD_RELEASE%/*}" ]; do sleep 0.1; done
-cat "$HOLD_PRINTS"
-exit "${HOLD_EXIT:-0}"
-"#;
 
 /// A stand-in for cargo, first on the rig's `PATH`: the build of a held `build`, in the
 /// commit the step tool unpacked. The binary it "builds" prints the version the runtime's
@@ -6783,7 +6770,7 @@ fn what_the_runtime_does_with_a_return_that_lacks_a_required_field_is_the_probes
 /// this suite, with a `PATH` on which nothing answers.
 #[test]
 fn without_node_the_suite_fails_under_ci_and_anywhere_else_passes_and_tells_the_gate() {
-    let here = ScratchDir::new("stabilize-sim-no-node");
+    let here = RigDir::new("stabilize-sim-no-node");
     let skips = here.path().join("skips");
     let run = |ci: Option<&str>| {
         let mut command = Command::new(std::env::current_exe().expect("this test binary"));

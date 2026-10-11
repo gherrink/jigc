@@ -77,9 +77,9 @@ use serde_json::{Value, json};
 
 use crate::support::child_stdin;
 
-use super::dev_stabilize_step::{StepRig, node_or_skip};
+use super::dev_stabilize_step::{LONG_COMMAND, StepRig, node_or_skip};
 use super::placed_executable;
-use super::stabilize_simulation::{CARGO, LONG_COMMAND};
+use super::stabilize_simulation::CARGO;
 
 const TOOL: &str = "dev/stabilize-canary";
 const RECORD: &str = "dev/stabilize-record";

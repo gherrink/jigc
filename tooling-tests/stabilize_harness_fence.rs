@@ -137,9 +137,9 @@ use std::process::Command;
 use serde_json::Value;
 
 use crate::support::root_walk;
-use crate::support::scratch::ScratchDir;
 
 use super::dev_stabilize_step::node_or_skip;
+use super::rig_processes::RigDir;
 
 const HARNESS: &str = ".claude/workflows/stabilize.js";
 const RECORD_SCRIPT: &str = "dev/stabilize-record";
@@ -2244,7 +2244,7 @@ fn m_a_stage_that_is_not_fit_for_use_refuses_to_start() {
     )) {
         return;
     }
-    let scratch = ScratchDir::new("stabilize-not-fit");
+    let scratch = RigDir::new("stabilize-not-fit");
     let driver = scratch.path().join("driver.mjs");
     fs::write(&driver, DRIVER).expect("write the driver");
     for stage in &refusing {
@@ -2341,7 +2341,7 @@ fn i_where_node_is_installed_the_script_parses_and_its_self_test_passes() {
     )) {
         return;
     }
-    let scratch = ScratchDir::new("stabilize-harness");
+    let scratch = RigDir::new("stabilize-harness");
     let driver = scratch.path().join("driver.mjs");
     fs::write(&driver, DRIVER).expect("write the driver");
 
@@ -3449,7 +3449,7 @@ console.log(JSON.stringify(out))
 
 /// [`PROMPTS`], composed by the committed script (or by `source`, a mutant of it).
 fn composed(source: Option<&str>) -> Vec<(String, String, Result<String, String>)> {
-    let scratch = ScratchDir::new("stabilize-prompts");
+    let scratch = RigDir::new("stabilize-prompts");
     let driver = scratch.path().join("composer.mjs");
     fs::write(&driver, COMPOSER).expect("write the composer");
     let script = match source {
@@ -3838,7 +3838,7 @@ console.log(JSON.stringify(new Function(pure + read)()))
 "#;
 
 fn census(schemas: &BTreeSet<String>) -> Value {
-    let scratch = ScratchDir::new("stabilize-census");
+    let scratch = RigDir::new("stabilize-census");
     let driver = scratch.path().join("census.mjs");
     fs::write(&driver, CENSUS).expect("write the census");
     let out = Command::new("node")

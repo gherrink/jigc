@@ -87,8 +87,14 @@
 //!   SIGKILL. **The verdict readers are fed recorded real output** ([`as_recorded`],
 //!   [`regression_line`]), and the probe's kind runs the real probe tool. The tool's
 //!   kinds are [`HELD_KINDS`], each by a test of this file; the tests are the section *A
-//!   held command*. What no arm shows: a command that outlives the SHELL of its starter
-//!   being ended — the hold probe's case (b) observed that — and anything with an agent.
+//!   held command*. **What a test holds, its rig ends** ([`RigDir`]; DECISIONS.md →
+//!   2026-10-11, *A tooling test ends what it started*): a held command outlives a test as
+//!   it outlives any starter, so the rig ends every process that names its directory — on
+//!   a return, a failed assertion and a panic — and the stand-in ends by itself where the
+//!   test process was killed. What the real tool leaves running, and for how long, is read
+//!   off the process list with the starter's whole process group killed
+//!   ([`what_the_tool_leaves_running_ends_when_the_command_does`]). What no arm shows: a
+//!   command that never ends, which no act of the tool ends, and anything with an agent.
 //!
 //! **Every arm runs under a shell-hostile root** — a space, a `'`, a `"` and a `#` in the
 //! repository's path — because the rig has no other kind.
@@ -119,10 +125,10 @@ use serde_json::{Value, json};
 
 use crate::support::child_stdin;
 use crate::support::install_line::INSTALL_COMMAND;
-use crate::support::scratch::ScratchDir;
 
 use super::dev_stabilize_record::{DENY_TERM, STUB_SECRET, gitleaks_stub};
 use super::placed_executable;
+use super::rig_processes::{self, RigDir};
 
 const TOOL: &str = "dev/stabilize-step";
 const RECORD: &str = "dev/stabilize-record";
@@ -256,7 +262,8 @@ fn real_git() -> PathBuf {
 /// branch of one opened run checked out and pushed, its tip the commit that added the
 /// opening record.
 pub(crate) struct StepRig {
-    dir: ScratchDir,
+    /// Dropped, it ends every process the rig started before it removes itself.
+    dir: RigDir,
     pub(crate) root: PathBuf,
     pub(crate) origin: PathBuf,
     /// The scratch root a `state` act is handed: outside the repository, of plain segments.
@@ -389,7 +396,7 @@ impl StepRig {
     /// The rig before any run is opened: `main` checked out and pushed, and nothing else —
     /// for a suite that opens the run itself.
     pub(crate) fn unopened(label: &str) -> Self {
-        let dir = ScratchDir::new(&format!("stabilize-step-{label}"));
+        let dir = RigDir::new(&format!("stabilize-step-{label}"));
         let root = dir.path().join(HOSTILE_ROOT);
         let origin = dir.path().join("origin.git");
         let scratch = dir.path().join("scratch");
@@ -3827,7 +3834,7 @@ impl StepRig {
     /// the clone pointed at the copy of its remote. What a kill is driven on: a stage is
     /// stood up once, and every kill point gets a copy.
     fn copy(&self, label: &str) -> Self {
-        let dir = ScratchDir::new(&format!("stabilize-step-{label}"));
+        let dir = RigDir::new(&format!("stabilize-step-{label}"));
         let copied = Command::new("cp")
             .arg("-R")
             .arg(self.dir.path().join("."))
@@ -7150,7 +7157,7 @@ pub(crate) fn node_or_skip(unrun: &str) -> bool {
 
 /// The harness's own pure functions, called under `node`: one result per `[name, args]`.
 pub(crate) fn harness_pure(calls: &Value) -> Vec<Value> {
-    let scratch = ScratchDir::new("stabilize-step-pure");
+    let scratch = RigDir::new("stabilize-step-pure");
     let driver = scratch.path().join("pure.mjs");
     fs::write(&driver, PURE).expect("write the driver");
     let out = Command::new("node")
@@ -8869,13 +8876,26 @@ const HELD_KINDS: &[(&str, &str)] = &[
     ("probe", "the_verdict_of_a_held_command_is_read_by_the_tool"),
 ];
 
-/// A stand-in for the command of a held kind — `dev/gate`, `dev/regression-set`. It writes
-/// down that it ran, with its pid and its arguments; waits until the test releases it — a
-/// file, never a number of seconds, so that no arm races a clock; prints what a file holds;
-/// and exits as it is told.
-const LONG_COMMAND: &str = r#"#!/bin/sh
-printf '%s %s\n' "$$" "$*" >>"$HOLD_RAN"
-while [ ! -e "$HOLD_RELEASE" ]; do sleep 0.1; done
+/// A stand-in for the command of a held kind — `dev/gate`, `dev/regression-set` — placed
+/// where the step tool finds the real one: THE ONE such stand-in, this suite's, the
+/// simulation's and the canary's. It writes down that it ran, with its pid, its name and
+/// its arguments; waits until the test releases it — a file, never a number of seconds, so
+/// that no arm races a clock; prints what a file holds; and exits as it is told.
+///
+/// NEVER RELEASED, IT ENDS BY ITSELF, with a status of its own and nothing printed — so no
+/// reader takes it for a verdict: once the directory its release is looked for in is gone,
+/// since the release can no longer come, and after `HOLD_POLLS` polls, ten minutes of them
+/// where no call names fewer — longer than a test may run. A rig ends what it started
+/// ([`RigDir`]); this is for the test process that was killed, and dropped nothing
+/// ([`the_stand_in_for_a_held_command_ends_by_itself`]).
+pub(crate) const LONG_COMMAND: &str = r#"#!/bin/sh
+printf '%s %s %s\n' "$$" "$(basename "$0")" "$*" >>"$HOLD_RAN"
+polls=0
+until [ -e "$HOLD_RELEASE" ]; do
+  if [ ! -d "${HOLD_RELEASE%/*}" ] || [ "$polls" -ge "${HOLD_POLLS:-6000}" ]; then exit 70; fi
+  sleep 0.1
+  polls=$((polls + 1))
+done
 cat "$HOLD_PRINTS"
 exit "${HOLD_EXIT:-0}"
 "#;
@@ -9049,7 +9069,7 @@ impl Held {
         self.runs()
     }
 
-    /// The commands that ran: `<pid> <arguments>` each.
+    /// The commands that ran: `<pid> <program> <arguments>` each.
     fn runs(&self) -> Vec<String> {
         fs::read_to_string(&self.ran)
             .expect("what ran")
@@ -9381,6 +9401,343 @@ fn a_held_command_whose_process_is_gone_is_dead_and_never_done() {
         "{dead}"
     );
     held.released(true);
+}
+
+/// **What a test holds is ended by its rig, however the test ends** (DECISIONS.md →
+/// 2026-10-11, *A tooling test ends what it started*). A held command outlives the call
+/// that started it — that is what a hold is — so it outlives a test too, unless the rig
+/// ends it. The three ways a test of this file has a command running when it ends, each
+/// ended three ways — the test returns, an assertion of it fails, it panics — and after
+/// every one of the nine no process whose command line names the rig's directory is alive:
+///
+/// - `unreleased`: started and never released — a test that failed between its start and
+///   its release (`hold-once`, `hold-slice`). The supervisor waits beside its command.
+/// - `unsupervised`: the supervisor killed, then the command released as the test's last
+///   act (`hold-dead`, `sim-held`) — nobody waits for the command, and the rig is removed
+///   before the stand-in looks for its release again.
+/// - `started-late`: released beforehand, started, and the test over at once — a start a
+///   test expected the tool to refuse (`hold-links`). The command begins after its rig.
+///
+/// The control: before the rig is dropped the listing finds the stand-in, so a listing
+/// that sees nothing is no pass (`started-late` has none: its command may not have begun).
+#[test]
+fn what_a_test_holds_is_ended_by_its_rig_however_the_test_ends() {
+    let green = as_recorded("gate-green.txt");
+    let stand_ins = |held: &Held| {
+        rig_processes::naming(held.rig.dir())
+            .into_iter()
+            .filter(|process| process.command.ends_with("/dev/gate --keep-going"))
+            .count()
+    };
+    type Start<'a> = &'a (dyn Fn(&Held) -> usize + Sync);
+    type End<'a> = &'a (dyn Fn(&Held) + Sync);
+    let shapes: [(&str, bool, Start); 3] = [
+        ("unreleased", true, &|held| {
+            held.released(false);
+            held.start("gate", &GATE_KIND, &green, 0)
+                .done("hold-start", "started");
+            held.runs_when(1);
+            stand_ins(held)
+        }),
+        ("unsupervised", true, &|held| {
+            held.released(false);
+            let pid = held
+                .start("gate", &GATE_KIND, &green, 0)
+                .done("hold-start", "started")["pid"]
+                .as_u64()
+                .expect("the supervisor's pid");
+            held.runs_when(1);
+            let seen = stand_ins(held);
+            let killed = Command::new("kill")
+                .args(["-9", &pid.to_string()])
+                .output()
+                .expect("run kill");
+            assert!(killed.status.success(), "{killed:?}");
+            held.wait("gate", Some(60)).done("hold-wait", "dead");
+            held.released(true);
+            seen
+        }),
+        ("started-late", false, &|held| {
+            held.released(true);
+            held.start("gate", &GATE_KIND, &green, 0)
+                .done("hold-start", "started");
+            0
+        }),
+    ];
+    let endings: [(&str, bool, End); 3] = [
+        ("returns", false, &|_| {}),
+        ("fails", true, &|held| {
+            held.wait("gate", Some(0)).refused("usage");
+        }),
+        ("panics", true, &|_| panic!("a test that panics")),
+    ];
+    // One test of each shape and ending — a thread each, as the tests of a group are.
+    let one = |start: Start, end: End, label: String| {
+        let seen = std::cell::RefCell::new((PathBuf::new(), 0));
+        let ended = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let held = Held::new(&label);
+            seen.borrow_mut().0 = held.rig.dir().to_path_buf();
+            seen.borrow_mut().1 = start(&held);
+            end(&held);
+        }));
+        let (dir, running) = seen.into_inner();
+        (ended.is_err(), running, dir)
+    };
+    let one = &one;
+    let ran: Vec<_> = std::thread::scope(|tests| {
+        let mut started = Vec::new();
+        for (shape, control, start) in shapes {
+            for (ending, unwinds, end) in endings {
+                let label = format!("ends-{shape}-{ending}");
+                let test = tests.spawn(move || one(start, end, label));
+                started.push((shape, control, ending, unwinds, test));
+            }
+        }
+        started
+            .into_iter()
+            .map(|(shape, control, ending, unwinds, test)| {
+                let ran = test.join().expect("the test's own end is caught");
+                (shape, control, ending, unwinds, ran)
+            })
+            .collect()
+    });
+    assert_eq!(ran.len(), 9);
+    for (shape, control, ending, unwinds, (unwound, running, dir)) in ran {
+        assert_eq!(unwound, unwinds, "`{shape}`, and the test {ending}");
+        assert!(
+            !control || running == 1,
+            "the control of `{shape}`: its stand-in is listed while its rig stands, once — {running}"
+        );
+        assert_eq!(
+            rig_processes::naming(&dir),
+            vec![],
+            "`{shape}`, and the test {ending}: a process of the rig runs on after it"
+        );
+    }
+}
+
+/// **The stand-in for a held command ends by itself** — the second line, behind the rig's
+/// own: a test process that is KILLED drops nothing, and its rig ends nothing. Released, the
+/// stand-in prints what it was told and exits as it was told. Never released, it exits 70
+/// and prints nothing — no verdict of any kind — once its polls are over, which is ten
+/// minutes of them where no call names fewer, or once the directory its release is looked
+/// for in is gone, because the release can no longer come.
+#[test]
+fn the_stand_in_for_a_held_command_ends_by_itself() {
+    let stand_in = |label: &str, polls: Option<&str>, then: &dyn Fn(&Path)| {
+        let dir = RigDir::new(&format!("stabilize-step-stand-in-{label}"));
+        let home = dir.path().join("held");
+        fs::create_dir(&home).expect("the directory a release is looked for in");
+        fs::write(home.join("prints"), "GATE: PASS\n").expect("what the stand-in prints");
+        let script = dir.path().join("gate");
+        placed_executable::write(&script, LONG_COMMAND);
+        let mut command = Command::new(&script);
+        command
+            .arg("--keep-going")
+            .env("HOLD_RAN", home.join("ran"))
+            .env("HOLD_RELEASE", home.join("release"))
+            .env("HOLD_PRINTS", home.join("prints"))
+            .env("HOLD_EXIT", "3")
+            .env_remove("HOLD_POLLS")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        if let Some(polls) = polls {
+            command.env("HOLD_POLLS", polls);
+        }
+        let mut child = command.spawn().expect("spawn the stand-in");
+        until("the stand-in has started", || {
+            fs::read_to_string(home.join("ran")).is_ok_and(|ran| ran.ends_with("--keep-going\n"))
+        });
+        then(&home);
+        let asked = std::time::Instant::now();
+        while child.try_wait().expect("ask after the stand-in").is_none() {
+            if asked.elapsed() > std::time::Duration::from_secs(15) {
+                child.kill().expect("end the stand-in");
+                child.wait().expect("the stand-in is gone");
+                return None;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let out = child.wait_with_output().expect("the stand-in ended");
+        Some((
+            out.status.code(),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+        ))
+    };
+    assert_eq!(
+        stand_in("released", None, &|home| {
+            fs::write(home.join("release"), "").expect("release the stand-in");
+        }),
+        Some((Some(3), "GATE: PASS\n".to_owned())),
+        "the control: released, it prints what it was told and exits as it was told"
+    );
+    let unreleased = Some((Some(70), String::new()));
+    assert_eq!(
+        stand_in("polls", Some("3"), &|_| {}),
+        unreleased,
+        "never released, it ends once its polls are over — and prints no verdict"
+    );
+    assert_eq!(
+        stand_in("gone", None, &|home| {
+            fs::remove_dir_all(home).expect("remove the directory");
+        }),
+        unreleased,
+        "it ends once the directory its release is looked for in is gone"
+    );
+    assert!(
+        LONG_COMMAND.contains("\"${HOLD_POLLS:-6000}\""),
+        "where no call names fewer, six thousand polls of a tenth of a second: ten minutes"
+    );
+}
+
+/// **What the real tool leaves running is the command and its supervisor, in a session of
+/// their own — and both end when the command does** (the tool's header, *A held command*:
+/// "it kills nothing"). No stand-in here: the held command is the real probe tool's hold,
+/// which ends by itself after its seconds, as a real gate or build does. Read off the
+/// process list:
+///
+/// - While it runs, the processes that name the rig are those two and no other, in ONE
+///   process group, which the supervisor leads and which is not this test's.
+/// - Once `hold-wait` says `done`, nothing is left: the supervisor ends with its command.
+/// - THE STARTER'S WHOLE PROCESS GROUP KILLED — the shell that called `hold-start`, held
+///   alive for it — the hold runs on, ends by itself and is judged green.
+/// - THE SUPERVISOR KILLED, the command runs on unsupervised for the rest of its seconds —
+///   the job is `dead` — and then it is gone too. Nothing loops: what is left of a hold is
+///   left for as long as its command runs, and no longer.
+///
+/// What it does not show: a command that never ends. The tool has no act that ends one.
+#[test]
+fn what_the_tool_leaves_running_ends_when_the_command_does() {
+    use std::os::unix::process::{CommandExt as _, ExitStatusExt as _};
+    let held = Held::new("hold-leaves");
+    let rig = &held.rig;
+    placed_executable::copy(
+        &repo_root().join("dev/stabilize-probe"),
+        &rig.root.join("dev/stabilize-probe"),
+    );
+    let begun = rig
+        .hermetic(Command::new(rig.root.join("dev/stabilize-probe")))
+        .args(["begin", "--scratch", &held.scratch, "--probe", "hold"])
+        .output()
+        .expect("run the probe tool");
+    assert!(begun.status.success(), "{begun:?}");
+    let own = rig_processes::own_group();
+    let supervisor = |name: &str| -> u32 {
+        until("the job is on record", || {
+            held.kept(name, "job.json").exists()
+        });
+        let job = fs::read_to_string(held.kept(name, "job.json")).expect("the job's record");
+        let pid = serde_json::from_str::<Value>(&job).expect("a job")["pid"]
+            .as_u64()
+            .expect("the supervisor's pid");
+        u32::try_from(pid).expect("a pid")
+    };
+    // The processes of a hold, once both are there: [the supervisor, its command].
+    let running = |name: &str| -> Vec<rig_processes::Process> {
+        let leader = supervisor(name);
+        let of_the_hold = || -> Vec<rig_processes::Process> {
+            let mut group: Vec<_> = rig_processes::naming(rig.dir())
+                .into_iter()
+                .filter(|process| process.group == leader)
+                .collect();
+            group.sort_by_key(|process| process.pid != leader);
+            group
+        };
+        let both = |group: &[rig_processes::Process]| {
+            group.len() == 2
+                && group[0].pid == leader
+                && group[0].command.contains("/dev/stabilize-step hold-start ")
+                && group[1].command.contains("/dev/stabilize-probe hold ")
+        };
+        until(
+            "the supervisor and its command run",
+            || both(&of_the_hold()),
+        );
+        of_the_hold()
+    };
+    let probe = |seconds: &'static str| ["--kind", "probe", "--seconds", seconds];
+    let none_left = |what: &str| {
+        until(what, || rig_processes::naming(rig.dir()).is_empty());
+    };
+
+    // WHILE IT RUNS: the two, in a group of their own — and nothing else names the rig.
+    held.start("a", &probe("3"), "", 0)
+        .done("hold-start", "started");
+    let hold = running("a");
+    assert_ne!(hold[0].group, own, "a session of its own: {hold:?}");
+    assert_eq!(
+        rig_processes::naming(rig.dir()),
+        {
+            let mut by_pid = hold.clone();
+            by_pid.sort_by_key(|process| process.pid);
+            by_pid
+        },
+        "what a hold leaves running is its supervisor and its command"
+    );
+    // DONE: the supervisor ended with its command.
+    let ended = held.wait("a", Some(60));
+    assert_eq!(ended.done("hold-wait", "done")["verdict"], "green");
+    none_left("a hold that is done has left no process");
+
+    // THE STARTER'S WHOLE GROUP IS KILLED, and the hold runs to its end.
+    let mut starter = rig.hermetic(Command::new("sh"));
+    starter
+        .args(["-c", "\"$@\" && sleep 60", "sh"])
+        .arg(rig.root.join(TOOL))
+        .args(["hold-start", "--scratch", &held.scratch, "--name", "b"])
+        .args(probe("3"))
+        .current_dir(rig.dir())
+        .process_group(0)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let mut starter = starter.spawn().expect("spawn the starter's shell");
+    let hold = running("b");
+    assert_ne!(hold[0].group, starter.id(), "{hold:?}");
+    let killed = Command::new("kill")
+        .args(["-9", &format!("-{}", starter.id())])
+        .output()
+        .expect("run kill");
+    assert!(killed.status.success(), "{killed:?}");
+    assert_eq!(
+        starter.wait().expect("the starter is gone").signal(),
+        Some(9),
+        "the control: the starter's shell was alive, and its group was killed"
+    );
+    assert_eq!(running("b"), hold, "the hold runs on, both of it");
+    let ended = held.wait("b", Some(60));
+    assert_eq!(
+        json!([
+            ended.done("hold-wait", "done")["verdict"],
+            ended.line["facts"]
+        ]),
+        json!(["green", {"seconds": 3}]),
+        "and it is judged, its starter long dead"
+    );
+    none_left("the hold whose starter was killed has left no process");
+
+    // THE SUPERVISOR IS KILLED: the command runs on, unsupervised, to its own end.
+    held.start("c", &probe("5"), "", 0)
+        .done("hold-start", "started");
+    let hold = running("c");
+    let killed = Command::new("kill")
+        .args(["-9", &hold[0].pid.to_string()])
+        .output()
+        .expect("run kill");
+    assert!(killed.status.success(), "{killed:?}");
+    let gone = held.wait("c", Some(60));
+    assert_eq!(gone.done("hold-wait", "dead")["why"], "no-exit");
+    assert_eq!(
+        rig_processes::naming(rig.dir()),
+        vec![hold[1].clone()],
+        "the command runs on, and nothing supervises it"
+    );
+    none_left("the unsupervised command has ended by itself");
+    assert!(
+        !held.kept("c", "exit.json").exists(),
+        "and nothing recorded how it ended: the job stays dead"
+    );
 }
 
 /// **The verdict of a held command is read by the tool, out of the command's own output —
