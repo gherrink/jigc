@@ -62,10 +62,12 @@ The first way out — remove the link — holds at every end a link was driven a
 
 ### `r1-setup-fifo-at-install-path-holds-the-command`
 
-- **Classification:** the command did not end. **Two cases:** `setup-compose-marker-a-special-file` (`.jigc/config/packs.yaml`), `setup-guide-a-special-file` (`.claude/skills/jigc/SKILL.md`).
+- **Classification:** the command did not end. **Three cases:** `setup-compose-marker-a-special-file` (`.jigc/config/packs.yaml`), `setup-guide-a-special-file` (`.claude/skills/jigc/SKILL.md`), `setup-reference-host-a-special-file` (`CLAUDE.md`).
 - **State:** a repository with one commit and no install; a FIFO at the path.
 - **Refusing command:** `jigc setup` — it prints nothing and does not end; the runner ends it at its limit. No route is printed, so none is quoted.
-- **What went wrong:** `jigc setup` reads each of these two paths before it reaches the refusal that names a special file there, and the read of a FIFO with no writer does not return. At the other four replaced paths (`.jigc/AGENT.md`, `.jigc/version`, `.jigc/config/.gitkeep`, `.jigc/settings-entries.json`) the same FIFO is refused at once, with a route that holds.
+- **What went wrong:** `jigc setup` reads each of the first two paths before it reaches the refusal that names a special file there, and the read of a FIFO with no writer does not return. At the other four replaced paths (`.jigc/AGENT.md`, `.jigc/version`, `.jigc/config/.gitkeep`, `.jigc/settings-entries.json`) the same FIFO is refused at once, with a route that holds.
+- **The third is the same read at a file the install merges into**, where no refusal names a special file at all: `CLAUDE.md` is read by the reference step (`inject_reference` — sampled, the command held in `std::fs::read_to_string` under `write_install_span`), after the bootstrap file is written, so the hold leaves `.jigc/AGENT.md` behind it.
+- **Not under this key — a FIFO at an ignore file.** With `.jigc/.gitignore`, or the root `.gitignore` of a repository with no commit, a FIFO, `jigc setup` does not end either; there it is `git status` that does not return (git reads a file of that name as an ignore file), and `jigc setup` waits for it without a limit. No `git` command ends in such a repository. No case: each is a reason at its site.
 - **Kin, at another door:** the canary's `r1-p4-named-pipe-at-managed-home-holds-reading-doors`.
 
 ### `r1-setup-home-unset-route-says-run-from-inside-the-repository`
@@ -114,6 +116,36 @@ The first way out — remove the link — holds at every end a link was driven a
 - **What went wrong:** the route names no act, no file and no command. What a reader needs — which file holds the profile — is in neither line.
 - **The two readings, of the twelfth:** (a) the backticked `jigc workflow … --task …` is a command to run — followed here, red; (b) it is the shape the template must hold, and the route prints nothing to run — then it is one more of the eleven.
 
+### `r1-setup-workbench-made-writable-rerun-refuses-its-own-files`
+
+- **Classification:** followed, another failure. **Two cases:** `setup-project-layer-no-config-workbench-read-only`, `setup-workbench-ignore-absent-workbench-read-only`.
+- **State:** a repository with one commit and no install; `.jigc` holds a committed `.jigc/AGENT.md` (in the second case `.jigc/config/.gitkeep` as well) and may not be written — mode 555.
+- **Refusing command:** `jigc setup` — exit 1, `setup.init-project-layer`: *Permission denied*.
+- **Printed route:**
+
+  ```text
+  route: ensure `.jigc/` is writable, then re-run `jigc setup`
+  ```
+
+- **What was done:** `.jigc` given its owner's write bit; `jigc setup` again.
+- **What went wrong:** the re-run exits 1 with `setup.dirty-install-path` over `.jigc/AGENT.md` and `CLAUDE.md` — *work `jigc setup` did not write* — which are the two files the refused run wrote before it reached the step that failed. A run that fails inside the write span records what it wrote so that the next run does not take it for the adopter's (`record_failed_install`), and that record is a file under `.jigc/state/`: where `.jigc` is what may not be written, it is not kept. So in the one state this route's words are true of, following it leads into a second refusal, whose own route says *commit or stash the work* over files nobody but jigc wrote.
+- **Beside it, and green:** `setup-version-stamp-absent-workbench-read-only` — the same shut `.jigc` over an install that stands, where the steps before the stamp rewrite their files to the bytes git already holds and leave nothing to refuse.
+
+### `r1-setup-settings-record-refused-rerun-installs-without-the-record`
+
+- **Classification:** followed, another failure. **Two cases:** `setup-settings-record-read-only`, `setup-settings-record-absent-workbench-read-only`.
+- **State:** a repository with one commit; the settings record, `.jigc/settings-entries.json`, cannot be written — a committed file there of mode 444 in the first case; in the second an install that stands with its settings file and its record taken out and that committed, and `.jigc` of mode 555.
+- **Refusing command:** `jigc setup` — exit 1, `setup.inject-allowlist`: *cannot write `.jigc/settings-entries.json`, the record of the entries `jigc setup` added to `.claude/settings.json`: Permission denied*. By then the three merges have run: the entries are in the settings file.
+- **Printed route:**
+
+  ```text
+  route: ensure `.jigc/settings-entries.json` is writable, then re-run `jigc setup`
+  ```
+
+- **What was done:** the file given its owner's write bit (in the second case there is no such file, and the act could not be done); `jigc setup` again — exit 0.
+- **What went wrong:** the install the re-run completes has no settings record. The re-run finds every entry already in the settings file, so it adds none and records none — in the first case it removes the file that stood there and says *this run added none*. The entries were added by the run that was refused. What must hold is the file the refused step exists to write, as for every case beside these; without it `jigc uninstall` leaves jigc's entries in the settings file.
+- **The source declares the half of this it chose** (`write_install_span`, step 4b′): *a run that fails between them and here leaves entries no record claims, which the teardown leaves in place and names — never the reverse*. Whether the route may then say *re-run* and nothing more is not said here.
+
 ## 2. Under the canary's keys — the hook's link refusal
 
 Not minted here; listed so that the count is in one place. The route of `setup.install-hook` names **where the link leads** as *the link* wherever the link leads anywhere: `display_hook_path` resolves the link before it words the path.
@@ -130,7 +162,7 @@ Where the link leads to nothing the route names the link itself, and removing it
 
 ## 3. Under the canary's key — a route that asks for a permission where the cause is none
 
-Not minted here. `r1-p3-setup-writability-route-printed-for-other-causes` is the canary's row for the hook's write: *ensure the repo's git hooks directory is writable* over causes that are no such thing. **The same defect at two more sites**, five cases, each *followed, the same refusal again*: the entry the route names was given its owner's bit — it had it — and the command was run again.
+Not minted here. `r1-p3-setup-writability-route-printed-for-other-causes` is the canary's row for the hook's write: *ensure the repo's git hooks directory is writable* over causes that are no such thing. **The same defect at ten more sites.** First at two, five cases, each *followed, the same refusal again*: the entry the route names was given its owner's bit — it had it — and the command was run again.
 
 | case | refusing — `jigc setup`, exit 1 | printed route | the cause |
 |---|---|---|---|
@@ -141,5 +173,22 @@ Not minted here. `r1-p3-setup-writability-route-printed-for-other-causes` is the
 | `setup-compose-marker-packs-file-read-only` | `setup.compose-marker`: *Permission denied* | the same | the file may not be written; the directory the route names may |
 
 **Beside them, and green:** `setup-compose-marker-config-directory-read-only` — the directory itself read-only and no `packs.yaml` in it yet, the one state the route's words are true of. And the settings file's eight other causes, sixteen cases: *fix it so jigc can merge into it, commit the fix* holds for every shape the merge refuses.
+
+**And at eight more sites — the other steps of the write span** (`write_install_span`), twenty-two cases, each *followed, the same refusal again*. Each step words every error of its callee under one route, which names one entry to make writable — for one of them readable. Where the cause is anything else — what stands at the path, what its bytes are, or the permission of another entry than the one named — the act changes nothing, or cannot be done, and the re-run is refused the same way.
+
+| step — `jigc setup`, exit 1 | printed route | the causes it was printed for, a case each |
+|---|---|---|
+| `setup.write-bootstrap` | ``route: ensure `.jigc/AGENT.md` is writable, then re-run `jigc setup` `` | `.jigc` is a regular file (`setup-bootstrap-write-workbench-a-file`) · there is no `.jigc` and the repository root may not be written (`-root-read-only`) · there is no `.jigc/AGENT.md` and `.jigc` may not be written (`-workbench-read-only`) |
+| `setup.inject-reference` | ``route: ensure `CLAUDE.md` is writable, then re-run `jigc setup` `` | the committed `CLAUDE.md` is not UTF-8 (`setup-reference-host-not-utf-8`) · a directory stands there (`-a-directory`) · there is none and the repository root may not be written (`-absent-root-read-only`) |
+| `setup.init-project-layer` | ``route: ensure `.jigc/` is writable, then re-run `jigc setup` `` | `.jigc/config` is a regular file (`setup-project-layer-config-a-file`) · the committed `.gitkeep` may not be written (`-marker-read-only`) · there is none and `.jigc/config` may not be written (`-no-marker-config-read-only`) · a directory stands at `.jigc/.gitignore` (`setup-workbench-ignore-a-directory`) · it is not UTF-8 (`-not-utf-8`) · it lacks an entry and may not be written (`-short-and-read-only`) |
+| `setup.version-stamp` | the same | the committed `.jigc/version` may not be written (`setup-version-stamp-read-only`) |
+| `setup.secrets-gitignore` | ``route: ensure the repository root is writable, then re-run `jigc setup` `` | on an unborn `HEAD`, the root `.gitignore` is not UTF-8 (`setup-seeded-ignore-not-utf-8`) · a directory (`-a-directory`) · may not be read (`-unreadable`) · may not be written (`-read-only`) |
+| `setup.inject-allowlist`, the read the record is computed from | ``route: ensure `.claude/settings.json` is readable, then re-run `jigc setup` `` | the settings path is a committed link to `CLAUDE.md`, to which the install has just appended its reference (`setup-settings-record-asked-of-the-reference-host`) |
+| `setup.inject-allowlist`, the merge | ``route: ensure `.claude/settings.json` is writable, then re-run `jigc setup` `` | the same link where git ignores `CLAUDE.md` and no record is kept (`setup-settings-merge-into-the-ignored-reference-host`) · there is no settings file and `.claude` may not be written (`-no-file-directory-read-only`) · there is no `.claude` and the repository root may not be written (`-no-directory-root-read-only`) |
+| `setup.inject-allowlist`, the record's write | ``route: ensure `.jigc/settings-entries.json` is writable, then re-run `jigc setup` `` | the run records nothing, a record stands, and `.jigc`, which it is to be taken out of, may not be written (`setup-settings-record-to-remove-workbench-read-only`) |
+
+Where the settings path leads to `CLAUDE.md`, the re-run is refused under the same code at another site — the question before the first write, with its own route, *fix it so jigc can merge into it*: the file is `CLAUDE.md` with the reference in it.
+
+**Beside them, and green — the state each route's words are true of:** `setup-bootstrap-write-file-read-only`, `setup-reference-host-read-only`, `setup-settings-merge-file-read-only` (the named file may not be written); `setup-version-stamp-absent-workbench-read-only` (`.jigc` may not be written, over an install that stands); `setup-seeded-ignore-absent-root-read-only` (the root may not be written — *holds, operand implied*: the route prints no path for the root). Two more states the words are true of are red under keys of their own, in §1: a shut `.jigc` over a first install, and the record's own write.
 
 **After each of the four refusals at the marker's write, the install is half written**: `.jigc/AGENT.md`, `.jigc/.gitignore`, `.jigc/config/.gitkeep` and `CLAUDE.md` are written and staged, and no install commit is made. The settings file's refusal comes before the first write and leaves nothing.

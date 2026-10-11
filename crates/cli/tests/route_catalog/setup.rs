@@ -9,12 +9,21 @@
 //! `$HOME` (`locate_finding`, two sites); and the adapter profile — not loaded, without a
 //! reference, with a launch template or a guide target a clause refuses (four sites, every
 //! one reached through `JIGC_ADAPTERS_DIR` and no other way). Then the last question before
-//! the first write — whether the settings file can take the merge — and the first refusal
-//! of the write span, the marker's write into `packs.yaml`. And one behind them all: a git
-//! step of the install commit that ran and refused. Each of those twenty sites has a row of
-//! [`READINGS`]: the functions that were read to count its causes, the count, every cause
-//! that has no case with why, and every way out of its route that is not followed with
-//! why. A twenty-first has a row of [`REASONS`] and no case.
+//! the first write — whether the settings file can take the merge — and nine steps of the
+//! write span, each a site: the bootstrap file, the reference, the project layer, the
+//! marker's write into `packs.yaml`, the stamp, the seeded root `.gitignore`, and the
+//! settings merge's three — the read its record is computed from, the merge, the record's
+//! own write. And one behind them all: a git step of the install commit that ran and
+//! refused. Each of those twenty-eight sites has a row of [`READINGS`]: the functions that
+//! were read to count its causes, the count, every cause that has no case with why, and
+//! every way out of its route that is not followed with why. A twenty-ninth has a row of
+//! [`REASONS`] and no case.
+//!
+//! **A step of the write span has one route for every error of its callee** — *ensure … is
+//! writable* over one entry it names. So its causes are the callee's errors, and a case
+//! follows the one act the route offers: the named entry made writable. **A state that
+//! needs the steps before a late one to find their files starts from an install the binary
+//! under test made** ([`Step::Jigc`]), never from the product's lines copied into a case.
 //!
 //! **A cause is one way through the callee to the constructor**: which entry is in the way
 //! — the file's own path, or a directory on the way to it — what that entry is, and, for a
@@ -1651,6 +1660,483 @@ const CONFIG_READ_ONLY: [Case; 1] = marker_refused!(
     ],
 );
 
+// ---------------------------------------------------------------------------
+// `write_install_span` — the steps of the write span, in the order it takes them
+// ---------------------------------------------------------------------------
+
+// The span's other refusals, a step a site. Each words every error of its step under one
+// route — *ensure … is writable*, for one of them *readable* — whatever the error was.
+const BOOTSTRAP_WRITE: &str =
+    "crates/cli/src/setup.rs::write_install_span::setup.write-bootstrap#1";
+const REFERENCE_WRITE: &str =
+    "crates/cli/src/setup.rs::write_install_span::setup.inject-reference#1";
+const LAYER_WRITE: &str =
+    "crates/cli/src/setup.rs::write_install_span::setup.init-project-layer#1";
+const STAMP_WRITE: &str = "crates/cli/src/setup.rs::write_install_span::setup.version-stamp#1";
+const SEED_WRITE: &str =
+    "crates/cli/src/setup.rs::write_install_span::setup.secrets-gitignore#1";
+const RECORD_ASKED: &str =
+    "crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#1";
+const ALLOWLIST_MERGE: &str =
+    "crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#2";
+const RECORD_WRITE: &str =
+    "crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#3";
+
+const WORKBENCH_IGNORE: &str = ".jigc/.gitignore";
+const LAYER_KEEP: &str = ".jigc/config/.gitkeep";
+const SETTINGS_RECORD: &str = ".jigc/settings-entries.json";
+
+/// **A step of the write span that refuses, followed the one way its route offers**: the
+/// entry the route names made writable to its owner, and the command again. `$member` is
+/// the file the step exists to write — a regular file once the route is followed.
+macro_rules! span_refused {
+    (
+        $name:literal, $site:expr, $member:expr, $cause:expr,
+        plant: [$($plant:expr),* $(,)?] $(,)?
+    ) => {
+        [Case {
+            name: $name,
+            site: $site,
+            cause: $cause,
+            state: &[$($plant,)*],
+            acts: MAKE_WRITABLE_AND_RUN_AGAIN,
+            holds: &[Check::RegularFile(Place::Repo($member))],
+            ..SETUP
+        }]
+    };
+}
+
+/// Take the owner's right to write away from an entry, by a `git` alias — a shell line git
+/// runs at the repository's root.
+macro_rules! shut {
+    ($mode:literal, $path:literal) => {
+        Step::Git(&[
+            "-c",
+            concat!("alias.shut=!chmod ", $mode, " ", $path),
+            "shut",
+        ])
+    };
+}
+
+/// The repository's root, and `.jigc`, as directories nothing may be made in.
+const ROOT_SHUT: Step = shut!("555", ".");
+const WORKBENCH_SHUT: Step = shut!("555", ".jigc");
+
+/// **An install that stands** — the binary under test, run once over the sandbox's
+/// repository, every member written and committed. A late step's state starts here: the
+/// steps before it find their files and make nothing, so a directory can be shut and the
+/// span still reaches the step — with no line of the product's copied into a case.
+const INSTALLED: Step = Step::Jigc(&["setup"]);
+
+/// What the steps behind [`INSTALLED`] took out of the install, committed.
+const COMMIT_THE_REMOVAL: Step = Step::Git(&["commit", "-q", "-m", "taken out again"]);
+
+// `setup.write-bootstrap` — the first write.
+
+const BOOTSTRAP_READ_ONLY: [Case; 1] = span_refused!(
+    "setup-bootstrap-write-file-read-only",
+    BOOTSTRAP_WRITE,
+    AGENT_MD,
+    "the committed `.jigc/AGENT.md` may not be written",
+    plant: [
+        Step::File(Place::Repo(AGENT_MD), "theirs\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        shut!("444", ".jigc/AGENT.md"),
+    ],
+);
+const WORKBENCH_A_FILE: [Case; 1] = span_refused!(
+    "setup-bootstrap-write-workbench-a-file",
+    BOOTSTRAP_WRITE,
+    AGENT_MD,
+    "`.jigc` is a regular file, so the directory cannot be made",
+    plant: [Step::File(Place::Repo(".jigc"), "a file\n")],
+);
+const NO_WORKBENCH_UNDER_A_SHUT_ROOT: [Case; 1] = span_refused!(
+    "setup-bootstrap-write-root-read-only",
+    BOOTSTRAP_WRITE,
+    AGENT_MD,
+    "there is no `.jigc`, and the repository root may not be written",
+    plant: [ROOT_SHUT],
+);
+const NO_BOOTSTRAP_IN_A_SHUT_WORKBENCH: [Case; 1] = span_refused!(
+    "setup-bootstrap-write-workbench-read-only",
+    BOOTSTRAP_WRITE,
+    AGENT_MD,
+    "there is no `.jigc/AGENT.md`, and `.jigc` may not be written",
+    plant: [
+        Step::File(Place::Repo(".jigc/kept"), "kept\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        WORKBENCH_SHUT,
+    ],
+);
+
+// `setup.inject-reference` — the read of `CLAUDE.md`, and the write back.
+
+const HOST_NOT_TEXT: [Case; 1] = span_refused!(
+    "setup-reference-host-not-utf-8",
+    REFERENCE_WRITE,
+    CLAUDE_MD,
+    "the committed `CLAUDE.md` is not UTF-8",
+    plant: [
+        Step::Git(&["-c", "alias.plant=!printf '\\377\\376' > CLAUDE.md", "plant"]),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+    ],
+);
+const HOST_A_DIRECTORY: [Case; 1] = span_refused!(
+    "setup-reference-host-a-directory",
+    REFERENCE_WRITE,
+    CLAUDE_MD,
+    "a directory stands at `CLAUDE.md`",
+    plant: [Step::Dir(Place::Repo(CLAUDE_MD))],
+);
+const HOST_A_FIFO: [Case; 1] = span_refused!(
+    "setup-reference-host-a-special-file",
+    REFERENCE_WRITE,
+    CLAUDE_MD,
+    "`CLAUDE.md` is a FIFO",
+    plant: [Step::Fifo(Place::Repo(CLAUDE_MD))],
+);
+const HOST_READ_ONLY: [Case; 1] = span_refused!(
+    "setup-reference-host-read-only",
+    REFERENCE_WRITE,
+    CLAUDE_MD,
+    "the committed `CLAUDE.md` may not be written",
+    plant: [
+        Step::File(Place::Repo(CLAUDE_MD), "mine\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        shut!("444", "CLAUDE.md"),
+    ],
+);
+/// `.jigc` stands, so the step before this one has a directory to write into.
+const NO_HOST_UNDER_A_SHUT_ROOT: [Case; 1] = span_refused!(
+    "setup-reference-host-absent-root-read-only",
+    REFERENCE_WRITE,
+    CLAUDE_MD,
+    "there is no `CLAUDE.md`, and the repository root may not be written",
+    plant: [
+        Step::File(Place::Repo(".jigc/kept"), "kept\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        ROOT_SHUT,
+    ],
+);
+
+// `setup.init-project-layer` — the layer's empty marker, then `.jigc/.gitignore`.
+
+const CONFIG_A_FILE: [Case; 1] = span_refused!(
+    "setup-project-layer-config-a-file",
+    LAYER_WRITE,
+    LAYER_KEEP,
+    "`.jigc/config` is a regular file, so the directory cannot be made",
+    plant: [Step::File(Place::Repo(".jigc/config"), "a file\n")],
+);
+/// The one state of the marker's write the route's words are true of.
+const NO_CONFIG_IN_A_SHUT_WORKBENCH: [Case; 1] = span_refused!(
+    "setup-project-layer-no-config-workbench-read-only",
+    LAYER_WRITE,
+    LAYER_KEEP,
+    "there is no `.jigc/config`, and `.jigc` may not be written",
+    plant: [
+        Step::File(Place::Repo(AGENT_MD), "theirs\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        WORKBENCH_SHUT,
+    ],
+);
+const KEEP_READ_ONLY: [Case; 1] = span_refused!(
+    "setup-project-layer-marker-read-only",
+    LAYER_WRITE,
+    LAYER_KEEP,
+    "the committed `.jigc/config/.gitkeep` may not be written",
+    plant: [
+        Step::File(Place::Repo(LAYER_KEEP), ""),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        shut!("444", ".jigc/config/.gitkeep"),
+    ],
+);
+const NO_KEEP_IN_A_SHUT_CONFIG: [Case; 1] = span_refused!(
+    "setup-project-layer-no-marker-config-read-only",
+    LAYER_WRITE,
+    LAYER_KEEP,
+    "there is no `.jigc/config/.gitkeep`, and `.jigc/config` may not be written",
+    plant: [
+        Step::File(Place::Repo(".jigc/config/kept"), "kept\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        shut!("555", ".jigc/config"),
+    ],
+);
+const IGNORE_A_DIRECTORY: [Case; 1] = span_refused!(
+    "setup-workbench-ignore-a-directory",
+    LAYER_WRITE,
+    WORKBENCH_IGNORE,
+    "a directory stands at `.jigc/.gitignore`",
+    plant: [Step::Dir(Place::Repo(WORKBENCH_IGNORE))],
+);
+const IGNORE_NOT_TEXT: [Case; 1] = span_refused!(
+    "setup-workbench-ignore-not-utf-8",
+    LAYER_WRITE,
+    WORKBENCH_IGNORE,
+    "the committed `.jigc/.gitignore` is not UTF-8",
+    plant: [
+        Step::Dir(Place::Repo(".jigc")),
+        Step::Git(&["-c", "alias.plant=!printf '\\377\\376' > .jigc/.gitignore", "plant"]),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+    ],
+);
+/// The one state of the ignore file's write the route's words are true of.
+const NO_IGNORE_IN_A_SHUT_WORKBENCH: [Case; 1] = span_refused!(
+    "setup-workbench-ignore-absent-workbench-read-only",
+    LAYER_WRITE,
+    WORKBENCH_IGNORE,
+    "there is no `.jigc/.gitignore`, and `.jigc` may not be written",
+    plant: [
+        Step::File(Place::Repo(AGENT_MD), "theirs\n"),
+        Step::File(Place::Repo(LAYER_KEEP), ""),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        WORKBENCH_SHUT,
+    ],
+);
+const IGNORE_SHORT_AND_READ_ONLY: [Case; 1] = span_refused!(
+    "setup-workbench-ignore-short-and-read-only",
+    LAYER_WRITE,
+    WORKBENCH_IGNORE,
+    "the committed `.jigc/.gitignore` lacks an entry and may not be written",
+    plant: [
+        Step::File(Place::Repo(WORKBENCH_IGNORE), "mine\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        shut!("444", ".jigc/.gitignore"),
+    ],
+);
+
+// `setup.version-stamp`
+
+const STAMP_READ_ONLY: [Case; 1] = span_refused!(
+    "setup-version-stamp-read-only",
+    STAMP_WRITE,
+    VERSION,
+    "the committed `.jigc/version` may not be written",
+    plant: [
+        Step::File(Place::Repo(VERSION), "theirs\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        shut!("444", ".jigc/version"),
+    ],
+);
+/// The one state the route's words are true of.
+const NO_STAMP_IN_A_SHUT_WORKBENCH: [Case; 1] = span_refused!(
+    "setup-version-stamp-absent-workbench-read-only",
+    STAMP_WRITE,
+    VERSION,
+    "there is no `.jigc/version`, and `.jigc` may not be written",
+    plant: [
+        INSTALLED,
+        Step::Git(&["rm", "-q", ".jigc/version"]),
+        COMMIT_THE_REMOVAL,
+        WORKBENCH_SHUT,
+    ],
+);
+
+// `setup.secrets-gitignore` — the root `.gitignore`, on an unborn `HEAD` only.
+
+/// The route names *the repository root* and prints no path for it: the marked form, and
+/// the re-run — the route's one span.
+const MAKE_THE_ROOT_WRITABLE_AND_RUN_AGAIN: &[Act] =
+    &[Act::MakeWritable(Operand::Unprinted(".")), Act::Run(0)];
+
+/// **The root `.gitignore` the floor cannot be seeded into**, on an unborn `HEAD` — where a
+/// file there that git does not track rides the first commit, so the dirty gate lets it by.
+macro_rules! seed_refused {
+    (
+        $name:literal, $cause:expr,
+        plant: [$($plant:expr),* $(,)?],
+        holds: [$($holds:expr),* $(,)?] $(,)?
+    ) => {
+        [Case {
+            name: $name,
+            site: SEED_WRITE,
+            cause: $cause,
+            state: &[UNBORN, $($plant,)*],
+            acts: MAKE_THE_ROOT_WRITABLE_AND_RUN_AGAIN,
+            holds: &[Check::RegularFile(Place::Repo(AGENT_MD)), $($holds,)*],
+            ..SETUP
+        }]
+    };
+}
+
+const SEED_NOT_TEXT: [Case; 1] = seed_refused!(
+    "setup-seeded-ignore-not-utf-8",
+    "the root `.gitignore` is not UTF-8",
+    plant: [Step::Git(&["-c", "alias.plant=!printf '\\377\\376' > .gitignore", "plant"])],
+    holds: [],
+);
+const SEED_A_DIRECTORY: [Case; 1] = seed_refused!(
+    "setup-seeded-ignore-a-directory",
+    "a directory stands at the root `.gitignore`",
+    plant: [Step::Dir(Place::Repo(ROOT_GITIGNORE))],
+    holds: [],
+);
+const SEED_UNREADABLE: [Case; 1] = seed_refused!(
+    "setup-seeded-ignore-unreadable",
+    "the root `.gitignore` may not be read",
+    plant: [Step::File(Place::Repo(ROOT_GITIGNORE), "mine\n"), shut!("000", ".gitignore")],
+    holds: [],
+);
+const SEED_READ_ONLY: [Case; 1] = seed_refused!(
+    "setup-seeded-ignore-read-only",
+    "the root `.gitignore` may not be written",
+    plant: [Step::File(Place::Repo(ROOT_GITIGNORE), "mine\n"), shut!("444", ".gitignore")],
+    holds: [],
+);
+/// The one state the route's words are true of. `CLAUDE.md` carries the reference already
+/// and `.jigc` stands, so the steps before this one make nothing in the root.
+const NO_SEED_UNDER_A_SHUT_ROOT: [Case; 1] = seed_refused!(
+    "setup-seeded-ignore-absent-root-read-only",
+    "there is no root `.gitignore`, and the repository root may not be written",
+    plant: [
+        Step::File(Place::Repo(CLAUDE_MD), "@.jigc/AGENT.md\n"),
+        Step::Dir(Place::Repo(".jigc")),
+        ROOT_SHUT,
+    ],
+    holds: [
+        Check::RegularFile(Place::Repo(ROOT_GITIGNORE)),
+        Check::GitIgnores(".env"),
+    ],
+);
+
+// `setup.inject-allowlist`, three times: the read the settings record is computed from,
+// the allowlist merge, and the record's own write.
+
+/// The settings file as a link to the reference host — a regular file inside the
+/// repository, so the install follows it.
+const SETTINGS_ARE_THE_HOST: Step =
+    Step::LinkTo(Place::Repo(SETTINGS_JSON), "../CLAUDE.md");
+
+/// **The one state that fails a read of the settings file inside the span**: the file was
+/// asked before the first write and could take the merge; since then the install has
+/// appended its reference to `CLAUDE.md`, and the settings path leads there.
+const RECORD_ASKED_OF_THE_HOST: [Case; 1] = [Case {
+    name: "setup-settings-record-asked-of-the-reference-host",
+    site: RECORD_ASKED,
+    cause: "the settings path is a committed link to `CLAUDE.md`, which the install's own \
+            reference step has written since the settings were asked",
+    state: &[
+        Step::File(Place::Repo(CLAUDE_MD), "{}\n"),
+        SETTINGS_ARE_THE_HOST,
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+    ],
+    acts: &[Act::MakeReadable(Operand::Span(0)), Act::Run(1)],
+    holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+    ..SETUP
+}];
+/// The same, where the run keeps no settings record — git ignores the file the link leads
+/// to — so the first read inside the span is the merge's own.
+const MERGE_INTO_THE_HOST: [Case; 1] = span_refused!(
+    "setup-settings-merge-into-the-ignored-reference-host",
+    ALLOWLIST_MERGE,
+    SETTINGS_JSON,
+    "the settings path is a committed link to `CLAUDE.md`, which git ignores and the \
+     install's own reference step has written since the settings were asked",
+    plant: [
+        Step::File(Place::Repo(ROOT_GITIGNORE), "CLAUDE.md\n"),
+        SETTINGS_ARE_THE_HOST,
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        Step::File(Place::Repo(CLAUDE_MD), "{}\n"),
+    ],
+);
+const SETTINGS_READ_ONLY: [Case; 1] = span_refused!(
+    "setup-settings-merge-file-read-only",
+    ALLOWLIST_MERGE,
+    SETTINGS_JSON,
+    "the committed settings file may not be written",
+    plant: [
+        Step::File(Place::Repo(SETTINGS_JSON), "{}\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        shut!("444", ".claude/settings.json"),
+    ],
+);
+const NO_SETTINGS_IN_A_SHUT_DIRECTORY: [Case; 1] = span_refused!(
+    "setup-settings-merge-no-file-directory-read-only",
+    ALLOWLIST_MERGE,
+    SETTINGS_JSON,
+    "there is no settings file, and `.claude` may not be written",
+    plant: [
+        Step::File(Place::Repo(".claude/kept"), "kept\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        shut!("555", ".claude"),
+    ],
+);
+/// `CLAUDE.md` carries the reference already and `.jigc` stands, so every step before this
+/// one has what it needs under a root nothing may be made in.
+const NO_SETTINGS_DIRECTORY_UNDER_A_SHUT_ROOT: [Case; 1] = span_refused!(
+    "setup-settings-merge-no-directory-root-read-only",
+    ALLOWLIST_MERGE,
+    SETTINGS_JSON,
+    "there is no `.claude`, and the repository root may not be written",
+    plant: [
+        Step::File(Place::Repo(CLAUDE_MD), "@.jigc/AGENT.md\n"),
+        Step::File(Place::Repo(".jigc/kept"), "kept\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        ROOT_SHUT,
+    ],
+);
+
+const RECORD_READ_ONLY: [Case; 1] = span_refused!(
+    "setup-settings-record-read-only",
+    RECORD_WRITE,
+    SETTINGS_RECORD,
+    "the committed `.jigc/settings-entries.json` may not be written",
+    plant: [
+        Step::File(Place::Repo(SETTINGS_RECORD), "theirs\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        shut!("444", ".jigc/settings-entries.json"),
+    ],
+);
+/// The settings file is taken out with the record, so the run has entries to record.
+const NO_RECORD_IN_A_SHUT_WORKBENCH: [Case; 1] = span_refused!(
+    "setup-settings-record-absent-workbench-read-only",
+    RECORD_WRITE,
+    SETTINGS_RECORD,
+    "there is no `.jigc/settings-entries.json`, and `.jigc` may not be written",
+    plant: [
+        INSTALLED,
+        Step::Git(&["rm", "-q", ".claude/settings.json", ".jigc/settings-entries.json"]),
+        COMMIT_THE_REMOVAL,
+        WORKBENCH_SHUT,
+    ],
+);
+/// The record that stands claims nothing this build can read, and the settings file
+/// already holds every entry of the install's: the run records nothing, and takes the
+/// record away — out of a directory nothing may be taken from. What must stand afterwards
+/// is the install, and no record.
+const RECORD_TO_REMOVE_FROM_A_SHUT_WORKBENCH: [Case; 1] = span_refused!(
+    "setup-settings-record-to-remove-workbench-read-only",
+    RECORD_WRITE,
+    AGENT_MD,
+    "the run records nothing, a record stands, and `.jigc` may not be written",
+    plant: [
+        INSTALLED,
+        Step::File(Place::Repo(SETTINGS_RECORD), "theirs\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        WORKBENCH_SHUT,
+    ],
+);
+
 /// The cases of `jigc setup`, a group a cause — and, within a group, a case a way out of
 /// the cause's route.
 pub const CASES: &[&[Case]] = &[
@@ -1741,6 +2227,38 @@ pub const CASES: &[&[Case]] = &[
     &PACKS_NO_MAPPING,
     &PACKS_READ_ONLY,
     &CONFIG_READ_ONLY,
+    &BOOTSTRAP_READ_ONLY,
+    &WORKBENCH_A_FILE,
+    &NO_WORKBENCH_UNDER_A_SHUT_ROOT,
+    &NO_BOOTSTRAP_IN_A_SHUT_WORKBENCH,
+    &HOST_NOT_TEXT,
+    &HOST_A_DIRECTORY,
+    &HOST_A_FIFO,
+    &HOST_READ_ONLY,
+    &NO_HOST_UNDER_A_SHUT_ROOT,
+    &CONFIG_A_FILE,
+    &NO_CONFIG_IN_A_SHUT_WORKBENCH,
+    &KEEP_READ_ONLY,
+    &NO_KEEP_IN_A_SHUT_CONFIG,
+    &IGNORE_A_DIRECTORY,
+    &IGNORE_NOT_TEXT,
+    &NO_IGNORE_IN_A_SHUT_WORKBENCH,
+    &IGNORE_SHORT_AND_READ_ONLY,
+    &STAMP_READ_ONLY,
+    &NO_STAMP_IN_A_SHUT_WORKBENCH,
+    &SEED_NOT_TEXT,
+    &SEED_A_DIRECTORY,
+    &SEED_UNREADABLE,
+    &SEED_READ_ONLY,
+    &NO_SEED_UNDER_A_SHUT_ROOT,
+    &RECORD_ASKED_OF_THE_HOST,
+    &MERGE_INTO_THE_HOST,
+    &SETTINGS_READ_ONLY,
+    &NO_SETTINGS_IN_A_SHUT_DIRECTORY,
+    &NO_SETTINGS_DIRECTORY_UNDER_A_SHUT_ROOT,
+    &RECORD_READ_ONLY,
+    &NO_RECORD_IN_A_SHUT_WORKBENCH,
+    &RECORD_TO_REMOVE_FROM_A_SHUT_WORKBENCH,
 ];
 
 /// The sites of `jigc setup` that have no case, each with why.
@@ -1779,6 +2297,61 @@ const WORKBENCH_LINK_IS_THE_BOOTSTRAP_FILES: Why = Why::NotConstructible(
 const GIT_TRACKS_NO_FIFO: (&str, Why) = (
     "the special file committed, and its removal committed",
     Why::NotConstructible("git tracks regular files and links: a FIFO is in no index"),
+);
+
+/// What the steps of the write span share: the one writer four of them call, and what
+/// stands before the span.
+const SPAN: [&str; 3] = [
+    "crates/cli/src/regular_file.rs::replace and open_no_follow — the write is in place: the directories made, the file opened, cut and written",
+    "crates/cli/src/regular_file.rs::blocker — asked again by the write, after `replaced_path_refusal` asked it before the first one",
+    "crates/cli/src/setup.rs::install — the refusals and the dirty gate before the first write, which decide what state reaches the span",
+];
+
+/// Why an entry in the way of a replaced member is no cause of the member's write.
+const ASKED_BEFORE_THE_FIRST_WRITE: Why = Why::NotConstructible(
+    "`replaced_path_refusal` asks the same question before the first write and answers under \
+     this code at its own site — the cases of a link, a directory and a special file there",
+);
+
+/// Why no step's failed write of bytes has a case.
+const BYTES_CANNOT_BE_WRITTEN: (&str, Why) = (
+    "the file is opened and its bytes cannot be written",
+    Why::NotConstructible(
+        "a write that fails on an open file is a full disk or a failing one: no state of a \
+         sandbox",
+    ),
+);
+
+/// Why `.jigc` is there for every step behind the first.
+const THE_WORKBENCH_STANDS: Why = Why::NotConstructible(
+    "the steps before this one have written into `.jigc`, so it stands or one of them has \
+     refused under its own code",
+);
+
+/// Why a FIFO at an ignore file is no case: the command holds, and it is git that holds.
+const GIT_READS_AN_IGNORE_FILE: Why = Why::NotConstructible(
+    "git reads a file of that name as an ignore file, and its read of a FIFO does not \
+     return: `jigc setup` asks `git status` before its first write and waits for it — \
+     driven, the command printing nothing and ended by hand, held in \
+     `ask_dirty_against_head`. The state does not reach the step, and no `git` command \
+     ends in such a repository",
+);
+
+/// Why the settings file cannot differ in kind between the read before the first write and
+/// the reads inside the span.
+const NOTHING_ELSE_WRITES_THE_SETTINGS: Why = Why::NotConstructible(
+    "the file passed this read before the first write, and nothing the install does in \
+     between changes its encoding or who may read it: the one write that can reach it \
+     appends text",
+);
+
+/// Why each state of the write span is planted committed.
+const UNCOMMITTED_IS_THE_DIRTY_GATES: (&str, Why) = (
+    "the same state with the file in no commit — untracked, or changed — on a born `HEAD`",
+    Why::NotConstructible(
+        "the dirty gate stands before the span and refuses the path as work in no commit, \
+         under `setup.dirty-install-path`",
+    ),
 );
 
 /// **What was read for each site, and how many causes it holds** — a hand count, with its
@@ -2315,5 +2888,263 @@ pub const READINGS: &[Reading] = &[
                 ),
             ),
         ],
+    },
+    Reading {
+        site: BOOTSTRAP_WRITE,
+        read: &[
+            "crates/cli/src/setup.rs::write_install_span — the step, the first write of the span",
+            "crates/cli/src/adapter.rs::write_bootstrap_file",
+            SPAN[0],
+            SPAN[1],
+        ],
+        causes: 6,
+        derivation: "`write_bootstrap_file` is one call of `regular_file::replace`, which \
+                     fails in four places: an entry is in the way; `.jigc` cannot be made — \
+                     because an entry stands there that is neither a directory nor a link, \
+                     or because there is none and the root may not be written; the file \
+                     cannot be opened for writing — because it may not be written, or \
+                     because there is none and `.jigc` may not be; or its bytes cannot be \
+                     written. Six, under one route",
+        without_case: &[
+            (
+                "an entry is in the way of `.jigc/AGENT.md`",
+                ASKED_BEFORE_THE_FIRST_WRITE,
+            ),
+            BYTES_CANNOT_BE_WRITTEN,
+        ],
+        not_followed: &[UNCOMMITTED_IS_THE_DIRTY_GATES],
+    },
+    Reading {
+        site: REFERENCE_WRITE,
+        read: &[
+            "crates/cli/src/setup.rs::write_install_span — the step",
+            "crates/cli/src/adapter.rs::inject_reference and contains_import_line",
+            SPAN[2],
+        ],
+        causes: 7,
+        derivation: "`inject_reference` reads `CLAUDE.md` and writes it back unless the \
+                     reference is there already. The read fails — not on an absent file — \
+                     where the bytes are not UTF-8, where a directory stands at the path, \
+                     and where the caller may not read the file; and where a FIFO stands \
+                     there it does not return. The write fails where the file may not be \
+                     written, where there is none and the root may not be, and where the \
+                     bytes cannot be written. Seven, under one route",
+        without_case: &[
+            (
+                "the caller may not read `CLAUDE.md`",
+                Why::NotConstructible(
+                    "git cannot read it either and reports it changed, so the dirty gate \
+                     refuses first under `setup.dirty-install-path` — driven, a committed \
+                     `CLAUDE.md` of mode 000",
+                ),
+            ),
+            BYTES_CANNOT_BE_WRITTEN,
+        ],
+        not_followed: &[UNCOMMITTED_IS_THE_DIRTY_GATES],
+    },
+    Reading {
+        site: LAYER_WRITE,
+        read: &[
+            "crates/cli/src/setup.rs::write_install_span — the step",
+            "crates/cli/src/adapter.rs::init_project_layer — two writes under one code: the layer's empty marker, then `.jigc/.gitignore`",
+            "crates/cli/src/gitignore.rs::ensure, refuse and write_ignore",
+            SPAN[0],
+            SPAN[1],
+            SPAN[2],
+        ],
+        causes: 13,
+        derivation: "the marker is `regular_file::replace` over `.jigc/config/.gitkeep`: an \
+                     entry in the way; `.jigc/config` cannot be made, because a file stands \
+                     there or because there is none and `.jigc` may not be written; the \
+                     marker cannot be opened, because it may not be written or because \
+                     there is none and `.jigc/config` may not be. `ensure` then asks what \
+                     `.jigc/.gitignore` is and refuses a link, anything else that is no \
+                     regular file — a directory, a special file — bytes that are not UTF-8, \
+                     and a file it cannot ask about or read; and its write fails where \
+                     there is no file and `.jigc` may not be written, and where the file \
+                     lacks an entry and may not be written. And the bytes of either cannot \
+                     be written. Thirteen, under one route",
+        without_case: &[
+            (
+                "an entry is in the way of `.jigc/config/.gitkeep`",
+                ASKED_BEFORE_THE_FIRST_WRITE,
+            ),
+            (
+                "`.jigc/.gitignore` is a link",
+                Why::NotConstructible(
+                    "`merged_through_links` asks before the first write and answers under \
+                     this code at its own site — the cases `setup-workbench-ignore-a-link-…`",
+                ),
+            ),
+            (
+                "`.jigc/.gitignore` is a FIFO",
+                GIT_READS_AN_IGNORE_FILE,
+            ),
+            (
+                "`.jigc/.gitignore` cannot be asked about, or may not be read",
+                Why::NotConstructible(
+                    "a file git cannot read is one it reports changed, and the dirty gate \
+                     refuses first under `setup.dirty-install-path` — driven, a committed \
+                     `.jigc/.gitignore` of mode 000; and an entry that cannot be asked about \
+                     is one under a `.jigc` that may not be searched, which the step before \
+                     this one has already written into",
+                ),
+            ),
+            BYTES_CANNOT_BE_WRITTEN,
+        ],
+        not_followed: &[UNCOMMITTED_IS_THE_DIRTY_GATES],
+    },
+    Reading {
+        site: STAMP_WRITE,
+        read: &[
+            "crates/cli/src/setup.rs::write_install_span — the step",
+            "crates/cli/src/setup.rs::write_version_stamp",
+            SPAN[0],
+            SPAN[1],
+        ],
+        causes: 5,
+        derivation: "one call of `regular_file::replace` over `.jigc/version`: an entry in \
+                     the way; `.jigc` cannot be made; the stamp cannot be opened, because \
+                     it may not be written or because there is none and `.jigc` may not \
+                     be; its bytes cannot be written. Five, under one route",
+        without_case: &[
+            (
+                "an entry is in the way of `.jigc/version`",
+                ASKED_BEFORE_THE_FIRST_WRITE,
+            ),
+            ("`.jigc` cannot be made", THE_WORKBENCH_STANDS),
+            BYTES_CANNOT_BE_WRITTEN,
+        ],
+        not_followed: &[UNCOMMITTED_IS_THE_DIRTY_GATES],
+    },
+    Reading {
+        site: SEED_WRITE,
+        read: &[
+            "crates/cli/src/setup.rs::write_install_span — the step",
+            "crates/cli/src/setup.rs::seed_secrets_gitignore and is_fresh_repo — a step of an unborn `HEAD` only",
+            "crates/cli/src/setup.rs::DirtyPaths::rides_the_first_commit — why a root `.gitignore` git does not track reaches the step",
+            SPAN[2],
+        ],
+        causes: 7,
+        derivation: "on an unborn `HEAD` `seed_secrets_gitignore` reads the root \
+                     `.gitignore` and writes it unless the floor is there. The read fails \
+                     where the bytes are not UTF-8, where a directory stands at the path \
+                     and where the caller may not read the file — which reaches the step \
+                     here, since an untracked file rides the first commit — and does not \
+                     return where a FIFO stands there. The write fails where the file may \
+                     not be written, where there is none and the root may not be, and \
+                     where the bytes cannot be written. Seven, under one route",
+        without_case: &[
+            ("the root `.gitignore` is a FIFO", GIT_READS_AN_IGNORE_FILE),
+            BYTES_CANNOT_BE_WRITTEN,
+        ],
+        not_followed: &[(
+            "the root `.gitignore` staged, in any of those states",
+            Why::NotConstructible(
+                "a staged file rides no first commit: the dirty gate refuses it before the \
+                 first write, under `setup.dirty-install-path` — driven",
+            ),
+        )],
+    },
+    Reading {
+        site: RECORD_ASKED,
+        read: &[
+            "crates/cli/src/setup.rs::write_install_span — the step, taken only where the run keeps a settings record",
+            "crates/cli/src/setup.rs::settings_record_entries, earlier_settings_record and settings_file_is_committable",
+            "crates/cli/src/adapter.rs::settings_entries_present and read_settings",
+            "crates/cli/src/setup.rs::install — `check_settings_merge` makes the same read before the first write",
+        ],
+        causes: 3,
+        derivation: "the step's one fallible call is `read_settings`, which fails three ways \
+                     — the bytes are not UTF-8, the read fails otherwise, the text is no \
+                     JSON. `install` made the same read of the same path before the first \
+                     write and it passed, so each needs the file to have changed since; and \
+                     the one writer in between is the install's own reference step, which \
+                     appends text to `CLAUDE.md`. Three, of which one can be planted: the \
+                     settings path leads to `CLAUDE.md`",
+        without_case: &[
+            (
+                "the settings file is not UTF-8 by the time the record is computed",
+                NOTHING_ELSE_WRITES_THE_SETTINGS,
+            ),
+            (
+                "the settings file cannot be read by the time the record is computed",
+                NOTHING_ELSE_WRITES_THE_SETTINGS,
+            ),
+        ],
+        not_followed: &[],
+    },
+    Reading {
+        site: ALLOWLIST_MERGE,
+        read: &[
+            "crates/cli/src/setup.rs::write_install_span — the step",
+            "crates/cli/src/adapter.rs::inject_allowlist, read_settings, merge_allowlist and write_settings",
+            "crates/cli/src/setup.rs::install — `check_settings_merge` runs the same read and the same merge before the first write",
+        ],
+        causes: 9,
+        derivation: "`inject_allowlist` reads, merges and writes. The read fails as the \
+                     record's does — three ways, each needing the file to have changed \
+                     since it was asked. The merge refuses a shape. The write fails where \
+                     `.claude` cannot be made — a file stands there, or there is none and \
+                     the root may not be written — where the file may not be written, where \
+                     there is none and `.claude` may not be, and where the merged value or \
+                     its bytes cannot be written. Nine, under one route",
+        without_case: &[
+            (
+                "the settings file is not UTF-8 by the time it is merged into",
+                NOTHING_ELSE_WRITES_THE_SETTINGS,
+            ),
+            (
+                "the settings file cannot be read by the time it is merged into",
+                NOTHING_ELSE_WRITES_THE_SETTINGS,
+            ),
+            (
+                "the merge refuses the settings file's shape",
+                Why::NotConstructible(
+                    "`check_settings_merge` runs the same merge before the first write and \
+                     refuses there, at its own site — the cases `setup-settings-…-no-object` \
+                     and `…-no-array`",
+                ),
+            ),
+            (
+                "a file stands at `.claude`",
+                Why::NotConstructible(
+                    "the read before the first write fails over it — *Not a directory* — \
+                     and `install` refuses there, under this code at its own site: driven",
+                ),
+            ),
+            BYTES_CANNOT_BE_WRITTEN,
+        ],
+        not_followed: &[UNCOMMITTED_IS_THE_DIRTY_GATES],
+    },
+    Reading {
+        site: RECORD_WRITE,
+        read: &[
+            "crates/cli/src/setup.rs::write_install_span — the step",
+            "crates/cli/src/setup.rs::write_settings_record — two arms: a record to write, and one to take away",
+            SPAN[0],
+            SPAN[1],
+        ],
+        causes: 7,
+        derivation: "where the run records nothing, a record that stands is removed, and \
+                     the removal fails where `.jigc` may not be written or where what \
+                     stands there is no file. Otherwise the record is written by \
+                     `regular_file::replace`: an entry in the way; `.jigc` cannot be made; \
+                     the record cannot be opened, because it may not be written or because \
+                     there is none and `.jigc` may not be; its bytes cannot be written. \
+                     Seven, under one route",
+        without_case: &[
+            (
+                "an entry is in the way of `.jigc/settings-entries.json`",
+                ASKED_BEFORE_THE_FIRST_WRITE,
+            ),
+            ("`.jigc` cannot be made", THE_WORKBENCH_STANDS),
+            (
+                "the run records nothing, and what stands at the record's path is no file",
+                ASKED_BEFORE_THE_FIRST_WRITE,
+            ),
+            BYTES_CANNOT_BE_WRITTEN,
+        ],
+        not_followed: &[UNCOMMITTED_IS_THE_DIRTY_GATES],
     },
 ];

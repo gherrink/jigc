@@ -31,14 +31,16 @@
 //! (`completions/artifacts/M55/stabilization-build/canary-one/findings.md`), and no ledger
 //! holds it yet. The tie becomes a real one when a run's opening seeds its rows.
 //!
-//! **What the catalog holds today** is twenty-one sites of `jigc setup` (the plan's step
+//! **What the catalog holds today** is twenty-nine sites of `jigc setup` (the plan's step
 //! `P3`, so far): the hook's link refusal — the site whose cause an existing test planted
 //! and passed over; the two refusals the install raises before its first write over an
 //! entry in the way of a file it replaces or merges into; the two of a command that cannot
 //! find its repository; the four over the adapter profile; the settings file's question
-//! before the first write; the first refusal of the write span; and the two of the install
-//! commit — one of them with a reason and no case. Every other blocking site of `setup` and
-//! `uninstall` is a row of [`OWED`], under the task that owes its case.
+//! before the first write; nine steps of the write span — the bootstrap file, the
+//! reference, the project layer, the marker, the stamp, the seeded `.gitignore`, and the
+//! settings merge's three; and the two of the install commit — one of them with a reason
+//! and no case. Every other blocking site of `setup` and `uninstall` is a row of [`OWED`],
+//! under the task that owes its case.
 //!
 //! **A site with a case says what was read to count its causes**
 //! ([`Reading`], a command's `READINGS`): the functions, the count with its derivation,
@@ -91,6 +93,11 @@
 //! makes included ([`a_repository_a_route_makes_has_the_sandboxs_identity_and_no_other`]);
 //! and a file is mended with the runner's own bytes, an entry made readable or writable
 //! ([`a_file_is_mended_and_an_entry_is_made_readable_or_writable`]).
+//!
+//! **And with the steps of the write span**: a state is made by the binary under test
+//! where it is one an earlier run left — an install that stands
+//! ([`a_state_step_runs_the_binary_under_test`]); and a sandbox is removed whole, whatever
+//! directory its state shut ([`a_sandbox_is_removed_whole_whatever_its_state_shut`]).
 //!
 //! **The fence** (the plan's step `P2`) holds the catalog to the refusal sites of the
 //! families [`CATALOGUED`] names. It scans nothing for itself — the sites are
@@ -301,6 +308,7 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &[
             "setup-compose-marker-a-special-file",
             "setup-guide-a-special-file",
+            "setup-reference-host-a-special-file",
         ],
     ),
     (
@@ -344,11 +352,49 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         PERMISSION_ROUTE,
         Classification::SameRefusalAgain,
         &[
+            "setup-bootstrap-write-root-read-only",
+            "setup-bootstrap-write-workbench-a-file",
+            "setup-bootstrap-write-workbench-read-only",
             "setup-compose-marker-packs-file-no-mapping",
             "setup-compose-marker-packs-file-not-utf-8",
             "setup-compose-marker-packs-file-not-yaml",
             "setup-compose-marker-packs-file-read-only",
+            "setup-project-layer-config-a-file",
+            "setup-project-layer-marker-read-only",
+            "setup-project-layer-no-marker-config-read-only",
+            "setup-reference-host-a-directory",
+            "setup-reference-host-absent-root-read-only",
+            "setup-reference-host-not-utf-8",
+            "setup-seeded-ignore-a-directory",
+            "setup-seeded-ignore-not-utf-8",
+            "setup-seeded-ignore-read-only",
+            "setup-seeded-ignore-unreadable",
             "setup-settings-a-directory-made-readable",
+            "setup-settings-merge-into-the-ignored-reference-host",
+            "setup-settings-merge-no-directory-root-read-only",
+            "setup-settings-merge-no-file-directory-read-only",
+            "setup-settings-record-asked-of-the-reference-host",
+            "setup-settings-record-to-remove-workbench-read-only",
+            "setup-version-stamp-read-only",
+            "setup-workbench-ignore-a-directory",
+            "setup-workbench-ignore-not-utf-8",
+            "setup-workbench-ignore-short-and-read-only",
+        ],
+    ),
+    (
+        SHUT_WORKBENCH,
+        Classification::AnotherFailure,
+        &[
+            "setup-project-layer-no-config-workbench-read-only",
+            "setup-workbench-ignore-absent-workbench-read-only",
+        ],
+    ),
+    (
+        NO_RECORD,
+        Classification::AnotherFailure,
+        &[
+            "setup-settings-record-absent-workbench-read-only",
+            "setup-settings-record-read-only",
         ],
     ),
 ];
@@ -361,7 +407,9 @@ const HOOK_DEVICE: &str = "r1-p4-setup-hook-linked-to-dev-null-route-names-dev-n
 
 /// The canary's key for a route that asks for a permission where the cause is none: there
 /// the hooks directory's writability, here — the same defect at another site — the settings
-/// file's readability, over a directory at its path.
+/// file's readability, over a directory at its path; and every other step of the write
+/// span, each of which words every error of its step as *ensure … is writable* over one
+/// entry it names, whatever the error was.
 const PERMISSION_ROUTE: &str = "r1-p3-setup-writability-route-printed-for-other-causes";
 
 // The pilot's keys.
@@ -392,6 +440,14 @@ const REINSTALL: &str = "r1-setup-profile-route-says-reinstall-under-adapters-di
 /// A profile's launch template or guide target is refused, and the route is the violated
 /// clause again: it names no act, no file and no command.
 const CLAUSE: &str = "r1-setup-profile-clause-route-names-no-act";
+
+/// `.jigc` may not be written, a step of the write span refuses over it, and the route says
+/// to make it writable and run again: the re-run refuses the files the refused run wrote as
+/// work in no commit — the record that says they are the install's own is kept in `.jigc`.
+const SHUT_WORKBENCH: &str = "r1-setup-workbench-made-writable-rerun-refuses-its-own-files";
+/// The settings record's write is refused after the entries are merged: the re-run finds
+/// them in the settings file, records none, and leaves an install without its record.
+const NO_RECORD: &str = "r1-setup-settings-record-refused-rerun-installs-without-the-record";
 
 /// [`EXPECTED_RED`], an entry a case.
 fn expected_red() -> Vec<ExpectedRed> {
@@ -654,18 +710,10 @@ const OWED: &[Owed] = &[
     Owed {
         task: "P3",
         sites: &[
-            "crates/cli/src/setup.rs::write_install_span::setup.init-project-layer#1",
-            "crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#1",
-            "crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#2",
-            "crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#3",
             "crates/cli/src/setup.rs::write_install_span::setup.inject-deny#1",
             "crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1",
-            "crates/cli/src/setup.rs::write_install_span::setup.inject-reference#1",
             "crates/cli/src/setup.rs::write_install_span::setup.install-hook#1",
             "crates/cli/src/setup.rs::write_install_span::setup.install-hook#2",
-            "crates/cli/src/setup.rs::write_install_span::setup.secrets-gitignore#1",
-            "crates/cli/src/setup.rs::write_install_span::setup.version-stamp#1",
-            "crates/cli/src/setup.rs::write_install_span::setup.write-bootstrap#1",
             "crates/cli/src/setup.rs::write_install_span::setup.write-guide#1",
             "crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1",
             "crates/engine/src/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1",
@@ -2947,4 +2995,71 @@ fn a_file_is_mended_and_an_entry_is_made_readable_or_writable() {
             Classification::Holds,
         ),
     ]);
+}
+
+/// **A state step runs the binary under test** ([`Step::Jigc`]). A state an earlier run of
+/// the product left — an install that stands — is made by the product, and no case copies
+/// the product's lines into its state to stand in for one. A shell stands in for the
+/// binary: the refusal is printed only where the step's own run left its file, and the step
+/// ran in the repository.
+#[test]
+fn a_state_step_runs_the_binary_under_test() {
+    come_out(&[(
+        Case {
+            name: "planted-a-state-the-binary-under-test-made",
+            state: &[Step::Jigc(&[
+                "-c",
+                "test -f README.md && echo made > made-by-the-binary",
+            ])],
+            refusing: &[
+                "-c",
+                "grep -q made made-by-the-binary 2>/dev/null || exit 0; \
+                 printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                 '  route: re-run `jigc -c true`'; exit 1",
+            ],
+            acts: &[Act::Run(0)],
+            ..PLANTED
+        },
+        Classification::Holds,
+    )]);
+}
+
+/// **A sandbox is removed whole, whatever its state shut.** A case that plants a directory
+/// nothing may be taken from — and whose route does not open it again — would otherwise
+/// leave its scratch root behind on every run: the root's own removal cannot empty such a
+/// directory. So the runner gives every directory of the sandbox back to its owner before
+/// the root goes, and the sandbox is gone by the time the case is handed back.
+#[test]
+fn a_sandbox_is_removed_whole_whatever_its_state_shut() {
+    let planted = Case {
+        name: "planted-a-directory-nothing-may-be-taken-from",
+        state: &[
+            Step::File(Place::Repo("shut/deeper/kept"), "kept\n"),
+            Step::Git(&[
+                "-c",
+                "alias.shut=!chmod 555 shut/deeper && chmod 000 shut",
+                "shut",
+            ]),
+        ],
+        refusing: &[
+            "-c",
+            "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             '  route: re-run `jigc -c true`'; exit 1",
+        ],
+        acts: &[Act::Run(0)],
+        ..PLANTED
+    };
+    let followed = route_case::follow(Path::new("/bin/sh"), &planted)
+        .expect("the planted case is one the runner follows");
+    assert_eq!(
+        followed.classification,
+        Classification::Holds,
+        "{}",
+        followed.detail
+    );
+    assert!(
+        !followed.sandbox.exists(),
+        "the sandbox of a case that shut a directory is still there once the case is \
+         followed — its scratch root is left behind on every run",
+    );
 }

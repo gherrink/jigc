@@ -2,6 +2,54 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The route catalog's eight steps of `setup`'s write span behind the marker: 32 cases, 27 of them red — 22 more under the canary's writability key, one more read that holds, and two new keys, both in a state the route's own words are true of (the plan's step `P3`, fourth part, first commit; ruling 3 of 2026-10-10)
+
+**What.** Cases and readings in [route_catalog/setup.rs](crates/cli/tests/route_catalog/setup.rs); the expected-red rows and the owed list in [route_catalog.rs](crates/cli/tests/route_catalog.rs); two keys and the extended tables in the pilot's findings file ([route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md)). No product source changes and nothing is fixed. **The catalog is 217 cases over twenty-eight sites, 104 of them red; a twenty-ninth site has a reason. The owed list is 7 rows under `P3`**, 18 under `P4`. (The last entry's *78 red* was the list's 77: it counted one too many.)
+
+**The eight sites are steps of `write_install_span`**, in the order the span takes them. Each words every error of its callee under one route — *ensure … is writable* over one entry it names, for one of them *readable* — so a site's causes are its callee's errors, and each is followed the one way the route offers: the named entry given its owner's bit, and the command again.
+
+| site — `write_install_span` · code | read (beside the step) | causes | followed | a reason | cases | red | new frame vocabulary |
+|---|---|---|---|---|---|---|---|
+| `setup.write-bootstrap` | `adapter::write_bootstrap_file`; `regular_file::replace`, `open_no_follow`, `blocker` | 6 | 4 | 2 | 4 | 3 | a sandbox is removed whole |
+| `setup.inject-reference` | `adapter::inject_reference`, `contains_import_line` | 7 | 5 | 2 | 5 | 4 | none |
+| `setup.init-project-layer` | `adapter::init_project_layer`; `gitignore::ensure`, `refuse`, `write_ignore`; `regular_file::replace` | 13 | 8 | 5 | 8 | 8 | none |
+| `setup.version-stamp` | `write_version_stamp`; `regular_file::replace` | 5 | 2 | 3 | 2 | 1 | a state step runs the binary under test |
+| `setup.secrets-gitignore` | `seed_secrets_gitignore`, `is_fresh_repo`, `DirtyPaths::rides_the_first_commit` | 7 | 5 | 2 | 5 | 4 | none |
+| `setup.inject-allowlist` #1, the read the record is computed from | `settings_record_entries`, `earlier_settings_record`, `settings_file_is_committable`; `adapter::settings_entries_present`, `read_settings` | 3 | 1 | 2 | 1 | 1 | none |
+| `setup.inject-allowlist` #2, the merge | `adapter::inject_allowlist`, `read_settings`, `merge_allowlist`, `write_settings` | 9 | 4 | 5 | 4 | 3 | none |
+| `setup.inject-allowlist` #3, the record's write | `write_settings_record`; `regular_file::replace` | 7 | 3 | 4 | 3 | 3 | none |
+| | | **57** | **32** | **25** | **32** | **27** | |
+
+**The minutes were not clocked site by site.** The eight were probed by hand in one pass of about thirty-five minutes — a state a probe, each read off the callee first — and written in one of about thirty; no site came near the hour that stops the task. What cost the hours of this part was the machine: the merge's gate ran three times, over thirty minutes each, beside another builder's.
+
+**Red — 22 cases under the canary's `r1-p3-setup-writability-route-printed-for-other-causes`, *the same refusal again*.** It is the same defect and no neighbour: the canary confirmed it at the hook's write as *a route that asks for a permission* printed over causes that are no such thing — a read-only hook in a writable hooks directory among them, so the permission of another entry than the one named is inside the key — and each of these eight steps does what that step does: one route for every error, which fits one of them. The causes it does not fit, a case each: what stands at the path (a file where a directory must be made, a directory where a file is read), what the bytes are (not UTF-8; a settings path that leads to `CLAUDE.md`, into which the install has just written its reference), and whose permission it is (the file where the route names its directory, the directory where it names the file, the root where it names a file under it).
+
+**And one more under the pilot's `r1-setup-fifo-at-install-path-holds-the-command`, *the command did not end*:** a FIFO at `CLAUDE.md`. The same defect — `jigc setup` reads an install path with no limit, and a FIFO with no writer does not return — at a read that is the step's own (`inject_reference`, sampled), behind the first write.
+
+**Two new keys, each *another failure*, and each in a state the route's words are true of.**
+
+- `r1-setup-workbench-made-writable-rerun-refuses-its-own-files`, 2 cases. `.jigc` may not be written; the project layer's step refuses, rightly routed *ensure `.jigc/` is writable*; made writable, the re-run exits 1 with `setup.dirty-install-path` over `.jigc/AGENT.md` and `CLAUDE.md` — the files the refused run wrote. The record that keeps a failed run's writes from being taken for the adopter's (`record_failed_install`) is a file under `.jigc/state/`, and is not kept where `.jigc` is what cannot be written.
+- `r1-setup-settings-record-refused-rerun-installs-without-the-record`, 2 cases. The record's write is refused after the three merges have run; the route's act done, the re-run exits 0 — and finds every entry in the settings file, adds none, records none, and in one case removes the file that stood at the record's path, saying *this run added none*. The install is complete without the file the refused step exists to write. The source declares its half of this (step 4b′: a run that fails between the merges and the record *leaves entries no record claims*); whether the route may then say *re-run* and no more is the human's.
+
+**What must hold is the file the refused step exists to write** — the convention of every case before these (a replaced member is a regular file once its route is followed), kept here: the bootstrap file, `CLAUDE.md`, the marker or the ignore file, the stamp, the settings file, the record. That is what turns the record's two cases red, and it is the frame's convention deciding, not this entry.
+
+**Green — five cases, each the state its route's words are true of**: the named file read-only (the bootstrap file, `CLAUDE.md`, the settings file), `.jigc` shut over an install that stands (the stamp), and the root shut on an unborn `HEAD` (*holds, operand implied* — *the repository root* is named in words and printed as no path).
+
+**Two causes that are a hold and no case: a FIFO at an ignore file.** With `.jigc/.gitignore`, or the root `.gitignore` of a repository with no commit, a FIFO, `jigc setup` does not end — and it is `git status` that does not return (git reads a file of that name as an ignore file; sampled, the command held in `ask_dirty_against_head`). The state does not reach the step, no `git` command ends in such a repository, and each is a reason at its site. That `jigc setup` waits for git with no limit is seen here and keyed nowhere.
+
+**The frame grew by two pieces, each red first** ([route_case.rs](crates/cli/tests/support/route_case.rs)).
+
+- **A state step runs the binary under test** (`Step::Jigc`). Three late steps are reached with `.jigc` shut only where the steps before them find their files and make nothing — an install that stands. Copied into a case, that state is the product's own lines (`.jigc/.gitignore`'s seven entries), and a case that pins them answers for another step the day one is added. So the product makes the state, on the binary handed in. *Considered and not taken:* the pinned lines — driven by hand first, and they work today.
+- **A sandbox is removed whole, whatever its state shut.** A case that shuts a directory and whose route does not open it again left its scratch root behind: the root's own removal cannot empty a directory nothing may be taken from. Seen as eight roots in the machine's temporary directory after the first red run; the runner now gives every directory of the sandbox back to its owner before the root goes, asked without following a link. `Followed` says where the sandbox stood, for the arm that holds it gone.
+
+**Red first.** `route_catalog::` on the tree with the cases written, the two pieces declared and doing nothing, and neither list touched: 4 of 27 arms red — `a_state_step_runs_the_binary_under_test` (*not provoked*), `a_sandbox_is_removed_whole_whatever_its_state_shut` (*still there*), the fence (*has a case and is still owed by `P3`*, eight times), and the catalog (a state's `git rm` over a file the step that does nothing had not made). With the two pieces built: the fence as before, and the catalog naming 26 red cases no entry listed — the 27th came with the hold on the record. Then the rows.
+
+**What the list does not establish.** Each red case is what this tree's debug build did on macOS on one day. No word here about the previous release. The two new keys certify themselves, as every pilot key does until a run is opened.
+
+**The suite's seconds.** `cargo test -p jigc --test g_migration route_catalog::`, 27 arms, 217 cases: 38 s on this machine while another builder's gate ran beside it. What the arm that follows the cases takes inside a gate is in the commit's message, with the gate's line: an entry cannot hold the numbers of the gate that runs over it.
+
+**The Linux run follows the next commit**, which ends the task's sites; both lines go into its entry or its report.
+
 ## 2026-10-11 — The route catalog's next ten sites of `setup`: no repository, no `$HOME`, the four profile refusals, the install commit, the settings file asked before the first write, and the first refusal of the write span — 47 cases, 23 of them red, three new keys and one of the canary's; six that hold with the operand implied (the plan's step `P3`, third part; ruling 3 of 2026-10-10)
 
 **What.** Cases, readings and one reason in [route_catalog/setup.rs](crates/cli/tests/route_catalog/setup.rs); the expected-red rows and the owed list in [route_catalog.rs](crates/cli/tests/route_catalog.rs); three keys in the pilot's findings file ([route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md)). No product source changes and nothing is fixed. **The catalog is 185 cases over twenty sites, 78 of them red; a twenty-first site has a reason. The owed list is 15 rows under `P3`**, 18 under `P4`. The frame grew by three acts for the last two sites ([route_case.rs](crates/cli/tests/support/route_case.rs)), each red first.

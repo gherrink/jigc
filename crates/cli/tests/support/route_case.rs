@@ -87,6 +87,16 @@
 //! waited for under the standing limit, so a short limit never ends a setup that a loaded
 //! machine made slow.
 //!
+//! **A state step may run the binary under test** ([`Step::Jigc`]). Where a case's state is
+//! one an earlier run of the product left — an install that stands — the product makes it,
+//! on the binary handed in: the state is that release's own, and no case copies the
+//! product's lines into its state to stand in for one.
+//!
+//! **A sandbox is removed whole, whatever its state shut.** A state may take the owner's
+//! right to write or search a directory away, and a route need not give it back; the
+//! runner gives every directory of the sandbox back to its owner before the scratch root
+//! is removed, so no case leaves its root behind ([`Followed::sandbox`] is where it stood).
+//!
 //! **What it does not decide.** Whether a refusal *should* have been printed, what a route's
 //! prose means beyond the acts a case lists, and whether a red case is a regression — a
 //! classification is what happened on the binary handed in, and no more.
@@ -153,6 +163,11 @@ pub enum Step {
     /// A `git` command line in the repository, under the case's mask: to commit what the
     /// steps before it planted, or to take the sandbox's one commit away again.
     Git(&'static [&'static str]),
+    /// **The binary under test, run in the repository with these arguments** — a state an
+    /// earlier run of the product left: an install that stands, made by the product and
+    /// never by bytes a case copies out of it. It runs under the mask as it stands, like
+    /// every step, and must exit 0.
+    Jigc(&'static [&'static str]),
 }
 
 /// One variable of the environment a case's **commands under test** run in — the refusing
@@ -576,6 +591,9 @@ pub struct Followed {
     pub route: Option<String>,
     /// What happened, step by step, with the sandbox's root written `<sandbox>`.
     pub detail: String,
+    /// Where the case's sandbox stood. It is removed by the time the case is handed back,
+    /// whatever its state shut — the arm that holds that asks this path.
+    pub sandbox: PathBuf,
 }
 
 /// What one child of a case came to.
@@ -759,7 +777,9 @@ impl Sandbox {
         assert!(ran.success(), "git {args:?}: {}\n{}", ran.exit(), ran.said);
     }
 
-    fn plant(&self, state: &[Step]) {
+    /// Plant a case's state, step by step. `binary` is the binary under test, for the step
+    /// that runs it ([`Step::Jigc`]).
+    fn plant(&self, binary: &Path, state: &[Step]) {
         for (at, step) in state.iter().enumerate() {
             match *step {
                 Step::Script(place, body) => {
@@ -798,6 +818,15 @@ impl Sandbox {
                     assert!(made.success(), "mkfifo {}", path.display());
                 }
                 Step::Git(args) => self.git(args),
+                Step::Jigc(args) => {
+                    let ran = self.run(self.child(binary).args(args), LIMIT);
+                    assert!(
+                        ran.success(),
+                        "the binary under test, as a state's step, {args:?}: {}\n{}",
+                        ran.exit(),
+                        ran.said
+                    );
+                }
             }
         }
     }
@@ -1118,6 +1147,36 @@ impl Sandbox {
     }
 }
 
+impl Drop for Sandbox {
+    /// **Give every directory of the sandbox back to its owner before the scratch root is
+    /// removed.** A state may shut a directory — nothing may be made in it, or taken from
+    /// it — and a route need not open it again; the root's removal cannot empty such a
+    /// directory, and the root would be left behind on every run. This runs before the
+    /// root's own removal, which is a field's and comes after.
+    fn drop(&mut self) {
+        reopen(&self.root);
+    }
+}
+
+/// Make `dir`, and every directory under it, its owner's to read, write and search — the
+/// entry itself, asked without following a link, so nothing a link leads to is touched.
+fn reopen(dir: &Path) {
+    let Ok(entry) = fs::symlink_metadata(dir) else {
+        return;
+    };
+    if !entry.is_dir() {
+        return;
+    }
+    let mut permissions = entry.permissions();
+    permissions.set_mode(permissions.mode() | 0o700);
+    let _ = fs::set_permissions(dir, permissions);
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            reopen(&entry.path());
+        }
+    }
+}
+
 /// **Follow one case on `binary`.** `Err` is a fault of the case as written — the marked
 /// form where the printed route holds a path span, a span the route does not have, no act
 /// under a printed route — and is no classification: the catalog names it and fails.
@@ -1192,7 +1251,7 @@ pub fn pooled<T: Sync, R: Send>(width: usize, items: &[T], job: impl Fn(&T) -> R
 pub fn follow_within(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed, String> {
     let code = case.code();
     let sandbox = Sandbox::new(case.name, under_test);
-    sandbox.plant(case.state);
+    sandbox.plant(binary, case.state);
     let before = sandbox.witnesses(case.witnesses);
 
     let stand = sandbox.at(case.from);
@@ -1289,5 +1348,6 @@ pub fn follow_within(binary: &Path, case: &Case, under_test: Duration) -> Result
         classification: classify(&seen),
         detail: sandbox.shown(&detail.join("\n")),
         route,
+        sandbox: sandbox.root.clone(),
     })
 }
