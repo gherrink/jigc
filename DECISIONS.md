@@ -2,6 +2,87 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — Which families the route catalog takes in: the sites the fix pass touched now, the rest scheduled before the port — and the fence holds every blocking site of every family to a case, a reason, an owed row or a scheduled row (the human's ruling of 2026-10-11, the first of three options)
+
+**The ruling — the human's, 2026-10-11.** The pilot catalogued two commands. Asked which other families get a catalog, on a count ([route-catalog-sites-changed-since-rc24.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-sites-changed-since-rc24.md), committed with this entry as it was handed over) — outside `setup` and `uninstall` there are **183 blocking sites in 12 families, of which the fix pass since the previous release touched about 14, while it changed 33 of the two commands' 39** — the human ruled, of three options (the sites the pass touched now and the rest later · every family now · none now, leave it to round 1's hunters):
+
+- **Now: the sites the fix pass touched**, because that is where a regression can be and the run tests what changed. They are (i) every site of class `new-code`, `new-site`, `route-changed` or `function-changed` outside the two catalogued commands; (ii) every `unchanged` site with a changed or new directly called function; (iii) of the `unchanged` sites with a changed or new direct **caller** (46 outside the two commands), those where the caller's change lies on the path to the refusal — the caller's diff against the previous release (`91834b5e011de2c36e2be2b79e96c0b9f60a803c`) is read and decided per site, and a site left out carries its reason in words.
+- **The rest: scheduled before the port (M56) begins**, in the human's words *so we can detect misleading routes … that need to be fixed before the migration*. It is a row on the pending list keyed to the port, **owed there by the orchestrating session on the other branch**; this entry names it and does not write it.
+- Agreed with it, for the build workflow (written by the orchestrating session at the join; what holds it is built here): **a task that adds or changes a refusal writes its cases in the same commit, and a new route may not be born red** — a new expected-red entry is a halt to the human.
+
+### What was built with it — the builder's choices
+
+No product source changes; no case is added by this commit — the cases follow, family by family.
+
+**1. The fence is over every family.** `route_catalog::every_blocking_refusal_site_has_a_case_a_reason_an_owed_row_or_a_scheduled_row` (it was `…_of_the_catalogued_families_has_a_case_or_a_reason`): every blocking site of the committed list has exactly one answer — a case, a reason, **a row of the owed list** under the task of this ruling that owes it, **or a row of the scheduled list**. 233 sites owe an answer on this tree: the 218 listed blocking sites that no claim answers for, and the 15 codes claimed at five dynamic sites.
+
+- **A dynamic site no family has is a site too.** One that a claim names is answered through the codes claimed for it, as before; one no claim names owes under its own id (`file::function::dynamic#n`). A row of either list under the id of a claimed dynamic site is about nothing, and named.
+- **Exactly one answer still.** A row of either list beside a case or a reason, and a site on both lists, are named — a row goes in the commit that brings the answer.
+- **The owed list** (`OWED`) is back, one table in the suite, a row a task and its sites; it is emptied family by family and deleted with the last. Two kinds of task: *a case or a reason*, and — for a family whose callers are not read yet — *the caller's diff is read: a case, or a scheduled row that says why the change is off the path*.
+- **The scheduled list is one file of data**, [`crates/cli/tests/route_catalog/scheduled.tsv`](crates/cli/tests/route_catalog/scheduled.tsv): a line a site — its id, the class the count gave it, a note. Its head names this entry; the suite names it by heading (`THE_RULING_ON_FAMILIES`).
+- **The scheduled list is held to the count** — `route_catalog::a_scheduled_site_is_one_the_count_holds_unchanged`, which reads the table of the committed count: a scheduled site the count holds is one it classes `unchanged`, under that word; a site the count classes otherwise is the ruling's to take in now and is named; a site the count has no row for is scheduled as `not-counted` and says why. One such row: `crates/engine/src/finding.rs::graded::dynamic#1`, the constructor's own body, whose severity is handed in — the count took the rows written `blocking`, the fence does not take a handed-in severity for advisory.
+- **What this buys, and the arms that prove it.** *A blocking site production source gains tomorrow, in any family, is on neither list and reddens the fence until it has a case*: on the fixture, a site of a family no command's file is there for is named once its row is taken away; **on this tree, read with one file more** — a `Finding::block("ingest.planted", …)` in a file of its own — exactly that site is named. *A scheduled site whose constructing function no longer exists is named*, as an owed row, a reason and a claim for a site that is gone are (`a_row_for_a_site_that_is_gone_is_named`). And the vacuity arm holds that every family with a blocking site is among the sites that owe.
+- **The vocabulary half is unchanged in this commit**: `CATALOGUED` holds `adapter-guide`, `setup`, `uninstall`. A prefix joins with its family's file, and each later entry says which it then holds.
+
+**2. The caller reading, for the two families taken first** — the functions are the count's rule (a name declared more than once is followed inside its own file), re-derived here by a script over both revisions and matching the count's numbers family by family: `task finalize` 19, `milestone` 6, `doc write` 11, `unassigned` 4, `start` 2, `doc read` 2, `migrate` 2. Each caller's body was diffed against the previous release and read.
+
+*`task finalize` — 19 sites with a changed caller: 9 taken in, 10 left out.*
+
+| site | caller, and its change | |
+|---|---|---|
+| `task.rs::amend_staged_doc_finding` | `doc.rs::read_or_copy_in` — a guard over a linked worktree's docs now stands in front of the amend refusal; `task.rs::finalize` reaches it behind the same guard | in |
+| `task.rs::nothing_staged_finding` | `task.rs::finalize` — what counts as a pending config change (an untracked file counts now), the homes git holds, the guard in front | in |
+| `engine/file_state.rs::conflict_block_finding` | `reconcile_committed` rewritten around what git says of the file against the pin; two new callers, `reconcile_held` and `ConflictBlock::finding_at` | in |
+| `engine/file_state.rs::conformance_block_finding` | `reconcile_committed`, the same rewrite: the arm stands behind the pin's verdict | in |
+| `engine/file_state.rs::drift_store_finding` | `detect_committed_store` — whether a drifted doc *lags `HEAD`* is asked of git now and not of a blob's hash; the answer chooses between this refusal and an advisory | in |
+| `engine/finalize.rs::amend_base_mismatch_finding` | `task.rs::finalize` — the linked-worktree guard is placed ahead of the amend arm's gates, by its own comment | in |
+| `engine/finalize.rs::provenance_io_finding`, `source_path_io_finding` | `plan_clobber_guard`, 42 lines grown to 108: the reads these refuse over stand inside it | in |
+| `engine/state.rs::io_finding` | `create_gated` — the home is probed first and the staging goes through the new `stage_minted`, which calls this | in |
+| `orphan.rs::home_vacated_finding`, `orphaned_instance_finding` | `cli.rs::validate_store_in_repo` — one closure, the file-state family's question to git; the two walks ask it nothing | out |
+| `engine/finalize.rs::task_missing_finding`, `base_mismatch_finding`, `empty_commit_finding`, `render_io_finding` | `plan_finalize`, `plan_milestone_finalize` — parameters handed to the clobber guard, which is called once the promotions are planned; all four return before it | out |
+| `engine/milestone.rs::sub_task_finalize_finding` | `task.rs::finalize` — the function's first check, ahead of every changed line | out |
+| `engine/parse.rs::parse_sections` (three sites) | `doc.rs::run_list` — one line, a note after the listing; and it discards this parse's refusal | out |
+
+*`milestone` — 6 sites with a changed caller: 4 taken in, 2 left out.*
+
+| site | caller, and its change | |
+|---|---|---|
+| `combine.rs::collision_finding` | `detect_code_collision` — the set of paths two sub-tasks staged is computed by a new function | in |
+| `milestone.rs::provision_failed_finding` | `provision_worktrees` — a registration git calls prunable is dropped inside the loop this refuses over, a new way for it to stop | in |
+| `milestone.rs::zero_contribution_finding` | `run_milestone_finalize` — a new guard over unlanded work stands in front of it, and the planner is handed more | in |
+| `engine/milestone.rs::io_finding` | `discard_record`, `discard_sub_task_item`, `join_record` — the record's write is the call whose failure this is, and it is now in place and through no link | in |
+| `engine/milestone.rs::record_flip_finding` | the same three — the changed line is the write, behind the flip this refuses over | out |
+| `engine/milestone.rs::settled_sub_task_finding` | `discard_sub_task_item` — the same line; the check returns before it | out |
+
+**The three most doubtful of the twelve left out.** `empty_commit_finding`: its two callers' change is behind it, and **the `has_diff` it turns on is computed one level further out, in `task.rs::finalize`, by lines that changed** — outside what the ruling reads, said in its row. `base_mismatch_finding` and `task_missing_finding`: the new linked-worktree guard at the door answers before the planner is called at all, again one level out. `record_flip_finding`: off the path as ruled; what a failed write leaves of a flipped record is the next site's.
+
+**3. What the two lists hold** (this tree).
+
+| family | blocking sites | owed — a case or a reason | owed — the caller's diff to be read | scheduled |
+|---|---|---|---|---|
+| `task finalize` | 58 | 15 | 0 | 43 |
+| `milestone` | 31 | 8 | 0 | 23 |
+| `doc write` | 23 | 2 | 11 | 10 |
+| `config` | 19 | 5 | 0 | 14 |
+| `start` | 10 | 1 | 2 | 7 |
+| `doc read` | 5 | 1 | 2 | 2 |
+| `migrate` | 2 | 0 | 2 | 0 |
+| `task discard` · `ingest` · `task bind` · `validate` | 4 · 3 · 2 · 2 | 0 | 0 | 11 |
+| `unassigned` — the dynamic sites | 25 | 0 | 4 | 16, and 5 answered through their claims |
+| **together** | **184** | **32** | **21** | **126** |
+
+`config`'s five are its one `route-changed` site and the four of `run_set`, whose callee `reject_repoint` changed; `start`'s one is `reenter_in_repo`, whose callee changed. **The three `unassigned` sites the count has in its changed classes all mint `setup.*` codes, and the catalog already holds them through its claims** — `merged_through_links`, `replaced_path_refusal` and `setup_dirty_install_finding`, each with cases under every code claimed for it; nothing of theirs is owed. Twelve scheduled rows carry a caller's change and why it is off the path — the twelve above.
+
+**Red first.** The four arms were written against a fence that did not read the new tables: the site arm named 2 sites of the fixture where 4 owe (`left: 2  right: 4`); the gone-row arm and the count's arm named nothing (`left: 0  right: 4`, `left: 0  right: 6`); the vacuity arm said *no site of the family `config` owes an answer*. Then by data, on the finished code with both lists empty: *the route catalog does not answer for 179 of the 233 blocking refusal sites of the product*.
+
+**Not established.**
+
+- **That a site left out is rightly left out.** A note is a person's reading of one diff, one level deep, as the ruling asks; the fence holds that the count classes the site `unchanged`.
+- **The caller's diff of the 21 sites of the five families not taken yet.** Their rows say so.
+- **Which codes a dynamic site outside the catalogued prefixes mints.** It is one row whatever it mints.
+- **That nothing schedules a new site.** A site the count has no row for can be written onto the scheduled list as `not-counted` with a note; the rule that a new refusal comes with its cases is the workflow's, and the fence's message says it.
+- **The row on the pending list**, which the orchestrating session writes.
+
 ## 2026-10-11 — The route catalog's first doubt, read by the surface contract: a printed line with a word in angle brackets is a shape the reader fills, the frame fills it with what the refusal lists, and the seven cases are followed again — five hold, one is red under a new key, one stays marked (the builder's reading of the design of record; nothing ruled, nothing asked)
 
 **The doubt.** Seven cases of the pilot rest on a backticked line that holds a word in angle brackets — `git -C <repo> rm --cached -- <path>`, `jigc doc show <address> --task <task-id>`, `jigc task discard <task-id> --force`, `jigc task finalize <task-id>`, `jigc milestone discard <milestone-id> --force`, `git -C <repo> add -- <path>`. The pilot's record listed it for the human with two readings: (a) a command to run as printed, which no shell can split, or (b) a shape to fill in. **It is not put to the human, because the design of record already speaks to it** — and where it does not, the case stays marked.

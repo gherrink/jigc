@@ -54,8 +54,14 @@
 //! the profile not loaded, the four guards over what `.jigc/` holds the only copy of — a
 //! worktree path with content, a byte jigc did not write, an open task's staged doc, a file
 //! no index has — each with the refusal it raises where it could not look, and the seven
-//! steps that remove. Every one of the eighteen has a case. **Nothing is owed**: the list
-//! of sites a task of the plan still owed a case is empty, and gone with its type.
+//! steps that remove. Every one of the eighteen has a case.
+//!
+//! **And beyond the two commands, the sites the fix pass touched** — the human's ruling of
+//! 2026-10-11 (`DECISIONS.md` → [`THE_RULING_ON_FAMILIES`]): the blocking sites of every
+//! other family that are new or changed since the previous release, or whose direct caller
+//! changed on the path to the refusal, get their cases now, family by family, and are rows
+//! of [`OWED`] until they have them; every other blocking site is a row of the scheduled
+//! list ([`SCHEDULED`], `route_catalog/scheduled.tsv`), owed a case before the port begins.
 //!
 //! **A site with a case says what was read to count its causes**
 //! ([`Reading`], a command's `READINGS`): the functions, the count with its derivation,
@@ -164,16 +170,21 @@
 //! arm prints, key by key, the red cases that can block and the ones that stand on each
 //! bound ([`bounds`]). The expected-red list is as it was: a bound takes no entry off it.
 //!
-//! **The fence** (the plan's step `P2`) holds the catalog to the refusal sites of the
-//! families [`CATALOGUED`] names. It scans nothing for itself — the sites are
+//! **The fence** (the plan's step `P2`, and since the ruling above over every family) holds
+//! the catalog to the product's refusal sites. It scans nothing for itself — the sites are
 //! [`support::refusal_sites`](crate::support::refusal_sites)' scan, which
 //! `refusal_site_list.rs` holds byte-equal to the committed list, and the literals are
 //! [`support::rust_source`](crate::support::rust_source)'s. Two arms:
 //!
-//!   * [`every_refusal_site_of_the_catalogued_families_has_a_case_or_a_reason`] — a
-//!     blocking site has exactly one answer: a case in its command's file, or a [`Reason`]
-//!     there.
-//!   * [`every_code_of_a_catalogued_prefix_is_a_listed_sites_or_is_claimed`] — the list
+//!   * [`every_blocking_refusal_site_has_a_case_a_reason_an_owed_row_or_a_scheduled_row`]
+//!     — a blocking site, of whatever family, has exactly one answer: a case in its
+//!     command's file, a [`Reason`] there, a row of [`OWED`] or a row of the scheduled
+//!     list. **So a blocking site production source gains is on no list and is named until
+//!     it has its case**: the two lists are one ruling's, and the scheduled one is held to
+//!     the count that ruling was put on
+//!     ([`a_scheduled_site_is_one_the_count_holds_unchanged`]).
+//!   * [`every_code_of_a_catalogued_prefix_is_a_listed_sites_or_is_claimed`] — over the
+//!     prefixes [`CATALOGUED`] names, which a family joins when its file does: the list
 //!     says where a finding is constructed, and a code that reaches its constructor
 //!     through a `match`, a parameter or a table stands in no row of its family. So the
 //!     **vocabulary** is held as well: every code-shaped literal of a catalogued prefix
@@ -192,7 +203,13 @@
 //! Rust source of the two crates. And **a code that is a listed site's is asked no
 //! further**, so a dynamic site that mints codes other sites spell too is demanded by no
 //! arm. Two such sites stand in `setup.rs`; their rows of [`CLAIMS`] are kept by reading,
-//! and the table says which rows those are.
+//! and the table says which rows those are. **Outside the prefixes of [`CATALOGUED`] a
+//! dynamic site is one row whatever it mints**: which codes reach it is asked by nobody
+//! until its family's prefix joins. **And the two lists are held to a count, not to the
+//! ruling**: that a site was rightly left for the port — that the change of its caller is
+//! off the path — is a person's reading, in the row's note; and nothing but the rule that
+//! a new refusal comes with its cases keeps a new site off the scheduled list under the
+//! word for a site the count did not class.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -1194,9 +1211,12 @@ fn every_case_names_a_site_of_the_list_and_has_a_name_of_its_own() {
 // The fence — its tables
 // ---------------------------------------------------------------------------
 
-/// **The code prefixes the catalog is held to** — the families of `jigc setup`
-/// (`setup`, `adapter-guide`) and of `jigc uninstall`, as
+/// **The code prefixes whose vocabulary the catalog is held to** — the families of
+/// `jigc setup` (`setup`, `adapter-guide`) and of `jigc uninstall`, as
 /// [`refusal_sites::FAMILIES`] assigns them. A prefix joins when its command's file does.
+/// The sites are held family or no family
+/// ([`every_blocking_refusal_site_has_a_case_a_reason_an_owed_row_or_a_scheduled_row`]);
+/// this is the list for the arm beside it, which asks after every code a prefix spells.
 const CATALOGUED: &[&str] = &["adapter-guide", "setup", "uninstall"];
 
 /// Why a blocking site has no case. The three words are the plan's, and a reason is one of
@@ -1340,6 +1360,224 @@ const MERGED_THROUGH: &str = "crates/cli/src/setup.rs::merged_through_links::dyn
 /// with why — a file name, say. None on this tree.
 const NO_CODE: &[(&str, &str)] = &[];
 
+/// The sites one task owes an answer.
+struct Owed {
+    task: &'static str,
+    sites: &'static [&'static str],
+}
+
+/// **The owed list: the sites the ruling takes in now that have no answer yet, under the
+/// task of the ruling that owes it** (`DECISIONS.md` → [`THE_RULING_ON_FAMILIES`]). A row
+/// goes in the commit that brings its site's case or reason — or, for a site whose caller
+/// is still to be read, its row of the scheduled list with why the caller's change is off
+/// the path; a row that stays beside an answer is named. The list is emptied family by
+/// family and deleted, with this type, when the last is in.
+const OWED: &[Owed] = &[
+    Owed {
+        task: "P7 · config — a case or a reason",
+        sites: &[
+            "crates/cli/src/config.rs::repoint_failed::config.repoint-failed#1",
+            "crates/cli/src/config.rs::run_set::config.untrackable-root#1",
+            "crates/cli/src/config.rs::run_set::config.unusable-root#1",
+            "crates/cli/src/config.rs::run_set::config.value-rejected#1",
+            "crates/cli/src/config.rs::run_set::config.workbench-root#1",
+        ],
+    },
+    Owed {
+        task: "P7 · doc read — a case or a reason",
+        sites: &["crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file#1"],
+    },
+    Owed {
+        task: "P7 · doc read — the caller's diff is read: a case, or a scheduled row that says why the change is off the path",
+        sites: &[
+            "crates/cli/src/task.rs::reject_fixed_identity_slug::store.fixed-identity#1",
+            "crates/cli/src/task.rs::reject_malformed_work_unit_id::work-unit.malformed-id#1",
+        ],
+    },
+    Owed {
+        task: "P7 · doc write — a case or a reason",
+        sites: &[
+            "crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1",
+            "crates/cli/src/doc.rs::title_ignored_refusal::write.title-ignored#1",
+        ],
+    },
+    Owed {
+        task: "P7 · doc write — the caller's diff is read: a case, or a scheduled row that says why the change is off the path",
+        sites: &[
+            "crates/cli/src/doc.rs::committed_reslug_refusal::write.identity-change#1",
+            "crates/cli/src/doc.rs::fixed_identity_refusal::write.identity-change#1",
+            "crates/cli/src/doc.rs::fixed_title_refusal::write.title-ignored#1",
+            "crates/cli/src/doc.rs::identity_divergence_refusal::write.identity-change#1",
+            "crates/cli/src/doc.rs::machine_maintained_guard::write.machine-maintained#1",
+            "crates/cli/src/doc.rs::occupied_destination_refusal::write.already-present#1",
+            "crates/cli/src/doc.rs::retitle_id_from_refusal::write.identity-change#1",
+            "crates/cli/src/task.rs::reject_slug_over_name_ceiling::write.slug-name-ceiling#1",
+            "crates/engine/src/state.rs::already_exists_finding::create.already-exists#1",
+            "crates/engine/src/state.rs::instance_collision_finding::create.serial-collision#1",
+            "crates/engine/src/state.rs::unknown_doctype_finding::create.unknown-doctype#1",
+        ],
+    },
+    Owed {
+        task: "P7 · migrate — the caller's diff is read: a case, or a scheduled row that says why the change is off the path",
+        sites: &[
+            "crates/cli/src/migrate.rs::adjudicate_source_path::migrate.source-untrackable#1",
+            "crates/cli/src/migrate.rs::adjudicate_source_tracked::migrate.source-untracked#1",
+        ],
+    },
+    Owed {
+        task: "P7 · milestone — a case or a reason",
+        sites: &[
+            "crates/cli/src/combine.rs::collision_finding::combine.code-collision#1",
+            "crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1",
+            "crates/cli/src/milestone.rs::leftover_finding::milestone.leftover-holds-work#1",
+            "crates/cli/src/milestone.rs::provision_failed_finding::milestone.provision-failed#1",
+            "crates/cli/src/milestone.rs::unlanded_work_finding::milestone.unlanded-work#1",
+            "crates/cli/src/milestone.rs::zero_contribution_finding::milestone.zero-contribution#1",
+            "crates/engine/src/milestone.rs::io_finding::milestone.area-io#1",
+            "crates/engine/src/milestone.rs::record_home_refusal::milestone.record-exists#1",
+        ],
+    },
+    Owed {
+        task: "P7 · start — a case or a reason",
+        sites: &["crates/cli/src/start.rs::reenter_in_repo::workflow-refs.workflow-mismatch#1"],
+    },
+    Owed {
+        task: "P7 · start — the caller's diff is read: a case, or a scheduled row that says why the change is off the path",
+        sites: &[
+            "crates/cli/src/start.rs::read_workflow::workflow-refs.unknown-workflow#1",
+            "crates/engine/src/compose.rs::workflow_refs_with_fills::workflow-refs.slot-fill-orphan#1",
+        ],
+    },
+    Owed {
+        task: "P7 · task finalize — a case or a reason",
+        sites: &[
+            "crates/cli/src/task.rs::amend_staged_doc_finding::finalize.amend-staged-doc#1",
+            "crates/cli/src/task.rs::linked_worktree_doc_finding::finalize.linked-worktree-doc#1",
+            "crates/cli/src/task.rs::linked_worktree_mint_finding::finalize.linked-worktree-doc#1",
+            "crates/cli/src/task.rs::nothing_staged_finding::finalize.nothing-staged#1",
+            "crates/cli/src/task.rs::stage_failed_finding::finalize.stage-failed#1",
+            "crates/engine/src/file_state.rs::conflict_block_finding::reconciliation.conflict-block#1",
+            "crates/engine/src/file_state.rs::conformance_block_finding::reconciliation.conformance-block#1",
+            "crates/engine/src/file_state.rs::drift_store_finding::file-state.hash-matches#1",
+            "crates/engine/src/file_state.rs::unanswered_pin_finding::reconciliation.conflict-block#1",
+            "crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1",
+            "crates/engine/src/finalize.rs::carried_staged_finding::finalize.carried-staged#1",
+            "crates/engine/src/finalize.rs::clobber_finding::finalize.promote-clobber#1",
+            "crates/engine/src/finalize.rs::provenance_io_finding::finalize.provenance-io#1",
+            "crates/engine/src/finalize.rs::source_path_io_finding::finalize.source-path-io#1",
+            "crates/engine/src/state.rs::io_finding::task.working-area-io#1",
+        ],
+    },
+    Owed {
+        task: "P7 · unassigned — the caller's diff is read: a case, or a scheduled row that says why the change is off the path",
+        sites: &[
+            "crates/cli/src/migrate_corpus.rs::blocked_finding::dynamic#1",
+            "crates/cli/src/relocate.rs::refuse::dynamic#1",
+            "crates/cli/src/rename.rs::refuse::dynamic#1",
+            "crates/engine/src/store.rs::block::dynamic#1",
+        ],
+    },
+];
+
+/// **A site the ruling leaves for the port**: its id, the class the count gave it
+/// ([`THE_COUNT`]), and a note — `-`, or, where a direct caller of the site's function
+/// changed since the previous release and the site is left out all the same, which change
+/// that is and why it is off the path to the refusal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Scheduled {
+    site: &'static str,
+    class: &'static str,
+    note: &'static str,
+}
+
+/// **The scheduled list — the blocking sites outside the fix pass's reach, which the
+/// human's ruling leaves until before the port** ([`THE_RULING_ON_FAMILIES`]): one file of
+/// data, a line a site. A row leaves it in the commit that brings its site's case.
+const SCHEDULED: &str = include_str!("route_catalog/scheduled.tsv");
+
+/// The entry of `DECISIONS.md` that holds the ruling on which families the catalog takes
+/// in, by its heading.
+const THE_RULING_ON_FAMILIES: &str = "2026-10-12 — Which families the route catalog takes \
+    in: the sites the fix pass touched now, the rest scheduled before the port — and the \
+    fence holds every blocking site of every family to a case, a reason, an owed row or a \
+    scheduled row (the human's ruling of 2026-10-11, the first of three options)";
+
+/// The class the count gives a site whose constructing function is byte for byte the
+/// previous release's — the one class the ruling leaves for the port.
+const UNCHANGED: &str = "unchanged";
+
+/// The class of a scheduled site the count holds no row for; its note says why.
+const NOT_COUNTED: &str = "not-counted";
+
+/// The rows of a scheduled list: every line that is no comment and not empty, as
+/// `site`, `class` and `note`, tab-separated. A line of another shape is a row with what it
+/// has, so that [`idle_rows`] names it.
+fn scheduled(list: &'static str) -> Vec<Scheduled> {
+    list.lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| {
+            let mut columns = line.splitn(3, '\t');
+            Scheduled {
+                site: columns.next().unwrap_or_default(),
+                class: columns.next().unwrap_or_default(),
+                note: columns.next().unwrap_or_default(),
+            }
+        })
+        .collect()
+}
+
+/// **The count the ruling was put on**, as committed beside the pilot's record: every
+/// blocking site of the list, classed against the previous release's production source.
+const THE_COUNT: &str = include_str!(
+    "../../../completions/artifacts/M55/stabilization-build/reshape/route-catalog-sites-changed-since-rc24.md"
+);
+
+/// `site → class`, from the rows of a count's table: a line `` | `site` | family | class | … ``.
+fn counted(count: &str) -> BTreeMap<&str, &str> {
+    count
+        .lines()
+        .filter_map(|line| {
+            let mut cells = line.strip_prefix("| `")?.split(" | ");
+            let site = cells.next()?.strip_suffix('`')?;
+            let _family = cells.next()?;
+            // A site's id, and no other table's first cell.
+            site.contains("::").then_some((site, cells.next()?))
+        })
+        .collect()
+}
+
+/// **Every row of a scheduled list that the count does not bear out.** The ruling leaves
+/// for the port the sites whose function did not change; so a scheduled site the count
+/// holds is one it classes [`UNCHANGED`], under that word, and a site it holds under
+/// another class is the ruling's to take in now. A site the count has no row for is
+/// scheduled as [`NOT_COUNTED`], with why in its note.
+fn misscheduled(scheduled: &[Scheduled], counted: &BTreeMap<&str, &str>) -> Vec<String> {
+    let mut out = Vec::new();
+    for row in scheduled {
+        let Scheduled { site, class, note } = *row;
+        match counted.get(site) {
+            Some(&counted) if counted != UNCHANGED => out.push(format!(
+                "`{site}` is on the scheduled list, and the count classes it `{counted}`: a \
+                 site of that class is one the ruling takes in now"
+            )),
+            Some(&counted) if class != counted => out.push(format!(
+                "`{site}` is scheduled as `{class}`, and the count classes it `{counted}`"
+            )),
+            Some(_) => {}
+            None if class != NOT_COUNTED => out.push(format!(
+                "`{site}` is scheduled as `{class}`, and the count holds no row for it: a \
+                 site the count did not class is scheduled as `{NOT_COUNTED}`, with why"
+            )),
+            None if matches!(note, "" | "-") => out.push(format!(
+                "`{site}` is scheduled as `{NOT_COUNTED}` and does not say why the count \
+                 has no row for it"
+            )),
+            None => {}
+        }
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // The fence — what it reads, and what it says
 // ---------------------------------------------------------------------------
@@ -1411,6 +1649,10 @@ struct Rows {
     claims: Vec<Claim>,
     /// `(literal, why it is no finding's code)`.
     no_code: Vec<(&'static str, &'static str)>,
+    /// `(site, the task that owes its answer)` — [`OWED`], a row a site.
+    owed: Vec<(&'static str, &'static str)>,
+    /// The sites the ruling leaves for the port ([`scheduled`]).
+    scheduled: Vec<Scheduled>,
 }
 
 /// The tables this suite holds.
@@ -1424,7 +1666,19 @@ fn rows() -> Rows {
             .collect(),
         claims: CLAIMS.to_vec(),
         no_code: NO_CODE.to_vec(),
+        owed: OWED
+            .iter()
+            .flat_map(|owed| owed.sites.iter().map(|site| (*site, owed.task)))
+            .collect(),
+        scheduled: scheduled(SCHEDULED),
     }
+}
+
+/// Whether `id` is the id a claim gives a code minted at the dynamic site `site`.
+fn claimed_at(site: &Site, id: &str) -> bool {
+    CLAIMS
+        .iter()
+        .any(|claim| claim.minted_at == site.id() && claim.id().as_deref() == Some(id))
 }
 
 /// A site that owes the catalog a case.
@@ -1440,14 +1694,18 @@ fn blocks(site: &Site) -> bool {
     matches!(site.severity, "blocking" | DYNAMIC)
 }
 
-/// **Every site that owes a case, sorted by id**: the blocking listed sites of the
-/// catalogued families, and each claimed code at the blocking dynamic site its claim names.
-/// A claim that names no such site adds nothing here and is named by [`idle_rows`].
+/// **Every site that owes an answer, sorted by id**: the blocking listed sites of every
+/// family, and each claimed code at the blocking dynamic site its claim names. A dynamic
+/// site a claim names owes nothing under its own id — it is answered through the codes
+/// claimed for it; one no claim names owes like a listed site. A claim that names no such
+/// site adds nothing here and is named by [`idle_rows`].
 fn owing(read: &Read, claims: &[Claim]) -> Vec<Owing> {
+    let claimed =
+        |site: &Site| site.code == DYNAMIC && claims.iter().any(|c| c.minted_at == site.id());
     let mut out: Vec<Owing> = read
         .sites
         .iter()
-        .filter(|site| catalogued(&site.code) && blocks(site))
+        .filter(|site| blocks(site) && !claimed(site))
         .map(|site| Owing {
             id: site.id(),
             route: site.route,
@@ -1460,7 +1718,6 @@ fn owing(read: &Read, claims: &[Claim]) -> Vec<Owing> {
             .find(|site| site.id() == claim.minted_at && site.code == DYNAMIC && blocks(site));
         if let Some(site) = minted
             && let Some(id) = claim.id()
-            && catalogued(claim.code)
         {
             out.push(Owing {
                 id,
@@ -1472,17 +1729,27 @@ fn owing(read: &Read, claims: &[Claim]) -> Vec<Owing> {
     out
 }
 
-/// **Every site that does not have exactly one answer** — a case or a reason. None is
-/// named; so is a case beside a reason, and `no-route-printed` given to a site whose route
-/// the list reads at its call.
+/// **Every site that does not have exactly one answer** — a case, a reason, a row of the
+/// owed list or a row of the scheduled list. None is named; so is a case beside a reason,
+/// a row of either list beside an answer or beside the other list's, and
+/// `no-route-printed` given to a site whose route the list reads at its call.
 fn uncovered(read: &Read, rows: &Rows) -> Vec<String> {
     let mut out = Vec::new();
     for site in owing(read, &rows.claims) {
         let id = &site.id;
         let case = rows.cases.contains(&id.as_str());
         let reason = rows.reasons.iter().find(|reason| reason.site == id);
+        let owed = rows.owed.iter().find(|(owed, _)| owed == id);
+        let scheduled = rows.scheduled.iter().any(|row| row.site == id);
+        let answer = match (case, reason.is_some()) {
+            (true, _) => Some("case"),
+            (false, true) => Some("reason"),
+            (false, false) => None,
+        };
         match (case, reason) {
-            (false, None) => out.push(format!("`{id}` has no case and no reason")),
+            (false, None) if owed.is_none() && !scheduled => out.push(format!(
+                "`{id}` has no case, no reason, no owed row and no scheduled row"
+            )),
             (true, Some(reason)) => out.push(format!(
                 "`{id}` has a case and the reason `{}` for having none — one of the two is \
                  wrong",
@@ -1502,6 +1769,23 @@ fn uncovered(read: &Read, rows: &Rows) -> Vec<String> {
                 ))
             }
             _ => {}
+        }
+        match (answer, owed, scheduled) {
+            (Some(answer), Some((_, task)), _) => out.push(format!(
+                "`{id}` has a {answer} and is still owed by `{task}` — the row goes in the \
+                 commit that brings the answer"
+            )),
+            (None, Some((_, task)), true) => out.push(format!(
+                "`{id}` is owed by `{task}` and is on the scheduled list — a site the \
+                 ruling takes in now is not one it leaves for the port"
+            )),
+            _ => {}
+        }
+        if let (Some(answer), true) = (answer, scheduled) {
+            out.push(format!(
+                "`{id}` has a {answer} and is still on the scheduled list — the row goes in \
+                 the commit that brings the answer"
+            ));
         }
     }
     out
@@ -1546,6 +1830,37 @@ fn idle_rows(read: &Read, rows: &Rows) -> Vec<String> {
     let owes = |id: &str| owing.iter().any(|site| site.id == id);
     let mut out = Vec::new();
 
+    for (at, (site, task)) in rows.owed.iter().enumerate() {
+        if task.is_empty() {
+            out.push(format!("the owed row for `{site}` names no task"));
+        }
+        if !owes(site) {
+            out.push(format!(
+                "the owed list (`{task}`) names `{site}`, which is no blocking site that \
+                 owes an answer: it is gone, renamed, was never one, or is a dynamic site \
+                 answered through its claims"
+            ));
+        } else if rows.owed[..at].iter().any(|(other, _)| other == site) {
+            out.push(format!("`{site}` is on the owed list twice"));
+        }
+    }
+
+    for (at, row) in rows.scheduled.iter().enumerate() {
+        let site = row.site;
+        if row.class.is_empty() {
+            out.push(format!("the scheduled row for `{site}` has no class"));
+        }
+        if !owes(site) {
+            out.push(format!(
+                "the scheduled list names `{site}`, which is no blocking site that owes an \
+                 answer: it is gone, renamed, was never one, or is a dynamic site answered \
+                 through its claims"
+            ));
+        } else if rows.scheduled[..at].iter().any(|other| other.site == site) {
+            out.push(format!("`{site}` is on the scheduled list twice"));
+        }
+    }
+
     for (at, reason) in rows.reasons.iter().enumerate() {
         let site = reason.site;
         if let Why::NotConstructible("") | Why::Platform("") = reason.why {
@@ -1556,8 +1871,8 @@ fn idle_rows(read: &Read, rows: &Rows) -> Vec<String> {
         }
         if !owes(site) {
             out.push(format!(
-                "the reason `{}` names `{site}`, which is no blocking site of a catalogued \
-                 family: it is gone, renamed, or was never one",
+                "the reason `{}` names `{site}`, which is no blocking site that owes an \
+                 answer: it is gone, renamed, or was never one",
                 reason.why
             ));
         } else if rows.reasons[..at].iter().any(|other| other.site == site) {
@@ -1684,6 +1999,17 @@ const ADVISED: &str = "crates/cli/src/fixture.rs::advises::setup.advised#1";
 const MINTED: &str = "crates/cli/src/fixture.rs::minted::dynamic#1";
 const CLAIMED: &str = "crates/cli/src/fixture.rs::minted::setup.by-a-match#dynamic-1";
 const GONE: &str = "crates/cli/src/fixture.rs::removed::setup.removed#1";
+/// The fixture's site of a family no command's file is there for.
+const ANOTHER: &str = "crates/cli/src/fixture.rs::another_familys::task.spelled#1";
+
+/// A row of a scheduled list with nothing to note.
+const fn left(site: &'static str) -> Scheduled {
+    Scheduled {
+        site,
+        class: UNCHANGED,
+        note: "-",
+    }
+}
 
 fn fixture() -> Read {
     read(&[Source::new(FIXTURE, REFUSALS)])
@@ -1693,8 +2019,8 @@ fn fixture() -> Read {
 const BY_A_MATCH: Claim = claim("setup.by-a-match", MINTED);
 
 /// The fixture's tables with nothing wrong: a case for the site that spells its code and
-/// for the one a claim makes, a reason for the third; the claim; and the literal that is no
-/// code.
+/// for the one a claim makes, a reason for the third, the fourth — another family's —
+/// scheduled; the claim; and the literal that is no code.
 fn in_order() -> Rows {
     Rows {
         cases: vec![SPELLED, CLAIMED],
@@ -1704,6 +2030,8 @@ fn in_order() -> Rows {
         }],
         claims: vec![BY_A_MATCH],
         no_code: vec![("setup.rs", "a file's name")],
+        owed: Vec::new(),
+        scheduled: vec![left(ANOTHER)],
     }
 }
 
@@ -1719,17 +2047,30 @@ fn says(said: &[String], expected: &[(&str, &str)]) {
     }
 }
 
-/// **Every blocking site of the catalogued families has a case or a reason — exactly
-/// one.** (Until the cases of `jigc uninstall` were in, a third answer stood beside the two:
-/// a row of a list of what a task of the plan still owed. The list is empty and gone.) On a fixture: the advisory site and the other family's owe nothing, a
-/// claim makes the code at its dynamic site owe like a listed one, and two answers for one
-/// site are named as none is. Then this tree, against the tables this suite holds.
+/// **Every blocking refusal site of the product has exactly one answer**: a case in its
+/// command's file, a reason there, a row of the owed list under the task of the ruling
+/// that owes it, or a row of the scheduled list — the sites the ruling leaves for the port
+/// (`DECISIONS.md` → [`THE_RULING_ON_FAMILIES`]). Every family, and the dynamic sites no
+/// family has: one that a claim names is answered through the codes claimed for it, each a
+/// site of its own; one no claim names answers under its own id.
+///
+/// On a fixture: the advisory site owes nothing; **a site of a family no command's file is
+/// there for owes like any other**; a claim makes the code at its dynamic site owe like a
+/// listed one, and without it the dynamic site owes; and two answers for one site are
+/// named as none is. Then this tree, against the tables this suite holds — and this tree
+/// with one blocking site more than it has, in a family nobody catalogued: **a site
+/// production source gains tomorrow is on no list, and is named until it has its case**.
 #[test]
-fn every_refusal_site_of_the_catalogued_families_has_a_case_or_a_reason() {
+fn every_blocking_refusal_site_has_a_case_a_reason_an_owed_row_or_a_scheduled_row() {
     let fixture = fixture();
     says(
         &uncovered(&fixture, &Rows::default()),
-        &[(SPELLED, "no case"), (ROUTELESS, "no case")],
+        &[
+            (ANOTHER, "no case"),
+            (MINTED, "no case"),
+            (SPELLED, "no case"),
+            (ROUTELESS, "no case"),
+        ],
     );
     says(
         &uncovered(
@@ -1740,12 +2081,39 @@ fn every_refusal_site_of_the_catalogued_families_has_a_case_or_a_reason() {
             },
         ),
         &[
+            (ANOTHER, "no case"),
             (CLAIMED, "no case"),
             (SPELLED, "no case"),
             (ROUTELESS, "no case"),
         ],
     );
     says(&uncovered(&fixture, &in_order()), &[]);
+    // The scheduled list taken away: the other family's site is on no list.
+    says(
+        &uncovered(
+            &fixture,
+            &Rows {
+                scheduled: Vec::new(),
+                ..in_order()
+            },
+        ),
+        &[(
+            ANOTHER,
+            "no case, no reason, no owed row and no scheduled row",
+        )],
+    );
+    // An owed row answers as a scheduled one does.
+    says(
+        &uncovered(
+            &fixture,
+            &Rows {
+                owed: vec![(ANOTHER, "P7")],
+                scheduled: Vec::new(),
+                ..in_order()
+            },
+        ),
+        &[],
+    );
     for why in [
         Why::NotConstructible("the profile is compiled in"),
         Why::Platform("a filesystem without links"),
@@ -1783,6 +2151,34 @@ fn every_refusal_site_of_the_catalogued_families_has_a_case_or_a_reason() {
             "a case and the reason `not-constructible: nothing reaches it`",
         )],
     );
+    // A row of either list beside an answer, and a row of both.
+    says(
+        &uncovered(
+            &fixture,
+            &Rows {
+                owed: vec![(SPELLED, "P7"), (ROUTELESS, "P7"), (ANOTHER, "P7")],
+                ..in_order()
+            },
+        ),
+        &[
+            (ANOTHER, "is owed by `P7` and is on the scheduled list"),
+            (SPELLED, "a case and is still owed by `P7`"),
+            (ROUTELESS, "a reason and is still owed by `P7`"),
+        ],
+    );
+    says(
+        &uncovered(
+            &fixture,
+            &Rows {
+                scheduled: vec![left(ANOTHER), left(CLAIMED), left(ROUTELESS)],
+                ..in_order()
+            },
+        ),
+        &[
+            (CLAIMED, "a case and is still on the scheduled list"),
+            (ROUTELESS, "a reason and is still on the scheduled list"),
+        ],
+    );
     // `no-route-printed` is taken from the site that prints none, and from no other.
     let routeless = |site| Reason {
         site,
@@ -1800,16 +2196,112 @@ fn every_refusal_site_of_the_catalogued_families_has_a_case_or_a_reason() {
         &[(SPELLED, "a `prose` route written at its call")],
     );
 
-    let read = tree();
-    let wrong = uncovered(&read, &rows());
+    let here = tree();
+    let wrong = uncovered(&here, &rows());
     assert!(
         wrong.is_empty(),
         "the route catalog does not answer for {} of the {} blocking refusal sites of the \
-         families {CATALOGUED:?}:\n\n  {}\n\na site is answered by a case in its command's \
-         file under `route_catalog/`, or by a reason there; a code that a dynamic site mints \
-         is a site once `CLAIMS` holds it.",
+         product:\n\n  {}\n\na site is answered by a case in its command's file under \
+         `route_catalog/`, or by a reason there; a code that a dynamic site mints is a site \
+         once `CLAIMS` holds it. **A site that is new has its case in the commit that adds \
+         it**: the owed list and `route_catalog/scheduled.tsv` are the lists of one ruling \
+         (`DECISIONS.md` → {THE_RULING_ON_FAMILIES}) and take no site that ruling did not \
+         count.",
         wrong.len(),
-        owing(&read, CLAIMS).len(),
+        owing(&here, CLAIMS).len(),
+        wrong.join("\n  "),
+    );
+
+    // Tomorrow's site: one file more, in a family no command's file is there for.
+    let mut sources = refusal_sites::tree_sources();
+    sources.push(Source::new(
+        "crates/cli/src/planted.rs",
+        "fn planted() -> Finding {\n    Finding::block(\"ingest.planted\", \"m\", \"r\")\n}\n",
+    ));
+    says(
+        &uncovered(&read(&sources), &rows()),
+        &[(
+            "`crates/cli/src/planted.rs::planted::ingest.planted#1`",
+            "no case, no reason, no owed row and no scheduled row",
+        )],
+    );
+}
+
+/// **A scheduled site is one the count holds unchanged.** The scheduled list is the rest of
+/// one ruling, put on one count: a row whose site the count classes otherwise is the
+/// ruling's to take in now, a row under another class than the count's is wrong, and a
+/// row for a site the count has no row for says why. On planted rows against a planted
+/// count; then the suite's list against the committed count — whose table is not empty and
+/// holds every scheduled site but the ones that say why it does not.
+#[test]
+fn a_scheduled_site_is_one_the_count_holds_unchanged() {
+    let count = "| site (`file::function::code#ordinal`) | family | class | why |\n\
+                 |---|---|---|---|\n\
+                 | `a.rs::kept::task.kept#1` | task finalize | unchanged | function byte-identical |\n\
+                 | `a.rs::moved::task.moved#1` | task finalize | route-changed | route text differs |\n";
+    let counted_here = counted(count);
+    assert_eq!(
+        counted_here.iter().collect::<Vec<_>>(),
+        [
+            (&"a.rs::kept::task.kept#1", &"unchanged"),
+            (&"a.rs::moved::task.moved#1", &"route-changed"),
+        ],
+    );
+    let row = |site, class, note| Scheduled { site, class, note };
+    says(
+        &misscheduled(
+            &[
+                row("a.rs::kept::task.kept#1", UNCHANGED, "-"),
+                row(
+                    "a.rs::handed::dynamic#1",
+                    NOT_COUNTED,
+                    "its severity is handed in",
+                ),
+            ],
+            &counted_here,
+        ),
+        &[],
+    );
+    says(
+        &misscheduled(
+            &[
+                row("a.rs::moved::task.moved#1", "route-changed", "-"),
+                row("a.rs::kept::task.kept#1", "function-changed", "-"),
+                row("a.rs::kept::task.kept#1", NOT_COUNTED, "it is"),
+                row("a.rs::new::task.new#1", UNCHANGED, "-"),
+                row("a.rs::new::task.new#1", NOT_COUNTED, "-"),
+                row("a.rs::new::task.new#1", NOT_COUNTED, ""),
+            ],
+            &counted_here,
+        ),
+        &[
+            ("`a.rs::moved::task.moved#1`", "the ruling takes in now"),
+            (
+                "`a.rs::kept::task.kept#1`",
+                "the count classes it `unchanged`",
+            ),
+            (
+                "`a.rs::kept::task.kept#1`",
+                "the count classes it `unchanged`",
+            ),
+            ("`a.rs::new::task.new#1`", "the count holds no row for it"),
+            ("`a.rs::new::task.new#1`", "does not say why"),
+            ("`a.rs::new::task.new#1`", "does not say why"),
+        ],
+    );
+
+    let counted = counted(THE_COUNT);
+    let scheduled = scheduled(SCHEDULED);
+    assert!(
+        counted.len() > 200 && scheduled.len() > 100,
+        "the count's table has {} rows and the scheduled list {}: neither was read",
+        counted.len(),
+        scheduled.len(),
+    );
+    let wrong = misscheduled(&scheduled, &counted);
+    assert!(
+        wrong.is_empty(),
+        "`route_catalog/scheduled.tsv` and the count it was cut from disagree:\n\n  {}",
         wrong.join("\n  "),
     );
 }
@@ -1897,7 +2389,7 @@ fn a_row_for_a_site_that_is_gone_is_named() {
         ),
         &[
             (GONE, "the reason `platform: another` names"),
-            (ADVISED, "no blocking site of a catalogued family"),
+            (ADVISED, "no blocking site that owes an answer"),
             (ROUTELESS, "states nothing"),
             (ROUTELESS, "is given two reasons"),
         ],
@@ -1960,6 +2452,67 @@ fn a_row_for_a_site_that_is_gone_is_named() {
             ("`setup.md`", "no production source spells it"),
             ("`setup.rs`", "has two rows"),
         ],
+    );
+
+    // A row of the owed list, and one of the scheduled list, for a site that is gone, was
+    // never blocking, or is there twice; an owed row that names no task; a scheduled row
+    // that has no class.
+    says(
+        &idle_rows(
+            &fixture,
+            &Rows {
+                owed: vec![
+                    (GONE, "P7"),
+                    (ADVISED, "P7"),
+                    (ANOTHER, ""),
+                    (ANOTHER, "P7"),
+                ],
+                scheduled: Vec::new(),
+                ..in_order()
+            },
+        ),
+        &[
+            (GONE, "the owed list (`P7`) names"),
+            (ADVISED, "which is no blocking site"),
+            (ANOTHER, "names no task"),
+            (ANOTHER, "on the owed list twice"),
+        ],
+    );
+    says(
+        &idle_rows(
+            &fixture,
+            &Rows {
+                scheduled: vec![
+                    left(ANOTHER),
+                    left(GONE),
+                    left(ADVISED),
+                    left(ANOTHER),
+                    Scheduled {
+                        class: "",
+                        ..left(ROUTELESS)
+                    },
+                ],
+                ..in_order()
+            },
+        ),
+        &[
+            (GONE, "the scheduled list names"),
+            (ADVISED, "which is no blocking site"),
+            (ANOTHER, "on the scheduled list twice"),
+            (ROUTELESS, "has no class"),
+        ],
+    );
+    // A dynamic site a claim names is answered through its claims: a row under its own id
+    // is about nothing.
+    says(
+        &idle_rows(
+            &fixture,
+            &Rows {
+                scheduled: vec![left(ANOTHER), left(MINTED)],
+                ..in_order()
+            },
+        ),
+        &[(MINTED, "the scheduled list names")],
     );
 
     let wrong = idle_rows(&tree(), &rows());
@@ -2060,9 +2613,28 @@ fn the_fence_is_not_vacuous() {
     assert_eq!(
         named.len(),
         owing.len(),
-        "handed no case and no reason, the fence names every site that owes \
-         one: {named:#?}",
+        "handed no case, no reason and neither list, the fence names every site that owes \
+         an answer: {named:#?}",
     );
+    // Every family of the list that has a blocking site is among the sites that owe: the
+    // fence is over the product, and not over the commands that have a file.
+    for family in read
+        .sites
+        .iter()
+        .filter(|site| blocks(site))
+        .map(|site| site.command)
+        .collect::<BTreeSet<_>>()
+    {
+        let of_family = |id: &str| {
+            read.sites
+                .iter()
+                .any(|site| site.command == family && (site.id() == id || claimed_at(site, id)))
+        };
+        assert!(
+            owing.iter().any(|site| of_family(&site.id)),
+            "no site of the family `{family}` owes an answer",
+        );
+    }
 
     let unlisted: BTreeSet<&str> = CLAIMS
         .iter()
