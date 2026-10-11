@@ -30,6 +30,7 @@ pub mod older_guide;
 pub mod pack_locator;
 pub mod refusal_sites;
 pub mod root_walk;
+pub mod route_case;
 pub mod route_spans;
 pub mod run_then_parse;
 pub mod rust_source;

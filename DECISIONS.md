@@ -2,6 +2,47 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The route catalog's frame: an act takes its operand from the printed route, a case is data, seven classifications in one order, and a red case is listed under its finding's key (the plan's step `P1`; ruling 3 of 2026-10-10)
+
+**What.** A frame for following a refusal's route as printed ([route_case.rs](crates/cli/tests/support/route_case.rs)), the suite that holds it ([route_catalog.rs](crates/cli/tests/route_catalog.rs), `route_catalog::`), and the first two cases ([route_catalog/setup.rs](crates/cli/tests/route_catalog/setup.rs)). It changes no product source and fixes nothing.
+
+**The first case, red before it was listed.** Site `crates/cli/src/setup.rs::hook_link_refusal::setup.install-hook#1`, cause: the `pre-commit` hook is a link to an existing script outside the repository. `jigc setup` refuses and prints *remove the link at `<sandbox>/outside/pre-commit`* — the script, not the link. The runner removed what span 0 named, re-ran span 1, and the case came out **followed, a witness changed**: the script was gone and the re-run was refused under the same code. Its control — the same link, leading to nothing — is **followed, holds**: there the route names the link, `<sandbox>/repo/.git/hooks/pre-commit`.
+
+**The expected-red key** is `r1-setup-install-hook-route-other-causes-unexamined`: the first row of §1, *The two blockers*, of [canary-one/findings.md](completions/artifacts/M55/stabilization-build/canary-one/findings.md). No ledger holds it yet, so until a run is opened the tie certifies itself; the join's fence holds keys to that file later.
+
+**Pinned, as an engineer — the plan left each open.**
+
+- **The route is read from the text a reader sees**: stdout and stderr together, the `route:` line between the first line of the first finding that carries the site's code and the next finding's first line. A finding that prints no route has none; the next finding's is not taken. No `--format json` — not every door has one, and the text is what is followed.
+- **A span** is a piece between paired backticks. **An operand is its bytes as printed**, read as a path from the repository root: nothing is unquoted and nothing is resolved by the frame.
+- **A path span** is one that names an entry that is there, asked without following a link, or one word that holds a `/`; a span that opens with `-` never is. On that rule the marked form — an object the case names because the route prints none — is refused before any act wherever the route prints a path. That refusal is a fault of the case and no classification: the catalog names it and fails.
+- **The order of the seven is the rule.** Not provoked · provoked, no route printed · followed, a witness changed · followed, the same refusal again · followed, another failure · followed, holds, operand implied · followed, holds — the first that applies. **Red is everything but the two that hold**: a case that no longer provokes its refusal says nothing about the route any more.
+- **The same refusal again** is a command of the route exiting non-zero and printing a finding of the case's own code. By code, never by wording.
+- **Provoked** is a non-zero exit and that code printed. An advisory site at exit 0 would need another rule; the pilot's fence is over blocking sites.
+- **An act never leaves the case's sandbox.** The runner removes what the product printed, so a path that does not resolve inside the scratch root is not acted on and the act is recorded as failed. The small canary lists a route that names `/dev/null` as the link to remove.
+- **A case is data, and neither the suite nor a command's file acts on a file itself.** `Case` holds no function; their source names no filesystem and no process API; an act's payload is an operand or a span's index. All three are read from source by one arm, which is what stands in for *no act takes a path*.
+- **The vocabulary is what the cases need**: two state steps (a script, a link), two acts (remove, run), one check (a regular file). It grows with the case that needs more, never ahead of it.
+- **The binary is handed to the runner.** The suite hands it the one cargo built; the plan's later arm hands it another release's. So an arm of the frame that needs a refusal the product does not print hands it a shell.
+- **The expected-red entry** is (case, key, classification) in the suite, strict three ways, every difference reported by one arm.
+- **The group root is `g_migration`**, the lightest of the product's groups by the gate's timing record (`<target>/jigc-gate/test-seconds.tsv`): 302 seconds over 89 tests there, against 3,362 over 485 in `g_finalize`, the second heaviest, where the list of sites is held. The record is the one this worktree's first whole-suite run wrote into its private target, **on a loaded machine** — the seconds are inflated, the order of the groups is what was read. The catalog grows by cases that each drive the binary, so it does not join a heavy group.
+
+**Corrected against the plan — what is true now.**
+
+- **A command's cases are a file under `route_catalog/`, declared by the suite**: `route_catalog/setup.rs` today, `route_catalog/uninstall.rs` with the cases of `uninstall`. The plan named `crates/cli/tests/route_catalog.rs` beside the directory `crates/cli/tests/route_catalog/`, which held only the list of sites. A suite file beside a directory of its name makes the directory an aggregation for the registration fence (`test_target_registration::every_aggregated_submodule_is_declared_by_its_aggregator`), which reads the directory's declared `.rs` files and refuses one that holds none — the one test the first whole-suite run over this task's files failed. The suite keeps its name, the list keeps its path, the fence is untouched; the write-set grew by that one file (the coordinator's ruling on the halt).
+- **The mutant *the link's own path by a constant* lives in the runner.** Written as a case it is the marked form, and the runner refuses it where a path is printed — it never turns green. Replacing the span's operand by that constant inside the runner does: the first case comes out *followed, holds* and the strict list fails it.
+- ***A witness changed* is the first case's classification by precedence**, not by being the only thing that happened: the same run is also *the same refusal again*. A changed witness outranks it because the refusal that follows a lost file would otherwise hide the loss.
+- **The frame carries its own lines for placing an executable** — a child `cp`, then the mode by path. The helper that does this lives in `tooling-tests/`, out of a product suite's reach.
+
+**Tests that followed their code**, each shown red by a mutant: the sandbox arm (the guard switched off — the removal of `/dev/null` is attempted) and the site arm (a mistyped function name). The other mutants, all red: the runner's constant above; the refusal of the marked form switched off (the planted case comes out *holds, operand implied*); two classifications swapped (the first case's classification moves and the strict list fails it); an act that takes a path; a filesystem call written into the suite, and one into the command's file.
+
+**Not established.**
+
+- **Linux.** Nothing here ran in `dev/runner-faithful`; the plan asks for that run with the cases of `setup`.
+- **The previous release.** The cases were run on this tree's binary only.
+- ***Holds, operand implied* on a real route.** It was reached only with the marked form's refusal switched off. The first route that prints no path is the hook's write failure, a case of the next task.
+- **The relative link**, the second canary key: no case yet.
+- **A root caller.** The sandbox arm's mutant was run by an ordinary user, for whom removing `/dev/null` fails anyway; for a root caller the guard is all that stands between a route that names it and its removal.
+- **Cost per case.** The first case was written with the frame and cannot be timed apart from it; the control was one more row of the table and no new vocabulary.
+
 ## 2026-10-11 — The shared source reader reads a character literal as a literal; the scan's workaround is gone, and what the misreading had cost on this tree
 
 **What.** [rust_source.rs](crates/cli/tests/support/rust_source.rs) — the one reader every source-level fence shares — did not model character literals in its two blanking views: a `'"'` opened a string that the next real string closed, so the code between read as prose and the prose after it as code, and a `'{'` or a `'('` was counted by the brace and parenthesis matching built on the view. It does now, and the reader has a suite of its own, [rust_source_reader.rs](crates/cli/tests/rust_source_reader.rs). The step the entry below describes — the refusal-site scan neutralising such literals before the reader saw a file — is removed; [sites.tsv](crates/cli/tests/route_catalog/sites.tsv) is unchanged byte for byte. No product source changes.

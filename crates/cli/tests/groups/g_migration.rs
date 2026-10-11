@@ -43,6 +43,8 @@ mod owner_artifact_natural_order;
 mod owner_artifact_rollback;
 #[path = "../record_decision_acceptance.rs"]
 mod record_decision_acceptance;
+#[path = "../route_catalog.rs"]
+mod route_catalog;
 #[path = "../single_task_changelog_gate.rs"]
 mod single_task_changelog_gate;
 #[path = "../spec_derived_from.rs"]
