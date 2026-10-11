@@ -40,7 +40,7 @@
 //! way that cannot be followed at a site is a row of that site's reading.
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{Act, Case, Check, Operand, Place, SCRIPT, Step, Var};
+use crate::support::route_case::{Act, Case, Check, Operand, Over, Place, SCRIPT, Step, Var};
 
 /// The hook `jigc setup` installs, from the repository root.
 pub const HOOK: &str = ".git/hooks/pre-commit";
@@ -97,6 +97,7 @@ const SETUP: Case = Case {
     witnesses: &[],
     untouched: &[],
     doubt: None,
+    over: None,
 };
 
 // **The acts.** Every route here prints the entry in the way as its first span and the
@@ -1986,33 +1987,51 @@ const SEED_A_DIRECTORY: [Case; 1] = seed_refused!(
     plant: [Step::Dir(Place::Repo(ROOT_GITIGNORE))],
     holds: [],
 );
-const SEED_UNREADABLE: [Case; 1] = seed_refused!(
-    "setup-seeded-ignore-unreadable",
-    "the root `.gitignore` may not be read",
-    plant: [Step::File(Place::Repo(ROOT_GITIGNORE), "mine\n"), shut!("000", ".gitignore")],
-    holds: [],
-);
-const SEED_READ_ONLY: [Case; 1] = seed_refused!(
-    "setup-seeded-ignore-read-only",
-    "the root `.gitignore` may not be written",
-    plant: [Step::File(Place::Repo(ROOT_GITIGNORE), "mine\n"), shut!("444", ".gitignore")],
-    holds: [],
-);
+/// **The bit, and not the unborn `HEAD`** — which of the two the refusal is over in the
+/// three cases below, whose state stands on both. The unborn `HEAD` is where `jigc setup`
+/// seeds the root `.gitignore` at all; the refusal is the permission's.
+const THE_BIT_NOT_THE_UNBORN_HEAD: Option<(Over, &str)> = Some((
+    Over::TheBound,
+    "on an unborn `HEAD` with the root and its `.gitignore` the owner's to read and write, \
+     `jigc setup` seeds the floor and refuses nothing — driven by hand, with a `.gitignore` \
+     of somebody's and with none: exit 0",
+));
+const SEED_UNREADABLE: [Case; 1] = [Case {
+    over: THE_BIT_NOT_THE_UNBORN_HEAD,
+    ..seed_refused!(
+        "setup-seeded-ignore-unreadable",
+        "the root `.gitignore` may not be read",
+        plant: [Step::File(Place::Repo(ROOT_GITIGNORE), "mine\n"), shut!("000", ".gitignore")],
+        holds: [],
+    )[0]
+}];
+const SEED_READ_ONLY: [Case; 1] = [Case {
+    over: THE_BIT_NOT_THE_UNBORN_HEAD,
+    ..seed_refused!(
+        "setup-seeded-ignore-read-only",
+        "the root `.gitignore` may not be written",
+        plant: [Step::File(Place::Repo(ROOT_GITIGNORE), "mine\n"), shut!("444", ".gitignore")],
+        holds: [],
+    )[0]
+}];
 /// The one state the route's words are true of. `CLAUDE.md` carries the reference already
 /// and `.jigc` stands, so the steps before this one make nothing in the root.
-const NO_SEED_UNDER_A_SHUT_ROOT: [Case; 1] = seed_refused!(
-    "setup-seeded-ignore-absent-root-read-only",
-    "there is no root `.gitignore`, and the repository root may not be written",
-    plant: [
-        Step::File(Place::Repo(CLAUDE_MD), "@.jigc/AGENT.md\n"),
-        Step::Dir(Place::Repo(".jigc")),
-        ROOT_SHUT,
-    ],
-    holds: [
-        Check::RegularFile(Place::Repo(ROOT_GITIGNORE)),
-        Check::GitIgnores(".env"),
-    ],
-);
+const NO_SEED_UNDER_A_SHUT_ROOT: [Case; 1] = [Case {
+    over: THE_BIT_NOT_THE_UNBORN_HEAD,
+    ..seed_refused!(
+        "setup-seeded-ignore-absent-root-read-only",
+        "there is no root `.gitignore`, and the repository root may not be written",
+        plant: [
+            Step::File(Place::Repo(CLAUDE_MD), "@.jigc/AGENT.md\n"),
+            Step::Dir(Place::Repo(".jigc")),
+            ROOT_SHUT,
+        ],
+        holds: [
+            Check::RegularFile(Place::Repo(ROOT_GITIGNORE)),
+            Check::GitIgnores(".env"),
+        ],
+    )[0]
+}];
 
 // `setup.inject-allowlist`, three times: the read the settings record is computed from,
 // the allowlist merge, and the record's own write.
@@ -2256,17 +2275,26 @@ const HOOKS_PATH_A_DEVICE: [Case; 1] = hook_refused!(
     plant: [Step::Git(&["config", "core.hooksPath", "/dev/null"])],
     installed: [],
 );
-const NO_HOOKS_DIRECTORY_UNDER_A_SHUT_ONE: [Case; 1] = hook_refused!(
-    "setup-hook-write-no-hooks-directory-parent-read-only",
-    "there is no hooks directory, and the directory it would be made in may not be written",
-    "../outside/shut/hooks",
-    plant: [
-        Step::Dir(Place::Outside("shut")),
-        Step::Git(&["config", "core.hooksPath", "../outside/shut/hooks"]),
-        shut!("555", "../outside/shut"),
-    ],
-    installed: [Check::RegularFile(Place::Outside("shut/hooks/pre-commit"))],
-);
+/// The state stands on a `core.hooksPath` value as well as on the bit; the refusal is the
+/// bit's.
+const NO_HOOKS_DIRECTORY_UNDER_A_SHUT_ONE: [Case; 1] = [Case {
+    over: Some((
+        Over::TheBound,
+        "with the directory the owner's to write, `jigc setup` makes the hooks directory \
+         `core.hooksPath` names and installs its hook there — driven by hand: exit 0",
+    )),
+    ..hook_refused!(
+        "setup-hook-write-no-hooks-directory-parent-read-only",
+        "there is no hooks directory, and the directory it would be made in may not be written",
+        "../outside/shut/hooks",
+        plant: [
+            Step::Dir(Place::Outside("shut")),
+            Step::Git(&["config", "core.hooksPath", "../outside/shut/hooks"]),
+            shut!("555", "../outside/shut"),
+        ],
+        installed: [Check::RegularFile(Place::Outside("shut/hooks/pre-commit"))],
+    )[0]
+}];
 const HOOK_NOT_TEXT: [Case; 1] = hook_refused!(
     "setup-hook-write-hook-not-utf-8",
     "the `pre-commit` hook that stands is not UTF-8",

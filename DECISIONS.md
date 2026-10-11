@@ -2,6 +2,64 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — Which states a route must work in: three kinds of planted state are declared bounds of the route catalog, a case's bound is read off its state, and one key is admitted by name (the human's ruling, option B of three)
+
+**The ruling — the human's, 2026-10-11, option B of three, as recommended.** The exit rule declares *deliberately planted states* a bound (→ *2026-10-04 — The exit rule, revised*, the first sharpening), and nobody had said which states those are for the clause *every refusal's route works as printed*. For the route catalog they are three:
+
+1. **A permission bit changed by hand** — a file or a directory made read-only, unreadable, unwritable or unsearchable, wherever it lies: inside `.jigc/`, a file the user owns in the repository, outside it.
+2. **A FIFO or a device node planted at a path jigc reads or writes** — the node itself. A symbolic link whose target is `/dev/null`, or a configuration value that names it, is a link or a configuration and is **not** this bound.
+3. **A state only the developer's override `JIGC_ADAPTERS_DIR` reaches.**
+
+A red case that stands on such a state is recorded and stays pinned red in the catalog; **it does not block**. Its row stays in the run's ledger, and the human may admit it by key at any stop. **Not bounds, so able to block:** symbolic links of every kind; what git reports — dirty, staged, unborn, skip-worktree, a broken index, a linked worktree; hand-edited or foreign content; any other environment state; a directory in a file's place and a file in a directory's place.
+
+**The count it was put on** — [route-catalog-red-by-state.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-red-by-state.md), committed with this entry as it was handed over: the pilot's 170 red cases sorted by the kind of state that provokes each refusal, by a read-only agent of the orchestrating session. On its numbers: of the 27 keys, 11 lie entirely inside the bounds (45 cases); 16 keys keep cases that can block (97 cases, and 28 bounded cases beside them under three of those keys). **The options not taken:** every state counts (27 keys); only the second and third bound (4 keys, 26 cases bounded).
+
+**One key is admitted by name with the ruling, bound or not:** `r1-uninstall-refusal-behind-the-workbench-rerun-leaves-the-settings-entries`. `jigc uninstall` removes `.jigc/` first, and when a later step is then refused the re-run exits 0 and leaves the settings entries, because the record of which are jigc's went with `.jigc/`. The pilot reaches it only through a read-only file (4 cases); the cause is the order of the teardown, which a permission bit only happens to show.
+
+**Where the three bounds stand as declared bounds.** A declared bound is the human's ruling and, once ruled, is pinned as a test or recorded as explicitly unpinned (→ *2026-10-05 — The stabilization workflow, as ruled*). These three are **pinned**: by the arm that holds the derivation, and by the expected-red list, in which every bounded case stays. They are rows of no run's declared-bounds list yet — no run is open, and the opening record takes them when one is.
+
+### What was built with it — the builder's choices
+
+No product source changes; nothing is fixed; the expected-red list is byte for byte what it was.
+
+**1. A case's bound is derived** — `route_case::standing` and `bound_of`, in [route_case.rs](crates/cli/tests/support/route_case.rs). The function reads a case's steps and its environment, and never its acts, which follow a route and may well change a permission themselves.
+
+- **What was found: a permission is no step of the vocabulary.** The count's method says so and the brief of this task had it the other way round. A state takes a permission away by a shell line a `git` alias runs — in all 59 cases that hold one: 57 by a line that does nothing else (the tables' `shut!`, or the same line spelled out), 2 at the end of a longer one (`… && ln -s … && chmod 444 …`). So the function reads the words of every `git` step: `chmod` is a permission bit changed by hand; `mkfifo` and `mknod` are a special file, as the step `Fifo` is — no state spells either today, and one that did could not hide a bound in a shell line. The override is the case's variable of that name, set to a place.
+- **Not taken: a step for a permission**, which would let the function match a variant instead of a word. It changes how 59 states are planted for a reading the words already give, in a commit that is to leave every case as it was.
+- **Two bounds at once are the first in the ruling's order.** No case of the catalog stands so.
+
+**2. Where a state stands on a bound and on a state that is none, the function says so and decides nothing** (`Standing::Both`), and the case carries one word for which of the two its refusal is over — `Case::over`, with what it was read from. *What the function reads as a second state:* a symbolic link (the steps `Link` and `LinkTo`, an `ln` in a shell line), an unborn `HEAD`, a `core.hooksPath` value, a variable that is not the override. **A word is a fault anywhere else**, and a state that stands on both without one is a fault too: one arm holds both over every case of the catalog.
+
+*What it cannot read as a second state, declared:* a file's bytes, a directory, and what a `git add` or a commit leaves. They are in nearly every state, as the ground a case stands on. The count names such conditions beside a permission — a `.jigc/` entry planted by hand under eleven permission cases, a file that must lack an entry under one, a refusing command that carries `--force` under one — and they were read there by a person; here nothing reads them.
+
+**3. Held to the count, difference by difference.** The count put each red case in one bucket by its cause; the function reads the state.
+
+- **The totals are the count's: 47 red cases on a permission bit, 7 on a FIFO, 19 on the override.** Nothing differs from 47 / 7 / 19. Beside them, which the count did not count: **of the 183 cases that hold, 12 stand on a permission bit and 4 on a FIFO**, none on the override.
+- **Five red cases where the two disagree before a word is given** — the count says *permission*, the function says *on both* — and one case that holds beside them. Each was resolved by reading the case and by driving its state without the bit:
+  - `uninstall-reference-host-a-link-to-a-read-only-file-outside`, `uninstall-hook-a-link-to-a-read-only-script-outside` — a link and a mode bit. **The bit**: with the file outside the owner's to write, the teardown writes through the link at exit 0 and refuses nothing (driven at both paths; the pilot's findings file has it under *Seen, and no case*). The count's §4, item 4, read them the same way from the cause's words.
+  - `setup-seeded-ignore-unreadable`, `setup-seeded-ignore-read-only`, and the green `setup-seeded-ignore-absent-root-read-only` — an unborn `HEAD` and a mode bit. **The bit**: on an unborn `HEAD` with the root and its `.gitignore` the owner's to read and write, `jigc setup` seeds the floor and exits 0 (driven with a `.gitignore` of somebody's and with none). The unborn `HEAD` is where the step runs at all.
+  - `setup-hook-write-no-hooks-directory-parent-read-only` — a `core.hooksPath` value and a mode bit. **The bit**: with the directory the owner's to write, `jigc setup` makes the hooks directory the value names and installs there (driven: exit 0).
+- **Where the count's buckets are not the ruling's bounds, and the function follows the ruling.** The adapter profile: the count put 17 cases under *content* and 2 under *environment*, and named all 19 as reached only through the variable (§4, item 2); the third bound takes the 19. `/dev/null` behind a link (3 cases) and behind `core.hooksPath` (2): the count's *file-kind*, and by the ruling a link and a configuration — the function reads no bound there. A directory in a file's place, a file in a directory's: the count's *file-kind*, no bound.
+
+**4. The admitted key is data in one place** — `ADMITTED` in [route_catalog.rs](crates/cli/tests/route_catalog.rs): a row a key and this entry's heading. An arm holds that a key listed there is a key of the expected-red list.
+
+**5. The numbers arm prints what can block, key by key** — a sixth block, `bounds`, of the ignored arm: the red cases under a key, how many of them can block — their refusal is over no bound, or the key is admitted — and how many stand on each bound; a line of sums; and a line for the cases no entry lists. **17 of the 27 keys keep a case that can block, and 101 of the 170 red cases can**: the count's 16 keys and 97 cases, and the admitted key with its 4. The table as printed is in the pilot's record, §13.
+
+**6. A bound makes no case green.** Neither the runner, the classification, the list's comparison nor the arm that follows the cases reads one — the arm of (1) reads their source for it. The list is strict three ways as before, with the 73 bounded cases in it.
+
+**7. The records.** The pilot's record gains §13 — the ruling by pointer, the table — and three dated brackets: in §7, which doubts stand inside a bound (5 of the 25: all of questions 3, 5 and 6 — they cannot block whichever way they are read, and stay listed; the 20 of questions 1, 2 and 4 stand on none); in §5, the sentence that said nothing was ruled about a state only a variable reaches; and in §2, two corrections that are the orchestrating session's — `P5`'s own line, 9,508 wall seconds and 581 k subagent tokens, and the label *first twenty-two sites' worth*, which was that session's mistake: the entries' split, eleven sites and 138 cases, is right. [pinning.md](implementation/pinning.md) → §6: one sentence.
+
+**Red first** — `route_catalog::a_cases_bound_is_read_off_its_state_and_never_off_its_acts` and `…::the_keys_say_what_can_block_and_an_admitted_key_is_a_listed_one`, against a function that answers *on no bound* for everything: the first `left: Unbounded  right: On(PermissionBit)` at the planted `chmod`; the second printed every planted key as able to block whole — `r1-inside 1 1 0 0 0`, `every key (3), of which 3 can block` — where one stands inside a bound.
+
+**A control on the frame's change.** The ignored arm was run on `rc.24`'s binary on this tree (301.7 s): its blocks `cases` and `sites` came out byte for byte as they are committed beside the record. A field added to a case moved nothing a case comes to.
+
+**Not established.**
+
+- **That a case that can block is a blocking finding.** A key certifies itself until a run's ledger holds it; what a run grades is the run's.
+- **That nothing but the bit refuses in the other 68 bounded red cases.** Six states were driven without their bit, the six that stand on both. For the rest the state says a bound and nothing the function reads beside it.
+- **A device node.** The frame has no step that plants one; the second bound is held on FIFOs and on the two words a shell line would make one with.
+- **Linux, for this commit**: the run follows the task's second commit and is in its return.
+
 ## 2026-10-11 — The route catalog on the previous release's binary, and the pilot's numbers: one ignored arm follows every case on a binary a variable names, from the state that binary built; 159 of 353 lines differ from this tree's, 132 of them because `rc.24` does not refuse there — and a record that decides nothing (the plan's step `P5`, second commit; ruling 3 of 2026-10-10)
 
 **What.** One ignored arm and the arm that holds it, in [route_catalog.rs](crates/cli/tests/route_catalog.rs); its name as a second term of the runner's one-at-a-time group ([.config/nextest.toml](.config/nextest.toml)); the pilot's record, [route-catalog-pilot.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot.md), with two blocks of the arm's output committed beside it as printed ([cases](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot-cases.tsv), [sites](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot-sites.tsv)); and one section of [pinning.md](implementation/pinning.md), §6. No product source changes, nothing is fixed, no case is added or changed, the frame ([route_case.rs](crates/cli/tests/support/route_case.rs)) is not touched, and the pilot's findings file is as it was: a line of the table is a line of the table.

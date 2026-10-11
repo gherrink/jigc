@@ -146,6 +146,15 @@
 //! does this suite ([`the_table_follows_each_binary_with_the_state_that_binary_built`]
 //! holds the table to its binaries).
 //!
+//! **Which red cases can block is a ruling's, and this suite does its arithmetic**
+//! (`DECISIONS.md` → 2026-10-11, *Which states a route must work in*). A case's bound is
+//! read off its state by the frame
+//! ([`a_cases_bound_is_read_off_its_state_and_never_off_its_acts`]); the keys the human
+//! admitted by name are one table ([`ADMITTED`]), held to the list
+//! ([`the_keys_say_what_can_block_and_an_admitted_key_is_a_listed_one`]); and the ignored
+//! arm prints, key by key, the red cases that can block and the ones that stand on each
+//! bound ([`bounds`]). The expected-red list is as it was: a bound takes no entry off it.
+//!
 //! **The fence** (the plan's step `P2`) holds the catalog to the refusal sites of the
 //! families [`CATALOGUED`] names. It scans nothing for itself — the sites are
 //! [`support::refusal_sites`](crate::support::refusal_sites)' scan, which
@@ -182,8 +191,8 @@ use std::path::Path;
 
 use crate::support::refusal_sites::{self, DYNAMIC, FAMILIES, Site, Source};
 use crate::support::route_case::{
-    self, Act, Case, Check, Classification, ExpectedRed, Followed, Operand, Place, Refusal, Seen,
-    Step, Var,
+    self, Act, Bound, Case, Check, Classification, ExpectedRed, Followed, Operand, Over, Place,
+    Refusal, Seen, Standing, Step, Var,
 };
 use crate::support::rust_source;
 
@@ -725,6 +734,17 @@ const LATE_REFUSAL: &str =
 /// A FIFO at a file the teardown reads — `CLAUDE.md`, the settings file, the hook: the
 /// command does not end, with `.jigc/` already removed.
 const UNINSTALL_HELD: &str = "r1-uninstall-fifo-at-a-file-the-teardown-reads-holds-the-command";
+
+/// **The keys the human admitted by name** — a row a key, and the heading of the entry of
+/// `DECISIONS.md` that holds the ruling. Every red case under an admitted key can block,
+/// whatever its state stands on ([`bounds`]).
+const ADMITTED: &[(&str, &str)] = &[(LATE_REFUSAL, THE_RULING_ON_STATES)];
+
+/// The entry of `DECISIONS.md` that holds the ruling on which states a route must work in,
+/// by its heading.
+const THE_RULING_ON_STATES: &str = "2026-10-11 — Which states a route must work in: three \
+    kinds of planted state are declared bounds of the route catalog, a case's bound is read \
+    off its state, and one key is admitted by name (the human's ruling, option B of three)";
 
 /// [`EXPECTED_RED`], an entry a case.
 fn expected_red() -> Vec<ExpectedRed> {
@@ -2198,6 +2218,7 @@ fn an_act_is_not_done_outside_the_sandbox() {
         witnesses: &[],
         untouched: &[],
         doubt: None,
+        over: None,
     };
     let followed = route_case::follow(Path::new("/bin/sh"), &planted)
         .expect("the planted case is one the runner follows");
@@ -2667,6 +2688,7 @@ const PLANTED: Case = Case {
     witnesses: &[],
     untouched: &[],
     doubt: None,
+    over: None,
 };
 
 /// **A state step plants what it names, and a file act does what the route says** — every
@@ -3894,6 +3916,453 @@ fn what_is_gone_what_still_stands_and_what_was_not_touched() {
 }
 
 // ---------------------------------------------------------------------------
+// The declared bounds
+// ---------------------------------------------------------------------------
+
+/// **A case's bound is read off its state — its steps and its environment — and never off
+/// its acts; and a word about it stands only where the state stands on a bound and on a
+/// state that is none.** On planted states, kind by kind: what plants each of the three
+/// bounds; what is a link, a configuration or another variable and no bound; an act that
+/// changes a permission, which is a route followed and no state; and the states that stand
+/// on both, which the function names and does not decide. Then the word: it decides where
+/// the state stands on both, is owed there, and is a fault anywhere else.
+///
+/// Then this suite's: every case of the catalog has a bound or none without a fault — so
+/// a word is exactly where [`route_case::standing`] answers *both*. And **a bound makes no
+/// case green**: neither the runner nor the arm that follows the cases reads one.
+#[test]
+fn a_cases_bound_is_read_off_its_state_and_never_off_its_acts() {
+    const SHUT: Step = Step::Git(&["-c", "alias.shut=!chmod 444 CLAUDE.md", "shut"]);
+    const UNBORN: Step = Step::Git(&["update-ref", "-d", "HEAD"]);
+    const ADAPTERS: Var = Var::Path("JIGC_ADAPTERS_DIR", Place::Outside("adapters"));
+    let planted = |state: &'static [Step], env: &'static [Var], acts: &'static [Act]| Case {
+        state,
+        env,
+        acts,
+        ..PLANTED
+    };
+    let bit = Standing::On(Bound::PermissionBit);
+    let node = Standing::On(Bound::SpecialFile);
+    let stands: &[(&str, Case, Standing)] = &[
+        (
+            "nothing planted",
+            planted(&[], &[], &[]),
+            Standing::Unbounded,
+        ),
+        (
+            "a file, added and committed",
+            planted(
+                &[
+                    Step::File(Place::Repo("CLAUDE.md"), "mine\n"),
+                    Step::Git(&["add", "--all"]),
+                    Step::Git(&["commit", "-q", "-m", "theirs"]),
+                ],
+                &[],
+                &[],
+            ),
+            Standing::Unbounded,
+        ),
+        (
+            "a `chmod` a git alias runs",
+            planted(&[SHUT], &[], &[]),
+            bit,
+        ),
+        (
+            "a `chmod` at the end of a longer shell line",
+            planted(
+                &[Step::Git(&[
+                    "-c",
+                    "alias.plant=!cp a ../outside/a && chmod 444 ../outside/a",
+                    "plant",
+                ])],
+                &[],
+                &[],
+            ),
+            bit,
+        ),
+        (
+            "a FIFO",
+            planted(&[Step::Fifo(Place::Repo("CLAUDE.md"))], &[], &[]),
+            node,
+        ),
+        (
+            "a `mkfifo` in a shell line",
+            planted(
+                &[Step::Git(&["-c", "alias.plant=!mkfifo CLAUDE.md", "plant"])],
+                &[],
+                &[],
+            ),
+            node,
+        ),
+        (
+            "a `mknod` in a shell line",
+            planted(
+                &[Step::Git(&["-c", "alias.plant=!mknod null c 1 3", "plant"])],
+                &[],
+                &[],
+            ),
+            node,
+        ),
+        (
+            "the override set",
+            planted(&[], &[ADAPTERS], &[]),
+            Standing::On(Bound::AdaptersOverride),
+        ),
+        (
+            "a permission and a FIFO: the first in the ruling's order",
+            planted(&[Step::Fifo(Place::Repo("CLAUDE.md")), SHUT], &[], &[]),
+            bit,
+        ),
+        // No bound: an act, a link, a configuration, another variable.
+        (
+            "an act that changes a permission — a route followed, no state",
+            planted(
+                &[],
+                &[],
+                &[
+                    Act::MakeWritable(Operand::Unprinted("CLAUDE.md")),
+                    Act::MakeReadable(Operand::Span(0)),
+                ],
+            ),
+            Standing::Unbounded,
+        ),
+        (
+            "a link whose target is `/dev/null` — a link",
+            planted(&[Step::LinkTo(Place::Repo(HOOK), "/dev/null")], &[], &[]),
+            Standing::Unbounded,
+        ),
+        (
+            "a `core.hooksPath` that names `/dev/null` — a configuration",
+            planted(
+                &[Step::Git(&["config", "core.hooksPath", "/dev/null"])],
+                &[],
+                &[],
+            ),
+            Standing::Unbounded,
+        ),
+        (
+            "`$HOME` taken away — another variable",
+            planted(&[], &[Var::Unset("HOME")], &[]),
+            Standing::Unbounded,
+        ),
+        (
+            "the override's variable taken away — it is not set",
+            planted(&[], &[Var::Unset("JIGC_ADAPTERS_DIR")], &[]),
+            Standing::Unbounded,
+        ),
+        // On a bound and on a state that is none.
+        (
+            "a link and a permission",
+            planted(
+                &[
+                    Step::Link(Place::Repo("CLAUDE.md"), Place::Outside("theirs")),
+                    SHUT,
+                ],
+                &[],
+                &[],
+            ),
+            Standing::Both(Bound::PermissionBit, "a symbolic link"),
+        ),
+        (
+            "a link a shell line makes, and a permission",
+            planted(
+                &[Step::Git(&[
+                    "-c",
+                    "alias.plant=!ln -s \"$PWD/../outside/a\" a && chmod 444 ../outside/a",
+                    "plant",
+                ])],
+                &[],
+                &[],
+            ),
+            Standing::Both(Bound::PermissionBit, "a symbolic link"),
+        ),
+        (
+            "an unborn `HEAD` and a permission",
+            planted(&[UNBORN, SHUT], &[], &[]),
+            Standing::Both(Bound::PermissionBit, "an unborn `HEAD`"),
+        ),
+        (
+            "a `core.hooksPath` value and a permission",
+            planted(
+                &[
+                    Step::Git(&["config", "core.hooksPath", "../outside/hooks"]),
+                    SHUT,
+                ],
+                &[],
+                &[],
+            ),
+            Standing::Both(Bound::PermissionBit, "a `core.hooksPath` value"),
+        ),
+        (
+            "another variable beside the override",
+            planted(&[], &[Var::Unset("HOME"), ADAPTERS], &[]),
+            Standing::Both(
+                Bound::AdaptersOverride,
+                "a variable of the environment that is not the override",
+            ),
+        ),
+    ];
+    for (what, case, expected) in stands {
+        assert_eq!(route_case::standing(case), *expected, "{what}");
+    }
+
+    const ON_BOTH: &[Step] = &[UNBORN, SHUT];
+    const ON_THE_BIT: &[Step] = &[SHUT];
+    const ON_NO_BOUND: &[Step] = &[UNBORN];
+    let word = |state: &'static [Step], over| Case {
+        over,
+        ..planted(state, &[], &[])
+    };
+    let the_bound = Some((
+        Over::TheBound,
+        "planted: without the bit nothing is refused",
+    ));
+    let the_other = Some((Over::TheOther, "planted: the link is refused by itself"));
+    assert_eq!(
+        (
+            route_case::bound_of(&word(ON_BOTH, the_bound)),
+            route_case::bound_of(&word(ON_BOTH, the_other)),
+            route_case::bound_of(&word(ON_THE_BIT, None)),
+            route_case::bound_of(&word(ON_NO_BOUND, None)),
+        ),
+        (
+            Ok(Some(Bound::PermissionBit)),
+            Ok(None),
+            Ok(Some(Bound::PermissionBit)),
+            Ok(None),
+        ),
+        "where a state stands on both the word decides, and where it does not the state does",
+    );
+    for (state, over, says) in [
+        (ON_BOTH, None, "does not say which of the two"),
+        (ON_THE_BIT, the_bound, "does not stand on both"),
+        (ON_NO_BOUND, the_other, "does not stand on both"),
+    ] {
+        match route_case::bound_of(&word(state, over)) {
+            Err(fault) => assert!(fault.contains(says), "{says}: {fault}"),
+            Ok(bound) => panic!("{says}: the case was answered {bound:?}"),
+        }
+    }
+
+    let faults: Vec<String> = cases()
+        .iter()
+        .filter_map(|case| {
+            route_case::bound_of(case)
+                .err()
+                .map(|fault| format!("`{}`: {fault}", case.name))
+        })
+        .collect();
+    assert!(
+        faults.is_empty(),
+        "a word about the cause is exactly where the state stands on both:\n\n  {}",
+        faults.join("\n  "),
+    );
+
+    let frame = rust_source::code_only(include_str!("support/route_case.rs"));
+    let suite = rust_source::code_only(include_str!("route_catalog.rs"));
+    for (what, body) in [
+        (
+            "the runner",
+            body_of(
+                &frame,
+                "fn followed(binary: &Path, case: &Case, under_test: Duration) -> \
+                 Result<Followed, String> {",
+            ),
+        ),
+        (
+            "the classification",
+            body_of(&frame, "pub fn classify(seen: &Seen) -> Classification {"),
+        ),
+        (
+            "the list's differences",
+            body_of(
+                &frame,
+                "pub fn differences(expected: &[ExpectedRed], results: &[(&str, \
+                 Classification)]) -> Vec<String> {",
+            ),
+        ),
+        (
+            "the arm that follows the cases",
+            body_of(&suite, "fn follow_the_cases_of(file: &str) {"),
+        ),
+    ] {
+        assert!(
+            !body.contains("bound") && !body.contains("standing") && !body.contains("ADMITTED"),
+            "{what} reads a bound: a bound says whether a red case can block, and makes \
+             none green",
+        );
+    }
+}
+
+/// Every key of `admitted` that no entry of `expected` lists.
+fn admitted_and_not_listed(admitted: &[(&str, &str)], expected: &[ExpectedRed]) -> Vec<String> {
+    admitted
+        .iter()
+        .filter(|(key, _)| !expected.iter().any(|entry| entry.key == *key))
+        .map(|(key, ruling)| {
+            format!(
+                "`{key}` is admitted by name — {ruling} — and no entry of the expected-red \
+                 list is under it: an admitted key is a key of a red case"
+            )
+        })
+        .collect()
+}
+
+/// **What can block, a line a key** — tab-separated: the key, the red cases listed under
+/// it, how many of them can block, how many stand on each of the three bounds, and whether
+/// the key is admitted by name. A case can block where its refusal is over no bound, or
+/// where its key is admitted. Then a line of sums, and a line for the cases no entry lists
+/// — the ones that hold — which says how many of those stand on each bound.
+///
+/// It counts. A bound takes no case off the expected-red list and changes no
+/// classification; what blocks a call is a ruling's to say, and this is that ruling's
+/// arithmetic over the cases.
+fn bounds(cases: &[&Case], expected: &[ExpectedRed], admitted: &[(&str, &str)]) -> String {
+    let bound_of = |case: &Case| {
+        route_case::bound_of(case)
+            .unwrap_or_else(|fault| panic!("`{}` has no bound to count: {fault}", case.name))
+    };
+    let per_bound = |cases: &[&Case]| -> String {
+        Bound::ALL
+            .iter()
+            .map(|bound| {
+                cases
+                    .iter()
+                    .filter(|case| bound_of(case) == Some(*bound))
+                    .count()
+                    .to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\t")
+    };
+    let is_admitted = |key: &str| admitted.iter().any(|(named, _)| *named == key);
+    let can_block = |key: &str, cases: &[&Case]| {
+        if is_admitted(key) {
+            cases.len()
+        } else {
+            cases.iter().filter(|case| bound_of(case).is_none()).count()
+        }
+    };
+
+    let mut by_key: BTreeMap<&str, Vec<&Case>> = BTreeMap::new();
+    let mut listed: Vec<&Case> = Vec::new();
+    let mut unlisted: Vec<&Case> = Vec::new();
+    for case in cases {
+        match expected.iter().find(|entry| entry.case == case.name) {
+            Some(entry) => {
+                by_key.entry(entry.key).or_default().push(case);
+                listed.push(case);
+            }
+            None => unlisted.push(case),
+        }
+    }
+
+    let mut out = format!(
+        "key\tred cases\tcan block\t{}\tadmitted\n",
+        Bound::ALL.map(Bound::as_str).join("\t")
+    );
+    let mut blocking = (0, 0);
+    for (key, of_key) in &by_key {
+        let can = can_block(key, of_key);
+        if can > 0 {
+            blocking = (blocking.0 + 1, blocking.1 + can);
+        }
+        out.push_str(&format!(
+            "{key}\t{}\t{can}\t{}\t{}\n",
+            of_key.len(),
+            per_bound(of_key),
+            if is_admitted(key) { "admitted" } else { "-" },
+        ));
+    }
+    out.push_str(&format!(
+        "every key ({}), of which {} can block\t{}\t{}\t{}\t{}\n",
+        by_key.len(),
+        blocking.0,
+        listed.len(),
+        blocking.1,
+        per_bound(&listed),
+        by_key.keys().filter(|key| is_admitted(key)).count(),
+    ));
+    out.push_str(&format!(
+        "the cases no entry lists\t{}\t-\t{}\t-\n",
+        unlisted.len(),
+        per_bound(&unlisted),
+    ));
+    out
+}
+
+/// **The keys say what can block, and an admitted key is a listed one.** On planted cases:
+/// a key whose cases stand on a bound and on none counts the ones on none; a key wholly
+/// inside a bound can block nothing — unless it is admitted by name, and then every case
+/// of it can; a case that holds is counted by its bound on the last line and under no key.
+/// An admitted key that no entry lists is named. Then this suite's table of admitted keys,
+/// against its list; and the ignored arm prints the block.
+#[test]
+fn the_keys_say_what_can_block_and_an_admitted_key_is_a_listed_one() {
+    const SHUT: Step = Step::Git(&["-c", "alias.shut=!chmod 444 CLAUDE.md", "shut"]);
+    let planted = |name, state: &'static [Step]| Case {
+        name,
+        state,
+        ..PLANTED
+    };
+    let cases = [
+        planted("shut-and-red", &[SHUT]),
+        planted("plain-and-red", &[]),
+        planted("held", &[Step::Fifo(Place::Repo("CLAUDE.md"))]),
+        planted("shut-admitted", &[SHUT]),
+        planted("shut-and-holds", &[SHUT]),
+        planted("plain-and-holds", &[]),
+    ];
+    let cases: Vec<&Case> = cases.iter().collect();
+    let entry = |case, key, classification| ExpectedRed {
+        case,
+        key,
+        classification,
+    };
+    let expected = [
+        entry("shut-and-red", "r1-mixed", Classification::SameRefusalAgain),
+        entry(
+            "plain-and-red",
+            "r1-mixed",
+            Classification::SameRefusalAgain,
+        ),
+        entry("held", "r1-inside", Classification::DidNotEnd),
+        entry("shut-admitted", "r1-named", Classification::AnotherFailure),
+    ];
+    let admitted = [("r1-named", "a ruling's heading")];
+    assert_eq!(
+        bounds(&cases, &expected, &admitted),
+        "key\tred cases\tcan block\ta permission bit changed by hand\t\
+         a FIFO or a device node planted\ta state only `JIGC_ADAPTERS_DIR` reaches\tadmitted\n\
+         r1-inside\t1\t0\t0\t1\t0\t-\n\
+         r1-mixed\t2\t1\t1\t0\t0\t-\n\
+         r1-named\t1\t1\t1\t0\t0\tadmitted\n\
+         every key (3), of which 2 can block\t4\t2\t2\t1\t0\t1\n\
+         the cases no entry lists\t2\t-\t1\t0\t0\t-\n",
+    );
+
+    says(&admitted_and_not_listed(&admitted, &expected), &[]);
+    says(
+        &admitted_and_not_listed(&[("r1-gone", "a ruling's heading")], &expected),
+        &[("`r1-gone`", "no entry of the expected-red list is under it")],
+    );
+    let wrong = admitted_and_not_listed(ADMITTED, &expected_red());
+    assert!(
+        wrong.is_empty(),
+        "the keys admitted by name, held against the expected-red list:\n\n  {}",
+        wrong.join("\n  "),
+    );
+
+    let suite = rust_source::code_only(include_str!("route_catalog.rs"));
+    let arm = body_of(&suite, &format!("fn {ON_A_NAMED_BINARY}() {{"));
+    assert!(
+        arm.contains("bounds(&cases, &expected, ADMITTED)"),
+        "the ignored arm prints what can block, over this suite's cases, list and \
+         admitted keys",
+    );
+}
+
+// ---------------------------------------------------------------------------
 // The cases on a binary a variable names
 // ---------------------------------------------------------------------------
 
@@ -4398,11 +4867,12 @@ fn the_table_follows_each_binary_with_the_state_that_binary_built() {
 /// case the frame cannot follow on the named binary — a state it cannot build there, a
 /// route with fewer spans than the case's acts name — keeps its line, which says why.
 ///
-/// It prints five blocks, each tab-separated under a line `== <name> ==`: `cases`, the
+/// It prints six blocks, each tab-separated under a line `== <name> ==`: `cases`, the
 /// table; `pairs`, how many cases came to each pair of outcomes; `sites` and `reasons`,
-/// the catalog's own numbers, which need no binary; `doubts`, the cases that rest on a
-/// reading nobody has given; and then, for a reader of the run, what the runner did in
-/// every case whose two outcomes are not the same words.
+/// the catalog's own numbers, which need no binary; `bounds`, what can block key by key
+/// ([`bounds`]), which needs none either; `doubts`, the cases that rest on a reading
+/// nobody has given; and then, for a reader of the run, what the runner did in every case
+/// whose two outcomes are not the same words.
 ///
 /// **It asserts that it ran** — a binary was named, and every case has its line — and
 /// nothing about what a case came to on either binary or about a pair: whether a
@@ -4427,6 +4897,7 @@ fn the_cases_are_followed_on_the_binary_a_variable_names() {
     println!("== pairs ==\n{}", pairs(&rows));
     println!("== sites ==\n{}", sites(&expected));
     println!("== reasons ==\n{}", reasons());
+    println!("== bounds ==\n{}", bounds(&cases, &expected, ADMITTED));
     println!("== doubts ==\n{}", doubts(&rows));
     println!("== what the runner did, where the two outcomes are not the same words ==");
     for row in rows.iter().filter(|row| row.here.came != row.there.came) {

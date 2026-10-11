@@ -44,7 +44,7 @@
 //! with the two readings ([`WHICH_LINE`]).
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{Act, Case, Check, Operand, Place, Step, Var};
+use crate::support::route_case::{Act, Case, Check, Operand, Over, Place, Step, Var};
 
 // The sites, as the committed list of refusal sites and the suite's claims name them.
 const NOT_IN_A_REPOSITORY: &str =
@@ -159,6 +159,7 @@ const UNINSTALL: Case = Case {
     witnesses: OUTSIDE,
     untouched: THEIRS,
     doubt: None,
+    over: None,
 };
 
 /// Take a permission away: a state has no step for one, so a `git` alias does it — a shell
@@ -1021,6 +1022,15 @@ macro_rules! step_refused {
     };
 }
 
+/// **The bit, and not the link** — which of the two the refusal is over in the two cases
+/// whose state is a link to a file outside the repository that may not be written.
+const THE_BIT_NOT_THE_LINK: Option<(Over, &str)> = Some((
+    Over::TheBound,
+    "with the file outside the owner's to write, the teardown writes through the link at \
+     exit 0 and refuses nothing — driven by hand at both paths (the findings file, *Seen, \
+     and no case*)",
+));
+
 /// Run a shell line at the repository's root — a `git` alias, where a state has no step
 /// for what it needs: an entry swapped for another kind, bytes that are no text.
 macro_rules! sh {
@@ -1114,6 +1124,7 @@ const HOST_A_LINK_OUT: [Case; 1] = [Case {
     acts: &[Act::MakeWritable(Operand::Span(0)), Act::Run(1)],
     holds: torn_down![],
     witnesses: &["theirs", "CLAUDE.md"],
+    over: THE_BIT_NOT_THE_LINK,
     ..UNINSTALL
 }];
 // --- `uninstall.remove-allowlist`
@@ -1299,6 +1310,7 @@ const HOOK_A_LINK_OUT: [Case; 1] = [Case {
     acts: &[Act::MakeWritable(Operand::Unprinted(".git/hooks")), Act::Run(0)],
     holds: torn_down![],
     witnesses: &["theirs", "pre-commit"],
+    over: THE_BIT_NOT_THE_LINK,
     ..UNINSTALL
 }];
 /// **The one state the route's words are true of**: an install over a repository with no

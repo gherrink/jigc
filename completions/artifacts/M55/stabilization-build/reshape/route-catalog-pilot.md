@@ -11,7 +11,7 @@
       cargo test -p jigc --test g_migration route_catalog::the_cases_are_followed_on_the_binary_a_variable_names -- --ignored --exact --nocapture
   ```
 
-  It prints five tab-separated blocks. Two are committed beside this file as printed, byte for byte: `cases` is [route-catalog-pilot-cases.tsv](route-catalog-pilot-cases.tsv) (353 lines under a header) and `sites` is [route-catalog-pilot-sites.tsv](route-catalog-pilot-sites.tsv) (54 lines under a header). A count over one of them is an `awk` over its columns, named where it is used.
+  It prints five tab-separated blocks **[2026-10-11: six — the block `bounds` joined them, §13]**. Two are committed beside this file as printed, byte for byte: `cases` is [route-catalog-pilot-cases.tsv](route-catalog-pilot-cases.tsv) (353 lines under a header) and `sites` is [route-catalog-pilot-sites.tsv](route-catalog-pilot-sites.tsv) (54 lines under a header). A count over one of them is an `awk` over its columns, named where it is used.
 - **(entry)** — an entry of `DECISIONS.md`, or a commit's message, of this stream; the commit is named.
 - **(orchestrator)** — the usage table of §2, handed to this task by the session that launched the builders.
 
@@ -63,6 +63,10 @@ The two files of cases are 6,041 lines for 353 cases — 17.1 lines a case, the 
 | `P3` part four | 11,554 | 645 k |
 | `P4` | 12,065 | 728 k |
 | `P5` | added by the orchestrating session after this task | — |
+
+**[2026-10-11, the orchestrating session's: `P5`'s own line is 9,508 wall seconds and 581 k subagent tokens.]**
+
+**[2026-10-11, the orchestrating session's: the label *first twenty-two sites' worth* on the row for `P3` parts one and two was that session's mistake. The entries' split is right — parts one and two end at eleven sites and 138 cases — as the paragraph under the next table found from the commits' own times.]**
 
 ### What each task added, by its entries
 
@@ -235,7 +239,7 @@ These are the gate's own: the two arms that follow the cases hold the expected-r
 | `r1-uninstall-worktree-route-move-aside-over-unreadable-path` | 1 | the same refusal again | 0 |
 | `r1-uninstall-worktrees-route-prints-git-worktree-remove-without-a-path` | 1 | the same refusal again | 1 |
 
-**55 of the 170 stand under the canary's two writability keys** — a step that words every error of its callee as *ensure … is writable* over one entry it names, in `jigc setup` and in `jigc uninstall` (the first two rows of the canary's table). **Three of the pilot's keys, 21 cases, are about a state only a variable reaches** — `JIGC_ADAPTERS_DIR`, or `$HOME` taken away — and whether a route owes anything there is said nowhere.
+**55 of the 170 stand under the canary's two writability keys** — a step that words every error of its callee as *ensure … is writable* over one entry it names, in `jigc setup` and in `jigc uninstall` (the first two rows of the canary's table). **Three of the pilot's keys, 21 cases, are about a state only a variable reaches** — `JIGC_ADAPTERS_DIR`, or `$HOME` taken away — and whether a route owes anything there is said nowhere. **[2026-10-11: ruled. A state only `JIGC_ADAPTERS_DIR` reaches is a declared bound — two of the three keys, 19 cases; `$HOME` taken away is none — the third, 2 cases (§13).]**
 
 ## 6. Routes that print no operand
 
@@ -277,6 +281,19 @@ So of the 74 cases in which a route was reached that prints no operand for an ac
 4. `setup-git-refuses-the-repository-asked-as-printed-and-resolved` · `setup-git-status-fails-asked-as-printed-and-resolved`
 5. `setup-launch-template-without-the-invocation`
 6. `uninstall-worktrees-root-unreadable-worktrees-removed-as-printed`
+
+**[2026-10-11 — which of them stand on a declared bound (§13).** Five of the 25 do, and cannot block whichever way their question is read; they stay listed, marked and red.
+
+| # | cases | inside a bound | which |
+|---|---|---|---|
+| 1 | 7 | 0 | — |
+| 2 | 11 | 0 | — |
+| 3 | 3 | 3 | a permission bit changed by hand — `.jigc/tasks` and `.jigc` of mode 000, an open task's `docs/` of mode 600 |
+| 4 | 2 | 0 | — |
+| 5 | 1 | 1 | a state only `JIGC_ADAPTERS_DIR` reaches |
+| 6 | 1 | 1 | a permission bit changed by hand — `.jigc/worktrees` of mode 000 |
+
+So the readings that can still decide whether a case blocks are those of questions 1, 2 and 4: 20 cases.**]**
 
 The two readings of each, in the case's own words, are the last column of the block the arm prints; the routes as printed are in [route-catalog-findings.md](route-catalog-findings.md) under each key.
 
@@ -461,3 +478,54 @@ By pointer; none of it is restated here.
 - **A cause nobody constructed.** 69 causes have a reason and no case; a fence holds sites, never causes.
 - **A root caller**, for whom no permission state is provoked; **the advisory sites** of `jigc setup`, which exit 0; and **a second platform's classifications** beyond what the Linux lines show — that the same list is exact there.
 - **`rc.24` on any other state than the ones this tree's cases build.** The table says what `rc.24` did where this tree refuses; what `rc.24` refused that this tree does not is not in it.
+
+## 13. 2026-10-11 — which states a route must work in: the ruling by pointer, and what can block
+
+**The ruling is the human's, and its home is [DECISIONS.md](../../../../../DECISIONS.md)** → *2026-10-11 — Which states a route must work in* — it is not restated here. In one line: three kinds of planted state are declared bounds of the route catalog — a permission bit changed by hand, a FIFO or a device node planted at a path, a state only `JIGC_ADAPTERS_DIR` reaches; a red case whose refusal is over one is recorded, stays pinned red, and does not block; and one key is admitted by name, bound or not. **The count the ruling was put on** is [route-catalog-red-by-state.md](route-catalog-red-by-state.md), committed as it was handed over.
+
+**How a case's bound is known.** It is read off the case's state — its steps and its environment, never its acts — by one function of the frame (`route_case::standing`, `bound_of`), and marked by hand nowhere it can be read. Six cases stand on a bound **and** on a state that is none — a link to a file outside that may not be written (2), an unborn `HEAD` beside a permission (3), a `core.hooksPath` value beside one (1); each carries one word for which of the two its refusal is over, with what that was read from, and in all six it is the permission: the same state without the bit was driven by hand and refuses nothing.
+
+**The table** (arm, the block `bounds`, as printed — run on 2026-10-11 on the tree of the commit that carries this section, the variable naming `rc.24`'s binary of §8: 301.7 s, load average 4.6 at its start and 10.6 at its end. The same run printed the blocks `cases` and `sites` byte for byte as they are committed beside this file.) A line a key: the red cases listed under it, how many of them **can block** — their refusal is over no bound, or the key is admitted — and how many stand on each bound.
+
+| key | red cases | can block | a permission bit changed by hand | a FIFO or a device node planted | a state only `JIGC_ADAPTERS_DIR` reaches | admitted |
+|---|---|---|---|---|---|---|
+| `r1-p3-setup-install-hook-undriven-producers-and-causes` | 5 | 4 | 1 | 0 | 0 | - |
+| `r1-p3-setup-writability-route-printed-for-other-causes` | 35 | 18 | 17 | 0 | 0 | - |
+| `r1-p3-uninstall-force-names-nothing-undecodable-listing` | 2 | 2 | 0 | 0 | 0 | - |
+| `r1-p3-uninstall-writability-route-not-driven` | 20 | 10 | 10 | 0 | 0 | - |
+| `r1-p4-setup-hook-linked-to-dev-null-route-names-dev-null` | 3 | 3 | 0 | 0 | 0 | - |
+| `r1-setup-fifo-at-install-path-holds-the-command` | 4 | 0 | 0 | 4 | 0 | - |
+| `r1-setup-force-over-skip-worktree-path-cannot-commit` | 1 | 1 | 0 | 0 | 0 | - |
+| `r1-setup-home-unset-route-says-run-from-inside-the-repository` | 2 | 2 | 0 | 0 | 0 | - |
+| `r1-setup-hook-link-pointed-at-uncommitted-script-draws-dirty-install-path` | 3 | 3 | 0 | 0 | 0 | - |
+| `r1-setup-install-hook-route-other-causes-unexamined` | 12 | 12 | 0 | 0 | 0 | - |
+| `r1-setup-installs-outside-work-tree` | 1 | 1 | 0 | 0 | 0 | - |
+| `r1-setup-link-pointed-at-uncommitted-file-draws-dirty-install-path` | 8 | 8 | 0 | 0 | 0 | - |
+| `r1-setup-profile-clause-route-names-no-act` | 12 | 0 | 0 | 0 | 12 | - |
+| `r1-setup-profile-route-says-reinstall-under-adapters-dir` | 7 | 0 | 0 | 0 | 7 | - |
+| `r1-setup-seeded-ignore-route-followed-leaves-no-secrets-floor` | 8 | 8 | 0 | 0 | 0 | - |
+| `r1-setup-settings-record-refused-rerun-installs-without-the-record` | 2 | 0 | 2 | 0 | 0 | - |
+| `r1-setup-unborn-dirty-route-unstaging-line-is-no-command-line` | 2 | 2 | 0 | 0 | 0 | - |
+| `r1-setup-untracked-link-repointed-draws-dirty-install-path` | 16 | 16 | 0 | 0 | 0 | - |
+| `r1-setup-unverified-route-opens-with-the-question-that-failed` | 2 | 2 | 0 | 0 | 0 | - |
+| `r1-setup-workbench-made-writable-rerun-refuses-its-own-files` | 2 | 0 | 2 | 0 | 0 | - |
+| `r1-uninstall-could-not-look-route-names-the-walks-root-to-make-readable` | 3 | 0 | 3 | 0 | 0 | - |
+| `r1-uninstall-fifo-at-a-file-the-teardown-reads-holds-the-command` | 3 | 0 | 0 | 3 | 0 | - |
+| `r1-uninstall-force-over-unreadable-workbench-fails-part-way` | 6 | 0 | 6 | 0 | 0 | - |
+| `r1-uninstall-refusal-behind-the-workbench-rerun-leaves-the-settings-entries` | 4 | 4 | 4 | 0 | 0 | admitted |
+| `r1-uninstall-routes-print-lines-with-a-placeholder-for-the-id` | 5 | 5 | 0 | 0 | 0 | - |
+| `r1-uninstall-worktree-route-move-aside-over-unreadable-path` | 1 | 0 | 1 | 0 | 0 | - |
+| `r1-uninstall-worktrees-route-prints-git-worktree-remove-without-a-path` | 1 | 0 | 1 | 0 | 0 | - |
+| **every key (27), of which 17 can block** | **170** | **101** | **47** | **7** | **19** | **1** |
+| **the cases no entry lists** | **183** | **-** | **12** | **4** | **0** | **-** |
+
+Read across:
+
+- **17 of the 27 keys keep a case that can block, and 101 of the 170 red cases can.** Sixteen keys by their states — 97 cases — and the admitted one, with its 4.
+- **73 red cases stand on a bound**: 47 on a permission bit, 7 on a FIFO, 19 on the override — the count's own three numbers, which the function reaches by reading the states. 69 of them do not block; the 4 under the admitted key do.
+- **Ten keys lie wholly inside the bounds and block nothing** — 41 cases; the eleventh the count names, the admitted key, is wholly inside them and blocks by name. Three keys hold both kinds: 28 bounded cases beside 32 that can block.
+- **Of the 183 cases that hold, 16 stand on a bound**: 12 on a permission bit and 4 on a FIFO. No case that holds stands on the override.
+
+**What a bound does not do.** It takes no case off the expected-red list, moves no classification and makes no case green: the list is what it was at §5, strict three ways, and the 73 are in it. And the human may admit a bounded case by its key at any stop of a run; the table of admitted keys is one constant of the suite (`ADMITTED`).
+
+**What this section does not establish.** That a case that *can* block is a finding a run would grade as blocking — a key certifies itself until a run's ledger holds it (§12). That the three bounds are rows of a run's declared-bounds list: no run is open, and the opening record takes them when one is. And anything about a state the function cannot read as a second one beside a bound — a file's bytes, a directory, what a `git add` leaves: the count's §1c and §4 name such conditions beside a permission — a `.jigc/` entry the state plants by hand under eleven of the permission cases, a file that must lack an entry under one, a refusing command that carries `--force` under one — read there by a person and here by nobody.

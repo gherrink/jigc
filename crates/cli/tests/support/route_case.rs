@@ -123,6 +123,16 @@
 //! runner gives every directory of the sandbox back to its owner before the scratch root
 //! is removed, so no case leaves its root behind ([`Followed::sandbox`] is where it stood).
 //!
+//! **Which of the declared bounds a case's state stands on is read off the state**
+//! ([`standing`], [`bound_of`]; the ruling is `DECISIONS.md` → 2026-10-11, *Which states a
+//! route must work in*). Three kinds of planted state are bounds — a permission bit changed
+//! by hand, a FIFO or a device node planted, a state only `JIGC_ADAPTERS_DIR` reaches — and
+//! a red case whose refusal is over one is recorded and does not block. The function reads
+//! a case's steps and its environment, never its acts; where a state stands on a bound and
+//! on a state that is none, it says so and the case carries one word for which of the two
+//! its refusal is over ([`Case::over`]), with what that was read from. **A bound makes no
+//! case green**: the runner reads none, and no classification moves by one.
+//!
 //! **What it does not decide.** Whether a refusal *should* have been printed, what a route's
 //! prose means beyond the acts a case lists, and whether a red case is a regression — a
 //! classification is what happened on the binary handed in, and no more.
@@ -355,6 +365,153 @@ pub struct Case {
     /// readings, in words. The case follows the printed words most literally and decides
     /// nothing; a marked case is listed for the human with its route.
     pub doubt: Option<&'static str>,
+    /// **Which of the two the refusal is over**, where the state stands on a declared
+    /// bound and, beside it, on a state the ruling says is none ([`Standing::Both`]) — one
+    /// word, with what it was read from. `None` wherever the state says it by itself:
+    /// a word is a reading of the cause, and the catalog holds that no case carries one
+    /// that [`standing`] could have answered.
+    pub over: Option<(Over, &'static str)>,
+}
+
+/// **One of the three states the human ruled a declared bound of the route catalog**
+/// (`DECISIONS.md` → 2026-10-11, *Which states a route must work in*). A red case whose
+/// refusal is over such a state is recorded and stays listed red; it does not block. A
+/// bound changes no classification and takes no case off the expected-red list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Bound {
+    /// A permission bit changed by hand — an entry made read-only, unreadable, unwritable
+    /// or unsearchable, wherever it lies.
+    PermissionBit,
+    /// A FIFO or a device node planted at a path — the node itself. A link that leads to
+    /// one, and a configuration value that names one, are a link and a configuration.
+    SpecialFile,
+    /// A state only the developer's override `JIGC_ADAPTERS_DIR` reaches.
+    AdaptersOverride,
+}
+
+impl Bound {
+    /// Every bound, in the ruling's order.
+    pub const ALL: [Bound; 3] = [
+        Bound::PermissionBit,
+        Bound::SpecialFile,
+        Bound::AdaptersOverride,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Bound::PermissionBit => "a permission bit changed by hand",
+            Bound::SpecialFile => "a FIFO or a device node planted",
+            Bound::AdaptersOverride => "a state only `JIGC_ADAPTERS_DIR` reaches",
+        }
+    }
+}
+
+/// The variable of the third bound: the developer's override of the adapter profiles'
+/// directory.
+const ADAPTERS_OVERRIDE: &str = "JIGC_ADAPTERS_DIR";
+
+/// Which of the two a refusal is over, where a state stands on both ([`Case::over`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Over {
+    /// The bound: without it the command refuses nothing over the rest of the state.
+    TheBound,
+    /// The state beside it, which is no bound: the case can block.
+    TheOther,
+}
+
+/// What a case's state stands on, as far as its steps and its environment say.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Standing {
+    /// On no bound.
+    Unbounded,
+    /// On a bound, and on no other state [`standing`] reads as one.
+    On(Bound),
+    /// On a bound **and** on a state the ruling says is none — the bound, and the other
+    /// in words. Which of the two the refusal is over, the state does not say.
+    Both(Bound, &'static str),
+}
+
+/// **What `case`'s state stands on — read off its steps and its environment, and never off
+/// its acts**, which follow a route and may well change a permission themselves.
+///
+/// *A bound, by what plants it.* A state has no step for a permission: it is a shell line
+/// a `git` alias runs, so the words of every `git` step are read — `chmod` is a permission
+/// bit changed by hand, `mkfifo` and `mknod` a special file, as [`Step::Fifo`] is. The
+/// override is the case's variable of that name, set. Two bounds at once are the first in
+/// the ruling's order; no case of the catalog stands so.
+///
+/// *A state beside it that is none, where a step spells one by its kind or by a word*: a
+/// symbolic link ([`Step::Link`], [`Step::LinkTo`], an `ln` in a shell line), an unborn
+/// `HEAD` (`git update-ref -d HEAD`), a `core.hooksPath` value, and a variable other than
+/// the override. **What it cannot read as a second state**: a file's bytes, a directory,
+/// and what a `git add` or a commit leaves — they are in nearly every state, as the
+/// ground a case stands on.
+pub fn standing(case: &Case) -> Standing {
+    let mut bound: Option<Bound> = None;
+    let mut other: Option<&'static str> = None;
+    let mut on = |seen: Bound| bound = Some(bound.map_or(seen, |before| before.min(seen)));
+    let mut beside = |what: &'static str| other = other.or(Some(what));
+    for step in case.state {
+        match step {
+            Step::Fifo(_) => on(Bound::SpecialFile),
+            Step::Link(..) | Step::LinkTo(..) => beside("a symbolic link"),
+            Step::Git(args) => {
+                if matches!(args, ["update-ref", "-d", "HEAD"]) {
+                    beside("an unborn `HEAD`");
+                }
+                // A shell line is one argument: its words are read, the alias's own
+                // punctuation (`alias.x=!line`) and the shell's (`&&`, `;`) apart.
+                let words = args.iter().flat_map(|arg| {
+                    arg.split(|c: char| c.is_whitespace() || "!=&;|()".contains(c))
+                });
+                for word in words {
+                    match word {
+                        "chmod" => on(Bound::PermissionBit),
+                        "mkfifo" | "mknod" => on(Bound::SpecialFile),
+                        "ln" => beside("a symbolic link"),
+                        "core.hooksPath" => beside("a `core.hooksPath` value"),
+                        _ => {}
+                    }
+                }
+            }
+            Step::Script(..) | Step::File(..) | Step::Dir(_) | Step::Jigc(_) => {}
+        }
+    }
+    for var in case.env {
+        match var {
+            Var::Path(ADAPTERS_OVERRIDE, _) => on(Bound::AdaptersOverride),
+            Var::Unset(ADAPTERS_OVERRIDE) => {}
+            Var::Path(..) | Var::Unset(_) => {
+                beside("a variable of the environment that is not the override");
+            }
+        }
+    }
+    match (bound, other) {
+        (None, _) => Standing::Unbounded,
+        (Some(bound), None) => Standing::On(bound),
+        (Some(bound), Some(other)) => Standing::Both(bound, other),
+    }
+}
+
+/// **The bound `case`'s refusal is over, or none** — [`standing`], and the case's own word
+/// where its state stands on both. `Err` is a fault of the case as written: a state that
+/// stands on both and says nothing of which, or a word where the state says it by itself.
+pub fn bound_of(case: &Case) -> Result<Option<Bound>, String> {
+    match (standing(case), case.over) {
+        (Standing::Unbounded, None) => Ok(None),
+        (Standing::On(bound), None) => Ok(Some(bound)),
+        (Standing::Both(bound, _), Some((Over::TheBound, _))) => Ok(Some(bound)),
+        (Standing::Both(_, _), Some((Over::TheOther, _))) => Ok(None),
+        (Standing::Both(bound, other), None) => Err(format!(
+            "the state stands on a declared bound — {} — and on {other}, which is none, \
+             and the case does not say which of the two its refusal is over (`Case::over`)",
+            bound.as_str()
+        )),
+        (Standing::Unbounded | Standing::On(_), Some((_, why))) => Err(format!(
+            "the case says which of two its refusal is over — {why} — and its state does \
+             not stand on both: a word is only where the state cannot say it"
+        )),
+    }
 }
 
 impl Case {
