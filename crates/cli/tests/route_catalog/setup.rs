@@ -4,10 +4,17 @@
 //! **What stands here.** The hook's link refusal; and the two refusals beside it that the
 //! install raises before its first write — over an entry in the way of a file it
 //! **replaces** (`replaced_path_refusal`, six codes) and over a link at a file it **merges
-//! into** that leads where it will not follow (`merged_through_links`, four codes). Each of
-//! those eleven sites has a row of [`READINGS`]: the functions that were read to count its
-//! causes, the count, every cause that has no case with why, and every way out of its
-//! route that is not followed with why.
+//! into** that leads where it will not follow (`merged_through_links`, four codes). Then
+//! the refusals a run meets before any of those: no repository to install into, or no
+//! `$HOME` (`locate_finding`, two sites); and the adapter profile — not loaded, without a
+//! reference, with a launch template or a guide target a clause refuses (four sites, every
+//! one reached through `JIGC_ADAPTERS_DIR` and no other way). Then the last question before
+//! the first write — whether the settings file can take the merge — and the first refusal
+//! of the write span, the marker's write into `packs.yaml`. And one behind them all: a git
+//! step of the install commit that ran and refused. Each of those twenty sites has a row of
+//! [`READINGS`]: the functions that were read to count its causes, the count, every cause
+//! that has no case with why, and every way out of its route that is not followed with
+//! why. A twenty-first has a row of [`REASONS`] and no case.
 //!
 //! **A cause is one way through the callee to the constructor**: which entry is in the way
 //! — the file's own path, or a directory on the way to it — what that entry is, and, for a
@@ -23,7 +30,7 @@
 //! way that cannot be followed at a site is a row of that site's reading.
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{Act, Case, Check, Operand, Place, SCRIPT, Step};
+use crate::support::route_case::{Act, Case, Check, Operand, Place, SCRIPT, Step, Var};
 
 /// The hook `jigc setup` installs, from the repository root.
 pub const HOOK: &str = ".git/hooks/pre-commit";
@@ -1096,6 +1103,554 @@ const WORKBENCH_IGNORE_A_LINK: [Case; 2] = removed_ways!(
     witnesses: ["theirs"],
 );
 
+// ---------------------------------------------------------------------------
+// `locate_finding` · `setup.repo-root`
+// ---------------------------------------------------------------------------
+
+/// Outside a repository.
+const NOT_IN_A_REPOSITORY: &str =
+    "crates/cli/src/locate.rs::locate_finding::setup.repo-root#dynamic-1";
+/// Inside one, where the team layer's path cannot be resolved.
+const NO_HOME_SITE: &str = "crates/cli/src/locate.rs::locate_finding::setup.repo-root#dynamic-2";
+
+/// **A command run where there is no repository, followed the two ways its route offers**:
+/// run from inside the target repository — the sandbox's, since the route names it and
+/// prints none — and `git init` here first, then the command again. The route prints no
+/// command line for either re-run.
+macro_rules! outside_ways {
+    ($prefix:literal, $cause:expr, plant: [$($plant:expr),* $(,)?] $(,)?) => {
+        [
+            Case {
+                name: concat!($prefix, "-run-inside-the-repository"),
+                site: NOT_IN_A_REPOSITORY,
+                cause: $cause,
+                state: &[$($plant,)*],
+                from: Place::Outside(""),
+                acts: &[Act::RerunInTheRepository],
+                holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-a-repository-made-here"),
+                site: NOT_IN_A_REPOSITORY,
+                cause: $cause,
+                state: &[$($plant,)*],
+                from: Place::Outside(""),
+                acts: &[Act::Run(0), Act::Rerun],
+                holds: &[Check::RegularFile(Place::Outside(".jigc/AGENT.md"))],
+                ..SETUP
+            },
+        ]
+    };
+}
+
+const OUTSIDE_A_REPOSITORY: [Case; 2] = outside_ways!(
+    "setup-outside-a-repository",
+    "the command is run in a directory that is in no repository: neither it nor a directory \
+     above it holds a `.git`",
+    plant: [],
+);
+const BESIDE_A_GIT_LINK_TO_NOTHING: [Case; 2] = outside_ways!(
+    "setup-beside-a-git-link-to-nothing",
+    "the directory's `.git` is a link that leads to nothing, and no directory above it holds \
+     a `.git`",
+    plant: [Step::LinkTo(Place::Outside(".git"), "gits-directory")],
+);
+
+const HOME_NOT_SET: [Case; 1] = [Case {
+    name: "setup-home-not-set-run-as-the-route-prints",
+    site: NO_HOME_SITE,
+    cause: "`$HOME` is not set, and the command is run inside a repository",
+    env: &[Var::Unset("HOME")],
+    acts: &[Act::Run(0)],
+    holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+    ..SETUP
+}];
+
+// ---------------------------------------------------------------------------
+// The four profile refusals — `run` and `install`, before any install path is asked about
+// ---------------------------------------------------------------------------
+
+const PROFILE_LOAD: &str = "crates/cli/src/setup.rs::run::setup.profile-load#1";
+const PROFILE_INCOMPLETE: &str = "crates/cli/src/setup.rs::install::setup.profile-incomplete#1";
+const LAUNCH_TEMPLATE: &str = "crates/cli/src/setup.rs::install::setup.spawn-template#1";
+const GUIDE_TARGET: &str = "crates/cli/src/setup.rs::install::setup.guide-target#1";
+
+/// **The one road to a profile that is not the binary's own**: `JIGC_ADAPTERS_DIR` names a
+/// directory, and the profile is read from `<directory>/claude-code.yaml`. Every case of
+/// the four sites stands in the sandbox's repository with the variable set to this
+/// directory of the sandbox.
+const ADAPTERS: &[Var] = &[Var::Path("JIGC_ADAPTERS_DIR", Place::Outside("adapters"))];
+const PROFILE: Place = Place::Outside("adapters/claude-code.yaml");
+
+/// The one act a route here leaves a reader: the command again. None of the four prints a
+/// command line, and none names a file.
+const AGAIN: &[Act] = &[Act::Rerun];
+
+/// A profile — the shipped one's shape in small, and valid where every piece is the one
+/// [`template!`] and [`guide!`] pass for the others: the `inject:` list, the launch
+/// template, the guide's file and its one front-matter key.
+macro_rules! profile {
+    ($inject:literal, $template:literal, $file:literal, $key:literal) => {
+        concat!(
+            "assistant: claude-code\ninject:",
+            $inject,
+            "\nallowlist:\n  file: .claude/settings.json\n  permit: [\"Bash(jigc:*)\"]\n  \
+             deny: []\nspawn:\n  template: ",
+            $template,
+            "\nguide:\n  file: ",
+            $file,
+            "\n  front-matter:\n    ",
+            $key,
+            ": jigc\n"
+        )
+    };
+}
+
+/// A profile whose launch template is this YAML scalar, and nothing else wrong.
+macro_rules! template {
+    ($template:literal) => {
+        profile!(
+            "\n  - reference: { file: CLAUDE.md, to: .jigc/AGENT.md, syntax: at-import }",
+            $template,
+            ".claude/skills/jigc/SKILL.md",
+            "name"
+        )
+    };
+}
+
+/// A profile whose guide target is this file under this front-matter key, and nothing else
+/// wrong.
+macro_rules! guide {
+    ($file:literal, $key:literal) => {
+        profile!(
+            "\n  - reference: { file: CLAUDE.md, to: .jigc/AGENT.md, syntax: at-import }",
+            "\"Use `jigc workflow {{workflow}} --task {{task_id}}`\"",
+            $file,
+            $key
+        )
+    };
+}
+
+/// **One refusal over the profile, followed the one way its route leaves**: the command
+/// again. The profile's own bytes are the case's witness — nothing a route here says
+/// touches them.
+macro_rules! profile_refused {
+    ($name:literal, $site:expr, $cause:expr, plant: [$($plant:expr),* $(,)?] $(,)?) => {
+        [Case {
+            name: $name,
+            site: $site,
+            cause: $cause,
+            state: &[$($plant,)*],
+            env: ADAPTERS,
+            acts: AGAIN,
+            holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+            witnesses: &["adapters/claude-code.yaml"],
+            ..SETUP
+        }]
+    };
+}
+
+const NO_PROFILE_IN_THE_DIRECTORY: [Case; 1] = profile_refused!(
+    "setup-profile-not-in-the-adapters-directory",
+    PROFILE_LOAD,
+    "the directory `JIGC_ADAPTERS_DIR` names holds no profile to read",
+    plant: [Step::Dir(Place::Outside("adapters"))],
+);
+/// A state's file is text, so the two bytes are written by a `git` alias — a shell line
+/// git runs at the repository's root.
+const PROFILE_NOT_TEXT: [Case; 1] = profile_refused!(
+    "setup-profile-not-utf-8",
+    PROFILE_LOAD,
+    "the profile in that directory is not UTF-8",
+    plant: [
+        Step::Dir(Place::Outside("adapters")),
+        Step::Git(&[
+            "-c",
+            "alias.plant=!printf '\\377\\376' > ../outside/adapters/claude-code.yaml",
+            "plant",
+        ]),
+    ],
+);
+const PROFILE_MALFORMED: [Case; 1] = profile_refused!(
+    "setup-profile-malformed",
+    PROFILE_LOAD,
+    "the profile in that directory is YAML that is no profile",
+    plant: [Step::File(PROFILE, "assistant: claude-code\n")],
+);
+
+const PROFILE_WITHOUT_A_REFERENCE: [Case; 1] = profile_refused!(
+    "setup-profile-declares-no-reference",
+    PROFILE_INCOMPLETE,
+    "the profile declares no reference among its inject targets",
+    plant: [Step::File(
+        PROFILE,
+        profile!(
+            " []",
+            "\"Use `jigc workflow {{workflow}} --task {{task_id}}`\"",
+            ".claude/skills/jigc/SKILL.md",
+            "name"
+        ),
+    )],
+);
+
+const TEMPLATE_WITHOUT_A_TASK: [Case; 1] = profile_refused!(
+    "setup-launch-template-without-the-task-placeholder",
+    LAUNCH_TEMPLATE,
+    "the launch template holds no `{{task_id}}`",
+    plant: [Step::File(PROFILE, template!("\"Use `jigc workflow {{workflow}} --task x`\""))],
+);
+const TEMPLATE_WITHOUT_A_WORKFLOW: [Case; 1] = profile_refused!(
+    "setup-launch-template-without-the-workflow-placeholder",
+    LAUNCH_TEMPLATE,
+    "the launch template holds no `{{workflow}}`",
+    plant: [Step::File(PROFILE, template!("\"Use `jigc workflow x --task {{task_id}}`\""))],
+);
+/// **The one route of the four sites that prints a `jigc` span** — the shape the template
+/// lacks, `jigc workflow … --task …`. The frame takes a `jigc` span for a command line and
+/// refuses a re-run beside it, so the case runs the span.
+const TEMPLATE_WITHOUT_THE_INVOCATION: [Case; 1] = [Case {
+    name: "setup-launch-template-without-the-invocation",
+    site: LAUNCH_TEMPLATE,
+    cause: "the launch template holds no `jigc workflow … --task …` line",
+    state: &[Step::File(PROFILE, template!("\"Use `{{workflow}} {{task_id}}`\""))],
+    env: ADAPTERS,
+    acts: &[Act::Run(0)],
+    holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+    witnesses: &["adapters/claude-code.yaml"],
+    doubt: Some(
+        "the route is the violated clause and nothing else — *spawn template missing the \
+         required `jigc workflow … --task …` invocation*: (a) the backticked `jigc` line is a \
+         command to run — followed here, as printed; (b) it is the shape the profile's \
+         template must hold, and the route prints nothing to run and names no file to change",
+    ),
+    ..SETUP
+}];
+const TEMPLATE_OF_THREE_LINES: [Case; 1] = profile_refused!(
+    "setup-launch-template-of-three-lines",
+    LAUNCH_TEMPLATE,
+    "the launch template holds more than one newline",
+    plant: [Step::File(
+        PROFILE,
+        template!("\"a\\nb\\nc `jigc workflow {{workflow}} --task {{task_id}}`\""),
+    )],
+);
+const TEMPLATE_WITHOUT_A_SPAN: [Case; 1] = profile_refused!(
+    "setup-launch-template-without-a-backticked-span",
+    LAUNCH_TEMPLATE,
+    "the launch template does not hold exactly one backticked span",
+    plant: [Step::File(
+        PROFILE,
+        template!("\"Use jigc workflow {{workflow}} --task {{task_id}}\""),
+    )],
+);
+const TEMPLATE_WITH_A_MARKER: [Case; 1] = profile_refused!(
+    "setup-launch-template-with-a-forbidden-marker",
+    LAUNCH_TEMPLATE,
+    "the launch template holds a forbidden marker",
+    plant: [Step::File(
+        PROFILE,
+        template!("\"# `jigc workflow {{workflow}} --task {{task_id}}`\""),
+    )],
+);
+const TEMPLATE_WITH_OTHER_SHELL: [Case; 1] = profile_refused!(
+    "setup-launch-template-with-other-shell",
+    LAUNCH_TEMPLATE,
+    "the launch template's span holds shell beyond the one `cd` it may",
+    plant: [Step::File(
+        PROFILE,
+        template!("\"Use `ls && jigc workflow {{workflow}} --task {{task_id}}`\""),
+    )],
+);
+
+const GUIDE_WITHOUT_A_PATH: [Case; 1] = profile_refused!(
+    "setup-guide-target-without-a-path",
+    GUIDE_TARGET,
+    "the guide target's file is empty",
+    plant: [Step::File(PROFILE, guide!("\"\"", "name"))],
+);
+const GUIDE_AT_AN_ABSOLUTE_PATH: [Case; 1] = profile_refused!(
+    "setup-guide-target-absolute",
+    GUIDE_TARGET,
+    "the guide target's file is an absolute path",
+    plant: [Step::File(PROFILE, guide!("/elsewhere/SKILL.md", "name"))],
+);
+const GUIDE_OUT_OF_THE_REPOSITORY: [Case; 1] = profile_refused!(
+    "setup-guide-target-climbing-out",
+    GUIDE_TARGET,
+    "the guide target's file holds a `..` component",
+    plant: [Step::File(PROFILE, guide!("../SKILL.md", "name"))],
+);
+const GUIDE_WITH_A_STAMP_KEY: [Case; 1] = profile_refused!(
+    "setup-guide-target-declares-a-stamp-key",
+    GUIDE_TARGET,
+    "the guide target's front matter declares one of jigc's own stamp keys",
+    plant: [Step::File(PROFILE, guide!(".claude/skills/jigc/SKILL.md", "jigc-version"))],
+);
+const GUIDE_WITH_A_KEY_THAT_IS_NONE: [Case; 1] = profile_refused!(
+    "setup-guide-target-malformed-key",
+    GUIDE_TARGET,
+    "the guide target's front matter has a key that is no plain YAML key",
+    plant: [Step::File(PROFILE, guide!(".claude/skills/jigc/SKILL.md", "\"a key\""))],
+);
+
+// ---------------------------------------------------------------------------
+// `InstallCommitRejection::finding` · `setup.install-commit`
+// ---------------------------------------------------------------------------
+
+/// A git step of the install commit that ran and refused — after the install's writes.
+const COMMIT_REFUSED: &str = "crates/cli/src/setup.rs::finding::setup.install-commit#1";
+
+/// The route of an identity refusal prints the two `git config` lines and the re-run.
+const TELL_GIT_AND_RUN_AGAIN: &[Act] = &[Act::Run(0), Act::Run(1), Act::Run(2)];
+
+/// The sandbox's identity, taken out of the commands under test.
+const NO_IDENTITY: &[Var] = &[Var::Unset("GIT_CONFIG_COUNT")];
+
+const INDEX_LOCKED: [Case; 1] = [Case {
+    name: "setup-install-staging-refused-over-a-locked-index",
+    site: COMMIT_REFUSED,
+    cause: "`git add` refuses the install's paths — here over a lock on the index",
+    state: &[Step::File(Place::Repo(".git/index.lock"), "")],
+    acts: &[
+        Act::Remove(Operand::Unprinted(".git/index.lock")),
+        Act::Run(1),
+    ],
+    holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+    ..SETUP
+}];
+const NOBODY_TO_COMMIT_AS: [Case; 1] = [Case {
+    name: "setup-install-commit-refused-with-no-identity",
+    site: COMMIT_REFUSED,
+    cause: "`git commit` refuses for want of an identity: git has no name and no address",
+    env: NO_IDENTITY,
+    acts: TELL_GIT_AND_RUN_AGAIN,
+    holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+    ..SETUP
+}];
+const AN_EMPTY_NAME: [Case; 1] = [Case {
+    name: "setup-install-commit-refused-over-an-empty-name",
+    site: COMMIT_REFUSED,
+    cause: "`git commit` refuses for want of an identity: the name git is given is empty",
+    state: &[
+        Step::Git(&["config", "user.email", "someone@example.com"]),
+        Step::Git(&["config", "user.name", ""]),
+    ],
+    env: NO_IDENTITY,
+    acts: TELL_GIT_AND_RUN_AGAIN,
+    holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+    ..SETUP
+}];
+/// `--no-verify` passes over `pre-commit` and `commit-msg`, and not over this hook.
+const A_HOOK_REFUSES_THE_COMMIT: [Case; 1] = [Case {
+    name: "setup-install-commit-refused-by-a-hook",
+    site: COMMIT_REFUSED,
+    cause: "`git commit` refuses for another reason — here a `prepare-commit-msg` hook that \
+            exits 1",
+    state: &[Step::Script(
+        Place::Repo(".git/hooks/prepare-commit-msg"),
+        "#!/bin/sh\necho refused by a hook >&2\nexit 1\n",
+    )],
+    acts: &[
+        Act::Remove(Operand::Unprinted(".git/hooks/prepare-commit-msg")),
+        Act::Run(1),
+    ],
+    holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+    ..SETUP
+}];
+
+// ---------------------------------------------------------------------------
+// `install` · `setup.inject-allowlist` — the settings file, asked before the first write
+// ---------------------------------------------------------------------------
+
+/// The merge into the settings file, run in memory before anything is written.
+const SETTINGS_ASKED: &str = "crates/cli/src/setup.rs::install::setup.inject-allowlist#1";
+
+/// The route of a settings file the merge cannot take: fix it, commit the fix, run again.
+const MEND_COMMIT_AND_RUN_AGAIN: &[Act] = &[
+    Act::Mend(Operand::Span(0)),
+    Act::Commit(Operand::Span(0)),
+    Act::Run(1),
+];
+
+/// **A settings file the merge cannot take, in the two states that reach the refusal**:
+/// committed, on a born `HEAD` — uncommitted there, the file is refused first as work in no
+/// commit — and untracked on an unborn one, where a file the install merges into rides the
+/// first commit. The route is the same and is followed the same: the file mended, the fix
+/// committed, the command again.
+macro_rules! unmergeable_ways {
+    ($prefix:literal, $cause:expr, plant: [$($plant:expr),* $(,)?] $(,)?) => {
+        [
+            Case {
+                name: concat!($prefix, "-committed"),
+                site: SETTINGS_ASKED,
+                cause: $cause,
+                state: &[$($plant,)* COMMIT_IT[0], COMMIT_IT[1]],
+                acts: MEND_COMMIT_AND_RUN_AGAIN,
+                holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-on-an-unborn-head"),
+                site: SETTINGS_ASKED,
+                cause: $cause,
+                state: &[UNBORN, $($plant,)*],
+                acts: MEND_COMMIT_AND_RUN_AGAIN,
+                holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+                ..SETUP
+            },
+        ]
+    };
+}
+
+/// The same, where the cause is the file's text.
+macro_rules! unmergeable {
+    ($prefix:literal, $cause:expr, $body:literal) => {
+        unmergeable_ways!(
+            $prefix,
+            $cause,
+            plant: [Step::File(Place::Repo(SETTINGS_JSON), $body)],
+        )
+    };
+}
+
+const SETTINGS_NOT_JSON: [Case; 2] = unmergeable!(
+    "setup-settings-not-json",
+    "the settings file is no JSON",
+    "not json\n"
+);
+/// Two bytes a `git` alias writes, as for the profile: a state's file is text.
+const SETTINGS_NOT_TEXT: [Case; 2] = unmergeable_ways!(
+    "setup-settings-not-utf-8",
+    "the settings file is not UTF-8",
+    plant: [
+        Step::Dir(Place::Repo(".claude")),
+        Step::Git(&[
+            "-c",
+            "alias.plant=!printf '\\377\\376' > .claude/settings.json",
+            "plant",
+        ]),
+    ],
+);
+const SETTINGS_ROOT_NO_OBJECT: [Case; 2] = unmergeable!(
+    "setup-settings-root-no-object",
+    "the settings file's root is no JSON object",
+    "[]\n"
+);
+const SETTINGS_PERMISSIONS_NO_OBJECT: [Case; 2] = unmergeable!(
+    "setup-settings-permissions-no-object",
+    "the settings file's `permissions` is no JSON object",
+    "{\"permissions\": []}\n"
+);
+const SETTINGS_ALLOW_NO_ARRAY: [Case; 2] = unmergeable!(
+    "setup-settings-allow-no-array",
+    "the settings file's `permissions.allow` is no JSON array",
+    "{\"permissions\": {\"allow\": {}}}\n"
+);
+const SETTINGS_HOOKS_NO_OBJECT: [Case; 2] = unmergeable!(
+    "setup-settings-hooks-no-object",
+    "the settings file's `hooks` is no JSON object",
+    "{\"hooks\": []}\n"
+);
+const SETTINGS_EVENT_NO_ARRAY: [Case; 2] = unmergeable!(
+    "setup-settings-hook-event-no-array",
+    "the settings file's `hooks.SessionStart` is no JSON array",
+    "{\"hooks\": {\"SessionStart\": {}}}\n"
+);
+const SETTINGS_DENY_NO_ARRAY: [Case; 2] = unmergeable!(
+    "setup-settings-deny-no-array",
+    "the settings file's `permissions.deny` is no JSON array",
+    "{\"permissions\": {\"deny\": {}}}\n"
+);
+/// The one cause with the other route: the read fails, and not over the file's bytes.
+const SETTINGS_A_DIRECTORY: [Case; 1] = [Case {
+    name: "setup-settings-a-directory-made-readable",
+    site: SETTINGS_ASKED,
+    cause: "the settings file cannot be read — here a directory stands at its path",
+    state: &[Step::Dir(Place::Repo(SETTINGS_JSON))],
+    acts: &[Act::MakeReadable(Operand::Span(0)), Act::Run(1)],
+    holds: &[Check::RegularFile(Place::Repo(SETTINGS_JSON))],
+    ..SETUP
+}];
+
+// ---------------------------------------------------------------------------
+// `write_install_span` · `setup.compose-marker` — the first of the write span's refusals
+// ---------------------------------------------------------------------------
+
+/// The marker's write into `.jigc/config/packs.yaml` — the read before it, the parse, and
+/// the write itself, every error of the three under one route.
+const MARKER_WRITE: &str = "crates/cli/src/setup.rs::write_install_span::setup.compose-marker#1";
+
+const PACKS_YAML: &str = ".jigc/config/packs.yaml";
+
+/// The route's one act — *ensure `.jigc/config/` is writable* — and the re-run.
+const MAKE_WRITABLE_AND_RUN_AGAIN: &[Act] = &[Act::MakeWritable(Operand::Span(0)), Act::Run(1)];
+
+/// **A committed `packs.yaml` the marker cannot be written into**, followed the one way the
+/// route offers. Committed, because a file there that git does not hold is refused first as
+/// work in no commit, on a born `HEAD` and on an unborn one.
+macro_rules! marker_refused {
+    ($name:literal, $cause:expr, plant: [$($plant:expr),* $(,)?] $(,)?) => {
+        [Case {
+            name: $name,
+            site: MARKER_WRITE,
+            cause: $cause,
+            state: &[$($plant,)*],
+            acts: MAKE_WRITABLE_AND_RUN_AGAIN,
+            holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+            ..SETUP
+        }]
+    };
+}
+
+const PACKS_NOT_TEXT: [Case; 1] = marker_refused!(
+    "setup-compose-marker-packs-file-not-utf-8",
+    "the committed `packs.yaml` cannot be read as text",
+    plant: [
+        Step::Dir(Place::Repo(".jigc/config")),
+        Step::Git(&[
+            "-c",
+            "alias.plant=!printf '\\377\\376' > .jigc/config/packs.yaml",
+            "plant",
+        ]),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+    ],
+);
+const PACKS_NOT_YAML: [Case; 1] = marker_refused!(
+    "setup-compose-marker-packs-file-not-yaml",
+    "the committed `packs.yaml` is no YAML",
+    plant: [Step::File(Place::Repo(PACKS_YAML), "packs: [\n"), COMMIT_IT[0], COMMIT_IT[1]],
+);
+const PACKS_NO_MAPPING: [Case; 1] = marker_refused!(
+    "setup-compose-marker-packs-file-no-mapping",
+    "the committed `packs.yaml` is YAML and no mapping",
+    plant: [Step::File(Place::Repo(PACKS_YAML), "- a list\n"), COMMIT_IT[0], COMMIT_IT[1]],
+);
+const PACKS_READ_ONLY: [Case; 1] = marker_refused!(
+    "setup-compose-marker-packs-file-read-only",
+    "the committed `packs.yaml` may not be written, in a directory that may",
+    plant: [
+        Step::File(Place::Repo(PACKS_YAML), "packs: []\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        Step::Git(&["-c", "alias.shut=!chmod 444 .jigc/config/packs.yaml", "shut"]),
+    ],
+);
+/// The one state the route's words are true of: the directory itself may not be written,
+/// and there is no `packs.yaml` in it yet. `.gitkeep` is committed there, so the step
+/// before this one has nothing to write.
+const CONFIG_READ_ONLY: [Case; 1] = marker_refused!(
+    "setup-compose-marker-config-directory-read-only",
+    "`.jigc/config/` may not be written, and holds no `packs.yaml` yet",
+    plant: [
+        Step::File(Place::Repo(".jigc/config/.gitkeep"), ""),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        Step::Git(&["-c", "alias.shut=!chmod 555 .jigc/config", "shut"]),
+    ],
+);
+
 /// The cases of `jigc setup`, a group a cause — and, within a group, a case a way out of
 /// the cause's route.
 pub const CASES: &[&[Case]] = &[
@@ -1149,10 +1704,59 @@ pub const CASES: &[&[Case]] = &[
     &SEED_TO_A_DIRECTORY,
     &SEED_INTO_GITS_DIRECTORY,
     &WORKBENCH_IGNORE_A_LINK,
+    &OUTSIDE_A_REPOSITORY,
+    &BESIDE_A_GIT_LINK_TO_NOTHING,
+    &HOME_NOT_SET,
+    &NO_PROFILE_IN_THE_DIRECTORY,
+    &PROFILE_NOT_TEXT,
+    &PROFILE_MALFORMED,
+    &PROFILE_WITHOUT_A_REFERENCE,
+    &TEMPLATE_WITHOUT_A_TASK,
+    &TEMPLATE_WITHOUT_A_WORKFLOW,
+    &TEMPLATE_WITHOUT_THE_INVOCATION,
+    &TEMPLATE_OF_THREE_LINES,
+    &TEMPLATE_WITHOUT_A_SPAN,
+    &TEMPLATE_WITH_A_MARKER,
+    &TEMPLATE_WITH_OTHER_SHELL,
+    &GUIDE_WITHOUT_A_PATH,
+    &GUIDE_AT_AN_ABSOLUTE_PATH,
+    &GUIDE_OUT_OF_THE_REPOSITORY,
+    &GUIDE_WITH_A_STAMP_KEY,
+    &GUIDE_WITH_A_KEY_THAT_IS_NONE,
+    &INDEX_LOCKED,
+    &NOBODY_TO_COMMIT_AS,
+    &AN_EMPTY_NAME,
+    &A_HOOK_REFUSES_THE_COMMIT,
+    &SETTINGS_NOT_JSON,
+    &SETTINGS_NOT_TEXT,
+    &SETTINGS_ROOT_NO_OBJECT,
+    &SETTINGS_PERMISSIONS_NO_OBJECT,
+    &SETTINGS_ALLOW_NO_ARRAY,
+    &SETTINGS_HOOKS_NO_OBJECT,
+    &SETTINGS_EVENT_NO_ARRAY,
+    &SETTINGS_DENY_NO_ARRAY,
+    &SETTINGS_A_DIRECTORY,
+    &PACKS_NOT_TEXT,
+    &PACKS_NOT_YAML,
+    &PACKS_NO_MAPPING,
+    &PACKS_READ_ONLY,
+    &CONFIG_READ_ONLY,
 ];
 
 /// The sites of `jigc setup` that have no case, each with why.
-pub const REASONS: &[Reason] = &[];
+pub const REASONS: &[Reason] = &[Reason {
+    site: "crates/cli/src/setup.rs::commit_install::setup.install-commit#1",
+    why: Why::NotConstructible(
+        "read: `commit_install`, `repo::SeamSubject::live_exempt` and `verify`, \
+         `render::blocked_finding`. The site is the fallback for a posture re-probe that \
+         fails without a finding of its own, and `verify` has two such arms — the git \
+         directory is no longer the one the subject was built against, and `HEAD` is on \
+         another ref — while a posture breach carries its finding and its own code. The \
+         subject is built and verified in one expression, so either arm needs the \
+         repository to change between two reads a few instructions apart: no state stands \
+         still in it",
+    ),
+}];
 
 /// What both callees share: the question each asks of a member's path, and the table whose
 /// order decides the code.
@@ -1456,5 +2060,260 @@ pub const READINGS: &[Reading] = &[
             ),
         )],
         not_followed: &[],
+    },
+    Reading {
+        site: NOT_IN_A_REPOSITORY,
+        read: &[
+            "crates/cli/src/locate.rs::locate_finding and not_in_repo_route",
+            "crates/cli/src/locate.rs::locate and locate_from — the two ways `locate` fails",
+            "crates/cli/src/repo.rs::discover_repo_root — the walk up, and what it asks of a `.git`",
+            "crates/cli/src/cli.rs::run_setup — the start is the directory the command is run in",
+        ],
+        causes: 3,
+        derivation: "`locate_finding` answers here where `discover_repo_root` finds nothing, \
+                     and that walk asks one thing of each directory on the way up: whether \
+                     `.git` exists there, following a link. Three ways to nothing: no entry \
+                     of that name anywhere above; an entry that is a link leading to nothing; \
+                     an entry that cannot be asked about. What the `.git` *is* where it \
+                     exists — a file, an empty directory — is no cause of this site: the \
+                     walk takes it, and a later refusal answers",
+        without_case: &[(
+            "a directory above holds a `.git` that cannot be asked about",
+            Why::NotConstructible(
+                "the walk reads a failed `stat` as absent, so the cause is a directory on \
+                 the way up that may not be searched — and a command cannot be started in a \
+                 directory under one its caller may not search: the frame has no state for \
+                 it, and a root caller, who may search anything, cannot reach it at all",
+            ),
+        )],
+        not_followed: &[],
+    },
+    Reading {
+        site: NO_HOME_SITE,
+        read: &[
+            "crates/cli/src/locate.rs::locate_finding",
+            "crates/cli/src/locate.rs::locate — `$HOME` is read for the team layer's path",
+            "crates/cli/src/setup.rs::run — the route this arm is handed",
+        ],
+        causes: 1,
+        derivation: "`locate` fails two ways, and the other is the site above, which is asked \
+                     first: so this arm is `$HOME` not set, inside a repository. A `$HOME` \
+                     that is set and empty is no cause — the variable is there",
+        without_case: &[],
+        not_followed: &[],
+    },
+    Reading {
+        site: PROFILE_LOAD,
+        read: &[
+            "crates/cli/src/setup.rs::run",
+            "crates/cli/src/adapter.rs::load_profile and load_profile_from",
+            "crates/cli/src/adapter.rs::ProfileError — the four ways a load fails",
+        ],
+        causes: 4,
+        derivation: "`load_profile_from` fails four ways: no profile of that name is embedded; \
+                     the file `JIGC_ADAPTERS_DIR` selects cannot be read; its bytes are not \
+                     UTF-8; its YAML is no profile. The second is one arm whatever the read's \
+                     error was, and is followed where the directory holds no such file",
+        without_case: &[(
+            "no profile of the assistant's name is embedded in the binary",
+            Why::NotConstructible(
+                "the name is a constant of `setup.rs` and the binary embeds the profile of \
+                 that name: no state of a repository or of the environment takes it out",
+            ),
+        )],
+        not_followed: &[],
+    },
+    Reading {
+        site: PROFILE_INCOMPLETE,
+        read: &[
+            "crates/cli/src/setup.rs::install — the order of its refusals before any path is asked about",
+            "crates/cli/src/adapter.rs::AdapterProfile::reference",
+        ],
+        causes: 1,
+        derivation: "`reference` finds the first inject target that is a reference; there is \
+                     none where the list is empty or holds hooks alone — one arm",
+        without_case: &[],
+        not_followed: &[],
+    },
+    Reading {
+        site: LAUNCH_TEMPLATE,
+        read: &[
+            "crates/cli/src/setup.rs::install",
+            "crates/cli/src/adapter.rs::validate_spawn_template, spawn_span_is_permitted and line_carries_forbidden_marker",
+            "crates/cli/src/adapter.rs::SpawnTemplateReason — the route is its `Display`",
+        ],
+        causes: 7,
+        derivation: "`validate_spawn_template` checks seven clauses in order and returns the \
+                     first that fails, one reason a clause; the reason's words are the whole \
+                     route",
+        without_case: &[],
+        not_followed: &[],
+    },
+    Reading {
+        site: GUIDE_TARGET,
+        read: &[
+            "crates/cli/src/setup.rs::install",
+            "crates/cli/src/adapter.rs::validate_guide_target",
+            "crates/cli/src/adapter.rs::GuideTargetReason — the route is its `Display`",
+        ],
+        causes: 5,
+        derivation: "`validate_guide_target` returns one of five reasons: no path, an \
+                     absolute one, one with a `..` component, a front-matter key that is one \
+                     of jigc's stamp keys, a key that is no plain YAML key",
+        without_case: &[],
+        not_followed: &[],
+    },
+    Reading {
+        site: COMMIT_REFUSED,
+        read: &[
+            "crates/cli/src/setup.rs::InstallCommitRejection::finding — which step refused, and which of two routes",
+            "crates/cli/src/setup.rs::is_git_identity_rejection — the three wordings of git's that choose the identity route",
+            "crates/cli/src/setup.rs::commit_install — where each rejection is raised",
+            "crates/cli/src/setup.rs::stage_paths",
+        ],
+        causes: 5,
+        derivation: "the finding is built for a refused `git add` or a refused `git commit` \
+                     (the two other rejections carry findings of their own). A refused \
+                     commit takes the identity route where git's words match one of three \
+                     wordings — *tell me who you are*, *unable to auto-detect email \
+                     address*, *empty ident name* — and the other route where they match \
+                     none; a refused `git add` never speaks of identity. One staging cause, \
+                     three identity causes, one other",
+        without_case: &[(
+            "`git commit` refuses because git cannot make up an address for this machine",
+            Why::Platform(
+                "git says *unable to auto-detect email address* where it is allowed to \
+                 invent an identity and the machine gives it none to invent one from — a \
+                 host with no name it can qualify. Whether that is so is the machine's and \
+                 not the sandbox's: the mask forbids the invention outright, and git then \
+                 words the refusal the first way",
+            ),
+        )],
+        not_followed: &[
+            (
+                "a refused `git add` over another refusal than a locked index — a path a \
+                 sparse checkout excludes, a submodule that is registered and absent",
+                Why::NotConstructible(
+                    "one arm, followed over one refusal: `finding` words the route the same \
+                     whatever git said, and what resolves the refusal is in git's words, \
+                     never in the route — a second state would follow the same route by \
+                     another act of the case's own",
+                ),
+            ),
+            (
+                "a refused `git commit` whose cause is a setting and no file — a signing \
+                 key git cannot use",
+                Why::NotConstructible(
+                    "the route says *resolve the refusal* and prints no command for it; \
+                     the frame has no act that changes a setting, and a `git config` line \
+                     of the case's own would be a command the route did not print",
+                ),
+            ),
+        ],
+    },
+    Reading {
+        site: SETTINGS_ASKED,
+        read: &[
+            "crates/cli/src/setup.rs::install — where the question stands: behind the dirty gate, before the first write",
+            "crates/cli/src/adapter.rs::check_settings_merge and read_settings",
+            "crates/cli/src/adapter.rs::merge_allowlist, merge_hook and merge_deny — the shapes each refuses",
+            "crates/cli/src/setup.rs::InstallSubject and DirtyPaths::rides_the_first_commit — which states of the file reach the question",
+        ],
+        causes: 9,
+        derivation: "`read_settings` fails three ways — the read fails over the file's bytes \
+                     (not UTF-8), the read fails any other way, the text is no JSON — and the \
+                     three merges refuse six shapes between them: a root that is no object; \
+                     `permissions`, `permissions.allow`, `hooks`, `hooks.<event>` and \
+                     `permissions.deny` of the wrong kind (the later merges' checks of the \
+                     root and of `permissions` cannot fail once the first merge passed). \
+                     Eight of the nine draw one route, *fix it … commit the fix*; the read \
+                     that fails otherwise draws *ensure it is readable*",
+        without_case: &[],
+        not_followed: &[
+            (
+                "the settings file changed and not committed, on a born `HEAD`",
+                Why::NotConstructible(
+                    "the dirty gate stands before this question and refuses the file as \
+                     work in no commit, under `setup.dirty-install-path`",
+                ),
+            ),
+            (
+                "the read fails because the caller may not read the file",
+                Why::NotConstructible(
+                    "git cannot read it either and reports it changed: the dirty gate \
+                     refuses first — driven, a committed settings file of mode 000. The \
+                     arm is followed where a directory stands at the path, which git does \
+                     not see",
+                ),
+            ),
+        ],
+    },
+    Reading {
+        site: MARKER_WRITE,
+        read: &[
+            "crates/cli/src/setup.rs::write_install_span — the step, and the three before it in the span",
+            "crates/cli/src/setup.rs::write_compose_marker and compose_marker_rendering",
+            "crates/cli/src/regular_file.rs::replace and open_no_follow — the write is in place: the file is opened, cut and written",
+            SHARED[2],
+        ],
+        causes: 9,
+        derivation: "`write_compose_marker` fails in four places. The entry is in the way (a \
+                     link, a directory, a special file). The read fails otherwise than on \
+                     an absent file. The rendering fails: the text is no YAML, is no \
+                     mapping, or the mapping cannot be written back. The write fails: the \
+                     directory cannot be made, the file cannot be opened for writing — \
+                     because the file may not be written, or because there is none and the \
+                     directory may not be — or the bytes cannot be written. Nine; every one \
+                     draws the one route",
+        without_case: &[
+            (
+                "an entry is in the way of `packs.yaml`",
+                Why::NotConstructible(
+                    "`replaced_path_refusal` asks the same question before the first write \
+                     and answers under this code at its own site — the cases \
+                     `setup-compose-marker-a-…`",
+                ),
+            ),
+            (
+                "the rendered mapping cannot be written back as YAML",
+                Why::NotConstructible(
+                    "what is written back is the mapping that was read, with one key set: \
+                     a mapping YAML gave serializes",
+                ),
+            ),
+            (
+                "`.jigc/config/` cannot be made",
+                Why::NotConstructible(
+                    "the step before this one writes `.jigc/config/.gitkeep`, so the \
+                     directory stands or that step has refused under \
+                     `setup.init-project-layer`",
+                ),
+            ),
+            (
+                "the file is opened and its bytes cannot be written",
+                Why::NotConstructible(
+                    "a write that fails on an open file is a full disk or a failing one: no \
+                     state of a sandbox",
+                ),
+            ),
+        ],
+        not_followed: &[
+            (
+                "`packs.yaml` in no commit — untracked, or changed — on a born `HEAD` and on \
+                 an unborn one",
+                Why::NotConstructible(
+                    "the file is one the install replaces, so the dirty gate refuses it \
+                     before the first write wherever git does not hold its bytes — driven \
+                     on an unborn `HEAD`, `setup.dirty-install-path`",
+                ),
+            ),
+            (
+                "the read fails because the caller may not read the file",
+                Why::NotConstructible(
+                    "git cannot read it either and reports it changed: the dirty gate \
+                     refuses first, as for the settings file",
+                ),
+            ),
+        ],
     },
 ];

@@ -31,11 +31,14 @@
 //! (`completions/artifacts/M55/stabilization-build/canary-one/findings.md`), and no ledger
 //! holds it yet. The tie becomes a real one when a run's opening seeds its rows.
 //!
-//! **What the catalog holds today** is eleven sites of `jigc setup` (the plan's step `P3`,
-//! so far): the hook's link refusal — the site whose cause an existing test planted and
-//! passed over — and the two refusals the install raises before its first write over an
-//! entry in the way of a file it replaces or merges into. Every other blocking site of
-//! `setup` and `uninstall` is a row of [`OWED`], under the task that owes its case.
+//! **What the catalog holds today** is twenty-one sites of `jigc setup` (the plan's step
+//! `P3`, so far): the hook's link refusal — the site whose cause an existing test planted
+//! and passed over; the two refusals the install raises before its first write over an
+//! entry in the way of a file it replaces or merges into; the two of a command that cannot
+//! find its repository; the four over the adapter profile; the settings file's question
+//! before the first write; the first refusal of the write span; and the two of the install
+//! commit — one of them with a reason and no case. Every other blocking site of `setup` and
+//! `uninstall` is a row of [`OWED`], under the task that owes its case.
 //!
 //! **A site with a case says what was read to count its causes**
 //! ([`Reading`], a command's `READINGS`): the functions, the count with its derivation,
@@ -85,7 +88,9 @@
 //! again where a route prints no command line, and nowhere else
 //! ([`the_refusing_command_is_run_again_only_where_the_route_prints_no_command_line`]); and
 //! every repository of a sandbox has the sandbox's identity, one a route's own `git init`
-//! makes included ([`a_repository_a_route_makes_has_the_sandboxs_identity_and_no_other`]).
+//! makes included ([`a_repository_a_route_makes_has_the_sandboxs_identity_and_no_other`]);
+//! and a file is mended with the runner's own bytes, an entry made readable or writable
+//! ([`a_file_is_mended_and_an_entry_is_made_readable_or_writable`]).
 //!
 //! **The fence** (the plan's step `P2`) holds the catalog to the refusal sites of the
 //! families [`CATALOGUED`] names. It scans nothing for itself — the sites are
@@ -298,6 +303,54 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "setup-guide-a-special-file",
         ],
     ),
+    (
+        HOME_UNSET,
+        Classification::SameRefusalAgain,
+        &["setup-home-not-set-run-as-the-route-prints"],
+    ),
+    (
+        REINSTALL,
+        Classification::SameRefusalAgain,
+        &[
+            "setup-profile-declares-no-reference",
+            "setup-profile-malformed",
+            "setup-profile-not-in-the-adapters-directory",
+            "setup-profile-not-utf-8",
+        ],
+    ),
+    (
+        CLAUSE,
+        Classification::SameRefusalAgain,
+        &[
+            "setup-guide-target-absolute",
+            "setup-guide-target-climbing-out",
+            "setup-guide-target-declares-a-stamp-key",
+            "setup-guide-target-malformed-key",
+            "setup-guide-target-without-a-path",
+            "setup-launch-template-of-three-lines",
+            "setup-launch-template-with-a-forbidden-marker",
+            "setup-launch-template-with-other-shell",
+            "setup-launch-template-without-a-backticked-span",
+            "setup-launch-template-without-the-task-placeholder",
+            "setup-launch-template-without-the-workflow-placeholder",
+        ],
+    ),
+    (
+        CLAUSE,
+        Classification::AnotherFailure,
+        &["setup-launch-template-without-the-invocation"],
+    ),
+    (
+        PERMISSION_ROUTE,
+        Classification::SameRefusalAgain,
+        &[
+            "setup-compose-marker-packs-file-no-mapping",
+            "setup-compose-marker-packs-file-not-utf-8",
+            "setup-compose-marker-packs-file-not-yaml",
+            "setup-compose-marker-packs-file-read-only",
+            "setup-settings-a-directory-made-readable",
+        ],
+    ),
 ];
 
 // The canary's keys — the route of the hook's link refusal names where the link leads, and
@@ -305,6 +358,11 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
 const HOOK_END: &str = "r1-setup-install-hook-route-other-causes-unexamined";
 const HOOK_RELATIVE: &str = "r1-p3-setup-install-hook-undriven-producers-and-causes";
 const HOOK_DEVICE: &str = "r1-p4-setup-hook-linked-to-dev-null-route-names-dev-null";
+
+/// The canary's key for a route that asks for a permission where the cause is none: there
+/// the hooks directory's writability, here — the same defect at another site — the settings
+/// file's readability, over a directory at its path.
+const PERMISSION_ROUTE: &str = "r1-p3-setup-writability-route-printed-for-other-causes";
 
 // The pilot's keys.
 /// A link git does not track, pointed at a regular file inside the repository as the route
@@ -324,6 +382,16 @@ const NO_FLOOR: &str = "r1-setup-seeded-ignore-route-followed-leaves-no-secrets-
 /// A FIFO at an install path `jigc setup` reads before it refuses: the command does not
 /// end.
 const HELD: &str = "r1-setup-fifo-at-install-path-holds-the-command";
+
+/// `$HOME` is not set: the route says to run the command from inside the repository, where
+/// it was run.
+const HOME_UNSET: &str = "r1-setup-home-unset-route-says-run-from-inside-the-repository";
+/// A profile read from the directory `JIGC_ADAPTERS_DIR` names is refused, and the route
+/// says to reinstall jigc over an embedded profile that is not the one at fault.
+const REINSTALL: &str = "r1-setup-profile-route-says-reinstall-under-adapters-dir";
+/// A profile's launch template or guide target is refused, and the route is the violated
+/// clause again: it names no act, no file and no command.
+const CLAUSE: &str = "r1-setup-profile-clause-route-names-no-act";
 
 /// [`EXPECTED_RED`], an entry a case.
 fn expected_red() -> Vec<ExpectedRed> {
@@ -586,16 +654,6 @@ const OWED: &[Owed] = &[
     Owed {
         task: "P3",
         sites: &[
-            "crates/cli/src/locate.rs::locate_finding::setup.repo-root#dynamic-1",
-            "crates/cli/src/locate.rs::locate_finding::setup.repo-root#dynamic-2",
-            "crates/cli/src/setup.rs::commit_install::setup.install-commit#1",
-            "crates/cli/src/setup.rs::finding::setup.install-commit#1",
-            "crates/cli/src/setup.rs::install::setup.guide-target#1",
-            "crates/cli/src/setup.rs::install::setup.inject-allowlist#1",
-            "crates/cli/src/setup.rs::install::setup.profile-incomplete#1",
-            "crates/cli/src/setup.rs::install::setup.spawn-template#1",
-            "crates/cli/src/setup.rs::run::setup.profile-load#1",
-            "crates/cli/src/setup.rs::write_install_span::setup.compose-marker#1",
             "crates/cli/src/setup.rs::write_install_span::setup.init-project-layer#1",
             "crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#1",
             "crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#2",
@@ -2269,7 +2327,7 @@ fn a_path_git_does_not_ignore_does_not_hold() {
 
 /// Every act that takes an operand, with the marked form naming the directory the planted
 /// refusals below are about.
-const MARKED: [&[Act]; 7] = [
+const MARKED: [&[Act]; 10] = [
     &[Act::Remove(Operand::Unprinted("in/the-way"))],
     &[Act::MoveAway(Operand::Unprinted("in/the-way"))],
     &[Act::ReplaceWithDirectory(Operand::Unprinted("in/the-way"))],
@@ -2277,6 +2335,9 @@ const MARKED: [&[Act]; 7] = [
     &[Act::PointAtNew(Operand::Unprinted("in/the-way"))],
     &[Act::PointAtScript(Operand::Unprinted("in/the-way"))],
     &[Act::Commit(Operand::Unprinted("in/the-way"))],
+    &[Act::Mend(Operand::Unprinted("in/the-way"))],
+    &[Act::MakeReadable(Operand::Unprinted("in/the-way"))],
+    &[Act::MakeWritable(Operand::Unprinted("in/the-way"))],
 ];
 
 /// **The marked form is refused for every act that takes an operand, wherever the printed
@@ -2359,6 +2420,9 @@ fn no_file_act_is_done_outside_the_sandbox() {
             Act::PointAtNew(Operand::Span(1)),
             Act::PointAtScript(Operand::Span(1)),
             Act::Commit(Operand::Span(0)),
+            Act::Mend(Operand::Span(1)),
+            Act::MakeReadable(Operand::Span(1)),
+            Act::MakeWritable(Operand::Span(1)),
         ],
         ..PLANTED
     };
@@ -2372,8 +2436,8 @@ fn no_file_act_is_done_outside_the_sandbox() {
                 .matches("not done — it names nothing inside")
                 .count()
         ),
-        (Classification::AnotherFailure, 6),
-        "all six acts are refused, and the case is red for it:\n{}",
+        (Classification::AnotherFailure, 9),
+        "all nine acts are refused, and the case is red for it:\n{}",
         followed.detail,
     );
 }
@@ -2789,6 +2853,95 @@ fn a_repository_a_route_makes_has_the_sandboxs_identity_and_no_other() {
                 ],
                 env: &[Var::Unset("GIT_CONFIG_COUNT")],
                 acts: &[Act::Run(0)],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+    ]);
+}
+
+/// **A file is mended with the runner's own bytes, and an entry is made readable or
+/// writable** — the acts the settings file's refusal and the first write's added. *Fix it so jigc can merge into it* says what
+/// must come of the file and not what to write, so the bytes are the runner's — the empty
+/// JSON object every file of its own holds — and a case supplies none; where no regular
+/// file stands, nothing is made. *Ensure it is readable* gives the owner the read bit of
+/// the entry itself, and *ensure it is writable* the write bit — of a directory, its own
+/// and of nothing in it. (A root caller reads and writes everything: the last two planted
+/// cases would not be provoked for one.)
+#[test]
+fn a_file_is_mended_and_an_entry_is_made_readable_or_writable() {
+    come_out(&[
+        (
+            Case {
+                name: "planted-a-file-to-mend",
+                state: &[Step::File(Place::Repo("conf/settings"), "broken\n")],
+                refusing: &[
+                    "-c",
+                    "grep -q broken conf/settings || exit 0; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: fix `conf/settings` so that it can be merged into, then re-run \
+                     `jigc -c \"grep -qx {} conf/settings\"`'; exit 1",
+                ],
+                acts: &[Act::Mend(Operand::Span(0)), Act::Run(1)],
+                holds: &[Check::RegularFile(Place::Repo("conf/settings"))],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+        (
+            Case {
+                name: "planted-nothing-to-mend",
+                state: &[Step::Dir(Place::Repo("conf"))],
+                refusing: &[
+                    "-c",
+                    "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: fix `conf/settings`, then re-run \
+                     `jigc -c \"test ! -e conf/settings\"`'; exit 1",
+                ],
+                acts: &[Act::Mend(Operand::Span(0)), Act::Run(1)],
+                ..PLANTED
+            },
+            Classification::AnotherFailure,
+        ),
+        (
+            Case {
+                name: "planted-a-file-to-make-readable",
+                state: &[
+                    Step::File(Place::Repo("conf/shut"), "kept\n"),
+                    Step::Git(&["-c", "alias.shut=!chmod 000 conf/shut", "shut"]),
+                ],
+                refusing: &[
+                    "-c",
+                    "test -r conf/shut && exit 0; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: ensure `conf/shut` is readable, then re-run \
+                     `jigc -c \"grep -q kept conf/shut\"`'; exit 1",
+                ],
+                acts: &[Act::MakeReadable(Operand::Span(0)), Act::Run(1)],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+        (
+            Case {
+                name: "planted-a-directory-to-make-writable",
+                state: &[
+                    Step::File(Place::Repo("shut/kept"), "kept\n"),
+                    Step::Git(&[
+                        "-c",
+                        "alias.shut=!chmod 444 shut/kept && chmod 555 shut",
+                        "shut",
+                    ]),
+                ],
+                refusing: &[
+                    "-c",
+                    "test -w shut && exit 0; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: ensure `shut/` is writable, then re-run \
+                     `jigc -c \": > shut/new && test ! -w shut/kept\"`'; exit 1",
+                ],
+                acts: &[Act::MakeWritable(Operand::Span(0)), Act::Run(1)],
+                holds: &[Check::RegularFile(Place::Repo("shut/new"))],
                 ..PLANTED
             },
             Classification::Holds,

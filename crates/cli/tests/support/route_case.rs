@@ -207,6 +207,18 @@ pub enum Act {
     /// Commit the change at the path the operand names — what a route asks for with
     /// *committing the removal where git tracks the entry*.
     Commit(Operand),
+    /// Mend the regular file the operand names — what a route asks for with *fix it so
+    /// jigc can merge into it*, which says what must come of the file and not its bytes.
+    /// The bytes are the runner's: [`BODY`], the empty JSON object. A link is not followed
+    /// and nothing is made where no file stands.
+    Mend(Operand),
+    /// Make the entry the operand names readable to its owner — what *ensure it is
+    /// readable* asks for. The entry itself, never what a link leads to.
+    MakeReadable(Operand),
+    /// Make the entry the operand names writable to its owner — what *ensure it is
+    /// writable* asks for. The entry itself: a directory's own bit and nothing in it, and
+    /// never what a link leads to.
+    MakeWritable(Operand),
     /// **Run the refusing command again**, where the case stands — what *re-run* and *run
     /// jigc* ask for where the route prints no command line. It takes nothing from the
     /// case; it is refused wherever the printed route holds a command line of the product
@@ -229,7 +241,10 @@ impl Act {
             | Act::PointAtCommitted(operand)
             | Act::PointAtNew(operand)
             | Act::PointAtScript(operand)
-            | Act::Commit(operand) => Some(operand),
+            | Act::Commit(operand)
+            | Act::Mend(operand)
+            | Act::MakeReadable(operand)
+            | Act::MakeWritable(operand) => Some(operand),
             Act::Run(_) | Act::Rerun | Act::RerunInTheRepository => None,
         }
     }
@@ -861,6 +876,9 @@ impl Sandbox {
                 Act::PointAtNew(_) => format!("point the link `{named}` at `{NEW_FILE}` ({how})"),
                 Act::PointAtScript(_) => format!("point the link `{named}` at `{SCRIPT}` ({how})"),
                 Act::Commit(_) => format!("commit the change at `{named}` ({how})"),
+                Act::Mend(_) => format!("mend the file `{named}` ({how})"),
+                Act::MakeReadable(_) => format!("make `{named}` readable ({how})"),
+                Act::MakeWritable(_) => format!("make `{named}` writable ({how})"),
                 Act::Run(_) | Act::Rerun | Act::RerunInTheRepository => {
                     unreachable!("a run takes no operand")
                 }
@@ -896,6 +914,17 @@ impl Sandbox {
                     self.point(&path, SCRIPT)
                 }),
                 Act::Commit(_) => self.commit(named),
+                Act::Mend(_) => {
+                    if fs::symlink_metadata(&path).is_ok_and(|entry| entry.is_file()) {
+                        fs::write(&path, BODY)
+                            .map(|()| "its bytes are the runner's now".to_string())
+                            .map_err(|e| e.to_string())
+                    } else {
+                        Err("not done — no regular file stands there".to_string())
+                    }
+                }
+                Act::MakeReadable(_) => self.permit(&path, 0o400, "its owner may read it"),
+                Act::MakeWritable(_) => self.permit(&path, 0o200, "its owner may write it"),
                 Act::Run(_) | Act::Rerun | Act::RerunInTheRepository => {
                     unreachable!("a run takes no operand")
                 }
@@ -963,6 +992,24 @@ impl Sandbox {
             seen.failed = true;
             format!("{what}: {}\n{}", ran.exit(), ran.said)
         })
+    }
+
+    /// Give the owner of the entry at `path` the permission `bit` — of the entry itself: a
+    /// link is refused, since a permission set through one is set on what it leads to.
+    fn permit(&self, path: &Path, bit: u32, done: &str) -> Result<String, String> {
+        match fs::symlink_metadata(path) {
+            Ok(entry) if entry.file_type().is_symlink() => {
+                Err("not done — a link stands there".to_string())
+            }
+            Ok(entry) => {
+                let mut permissions = entry.permissions();
+                permissions.set_mode(permissions.mode() | bit);
+                fs::set_permissions(path, permissions)
+                    .map(|()| done.to_string())
+                    .map_err(|e| e.to_string())
+            }
+            Err(e) => Err(e.to_string()),
+        }
     }
 
     /// `Ok` where the entry at `path` is a link, asked without following it.

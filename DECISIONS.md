@@ -2,6 +2,84 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The route catalog's next ten sites of `setup`: no repository, no `$HOME`, the four profile refusals, the install commit, the settings file asked before the first write, and the first refusal of the write span — 47 cases, 23 of them red, three new keys and one of the canary's; six that hold with the operand implied (the plan's step `P3`, third part; ruling 3 of 2026-10-10)
+
+**What.** Cases, readings and one reason in [route_catalog/setup.rs](crates/cli/tests/route_catalog/setup.rs); the expected-red rows and the owed list in [route_catalog.rs](crates/cli/tests/route_catalog.rs); three keys in the pilot's findings file ([route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md)). No product source changes and nothing is fixed. **The catalog is 185 cases over twenty sites, 78 of them red; a twenty-first site has a reason. The owed list is 15 rows under `P3`**, 18 under `P4`. The frame grew by three acts for the last two sites ([route_case.rs](crates/cli/tests/support/route_case.rs)), each red first.
+
+**The order.** The list's first two rows, then the four profile sites, then the list again from its top: the install commit's two, the settings file's question, and the first row of the write span.
+
+| site — function · code | read (beside the function) | causes | followed | a reason | cases | red | minutes | new frame vocabulary |
+|---|---|---|---|---|---|---|---|---|
+| `locate_finding` · `setup.repo-root`, outside a repository | `locate`, `locate_from`, `repo::discover_repo_root`, `cli::run_setup` | 3 | 2 | 1 | 4 | 0 | 6 | a case stands elsewhere; the two re-runs; the identity |
+| `locate_finding` · `setup.repo-root`, no `$HOME` | `locate`, `setup::run` | 1 | 1 | 0 | 1 | 1 | 2 | a variable taken away |
+| `run` · `setup.profile-load` | `adapter::load_profile`, `load_profile_from`, `ProfileError` | 4 | 3 | 1 | 3 | 3 | 5 | a variable set to a place |
+| `install` · `setup.profile-incomplete` | `AdapterProfile::reference` | 1 | 1 | 0 | 1 | 1 | 2 | none |
+| `install` · `setup.spawn-template` | `adapter::validate_spawn_template` and its two helpers, `SpawnTemplateReason` | 7 | 7 | 0 | 7 | 7 | 6 | none |
+| `install` · `setup.guide-target` | `adapter::validate_guide_target`, `GuideTargetReason` | 5 | 5 | 0 | 5 | 5 | 4 | none |
+| `commit_install` · `setup.install-commit` | `repo::SeamSubject::live_exempt` and `verify`, `render::blocked_finding` | — | — | the site | 0 | — | 3 | none |
+| `InstallCommitRejection::finding` · `setup.install-commit` | `is_git_identity_rejection`, `commit_install`, `stage_paths` | 5 | 4 | 1 | 4 | 0 | 7 | none |
+| `install` · `setup.inject-allowlist`, the merge asked in memory | `adapter::check_settings_merge`, `read_settings`, `merge_allowlist`, `merge_hook`, `merge_deny`; `InstallSubject`, `DirtyPaths::rides_the_first_commit` | 9 | 9 | 0 | 17 | 1 | 10 | mend a file; make an entry readable |
+| `write_install_span` · `setup.compose-marker` | `write_compose_marker`, `compose_marker_rendering`, `regular_file::replace` and `open_no_follow` | 9 | 5 | 4 | 5 | 4 | 6 | make an entry writable |
+| | | **44** | **37** | **7, and one site** | **47** | **23** | **51** | |
+
+The minutes are the clock's between one site's first probe and the next one's, driving by hand and — for the last two — the acts they needed included. The frame's growth for the first six, the commit before this one, was about twenty more and is not in the column.
+
+**Red — three new keys, and five cases under one of the canary's.** None of the three is one of the eight defects already keyed: those are about a link at an install path — what its route names, what the re-run makes of the link once it is pointed elsewhere, the floor it leaves — and a read that holds. The canary's file has no row for any of the three.
+
+- `r1-setup-home-unset-route-says-run-from-inside-the-repository` — *the same refusal again*, 1 case. With no `$HOME` the refusal is `setup.repo-root` and its route is *run `jigc setup` from inside the target git repository*, where it was run. The source declares it.
+- `r1-setup-profile-route-says-reinstall-under-adapters-dir` — *the same refusal again*, 4 cases over two sites. A profile read from the directory `JIGC_ADAPTERS_DIR` names is refused, and the route says *reinstall jigc — the embedded adapter profile is…*: the embedded one was not read, and neither line names the variable or the file.
+- `r1-setup-profile-clause-route-names-no-act` — *the same refusal again*, 11 cases; *another failure*, 1 case, marked `doubt`. The route of a refused launch template or guide target is the violated clause, word for word the end of the message above it: no act, no file, no command.
+
+**And under the canary's `r1-p3-setup-writability-route-printed-for-other-causes` — *the same refusal again*, 5 cases over the two last sites.** The canary confirmed it at the hook's write: a route that asks for a permission where the cause is none, or is another entry's. The same defect at two more sites:
+
+- the settings file's question, where a **directory** stands at `.claude/settings.json`: *ensure `.claude/settings.json` is readable* — it is, and is no file;
+- the marker's write, four ways: a committed `packs.yaml` that is not UTF-8, is no YAML, or is no mapping, and one that may not be written in a directory that may — each routed *ensure `.jigc/config/` is writable*, which it is. **Where the route's words are true it holds**: the directory itself read-only and no `packs.yaml` in it yet — made writable, the re-run exits 0 (green).
+
+**The settings file's other eight causes are green, sixteen cases.** *Fix `.claude/settings.json` so jigc can merge into it, commit the fix, then re-run* holds for every shape the merge refuses, in both states that reach the refusal: committed on a born `HEAD`, and untracked on an unborn one, where a merged-into file rides the first commit.
+
+**All sixteen profile cases stand on a state only a variable reaches.** The shipped profile is embedded and passes every clause; `JIGC_ADAPTERS_DIR` is the one road to another, and the source says of a profile that will not load that *that state is the test seam's alone*. The cases are there because the sites are blocking sites of the family and can be constructed; whether a route owes a reader anything in that state is the human's, and the findings file says so at its head.
+
+**Green among the first eight sites — eight cases, and six of them are *followed, holds, operand implied*, the first on a real route.** The frame's own entry had that classification reached only with a refusal switched off. Now: the four cases outside a repository (the route prints no line for *run jigc*, and both ways hold — from inside the sandbox's repository, and after the route's own `git init`), and the two refused git steps whose route is *resolve the refusal `git add` / `git commit` reports above*, where what to resolve is in git's words and not in the route — a lock on the index, a hook that exits 1 — and the case names it by the marked form. The two identity refusals are *followed, holds*: the route prints both `git config` lines and the re-run, and they work as printed.
+
+**One doubt, for the human — the twelfth in all.** *Spawn template missing the required `jigc workflow … --task …` invocation*: (a) the backticked `jigc` line is a command to run — followed, as printed: exit 1 under `work-unit.malformed-id`; (b) it is the shape the template must hold, and the route prints nothing to run — then the case is one more *the same refusal again*. Red either way.
+
+**Seven reasons for a cause, one for a site.** The first three:
+
+- `not-constructible` — a `.git` above that cannot be asked about: a command cannot be started under a directory its caller may not search.
+- `not-constructible` — no profile of the assistant's name embedded: the name is a constant and the binary embeds that profile.
+- `platform` — `git commit` refused because git cannot make up an address: whether it can is the machine's, and the mask forbids the invention outright.
+- Four more, all `not-constructible`, at the marker's write: an entry in the way is answered first by `replaced_path_refusal`; a mapping YAML gave serializes; the directory stands once the step before has written into it; a write that fails on an open file is a disk's fault.
+- **The site `commit_install::setup.install-commit#1`, `not-constructible`.** It is the fallback for a posture re-probe that fails without a finding of its own. `verify` has two such arms — the git directory moved, the ref moved — and the subject is built and verified in one expression, so either needs the repository to change between two reads a few instructions apart.
+
+**Ways not followed, with why** (in the site's reading): a refused `git add` over another refusal than a locked index — one arm, one route, and what resolves it is never in the route; a refused `git commit` whose cause is a setting — the frame has no act that changes one, and a `git config` line of the case's own would be a command the route did not print; a settings file or a `packs.yaml` that is in no commit, or that the caller may not read — the dirty gate refuses first, under another code (driven: a committed settings file of mode 000, and an untracked `packs.yaml` on an unborn `HEAD`).
+
+**The frame, grown by three acts — each red first**, against a runner that declared it and did nothing (`a_file_is_mended_and_an_entry_is_made_readable_or_writable`; the arms that hold the marked form and the sandbox's bound to every act that takes an operand now hold these three too).
+
+- **Mend a file.** *Fix it so jigc can merge into it* says what must come of the file and not its bytes, so the bytes are the runner's — the empty JSON object every file of its own already holds — and a case supplies none. Where no regular file stands, nothing is made.
+- **Make an entry readable, or writable**: the owner's bit, of the entry the route names and of nothing in it; a link is refused, since a permission set through one is set on what it leads to.
+
+**Pinned.**
+
+- **A state's file is text, and a state has no step for a permission.** A file that is not UTF-8 is two bytes a `git` alias writes, and a permission is taken away by one — a shell line git runs at the repository's root, which a state step already could do. No step was added for either.
+- **A case over a permission is not provoked for a root caller**, who may read and write everything: two cases of the catalog and two planted ones. The container's user is none.
+- **A link at `.git` that leads to nothing is a cause of *not in a repository*, and the route's `git init` makes git's directory where the link leads.** No witness is listed for that end: it is where the link says the repository's own directory is.
+- **The profile's bytes are the witness of every profile case.**
+
+**What the list is from here.** Thirteen of the fifteen rows left are the write span's other steps, each a `map_err` that words every error of its step as *ensure … is writable* — the shape the marker's write has. By that one site: a step's route holds where the named entry is what may not be written, and is *the same refusal again* for every other error of the step, under the canary's key. Not driven for the thirteen. The two others are the engine's: the dirty gate's own refusal and the question git could not answer.
+
+**The suite's seconds.** `cargo test -p jigc --test g_migration route_catalog::`, 25 arms, 185 cases: 103 s and 84 s on this machine **while it ran this branch's own gate for the pool's commit and another lane's** (load average 48), and 31 s once that gate was over and the load was falling (46, then 20). The first two are not comparable with the pool's 35 s and 32 s for 138 cases, which had one gate fewer beside them; the 47 new cases are also the first that go on into the write span and the install commit. Inside a gate, one process an arm: the arm that follows the cases took 58.5 s and 21.8 s at 138 cases, in a gate of each of the two commits before this one; at 185 it is in the task's report, with this commit's gate.
+
+**Not established.**
+
+- **Linux**: the two runs follow this commit and are in the task's report.
+- **The previous release.**
+- **A FIFO where `JIGC_ADAPTERS_DIR` puts the profile.** By reading, the load would hold as the two held cases do; not driven.
+- **Other errors of the profile's read** — a directory there, a file the caller may not read: one arm, followed at the file that is absent.
+- **A root caller**, for the cause given a reason on search permission.
+- **What the arm that follows the cases costs inside a gate once the catalog is twice this.** The gate ends a test at eight minutes, the arm is one test, and under two gates at once it is past a minute now.
+- **That the minutes carry over** to the write span's other steps: each has callees of its own to read, and a state in which the steps before it have nothing to write.
+- **What a sandbox leaves behind where a case over a read-only directory fails before its route is followed**: the scratch root's removal is best effort and cannot empty a directory it may not write.
+
 ## 2026-10-11 — The route catalog's frame, grown for the sites behind the install's first refusals: a case stands where it says in the environment it says, the refusing command is run again only where a route prints no command line, and every repository of a sandbox has the sandbox's identity (the plan's step `P3`, third part; ruling 3 of 2026-10-10)
 
 **What.** [route_case.rs](crates/cli/tests/support/route_case.rs) and three arms in [route_catalog.rs](crates/cli/tests/route_catalog.rs). No case of the catalog is added or changed, and the 138 came out as they were listed. No product source changes.
