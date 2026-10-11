@@ -2,6 +2,42 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The route catalog's cases are followed through a bounded pool: no more at once than the machine has cores, counted and never timed (the plan's step `P3`, third part; ruling 3 of 2026-10-10)
+
+**What.** [route_case.rs](crates/cli/tests/support/route_case.rs): `pooled(width, items, job)` runs a job over every item, no more than `width` at once, and hands the results back in the items' order; `width()` is how wide the catalog's pool is. [route_catalog.rs](crates/cli/tests/route_catalog.rs): the arm that follows the cases hands them to the pool, and one new arm holds the pool. No case changes, no product source changes; the report's order and *one arm reports every difference* are as they were.
+
+**Why.** The arm started every case at once — 138 sandboxes, each a chain of child processes. In `dev/runner-faithful` on a loaded host the suite took 142 s and 120 s where it had taken 15 s with 48 cases, an arm beside it that starts no process ran past a minute, and a `jigc setup` slowed that far comes within reach of the frame's two-minute limit, at which a green case turns red for no reason of the product's. The catalog at least doubles.
+
+**The width: as many as this process may run threads at once** (`std::thread::available_parallelism` — the cores, or the share of them a container was given; two where the machine does not say). *Why that number.* A case is one child process at a time, so a case computes about as much as one thread: that many chains are one machine's worth of work, whatever the catalog grows to — the bound a test harness puts on its own tests, which already run beside this arm. It is read from the machine and not written down because the same suite runs on ten cores here, on eight in the container, on four on the hosted runner and on a cpuset of four in the per-leg proxy, and a constant is too wide for one of them or too narrow for another.
+
+**Narrower is not kinder, only slower — measured.** `cargo test -p jigc --test g_migration route_catalog::`, 138 cases, this machine (ten cores) **while it carried another lane's gate** — the load average stood between 35 and 90 throughout, so every number is a loaded one and none is a quiet machine's:
+
+| the cases followed | seconds, each run |
+|---|---|
+| all at once (the commit before) | 32.3 · 31.3 |
+| a pool of 2 | 186.7 |
+| a pool of 4 | 122.8 · 60.0 |
+| a pool of 8 | 72.8 · 45.7 |
+| a pool of 16 | 25.9 |
+| **the machine's width — 10** (this commit) | **35.3 · 32.2** |
+
+Two things are read off it. **Started all at once, the cases were fast here because they crowded everything else out**: on a loaded host a process's share goes with the number of processes that ask, so 138 chains took what a pool of four never gets — which is what *assuming it has the machine* is, and inside a container, whose share is fixed, the same crowd only fights itself. And **a pool of two or four is within reach of the gate's own limit**: `dev/gate` runs under nextest, which ends a test at eight minutes (`slow-timeout`, 60 s × 8), and a catalog three times this one at width four is 3 × 123 s under this load.
+
+**Red first, by construction and not by load.** `no_more_cases_run_at_once_than_the_pool_is_wide` counts through the pool's own jobs: each job says that it runs and on which thread, then holds until the pool is full behind it (job `k` goes on once `k + width` jobs have started), so the most that run at once is the width exactly and no accident of scheduling. Against `pooled` as first written — it took the width and started a thread an item, which is what the arm did before — it failed with `12 jobs through a pool 3 wide: 12 started, on 12 thread(s), 12 at once at the most`. **The count that is red by construction is the threads**: a thread runs one job at a time, so no more run at once than there are threads, whatever the scheduler does; *how many at once* alone cannot tell a bounded pool from an unbounded one that was unlucky, since nothing a job can see says that no further job is coming.
+
+**Pinned.**
+
+- **The arm reads no clock**, as *The route catalog's runner* below has it of every arm of the frame. *Its price, declared:* a pool that ran **fewer** at once than it was asked for holds this arm and does not fail it — the first job waits for a job that never starts.
+- **Neither the suite nor a command's file starts a thread** (`thread::scope`, `spawn(` — read from source by the same arm), so the cases cannot be followed around the pool.
+- **A width of nothing is refused**, and a pool is never wider than its items.
+
+**Not established.**
+
+- **A quiet machine's seconds**, at any width — no quiet run was to be had.
+- **The seconds in the container**, for this commit: the Linux runs follow the task's last commit and are recorded there.
+- **The hosted runner.** Four cores and `cargo test`, which has no limit per test: the leg's ten minutes are its only bound, and what the catalog costs there at twice its size was not measured.
+- **That the machine's width is right under the gate's own load** — sixteen tests at once on ten cores, and this arm ten chains beside them. Two runs under another lane's gate are what there is.
+
 ## 2026-10-11 — The route catalog follows a cause every way its route offers: 138 cases over eleven sites of `setup`, 55 of them red; the hook's site in full; a command that does not end is a classification of its own; and no new site (the plan's step `P3`, second part; ruling 3 of 2026-10-10)
 
 **What.** [route_catalog/setup.rs](crates/cli/tests/route_catalog/setup.rs) rewritten as groups — a group a cause, a case a way out of its route; the frame grown again ([route_case.rs](crates/cli/tests/support/route_case.rs)); the arms and the expected-red list in [route_catalog.rs](crates/cli/tests/route_catalog.rs); the findings file rewritten ([route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md)). No product source changes and nothing is fixed. **The owed list is unchanged — 25 rows under `P3`**: the three things below filled the commit before a new site was whole.

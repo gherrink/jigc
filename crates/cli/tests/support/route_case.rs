@@ -964,6 +964,61 @@ pub fn follow(binary: &Path, case: &Case) -> Result<Followed, String> {
 /// after two minutes rather than a suite that does not come back.
 pub const LIMIT: Duration = Duration::from_secs(120);
 
+/// **How many cases are followed at once** ([`pooled`]): as many as this process may run
+/// threads at once — the machine's cores, or the share of them a container was given — and
+/// two where the machine does not say.
+///
+/// *Why a bound at all.* A case is a chain of child processes, one at a time: a sandbox's
+/// `git` setup, the refusing command, the route's commands. Started all at once, the cases
+/// take a share of the machine in proportion to their number — 138 chains on a ten-core
+/// host that another gate was loading finished sooner than any bounded pool did, **because**
+/// they crowded everything else out; and in a container of eight CPUs the same 138 made
+/// every `jigc setup` slow toward the two-minute [`LIMIT`], at which a green case turns red
+/// for no reason of the product's, while an arm beside them that starts no process ran past
+/// a minute. The number of cases only grows.
+///
+/// *Why the cores.* A chain computes about as much as one thread does, so this many chains
+/// are one machine's worth of work and no more, whatever the catalog grows to — the bound a
+/// test harness puts on its own tests, which already run beside this arm. Narrower is not
+/// kinder, only slower: the gate ends a test that runs eight minutes, and under a loaded
+/// machine a pool of two or four comes within reach of that once the catalog is two or
+/// three times what it is (`DECISIONS.md` → 2026-10-11, *the cases are followed through a
+/// bounded pool*, has the seconds).
+pub fn width() -> usize {
+    std::thread::available_parallelism().map_or(2, usize::from)
+}
+
+/// **Run `job` over every item, no more than `width` of them at once**, and hand back what
+/// each came to, in the items' order — whichever ended first. `width` threads take the
+/// items in order, each the next one that nobody has taken, so what runs at once is never
+/// more than the threads there are.
+pub fn pooled<T: Sync, R: Send>(width: usize, items: &[T], job: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    assert!(width > 0, "a pool of no width runs nothing");
+    let next = AtomicUsize::new(0);
+    let mut came_to: Vec<(usize, R)> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..width.min(items.len()))
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut mine = Vec::new();
+                    loop {
+                        let at = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(item) = items.get(at) else {
+                            break mine;
+                        };
+                        mine.push((at, job(item)));
+                    }
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|worker| worker.join().expect("a case's runner panicked"))
+            .collect()
+    });
+    came_to.sort_by_key(|(at, _)| *at);
+    came_to.into_iter().map(|(_, what)| what).collect()
+}
+
 /// [`follow`], with the limit a **command under test** is ended at — the refusing command
 /// and the commands a route prints — for the arm that holds the limit itself, which cannot
 /// wait two minutes for it. The runner's own children keep [`LIMIT`].

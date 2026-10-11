@@ -72,6 +72,13 @@
 //! A case listed under it is waited for seconds, so a known hold is no two minutes of
 //! every run.
 //!
+//! **The cases are followed through a pool of bounded width**
+//! ([`route_case::pooled`](crate::support::route_case::pooled),
+//! [`route_case::width`](crate::support::route_case::width)): no more at once than the
+//! machine has cores, however many the catalog holds
+//! ([`no_more_cases_run_at_once_than_the_pool_is_wide`]). Neither this file nor a command's
+//! starts a thread of its own.
+//!
 //! **The fence** (the plan's step `P2`) holds the catalog to the refusal sites of the
 //! families [`CATALOGUED`] names. It scans nothing for itself — the sites are
 //! [`support::refusal_sites`](crate::support::refusal_sites)' scan, which
@@ -340,19 +347,12 @@ fn binary() -> &'static Path {
 fn the_catalog_is_followed_and_the_expected_red_list_is_exact() {
     let cases = cases();
     let expected = expected_red();
-    let followed: Vec<Result<Followed, String>> = std::thread::scope(|scope| {
-        let arms: Vec<_> = cases
-            .iter()
-            .map(|case| {
-                // A case listed as one whose command does not end is waited for seconds.
-                let limit = route_case::limit_of(&expected, case);
-                scope.spawn(move || route_case::follow_within(binary(), case, limit))
-            })
-            .collect();
-        arms.into_iter()
-            .map(|arm| arm.join().expect("a case's runner panicked"))
-            .collect()
-    });
+    let followed: Vec<Result<Followed, String>> =
+        route_case::pooled(route_case::width(), &cases, |case| {
+            // A case listed as one whose command does not end is waited for seconds.
+            let limit = route_case::limit_of(&expected, case);
+            route_case::follow_within(binary(), case, limit)
+        });
 
     let mut wrong = Vec::new();
     let mut results = Vec::new();
@@ -1472,6 +1472,14 @@ fn variants(body: &str) -> Vec<String> {
         .collect()
 }
 
+/// This file and every command's, each with its source — what the arms that read the
+/// suite's own source read.
+fn suite_files() -> Vec<(&'static str, &'static str)> {
+    std::iter::once(("route_catalog.rs", include_str!("route_catalog.rs")))
+        .chain(TABLES.iter().map(|table| (table.file, table.source)))
+        .collect()
+}
+
 /// **No act takes a path, and the marked form is refused where a path is printed.**
 ///
 /// The source half reads the frame, this file and every command's. An [`Act`] carries an
@@ -1506,9 +1514,7 @@ fn no_act_takes_a_path_and_the_marked_form_is_refused_where_a_path_is_printed() 
             "a case is data: `{callable}` in `Case` lets one act around the runner",
         );
     }
-    let files = std::iter::once(("route_catalog.rs", include_str!("route_catalog.rs")))
-        .chain(TABLES.iter().map(|table| (table.file, table.source)));
-    for (file, source) in files {
+    for (file, source) in suite_files() {
         let code = rust_source::code_only(source);
         for by_hand in ["fs::", "std::os", "std::process", "Command", "symlink"] {
             assert!(
@@ -2453,4 +2459,96 @@ fn the_handed_limit_ends_the_command_under_test_and_never_the_sandboxs_setup() {
         followed.classification,
         followed.detail,
     );
+}
+
+// ---------------------------------------------------------------------------
+// The pool
+// ---------------------------------------------------------------------------
+
+/// What the jobs of the arm below count, under one lock.
+#[derive(Default)]
+struct Counted {
+    /// How many jobs have started.
+    started: usize,
+    /// How many are running now, and the most that ever were.
+    running: usize,
+    most: usize,
+    /// The threads a job ran on.
+    threads: Vec<std::thread::ThreadId>,
+}
+
+/// **No more cases run at once than the pool is wide** — counted, never timed.
+///
+/// The catalog's arm hands its cases to [`route_case::pooled`], and as first built that
+/// arm started every case at once: 138 sandboxes, each a chain of child processes, on
+/// whatever machine the gate had left it. So the pool is held here by a count of its own
+/// jobs. Each job says that it runs, on which thread, and then **holds until the pool is
+/// full behind it** — job `k` goes on once `k + width` jobs have started — so the most
+/// that run at once is no accident of scheduling: under a pool of this width it is the
+/// width, exactly. Three things follow and are asserted: the jobs ran on no more threads
+/// than the pool is wide (a thread runs one job at a time, so that bounds what runs at
+/// once whatever the scheduler does — this is the count that is red against a runner
+/// that starts a thread a case); no more ran at once than the width; and what each came
+/// to is handed back in the items' order.
+///
+/// **Its bound, declared:** a pool that ran *fewer* at once than it was asked for would
+/// hold this arm and not fail it — the first job waits for a job that never starts. The
+/// arm reads no clock, so it has none to end that wait with.
+///
+/// And the source half: neither this file nor a command's starts a thread of its own, so
+/// the catalog cannot be followed around the pool.
+#[test]
+fn no_more_cases_run_at_once_than_the_pool_is_wide() {
+    use std::sync::{Condvar, Mutex};
+
+    const WIDE: usize = 3;
+    const JOBS: usize = 4 * WIDE;
+    let counted = Mutex::new(Counted::default());
+    let started = Condvar::new();
+    let jobs: Vec<usize> = (0..JOBS).collect();
+    let came_to = route_case::pooled(WIDE, &jobs, |job| {
+        let mut counted = counted.lock().expect("no job panics under the lock");
+        counted.started += 1;
+        counted.running += 1;
+        counted.most = counted.most.max(counted.running);
+        let here = std::thread::current().id();
+        if !counted.threads.contains(&here) {
+            counted.threads.push(here);
+        }
+        started.notify_all();
+        let full_behind_it = (job + WIDE).min(JOBS);
+        let mut counted = started
+            .wait_while(counted, |counted| counted.started < full_behind_it)
+            .expect("no job panics under the lock");
+        counted.running -= 1;
+        job * 2
+    });
+    let counted = counted
+        .into_inner()
+        .expect("no job panicked under the lock");
+    assert_eq!(
+        (counted.started, counted.threads.len(), counted.most),
+        (JOBS, WIDE, WIDE),
+        "{JOBS} jobs through a pool {WIDE} wide: {} started, on {} thread(s), {} at once at \
+         the most",
+        counted.started,
+        counted.threads.len(),
+        counted.most,
+    );
+    assert_eq!(
+        came_to,
+        jobs.iter().map(|job| job * 2).collect::<Vec<_>>(),
+        "what each job came to, in the items' order",
+    );
+
+    for (file, source) in suite_files() {
+        let code = rust_source::code_only(source);
+        for by_hand in ["thread::scope", "spawn("] {
+            assert!(
+                !code.contains(by_hand),
+                "`{file}` names `{by_hand}`: a case is followed in the runner's pool, which \
+                 bounds how many run at once",
+            );
+        }
+    }
 }
