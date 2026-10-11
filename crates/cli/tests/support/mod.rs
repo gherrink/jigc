@@ -142,6 +142,21 @@ pub fn create_title(doctype: &str, otherwise: &str) -> String {
 /// `$HOME` and a command substitution's side effect lands inside the throwaway repo where
 /// the caller can assert on it — never in the developer's tree.
 pub fn shell_words(cmd: &str, cwd: &std::path::Path, home: &std::path::Path) -> Vec<String> {
+    shell_words_or(cmd, cwd, home).unwrap_or_else(|stderr| {
+        panic!("the emitted command line must parse as shell words; got `{cmd}`\nstderr:\n{stderr}")
+    })
+}
+
+/// [`shell_words`], for a caller to whom **a line no shell can split is a result and not a
+/// fault of the test**: `Err` is what `sh` said of it. The route catalog follows a printed
+/// route whatever it prints, and a line that cannot be run as printed is what it is there
+/// to show (`support::route_case`); every other suite holds an emitted line to being one,
+/// through [`shell_words`].
+pub fn shell_words_or(
+    cmd: &str,
+    cwd: &std::path::Path,
+    home: &std::path::Path,
+) -> Result<Vec<String>, String> {
     let script = format!("set -- {cmd}\nfor w in \"$@\"; do printf '%s\\0' \"$w\"; done");
     let out = std::process::Command::new("sh")
         .arg("-c")
@@ -150,11 +165,9 @@ pub fn shell_words(cmd: &str, cwd: &std::path::Path, home: &std::path::Path) -> 
         .env("HOME", home)
         .output()
         .expect("spawn sh");
-    assert!(
-        out.status.success(),
-        "the emitted command line must parse as shell words; got `{cmd}`\nstderr:\n{}",
-        String::from_utf8_lossy(&out.stderr),
-    );
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).into_owned());
+    }
     let mut words: Vec<String> = out
         .stdout
         .split(|b| *b == 0)
@@ -163,5 +176,5 @@ pub fn shell_words(cmd: &str, cwd: &std::path::Path, home: &std::path::Path) -> 
     // The trailing NUL of the last word yields one empty tail element — an *emitted*
     // empty word keeps its own element.
     words.pop();
-    words
+    Ok(words)
 }

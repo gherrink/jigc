@@ -178,6 +178,22 @@ The first way out — remove the link — holds at every end a link was driven a
 - **What went wrong:** nothing but the first step. The frame holds every command a route prints to exit 0, and this one is the question that failed, printed so that the reader sees it fail.
 - **The two readings:** (a) the printed `git` line is a step of the route like any other — followed here, red; (b) it is there to show git's words, and the route's steps are *resolve that* and the re-run — `…-resolved`, two cases, *followed, holds, operand implied*: what resolves the failure is in git's words and never in the route.
 
+### `r1-setup-unborn-dirty-route-unstaging-line-is-no-command-line`
+
+- **Classification:** followed, a printed line no shell can split. **Marked `doubt`** — both cases rest on a reading the human has not given. **Two cases:** `setup-unborn-staged-file-at-an-install-path-unstaged-as-printed-and-moved`, `setup-unborn-install-path-staged-and-deleted-unstaged-as-printed`.
+- **State:** a repository with no commit yet and no install, in which a file is staged at an install path (`CLAUDE.md`) — still in the working tree in the first case, deleted from it in the second, where the refusal comes behind the install's writes.
+- **Refusing command:** `jigc setup` — exit 1, `setup.dirty-install-path`.
+- **Printed route** (the first case; the second ends its commit clause at *before the install runs over the path*):
+
+  ```text
+  route: move the file(s) out of those path(s) — `git -C <sandbox>/repo rm --cached -- <path>` first where you had staged one — then re-run `jigc setup`; or commit them and re-run, so git holds your copy before the install runs over the path — a first commit also ends the fresh-repository install, so `jigc setup` will not seed its secrets-floor root `.gitignore` afterwards (it writes that only where there is no commit yet; moving the file out instead keeps it); `jigc setup --force` is the single consent, and it lets the install run and commit those paths as it leaves them — which at a path jigc regenerates whole is jigc's own content, not yours
+  ```
+
+- **What was done:** the first backticked line handed to a shell as printed — it is not run: `<path>` is a redirection with nothing behind it, and the shell refuses the line whole (`syntax error near unexpected token`). Then the rest of the way: the file moved out of its path (the first case), and `jigc setup` again.
+- **What went wrong:** the one line the route prints for a staged file cannot be run as it stands; and with the file still staged, the re-run refuses under the same code in both cases. The repository's path is printed in full in the same line; the staged file's, which the refusal lists two lines above, is not.
+- **The two readings:** (a) the backticked line is a command to run as printed, like every other line a route prints between backticks — followed here, red; (b) it is a shape, and the reader fills in the path — then this route prints no line that can be run as it stands, and the catalog has no case for it: a filled-in line would be a line of the case's own, which the frame does not run.
+- **Beside it, and green:** the route's other two ways from the same two states — the file committed, and the consent (`…-committed`, `…-forced`).
+
 ## 2. Under the canary's keys — the hook's link refusal
 
 Not minted here; listed so that the count is in one place. The route of `setup.install-hook` names **where the link leads** as *the link* wherever the link leads anywhere: `display_hook_path` resolves the link before it words the path.

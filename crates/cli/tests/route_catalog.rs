@@ -19,12 +19,22 @@
 //!
 //! **A red case is a finding, not a failure to hide.** A case that comes out red is listed
 //! in [`EXPECTED_RED`] with the key of the finding it reproduces and the classification it
-//! is red with, and the list is strict three ways
-//! ([`the_catalog_is_followed_and_the_expected_red_list_is_exact`]): a listed case that is
-//! no longer red fails, a red case that is not listed fails, and a listed case whose
-//! classification moved fails. So the gate is green over a known defect, the defect is on
-//! record under its key, and the fix that turns the case removes the entry in the same
-//! commit — nothing here is fixed, and nothing here asserts a route's wording.
+//! is red with, and the list is strict three ways: a listed case that is no longer red
+//! fails, a red case that is not listed fails, and a listed case whose classification moved
+//! fails. So the gate is green over a known defect, the defect is on record under its key,
+//! and the fix that turns the case removes the entry in the same commit — nothing here is
+//! fixed, and nothing here asserts a route's wording.
+//!
+//! **The cases are followed by one arm a command's file** — `tables!` makes the arm with
+//! the file's row, under [`FOLLOWED`], so the test a runner bounds is one command's cases
+//! and not the catalog's ([`follow_the_cases_of`]). Each arm holds the list three ways over
+//! its own cases and reports every difference of its command at once; a case stands in one
+//! file, so the arms together hold the list across the catalog, and what is wrong with the
+//! list by itself — an entry for a case no file holds, a case listed twice — is one arm's
+//! that follows nothing
+//! ([`every_entry_of_the_expected_red_list_names_a_case_of_the_catalog`]). That every file
+//! has its arm, and every arm a file, is held against the tests the harness itself lists
+//! ([`every_table_has_its_arm_and_every_arm_its_table`]).
 //!
 //! **Before a stabilization run is opened, a key certifies itself**: it is the key the
 //! small canary gave the finding
@@ -79,9 +89,23 @@
 //! **The cases are followed through a pool of bounded width**
 //! ([`route_case::pooled`](crate::support::route_case::pooled),
 //! [`route_case::width`](crate::support::route_case::width)): no more at once than the
-//! machine has cores, however many the catalog holds
+//! machine has cores, however many a command's file holds
 //! ([`no_more_cases_run_at_once_than_the_pool_is_wide`]). Neither this file nor a command's
-//! starts a thread of its own.
+//! starts a thread of its own. **And every case followed in one process passes one gate of
+//! that width** ([`route_case::Gate`](crate::support::route_case::Gate)), so two commands'
+//! arms that run as threads of one process — `cargo test`, which is what CI and the
+//! container run — are one machine's worth of chains together
+//! ([`no_more_chains_run_at_once_in_one_process_than_the_machine_is_wide`]). **Across
+//! processes nothing bounds them**: under nextest, which gives each test a process, two
+//! commands' arms that run at once are up to twice the machine's width of chains. A bound
+//! inside the suite would make one arm wait for the other inside its own eight minutes,
+//! which is the limit the arms were split for; the bound that costs an arm no time is the
+//! runner's (a test group of one thread in `.config/nextest.toml`), a file that is not this
+//! suite's.
+//!
+//! **A printed line that no shell can split is a red case** — the ninth classification
+//! ([`a_printed_line_no_shell_can_split_is_a_red_case_and_stops_no_arm`]). The frame's
+//! reader of a printed line used to end the whole arm over one.
 //!
 //! **And with the sites behind those**, each piece again with an arm that was red first: a
 //! case stands where it says, in the environment it says
@@ -151,6 +175,8 @@ struct Table {
     cases: &'static [&'static [Case]],
     reasons: &'static [Reason],
     readings: &'static [Reading],
+    /// The arm that follows the file's cases, by its name under [`FOLLOWED`].
+    arm: &'static str,
 }
 
 /// **A command's file is wired in by its declaration inside this macro's one call, and
@@ -158,6 +184,10 @@ struct Table {
 /// (`test_target_registration.rs`), and the macro makes the same line the file's row of
 /// [`TABLES`] — its cases, its reasons and its source — so no arm of this suite names a
 /// command's file a second time. The file exports `CASES`, `REASONS` and `READINGS`.
+///
+/// **And the same line makes the arm that follows the file's cases** — a test of the
+/// file's own name in the module [`FOLLOWED`] names — so a command's file cannot be wired
+/// in without its arm, and the test a runner puts a limit on is one command's cases.
 macro_rules! tables {
     ($(#[path = $file:literal] mod $name:ident;)*) => {
         $(
@@ -172,9 +202,26 @@ macro_rules! tables {
             cases: $name::CASES,
             reasons: $name::REASONS,
             readings: $name::READINGS,
+            arm: stringify!($name),
         }),*];
+
+        /// **A command's cases are followed on the binary this suite was built with, and
+        /// the expected-red list is exactly the ones that came out red** — one arm a
+        /// command's file ([`follow_the_cases_of`]).
+        mod the_cases_are_followed_and_the_expected_red_list_is_exact {
+            $(
+                #[test]
+                fn $name() {
+                    super::follow_the_cases_of($file);
+                }
+            )*
+        }
     };
 }
+
+/// The module `tables!` puts the arms that follow the cases in, as the harness names it
+/// inside this suite.
+const FOLLOWED: &str = "the_cases_are_followed_and_the_expected_red_list_is_exact";
 
 tables! {
     #[path = "route_catalog/setup.rs"]
@@ -427,6 +474,14 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "setup-git-status-fails-asked-as-printed-and-resolved",
         ],
     ),
+    (
+        A_SHAPE_FOR_A_LINE,
+        Classification::UnsplittableLine,
+        &[
+            "setup-unborn-install-path-staged-and-deleted-unstaged-as-printed",
+            "setup-unborn-staged-file-at-an-install-path-unstaged-as-printed-and-moved",
+        ],
+    ),
 ];
 
 // The canary's keys — the route of the hook's link refusal names where the link leads, and
@@ -491,6 +546,10 @@ const FORCE_CANNOT_COMMIT: &str = "r1-setup-force-over-skip-worktree-path-cannot
 /// on a reading — every case under it is marked.
 const THE_QUESTION_THAT_FAILED: &str =
     "r1-setup-unverified-route-opens-with-the-question-that-failed";
+/// Where there is no commit yet, the dirty route's line to unstage a file is printed with
+/// `<path>` standing where the path belongs: no shell splits it. Rests on a reading — every
+/// case under it is marked.
+const A_SHAPE_FOR_A_LINE: &str = "r1-setup-unborn-dirty-route-unstaging-line-is-no-command-line";
 
 /// [`EXPECTED_RED`], an entry a case.
 fn expected_red() -> Vec<ExpectedRed> {
@@ -514,14 +573,23 @@ fn binary() -> &'static Path {
 // The catalog
 // ---------------------------------------------------------------------------
 
-/// **Every case is followed on the binary this suite was built with, and the expected-red
-/// list is exactly the cases that came out red.** One arm, every difference: a case that
-/// cannot be followed as written, a red case no entry lists, a listed case that is not
-/// red, and a listed case whose classification moved are all named before it fails.
-#[test]
-fn the_catalog_is_followed_and_the_expected_red_list_is_exact() {
-    let cases = cases();
-    let expected = expected_red();
+/// **Follow one command's cases on the binary this suite was built with, and hold the
+/// expected-red list to exactly the ones that came out red.** One arm a command's file,
+/// every difference of that command at once: a case that cannot be followed as written, a
+/// red case no entry lists, a listed case that is not red, and a listed case whose
+/// classification moved are all named before it fails. The entries held are the ones that
+/// name a case of this file; what the list holds beside the cases of any file is
+/// [`every_entry_of_the_expected_red_list_names_a_case_of_the_catalog`]'s.
+fn follow_the_cases_of(file: &str) {
+    let table = TABLES
+        .iter()
+        .find(|table| table.file == file)
+        .unwrap_or_else(|| panic!("`{file}` is a row of `TABLES`"));
+    let cases: Vec<&Case> = table.cases.iter().flat_map(|group| group.iter()).collect();
+    let expected: Vec<ExpectedRed> = expected_red()
+        .into_iter()
+        .filter(|entry| cases.iter().any(|case| case.name == entry.case))
+        .collect();
     let followed: Vec<Result<Followed, String>> =
         route_case::pooled(route_case::width(), &cases, |case| {
             // A case listed as one whose command does not end is waited for seconds.
@@ -556,10 +624,158 @@ fn the_catalog_is_followed_and_the_expected_red_list_is_exact() {
     wrong.extend(route_case::differences(&expected, &results));
     assert!(
         wrong.is_empty(),
-        "the route catalog and its expected-red list disagree:\n\n  {}\n\nwhat each case \
-         did:\n\n{}",
+        "the cases of `{file}` and the expected-red list disagree:\n\n  {}\n\nwhat each \
+         case did:\n\n{}",
         wrong.join("\n  "),
         seen.join("\n\n"),
+    );
+}
+
+/// **What is wrong with `expected` by itself**, whatever the cases come to: an entry for a
+/// case that is among no file's `names`, a case listed twice, an entry that expects a
+/// classification that is not red. It is the list held against every case coming out as
+/// listed, so that nothing but the list's own faults is left to differ.
+fn the_lists_own_faults(expected: &[ExpectedRed], names: &[&str]) -> Vec<String> {
+    let as_listed: Vec<(&str, Classification)> = names
+        .iter()
+        .map(|name| {
+            let listed = expected
+                .iter()
+                .find(|entry| entry.case == *name && entry.classification.is_red());
+            (
+                *name,
+                listed.map_or(Classification::Holds, |entry| entry.classification),
+            )
+        })
+        .collect();
+    route_case::differences(expected, &as_listed)
+}
+
+/// **Every entry of the expected-red list names a case of the catalog, once.** The arms
+/// that follow the cases each hold the entries of their own command's cases, so an entry
+/// for a case no command's file holds would be held by none of them: it is named here,
+/// with a case listed twice and an entry that expects a classification that is not red. On
+/// planted lists, kind by kind; then this suite's.
+#[test]
+fn every_entry_of_the_expected_red_list_names_a_case_of_the_catalog() {
+    let entry = |case, classification| ExpectedRed {
+        case,
+        key: "r1-a-key",
+        classification,
+    };
+    let names = ["destroys", "works"];
+    says(
+        &the_lists_own_faults(&[entry("destroys", Classification::WitnessChanged)], &names),
+        &[],
+    );
+    says(
+        &the_lists_own_faults(
+            &[
+                entry("destroys", Classification::WitnessChanged),
+                entry("gone", Classification::AnotherFailure),
+                entry("destroys", Classification::SameRefusalAgain),
+                entry("works", Classification::Holds),
+            ],
+            &names,
+        ),
+        &[
+            ("`gone`", "names a case that was not followed"),
+            ("`destroys`", "is listed twice"),
+            ("`works`", "which is not red"),
+        ],
+    );
+
+    let names: Vec<&str> = cases().iter().map(|case| case.name).collect();
+    let wrong = the_lists_own_faults(&expected_red(), &names);
+    assert!(
+        wrong.is_empty(),
+        "the expected-red list, held against the names of the catalog's cases:\n\n  {}",
+        wrong.join("\n  "),
+    );
+}
+
+/// The suite's own path inside the test binary, as the harness names its tests: the module
+/// the group root declares it as.
+fn suite() -> &'static str {
+    module_path!()
+        .split_once("::")
+        .map_or(module_path!(), |(_, suite)| suite)
+}
+
+/// **Every way the tables and the arms that follow their cases disagree.** `tables` is
+/// `(file, arm)`, a row a command's file; `listed` is every test the harness holds; `arms`
+/// is the path the arms stand under, with its last `::`. A file whose arm the harness does
+/// not list is named, and so is a test under `arms` that is no file's arm.
+fn unarmed(tables: &[(&str, &str)], listed: &[String], arms: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for (file, arm) in tables {
+        if !listed.iter().any(|test| *test == format!("{arms}{arm}")) {
+            out.push(format!(
+                "`{file}` has no arm: the harness lists no test `{arms}{arm}`, so nothing \
+                 follows its cases"
+            ));
+        }
+    }
+    for test in listed {
+        if let Some(arm) = test.strip_prefix(arms)
+            && !tables.iter().any(|(_, of)| *of == arm)
+        {
+            out.push(format!(
+                "`{test}` follows no table: no file is wired in under the name `{arm}`"
+            ));
+        }
+    }
+    out
+}
+
+/// **Every command's file has its arm, and every arm its file** — held against the tests
+/// the harness itself lists, and not against what `tables!` says it made: a file wired in
+/// without an arm would have its cases followed by nothing, at a green gate, and an arm
+/// left behind by a file that is gone would follow nothing under a name that says it does.
+/// On planted lists; then this binary's own.
+#[test]
+fn every_table_has_its_arm_and_every_arm_its_table() {
+    let planted = [
+        ("route_catalog/setup.rs", "setup"),
+        ("route_catalog/uninstall.rs", "uninstall"),
+    ];
+    let listed = |tests: &[&str]| {
+        tests
+            .iter()
+            .map(|test| test.to_string())
+            .collect::<Vec<_>>()
+    };
+    says(
+        &unarmed(
+            &planted,
+            &listed(&["s::followed::setup", "s::followed::uninstall", "s::other"]),
+            "s::followed::",
+        ),
+        &[],
+    );
+    says(
+        &unarmed(
+            &planted,
+            &listed(&["s::followed::setup", "s::followed::gone", "s::uninstall"]),
+            "s::followed::",
+        ),
+        &[
+            ("`route_catalog/uninstall.rs`", "has no arm"),
+            ("`s::followed::gone`", "follows no table"),
+        ],
+    );
+
+    let tables: Vec<(&str, &str)> = TABLES.iter().map(|table| (table.file, table.arm)).collect();
+    let wrong = unarmed(
+        &tables,
+        &route_case::harness_tests(),
+        &format!("{}::{FOLLOWED}::", suite()),
+    );
+    assert!(
+        wrong.is_empty(),
+        "the tables and the arms that follow their cases disagree:\n\n  {}\n\na command's \
+         file is wired in by its line inside `tables!`, which makes its arm.",
+        wrong.join("\n  "),
     );
 }
 
@@ -1792,12 +2008,13 @@ blocking (gates at finalize) · setup.wanted — refused over `a/b`
     assert_eq!(route("setup"), None, "a code is matched whole");
 }
 
-/// The eight classifications, and the order they are read in: nothing is *followed* that
+/// The nine classifications, and the order they are read in: nothing is *followed* that
 /// was not provoked or printed no route; a changed witness outranks a repeated refusal,
-/// which outranks any other failure; the marked form holds only as *operand implied*; and
-/// a command that did not end is said where it stopped the case — ahead of *not provoked*
+/// which outranks any other failure; the marked form holds only as *operand implied*; a
+/// command that did not end is said where it stopped the case — ahead of *not provoked*
 /// for the refusing command, behind a changed witness and ahead of everything else for a
-/// command of the route.
+/// command of the route; and a printed line no shell can split is read behind those two
+/// and ahead of the refusal that follows a step nobody could do.
 #[test]
 fn the_classifications_in_their_order() {
     let provoked = Seen {
@@ -1813,6 +2030,7 @@ fn the_classifications_in_their_order() {
         same_refusal: true,
         failed: true,
         implied: true,
+        unsplit: true,
         ..followed
     };
     let table = [
@@ -1861,6 +2079,15 @@ fn the_classifications_in_their_order() {
         (
             Seen {
                 witness_changed: false,
+                ..everything
+            },
+            Classification::UnsplittableLine,
+            "followed, a printed line no shell can split",
+        ),
+        (
+            Seen {
+                witness_changed: false,
+                unsplit: false,
                 ..everything
             },
             Classification::SameRefusalAgain,
@@ -3136,4 +3363,120 @@ fn a_file_is_moved_out_of_its_path() {
             Classification::AnotherFailure,
         ),
     ]);
+}
+
+// ---------------------------------------------------------------------------
+// The frame, as the second command's file grew it
+// ---------------------------------------------------------------------------
+
+/// **A printed line that no shell can split is a red case, and stops no arm.** A route may
+/// print between backticks a line that is no command line as it stands — the unborn dirty
+/// route of `jigc setup` prints `git -C <repo> rm --cached -- <path>`, and a shell reads
+/// `<path>` as a redirection with nothing behind it. As first built, the frame's reader of
+/// a printed line ended the whole arm over it, and every other case of the command with
+/// it. Now the line is not run, the case says what the shell said of it, the acts behind
+/// it are still done — and the case comes out with a classification of its own, whatever
+/// the rest of its route came to.
+#[test]
+fn a_printed_line_no_shell_can_split_is_a_red_case_and_stops_no_arm() {
+    let planted = Case {
+        name: "planted-a-route-that-prints-a-shape-where-a-command-stands",
+        state: &[Step::File(Place::Repo("staged"), "mine\n")],
+        refusing: &[
+            "-c",
+            "test -e staged || exit 0; \
+             printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             '  route: `git -C . rm --cached -- <path>` first, then remove `staged` and \
+             re-run `jigc -c \"test ! -e staged\"`'; exit 1",
+        ],
+        acts: &[Act::Run(0), Act::Remove(Operand::Span(1)), Act::Run(2)],
+        ..PLANTED
+    };
+    let followed = route_case::follow(Path::new("/bin/sh"), &planted)
+        .expect("a line no shell can split is no fault of the case as written");
+    assert!(
+        followed.classification == Classification::UnsplittableLine
+            && followed.detail.contains("no shell splits it into words")
+            && followed
+                .detail
+                .contains("remove `staged` (span 1): removed")
+            && followed.detail.ends_with("(span 2): exit 0"),
+        "the line is not run, the acts behind it are done, and the case is red for the \
+         line — it came out {}:\n{}",
+        followed.classification,
+        followed.detail,
+    );
+}
+
+/// **No more chains run at once in one process than the machine is wide** — counted, never
+/// timed. One command's arm bounds its own cases by its pool; two commands' arms in one
+/// process are two pools, and a harness that runs a suite's tests as threads would have
+/// twice the machine's width of chains at once. So every case passes one gate of the
+/// process ([`route_case::Gate`]) before its sandbox is made.
+///
+/// The gate is held here by a count through one of its kind: twelve jobs arrive from
+/// twelve threads at a gate three wide, each says that it has arrived before it asks to be
+/// let in, and a job that is inside **holds until all twelve have arrived**. Under a gate
+/// that bounds, three are inside when the last arrives and nine wait at it, so the most
+/// that are ever inside is three, exactly; under one that lets everybody through, the
+/// first eleven are inside when the twelfth arrives. No clock is read.
+///
+/// And the source half: the runner follows every case inside the process's one gate, which
+/// is as wide as the pool.
+#[test]
+fn no_more_chains_run_at_once_in_one_process_than_the_machine_is_wide() {
+    use std::sync::{Condvar, Mutex};
+
+    const WIDE: usize = 3;
+    const JOBS: usize = 4 * WIDE;
+    #[derive(Default)]
+    struct Counted {
+        arrived: usize,
+        inside: usize,
+        most: usize,
+    }
+    let gate = route_case::Gate::new(WIDE);
+    let counted = Mutex::new(Counted::default());
+    let arrival = Condvar::new();
+    let jobs: Vec<usize> = (0..JOBS).collect();
+    route_case::pooled(JOBS, &jobs, |_| {
+        counted
+            .lock()
+            .expect("no job panics under the lock")
+            .arrived += 1;
+        arrival.notify_all();
+        gate.admit(|| {
+            let mut counted = counted.lock().expect("no job panics under the lock");
+            counted.inside += 1;
+            counted.most = counted.most.max(counted.inside);
+            let mut counted = arrival
+                .wait_while(counted, |counted| counted.arrived < JOBS)
+                .expect("no job panics under the lock");
+            counted.inside -= 1;
+        })
+    });
+    let counted = counted
+        .into_inner()
+        .expect("no job panicked under the lock");
+    assert_eq!(
+        (counted.arrived, counted.most),
+        (JOBS, WIDE),
+        "{JOBS} jobs at a gate {WIDE} wide: {} arrived, {} inside at once at the most",
+        counted.arrived,
+        counted.most,
+    );
+
+    let frame = rust_source::code_only(include_str!("support/route_case.rs"));
+    assert!(
+        body_of(
+            &frame,
+            "pub fn follow_within(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed, String> {"
+        )
+        .contains("chains().admit("),
+        "the runner follows a case inside the process's one gate",
+    );
+    assert!(
+        body_of(&frame, "fn chains() -> &'static Gate {").contains("Gate::new(width())"),
+        "the process's gate is as wide as the pool: the machine's width",
+    );
 }

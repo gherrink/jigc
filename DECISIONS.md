@@ -2,6 +2,48 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The route catalog's frame before the second command: one arm a command's file, a printed line no shell can split is a classification and stops no arm, one gate a process — and the suite's seconds of the entry below, corrected (the plan's step `P4`, first commit; ruling 3 of 2026-10-10)
+
+**What.** [route_case.rs](crates/cli/tests/support/route_case.rs), [route_catalog.rs](crates/cli/tests/route_catalog.rs), two cases in [route_catalog/setup.rs](crates/cli/tests/route_catalog/setup.rs), one key in the pilot's findings file ([route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md)), and a splitter that answers where the shared one panics ([support/mod.rs](crates/cli/tests/support/mod.rs)). No product source changes and nothing is fixed. No case of `jigc uninstall` yet: the owed list is as it was, 18 rows under `P4`. **The catalog is 268 cases over thirty-two sites of `jigc setup`, 121 of them red.**
+
+**1 — The cases are followed by one arm a command's file.** It was one test for the whole catalog; the gate's runner ends a test at eight minutes, and that test took a minute at 266 cases under a loaded machine with a second command's cases still to come. Now `tables!` makes, with a file's row, a test of the file's name in the module `the_cases_are_followed_and_the_expected_red_list_is_exact` — today `…::setup` — so a file cannot be wired in without its arm, and what a runner bounds is one command's cases.
+
+- **The list stays strict three ways, across the catalog.** An arm holds the entries that name a case of its own file, and reports every difference of its command at once. A case stands in one file, so the arms together are the whole list. What no arm of a command can see — an entry for a case no file holds, a case listed twice — is one arm's that follows nothing (`every_entry_of_the_expected_red_list_names_a_case_of_the_catalog`): the list held against every case coming out as listed, so that only the list's own faults are left.
+- **A table without an arm, or an arm without a table, is named — against the tests the harness itself lists** (`every_table_has_its_arm_and_every_arm_its_table`; the test binary is asked with `--list`). *Considered and not taken:* a list of arms the macro writes beside the arms. It is the macro saying what the macro did, and is green over a macro that makes no test.
+
+**The load — what two commands' arms do to it, and where it is bounded.** An arm's pool stays the machine's width. **Inside one process the arms now share that width**: every case followed in a process passes one gate (`route_case::Gate`, `chains()`), as wide as the pool, before its sandbox is made — so under `cargo test`, which runs a suite's tests as threads and is what CI and the container run, two commands' arms are one machine's worth of chains and not two. **Across processes nothing bounds them, and nothing in the suite can without costing what the split is for**: under nextest each test is a process, so two commands' arms that run at once are up to twice the machine's width of chains; a lock between the two processes would make one arm wait for the other *inside its own eight minutes*. The bound that costs an arm no time is the runner's — a test group of one thread over these arms in `.config/nextest.toml` — and that file is not this stream's: a row for whoever owns it.
+
+**2 — A printed line that no shell can split is a red case: the ninth classification, *followed, a printed line no shell can split*.** The frame's reader of a printed line ended the whole arm over one (the entry below, at its *where the frame is why a cause has no case*). Now the line is handed to the shell as before, and a line the shell refuses is not run: the case says what the shell said, the acts behind it are still done, and the case comes out with this classification.
+
+- *Why a classification of its own and not* another failure*.* The list is strict by classification, and *another failure* is what a command that ran and failed comes to. Under it, a line changed so that a shell splits it — and it then fails for a reason of its own — would leave its entry satisfied; and the pilot's count of routes that print something no reader can run would be a count nobody can read off the table. The same argument made *the command did not end* the eighth.
+- **Where it is read:** behind a changed witness and a command that did not end, ahead of a repeated refusal. The step the line stood for was not done, so the refusal that follows is what the line cost — and would otherwise be all the case said.
+- **Two cases, both marked `doubt`, under a new key**, `r1-setup-unborn-dirty-route-unstaging-line-is-no-command-line`. Where there is no commit yet the dirty route says *move the file(s) out — `git -C <repo> rm --cached -- <path>` first where you had staged one*, with the repository's path printed in full and `<path>` standing where the file's belongs. Followed where a file is staged — still in the working tree, and staged and then deleted, where the refusal comes behind the install's writes — the line is refused by the shell, and the re-run refuses under the same code. **For the human, two readings:** (a) a command to run as printed, like every backticked line — red, as listed; (b) a shape to fill in — then the route prints no line a reader can run as it stands, and the frame has no case for it, since a filled-in line would be the case's own.
+
+**3 — One number of the entry below is wrong, and is corrected here.** *The route catalog's last seven sites of `setup`* (commit `40fd02cd`) says the suite takes *85 s on this machine, alone*. That run was taken under load; alone, the suite took **26.3 s** — its builder's own measurement afterwards, handed to this task and not taken again here. The old entry carries one bracketed pointer to this paragraph and is otherwise as it was.
+
+**Red first** — `route_catalog::`, against a tree that declared each piece and did nothing: the classification declared and read nowhere, a gate that lets everybody through and a runner beside it, the old reader of a printed line, and `tables!` making no arm. 4 of 31 arms red:
+
+- `a_printed_line_no_shell_can_split_is_a_red_case_and_stops_no_arm` — the arm itself stopped, by the shared reader's `the emitted command line must parse as shell words; got …`: the defect.
+- `every_table_has_its_arm_and_every_arm_its_table` — `` `route_catalog/setup.rs` has no arm: the harness lists no test … ``.
+- `no_more_chains_run_at_once_in_one_process_than_the_machine_is_wide` — `12 jobs at a gate 3 wide: 12 arrived, 12 inside at once at the most`. Red by construction: each job says it has arrived before it asks to be let in, and one that is inside holds until all twelve have arrived; no clock is read.
+- `the_classifications_in_their_order` — a repeated refusal read where the line belongs.
+
+Then, built and with neither list touched, the arm of `setup` named the two new cases as red and unlisted. Then the row.
+
+**Three arms followed their code, each red against a mutant:** the list's own faults answered with nothing (`0` named where three were planted); a test planted in the arms' module (`…::left_behind` *follows no table*); the runner following a case beside the gate (the source half of the gate's arm).
+
+**Pinned.**
+
+- **The shared splitter is not changed for anybody else.** `support::shell_words` still panics over a line no shell can split, with the words it had; it is now a call of `shell_words_or`, which answers. Every other suite holds an emitted line to being one.
+- **The gate is the process's, and every `follow` passes it** — a planted case of a frame's arm as well as a case of the catalog.
+
+**Not established.**
+
+- **A quiet machine's seconds.** `cargo test -p jigc --test g_migration route_catalog::`, 32 arms, 268 cases: 132 s and 140 s, both with another lane's gate on the machine (load average 43 to 53). What the arm of `setup` takes inside a gate is in the commit's message.
+- **Linux**, for this commit: the runs follow the task's last commit.
+- **What two arms at once cost under nextest** — there is one arm until the next commit.
+- **That a shell's refusal reads the same everywhere.** The case's detail quotes what `sh` said; nothing asserts it.
+
 ## 2026-10-11 — The route catalog's last seven sites of `setup`: the guide and the hook at the end of the write span, the dirty gate and git unable to answer it, and three steps with a reason — 49 cases, 15 of them red; `P3` owes nothing more (the plan's step `P3`, fourth part, second commit; ruling 3 of 2026-10-10)
 
 **What.** Cases, readings and three reasons in [route_catalog/setup.rs](crates/cli/tests/route_catalog/setup.rs); the expected-red rows and the owed list in [route_catalog.rs](crates/cli/tests/route_catalog.rs); two keys and the hook's write under three of the canary's in the pilot's findings file ([route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md)). No product source changes and nothing is fixed. **The catalog is 266 cases over thirty-two sites, 119 of them red; four more sites have a reason — every blocking site of `jigc setup`, thirty-six. The owed list holds no row under `P3`**, and 18 under `P4`.
@@ -49,7 +91,7 @@ Running log of what we decided and **why**, dated. Short and punchy — this rot
 
 **What this does not establish.** What each case came to is this tree's debug build on macOS on one day; nothing here is about the previous release. The four keys of this part certify themselves until a run is opened. The hook's causes are followed at the default hooks directory and not again under each `core.hooksPath`; the dirty kinds at one path each. And whether *holds, operand implied* is *works as printed* is the pilot's question, not this entry's: 19 cases stand on it now.
 
-**The suite's seconds.** `cargo test -p jigc --test g_migration route_catalog::`, 28 arms, 266 cases: 85 s on this machine, alone. What the one arm that follows the cases takes inside a gate is in the commit's message. It is one test, and the gate ends a test at 480 s; it was not split — that is `P4`'s, which brings the second command's file.
+**The suite's seconds.** `cargo test -p jigc --test g_migration route_catalog::`, 28 arms, 266 cases: 85 s on this machine, alone. **[Corrected 2026-10-11: that run was taken under load, and alone the suite took 26.3 s — the entry *The route catalog's frame before the second command*, above.]** What the one arm that follows the cases takes inside a gate is in the commit's message. It is one test, and the gate ends a test at 480 s; it was not split — that is `P4`'s, which brings the second command's file.
 
 **The Linux run follows this commit** — the tool runs a committed revision — twice, and both lines are in the report of this part.
 

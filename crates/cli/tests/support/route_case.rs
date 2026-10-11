@@ -30,7 +30,7 @@
 //! placed by a child process, as that section's Linux rule asks of a file that may be
 //! executed. The refusing argv runs on the binary **handed in** — the frame names no
 //! binary of its own, so the same case runs on another release's. Then the acts, then the
-//! checks, then the witnesses, and one of eight [`Classification`]s.
+//! checks, then the witnesses, and one of nine [`Classification`]s.
 //!
 //! **Where a route names an act and not its object, the runner owns the object.** *Move
 //! the directory out of the way* says where from and never where to; *point it at a regular
@@ -88,6 +88,23 @@
 //! waited for under the standing limit, so a short limit never ends a setup that a loaded
 //! machine made slow.
 //!
+//! **A printed line that no shell can split is a red case, and stops nothing.** A route may
+//! print, between backticks, a line that is no command line as it stands —
+//! `git -C <repo> rm --cached -- <path>`, where the angle-bracket word is a redirection with
+//! nothing behind it. The runner hands every printed line to a real shell to split
+//! ([`super::shell_words_or`]); a line the shell refuses is not run, the case says what the
+//! shell said, and it comes out with a classification of its own
+//! ([`Classification::UnsplittableLine`]) — a route that cannot be run as printed is what
+//! the catalog is there to show, and never a fault that ends the arm.
+//!
+//! **No more chains run at once in one process than the machine is wide** ([`Gate`]).
+//! A case is one child process at a time; [`pooled`] bounds how many cases one caller
+//! follows at once, and every case followed in this process — by whichever arm, through a
+//! pool or by itself — passes one gate of [`width`] before its sandbox is made. Under a
+//! harness that runs a suite's tests as threads of one process, two commands' arms then
+//! share one machine's width; under one that gives each test a process of its own, each
+//! process has its own gate, and nothing here reaches across them.
+//!
 //! **A state step may run the binary under test** ([`Step::Jigc`]). Where a case's state is
 //! one an earlier run of the product left — an install that stands — the product makes it,
 //! on the binary handed in: the state is that release's own, and no case copies the
@@ -108,6 +125,7 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Condvar, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use super::scratch::ScratchDir;
@@ -344,6 +362,7 @@ pub enum Classification {
     WitnessChanged,
     AnotherFailure,
     DidNotEnd,
+    UnsplittableLine,
 }
 
 impl Classification {
@@ -357,6 +376,7 @@ impl Classification {
             Classification::WitnessChanged => "followed, a witness changed",
             Classification::AnotherFailure => "followed, another failure",
             Classification::DidNotEnd => "the command did not end",
+            Classification::UnsplittableLine => "followed, a printed line no shell can split",
         }
     }
 
@@ -396,6 +416,9 @@ pub struct Seen {
     /// A command under test — the refusing command, or one the route prints — had not
     /// ended at its limit and was ended by the runner.
     pub did_not_end: bool,
+    /// A line the route prints for an act to run is one no shell splits into words: it
+    /// was not run.
+    pub unsplit: bool,
 }
 
 /// The one classification of what was seen. **The order is the rule**: a witness that
@@ -405,6 +428,9 @@ pub struct Seen {
 /// where it stopped the case**: the refusing command held says nothing of a refusal, so
 /// it is read before *not provoked*; a command of the route held is read behind a changed
 /// witness, which it must not hide, and ahead of everything else a followed route comes to.
+/// **A printed line no shell can split is read behind those two and ahead of a repeated
+/// refusal**: the step it stood for was not done, so the refusal that follows it is what
+/// the line cost, and would otherwise be all the case said.
 pub fn classify(seen: &Seen) -> Classification {
     if seen.did_not_end && !seen.provoked {
         Classification::DidNotEnd
@@ -416,6 +442,8 @@ pub fn classify(seen: &Seen) -> Classification {
         Classification::WitnessChanged
     } else if seen.did_not_end {
         Classification::DidNotEnd
+    } else if seen.unsplit {
+        Classification::UnsplittableLine
     } else if seen.same_refusal {
         Classification::SameRefusalAgain
     } else if seen.failed {
@@ -978,7 +1006,17 @@ impl Sandbox {
         let (what, ran) = match act {
             Act::Run(at) => {
                 let line = span(at)?;
-                let words = super::shell_words(line, &stand, &self.home());
+                let words = match super::shell_words_or(line, &stand, &self.home()) {
+                    Ok(words) => words,
+                    Err(said) => {
+                        seen.unsplit = true;
+                        return Ok(format!(
+                            "run `{line}` (span {at}): not run — no shell splits it into \
+                             words\n{}",
+                            said.trim_end()
+                        ));
+                    }
+                };
                 let program = match words.first().map(String::as_str) {
                     Some("jigc") => binary,
                     Some("git") => Path::new("git"),
@@ -1269,10 +1307,91 @@ pub fn pooled<T: Sync, R: Send>(width: usize, items: &[T], job: impl Fn(&T) -> R
     came_to.into_iter().map(|(_, what)| what).collect()
 }
 
+/// **A gate no more than `width` jobs are inside at once**, whoever sends them through and
+/// from whichever thread. [`pooled`] bounds one caller's jobs by its threads; a gate bounds
+/// every caller's together.
+pub struct Gate {
+    width: usize,
+    inside: Mutex<usize>,
+    left: Condvar,
+}
+
+impl Gate {
+    pub const fn new(width: usize) -> Gate {
+        Gate {
+            width,
+            inside: Mutex::new(0),
+            left: Condvar::new(),
+        }
+    }
+
+    /// Run `job` once fewer than the gate's width are inside, and hand back what it came
+    /// to. The place is given back however the job ends — a job that panics included.
+    pub fn admit<R>(&self, job: impl FnOnce() -> R) -> R {
+        /// One place inside the gate, given back when dropped.
+        struct Place<'a>(&'a Gate);
+        impl Drop for Place<'_> {
+            fn drop(&mut self) {
+                *self.0.inside.lock().unwrap_or_else(PoisonError::into_inner) -= 1;
+                self.0.left.notify_one();
+            }
+        }
+        assert!(self.width > 0, "a gate of no width admits nothing");
+        let mut inside = self
+            .left
+            .wait_while(
+                self.inside.lock().unwrap_or_else(PoisonError::into_inner),
+                |inside| *inside >= self.width,
+            )
+            .unwrap_or_else(PoisonError::into_inner);
+        *inside += 1;
+        drop(inside);
+        let _place = Place(self);
+        job()
+    }
+}
+
+/// **This process's one gate for the cases it follows**, [`width`] wide: every
+/// [`follow_within`] passes it, so the chains of child processes this process runs at once
+/// are one machine's worth whatever the number of arms that follow cases in it.
+fn chains() -> &'static Gate {
+    static CHAINS: OnceLock<Gate> = OnceLock::new();
+    CHAINS.get_or_init(|| Gate::new(width()))
+}
+
+/// **The tests the running test binary holds, as its harness names them** — asked of the
+/// binary itself (`--list`), so that an arm can hold what the suite's wiring declares to
+/// what the harness will in fact run.
+pub fn harness_tests() -> Vec<String> {
+    let binary = std::env::current_exe().expect("the running test binary has a path");
+    let listed = Command::new(&binary)
+        .args(["--list", "--format", "terse"])
+        .stdin(Stdio::null())
+        .output()
+        .expect("ask the test binary for its tests");
+    assert!(
+        listed.status.success(),
+        "`{} --list --format terse`: {}",
+        binary.display(),
+        String::from_utf8_lossy(&listed.stderr)
+    );
+    String::from_utf8_lossy(&listed.stdout)
+        .lines()
+        .filter_map(|line| line.strip_suffix(": test"))
+        .map(str::to_string)
+        .collect()
+}
+
 /// [`follow`], with the limit a **command under test** is ended at — the refusing command
 /// and the commands a route prints — for the arm that holds the limit itself, which cannot
-/// wait two minutes for it. The runner's own children keep [`LIMIT`].
+/// wait two minutes for it. The runner's own children keep [`LIMIT`]. Every case passes
+/// this process's gate ([`chains`]) before its sandbox is made.
 pub fn follow_within(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed, String> {
+    chains().admit(|| followed(binary, case, under_test))
+}
+
+/// One case, followed — inside the gate.
+fn followed(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed, String> {
     let code = case.code();
     let sandbox = Sandbox::new(case.name, under_test);
     sandbox.plant(binary, case.state);
@@ -1343,7 +1462,7 @@ pub fn follow_within(binary: &Path, case: &Case, under_test: Duration) -> Result
             let done = sandbox.perform(binary, case, *act, &spans, &mut seen)?;
             detail.push(done);
         }
-        if !seen.same_refusal && !seen.failed && !seen.did_not_end {
+        if !seen.same_refusal && !seen.failed && !seen.did_not_end && !seen.unsplit {
             for check in case.holds {
                 if let Err(why) = sandbox.check(*check) {
                     seen.failed = true;

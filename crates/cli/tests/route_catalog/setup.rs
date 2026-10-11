@@ -2601,11 +2601,45 @@ const AN_UNTRACKED_REPLACED_FILE_ON_AN_UNBORN_HEAD: [Case; 3] = [
     },
 ];
 
+/// The two readings of the unborn route's unstaging line.
+const WHICH_UNSTAGING_LINE: &str = "*`git -C <repo> rm --cached -- <path>` first where you \
+                                    had staged one*: (a) a command to run as printed, like \
+                                    every line a route prints between backticks — followed \
+                                    here: no shell splits it, `<path>` being a redirection \
+                                    with nothing behind it; (b) a shape to fill in with the \
+                                    staged file's path — then the route prints no line a \
+                                    reader can run as it stands, and the frame has no case \
+                                    for it: a filled-in line would be the case's own";
+
 /// **A staged file at an install path, where there is no commit yet.** A staged file rides
-/// no first commit, whatever the install does with the path.
+/// no first commit, whatever the install does with the path. The route's first way — the
+/// file moved out of its path — opens with a line to unstage it *first where you had staged
+/// one*, and here one is staged: the line run as printed, then the file moved out, then
+/// the command again.
 const UNBORN_STAGED: &str = "there is no commit yet, and a file is staged at an install \
                              path";
-const A_STAGED_FILE_ON_AN_UNBORN_HEAD: [Case; 2] = [
+const A_STAGED_FILE_ON_AN_UNBORN_HEAD: [Case; 3] = [
+    Case {
+        name: "setup-unborn-staged-file-at-an-install-path-unstaged-as-printed-and-moved",
+        site: DIRTY,
+        cause: UNBORN_STAGED,
+        state: &[
+            UNBORN,
+            Step::File(Place::Repo(CLAUDE_MD), "mine\n"),
+            Step::Git(&["add", "CLAUDE.md"]),
+        ],
+        acts: &[
+            Act::Run(0),
+            Act::MoveOut(Operand::Unprinted(CLAUDE_MD)),
+            Act::Run(1),
+        ],
+        holds: &[
+            Check::RegularFile(Place::Repo(AGENT_MD)),
+            Check::RegularFile(Place::Moved(CLAUDE_MD)),
+        ],
+        doubt: Some(WHICH_UNSTAGING_LINE),
+        ..SETUP
+    },
     Case {
         name: "setup-unborn-staged-file-at-an-install-path-committed",
         site: DIRTY,
@@ -2676,7 +2710,24 @@ const AN_IGNORED_REPLACED_FILE_ON_AN_UNBORN_HEAD: [Case; 2] = [
 const UNBORN_STAGED_AND_GONE: &str = "there is no commit yet, and a file was staged at an \
                                       install path and then deleted from the working tree \
                                       — asked behind the install's writes";
-const STAGED_AND_GONE_ON_AN_UNBORN_HEAD: [Case; 2] = [
+const STAGED_AND_GONE_ON_AN_UNBORN_HEAD: [Case; 3] = [
+    // The route's first way, where nothing stands at the path any more: the unstaging line
+    // is all of it.
+    Case {
+        name: "setup-unborn-install-path-staged-and-deleted-unstaged-as-printed",
+        site: DIRTY,
+        cause: UNBORN_STAGED_AND_GONE,
+        state: &[
+            UNBORN,
+            Step::File(Place::Repo(CLAUDE_MD), "mine\n"),
+            Step::Git(&["add", "CLAUDE.md"]),
+            Step::Git(&["-c", "alias.drop=!rm CLAUDE.md", "drop"]),
+        ],
+        acts: &[Act::Run(0), Act::Run(1)],
+        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+        doubt: Some(WHICH_UNSTAGING_LINE),
+        ..SETUP
+    },
     Case {
         name: "setup-unborn-install-path-staged-and-deleted-committed",
         site: DIRTY,
@@ -4026,18 +4077,6 @@ pub const READINGS: &[Reading] = &[
                 Why::NotConstructible(
                     "which member the path is decides whether it refuses and never how the \
                      route is worded: each kind is followed at one path",
-                ),
-            ),
-            (
-                "a staged file unstaged by the line the unborn route prints, and moved out \
-                 of its path",
-                Why::NotConstructible(
-                    "the line is `git -C … rm --cached -- <path>`, and it is no command a \
-                     shell can read as printed — `<path>` is a redirection with nothing \
-                     behind it — so the runner cannot run it; filled in, it would be a \
-                     line of the case's own. Whether a route may print a shape to fill in \
-                     is for the human, with the two readings: a command to run as \
-                     printed, or a shape",
                 ),
             ),
         ],
