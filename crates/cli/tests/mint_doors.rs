@@ -38,7 +38,9 @@
 //! a skip — a registry whose new member silently ran no test would be the remembered
 //! list again, wearing a table's clothes.
 
-use crate::support::rust_source::{cfg_test_regions, code_only, enclosing_fn, is_test_domain};
+use crate::support::rust_source::{
+    CodeOnly, cfg_test_regions, code_only, enclosing_fn, is_test_domain,
+};
 use engine::state::{MINT_DOORS, Snapshot};
 use std::collections::BTreeSet;
 use std::fs;
@@ -68,7 +70,12 @@ const MINTS: [&str; 2] = ["mint_task", "mint_milestone"];
 ///
 /// The mint's **own definition** is not a call: `fn mint_task(` is skipped by the token
 /// before it, which is also what keeps the fence honest if the definitions move.
-fn mint_sites_in(rel: &str, code: &str, regions: &[(usize, usize)], path: &Path) -> Vec<String> {
+fn mint_sites_in(
+    rel: &str,
+    code: &CodeOnly,
+    regions: &[(usize, usize)],
+    path: &Path,
+) -> Vec<String> {
     let mut sites = Vec::new();
     for mint in MINTS {
         let needle = format!("{mint}(");

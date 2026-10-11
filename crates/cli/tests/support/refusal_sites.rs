@@ -171,7 +171,7 @@ impl Site {
 /// `body` as the scan reads it: comments and literals blanked
 /// ([`rust_source::code_only`]), and the `#[cfg(test)]` regions of that view. Offsets are
 /// `body`'s own.
-pub fn production_code(body: &str) -> (String, Vec<(usize, usize)>) {
+pub fn production_code(body: &str) -> (rust_source::CodeOnly, Vec<(usize, usize)>) {
     let code = rust_source::code_only(body);
     let regions = rust_source::cfg_test_regions(&code);
     (code, regions)
@@ -181,7 +181,7 @@ pub fn production_code(body: &str) -> (String, Vec<(usize, usize)>) {
 struct File<'a> {
     path: &'a str,
     /// Comments and literals blanked.
-    code: String,
+    code: rust_source::CodeOnly,
     /// Comments blanked, literals kept — what an expression was *written* as.
     kept: String,
     regions: Vec<(usize, usize)>,

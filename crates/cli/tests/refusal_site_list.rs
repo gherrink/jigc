@@ -356,7 +356,7 @@ fn a_site_keeps_its_id_when_lines_above_it_move() {
 /// here rather than standing in a committed id.
 #[test]
 fn on_this_tree_every_site_stands_in_a_function_its_file_declares() {
-    let code_of: BTreeMap<String, String> = refusal_sites::tree_sources()
+    let code_of: BTreeMap<String, rust_source::CodeOnly> = refusal_sites::tree_sources()
         .into_iter()
         .map(|source| {
             let (code, _) = refusal_sites::production_code(&source.body);

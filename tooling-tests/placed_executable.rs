@@ -341,10 +341,11 @@ fn line_of(source: &str, at: usize) -> usize {
 ///
 /// The scan reads the source **as written**, and only this is taken out of it — a
 /// mention in a string, or behind code on its line, is an offence until it is reworded.
-/// It errs that way on purpose: the shared reading that blanks strings
-/// (`support::rust_source::code_only`) takes a `'"'` for the start of one and reads the
-/// rest of the file inside out, which hid `dev_gate_report`'s copy of `dev/hygiene-scan`
-/// from this fence's first draft.
+/// It errs that way on purpose. When this fence was written, the shared reading that blanks
+/// strings (`support::rust_source::code_only`) took a `'"'` for the start of one and read
+/// the rest of the file inside out, which hid `dev_gate_report`'s copy of
+/// `dev/hygiene-scan` from this fence's first draft. That reader has read a character
+/// literal as a literal since 2026-10-11; this scan still reads the source as written.
 fn in_a_comment_line(source: &str, at: usize) -> bool {
     let start = source[..at].rfind('\n').map_or(0, |newline| newline + 1);
     source[start..at].trim_start().starts_with("//")
@@ -499,7 +500,8 @@ fn a_planted_writer_reddens_the_scan() {
         "fn rig() { std::fs::copy(repo.join(SCRIPT), root.join(SCRIPT)).unwrap(); }",
         // The excused function, in a suite it is not excused in.
         "fn copy_tree() { fs::copy(a, b).unwrap(); }",
-        // Behind a `'"'`, which the shared blanking reader takes for a string's start.
+        // Behind a `'"'`, which the shared blanking reader took for a string's start until
+        // 2026-10-11 and reads as a character literal now; this scan reads neither way.
         "fn f() { s.strip_suffix('\"'); fs::copy(a, b).unwrap(); }",
         // A mention is an offence unless its whole line is a comment.
         "fn f() { let said = \"perms.set_mode(0o755)\"; }",

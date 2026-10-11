@@ -19,6 +19,15 @@
 //!     string or a comment opens nothing;
 //!   * and on this tree, over every file a fence can be handed, the code view balances its
 //!     brackets and holds no quote — what a file read inside out cannot do.
+//!
+//! **The code view is a type** (2026-10-11, `rust_source::CodeOnly`), and the helpers that
+//! match brackets take nothing else. Until then three fences matched their test regions over
+//! the view that keeps strings, where a brace in a string is a brace: it found no test
+//! module at all in four production files and a wrong one in a fifth, and their 195 unit
+//! tests were scanned as production code. Handing that view to `cfg_test_regions` no longer
+//! compiles, which no arm here can show; what the last arm holds is what the code view's
+//! regions are on this tree — every unit test of a production file lies in one. Each of the
+//! three fences holds its own reading on a fixture, in its own suite.
 
 use std::path::Path;
 
@@ -71,8 +80,8 @@ fn a_character_literal_is_blanked_whole_and_what_follows_it_is_still_code() {
              fn g() {{ tail(); }}\n"
         );
         let code = code_only(&source);
-        if code != with_blank(&source, &[literal]) {
-            misread.push(format!("{literal} -> {code:?}"));
+        if *code != with_blank(&source, &[literal]) {
+            misread.push(format!("{literal} -> {:?}", &*code));
         }
         // Kept beside the strings, and nothing else of the file touched.
         if code_and_strings(&source) != source {
@@ -109,7 +118,7 @@ fn after() { also_seen(); }
 fn a_quote_character_literal_opens_no_string() {
     let code = code_only(AFTER_A_QUOTE);
     assert_eq!(
-        code,
+        *code,
         with_blank(AFTER_A_QUOTE, &["'\"'", "// a remark", "\"prose\""]),
         "the code between the literal and the next string is code, and the string is not"
     );
@@ -174,7 +183,7 @@ fn a_byte_character_literal_is_the_same_literal_behind_a_b() {
     for literal in ["'\"'", "'{'", "'\\''", "'\\\\'", "'a'"] {
         let source = format!("fn f(c: u8) -> bool {{ c == b{literal} || after() }}\n");
         assert_eq!(
-            code_only(&source),
+            *code_only(&source),
             with_blank(&source, &[literal]),
             "b{literal}"
         );
@@ -190,7 +199,7 @@ fn a_byte_character_literal_is_the_same_literal_behind_a_b() {
 fn adjacent_character_literals_each_close_at_their_own_tick() {
     let source = "fn f() -> [char; 5] { ['\\'','\"','\\\\','{','}'] }\nfn g() { tail(); }\n";
     assert_eq!(
-        code_only(source),
+        *code_only(source),
         with_blank(source, &["'\\''", "'\"'", "'\\\\'", "'{'", "'}'"]),
     );
     assert_eq!(code_and_strings(source), source);
@@ -208,7 +217,7 @@ fn anon(x: &'_ str) -> impl Iterator<Item = char> + '_ { x.chars() }
 
 #[test]
 fn a_lifetime_and_a_loop_label_are_code_and_nothing_of_them_is_eaten() {
-    assert_eq!(code_only(LIFETIMES), with_blank(LIFETIMES, &["\"n\""]));
+    assert_eq!(*code_only(LIFETIMES), with_blank(LIFETIMES, &["\"n\""]));
     assert_eq!(code_and_strings(LIFETIMES), LIFETIMES);
 }
 
@@ -218,7 +227,7 @@ fn a_lifetime_beside_a_character_literal_of_its_own_name_is_still_a_lifetime() {
                       if c == 'a' { s.trim_matches('\"') } else { 'a: loop { break 'a s; } }\n\
                   }\n\
                   fn g<'b>(x: &'b str) -> &'b str { x }\n";
-    assert_eq!(code_only(source), with_blank(source, &["'a'", "'\"'"]));
+    assert_eq!(*code_only(source), with_blank(source, &["'a'", "'\"'"]));
     assert_eq!(code_and_strings(source), source);
 }
 
@@ -246,7 +255,7 @@ fn raw_strings_and_nested_block_comments_read_as_they_did() {
     ];
     let code = code_only(RAW_AND_NESTED);
     assert_eq!(
-        code,
+        *code,
         with_blank(RAW_AND_NESTED, &[&comments[..], &strings[..]].concat())
     );
     assert!(code.contains("kept();") && code.contains("done();") && code.contains("end();"));
@@ -312,5 +321,46 @@ fn on_this_tree_every_files_code_view_balances_its_brackets_and_holds_no_quote()
          the reader took a literal for code there, or code for a literal:\n  {}",
         inside_out.len(),
         inside_out.join("\n  ")
+    );
+}
+
+/// The test regions on the tree itself, not on a fixture. [`cfg_test_regions`] takes the
+/// code view and nothing else, so these are the regions every fence over production code
+/// works with; and a production file's unit tests are what such a fence must not read, so
+/// every `#[test]` of one lies in a region — a module left unclosed, or closed early, leaves
+/// its tests outside. Matched over the view that keeps strings, 195 of them were.
+#[test]
+fn on_this_tree_every_unit_test_of_a_production_file_lies_in_a_test_region_of_its_code_view() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("the repository root is two levels above crates/cli");
+    let trees = [root.join("crates/cli/src"), root.join("crates/engine/src")];
+
+    let mut tests = 0usize;
+    let mut outside = Vec::new();
+    for path in trees.iter().flat_map(|tree| rust_files(tree)) {
+        let body = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let code = code_only(&body);
+        let regions = cfg_test_regions(&code);
+        for (at, _) in code.match_indices("#[test]") {
+            tests += 1;
+            if !regions.iter().any(|(lo, hi)| (*lo..*hi).contains(&at)) {
+                outside.push(format!(
+                    "{}:{}",
+                    path.display(),
+                    body[..at].matches('\n').count() + 1
+                ));
+            }
+        }
+    }
+    assert!(tests > 0, "the reader was handed no unit test");
+    assert!(
+        outside.is_empty(),
+        "{} of {tests} unit tests of production files lie outside every `#[cfg(test)]` region — \
+         a fence over production code reads them as production code:\n  {}",
+        outside.len(),
+        outside.join("\n  ")
     );
 }

@@ -44,7 +44,9 @@ use std::path::{Path, PathBuf};
 use cli::gitignore::{Ack, ENTRIES, IGNORE_DOORS};
 
 use crate::support;
-use support::rust_source::{cfg_test_regions, code_only, enclosing_fn, is_test_domain, rust_files};
+use support::rust_source::{
+    CodeOnly, cfg_test_regions, code_only, enclosing_fn, is_test_domain, rust_files,
+};
 use support::trial_corpus::{State, TrialCorpus};
 
 // ───────────────────────── (a) the completeness fence ─────────────────────────
@@ -70,7 +72,12 @@ fn workspace_root() -> PathBuf {
 /// writer's own module, which is where an unqualified call could appear; the function's
 /// own `fn ensure(` header is skipped by the token before it, and a match glued to an
 /// identifier (`reensure(`) is not a call to this one.
-fn ensure_sites_in(rel: &str, code: &str, regions: &[(usize, usize)], path: &Path) -> Vec<String> {
+fn ensure_sites_in(
+    rel: &str,
+    code: &CodeOnly,
+    regions: &[(usize, usize)],
+    path: &Path,
+) -> Vec<String> {
     let own_module = rel.ends_with("crates/cli/src/gitignore.rs");
     let mut sites = Vec::new();
     for (at, _) in code.match_indices("ensure(") {
@@ -216,7 +223,12 @@ mod tests {
 ///
 /// Same reading as [`ensure_sites_in`]: production only, comments and string literals
 /// blanked, and the function's own `fn <name>(` header is not a call.
-fn call_counts(needle: &str, code: &str, regions: &[(usize, usize)], path: &Path) -> Vec<String> {
+fn call_counts(
+    needle: &str,
+    code: &CodeOnly,
+    regions: &[(usize, usize)],
+    path: &Path,
+) -> Vec<String> {
     let mut owners = Vec::new();
     for (at, _) in code.match_indices(&format!("{needle}(")) {
         if is_test_domain(path, regions, at) {

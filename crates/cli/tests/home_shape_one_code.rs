@@ -416,17 +416,13 @@ fn the_code_is_spelled_once_in_production() {
     for dir in ["crates/engine/src", "crates/cli/src"] {
         for path in rust_source::rust_files(&root.join(dir)) {
             let body = fs::read_to_string(&path).expect("read a source file");
-            let code = rust_source::code_and_strings(&body);
-            let regions = rust_source::cfg_test_regions(&code);
-            for (at, _) in code.match_indices(&format!("\"{CODE}\"")) {
-                if !rust_source::is_test_domain(&path, &regions, at) {
-                    spelled.push(
-                        path.strip_prefix(&root)
-                            .expect("under the workspace")
-                            .to_string_lossy()
-                            .into_owned(),
-                    );
-                }
+            for _ in 0..production_spellings(&path, &body) {
+                spelled.push(
+                    path.strip_prefix(&root)
+                        .expect("under the workspace")
+                        .to_string_lossy()
+                        .into_owned(),
+                );
             }
         }
     }
@@ -435,6 +431,42 @@ fn the_code_is_spelled_once_in_production() {
         vec!["crates/engine/src/store.rs".to_owned()],
         "`{CODE}` is a string literal in one place: `engine::store::HOME_NOT_REGULAR_FILE`",
     );
+}
+
+/// How often one file's `body` spells the code as a string literal outside its
+/// `#[cfg(test)]` modules.
+fn production_spellings(path: &Path, body: &str) -> usize {
+    // The code is a string, so it is matched where strings are kept; the test regions are
+    // the code view's, whose offsets are the same.
+    let regions = rust_source::cfg_test_regions(&rust_source::code_only(body));
+    rust_source::code_and_strings(body)
+        .match_indices(&format!("\"{CODE}\""))
+        .filter(|(at, _)| !rust_source::is_test_domain(path, &regions, *at))
+        .count()
+}
+
+/// **A test module spells no production code, whatever its strings hold.** The code is a
+/// string, so arm 4 matches in the view that keeps strings — and a brace in a string is a
+/// brace there. Until 2026-10-11 the test regions were matched over that same view: a `"{"`
+/// in a test left its module unclosed and no region at all, a `"}"` closed it early, and a
+/// test naming the code behind either counted as a second production spelling.
+#[test]
+fn a_test_module_holding_a_brace_in_a_string_spells_no_production_code() {
+    for brace in ["{", "}"] {
+        let body = format!(
+            "pub const HOME_NOT_REGULAR_FILE: &str = \"{CODE}\";\n\n\
+             #[cfg(test)]\n\
+             mod tests {{\n    \
+                 fn opens() -> (&'static str, &'static str) {{ (\"{brace}\", \"{CODE}\") }}\n    \
+                 fn names_it_again() -> &'static str {{ \"{CODE}\" }}\n\
+             }}\n"
+        );
+        assert_eq!(
+            production_spellings(Path::new("crates/engine/src/fixture.rs"), &body),
+            1,
+            "the one production spelling of a file whose test module holds a `\"{brace}\"`",
+        );
+    }
 }
 
 // ── arm 2: the commands, driven ──────────────────────────────────────────────────────

@@ -407,35 +407,45 @@ struct Occurrence {
     tail: String,
 }
 
-/// Every production occurrence of [`TOKEN`] under the two source trees, comments blanked and
-/// `#[cfg(test)]` bodies excluded ([`rust_source`]).
+/// Every production occurrence of [`TOKEN`] under the two source trees ([`occurrences_in`]).
 fn occurrences() -> Vec<Occurrence> {
     let root = workspace_root();
     let mut out = Vec::new();
     for tree in ["crates/cli/src", "crates/engine/src"] {
         for path in rust_source::rust_files(&root.join(tree)) {
             let body = fs::read_to_string(&path).expect("read a source file");
-            let code = rust_source::code_and_strings(&body);
-            let regions = rust_source::cfg_test_regions(&code);
             let rel = path
                 .strip_prefix(&root)
                 .expect("a workspace-relative path")
                 .to_string_lossy()
                 .replace('\\', "/");
-            for (at, _) in code.match_indices(TOKEN) {
-                if rust_source::is_test_domain(&path, &regions, at) {
-                    continue;
-                }
-                out.push(Occurrence {
-                    file: rel.clone(),
-                    func: rust_source::enclosing_fn(&code, at)
-                        .unwrap_or("<top level>")
-                        .to_string(),
-                    line: body[..at].lines().count(),
-                    tail: code[at + TOKEN.len()..].chars().take(2).collect::<String>(),
-                });
-            }
+            out.extend(occurrences_in(&path, &rel, &body));
         }
+    }
+    out
+}
+
+/// Every production occurrence of [`TOKEN`] in one file's `body`, comments blanked and
+/// `#[cfg(test)]` bodies excluded ([`rust_source`]).
+fn occurrences_in(path: &Path, rel: &str, body: &str) -> Vec<Occurrence> {
+    // The verb is named in strings, so it is matched where they are kept; the test regions
+    // and the enclosing `fn` are the code view's, whose offsets are the same.
+    let kept = rust_source::code_and_strings(body);
+    let code = rust_source::code_only(body);
+    let regions = rust_source::cfg_test_regions(&code);
+    let mut out = Vec::new();
+    for (at, _) in kept.match_indices(TOKEN) {
+        if rust_source::is_test_domain(path, &regions, at) {
+            continue;
+        }
+        out.push(Occurrence {
+            file: rel.to_string(),
+            func: rust_source::enclosing_fn(&code, at)
+                .unwrap_or("<top level>")
+                .to_string(),
+            line: body[..at].lines().count(),
+            tail: kept[at + TOKEN.len()..].chars().take(2).collect::<String>(),
+        });
     }
     out
 }
@@ -600,6 +610,39 @@ fn the_excluded_occurrences_are_all_finding_codes() {
             "{}:{}: excluded as a finding code, but the token is not followed by `.`",
             occ.file,
             occ.line,
+        );
+    }
+}
+
+/// **A test module is not a production site, whatever its strings hold.**
+///
+/// The verb is named in strings, so the scan matches in the view that keeps them — and a
+/// brace in a string is a brace there. Until 2026-10-11 the test regions were matched over
+/// that same view: a `"{"` in a test left its module unclosed and no region at all, a `"}"`
+/// closed it early, and what followed was scanned as production code.
+#[test]
+fn a_test_module_holding_a_brace_in_a_string_is_not_a_production_site() {
+    for brace in ["{", "}"] {
+        let body = format!(
+            "fn route() -> &'static str {{ \"jigc migrate-corpus\" }}\n\n\
+             #[cfg(test)]\n\
+             mod tests {{\n    \
+                 fn opens() -> (&'static str, &'static str) {{ (\"{brace}\", \"jigc migrate-corpus\") }}\n    \
+                 fn names_it_again() -> &'static str {{ \"jigc migrate-corpus\" }}\n\
+             }}\n"
+        );
+        let found: Vec<(String, usize)> = occurrences_in(
+            Path::new("crates/cli/src/fixture.rs"),
+            "crates/cli/src/fixture.rs",
+            &body,
+        )
+        .into_iter()
+        .map(|occ| (occ.func, occ.line))
+        .collect();
+        assert_eq!(
+            found,
+            [("route".to_string(), 1)],
+            "the one production site of a file whose test module holds a `\"{brace}\"`",
         );
     }
 }

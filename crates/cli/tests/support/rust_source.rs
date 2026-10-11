@@ -21,8 +21,34 @@
 //! and `'{'` is not a brace. Every view below reads one through the same recogniser
 //! ([`char_literal_end`]), which tells it from the lifetime or loop label a tick also
 //! opens; `rust_source_reader.rs` holds that reading on source it is handed.
+//!
+//! **The code view is a type of its own** (2026-10-11): [`CodeOnly`]. The helpers that find
+//! a position's surroundings — [`cfg_test_regions`], [`enclosing_callee`], [`enclosing_fn`]
+//! — are defined over that view and take nothing else, so a fence that needs its literals
+//! matches in [`code_and_strings`] and asks the regions of [`code_only`] about the offsets
+//! it finds there; the two line up byte for byte.
 
+use std::ops::Deref;
 use std::path::Path;
+
+/// A file as [`code_only`] reads it, and the one thing that function returns it as.
+///
+/// The helpers that match brackets or look for a declaration are defined over this view
+/// alone: in the view that keeps strings a brace in a string is a brace and a `fn ` in a
+/// message is a declaration; in source as written, so is either in a comment. Until
+/// 2026-10-11 every view was a `String`, and three fences handed the one that keeps strings
+/// to [`cfg_test_regions`] — which found no test module at all in four production files and
+/// a wrong one in a fifth, so their unit tests were scanned as production code. Now that
+/// does not compile. Everywhere else the view reads as the `str` it holds.
+pub struct CodeOnly(String);
+
+impl Deref for CodeOnly {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
 
 /// The file with every comment, string literal and character literal blanked to spaces,
 /// byte offsets and line breaks preserved.
@@ -31,8 +57,8 @@ use std::path::Path;
 /// *mentions* the idiom is not an instance of it, an assertion message quoting it is not
 /// an instance of it, and a brace inside a string or a character literal must not be
 /// counted when matching a module body.
-pub fn code_only(body: &str) -> String {
-    blank(body, false)
+pub fn code_only(body: &str) -> CodeOnly {
+    CodeOnly(blank(body, false))
 }
 
 /// The file with every **comment** blanked and string and character literals **kept**,
@@ -171,13 +197,13 @@ fn blank(body: &str, keep_strings: bool) -> String {
     String::from_utf8(out).expect("blanking preserves utf-8 boundaries")
 }
 
-/// The byte ranges of every `#[cfg(test)]` module body in `code` (which must already be
-/// [`code_only`]).
+/// The byte ranges of every `#[cfg(test)]` module body in `code`.
 ///
 /// Found by brace-matching from the module's opening `{`, so an inline test module
 /// followed by more production code (the `validate.rs` shape) bounds correctly instead
-/// of swallowing the rest of the file.
-pub fn cfg_test_regions(code: &str) -> Vec<(usize, usize)> {
+/// of swallowing the rest of the file — and matched over the code view only, where no
+/// brace is a literal's.
+pub fn cfg_test_regions(code: &CodeOnly) -> Vec<(usize, usize)> {
     let bytes = code.as_bytes();
     let mut regions = Vec::new();
 
@@ -231,8 +257,9 @@ pub fn rust_files(dir: &Path) -> Vec<std::path::PathBuf> {
 /// allow-list keys on.
 ///
 /// Nesting is not modelled: a site inside a closure or an inner `fn` reports that inner
-/// name, which is the more specific answer and the one a reader can find.
-pub fn enclosing_fn(code: &str, at: usize) -> Option<&str> {
+/// name, which is the more specific answer and the one a reader can find. Read in the code
+/// view only, where a `fn ` is a declaration and never a word of a message.
+pub fn enclosing_fn(code: &CodeOnly, at: usize) -> Option<&str> {
     let head = &code[..at];
     let start = head.rfind("fn ")? + 3;
     let name: &str = code[start..]
@@ -247,8 +274,9 @@ pub fn enclosing_fn(code: &str, at: usize) -> Option<&str> {
 ///
 /// Walks back from `at` to the nearest **unmatched** `(`, then takes the identifier
 /// immediately before it, so a fence can ask *what is being done with this value* rather
-/// than pattern-matching one spelling of the call.
-pub fn enclosing_callee(code: &str, at: usize) -> Option<&str> {
+/// than pattern-matching one spelling of the call. Matched over the code view only, where
+/// no parenthesis is a literal's.
+pub fn enclosing_callee(code: &CodeOnly, at: usize) -> Option<&str> {
     let bytes = code.as_bytes();
     let mut depth = 0i32;
     let mut i = at;

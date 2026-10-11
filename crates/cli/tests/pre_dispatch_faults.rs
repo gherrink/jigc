@@ -1230,12 +1230,17 @@ fn production_occurrences(file: &str, needle: &str, reading: Reading) -> usize {
         .join("..")
         .join(file);
     let body = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {file}: {e}"));
-    let code = match reading {
-        Reading::Code => rust_source::code_only(&body),
-        Reading::Literals => rust_source::code_and_strings(&body),
+    let code = rust_source::code_only(&body);
+    let regions = rust_source::cfg_test_regions(&code);
+    let kept;
+    let read: &str = match reading {
+        Reading::Code => &code,
+        Reading::Literals => {
+            kept = rust_source::code_and_strings(&body);
+            &kept
+        }
     };
-    let regions = rust_source::cfg_test_regions(&rust_source::code_only(&body));
-    code.match_indices(needle)
+    read.match_indices(needle)
         .filter(|(at, _)| !rust_source::is_test_domain(&path, &regions, *at))
         .count()
 }
