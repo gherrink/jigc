@@ -105,6 +105,8 @@ mod rename_rollback_conflict;
 mod repo_posture;
 #[path = "../rollback_population_registry.rs"]
 mod rollback_population_registry;
+#[path = "../rust_source_reader.rs"]
+mod rust_source_reader;
 #[path = "../severity_tuning.rs"]
 mod severity_tuning;
 #[path = "../store_door_home_shape.rs"]

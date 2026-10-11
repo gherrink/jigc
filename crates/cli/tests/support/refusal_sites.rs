@@ -16,13 +16,10 @@
 //! **Built on [`rust_source`], never beside it.** Comments, strings, `#[cfg(test)]`
 //! regions, the enclosing function and every literal's value come from the shared reader;
 //! this module adds only what a *site* needs — the call's arguments and the literal's
-//! fields. One thing is done to a file before the reader sees it
-//! ([`production_code`]): its blanking view does not model character literals, so a `'"'`
-//! opens a string for it — everything up to the next real string is then read inside out —
-//! and a `'{'` counts as a brace. Production files hold both. The repair belongs in the
-//! reader; until it lands there, the character literals that hold a quote or a bracket
-//! are neutralised here, byte for byte, and
-//! `a_site_after_a_quote_character_literal_is_still_listed` holds it.
+//! fields. Nothing is done to a file before the reader sees it: a character literal that
+//! holds a quote or a bracket — production files hold both — is the reader's to read as a
+//! literal, and `a_site_after_a_quote_character_literal_is_still_listed` holds that the
+//! scan gets that reading.
 //!
 //! **A row.**
 //!
@@ -171,38 +168,11 @@ impl Site {
     }
 }
 
-/// The character literals that hold a quote or a bracket the reader's blanking view would
-/// count — each replaced by one of the same length that holds none. In code, nothing but
-/// a character literal puts a quote or a bracket between two ticks; inside a string or a
-/// comment the replacement changes bytes the reader blanks anyway, and never a delimiter.
-const DELIMITER_CHARS: [(&str, &str); 8] = [
-    ("'\"'", "'_'"),
-    ("'\\\"'", "'__'"),
-    ("'('", "'_'"),
-    ("')'", "'_'"),
-    ("'['", "'_'"),
-    ("']'", "'_'"),
-    ("'{'", "'_'"),
-    ("'}'", "'_'"),
-];
-
-fn neutralised(body: &str) -> String {
-    let mut out = body.to_string();
-    for (literal, harmless) in DELIMITER_CHARS {
-        out = out.replace(literal, harmless);
-    }
-    out
-}
-
-/// `body` as the scan reads it: comments and strings blanked ([`rust_source::code_only`],
-/// over the file with its delimiter character literals neutralised), and the
-/// `#[cfg(test)]` regions of that view. Offsets are `body`'s own.
+/// `body` as the scan reads it: comments and literals blanked
+/// ([`rust_source::code_only`]), and the `#[cfg(test)]` regions of that view. Offsets are
+/// `body`'s own.
 pub fn production_code(body: &str) -> (String, Vec<(usize, usize)>) {
-    blanked(&neutralised(body))
-}
-
-fn blanked(neutral: &str) -> (String, Vec<(usize, usize)>) {
-    let code = rust_source::code_only(neutral);
+    let code = rust_source::code_only(body);
     let regions = rust_source::cfg_test_regions(&code);
     (code, regions)
 }
@@ -210,9 +180,9 @@ fn blanked(neutral: &str) -> (String, Vec<(usize, usize)>) {
 /// A file, read once by every view the scan needs.
 struct File<'a> {
     path: &'a str,
-    /// Comments and strings blanked.
+    /// Comments and literals blanked.
     code: String,
-    /// Comments blanked, strings kept — what an expression was *written* as.
+    /// Comments blanked, literals kept — what an expression was *written* as.
     kept: String,
     regions: Vec<(usize, usize)>,
     literals: Vec<StringLiteral>,
@@ -220,20 +190,11 @@ struct File<'a> {
 
 impl<'a> File<'a> {
     fn read(source: &'a Source) -> Self {
-        let neutral = neutralised(&source.body);
-        let (code, regions) = blanked(&neutral);
-        // The kept view is for showing an expression, so a neutralised character literal
-        // gets its own bytes back.
-        let mut kept = rust_source::code_and_strings(&neutral).into_bytes();
-        for (i, (was, is)) in source.body.bytes().zip(neutral.bytes()).enumerate() {
-            if was != is && kept[i] == is {
-                kept[i] = was;
-            }
-        }
+        let (code, regions) = production_code(&source.body);
         File {
             path: &source.path,
             code,
-            kept: String::from_utf8(kept).expect("a restored byte is the file's own"),
+            kept: rust_source::code_and_strings(&source.body),
             regions,
             literals: rust_source::string_literals(&source.body),
         }

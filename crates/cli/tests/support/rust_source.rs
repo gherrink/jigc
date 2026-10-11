@@ -4,7 +4,7 @@
 //! A source-level fence checks a property where membership is decided rather than over
 //! a swept list ([dev-workflow.md](../../../../implementation/dev-workflow.md) → *a grep
 //! is not a fence*), and every such fence needs the same two things before it can look
-//! at anything: source with its **comments and string literals blanked out**, so prose
+//! at anything: source with its **comments and literals blanked out**, so prose
 //! that merely *mentions* the banned idiom is not an offence, and the byte ranges of the
 //! **`#[cfg(test)]` module bodies**, so a rule written for production code does not fire
 //! on the unit tests interleaved with it.
@@ -16,24 +16,29 @@
 //! directions, and a `{` inside a string literal throws brace matching off. The
 //! implementation landed with the temp-mint fence (M45) and moved here when the schema
 //! resolution fence (M49 Increment 3) needed the same reading.
+//!
+//! **A character literal is a literal** (2026-10-11): `'"'` is not the start of a string
+//! and `'{'` is not a brace. Every view below reads one through the same recogniser
+//! ([`char_literal_end`]), which tells it from the lifetime or loop label a tick also
+//! opens; `rust_source_reader.rs` holds that reading on source it is handed.
 
 use std::path::Path;
 
-/// The file with every comment and string literal blanked to spaces, byte offsets and
-/// line breaks preserved.
+/// The file with every comment, string literal and character literal blanked to spaces,
+/// byte offsets and line breaks preserved.
 ///
 /// Everything a fence looks at reads this rather than the raw bytes: prose that
 /// *mentions* the idiom is not an instance of it, an assertion message quoting it is not
-/// an instance of it, and a brace inside a string literal must not be counted when
-/// matching a module body.
+/// an instance of it, and a brace inside a string or a character literal must not be
+/// counted when matching a module body.
 pub fn code_only(body: &str) -> String {
     blank(body, false)
 }
 
-/// The file with every **comment** blanked and string literals **kept**, byte offsets
-/// and line breaks preserved — the reading a fence needs when the thing it looks for
-/// *is* a literal (M51 Increment 8: the ambush registry's site leg asks whether a
-/// production function really mints a finding **code**, which exists in source only as
+/// The file with every **comment** blanked and string and character literals **kept**,
+/// byte offsets and line breaks preserved — the reading a fence needs when the thing it
+/// looks for *is* a literal (M51 Increment 8: the ambush registry's site leg asks whether
+/// a production function really mints a finding **code**, which exists in source only as
 /// a `"…"`).
 ///
 /// It delegates to [`code_only`]'s own scanner rather than approximating one, because a
@@ -44,8 +49,8 @@ pub fn code_and_strings(body: &str) -> String {
     blank(body, true)
 }
 
-/// The shared scanner: blank comments always, string literals only when `keep_strings`
-/// is false.
+/// The shared scanner: blank comments always, string and character literals only when
+/// `keep_strings` is false.
 fn blank(body: &str, keep_strings: bool) -> String {
     #[derive(Clone, Copy, PartialEq)]
     enum Mode {
@@ -84,6 +89,16 @@ fn blank(body: &str, keep_strings: bool) -> String {
                     if keep_strings {
                         out[i] = b;
                     }
+                } else if b == b'\''
+                    && let Some(end) = char_literal_end(body, i)
+                {
+                    // A literal like a string, so no quote or bracket in it is code. A
+                    // tick that opens a lifetime or a label falls through as the code it is.
+                    if keep_strings {
+                        out[i..end].copy_from_slice(&src[i..end]);
+                    }
+                    i = end;
+                    continue;
                 } else if b == b'r' && matches!(src.get(i + 1), Some(b'"') | Some(b'#')) {
                     // `r"…"` or `r#"…"#` — count the hashes so the closer matches.
                     let mut hashes = 0;
@@ -277,9 +292,9 @@ pub struct StringLiteral {
 /// `\`-newline has already eaten the indentation that follows it, and a run of spaces
 /// inside a comment or an aligned doc-table is not part of any message at all.
 ///
-/// Unlike [`code_only`] this also models **char literals**: `'"'` occurs ten times in
-/// this workspace, and treating its quote as a string opener would report a stretch of
-/// real code as some literal's value.
+/// A **character literal** is stepped over whole ([`char_literal_end`], as in the blanking
+/// views): `'"'` occurs in this workspace, and treating its quote as a string opener would
+/// report a stretch of real code as some literal's value.
 pub fn string_literals(body: &str) -> Vec<StringLiteral> {
     let src = body.as_bytes();
     let mut out = Vec::new();
@@ -312,7 +327,7 @@ pub fn string_literals(body: &str) -> Vec<StringLiteral> {
 
         // A `'` opens a char literal or a lifetime; only the former can hide a quote.
         if b == b'\'' {
-            i = skip_char_or_lifetime(body, i);
+            i = char_literal_end(body, i).unwrap_or(i + 1);
             continue;
         }
 
@@ -355,24 +370,25 @@ pub fn string_literals(body: &str) -> Vec<StringLiteral> {
     out
 }
 
-/// Past the `'` at `at`: a char literal (`'x'`, `'\n'`, `'\u{1f}'`) is skipped whole, a
-/// lifetime is skipped by one byte so the tick itself cannot open anything.
-fn skip_char_or_lifetime(body: &str, at: usize) -> usize {
+/// The offset just past the character literal that opens at the `'` at `at` — `'x'`,
+/// `'"'`, `'\n'`, `'\''`, `'\u{1f}'`, and the same behind a `b` — or `None` where the tick
+/// opens a lifetime or a loop label, which no tick closes.
+///
+/// The one place the reader decides which of the two a tick is. A literal is one character
+/// between two ticks, or a backslash, the character it escapes — passed over unread, so
+/// `'\''` and `'\\'` close at their own last tick — and whatever the escape spells up to
+/// the closing tick. A literal never spans a line, so a view that blanks one keeps every
+/// line break.
+fn char_literal_end(body: &str, at: usize) -> Option<usize> {
     let src = body.as_bytes();
     if src.get(at + 1) == Some(&b'\\') {
-        return body[at + 2..]
-            .find('\'')
-            .map_or(src.len(), |o| at + 2 + o + 1);
+        let rest = body.get(at + 3..)?;
+        let close = rest.find(['\'', '\n'])?;
+        return (rest.as_bytes()[close] == b'\'').then_some(at + 3 + close + 1);
     }
-    let Some(c) = body[at + 1..].chars().next() else {
-        return at + 1;
-    };
+    let c = body[at + 1..].chars().next()?;
     let after = at + 1 + c.len_utf8();
-    if src.get(after) == Some(&b'\'') {
-        after + 1
-    } else {
-        at + 1
-    }
+    (!matches!(c, '\'' | '\n') && src.get(after) == Some(&b'\'')).then_some(after + 1)
 }
 
 /// The value of a normal string literal whose body starts at `from`, and the offset just

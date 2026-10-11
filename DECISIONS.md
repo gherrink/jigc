@@ -2,6 +2,30 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The shared source reader reads a character literal as a literal; the scan's workaround is gone, and what the misreading had cost on this tree
+
+**What.** [rust_source.rs](crates/cli/tests/support/rust_source.rs) — the one reader every source-level fence shares — did not model character literals in its two blanking views: a `'"'` opened a string that the next real string closed, so the code between read as prose and the prose after it as code, and a `'{'` or a `'('` was counted by the brace and parenthesis matching built on the view. It does now, and the reader has a suite of its own, [rust_source_reader.rs](crates/cli/tests/rust_source_reader.rs). The step the entry below describes — the refusal-site scan neutralising such literals before the reader saw a file — is removed; [sites.tsv](crates/cli/tests/route_catalog/sites.tsv) is unchanged byte for byte. No product source changes.
+
+**Why now.** The entry below called the defect latent, and for the list it was. For the reader it was not, which is the next paragraph.
+
+**What the misreading had cost on this tree** (measured by dumping every view of all 608 files before and after, and by the new tree-wide arm run against the parent's reader). The code view of **60 of 608 files** did not balance its brackets — 11 of them production files, the eleven the entry below counted. In three production files the `#[cfg(test)]` region was wrong: in `cli/src/doc_code_probe/resolve.rs` a `['"', '\'']` at line 444 opened a string that swallowed the module's own `#[cfg(test)]` at line 505, so the production code between was read inside out and the whole test module was read as production; in `cli/src/invocation_log.rs` a `'}'` in a test closed the region 51 lines early; in `engine/src/finding.rs` it closed 186 lines early, and stretches of production code from line 1360 on were blanked. In `cli/src/route_fence.rs` 35 bytes on two lines were blanked. **No fence's verdict moved**: the 24 consuming suites (156 tests) pass before and after — one arm of them, which drives the binary and reads no source, only without the scoped profile's two-minute limit on a loaded machine.
+
+**Pinned, as an engineer.**
+
+- **A character literal is blanked whole in the code view — ticks and content, whatever the content — and kept whole beside the strings in the other.** Blanking only the literals that hold a delimiter would be a patch for the characters that were noticed: `','` splits an argument list and `';'` a declaration just as `'{'` moves a brace count.
+- **One recogniser decides what a tick opens** (`char_literal_end`), and the string-literal view reads through it too. Its own older skip closed `'\''` one tick early, so `['\'','"']` opened a phantom string there as well — the same misreading, beside the one reported.
+- **A lifetime or a loop label is code.** A tick opens a literal only where one character and a tick follow, or a backslash; a literal never spans a line, so a view keeps every line break on any input.
+- **The reader is held on the tree as well as on fixtures**: the code view of every file under both `src` trees and every suite home balances its brackets and holds no quote. That arm knows no syntax by name, so the next misreading of this kind reddens it.
+
+**Red first.** Eight of the suite's arms were red by assertion against the unrepaired reader; the two lifetime arms were green there and are killed by a mutant that reads every tick as a literal's start; the raw-string and nested-comment arm is a guard and was never red. The tree-wide arm followed its code and is red against the parent's reader (60 files). With the workaround gone, `refusal_site_list::a_site_after_a_quote_character_literal_is_still_listed` is red against the parent's reader and green through the repair.
+
+**Not established.**
+
+- **What each fence read differently.** Every consumer's verdict is unchanged; which sites each one gained or lost in the four production files was not counted per fence.
+- **Three fences compute test regions over the view that keeps strings** (`home_shape_one_code`, `migrate_route_family`, `unclaimed_file_family`), which `cfg_test_regions` says it must not be handed: a brace in a string still counts there. On this tree that view finds no test region at all in `cli/src/adapter.rs`, `cli/src/invocation_log.rs`, `engine/src/probe.rs` and `engine/src/state.rs`, and a wrong one in `resolve.rs` — those fences read those test modules as production code. It errs toward reading too much, it is not the reader's, and it is not repaired here.
+- **`tooling-tests/placed_executable.rs` still says the reader takes a `'"'` for a string's start**, twice, in comments. It reads source as written and uses the reader only to list files; the wording is stale and outside this change.
+- **Rust the tree does not hold.** The recogniser is held to the literals listed in the suite and to this tree; a raw identifier or a string prefix other than `b`, `r` and `br` is read as before.
+
 ## 2026-10-11 — The product's refusal sites are one scan and one committed list; what a site is, what its id is, and what the list cannot say (the plan's step `S0`; rulings 2 and 3 of 2026-10-10)
 
 **What.** A scan of production source in both crates, built on the shared source reader ([refusal_sites.rs](crates/cli/tests/support/refusal_sites.rs)), and its output committed as [sites.tsv](crates/cli/tests/route_catalog/sites.tsv), which the suite `refusal_site_list::` holds byte-equal to the scan. Regenerated by the goldens' switch (`UPDATE_GOLDENS=1 cargo test -p jigc refusal_site_list::`, refused under `CI`), never edited. It changes no product source. The route hunter is to be handed this file and the route catalog's fence is to read it, so that neither counts sites for itself.

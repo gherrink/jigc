@@ -699,9 +699,10 @@ fn every_row_of_the_family_table_assigns_a_site_of_this_tree() {
     }
 }
 
-/// The shared reader's blanking view does not model character literals, and a `'"'` opens
-/// a string for it that the next real string closes — so everything between, a constructor
-/// call included, reads as prose. Three production files hold one.
+/// A reading that does not model character literals takes a `'"'` for the start of a
+/// string that the next real string closes — so everything between, a constructor call
+/// included, reads as prose. Three production files hold one. The shared reader models
+/// them (`rust_source_reader.rs` holds that); this holds that the scan reads through it.
 const AFTER_A_QUOTE: &str = r#"
 fn unquoted(s: &str) -> &str {
     s.trim_matches('"')
