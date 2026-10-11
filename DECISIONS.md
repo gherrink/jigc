@@ -2,6 +2,45 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The route catalog's arms that follow cases run one at a time under the gate's runner: a test group of one thread, named by the arms' module and by no arm — and the suite holds the runner's file to it (the plan's step `P5`, first commit; ruling 3 of 2026-10-10)
+
+**What.** A test group in [.config/nextest.toml](.config/nextest.toml) — `route-catalog-cases`, `max-threads = 1` — and one override of `[profile.default]` that puts every test under `route_catalog::the_cases_are_followed_and_the_expected_red_list_is_exact::` into it; one arm in [route_catalog.rs](crates/cli/tests/route_catalog.rs) that holds that file to the group. No case changes, no product source changes.
+
+**Why.** The entry *The route catalog's frame before the second command*, below, split the case-following arm into one a command's file and gave each process one gate as wide as the machine. Under nextest every test is a process, so two commands' arms at once were up to twice the machine's width of chains, and the catalog grows by families. That entry named the bound that costs an arm no time and left it: the runner's file was not in its write-set. It is in this task's.
+
+**Why a group, and why by the module.** A group holds a test back *before* it is started, so the wait is none of the test's own eight minutes; a lock inside the suite would be. The filter is `test(/^…::the_cases_are_followed_and_the_expected_red_list_is_exact::/)` — the module `tables!` puts the arms in, never an arm's name — so the arm of a third command's file is in the group the day its line is written, and nobody has to remember the runner's file.
+
+**nextest takes it, asked** — `cargo nextest show-config test-groups -p jigc --test g_migration`, nextest 0.9.143, and the same under a profile of a tool config shaped as the gate's per-run one (`--tool-config-file jigc-gate:<scratch>/tiers.toml --profile gate-tier1`); both printed:
+
+```text
+group: route-catalog-cases (max threads = 1)
+  * override for default profile with filter 'test(/^route_catalog::the_cases_are_followed_and_the_expected_red_list_is_exact::/)':
+      jigc::g_migration:
+          route_catalog::the_cases_are_followed_and_the_expected_red_list_is_exact::setup
+          route_catalog::the_cases_are_followed_and_the_expected_red_list_is_exact::uninstall
+```
+
+So an override of the default profile reaches the profiles `dev/gate` writes per run, which is what the gate runs under.
+
+**What `cargo test` does instead.** CI and `dev/runner-faithful` run `cargo test`, which reads no nextest file: there a suite's tests are threads of one process, and the bound is the one the suite already had — every case followed in a process passes one gate of the machine's width (`route_case::Gate`). The two bounds do not stack anywhere: under nextest an arm has its process's gate to itself.
+
+**The arm** — `the_arms_that_follow_cases_run_one_at_a_time_under_the_gates_runner`. It reads the committed file (`include_str!`; the suite names no filesystem API) as TOML and names: no override of `[profile.default]` with the module's term in its filter; that term narrowed by an `&`, or an arm named by itself in its place; an override with no group; a group that is not one thread wide, or is declared nowhere; and a key beside `filter` and `test-group` under the override's header. On planted configurations, fault by fault; then the committed one.
+
+**Red first, by data.** With the arm written and the runner's file untouched: `no override of [profile.default] has test(/^route_catalog::the_cases_are_followed_and_the_expected_red_list_is_exact::/) as a term of its filter: the arms that follow cases are in no test group, and a runner that gives each test a process runs them beside each other` — 1 failed of 1. Then the group.
+
+**A slip the arm now names.** As first written, the override's header stood between `test-threads` and `slow-timeout` of `[profile.default]`. TOML reads every key below a header as that table's, so the profile's `slow-timeout` — the eight minutes at which the gate ends a test — `status-level` and `final-status-level` were the override's. Caught by reading the file back, before any run; then asked of nextest with that file handed in (`--config-file`): it exits 0, warns *ignoring unknown configuration keys* for the two status keys, and says nothing of `slow-timeout`, which an override may set — with `slow-timeout` alone below the header it says nothing at all, and the profile has lost the key. The override now stands below the profile's last key, the file says why, and the arm refuses an override that sets anything but its filter and its group.
+
+**Pinned.**
+
+- **The term is held to the letter**, as one of the filter's terms joined by ` | `. A filter that means the same and is written another way is named; the fence reads text, and nextest's own reading is the `show-config` call above.
+- **Only the default profile's overrides are read.** `[profile.ci]` and `[profile.scoped]` set none.
+
+**Not established.**
+
+- **What one at a time costs in seconds.** The two arms ran beside each other in every gate before this one and behind each other in this one's; what each took is in the commit's message, from the gate's own log, under the load of that run. No quiet-machine number exists.
+- **A profile that overrides the same tests itself**: nextest reads a profile's own overrides ahead of the default's. None does today, and the arm does not look.
+- **The hosted runner**, which does not use nextest.
+
 ## 2026-10-11 — The route catalog's last nine sites of `uninstall`: the fourth guard and the seven steps that remove — 45 cases, 32 of them red, twenty under the canary's key for the hook's step; a refusal behind the removal of `.jigc/` re-runs into a teardown that takes less; `P4` owes nothing, and the owed list is gone (the plan's step `P4`, third commit; ruling 3 of 2026-10-10)
 
 **What.** Cases and readings in [route_catalog/uninstall.rs](crates/cli/tests/route_catalog/uninstall.rs); the expected-red rows in [route_catalog.rs](crates/cli/tests/route_catalog.rs), **where the owed list is deleted** with its type, its field of the fence's rows and the halves of the arms that held it; two keys, and cases under two of the canary's, in the pilot's findings file ([route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md), §4). No product source changes and nothing is fixed. No frame vocabulary was added. **The catalog is 353 cases over fifty sites, 170 of them red; four more sites have a reason — every blocking site of `jigc setup` and of `jigc uninstall`, fifty-four. Nothing is owed.**

@@ -102,12 +102,13 @@
 //! arms that run as threads of one process — `cargo test`, which is what CI and the
 //! container run — are one machine's worth of chains together
 //! ([`no_more_chains_run_at_once_in_one_process_than_the_machine_is_wide`]). **Across
-//! processes nothing bounds them**: under nextest, which gives each test a process, two
-//! commands' arms that run at once are up to twice the machine's width of chains. A bound
+//! processes the bound is the runner's**: nextest gives each test a process, and a bound
 //! inside the suite would make one arm wait for the other inside its own eight minutes,
-//! which is the limit the arms were split for; the bound that costs an arm no time is the
-//! runner's (a test group of one thread in `.config/nextest.toml`), a file that is not this
-//! suite's.
+//! which is the limit the arms were split for. So the arms stand in a test group of one
+//! thread in `.config/nextest.toml`, named by their module and by no arm's own name — a
+//! group waits before a test is started, which costs the test no time — and
+//! [`the_arms_that_follow_cases_run_one_at_a_time_under_the_gates_runner`] holds that file
+//! to it.
 //!
 //! **And with the cases of `jigc uninstall`, which removes**: what must hold once a route
 //! is followed is that a thing is gone, that jigc's lines are out of a file and its owner's
@@ -939,6 +940,172 @@ fn every_table_has_its_arm_and_every_arm_its_table() {
         wrong.is_empty(),
         "the tables and the arms that follow their cases disagree:\n\n  {}\n\na command's \
          file is wired in by its line inside `tables!`, which makes its arm.",
+        wrong.join("\n  "),
+    );
+}
+
+/// The configuration of the runner `dev/gate` runs the suite under, as committed.
+const RUNNER: &str = include_str!("../../../.config/nextest.toml");
+
+/// **Every way a nextest configuration leaves the tests under `arms` free to run beside
+/// each other.** `arms` is the path the arms stand under, with its last `::`. What holds
+/// them to one at a time is an override of `[profile.default]` — the profile every other
+/// one inherits — whose filter names every test under that path, by the path and by no
+/// arm's own name, and whose test group is one thread wide. The filter's terms may be
+/// joined by ` | ` and by nothing else: a term narrowed by an `&` is not the path's. And
+/// the override sets nothing else — a key of the profile written below the override's
+/// header is read as the override's, and the profile loses it without a word.
+fn unbounded(config: &str, arms: &str) -> Vec<String> {
+    let term = format!("test(/^{arms}/)");
+    let config: toml::Table = match config.parse() {
+        Ok(config) => config,
+        Err(why) => return vec![format!("the runner's configuration is no TOML: {why}")],
+    };
+    let naming: Vec<&toml::Value> = config
+        .get("profile")
+        .and_then(|profiles| profiles.get("default"))
+        .and_then(|default| default.get("overrides"))
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|over| {
+            over.get("filter")
+                .and_then(toml::Value::as_str)
+                .is_some_and(|filter| filter.split(" | ").any(|part| part.trim() == term))
+        })
+        .collect();
+    if naming.is_empty() {
+        return vec![format!(
+            "no override of `[profile.default]` has `{term}` as a term of its filter: the \
+             arms that follow cases are in no test group, and a runner that gives each \
+             test a process runs them beside each other"
+        )];
+    }
+    let mut out = Vec::new();
+    for over in naming {
+        for (key, _) in over.as_table().into_iter().flatten() {
+            if !matches!(key.as_str(), "filter" | "test-group") {
+                out.push(format!(
+                    "the override that names `{term}` also sets `{key}`: a key written \
+                     below an override's header is the override's, and the profile above \
+                     it no longer has it"
+                ));
+            }
+        }
+        let Some(group) = over.get("test-group").and_then(toml::Value::as_str) else {
+            out.push(format!(
+                "the override that names `{term}` puts it in no test group"
+            ));
+            continue;
+        };
+        let wide = config
+            .get("test-groups")
+            .and_then(|groups| groups.get(group))
+            .and_then(|group| group.get("max-threads"));
+        if wide.and_then(toml::Value::as_integer) != Some(1) {
+            out.push(format!(
+                "`{term}` is in the test group `{group}`, which is {} — one thread wide is \
+                 what runs the arms one at a time",
+                wide.map_or("declared nowhere".to_string(), |wide| format!(
+                    "`max-threads = {wide}`"
+                )),
+            ));
+        }
+    }
+    out
+}
+
+/// **The arms that follow cases run one at a time under the gate's runner** — and an arm
+/// `tables!` makes for a third command's file is in the bound the day it is made.
+///
+/// Inside one process every case passes one gate as wide as the machine
+/// ([`no_more_chains_run_at_once_in_one_process_than_the_machine_is_wide`]). nextest gives
+/// each test a process of its own, so there the gate is one an arm, and two commands' arms
+/// at once are twice the machine's width of chains. What bounds them is the runner's: a
+/// test group of one thread in `.config/nextest.toml`, over every test under [`FOLLOWED`]
+/// — named by the module, so that no arm is in it by its own name and none can be left
+/// out. On planted configurations, fault by fault; then the committed one.
+#[test]
+fn the_arms_that_follow_cases_run_one_at_a_time_under_the_gates_runner() {
+    const ARMS: &str = "s::followed::";
+    let config = |groups: &str, filter: &str, group: &str| {
+        format!(
+            "[test-groups]\n{groups}\n[profile.default]\ntest-threads = 16\n\
+             [[profile.default.overrides]]\nfilter = '{filter}'\n{group}\n"
+        )
+    };
+    let one = "one-at-a-time = { max-threads = 1 }";
+    let in_it = "test-group = 'one-at-a-time'";
+    says(
+        &unbounded(&config(one, "test(/^s::followed::/)", in_it), ARMS),
+        &[],
+    );
+    says(
+        &unbounded(
+            &config(one, "test(=s::other) | test(/^s::followed::/)", in_it),
+            ARMS,
+        ),
+        &[],
+    );
+    for (groups, filter, group, said) in [
+        // An arm named by itself: the next command's arm is outside the group.
+        (one, "test(=s::followed::setup)", in_it, "in no test group"),
+        // The path, narrowed.
+        (
+            one,
+            "test(/^s::followed::/) & binary(g_other)",
+            in_it,
+            "in no test group",
+        ),
+        (
+            one,
+            "test(/^s::followed::/)",
+            "",
+            "puts it in no test group",
+        ),
+        (
+            "one-at-a-time = { max-threads = 2 }",
+            "test(/^s::followed::/)",
+            in_it,
+            "`max-threads = 2`",
+        ),
+        (
+            "another = { max-threads = 1 }",
+            "test(/^s::followed::/)",
+            in_it,
+            "declared nowhere",
+        ),
+    ] {
+        says(
+            &unbounded(&config(groups, filter, group), ARMS),
+            &[("`test(/^s::followed::/)`", said)],
+        );
+    }
+    says(
+        &unbounded("[profile.default]\ntest-threads = 16\n", ARMS),
+        &[("`test(/^s::followed::/)`", "in no test group")],
+    );
+    // The profile's own key, written below the override's header.
+    says(
+        &unbounded(
+            &config(
+                one,
+                "test(/^s::followed::/)",
+                "test-group = 'one-at-a-time'\nslow-timeout = '60s'",
+            ),
+            ARMS,
+        ),
+        &[("`test(/^s::followed::/)`", "also sets `slow-timeout`")],
+    );
+    says(
+        &unbounded("[profile.default", ARMS),
+        &[("the runner's configuration", "is no TOML")],
+    );
+
+    let wrong = unbounded(RUNNER, &format!("{}::{FOLLOWED}::", suite()));
+    assert!(
+        wrong.is_empty(),
+        "`.config/nextest.toml` and the arms that follow cases:\n\n  {}",
         wrong.join("\n  "),
     );
 }
