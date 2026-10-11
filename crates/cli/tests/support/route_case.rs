@@ -36,7 +36,8 @@
 //! the directory out of the way* says where from and never where to; *point it at a regular
 //! file inside this repository* names no file. A case may not supply either — that would be
 //! a path of the case's own beside a printed one — so the runner does: a moved directory
-//! goes to the sandbox's `moved/` under the path it had ([`Place::Moved`]), and a link is
+//! goes to the sandbox's `moved/` under the path it had ([`Place::Moved`]) — as a file does
+//! that a route says to move out of its path ([`Act::MoveOut`]) — and a link is
 //! re-pointed at one of two files of the runner's, the one the sandbox's repository holds
 //! committed ([`COMMITTED`]) or one written new, in no commit ([`NEW_FILE`]). Which of the
 //! two a route means is a reading, and a case says which it followed
@@ -207,6 +208,11 @@ pub enum Act {
     /// sandbox's `moved/` under the path it had ([`Place::Moved`]), with everything in it.
     /// A link to a directory is not one.
     MoveAway(Operand),
+    /// Move the file the operand names out of its path — what a route asks for with *move
+    /// the file out of …*: out of the repository, to the sandbox's `moved/` under the path
+    /// it had ([`Place::Moved`]). A regular file, and the entry itself: a link is not one,
+    /// nor a directory.
+    MoveOut(Operand),
     /// Replace the link the operand names with a real directory: the link is removed —
     /// never what it leads to — and an empty directory is made at its path.
     ReplaceWithDirectory(Operand),
@@ -252,6 +258,7 @@ impl Act {
         match self {
             Act::Remove(operand)
             | Act::MoveAway(operand)
+            | Act::MoveOut(operand)
             | Act::ReplaceWithDirectory(operand)
             | Act::PointAtCommitted(operand)
             | Act::PointAtNew(operand)
@@ -896,6 +903,7 @@ impl Sandbox {
             let what = match act {
                 Act::Remove(_) => format!("remove `{named}` ({how})"),
                 Act::MoveAway(_) => format!("move `{named}` out of the way ({how})"),
+                Act::MoveOut(_) => format!("move the file `{named}` out of its path ({how})"),
                 Act::ReplaceWithDirectory(_) => {
                     format!("replace the link `{named}` with a real directory ({how})")
                 }
@@ -923,6 +931,7 @@ impl Sandbox {
                     .map(|()| "removed".to_string())
                     .map_err(|e| e.to_string()),
                 Act::MoveAway(_) => self.move_away(&path),
+                Act::MoveOut(_) => self.move_out(&path),
                 Act::ReplaceWithDirectory(_) => self
                     .a_link(&path)
                     .and_then(|()| fs::remove_file(&path).map_err(|e| e.to_string()))
@@ -1056,6 +1065,21 @@ impl Sandbox {
         if !fs::symlink_metadata(path).is_ok_and(|entry| entry.is_dir()) {
             return Err("not done — no directory stands there".to_string());
         }
+        self.to_moved(path)
+    }
+
+    /// Move the regular file at `path` to `moved/`, where [`Self::move_away`] moves a
+    /// directory: asked of the entry itself, so a link is no file to move.
+    fn move_out(&self, path: &Path) -> Result<String, String> {
+        if !fs::symlink_metadata(path).is_ok_and(|entry| entry.is_file()) {
+            return Err("not done — no regular file stands there".to_string());
+        }
+        self.to_moved(path)
+    }
+
+    /// Move the entry at `path` to `moved/`, under the path it had from the repository
+    /// root — or under its own name, where it stood elsewhere in the sandbox.
+    fn to_moved(&self, path: &Path) -> Result<String, String> {
         let under = path
             .strip_prefix(self.repo())
             .ok()

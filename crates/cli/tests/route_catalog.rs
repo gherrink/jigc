@@ -31,16 +31,15 @@
 //! (`completions/artifacts/M55/stabilization-build/canary-one/findings.md`), and no ledger
 //! holds it yet. The tie becomes a real one when a run's opening seeds its rows.
 //!
-//! **What the catalog holds today** is twenty-nine sites of `jigc setup` (the plan's step
-//! `P3`, so far): the hook's link refusal — the site whose cause an existing test planted
-//! and passed over; the two refusals the install raises before its first write over an
-//! entry in the way of a file it replaces or merges into; the two of a command that cannot
-//! find its repository; the four over the adapter profile; the settings file's question
-//! before the first write; nine steps of the write span — the bootstrap file, the
-//! reference, the project layer, the marker, the stamp, the seeded `.gitignore`, and the
-//! settings merge's three; and the two of the install commit — one of them with a reason
-//! and no case. Every other blocking site of `setup` and `uninstall` is a row of [`OWED`],
-//! under the task that owes its case.
+//! **What the catalog holds today** is every blocking site of `jigc setup`, thirty-six (the
+//! plan's step `P3`): the hook's link refusal — the site whose cause an existing test
+//! planted and passed over; the two refusals the install raises before its first write over
+//! an entry in the way of a file it replaces or merges into; the two of a command that
+//! cannot find its repository; the four over the adapter profile; the dirty gate, and the
+//! refusal where git cannot answer it; the settings file's question before the first write;
+//! the fourteen steps of the write span; and the two of the install commit. Four of the
+//! thirty-six have a reason and no case. Every blocking site of `uninstall` is a row of
+//! [`OWED`], under the task that owes its case.
 //!
 //! **A site with a case says what was read to count its causes**
 //! ([`Reading`], a command's `READINGS`): the functions, the count with its derivation,
@@ -97,7 +96,9 @@
 //! **And with the steps of the write span**: a state is made by the binary under test
 //! where it is one an earlier run left — an install that stands
 //! ([`a_state_step_runs_the_binary_under_test`]); and a sandbox is removed whole, whatever
-//! directory its state shut ([`a_sandbox_is_removed_whole_whatever_its_state_shut`]).
+//! directory its state shut ([`a_sandbox_is_removed_whole_whatever_its_state_shut`]). And
+//! with the dirty gate, whose route says to move a file out of its path: the runner moves
+//! it, as it moves a directory out of the way ([`a_file_is_moved_out_of_its_path`]).
 //!
 //! **The fence** (the plan's step `P2`) holds the catalog to the refusal sites of the
 //! families [`CATALOGUED`] names. It scans nothing for itself — the sites are
@@ -227,7 +228,14 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &[
             "setup-hook-relative-link-out-to-a-script-pointed-at-a-committed-script",
             "setup-hook-relative-link-out-to-a-script-pointed-at-a-new-script",
+            "setup-hook-write-hook-a-directory",
+            "setup-hook-write-hook-unreadable",
         ],
+    ),
+    (
+        OUTSIDE_A_WORK_TREE,
+        Classification::SameRefusalAgain,
+        &["setup-hook-write-in-a-worktree-of-a-bare-repository"],
     ),
     (
         HOOK_RELATIVE,
@@ -308,6 +316,7 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &[
             "setup-compose-marker-a-special-file",
             "setup-guide-a-special-file",
+            "setup-hook-write-hook-a-special-file",
             "setup-reference-host-a-special-file",
         ],
     ),
@@ -359,6 +368,14 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "setup-compose-marker-packs-file-not-utf-8",
             "setup-compose-marker-packs-file-not-yaml",
             "setup-compose-marker-packs-file-read-only",
+            "setup-guide-write-no-directory-assistant-directory-read-only",
+            "setup-guide-write-no-file-directory-read-only",
+            "setup-hook-write-hook-not-utf-8",
+            "setup-hook-write-hook-read-only",
+            "setup-hook-write-hooks-path-a-file",
+            "setup-hook-write-hooks-path-dev-null",
+            "setup-hook-write-hooks-path-empty",
+            "setup-hook-write-no-hooks-directory-parent-read-only",
             "setup-project-layer-config-a-file",
             "setup-project-layer-marker-read-only",
             "setup-project-layer-no-marker-config-read-only",
@@ -397,6 +414,19 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "setup-settings-record-read-only",
         ],
     ),
+    (
+        FORCE_CANNOT_COMMIT,
+        Classification::AnotherFailure,
+        &["setup-change-hidden-by-skip-worktree-forced"],
+    ),
+    (
+        THE_QUESTION_THAT_FAILED,
+        Classification::AnotherFailure,
+        &[
+            "setup-git-refuses-the-repository-asked-as-printed-and-resolved",
+            "setup-git-status-fails-asked-as-printed-and-resolved",
+        ],
+    ),
 ];
 
 // The canary's keys — the route of the hook's link refusal names where the link leads, and
@@ -404,6 +434,11 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
 const HOOK_END: &str = "r1-setup-install-hook-route-other-causes-unexamined";
 const HOOK_RELATIVE: &str = "r1-p3-setup-install-hook-undriven-producers-and-causes";
 const HOOK_DEVICE: &str = "r1-p4-setup-hook-linked-to-dev-null-route-names-dev-null";
+
+/// The canary's key for an install from a worktree of a bare repository: the install home is
+/// the folder that holds the repository, the hook's write is refused there, and the
+/// writability route leads back to the refusal.
+const OUTSIDE_A_WORK_TREE: &str = "r1-setup-installs-outside-work-tree";
 
 /// The canary's key for a route that asks for a permission where the cause is none: there
 /// the hooks directory's writability, here — the same defect at another site — the settings
@@ -448,6 +483,14 @@ const SHUT_WORKBENCH: &str = "r1-setup-workbench-made-writable-rerun-refuses-its
 /// The settings record's write is refused after the entries are merged: the re-run finds
 /// them in the settings file, records none, and leaves an install without its record.
 const NO_RECORD: &str = "r1-setup-settings-record-refused-rerun-installs-without-the-record";
+
+/// The dirty gate's consent, `--force`, over a change a skip-worktree flag hides: the install
+/// runs over the file and git then refuses to stage it — no install commit is made.
+const FORCE_CANNOT_COMMIT: &str = "r1-setup-force-over-skip-worktree-path-cannot-commit";
+/// Where git cannot answer, the route's first step is to run the question that failed. Rests
+/// on a reading — every case under it is marked.
+const THE_QUESTION_THAT_FAILED: &str =
+    "r1-setup-unverified-route-opens-with-the-question-that-failed";
 
 /// [`EXPECTED_RED`], an entry a case.
 fn expected_red() -> Vec<ExpectedRed> {
@@ -702,47 +745,33 @@ struct Owed {
 }
 
 /// **The owed list: every blocking site of a catalogued family that has neither a case nor
-/// a reason yet, under the plan's task that owes it** — `P3` the sites of `jigc setup`,
-/// `P4` those of `jigc uninstall`. A row goes in the commit that brings its site's case or
-/// reason; a row that stays beside one is named. After `P4` the list is empty and is
-/// deleted, with this type and the `owed` field of [`Rows`].
-const OWED: &[Owed] = &[
-    Owed {
-        task: "P3",
-        sites: &[
-            "crates/cli/src/setup.rs::write_install_span::setup.inject-deny#1",
-            "crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1",
-            "crates/cli/src/setup.rs::write_install_span::setup.install-hook#1",
-            "crates/cli/src/setup.rs::write_install_span::setup.install-hook#2",
-            "crates/cli/src/setup.rs::write_install_span::setup.write-guide#1",
-            "crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1",
-            "crates/engine/src/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1",
-        ],
-    },
-    Owed {
-        task: "P4",
-        sites: &[
-            "crates/cli/src/locate.rs::locate_finding::uninstall.repo-root#dynamic-1",
-            "crates/cli/src/locate.rs::locate_finding::uninstall.repo-root#dynamic-2",
-            "crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1",
-            "crates/cli/src/setup.rs::foreign_bytes_finding::uninstall.foreign-bytes#1",
-            "crates/cli/src/setup.rs::run_uninstall::uninstall.profile-load#1",
-            "crates/cli/src/setup.rs::staged_prose_finding::uninstall.staged-prose#1",
-            "crates/cli/src/setup.rs::uninstall::uninstall.remove-allowlist#1",
-            "crates/cli/src/setup.rs::uninstall::uninstall.remove-deny#1",
-            "crates/cli/src/setup.rs::uninstall::uninstall.remove-guide#1",
-            "crates/cli/src/setup.rs::uninstall::uninstall.remove-hook#1",
-            "crates/cli/src/setup.rs::uninstall::uninstall.remove-jigc#1",
-            "crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1",
-            "crates/cli/src/setup.rs::uninstall::uninstall.unwire-reference#1",
-            "crates/cli/src/setup.rs::untracked_workbench_finding::uninstall.untracked-workbench-file#1",
-            "crates/cli/src/setup.rs::unverified_foreign_finding::uninstall.foreign-bytes#1",
-            "crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1",
-            "crates/cli/src/setup.rs::unverified_worktrees_finding::uninstall.dirty-worktree#1",
-            "crates/cli/src/task.rs::unverified_prose_finding::uninstall.staged-prose#1",
-        ],
-    },
-];
+/// a reason yet, under the plan's task that owes it** — `P4`, the sites of `jigc uninstall`;
+/// `P3` owed those of `jigc setup` and owes none. A row goes in the commit that brings its
+/// site's case or reason; a row that stays beside one is named. After `P4` the list is
+/// empty and is deleted, with this type and the `owed` field of [`Rows`].
+const OWED: &[Owed] = &[Owed {
+    task: "P4",
+    sites: &[
+        "crates/cli/src/locate.rs::locate_finding::uninstall.repo-root#dynamic-1",
+        "crates/cli/src/locate.rs::locate_finding::uninstall.repo-root#dynamic-2",
+        "crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1",
+        "crates/cli/src/setup.rs::foreign_bytes_finding::uninstall.foreign-bytes#1",
+        "crates/cli/src/setup.rs::run_uninstall::uninstall.profile-load#1",
+        "crates/cli/src/setup.rs::staged_prose_finding::uninstall.staged-prose#1",
+        "crates/cli/src/setup.rs::uninstall::uninstall.remove-allowlist#1",
+        "crates/cli/src/setup.rs::uninstall::uninstall.remove-deny#1",
+        "crates/cli/src/setup.rs::uninstall::uninstall.remove-guide#1",
+        "crates/cli/src/setup.rs::uninstall::uninstall.remove-hook#1",
+        "crates/cli/src/setup.rs::uninstall::uninstall.remove-jigc#1",
+        "crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1",
+        "crates/cli/src/setup.rs::uninstall::uninstall.unwire-reference#1",
+        "crates/cli/src/setup.rs::untracked_workbench_finding::uninstall.untracked-workbench-file#1",
+        "crates/cli/src/setup.rs::unverified_foreign_finding::uninstall.foreign-bytes#1",
+        "crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1",
+        "crates/cli/src/setup.rs::unverified_worktrees_finding::uninstall.dirty-worktree#1",
+        "crates/cli/src/task.rs::unverified_prose_finding::uninstall.staged-prose#1",
+    ],
+}];
 
 // ---------------------------------------------------------------------------
 // The fence — what it reads, and what it says
@@ -2375,9 +2404,10 @@ fn a_path_git_does_not_ignore_does_not_hold() {
 
 /// Every act that takes an operand, with the marked form naming the directory the planted
 /// refusals below are about.
-const MARKED: [&[Act]; 10] = [
+const MARKED: [&[Act]; 11] = [
     &[Act::Remove(Operand::Unprinted("in/the-way"))],
     &[Act::MoveAway(Operand::Unprinted("in/the-way"))],
+    &[Act::MoveOut(Operand::Unprinted("in/the-way"))],
     &[Act::ReplaceWithDirectory(Operand::Unprinted("in/the-way"))],
     &[Act::PointAtCommitted(Operand::Unprinted("in/the-way"))],
     &[Act::PointAtNew(Operand::Unprinted("in/the-way"))],
@@ -2463,6 +2493,7 @@ fn no_file_act_is_done_outside_the_sandbox() {
         ],
         acts: &[
             Act::MoveAway(Operand::Span(0)),
+            Act::MoveOut(Operand::Span(0)),
             Act::ReplaceWithDirectory(Operand::Span(1)),
             Act::PointAtCommitted(Operand::Span(1)),
             Act::PointAtNew(Operand::Span(1)),
@@ -2484,8 +2515,8 @@ fn no_file_act_is_done_outside_the_sandbox() {
                 .matches("not done — it names nothing inside")
                 .count()
         ),
-        (Classification::AnotherFailure, 9),
-        "all nine acts are refused, and the case is red for it:\n{}",
+        (Classification::AnotherFailure, 10),
+        "all ten acts are refused, and the case is red for it:\n{}",
         followed.detail,
     );
 }
@@ -3062,4 +3093,47 @@ fn a_sandbox_is_removed_whole_whatever_its_state_shut() {
         "the sandbox of a case that shut a directory is still there once the case is \
          followed — its scratch root is left behind on every run",
     );
+}
+
+/// **A file is moved out of its path** ([`Act::MoveOut`]) — what a route asks for with
+/// *move the file out of …*, which says where from and never where to: the runner owns the
+/// where, as for a directory moved out of the way. The file goes to the sandbox's `moved/`
+/// under the path it had, with its bytes; and what is no regular file — a directory here —
+/// is not moved by this act.
+#[test]
+fn a_file_is_moved_out_of_its_path() {
+    come_out(&[
+        (
+            Case {
+                name: "planted-a-file-to-move-out",
+                state: &[Step::File(Place::Repo("in/the-way"), "kept\n")],
+                refusing: &[
+                    "-c",
+                    "test -f in/the-way || exit 0; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: move the file out of `in/the-way`, then re-run \
+                     `jigc -c \"test ! -e in/the-way && test -d in\"`'; exit 1",
+                ],
+                acts: &[Act::MoveOut(Operand::Span(0)), Act::Run(1)],
+                holds: &[Check::RegularFile(Place::Moved("in/the-way"))],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+        (
+            Case {
+                name: "planted-a-directory-where-a-file-is-to-move-out",
+                state: &[Step::File(Place::Repo("in/the-way/kept"), "kept\n")],
+                refusing: &[
+                    "-c",
+                    "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: move the file out of `in/the-way`, then re-run \
+                     `jigc -c \"test -f in/the-way/kept\"`'; exit 1",
+                ],
+                acts: &[Act::MoveOut(Operand::Span(0)), Act::Run(1)],
+                ..PLANTED
+            },
+            Classification::AnotherFailure,
+        ),
+    ]);
 }

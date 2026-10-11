@@ -6,6 +6,8 @@ What a case of the route catalog ([route_catalog.rs](../../../../../crates/cli/t
 
 **Three of the keys are about a state only a variable reaches** — `JIGC_ADAPTERS_DIR` for two, `$HOME` taken away for one. Whether a route owes anything there is not said here.
 
+**The cases are those of every blocking site of `jigc setup`** — thirty-six sites, four of them with a reason and no case; `jigc uninstall` has none yet.
+
 **A case's name says its cause and its way.** The cases of one cause are a group, and a name ends with the way the route was followed: `-removed`, `-pointed-at-a-committed-file`, `-pointed-at-a-new-file`, and each of those again with `-committed-and-` in front where the link was committed and the change was committed as the route's clause says.
 
 ## 1. Keyed — cases are listed under each
@@ -62,11 +64,11 @@ The first way out — remove the link — holds at every end a link was driven a
 
 ### `r1-setup-fifo-at-install-path-holds-the-command`
 
-- **Classification:** the command did not end. **Three cases:** `setup-compose-marker-a-special-file` (`.jigc/config/packs.yaml`), `setup-guide-a-special-file` (`.claude/skills/jigc/SKILL.md`), `setup-reference-host-a-special-file` (`CLAUDE.md`).
+- **Classification:** the command did not end. **Four cases:** `setup-compose-marker-a-special-file` (`.jigc/config/packs.yaml`), `setup-guide-a-special-file` (`.claude/skills/jigc/SKILL.md`), `setup-reference-host-a-special-file` (`CLAUDE.md`), `setup-hook-write-hook-a-special-file` (`.git/hooks/pre-commit`).
 - **State:** a repository with one commit and no install; a FIFO at the path.
 - **Refusing command:** `jigc setup` — it prints nothing and does not end; the runner ends it at its limit. No route is printed, so none is quoted.
 - **What went wrong:** `jigc setup` reads each of the first two paths before it reaches the refusal that names a special file there, and the read of a FIFO with no writer does not return. At the other four replaced paths (`.jigc/AGENT.md`, `.jigc/version`, `.jigc/config/.gitkeep`, `.jigc/settings-entries.json`) the same FIFO is refused at once, with a route that holds.
-- **The third is the same read at a file the install merges into**, where no refusal names a special file at all: `CLAUDE.md` is read by the reference step (`inject_reference` — sampled, the command held in `std::fs::read_to_string` under `write_install_span`), after the bootstrap file is written, so the hold leaves `.jigc/AGENT.md` behind it.
+- **The third and the fourth are the same read at a file the install merges into**, where no refusal names a special file at all: `CLAUDE.md` is read by the reference step (`inject_reference`), after the bootstrap file is written, so the hold leaves `.jigc/AGENT.md` behind it; and the `pre-commit` hook is read by the last step of the write span (`install_precommit_hook`), so there the hold leaves every other install file written and none committed. Both sampled: the command held in `std::fs::read_to_string` under `write_install_span`.
 - **Not under this key — a FIFO at an ignore file.** With `.jigc/.gitignore`, or the root `.gitignore` of a repository with no commit, a FIFO, `jigc setup` does not end either; there it is `git status` that does not return (git reads a file of that name as an ignore file), and `jigc setup` waits for it without a limit. No `git` command ends in such a repository. No case: each is a reason at its site.
 - **Kin, at another door:** the canary's `r1-p4-named-pipe-at-managed-home-holds-reading-doors`.
 
@@ -146,6 +148,36 @@ The first way out — remove the link — holds at every end a link was driven a
 - **What went wrong:** the install the re-run completes has no settings record. The re-run finds every entry already in the settings file, so it adds none and records none — in the first case it removes the file that stood there and says *this run added none*. The entries were added by the run that was refused. What must hold is the file the refused step exists to write, as for every case beside these; without it `jigc uninstall` leaves jigc's entries in the settings file.
 - **The source declares the half of this it chose** (`write_install_span`, step 4b′): *a run that fails between them and here leaves entries no record claims, which the teardown leaves in place and names — never the reverse*. Whether the route may then say *re-run* and nothing more is not said here.
 
+### `r1-setup-force-over-skip-worktree-path-cannot-commit`
+
+- **Classification:** followed, another failure. **One case:** `setup-change-hidden-by-skip-worktree-forced`.
+- **State:** a repository with one commit more, which holds `.jigc/AGENT.md`; the file's index entry is flagged skip-worktree, and the file is changed.
+- **Refusing command:** `jigc setup` — exit 1, `setup.dirty-install-path`: the path is *tracked, with the change hidden by its index entry*.
+- **Printed route:**
+
+  ```text
+  route: let git see the change at `.jigc/AGENT.md` with `git -C <sandbox>/repo update-index --no-assume-unchanged -- .jigc/AGENT.md` and `git -C <sandbox>/repo update-index --no-skip-worktree -- .jigc/AGENT.md` (one call clears only one of the two flags), and commit or stash it — then re-run `jigc setup`; `jigc setup --force` is the single consent, and it lets the install run and commit those paths as it leaves them — which at a path jigc regenerates whole is jigc's own content, not yours
+  ```
+
+- **What was done:** the route's last way out — `jigc setup --force`.
+- **What went wrong:** exit 1 with `setup.install-commit`: *the jigc install files were written, but `git add` was rejected* — git does not stage a path its sparse-checkout rules skip, and says so. The route says the consent *lets the install run and commit those paths*: the install ran — `.jigc/AGENT.md` holds jigc's text now, and the change that stood there is in no commit — and nothing was committed.
+- **Beside it, and green:** the route's first way — both flag lines run, the change committed, the command again (`setup-change-hidden-by-skip-worktree-flags-cleared-and-committed`); and the same consent over an entry flagged assume-unchanged (`setup-change-hidden-by-assume-unchanged-forced`), which git stages.
+
+### `r1-setup-unverified-route-opens-with-the-question-that-failed`
+
+- **Classification:** followed, another failure. **Marked `doubt`** — both cases rest on a reading the human has not given. **Two cases:** `setup-git-refuses-the-repository-asked-as-printed-and-resolved`, `setup-git-status-fails-asked-as-printed-and-resolved`.
+- **State:** a repository with one commit and no install, in which git cannot answer: its `.git/config` is no configuration file in the first case, its `.git/index` no index in the second.
+- **Refusing command:** `jigc setup` — exit 1, `setup.unverified-install-path`, with git's own words quoted.
+- **Printed route** (the first case; the second prints `git -C <sandbox>/repo status`):
+
+  ```text
+  route: run `git -C <sandbox>/repo rev-parse --is-inside-work-tree` to see what git reports, resolve that (or put `git` on `PATH`), then re-run `jigc setup`. `--force` does not change this: it consents to the paths git names, and git named none
+  ```
+
+- **What was done:** the printed `git` line run — exit 128, with the words the refusal had quoted; the file git's words name removed; `jigc setup` again — exit 0, the install complete.
+- **What went wrong:** nothing but the first step. The frame holds every command a route prints to exit 0, and this one is the question that failed, printed so that the reader sees it fail.
+- **The two readings:** (a) the printed `git` line is a step of the route like any other — followed here, red; (b) it is there to show git's words, and the route's steps are *resolve that* and the re-run — `…-resolved`, two cases, *followed, holds, operand implied*: what resolves the failure is in git's words and never in the route.
+
 ## 2. Under the canary's keys — the hook's link refusal
 
 Not minted here; listed so that the count is in one place. The route of `setup.install-hook` names **where the link leads** as *the link* wherever the link leads anywhere: `display_hook_path` resolves the link before it words the path.
@@ -160,9 +192,19 @@ Not minted here; listed so that the count is in one place. The route of `setup.i
 
 Where the link leads to nothing the route names the link itself, and removing it holds in all three hooks directories — and with the link committed, under a hooks directory inside the repository.
 
+**And the hook's write, behind the link refusal** — the canary's own site for three of its keys. The route of every one is the one line, which prints no path: ``route: ensure the repo's git hooks directory is writable, then re-run `jigc setup` ``; the hooks directory git resolves was given its owner's bit, and the command run again. Each case is *followed, the same refusal again*.
+
+| the canary's key | cases at the hook's write |
+|---|---|
+| `r1-p3-setup-writability-route-printed-for-other-causes` | 6 — the canary's four causes: `core.hooksPath` names `/dev/null` (`setup-hook-write-hooks-path-dev-null`), names a regular file (`-hooks-path-a-file`), the hook that stands may not be written in a hooks directory that may (`-hook-read-only`), is not UTF-8 (`-hook-not-utf-8`); and two the canary did not drive — `core.hooksPath` is the empty string, which git refuses to resolve (`-hooks-path-empty`), and there is no hooks directory under a directory that may not be written (`-no-hooks-directory-parent-read-only`) |
+| `r1-p3-setup-install-hook-undriven-producers-and-causes` | 2 — a directory stands at the hook's path (`setup-hook-write-hook-a-directory`); the hook may not be read, mode 000 (`-hook-unreadable`) |
+| `r1-setup-installs-outside-work-tree` | 1 — `jigc setup` run in a worktree of a bare repository (`setup-hook-write-in-a-worktree-of-a-bare-repository`): the install home is the folder that holds the repository, git resolves no hooks directory there, and the install's other files are written into that folder before the refusal |
+
+**Green there:** `setup-hook-write-no-hook-hooks-directory-read-only` — no hook, and the hooks directory itself read-only: the one state the route's words are true of (*holds, operand implied*).
+
 ## 3. Under the canary's key — a route that asks for a permission where the cause is none
 
-Not minted here. `r1-p3-setup-writability-route-printed-for-other-causes` is the canary's row for the hook's write: *ensure the repo's git hooks directory is writable* over causes that are no such thing. **The same defect at ten more sites.** First at two, five cases, each *followed, the same refusal again*: the entry the route names was given its owner's bit — it had it — and the command was run again.
+Not minted here. `r1-p3-setup-writability-route-printed-for-other-causes` is the canary's row for the hook's write: *ensure the repo's git hooks directory is writable* over causes that are no such thing. **The same defect at eleven more sites** — and at the hook's write six cases, in §2. First at two, five cases, each *followed, the same refusal again*: the entry the route names was given its owner's bit — it had it — and the command was run again.
 
 | case | refusing — `jigc setup`, exit 1 | printed route | the cause |
 |---|---|---|---|
@@ -174,7 +216,7 @@ Not minted here. `r1-p3-setup-writability-route-printed-for-other-causes` is the
 
 **Beside them, and green:** `setup-compose-marker-config-directory-read-only` — the directory itself read-only and no `packs.yaml` in it yet, the one state the route's words are true of. And the settings file's eight other causes, sixteen cases: *fix it so jigc can merge into it, commit the fix* holds for every shape the merge refuses.
 
-**And at eight more sites — the other steps of the write span** (`write_install_span`), twenty-two cases, each *followed, the same refusal again*. Each step words every error of its callee under one route, which names one entry to make writable — for one of them readable. Where the cause is anything else — what stands at the path, what its bytes are, or the permission of another entry than the one named — the act changes nothing, or cannot be done, and the re-run is refused the same way.
+**And at nine more sites — the other steps of the write span** (`write_install_span`), twenty-four cases, each *followed, the same refusal again*. Each step words every error of its callee under one route, which names one entry to make writable — for one of them readable. Where the cause is anything else — what stands at the path, what its bytes are, or the permission of another entry than the one named — the act changes nothing, or cannot be done, and the re-run is refused the same way.
 
 | step — `jigc setup`, exit 1 | printed route | the causes it was printed for, a case each |
 |---|---|---|
@@ -186,9 +228,10 @@ Not minted here. `r1-p3-setup-writability-route-printed-for-other-causes` is the
 | `setup.inject-allowlist`, the read the record is computed from | ``route: ensure `.claude/settings.json` is readable, then re-run `jigc setup` `` | the settings path is a committed link to `CLAUDE.md`, to which the install has just appended its reference (`setup-settings-record-asked-of-the-reference-host`) |
 | `setup.inject-allowlist`, the merge | ``route: ensure `.claude/settings.json` is writable, then re-run `jigc setup` `` | the same link where git ignores `CLAUDE.md` and no record is kept (`setup-settings-merge-into-the-ignored-reference-host`) · there is no settings file and `.claude` may not be written (`-no-file-directory-read-only`) · there is no `.claude` and the repository root may not be written (`-no-directory-root-read-only`) |
 | `setup.inject-allowlist`, the record's write | ``route: ensure `.jigc/settings-entries.json` is writable, then re-run `jigc setup` `` | the run records nothing, a record stands, and `.jigc`, which it is to be taken out of, may not be written (`setup-settings-record-to-remove-workbench-read-only`) |
+| `setup.write-guide` | ``route: ensure `.claude/skills/jigc/SKILL.md` is writable, then re-run `jigc setup` `` | there is no `.claude/skills` and `.claude` may not be written (`setup-guide-write-no-directory-assistant-directory-read-only`) · there is no guide and `.claude/skills/jigc` may not be written (`-no-file-directory-read-only`) |
 
 Where the settings path leads to `CLAUDE.md`, the re-run is refused under the same code at another site — the question before the first write, with its own route, *fix it so jigc can merge into it*: the file is `CLAUDE.md` with the reference in it.
 
-**Beside them, and green — the state each route's words are true of:** `setup-bootstrap-write-file-read-only`, `setup-reference-host-read-only`, `setup-settings-merge-file-read-only` (the named file may not be written); `setup-version-stamp-absent-workbench-read-only` (`.jigc` may not be written, over an install that stands); `setup-seeded-ignore-absent-root-read-only` (the root may not be written — *holds, operand implied*: the route prints no path for the root). Two more states the words are true of are red under keys of their own, in §1: a shut `.jigc` over a first install, and the record's own write.
+**Beside them, and green — the state each route's words are true of:** `setup-bootstrap-write-file-read-only`, `setup-reference-host-read-only`, `setup-settings-merge-file-read-only`, `setup-guide-write-file-read-only` (the named file may not be written); `setup-version-stamp-absent-workbench-read-only` (`.jigc` may not be written, over an install that stands); `setup-seeded-ignore-absent-root-read-only` (the root may not be written — *holds, operand implied*: the route prints no path for the root). Two more states the words are true of are red under keys of their own, in §1: a shut `.jigc` over a first install, and the record's own write.
 
 **After each of the four refusals at the marker's write, the install is half written**: `.jigc/AGENT.md`, `.jigc/.gitignore`, `.jigc/config/.gitkeep` and `CLAUDE.md` are written and staged, and no install commit is made. The settings file's refusal comes before the first write and leaves nothing.

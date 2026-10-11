@@ -13,11 +13,12 @@
 //! write span, each a site: the bootstrap file, the reference, the project layer, the
 //! marker's write into `packs.yaml`, the stamp, the seeded root `.gitignore`, and the
 //! settings merge's three — the read its record is computed from, the merge, the record's
-//! own write. And one behind them all: a git step of the install commit that ran and
-//! refused. Each of those twenty-eight sites has a row of [`READINGS`]: the functions that
-//! were read to count its causes, the count, every cause that has no case with why, and
-//! every way out of its route that is not followed with why. A twenty-ninth has a row of
-//! [`REASONS`] and no case.
+//! own write — and behind those the guide and the hook. Before the span, the dirty gate:
+//! install paths that hold work in no commit, and git unable to say. And one behind them
+//! all: a git step of the install commit that ran and refused. Each of those thirty-two
+//! sites has a row of [`READINGS`]: the functions that were read to count its causes, the
+//! count, every cause that has no case with why, and every way out of its route that is
+//! not followed with why. Four more have a row of [`REASONS`] and no case.
 //!
 //! **A step of the write span has one route for every error of its callee** — *ensure … is
 //! writable* over one entry it names. So its causes are the callee's errors, and a case
@@ -2137,6 +2138,639 @@ const RECORD_TO_REMOVE_FROM_A_SHUT_WORKBENCH: [Case; 1] = span_refused!(
     ],
 );
 
+// `setup.write-guide`
+
+const GUIDE_WRITE: &str = "crates/cli/src/setup.rs::write_install_span::setup.write-guide#1";
+
+/// The one state the route's words are true of: the guide an earlier install wrote — which
+/// is the only copy the step writes over — may not be written.
+const GUIDE_READ_ONLY: [Case; 1] = span_refused!(
+    "setup-guide-write-file-read-only",
+    GUIDE_WRITE,
+    GUIDE_MD,
+    "the guide an earlier install wrote may not be written",
+    plant: [INSTALLED, shut!("444", ".claude/skills/jigc/SKILL.md")],
+);
+/// The settings file stands, so the merges before this step write into a file that is
+/// there.
+const NO_GUIDE_DIRECTORY_IN_A_SHUT_ASSISTANT_DIRECTORY: [Case; 1] = span_refused!(
+    "setup-guide-write-no-directory-assistant-directory-read-only",
+    GUIDE_WRITE,
+    GUIDE_MD,
+    "there is no `.claude/skills`, and `.claude` may not be written",
+    plant: [
+        Step::File(Place::Repo(SETTINGS_JSON), "{}\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        shut!("555", ".claude"),
+    ],
+);
+const NO_GUIDE_IN_A_SHUT_DIRECTORY: [Case; 1] = span_refused!(
+    "setup-guide-write-no-file-directory-read-only",
+    GUIDE_WRITE,
+    GUIDE_MD,
+    "there is no guide, and `.claude/skills/jigc` may not be written",
+    plant: [
+        Step::Dir(Place::Repo(".claude/skills/jigc")),
+        shut!("555", ".claude/skills/jigc"),
+    ],
+);
+
+// `setup.install-hook`, the hook's write — the last step of the span.
+
+const HOOK_WRITE: &str = "crates/cli/src/setup.rs::write_install_span::setup.install-hook#2";
+
+/// **The hook's write refused, followed the one way its route offers.** The route names
+/// *the repo's git hooks directory* and prints no path for it, so the directory is the
+/// case's to name, by the marked form: the one git resolves, from where the case stands.
+/// Then the re-run — the route's one span.
+macro_rules! hook_refused {
+    (
+        $name:literal, $cause:expr, $hooks:literal,
+        plant: [$($plant:expr),* $(,)?],
+        installed: [$($installed:expr),* $(,)?] $(,)?
+    ) => {
+        [Case {
+            name: $name,
+            site: HOOK_WRITE,
+            cause: $cause,
+            state: &[$($plant,)*],
+            acts: &[Act::MakeWritable(Operand::Unprinted($hooks)), Act::Run(0)],
+            holds: &[$($installed,)*],
+            ..SETUP
+        }]
+    };
+}
+
+const HOOKS_PATH_EMPTY: [Case; 1] = hook_refused!(
+    "setup-hook-write-hooks-path-empty",
+    "git cannot resolve a hooks directory: `core.hooksPath` is the empty string",
+    ".git/hooks",
+    plant: [Step::Git(&["config", "core.hooksPath", ""])],
+    installed: [Check::RegularFile(Place::Repo(HOOK))],
+);
+/// The canary's `r1-setup-installs-outside-work-tree`: the install home is the folder that
+/// holds the bare repository, which is no repository git can answer for.
+const IN_A_WORKTREE_OF_A_BARE_REPOSITORY: [Case; 1] = [Case {
+    name: "setup-hook-write-in-a-worktree-of-a-bare-repository",
+    site: HOOK_WRITE,
+    cause: "git cannot resolve a hooks directory: the command stands in a worktree of a bare \
+            repository, and the install home is the folder that holds it",
+    state: &[
+        Step::Git(&["clone", "-q", "--bare", ".", "../outside/bare.git"]),
+        Step::Git(&[
+            "-C",
+            "../outside/bare.git",
+            "worktree",
+            "add",
+            "-q",
+            "../wt",
+            "main",
+        ]),
+    ],
+    from: Place::Outside("wt"),
+    acts: &[
+        Act::MakeWritable(Operand::Unprinted("../bare.git/hooks")),
+        Act::Run(0),
+    ],
+    holds: &[Check::RegularFile(Place::Outside("bare.git/hooks/pre-commit"))],
+    ..SETUP
+}];
+const HOOKS_PATH_A_FILE: [Case; 1] = hook_refused!(
+    "setup-hook-write-hooks-path-a-file",
+    "`core.hooksPath` names a regular file",
+    "hooks-file",
+    plant: [
+        Step::File(Place::Repo("hooks-file"), "a file\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        Step::Git(&["config", "core.hooksPath", "hooks-file"]),
+    ],
+    installed: [Check::RegularFile(Place::Repo("hooks-file/pre-commit"))],
+);
+const HOOKS_PATH_A_DEVICE: [Case; 1] = hook_refused!(
+    "setup-hook-write-hooks-path-dev-null",
+    "`core.hooksPath` names `/dev/null`",
+    "/dev/null",
+    plant: [Step::Git(&["config", "core.hooksPath", "/dev/null"])],
+    installed: [],
+);
+const NO_HOOKS_DIRECTORY_UNDER_A_SHUT_ONE: [Case; 1] = hook_refused!(
+    "setup-hook-write-no-hooks-directory-parent-read-only",
+    "there is no hooks directory, and the directory it would be made in may not be written",
+    "../outside/shut/hooks",
+    plant: [
+        Step::Dir(Place::Outside("shut")),
+        Step::Git(&["config", "core.hooksPath", "../outside/shut/hooks"]),
+        shut!("555", "../outside/shut"),
+    ],
+    installed: [Check::RegularFile(Place::Outside("shut/hooks/pre-commit"))],
+);
+const HOOK_NOT_TEXT: [Case; 1] = hook_refused!(
+    "setup-hook-write-hook-not-utf-8",
+    "the `pre-commit` hook that stands is not UTF-8",
+    ".git/hooks",
+    plant: [
+        Step::Script(Place::Repo(HOOK), "#!/bin/sh\n"),
+        Step::Git(&[
+            "-c",
+            "alias.plant=!printf '\\377\\376' >> .git/hooks/pre-commit",
+            "plant",
+        ]),
+    ],
+    installed: [Check::RegularFile(Place::Repo(HOOK))],
+);
+const HOOK_A_DIRECTORY: [Case; 1] = hook_refused!(
+    "setup-hook-write-hook-a-directory",
+    "a directory stands at the `pre-commit` hook's path",
+    ".git/hooks",
+    plant: [Step::Dir(Place::Repo(HOOK))],
+    installed: [Check::RegularFile(Place::Repo(HOOK))],
+);
+const HOOK_UNREADABLE: [Case; 1] = hook_refused!(
+    "setup-hook-write-hook-unreadable",
+    "the `pre-commit` hook that stands may not be read",
+    ".git/hooks",
+    plant: [
+        Step::Script(Place::Repo(HOOK), "#!/bin/sh\necho mine\n"),
+        shut!("000", ".git/hooks/pre-commit"),
+    ],
+    installed: [Check::RegularFile(Place::Repo(HOOK))],
+);
+const HOOK_A_FIFO: [Case; 1] = hook_refused!(
+    "setup-hook-write-hook-a-special-file",
+    "the `pre-commit` hook is a FIFO",
+    ".git/hooks",
+    plant: [Step::Fifo(Place::Repo(HOOK))],
+    installed: [Check::RegularFile(Place::Repo(HOOK))],
+);
+const HOOK_READ_ONLY: [Case; 1] = hook_refused!(
+    "setup-hook-write-hook-read-only",
+    "the `pre-commit` hook that stands may not be written, in a hooks directory that may",
+    ".git/hooks",
+    plant: [
+        Step::Script(Place::Repo(HOOK), "#!/bin/sh\necho mine\n"),
+        shut!("555", ".git/hooks/pre-commit"),
+    ],
+    installed: [Check::RegularFile(Place::Repo(HOOK))],
+);
+/// The one state the route's words are true of.
+const NO_HOOK_IN_A_SHUT_HOOKS_DIRECTORY: [Case; 1] = hook_refused!(
+    "setup-hook-write-no-hook-hooks-directory-read-only",
+    "there is no `pre-commit` hook, and the hooks directory may not be written",
+    ".git/hooks",
+    plant: [Step::Dir(Place::Repo(".git/hooks")), shut!("555", ".git/hooks")],
+    installed: [Check::RegularFile(Place::Repo(HOOK))],
+);
+
+// ---------------------------------------------------------------------------
+// `setup_dirty_install_finding` · `setup.dirty-install-path` — the dirty gate
+// ---------------------------------------------------------------------------
+
+/// The engine's wording of the refusal over install paths that hold work in no commit —
+/// raised by the gate before the install's first write, and by its backstop before the
+/// install commit.
+const DIRTY: &str = "crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1";
+
+/// **Work in no commit at an install path on a born `HEAD`, where git's status names it —
+/// followed the three ways the route offers**: the work committed; stashed, by the one
+/// stash line the route prints; and the consent, `--force`. The route says *those
+/// path(s)* and prints none, so the path committed is the case's to name, by the marked
+/// form.
+macro_rules! uncommitted_ways {
+    ($prefix:literal, $cause:expr, $path:expr, plant: [$($plant:expr),* $(,)?] $(,)?) => {
+        [
+            Case {
+                name: concat!($prefix, "-committed"),
+                site: DIRTY,
+                cause: $cause,
+                state: &[$($plant,)*],
+                acts: &[Act::Commit(Operand::Unprinted($path)), Act::Run(1)],
+                holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-stashed"),
+                site: DIRTY,
+                cause: $cause,
+                state: &[$($plant,)*],
+                acts: &[Act::Run(0), Act::Run(1)],
+                holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-forced"),
+                site: DIRTY,
+                cause: $cause,
+                state: &[$($plant,)*],
+                acts: &[Act::Run(2)],
+                holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+                ..SETUP
+            },
+        ]
+    };
+}
+
+const A_COMMITTED_HOST: [Step; 3] = [
+    Step::File(Place::Repo(CLAUDE_MD), "mine\n"),
+    COMMIT_IT[0],
+    COMMIT_IT[1],
+];
+const THE_HOST_CHANGED: Step = Step::File(Place::Repo(CLAUDE_MD), "mine, and more\n");
+
+const HOST_CHANGED: [Case; 3] = uncommitted_ways!(
+    "setup-uncommitted-change-at-an-install-path",
+    "a file git tracks at an install path is changed and the change is not staged",
+    CLAUDE_MD,
+    plant: [A_COMMITTED_HOST[0], A_COMMITTED_HOST[1], A_COMMITTED_HOST[2], THE_HOST_CHANGED],
+);
+const HOST_CHANGE_STAGED: [Case; 3] = uncommitted_ways!(
+    "setup-staged-change-at-an-install-path",
+    "a file git tracks at an install path is changed and the change is staged",
+    CLAUDE_MD,
+    plant: [
+        A_COMMITTED_HOST[0],
+        A_COMMITTED_HOST[1],
+        A_COMMITTED_HOST[2],
+        THE_HOST_CHANGED,
+        Step::Git(&["add", "CLAUDE.md"]),
+    ],
+);
+const HOST_UNTRACKED: [Case; 3] = uncommitted_ways!(
+    "setup-untracked-file-at-an-install-path",
+    "a file git does not track stands at an install path",
+    CLAUDE_MD,
+    plant: [Step::File(Place::Repo(CLAUDE_MD), "mine\n")],
+);
+
+/// The gate's backstop, behind the install's writes: the hook's home is resolved by the
+/// install itself, so a hook of the repository's own that is in no commit is first asked
+/// about there.
+const A_HOOK_IN_NO_COMMIT: [Case; 3] = uncommitted_ways!(
+    "setup-uncommitted-hook-in-the-repository",
+    "the `pre-commit` hook under a hooks directory inside the repository is in no commit — \
+     asked behind the install's writes",
+    ".githooks/pre-commit",
+    plant: [
+        HOOKS_IN_THE_REPOSITORY,
+        Step::Script(Place::Repo(".githooks/pre-commit"), "#!/bin/sh\necho mine\n"),
+    ],
+);
+/// The other state the backstop is first to see: the path was not on disk when the gate
+/// asked, and the index held bytes for it that `HEAD` does not.
+const STAGED_AND_GONE: [Case; 3] = uncommitted_ways!(
+    "setup-install-path-staged-and-deleted",
+    "a file was staged at an install path and then deleted from the working tree — asked \
+     behind the install's writes",
+    CLAUDE_MD,
+    plant: [
+        Step::File(Place::Repo(CLAUDE_MD), "mine\n"),
+        Step::Git(&["add", "CLAUDE.md"]),
+        Step::Git(&["-c", "alias.drop=!rm CLAUDE.md", "drop"]),
+    ],
+);
+
+/// **A file git ignores at a path the install replaces** — the route prints the path:
+/// moved out of it, or the consent.
+const IGNORED: &str = "a file git ignores stands at a path the install replaces, on a born \
+                       `HEAD`";
+const AN_IGNORED_REPLACED_FILE: [Case; 2] = [
+    Case {
+        name: "setup-ignored-file-at-a-replaced-path-moved",
+        site: DIRTY,
+        cause: IGNORED,
+        state: &[
+            Step::File(Place::Repo(ROOT_GITIGNORE), ".jigc/AGENT.md\n"),
+            COMMIT_IT[0],
+            COMMIT_IT[1],
+            Step::File(Place::Repo(AGENT_MD), "notes\n"),
+        ],
+        acts: &[Act::MoveOut(Operand::Span(0)), Act::Run(1)],
+        holds: &[
+            Check::RegularFile(Place::Repo(AGENT_MD)),
+            Check::RegularFile(Place::Moved(AGENT_MD)),
+        ],
+        ..SETUP
+    },
+    Case {
+        name: "setup-ignored-file-at-a-replaced-path-forced",
+        site: DIRTY,
+        cause: IGNORED,
+        state: &[
+            Step::File(Place::Repo(ROOT_GITIGNORE), ".jigc/AGENT.md\n"),
+            COMMIT_IT[0],
+            COMMIT_IT[1],
+            Step::File(Place::Repo(AGENT_MD), "notes\n"),
+        ],
+        acts: &[Act::Run(2)],
+        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+        ..SETUP
+    },
+];
+
+/// **A change git's status does not report, because the index entry is flagged** — the
+/// route prints the path and the two lines that clear the two flags: both run, the change
+/// committed, the command again; or the consent.
+macro_rules! flagged_ways {
+    ($prefix:literal, $cause:expr, plant: [$($plant:expr),* $(,)?] $(,)?) => {
+        [
+            Case {
+                name: concat!($prefix, "-flags-cleared-and-committed"),
+                site: DIRTY,
+                cause: $cause,
+                state: &[$($plant,)*],
+                acts: &[
+                    Act::Run(1),
+                    Act::Run(2),
+                    Act::Commit(Operand::Span(0)),
+                    Act::Run(3),
+                ],
+                holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-forced"),
+                site: DIRTY,
+                cause: $cause,
+                state: &[$($plant,)*],
+                acts: &[Act::Run(4)],
+                holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+                ..SETUP
+            },
+        ]
+    };
+}
+
+const A_CHANGE_GIT_ASSUMES_AWAY: [Case; 2] = flagged_ways!(
+    "setup-change-hidden-by-assume-unchanged",
+    "a tracked file at an install path is changed under an index entry flagged \
+     assume-unchanged",
+    plant: [
+        A_COMMITTED_HOST[0],
+        A_COMMITTED_HOST[1],
+        A_COMMITTED_HOST[2],
+        Step::Git(&["update-index", "--assume-unchanged", "CLAUDE.md"]),
+        THE_HOST_CHANGED,
+    ],
+);
+const A_CHANGE_GIT_SKIPS: [Case; 2] = flagged_ways!(
+    "setup-change-hidden-by-skip-worktree",
+    "a tracked file at an install path is changed under an index entry flagged \
+     skip-worktree",
+    plant: [
+        Step::File(Place::Repo(AGENT_MD), "theirs\n"),
+        COMMIT_IT[0],
+        COMMIT_IT[1],
+        Step::Git(&["update-index", "--skip-worktree", ".jigc/AGENT.md"]),
+        Step::File(Place::Repo(AGENT_MD), "theirs, and more\n"),
+    ],
+);
+
+/// **All three kinds at once** — a path git reports, one it hides and one it ignores — and
+/// the route joins their acts. The reported path is the one the route does not print, and
+/// the marked form may not stand beside a printed path; so that one is stashed, by the
+/// line the route prints for it, after the two the route names are dealt with.
+const EVERY_KIND_AT_ONCE: [Case; 1] = [Case {
+    name: "setup-uncommitted-work-of-every-kind-at-once",
+    site: DIRTY,
+    cause: "three install paths at once, on a born `HEAD`: one git reports, one whose \
+            change a flagged index entry hides, and one git ignores — and the route joins \
+            their acts",
+    state: &[
+        Step::File(Place::Repo(ROOT_GITIGNORE), ".jigc/AGENT.md\n"),
+        A_COMMITTED_HOST[0],
+        A_COMMITTED_HOST[1],
+        A_COMMITTED_HOST[2],
+        Step::Git(&["update-index", "--assume-unchanged", "CLAUDE.md"]),
+        THE_HOST_CHANGED,
+        Step::File(Place::Repo(SETTINGS_JSON), "{}\n"),
+        Step::File(Place::Repo(AGENT_MD), "notes\n"),
+    ],
+    acts: &[
+        Act::Run(3),
+        Act::Run(4),
+        Act::Commit(Operand::Span(2)),
+        Act::MoveOut(Operand::Span(5)),
+        Act::Run(1),
+        Act::Run(6),
+    ],
+    holds: &[
+        Check::RegularFile(Place::Repo(AGENT_MD)),
+        Check::RegularFile(Place::Moved(AGENT_MD)),
+    ],
+    ..SETUP
+}];
+
+/// **A file git does not track at a path the install replaces, where there is no commit
+/// yet** — the unborn route: the file moved out of the path, which keeps the fresh
+/// install and its secrets floor; or committed, which the route says ends it; or the
+/// consent.
+const UNBORN_UNTRACKED: &str = "there is no commit yet, and a file git does not track \
+                                stands at a path the install replaces";
+const AN_UNTRACKED_REPLACED_FILE_ON_AN_UNBORN_HEAD: [Case; 3] = [
+    Case {
+        name: "setup-unborn-untracked-file-at-a-replaced-path-moved",
+        site: DIRTY,
+        cause: UNBORN_UNTRACKED,
+        state: &[UNBORN, Step::File(Place::Repo(AGENT_MD), "notes\n")],
+        acts: &[Act::MoveOut(Operand::Unprinted(AGENT_MD)), Act::Run(1)],
+        holds: &[
+            Check::RegularFile(Place::Repo(AGENT_MD)),
+            Check::RegularFile(Place::Moved(AGENT_MD)),
+            Check::GitIgnores(".env"),
+        ],
+        ..SETUP
+    },
+    Case {
+        name: "setup-unborn-untracked-file-at-a-replaced-path-committed",
+        site: DIRTY,
+        cause: UNBORN_UNTRACKED,
+        state: &[UNBORN, Step::File(Place::Repo(AGENT_MD), "notes\n")],
+        acts: &[Act::Commit(Operand::Unprinted(AGENT_MD)), Act::Run(1)],
+        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+        ..SETUP
+    },
+    Case {
+        name: "setup-unborn-untracked-file-at-a-replaced-path-forced",
+        site: DIRTY,
+        cause: UNBORN_UNTRACKED,
+        state: &[UNBORN, Step::File(Place::Repo(AGENT_MD), "notes\n")],
+        acts: &[Act::Run(4)],
+        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+        ..SETUP
+    },
+];
+
+/// **A staged file at an install path, where there is no commit yet.** A staged file rides
+/// no first commit, whatever the install does with the path.
+const UNBORN_STAGED: &str = "there is no commit yet, and a file is staged at an install \
+                             path";
+const A_STAGED_FILE_ON_AN_UNBORN_HEAD: [Case; 2] = [
+    Case {
+        name: "setup-unborn-staged-file-at-an-install-path-committed",
+        site: DIRTY,
+        cause: UNBORN_STAGED,
+        state: &[
+            UNBORN,
+            Step::File(Place::Repo(CLAUDE_MD), "mine\n"),
+            Step::Git(&["add", "CLAUDE.md"]),
+        ],
+        acts: &[Act::Commit(Operand::Unprinted(CLAUDE_MD)), Act::Run(1)],
+        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+        ..SETUP
+    },
+    Case {
+        name: "setup-unborn-staged-file-at-an-install-path-forced",
+        site: DIRTY,
+        cause: UNBORN_STAGED,
+        state: &[
+            UNBORN,
+            Step::File(Place::Repo(CLAUDE_MD), "mine\n"),
+            Step::Git(&["add", "CLAUDE.md"]),
+        ],
+        acts: &[Act::Run(4)],
+        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+        ..SETUP
+    },
+];
+
+/// **Only files git ignores, where there is no commit yet** — the arm with no commit to
+/// offer: the file moved out of the path the consent's clause prints, or the consent.
+const UNBORN_IGNORED: &str = "there is no commit yet, and the one install path that holds \
+                              work is a file git ignores at a path the install replaces";
+const AN_IGNORED_REPLACED_FILE_ON_AN_UNBORN_HEAD: [Case; 2] = [
+    Case {
+        name: "setup-unborn-ignored-file-at-a-replaced-path-moved",
+        site: DIRTY,
+        cause: UNBORN_IGNORED,
+        state: &[
+            UNBORN,
+            Step::File(Place::Repo(ROOT_GITIGNORE), ".jigc/AGENT.md\n"),
+            Step::File(Place::Repo(AGENT_MD), "notes\n"),
+        ],
+        acts: &[Act::MoveOut(Operand::Span(2)), Act::Run(0)],
+        holds: &[
+            Check::RegularFile(Place::Repo(AGENT_MD)),
+            Check::RegularFile(Place::Moved(AGENT_MD)),
+            Check::GitIgnores(".env"),
+        ],
+        ..SETUP
+    },
+    Case {
+        name: "setup-unborn-ignored-file-at-a-replaced-path-forced",
+        site: DIRTY,
+        cause: UNBORN_IGNORED,
+        state: &[
+            UNBORN,
+            Step::File(Place::Repo(ROOT_GITIGNORE), ".jigc/AGENT.md\n"),
+            Step::File(Place::Repo(AGENT_MD), "notes\n"),
+        ],
+        acts: &[Act::Run(1)],
+        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+        ..SETUP
+    },
+];
+
+/// **The backstop where there is no commit yet**: staged, then deleted — not on disk when
+/// the gate asked, and no file git does not track.
+const UNBORN_STAGED_AND_GONE: &str = "there is no commit yet, and a file was staged at an \
+                                      install path and then deleted from the working tree \
+                                      — asked behind the install's writes";
+const STAGED_AND_GONE_ON_AN_UNBORN_HEAD: [Case; 2] = [
+    Case {
+        name: "setup-unborn-install-path-staged-and-deleted-committed",
+        site: DIRTY,
+        cause: UNBORN_STAGED_AND_GONE,
+        state: &[
+            UNBORN,
+            Step::File(Place::Repo(CLAUDE_MD), "mine\n"),
+            Step::Git(&["add", "CLAUDE.md"]),
+            Step::Git(&["-c", "alias.drop=!rm CLAUDE.md", "drop"]),
+        ],
+        acts: &[Act::Commit(Operand::Unprinted(CLAUDE_MD)), Act::Run(1)],
+        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+        ..SETUP
+    },
+    Case {
+        name: "setup-unborn-install-path-staged-and-deleted-forced",
+        site: DIRTY,
+        cause: UNBORN_STAGED_AND_GONE,
+        state: &[
+            UNBORN,
+            Step::File(Place::Repo(CLAUDE_MD), "mine\n"),
+            Step::Git(&["add", "CLAUDE.md"]),
+            Step::Git(&["-c", "alias.drop=!rm CLAUDE.md", "drop"]),
+        ],
+        acts: &[Act::Run(2)],
+        holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+        ..SETUP
+    },
+];
+
+// ---------------------------------------------------------------------------
+// `setup_unasked_install_finding` · `setup.unverified-install-path`
+// ---------------------------------------------------------------------------
+
+/// git could not answer the question the install asks before its first write.
+const UNVERIFIED: &str = "crates/engine/src/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1";
+
+/// The two readings of the route's first clause.
+const WHICH_FIRST_STEP: &str = "*run `git …` to see what git reports, resolve that, then \
+                                re-run*: (a) the printed `git` line is a step of the route, \
+                                run as printed and held to exit 0 like every command a \
+                                route prints — followed here: it is the question that \
+                                failed, and it fails again; (b) the line is there to show \
+                                git's own words, its failure is what it is for, and the \
+                                route's steps are *resolve that* and the re-run — the case \
+                                beside this one that ends `-resolved`";
+
+/// **git cannot answer, followed the two ways the route's first clause can be read.** What
+/// *resolves that* is in git's words and never in the route, so the object is the case's
+/// to name, by the marked form: the one file git's words name, removed.
+macro_rules! unverified_ways {
+    ($prefix:literal, $cause:expr, $broken:literal, $body:literal) => {
+        [
+            Case {
+                name: concat!($prefix, "-asked-as-printed-and-resolved"),
+                site: UNVERIFIED,
+                cause: $cause,
+                state: &[Step::File(Place::Repo($broken), $body)],
+                acts: &[
+                    Act::Run(0),
+                    Act::Remove(Operand::Unprinted($broken)),
+                    Act::Run(3),
+                ],
+                holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+                doubt: Some(WHICH_FIRST_STEP),
+                ..SETUP
+            },
+            Case {
+                name: concat!($prefix, "-resolved"),
+                site: UNVERIFIED,
+                cause: $cause,
+                state: &[Step::File(Place::Repo($broken), $body)],
+                acts: &[Act::Remove(Operand::Unprinted($broken)), Act::Run(3)],
+                holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+                ..SETUP
+            },
+        ]
+    };
+}
+
+const GIT_REFUSES_TO_SPEAK_FOR_THE_REPOSITORY: [Case; 2] = unverified_ways!(
+    "setup-git-refuses-the-repository",
+    "git refuses to say whether the install home is a work tree, where a `.git` stands — \
+     here over a configuration file it cannot read",
+    ".git/config",
+    "[core\n"
+);
+const GIT_STATUS_FAILS: [Case; 2] = unverified_ways!(
+    "setup-git-status-fails",
+    "`git status` fails in a work tree — here over an index that is not one",
+    ".git/index",
+    "no index\n"
+);
+
 /// The cases of `jigc setup`, a group a cause — and, within a group, a case a way out of
 /// the cause's route.
 pub const CASES: &[&[Case]] = &[
@@ -2259,22 +2893,97 @@ pub const CASES: &[&[Case]] = &[
     &RECORD_READ_ONLY,
     &NO_RECORD_IN_A_SHUT_WORKBENCH,
     &RECORD_TO_REMOVE_FROM_A_SHUT_WORKBENCH,
+    &GUIDE_READ_ONLY,
+    &NO_GUIDE_DIRECTORY_IN_A_SHUT_ASSISTANT_DIRECTORY,
+    &NO_GUIDE_IN_A_SHUT_DIRECTORY,
+    &HOOKS_PATH_EMPTY,
+    &IN_A_WORKTREE_OF_A_BARE_REPOSITORY,
+    &HOOKS_PATH_A_FILE,
+    &HOOKS_PATH_A_DEVICE,
+    &NO_HOOKS_DIRECTORY_UNDER_A_SHUT_ONE,
+    &HOOK_NOT_TEXT,
+    &HOOK_A_DIRECTORY,
+    &HOOK_UNREADABLE,
+    &HOOK_A_FIFO,
+    &HOOK_READ_ONLY,
+    &NO_HOOK_IN_A_SHUT_HOOKS_DIRECTORY,
+    &HOST_CHANGED,
+    &HOST_CHANGE_STAGED,
+    &HOST_UNTRACKED,
+    &A_HOOK_IN_NO_COMMIT,
+    &STAGED_AND_GONE,
+    &AN_IGNORED_REPLACED_FILE,
+    &A_CHANGE_GIT_ASSUMES_AWAY,
+    &A_CHANGE_GIT_SKIPS,
+    &EVERY_KIND_AT_ONCE,
+    &AN_UNTRACKED_REPLACED_FILE_ON_AN_UNBORN_HEAD,
+    &A_STAGED_FILE_ON_AN_UNBORN_HEAD,
+    &AN_IGNORED_REPLACED_FILE_ON_AN_UNBORN_HEAD,
+    &STAGED_AND_GONE_ON_AN_UNBORN_HEAD,
+    &GIT_REFUSES_TO_SPEAK_FOR_THE_REPOSITORY,
+    &GIT_STATUS_FAILS,
 ];
 
+/// Why the two settings steps behind the allowlist merge have no state of their own.
+macro_rules! the_step_before_answers {
+    ($read:literal, $shapes:literal) => {
+        Why::NotConstructible(concat!(
+            "read: `write_install_span`, ",
+            $read,
+            ", `adapter::read_settings` and `write_settings`; `adapter::inject_allowlist`; \
+             `adapter::check_settings_merge`. The step reads the settings file, merges into \
+             it and writes it back — the file the allowlist step read, merged into and \
+             wrote the instruction before, and whose shape `check_settings_merge` held to \
+             this very merge before the first write. So every error the step can return \
+             was another's first: a read or a write that fails here failed there, under \
+             `setup.inject-allowlist`, and a shape this merge refuses was refused before \
+             anything was written — the cases ",
+            $shapes,
+            ". Nothing changes the file between the two steps: no state stands in it",
+        ))
+    };
+}
+
 /// The sites of `jigc setup` that have no case, each with why.
-pub const REASONS: &[Reason] = &[Reason {
-    site: "crates/cli/src/setup.rs::commit_install::setup.install-commit#1",
-    why: Why::NotConstructible(
-        "read: `commit_install`, `repo::SeamSubject::live_exempt` and `verify`, \
-         `render::blocked_finding`. The site is the fallback for a posture re-probe that \
-         fails without a finding of its own, and `verify` has two such arms — the git \
-         directory is no longer the one the subject was built against, and `HEAD` is on \
-         another ref — while a posture breach carries its finding and its own code. The \
-         subject is built and verified in one expression, so either arm needs the \
-         repository to change between two reads a few instructions apart: no state stands \
-         still in it",
-    ),
-}];
+pub const REASONS: &[Reason] = &[
+    Reason {
+        site: "crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1",
+        why: the_step_before_answers!(
+            "`adapter::inject_hook` and `merge_hook`",
+            "`setup-settings-hooks-no-object-…` and `setup-settings-hook-event-no-array-…`"
+        ),
+    },
+    Reason {
+        site: "crates/cli/src/setup.rs::write_install_span::setup.inject-deny#1",
+        why: the_step_before_answers!(
+            "`adapter::inject_deny` and `merge_deny`",
+            "`setup-settings-deny-no-array-…`"
+        ),
+    },
+    Reason {
+        site: "crates/cli/src/setup.rs::write_install_span::setup.install-hook#1",
+        why: Why::NotConstructible(
+            "read: `write_install_span` — the site is `std::env::current_exe` failing, the \
+             operating system unable to say where the running binary is; on Linux that is \
+             a `/proc` that is not mounted. No state of a repository or of a case's \
+             environment takes that away, and the binary is one the runner started by its \
+             path",
+        ),
+    },
+    Reason {
+        site: "crates/cli/src/setup.rs::commit_install::setup.install-commit#1",
+        why: Why::NotConstructible(
+            "read: `commit_install`, `repo::SeamSubject::live_exempt` and `verify`, \
+             `render::blocked_finding`. The site is the fallback for a posture re-probe that \
+             fails without a finding of its own, and `verify` has two such arms — the git \
+             directory is no longer the one the subject was built against, and `HEAD` is on \
+             another ref — while a posture breach carries its finding and its own code. The \
+             subject is built and verified in one expression, so either arm needs the \
+             repository to change between two reads a few instructions apart: no state stands \
+             still in it",
+        ),
+    },
+];
 
 /// What both callees share: the question each asks of a member's path, and the table whose
 /// order decides the code.
@@ -2343,6 +3052,15 @@ const NOTHING_ELSE_WRITES_THE_SETTINGS: Why = Why::NotConstructible(
     "the file passed this read before the first write, and nothing the install does in \
      between changes its encoding or who may read it: the one write that can reach it \
      appends text",
+);
+
+/// Why a refusal over one path has no case where its route prints another.
+const PRINTS_ANOTHER_PATH: Why = Why::NotConstructible(
+    "the refusal is reached — driven by hand — and its route says *those path(s)* of the \
+     refused file while it prints the path of another: the file beside it that rides the \
+     first commit, or the ignored one. The frame refuses the marked form wherever the \
+     printed route holds a path, so a case may not name the refused file there, and no act \
+     on it can be written",
 );
 
 /// Why each state of the write span is planted committed.
@@ -3146,5 +3864,239 @@ pub const READINGS: &[Reading] = &[
             BYTES_CANNOT_BE_WRITTEN,
         ],
         not_followed: &[UNCOMMITTED_IS_THE_DIRTY_GATES],
+    },
+    Reading {
+        site: GUIDE_WRITE,
+        read: &[
+            "crates/cli/src/setup.rs::write_install_span — the step, taken only where this run writes the guide",
+            "crates/cli/src/setup.rs::write_guide_artifact",
+            "crates/cli/src/setup.rs::guide_ownership — asked before the first write: a copy that is not jigc's takes the guide out of the run",
+            SPAN[0],
+            SPAN[1],
+        ],
+        causes: 6,
+        derivation: "one call of `regular_file::replace` over the guide's path, taken where \
+                     `guide_ownership` found no copy or one that is jigc's own: an entry in \
+                     the way; a directory on the way cannot be made — because a file stands \
+                     there, or because there is none and its parent may not be written; the \
+                     guide cannot be opened — because jigc's own copy may not be written, or \
+                     because there is none and its directory may not be; its bytes cannot \
+                     be written. Six, under one route",
+        without_case: &[
+            (
+                "an entry is in the way of the guide",
+                Why::NotConstructible(
+                    "`replaced_path_refusal` answers for a link on the way and for a \
+                     special file at the path, under this code at its own site; a link or \
+                     a directory at the path itself takes the guide out of the run — the \
+                     cases and reasons of `setup-guide-…`",
+                ),
+            ),
+            (
+                "a file stands where a directory on the way to the guide must be made",
+                Why::NotConstructible(
+                    "`guide_ownership` reads the guide's path first, and a path through a \
+                     file is one it cannot read as jigc's: the guide leaves the run, and \
+                     `jigc setup` exits 0 without it — driven, a committed file at \
+                     `.claude/skills`",
+                ),
+            ),
+            BYTES_CANNOT_BE_WRITTEN,
+        ],
+        not_followed: &[],
+    },
+    Reading {
+        site: HOOK_WRITE,
+        read: &[
+            "crates/cli/src/setup.rs::write_install_span — the step, the last of the span",
+            "crates/cli/src/setup.rs::install_precommit_hook, strip_managed_block and is_standalone_frame",
+            "crates/cli/src/setup.rs::resolve_hooks_dir and precommit_hook_in — git is asked where the hooks are",
+            "crates/cli/src/setup.rs::make_executable",
+            "crates/cli/src/setup.rs::hook_link_refusal — asked before the first write: a hook that is a link out of the repository, or to nothing, is refused there",
+            "crates/cli/src/repo.rs::jigc_home — where the install home is, in a worktree of a bare repository",
+        ],
+        causes: 15,
+        derivation: "`install_precommit_hook` fails in five places. `resolve_hooks_dir`: git \
+                     cannot be run; git refuses — over a `core.hooksPath` that is empty, or \
+                     because the install home is no repository; git prints no path. The \
+                     hooks directory cannot be made: an entry that is no directory stands \
+                     at its path — a regular file, a device — or there is none and its \
+                     parent may not be written. The hook that stands cannot be read: it is \
+                     not UTF-8, is a directory, or may not be read; and where it is a FIFO \
+                     the read does not return. The hook cannot be written: it may not be \
+                     written, or there is none and the hooks directory may not be, or its \
+                     bytes cannot be written. And its mode cannot be set. Fifteen, under \
+                     one route — which names *the repo's git hooks directory* and prints \
+                     no path",
+        without_case: &[
+            (
+                "git cannot be run",
+                Why::NotConstructible(
+                    "the install asks git before its first write, and where git cannot be \
+                     run it refuses there, under `setup.unverified-install-path`",
+                ),
+            ),
+            (
+                "git resolves the hooks directory to an empty path",
+                Why::NotConstructible(
+                    "`git rev-parse --git-path hooks` prints a path or fails: an empty \
+                     `core.hooksPath` is refused by git itself, which is the cause beside \
+                     this one",
+                ),
+            ),
+            BYTES_CANNOT_BE_WRITTEN,
+            (
+                "the hook is written and its mode cannot be set",
+                Why::NotConstructible(
+                    "the mode of a file is its owner's to set, and the file was opened for \
+                     writing by the same caller a moment before: no state of a sandbox \
+                     makes the one succeed and the other fail",
+                ),
+            ),
+        ],
+        not_followed: &[(
+            "a hook that is a link the install follows — to a script inside the repository \
+             — in each of those states",
+            Why::NotConstructible(
+                "the read and the write go through the link and meet the file it leads to: \
+                 the same arms, at another path — and the hook's link has its own site, \
+                 whose cases point it there",
+            ),
+        )],
+    },
+    Reading {
+        site: DIRTY,
+        read: &[
+            "crates/engine/src/finalize.rs::setup_dirty_install_finding — three routes, by the `HEAD` it is read at and by what git's status saw; and whether the install has run",
+            "crates/engine/src/finalize.rs::decide_carryover — the one other caller, by its `Setup` arm",
+            "crates/cli/src/setup.rs::install — the gate before the first write",
+            "crates/cli/src/setup.rs::commit_install and InstallCommitRejection::finding — the backstop before the install commit",
+            "crates/cli/src/setup.rs::dirty_install_refusals, jigc_owned_at and install_candidates — which paths refuse",
+            "crates/cli/src/setup.rs::InstallSubject::probe, ask_dirty_against_head and unseen_by_status — what is asked of git, and the two kinds its status does not report",
+            "crates/cli/src/setup.rs::DirtyPaths::rides_the_first_commit and install_tracked_paths — the one exemption, and each member's writer",
+        ],
+        causes: 16,
+        derivation: "the finding words one of three routes. On a born `HEAD` where git's \
+                     status names every listed path: a tracked file changed, a change \
+                     staged, a file git does not track — the three kinds the route's *commit \
+                     or stash … `git stash -u` where git does not track them* turns on. On \
+                     a born `HEAD` with a path status does not report: a file git ignores \
+                     at a path the install replaces; a change under an index entry flagged \
+                     assume-unchanged, or skip-worktree — one arm, two flags, and the route \
+                     prints a line for each; and the kinds together, their acts joined. \
+                     Where there is no commit: a file git does not track at a path the \
+                     install replaces; a staged file; either beside an untracked file the \
+                     exemption covers, which the commit arm then names; only ignored files; \
+                     ignored and reported together. The backstop raises the same finding \
+                     behind the install's writes, worded for it, over what the gate could \
+                     not ask about: a hook of the repository's own in no commit, and a path \
+                     staged and then deleted — the second on either `HEAD`. And the \
+                     engine's per-path carryover door has an arm for this boundary. Sixteen",
+        without_case: &[
+            (
+                "there is no commit yet, a file refuses, and an untracked file the install \
+                 merges into stands beside it",
+                PRINTS_ANOTHER_PATH,
+            ),
+            (
+                "there is no commit yet, and a file git reports and a file git ignores both \
+                 refuse",
+                PRINTS_ANOTHER_PATH,
+            ),
+            (
+                "the per-path carryover door is handed the `Setup` boundary",
+                Why::NotConstructible(
+                    "`decide_carryover` has three callers — the task's finalize, its \
+                     preview, the milestone's — and none hands it this boundary: the arm \
+                     is there so that no door borrows another's words",
+                ),
+            ),
+        ],
+        not_followed: &[
+            (
+                "a flagged change stashed",
+                Why::NotConstructible(
+                    "that arm of the route says *commit or stash it* and prints no stash \
+                     line; the frame runs a line the route prints",
+                ),
+            ),
+            (
+                "the same kinds at a path the install replaces, or at one it leaves alone \
+                 where jigc's own bytes stand",
+                Why::NotConstructible(
+                    "which member the path is decides whether it refuses and never how the \
+                     route is worded: each kind is followed at one path",
+                ),
+            ),
+            (
+                "a staged file unstaged by the line the unborn route prints, and moved out \
+                 of its path",
+                Why::NotConstructible(
+                    "the line is `git -C … rm --cached -- <path>`, and it is no command a \
+                     shell can read as printed — `<path>` is a redirection with nothing \
+                     behind it — so the runner cannot run it; filled in, it would be a \
+                     line of the case's own. Whether a route may print a shape to fill in \
+                     is for the human, with the two readings: a command to run as \
+                     printed, or a shape",
+                ),
+            ),
+        ],
+    },
+    Reading {
+        site: UNVERIFIED,
+        read: &[
+            "crates/engine/src/finalize.rs::setup_unasked_install_finding — one route, whatever git said",
+            "crates/cli/src/setup.rs::install — where the refusal is raised: before the first write, whatever `--force` says",
+            "crates/cli/src/setup.rs::InstallSubject::probe — the three questions",
+            "crates/cli/src/setup.rs::home_is_a_work_tree, ask_dirty_against_head and unseen_by_status — the ways each has no answer",
+            "crates/cli/src/task.rs::git_index_flags — `ls-files -v`, asked only of members status did not name",
+        ],
+        causes: 5,
+        derivation: "`probe` asks git three things and has no answer five ways: git cannot \
+                     be run; git refuses to say whether the home is a work tree, at a \
+                     directory that holds a `.git`; `git status` cannot be run; `git status` \
+                     fails; `git ls-files -v` gives no answer. The route is one, and prints \
+                     the question that failed",
+        without_case: &[
+            (
+                "git cannot be run",
+                Why::NotConstructible(
+                    "reached with no `git` on `PATH` — driven by hand. The route's way out \
+                     is to put it there, and a case's environment is one for all its \
+                     commands: the frame has no act that changes a variable between the \
+                     refusing command and the route's, and its own `git` children would \
+                     not start",
+                ),
+            ),
+            (
+                "`git status` cannot be run, where the question before it could",
+                Why::NotConstructible(
+                    "the two are one program started twice within an instruction of each \
+                     other: no state stands still between them",
+                ),
+            ),
+            (
+                "`git ls-files -v` gives no answer where `git status` gave one",
+                Why::NotConstructible(
+                    "both read the same index; no state was found that fails the second \
+                     and not the first",
+                ),
+            ),
+        ],
+        not_followed: &[
+            (
+                "`--force`",
+                Why::NotConstructible(
+                    "the route names it to say it changes nothing; no case runs it",
+                ),
+            ),
+            (
+                "a `git status` that fails over a submodule whose git directory is gone",
+                Why::NotConstructible(
+                    "one arm, followed over one failure: the route is worded the same \
+                     whatever git said, and what resolves the failure is in git's words",
+                ),
+            ),
+        ],
     },
 ];

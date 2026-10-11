@@ -2,6 +2,57 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The route catalog's last seven sites of `setup`: the guide and the hook at the end of the write span, the dirty gate and git unable to answer it, and three steps with a reason — 49 cases, 15 of them red; `P3` owes nothing more (the plan's step `P3`, fourth part, second commit; ruling 3 of 2026-10-10)
+
+**What.** Cases, readings and three reasons in [route_catalog/setup.rs](crates/cli/tests/route_catalog/setup.rs); the expected-red rows and the owed list in [route_catalog.rs](crates/cli/tests/route_catalog.rs); two keys and the hook's write under three of the canary's in the pilot's findings file ([route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md)). No product source changes and nothing is fixed. **The catalog is 266 cases over thirty-two sites, 119 of them red; four more sites have a reason — every blocking site of `jigc setup`, thirty-six. The owed list holds no row under `P3`**, and 18 under `P4`.
+
+| site — function · code | read (beside the function) | causes | followed | a reason | cases | red | new frame vocabulary |
+|---|---|---|---|---|---|---|---|
+| `write_install_span` · `setup.inject-hook` | `adapter::inject_hook`, `merge_hook`, `read_settings`, `write_settings`; `inject_allowlist`; `check_settings_merge` | — | — | the site | 0 | — | none |
+| `write_install_span` · `setup.inject-deny` | `adapter::inject_deny`, `merge_deny`, and the same four | — | — | the site | 0 | — | none |
+| `write_install_span` · `setup.write-guide` | `write_guide_artifact`, `guide_ownership`; `regular_file::replace`, `blocker` | 6 | 3 | 3 | 3 | 2 | none |
+| `write_install_span` · `setup.install-hook` #1, the binary's own path | the step | — | — | the site | 0 | — | none |
+| `write_install_span` · `setup.install-hook` #2, the hook's write | `install_precommit_hook`, `strip_managed_block`, `is_standalone_frame`, `resolve_hooks_dir`, `precommit_hook_in`, `make_executable`, `hook_link_refusal`; `repo::jigc_home` | 15 | 11 | 4 | 11 | 10 | none |
+| `setup_dirty_install_finding` · `setup.dirty-install-path` | `decide_carryover`; `install`, `commit_install`, `InstallCommitRejection::finding`; `dirty_install_refusals`, `jigc_owned_at`, `install_candidates`; `InstallSubject::probe`, `ask_dirty_against_head`, `unseen_by_status`; `DirtyPaths::rides_the_first_commit`, `install_tracked_paths` | 16 | 13 | 3 | 31 | 1 | a file moved out of its path |
+| `setup_unasked_install_finding` · `setup.unverified-install-path` | `install`; `InstallSubject::probe`, `home_is_a_work_tree`, `ask_dirty_against_head`, `unseen_by_status`; `task::git_index_flags` | 5 | 2 | 3 | 4 | 2 | none |
+| | | **42** | **29** | **13, and three sites** | **49** | **15** | |
+
+**The minutes were not clocked site by site** here either: the seven took about an hour of probing and writing together — the dirty gate about twenty-five minutes of it, the hook's write ten — and two runs of the suite red before the rows.
+
+**Three sites have a reason and no case.** The session hook's merge and the deny floor's read, merge into and write the settings file the allowlist step read, merged into and wrote the instruction before, a file whose shape was held to these very merges before the first write: every error either can return was another step's first, and nothing changes the file between them. The third is `std::env::current_exe` failing, which is no state of a repository.
+
+**Red at the end of the write span — 12 cases, every one under a key that stands.**
+
+- *The hook's write, the canary's own site, 9 cases the same refusal again.* Under `r1-p3-setup-writability-route-printed-for-other-causes`, six: the canary's four causes — `core.hooksPath` names `/dev/null` or a regular file, the hook that stands is read-only in a hooks directory that is not, or is not UTF-8 — and two it did not drive, the same defect at the same line: `core.hooksPath` is the empty string, and there is no hooks directory under a directory that may not be written. Under `r1-p3-setup-install-hook-undriven-producers-and-causes`, the two its row names: a directory at the hook's path, a hook of mode 000. Under `r1-setup-installs-outside-work-tree`, the one its row names: `jigc setup` in a worktree of a bare repository.
+- *The guide's write, 2 cases the same refusal again*, under the writability key — the same defect at one more step: *ensure `.claude/skills/jigc/SKILL.md` is writable* where there is no such file and what may not be written is a directory above it.
+- *One more read that holds*, under `r1-setup-fifo-at-install-path-holds-the-command`: a FIFO at the `pre-commit` hook, read by the last step of the span with no limit (sampled), every other install file written behind it and none committed.
+
+**Green there:** the guide an earlier install wrote, read-only; and no hook in a hooks directory that is itself read-only (*holds, operand implied* — the route names the hooks directory and prints no path).
+
+**The dirty gate holds, 30 cases of 31.** Thirteen causes — three kinds of work git's status names, a file it ignores, a change hidden under either index flag, all of them at once, the three on an unborn `HEAD`, and the backstop's two behind the install's writes — each followed every way its route offers: committed, stashed by the one line the route prints, moved out of its path, the two flag lines run, and the consent. Nine of the thirty are *holds, operand implied*: the route says *those path(s)* and prints none.
+
+**Two new keys.**
+
+- `r1-setup-force-over-skip-worktree-path-cannot-commit` — *another failure*, 1 case. Over a change hidden by a skip-worktree flag the route ends, like every dirty route, in *`jigc setup --force` … lets the install run and commit those paths*: the install runs over the file, and `git add` then refuses a path the sparse rules skip — exit 1, `setup.install-commit`, nothing committed. The same consent over an assume-unchanged entry holds, and so does the route's first way over both flags.
+- `r1-setup-unverified-route-opens-with-the-question-that-failed` — *another failure*, 2 cases, **marked `doubt`**. Where git cannot answer, the route is *run `git …` to see what git reports, resolve that, then re-run*. Run as printed the line exits 128 — it is the question that failed — and the frame holds every command a route prints to exit 0. The rest of the route holds: the file git names removed, the re-run installs.
+
+**For the human — two readings each, decided nowhere.**
+
+1. *The unverified route's first line.* (a) A step like any other: red, as listed. (b) There to show git's words, its failure being what it is for: then the route's steps are *resolve that* and the re-run, which hold (`…-resolved`, two cases, *operand implied*).
+2. *The unborn dirty route's unstaging line*, `` `git -C <repo> rm --cached -- <path>` first where you had staged one ``. (a) A command to run as printed: no shell reads it — `<path>` is a redirection with nothing behind it. (b) A shape to fill in: then the route prints no line a reader can run as it stands. **No case stands on it**: the frame's reader of a printed line stops the whole arm over a line it cannot split (seen in the first red run), so the way is a reason at the site, and this is where it is said.
+
+**Where the frame, and not the product, is why a cause has no case — three, each said at its site.** The marked form is refused wherever a route prints a path, and two unborn dirty routes say *those path(s)* of the refused file while printing another's — the file that rides the first commit, the ignored one: the refusal is reached by hand and no act on the refused file can be written. A case's environment is one for all its commands, so *put `git` on `PATH`* cannot be followed. And a printed line no shell can split is not a red case but a stopped arm.
+
+**The frame grew by one act, red first** ([route_case.rs](crates/cli/tests/support/route_case.rs)): `Act::MoveOut`, a file moved out of its path to where the runner moves a directory out of the way — what the dirty routes ask for over an ignored file, and over any file where there is no commit to take it. The arms that hold the marked form and the sandbox's bound take it in their lists; with the act declared and not done, `a_file_is_moved_out_of_its_path` was red both ways (a file not moved, a directory passed over).
+
+**Red first.** `route_catalog::` with the cases and reasons written, the act declared and neither list touched: 3 of 28 arms red — the new arm, the fence (seven sites *have a case*, or *a reason*, *and are still owed by `P3`*), and the catalog, stopped by the unstaging line. With that way taken out and the act built: the fence as before, and the catalog naming 15 red cases no entry listed. Then the rows.
+
+**What this does not establish.** What each case came to is this tree's debug build on macOS on one day; nothing here is about the previous release. The four keys of this part certify themselves until a run is opened. The hook's causes are followed at the default hooks directory and not again under each `core.hooksPath`; the dirty kinds at one path each. And whether *holds, operand implied* is *works as printed* is the pilot's question, not this entry's: 19 cases stand on it now.
+
+**The suite's seconds.** `cargo test -p jigc --test g_migration route_catalog::`, 28 arms, 266 cases: 85 s on this machine, alone. What the one arm that follows the cases takes inside a gate is in the commit's message. It is one test, and the gate ends a test at 480 s; it was not split — that is `P4`'s, which brings the second command's file.
+
+**The Linux run follows this commit** — the tool runs a committed revision — twice, and both lines are in the report of this part.
+
 ## 2026-10-11 — The route catalog's eight steps of `setup`'s write span behind the marker: 32 cases, 27 of them red — 22 more under the canary's writability key, one more read that holds, and two new keys, both in a state the route's own words are true of (the plan's step `P3`, fourth part, first commit; ruling 3 of 2026-10-10)
 
 **What.** Cases and readings in [route_catalog/setup.rs](crates/cli/tests/route_catalog/setup.rs); the expected-red rows and the owed list in [route_catalog.rs](crates/cli/tests/route_catalog.rs); two keys and the extended tables in the pilot's findings file ([route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md)). No product source changes and nothing is fixed. **The catalog is 217 cases over twenty-eight sites, 104 of them red; a twenty-ninth site has a reason. The owed list is 7 rows under `P3`**, 18 under `P4`. (The last entry's *78 red* was the list's 77: it counted one too many.)
