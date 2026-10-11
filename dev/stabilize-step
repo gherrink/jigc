@@ -86,8 +86,9 @@
 #       stands at (null: not pushed); `pending` is null, or the applied batch a record
 #       step left uncommitted: {round, subject, calls, checks, files}; `found` names
 #       every arrival state it met, in the table's order, `finished` those it finished
-#       and `owed` those it left — to the stage (`applied`, `staged`: the gate, then
-#       `record`), or, under --look, to the next invocation. (Under --look over a killed
+#       and `owed` those it left — to the stage (`filed`: its report check, then its
+#       record; `applied`, `staged`: the gate, then `record`), or, under --look, to the
+#       next invocation. (Under --look over a killed
 #       write the tree is not read across it: `untracked` and `pending` are null.)
 #
 #   dev/stabilize-step state --run R --scratch DIR --tag T
@@ -112,10 +113,15 @@
 #                      --attempt A [--scratch DIR] [--] [REPORTER...]
 #       THE FIRST OF THE THREE BOUNDARIES (WHAT IS VETTED, AND WHERE, below). First every
 #       file of the run that is written once and in no commit — the reports of every
-#       attempt, each round's scope — is vetted, and ONE THAT THE RECORD SCRIPT WOULD NOT
-#       HAVE WRITTEN IS NO REPORT: it is moved out of the tree (`dev/stabilize-record
-#       set-aside`), to DIR/refused where a scratch root is named and to a directory that
-#       script mints where none is. Then `dev/stabilize-record check-reports` with these
+#       attempt, each round's scope, every file among a round's filed verdicts — is
+#       vetted, and ONE THAT THE RECORD SCRIPT WOULD NOT HAVE WRITTEN IS NO REPORT: it is
+#       moved out of the tree (`dev/stabilize-record set-aside`), to DIR/refused where a
+#       scratch root is named and to a directory that script mints where none is. A FILED
+#       VERDICT IS VETTED AS ONE — the text its writer left, under its own seal, beside
+#       the report whose hash it keeps — and one that is none, or a file there without a
+#       verdict's name, leaves the tree the same way: its finding is then unverified
+#       again, which the record script's state says. Then `dev/stabilize-record
+#       check-reports` with these
 #       arguments: the reporter whose file left has left none, and is `missing`. A
 #       missing or an extra report is the check's answer, not a refusal. Prints {status:
 #       checked, check, aside: [{path, why, detail, to}]} — `aside` is what left the tree.
@@ -333,7 +339,9 @@
 # THE RUN'S PENDING WRITES. What `dev/stabilize-record` wrote and no commit holds yet is
 # no dirty tree. This tool asks that script (`pending`) and holds `git status` to the
 # answer, path by path: an UNTRACKED file that is one of the run's written-once files —
-# a report, a round's scope; an untracked or modified file of THE APPLIED BATCH whose
+# a report, a round's scope, a file among a round's filed verdicts (a filed verdict, or
+# a file a hand left there under a plain name: the report check moves that one out); an
+# untracked or modified file of THE APPLIED BATCH whose
 # content is still what the batch wrote; either of them STAGED, while a batch is applied
 # — what that record's own commit step staged and did not commit; and the script's own
 # journal. Any other line — a tracked file changed by hand, a file of a batch changed
@@ -361,7 +369,8 @@
 #   an ARRIVAL is a state an act can be found in, keyed by the open act and the first
 #              phase of it that is not done. The tool FINISHES it (interrupted-write,
 #              committed, unpushed), UNDOES it (stray-temporaries), leaves it OWED to
-#              the stage (applied, staged: the gate, then `record`), ANSWERS again
+#              the stage (filed: its report check, then its record; applied, staged:
+#              the gate, then `record`), ANSWERS again
 #              (recorded), or REFUSES it and says whose it is and what leaves it:
 #                wrong-branch    the caller's — before any write, fetch or push
 #                git-lock        the orchestrator's: the tool never removes a lock
@@ -381,6 +390,33 @@
 # that was never interrupted, pushed. WHERE THIS ENDS: a kill INSIDE a git child. Its
 # one common trace, `index.lock`, has its row; that git moves a ref whole or not at all
 # is relied on; anything else such a kill leaves is the last row, `dirty`.
+# BETWEEN A FILING AND ITS RECORD (the build plan of the reshaped `test` stage, T3b). In a
+# run with a queue a verifier FILES its verdict the moment it returns (`dev/stabilize-record
+# verdict`): one file of the round, written once, in no table and no commit until the
+# stage's next record takes it. A stage can end anywhere between the two, and each state
+# it leaves is a row of the same table, before the record's first phase:
+#   the filing's own write was killed    a temporary of the record script, which no journal
+#                                        names (stray-temporaries): removed. The state is
+#                                        the one BEFORE THE FILING — the finding is
+#                                        unverified, and its verifier is launched again.
+#   the file is in place, and no commit  `filed`, owed to the stage. The state reads the
+#   holds it                             file as a verdict, so nothing is verified twice;
+#                                        the stage's report check vets it, its record
+#                                        takes it from the file (`apply` names no
+#                                        verdict), and the commit step commits the file
+#                                        with the tables that hold its verdict.
+#   the file is no filed verdict any     the same row: a hand wrote in it, its report was
+#   more, or never was one               rewritten or is gone, it has no verdict's name. The
+#                                        report check moves it out of the tree; its
+#                                        finding is unverified again. (A record that
+#                                        meets one before then is refused by the record
+#                                        script, and names this exit.)
+#   the record that takes it was killed  the rows of the `record` act, as for any batch:
+#                                        interrupted-write, applied, staged, committed,
+#                                        unpushed.
+# So a stage killed between a filing and its record ends, once it is invoked again and has
+# made its record, in ONE OF TWO STATES and no third: the state before the filing, or the
+# state of the record that took it, pushed.
 # WHAT THE TOOL PUSHES FOR ITSELF is a record's commit and nothing else: a commit on
 # the loop branch that changes a path outside the run's directory is its author's to
 # push, and until it is pushed no `test` stage starts.
@@ -390,15 +426,22 @@
 # checks at a write — the path, no host path left, the fenced line, a report's last line,
 # the two scanners CI runs over a push — is therefore checked again, by that script's own
 # read (`dev/stabilize-record vet`), where the content becomes permanent:
-#   1. the report check   every pending written-once file. A hit is no report: it leaves
-#                         the tree, its reporter has left none, and the stage goes on.
-#   2. the commit         every path the record's commit adds, its subject, and the
-#                         batch's report checks against the disk. A hit: nothing is
+#   1. the report check   every pending written-once file — a filed verdict as one: its
+#                         writer's text, under its seal, beside the report whose hash it
+#                         keeps. A hit is no report, or no filed verdict: it leaves
+#                         the tree, its reporter has left none — its finding is
+#                         unverified again — and the stage goes on.
+#   2. the commit         every path the record's commit adds — the filed verdicts among
+#                         them — its subject, and against the disk again the batch's
+#                         report checks AND THE FILED VERDICTS THE BATCH TOOK, each with
+#                         the bytes it had. A hit: nothing is
 #                         committed, the batch is taken back, the next attempt starts clean.
 #   3. every push         of `push`, `land` and `carry` alike — one helper makes them all:
 #                         every commit no branch of the remote holds yet, whoever made it
 #                         — its added lines, AND WHAT IT SAYS: a commit's message is held
-#                         to both scanners, as a file is. A hit: nothing is pushed, and it
+#                         to both scanners, as a file is; and a filed verdict a commit
+#                         holds is the text its writer left, under its seal, with the
+#                         report whose hash it keeps in that commit. A hit: nothing is pushed, and it
 #                         is the human's — the commit is local, and rewriting it is his
 #                         to confirm. The refusal names the read that names every commit
 #                         and place again.
@@ -780,6 +823,7 @@ ARRIVALS = (
     {"state": "git-lock", "act": "*", "phase": "*", "found": "git's own lock stands in the repository (index.lock): a git process runs there, or one was killed", "answer": "refused", "word": "locked", "whose": "the orchestrator's", "leaves": "the tool never removes a lock. With no git process running in the repository the orchestrator removes the file the refusal names, and the act is asked for again; while one runs, it is asked for again once that process is done"},
     {"state": "interrupted-write", "act": "record", "phase": "applied", "found": "a write of the record script was killed between its files: a batch half in place, or half taken back", "answer": "finished", "word": None, "whose": "the tool's", "leaves": "`dev/stabilize-record recover`, which the act runs before it reads anything else: the batch is put in place whole, or taken back whole"},
     {"state": "stray-temporaries", "act": "record", "phase": "applied", "found": "the record script's own temporaries, which no journal names: a write killed before its journal", "answer": "undone", "word": None, "whose": "the tool's", "leaves": "`dev/stabilize-record recover`, which the act runs: they are removed, and the state is the one before that write"},
+    {"state": "filed", "act": "record", "phase": "applied", "found": "a file among a round's filed verdicts (r<N>/verdicts/) that no commit holds: a verifier filed its verdict and the stage ended before the commit of the record that takes it — or a hand left a file there", "answer": "owed", "word": None, "whose": "the stage's", "leaves": "the stage, invoked again, goes on from it. The record script's state reads a filed verdict that counts as a verdict — its finding verified, the budget spent, what it hands on a row — so only what is missing is launched. The stage's report check (`dev/stabilize-step check-reports`) vets the file as a filed verdict, and one that is none — a hand wrote in it, its report changed since, it has no verdict's name — leaves the tree, its finding unverified again; the stage's record (`dev/stabilize-record apply`) takes every other from its file, and the commit step commits the file with the tables that hold its verdict"},
     {"state": "applied", "act": "record", "phase": "committed", "found": "the journal holds a batch, every file of it is in the tree as the batch wrote it, and no commit holds it", "answer": "owed", "word": None, "whose": "the stage's", "leaves": "the full gate on the tree, then `dev/stabilize-step record`, which is repeatable; or `dev/stabilize-step discard`, which takes the batch back"},
     {"state": "staged", "act": "record", "phase": "committed", "found": "as `applied`, with paths of the record in the index: a commit step killed after its `git add`, or one whose `git commit` failed", "answer": "owed", "word": None, "whose": "the stage's", "leaves": "as `applied`: the commit step admits its own staged lines, stages the paths again, vets them and commits"},
     {"state": "altered", "act": "record", "phase": "committed", "found": "a file of the applied batch is no longer what the batch wrote, and no commit holds the batch: HEAD does not hold every file of it as the batch wrote it", "answer": "refused", "word": "dirty", "whose": "the human's", "leaves": "it is the human's, because a hand wrote in a table of the record: `dev/stabilize-step discard --branch <branch> --run-dir <run-dir>` takes the batch back — every file of it as it was before the batch, whatever was written since — and the stage invoked again works the next attempt; or the file is put back as the batch wrote it, and the step asked for again"},
@@ -932,6 +976,8 @@ def pushed_is_not_ahead(branch, facts):
     return (heads(listing.out, branch) or [None])[0]
 
 
+# A file among a round's filed verdicts, below the run's directory (the arrival state `filed`).
+FILED = re.compile(r"r[1-9][0-9]{0,5}/verdicts/[^/]+")
 # What the remote said it holds, the first time this act asked it: an act is one process,
 # and every range of it is read against ONE answer (remote_holds).
 ASKED = []
@@ -1240,6 +1286,10 @@ def git_state(args, facts):
     # 4. The tree, and where the open act stands: a batch whose commit is made is settled.
     untracked, held, state = standing(pending, facts, branch=current, run_dir=args.run_dir) if read else (None, None, None)
     batch = pending.get("batch") if read else None
+    # … and what lies between a filing and the commit of its record: a filed verdict no
+    # commit holds is the stage's, whose report check vets it and whose record takes it.
+    if any(path.startswith(args.run_dir + "/") and FILED.fullmatch(path[len(args.run_dir) + 1:]) for path in untracked or []):
+        note(facts, "filed", "owed")
     if state == "committed" and args.look:
         note(facts, state, "owed")
     elif state == "committed":
@@ -1544,7 +1594,7 @@ def record(args, facts):
             facts.update(aside=aside.get("aside") or [], discarded=True)
             hits = [places(vet.get("refused") or [])] if vet.get("refused") else []
             hits += ["the commit's subject (%s)" % vet["subject"].get("why")] if vet.get("subject") else []
-            hits += ["the batch's report check of %s no longer holds — gone: %s; changed: %s" % (stale.get("dir"), ", ".join(stale.get("gone") or []) or "none", ", ".join(stale.get("changed") or []) or "none") for stale in vet.get("stale") or []]
+            hits += ["%s of %s no longer holds — gone: %s; changed: %s" % ("what the batch took of the filed verdicts" if stale.get("what") == "filed" else "the batch's report check", stale.get("dir"), ", ".join(stale.get("gone") or []) or "none", ", ".join(stale.get("changed") or []) or "none") for stale in vet.get("stale") or []]
             hits += ["changed while the step ran: %s" % ", ".join(moved)] if moved else []
             refuse("unvetted", "the record's commit would hold what dev/stabilize-record would not have written: %s" % "; ".join(hits), "`dev/stabilize-record vet` answered: %s" % json.dumps({name: vet.get(name) for name in ("refused", "subject", "stale")}), "nothing was committed, and nothing is left to undo: the batch is taken back (`dev/stabilize-record discard`), and what is no report was moved out of the tree (%s). `dev/stabilize-step git-state` answers for the tree, and the stage invoked again works the next attempt — the instruments run again, because their record was not made" % (", ".join(found["to"] for found in facts["aside"]) or "nothing had to be"))
         # 8. The one commit, with that subject.

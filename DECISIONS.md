@@ -2,6 +2,101 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The record takes what was filed: a batch names no verdict, the script writes what the state already said of each filed file, the round's record names the files it took — and the states between a filing and its record are rows of the step tool's table (the plan's `T3b`; the builder's choices inside it)
+
+**What.** A `test` stage's record takes its verifiers' verdicts from the files they filed, and from no caller ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §4, `T3b`, the migration order's Phase A; ruling 4 of *2026-10-10 — The `test` stage, reshaped after the canary*; ruling 1 of *2026-10-11 — The reshaped `test` stage's three open questions, ruled*). The two scripts' headers are the contract; in one place:
+
+- **[`dev/stabilize-record`](dev/stabilize-record) `apply`, in a run with a queue, takes what was filed before its first call runs.** Of every filed verdict that counts and that no record holds it writes **what the state already said of it**: each item it hands on as a row of the ledger and of the classes, the verdict as a row of its round's triage record, the grade a verdict gives in the ledger, the rows in the census — and the file's name in the round's own record. Nothing the state says of a row moves at the record but where the verdict and the row are held (`filed` on a row's triage, `recorded` on what was handed on).
+- **Each is held to the report hash its filing stored.** A file among the filed verdicts that no record took and that the vet would refuse — its report gone or changed, another text under the name, another binary, no verdict's name — refuses the batch whole (`check`), naming the file, why, and its exit: the report check's `set-aside`.
+- **From no caller.** A triage entry that says a verdict for a finding whose verdict is filed and held by no record is refused (`exists`) — alone, and as a call of the batch that takes the file.
+- **[`dev/stabilize-step`](dev/stabilize-step)** has one more arrival state, `filed` — a file among a round's filed verdicts that no commit holds, owed to the stage — which the read every stage starts from names; and its header says what lies between a filing and its record, state by state.
+
+**The states between a filing and its record, as the step tool holds them.**
+
+| State | What the next call does |
+|---|---|
+| the filing's own write was killed (a temporary no journal names) | `git-state` runs `recover`: the temporary is removed (`stray-temporaries`, undone). The state is the one before the filing; the verifier is launched again |
+| the file is in place, and no commit holds it (`filed`, owed) | `git-state` names it and goes on. The state reads it as a verdict. The stage's `check-reports` vets it as a filed verdict; its `apply` takes it; `record` commits the file with the tables; `push` publishes both |
+| the file is no filed verdict any more, or never was one — a hand wrote in it, its report was rewritten or is gone, it has no verdict's name (`filed`, the same row) | `check-reports` moves it out of the tree (`aside`); its finding is unverified again. An `apply` that meets one before then is refused (`check`) and names that exit |
+| the record that takes it was killed | the rows of the `record` act, unchanged: `interrupted-write`, `applied`, `staged`, `committed`, `unpushed` |
+| the batch took it, and the file is gone or another by the commit | `record` refuses (`unvetted`): the vet finds the batch's own take stale; the batch is taken back, a file that is no filed verdict leaves the tree, the finding is unverified again |
+
+A stage killed anywhere between a filing and its record ends, once it is invoked again and has made its record, in one of two states: the one before the filing, or the record that took it, pushed.
+
+**A verdict for a row nobody graded, in the tables** — an item `hop-a` handed on under `r-1`, confirmed by its own verifier:
+
+```text
+r1/triage.md   | `hop-a` | inside | - | confirmed | - | open | - |
+ledger.md      | `hop-a` | `jigc-feedback` | 1 | handed on by `verify-r-1`, … | jigc setup | clause-b | confirmed | verify-real | open | … |
+classes.md     | `hop-a` | route | under-confirmed | `r-1` | - | - | Run: jigc setup --repair hop-a |
+r1/round.md    | `verdicts` | `verify-hop-a a1, verify-r-1 a1` |
+```
+
+Where nobody could drive it the triage row says `- | undrivable: <reason>`, the ledger row stays `ungraded | -`, and the row is the human's at once — before the record and after it.
+
+**Chosen where the plan left it to the builder — and what was rejected.**
+
+- **The take is `apply`'s own, first, and whole.** Every `apply` of a run with a queue takes every filed verdict that counts and that no record holds, before the batch's first call. *Rejected:* a call of the batch that the harness composes — a caller would name what is taken; taking after the calls — a caller's row under a key a filing minted would then find no row to stand on, and the batch's own `triage-set` for it would be refused.
+- **It writes from the state's own read.** One function reads the state and the filed files; the take writes the rows and the entries that read holds. Where an item comes from is the file's word, never computed a second time. *Rejected:* going through `ledger-add` with `parent` — it computes the origin from the triage records, so the parent's verdict would have to land first and the result could differ from what the state had said.
+- **The ledger's order is the state's**: by round, reporter, attempt and place — because the rows are appended in the order the state lists them, whatever order the verifiers filed in.
+- **A verdict beside no grade is a `-` in the triage record's grade cell** — beside a verdict, and in a run with a queue; anywhere else `-` is refused as it was. *Rejected:* a word such as `handed-on` — a row can lack a triage grade without being handed on (its ledger grade was set with the row); a triage entry a caller sends without a grade — the caller's path stays as narrow as it was.
+- **What a record took is named, and the file stays the home of what it says.** A round's record gains one counted fact, `verdicts` — the files a record of the round took, each as it is named — **a fact only where the round holds it**, so a run without an order prints and holds what it did. The state refuses (`corrupt`) to be read where such a file is gone or is no longer the text its writer left; and what a taken file says of its rows no longer hangs on its report. So a row beyond the number is beyond it after the record, whatever becomes of the report, and never enters the queue because its file went away. *Rejected:* moving the mark onto a table — `T3a` had turned down a column and a word in the origin cell, and a table of its own would need the same naming to be missed.
+- **Before its record nothing names a filed file but itself.** A file gone by then is told by nothing from a verifier that reported and filed nothing: the finding awaits its verdict again, nothing is spent, what it handed on is no row, and the launch is counted — two, and it is the human's. *Rejected:* a trace of each filing in the journal — a second file to keep in step with the first at every point a filing can be killed, for a state whose every consequence the launch count already bounds.
+- **A key a filing minted is a key the run holds.** `ledger-add` names a caller's row under it `existing` and appends nothing; in the batch the filed rows are in the ledger before the first call. And no key is minted that a red run of an item of the test set is filed under. *Rejected:* refusing the caller's call — a record's refusal is a halt, for a collision the ledger has always answered with *the key keeps its row*.
+- **A caller's verdict is refused only while no record holds the filed one** — and for the batch that took it. Once a record holds the verdict an entry records the finding again as it always could: the `fix` half verifies a finding again in its round.
+- **The record refuses over what the vet can remove, and over nothing else.** A file that is `no-such-row` or a `second-filing` is not what the vet refuses, so `set-aside` cannot take it out of the way; a refusal over it would strand the stage. It is named by the state and taken by nothing.
+- **`set-aside` takes a file among the filed verdicts that has no verdict's name**, and `pending` names it among what is written once — under a plain name. A name of no plain segment is a path neither takes: the tree is `dirty`, the human's.
+- **The applied batch keeps the files it took with the hash of each**, and the vet's `stale` says so where one is gone or another at the commit (`what: filed`). At the push a filed verdict a commit holds is held to its seal *and to the report beside it in that commit's tree*.
+- **One arrival row, not two.** `filed` is a file among the filed verdicts that no commit holds, whatever it is: `git-state` reads no state document, and what such a file is worth is the report check's answer (`aside`), as for a file that is no report.
+
+**Phase A, shown.** `a_run_without_an_order_holds_the_bytes_it_held` is green **unmodified**. In a run without an order `apply` reads no filed file and prints no `filed`; a `-` grade is refused; a round's facts are the ones it had. Three arms drive that beside the run with a queue.
+
+**Red first.** Eleven new arms, the two arms of `T3a`'s that this task changed and one row of the step suite's table of driven arrival states were written before either script changed, and run on the parent's: 13 red, 1 green. Five record arms at their first `apply`, which the parent refuses as a batch that changes nothing — `T3a`'s counted-once arm among them; `the_record_takes_…` where the parent takes a caller's verdict beside a filed one; `a_key_a_filing_minted_…` at the red run's key; `T3a`'s stray arm at `pending`. The four step arms: the stray refused `dirty`; `found` empty where `filed` is owed (twice); the commit step committing over a taken file that was gone, and the push publishing a filed verdict without its report. The table's arm, at the state no row names. **Green on the parent, and so a pin and no red:** `a_filed_verdict_gone_before_its_record_leaves_its_finding_unverified_and_its_launch_counted` — it holds what `T3a` and `T2b` already did, which no arm had driven.
+
+**Mutants of the finished scripts** — twenty-three, each one edit, the arms that name its property run on each. Twenty-two died at once. **One survived, and showed an arm that did not reach what it named**; the arm was sharpened and the mutant then died.
+
+| The edit | An arm that went red — the one that names it |
+|---|---|
+| the batch takes nothing of what was filed · the ledger's grade does not follow a taken verdict · a call of the batch says a verdict the batch took · a caller says a verdict that is filed | `the_record_takes_its_verdicts_from_the_files_and_from_no_caller` — and five more for the first two |
+| a file that is no verdict does not refuse the batch · the vet does not hold what the batch took to the disk · the journal keeps no file the batch took | `a_record_refuses_a_filed_verdict_whose_report_is_gone_or_changed` — and the step suite's commit arm for the last two |
+| an item nobody could drive is queued again once its verdict is recorded · a verdict beside no grade is read in a run without an order · a `-` grade is read beside no verdict | `a_verdict_for_a_row_nobody_graded_is_recorded_beside_no_grade` |
+| an item handed on is always under a confirmed parent · the handed-on rows are appended last first | `the_queue_does_not_move_when_the_record_takes_what_was_handed_on` |
+| what a taken file says of its rows hangs on its report · a taken file that is gone is missed by nothing · the record names no file it took | `what_a_record_took_is_missed_and_a_row_beyond_the_number_stays_beyond_it` |
+| a caller's row takes a key a filing minted · a red run's key is minted for an item handed on | `a_key_a_filing_minted_is_taken_by_no_callers_row` |
+| a file without a verdict's name is set aside by nothing · is named by no read | `a_file_among_the_filed_verdicts_without_a_verdicts_name_is_refused`, and the step suite's `a_file_without_a_verdicts_name_among_the_filed_verdicts_strands_no_stage` |
+| the starting read does not name a filed verdict | `a_stage_killed_between_a_filing_and_its_record_ends_in_one_of_two_states` — and two more |
+| the table has no row for a filed verdict | `the_table_names_every_act_and_every_arrival_and_each_is_driven` |
+| a filed verdict is published without its report | `a_filed_file_is_vetted_at_the_commit_and_at_the_push` |
+| **survived:** a filed verdict is published beside another report | the same arm, once it pushes a commit that holds the report rewritten |
+
+**The assertions this task carried.** None outside its two suites: the whole `g_tooling` target ran on the finished scripts — 493 of 493. In the record suite, two arms `T3a` had written as stand-ins for this task: `a_verdict_that_is_filed_and_recorded_is_counted_once` records through `apply` (a triage entry's verdict beside a filed one is refused now), and `a_file_among_the_filed_verdicts_without_a_verdicts_name_is_refused` sets the stray aside (it pinned the refusal). The suite's module doc counted ten writers; it lists thirteen.
+
+**What `T4` owes because of this.**
+
+- The stop's view is *written by every record that changes it*: the take changes the hit rates, so the view is rendered in `apply` after the take, from the same read.
+- What it counts is on the rows after the record: a row's `class`, and `handed_on.by` — from the filed file, which is there or the state is refused.
+- `apply` prints `filed`; a round's facts carry `verdicts` where a record took one. The step tool's digest carries nothing of either.
+
+**What later tasks owe.**
+
+- `T6a`: the second record's batch names no verdict and no handed-on row; the step tool's `check-reports` comes before `apply`, because it is what moves a file out of the way that `apply` would refuse over; what was taken is `apply`'s `filed`.
+- `T6b`: an invocation that continues starts from `git-state`, whose `found` says `filed`; a triage that grades a row no triage graded sends no verdict for a finding whose verdict is filed.
+- `T5b`: a row added under a key a filing minted comes back `existing`.
+
+**What is not established.**
+
+- **Nothing of a stage calls any of it.** No harness path, no scenario of the simulation, no agent's definition.
+- **A filed file gone before its record** is missed by nothing, and what it handed on is gone without a word. Declared above; an arm pins what the state does say.
+- **A file that is `no-such-row` or a `second-filing`** is taken by nothing and set aside by nothing: it rides the next record's commit as a file no record holds. Reached by no arm.
+- **A filing of an earlier round whose finding a later round triaged again**: its rows are taken and its verdict is not written. Reached by no arm.
+- **The kills are driven in the filing's write and in the `apply` that takes it.** The commit step and the push of such a record are held by the existing kill arms, on a batch that took nothing.
+- **A stray file among the reports** is still removable by nothing; this task took the filed verdicts' directory only.
+- **The real scanners over a filed file**, as `T3a` left it.
+- **Not read whole for this task**: the step tool between its held commands and its digest's shapes; the step suite beyond its rig, its `Stage` and the arms of the record act; the record suite beyond its rig, its tables and the arms of `T1` to `T3a`; [stabilization-workflow.md](implementation/stabilization-workflow.md), [dev-workflow.md](implementation/dev-workflow.md) and [decisions-pending.md](implementation/decisions-pending.md) beyond what the project's instructions and the plan carry of them.
+- **The workflow's document** says nothing of this yet; it is `T10`'s.
+
+*[2026-10-11, of the entry below: `T3a`'s full gate was red once before it was green — thirty tests of the product's suites ran into the runner's 480-second bound on a loaded machine, all passing alone; the gate was run again whole. Its commit message says so, and its entry did not.]*
+
 ## 2026-10-11 — A verdict is filed when it returns: one written-once file of the round, held to five things before it counts, read by the state before any record holds it — and what a verifier hands on is a row from that moment, at most the opening's number of them in the queue (the plan's `T3a`; the builder's choices inside it)
 
 **What.** [`dev/stabilize-record`](dev/stabilize-record) takes a verifier's verdict the moment it returns, as a file of the round, and its state reads the filed files no record holds ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §4, `T3a`, the migration order's Phase A; ruling 4 of *2026-10-10 — The `test` stage, reshaped after the canary*; rulings 1 and 2 of *2026-10-11 — The reshaped `test` stage's three open questions, ruled*). The script's header is the contract; in one place:

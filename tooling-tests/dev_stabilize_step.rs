@@ -5425,6 +5425,10 @@ const DRIVEN: &[(&str, &str)] = &[
         "dirty",
         "git_state_refuses_a_tree_that_holds_more_than_reports",
     ),
+    (
+        "filed",
+        "a_stage_killed_between_a_filing_and_its_record_ends_in_one_of_two_states",
+    ),
 ];
 
 /// **The table of acts and arrivals is the tool's own, printed by a read, and every cell of
@@ -10709,4 +10713,754 @@ fn the_tools_verdict_file_is_what_the_record_script_records() {
         json!(["green", previous, candidate, ran["list"]["sha256"], 11]),
         "the two commits, the list's hash and what was excluded are on record: {on_record}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Between a filing and the record that takes it (the build plan of the reshaped `test`
+// stage, T3b)
+// ---------------------------------------------------------------------------
+
+/// The subject of a `test` stage's second record, which takes what its verifiers filed.
+const SECOND: &str = "docs(record): rc24 r1 — the verdicts filed";
+
+/// The batch of a `test` stage's second record: ONE call, the report check of attempt 2 —
+/// no verdict and no row in it. What it takes of the filed files, the record script reads.
+fn second_batch(launched: &[&str]) -> Value {
+    let mut check = vec![
+        "check-reports",
+        "--run",
+        RUN,
+        "--round",
+        "1",
+        "--stage",
+        "test",
+        "--attempt",
+        "2",
+        "--",
+    ];
+    check.extend(launched);
+    json!([{"argv": check}])
+}
+
+/// Where round 1's filed verdict of the verifier of `key` lies, filed in attempt 2.
+fn filed_verdict(key: &str) -> String {
+    format!("{RUN_DIR}/r1/verdicts/verify-{key}.a2.json")
+}
+
+/// `[route, why]` of a row of a state document.
+fn routed_as(state: &Value, key: &str) -> Value {
+    let row = state["ledger"]
+        .as_array()
+        .expect("the ledger's rows")
+        .iter()
+        .find(|row| row["key"] == key)
+        .unwrap_or_else(|| panic!("no row `{key}` in {state}"));
+    json!([row["route"], row["why"]])
+}
+
+impl Stage {
+    /// A `test` stage of a run WITH A QUEUE, stood BETWEEN ITS TWO RECORDS — through the two
+    /// scripts, as a stage stands there: the opening's facts with an order, a budget and
+    /// the number a verifier hands on; round 1's first record applied, committed and pushed
+    /// — two findings sent on, the binary named; and attempt 2 begun, in which the stage
+    /// verifies. Its batch is the second record's: the report check of that attempt, for
+    /// the attempt's marker and the verifier of `f-1`.
+    fn between_its_two_records(label: &str) -> Self {
+        let rig = StepRig::new(label);
+        let scratch = rig.scratch.display().to_string();
+        rig.wrote(
+            &format!("run-set --run {RUN}"),
+            &json!({"stop": "at-the-bound", "rounds": 3, "previous": "1.0.0-rc.24",
+                    "previous-commit": "9".repeat(40), "scope": "delta",
+                    "clauses": ["clause-a"], "budget": 5, "hand-on": 2,
+                    "order": ["route under-not-a-break", "route hunt", "behaviour hunt"]})
+            .to_string(),
+        );
+        rig.wrote(
+            &format!("item-set --run {RUN}"),
+            &json!([
+                {"item": "gate", "kind": "check", "clause": "clause-a",
+                 "runs": "every-candidate", "brief": "the candidate's gate"},
+                {"item": "review-setup", "kind": "review-row", "clause": "clause-a",
+                 "runs": "in-scope", "doors": ["jigc setup"], "brief": "the setup door"},
+            ])
+            .to_string(),
+        );
+        rig.commit("docs(record): the opening's facts");
+        rig.git(&["push", "-q", "origin", LOOP]);
+        let candidate = rig.rev("HEAD");
+        let begin = |attempt: &str| {
+            rig.step(&[
+                "begin",
+                "--run",
+                RUN,
+                "--round",
+                "1",
+                "--stage",
+                "test",
+                "--attempt",
+                attempt,
+                "--reporter",
+                "attempt",
+                "--commit",
+                &candidate,
+                "--scratch",
+                &scratch,
+            ])
+            .done("begin", "begun");
+        };
+        begin("1");
+        rig.wrote(
+            &format!("scope-set --run {RUN} --round 1"),
+            &json!({"included": [{"door": "jigc setup", "registry": "verbs",
+                                  "derivation": "the change reaches it"}],
+                    "excluded": []})
+            .to_string(),
+        );
+        for reporter in &LAUNCHED[1..] {
+            rig.wrote(
+                &format!(
+                    "report --run {RUN} --round 1 --stage test --reporter {reporter} --attempt 1"
+                ),
+                REPORT,
+            );
+        }
+        let gate = format!("{scratch}/gate.txt");
+        fs::write(
+            &gate,
+            "gate: mode   full, keep-going\ntests   passed=10 failed=0  (over 3 test binaries)\nGATE: PASS\n",
+        )
+        .expect("write the gate's output");
+        let call = |argv: &[&str], stdin: Value| json!({"argv": argv, "stdin": stdin.to_string()});
+        let found = |key: &str| {
+            json!({"key": key, "doctype": "jigc-feedback", "round": 1,
+                   "source": "review-setup", "door": "jigc setup", "clause": "clause-a",
+                   "repro": "the report", "kind": "route", "origin": "hunt",
+                   "route": format!("Run: jigc setup --repair {key}")})
+        };
+        let mut check = vec![
+            "check-reports",
+            "--run",
+            RUN,
+            "--round",
+            "1",
+            "--stage",
+            "test",
+            "--attempt",
+            "1",
+            "--",
+        ];
+        check.extend(LAUNCHED);
+        let first = json!([
+            {"argv": check},
+            {"argv": ["gate-set", "--run", RUN, "--round", "1", "--commit", candidate,
+                      "--summary", gate]},
+            call(
+                &["result-set", "--run", RUN, "--round", "1", "--commit", &candidate],
+                json!([{"item": "gate", "outcome": "green"},
+                       {"item": "review-setup", "outcome": "green"}]),
+            ),
+            call(&["ledger-add", "--run", RUN], json!([found("f-1"), found("f-2")])),
+            call(
+                &["triage-set", "--run", RUN, "--round", "1"],
+                json!([{"key": "f-1", "grade": "breaks"}, {"key": "f-2", "grade": "breaks"}]),
+            ),
+            call(
+                &["round-set", "--run", RUN, "--round", "1"],
+                json!({"candidate": candidate, "binary": "b".repeat(64)}),
+            ),
+            {"argv": ["check-ledger", "--run", RUN, "--", "f-1", "f-2"]},
+        ]);
+        let stage = Stage {
+            rig,
+            gate,
+            batch: first,
+        };
+        stage.apply(SUBJECT);
+        stage.record().done("record", "recorded");
+        stage.rig.step(&PUSH).done("push", "ready");
+        assert_eq!(
+            stage.position(),
+            json!({"round": 1, "attempt": 2, "verify": true}),
+            "after its first record the stage continues: it verifies"
+        );
+        stage
+            .rig
+            .step(&[
+                "begin",
+                "--run",
+                RUN,
+                "--round",
+                "1",
+                "--stage",
+                "test",
+                "--attempt",
+                "2",
+                "--reporter",
+                "attempt",
+                "--commit",
+                &candidate,
+                "--scratch",
+                &scratch,
+            ])
+            .done("begin", "begun");
+        Stage {
+            batch: second_batch(&["attempt", "verify-f-1"]),
+            ..stage
+        }
+    }
+
+    /// The report of the verifier of `key`, which it writes before it files.
+    fn verifier_reports(&self, key: &str) {
+        self.rig.wrote(
+            &format!(
+                "report --run {RUN} --round 1 --stage test --reporter verify-{key} --attempt 2"
+            ),
+            REPORT,
+        );
+    }
+
+    /// What the verifier of `key` files: the finding refuted, on the round's binary — and
+    /// one item it hands on.
+    fn filing(key: &str) -> String {
+        json!({"key": key, "verdict": "refuted", "refutation": "intended",
+               "candidate": "b".repeat(64),
+               "hands_on": [{"key": format!("beside {key}"), "doctype": "jigc-feedback",
+                             "door": "jigc setup", "clause": "clause-a",
+                             "repro": "what the verifier saw", "kind": "route",
+                             "route": format!("Run: jigc setup --again {key}")}]})
+        .to_string()
+    }
+
+    /// The arguments of the filing of the verifier of `key`.
+    fn filing_args(key: &str) -> Vec<String> {
+        [
+            "verdict",
+            "--run",
+            RUN,
+            "--round",
+            "1",
+            "--reporter",
+            &format!("verify-{key}"),
+            "--attempt",
+            "2",
+        ]
+        .iter()
+        .map(|arg| (*arg).to_owned())
+        .collect()
+    }
+
+    /// A verifier's whole act: its report, then its filing.
+    fn verified(&self, key: &str) {
+        self.verifier_reports(key);
+        self.rig
+            .wrote(&Self::filing_args(key).join(" "), &Self::filing(key));
+    }
+
+    /// The filing of the verifier of `key`, under the killer.
+    fn file_under(&self, key: &str, kill: (&str, &str)) -> Counted {
+        let args = Self::filing_args(key);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        self.rig
+            .wrapped("files", RECORD, &args, &Self::filing(key), kill)
+    }
+
+    /// The report check of attempt 2, for the launched reporters, under the scratch root.
+    fn second_check(&self, launched: &[&str]) -> Stepped {
+        let root = self.rig.scratch.display().to_string();
+        let mut args = vec![
+            "check-reports",
+            "--run",
+            RUN,
+            "--round",
+            "1",
+            "--stage",
+            "test",
+            "--attempt",
+            "2",
+            "--scratch",
+            root.as_str(),
+            "--",
+        ];
+        args.extend(launched);
+        self.rig.step(&args)
+    }
+
+    /// The second record's commit step: a batch of one call and one check.
+    fn second_record(&self) -> Stepped {
+        let scratch = self.rig.scratch.display().to_string();
+        self.rig.step(&[
+            "record",
+            "--branch",
+            LOOP,
+            "--run-dir",
+            RUN_DIR,
+            "--gate",
+            &self.gate,
+            "--calls",
+            "1",
+            "--checks",
+            "1",
+            "--scratch",
+            &scratch,
+        ])
+    }
+
+    /// The `apply` of the stage's batch under the second record's subject, under the killer.
+    fn second_apply_under(&self, kill: (&str, &str)) -> Counted {
+        self.rig.wrapped(
+            "files",
+            RECORD,
+            &["apply", "--run", RUN, "--round", "1", "--subject", SECOND],
+            &self.batch.to_string(),
+            kill,
+        )
+    }
+
+    /// The run's state document.
+    fn state(&self) -> Value {
+        serde_json::from_str(&self.rig.wrote(&format!("state --run {RUN}"), ""))
+            .expect("the state document")
+    }
+
+    /// The stage's second record, from its report check to its push.
+    fn records_what_was_filed(&self) {
+        self.second_check(&["attempt", "verify-f-1"])
+            .done("check-reports", "checked");
+        self.apply(SECOND);
+        self.second_record().done("record", "recorded");
+        self.rig.step(&PUSH).done("push", "ready");
+    }
+}
+
+/// **A stage killed between a filing and its record ends in one of two states** (the build
+/// plan of the reshaped `test` stage, `T3b`: *the table of states between two commands gains
+/// those between a filing and the record that takes it*; the plan's `P1`). A verifier files
+/// its verdict the moment it returns, and the stage's record comes later: a stage can end
+/// anywhere between the two. However it ends — inside the filing's own write, before each
+/// of its points; after the filing and before the record; inside the record's `apply`,
+/// before each of its points — the run is, once the stage is invoked again and has made its
+/// record, in ONE OF TWO STATES and no third: THE STATE BEFORE THE FILING, where the file
+/// was never put in place, or THE STATE OF THE RECORD THAT TOOK IT, pushed. And the read a
+/// stage starts from names what it found on the way: a filed verdict no record holds is the
+/// arrival state `filed`, owed to the stage.
+#[test]
+fn a_stage_killed_between_a_filing_and_its_record_ends_in_one_of_two_states() {
+    let stage = Stage::between_its_two_records("filed-kill");
+    stage.verifier_reports("f-1");
+    let before = stage.end();
+
+    // THE STAGE THAT WAS NEVER KILLED — and the one that ended after the filing and before
+    // its record, which is the same stage once it is invoked again.
+    let whole = stage.copy("filed-kill-whole");
+    whole
+        .rig
+        .wrote(&Stage::filing_args("f-1").join(" "), &Stage::filing("f-1"));
+    let seen = whole.git_state();
+    let line = seen.done("git-state", "ready");
+    assert_eq!(
+        json!([
+            line["found"],
+            line["owed"],
+            line["finished"],
+            line["pending"]
+        ]),
+        json!([["filed"], ["filed"], [], null]),
+        "a filed verdict no record holds is found, and owed to the stage: {}",
+        seen.raw
+    );
+    assert!(
+        line["untracked"]
+            .as_array()
+            .expect("the pending files")
+            .contains(&json!(filed_verdict("f-1"))),
+        "{}",
+        seen.raw
+    );
+    whole.records_what_was_filed();
+    let taken = whole.end();
+    assert_eq!(
+        json!([
+            routed_as(&taken.state, "f-1"),
+            routed_as(&taken.state, "beside-f-1"),
+            taken.state["filed"][0]["recorded"],
+            taken.remote.as_deref() == Some(taken.head.as_str()),
+            taken.status
+        ]),
+        json!([
+            ["recorded", "not-a-break"],
+            ["verify", "queued"],
+            true,
+            true,
+            ""
+        ]),
+        "the record took the verdict and the row it handed on, and is pushed"
+    );
+    assert!(
+        whole
+            .rig
+            .read(&format!("{RUN_DIR}/r1/triage.md"))
+            .contains("| `f-1` | inside | breaks | refuted: intended |"),
+        "the verdict is in the round's triage record"
+    );
+    let again = whole.git_state();
+    assert_eq!(
+        again.done("git-state", "ready")["found"],
+        json!([]),
+        "a filed verdict a commit holds is found by nothing: {}",
+        again.raw
+    );
+    assert_ne!(before.state, taken.state);
+
+    // 1. THE FILING'S OWN WRITE, killed before each of its points.
+    let counted = stage
+        .copy("filed-kill-count")
+        .file_under("f-1", ("KILL_AT", "0"));
+    assert_eq!(counted.code, Some(0), "{}", counted.stderr);
+    assert!(
+        counted.points.len() >= 3,
+        "a filing makes a temporary, puts it in place and removes it: {:?}",
+        counted.points
+    );
+    let (mut ended_before, mut ended_taken) = (0, 0);
+    for n in 1..=counted.points.len() {
+        let copy = stage.copy(&format!("filed-kill-write-{n}"));
+        let killed = copy.file_under("f-1", ("KILL_AT", &n.to_string()));
+        assert_eq!(killed.code, None, "point {n}: {}", killed.stderr);
+        let seen = copy.git_state();
+        seen.done("git-state", "ready");
+        if copy.rig.root.join(filed_verdict("f-1")).exists() {
+            copy.records_what_was_filed();
+            assert_eq!(copy.end(), taken, "point {n}: the record that took it");
+            ended_taken += 1;
+        } else {
+            assert_eq!(copy.end(), before, "point {n}: the state before the filing");
+            ended_before += 1;
+        }
+    }
+    assert!(
+        ended_before > 0 && ended_taken > 0,
+        "both states are reached: {ended_before} before, {ended_taken} taken"
+    );
+
+    // 2. THE RECORD THAT TAKES IT, killed before each point of its `apply`.
+    let filed = stage.copy("filed-kill-filed");
+    filed
+        .rig
+        .wrote(&Stage::filing_args("f-1").join(" "), &Stage::filing("f-1"));
+    filed
+        .second_check(&["attempt", "verify-f-1"])
+        .done("check-reports", "checked");
+    let counted = filed
+        .copy("filed-kill-apply-count")
+        .second_apply_under(("KILL_AT", "0"));
+    assert_eq!(counted.code, Some(0), "{}", counted.stderr);
+    std::thread::scope(|threads| {
+        for n in 1..=counted.points.len() {
+            let (filed, taken) = (&filed, &taken);
+            threads.spawn(move || {
+                let copy = filed.copy(&format!("filed-kill-apply-{n}"));
+                let killed = copy.second_apply_under(("KILL_AT", &n.to_string()));
+                assert_eq!(killed.code, None, "point {n}: {}", killed.stderr);
+                let seen = copy.git_state();
+                let line = seen.done("git-state", "ready");
+                if line["pending"].is_null() {
+                    // Killed before its journal: nothing of the batch is there, and the
+                    // stage applies it again.
+                    copy.apply(SECOND);
+                }
+                copy.second_record().done("record", "recorded");
+                copy.rig.step(&PUSH).done("push", "ready");
+                let second = copy.git_state();
+                assert_eq!(
+                    second.done("git-state", "ready")["found"],
+                    json!([]),
+                    "point {n}: the second read finds nothing: {}",
+                    second.raw
+                );
+                assert_eq!(copy.end(), *taken, "point {n}: the record that took it");
+            });
+        }
+    });
+}
+
+/// **A filed verdict overwritten by hand is set aside, and its finding is unverified again**
+/// (`T3b`; the tool's header: *What is vetted, and where*, the first boundary). The report
+/// check vets every pending written-once file, a filed verdict among them — as one: the
+/// text the writer left, under its own seal, beside the report whose hash it keeps. A file
+/// a hand wrote in, and one whose report was rewritten since, are no filed verdicts: each
+/// leaves the tree, named by where it lay and why; the state reads its finding as
+/// unverified again, with nothing spent; and the stage goes on. Filed verdicts as their
+/// writer left them stay.
+#[test]
+fn a_filed_verdict_overwritten_by_hand_is_set_aside_and_its_finding_is_unverified_again() {
+    let stage = Stage::between_its_two_records("filed-overwritten");
+    let rig = &stage.rig;
+    let launched = ["attempt", "verify-f-1", "verify-f-2"];
+    stage.verified("f-1");
+    stage.verified("f-2");
+    let read = stage.state();
+    assert_eq!(
+        json!([
+            routed_as(&read, "f-1"),
+            routed_as(&read, "f-2"),
+            read["budget"]["spent"]
+        ]),
+        json!([["recorded", "not-a-break"], ["recorded", "not-a-break"], 2])
+    );
+
+    // MUST NOT MOVE: two filed verdicts as their writer left them.
+    let seen = stage.second_check(&launched);
+    let line = seen.done("check-reports", "checked");
+    assert_eq!(
+        json!([line["check"]["ok"], line["aside"]]),
+        json!([true, []]),
+        "{}",
+        seen.raw
+    );
+
+    // A hand in one — it keeps the file's shape — and the other's report, rewritten.
+    let (first, second) = (filed_verdict("f-1"), filed_verdict("f-2"));
+    let text = rig.read(&first);
+    let word = "\"refutation\": \"intended\"";
+    assert!(text.contains(word), "{text}");
+    rig.write(
+        &first,
+        &text.replace(word, "\"refutation\": \"breaks-no-clause\""),
+    );
+    rig.write(
+        &format!("{RUN_DIR}/r1/reports/test/verify-f-2.a2.md"),
+        &report_saying("It was confirmed after all."),
+    );
+    let seen = stage.git_state();
+    assert_eq!(
+        seen.done("git-state", "ready")["found"],
+        json!(["filed"]),
+        "the tree is one a stage starts from: {}",
+        seen.raw
+    );
+    let seen = stage.second_check(&launched);
+    let line = seen.done("check-reports", "checked");
+    let mut aside: Vec<(String, String)> = line["aside"]
+        .as_array()
+        .expect("what was moved")
+        .iter()
+        .map(|found| {
+            (
+                found["path"].as_str().expect("a path").to_owned(),
+                found["why"].as_str().expect("a word").to_owned(),
+            )
+        })
+        .collect();
+    aside.sort();
+    assert_eq!(
+        (line["check"]["ok"].clone(), aside),
+        (
+            json!(true),
+            vec![
+                (first.clone(), "bad-value".to_owned()),
+                (second.clone(), "bad-value".to_owned())
+            ]
+        ),
+        "each is no filed verdict, and the reports beside them stand: {}",
+        seen.raw
+    );
+    for found in line["aside"].as_array().expect("what was moved") {
+        let to = PathBuf::from(found["to"].as_str().expect("where it went"));
+        assert!(
+            to.starts_with(rig.scratch.join("refused")) && to.is_file(),
+            "kept outside the tree: {}",
+            to.display()
+        );
+    }
+    assert!(!rig.root.join(&first).exists() && !rig.root.join(&second).exists());
+    let read = stage.state();
+    assert_eq!(
+        json!([
+            routed_as(&read, "f-1"),
+            routed_as(&read, "f-2"),
+            read["budget"]["spent"],
+            read["filed"]
+        ]),
+        json!([["verify", "queued"], ["verify", "queued"], 0, []]),
+        "each finding is unverified again, and nothing is spent: {read}"
+    );
+    let seen = stage.git_state();
+    assert_eq!(
+        seen.done("git-state", "ready")["found"],
+        json!([]),
+        "{}",
+        seen.raw
+    );
+}
+
+/// **A filed file is vetted at the commit and at the push** (`T3b`; the tool's header: *What
+/// is vetted, and where*, the second and the third boundary). AT THE COMMIT a filed verdict
+/// is one of the paths the record's commit adds, and it is what the batch took: a hand in
+/// it after the batch was applied, or the file gone by then, and nothing is committed —
+/// the batch is taken back, the file that is no filed verdict leaves the tree, and its
+/// finding is unverified again. AT THE PUSH a commit that holds a file among the filed
+/// verdicts which the writer did not leave — not under its seal, without the report it
+/// was filed beside, or beside a report that is not the one whose hash it keeps — is not
+/// published.
+#[test]
+fn a_filed_file_is_vetted_at_the_commit_and_at_the_push() {
+    std::thread::scope(|threads| {
+        for hand in ["changed", "gone"] {
+            threads.spawn(move || {
+                let stage = Stage::between_its_two_records(&format!("filed-commit-{hand}"));
+                let rig = &stage.rig;
+                stage.verified("f-1");
+                stage
+                    .second_check(&["attempt", "verify-f-1"])
+                    .done("check-reports", "checked");
+                stage.apply(SECOND);
+                let path = filed_verdict("f-1");
+                if hand == "changed" {
+                    let text = rig.read(&path);
+                    rig.write(
+                        &path,
+                        &text.replace(
+                            "\"refutation\": \"intended\"",
+                            "\"refutation\": \"breaks-no-clause\"",
+                        ),
+                    );
+                } else {
+                    fs::remove_file(rig.root.join(&path)).expect("remove the filed verdict");
+                }
+                let head = rig.rev("HEAD");
+                let seen = stage.second_record();
+                let said = seen.refused("unvetted");
+                assert_eq!(rig.rev("HEAD"), head, "{hand}: nothing was committed");
+                assert_eq!(
+                    json!([
+                        said["discarded"],
+                        said["vet"]["stale"][0]["what"],
+                        said["vet"]["stale"][0][hand]
+                    ]),
+                    json!([true, "filed", ["verify-f-1.a2.json"]]),
+                    "{hand}: the batch's own take no longer holds, and the batch is taken back: {}",
+                    seen.raw
+                );
+                assert!(
+                    !rig.root.join(&path).exists(),
+                    "{hand}: what is no filed verdict is out of the tree"
+                );
+                let state = stage.git_state();
+                assert_eq!(
+                    state.done("git-state", "ready")["pending"],
+                    Value::Null,
+                    "{hand}: a tree a stage starts from: {}",
+                    state.raw
+                );
+                let read = stage.state();
+                assert_eq!(
+                    json!([routed_as(&read, "f-1"), read["budget"]["spent"]]),
+                    json!([["verify", "queued"], 0]),
+                    "{hand}: the finding is unverified again: {read}"
+                );
+                assert!(
+                    !rig.read(&format!("{RUN_DIR}/r1/triage.md"))
+                        .contains("refuted"),
+                    "{hand}: and no table holds its verdict"
+                );
+            });
+        }
+
+        // AT THE PUSH: a commit somebody made by hand.
+        for hand in ["no-seal", "no-report", "another-report"] {
+            threads.spawn(move || {
+                let stage = Stage::between_its_two_records(&format!("filed-push-{hand}"));
+                let rig = &stage.rig;
+                stage.verified("f-1");
+                let path = filed_verdict("f-1");
+                let report = format!("{RUN_DIR}/r1/reports/test/verify-f-1.a2.md");
+                let marker = format!("{RUN_DIR}/r1/reports/test/attempt.a2.md");
+                if hand == "no-seal" {
+                    let text = rig.read(&path);
+                    rig.write(
+                        &path,
+                        &text.replace(
+                            "\"refutation\": \"intended\"",
+                            "\"refutation\": \"breaks-no-clause\"",
+                        ),
+                    );
+                    rig.git(&["add", "--", &path, &report, &marker]);
+                } else if hand == "another-report" {
+                    // The report is in the commit, and is not the file the verdict was
+                    // filed beside: a report by its name and its last line, rewritten.
+                    rig.write(&report, &report_saying("It was confirmed after all."));
+                    rig.git(&["add", "--", &path, &report, &marker]);
+                } else {
+                    rig.git(&["add", "--", &path, &marker]);
+                }
+                rig.git(&["commit", "-q", "-m", "docs(record): a record made by hand"]);
+                let commit = rig.rev("HEAD");
+                let pushed = rig.remote(LOOP);
+                let seen = rig.step(&["push", "--branch", LOOP, "--run-dir", RUN_DIR]);
+                let said = seen.refused("unvetted");
+                assert_eq!(
+                    json!([
+                        said["vet"]["refused"][0]["commit"],
+                        said["vet"]["refused"][0]["path"],
+                        said["vet"]["refused"][0]["why"]
+                    ]),
+                    json!([commit, path, "bad-value"]),
+                    "{hand}: the vet names the commit and the file: {}",
+                    seen.raw
+                );
+                assert_eq!(rig.remote(LOOP), pushed, "{hand}: nothing was pushed");
+            });
+        }
+    });
+}
+
+/// **A file without a verdict's name among the filed verdicts strands no stage** (`T3b`;
+/// what `T3a` left: *a stray file there is named by the state and by the vet and is
+/// removable by nothing*). The record script names it among what is written once, so the
+/// tree that holds it is one a stage starts from; the report check's vet refuses it by its
+/// name, and it leaves the tree like a file that is no report; the stage goes on to its
+/// record. A file there whose name is not of plain characters is named by no read, and is
+/// the human's, as anything else in the tree is.
+#[test]
+fn a_file_without_a_verdicts_name_among_the_filed_verdicts_strands_no_stage() {
+    let stage = Stage::between_its_two_records("filed-stray");
+    let rig = &stage.rig;
+    stage.verified("f-1");
+    let stray = format!("{RUN_DIR}/r1/verdicts/notes.md");
+    rig.write(&stray, "what I saw\n");
+    let seen = stage.git_state();
+    let line = seen.done("git-state", "ready");
+    assert!(
+        line["found"] == json!(["filed"])
+            && line["untracked"]
+                .as_array()
+                .expect("the pending files")
+                .contains(&json!(stray)),
+        "a tree a stage starts from: {}",
+        seen.raw
+    );
+    let seen = stage.second_check(&["attempt", "verify-f-1"]);
+    let line = seen.done("check-reports", "checked");
+    assert_eq!(
+        json!([
+            line["check"]["ok"],
+            line["aside"][0]["path"],
+            line["aside"][0]["why"],
+            line["aside"].as_array().map(Vec::len)
+        ]),
+        json!([true, stray, "bad-id", 1]),
+        "the file leaves the tree, and no other: {}",
+        seen.raw
+    );
+    assert!(!rig.root.join(&stray).exists() && rig.root.join(filed_verdict("f-1")).is_file());
+    stage.records_what_was_filed();
+    assert_eq!(
+        routed_as(&stage.state(), "f-1"),
+        json!(["recorded", "not-a-break"])
+    );
+
+    // A name of no plain segment is named by no read: the human's.
+    rig.write(&format!("{RUN_DIR}/r1/verdicts/.notes"), "what I saw\n");
+    stage.git_state().refused("dirty");
 }
