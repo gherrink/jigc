@@ -2,6 +2,58 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The route catalog's fence: every blocking site of `setup` and `uninstall` has a case, a reason or an owed row; the code vocabulary is held beside the call sites; and a code a dynamic site mints is a site once a row claims it (the plan's step `P2`; ruling 3 of 2026-10-10)
+
+**What.** Five arms in [route_catalog.rs](crates/cli/tests/route_catalog.rs) and the tables they hold. No product source changes, and no case is added — the cases are the next two tasks'.
+
+- **Every blocking site of the catalogued families has exactly one answer**: a case in its command's file, a reason there, or a row of the owed list.
+- **The vocabulary is held**: every code-shaped string literal with the prefix `setup.`, `adapter-guide.` or `uninstall.` in production code is a listed site's code, is claimed by a row that names the `dynamic` site that mints it, or has a row that says why it is no finding's code.
+- **A row that is about nothing is named**: an owed row, a reason or a claim whose site is gone, renamed or never owed a case; a claim for a code nothing spells; a row that is there twice, or says nothing where it must say why.
+- **A command's file on disk is one the suite reads.**
+- **The fence is not vacuous.**
+
+It scans nothing for itself. The sites are the scan of [refusal_sites.rs](crates/cli/tests/support/refusal_sites.rs), which `refusal_site_list::` holds byte-equal to [sites.tsv](crates/cli/tests/route_catalog/sites.tsv); the literals, the test regions and the function a literal stands in are the shared reader's ([rust_source.rs](crates/cli/tests/support/rust_source.rs)), which needed no extension.
+
+**What it counted** (this tree; pinned nowhere).
+
+| | listed | of them blocking | claimed | owe a case | have a case | a reason | an owed row |
+|---|---|---|---|---|---|---|---|
+| `setup.*` | 26 | 23 | 13 | 36 | 1 | 0 | 35, under `P3` |
+| `adapter-guide.*` | 2 | 0 | 0 | 0 | — | — | — |
+| `uninstall.*` | 16 | 16 | 2 | 18 | 0 | 0 | 18, under `P4` |
+
+The one site with a case is `hook_link_refusal`, in two cases. **`adapter-guide` has no blocking site** — both of its sites are advisories of `jigc setup` — so the fence asks nothing of it today. The plan names it among the catalogued families and under no task; the list's family table assigns it to `setup`, so a blocking site it grew would be `P3`'s.
+
+**The vocabulary arm found three codes outside the listed sites, not the one the plan names.**
+
+- `setup.dirty-install-path` — a `match` in the engine hands it over (`CarryoverBoundary::Setup.code()`); minted at `crates/engine/src/finalize.rs::setup_dirty_install_finding::dynamic#1`.
+- `setup.repo-root` and `uninstall.repo-root` — `setup::run` and `setup::run_uninstall` hand each to `locate::locate_finding`, which constructs at two dynamic sites: outside a repository, and where `$HOME` is not set. The plan's fact F13 names neither.
+
+The plan's other two — `setup.unverified-install-path` behind a constant and `uninstall.staged-prose` in `task.rs` — are listed sites since the scan resolves a constant, and the arm has nothing to ask of them. No code-shaped literal on this tree is no finding's code, so that table is empty.
+
+**Pinned, as an engineer — the plan left each open.**
+
+- **A claim makes a site.** A claim is (code, the dynamic site's id). The code at that site then owes a case like a listed site, under the id `file::function::<code>#dynamic-<ordinal>`: the code stands where a listed id has it, so a case reads its code the same way, and `dynamic-` keeps the id apart from every listed one. Without this the arm would find `setup.dirty-install-path` and nothing would ever owe it a case.
+- **Fifteen claims: five the arm demands, ten kept by reading.** The arm asks for one row a code; the second site of `locate_finding` was found by reading it. The other ten are the codes of the two dynamic sites in `setup.rs` — `replaced_path_refusal` raises the write-failure code of each of six install members where its path is not a regular file's, `merged_through_links` chooses among four where a merged-into member is a link the install will not follow. Each is a second refusal under a code a listed site also carries, with a route of its own — the kind of route the first case is red on. **No arm demands those ten rows**, and the table says which they are: a list a person keeps, expected to rot when one of the two functions starts to mint another code.
+- **Exactly one answer a site.** A case beside a reason, and an owed row beside either, are named: the owed list shrinks in the commit that brings the answer, and cannot stay behind it.
+- **A reason is one of three by construction** (`not-constructible: …`, `platform: …`, `no-route-printed`), and `no-route-printed` is refused for a site whose route the list reads at its call.
+- **A site owes where its severity is written `blocking`, or is handed in.** A severity the list cannot read is not taken for advisory.
+- **Code-shaped** is the prefix, a dot, and a name of lower-case letters, digits, `-`, `_` and `.`, as one literal's whole value — wider than any code minted, so that a literal which only looks like one is asked about and not passed over.
+- **Where each table lives.** A command's **reasons** stand in its file beside its cases: they are what a reader of that file is told instead of a case. The **owed list** is one table in the suite, because `uninstall` has no file until its cases are written and because the list is deleted whole after `P4` — the fence's own run with no table at all is an arm that stays. The **claims** are one table in the suite: they are about what the list cannot say, and two of them are `uninstall`'s.
+- **A command's file is wired in by one declaration.** Its `#[path]` line stands inside one macro call, which makes the same line the file's row — cases, reasons, source — for every arm. A file under `route_catalog/` declared anywhere else satisfies the registration fence and is named here.
+
+**Red first.** The first two arms were red by data on the finished code, with both tables empty: the site arm named 38 of 39 sites, the vocabulary arm the three codes above. With the claims in and the owed list still empty the site arm named 53 of 54. The other three followed their code and are red against a mutant each: every gone site passed as one that owes (the gone-row arm); the tree read as no file, and the vocabulary's reader blind outside its fixture (the vacuity arm, and the gone-row arm with it — **the site arm and the vocabulary arm stay green over a tree read as empty**, which is what the vacuity arm is for); a file declared beside the macro (the wiring arm).
+
+**Not established.**
+
+- **That a claim is true.** A claim is a person's reading of where a code reaches a constructor. The fence holds that its site is a dynamic one of the list and that production source spells its code — not that the one mints the other.
+- **Every place a dynamic site mints a catalogued code.** The arm works on a code's value: a code that is a listed site's is asked no further. Holding every *occurrence* of a literal to a site, a claim or a reason would find the ten rows above by itself; it is a larger table than this task's and is not built.
+- **A code no literal spells whole** — one built at run time — and one spelled only outside the Rust source of the two crates.
+- **Which of the 53 owed sites can be constructed.** None was driven here.
+- **That an owed row names the right task.** The name is held to be there.
+- **The five advisory sites of `jigc setup`.** The fence is over blocking sites, and the frame's rule for *provoked* needs a non-zero exit.
+- **Linux.** The fence reads source and no case was added; nothing here ran in `dev/runner-faithful`.
+
 ## 2026-10-11 — The route catalog's frame: an act takes its operand from the printed route, a case is data, seven classifications in one order, and a red case is listed under its finding's key (the plan's step `P1`; ruling 3 of 2026-10-10)
 
 **What.** A frame for following a refusal's route as printed ([route_case.rs](crates/cli/tests/support/route_case.rs)), the suite that holds it ([route_catalog.rs](crates/cli/tests/route_catalog.rs), `route_catalog::`), and the first two cases ([route_catalog/setup.rs](crates/cli/tests/route_catalog/setup.rs)). It changes no product source and fixes nothing.

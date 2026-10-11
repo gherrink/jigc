@@ -1,6 +1,7 @@
 //! The route catalog's cases for `jigc setup` — the family's table, declared by
 //! `crates/cli/tests/route_catalog.rs`, which says what a case is held to.
 
+use super::Reason;
 use crate::support::route_case::{Act, Case, Check, Operand, Place, Step};
 
 /// The hook `jigc setup` installs, from the repository root.
@@ -39,3 +40,6 @@ pub const CASES: &[Case] = &[
         witnesses: &["pre-commit"],
     },
 ];
+
+/// The sites of `jigc setup` that have no case, each with why.
+pub const REASONS: &[Reason] = &[];
