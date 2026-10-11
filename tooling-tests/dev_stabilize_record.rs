@@ -48,11 +48,12 @@
 //!   a cycle, a reporter, an attempt, a ledger key, a cited bound, a clause, each name a
 //!   check is handed — is driven with every hostile value ([`HOSTILE_IDS`]): each is
 //!   refused as `bad-id` and leaves the tree as it was.
-//! - *The writers.* Thirteen subcommands write a file ([`WRITERS`]), and ten of them put a
+//! - *The writers.* Fourteen subcommands write a file ([`WRITERS`]), and eleven of them put a
 //!   caller's free text into it: a report's body, a ledger row's cells as it is added and
 //!   as it is set, a void run's reason, a bound's, a door's derivation, a test-set item's
 //!   brief, a failing test's name in a gate's output, what a verifier files of an item it
-//!   hands on, a record's batch — and the evidence of a row's kind, as the row is added and
+//!   hands on, what a triage says of an entry it hands over, a record's batch — and the
+//!   evidence of a row's kind, as the row is added and
 //!   as its kind is set (two rows of the list). The scanner that could not run and the killed write are
 //!   driven through all of them; the host-path replacement and the hygiene stop through
 //!   those that take a text. The list is
@@ -1313,6 +1314,24 @@ const WRITERS: &[Writer] = &[
         },
     },
     Writer {
+        // The entries a triage hands over: why it grades a finding as it does.
+        name: "triage (an entry's `why`)",
+        free_text: true,
+        prepare: |rig| {
+            ordered(rig, &ORDER);
+            scoped(rig);
+        },
+        call: |rig, text, extra| {
+            let mut entry = new_entry("audit-f3", "route", "breaks", json!({"audit-install": [1]}));
+            entry["why"] = json!(text);
+            let args = triage_args(RUN, "1", TRIAGE, "1", extra, &[("audit-install", 1)]);
+            (
+                rig.run(&args, &json!([entry]).to_string()),
+                report_path("1", TRIAGE, "1"),
+            )
+        },
+    },
+    Writer {
         name: "apply (a row's `source` cell, in a batch of one call)",
         free_text: true,
         prepare: |_| {},
@@ -1860,6 +1879,66 @@ const ID_SITES: &[IdSite] = &[
             rig.run(&verdict_args(RUN, "1", "verify-seeded", "1"), &given)
         },
     },
+    IdSite {
+        name: "triage --run",
+        numeric: false,
+        call: |rig, v| {
+            rig.run(
+                &triage_args(v, "1", TRIAGE, "1", &[], &[("hunt-a", 1)]),
+                &one_entry("audit-f3"),
+            )
+        },
+    },
+    IdSite {
+        name: "triage --round",
+        numeric: true,
+        call: |rig, v| {
+            rig.run(
+                &triage_args(RUN, v, TRIAGE, "1", &[], &[("hunt-a", 1)]),
+                &one_entry("audit-f3"),
+            )
+        },
+    },
+    IdSite {
+        name: "triage --reporter",
+        numeric: false,
+        call: |rig, v| {
+            rig.run(
+                &triage_args(RUN, "1", v, "1", &[], &[("hunt-a", 1)]),
+                &one_entry("audit-f3"),
+            )
+        },
+    },
+    IdSite {
+        name: "triage --attempt",
+        numeric: true,
+        call: |rig, v| {
+            rig.run(
+                &triage_args(RUN, "1", TRIAGE, v, &[], &[("hunt-a", 1)]),
+                &one_entry("audit-f3"),
+            )
+        },
+    },
+    IdSite {
+        name: "triage, a source that handed it findings",
+        numeric: false,
+        call: |rig, v| {
+            rig.run(
+                &triage_args(RUN, "1", TRIAGE, "1", &[], &[(v, 1)]),
+                &one_entry("audit-f3"),
+            )
+        },
+    },
+    IdSite {
+        name: "triage, the key of an entry",
+        numeric: false,
+        call: |rig, v| {
+            rig.run(
+                &triage_args(RUN, "1", TRIAGE, "1", &[], &[("hunt-a", 1)]),
+                &one_entry(v),
+            )
+        },
+    },
 ];
 
 #[test]
@@ -1985,6 +2064,13 @@ fn every_subcommand(rig: &Rig, run: &str) -> Vec<(&'static str, Seen)> {
             rig.run(
                 &verdict_args(run, "1", "verify-seeded", "1"),
                 &filing("seeded", "refuted").to_string(),
+            ),
+        ),
+        (
+            "triage",
+            rig.run(
+                &triage_args(run, "1", TRIAGE, "1", &[], &[("hunt-a", 1)]),
+                &one_entry("audit-f3"),
             ),
         ),
     ]
@@ -11920,6 +12006,19 @@ const HERE: &[Taken] = &[
         },
     },
     Taken {
+        // A triage hands its entries over in a run with a queue, and no place of this table
+        // holds an order: where they ARE taken is
+        // `triage_hands_over_its_entries_once_and_its_report_is_rendered_from_them`.
+        name: "triage",
+        takes: NOWHERE,
+        call: |rig, _, round| {
+            rig.run(
+                &triage_args(RUN, &round.to_string(), TRIAGE, "1", &[], &[("hunt-a", 1)]),
+                &one_entry("prop-triaged"),
+            )
+        },
+    },
+    Taken {
         name: "round-set candidate",
         takes: "ssarrrrrrrrrrrrar",
         call: |rig, _, round| fact_of_round(rig, round, json!({"candidate": sha('9')})),
@@ -20673,7 +20772,7 @@ Shown at every stop and at the close, and holding nothing: each word is why its 
 
 ## How often a refusal's code and a site are named — information, on which nothing is ranked, promoted, merged or ordered
 
-For each code and each site a row of the ledger carries: how many distinct agents reported such a row in the run so far, which, on how many rows — and on how many of those rows the record names no reporter. An agent is a reporter of a round: the verifier that handed the row on, as its filed verdict names it; for any other row, a reporter with a report in the row's round whose name opens the row's `source`, or a part of it. It counts rows and who reported them, and reads no report: a code a report only mentions is not in it.
+For each code and each site a row of the ledger carries: how many distinct agents reported such a row in the run so far, which, on how many rows — and on how many of those rows the record names no reporter. An agent is a reporter of a round. Where the record holds a row's reporters as data, they are read and nothing else is: the verifier that handed the row on, as its filed verdict names it, and the reporters whose findings a triage folded into the row, as the entries it handed over name them — a finding found again adds its own. Only for a row that has neither: a reporter with a report in the row's round whose name opens the row's `source`, or a part of it. It counts rows and who reported them, and reads no report's prose: a code a report only mentions is not in it.
 
 | code | agents | which | rows | of them, rows whose reporter the record does not name |
 |---|---|---|---|---|
@@ -21684,6 +21783,1177 @@ fn how_often_a_code_or_a_site_is_named_is_counted_and_nothing_follows_from_it() 
             named("b.code", &["r1 rep-a", "r1 rep-b", "r1 rep-c", "r1 verify-k-1"], 4),
             {"code": "c.code", "agents": [], "rows": 1, "unnamed": 1},
         ]),
+        "{read}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Triage types each entry once (the build plan of the reshaped `test` stage, K2)
+// ---------------------------------------------------------------------------
+
+/// The name a stage's one triage reports under, in the arms below — the harness's to choose.
+const TRIAGE: &str = "triage";
+
+/// The line a triage's rendered report opens with: what says that the script rendered the
+/// file from the entries a triage handed over.
+const RENDERED: &str = "<!-- the entries a triage handed over, rendered by dev/stabilize-record and never written by hand -->";
+
+/// `triage`: the writer a stage's one triage hands its entries over through — for a round,
+/// under its reporter's name and its attempt, with HOW MANY FINDINGS EACH SOURCE HANDED IT as
+/// plain words, `<source>=<count>`.
+fn triage_args(
+    run: &str,
+    round: &str,
+    reporter: &str,
+    attempt: &str,
+    extra: &[String],
+    handed: &[(&str, u64)],
+) -> Vec<String> {
+    let mut args = vec![
+        "triage".to_owned(),
+        format!("--run={run}"),
+        format!("--round={round}"),
+        format!("--reporter={reporter}"),
+        format!("--attempt={attempt}"),
+    ];
+    args.extend_from_slice(extra);
+    args.push("--".to_owned());
+    args.extend(
+        handed
+            .iter()
+            .map(|(source, count)| format!("{source}={count}")),
+    );
+    args
+}
+
+/// A NEW finding as a triage hands it over: what its ledger row needs, triage's grade and
+/// why, its kind WITH the kind's evidence — and the handed findings it folds, each by its
+/// source and its number.
+fn new_entry(key: &str, kind: &str, grade: &str, folds: Value) -> Value {
+    let mut entry = json!({
+        "key": key,
+        "found": "new",
+        "doctype": "jigc-feedback",
+        "door": INSIDE,
+        "clause": "clause-b",
+        "repro": format!("the block of {key} in its reporter's report"),
+        "grade": grade,
+        "kind": kind,
+        "why": format!("what triage read of {key}, and why it grades it so"),
+        "folds": folds,
+    });
+    match kind {
+        "route" => entry["route"] = json!(format!("Run: jigc setup --repair {key}")),
+        "behaviour" => entry["commands"] = json!(format!("jigc setup; jigc doc show {key}")),
+        _ => {}
+    }
+    entry
+}
+
+/// A finding FOUND AGAIN: the row it is, by its key, triage's grade and why, what it folds —
+/// and none of a row's cells, which the row keeps.
+fn again_entry(key: &str, grade: &str, folds: Value) -> Value {
+    json!({
+        "key": key,
+        "found": "again",
+        "grade": grade,
+        "why": format!("{key} is on the ledger, and this is it again"),
+        "folds": folds,
+    })
+}
+
+/// The file of a triage that was handed one finding, by `hunt-a`, and hands over one new
+/// entry for it, under `key`.
+fn one_entry(key: &str) -> String {
+    json!([new_entry(key, "route", "breaks", json!({"hunt-a": [1]}))]).to_string()
+}
+
+/// Two instruments handed five findings: `hunt-a` three, `hunt-b` two.
+const TWO_SOURCES: [(&str, u64); 2] = [("hunt-a", 3), ("hunt-b", 2)];
+
+/// The example of two entries — one new, one found again — that fold the five findings of
+/// [`TWO_SOURCES`].
+fn two_entries() -> Value {
+    let mut new = new_entry(
+        "setup-leaves-a-link",
+        "route",
+        "breaks",
+        json!({"hunt-a": [1, 2], "hunt-b": [1]}),
+    );
+    new["code"] = json!(HOOK);
+    json!([
+        new,
+        again_entry("seeded", "no-break", json!({"hunt-a": [3], "hunt-b": [2]}))
+    ])
+}
+
+/// Where a `test` stage of a run WITH A QUEUE stands once its instruments reported, before its
+/// first record: round 1 has its scope and no candidate, the attempt is begun, two
+/// instruments left their reports — and the ledger holds one row, which the opening seeded.
+fn a_triage_run(label: &str) -> Rig {
+    let rig = two_clause_run(label, BOUNDED);
+    ordered(&rig, &STOP_ORDER);
+    let mut seed = evident("seeded", "behaviour", "seed");
+    seed["round"] = json!(0);
+    seed["source"] = json!("the opening");
+    seed["code"] = json!(HOOK);
+    rig.run(&ledger_add(RUN), &seed.to_string())
+        .must(OK, "a row the opening seeded");
+    scoped(&rig);
+    begun_attempt(&rig, "1");
+    for reporter in ["hunt-a", "hunt-b"] {
+        rig.run(&report(RUN, "1", reporter, "1"), BODY)
+            .must(OK, "an instrument's report");
+    }
+    rig
+}
+
+/// The triage of round 1 hands `entries` over, as its attempt `attempt`.
+fn hand_over(rig: &Rig, attempt: &str, handed: &[(&str, u64)], entries: &Value) -> Seen {
+    rig.run(
+        &triage_args(RUN, "1", TRIAGE, attempt, &[], handed),
+        &entries.to_string(),
+    )
+}
+
+/// The entries a rendered report holds as data: the one fenced block of it.
+fn data_of(text: &str) -> Value {
+    let (_, rest) = text
+        .split_once("\n```json\n")
+        .unwrap_or_else(|| panic!("a rendered report holds its entries as data:\n{text}"));
+    let (block, _) = rest
+        .rsplit_once("\n```\n")
+        .unwrap_or_else(|| panic!("the block closes:\n{text}"));
+    serde_json::from_str(block).unwrap_or_else(|e| panic!("the block is JSON ({e}):\n{block}"))
+}
+
+/// The files of a rig that differ between two snapshots, or are in one of them only.
+fn moved(before: &BTreeMap<String, String>, after: &BTreeMap<String, String>) -> Vec<String> {
+    let names: BTreeSet<&String> = before.keys().chain(after.keys()).collect();
+    names
+        .into_iter()
+        .filter(|name| before.get(*name) != after.get(*name))
+        .map(|name| {
+            name.rsplit_once("/completions/")
+                .map_or(name.clone(), |(_, rel)| format!("completions/{rel}"))
+        })
+        .collect()
+}
+
+/// The report the script renders from [`two_entries`], whole.
+const A_TRIAGES_REPORT: &str = r##"<!-- the entries a triage handed over, rendered by dev/stabilize-record and never written by hand -->
+# Round 1 — the triage of `triage`, attempt 1
+
+Rendered by `dev/stabilize-record triage` from the one file of entries the triage handed over: every entry is typed once, there. The table is read off the entries below it, and so is the record of the stage; a file under this name that is not this text is not that triage's report.
+
+Handed 5 findings by 2 sources, each in exactly one entry: `hunt-a` 3, `hunt-b` 2. 2 entries: 1 new, 1 found again.
+
+## The entries
+
+| # | key | new or found again | grade | kind | folds |
+|---|---|---|---|---|---|
+| 1 | `setup-leaves-a-link` | new | breaks | route | `hunt-a` 1, 2; `hunt-b` 1 |
+| 2 | `seeded` | found again | no-break | - | `hunt-a` 3; `hunt-b` 2 |
+
+## The entries, as data
+
+```json
+{
+ "round": 1,
+ "reporter": "triage",
+ "attempt": 1,
+ "handed": {
+  "hunt-a": 3,
+  "hunt-b": 2
+ },
+ "entries": [
+  {
+   "key": "setup-leaves-a-link",
+   "found": "new",
+   "grade": "breaks",
+   "bound": null,
+   "why": "what triage read of setup-leaves-a-link, and why it grades it so",
+   "folds": [
+    "hunt-a 1",
+    "hunt-a 2",
+    "hunt-b 1"
+   ],
+   "doctype": "jigc-feedback",
+   "door": "jigc setup",
+   "clause": "clause-b",
+   "repro": "the block of setup-leaves-a-link in its reporter's report",
+   "kind": "route",
+   "given": null,
+   "code": "setup.install-hook",
+   "site": null,
+   "evidence": "Run: jigc setup --repair setup-leaves-a-link"
+  },
+  {
+   "key": "seeded",
+   "found": "again",
+   "grade": "no-break",
+   "bound": null,
+   "why": "seeded is on the ledger, and this is it again",
+   "folds": [
+    "hunt-a 3",
+    "hunt-b 2"
+   ],
+   "doctype": null,
+   "door": null,
+   "clause": null,
+   "repro": null,
+   "kind": null,
+   "given": null,
+   "code": null,
+   "site": null,
+   "evidence": null
+  }
+ ]
+}
+```
+
+<!-- end of report -->
+"##;
+
+/// **Triage hands over its entries once, and its report is rendered from them** (the build
+/// plan of the reshaped `test` stage, §5, `K2`: *a writer for triage: it hands over one file
+/// of entries … and the script renders the triage's report from it, files it as that
+/// reporter's report … its line is a digest: keys, grades, classes, counts*). The call
+/// writes ONE FILE AND NO TABLE — the report, under the triage's own name and attempt — and
+/// that file holds the entries as data, so the same entries give the same bytes and the
+/// record is composed from what was typed once. What it prints is a digest: no text of an
+/// entry is in it. IN A RUN WITHOUT AN ORDER the writer is refused and nothing is written:
+/// such a run's triage returns its entries as it always did.
+#[test]
+fn triage_hands_over_its_entries_once_and_its_report_is_rendered_from_them() {
+    let rig = a_triage_run("triage-once");
+    let before = rig.snapshot();
+    let seen = hand_over(&rig, "1", &TWO_SOURCES, &two_entries());
+    seen.must(OK, "the entries, handed over");
+    let path = report_path("1", TRIAGE, "1");
+    assert_eq!(
+        moved(&before, &rig.snapshot()),
+        std::slice::from_ref(&path),
+        "one file, and no table: the report under the triage's name and attempt"
+    );
+    let text = rig.read(&path);
+    assert_eq!(
+        text, A_TRIAGES_REPORT,
+        "the report, rendered from the entries"
+    );
+    assert!(
+        text.starts_with(&format!("{RENDERED}\n")) && text.ends_with(&format!("\n{ENDS}\n")),
+        "it opens as a rendering, and ends as a report does"
+    );
+
+    // ITS LINE IS A DIGEST: keys, grades, classes, counts — the path and the hash of the file's
+    // bytes, which a return is held to — and no text of an entry.
+    assert_eq!(
+        seen.json(),
+        json!({
+            "triage": path,
+            "sha256": sha256_of(&text),
+            "round": 1,
+            "reporter": TRIAGE,
+            "attempt": 1,
+            "handed": {"hunt-a": 3, "hunt-b": 2},
+            "findings": 5,
+            "entries": [
+                {"key": "setup-leaves-a-link", "found": "new", "grade": "breaks", "class": "route hunt"},
+                {"key": "seeded", "found": "again", "grade": "no-break", "class": "behaviour seed"},
+            ],
+            "counts": {
+                "entries": 2,
+                "new": 1,
+                "again": 1,
+                "grades": {"breaks": 1, "no-break": 1},
+                "classes": {"route hunt": 1, "behaviour seed": 1},
+            },
+            "leads": [],
+        }),
+        "{}",
+        seen.stdout
+    );
+    for text_of_an_entry in ["what triage read", "the block of", "Run: jigc setup"] {
+        assert!(
+            !seen.stdout.contains(text_of_an_entry),
+            "the digest carries no entry's text: {}",
+            seen.stdout
+        );
+    }
+
+    // THE ENTRIES, AS DATA, are what the report was rendered from — each text as a table's
+    // cell holds it, a kind with what it was given as, the folds by source and number.
+    let data = data_of(&text);
+    assert_eq!(
+        json!([
+            data["round"],
+            data["reporter"],
+            data["attempt"],
+            data["handed"]
+        ]),
+        json!([1, TRIAGE, 1, {"hunt-a": 3, "hunt-b": 2}])
+    );
+    assert_eq!(
+        json!([
+            data["entries"][0]["folds"],
+            data["entries"][0]["kind"],
+            data["entries"][0]["evidence"],
+            data["entries"][1]["folds"],
+            data["entries"][1]["door"]
+        ]),
+        json!([
+            ["hunt-a 1", "hunt-a 2", "hunt-b 1"],
+            "route",
+            "Run: jigc setup --repair setup-leaves-a-link",
+            ["hunt-a 3", "hunt-b 2"],
+            null
+        ])
+    );
+
+    // THE SAME ENTRIES GIVE THE SAME BYTES, however a triage spells what an entry folds.
+    let other = a_triage_run("triage-once-again");
+    let mut spelled = two_entries();
+    spelled[0]["folds"] = json!({"hunt-b": [1], "hunt-a": [2, 1]});
+    hand_over(&other, "1", &TWO_SOURCES, &spelled).must(OK, "the same entries");
+    assert_eq!(other.read(&path), text, "one text");
+
+    // NOTHING OF THE STATE MOVED BUT WHO REPORTED A ROW THE LEDGER HOLDS: no row, no grade, no
+    // step — the record of the stage is what writes the tables.
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            ledger_keys(&rig),
+            finding(&read, "seeded")["grade"],
+            read["next"],
+            queued(&read)
+        ]),
+        json!([["seeded"], "ungraded", "test", []]),
+        "{read}"
+    );
+
+    // IN A RUN WITHOUT AN ORDER nothing of it exists: the writer is refused, and the run
+    // holds the bytes it held.
+    let plain = two_clause_run("triage-no-order", BOUNDED);
+    scoped(&plain);
+    for reporter in ["hunt-a", "hunt-b"] {
+        plain
+            .run(&report(RUN, "1", reporter, "1"), BODY)
+            .must(OK, "an instrument's report");
+    }
+    let before = plain.snapshot();
+    let mut bare = two_entries();
+    bare[1] = new_entry(
+        "another",
+        "route",
+        "no-break",
+        json!({"hunt-a": [3], "hunt-b": [2]}),
+    );
+    let seen = hand_over(&plain, "1", &TWO_SOURCES, &bare);
+    seen.refused(BAD_VALUE, "entries handed over in a run without an order");
+    assert!(seen.stderr.contains("order"), "{}", seen.stderr);
+    assert_eq!(plain.snapshot(), before, "nothing written");
+}
+
+/// **An entry is held as the row it will be** (`K2`; `T1`: *a kind without its evidence is a
+/// lead*; `T2a`: *in a run with an order a row without a kind is refused*) — by the ledger's
+/// own functions and no second check: a new entry's kind without its evidence is entered as
+/// a lead, and the call says so; a new entry that names no kind is refused in the words the
+/// ledger refuses a row with; the evidence of another kind, a grade outside triage's five and
+/// a bound off the list are refused. AND WHAT AN ENTRY SAYS OF ITS KEY IS HELD TO THE LEDGER:
+/// `new` under a key the run holds, and `again` under a key that is no row, are refused — a
+/// finding found again is the row it names, and brings none of that row's cells.
+#[test]
+fn an_entry_is_held_as_the_row_it_will_be() {
+    let rig = a_triage_run("triage-rows");
+    let one = [("hunt-a", 1)];
+    let folds = || json!({"hunt-a": [1]});
+    let before = rig.snapshot();
+
+    // No kind: refused, as the ledger refuses the row.
+    let mut bare = new_entry("no-kind", "lead", "breaks", folds());
+    bare.as_object_mut().expect("an entry").remove("kind");
+    let seen = hand_over(&rig, "1", &one, &json!([bare]));
+    seen.refused(BAD_VALUE, "a new entry that names no kind");
+    assert!(
+        seen.stderr.contains("it names no `kind`") && seen.stderr.contains("no-kind"),
+        "refused in the ledger's own words: {}",
+        seen.stderr
+    );
+
+    // The evidence of the other kind, and evidence beside a lead.
+    let mut crossed = new_entry("crossed", "route", "breaks", folds());
+    crossed["commands"] = json!("jigc setup");
+    hand_over(&rig, "1", &one, &json!([crossed]))
+        .refused(BAD_VALUE, "a route item with a behaviour item's evidence");
+    let mut led = new_entry("led", "lead", "breaks", folds());
+    led["route"] = json!("Run: jigc setup");
+    hand_over(&rig, "1", &one, &json!([led])).refused(BAD_VALUE, "a lead that quotes a route");
+
+    // Triage's grade, and the bound an out-of-scope grade cites.
+    for (grade, bound, code, what) in [
+        ("confirmed", None, BAD_VALUE, "a verifier's grade"),
+        (
+            "out-of-scope",
+            None,
+            BAD_VALUE,
+            "out of scope, citing no bound",
+        ),
+        (
+            "breaks",
+            Some("non-jigc-writer"),
+            BAD_VALUE,
+            "a bound beside another grade",
+        ),
+        (
+            "out-of-scope",
+            Some("non-jigc-writer"),
+            NO_SUCH_BOUND,
+            "a bound off the list",
+        ),
+    ] {
+        let mut entry = new_entry("graded", "route", grade, folds());
+        if let Some(bound) = bound {
+            entry["bound"] = json!(bound);
+        }
+        hand_over(&rig, "1", &one, &json!([entry])).refused(code, what);
+    }
+
+    // What an entry says of its key, held to the ledger.
+    let seen = hand_over(
+        &rig,
+        "1",
+        &one,
+        &json!([new_entry("seeded", "route", "breaks", folds())]),
+    );
+    seen.refused(EXISTS, "a new finding under a key the ledger holds");
+    assert!(seen.stderr.contains("seeded"), "{}", seen.stderr);
+    hand_over(
+        &rig,
+        "1",
+        &one,
+        &json!([again_entry("nobody", "breaks", folds())]),
+    )
+    .refused(NO_SUCH_ROW, "found again, under a key that is no row");
+    let mut twice_said = again_entry("seeded", "breaks", folds());
+    twice_said["door"] = json!(EXCLUDED);
+    let seen = hand_over(&rig, "1", &one, &json!([twice_said]));
+    seen.refused(BAD_VALUE, "found again, with a cell of the row");
+    assert!(seen.stderr.contains("door"), "{}", seen.stderr);
+    let mut neither = again_entry("seeded", "breaks", folds());
+    neither["found"] = json!("maybe");
+    hand_over(&rig, "1", &one, &json!([neither])).refused(BAD_VALUE, "neither new nor again");
+    let same = json!([
+        again_entry("seeded", "breaks", json!({"hunt-a": [1]})),
+        again_entry("seeded", "breaks", json!({"hunt-a": [2]}))
+    ]);
+    hand_over(&rig, "1", &[("hunt-a", 2)], &same).refused(BAD_VALUE, "two entries under one key");
+    // … and where a report of a round is taken: never for a round the run has not begun.
+    rig.run(
+        &triage_args(RUN, "2", TRIAGE, "1", &[], &one),
+        &json!([again_entry("seeded", "breaks", folds())]).to_string(),
+    )
+    .refused(BAD_VALUE, "the entries of a round that is not begun");
+    assert_eq!(rig.snapshot(), before, "nothing of any of them was written");
+
+    // A KIND WITHOUT ITS EVIDENCE IS A LEAD — entered, and said; the out-of-scope grade with
+    // its bound on the list; and a red run's own key, found again before its row is filed.
+    rig.run(&bound_set(RUN, "non-jigc-writer", &BOUND), "")
+        .must(OK, "a declared bound");
+    let mut hunch = new_entry("a-hunch", "route", "unclear", json!({"hunt-a": [1]}));
+    hunch.as_object_mut().expect("an entry").remove("route");
+    let mut bounded = new_entry(
+        "far-off",
+        "behaviour",
+        "out-of-scope",
+        json!({"hunt-a": [2]}),
+    );
+    bounded["bound"] = json!("non-jigc-writer");
+    let red = again_entry(
+        "red-check-clause-a",
+        "breaks",
+        json!({"red-check-clause-a": [1]}),
+    );
+    let seen = hand_over(
+        &rig,
+        "1",
+        &[("hunt-a", 2), ("red-check-clause-a", 1)],
+        &json!([hunch, bounded, red]),
+    );
+    seen.must(OK, "a lead, a bounded grade and a red run's key");
+    let said = seen.json();
+    assert_eq!(
+        json!([said["leads"], said["entries"], said["counts"]["classes"]]),
+        json!([
+            ["a-hunch"],
+            [
+                {"key": "a-hunch", "found": "new", "grade": "unclear", "class": "lead hunt"},
+                {"key": "far-off", "found": "new", "grade": "out-of-scope", "class": "behaviour hunt"},
+                {"key": "red-check-clause-a", "found": "again", "grade": "breaks", "class": "behaviour hunt"},
+            ],
+            {"lead hunt": 1, "behaviour hunt": 2},
+        ]),
+        "{}",
+        seen.stdout
+    );
+    let text = rig.read(&report_path("1", TRIAGE, "1"));
+    let data = data_of(&text);
+    assert_eq!(
+        json!([
+            data["entries"][0]["kind"],
+            data["entries"][0]["given"],
+            data["entries"][0]["evidence"],
+            data["entries"][1]["bound"]
+        ]),
+        json!(["lead", "route", null, "non-jigc-writer"])
+    );
+    let rows = table_in(
+        &text,
+        &["#", "key", "new or found again", "grade", "kind", "folds"],
+    );
+    assert_eq!(
+        json!([rows[0][4], rows[1][3], rows[2][5]]),
+        json!([
+            "lead: given as route",
+            "out-of-scope: non-jigc-writer",
+            "`red-check-clause-a` 1"
+        ]),
+        "{text}"
+    );
+}
+
+/// **A numbered finding in no entry, or in two, is refused, and nothing is written** (`K2`:
+/// *the script … holds the partition: the caller passes, as plain words, how many findings
+/// each source handed, the prompt numbers them 1 to that count, and every number of every
+/// source is in exactly one entry*). The refusal names each finding that is in no entry and
+/// each that is in more than one, by its source and its number; a fold of a source nobody
+/// handed, of a number past its source's count, and an entry that folds nothing are refused
+/// too. The numbers are the caller's words, never the file's.
+#[test]
+fn a_numbered_finding_in_no_entry_or_in_two_is_refused_and_nothing_is_written() {
+    let rig = a_triage_run("triage-partition");
+    let before = rig.snapshot();
+    let with = |first: Value, second: Value| {
+        json!([
+            new_entry("first", "route", "breaks", first),
+            new_entry("second", "route", "no-break", second)
+        ])
+    };
+
+    // IN NO ENTRY: two handed findings that no entry folds, each named.
+    let seen = hand_over(
+        &rig,
+        "1",
+        &TWO_SOURCES,
+        &with(json!({"hunt-a": [1, 2]}), json!({"hunt-b": [1]})),
+    );
+    seen.refused(BAD_VALUE, "two findings in no entry");
+    assert!(
+        seen.stderr.contains("in no entry: hunt-a 3, hunt-b 2"),
+        "each is named, by its source and its number: {}",
+        seen.stderr
+    );
+
+    // IN TWO: across two entries, and twice in one.
+    let seen = hand_over(
+        &rig,
+        "1",
+        &TWO_SOURCES,
+        &with(
+            json!({"hunt-a": [1, 2, 3], "hunt-b": [1]}),
+            json!({"hunt-a": [3], "hunt-b": [2]}),
+        ),
+    );
+    seen.refused(BAD_VALUE, "a finding in two entries");
+    assert!(
+        seen.stderr
+            .contains("in more than one entry: hunt-a 3 (entries 1 and 2)"),
+        "{}",
+        seen.stderr
+    );
+    let seen = hand_over(
+        &rig,
+        "1",
+        &TWO_SOURCES,
+        &with(json!({"hunt-a": [1, 2, 2, 3]}), json!({"hunt-b": [1, 2]})),
+    );
+    seen.refused(BAD_VALUE, "a finding twice in one entry");
+    assert!(seen.stderr.contains("hunt-a 2"), "{}", seen.stderr);
+
+    // A source nobody handed, a number past its source's count, no number at all — and an
+    // entry that folds nothing: a triage grades what it is handed, and nothing else.
+    for (first, why) in [
+        (
+            json!({"hunt-a": [1, 2, 3], "hunt-c": [1]}),
+            "a source nobody handed",
+        ),
+        (json!({"hunt-a": [1, 2, 3, 4]}), "a number past the count"),
+        (json!({"hunt-a": [0, 1, 2, 3]}), "the number nought"),
+        (json!({"hunt-a": [1, 2, 3, "4"]}), "a number as text"),
+        (
+            json!({"hunt-a": [1, 2, 3], "hunt-b": []}),
+            "a source with no number",
+        ),
+        (json!(["hunt-a 1"]), "folds that are no map"),
+    ] {
+        hand_over(
+            &rig,
+            "1",
+            &TWO_SOURCES,
+            &with(first, json!({"hunt-b": [1, 2]})),
+        )
+        .refused(BAD_VALUE, why);
+    }
+    // (Where every handed finding is in its one entry and an entry beside them folds none,
+    // it is that entry which is refused.)
+    hand_over(
+        &rig,
+        "1",
+        &[("hunt-b", 2)],
+        &with(json!({}), json!({"hunt-b": [1, 2]})),
+    )
+    .refused(BAD_VALUE, "an entry that folds nothing");
+    // … and the counts are the caller's plain words: a word that is no count, a source twice.
+    for (handed, why) in [
+        (vec!["hunt-a".to_owned()], "a word without a count"),
+        (vec!["hunt-a=three".to_owned()], "a count that is no number"),
+        (vec!["hunt-a=-1".to_owned()], "a count below nought"),
+        (
+            vec![
+                "hunt-a=3".to_owned(),
+                "hunt-b=2".to_owned(),
+                "hunt-a=3".to_owned(),
+            ],
+            "a source twice",
+        ),
+    ] {
+        let mut args = triage_args(RUN, "1", TRIAGE, "1", &[], &[]);
+        args.extend(handed);
+        rig.run(&args, &two_entries().to_string())
+            .refused(BAD_VALUE, why);
+    }
+    assert_eq!(rig.snapshot(), before, "nothing of any of them was written");
+
+    // The control: every number of every source, each in exactly one entry — and a source
+    // that handed nothing, which no entry can fold.
+    let mut handed = TWO_SOURCES.to_vec();
+    handed.push(("hunt-c", 0));
+    let seen = hand_over(
+        &rig,
+        "1",
+        &handed,
+        &with(json!({"hunt-a": [1, 2, 3]}), json!({"hunt-b": [1, 2]})),
+    );
+    seen.must(OK, "the partition holds");
+    assert_eq!(
+        json!([seen.json()["findings"], seen.json()["handed"]]),
+        json!([5, {"hunt-a": 3, "hunt-b": 2, "hunt-c": 0}])
+    );
+}
+
+/// **A rendered report is a report like any other** (`K2`): the report check counts it under
+/// the triage's name, it is a file written once that `pending` names, the vet covers it, and
+/// a second filing for the attempt is refused as a report's is — the next attempt lands
+/// beside it. AND IT IS HELD TO ITS OWN ENTRIES: a file that opens as a rendering and is not
+/// the text the script renders from the entries it holds — a hand wrote in it, it lies under
+/// another reporter's name — is refused by the vet and leaves the tree by `set-aside`, after
+/// which the triage has left no report. The plain `report` writer takes no text that opens
+/// as one: a rendering is written by `triage`, and by nothing else.
+#[test]
+fn a_rendered_report_is_a_report_like_any_other() {
+    let rig = a_triage_run("triage-report");
+    let launched = ["attempt", "hunt-a", "hunt-b", TRIAGE];
+    let checked = rig.run(&check_reports(RUN, "1", "1", &launched), "");
+    checked.must(REPORTS_MISMATCH, "before the triage handed anything over");
+    assert_eq!(checked.json()["missing"], json!([TRIAGE]));
+
+    hand_over(&rig, "1", &TWO_SOURCES, &two_entries()).must(OK, "the entries");
+    let path = report_path("1", TRIAGE, "1");
+    let text = rig.read(&path);
+    let checked = rig.run(&check_reports(RUN, "1", "1", &launched), "");
+    checked.must(OK, "the report check counts the rendered report");
+    assert_eq!(
+        checked.json()["reports"][format!("{TRIAGE}.a1.md")],
+        json!(sha256_of(&text))
+    );
+    let pending = rig.run(&keeper("pending", RUN), "").json();
+    assert!(
+        pending["once"]
+            .as_array()
+            .expect("the files written once")
+            .contains(&json!(path)),
+        "{pending}"
+    );
+    let vetted = rig.run(&vet(RUN, None, &[&path]), "");
+    vetted.must(OK, "the vet covers it");
+    assert_eq!(vetted.json()["vetted"][&path], json!(sha256_of(&text)));
+
+    // A SECOND FILING FOR THE ATTEMPT is refused as a report's is, and the file stands.
+    let mut other = two_entries();
+    other[1]["grade"] = json!("breaks");
+    hand_over(&rig, "1", &TWO_SOURCES, &other).refused(EXISTS, "a second filing for the attempt");
+    assert_eq!(rig.read(&path), text);
+    rig.run(&report(RUN, "1", TRIAGE, "1"), BODY)
+        .refused(EXISTS, "a plain report under the same name and attempt");
+    begun_attempt(&rig, "2");
+    hand_over(&rig, "2", &TWO_SOURCES, &other).must(OK, "the next attempt lands beside it");
+
+    // `report` TAKES NO TEXT THAT OPENS AS A RENDERING — the script's own, word for word.
+    let before = rig.snapshot();
+    rig.run(&report(RUN, "1", "copycat", "1"), &text)
+        .refused(BAD_VALUE, "a rendering, handed to the plain report writer");
+    assert_eq!(rig.snapshot(), before);
+
+    // HELD TO ITS OWN ENTRIES: a hand's edit that keeps the file a report, and a rendering
+    // under another reporter's name, are refused by the vet and leave the tree.
+    let edited = text.replace(
+        "| 2 | `seeded` | found again | no-break |",
+        "| 2 | `seeded` | found again | breaks |",
+    );
+    assert_ne!(edited, text, "the control: the edit is one");
+    fs::write(rig.root.join(&path), &edited).expect("a hand's edit of the rendered report");
+    let stray = report_path("1", "hunt-c", "1");
+    fs::write(rig.root.join(&stray), &text).expect("a rendering under another name");
+    let vetted = rig.run(
+        &vet(
+            RUN,
+            None,
+            &[&path, &stray, &report_path("1", "hunt-a", "1")],
+        ),
+        "",
+    );
+    vetted.must(
+        VET_MISMATCH,
+        "a rendering that is not the text of its entries",
+    );
+    let refused: Vec<Value> = vetted.json()["refused"]
+        .as_array()
+        .expect("what the vet refused")
+        .iter()
+        .map(|entry| json!([entry["path"], entry["why"]]))
+        .collect();
+    assert_eq!(
+        refused,
+        [json!([path, "bad-value"]), json!([stray, "bad-value"])],
+        "the two, and not the instrument's report beside them: {}",
+        vetted.stdout
+    );
+    // … AND A PUSH PUBLISHES NEITHER: in a commit that holds them, the range's vet refuses the
+    // same two, for the same reason.
+    rig.init_repository();
+    let git = |args: &[&str]| {
+        let out = rig
+            .hermetic(Command::new("git"))
+            .args(args)
+            .current_dir(&rig.root)
+            .output()
+            .expect("run git");
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    };
+    git(&["add", "-A"]);
+    git(&[
+        "-c",
+        "user.name=rig",
+        "-c",
+        "user.email=rig@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-q",
+        "-m",
+        "docs(record): what a stage left",
+    ]);
+    let published = rig.run(&strings(&["vet", "--range", "--", "HEAD"]), "");
+    published.must(VET_MISMATCH, "a commit that holds a rendering that is none");
+    let refused: Vec<Value> = published.json()["refused"]
+        .as_array()
+        .expect("what the range's vet refused")
+        .iter()
+        .map(|entry| json!([entry["path"], entry["why"]]))
+        .collect();
+    assert_eq!(
+        refused,
+        [json!([stray, "bad-value"]), json!([path, "bad-value"])],
+        "{}",
+        published.stdout
+    );
+
+    let aside = rig.tmp.join("refused");
+    let moved_out = rig.run(&set_aside(RUN, Some(&aside), &[&path, &stray]), "");
+    moved_out.must(OK, "set-aside takes what is no rendering");
+    assert_eq!(
+        moved_out.json()["aside"].as_array().map(Vec::len),
+        Some(2),
+        "{}",
+        moved_out.stdout
+    );
+    assert!(!rig.root.join(&path).exists() && !rig.root.join(&stray).exists());
+    let checked = rig.run(&check_reports(RUN, "1", "1", &launched), "");
+    checked.must(
+        REPORTS_MISMATCH,
+        "the triage has left no report of attempt 1",
+    );
+    assert_eq!(checked.json()["missing"], json!([TRIAGE]));
+}
+
+/// **An entry's text with a denylisted term refuses the filing, and names the entry** (`K2`;
+/// the rendered report is a file that becomes public — `implementation/public-hygiene.md`).
+/// The filing goes through the one write every writer goes through: the scan stops it hard,
+/// nothing of it is on disk — and the refusal says WHICH ENTRY, by its place in the file and
+/// never by what matched, so that one entry is reworded and the file handed over again. A
+/// host path in an entry's text becomes its public placeholder, by the function a report's
+/// is replaced with.
+#[test]
+fn an_entrys_text_with_a_denylisted_term_refuses_the_filing_and_names_the_entry() {
+    let rig = a_triage_run("triage-denylist");
+    let before = rig.snapshot();
+    let three = |why: &str| {
+        let mut second = new_entry("second", "behaviour", "unclear", json!({"hunt-a": [3]}));
+        second["why"] = json!(why);
+        json!([
+            new_entry("first", "route", "breaks", json!({"hunt-a": [1, 2]})),
+            second,
+            again_entry("seeded", "no-break", json!({"hunt-b": [1, 2]}))
+        ])
+    };
+    let term = DENY_TERM.to_uppercase();
+    let seen = hand_over(
+        &rig,
+        "1",
+        &TWO_SOURCES,
+        &three(&format!("it was seen on the host {term}")),
+    );
+    seen.refused(HYGIENE, "an entry that names a denylisted term");
+    assert!(
+        seen.stderr.contains("entry 2")
+            && !seen.stderr.contains("entry 1")
+            && !seen.stderr.contains("entry 3"),
+        "the entry is named, by its place: {}",
+        seen.stderr
+    );
+    assert!(
+        !seen.stderr.to_lowercase().contains(DENY_TERM),
+        "a hit is named by where it is, never by what matched: {}",
+        seen.stderr
+    );
+    assert_eq!(rig.snapshot(), before, "nothing of the filing was written");
+
+    // Reworded, it is filed — with a host path replaced as a report's is.
+    let scratch = format!("{}/agent/scratchpad", rig.tmp.display());
+    let args = triage_args(
+        RUN,
+        "1",
+        TRIAGE,
+        "1",
+        &[format!("--scratch={scratch}")],
+        &TWO_SOURCES,
+    );
+    rig.run(
+        &args,
+        &three(&format!("the script is {scratch}/routes.sh")).to_string(),
+    )
+    .must(OK, "the same entries, without the term");
+    let written = rig.read(&report_path("1", TRIAGE, "1"));
+    assert!(
+        written.contains("the script is <scratch>/routes.sh")
+            && !written.contains(&*rig.tmp.to_string_lossy()),
+        "{written}"
+    );
+
+    // WHERE NO ENTRY CAN BE NAMED THE FIRST REFUSAL STANDS, and is never lost: a hit in a
+    // name of the file's own — its reporter's — is in no entry; and a scanner that cannot be
+    // asked a second time leaves the hit a hit, never a scan that did not run.
+    let before = rig.snapshot();
+    let seen = rig.run(
+        &triage_args(RUN, "1", DENY_TERM, "1", &[], &TWO_SOURCES),
+        &three("nothing a scanner would stop").to_string(),
+    );
+    seen.refused(HYGIENE, "a triage that reports under a denylisted name");
+    assert!(!seen.stderr.contains("entry "), "{}", seen.stderr);
+    let mut once = a_triage_run("triage-scan-once");
+    once.env.push(("STUB_GITLEAKS", "once".to_owned()));
+    let seen = hand_over(
+        &once,
+        "1",
+        &TWO_SOURCES,
+        &three(&format!("the token was {STUB_SECRET}")),
+    );
+    seen.refused(HYGIENE, "a secret, and a scanner that runs once");
+    assert!(seen.stderr.contains("stub-rule"), "{}", seen.stderr);
+    assert_eq!(rig.snapshot(), before, "nothing written");
+}
+
+/// The agents the state names for a row — `reporters`, a field only of a row that has any.
+fn reporters_of(read: &Value, key: &str) -> Value {
+    finding(read, key)
+        .get("reporters")
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+/// **The record keeps who reported a row, and a finding found again adds** (`K2`, the
+/// decision `T4` brought back and the orchestrating session took, 2026-10-11: *an exact count
+/// needs the reporters of a row as data*; the ruling of the same day: *the stage records and
+/// prints how many distinct agents named each code and each site — nothing is ranked,
+/// promoted or merged on it*). The entries a triage handed over name the handed findings each
+/// entry folds, by source and number, and the state reads them: a row says `reporters` — the
+/// sources folded into it that are REPORTERS OF THAT TRIAGE'S ROUND, each as `r<N>
+/// <reporter>` — from the moment the row and the entries both exist. A source that is no
+/// reporter — a red run's key, the rows nobody graded — is no agent. FOUND AGAIN ADDS, two
+/// attempts of one reporter stay one agent, and the verifier that handed a row on stays its
+/// agent beside them. The view's count reads the stored reporters where a row has them, and
+/// the row's `source` cell ONLY FOR A ROW THAT HAS NONE. A rendering a hand wrote in is read
+/// by nothing — and nothing is refused over it. And nothing follows from any of it.
+#[test]
+fn the_record_keeps_who_reported_a_row_and_a_finding_found_again_adds() {
+    let rig = a_stop_run("triage-reporters", Some(9), Some(2));
+    // The ledger, as the stage's first record leaves it — the row of the new entry with a
+    // `source` that names only one of the two reporters whose findings were folded into it.
+    let mut link = evident("setup-leaves-a-link", "route", "hunt");
+    link["code"] = json!(HOOK);
+    link["source"] = json!("hunt-b 1");
+    let mut seed = evident("seeded", "behaviour", "seed");
+    seed["code"] = json!("a.code");
+    seed["source"] = json!("hunt-b brought it up");
+    let mut late = evident("seeded-late", "behaviour", "seed");
+    late["code"] = json!("c.code");
+    late["source"] = json!("the opening");
+    let mut plain = evident("plain", "route", "hunt");
+    plain["code"] = json!("b.code");
+    plain["source"] = json!("hunt-b F7");
+    rig.run(
+        &ledger_add(RUN),
+        &json!([link, seed, late, plain]).to_string(),
+    )
+    .must(OK, "four rows");
+    rig.run(
+        &triage_set(RUN, "1"),
+        &json!([sent_on("setup-leaves-a-link"), sent_on("plain")]).to_string(),
+    )
+    .must(OK, "the one triage");
+    begun_attempt(&rig, "1");
+    for reporter in ["hunt-a", "hunt-b"] {
+        rig.run(&report(RUN, "1", reporter, "1"), BODY)
+            .must(OK, "an instrument's report");
+    }
+    let named = |read: &Value| read["view"]["named"]["codes"].clone();
+    let count = |code: &str, agents: &[&str], rows: u64, unnamed: u64| json!({"code": code, "agents": agents, "rows": rows, "unnamed": unnamed});
+
+    // BEFORE ANY ENTRIES ARE HANDED OVER the count reads each row's `source`, by the one rule.
+    let read = rig.state();
+    assert_eq!(
+        json!([reporters_of(&read, "setup-leaves-a-link"), named(&read)]),
+        json!([
+            null,
+            [
+                count("a.code", &["r1 hunt-b"], 1, 0),
+                count("b.code", &["r1 hunt-b"], 1, 0),
+                count("c.code", &[], 1, 1),
+                count(HOOK, &["r1 hunt-b"], 1, 0),
+            ]
+        ]),
+        "{read}"
+    );
+
+    // THE ENTRIES: two reporters' findings folded into one row, one's and a source that is
+    // no reporter into a second, and that source alone into a third.
+    let entries = json!([
+        again_entry(
+            "setup-leaves-a-link",
+            "breaks",
+            json!({"hunt-a": [1, 2], "hunt-b": [1]})
+        ),
+        again_entry(
+            "seeded",
+            "no-break",
+            json!({"hunt-a": [3], "untriaged": [1]})
+        ),
+        again_entry("seeded-late", "no-break", json!({"untriaged": [2]})),
+    ]);
+    hand_over(
+        &rig,
+        "1",
+        &[("hunt-a", 3), ("hunt-b", 1), ("untriaged", 2)],
+        &entries,
+    )
+    .must(OK, "the entries");
+    let stored = rig.state();
+    assert_eq!(
+        json!([
+            reporters_of(&stored, "setup-leaves-a-link"),
+            reporters_of(&stored, "seeded"),
+            reporters_of(&stored, "seeded-late"),
+            reporters_of(&stored, "plain"),
+            named(&stored)
+        ]),
+        json!([
+            ["r1 hunt-a", "r1 hunt-b"],
+            ["r1 hunt-a"],
+            null,
+            null,
+            [
+                // THE STORED REPORTERS, AND NOTHING ELSE: the row's `source` names another
+                // reporter, and is read no more —
+                count("a.code", &["r1 hunt-a"], 1, 0),
+                // — a row that has none is still read by its `source` —
+                count("b.code", &["r1 hunt-b"], 1, 0),
+                // — and one whose folded sources name no reporter is a row no reporter is
+                // named for.
+                count("c.code", &[], 1, 1),
+                count(HOOK, &["r1 hunt-a", "r1 hunt-b"], 1, 0),
+            ]
+        ]),
+        "{stored}"
+    );
+
+    // NOTHING FOLLOWS FROM IT: the same rows, routes, queue and step as before the entries.
+    let but_who = |read: &Value| {
+        let rows: Vec<Value> = rows_said(read)
+            .into_iter()
+            .map(|mut row| {
+                row.as_object_mut().expect("a row").remove("reporters");
+                row
+            })
+            .collect();
+        let mut view = read["view"].clone();
+        view["named"] = json!(null);
+        view["sha256"] = json!(null);
+        json!([rows, follows(read), view])
+    };
+    assert_eq!(but_who(&read), but_who(&stored));
+
+    // FOUND AGAIN ADDS — a third reporter, in a later attempt — and two attempts of one
+    // reporter are one agent.
+    begun_attempt(&rig, "2");
+    for reporter in ["hunt-a", "hunt-c"] {
+        rig.run(&report(RUN, "1", reporter, "2"), BODY)
+            .must(OK, "an instrument's report of the second attempt");
+    }
+    let again = json!([again_entry(
+        "setup-leaves-a-link",
+        "breaks",
+        json!({"hunt-c": [1], "hunt-a": [1]})
+    ),]);
+    hand_over(&rig, "2", &[("hunt-a", 1), ("hunt-c", 1)], &again).must(OK, "found again");
+    let added = rig.state();
+    assert_eq!(
+        json!([
+            reporters_of(&added, "setup-leaves-a-link"),
+            named(&added)[3]
+        ]),
+        json!([
+            ["r1 hunt-a", "r1 hunt-b", "r1 hunt-c"],
+            count(HOOK, &["r1 hunt-a", "r1 hunt-b", "r1 hunt-c"], 1, 0)
+        ]),
+        "{added}"
+    );
+
+    // THE FILE SAYS THE SAME, and what it counts.
+    recorded(&rig, &["plain"]).must(OK, "a record");
+    let text = rig.read(&view_path("1"));
+    let columns = [
+        "code",
+        "agents",
+        "which",
+        "rows",
+        "of them, rows whose reporter the record does not name",
+    ];
+    assert_eq!(
+        json!(table_in(&text, &columns)),
+        json!([
+            ["a.code", "1", "`r1 hunt-a`", "1", "0"],
+            ["b.code", "1", "`r1 hunt-b`", "1", "0"],
+            ["c.code", "0", "-", "1", "1"],
+            [HOOK, "3", "`r1 hunt-a`, `r1 hunt-b`, `r1 hunt-c`", "1", "0"],
+        ]),
+        "{text}"
+    );
+    assert!(
+        text.contains("the reporters whose findings a triage folded into the row")
+            && text
+                .contains("reads no report's prose: a code a report only mentions is not in it."),
+        "{text}"
+    );
+    settled(&rig);
+
+    // THE VERIFIER THAT HANDED A ROW ON STAYS ITS AGENT beside the reporters of a triage that
+    // found the row again.
+    let mut handed = noticed("hook-loops", "route");
+    handed["code"] = json!("d.code");
+    let mut given = filing("setup-leaves-a-link", "confirmed");
+    given["hands_on"] = json!([handed]);
+    verified(&rig, "2", &given);
+    begun_attempt(&rig, "3");
+    rig.run(&report(RUN, "1", "hunt-b", "3"), BODY)
+        .must(OK, "an instrument's report of the third attempt");
+    hand_over(
+        &rig,
+        "3",
+        &[("hunt-b", 1)],
+        &json!([again_entry("hook-loops", "breaks", json!({"hunt-b": [1]}))]),
+    )
+    .must(OK, "an item a verifier handed on, found again");
+    let read = rig.state();
+    assert_eq!(
+        json!([reporters_of(&read, "hook-loops"), named(&read)[3]]),
+        json!([
+            ["r1 hunt-b"],
+            count(
+                "d.code",
+                &["r1 hunt-b", "r1 verify-setup-leaves-a-link"],
+                1,
+                0
+            )
+        ]),
+        "{read}"
+    );
+
+    // A RENDERING A HAND WROTE IN IS READ BY NOTHING, and nothing is refused over it: the
+    // rows it named reporters for are read as if it had never been handed over.
+    let second = report_path("1", TRIAGE, "2");
+    let text = rig.read(&second);
+    fs::write(rig.root.join(&second), text.replace("hunt-c 1", "hunt-c 2"))
+        .expect("a hand's edit of the entries");
+    let read = rig.state();
+    assert_eq!(
+        reporters_of(&read, "setup-leaves-a-link"),
+        json!(["r1 hunt-a", "r1 hunt-b"]),
+        "{read}"
+    );
+
+    // AN AGENT IS A REPORTER OF THE ROUND OF THE TRIAGE THAT FOLDED ITS FINDING: in round 2 a
+    // source with a report there is `r2 …`, and one whose reports all lie in round 1 is no
+    // reporter of that round.
+    rig.run(
+        &round_set(RUN, "1"),
+        &json!({"outcome": "dropped"}).to_string(),
+    )
+    .must(OK, "the human's exit from round 1");
+    tested_round(&rig, 2, true, &BOTH_GREEN, json!({"binary": driven()}));
+    for reporter in ["attempt", "hunt-d"] {
+        rig.run(&report(RUN, "2", reporter, "1"), BODY)
+            .must(OK, "a report of round 2");
+    }
+    let handed = [("hunt-d", 1), ("hunt-b", 1)];
+    rig.run(
+        &triage_args(RUN, "2", TRIAGE, "1", &[], &handed),
+        &json!([again_entry(
+            "plain",
+            "breaks",
+            json!({"hunt-d": [1], "hunt-b": [1]})
+        )])
+        .to_string(),
+    )
+    .must(OK, "round 2's triage finds a row of round 1 again");
+    let read = rig.state();
+    assert_eq!(reporters_of(&read, "plain"), json!(["r2 hunt-d"]), "{read}");
+    assert!(
+        named(&read).as_array().expect("the codes").contains(&count(
+            "b.code",
+            &["r2 hunt-d"],
+            1,
+            0
+        )),
         "{read}"
     );
 }

@@ -5717,6 +5717,7 @@ const REACH: &[(&str, &str, &str)] = &[
     (RECORD, "scope-set", "no-ref"),
     (RECORD, "triage-set", "no-ref"),
     (RECORD, "verdict", "no-ref"),
+    (RECORD, "triage", "no-ref"),
     (RECORD, "item-set", "no-ref"),
     (RECORD, "round-set", "no-ref"),
     (RECORD, "run-set", "no-ref"),

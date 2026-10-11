@@ -75,7 +75,11 @@
 #                                           that changes it, and written by no caller
 #                                                                         (apply; state: view)
 #   .pending.json                          the journal (below) — never committed
-#   r<N>/reports/test/<reporter>.a<A>.md    a test-stage report          (report)
+#   r<N>/reports/test/<reporter>.a<A>.md    a test-stage report          (report) — and,
+#                                           under the name of a stage's triage, THE ENTRIES
+#                                           IT HANDED OVER, rendered: a report like any
+#                                           other, which holds its entries as data
+#                                                                         (triage)
 #   r<N>/reports/fix/c<K>/<reporter>.a<A>.md  a fix-stage report, cycle K  (report)
 #
 # A RUN IS OPENED when completions/artifacts/<run>/ is a directory holding a regular
@@ -104,6 +108,8 @@
 #       its way — the command it was piped from died — or was never finished, and is
 #       refused (truncated): a short text is still text, and nothing else tells the two
 #       apart. Input that is JSON needs no such line: cut off, it is not JSON.
+#       ONE TEXT IS NOT TAKEN HERE: a report that opens as the entries a triage handed over,
+#       rendered by this script, is written by `triage` and by nothing else (bad-value).
 #
 #   dev/stabilize-record ledger-add --run R [--scratch DIR]... <rows.json
 #       One JSON object per finding, or an array of them:
@@ -509,6 +515,83 @@
 #       was said is not kept, or null, "handed_on": [{key, proposed, kind, origin,
 #       beyond}], "leads": the keys of the items entered as a lead}.
 #
+#   dev/stabilize-record triage --run R --round N --reporter S --attempt A
+#                        [--scratch DIR]... [--] SOURCE=COUNT... <entries.json
+#   dev/stabilize-record triage … --from FILE [--] SOURCE=COUNT...
+#       A TRIAGE HANDS ITS ENTRIES OVER, ONCE (the build plan of the reshaped `test` stage,
+#       §5, K2: triage typed every entry twice — in its report, and again in its return —
+#       and what it returned grew with what it was handed). The entries on stdin — or, with
+#       --from, the file the triage wrote them to (A WRITER FED FROM A FILE, below) — are
+#       a JSON array, one object per entry, in the triage's own order:
+#         key          the finding's key — a slug                          } of every
+#         found        new | again — a finding the ledger does not hold, or } entry
+#                      THE ROW IT NAMES, FOUND AGAIN                        }
+#         grade        triage's: breaks | unclear | no-break | out-of-scope | needs-bound,
+#                      as triage-set takes it — and `bound` beside out-of-scope, a row of
+#                      bounds.md (no-such-bound)
+#         why          why it is graded so — text, not blank
+#         folds        WHICH HANDED FINDINGS THE ENTRY FOLDS, each by its source and its
+#                      number: {"<source>": [1, 2], …} — at least one: a triage grades what
+#                      it was handed, and nothing else
+#         doctype, door, clause, repro     } of A NEW FINDING, and of no other: what its
+#         kind, route or commands, code,   } ledger row and that row's class need, as
+#         site                             } ledger-add takes them. Where it comes from is
+#                      not said: a finding a triage keys is an instrument's (`hunt`).
+#       AN ENTRY IS HELD AS THE ROW IT WILL BE, by the functions a ledger row and a triage
+#       entry are held by, and by no second check: A KIND WITHOUT ITS EVIDENCE IS A LEAD,
+#       and the call says so (`leads`); a new entry that names no kind is refused as the
+#       ledger refuses such a row in a run with an order (bad-value); the other kind's
+#       evidence, a grade outside the five and a bound beside another grade are refused.
+#       AND WHAT IT SAYS OF ITS KEY IS HELD TO THE LEDGER: `new` under a key the run holds —
+#       a row, an item a filed verdict handed on, the key a red run of an item of the test
+#       set is filed under — is refused (exists); `again` under a key that is none of those
+#       is refused (no-such-row); and A FINDING FOUND AGAIN BRINGS NONE OF A ROW'S CELLS
+#       (bad-value): the row keeps its own, and saying them again is the second typing this
+#       writer ends. Two entries under one key are refused (bad-value).
+#       THE PARTITION IS HELD HERE. The caller — the harness, which numbered every handed
+#       finding in the triage's prompt, 1 to its source's count — passes HOW MANY FINDINGS
+#       EACH SOURCE HANDED as plain words, `<source>=<count>`: a source is a slug (a
+#       reporter's name, the key of a red run, the name the harness gives the rows nobody
+#       graded), a count a whole number, 0 for a source that handed none; no source twice
+#       (bad-value). EVERY NUMBER OF EVERY SOURCE IS IN EXACTLY ONE ENTRY, or the call is
+#       refused (bad-value) and nothing is written: the refusal names each finding that is
+#       in no entry, and each that is in more than one, by its source and its number. A
+#       fold of a source nobody named, or of a number its source did not hand, is refused
+#       the same. The counts are the caller's words and never the file's.
+#       IT WRITES ONE FILE, AND NO TABLE: THE TRIAGE'S REPORT, RENDERED from the entries —
+#       r<N>/reports/test/<reporter>.a<A>.md, the path a report of that reporter and
+#       attempt has, written once (exists: a re-run passes the next attempt). It opens
+#       with the line that says what it is, shows the entries as a table — key, new or
+#       found again, grade, kind, what each folds — HOLDS THE ENTRIES AS DATA, in one
+#       fenced block, and ends as a report ends. Every text of an entry is stored as a
+#       table's cell would hold it; an entry's kind as the row will have it (`kind`, and
+#       `given` where it was entered as a lead), its evidence as `evidence`; what it folds
+#       in one spelling, `<source> <number>`, by source and number. THE FILE IS A PURE
+#       FUNCTION OF THOSE ENTRIES: the same entries give the same bytes, and a text there
+#       that the entries it holds do not render — a hand wrote in it, it lies under
+#       another name — is no rendering: the vet refuses it (bad-value) at the report
+#       check, the commit and the push, `set-aside` takes it out of the tree, and nothing
+#       reads its entries. So IT IS A REPORT LIKE ANY OTHER: the report check counts it
+#       under the triage's name, `pending` names it among what is written once, and the
+#       record's batch holds it to the bytes its report check counted.
+#       ITS TEXT goes through the one write every writer's goes through (WHAT A WRITER DOES
+#       TO ITS TEXT, below): host paths replaced, the public-hygiene scan hard. A HIT
+#       REFUSES THE FILING AND NAMES THE ENTRY (hygiene) — by its place in the file, never
+#       by what matched — so that one entry is reworded and the file handed over again.
+#       THE RECORD IS COMPOSED FROM THIS FILE (the plan's K3), and the file is THE HOME OF
+#       WHO REPORTED A ROW (state: a row's `reporters`): the entries name the handed
+#       findings folded into each row, and nothing else writes that.
+#       TAKEN IN A RUN WITH A QUEUE — in a run without an order the writer is refused
+#       (bad-value), nothing is written, and a triage returns its entries as it always did —
+#       for a round the run has begun, or the one the state hands a `test` stage.
+#       Prints ITS DIGEST, one line, with no text of an entry in it — what a triage's
+#       return is held to: {"triage": the path, "sha256": the hash of the file's bytes,
+#       "round", "reporter", "attempt", "handed": {source: count}, "findings": how many in
+#       all, "entries": [{key, found, grade, class: `<kind> <origin>` — the class the row
+#       has, or will have}], "counts": {entries, new, again, grades: {grade: n}, classes:
+#       {class: n}}, "leads": the keys entered as a lead for lack of their kind's
+#       evidence}.
+#
 #   dev/stabilize-record item-set --run R [--scratch DIR]... <items.json
 #       The run's test set, item by item — one JSON object per instrument item, or an
 #       array of them:
@@ -780,6 +863,19 @@
 #                                the row yet}. Until it does, the row is the state's
 #                                alone: read by its key (row), in the queue by its class,
 #                                and in no table
+#                        reporters  ONLY ON A ROW THAT HAS ANY (a run with a queue): WHO
+#                                REPORTED IT, AS DATA — the reporters whose findings a
+#                                triage folded into the row, each as `r<N> <reporter>`,
+#                                sorted: of every rendered report of a triage among a
+#                                round's `test` reports (triage), each source an entry
+#                                under this key folds that is A REPORTER OF THAT ROUND — it
+#                                has a report among the round's reports. A source that is
+#                                none — a red run's key, the rows nobody graded — is no
+#                                agent. FOUND AGAIN ADDS: a later triage's entry under the
+#                                key adds its own; two attempts of one reporter in a
+#                                round are one agent. Its one home is the file the triage
+#                                handed its entries over as: no row, no patch and no fact
+#                                says it.
 #                        class   ONLY ON A ROW THAT CARRIES ONE (ledger-add): {kind, given
 #                                — what a lead was given as without its evidence, or null
 #                                — origin, parent, code, site, evidence}; null where the
@@ -913,19 +1009,24 @@
 #                                      per site a row's class carries (ledger-add), the
 #                                      DISTINCT AGENTS that reported such a row in the run so
 #                                      far, the rows, and how many of them name no agent.
-#                                      AN AGENT is a reporter of a round, `r<N> <reporter>`:
-#                                      for an item a verifier handed on, that verifier, as
-#                                      its filed verdict names it (`handed_on.by`); for any
-#                                      other row, a reporter with a report among the
+#                                      AN AGENT is a reporter of a round, `r<N> <reporter>`.
+#                                      WHERE THE RECORD HOLDS A ROW'S REPORTERS AS DATA, THEY
+#                                      ARE READ, AND NOTHING ELSE IS: the verifier that
+#                                      handed the row on, as its filed verdict names it
+#                                      (`handed_on.by`), and the reporters whose findings a
+#                                      triage folded into the row (`reporters`: the plan's
+#                                      K2) — a finding found again adds its own. ONLY FOR A
+#                                      ROW THAT HAS NEITHER — a seeded row, a red run's, a
+#                                      row no triage's entries name — the one rule over its
+#                                      `source` cell: a reporter with a report among the
 #                                      reports of the row's round whose name OPENS the
-#                                      row's `source`, or a part of it after `;`, `,`, a
-#                                      line break or `and`. IT COUNTS ROWS AND WHO REPORTED
-#                                      THEM, AND READS NO REPORT: `source` is free text that
-#                                      nothing holds to a form, so a reporter it names any
-#                                      other way is not counted — the row is then `unnamed`,
-#                                      which is where an undercount shows — nor is a second
-#                                      agent that found a row again (the row keeps its
-#                                      source), nor a code a report only mentions; two
+#                                      cell, or a part of it after `;`, `,`, a line break
+#                                      or `and`. That cell is free text which nothing
+#                                      holds to a form, so a reporter it names any other
+#                                      way is not counted: the row is then `unnamed`,
+#                                      which is where an undercount shows. IT COUNTS ROWS
+#                                      AND WHO REPORTED THEM, AND READS NO REPORT'S PROSE: a
+#                                      code a report only mentions is not in it; two
 #                                      attempts of one reporter in a round are one agent,
 #                                      and a code is its cell, spelled as it is. In the
 #                                      order of the names, never of the numbers: NOTHING IS
@@ -1598,8 +1699,8 @@
 # agent composed — a here-document, or a redirect: a command no permission rule can
 # name. With --from the agent writes the text to a file with its file tool, and the call
 # is ONE plain invocation: `report` (its report), `scope-set` (the round's scope) and
-# `apply` (a record's batch, with --sha256) — and a fourth since, `verdict` (a verifier's
-# filing). The file is read as stdin would be — the
+# `apply` (a record's batch, with --sha256) — and two since: `verdict` (a verifier's
+# filing) and `triage` (the entries a triage hands over). The file is read as stdin would be — the
 # same bytes give the same write, and every rule of the writer holds — and stdin is not
 # read. A file that cannot be read is refused (bad-value). The other writers are called
 # by nobody but a batch, which carries their text.
@@ -1655,6 +1756,11 @@
 #               awaits a verdict — between the two records of a `test` stage. It writes
 #               one file and no table, so it lifts no stop: what it changes is what the
 #               state reads of that file, and a file that stops counting changes it back.
+#   handed      triage: in a run with a queue, for a round the run has begun or the one
+#               the state hands a `test` stage — where a report is taken. It writes one
+#               file and no table, so it lifts no stop: the record of the stage is what
+#               writes a row, and what it changes before that is who the state says
+#               reported a row the ledger already holds.
 #   anywhere    ledger-add, ledger-set, bound-set, item-set: the ledger, the declared
 #               bounds and the test set are held to no position. A finding is added by
 #               whichever stage finds it, and at the opening; a disposition is a fixer's
@@ -1782,7 +1888,9 @@
 #                     item a round has run or owes a run keeps its clause, runs, doors
 #                     and registries; or a row that has a verdict keeps its kind; or a
 #                     finding has its filed verdict in the round, or a recorded one; or a
-#                     caller says a verdict for a finding whose verdict is filed
+#                     caller says a verdict for a finding whose verdict is filed; or a
+#                     triage hands its entries over a second time for an attempt, or
+#                     says `new` under a key the run holds
 #    7  bad-value     a value outside its vocabulary, a malformed row, a report that is
 #                     not text; a file named by --from that cannot be read, or that is
 #                     not the file --sha256 names; an outcome word for a held check —
@@ -1800,14 +1908,20 @@
 #                     lead, or is not outside it, or in a run that has no queue; a
 #                     filing without its report, under a reporter that is not the key's,
 #                     of an attempt nobody began, on another binary, for a row that
-#                     awaits no verdict, or in a run without an order
+#                     awaits no verdict, or in a run without an order; the entries of a
+#                     triage with a handed finding in no entry or in two, with a finding
+#                     found again that brings a row's cells, or in a run without an order;
+#                     a report that opens as a triage's rendered entries and is not that
+#                     rendering, or is handed to `report`
 #    8  no-such-row   ledger-set names a key the ledger lacks, or result-set an item the
 #                     test set lacks; a row is handed on under a parent the ledger lacks;
 #                     a key is put into the queue that the ledger lacks; a verdict is
-#                     filed for a key that is no row
+#                     filed for a key that is no row; a triage says `again` of a key
+#                     that is no row
 #    9  fence         the file would redden a standing fence, which is named
 #   10  host-path     a host path the placeholders could not replace
-#   11  hygiene       the public-hygiene scan found a hit
+#   11  hygiene       the public-hygiene scan found a hit — in the entries a triage
+#                     hands over, named by the entry
 #   12  did-not-run   a scanner could not run
 #   13  corrupt       a table is not the one this script writes, or holds a cell it
 #                     does not write — the clause table too, which is the one the item
@@ -2127,6 +2241,23 @@ NO_WORD = "no-word"
 # read of it (state: view, `named`).
 SOURCE_BREAKS = re.compile(r";|,|<br>|\band\b")
 SOURCE_NAMES = re.compile(r"`?(%s)(?![A-Za-z0-9_-])" % SLUG.pattern)
+# THE ENTRIES A TRIAGE HANDS OVER (the build plan of the reshaped `test` stage, §5, K2) reach
+# the run as ONE FILE: the triage's report, RENDERED from them, which holds them as data.
+# The line such a report opens with; the members of the record it holds, and of an entry, in
+# the order the file holds them — a file is the text this script renders from its own
+# entries, to the byte, or it is no rendering; what a triage says of every entry, and the
+# cells of a ledger row a NEW finding brings and one found again does not; how a count and
+# a folded finding are spelled; and where a finding a triage keys comes from, which no
+# triage says: an instrument's own (`hunt`).
+TRIAGE_OPENS = "<!-- the entries a triage handed over, rendered by dev/stabilize-record and never written by hand -->"
+TRIAGED_FIELDS = ("round", "reporter", "attempt", "handed", "entries")
+ENTRY_FIELDS = ("key", "found", "grade", "bound", "why", "folds", "doctype", "door", "clause", "repro", "kind", "given", "code", "site", "evidence")
+ENTRY_SAID = ("key", "found", "grade", "why", "folds")
+ENTRY_ROW = ("doctype", "door", "clause", "repro")
+FOUND = ("new", "again")
+COUNT = re.compile(r"0|[1-9][0-9]{0,5}")
+FOLD = re.compile(r"(%s) ([1-9][0-9]{0,5})" % SLUG.pattern)
+TRIAGED_ORIGIN = SAID_ORIGINS[0]
 # A released version, as the previous release's fact names it.
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?")
 # The scope a round is started with when its invocation names none.
@@ -2191,6 +2322,8 @@ CHECKS = ("check-reports", "check-ledger")
 #   filed      a verdict: in the latest round of a run with a queue, once that round's
 #              record names the binary its candidate was driven as, for a row that awaits
 #              a verdict — between the two records of a `test` stage
+#   handed     the entries of a triage: in a run with a queue, where a report of the round
+#              is taken — one file and no table
 #   by-fact    by each fact the call names · by-call  by each call of the batch
 WRITERS = {
     "report": "a-round",
@@ -2206,6 +2339,7 @@ WRITERS = {
     "item-set": "anywhere",
     "apply": "by-call",
     "verdict": "filed",
+    "triage": "handed",
 }
 READERS = ("state", "item", "item-doors", "untriaged", "row", "pending", "check-reports", "check-ledger", "gate-check", "vet")
 KEEPERS = ("discard", "settle", "recover", "set-aside")
@@ -3345,6 +3479,9 @@ def report(args):
         refuse("bad-value", "the report on stdin is empty, or is not text")
     if text.rstrip().rsplit("\n", 1)[-1].strip() != REPORT_ENDS:
         refuse("truncated", "the report on stdin does not end with the line `%s`: it was cut off on its way, or its reporter never finished it; nothing was written" % REPORT_ENDS)
+    if text.startswith(TRIAGE_OPENS):
+        # THE ENTRIES A TRIAGE HANDED OVER ARE WRITTEN BY `triage`, AND BY NOTHING ELSE.
+        refuse("bad-value", "the report on stdin opens as the entries a triage handed over, rendered by this script — that file is written by `dev/stabilize-record triage`, from the entries, and by nothing else; nothing was written")
     text = public(text, scratch)
     if not text.endswith("\n"):
         text += "\n"
@@ -3356,11 +3493,7 @@ def ledger_add(args):
     scratch = scratch_roots(args)
     given = [ledger_row(row, scratch) for row in json_rows("ledger row")]
     one_writer(run_dir)
-    # IN A RUN WITH AN ORDER EVERY ROW NAMES ITS KIND: the queue is ranked by a row's class,
-    # and a row takes its class here and never later.
-    bare = [key for key, _, made in given if made is None]
-    if bare and has_queue(run_dir):
-        refuse("bad-value", "row %s: it names no `kind` (%s), and the run holds an order — it has a queue, which is ranked by a row's class: in such a run every row is added with its kind, its kind's evidence, and where it comes from (`origin`, or `parent`), a finding found again too. Nothing was written" % (", ".join(bare), ", ".join(KINDS)))
+    hold_kinds(run_dir, given)
     hold_to_the_list(run_dir, [("row %s" % key, cells[6]) for key, cells, _ in given])
     rel, above, rows = read_ledger(run_dir)
     keys = unique_rows(rel, rows)
@@ -3403,6 +3536,16 @@ def ledger_add(args):
         # A LEAD for lack of their kind's evidence.
         printed.update(classes=classes_rel, leads=leads)
     say(json.dumps(printed))
+
+
+def hold_kinds(run_dir, given):
+    """IN A RUN WITH AN ORDER EVERY ROW NAMES ITS KIND: the queue is ranked by a row's class,
+    and a row takes its class when it is added and never later. `given` is rows as
+    `ledger_row` read them — the rows of a `ledger-add`, and the new findings among the
+    entries a triage hands over (triage), which are the rows a record then adds."""
+    bare = [key for key, _, made in given if made is None]
+    if bare and has_queue(run_dir):
+        refuse("bad-value", "row %s: it names no `kind` (%s), and the run holds an order — it has a queue, which is ranked by a row's class: in such a run every row is added with its kind, its kind's evidence, and where it comes from (`origin`, or `parent`), a finding found again too. Nothing was written" % (", ".join(bare), ", ".join(KINDS)))
 
 
 def hold_census(run_dir, ledger_rel, keys):
@@ -4226,6 +4369,309 @@ def verdict(args):
     say(json.dumps({"verdict": rel, "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(), "key": key, "word": word, "regression": regression, "unknown": unknown, "handed_on": [{name: item[name] for name in ("key", "proposed", "kind", "origin", "beyond")} for item in handed], "leads": [item["key"] for item in handed if item["kind"] == "lead"]}))
 
 
+# --- the entries a triage hands over ------------------------------------------------------
+
+
+def handed_words(words):
+    """HOW MANY FINDINGS EACH SOURCE HANDED A TRIAGE, as {source: count} in the caller's own
+    order — from the caller's plain words, `<source>=<count>`: a source a slug, a count a
+    whole number, 0 for a source that handed none, and no source twice."""
+    handed = {}
+    for word in words:
+        source, said_, count = word.rpartition("=")
+        if not said_:
+            refuse("bad-value", "%s is not `<source>=<count>`: how many findings a source handed the triage is said as a plain word, the source and its count" % shown(word))
+        slug(source, "a source that handed the triage findings")
+        if not COUNT.fullmatch(count):
+            refuse("bad-value", "%s: the count of the findings %s handed is a whole number, 0 for none, not %s" % (shown(word), source, shown(count)))
+        if source in handed:
+            refuse("bad-value", "the source %s is given more than once" % source)
+        handed[source] = int(count)
+    return handed
+
+
+def folds_of(entry, what, handed):
+    """WHICH HANDED FINDINGS AN ENTRY FOLDS, in one spelling — `<source> <number>`, the
+    sources in the order the caller named them and each source's numbers rising. An entry
+    that folds nothing, a source nobody handed and a number that is none of its source's are
+    refused. A number an entry says twice is kept twice: that each handed finding is in
+    exactly one entry is the partition's to say (partition), which then names it."""
+    given = entry["folds"]
+    if not isinstance(given, dict) or not given:
+        refuse("bad-value", "%s: `folds` is the handed findings the entry folds — a JSON object that gives each source the numbers of its findings, `{\"<source>\": [1, 2]}` — and it names at least one: a triage grades what it was handed, and nothing else; not %s" % (what, shown(given)))
+    folds = []
+    for source, numbers in given.items():
+        if source not in handed:
+            refuse("bad-value", "%s: it folds a finding of %s, and no source of that name handed this triage any — the sources, as the call names them: %s" % (what, shown(source), ", ".join(handed) or "none"))
+        if not isinstance(numbers, list) or not numbers or not all(type(number_) is int and 1 <= number_ <= handed[source] for number_ in numbers):
+            refuse("bad-value", "%s: of %s it folds %s — and what an entry folds of a source is the numbers of that source's findings, a non-empty array of whole numbers from 1 to the %d it handed" % (what, source, shown(numbers), handed[source]))
+        folds += [(source, number_) for number_ in numbers]
+    order = list(handed)
+    return ["%s %d" % fold for fold in sorted(folds, key=lambda fold: (order.index(fold[0]), fold[1]))]
+
+
+def folds_said(folds):
+    """What an entry folds, as one cell says it: each source with its numbers, source by
+    source. It opens with the source's name, and so does each part after a `;` — which is
+    how a row's `source` cell names a reporter (state: view, `named`)."""
+    by = {}
+    for fold in folds:
+        source, _, number_ = fold.partition(" ")
+        by.setdefault(source, []).append(number_)
+    return "; ".join("%s %s" % (tick(source), ", ".join(numbers)) for source, numbers in by.items())
+
+
+def partition(handed, entries):
+    """THE PARTITION: every number of every source — 1 to the count the caller named — is in
+    exactly one entry, or the call is refused, naming each finding that is in no entry and
+    each that is in more than one. The counts are the caller's words, never the file's."""
+    places = {}
+    for n, entry in enumerate(entries, 1):
+        for fold in entry["folds"]:
+            places.setdefault(fold, []).append(n)
+    every = ["%s %d" % (source, number_) for source, count in handed.items() for number_ in range(1, count + 1)]
+    nowhere = [fold for fold in every if fold not in places]
+    twice = ["%s (%s)" % (fold, "twice in entry %d" % places[fold][0] if len(set(places[fold])) == 1 else "entries %s and %d" % (", ".join(str(n) for n in places[fold][:-1]), places[fold][-1])) for fold in every if len(places.get(fold, ())) > 1]
+    if nowhere or twice:
+        refuse("bad-value", "the %d finding(s) the triage was handed are not each in exactly one entry — %s. Every handed finding ends in an entry, a dismissed one too, and in one only: a finding that is the same as another is folded into that entry. Nothing was written" % (len(every), "; ".join(["in no entry: %s" % ", ".join(nowhere)] * bool(nowhere) + ["in more than one entry: %s" % ", ".join(twice)] * bool(twice))))
+
+
+def entry_of(n, entry, round_number, handed, scratch):
+    """ONE ENTRY of the file a triage hands over: (the entry as the file stores it —
+    ENTRY_FIELDS, each text as a table's cell would hold it; for a NEW finding the row it
+    will be, as `ledger_row` reads a row, and None for one found again; its grade as a
+    table's cell says it, with the bound it cites). IT IS HELD BY THE
+    FUNCTIONS A LEDGER ROW AND A TRIAGE ENTRY ARE HELD BY, and by no check of its own: its
+    grade by `triage_entry`, its row and its class by `ledger_row` — so a kind without its
+    evidence is a lead here because it is one there. A FINDING FOUND AGAIN BRINGS NONE OF A
+    ROW'S CELLS: the row keeps its own."""
+    fields(entry, ENTRY_SAID, ("bound",) + ENTRY_ROW + KIND_FIELDS, "an entry of a triage")
+    key = slug(entry["key"], "key")
+    what = "entry %d (%s)" % (n, key)
+    found = one_of(entry["found"], FOUND, what + ": found")
+    _, graded, _ = triage_entry({name: entry[name] for name in ("key", "grade", "bound") if name in entry})
+    stored = dict.fromkeys(ENTRY_FIELDS)
+    stored.update(key=key, found=found, grade=entry["grade"], bound=entry.get("bound"), why=as_data(said(entry, "why", what, scratch)), folds=folds_of(entry, what, handed))
+    if found == "again":
+        cells = [name for name in ENTRY_ROW + KIND_FIELDS if name in entry]
+        if cells:
+            refuse("bad-value", "%s: it is found again, and says %s — a finding found again is the row its key names, and that row keeps its own cells: an entry for it says its key, `found`, its grade, why, and what it folds, and nothing of a row" % (what, ", ".join(cells)))
+        return stored, None, graded[0]
+    lacks = [name for name in ENTRY_ROW if name not in entry]
+    if lacks:
+        refuse("bad-value", "%s: a new finding lacks %s — what its ledger row needs, as ledger-add takes it" % (what, ", ".join(lacks)))
+    row = {"key": key, "doctype": entry["doctype"], "round": round_number, "source": folds_said(stored["folds"])}
+    row.update({name: entry[name] for name in ENTRY_ROW[1:] + KIND_FIELDS if name in entry})
+    if "kind" in entry:
+        row["origin"] = TRIAGED_ORIGIN
+    _, cells, made = ledger_row(row, scratch)
+    stored.update(doctype=entry["doctype"], door=as_data(cells[4]), clause=as_data(cells[5]), repro=as_data(cells[9]))
+    if made is not None:
+        given = made[1][len(GIVEN):] if made[1].startswith(GIVEN) else None
+        stored.update(kind="lead" if given else made[1], given=given, **{name: None if text == "-" else as_data(text) for name, text in zip(("code", "site", "evidence"), made[4:])})
+    return stored, (key, cells, made), graded[0]
+
+
+def triage_text(record):
+    """A TRIAGE'S REPORT, RENDERED from the entries it handed over — a pure function of the
+    record the file holds as data (TRIAGED_FIELDS): the same entries give the same bytes,
+    and a text the entries it holds do not render is no rendering (rendered). Nothing of it
+    is read from the run: what an entry found again says of its row is the row's, and is
+    not here. Every text of an entry stands inside the data block, one line a member, so
+    no line of the file opens with one."""
+    entries, handed = record["entries"], record["handed"]
+    new = sum(entry["found"] == "new" for entry in entries)
+    count = lambda n, one, many: "%d %s" % (n, one if n == 1 else many)
+    lines = [
+        TRIAGE_OPENS,
+        "# Round %d — the triage of %s, attempt %d" % (record["round"], tick(record["reporter"]), record["attempt"]),
+        "",
+        "Rendered by `dev/stabilize-record triage` from the one file of entries the triage handed over: every entry is typed once, there. The table is read off the entries below it, and so is the record of the stage; a file under this name that is not this text is not that triage's report.",
+        "",
+        "Handed %s by %s, each in exactly one entry: %s. %s: %d new, %d found again." % (count(sum(handed.values()), "finding", "findings"), count(len(handed), "source", "sources"), ", ".join("%s %d" % (tick(source), n) for source, n in handed.items()) or "none", count(len(entries), "entry", "entries"), new, len(entries) - new),
+        "",
+        "## The entries",
+        "",
+    ] + header(["#", "key", "new or found again", "grade", "kind", "folds"])
+    for n, entry in enumerate(entries, 1):
+        grade = OUT_OF_SCOPE + entry["bound"] if entry["bound"] else entry["grade"]
+        kind = "-" if entry["kind"] is None else GIVEN + entry["given"] if entry["given"] else entry["kind"]
+        lines.append("| %d | %s | %s | %s | %s | %s |" % (n, tick(entry["key"]), "new" if entry["found"] == "new" else "found again", grade, kind, folds_said(entry["folds"])))
+    lines += ["", "## The entries, as data", "", "```json", json.dumps(record, indent=1, ensure_ascii=False), "```", "", REPORT_ENDS]
+    return "\n".join(lines) + "\n"
+
+
+def rendered(text):
+    """THE RECORD A RENDERED REPORT HOLDS — or None where the text is not one this script
+    rendered from the entries it holds: not that text, to the byte. The file is its own
+    seal: a hand's edit of the table, of a sentence or of the data leaves a text its data
+    does not render. (A hand that edits the data and renders it again is told from the
+    writer by nothing: who wrote a file is not holdable.)"""
+    lines = text.split("\n")
+    try:
+        record = json.loads("\n".join(lines[lines.index("```json") + 1 : len(lines) - 1 - lines[::-1].index("```")]))
+        shaped = (
+            isinstance(record, dict)
+            and tuple(record) == TRIAGED_FIELDS
+            and type(record["round"]) is int
+            and type(record["attempt"]) is int
+            and isinstance(record["reporter"], str)
+            and isinstance(record["handed"], dict)
+            and all(type(count) is int for count in record["handed"].values())
+            and isinstance(record["entries"], list)
+        )
+        for entry in record["entries"] if shaped else []:
+            shaped = shaped and (
+                isinstance(entry, dict)
+                and tuple(entry) == ENTRY_FIELDS
+                and isinstance(entry["key"], str)
+                and bool(SLUG.fullmatch(entry["key"]))
+                and entry["found"] in FOUND
+                and entry["grade"] in TRIAGE_GRADES
+                and isinstance(entry["folds"], list)
+                and all(isinstance(fold, str) and FOLD.fullmatch(fold) for fold in entry["folds"])
+                and all(entry[name] is None or isinstance(entry[name], str) for name in ENTRY_FIELDS if name != "folds")
+                and (entry["kind"] is None) == (entry["found"] == "again")
+            )
+        if not shaped or triage_text(record) != text:
+            return None
+    except (ValueError, KeyError, TypeError, AttributeError, RecursionError):
+        return None
+    return record
+
+
+def rendering_at(text, parts):
+    """A REPORT, HELD AS THE ENTRIES A TRIAGE HANDED OVER WHERE IT OPENS AS THEM — `parts` its
+    path below the run's directory: None for a report that opens as no rendering; the
+    record it holds, where it is the text this script renders from its own entries, under
+    the name its entries say — a `test` report of that round, reporter and attempt; else
+    the refusal (bad-value). It is what the vet holds such a file to at the report check,
+    the commit and the push, and what the state reads one by."""
+    if not text.startswith(TRIAGE_OPENS + "\n"):
+        return None
+    record = rendered(text)
+    named = REPORT_NAME.fullmatch(parts[-1])
+    if record is None:
+        refuse("bad-value", "it opens as the entries a triage handed over, rendered by this script, and is not the text those entries render — a hand wrote in it, or it never was one: `dev/stabilize-record triage` writes that file, from the entries, and nothing else does")
+    if len(parts) != 4 or parts[2] != "test" or named is None or (record["round"], record["reporter"], record["attempt"]) != (int(parts[0][1:]), named.group(1), int(named.group(2))):
+        refuse("bad-value", "it is the rendered entries of round %d's triage %s, attempt %d, and lies under another name: a rendering is the `test` report of the triage that handed its entries over, and of no other reporter, attempt or round" % (record["round"], record["reporter"], record["attempt"]))
+    return record
+
+
+def triaged_in(run_dir, numbers):
+    """THE ENTRIES TRIAGES HANDED OVER in the rounds `numbers` — [(round, the report, its
+    record)], by round, reporter and attempt: every `test` report of a round that is this
+    script's rendering of the entries it holds, under its own name. A file that opens as a
+    rendering and is none is read by nothing here and REFUSED BY NOTHING HERE: the state
+    stays readable over it — the vet refuses it, and the report check sets it aside."""
+    opens = (TRIAGE_OPENS + "\n").encode("utf-8")
+    found = []
+    for number_ in numbers:
+        parts = ["r%d" % number_, "reports", "test"]
+        directory = below(run_dir, parts)
+        within = []
+        for name in os.listdir(directory) if os.path.isdir(directory) else []:
+            path, named = os.path.join(directory, name), REPORT_NAME.fullmatch(name)
+            if named is None or os.path.islink(path) or not os.path.isfile(path):
+                continue
+            try:
+                with open(path, "rb") as file:
+                    if file.read(len(opens)) != opens:
+                        continue
+                    record = rendering_at((opens + file.read()).decode("utf-8"), parts + [name])
+            except (OSError, ValueError, Refusal):
+                continue
+            within.append((named.group(1), int(named.group(2)), "/".join(ARTIFACTS + (os.path.basename(run_dir),) + tuple(parts) + (name,)), record))
+        found += [(number_, rel, record) for _, _, rel, record in sorted(within, key=lambda entry: entry[:3])]
+    return found
+
+
+def triage(args):
+    """A TRIAGE HANDS ITS ENTRIES OVER, ONCE (the header: triage): one file of the round — its
+    report, rendered from the entries, which holds them as data — and nothing of a table.
+    Each entry is held as the row it will be, the handed findings to the partition, and what
+    an entry says of its key to the ledger; its line is a digest."""
+    run_dir = open_run(args.run)
+    round_number = number(args.round, "round")
+    reporter = slug(args.reporter, "reporter")
+    attempt = number(args.attempt, "attempt")
+    scratch = scratch_roots(args)
+    handed = handed_words(args.names)
+    parts = ["r" + round_number, "reports", "test", "%s.a%s.md" % (reporter, attempt)]
+    rel = "/".join(ARTIFACTS + (args.run,) + tuple(parts))
+    given = json_stdin()
+    given = [given] if isinstance(given, dict) else given
+    if not isinstance(given, list) or not all(isinstance(entry, dict) for entry in given):
+        refuse("bad-value", "stdin must be the entries of a triage: a JSON array of objects, one an entry")
+    held = [entry_of(n, entry, int(round_number), handed, scratch) for n, entry in enumerate(given, 1)]
+    entries = [stored for stored, _, _ in held]
+    distinct([entry["key"] for entry in entries], "the entry under the key")
+    partition(handed, entries)
+    one_writer(run_dir)
+    # The state as it stands before the write: what the run is, and what its ledger holds.
+    read = standing(run_dir, args.run)
+    if "queue" not in read:
+        refuse("bad-value", "the entries of round %s's triage: the run holds no order, and so has no queue — a triage hands its entries over through this writer in a run with a queue (run-set: order), and in any other run it returns them as it always did; nothing was written" % round_number)
+    a_round(read, round_number, "the entries of round %s's triage" % round_number)
+    # AS THE ROWS THEY WILL BE: a new finding names its kind, and a grade cites a listed bound.
+    hold_kinds(run_dir, [row for _, row, _ in held if row is not None])
+    hold_to_the_list(run_dir, [("entry %d (%s)" % (n, stored["key"]), grade) for n, (stored, _, grade) in enumerate(held, 1)])
+    # WHAT AN ENTRY SAYS OF ITS KEY, HELD TO THE LEDGER — the rows of the state: the ledger's,
+    # and each item a filed verdict handed on — and to the key a red run of an item of the
+    # test set is filed under, whose row the stage's record files before it grades it.
+    rows = {finding["key"]: finding for finding in read["ledger"]}
+    red = {RED + item["item"] for item in read["items"]}
+    classes = []
+    for n, entry in enumerate(entries, 1):
+        key = entry["key"]
+        if entry["found"] == "new":
+            if key in rows or key in red:
+                refuse("exists", "entry %d (%s): it says `new`, and the run holds that key — %s. A finding that is the row found again says so (`found`: again) and brings none of its cells; a new finding takes a key of its own. Nothing was written" % (n, key, "a row of the ledger" if key in rows else "the key a red run of the item %s is filed under" % key[len(RED):]))
+            classes.append("%s %s" % (entry["kind"], TRIAGED_ORIGIN))
+        elif key in rows:
+            classes.append("%s %s" % (rows[key]["class"]["kind"], rows[key]["class"]["origin"]))
+        elif key in red:
+            classes.append("%s %s" % RED_CLASS)
+        else:
+            refuse("no-such-row", "entry %d (%s): it says `again`, and the run holds no row under that key — the ledger has none, no filed verdict handed one on, and it is no red run's key of an item of the test set. A finding the ledger does not hold is `new`, and brings what its row needs. Nothing was written" % (n, key))
+    record = dict(zip(TRIAGED_FIELDS, (int(round_number), reporter, int(attempt), handed, entries)))
+    text = triage_text(record)
+    publish(run_dir, parts, text, replace=False, taken="a triage hands its entries over once an attempt, as a report is written once: a re-run passes the next attempt")
+    try:
+        flush(run_dir)
+    except Refusal as refusal:
+        if refusal.kind != "hygiene":
+            raise
+        # A HIT REFUSES THE FILING AND NAMES THE ENTRY — by its place in the file, never by
+        # what matched: each entry scanned as a text of its own. Where that names none — the
+        # hit is in a name of the file's own — or cannot be asked, the first refusal stands.
+        try:
+            hits = scan_hits([("entry-%d" % n, json.dumps(entry, indent=1, ensure_ascii=False) + "\n") for n, entry in enumerate(entries, 1)])
+        except Refusal:
+            raise refusal
+        places = sorted(int(name[len("entry-"):]) for name in hits)
+        if not places:
+            raise
+        raise Refusal("hygiene", "the entries a triage handed over are stopped by the public-hygiene scan at %s of the file — by where, never by what: reword %s, and hand the file over again; nothing was written. What the scan said of the report it would have been: %s" % ("entry %d" % places[0] if len(places) == 1 else "the entries %s and %d" % (", ".join(str(n) for n in places[:-1]), places[-1]), "it" if len(places) == 1 else "them", refusal.detail), refusal.where)
+    grades, counted_ = {}, {}
+    for entry, word in zip(entries, classes):
+        grades[entry["grade"]] = grades.get(entry["grade"], 0) + 1
+        counted_[word] = counted_.get(word, 0) + 1
+    new = sum(entry["found"] == "new" for entry in entries)
+    say(json.dumps({
+        "triage": rel,
+        "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "round": int(round_number),
+        "reporter": reporter,
+        "attempt": int(attempt),
+        "handed": handed,
+        "findings": sum(handed.values()),
+        "entries": [{"key": entry["key"], "found": entry["found"], "grade": entry["grade"], "class": word} for entry, word in zip(entries, classes)],
+        "counts": {"entries": len(entries), "new": new, "again": len(entries) - new, "grades": grades, "classes": counted_},
+        "leads": [entry["key"] for entry in entries if entry["given"]],
+    }))
+
+
 # --- the state, and what follows from it ----------------------------------------------
 
 
@@ -4747,14 +5193,18 @@ def reporters_in(run_dir, number_):
 
 def named_by(finding, reporters):
     """THE AGENTS THAT REPORTED A ROW, AS FAR AS THE RECORD NAMES THEM — each as `r<N>
-    <reporter>`, a reporter of a round. For an item a verifier handed on: that verifier, as
-    the filed verdict names it. For any other row: the reporters with a report in the row's
-    round (`reporters`) whose name OPENS the row's `source`, or a part of it. The cell is
-    free text and no vocabulary holds it; a reporter it names any other way is not read out
-    of it, and a row that names none this way has no agent here."""
+    <reporter>`, a reporter of a round. WHERE THE RECORD HOLDS THEM AS DATA, THEY ARE READ
+    AND NOTHING ELSE IS: the verifier that handed the row on, as the filed verdict names
+    it, and the reporters whose findings a triage folded into the row, as the entries it
+    handed over name them (the row's `reporters`) — a finding found again added its own.
+    ONLY FOR A ROW THAT HAS NEITHER: the reporters with a report in the row's round
+    (`reporters`) whose name OPENS the row's `source`, or a part of it. That cell is free
+    text and no vocabulary holds it; a reporter it names any other way is not read out of
+    it, and a row that names none this way has no agent here."""
     mark = finding.get("handed_on")
-    if mark is not None:
-        return ["r%d %s" % (mark["round"], mark["by"])]
+    stored = (["r%d %s" % (mark["round"], mark["by"])] if mark is not None else []) + finding.get("reporters", [])
+    if stored:
+        return sorted(set(stored))
     opens = [SOURCE_NAMES.match(part.strip()) for part in SOURCE_BREAKS.split(finding["source"])]
     return sorted({"r%d %s" % (finding["round"], found.group(1)) for found in opens if found and found.group(1) in reporters.get(finding["round"], ())})
 
@@ -4900,7 +5350,7 @@ def view_text(read):
         "",
         "## How often a refusal's code and a site are named — information, on which nothing is ranked, promoted, merged or ordered",
         "",
-        "For each code and each site a row of the ledger carries: how many distinct agents reported such a row in the run so far, which, on how many rows — and on how many of those rows the record names no reporter. An agent is a reporter of a round: the verifier that handed the row on, as its filed verdict names it; for any other row, a reporter with a report in the row's round whose name opens the row's `source`, or a part of it. It counts rows and who reported them, and reads no report: a code a report only mentions is not in it.",
+        "For each code and each site a row of the ledger carries: how many distinct agents reported such a row in the run so far, which, on how many rows — and on how many of those rows the record names no reporter. An agent is a reporter of a round. Where the record holds a row's reporters as data, they are read and nothing else is: the verifier that handed the row on, as its filed verdict names it, and the reporters whose findings a triage folded into the row, as the entries it handed over name them — a finding found again adds its own. Only for a row that has neither: a reporter with a report in the row's round whose name opens the row's `source`, or a part of it. It counts rows and who reported them, and reads no report's prose: a code a report only mentions is not in it.",
     ]
     for what in ("code", "site"):
         counts = shown["named"][what + "s"]
@@ -5496,6 +5946,17 @@ def read_state(run_dir, run):
             **({"reason": record["reason"]} if record["reason"] else {}),
             "filed": entry["file"],
         }
+    # … AND WHO REPORTED A ROW, AS DATA (the plan's K2): the entries a triage handed over name
+    # the handed findings each entry folds, by source and number, and a source that is a
+    # reporter of that triage's round is an agent that reported the row. FOUND AGAIN ADDS:
+    # every triage's entry under a key adds its own. The file is the one home of it.
+    reporters = {held["round"]: reporters_in(run_dir, held["round"]) for held in rounds} if order is not None else {}
+    folded = {}
+    for number_, _, record in triaged_in(run_dir, sorted(reporters)):
+        for entry in record["entries"]:
+            sources = {fold.partition(" ")[0] for fold in entry["folds"]} & reporters[number_]
+            if sources:
+                folded.setdefault(entry["key"], set()).update("r%d %s" % (number_, source) for source in sources)
     spent = spent_in(triage, filings, rounds[-1]["round"]) if rounds else 0
     limit = facts.get("budget")
     budget = {"limit": limit, "spent": spent, "left": None if limit is None else max(limit - spent, 0)}
@@ -5541,6 +6002,8 @@ def read_state(run_dir, run):
         if key in marks:
             # WHO HANDED IT ON, and where that is held: the filed verdict that minted its key.
             finding["handed_on"] = marks[key]
+        if key in folded:
+            finding["reporters"] = sorted(folded[key])
         # IN A RUN WITH A QUEUE (the header's second table) a row AWAITS A VERDICT where
         # triage sent it on and none is on record, or a verifier handed it on and nobody
         # graded it — what is handed on enters without a grade. Such a row is no triage's.
@@ -5664,7 +6127,7 @@ def read_state(run_dir, run):
         # beside are one read.
         read["view"] = None
         if rounds:
-            read["view"] = stop_view(findings, rounds[-1]["round"], order, queue, {held["round"]: reporters_in(run_dir, held["round"]) for held in rounds})
+            read["view"] = stop_view(findings, rounds[-1]["round"], order, queue, reporters)
             text = view_text(read)
             read["view"] = {
                 "round": rounds[-1]["round"],
@@ -6178,6 +6641,10 @@ def vet_files(run_dir, run, names, subject):
             except ValueError:
                 refuse("bad-value", "it is not UTF-8 text")
             held_to_the_rules(text, report)
+            if report:
+                # THE ENTRIES A TRIAGE HANDED OVER ARE VETTED AS THEM: a report that opens
+                # as a rendering is the text its own entries render, under its own name.
+                rendering_at(text, parts)
             if check:
                 # A HELD CHECK'S VERDICT IS VETTED AS ONE: it is the verdict the result
                 # of that run of that item was written from, and says the word it says.
@@ -6374,6 +6841,8 @@ def vet_range(revs):
                 except ValueError:
                     refuse("bad-value", "it is not UTF-8 text")
                 held_to_the_rules(text, report)
+                if report:
+                    rendering_at(text, parts)
                 if filed:
                     record = sealed(text)
                     if record is None:
@@ -6498,6 +6967,7 @@ def arguments(argv):
     command("scope-set", scope_set, [("round", True), ("from", False)], writes=True)
     command("triage-set", triage_set, [("round", True)])
     command("verdict", verdict, [("round", True), ("reporter", True), ("attempt", True), ("from", False)], writes=True)
+    command("triage", triage, [("round", True), ("reporter", True), ("attempt", True), ("from", False)], writes=True, names=True)
     command("item-set", item_set, [], writes=True)
     command("round-set", round_set, [("round", True)])
     command("run-set", run_set, [])
