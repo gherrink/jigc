@@ -18,8 +18,16 @@
 //!
 //! **A case is data** ([`Case`]): the site as the committed list of refusal sites names it,
 //! the cause in words, the state, the refusing argv, the acts, what must hold afterwards,
-//! and the files outside the repository whose bytes must not change. It holds no closure,
+//! and the files whose bytes must not change — outside the repository, and inside it where
+//! the command has no business touching them ([`Case::untouched`]). It holds no closure,
 //! so nothing a case does can go around the runner.
+//!
+//! **A command that removes is held to what is gone and to what still stands**
+//! ([`Check::Absent`], [`Check::Lacks`], [`Check::Contains`]). `jigc setup` refuses over a
+//! file it is to write, and what must hold once its route is followed is that file;
+//! `jigc uninstall` refuses over something it is to take away, and what must hold is that
+//! it is gone — from the tree, or from the file it was merged into — and that somebody's
+//! own lines in that file are still there.
 //!
 //! **What the runner does, in order.** A sandbox — `repo/`, `home/`, `outside/` under one
 //! scratch root — holds a repository with one commit and no `jigc setup`, built under the
@@ -300,6 +308,15 @@ pub enum Check {
     /// git ignores this path, from the repository root — asked of git itself
     /// (`git check-ignore`), which is what says whether an ignore file is in force.
     GitIgnores(&'static str),
+    /// Nothing stands at this place — no file, no directory, no link: what a command that
+    /// removes is refused over, once its route is followed.
+    Absent(Place),
+    /// The regular file at this place holds these bytes somewhere in it — somebody's own
+    /// lines in a file the command edits, which must still be there afterwards.
+    Contains(Place, &'static str),
+    /// No regular file at this place holds these bytes: what the command exists to take
+    /// out of a file is out of it, or the file is gone.
+    Lacks(Place, &'static str),
 }
 
 /// One case of the catalog: one refusal site in one cause.
@@ -329,6 +346,11 @@ pub struct Case {
     /// Files under `outside/` whose bytes must be afterwards what they were before the
     /// refusing command ran. One that was absent must still be absent.
     pub witnesses: &'static [&'static str],
+    /// **Files inside the repository that the command has no business touching**, from the
+    /// repository root — somebody's own file that the product did not write: witnesses like
+    /// the ones outside, held the same way. A file the command is there to edit is no
+    /// witness; what must survive in one is a [`Check::Contains`].
+    pub untouched: &'static [&'static str],
     /// **A doubtful reading of the route's prose**, where the case rests on one: the two
     /// readings, in words. The case follows the printed words most literally and decides
     /// nothing; a marked case is listed for the human with its route.
@@ -887,10 +909,14 @@ impl Sandbox {
             .expect("make the script executable");
     }
 
-    fn witnesses(&self, names: &[&str]) -> Vec<Option<Vec<u8>>> {
-        names
-            .iter()
-            .map(|name| fs::read(self.outside().join(name)).ok())
+    /// What stands at each witness: the files under `outside/`, then the files inside the
+    /// repository a case names as ones the command has no business touching.
+    fn witnesses(&self, case: &Case) -> Vec<Option<Vec<u8>>> {
+        let outside = case.witnesses.iter().map(|name| self.outside().join(name));
+        let inside = case.untouched.iter().map(|name| self.repo().join(name));
+        outside
+            .chain(inside)
+            .map(|path| fs::read(path).ok())
             .collect()
     }
 
@@ -1175,6 +1201,14 @@ impl Sandbox {
         Ok("committed".to_string())
     }
 
+    /// The bytes of the regular file at `path` — `None` where no regular file stands there,
+    /// asked without following a link.
+    fn regular(&self, path: &Path) -> Option<Result<Vec<u8>, String>> {
+        fs::symlink_metadata(path)
+            .is_ok_and(|entry| entry.is_file())
+            .then(|| fs::read(path).map_err(|e| e.to_string()))
+    }
+
     fn check(&self, check: Check) -> Result<(), String> {
         match check {
             Check::RegularFile(place) => {
@@ -1205,8 +1239,46 @@ impl Sandbox {
                     Err(format!("git does not ignore `{path}` ({})", ran.exit()))
                 }
             }
+            Check::Absent(place) => {
+                let path = self.at(place);
+                match fs::symlink_metadata(&path) {
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                    Err(e) => Err(format!("`{}` cannot be asked about: {e}", path.display())),
+                    Ok(_) => Err(format!("`{}` still stands", path.display())),
+                }
+            }
+            Check::Contains(place, bytes) => {
+                let path = self.at(place);
+                match self.regular(&path) {
+                    Some(Ok(held)) if contains(&held, bytes.as_bytes()) => Ok(()),
+                    Some(Ok(_)) => Err(format!(
+                        "`{}` does not hold `{}`",
+                        path.display(),
+                        bytes.escape_debug()
+                    )),
+                    Some(Err(why)) => Err(format!("`{}` cannot be read: {why}", path.display())),
+                    None => Err(format!("`{}` is no regular file", path.display())),
+                }
+            }
+            Check::Lacks(place, bytes) => {
+                let path = self.at(place);
+                match self.regular(&path) {
+                    Some(Ok(held)) if contains(&held, bytes.as_bytes()) => Err(format!(
+                        "`{}` still holds `{}`",
+                        path.display(),
+                        bytes.escape_debug()
+                    )),
+                    Some(Ok(_)) | None => Ok(()),
+                    Some(Err(why)) => Err(format!("`{}` cannot be read: {why}", path.display())),
+                }
+            }
         }
     }
+}
+
+/// Whether `held` holds `bytes` somewhere in it. Nothing is held by every file.
+fn contains(held: &[u8], bytes: &[u8]) -> bool {
+    bytes.is_empty() || held.windows(bytes.len()).any(|window| window == bytes)
 }
 
 impl Drop for Sandbox {
@@ -1395,7 +1467,7 @@ fn followed(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed
     let code = case.code();
     let sandbox = Sandbox::new(case.name, under_test);
     sandbox.plant(binary, case.state);
-    let before = sandbox.witnesses(case.witnesses);
+    let before = sandbox.witnesses(case);
 
     let stand = sandbox.at(case.from);
     let refused = sandbox.run(
@@ -1472,12 +1544,21 @@ fn followed(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed
         }
     }
 
-    let after = sandbox.witnesses(case.witnesses);
-    for ((name, before), after) in case.witnesses.iter().zip(&before).zip(&after) {
+    let after = sandbox.witnesses(case);
+    let named = case
+        .witnesses
+        .iter()
+        .map(|name| format!("`outside/{name}`"))
+        .chain(
+            case.untouched
+                .iter()
+                .map(|name| format!("`{name}`, inside the repository,")),
+        );
+    for ((name, before), after) in named.zip(&before).zip(&after) {
         if before != after {
             seen.witness_changed = true;
             detail.push(format!(
-                "the witness `outside/{name}` changed: {}",
+                "the witness {name} changed: {}",
                 match (before, after) {
                     (Some(_), None) => "it is gone",
                     (None, Some(_)) => "it was created",

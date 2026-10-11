@@ -1,12 +1,12 @@
 # The route catalog's pilot — the findings its cases made, by key
 
-What a case of the route catalog ([route_catalog.rs](../../../../../crates/cli/tests/route_catalog.rs), cases in [route_catalog/setup.rs](../../../../../crates/cli/tests/route_catalog/setup.rs)) came out red with, where the small canary's file ([canary-one/findings.md](../canary-one/findings.md)) has no row for it. A key here is in that file's grammar and is what the suite's expected-red list names; the classification is the frame's ([route_case.rs](../../../../../crates/cli/tests/support/route_case.rs)). **Nothing here is a ruling, a grade or a word about the previous release**: each row is what one binary did on one day — this tree's debug build, macOS arm64, 2026-10-11 — when the printed route was followed by its own words. Sandbox paths are written `<sandbox>/…`.
+What a case of the route catalog ([route_catalog.rs](../../../../../crates/cli/tests/route_catalog.rs), cases in [route_catalog/setup.rs](../../../../../crates/cli/tests/route_catalog/setup.rs) and [route_catalog/uninstall.rs](../../../../../crates/cli/tests/route_catalog/uninstall.rs)) came out red with, where the small canary's file ([canary-one/findings.md](../canary-one/findings.md)) has no row for it. A key here is in that file's grammar and is what the suite's expected-red list names; the classification is the frame's ([route_case.rs](../../../../../crates/cli/tests/support/route_case.rs)). **Nothing here is a ruling, a grade or a word about the previous release**: each row is what one binary did on one day — this tree's debug build, macOS arm64, 2026-10-11 — when the printed route was followed by its own words. Sandbox paths are written `<sandbox>/…`.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the canary's do for the cases listed under them ([DECISIONS.md](../../../../../DECISIONS.md) → *The route catalog's frame*).
 
 **Three of the keys are about a state only a variable reaches** — `JIGC_ADAPTERS_DIR` for two, `$HOME` taken away for one. Whether a route owes anything there is not said here.
 
-**The cases are those of every blocking site of `jigc setup`** — thirty-six sites, four of them with a reason and no case; `jigc uninstall` has none yet.
+**The cases are those of every blocking site of `jigc setup`** — thirty-six sites, four of them with a reason and no case — **and of nine of the eighteen blocking sites of `jigc uninstall`** (§4): the door, and three of the four guards over what `.jigc/` holds the only copy of.
 
 **A case's name says its cause and its way.** The cases of one cause are a group, and a name ends with the way the route was followed: `-removed`, `-pointed-at-a-committed-file`, `-pointed-at-a-new-file`, and each of those again with `-committed-and-` in front where the link was committed and the change was committed as the route's clause says.
 
@@ -251,3 +251,92 @@ Where the settings path leads to `CLAUDE.md`, the re-run is refused under the sa
 **Beside them, and green — the state each route's words are true of:** `setup-bootstrap-write-file-read-only`, `setup-reference-host-read-only`, `setup-settings-merge-file-read-only`, `setup-guide-write-file-read-only` (the named file may not be written); `setup-version-stamp-absent-workbench-read-only` (`.jigc` may not be written, over an install that stands); `setup-seeded-ignore-absent-root-read-only` (the root may not be written — *holds, operand implied*: the route prints no path for the root). Two more states the words are true of are red under keys of their own, in §1: a shut `.jigc` over a first install, and the record's own write.
 
 **After each of the four refusals at the marker's write, the install is half written**: `.jigc/AGENT.md`, `.jigc/.gitignore`, `.jigc/config/.gitkeep` and `CLAUDE.md` are written and staged, and no install commit is made. The settings file's refusal comes before the first write and leaves nothing.
+
+## 4. `jigc uninstall` — keyed, cases listed under each
+
+Every case starts from one state: somebody's repository — their `CLAUDE.md`, their settings file with a permit of their own, their `pre-commit` hook, a file jigc never writes, all committed — and an install the binary under test made over it. **What every case holds still:** a file outside the repository, and inside it the files the command has no business touching (`README.md`, `notes.md`); where a route leads to no teardown at all, every file of the install as well. **What must hold where a route leads to a teardown:** `.jigc/` and the guide are gone, jigc's lines are out of `CLAUDE.md`, the settings file and the hook, and their owner's lines are still in each.
+
+**No case of this section came out *a witness changed*.**
+
+### Under keys that stand — the same function, handed this door's code
+
+- **`r1-setup-home-unset-route-says-run-from-inside-the-repository`** — *the same refusal again*, 1 case: `uninstall-home-not-set-run-as-the-route-prints`. *Why the same defect and no neighbour:* it is the same arm of the same function — `locate_finding`'s second, which `run_uninstall` hands `uninstall.repo-root` as `setup::run` hands it `setup.repo-root`; the route is ``run `jigc uninstall` from inside the target git repository``, where it was run.
+- **`r1-setup-profile-route-says-reinstall-under-adapters-dir`** — *the same refusal again*, 3 cases: `uninstall-profile-not-in-the-adapters-directory`, `-not-utf-8`, `-malformed`. *Why the same defect:* the same loader (`load_profile`) refused the same file, and `run_uninstall` words it with the sentence `setup::run` uses — *reinstall jigc — the embedded adapter profile is missing or malformed* — over a profile read from the directory `JIGC_ADAPTERS_DIR` names. Reached through that variable and no other way.
+
+### `r1-uninstall-routes-print-lines-with-a-placeholder-for-the-id`
+
+- **Classification:** followed, a printed line no shell can split. **Marked `doubt`.** **Three cases:** `uninstall-staged-doc-read-and-discarded-as-printed`, `uninstall-staged-doc-finalized-as-printed` (`uninstall.staged-prose`); `uninstall-fan-out-worktree-uncommitted-work-milestone-abandoned-as-printed` (`uninstall.dirty-worktree`).
+- **State:** an open task that stages a doc (`jigc start --workflow decided-task "write a note"`); or a fan-out — a milestone, one sub-task, its worktree provisioned — with a file in no commit in the worktree.
+- **Refusing command:** `jigc uninstall` — exit 1.
+- **Printed routes:**
+
+  ```text
+  route: read what is in them with `jigc doc show <address> --task <task-id>`, then throw the task away with `jigc task discard <task-id> --force` — or, once its doc is complete, land it with `jigc task finalize <task-id>` (which refuses while a required slot is empty) — then re-run `jigc uninstall`; `jigc uninstall --force` deletes them with the install
+  route: get the work out of those paths first (commit, stash, or copy it), then re-run `jigc uninstall` — or abandon the milestone with `jigc milestone discard <milestone-id> --force`, which destroys the uncommitted work in the path(s) registered here, and re-run `jigc uninstall`; `jigc uninstall --force` deletes them with the install
+  ```
+
+- **What was done:** each backticked line handed to a shell as printed. The shell refuses the lines that hold a word in angle brackets — it reads `<task-id` as a redirection from a file of that name, and there is none — so none of them is run; `jigc uninstall`, run next as printed, refuses again under the same code. The staged doc and the worktree's file are witnesses and did not change.
+- **The two readings:** (a) a command to run as printed — followed here, red; (b) a shape to fill in with the id the refusal lists two lines above its route — then the route prints no line a reader can run as it stands. **By hand, filled in, both hold**: `jigc task discard write-a-note --force` and `jigc milestone discard fan-out --force` exit 0, and `jigc uninstall` then exits 0. The frame runs no line a case fills in.
+- **Beside them, and green:** the consent from the same states (`…-forced`), and the fan-out worktree's work moved out of the path (`…-moved-out`).
+- **Kin:** `r1-setup-unborn-dirty-route-unstaging-line-is-no-command-line` — another route, another function, the same question for the human.
+
+### `r1-uninstall-force-over-unreadable-workbench-fails-part-way`
+
+- **Classification:** followed, another failure. **Five cases:** `uninstall-worktree-path-unreadable-forced` (`uninstall.dirty-worktree`, the held path); `uninstall-worktrees-root-unreadable-forced` (the same code, the guard that could not look); `uninstall-task-areas-unlistable-forced`, `uninstall-workbench-unsearchable-forced` (`uninstall.foreign-bytes`); `uninstall-staged-docs-unsearchable-forced` (`uninstall.staged-prose`).
+- **State:** the install, and one directory of the workbench that may not be read or searched: `.jigc/worktrees/shut` or `.jigc/worktrees` or `.jigc/tasks` or `.jigc` itself of mode 000, or an open task's `docs/` of mode 600.
+- **Refusing command:** `jigc uninstall` — exit 1; each of the four routes ends in the consent, three of them in these words:
+
+  ```text
+  … `jigc uninstall --force` deletes them with the install
+  ```
+
+- **What was done:** `jigc uninstall --force`, as printed.
+- **What went wrong:** exit 1 with `uninstall.remove-jigc` — *cannot remove the repo-local `.jigc/` tree: Permission denied*, routed *ensure `.jigc/` is writable* — **after part of `.jigc/` was removed**. Driven by hand over `.jigc/worktrees` of mode 000: all six files of the install under `.jigc/` are gone — the settings record among them — and `.jigc/worktrees` stands; over a task's `docs/` of mode 600: `.jigc/AGENT.md` is gone and the rest stands. The files it took are in git's index. The consent the route offers does not delete *them with the install*: it leaves the install half removed and refuses under another code, whose own route names `.jigc/`.
+- **Not the canary's `r1-uninstall-refuses-and-force-half-removes-no-work-tree-home`:** that row is `--force` refusing at the hook's step, *after `.jigc/` is removed*, in a layout whose home is no work tree. This is the removal of `.jigc/` itself, failing part-way, in a plain checkout. A neighbour.
+- **Every state here is a permission taken away by hand inside the ignored workbench.** Whether a route owes anything there is not said here.
+
+### `r1-uninstall-could-not-look-route-names-the-walks-root-to-make-readable`
+
+- **Classification:** followed, the same refusal again. **Marked `doubt`.** **Three cases:** `uninstall-task-areas-unlistable-made-readable`, `uninstall-workbench-unsearchable-made-readable` (`uninstall.foreign-bytes`); `uninstall-staged-docs-unsearchable-made-readable` (`uninstall.staged-prose`).
+- **State:** as above — `.jigc/tasks` of mode 000; `.jigc` of mode 000; an open task's `docs/` of mode 600.
+- **Printed routes:**
+
+  ```text
+  route: make sure the `.jigc/` tree is readable, then re-run `jigc uninstall` — or, once you have confirmed it holds nothing you need, `jigc uninstall --force`
+  route: make sure `.jigc/tasks/` is readable, then re-run `jigc uninstall` — or, once you have confirmed the open tasks hold nothing you need, `jigc uninstall --force` deletes them with the install
+  ```
+
+- **What was done:** the entry the route names given its owner's read bit; `jigc uninstall` again.
+- **What went wrong:** the same refusal. The named entry had the bit (`.jigc/` over an unlistable `.jigc/tasks`; `.jigc/tasks/` over an unsearchable `docs/` two levels down), or the bit is not what was missing (`.jigc` of mode 000 made 400 still may not be searched). The staged-doc refusal's message names the directory at fault; the foreign-byte refusal's names none.
+- **The two readings:** (a) the entry the route names, its owner's read bit — followed here; (b) every directory under it, readable and searchable — under that reading each route is expected to hold; not driven, and the frame has no act for a tree.
+- **Beside them, and green:** `uninstall-worktrees-root-unreadable-made-readable` — the sibling guard's route names `.jigc/worktrees/`, which is the entry at fault, and the listing needs the read bit alone.
+
+### `r1-uninstall-worktree-route-move-aside-over-unreadable-path`
+
+- **Classification:** followed, the same refusal again. **One case:** `uninstall-worktree-path-unreadable-moved-out`.
+- **State:** the install, and `.jigc/worktrees/shut` — a directory holding a file — of mode 000.
+- **Refusing command:** `jigc uninstall` — exit 1, `uninstall.dirty-worktree`: *unknown — could not read the leftover directory … nothing could be read there*.
+- **Printed route:**
+
+  ```text
+  route: get the work out of those paths first (commit, stash, or copy it), then re-run `jigc uninstall` — abandoning the milestone will not clear them: a milestone teardown removes only the worktrees this repository has registered, and none of these paths is (a path listed above as a file, or as one nothing could be read at, is not a worktree at all, so no worktree removal clears it — look at it and move it aside or delete it yourself); `jigc uninstall --force` deletes them with the install
+  ```
+
+- **What was done:** the directory moved out of the way — *move it aside*; `jigc uninstall` again.
+- **What went wrong:** the move is refused, *Permission denied*: a directory that may not be written cannot be given another parent, and one that may not be read cannot be looked at or emptied. The route says what to do with the path and not what must be done to it first. The re-run refuses again; and the consent from the same state is red under the key above.
+
+### `r1-uninstall-worktrees-route-prints-git-worktree-remove-without-a-path`
+
+- **Classification:** followed, the same refusal again. **Marked `doubt`.** **One case:** `uninstall-worktrees-root-unreadable-worktrees-removed-as-printed`.
+- **State:** the install, and an empty `.jigc/worktrees` of mode 000.
+- **Refusing command:** `jigc uninstall` — exit 1, `uninstall.dirty-worktree`: *cannot check `.jigc/worktrees/` for uncommitted fan-out work*.
+- **Printed route:**
+
+  ```text
+  route: make sure `.jigc/worktrees/` is readable — this failure is a `read_dir` of that directory, not a git fault — then re-run `jigc uninstall`; or remove the worktrees yourself (`git worktree list`, then `git worktree remove`) and re-run — or, once you have confirmed the fan-out worktrees hold nothing you need, `jigc uninstall --force` deletes them with the install
+  ```
+
+- **What was done:** the route's second way — `git worktree list`, exit 0, listing the main checkout alone; `git worktree remove`, exit 129, git's usage line; `jigc uninstall` again.
+- **What went wrong:** the second line is no command as printed, and no worktree removal reaches the cause the route's own first clause names — the directory cannot be listed. The re-run refuses the same way.
+- **The two readings:** (a) two command lines to run as printed — followed here; (b) the names of two git verbs, the second to be run for each path the first lists — then the route prints no line, and in this state there is nothing for it to be run on.
+- **Beside it, and green:** the route's first way, `uninstall-worktrees-root-unreadable-made-readable`.

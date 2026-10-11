@@ -95,6 +95,7 @@ const SETUP: Case = Case {
     acts: &[],
     holds: &[],
     witnesses: &[],
+    untouched: &[],
     doubt: None,
 };
 

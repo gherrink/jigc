@@ -2,6 +2,67 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-11 — The route catalog's first nine sites of `uninstall`: the door and three of the four guards over what `.jigc/` holds the only copy of — 40 cases, 17 of them red, five new keys and two of `setup`'s; no witness changed; and a command that removes is held to what is gone (the plan's step `P4`, second commit; ruling 3 of 2026-10-10)
+
+**What.** Cases and readings in a new file, [route_catalog/uninstall.rs](crates/cli/tests/route_catalog/uninstall.rs), wired by its line in `tables!`, which makes its arm; the expected-red rows and the owed list in [route_catalog.rs](crates/cli/tests/route_catalog.rs); the frame grown by three checks and the witnesses inside the repository ([route_case.rs](crates/cli/tests/support/route_case.rs)); five keys in the pilot's findings file ([route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md), §4). No product source changes and nothing is fixed. **The catalog is 308 cases over forty-one sites, 138 of them red. The owed list is 9 rows under `P4`.**
+
+**Every case starts from one state**: somebody's repository — their `CLAUDE.md`, their settings file with a permit of their own, their `pre-commit` hook, a file jigc never writes, all committed — and then `jigc setup`, run by the binary under test. So what a teardown must leave is something a case can name.
+
+**What a case holds still, and what must hold.** `jigc uninstall` removes, so *a witness changed* is what matters most here, and a case names its witnesses three ways: a file outside the repository; inside it the files the command has no business touching (`README.md`, `notes.md` — and the work a guard refused over, where a route leads to no teardown); and, where a route leads to no teardown at all, every file of the install, since a refused teardown removes nothing. Where a route leads to a teardown, what must hold is all of it: `.jigc/` and the guide gone, jigc's lines out of `CLAUDE.md`, the settings file and the hook — and their owner's lines still in each. **No case came out *a witness changed*.**
+
+| site — function · code | read (beside the function) | causes | followed | a reason | cases | red | minutes | new frame vocabulary |
+|---|---|---|---|---|---|---|---|---|
+| `locate_finding` · `uninstall.repo-root`, outside a repository | `locate`, `locate_from`, `repo::discover_repo_root`, `run_uninstall` | 3 | 2 | 1 | 4 | 0 | 2 | nothing stands there; a file holds, or lacks, these bytes; a witness inside the repository |
+| `locate_finding` · `uninstall.repo-root`, no `$HOME` | `locate`, `run_uninstall` | 1 | 1 | 0 | 1 | 1 | 1 | none |
+| `run_uninstall` · `uninstall.profile-load` | `adapter::load_profile`, `load_profile_from`, `ProfileError` | 4 | 3 | 1 | 3 | 3 | 2 | none |
+| `dirty_worktree_finding` · `uninstall.dirty-worktree` | `uninstall`; `dirty_fanout_worktrees`, `fanout_worktree_paths`; `milestone::probe_leftover`, `is_jigc_made_registration`, `admin_records` | 9 | 8 | 1 | 14 | 3 | 9 | none |
+| `unverified_worktrees_finding` · `uninstall.dirty-worktree` | `fanout_worktree_paths`, `dirty_fanout_worktrees` | 2 | 1 | 1 | 3 | 2 | 3 | none |
+| `foreign_bytes_finding` · `uninstall.foreign-bytes` | `workbench_foreign_subject`, `workbench_foreign_areas`, `prefix_owner`, `own_transient_file`, `own_transient_paths`; `task::foreign_areas`, `leaves_under`, `stray_children`; `engine::state::foreign_area_paths` | 5 | 5 | 0 | 6 | 0 | 3 | none |
+| `unverified_foreign_finding` · `uninstall.foreign-bytes` | `workbench_foreign_areas`; `task::foreign_areas`, `leaves_under`; `foreign_area_paths` | 2 | 2 | 0 | 4 | 4 | 3 | none |
+| `staged_prose_finding` · `uninstall.staged-prose` | `task::staged_task_prose`, `staged_doc_ids`; `uninstall` | 2 | 1 | 1 | 3 | 2 | 4 | none |
+| `task::unverified_prose_finding` · `uninstall.staged-prose` | `task::staged_task_prose`, `staged_doc_ids`; `engine::state::foreign_area_paths` | 3 | 1 | 2 | 2 | 2 | 3 | none |
+| | | **31** | **24** | **7** | **40** | **17** | **30** | |
+
+The minutes are the clock's, from a site's first probe to its cases listed, with the one pass of writing — about eight minutes for the nine — spread over them. No site came near the hour that stops the task.
+
+**Green — 23 cases.** Outside a repository, both ways: run from inside the repository the install stands in, and after the route's own `git init`, where the teardown finds nothing to remove and leaves the install over there as it is (four, *operand implied*). Every guard's first way out where the route's words can be done: a directory nothing vouches for and a plain file moved out, a live fan-out worktree's work moved out, two kinds of path at once, the parking home moved out whole, `.jigc/worktrees/` made readable. And the consent, `jigc uninstall --force`, from every state whose workbench can be read: thirteen cases, the three kinds of what git's registration of a path holds among them.
+
+**Red — under two keys of `setup`'s, 4 cases, *the same refusal again*.** `r1-setup-home-unset-route-says-run-from-inside-the-repository`, one: it is the same arm of the same function, `locate_finding`'s second, handed this door's code. `r1-setup-profile-route-says-reinstall-under-adapters-dir`, three: the same loader refusing the same file, worded by `run_uninstall` with the sentence `setup::run` uses.
+
+**Red — five new keys, 13 cases.**
+
+- `r1-uninstall-routes-print-lines-with-a-placeholder-for-the-id` — *a printed line no shell can split*, 3 cases, **marked `doubt`**. The staged-doc route's three lines hold `<task-id>` (and `<address>`), the worktree route's abandon line `<milestone-id>`; the ids are in the refusal's listing, above the route. As printed no shell splits them; filled in by hand, both routes hold.
+- `r1-uninstall-force-over-unreadable-workbench-fails-part-way` — *another failure*, 5 cases over four sites. Where a directory of the workbench may not be read or searched, each guard's route ends in the consent — *`jigc uninstall --force` deletes them with the install* — and the consent exits 1 under `uninstall.remove-jigc` **after part of `.jigc/` is removed** (by hand: the six files of the install gone, the settings record among them, and the directory it could not enter left standing). *Not the canary's `r1-uninstall-refuses-and-force-half-removes-no-work-tree-home`:* that is the hook's step refusing after `.jigc/` is gone, in a layout whose home is no work tree; this is the removal of `.jigc/` itself, in a plain checkout.
+- `r1-uninstall-could-not-look-route-names-the-walks-root-to-make-readable` — *the same refusal again*, 3 cases, **marked `doubt`**. A guard that could not look names the root of its walk to make readable; the entry at fault is another, or lacks its search bit.
+- `r1-uninstall-worktree-route-move-aside-over-unreadable-path` — *the same refusal again*, 1 case. *Look at it and move it aside*, over a directory that may be neither read nor written: the move is refused.
+- `r1-uninstall-worktrees-route-prints-git-worktree-remove-without-a-path` — *the same refusal again*, 1 case, **marked `doubt`**. The second way out of an unlistable `.jigc/worktrees/` is `git worktree remove`, printed with no path.
+
+**For the human — three readings, decided nowhere.**
+
+1. *A backticked line with a word in angle brackets.* (a) A command to run as printed: red, as listed. (b) A shape to fill in from the refusal's listing: then such a route prints no line a reader can run as it stands, and the frame has no case — a filled-in line would be the case's own. The same question as the unborn dirty route of `setup`, in the entry below.
+2. *Make sure `.jigc/…` is readable.* (a) The entry named, its owner's read bit: red. (b) The tree under it, readable and searchable: expected to hold, and not driven.
+3. *(`git worktree list`, then `git worktree remove`).* (a) Two lines to run: git refuses the second. (b) Two verbs named: no line to run.
+
+**Seven reasons for a cause.** A `.git` above that cannot be asked about, and no profile embedded — as at `setup`'s sites. Whether a held path is registered being unknown: reached by hand only where git itself fails, and there neither way out ends anywhere that is about this route. A listing that fails in its middle. A sub-task's staged doc: staged by a write run inside the sub-task's own worktree, where a state's step does not stand. And two walks the guard before answers first.
+
+**Ways not followed, with why** (in each site's reading). The command a refusal prints on a path's own line of its listing — *keep the commit*, *bring the checkout back*, *abort the merge*: an act's operand is a span of the route, and the frame runs no line of the message. A listed foreign file moved out or deleted, at the four causes whose path is not the parking home: the route says *the paths above* and prints `.jigc/displaced/`, and the marked form is refused wherever a route prints a path. `rm -r`: printed with no path, and no line of `jigc` or of `git`.
+
+**The frame grew by four pieces, each red first** ([route_case.rs](crates/cli/tests/support/route_case.rs); `what_is_gone_what_still_stands_and_what_was_not_touched`).
+
+- **Nothing stands there** (`Check::Absent`), asked without following a link.
+- **The file holds these bytes** (`Check::Contains`) and **no file there holds them** (`Check::Lacks`): somebody's own lines in a file the command edits, and the lines the command exists to take out. *Why not the file's bytes entire:* `jigc uninstall` leaves an emptied `SessionStart` list and an empty `deny` list in a settings file that had neither; that is seen, said below, and not what a route's case is about.
+- **A file inside the repository that the command has no business touching is a witness** (`Case::untouched`), held like one outside: its bytes before the refusing command and after the route.
+
+No act was added, so the arms that hold the marked form and the sandbox's bound have nothing new to hold.
+
+**Red first.** `route_catalog::` with the file wired in, the four pieces declared and doing nothing, and neither list touched: 3 of 34 arms red — the frame's new arm (five planted cases *followed, holds* where a failure or a changed witness was planted), the fence (nine sites *have a case and are still owed by `P4`*), and the arm of `uninstall`, naming 17 red cases no entry listed. With the pieces built the 23 others stayed green under the checks, and the rows went in.
+
+**Seen, and no case.** After a clean `jigc uninstall` the settings file is not what it was before the install: `"hooks": { "SessionStart": [] }` and `"deny": []` stay behind. The `pre-commit` hook and `CLAUDE.md` are restored to the byte.
+
+**What this does not establish.** What each case came to is this tree's debug build on macOS on one day; nothing here is about the previous release. The five keys certify themselves until a run is opened. The states under three of them are permissions taken away by hand inside the ignored workbench — whether a route owes anything there is the human's. **One site's case rests on a filesystem's answer**: the staged-doc guard that could not look is reached only where a directory's listing says what each entry is without a `stat` — true here and on the container's filesystem, by reading; the Linux run after the task's last commit is what shows it.
+
+**The suite's seconds.** `cargo test -p jigc --test g_migration route_catalog::`, 34 arms, 308 cases: 59 s on this machine with another lane's gate beside it. What the two arms take inside a gate is in the commit's message.
+
 ## 2026-10-11 — The route catalog's frame before the second command: one arm a command's file, a printed line no shell can split is a classification and stops no arm, one gate a process — and the suite's seconds of the entry below, corrected (the plan's step `P4`, first commit; ruling 3 of 2026-10-10)
 
 **What.** [route_case.rs](crates/cli/tests/support/route_case.rs), [route_catalog.rs](crates/cli/tests/route_catalog.rs), two cases in [route_catalog/setup.rs](crates/cli/tests/route_catalog/setup.rs), one key in the pilot's findings file ([route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md)), and a splitter that answers where the shared one panics ([support/mod.rs](crates/cli/tests/support/mod.rs)). No product source changes and nothing is fixed. No case of `jigc uninstall` yet: the owed list is as it was, 18 rows under `P4`. **The catalog is 268 cases over thirty-two sites of `jigc setup`, 121 of them red.**

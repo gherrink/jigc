@@ -8,7 +8,8 @@
 //! [`support::route_case`](crate::support::route_case), which says what a case is and what
 //! the runner does; this file is the **expected-red list** ([`EXPECTED_RED`]) and the arms
 //! that hold the frame to its rules. **A command's cases are a file of their own under
-//! `route_catalog/`**, declared here by `#[path]` inside [`tables!`] — `setup.rs` today.
+//! `route_catalog/`**, declared here by `#[path]` inside [`tables!`] — `setup.rs` and
+//! `uninstall.rs`.
 //! They stand there, and not beside this file, because that directory also holds the
 //! committed list of refusal sites: a suite file beside a directory of its own name makes
 //! the directory an aggregation for the registration fence
@@ -48,8 +49,12 @@
 //! cannot find its repository; the four over the adapter profile; the dirty gate, and the
 //! refusal where git cannot answer it; the settings file's question before the first write;
 //! the fourteen steps of the write span; and the two of the install commit. Four of the
-//! thirty-six have a reason and no case. Every blocking site of `uninstall` is a row of
-//! [`OWED`], under the task that owes its case.
+//! thirty-six have a reason and no case. **And nine of the eighteen blocking sites of
+//! `jigc uninstall`** (the plan's step `P4`): the two of a command that cannot find its
+//! repository, the profile not loaded, and three of the four guards over what `.jigc/`
+//! holds the only copy of — a worktree path with content, a byte jigc did not write, an
+//! open task's staged doc — each with the refusal it raises where it could not look. The
+//! other nine are rows of [`OWED`], under the task that owes their cases.
 //!
 //! **A site with a case says what was read to count its causes**
 //! ([`Reading`], a command's `READINGS`): the functions, the count with its derivation,
@@ -102,6 +107,11 @@
 //! which is the limit the arms were split for; the bound that costs an arm no time is the
 //! runner's (a test group of one thread in `.config/nextest.toml`), a file that is not this
 //! suite's.
+//!
+//! **And with the cases of `jigc uninstall`, which removes**: what must hold once a route
+//! is followed is that a thing is gone, that jigc's lines are out of a file and its owner's
+//! still in it, and that a file inside the repository the command has no business touching
+//! is what it was ([`what_is_gone_what_still_stands_and_what_was_not_touched`]).
 //!
 //! **A printed line that no shell can split is a red case** — the ninth classification
 //! ([`a_printed_line_no_shell_can_split_is_a_red_case_and_stops_no_arm`]). The frame's
@@ -226,6 +236,8 @@ const FOLLOWED: &str = "the_cases_are_followed_and_the_expected_red_list_is_exac
 tables! {
     #[path = "route_catalog/setup.rs"]
     mod setup;
+    #[path = "route_catalog/uninstall.rs"]
+    mod uninstall;
 }
 
 use setup::{HOOK, HOOK_LINK_SITE};
@@ -482,6 +494,59 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "setup-unborn-staged-file-at-an-install-path-unstaged-as-printed-and-moved",
         ],
     ),
+    (
+        HOME_UNSET,
+        Classification::SameRefusalAgain,
+        &["uninstall-home-not-set-run-as-the-route-prints"],
+    ),
+    (
+        REINSTALL,
+        Classification::SameRefusalAgain,
+        &[
+            "uninstall-profile-malformed",
+            "uninstall-profile-not-in-the-adapters-directory",
+            "uninstall-profile-not-utf-8",
+        ],
+    ),
+    (
+        PLACEHOLDER_LINE,
+        Classification::UnsplittableLine,
+        &[
+            "uninstall-fan-out-worktree-uncommitted-work-milestone-abandoned-as-printed",
+            "uninstall-staged-doc-finalized-as-printed",
+            "uninstall-staged-doc-read-and-discarded-as-printed",
+        ],
+    ),
+    (
+        FORCE_OVER_UNREADABLE,
+        Classification::AnotherFailure,
+        &[
+            "uninstall-staged-docs-unsearchable-forced",
+            "uninstall-task-areas-unlistable-forced",
+            "uninstall-workbench-unsearchable-forced",
+            "uninstall-worktree-path-unreadable-forced",
+            "uninstall-worktrees-root-unreadable-forced",
+        ],
+    ),
+    (
+        READ_BIT_NOT_THE_CAUSE,
+        Classification::SameRefusalAgain,
+        &[
+            "uninstall-staged-docs-unsearchable-made-readable",
+            "uninstall-task-areas-unlistable-made-readable",
+            "uninstall-workbench-unsearchable-made-readable",
+        ],
+    ),
+    (
+        MOVE_ASIDE_UNREADABLE,
+        Classification::SameRefusalAgain,
+        &["uninstall-worktree-path-unreadable-moved-out"],
+    ),
+    (
+        WORKTREE_REMOVE_NO_PATH,
+        Classification::SameRefusalAgain,
+        &["uninstall-worktrees-root-unreadable-worktrees-removed-as-printed"],
+    ),
 ];
 
 // The canary's keys — the route of the hook's link refusal names where the link leads, and
@@ -550,6 +615,27 @@ const THE_QUESTION_THAT_FAILED: &str =
 /// `<path>` standing where the path belongs: no shell splits it. Rests on a reading — every
 /// case under it is marked.
 const A_SHAPE_FOR_A_LINE: &str = "r1-setup-unborn-dirty-route-unstaging-line-is-no-command-line";
+
+// The pilot's keys for `jigc uninstall`.
+/// A route prints, between backticks, a line with a word in angle brackets where an id the
+/// refusal lists belongs: no shell splits it. Rests on a reading — every case under it is
+/// marked.
+const PLACEHOLDER_LINE: &str = "r1-uninstall-routes-print-lines-with-a-placeholder-for-the-id";
+/// The consent, `jigc uninstall --force`, over a directory of the workbench that may not be
+/// read or searched: the removal of `.jigc/` fails part-way, under another code.
+const FORCE_OVER_UNREADABLE: &str = "r1-uninstall-force-over-unreadable-workbench-fails-part-way";
+/// A guard that could not look says *make sure `.jigc/…` is readable* and names the root of
+/// its walk: the entry at fault is another, or what it lacks is no read bit. Rests on a
+/// reading — every case under it is marked.
+const READ_BIT_NOT_THE_CAUSE: &str =
+    "r1-uninstall-could-not-look-route-names-the-walks-root-to-make-readable";
+/// The worktree guard's route over a path nothing can be read at says to move it aside: a
+/// directory that may be neither read nor written cannot be moved.
+const MOVE_ASIDE_UNREADABLE: &str = "r1-uninstall-worktree-route-move-aside-over-unreadable-path";
+/// Where `.jigc/worktrees/` cannot be listed, the route's second way is `git worktree
+/// remove`, printed with no path. Rests on a reading — the case under it is marked.
+const WORKTREE_REMOVE_NO_PATH: &str =
+    "r1-uninstall-worktrees-route-prints-git-worktree-remove-without-a-path";
 
 /// [`EXPECTED_RED`], an entry a case.
 fn expected_red() -> Vec<ExpectedRed> {
@@ -968,12 +1054,6 @@ struct Owed {
 const OWED: &[Owed] = &[Owed {
     task: "P4",
     sites: &[
-        "crates/cli/src/locate.rs::locate_finding::uninstall.repo-root#dynamic-1",
-        "crates/cli/src/locate.rs::locate_finding::uninstall.repo-root#dynamic-2",
-        "crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1",
-        "crates/cli/src/setup.rs::foreign_bytes_finding::uninstall.foreign-bytes#1",
-        "crates/cli/src/setup.rs::run_uninstall::uninstall.profile-load#1",
-        "crates/cli/src/setup.rs::staged_prose_finding::uninstall.staged-prose#1",
         "crates/cli/src/setup.rs::uninstall::uninstall.remove-allowlist#1",
         "crates/cli/src/setup.rs::uninstall::uninstall.remove-deny#1",
         "crates/cli/src/setup.rs::uninstall::uninstall.remove-guide#1",
@@ -982,10 +1062,7 @@ const OWED: &[Owed] = &[Owed {
         "crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1",
         "crates/cli/src/setup.rs::uninstall::uninstall.unwire-reference#1",
         "crates/cli/src/setup.rs::untracked_workbench_finding::uninstall.untracked-workbench-file#1",
-        "crates/cli/src/setup.rs::unverified_foreign_finding::uninstall.foreign-bytes#1",
         "crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1",
-        "crates/cli/src/setup.rs::unverified_worktrees_finding::uninstall.dirty-worktree#1",
-        "crates/cli/src/task.rs::unverified_prose_finding::uninstall.staged-prose#1",
     ],
 }];
 
@@ -1928,6 +2005,7 @@ fn an_act_is_not_done_outside_the_sandbox() {
         acts: &[Act::Remove(Operand::Span(0)), Act::Remove(Operand::Span(1))],
         holds: &[],
         witnesses: &[],
+        untouched: &[],
         doubt: None,
     };
     let followed = route_case::follow(Path::new("/bin/sh"), &planted)
@@ -2396,6 +2474,7 @@ const PLANTED: Case = Case {
     acts: &[],
     holds: &[],
     witnesses: &[],
+    untouched: &[],
     doubt: None,
 };
 
@@ -3479,4 +3558,146 @@ fn no_more_chains_run_at_once_in_one_process_than_the_machine_is_wide() {
         body_of(&frame, "fn chains() -> &'static Gate {").contains("Gate::new(width())"),
         "the process's gate is as wide as the pool: the machine's width",
     );
+}
+
+/// **A command that removes is held to what is gone, to what still stands, and to what it
+/// had no business touching** — the checks and the witnesses the cases of `jigc uninstall`
+/// added. *Nothing stands there* is asked without following a link, and fails over a file
+/// that is still there; *the file holds these bytes* and *no file there holds them* are
+/// asked of a regular file — one that is gone lacks everything and holds nothing. And a
+/// file inside the repository that a case names as untouched is a witness like one
+/// outside: changed by a command of the route, or taken by the refusing command itself,
+/// the case comes out *a witness changed*.
+#[test]
+fn what_is_gone_what_still_stands_and_what_was_not_touched() {
+    come_out(&[
+        (
+            Case {
+                name: "planted-an-entry-that-is-gone",
+                state: &[Step::File(Place::Repo("in/the-way"), "theirs\n")],
+                refusing: &[
+                    "-c",
+                    "test -e in/the-way || exit 0; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: remove `in/the-way`, then re-run `jigc -c true`'; exit 1",
+                ],
+                acts: &[Act::Remove(Operand::Span(0)), Act::Run(1)],
+                holds: &[Check::Absent(Place::Repo("in/the-way"))],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+        (
+            Case {
+                name: "planted-an-entry-that-still-stands",
+                state: &[Step::File(Place::Repo("in/the-way"), "theirs\n")],
+                refusing: &[
+                    "-c",
+                    "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: re-run `jigc -c true`'; exit 1",
+                ],
+                acts: &[Act::Run(0)],
+                holds: &[Check::Absent(Place::Repo("in/the-way"))],
+                ..PLANTED
+            },
+            Classification::AnotherFailure,
+        ),
+        (
+            Case {
+                name: "planted-a-file-with-their-lines-in-it-and-ours-out",
+                state: &[Step::File(Place::Repo("conf"), "mine\nours\n")],
+                refusing: &[
+                    "-c",
+                    "grep -q ours conf || exit 0; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: re-run `jigc -c \"grep -v ours conf > conf.new && mv conf.new conf\"`'; \
+                     exit 1",
+                ],
+                acts: &[Act::Run(0)],
+                holds: &[
+                    Check::Contains(Place::Repo("conf"), "mine\n"),
+                    Check::Lacks(Place::Repo("conf"), "ours"),
+                    Check::Lacks(Place::Repo("no-such-file"), "ours"),
+                ],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+        (
+            Case {
+                name: "planted-a-file-their-lines-are-gone-from",
+                state: &[Step::File(Place::Repo("conf"), "ours\n")],
+                refusing: &[
+                    "-c",
+                    "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: re-run `jigc -c true`'; exit 1",
+                ],
+                acts: &[Act::Run(0)],
+                holds: &[Check::Contains(Place::Repo("conf"), "mine\n")],
+                ..PLANTED
+            },
+            Classification::AnotherFailure,
+        ),
+        (
+            Case {
+                name: "planted-a-file-our-lines-are-still-in",
+                state: &[Step::File(Place::Repo("conf"), "mine\nours\n")],
+                refusing: &[
+                    "-c",
+                    "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: re-run `jigc -c true`'; exit 1",
+                ],
+                acts: &[Act::Run(0)],
+                holds: &[Check::Lacks(Place::Repo("conf"), "ours")],
+                ..PLANTED
+            },
+            Classification::AnotherFailure,
+        ),
+        (
+            Case {
+                name: "planted-a-file-inside-the-repository-nobody-touched",
+                state: &[Step::File(Place::Repo("kept"), "theirs\n")],
+                refusing: &[
+                    "-c",
+                    "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: re-run `jigc -c true`'; exit 1",
+                ],
+                acts: &[Act::Run(0)],
+                untouched: &["kept"],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+        (
+            Case {
+                name: "planted-a-file-inside-the-repository-the-route-changed",
+                state: &[Step::File(Place::Repo("kept"), "theirs\n")],
+                refusing: &[
+                    "-c",
+                    "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: re-run `jigc -c \"echo more >> kept\"`'; exit 1",
+                ],
+                acts: &[Act::Run(0)],
+                untouched: &["kept"],
+                ..PLANTED
+            },
+            Classification::WitnessChanged,
+        ),
+        (
+            Case {
+                name: "planted-a-file-inside-the-repository-the-refusing-command-took",
+                state: &[Step::File(Place::Repo("kept"), "theirs\n")],
+                refusing: &[
+                    "-c",
+                    "test -e kept || exit 0; rm kept; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: re-run `jigc -c true`'; exit 1",
+                ],
+                acts: &[Act::Run(0)],
+                untouched: &["kept"],
+                ..PLANTED
+            },
+            Classification::WitnessChanged,
+        ),
+    ]);
 }
