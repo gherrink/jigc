@@ -100,11 +100,42 @@
 // record script holds the partition — every number of every source in exactly one entry —
 // and renders the triage's report from the file. What comes back is that call's line, as
 // much of it as this script holds: the path, the hash, and what each source handed
-// (`filedFault`). WHAT OF THAT PATH IS BUILT ENDS THERE: its first record, its verification
-// and its return are the tasks that follow, and until the record is built a stage of a run
-// with a queue HALTS AT ITS RECORD, naming the rendered entries, with nothing recorded — a
-// refusal of that path, never of the stage. A RUN WITHOUT AN ORDER TAKES THE PATH ABOVE,
-// UNCHANGED.
+// (`filedFault`). THEN THE STAGE'S FIRST RECORD, BEFORE ANYTHING IS VERIFIED (that plan's
+// T5b; the ruling of 2026-10-11, 1: a stage records twice — until then nothing a stage found
+// was on record before its one record at the end, and a stage that died while it verified
+// lost every row). THE RECORD IS COMPOSED BY THE TOOL, AND NO AGENT TYPES A BATCH
+// (`composeRecord`; that plan's K3): one step — `dev/stabilize-step compose` — is handed
+// PLAIN WORDS (`recordWords`: the reporters that left a report, the commit, the gate's job,
+// what each item did, the round's facts) and THE SHA256 OF THEIR CANONICAL FORM, which this
+// script computes (`wordsText`: the run, the round, the attempt and the subject, a line each,
+// then a line a word, each ended by a line feed) and the record script computes again over
+// what the step typed. EVERY ROW IS THAT SCRIPT'S, read from what was filed: the entries, a
+// held check's verdict, a red check's report. A VOID SAYS WHY IN ONE WORD (VOID_WORDS), never
+// in a sentence. Then the record's gate, its one commit and its push, as above, and the stage
+// returns `hunted` with the state's `next`. HOW THE COMPOSING STEP CAN BE REFUSED is one
+// table (COMPOSE_REFUSALS): `words` — a word was altered on its way through the step's agent
+// — is asked for again, exactly, once; every other word halts the stage at its record with
+// nothing written. WHAT OF THAT PATH IS BUILT ENDS THERE: its verification and its
+// continuation are the tasks that follow, and until they are built AN INVOCATION THAT WOULD
+// CONTINUE — the state's position says `verify`, or `triage` — IS REFUSED, after its two
+// reads, as not built: a refusal of that path, never of the stage. NO ADVOCATE IS LAUNCHED
+// ON THAT PATH: a contested fix is the `fix` half's. A RUN WITHOUT AN ORDER TAKES THE PATH
+// ABOVE, UNCHANGED.
+//
+// WHAT A STAGE HOLDS IS NAMED BY ITS COMMIT, AND NOTHING IS BUILT TWICE (that plan's T5b; its
+// review's S12 — for BOTH kinds of run). The two builds, the candidate's gate and every held
+// check were named by the stage's ATTEMPT, so a stage that ended before its record ran all
+// of them again: forty-five minutes of gate and regression set on the canary's numbers. A
+// build is named by its commit, the candidate's gate by the candidate's commit, and a held
+// check by that commit and THE ITEM'S OWN RUN IN THE ROUND — so a stage started again asks
+// for the names the stage before it asked for and is answered by the jobs that stand, and an
+// item's re-run, on the same candidate, asks for the next. A JOB THAT STANDS UNDER A NAME IS
+// TAKEN ONLY WHILE IT RUNS OR WHERE ITS VERDICT IS GREEN (`hold`, `stands`): one that ended
+// red, void or dead is PASSED OVER for the next name — `<name>-2`, `<name>-3`, … — as a
+// record's gate always was: a red gate a starved machine left is measured again, and never
+// answered for ever. What a name CANNOT hold is that a gate's verdict is of the tree its
+// commit names: the gate reads the working tree, and the tool's own check of that is owed
+// (the row `wf-held-gate-tree`).
 //
 // A STAGE THAT IS NOT FIT FOR USE REFUSES TO START (the human's ruling of 2026-10-06 on the
 // order of the repair: the `test` half first). The build was reviewed red, and the `fix`
@@ -334,6 +365,9 @@
 //     a name that was there       (a record's gate) a job an earlier invocation started
 //       before the stage asked    under the name is that invocation's, a verdict of the
 //                               tree as it stood then: the next name is asked.
+//                               (a build, the candidate's gate, a held check — named by
+//                               their commit) it is TAKEN while it runs or where it is
+//                               green; red, void or dead it is passed over for the next.
 //
 // A FORK IS ON RECORD (the harness review's M3). A verdict the verifier found to contest a
 // settled decision is recorded with that verdict, in the round's triage record: its kind,
@@ -585,6 +619,11 @@ const HOLD_LAPS = 3
 // would mint is that invocation's — a verdict of a tree as it stood then — so the next
 // name is asked: `<name>-1`, `<name>-2`, … up to this many.
 const HOLD_NAMES = 9
+// HOW OFTEN THE COMPOSING STEP IS ASKED FOR AGAIN where the record script refused its words
+// as not the ones that were hashed (`words`): a word altered on its way through the step's
+// agent is that agent's slip, and the step typed as it stands composes the record. Refused
+// so once more, the stage halts at its record: two agents in a row did not type forty words.
+const WORDS_AGAIN = 1
 const RUNS_ROOT = 'completions/artifacts'
 // Adjustment (ii): the paths the published crates carry, and their tests. They move only
 // through an audited round's merge; every other path commits directly behind the gate. The
@@ -845,9 +884,48 @@ const HALTS_AFTER = {
   'scope-aside': { phase: 'scope', when: 'the round\'s scope was set aside by the report check: the file at its path is not what the record script would have written' },
   'stood-on': { phase: 'reports', when: 'a reporter the stage stands on left no report: the attempt\'s marker, the first preflight, the scope step, a second preflight that provided, the preflight of a finishing lap' },
   'triage': { phase: 'triage', when: 'ANY ending of triage but its grades with its report — no result, a halt, counts that do not balance, a key that is none or is given twice, no report — and, inside a pass, a verifier\'s name that cannot be made and a report check that could not be read. IN A RUN WITH A QUEUE, any ending of the one triage but its entries handed over, with their rendered report: a halt, a return that names another path than that report\'s or no hash, a call typed with other counts than the stage handed' },
-  'record': { phase: 'record', when: 'the record step: the executor applied nothing or its batch was refused, the record\'s gate left no verdict, or the commit step refused — the batch stays applied where it was, and the next invocation finishes it. AND IN A RUN WITH A QUEUE, UNTIL IT IS BUILT, THE RECORD ITSELF: that path has none yet, and the stage ends there with its triage\'s entries handed over and nothing recorded' },
+  'record': { phase: 'record', when: 'the record step: the executor applied nothing or its batch was refused, the record\'s gate left no verdict, or the commit step refused — the batch stays applied where it was, and the next invocation finishes it. IN A RUN WITH A QUEUE, where the tool composes the batch: the composing step returned nothing, or was refused — by a word of the record script (COMPOSE_REFUSALS; `words` only once it was asked for again), with nothing written, or by a word of the tool' },
   'push': { phase: 'push', when: 'the push of the record\'s commit failed or was refused: the record is committed, the push is owed, and the next invocation\'s first read makes it' },
   'read-back': { phase: 'state', when: 'the state could not be read back once the record was committed and pushed: nothing is lost, and the next invocation reads it' },
+}
+
+// VOID_WORDS — WHY AN ITEM DID NOT RUN TO ITS END, AS ONE WORD: what the record of a run with
+// a queue says of a void item, in the shape the record script takes of every void there
+// (`<word>` or `<word>:<key>`, HELD_VOID_RE — dev/stabilize-record compose: `item=<item>:
+// void:<word>[:<key>]`, "never a sentence"). The key is THE REPORTER the word is about — one
+// that left no report among them, which is then no `reporter=` word of the record — or, for
+// a held check, the job (`heldVoid`, whose words are the tool's and HELD_ENDS's and are not
+// repeated here). The sentence is this table's, for whoever reads the word; the path of a
+// run without an order records its own sentences, as it did.
+const VOID_WORDS = {
+  'silent': 'a step of the item\'s chain returned nothing, after its retries',
+  'halted': 'a step of the item\'s chain halted',
+  'unasserted': 'a step of the item\'s chain drove, and did not return the hash of the candidate\'s binary as the one it asserted',
+  'unreported': 'a step of the item\'s chain returned, and left no report',
+  'set-aside': 'the file at the report\'s path of a step of the item\'s chain was no report, and was set aside',
+  'chain-lost': 'the item\'s chain did not run: nothing came back of it',
+  'no-image': 'a trial arm, and the second preflight provided no verified trial image',
+  'off-tree': 'a check that reads the working tree, in a re-run: the tree is no longer the round\'s candidate, and the check was not run',
+  'other-commit': 'the check ran on another commit than the candidate, or on one the preflight did not name',
+  'could-not-run': 'the preflight could not run the check, and says so',
+  'not-provided': 'a check the scope selected, and the second preflight did not provide it',
+  'unanswered': 'the preflight returned nothing for the check',
+}
+// voidWord — a void's reason as the record of a run with a queue takes it: the word, and the
+// key it is about.
+function voidWord(word, key) {
+  return word + (key ? ':' + key : '')
+}
+// COMPOSE_REFUSALS — every word the record script refuses a composed record with that the
+// step tool has a sentence for (its COMPOSE_THEN; the fence holds the two tables together),
+// as what this script DOES about it and what the halt says is done next. `again`: the step
+// is asked for again, exactly (WORDS_AGAIN). Every other word halts the stage at its record,
+// and NOTHING WAS WRITTEN by a step refused so.
+const COMPOSE_REFUSALS = {
+  'words': { again: true, says: 'the words the step typed are not the words this script hashed: one was altered, dropped, added or moved on its way through the step\'s agent — also when the step was asked for again', then: null },
+  'check': { again: false, says: 'a check of the batch does not hold — a launched reporter\'s report is missing, a file nobody launched lies among the reports, a key is no row — or a file among the filed verdicts is no verdict. The stage\'s report check came before this step, so something changed between the two', then: null },
+  'pending': { again: false, says: 'another batch is applied and not committed — one this stage did not compose: it appeared while the stage ran', then: 'pending' },
+  'no-change': { again: false, says: 'every file the record would write is what the run holds already — and an attempt\'s first record always writes that the attempt reached it', then: ' Nothing was written and NO BATCH IS LEFT. No discard is asked for.' },
 }
 
 // ---- pure helpers (everything from here to `selfTest` runs no agent) ----
@@ -1229,7 +1307,7 @@ function unreported(ran, missing, aside) {
       // its path was not what the record script would have written.
       const moved = setAside(aside, r.name)
       if (r.crossModel) unit.crossModel = 'void'
-      else if (unit.status !== 'void') Object.assign(unit, { status: 'void', reason: 'its `' + r.as + '` step ' + (moved ? 'left a file at its report\'s path that is no report (`' + moved + '`): it was set aside, and the step left none' : r.result && r.result.status === 'reported' ? 'returned and left no report' : endingOf(r.result) + ', and left no report') })
+      else if (unit.status !== 'void') Object.assign(unit, { status: 'void', reason: 'its `' + r.as + '` step ' + (moved ? 'left a file at its report\'s path that is no report (`' + moved + '`): it was set aside, and the step left none' : r.result && r.result.status === 'reported' ? 'returned and left no report' : endingOf(r.result) + ', and left no report'), word: voidWord(moved ? 'set-aside' : !r.result ? 'silent' : r.result.status === 'reported' ? 'unreported' : 'halted', r.name) })
       r.result = null
       r.report = null
     }
@@ -1915,6 +1993,48 @@ function pushPrompt(v, branch, record) {
 function recordCommitPrompt(v, branch, gate, expect, head) {
   return stepPrompt('the ONE commit of a record step of `' + v.run + '` on `' + branch + '`: the applied batch, held to the gate that ran on it', 'record', '--branch ' + branch + ' --run-dir ' + runDir(v.run) + ' --gate ' + gate + ' --calls ' + expect.calls + ' --checks ' + expect.checks + ' --scratch ' + v.scratch + (head ? ' --head ' + head : '') + ' ' + digestFlag(v.scratch))
 }
+// wordsText — THE CANONICAL FORM OF A COMPOSED RECORD'S PLAIN WORDS, as the record script
+// defines it (dev/stabilize-record compose: THE CANONICAL FORM — its ONE definition; this is
+// a caller's computation of it, and the simulation holds the two to each other on every
+// record a stage composes): the run, the round, the attempt and the subject, a line each,
+// then one line a word IN THE ORDER HANDED — nothing sorted, folded or trimmed — each line
+// ended by ONE line feed, the last too. `sha256` hashes its UTF-8 bytes.
+function wordsText(run, round, attempt, subject, words) {
+  return ['run=' + run, 'round=' + round, 'attempt=' + attempt, 'subject=' + subject].concat(words).join('\n') + '\n'
+}
+// recordWords — THE PLAIN WORDS OF A `test` STAGE'S FIRST RECORD, IN A RUN WITH A QUEUE: what
+// the record script cannot read off what was filed (its header: compose, THE WORDS), in the
+// order the stage means them — which is the order of the report check's reporters and of
+// the results' rows. `rec` is { reporters, commit, gate, did, facts }:
+//   reporter=<name>   EVERY REPORTER THE STAGE LAUNCHED THAT LEFT A REPORT — the launcher's
+//                     list, off which the report check took each one that left none
+//   commit=<sha>      the commit the items ran on, which the gate is of: THE CANDIDATE
+//   gate=<job>        the candidate's gate, by the name of the job the tool holds it under
+//   item=<item>:…     what each item did: `held:<job>` for a held check that left a verdict
+//                     — green, red or void, which the script reads out of the job's file;
+//                     `red:<reporter>` for a check an agent read red — the preflight whose
+//                     report says so, and which is the evidence, by path; `void:<word>
+//                     [:<key>]` (VOID_WORDS, `heldVoid`); else `green`
+//   fact=<name>:<v>   the round's facts, a list one word an item — and no word for an
+//                     empty list
+// NO ROW, NO ENTRY, NO GRADE AND NO VERDICT IS A WORD: the script reads those itself.
+function recordWords(rec) {
+  const words = rec.reporters.map((name) => 'reporter=' + name).concat(['commit=' + rec.commit], rec.gate ? ['gate=' + rec.gate] : [])
+  for (const u of rec.did) words.push('item=' + u.item + ':' + (u.job ? 'held:' + u.job : u.status === 'void' ? 'void:' + u.word : u.status === 'red' ? 'red:' + u.by : 'green'))
+  for (const [name, value] of rec.facts) for (const one of Array.isArray(value) ? value : [value]) words.push('fact=' + name + ':' + one)
+  return words
+}
+// The COMPOSE step: a `test` stage's record composed BY THE TOOL from what was filed and
+// from the plain words — held to the sha256 of their canonical form, computed here — and
+// applied. `subject` is the commit's whole subject: one word of the call, quoted.
+function composePrompt(ctx, branch, subject, words) {
+  return stepPrompt('the record of the `' + ctx.stage + '` stage of `' + ctx.run + '`, round ' + ctx.round + ', attempt ' + ctx.attempt + ', COMPOSED BY THE TOOL from what the stage\'s agents filed and from the ' + words.length + ' plain word(s) after the `--` — and applied as ONE batch. THE WORDS ARE HELD TO THE HASH THE COMMAND NAMES: one word typed otherwise — a status, a name, their order — and the tool refuses, with nothing written', 'compose', '--branch ' + branch + ' --run-dir ' + runDir(ctx.run) + ' --round ' + ctx.round + ' --attempt ' + ctx.attempt + ' --subject ' + shq(subject) + ' --sha256 ' + sha256(wordsText(ctx.run, ctx.round, ctx.attempt, subject, words)) + ' --scratch ' + ctx.scratch + ' ' + digestFlag(ctx.scratch) + ' -- ' + words.join(' '))
+}
+// What the composing step is told when it is asked for again: the tool refused the words an
+// earlier step typed as not the ones that were hashed.
+function wordsAgain(n) {
+  return 'AGAIN (' + n + '): an earlier step ran this command and the tool refused it — a word of it was not typed as it stands, so the words did not hash to the sha256 the command names, and nothing was written. Run the ONE command above typed as it stands, word for word and in its order: copy it, and change nothing in it.'
+}
 // The LAND step: a round's branch merged `--no-ff` into the loop branch and the loop branch
 // pushed, as one act.
 function landPrompt(v, round, branch) {
@@ -2571,6 +2691,21 @@ function selfTest() {
   const typedWith = (source, count) => back.handed.map((h) => (h.source === source ? { source, count } : h))
   check('a call typed with another count is named by its source, with both counts', backWith({ handed: typedWith('row-3-source', 1) }).includes('`row-3-source`: handed 2, and the call was typed with 1') && !backWith({ handed: typedWith('row-3-source', 1) }).includes('`scope`') && backWith({ handed: back.handed.filter((h) => h.source !== 'red-ci') }).includes('`red-ci`: handed 1, and the call named no count for it') && backWith({ handed: undefined }).includes('`' + LEDGER_SOURCE + '`: handed 2, and the call named no count for it') && backWith({ handed: back.handed.concat([{ source: 'nobody', count: 1 }]) }).includes('1 source(s) of the call that nobody handed') && backWith({ handed: typedWith('scope', '1') }).includes('`scope`: handed 1, and the call named no count for it'))
   check('the one triage returns no entry, and its schema requires nothing but its status', JSON.stringify(Object.keys(FILED_SCHEMA.properties)) === JSON.stringify(['status', 'halt', 'report', 'sha256', 'handed']) && JSON.stringify(FILED_SCHEMA.required) === JSON.stringify(['status']))
+  // THE FIRST RECORD OF A RUN WITH A QUEUE IS COMPOSED BY THE TOOL: plain words, held to the
+  // sha256 of their canonical form — the record script's form, computed here.
+  const subjectSaid = 'docs(record): rc24 r1 - the record of the test stage'
+  const two = ['reporter=attempt', 'reporter=triage']
+  check('the canonical form of a record\'s words is the record script\'s — the run, the round, the attempt, the subject, then a line a word, each ended by a line feed — and hashes to what that script prints for its own example', wordsText('rc24', 1, 1, subjectSaid, two) === 'run=rc24\nround=1\nattempt=1\nsubject=' + subjectSaid + '\nreporter=attempt\nreporter=triage\n' && sha256(wordsText('rc24', 1, 1, subjectSaid, two)) === '38653f65999e4d356ac8bb701f36c22fd6cf84bd3dc4b2c5ef969153a0be4c95')
+  check('words in another order, another attempt, another round and another subject are other bytes, and nothing is sorted', [wordsText('rc24', 1, 1, subjectSaid, two.slice().reverse()), wordsText('rc24', 1, 2, subjectSaid, two), wordsText('rc24', 2, 1, subjectSaid, two), wordsText('rc24', 1, 1, subjectSaid + '.', two), wordsText('rc24', 1, 1, subjectSaid, two.concat(['reporter=scope']))].every((text, i, all) => sha256(text) !== sha256(wordsText('rc24', 1, 1, subjectSaid, two)) && all.indexOf(text) === i) && wordsText('rc24', 1, 1, subjectSaid, []).endsWith('subject=' + subjectSaid + '\n'))
+  const did = [{ item: 'area-a', status: 'green' }, { item: 'gate', status: 'green', verdict: '/tmp/scratch-1/hold/gate-0123456789ab/verdict.json', job: 'gate-0123456789ab' }, { item: 'regression-set', status: 'red', verdict: '/tmp/scratch-1/hold/regression-set-0123456789ab-a1/verdict.json', job: 'regression-set-0123456789ab-a1' }, { item: 'ci', status: 'red', evidence: 'a sentence of the preflight\'s', by: 'preflight-second', word: voidWord('unanswered', 'preflight-second') }, { item: 'arm-a', status: 'void', reason: 'no trial image: a sentence', word: voidWord('no-image', 'preflight-second') }, { item: 'held-b', status: 'void', reason: 'dead:held-b-0123456789ab-a1', word: heldVoid({ ends: 'dead', name: 'held-b-0123456789ab-a1' }) }]
+  const said = recordWords({ reporters: ['attempt', 'scope', 'triage'], commit: 'c'.repeat(40), gate: 'gate-0123456789ab', did, facts: [['candidate', 'c'.repeat(40)], ['binary', 'b'.repeat(64)], ['cross-model', ['row-a', 'row-b']], ['cross-model-void', []]] })
+  check('a record\'s words say the reporters, the commit, the gate\'s job, what each item did and the round\'s facts, in that order — a held check by its job whatever its verdict, a red check by the preflight that read it, a void by its word, a list one word an item and an empty list none', JSON.stringify(said) === JSON.stringify(['reporter=attempt', 'reporter=scope', 'reporter=triage', 'commit=' + 'c'.repeat(40), 'gate=gate-0123456789ab', 'item=area-a:green', 'item=gate:held:gate-0123456789ab', 'item=regression-set:held:regression-set-0123456789ab-a1', 'item=ci:red:preflight-second', 'item=arm-a:void:no-image:preflight-second', 'item=held-b:void:dead:held-b-0123456789ab-a1', 'fact=candidate:' + 'c'.repeat(40), 'fact=binary:' + 'b'.repeat(64), 'fact=cross-model:row-a', 'fact=cross-model:row-b']))
+  check('a re-run\'s words name the commit, and no gate and no fact of the round', JSON.stringify(recordWords({ reporters: ['attempt'], commit: 'c'.repeat(40), gate: null, did: [did[2]], facts: [] })) === JSON.stringify(['reporter=attempt', 'commit=' + 'c'.repeat(40), 'item=regression-set:held:regression-set-0123456789ab-a1']))
+  check('no sentence is a word: a void says why in one word of the shape the record script takes, and no word of a record holds a space', Object.keys(VOID_WORDS).length === 12 && Object.keys(VOID_WORDS).every((word) => isSlug(word) && HELD_VOID_RE.test(voidWord(word)) && HELD_VOID_RE.test(voidWord(word, 'row-3-reconciler')) && VOID_WORDS[word].split(' ').length >= 6) && voidWord('silent', 'area-a-review') === 'silent:area-a-review' && voidWord('off-tree') === 'off-tree' && said.every((word) => /^[A-Za-z0-9_.:=-]+$/.test(word)) && !said.join(' ').includes('sentence'))
+  const composing = composePrompt(tested, 'fix/rc24-tier1', subjectSaid, said)
+  check('the composing step is ONE command of the tool: the branch, the run\'s directory, the round, the attempt, the subject as one quoted word, the sha256 of the words\' canonical form, and the words after `--`', composing.includes('\n1. `dev/stabilize-step compose --branch fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --round 2 --attempt 4 --subject \'' + subjectSaid + '\' --sha256 ' + sha256(wordsText('rc24-tier1', 2, 4, subjectSaid, said)) + ' --scratch /tmp/scratch-1 --digest /tmp/scratch-1 -- ' + said.join(' ') + '`\n') && composing.startsWith('GIT STEP — ') && !composing.includes(LABELS.record) && !composing.includes(PAYLOAD_ENDS))
+  check('a composing step that is asked for again is told that the tool refused the words, and to type the command as it stands', wordsAgain(1).startsWith('AGAIN (1): ') && wordsAgain(1).includes('typed as it stands') && wordsAgain(1).includes('nothing was written') && !wordsAgain(1).includes('`'))
+  check('of the words a composed record is refused with, `words` is asked for again — once — and every other halts, each saying what it means', WORDS_AGAIN === 1 && Object.keys(COMPOSE_REFUSALS).filter((word) => COMPOSE_REFUSALS[word].again).join() === 'words' && ['words', 'check', 'pending', 'no-change'].every((word) => COMPOSE_REFUSALS[word] && COMPOSE_REFUSALS[word].says.split(' ').length >= 10) && COMPOSE_REFUSALS['no-change'].then.includes('NO BATCH IS LEFT') && COMPOSE_REFUSALS.pending.then === 'pending')
   const finishing = preflightPrompt(ctx, launcher(ctx), 'preflight', { image: false, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', checks: [], crossModel: false, tested: true })
   check('a finishing preflight is told that the candidate is the commit the round tested, and not HEAD', finishing.includes('the commit round 2 tested, an ancestor of `fix/rc24-tier1`') && finishing.includes('THE CANDIDATE IS NOT `HEAD` HERE') && finishing.includes('commit ' + 'c'.repeat(40) + ' must be an ancestor of `HEAD`') && !finishing.includes('`git ') && !prompts.preflight.includes('NOT `HEAD`'))
   check('a fork is recorded with the verdict it rides on, and with no other entry', JSON.stringify(triageRecord(ctx, [{ key: 'f-1', new: false, grade: 'breaks', verdict: 'confirmed', regression: false, fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }, { key: 'f-2', new: false, grade: 'breaks', fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }]).triage) === JSON.stringify([{ key: 'f-1', grade: 'breaks', verdict: 'confirmed', regression: false, fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }, { key: 'f-2', grade: 'breaks' }]))
@@ -2893,12 +3028,19 @@ async function toolStep(label, phaseTitle, act, prompt, seen) {
 }
 // hold — ONE LONG COMMAND, HELD BY THE TOOL: started by one step, asked after by another, and
 // judged by the tool, whose verdict comes back as what `heldOf` reads. `job` is { name, kind,
-// flags, what, phase } and, for a record's gate, `sequence`.
+// flags, what, phase } and, for a record's gate, `sequence`; for what is named by its commit
+// — a build, the candidate's gate, a held check — `stands`.
 //   THE START is one plain call, and IDEMPOTENT BY NAME: a start step whose agent died is
 //   asked for again as its one command, and the tool answers with the job that is there —
 //   nothing is started twice. With `sequence` the name is `<name>-<n>`: where the FIRST try
 //   of a start is answered by a job that was there already, that job is an EARLIER
 //   INVOCATION'S — a gate of the tree as it stood then — and the next name is asked.
+//   With `stands` the name is the commit's, and A JOB THAT WAS THERE IS THE ANSWER while it
+//   runs — its wait is taken over — or where its verdict is green: nothing is built, gated
+//   or checked twice for one commit. One that ended red, void or dead IS PASSED OVER, and
+//   the next name is asked — `<name>-2`, `<name>-3`, … — so that a red a starved machine
+//   left is measured again and a dead job is never the answer for ever. `flags` may then be
+//   a function of the name's number: what is written under a name is written once.
 //   THE WAIT is one plain call an agent runs again while the tool says `running`. A WAIT
 //   WHOSE AGENT DIED IS TAKEN OVER, never started again: the step's retry is the wait, and
 //   the command, which outlives every agent, ran once. An agent whose turn ended on
@@ -2908,46 +3050,60 @@ async function toolStep(label, phaseTitle, act, prompt, seen) {
 async function hold(job) {
   let started = null
   let name = job.name
-  for (let n = 1; n <= (job.sequence ? HOLD_NAMES : 1) && !started; n++) {
-    name = job.sequence ? job.name + '-' + n : job.name
+  let asked = 0
+  for (let n = 1; n <= (job.sequence || job.stands ? HOLD_NAMES : 1) && !started; n++) {
+    name = job.sequence || (job.stands && n > 1) ? job.name + '-' + n : job.name
+    asked = n
     if (!isSlug(name)) return { ends: 'unread', kind: job.kind, why: 'no name of a held command can be made of `' + name + '`: it must be a slug of at most ' + SLUG_MAX + ' characters' }
     const seen = { tries: 0 }
-    const at = heldOf(await toolStep('hold-start:' + name, job.phase, 'hold-start', holdStartPrompt(v, name, job.kind, job.flags, job.what), seen), v.scratch)
+    const at = heldOf(await toolStep('hold-start:' + name, job.phase, 'hold-start', holdStartPrompt(v, name, job.kind, typeof job.flags === 'function' ? job.flags(n) : job.flags, job.what), seen), v.scratch)
     if (job.sequence && at.ends !== 'unread' && !at.fresh && seen.tries < 2) {
       log('the held command `' + name + '` was there before this invocation asked for it — an earlier invocation\'s, ' + at.ends + ': it is not read as this one\'s, and the next name is asked')
       continue
     }
+    // (A start that started the command answers `running`: an end is a job that was there.
+    // One that a dead try of THIS start left is this invocation's own, and is its answer.)
+    if (job.stands && ['red', 'void', 'dead'].includes(at.ends) && seen.tries < 2) {
+      log('the held command `' + name + '` was there before this invocation asked for it, and ended ' + at.ends + ': it is passed over — a job that stands is the answer only while it runs or where it is green — and the next name is asked')
+      continue
+    }
     started = at
   }
-  if (!started) return { ends: 'unread', name, kind: job.kind, why: 'every name from `' + job.name + '-1` to `' + name + '` holds a command of an earlier invocation under this scratch root' }
+  if (!started) return { ends: 'unread', name, kind: job.kind, why: 'every name from `' + job.name + (job.sequence ? '-1' : '') + '` to `' + name + '` holds a command of an earlier invocation under this scratch root' + (job.stands ? ', each ended red, void or dead' : '') }
   // A start the tool REFUSED started nothing; one whose agent returned nothing, or whose
   // line did not come back, may have.
   if (started.ends === 'unread') return Object.assign({ name, kind: job.kind }, started, { started: !started.refused })
   let now = started
   for (let lap = 1; now.ends === 'running' && lap <= HOLD_LAPS; lap++) now = Object.assign({ name, kind: job.kind, output: started.output }, heldOf(await toolStep('hold-wait:' + name + (lap > 1 ? ':lap' + lap : ''), job.phase, 'hold-wait', holdWaitPrompt(v, name, job.what)), v.scratch))
-  return Object.assign(now, { started: true })
+  return Object.assign(now, { started: true, asked })
 }
 // buildOf — the `jigc` binary of a commit, BUILT BY A HELD COMMAND and read off the tool's
 // verdict: its path, its hash, the version it prints and that a bare `jigc` resolves to it
 // are the tool's facts, held here to what was asked, and no agent's reading (ruling 11; the
 // re-review's R-L3). Anything but a green build halts the stage: no instrument runs
 // without the binary.
-async function buildOf(name, sha, to, version, what, phaseTitle) {
-  const job = await hold({ name, kind: 'build', flags: '--commit ' + sha + ' --to ' + to + (version ? ' --version ' + version : ''), what, phase: phaseTitle })
+// A BUILD IS NAMED BY ITS COMMIT (`whose`: `candidate`, or `previous`), so the binary of a
+// commit that is built under this scratch root is the one the tool answers with — and where
+// a job of that name stands red, void or dead, the next name is asked, and writes its
+// binary at a path of its own: a binary is written once.
+async function buildOf(whose, sha, version, what, phaseTitle) {
+  const short = sha.slice(0, 12)
+  const at = (n) => 'bin/' + whose + '-' + short + (n > 1 ? '-' + n : '') + '/jigc'
+  const job = await hold({ name: 'build-' + whose + '-' + short, stands: true, kind: 'build', flags: (n) => '--commit ' + sha + ' --to ' + at(n) + (version ? ' --version ' + version : ''), what, phase: phaseTitle })
   if (!HELD_TAKES.build.includes(job.ends)) return { fault: heldFault(what, job) + ' No instrument runs without the binary.', phase: 'build', held: heldSaid(job), transient: job.ends === 'unread' || job.ends === 'running', then: heldThen(v.scratch, job) }
+  const to = at(job.asked)
   const f = job.facts
   if (f.commit !== sha || f.binary !== to || !SHA256_RE.test(String(f.content_sha256 || '')) || f.resolves !== true || (version && f.version !== version)) return { fault: what + ' is not the binary that was asked for: the tool\'s verdict names ' + JSON.stringify({ commit: f.commit, binary: f.binary, version: f.version, resolves: f.resolves }), phase: 'build', held: heldSaid(job) }
   return { binary: v.scratch + '/' + to, sha256: f.content_sha256, version: f.version }
 }
 // buildBoth — the ONE binary a candidate is driven as, and the previous release's, which
 // every regression fact is measured against: each from its commit, never from the working
-// tree. The previous release's is named by its commit, so that one that is built already
-// under this scratch root is the one the tool answers with.
-async function buildBoth(ctx, label, sha, previous, phaseTitle) {
-  const built = await buildOf('build-' + label + '-a' + ctx.attempt, sha, 'bin/' + label + '.a' + ctx.attempt + '/jigc', null, 'the candidate\'s binary, label ' + label, phaseTitle)
+// tree. EACH IS NAMED BY ITS COMMIT, so that one that is built already under this scratch
+// root — by an earlier attempt, a re-run, a lap — is the one the tool answers with.
+async function buildBoth(label, sha, previous, phaseTitle) {
+  const built = await buildOf('candidate', sha, null, 'the candidate\'s binary, label ' + label, phaseTitle)
   if (built.fault) return built
-  const short = String(previous.commit).slice(0, 12)
-  const before = await buildOf('build-previous-' + short, String(previous.commit), 'bin/previous-' + short + '/jigc', previous.version, 'the previous release\'s binary, version ' + previous.version, phaseTitle)
+  const before = await buildOf('previous', String(previous.commit), previous.version, 'the previous release\'s binary, version ' + previous.version, phaseTitle)
   if (before.fault) return before
   return { candidate: { label, sha, binary: built.binary, sha256: built.sha256 }, previous: { version: before.version, binary: before.binary, sha256: before.sha256 }, image: null }
 }
@@ -3088,6 +3244,35 @@ async function recordStep(label, branch, rec) {
   const word = r && typeof r.refused === 'string' ? r.refused : null
   return { fault, result: r, transient: !r, refused: word, step: stepFile(r), gate: r && plain(r.gate) ? r.gate : null, then: recordThen(v.run, branch, word, r ? r.discarded : null) }
 }
+// composeRecord — THE FIRST ACT OF A RECORD THE TOOL COMPOSES, IN A RUN WITH A QUEUE: ONE
+// step of the tool (`compose`), handed the plain words and the sha256 of their canonical
+// form, in place of the executor that typed a batch into a file. It returns `rec` — what
+// `recordStep` is then handed: NO TEXT, so no executor runs, the name the record's gate is
+// held under, and what the commit step is held to, WHICH IS WHAT THE COMPOSING STEP SAID IT
+// APPLIED — or `fault`, with `then`. A STEP REFUSED `words` IS ASKED FOR AGAIN, exactly
+// (COMPOSE_REFUSALS, WORDS_AGAIN): a word altered on its way is its agent's slip, and the
+// same words compose the same batch. Every other refusal is returned, with the record
+// script's own word (`refusal`) beside the tool's (`refused`); nothing was written by a step
+// the record script refused. A step that answered nothing, or with a line that is not read,
+// MAY HAVE APPLIED ITS BATCH: the next invocation's first read says so, and finishes it. It
+// halts nothing itself.
+async function composeRecord(label, branch, ctx, dir, subject, words) {
+  let c = null
+  for (let n = 0; n <= WORDS_AGAIN; n++) {
+    c = await toolStep('compose:' + label + (n ? ':again' + n : ''), 'Record', 'compose', composePrompt(ctx, branch, subject, words) + (n ? '\n\n' + wordsAgain(n) : ''))
+    const row = c && c.status === 'halted' && c.refused === 'record' ? COMPOSE_REFUSALS[c.refusal] : null
+    if (!row || !row.again) break
+    log('the composing step was refused `' + c.refusal + '` — ' + row.says + (n < WORDS_AGAIN ? ': the step is asked for again, exactly' : ': it was asked for again already'))
+  }
+  if (!c) return { fault: 'the step that composes the record returned no result', transient: true, then: recordThen(v.run, branch, null) }
+  if (c.status === 'applied' && plain(c.applied) && Number.isInteger(c.applied.calls) && Number.isInteger(c.applied.checks)) return { rec: { text: null, hold: recordHold(dir), expect: { calls: c.applied.calls, checks: c.applied.checks } } }
+  const word = typeof c.refused === 'string' ? c.refused : null
+  const said = word === 'record' && typeof c.refusal === 'string' ? c.refusal : null
+  const row = said ? COMPOSE_REFUSALS[said] || { says: 'a word of `' + RECORD_TOOL + '` this script has no row for: the step\'s own line holds that script\'s refusal', then: null } : null
+  if (row) return { fault: 'the record was not composed: `' + RECORD_TOOL + '` refused the composing step `' + said + '` — ' + row.says + '. Nothing was written', refused: word, refusal: said, step: stepFile(c), then: row.then === 'pending' ? recordThen(v.run, branch, null) : row.then }
+  if (word) return { fault: 'the step that composes the record refused ' + stepRefusal(word, branch), refused: word, refusal: null, step: stepFile(c), then: recordThen(v.run, branch, null) }
+  return { fault: 'the step that composes the record did not answer with a batch it applied: ' + (c.relay || (c.halt && c.halt.root_cause) || 'it said `' + c.status + '`'), refused: null, refusal: null, step: stepFile(c), halt: c.relay ? null : c.halt || null, then: recordThen(v.run, branch, null) }
+}
 // recordHalt — a record step that did not record, as the halt of the stage: why, what the
 // tool established (`gate`: the counts of what is red; `step`: the file its own line is in),
 // the executor's own halt report where it halted, and what the next invocation does.
@@ -3144,6 +3329,7 @@ async function runUnits(ctx, launch, built, units, phaseTitle) {
   const out = await parallel(units.map((unit) => async () => {
     const done = []
     let reason = null
+    let word = null
     let crossModel = null
     for (const stepList of unit.chain) {
       const named = stepList.map((step) => ({ step, name: launch.add([unit.item, step.as]) }))
@@ -3159,15 +3345,15 @@ async function runUnits(ctx, launch, built, units, phaseTitle) {
         // The cross-model pass that did not run is void FOR THAT PASS, however it ended:
         // the unit goes on with its own passes, and nothing of the stage waits for it.
         if (step.crossModel) crossModel = reported ? 'ran' : 'void'
-        else if (!reported && !reason) reason = 'its `' + step.as + '` step ' + endingOf(r)
-        else if (unheld && !reason) reason = 'its `' + step.as + '` step ' + unheld
+        else if (!reported && !reason) [reason, word] = ['its `' + step.as + '` step ' + endingOf(r), voidWord(r ? 'halted' : 'silent', name)]
+        else if (unheld && !reason) [reason, word] = ['its `' + step.as + '` step ' + unheld, voidWord('unasserted', name)]
         done.push({ as: step.as, name, drives: ROLES[step.role].drives, crossModel: !!step.crossModel, result: reported || !step.crossModel ? r : null, report: r && r.report ? r.report : null })
       })
       if (reason) break
     }
-    return { item: unit.item, clause: unit.clause, status: reason ? 'void' : 'green', reason, crossModel, reporters: done }
+    return { item: unit.item, clause: unit.clause, status: reason ? 'void' : 'green', reason, word, crossModel, reporters: done }
   }))
-  return units.map((unit, i) => out[i] || { item: unit.item, clause: unit.clause, status: 'void', reason: 'its chain did not run', crossModel: null, reporters: [] })
+  return units.map((unit, i) => out[i] || { item: unit.item, clause: unit.clause, status: 'void', reason: 'its chain did not run', word: voidWord('chain-lost'), crossModel: null, reporters: [] })
 }
 // triagePasses — triage of every finding, verify-real on everything graded breaks or
 // unclear, and per contested finding an advocate and an independent drive; then again over
@@ -3416,7 +3602,7 @@ async function finishTriage(ctx, launch, state, tip, branch) {
   log('round ' + ctx.round + ': the ' + ctx.stage + ' stage left its triage unfinished — ' + findingsOf(sources[0] || { findings: [] }) + ' row(s) are graded and verified now, attempt ' + ctx.attempt + '; no instrument runs')
   const pre = await preflightOf(ctx, launch, ['preflight'], { image: false, sha: tip.sha, label: tip.label, branch, checks: [], crossModel: false, tested: tip.tested }, 'Triage')
   if (pre.fault) return { halted: halt('preflight', pre.fault, { transient: !!pre.transient, halt: pre.halt || null, branch }) }
-  const built = await buildBoth(ctx, tip.label, tip.sha, previousOf(state), 'Triage')
+  const built = await buildBoth(tip.label, tip.sha, previousOf(state), 'Triage')
   if (built.fault) return { halted: halt(built.phase, built.fault, { transient: !!built.transient, held: built.held || null, branch, then: built.then }) }
   const tri = await triagePasses(ctx, launch, built, sources, [])
   if (tri.fault) return { halted: haltAfter('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null, step: tri.step || null, branch }) }
@@ -3568,6 +3754,14 @@ async function runTest() {
   if (at.refused) return { status: 'refused', stage: 'test', run: v.run, refused: at, message: 'the `test` stage is refused (' + at.refused + ', round ' + at.round + '): ' + refusalOf(at) + '. Nothing was run beyond the two reads.', next: state.next, not_ready: state.not_ready, stop: state.stop, named: namedOf(state), arrived }
   const ctx = { run: v.run, round: at.round, stage: 'test', attempt: at.attempt, scratch: v.scratch }
   const label = 'c' + ctx.round
+  // IN A RUN WITH A QUEUE AN INVOCATION THAT WOULD CONTINUE IS NOT BUILT YET (the header: A
+  // RUN WITH A QUEUE TAKES ANOTHER PATH; the reshape's plan, T5b — its T6a and T6b build it).
+  // After its first record such a run stands where a row of its queue is unverified
+  // (`verify`) or a row nobody graded is left (`triage`). The lap below is the other path's:
+  // it would grade every row a second time and launch an advocate. So the invocation is
+  // refused here, by name, before any attempt is begun — a refusal of that path, never of
+  // the stage: a stage that begins a round, or runs an item again, is taken as it stands.
+  if (hasQueue(state) && (at.triage || at.verify)) return { status: 'refused', stage: 'test', run: v.run, not_built: 'continuation', position: at, message: 'IN A RUN WITH A QUEUE THE CONTINUATION OF A `test` STAGE IS NOT BUILT YET: round ' + at.round + ' has its first record, and its position says ' + ['triage', 'verify'].filter((word) => at[word]).map((word) => '`' + word + '`').join(' and ') + ' (`next` is `' + state.next + '`) — ' + (at.verify ? 'a row of the queue is unverified, and budget is left' : '') + (at.verify && at.triage ? '; ' : '') + (at.triage ? 'a row nobody graded is left' : '') + '. This harness verifies nothing on that path and grades no row a second time until those steps are built (the build plan of the reshaped `test` stage, T6a and T6b). Nothing is to be repaired in the run. Nothing was run beyond the two reads, and no attempt was begun.', next: state.next, untriaged: state.untriaged, named: namedOf(state), arrived }
   // The round's triage is not finished, and this stage left it: finish it, and run nothing.
   if (at.triage) {
     if (v.scope != null || v.clause != null || v.crossModel != null) return { status: 'refused', stage: 'test', run: v.run, message: 'round ' + at.round + '\'s triage is not finished (`next` is `' + state.next + '`): this invocation finishes it and runs no instrument, so it takes no scope, clause or crossModel. Nothing was run beyond the two reads.', next: state.next, untriaged: state.untriaged, named: namedOf(state), arrived }
@@ -3625,14 +3819,14 @@ async function runTest() {
   const steps = [async () => {
     const asserted = await preflightOf(ctx, launch, ['preflight'], { image: false, sha, label, branch: loopBranch, checks: moved ? [] : always, crossModel: crossNamed.length > 0, tested: moved }, 'Preflight and scope')
     if (asserted.fault) return asserted
-    const binaries = await buildBoth(ctx, label, sha, previousOf(state), 'Preflight and scope')
+    const binaries = await buildBoth(label, sha, previousOf(state), 'Preflight and scope')
     if (binaries.fault) return Object.assign({ name: asserted.name }, binaries)
     // THE CANDIDATE'S OWN GATE, ONCE: a command the tool holds, whose whole output the
     // tool keeps — the record's batch puts what it shows red on record, a record commit is
     // held to exactly that, and a held gate of the test set is answered from this run of
     // it. Green and red are both FACTS about the candidate; a gate that left no verdict
     // leaves nothing a record could be held to, and the stage halts there.
-    const gate = rerun ? null : await hold({ name: 'gate-' + label + '-a' + ctx.attempt, kind: 'gate', flags: '--run ' + v.run, what: 'the full gate of the candidate, label ' + label, phase: 'Preflight and scope' })
+    const gate = rerun ? null : await hold({ name: 'gate-' + sha.slice(0, 12), stands: true, kind: 'gate', flags: '--run ' + v.run, what: 'the full gate of the candidate, label ' + label, phase: 'Preflight and scope' })
     if (gate && !HELD_TAKES.gate.includes(gate.ends)) return { name: asserted.name, fault: heldFault('the candidate\'s gate', gate) + ' A record commit is held to the candidate\'s own gate, so nothing of this attempt could be recorded against one.', phase: 'gate', held: heldSaid(gate), transient: gate.ends === 'unread' || gate.ends === 'running', then: heldThen(v.scratch, gate) }
     return { name: asserted.name, result: asserted.result, built: binaries, gate }
   }]
@@ -3663,7 +3857,10 @@ async function runTest() {
   // the candidate's own gate, which is not run twice — and in a re-run not at all. What
   // comes back is how each command ended (`heldOf`): a verdict of the tool's is the
   // check's result, by its file; any other end leaves the check VOID BY A WORD, and the
-  // stage goes on.
+  // stage goes on. A HELD CHECK IS NAMED BY THE CANDIDATE'S COMMIT AND THE ITEM'S OWN RUN IN
+  // THE ROUND (`runOf`): its first, in the stage that begins the round — whichever attempt
+  // of that stage this is — and in a re-run the run the state's position names.
+  const runOf = (i) => (rerun ? (rerun.items.find((x) => x.item === i.item) || {}).attempt : 1)
   const heldRan = []
   for (const i of held) {
     const kind = heldKind(i.kind)
@@ -3671,7 +3868,7 @@ async function runTest() {
       heldRan.push(Object.assign({ item: i.item }, pre.gate || { ends: 'not-run', kind, why: 'off-tree' }))
       continue
     }
-    heldRan.push(Object.assign({ item: i.item }, await hold({ name: i.item + '-' + label + '-a' + ctx.attempt, kind, flags: '--previous ' + previousOf(state).commit + ' --candidate ' + sha + ' --list ' + REGRESSION_LIST, what: 'the held check `' + i.item + '`: the regression set, the previous release against the candidate', phase: 'Preflight and scope' })))
+    heldRan.push(Object.assign({ item: i.item }, await hold({ name: i.item + '-' + sha.slice(0, 12) + '-a' + runOf(i), stands: true, kind, flags: '--previous ' + previousOf(state).commit + ' --candidate ' + sha + ' --list ' + REGRESSION_LIST, what: 'the held check `' + i.item + '`: the regression set, the previous release against the candidate', phase: 'Preflight and scope' })))
   }
   for (const h of heldRan.filter((x) => !HELD_TAKES.check.includes(x.ends))) log('VOID BY A WORD: the held check `' + h.item + '` — ' + (h.ends === 'not-run' ? 'a gate reads the working tree, which is no longer the round\'s candidate: it is not run again inside its round' : (HELD_ENDS[h.ends] || h.ends) + (h.why ? ' (`' + h.why + '`)' : '')) + '. It left no verdict, and is recorded void — `' + heldVoid(h) + '` — a run that counts')
   const needsImage = hunting.some((i) => chainOf(i.kind, false).some((stepList) => stepList.some((s) => s.image)))
@@ -3738,7 +3935,10 @@ async function runTest() {
   // WHAT EACH ITEM THIS INVOCATION RAN DID — one result per item, which the record step
   // records. It is read off what the instruments, the preflights and the held commands left,
   // and it stands BEFORE the triage: in a run with a queue every red one is a source of it.
-  const unitStatus = ran.map((u) => ({ item: u.item, status: u.status, reason: u.reason })).concat(hunting.filter(imageless).map((i) => ({ item: i.item, status: 'void', reason: 'no trial image: ' + unprovided })))
+  // BESIDE EACH VOID'S SENTENCE STANDS ITS WORD (`word`: VOID_WORDS, `heldVoid`), beside a
+  // check an agent read THE PREFLIGHT THAT READ IT (`by`), and beside a held check that left
+  // a verdict ITS JOB (`job`): what the record of a run with a queue is composed from.
+  const unitStatus = ran.map((u) => ({ item: u.item, status: u.status, reason: u.reason, word: u.word })).concat(hunting.filter(imageless).map((i) => ({ item: i.item, status: 'void', reason: 'no trial image: ' + unprovided, word: voidWord('no-image', secondName) })))
   // A check that is due again once the round's record lies on its candidate was not asked
   // for (above): it is void, with that reason — never run on the tip and recorded as the
   // candidate's.
@@ -3748,38 +3948,75 @@ async function runTest() {
     // A green or a red is evidence about exactly the commit the check ran on: one that
     // ran on another commit, or does not say which, did not run on the candidate.
     const elsewhere = c && c.status !== 'void' && c.commit !== sha ? 'the check ran on ' + (c.commit ? 'the commit ' + c.commit : 'a commit the preflight did not name') + ', not on the candidate' : null
-    unitStatus.push({ item: item.item, status: !c || elsewhere ? 'void' : c.status, reason: elsewhere || offTree || (c ? c.evidence || 'the check could not run, and the preflight returned no reason' : late.includes(item) && unprovided ? unprovided : 'the preflight returned nothing for it'), evidence: c && c.evidence ? c.evidence + ' — the preflight\'s report: ' + pre.result.report : null })
+    // The preflight that read it: the second's for a check the scope selected.
+    const by = late.includes(item) ? secondName : pre.name
+    unitStatus.push({ item: item.item, status: !c || elsewhere ? 'void' : c.status, reason: elsewhere || offTree || (c ? c.evidence || 'the check could not run, and the preflight returned no reason' : late.includes(item) && unprovided ? unprovided : 'the preflight returned nothing for it'), evidence: c && c.evidence ? c.evidence + ' — the preflight\'s report: ' + pre.result.report : null, by, word: offTree ? voidWord('off-tree') : voidWord(elsewhere ? 'other-commit' : c ? 'could-not-run' : late.includes(item) && unprovided ? 'not-provided' : 'unanswered', by) })
   }
   // A HELD CHECK'S RESULT IS THE FILE THE TOOL KEPT ITS VERDICT IN, and no word: green, red
   // or void as that file says. ONE THAT LEFT NO VERDICT IS VOID BY A WORD — the one word a
   // caller may say of a held check — so that it has a run on record and the state can
   // leave `retest`: dead, its start refused, still running when the stage stopped asking,
   // or a gate that is not held off the candidate's tree.
-  for (const h of heldRan) unitStatus.push(HELD_TAKES.check.includes(h.ends) ? { item: h.item, status: h.ends, verdict: h.verdict } : { item: h.item, status: 'void', reason: heldVoid(h) })
+  for (const h of heldRan) unitStatus.push(HELD_TAKES.check.includes(h.ends) ? { item: h.item, status: h.ends, verdict: h.verdict, job: h.name } : { item: h.item, status: 'void', reason: heldVoid(h), word: heldVoid(h) })
 
   // Triage of every finding; verify-real; the forks.
   phase('Triage')
   const sources = reporters.filter((r) => r.result && r.result.findings).map((r) => ({ reporter: r.name, report: r.report, findings: findingLines(r.result.findings) }))
   if (sc.left_open && sc.left_open.length) sources.push(leftOpenSource(scopeName, sc.report, sc.left_open))
   // A RUN WITH A QUEUE TAKES ITS OWN PATH FROM HERE (the header: A RUN WITH A QUEUE TAKES
-  // ANOTHER PATH; the reshape's plan, T5a). THE STAGE HAS ONE TRIAGE, handed every source:
-  // the reporters' findings and what the scope step left open (above), EVERY RED RESULT OF
-  // THIS INVOCATION under the key the record files its row with — a held check's evidence
-  // the file the tool kept its verdict in, any other's the report of the preflight that
-  // read it: the second preflight's for a check the scope selected — and the rows nobody
-  // graded. WHAT OF THIS PATH IS BUILT ENDS WITH THAT TRIAGE'S ENTRIES HANDED OVER: its
-  // first record is the task that follows, and the stage halts there, at its record, with
-  // nothing recorded. EVERY WAY OUT OF THIS BLOCK IS A RETURN: nothing below it runs for a
-  // run with a queue.
+  // ANOTHER PATH; the reshape's plan, T5a and T5b). THE STAGE HAS ONE TRIAGE, handed every
+  // source: the reporters' findings and what the scope step left open (above), EVERY RED
+  // RESULT OF THIS INVOCATION under the key the record files its row with — a held check's
+  // evidence the file the tool kept its verdict in, any other's the report of the preflight
+  // that read it — and the rows nobody graded. THEN THE STAGE'S FIRST RECORD, BEFORE ANYTHING
+  // IS VERIFIED: composed by the tool from what was filed and from plain words — the red
+  // item's result and the triage's reporter in ONE batch, so that the row a red result is
+  // filed as is graded by the entry that names it — then gated, committed and pushed as
+  // every record is. NO BATCH IS TYPED, NO EXECUTOR IS LAUNCHED, AND NOTHING IS VERIFIED
+  // HERE: no pass, no verifier, no advocate. EVERY WAY OUT OF THIS BLOCK IS A RETURN: nothing
+  // below it runs for a run with a queue.
   if (hasQueue(state)) {
     const reds = unitStatus.filter((u) => u.status === 'red').map((u) => {
       const h = heldRan.find((x) => x.item === u.item)
-      return Object.assign({ item: u.item, clause: (selected.find((i) => i.item === u.item) || {}).clause }, h ? { verdict: h.verdict, output: h.output } : { report: testReport(ctx, late.some((i) => i.item === u.item) ? secondName : pre.name) })
+      return Object.assign({ item: u.item, clause: (selected.find((i) => i.item === u.item) || {}).clause }, h ? { verdict: h.verdict, output: h.output } : { report: testReport(ctx, u.by) })
     })
     const once = await triageOnce(ctx, launch, sources.concat(redSources(reds), ledgerSource(v.run, state)))
     if (once.fault) return haltAfter('triage', once.fault, { transient: !!once.transient, halt: once.halt || null, step: once.step || null })
     if (v.stopAfter === 'triage') return { status: 'stopped', after: 'triage', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, triage: once.triage, findings_in: once.handed, reporters: launch.names, named: namedOf(state, doorsOf), arrived }
-    return haltAfter('record', 'IN A RUN WITH A QUEUE THE STAGE\'S FIRST RECORD IS NOT BUILT YET: ' + (once.triage ? 'the stage\'s one triage handed its entries over — rendered at ' + once.triage.report + ', sha256 ' + once.triage.sha256 + ' — and ' : 'no source handed a finding, so no triage ran, and ') + 'nothing of this attempt is recorded.', { not_built: 'record', triage: once.triage, findings_in: once.handed, launched: launch.names, then: ' Nothing is to be repaired in the run: this path of the harness ends at its record until the record is built (the build plan of the reshaped `test` stage, T5b). What was committed stands; what the attempt wrote through the record script — its reports, the round\'s scope, the triage\'s rendered entries — is untracked under ' + runDir(v.run) + '/ and stays there, and the attempt counts as one that reached no record.' })
+    // THE FIRST RECORD. Its words: the reporters that left a report — the last report check
+    // took every other off the list — the candidate, its gate's job, what each item did, and
+    // the round's facts; a re-run writes no fact of the round and names no gate.
+    phase('Record')
+    const facts = rerun ? [] : [['candidate', sha], ['binary', built.candidate.sha256]].concat(sc.base && SHORT_SHA_RE.test(sc.base) ? [['base', sc.base]] : [], crossNamed.length ? [['cross-model', crossRan], ['cross-model-void', crossVoid.map((x) => x.item)]] : [])
+    const words = recordWords({ reporters: launch.names, commit: sha, gate: pre.gate ? pre.gate.name : null, did: unitStatus, facts })
+    const composed = await composeRecord('test:r' + ctx.round, loopBranch, ctx, v.scratch + '/record/test-r' + ctx.round + '-a' + ctx.attempt, 'docs(record): ' + subjectOf(v.run, ctx.round, rerun ? 'a re-run of ' + rerun.clause : 'the findings of the test stage'), words)
+    if (composed.fault) return recordHalt('record', composed, { refusal: composed.refusal || null, launched: launch.names, triage: once.triage })
+    const recorded = await recordStep('test:r' + ctx.round, loopBranch, composed.rec)
+    if (recorded.fault) return recordHalt('record', recorded, { launched: launch.names, triage: once.triage })
+    const pushed = await pushRecord('push', loopBranch)
+    if (!onIt(pushed, loopBranch, true)) return pushHalt(pushed, loopBranch, 'the stage\'s first record is committed on ' + loopBranch + ' (' + recorded.result.commit + ') and the branch was not pushed')
+    const last = await readState()
+    if (!last.state) return haltAfter('read-back', 'the stage\'s first record is committed and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + last.error, { transient: !!last.transient, step: last.step || null })
+    state = last.state
+    // WHAT THE STAGE RETURNS: it HUNTED — its findings are on record, graded, and nothing of
+    // them is verified. `next` is the state's, verbatim: `verify` while a row of the queue
+    // is unverified and budget is left. No entry, no key and no grade is in the return.
+    return Object.assign({
+      status: 'hunted',
+      stage: 'test',
+      run: v.run,
+      round: ctx.round,
+      rerun,
+      cross_model: { named: crossNamed, ran: crossRan, void: crossVoid },
+      candidate: built.candidate,
+      record: recorded.result.commit,
+      triage: once.triage,
+      counts: { items: state.items.length, items_run: hunting.length + always.length + late.length + held.length, reporters: launch.names.length, findings_in: once.handed, blockers: state.blockers, for_the_human: state.human_list, voided: unitStatus.filter((u) => u.status === 'void').map((u) => u.item) },
+      unasserted: unassertedBy,
+      held: heldRan.map((h) => Object.assign({ item: h.item }, heldSaid(h))),
+      scope: { status: sc.status, uncovered: sc.uncovered || [], reached_but_excluded: sc.reached_but_excluded || [] },
+      forbids_close: state.forbids_close,
+    }, nextOf(state), rerun ? { named: namedOf(state, rerun.round) } : {})
   }
   // And the rows whose triage nobody finished — seeded at the opening, or left without a
   // verdict by an earlier stage: this triage is the next one that runs.

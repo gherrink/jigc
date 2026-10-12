@@ -1289,6 +1289,9 @@ fn a_stage_over_the_default_opening_starts_its_held_checks_and_records_the_tools
     // THE STAGE STARTS THE HELD COMMANDS, in this order: the two builds, the candidate's
     // gate, the regression set; and, at its record, the record's own gate.
     let previous = &canary.previous[..12];
+    let candidate = &result["candidate"]["sha"]
+        .as_str()
+        .expect("the candidate's commit")[..12];
     let held: Vec<&str> = ran
         .agents
         .iter()
@@ -1297,10 +1300,10 @@ fn a_stage_over_the_default_opening_starts_its_held_checks_and_records_the_tools
     assert_eq!(
         held,
         [
-            "build-c1-a1",
+            format!("build-candidate-{candidate}").as_str(),
             format!("build-previous-{previous}").as_str(),
-            "gate-c1-a1",
-            "regression-set-c1-a1",
+            format!("gate-{candidate}").as_str(),
+            format!("regression-set-{candidate}-a1").as_str(),
             "record-test-r1-a1-1"
         ],
         "{:?}",

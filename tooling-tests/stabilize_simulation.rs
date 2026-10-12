@@ -134,11 +134,15 @@
 //! unmodified. There the stage has ONE triage, and its stand-in does what the prompt spells:
 //! it holds the prompt to numbering every finding the call names, writes the scripted entries
 //! to ONE file, and hands it over by the prompt's own `dev/stabilize-record triage` call — so
-//! the partition, the rendered report and every refusal are the real script's. **What of that
-//! path is built ends with the entries handed over**: its first record is the next task's, so
-//! each of these scenarios asserts the refusal of that path ([`ends_before_its_record`]) —
-//! the stage halts at its record, names the rendering, and records nothing — and the task
-//! that builds the record turns that helper.
+//! the partition, the rendered report and every refusal are the real script's. **Then the
+//! stage's FIRST RECORD, composed by the tool** (the plan's `T5b`; the harness half of `K3`):
+//! no executor is launched and no batch is typed — one step of the tool is handed PLAIN WORDS
+//! and the sha256 of their canonical form, which the harness computed and the record script
+//! computes again over what the step typed — then the record's gate, its one commit and its
+//! push, as on the other path. **What of that path is built ends there**
+//! ([`ends_at_its_first_record`]): the stage returns `hunted`, nothing is verified, and an
+//! invocation that would CONTINUE — the state's position says `verify`, or `triage` — is
+//! refused on that path as not built, with nothing run beyond the two reads.
 //!
 //! **The `fix` stage refuses to start**, and that is all that is asserted of it; the rig,
 //! the scenario and the stand-in are shaped so that its half's tasks add its agents here.
@@ -824,12 +828,14 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
     assert_eq!(result["status"], "triaged", "{result}");
 
     // (1) WHAT WAS LAUNCHED, AND IN WHICH ORDER: the golden.
-    // The previous release's build is named by its commit — the rig's — which the golden
-    // holds as a placeholder: what the file pins is the steps, never a sha of a test rig.
+    // The previous release's build is named by its commit — the rig's — and the candidate's
+    // build and its gate by the candidate's: the golden holds each as a placeholder. What the
+    // file pins is the steps, never a sha of a test rig.
     golden(
         TRACE,
         &format!("{}\n", ran.trace.join("\n"))
-            .replace(&previous_build(&sim), "build-previous-<its commit>"),
+            .replace(&previous_build(&sim), "build-previous-<its commit>")
+            .replace(&sim.opened_at()[..12], "<the candidate>"),
     );
 
     // (2) EXACTLY ONE REPORT PER LAUNCHED REPORTER, on disk and committed. The launched
@@ -1030,7 +1036,8 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
             step.contains(&format!(" --digest {scratch}"))
                 || step
                     == &format!(
-                        "dev/stabilize-step hash --scratch {scratch} --file bin/c1.a1/jigc"
+                        "dev/stabilize-step hash --scratch {scratch} --file {}",
+                        candidate_bin(&candidate)
                     ),
             "a step of the stage asked for the line the tool prints unasked: {step}"
         );
@@ -1076,7 +1083,11 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
         json!([
             "c1",
             candidate,
-            format!("{}/bin/c1.a1/jigc", sim.rig.scratch.display())
+            format!(
+                "{}/{}",
+                sim.rig.scratch.display(),
+                candidate_bin(&candidate)
+            )
         ])
     );
     assert_eq!(
@@ -1344,7 +1355,10 @@ fn again(key: &str, door: &str, clause: &str, grade: &str) -> Value {
 /// are due, and the record with its own gate, held.
 fn rerun_agents(sim: &Sim, attempt: u32, instruments: &[&str]) -> Vec<String> {
     let mut agents = lines(&["git:state", "git:state:test-1", "git:begin", "preflight"]);
-    agents.extend(held_steps(&format!("build-c1-a{attempt}")));
+    agents.push(format!(
+        "git:hold-start:{}",
+        candidate_build(&sim.opened_at())
+    ));
     agents.push(format!("git:hold-start:{}", previous_build(sim)));
     agents.push("git:state:test-2".to_owned());
     agents.extend(lines(instruments));
@@ -1364,7 +1378,10 @@ fn rerun_agents(sim: &Sim, attempt: u32, instruments: &[&str]) -> Vec<String> {
 /// the one its start answers with; then the record's own gate, held.
 fn finishing_lap(sim: &Sim, attempt: u32, verified: &[&str], last_state: &str) -> Vec<String> {
     let mut agents = lines(&["git:state", "git:state:test-1", "git:begin", "preflight"]);
-    agents.extend(held_steps(&format!("build-c1-a{attempt}")));
+    agents.push(format!(
+        "git:hold-start:{}",
+        candidate_build(&sim.opened_at())
+    ));
     agents.push(format!("git:hold-start:{}", previous_build(sim)));
     agents.push("triage:p1".to_owned());
     agents.extend(verified.iter().map(|key| format!("verify:{key}")));
@@ -2397,8 +2414,12 @@ fn a_stage_stopped_after_its_scope_step_is_run_again_by_the_invocation_that_foll
         "what a stopped stage leaves: its attempt's marker, the reports written so far — and the round's scope, below"
     );
     let mut launched = lines(&["git:state", "git:state:test-1", "git:begin", "preflight"]);
-    for name in ["build-c1-a1", previous_build(&sim).as_str(), "gate-c1-a1"] {
-        launched.extend(held_steps(name));
+    for name in [
+        candidate_build(&opened),
+        previous_build(&sim),
+        candidates_gate(&opened),
+    ] {
+        launched.extend(held_steps(&name));
     }
     assert_eq!(
         ran.agents(),
@@ -3089,8 +3110,9 @@ fn an_instruments_reporter_that_does_not_report_voids_its_item_and_the_hunt_is_r
             .1;
         assert!(
             preflight.contains(&format!("commit {candidate} — the commit round 1 tested"))
-                && ran.commands.iter().any(|command| command
-                    .contains(&format!(" --kind build --commit {candidate} --to bin/c1.a"))),
+                && ran.commands.iter().any(|command| command.contains(&format!(
+                    " --kind build --commit {candidate} --to bin/candidate-"
+                ))),
             "{which} builds the round's candidate, from its commit, by a held command: {:?}",
             ran.commands
         );
@@ -5326,6 +5348,44 @@ fn previous_build(sim: &Sim) -> String {
     format!("build-previous-{}", &sim.rig.rev("main")[..12])
 }
 
+/// THE NAMES OF WHAT A STAGE HOLDS ARE THE COMMIT'S (the reshape's plan, `T5b`; its review's
+/// `S12`): the candidate's build and its gate by the candidate's commit, a held check by that
+/// commit and THE ITEM'S OWN RUN IN THE ROUND — never by the stage's attempt, so that a stage
+/// started again asks for the names the stage before it asked for. A job that stands under a
+/// name and ended red, void or dead is passed over for the next: `<name>-2`, `<name>-3`, ….
+fn candidate_build(sha: &str) -> String {
+    format!("build-candidate-{}", &sha[..12])
+}
+
+fn candidates_gate(sha: &str) -> String {
+    format!("gate-{}", &sha[..12])
+}
+
+fn held_check(item: &str, sha: &str, run: u32) -> String {
+    format!("{item}-{}-a{run}", &sha[..12])
+}
+
+/// Where the candidate's binary lies, under the scratch root.
+fn candidate_bin(sha: &str) -> String {
+    format!("bin/candidate-{}/jigc", &sha[..12])
+}
+
+impl Sim {
+    /// The commit the run was opened by: the candidate of its first round, in every scenario
+    /// that commits nothing between the opening and its first stage.
+    fn opened_at(&self) -> String {
+        self.rig
+            .git(&[
+                "rev-list",
+                "--max-count=1",
+                "--grep=^docs(record): the run is opened$",
+                LOOP,
+            ])
+            .trim()
+            .to_owned()
+    }
+}
+
 /// The kinds of step a held command is: its start, and the step that asks after it.
 fn held_steps(name: &str) -> [String; 2] {
     [
@@ -5381,6 +5441,8 @@ fn the_builds_and_the_gates_are_held_by_acts_and_every_command_an_agent_runs_is_
     }
     let sim = Sim::opened("held-acts", &one_area());
     let previous = previous_build(&sim);
+    let opened = sim.opened_at();
+    let (build, gate) = (candidate_build(&opened), candidates_gate(&opened));
     let ran = sim.invoke(sim.args("test", json!({})), small_stage(json!({})));
     assert_eq!(ran.result["status"], "triaged", "{}", ran.result);
 
@@ -5393,9 +5455,9 @@ fn the_builds_and_the_gates_are_held_by_acts_and_every_command_an_agent_runs_is_
         .cloned()
         .collect();
     let expected: Vec<String> = [
-        "build-c1-a1",
+        build.as_str(),
         previous.as_str(),
-        "gate-c1-a1",
+        gate.as_str(),
         "record-test-r1-a1-1",
     ]
     .iter()
@@ -5410,9 +5472,9 @@ fn the_builds_and_the_gates_are_held_by_acts_and_every_command_an_agent_runs_is_
             .position(|a| a == label)
             .unwrap_or_else(|| panic!("`{label}` was launched: {agents:?}"))
     };
-    assert!(at("preflight") < at("git:hold-start:build-c1-a1"));
+    assert!(at("preflight") < at(&format!("git:hold-start:{build}")));
     assert!(
-        at("git:hold-wait:gate-c1-a1") < at("area-a:review"),
+        at(&format!("git:hold-wait:{gate}")) < at("area-a:review"),
         "the instruments follow the candidate's gate"
     );
     assert!(
@@ -5483,7 +5545,7 @@ fn the_builds_and_the_gates_are_held_by_acts_and_every_command_an_agent_runs_is_
     let binary = candidate["binary"].as_str().expect("the binary's path");
     assert_eq!(
         binary,
-        format!("{}/bin/c1.a1/jigc", sim.rig.scratch.display())
+        format!("{}/{}", sim.rig.scratch.display(), candidate_bin(&opened))
     );
     let bytes = fs::read(binary).expect("the binary the tool built");
     assert_eq!(candidate["sha256"], sha256_of(&bytes).as_str());
@@ -5526,6 +5588,11 @@ fn a_held_check_is_started_by_the_stage_and_recorded_from_the_tools_verdict_file
     let mut ids: Vec<&str> = vec!["regression-set", "reg-green"];
     ids.extend(voids.iter().map(String::as_str));
     let sim = Sim::opened("held-checks", &with_held_checks(&ids));
+    let opened = sim.opened_at();
+    let (gate, regression) = (
+        candidates_gate(&opened),
+        held_check("regression-set", &opened, 1),
+    );
     let mut held = json!({"regression-set": {"status": "red"}, "reg-green": {"status": "green"}});
     for reason in reasons {
         held[format!("reg-{reason}")] = json!({"status": "void", "reason": reason});
@@ -5548,10 +5615,10 @@ fn a_held_check_is_started_by_the_stage_and_recorded_from_the_tools_verdict_file
             .unwrap_or_else(|| panic!("`{label}` was launched: {agents:?}"))
     };
     assert!(
-        at("git:hold-wait:gate-c1-a1") < at("git:hold-start:regression-set-c1-a1"),
+        at(&format!("git:hold-wait:{gate}")) < at(&format!("git:hold-start:{regression}")),
         "the regression set runs after the gate, never beside it"
     );
-    assert!(at("git:hold-wait:regression-set-c1-a1") < at("area-a:review"));
+    assert!(at(&format!("git:hold-wait:{regression}")) < at("area-a:review"));
     assert!(
         !ran.prompts
             .iter()
@@ -5657,25 +5724,27 @@ fn a_held_command_that_is_taken_over_dead_left_running_void_or_red_has_its_cell(
     // asked for again — the ONE command, which is the wait and never the start.
     let sim = Sim::opened("held-over", &with_held_checks(&["regression-set"]));
     let scratch = sim.rig.scratch.display().to_string();
+    let opened = sim.opened_at();
+    let (build, gate) = (candidate_build(&opened), candidates_gate(&opened));
     let over = sim.invoke(
         sim.args("test", json!({})),
         small_stage(json!({"endings": {
-            "git:hold-wait:gate-c1-a1": "acts-and-dies-once",
-            "git:hold-start:build-c1-a1": "acts-and-dies-once",
+            format!("git:hold-wait:{gate}"): "acts-and-dies-once",
+            format!("git:hold-start:{build}"): "acts-and-dies-once",
         }})),
     );
     assert_eq!(over.result["status"], "triaged", "{}", over.result);
     let asked = |label: &str| over.agents().iter().filter(|a| **a == label).count();
     assert_eq!(
         [
-            asked("git:hold-start:gate-c1-a1"),
-            asked("git:hold-wait:gate-c1-a1")
+            asked(&format!("git:hold-start:{gate}")),
+            asked(&format!("git:hold-wait:{gate}"))
         ],
         [1, 2],
         "the wait is asked again, and the start is not"
     );
     // A START WHOSE AGENT DIED is asked again too, and answers with the job that is there.
-    assert_eq!(asked("git:hold-start:build-c1-a1"), 2);
+    assert_eq!(asked(&format!("git:hold-start:{build}")), 2);
     let long = sim.long_commands();
     assert_eq!(
         [
@@ -5689,17 +5758,18 @@ fn a_held_command_that_is_taken_over_dead_left_running_void_or_red_has_its_cell(
     // DEAD: the regression set's supervisor is killed while the command runs.
     let sim = Sim::opened("held-dead", &with_held_checks(&["regression-set"]));
     let scratch_dead = sim.rig.scratch.display().to_string();
+    let regression = held_check("regression-set", &sim.opened_at(), 1);
     let kill = format!(
-        "python3 -c \"import json,os,signal; os.kill(json.load(open('{scratch_dead}/hold/regression-set-c1-a1/job.json'))['pid'], signal.SIGKILL)\""
+        "python3 -c \"import json,os,signal; os.kill(json.load(open('{scratch_dead}/hold/{regression}/job.json'))['pid'], signal.SIGKILL)\""
     );
     let dead = sim.invoke(
         sim.args("test", json!({})),
         small_stage(json!({
-            "unreleased": ["regression-set-c1-a1"],
-            "meanwhile": {"git:hold-start:regression-set-c1-a1": kill},
+            "unreleased": [regression],
+            "meanwhile": {format!("git:hold-start:{regression}"): kill},
         })),
     );
-    sim.release("regression-set-c1-a1");
+    sim.release(&regression);
     assert_eq!(dead.result["status"], "triaged", "{}", dead.result);
     let of = dead.result["held"]
         .as_array()
@@ -5729,7 +5799,7 @@ fn a_held_command_that_is_taken_over_dead_left_running_void_or_red_has_its_cell(
             "regression-set",
             1,
             "void",
-            "without a verdict: dead:regression-set-c1-a1"
+            format!("without a verdict: dead:{regression}")
         ])),
         "by the word and the job's name, in the shape the record script takes: {state}"
     );
@@ -5754,12 +5824,13 @@ fn a_held_command_that_is_taken_over_dead_left_running_void_or_red_has_its_cell(
     // TOOL'S OWN WORD, with the name — and the stage records.
     let sim = Sim::opened("held-taken", &with_held_checks(&["regression-set"]));
     let scratch_taken = sim.rig.scratch.display().to_string();
+    let regression = held_check("regression-set", &sim.opened_at(), 1);
     let other = sim.step(&[
         "hold-start",
         "--scratch",
         &scratch_taken,
         "--name",
-        "regression-set-c1-a1",
+        &regression,
         "--kind",
         "probe",
         "--seconds",
@@ -5776,7 +5847,7 @@ fn a_held_command_that_is_taken_over_dead_left_running_void_or_red_has_its_cell(
             "regression-set",
             1,
             "void",
-            "without a verdict: taken:regression-set-c1-a1"
+            format!("without a verdict: taken:{regression}")
         ])),
         "a refused start is a void run, by the tool's word: {}",
         taken.result
@@ -5784,7 +5855,7 @@ fn a_held_command_that_is_taken_over_dead_left_running_void_or_red_has_its_cell(
     assert!(
         !taken
             .agents()
-            .contains(&"git:hold-wait:regression-set-c1-a1"),
+            .contains(&format!("git:hold-wait:{regression}").as_str()),
         "nobody asks after a command that was not started: {:?}",
         taken.agents()
     );
@@ -5793,11 +5864,12 @@ fn a_held_command_that_is_taken_over_dead_left_running_void_or_red_has_its_cell(
     let sim = Sim::opened("held-running", &one_area());
     let scratch_running = sim.rig.scratch.display().to_string();
     let opened = sim.rig.rev("HEAD");
+    let gate = candidates_gate(&opened);
     let left = sim.invoke(
         sim.args("test", json!({})),
         small_stage(json!({
-            "unreleased": ["gate-c1-a1"],
-            "endings": {"git:hold-wait:gate-c1-a1": "dies"},
+            "unreleased": [gate],
+            "endings": {format!("git:hold-wait:{gate}"): "dies"},
             "agents": {},
         })),
     );
@@ -5818,14 +5890,13 @@ fn a_held_command_that_is_taken_over_dead_left_running_void_or_red_has_its_cell(
             halted["halted"]["held"]["output"]
         ]),
         json!([
-            "gate-c1-a1",
+            gate,
             "gate",
-            format!("{scratch_running}/hold/gate-c1-a1/output")
+            format!("{scratch_running}/hold/{gate}/output")
         ]),
         "the halt names the job: {halted}"
     );
-    let call =
-        format!("`dev/stabilize-step hold-wait --scratch {scratch_running} --name gate-c1-a1`");
+    let call = format!("`dev/stabilize-step hold-wait --scratch {scratch_running} --name {gate}`");
     assert!(
         text(&halted["message"]).contains(&call)
             && text(&halted["message"]).contains("MAY STILL RUN"),
@@ -5841,7 +5912,7 @@ fn a_held_command_that_is_taken_over_dead_left_running_void_or_red_has_its_cell(
         "--scratch",
         &scratch_running,
         "--name",
-        "gate-c1-a1",
+        &gate,
         "--slice",
         "1",
     ];
@@ -5850,14 +5921,8 @@ fn a_held_command_that_is_taken_over_dead_left_running_void_or_red_has_its_cell(
         "running",
         "the command runs on"
     );
-    sim.release("gate-c1-a1");
-    let ended = sim.step(&[
-        "hold-wait",
-        "--scratch",
-        &scratch_running,
-        "--name",
-        "gate-c1-a1",
-    ]);
+    sim.release(&gate);
+    let ended = sim.step(&["hold-wait", "--scratch", &scratch_running, "--name", &gate]);
     assert_eq!(
         json!([ended["status"], ended["verdict"]]),
         json!(["done", "green"])
@@ -5958,7 +6023,8 @@ fn a_held_regression_that_was_void_is_run_again_in_a_rerun_on_the_rounds_candida
     let previous = sim.rig.rev("main");
     assert!(
         again.commands.contains(&format!(
-            "dev/stabilize-step hold-start --scratch {scratch} --name regression-set-c1-a2 --kind regression --previous {previous} --candidate {candidate} --list completions/artifacts/M55/stabilization-build/regression-set/intended-changes.tsv --digest {scratch}"
+            "dev/stabilize-step hold-start --scratch {scratch} --name {} --kind regression --previous {previous} --candidate {candidate} --list completions/artifacts/M55/stabilization-build/regression-set/intended-changes.tsv --digest {scratch}",
+            held_check("regression-set", &candidate, 2)
         )),
         "the regression set is held again, over the round's candidate: {:?}",
         again.commands
@@ -6335,63 +6401,133 @@ fn handed_under(prompt: &str, name: &str) -> Vec<String> {
     block
 }
 
-/// WHERE THE NEW PATH ENDS AT THIS COMMIT — a refusal of that path, never of the stage (the
-/// reshape's plan, §4, Phase B: *on the new path, a step that is not built yet is a refusal of
-/// that path, which the task's own scenario asserts*): the one triage handed its entries over,
-/// its report is on disk, and THE STAGE'S FIRST RECORD IS NOT BUILT — so the stage halts at
-/// its record, names the rendering by its path and its hash, and RECORDS NOTHING: no batch, no
-/// commit, no verifier, and no agent of the other path.
-fn ends_before_its_record(sim: &Sim, ran: &Ran, candidate: &str) {
+/// The subject of the commit a `test` stage's first record is made by, in round 1.
+fn first_record_subject() -> String {
+    format!("docs(record): {RUN} r1 - the findings of the test stage")
+}
+
+/// THE CANONICAL FORM of a composed record's plain words (`dev/stabilize-record compose`: THE
+/// CANONICAL FORM), written here a second time, by hand: the run, the round, the attempt and
+/// the subject, a line each, then one line a word in the order handed — each line ended by one
+/// line feed, the last too.
+fn canonical(round: u32, attempt: u32, subject: &str, words: &[String]) -> String {
+    let mut text = format!("run={RUN}\nround={round}\nattempt={attempt}\nsubject={subject}\n");
+    for word in words {
+        text.push_str(word);
+        text.push('\n');
+    }
+    text
+}
+
+/// The commands of the composing step that ran, in order: each as `(its flags, its words)`.
+fn composing(ran: &Ran) -> Vec<(String, Vec<String>)> {
+    ran.commands
+        .iter()
+        .filter(|command| command.starts_with("dev/stabilize-step compose "))
+        .map(|command| {
+            let (flags, words) = command
+                .split_once(" -- ")
+                .unwrap_or_else(|| panic!("the composing step is handed words: {command}"));
+            (
+                flags.to_owned(),
+                words.split(' ').map(str::to_owned).collect(),
+            )
+        })
+        .collect()
+}
+
+/// The value of a flag of a command, as it was typed.
+fn flag_of<'a>(flags: &'a str, name: &str) -> &'a str {
+    let rest = flags
+        .split_once(&format!(" {name} "))
+        .unwrap_or_else(|| panic!("the command names `{name}`: {flags}"))
+        .1;
+    rest.split(' ').next().expect("a value")
+}
+
+/// WHERE THE NEW PATH ENDS AT THIS COMMIT: AT ITS FIRST RECORD (the reshape's plan, `T5b`; the
+/// harness half of `K3`). The stage returns `hunted` with the state's `next`; the record is
+/// ONE commit on the candidate, pushed, and the tree is clean; **the record step is tool steps
+/// only** — the composing step, the record's gate held, the one commit, the push — and NO
+/// EXECUTOR IS LAUNCHED and no batch typed; nothing is verified, and no agent of the other
+/// path runs: no pass of a triage, no verifier, no advocate, no independent drive. AND THE
+/// WORDS THE STEP WAS HANDED HASH, IN THEIR CANONICAL FORM, TO THE SHA256 THE HARNESS COMPUTED
+/// IN JAVASCRIPT: the form is written here a second time, by hand, and the record script — which
+/// computes it a third time — took the call. Returns the words.
+fn ends_at_its_first_record(
+    sim: &Sim,
+    ran: &Ran,
+    candidate: &str,
+    attempt: u32,
+    next: &str,
+) -> Vec<String> {
     let result = &ran.result;
     assert_eq!(
-        json!([
-            result["status"],
-            result["halted"]["phase"],
-            result["halted"]["not_built"]
-        ]),
-        json!(["halted", "record", "record"]),
+        json!([result["status"], result["next"], result["halted"]]),
+        json!(["hunted", next, null]),
         "{result}"
     );
-    let line = filed_line(ran);
-    let on_disk = sim.rig.read(&rendering(1, 1));
+    let head = sim.rig.rev("HEAD");
+    assert_eq!(result["record"], head.as_str(), "{result}");
     assert_eq!(
-        result["halted"]["triage"],
-        json!({"reporter": "triage", "report": rendering(1, 1), "sha256": sha256(&on_disk)}),
-        "the halt names the rendering by the path and the hash its call printed: {result}"
+        sim.rig.rev("HEAD~1"),
+        candidate,
+        "the record is ONE commit, on the candidate"
     );
     assert_eq!(
-        json!([line["triage"], line["sha256"]]),
-        json!([rendering(1, 1), sha256(&on_disk)]),
-        "{line}"
+        sim.rig.remote(LOOP).as_deref(),
+        Some(head.as_str()),
+        "the record is pushed"
     );
-    // NOTHING IS RECORDED: the candidate is the branch's tip, no batch is applied, and what
-    // the attempt wrote is untracked under the run's directory.
-    assert_eq!(sim.rig.rev("HEAD"), candidate, "no commit was made");
-    assert!(
-        sim.rig.status().lines().all(|line| line.starts_with("?? ")),
-        "nothing is staged or changed: {}",
-        sim.rig.status()
-    );
+    assert_eq!(sim.rig.status(), "", "nothing is left pending");
+    assert_eq!(head_commit(sim).0, first_record_subject());
     let agents = ran.agents();
-    for other in [
-        "triage:p",
-        "verify:",
-        "advocate:",
-        "proposal:",
-        "record:",
-        "git:record:",
-        "git:push",
-    ] {
+    for other in ["triage:p", "verify:", "advocate:", "proposal:", "record:"] {
         assert!(
             !agents.iter().any(|label| label.starts_with(other)),
-            "`{other}…` is of the other path, or of a step this path has not built: {agents:?}"
+            "`{other}…` is of the other path, an executor, or of a step this path has not built: {agents:?}"
         );
     }
+    let gate = format!("record-test-r1-a{attempt}-1");
     assert_eq!(
-        agents[agents.len() - 2..],
-        ["triage", "git:check-reports:triage"],
-        "the path ends with its one triage and the check of its report: {agents:?}"
+        agents[agents.len() - 6..],
+        [
+            "git:compose:test:r1",
+            format!("git:hold-start:{gate}").as_str(),
+            format!("git:hold-wait:{gate}").as_str(),
+            "git:record:test:r1",
+            "git:push",
+            "git:state:test-3",
+        ],
+        "the record is tool steps only: composed, gated, committed, pushed, read back: {agents:?}"
     );
+    assert!(
+        !ran.commands
+            .iter()
+            .any(|command| command.starts_with("dev/stabilize-record apply ")),
+        "no batch is typed: {:?}",
+        ran.commands
+    );
+    let composed = composing(ran);
+    assert_eq!(
+        composed.len(),
+        1,
+        "one step composes the record: {composed:?}"
+    );
+    let (flags, words) = &composed[0];
+    assert!(
+        flags.contains(&format!(
+            " --branch {LOOP} --run-dir {RUN_DIR} --round 1 --attempt {attempt} --subject '{}' --sha256 ",
+            first_record_subject()
+        )),
+        "{flags}"
+    );
+    assert_eq!(
+        flag_of(flags, "--sha256"),
+        sha256(&canonical(1, attempt, &first_record_subject(), words)),
+        "the hash the harness computed is the sha256 of the words' canonical form: {words:?}"
+    );
+    words.clone()
 }
 
 /// The opening of the fullest scenario of the new path: an audit area that finds things, the
@@ -6501,7 +6637,10 @@ fn a_red_held_check_is_graded_by_the_stages_one_triage_under_its_own_key() {
     // THE RED RESULT: a source under the key its row will be filed with, and no reporter —
     // its evidence the file the tool kept its verdict in, which is there.
     let red = handed_under(prompt, "red-regression-set");
-    let verdict = format!("{scratch}/hold/regression-set-c1-a1/verdict.json");
+    let verdict = format!(
+        "{scratch}/hold/{}/verdict.json",
+        held_check("regression-set", &candidate, 1)
+    );
     assert_eq!(red.len(), 2, "{red:?}");
     assert!(
         red[0].contains("A RED RESULT")
@@ -6604,19 +6743,26 @@ fn a_red_held_check_is_graded_by_the_stages_one_triage_under_its_own_key() {
         "{line}"
     );
 
-    // (3) THE STAGE ENDS WHERE THE PATH IS BUILT TO: at its record, with nothing recorded —
-    // the ledger holds the one seeded row, and no row of a red result yet.
-    ends_before_its_record(&sim, &ran, &candidate);
-    assert_eq!(ran.result["halted"]["findings_in"], 5, "{}", ran.result);
+    // (3) THE STAGE ENDS WHERE THE PATH IS BUILT TO: at its first record — the red result's
+    // row filed and graded by one batch, under its own key, beside the rows the triage keyed.
+    ends_at_its_first_record(&sim, &ran, &candidate, 1, "verify");
+    assert_eq!(ran.result["counts"]["findings_in"], 5, "{}", ran.result);
     let state = sim.state();
     assert_eq!(
-        state["ledger"]
-            .as_array()
-            .expect("the ledger")
-            .iter()
-            .map(|row| json!([row["key"], row["grade"]]))
-            .collect::<Vec<_>>(),
-        [json!([SEEDED, "ungraded"])],
+        sorted(
+            state["ledger"]
+                .as_array()
+                .expect("the ledger")
+                .iter()
+                .map(|row| format!("{} {}", text(&row["key"]), text(&row["grade"])))
+                .collect()
+        ),
+        sorted(vec![
+            format!("{HUNCH} unclear"),
+            format!("{ROUTE} breaks"),
+            "red-regression-set breaks".to_owned(),
+            format!("{SEEDED} out-of-scope"),
+        ]),
         "{state}"
     );
     assert!(
@@ -6816,7 +6962,7 @@ fn triage_that_leaves_a_handed_finding_in_no_entry_or_in_two_halts_by_name() {
     assert_eq!(sim.rig.rev("HEAD"), candidate);
 
     // (2) THE FILE CORRECTED, THE SAME CALL MADE AGAIN: the same attempt is handed over, and
-    // the stage goes on to where the path ends.
+    // the stage goes on to its first record.
     let sim = Sim::queued("queue-partition-corrected", &one_area());
     let candidate = sim.rig.rev("HEAD");
     let ran = sim.invoke(
@@ -6826,7 +6972,7 @@ fn triage_that_leaves_a_handed_finding_in_no_entry_or_in_two_halts_by_name() {
             "then": [once("first", json!([1])), once("second", json!([2]))],
         })),
     );
-    ends_before_its_record(&sim, &ran, &candidate);
+    ends_at_its_first_record(&sim, &ran, &candidate, 1, "verify");
     let calls: Vec<&String> = ran
         .commands
         .iter()
@@ -6901,11 +7047,11 @@ fn triage_that_leaves_a_handed_finding_in_no_entry_or_in_two_halts_by_name() {
     );
 }
 
-/// **A stage with nothing to grade launches no triage** — of the builder's naming, beside the
-/// plan's four. Where no source hands a finding — the instruments found nothing, nothing came
-/// back red, and the ledger holds no row nobody graded — there is no call to spell and no
-/// entry to hand over: the one triage is not launched, and the stage ends where the path
-/// ends, saying so.
+/// **A stage with nothing to grade launches no triage** — of the builder's naming (`T5a`),
+/// turned by `T5b`. Where no source hands a finding — the instruments found nothing, nothing
+/// came back red, and the ledger holds no row nobody graded — there is no call to spell and no
+/// entry to hand over: the one triage is not launched, AND THE STAGE STILL RECORDS — what each
+/// item did, the candidate's gate and the round's facts — from the words alone.
 #[test]
 fn a_stage_with_nothing_to_grade_launches_no_triage_on_the_new_path() {
     if !can_run() {
@@ -6914,29 +7060,30 @@ fn a_stage_with_nothing_to_grade_launches_no_triage_on_the_new_path() {
     let sim = Sim::queued("queue-nothing", &one_area());
     let candidate = sim.rig.rev("HEAD");
     let ran = sim.invoke(sim.args("test", json!({})), small_stage(json!({})));
+    let words = ends_at_its_first_record(&sim, &ran, &candidate, 1, "stop");
     let result = &ran.result;
     assert_eq!(
-        json!([
-            result["status"],
-            result["halted"]["phase"],
-            result["halted"]["not_built"],
-            result["halted"]["triage"],
-            result["halted"]["findings_in"]
-        ]),
-        json!(["halted", "record", "record", null, 0]),
-        "{result}"
-    );
-    assert!(
-        text(&result["halted"]["reason"]).contains("no source handed a finding, so no triage ran"),
+        json!([result["triage"], result["counts"]["findings_in"]]),
+        json!([null, 0]),
         "{result}"
     );
     let agents = ran.agents();
     assert!(
         !agents.iter().any(|label| label.starts_with("triage"))
-            && agents.last() == Some(&"git:check-reports"),
-        "no triage of either path is launched, and nothing follows the instruments' report check: {agents:?}"
+            && agents[agents.len() - 7] == "git:check-reports",
+        "no triage of either path is launched: the record follows the instruments' report check: {agents:?}"
     );
-    assert_eq!(sim.rig.rev("HEAD"), candidate);
+    assert!(
+        !words.contains(&"reporter=triage".to_owned())
+            && words.contains(&"item=area-a:green".to_owned()),
+        "{words:?}"
+    );
+    let state = sim.state();
+    assert_eq!(
+        json!([state["ledger"], standing(&state, "area-a")]),
+        json!([[], ["green", null]]),
+        "{state}"
+    );
 }
 
 /// **An entry without its kind's evidence is recorded as a lead** (`T5a`; `T1`: *a kind
@@ -6976,7 +7123,7 @@ fn an_entry_without_its_kinds_evidence_is_recorded_as_a_lead() {
             "triage": {"entries": [evident, bare]},
         }})),
     );
-    ends_before_its_record(&sim, &ran, &candidate);
+    ends_at_its_first_record(&sim, &ran, &candidate, 1, "verify");
     let data = sim.rendered(1, 1);
     assert_eq!(
         data["entries"]
@@ -7020,6 +7167,978 @@ fn an_entry_without_its_kinds_evidence_is_recorded_as_a_lead() {
             "`{of_an_entry}` is of an entry, and the harness's return holds it: {returned}"
         );
     }
+}
+
+/// A reviewer's one finding, and the entry a triage keys it under: a behaviour, graded a
+/// break, with its commands — so that the round's queue holds a row and `next` is `verify`.
+fn one_finding() -> Value {
+    found(&[finding(
+        "s-1",
+        "a slot is dropped",
+        "jigc doc set",
+        "audit-clean",
+    )])
+}
+
+fn one_entry() -> Value {
+    let mut entry = keyed(INSIDE, "behaviour", "breaks", json!({"area-a-review": [1]}));
+    entry["commands"] = json!("jigc doc set a b");
+    json!({"entries": [entry]})
+}
+
+/// **A stage records its findings before anything is verified** (the reshape's plan, `T5b`;
+/// ruling 1 of 2026-10-11: *a stage records twice*; the plan's §2.1 — until this task nothing
+/// a `test` stage found was on record before its one record at the end, so a stage that died
+/// while it verified lost every row). IN A RUN WITH A QUEUE the stage's FIRST RECORD follows
+/// its one triage: the reports checked, the candidate's gate, a result an item, every new
+/// entry as its row with its class, every entry's grade, the round's facts — composed BY THE
+/// TOOL from what was filed and from PLAIN WORDS, in the order the stage means them. A held
+/// check's word is its job; a reporter's word is a reporter that left a report. The stage
+/// returns `hunted`, `next` is `verify`, and NOTHING IS VERIFIED: no verifier was launched,
+/// no row holds a verdict, and the budget is unspent.
+#[test]
+fn a_stage_records_its_findings_before_anything_is_verified() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::queued("queue-first-record", &held_and_seeded());
+    let candidate = sim.rig.rev("HEAD");
+    let previous = sim.rig.rev("main");
+    let (gate, regression) = (
+        candidates_gate(&candidate),
+        held_check("regression-set", &candidate, 1),
+    );
+    let mut route = keyed(ROUTE, "route", "breaks", json!({"area-a-review": [1]}));
+    route["route"] = json!("Run: jigc doc set --repair");
+    route["code"] = json!("doc.set-slot");
+    let hunch = keyed(HUNCH, "lead", "unclear", json!({"area-a-review": [2]}));
+    let mut seeded = found_again(SEEDED, "out-of-scope", json!({"ledger": [1]}));
+    seeded["bound"] = json!("windows");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        json!({
+            "held": {"regression-set": {"status": "red"}},
+            "scope": one_door(),
+            "agents": {
+                "area-a:review": found(&[
+                    finding("s-1", "a refusal prints a route that leads nowhere", "jigc doc set", "audit-clean"),
+                    finding("s-2", "a slot may be dropped", "jigc doc set", "audit-clean"),
+                ]),
+                "triage": {"entries": [
+                    route,
+                    hunch,
+                    found_again("red-regression-set", "breaks", json!({"red-regression-set": [1]})),
+                    seeded,
+                ]},
+            },
+        }),
+    );
+    let words = ends_at_its_first_record(&sim, &ran, &candidate, 1, "verify");
+
+    // (1) THE WORDS, WHOLE AND IN ORDER: the reporters that left a report, as they were
+    // launched; the commit; the gate's job; what each item did — a held check by its job,
+    // whatever its verdict; the round's facts. No row, no entry, no grade is a word.
+    let binary = text(&ran.result["candidate"]["sha256"]);
+    assert_eq!(
+        words,
+        [
+            "reporter=attempt".to_owned(),
+            "reporter=scope".to_owned(),
+            "reporter=preflight".to_owned(),
+            "reporter=area-a-review".to_owned(),
+            "reporter=triage".to_owned(),
+            format!("commit={candidate}"),
+            format!("gate={gate}"),
+            "item=area-a:green".to_owned(),
+            format!("item=gate:held:{gate}"),
+            format!("item=regression-set:held:{regression}"),
+            format!("fact=candidate:{candidate}"),
+            format!("fact=binary:{binary}"),
+            format!("fact=base:{previous}"),
+        ]
+    );
+
+    // (2) WHAT IS ON RECORD, in the one commit: every finding as a row with its grade, the
+    // red result's among them under its own key; a result an item; the round's facts; the
+    // candidate's gate; the reports; what a stop shows.
+    let state = sim.state();
+    assert_eq!(
+        sorted(
+            state["ledger"]
+                .as_array()
+                .expect("the ledger")
+                .iter()
+                .map(|row| format!("{} {}", text(&row["key"]), text(&row["grade"])))
+                .collect()
+        ),
+        sorted(vec![
+            format!("{HUNCH} unclear"),
+            format!("{ROUTE} breaks"),
+            "red-regression-set breaks".to_owned(),
+            format!("{SEEDED} out-of-scope"),
+        ]),
+        "{state}"
+    );
+    assert_eq!(
+        json!([
+            standing(&state, "area-a"),
+            standing(&state, "gate"),
+            standing(&state, "regression-set")
+        ]),
+        json!([["green", null], ["green", null], ["red", null]]),
+        "{state}"
+    );
+    assert_eq!(
+        json!([
+            state["rounds"][0]["facts"]["candidate"],
+            state["rounds"][0]["facts"]["binary"],
+            state["rounds"][0]["facts"]["base"]
+        ]),
+        json!([candidate, binary, previous]),
+        "{state}"
+    );
+    let (_, paths) = head_commit(&sim);
+    for rel in [
+        "ledger.md".to_owned(),
+        "r1/gate.md".to_owned(),
+        "r1/results.md".to_owned(),
+        "r1/triage.md".to_owned(),
+        "r1/view.md".to_owned(),
+        "r1/reports/test/triage.a1.md".to_owned(),
+        "r1/checks/regression-set.a1.json".to_owned(),
+    ] {
+        assert!(
+            paths.contains(&format!("{RUN_DIR}/{rel}")),
+            "`{rel}` is in the first record's commit: {paths:?}"
+        );
+    }
+
+    // (3) NOTHING IS VERIFIED, and the state says what follows: the queue holds the rows the
+    // triage sent on, the budget is unspent, and the position is a continuation's.
+    assert_eq!(
+        json!([
+            state["next"],
+            state["position"]["test"]["verify"],
+            state["budget"]["spent"],
+            state["queue"]["ranked"].as_array().map(Vec::len)
+        ]),
+        json!(["verify", true, 0, 2]),
+        "{state}"
+    );
+    assert!(
+        state["ledger"]
+            .as_array()
+            .expect("the ledger")
+            .iter()
+            .all(|row| row["verdict"].is_null()),
+        "no row holds a verdict: {state}"
+    );
+    assert!(
+        !ran.reporters.iter().any(|name| name.starts_with("verify-")),
+        "{:?}",
+        ran.reporters
+    );
+}
+
+/// **A stage killed before its first record holds its green gate and its regression set
+/// once** (`T5b`; the plan's `F9` and its review's `S12`: the candidate's build, its gate and
+/// every held check were named by label AND ATTEMPT, so a stage that ended before its record
+/// ran all of them again — 45 minutes of gate and regression set on the canary's numbers).
+/// THE NAMES ARE THE COMMIT'S: the stage that is started again — a later attempt, the same
+/// candidate — asks for the names the first one asked for, and is answered by the jobs that
+/// stand, green: one start step each, NO WAIT, and no long command runs a second time. Its
+/// record names those jobs. *Here the first stage is stopped after its instruments, which is
+/// how a test ends a stage before its record: its attempt counts, and nothing is recorded.*
+#[test]
+fn a_stage_killed_before_its_first_record_holds_its_green_gate_and_its_regression_set_once() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::queued("queue-killed", &with_held_checks(&["regression-set"]));
+    let candidate = sim.rig.rev("HEAD");
+    let (build, gate, regression) = (
+        candidate_build(&candidate),
+        candidates_gate(&candidate),
+        held_check("regression-set", &candidate, 1),
+    );
+    let script =
+        || small_stage(json!({"agents": {"area-a:review": one_finding(), "triage": one_entry()}}));
+    let mut first = script();
+    first["agents"]
+        .as_object_mut()
+        .expect("the agents")
+        .remove("triage");
+    let stopped = sim.invoke(sim.args("test", json!({"stopAfter": "instruments"})), first);
+    assert_eq!(stopped.result["status"], "stopped", "{}", stopped.result);
+    assert_eq!(sim.rig.rev("HEAD"), candidate, "nothing was recorded");
+    let held_by = |ran: &Ran| -> Vec<String> {
+        ran.agents()
+            .iter()
+            .filter(|label| label.starts_with("git:hold-"))
+            .map(|label| (*label).to_owned())
+            .collect()
+    };
+    let previous = previous_build(&sim);
+    assert_eq!(
+        held_by(&stopped),
+        [
+            build.as_str(),
+            previous.as_str(),
+            gate.as_str(),
+            regression.as_str()
+        ]
+        .iter()
+        .flat_map(|name| held_steps(name))
+        .collect::<Vec<_>>(),
+        "the first stage starts each command and waits for it"
+    );
+
+    // THE STAGE, STARTED AGAIN: attempt 2 of the round, on the same candidate.
+    let again = sim.invoke(sim.args("test", json!({})), script());
+    let words = ends_at_its_first_record(&sim, &again, &candidate, 2, "verify");
+    let mut expected: Vec<String> = [&build, &previous, &gate, &regression]
+        .iter()
+        .map(|name| format!("git:hold-start:{name}"))
+        .collect();
+    expected.extend(held_steps("record-test-r1-a2-1"));
+    assert_eq!(
+        held_by(&again),
+        expected,
+        "every job that stands green answers its start, and nobody waits for one"
+    );
+    let long = sim.long_commands();
+    assert_eq!(
+        [
+            long.iter().filter(|c| *c == "gate --keep-going").count(),
+            long.iter()
+                .filter(|c| c.starts_with("regression-set "))
+                .count(),
+            long.iter().filter(|c| c.starts_with("cargo ")).count(),
+        ],
+        [2, 1, 2],
+        "the candidate's gate ran once — the other is the record's — the regression set once, and one build a binary: {long:?}"
+    );
+    for word in [
+        format!("gate={gate}"),
+        format!("item=gate:held:{gate}"),
+        format!("item=regression-set:held:{regression}"),
+    ] {
+        assert!(words.contains(&word), "`{word}`: {words:?}");
+    }
+    let state = sim.state();
+    assert_eq!(
+        json!([standing(&state, "gate"), standing(&state, "regression-set")]),
+        json!([["green", null], ["green", null]]),
+        "the record of the second attempt holds the verdicts the first one's jobs left: {state}"
+    );
+    assert!(
+        sim.rig
+            .read(&format!("{RUN_DIR}/r1/gate.md"))
+            .contains("pass"),
+        "the candidate's gate is a fact of the round"
+    );
+}
+
+/// **A held check that left no verdict is started under its next name in its re-run**
+/// (`T5b`; the plan's second review: *held checks named by commit defeat a re-run* — a start is
+/// answered by the job that is there, so an item's automatic re-run, on the round's own
+/// candidate, would meet the same dead job for ever). A HELD CHECK IS NAMED BY ITS COMMIT AND
+/// THE ITEM'S OWN RUN IN THE ROUND: the regression set whose supervisor was killed is recorded
+/// void BY A WORD that names its job, the state asks for its re-run, and the re-run — the
+/// item's second run — asks for the next name, starts the command, and records its verdict.
+#[test]
+fn a_held_check_that_left_no_verdict_is_started_under_its_next_name_in_its_rerun() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::queued("queue-held-rerun", &with_held_checks(&["regression-set"]));
+    let candidate = sim.rig.rev("HEAD");
+    let scratch = sim.rig.scratch.display().to_string();
+    let (first, second) = (
+        held_check("regression-set", &candidate, 1),
+        held_check("regression-set", &candidate, 2),
+    );
+    let kill = format!(
+        "python3 -c \"import json,os,signal; os.kill(json.load(open('{scratch}/hold/{first}/job.json'))['pid'], signal.SIGKILL)\""
+    );
+    let dead = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({
+            "unreleased": [first],
+            "meanwhile": {format!("git:hold-start:{first}"): kill},
+        })),
+    );
+    sim.release(&first);
+    let words = ends_at_its_first_record(&sim, &dead, &candidate, 1, "stop");
+    assert!(
+        words.contains(&format!("item=regression-set:void:dead:{first}")),
+        "a held check that left no verdict is void by a word, which names its job: {words:?}"
+    );
+    let state = sim.state();
+    assert_eq!(
+        results(&state, 1)
+            .into_iter()
+            .find(|row| row[0] == "regression-set"),
+        Some(json!([
+            "regression-set",
+            1,
+            "void",
+            format!("without a verdict: dead:{first}")
+        ])),
+        "{state}"
+    );
+    // The run stops after every round: the human's go, and the state asks for the re-run.
+    let go = sim.invoke(
+        sim.args("test", json!({"rulings": [{"go": true}]})),
+        json!({}),
+    );
+    assert_eq!(
+        json!([go.result["status"], go.result["next"]]),
+        json!(["ruled", "retest"]),
+        "{}",
+        go.result
+    );
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            state["retest"],
+            state["position"]["test"]["rerun"]["items"][0]["item"],
+            state["position"]["test"]["rerun"]["items"][0]["attempt"]
+        ]),
+        json!([["working-product"], "regression-set", 2]),
+        "the state asks for the item's second run: {state}"
+    );
+
+    // THE RE-RUN: the item's second run in the round, on the round's candidate — under the
+    // next name. The dead job is not asked for again.
+    let again = sim.invoke(
+        sim.args("test", json!({"clause": "working-product"})),
+        json!({}),
+    );
+    assert_eq!(
+        json!([again.result["status"], again.result["halted"]]),
+        json!(["hunted", null]),
+        "{}",
+        again.result
+    );
+    let agents = again.agents();
+    assert!(
+        held_steps(&second)
+            .iter()
+            .all(|step| agents.contains(&step.as_str()))
+            && !agents.iter().any(|label| label.ends_with(first.as_str())),
+        "the second run is started and waited for under its own name: {agents:?}"
+    );
+    let composed = composing(&again);
+    assert_eq!(composed.len(), 1, "{composed:?}");
+    assert_eq!(
+        composed[0].1,
+        [
+            "reporter=attempt".to_owned(),
+            "reporter=preflight".to_owned(),
+            format!("commit={candidate}"),
+            format!("item=regression-set:held:{second}"),
+        ],
+        "a re-run's record: its reporters, the round's candidate and the item's result — no gate of the candidate's, and no fact of the round"
+    );
+    let state = sim.state();
+    assert_eq!(
+        json!([standing(&state, "regression-set"), state["retest"]]),
+        json!([["green", null], []]),
+        "{state}"
+    );
+    assert_eq!(
+        sim.long_commands()
+            .iter()
+            .filter(|c| c.starts_with("regression-set "))
+            .count(),
+        2,
+        "the regression set ran once a run of its item"
+    );
+}
+
+/// **A gate that stands red is not the answer to a stage started again** (`T5b`: *a job that
+/// stands is taken only while it runs or where its verdict is green; one that ended red, void
+/// or dead is passed over for the next name, as a record's gate already is — a starved red
+/// gate is measured again, never answered for ever*). The candidate's gate of a stage that
+/// ended before its record was red. The stage started again meets that job under the commit's
+/// name, PASSES IT OVER, and holds the gate under the next name: that one is the candidate's
+/// gate of the round, by name, in the record.
+#[test]
+fn a_gate_that_stands_red_is_not_the_answer_to_a_stage_started_again() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::queued("queue-red-gate", &one_area());
+    let candidate = sim.rig.rev("HEAD");
+    let gate = candidates_gate(&candidate);
+    let stopped = sim.invoke(
+        sim.args("test", json!({"stopAfter": "preflight"})),
+        json!({"gate": red(&[KNOWN]), "scope": one_door(), "agents": {}}),
+    );
+    assert_eq!(
+        json!([
+            stopped.result["status"],
+            stopped.result["gate"]["name"],
+            stopped.result["gate"]["ends"]
+        ]),
+        json!(["stopped", gate, "red"]),
+        "{}",
+        stopped.result
+    );
+
+    let again = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"agents": {"area-a:review": one_finding(), "triage": one_entry()}})),
+    );
+    let words = ends_at_its_first_record(&sim, &again, &candidate, 2, "verify");
+    let next = format!("{gate}-2");
+    let gates: Vec<&str> = again
+        .agents()
+        .into_iter()
+        .filter(|label| label.contains(":gate-"))
+        .collect();
+    assert_eq!(
+        gates,
+        [
+            format!("git:hold-start:{gate}").as_str(),
+            format!("git:hold-start:{next}").as_str(),
+            format!("git:hold-wait:{next}").as_str(),
+        ],
+        "the red job answers its start and is passed over; the next name is started and waited for"
+    );
+    assert!(
+        again
+            .logs
+            .iter()
+            .any(|line| line.contains(&format!("`{gate}`")) && line.contains("passed over")),
+        "{:?}",
+        again.logs
+    );
+    assert!(
+        words.contains(&format!("gate={next}")) && !words.contains(&format!("gate={gate}")),
+        "{words:?}"
+    );
+    assert!(
+        sim.rig
+            .read(&format!("{RUN_DIR}/r1/gate.md"))
+            .contains("pass"),
+        "the round's gate is the one that was measured again"
+    );
+    assert_eq!(
+        sim.long_commands()
+            .iter()
+            .filter(|c| *c == "gate --keep-going")
+            .count(),
+        3,
+        "the red gate, the gate that was measured again, and the record's"
+    );
+
+    // AND A RED GATE THIS INVOCATION STARTED ITSELF IS ITS OWN ANSWER — also where the agent of
+    // its start died and the step, asked again, was answered by the job that was there by
+    // then: red is a fact about the candidate, and is passed over only where an EARLIER
+    // invocation left it.
+    let sim = Sim::queued("queue-red-gate-own", &one_area());
+    let candidate = sim.rig.rev("HEAD");
+    let gate = candidates_gate(&candidate);
+    let own = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({
+            "gate": red(&[KNOWN]),
+            "record": {"gate": red(&[KNOWN])},
+            "endings": {format!("git:hold-start:{gate}"): "acts-and-dies-once"},
+        })),
+    );
+    let words = ends_at_its_first_record(&sim, &own, &candidate, 1, "stop");
+    assert!(
+        words.contains(&format!("gate={gate}")),
+        "the gate this invocation started is the candidate's, red as it is: {words:?}"
+    );
+    assert!(
+        !own.agents()
+            .iter()
+            .any(|label| label.ends_with(&format!("{gate}-2"))),
+        "{:?}",
+        own.agents()
+    );
+    assert!(
+        sim.rig
+            .read(&format!("{RUN_DIR}/r1/gate.md"))
+            .contains(KNOWN),
+        "what the candidate's gate shows red is on record"
+    );
+}
+
+/// **A build that stands failed is passed over, and its binary is written at a path of its
+/// own** — of the builder's naming, beside the plan's (`T5b`: *the two builds are named by
+/// commit*; *a job that stands is taken only while it runs or where its verdict is green*). A
+/// build is named by its commit, so a build that failed would be the answer to every later
+/// stage on that candidate under that scratch root. It is passed over: the stage started
+/// again builds the commit under the next name, AT THE PATH OF THAT NAME — a binary is written
+/// once — and every driving agent is handed that file.
+#[test]
+fn a_build_that_stands_failed_is_passed_over_and_its_binary_is_written_at_a_path_of_its_own() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::queued("queue-failed-build", &one_area());
+    let candidate = sim.rig.rev("HEAD");
+    let build = candidate_build(&candidate);
+    let failed = sim.invoke(
+        sim.args("test", json!({})),
+        json!({"builds": {"fails": ["candidate"]}, "scope": one_door(), "agents": {}}),
+    );
+    assert_eq!(
+        json!([
+            failed.result["status"],
+            failed.result["halted"]["phase"],
+            failed.result["halted"]["held"]["name"],
+            failed.result["halted"]["held"]["ends"]
+        ]),
+        json!(["halted", "build", build, "red"]),
+        "{}",
+        failed.result
+    );
+
+    let again = sim.invoke(sim.args("test", json!({})), small_stage(json!({})));
+    ends_at_its_first_record(&sim, &again, &candidate, 2, "stop");
+    let next = format!("{build}-2");
+    let builds: Vec<&str> = again
+        .agents()
+        .into_iter()
+        .filter(|label| label.contains(":build-candidate-"))
+        .collect();
+    assert_eq!(
+        builds,
+        [
+            format!("git:hold-start:{build}").as_str(),
+            format!("git:hold-start:{next}").as_str(),
+            format!("git:hold-wait:{next}").as_str(),
+        ],
+        "the failed build answers its start and is passed over; the next name is started and waited for"
+    );
+    let binary = text(&again.result["candidate"]["binary"]);
+    assert_eq!(
+        binary,
+        format!(
+            "{}/bin/candidate-{}-2/jigc",
+            sim.rig.scratch.display(),
+            &candidate[..12]
+        ),
+        "the second build's binary lies at a path of its name's own"
+    );
+    assert_eq!(
+        again.result["candidate"]["sha256"],
+        sha256_of(&fs::read(&binary).expect("the binary the tool built")).as_str()
+    );
+    let reviewer = &again
+        .prompts
+        .iter()
+        .find(|(label, _)| label == "area-a:review")
+        .expect("the reviewer")
+        .1;
+    assert!(
+        reviewer.contains(&format!("BINARY: candidate `{binary}` sha256 ")),
+        "every driving agent is handed that file: {reviewer}"
+    );
+}
+
+/// **Every void says why in one word** — of the builder's naming, beside the plan's (`T5b`;
+/// what `K3` left to it: *every void is a word — the sentences the harness composes today need
+/// a word each*; *the reporter words are the reporters that left a report: one the report
+/// check found missing is dropped, and its item is `void:<word>:<reporter>`*). ONE STAGE, EIGHT
+/// ITEMS, EACH VOID ANOTHER WAY: a step that returned and left no report, a report a hand
+/// wrote over, a step that halted, a driver that drove another binary, a trial arm with no
+/// image, a check the preflight could not run, a check that ran on another commit, a check
+/// the second preflight did not provide. The record takes each as ONE WORD AND A KEY — the
+/// reporter it is about — and a reporter that left no report is no word of the record.
+#[test]
+fn every_void_says_why_in_one_word_and_a_reporter_that_left_no_report_is_no_word() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::queued(
+        "queue-voids",
+        &Opening {
+            clauses: vec!["adoptable", "gate-green", "audit-clean"],
+            items: json!([
+                in_scope("arm-a", "trial-arm", "adoptable", &[], &["verbs"]),
+                {"item": "tarball", "kind": "check", "clause": "adoptable", "runs": "in-scope",
+                 "brief": "the packaged-tarball install", "doors": ["jigc doc set"], "registries": []},
+                item("lint", "check", "gate-green"),
+                item("gate", "check", "gate-green"),
+                item("area-a", "audit-area", "audit-clean"),
+                item("area-b", "audit-area", "audit-clean"),
+                item("cross", "audit-cross-cutting", "audit-clean"),
+                item("drive-a", "audit-drive", "audit-clean"),
+            ]),
+            bounds: vec![],
+            rows: json!([]),
+        },
+    );
+    let candidate = sim.rig.rev("HEAD");
+    let previous = sim.rig.rev("main");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        json!({
+            "checks": {"lint": "void", "gate": "green"},
+            "checkCommits": {"gate": "f".repeat(40)},
+            "scope": one_door(),
+            "agents": {
+                "area-a:review": nothing(),
+                "area-b:review": nothing(),
+                "cross:review": {"status": "halted", "findings": [],
+                    "halt": {"root_cause": "the rig could not be built", "evidence": "scripted",
+                             "tree_state": "clean", "recommendation": "none"}},
+                "drive-a:drive": nothing(),
+            },
+            "endings": {"preflight-second": "dies", "area-a:review": "unreported"},
+            "overwrites": {"area-b:review": format!(
+                "# a review\n\nIt met {DENY_TERM}.\n\n<!-- end of report -->\n"
+            )},
+            "wrongBinary": ["drive-a:drive"],
+        }),
+    );
+    let words = ends_at_its_first_record(&sim, &ran, &candidate, 1, "stop");
+    let binary = text(&ran.result["candidate"]["sha256"]);
+    assert_eq!(
+        words,
+        [
+            "reporter=attempt".to_owned(),
+            "reporter=scope".to_owned(),
+            "reporter=preflight".to_owned(),
+            "reporter=cross-review".to_owned(),
+            "reporter=drive-a-drive".to_owned(),
+            format!("commit={candidate}"),
+            format!("gate={}", candidates_gate(&candidate)),
+            "item=area-a:void:unreported:area-a-review".to_owned(),
+            "item=area-b:void:set-aside:area-b-review".to_owned(),
+            "item=cross:void:halted:cross-review".to_owned(),
+            "item=drive-a:void:unasserted:drive-a-drive".to_owned(),
+            "item=arm-a:void:no-image:preflight-second".to_owned(),
+            "item=lint:void:could-not-run:preflight".to_owned(),
+            "item=gate:void:other-commit:preflight".to_owned(),
+            "item=tarball:void:not-provided:preflight-second".to_owned(),
+            format!("fact=candidate:{candidate}"),
+            format!("fact=binary:{binary}"),
+            format!("fact=base:{previous}"),
+        ],
+        "each void by its word and the reporter it is about; the three reporters that left no report are no word"
+    );
+    // ON RECORD, each item is void with that word — no sentence of the harness's, and no
+    // word an agent returned, is in the round's results.
+    let state = sim.state();
+    assert_eq!(
+        sorted(
+            results(&state, 1)
+                .iter()
+                .map(|row| format!("{} {} {}", text(&row[0]), text(&row[2]), text(&row[3])))
+                .collect()
+        ),
+        sorted(
+            words
+                .iter()
+                .filter_map(|word| word.strip_prefix("item="))
+                .map(|did| {
+                    let (item, why) = did.split_once(":void:").expect("every item is void");
+                    format!("{item} void {why}")
+                })
+                .collect()
+        ),
+        "{state}"
+    );
+    let recorded = sim.rig.read(&format!("{RUN_DIR}/r1/results.md"));
+    for sentence in [
+        "scripted by the simulation",
+        "returned and left no report",
+        "no trial image",
+    ] {
+        assert!(
+            !recorded.contains(sentence),
+            "`{sentence}` is a sentence, and the results hold it: {recorded}"
+        );
+    }
+    assert_eq!(
+        sorted(
+            ran.result["counts"]["voided"]
+                .as_array()
+                .expect("the void items")
+                .iter()
+                .map(text)
+                .collect()
+        ),
+        sorted(lines(&[
+            "area-a", "area-b", "arm-a", "cross", "drive-a", "gate", "lint", "tarball"
+        ])),
+        "{}",
+        ran.result
+    );
+}
+
+/// **A continuation is refused on the new path until it is built** (`T5b`; the plan's §4,
+/// Phase B: *a step that is not built yet is a refusal of that path, which the task's own
+/// scenario asserts — never a refusal of the stage*). After its first record a run with a
+/// queue stands at a position this harness has no path for yet: `verify` — a row of the
+/// queue is unverified, and budget is left — or `triage` — a row nobody graded. Until both
+/// are built (`T6a`, `T6b`) an invocation that meets either IS REFUSED, BY NAME, AFTER ITS TWO
+/// READS: no attempt is begun, no agent is launched, and nothing of the other path's lap —
+/// which would grade every row again and launch an advocate — runs for such a run.
+#[test]
+fn a_continuation_is_refused_on_the_new_path_until_it_is_built() {
+    if !can_run() {
+        return;
+    }
+    let refused = |sim: &Sim, word: &str| {
+        let before = sim.rig.rev("HEAD");
+        let position = sim.state()["position"]["test"].clone();
+        assert_eq!(
+            position[word], true,
+            "the position says `{word}`: {position}"
+        );
+        let ran = sim.invoke(sim.args("test", json!({})), json!({}));
+        let result = &ran.result;
+        assert_eq!(
+            json!([
+                result["status"],
+                result["not_built"],
+                result["next"],
+                result["position"]
+            ]),
+            json!(["refused", "continuation", word, position]),
+            "{result}"
+        );
+        assert_eq!(
+            ran.agents(),
+            ["git:state", "git:state:test-1"],
+            "nothing runs beyond the two reads"
+        );
+        assert!(
+            text(&result["message"]).contains("NOT BUILT YET")
+                && text(&result["message"]).contains("Nothing was run beyond the two reads"),
+            "{result}"
+        );
+        assert_eq!(sim.rig.rev("HEAD"), before);
+        assert_eq!(
+            sim.state()["position"]["test"],
+            position,
+            "no attempt was begun: the position is what it was"
+        );
+    };
+
+    // (1) `verify`: the first record left a row in the queue.
+    let sim = Sim::queued("queue-continue-verify", &one_area());
+    let candidate = sim.rig.rev("HEAD");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"agents": {"area-a:review": one_finding(), "triage": one_entry()}})),
+    );
+    ends_at_its_first_record(&sim, &ran, &candidate, 1, "verify");
+    refused(&sim, "verify");
+
+    // (2) `triage`: a red check the triage folded under a key of its own minting — the record
+    // files the red result's row under ITS key, and nobody graded that row.
+    let sim = Sim::queued(
+        "queue-continue-triage",
+        &Opening {
+            clauses: vec!["gate-green", "audit-clean"],
+            items: json!([
+                item("gate", "check", "gate-green"),
+                in_scope("ci", "check", "gate-green", &["jigc doc set"], &[]),
+                item("area-a", "audit-area", "audit-clean"),
+            ]),
+            bounds: vec![],
+            rows: json!([]),
+        },
+    );
+    let candidate = sim.rig.rev("HEAD");
+    let mut minted = keyed(
+        "the-gate-is-red",
+        "behaviour",
+        "no-break",
+        json!({"red-gate": [1]}),
+    );
+    minted["commands"] = json!("dev/gate");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({
+            "checks": {"gate": "red", "ci": "red"},
+            "agents": {"area-a:review": nothing(), "triage": {"entries": [
+                minted,
+                found_again("red-ci", "breaks", json!({"red-ci": [1]})),
+            ]}},
+        })),
+    );
+    let words = ends_at_its_first_record(&sim, &ran, &candidate, 1, "triage");
+    assert!(
+        words.contains(&"item=gate:red:preflight".to_owned())
+            && words.contains(&"item=ci:red:preflight-second".to_owned()),
+        "a check an agent read red names the preflight whose report says so — the second's for a check the scope selected: {words:?}"
+    );
+    let state = sim.state();
+    let filed = state["ledger"]
+        .as_array()
+        .expect("the ledger")
+        .iter()
+        .find(|row| row["key"] == "red-gate")
+        .unwrap_or_else(|| panic!("the red result's row is filed: {state}"));
+    assert_eq!(
+        json!([filed["grade"], filed["repro"]]),
+        json!([
+            "ungraded",
+            format!("{RUN_DIR}/r1/reports/test/preflight.a1.md")
+        ]),
+        "its evidence is the preflight's report, by path, and nobody graded it: {state}"
+    );
+    let late = state["ledger"]
+        .as_array()
+        .expect("the ledger")
+        .iter()
+        .find(|row| row["key"] == "red-ci")
+        .unwrap_or_else(|| panic!("the late red check's row is filed: {state}"));
+    assert_eq!(
+        json!([late["grade"], late["repro"]]),
+        json!([
+            "breaks",
+            format!("{RUN_DIR}/r1/reports/test/preflight-second.a1.md")
+        ]),
+        "a check the scope selected is filed from the second preflight's report, and graded by the batch that files it: {state}"
+    );
+    refused(&sim, "triage");
+}
+
+/// **A step that types one status wrong is refused by the hash** (the plan's `K3`, its harness
+/// half; `T5b`). The composing step is an agent that types forty words: THE HARNESS HASHES THE
+/// WORDS' CANONICAL FORM IN JAVASCRIPT, and the record script hashes what the step typed. A
+/// step that typed `green` for a void item is REFUSED (`words`) with nothing written — a
+/// green that nobody measured never reaches a record — and THE STEP IS ASKED FOR AGAIN,
+/// exactly: typed as it stands, the same words compose the record. A step refused so a second
+/// time halts the stage at its record, by the record script's own word, with nothing written.
+#[test]
+fn a_step_that_types_one_status_wrong_is_refused_by_the_hash() {
+    if !can_run() {
+        return;
+    }
+    // The reviewer dies: its item is void, by a word that names the reporter that left no
+    // report — and that reporter is no word of the record.
+    const VOID: &str = "item=area-a:void:silent:area-a-review";
+    const GREEN: &str = "item=area-a:green";
+    let script = |mistypes: Value| {
+        json!({"scope": one_door(), "agents": {"area-a:review": nothing()},
+               "endings": {"area-a:review": "dies"}, "mistypes": mistypes})
+    };
+
+    // (1) ONCE: refused, asked again, typed as it stands, recorded.
+    let sim = Sim::queued("queue-words-once", &one_area());
+    let candidate = sim.rig.rev("HEAD");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        script(json!({"git:compose:test:r1": [VOID, GREEN]})),
+    );
+    let result = &ran.result;
+    assert_eq!(
+        json!([result["status"], result["halted"]]),
+        json!(["hunted", null]),
+        "{result}"
+    );
+    let composed = composing(&ran);
+    assert_eq!(composed.len(), 2, "the step ran twice: {composed:?}");
+    assert_eq!(
+        composed[0].0, composed[1].0,
+        "the same call both times: the round, the attempt, the subject and the hash"
+    );
+    assert!(
+        composed[0].1.contains(&GREEN.to_owned())
+            && !composed[0].1.contains(&VOID.to_owned())
+            && composed[1].1.contains(&VOID.to_owned())
+            && !composed[1].1.contains(&"reporter=area-a-review".to_owned()),
+        "typed wrong, then as it stands — and a reporter that left no report is no word: {composed:?}"
+    );
+    assert_eq!(
+        flag_of(&composed[1].0, "--sha256"),
+        sha256(&canonical(1, 1, &first_record_subject(), &composed[1].1)),
+        "the hash is of the words as the harness composed them"
+    );
+    let agents = ran.agents();
+    let at = |label: &str| {
+        agents
+            .iter()
+            .position(|a| *a == label)
+            .unwrap_or_else(|| panic!("`{label}` was launched: {agents:?}"))
+    };
+    assert!(
+        at("git:compose:test:r1") + 1 == at("git:compose:test:r1:again1")
+            && at("git:compose:test:r1:again1") + 1 == at("git:hold-start:record-test-r1-a1-1"),
+        "the step is asked again at once, and the record's gate follows the words that hold: {agents:?}"
+    );
+    let again = &ran
+        .prompts
+        .iter()
+        .find(|(label, _)| label == "git:compose:test:r1:again1")
+        .expect("the step, asked again")
+        .1;
+    assert!(
+        again.contains("typed as it stands") && again.contains("AGAIN (1)"),
+        "{again}"
+    );
+    assert_eq!(
+        sim.rig.rev("HEAD~1"),
+        candidate,
+        "one record, on the candidate"
+    );
+    let state = sim.state();
+    assert_eq!(
+        results(&state, 1),
+        [json!(["area-a", 1, "void", "silent:area-a-review"])],
+        "what is on record is what the harness composed — the item void, by its word: {state}"
+    );
+
+    // (2) TWICE: the stage halts at its record, by the record script's own word, and nothing
+    // was written — the attempt reached no record.
+    let sim = Sim::queued("queue-words-twice", &one_area());
+    let candidate = sim.rig.rev("HEAD");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        script(json!({
+            "git:compose:test:r1": [VOID, GREEN],
+            "git:compose:test:r1:again1": [VOID, GREEN],
+        })),
+    );
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["halted"]["phase"],
+            result["halted"]["refused"],
+            result["halted"]["refusal"]
+        ]),
+        json!(["halted", "record", "record", "words"]),
+        "{result}"
+    );
+    let line = refused_line(result);
+    assert_eq!(
+        json!([line["act"], line["refused"], line["refusal"]]),
+        json!(["compose", "record", "words"]),
+        "the halt names the file the step's own line is in: {line}"
+    );
+    assert_eq!(sim.rig.rev("HEAD"), candidate, "nothing was committed");
+    assert!(
+        sim.rig.status().lines().all(|line| line.starts_with("?? ")),
+        "nothing is applied: {}",
+        sim.rig.status()
+    );
+    assert!(
+        !ran.agents()
+            .iter()
+            .any(|label| label.starts_with("git:hold-start:record-")),
+        "no gate is held on a record that was not composed: {:?}",
+        ran.agents()
+    );
+    let state = sim.state();
+    assert_eq!(
+        json!([state["ledger"], state["position"]["test"]["attempt"]]),
+        json!([[], 2]),
+        "the next invocation works the next attempt: {state}"
+    );
 }
 
 // ---------------------------------------------------------------------------

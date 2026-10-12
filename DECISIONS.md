@@ -2,6 +2,117 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The harness: the record before verification, and nothing built twice — a stage of a run with a queue records its findings by a batch the tool composes from plain words held to a hash, returns `hunted`, and refuses a continuation as not built; what a stage holds is named by its commit, and a job that stands is the answer only while it runs or where it is green (the plan's `T5b`; the builder's choices inside it, and one clause of the paragraph that is not built)
+
+**What.** [`.claude/workflows/stabilize.js`](.claude/workflows/stabilize.js) records a `test` stage's findings before anything is verified, where the run has a queue ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §4, `T5b`, Phase B; ruling 1 of *2026-10-11 — The reshaped `test` stage's three open questions, ruled*: a stage records twice; the harness half of `K3`; the review's `S12`). The script's header holds it as two paragraphs — *THEN THE STAGE'S FIRST RECORD* and *WHAT A STAGE HOLDS IS NAMED BY ITS COMMIT*. In one place:
+
+- **The first record is composed by the tool, and no agent types a batch.** After its one triage the stage hands ONE step — `dev/stabilize-step compose` — plain words and the sha256 of their canonical form (`recordWords`, `wordsText`, `composePrompt`, `composeRecord`). Then the record's gate, its one commit and its push are the steps every record has: `recordStep` is handed no text, so no executor runs, and the commit step is held to what the composing step said it applied.
+- **The words**, in the order the stage means them: `reporter=<name>` for every reporter that left a report · `commit=<sha>`, always · `gate=<job>` · one `item=` word an item · `fact=candidate`, `binary`, `base`, and `cross-model` / `cross-model-void` one word an item, none for an empty list. A re-run names no gate and no fact.
+- **What an item did**: `held:<job>` for a held check that left a verdict, whatever the verdict · `red:<reporter>` for a check an agent read red, the reporter being the preflight that read it (the second for a check the scope selected) — one field, `by`, which the red result's source is now composed from too · `void:<word>[:<key>]` · `green`.
+- **The stage returns `hunted`**, with the state's `next` verbatim. Nothing is verified: the branch launches no pass, no verifier, no advocate and no independent drive.
+- **A continuation is refused on that path as not built.** A run with a queue whose position says `verify` or `triage` is refused after its two reads — `status: refused`, `not_built: continuation` — before any attempt is begun. An invocation that only records rulings is taken as before, and so is a re-run, which is no continuation.
+- **For both kinds of run, what a stage holds is named by its commit**: `build-candidate-<12>` and `build-previous-<12>`, `gate-<12>`, and `<item>-<12>-a<the item's own run in the round>`. A stage started again asks for the same names and is answered by the jobs that stand; an item's re-run asks for the next.
+- **A job that stands is taken only while it runs or where it is green** (`hold`, `stands`). One that ended red, void or dead is passed over for `<name>-2`, `<name>-3`, … up to nine.
+
+**One clause of the paragraph is not built, and the task was not halted for it.** The plan has *a contested verdict recorded as contested and the human's, with no advocate*, and names a scenario for it. Two things stand against it, and neither is this task's to change:
+
+- A filed verdict has no field for it (`dev/stabilize-record verdict`: `key · verdict · candidate · refutation · reason · regression · previous · hands_on`), and the one cell that routes a finding to the human as contested, `triage-set`'s `fork`, takes `{kind, case, drive}` whole — the advocate's case and the independent drive, which the new path no longer has. `compose` takes no word for either. `T3a`'s entry said it: *a filing carries no fork; a contested verdict has no shape here*.
+- No verifier is launched on this path before `T6a`, so no verdict of any kind can arise from this commit's harness.
+
+*What is built of the clause:* no advocate and no independent drive is launched for a run with a queue, held by the fence's arm (t) and by every scenario of the path; the `advocate` and `proposal` rows of `NEEDS` are still reached, by the other path. *What is not:* that a contested verdict is on record as one and is the human's. **No scenario was written under the plan's name** — one that drove no contested verdict would assert what its name does not. The brief says a paragraph that needs a script changed is a halt with nothing committed; this was taken as `T5a` took its fork, because nothing built here moves whichever way it is settled, and it is said first in the return. **Owed before `T6a` takes a verifier's return:** a shape in the record script — a word of the filing, and a route to the human that needs no case and no drive — or a declared bound that a contested finding is in its verifier's report and nowhere else. Without one, a contested finding that is confirmed inside the round's scope is routed `fix`.
+
+**A void says why in one word** (`VOID_WORDS`; the key is the reporter the word is about, or a held job's name):
+
+| Word | When |
+|---|---|
+| `silent` · `halted` · `unasserted` | a step of the item's chain returned nothing · halted · drove and did not return the candidate's hash as the one it asserted |
+| `unreported` · `set-aside` | the report check found a step's report missing · moved a file at its path that was no report |
+| `chain-lost` | the item's chain did not come back at all |
+| `no-image` · `not-provided` | a trial arm, and a check the scope selected, where the second preflight provided nothing |
+| `off-tree` · `other-commit` · `could-not-run` · `unanswered` | a check: in a re-run · run on another commit · read void by the preflight · not answered |
+| the tool's and `HELD_ENDS`'s, by `heldVoid` | a held check that left no verdict: `dead:<job>`, `taken:<job>`, `off-tree`, … |
+
+The sentences stay where they were, for the path of a run without an order: its typed batch writes what it wrote.
+
+**How the composing step can be refused, and the road taken for each** (`COMPOSE_REFUSALS`, held to the step tool's `COMPOSE_THEN` by the fence):
+
+| The record script's word | Road |
+|---|---|
+| `words` | the step is asked for again, once, with one more paragraph that says the tool refused the words and to type the command as it stands; refused again, the stage halts at `record` |
+| `check` | halt at `record`. The report check stands before the step on every way into it, so this is a file that changed between the two; nothing was written, and the next invocation works the next attempt |
+| `pending` | halt at `record`, with the sentence a record step that stopped has: the next invocation's first read finds the batch, gates and commits it |
+| `no-change` | halt at `record`, *no batch is left*. An attempt's first record always writes that the attempt reached it, so this cannot be a first record's; `T6a` turns it for the second, where it is no halt |
+| any other word | halt at `record`, naming the file the step's own line is in |
+
+The halt carries the tool's word (`refused`) and the record script's (`refusal`).
+
+**Chosen where the plan left it to the builder — and what was rejected.**
+
+- **The first name is the bare one, the next `-2`.** A record's gate numbers from `-1`, because every name of it is one invocation's. Here the common case reads as the commit, and the previous release's build keeps the name and the path it had. *Rejected:* `-1` everywhere — every assertion on the previous build would move for nothing.
+- **A build is passed over too, and writes its binary at a path of its name's own** (`bin/<whose>-<12>-<n>/jigc`). The plan names the gate and the held checks; a build named by its commit with no way past a dead job would end every later stage on that candidate under that scratch root. *Rejected:* one path a commit — the tool refuses a path that is taken, and a build killed after it placed its binary would refuse every later one.
+- **A job is passed over only where an earlier invocation left it.** A start that started the command answers `running`; an end at a start is a job that was there. One that a dead try of this invocation's own start left is this invocation's, and its red is a fact of the candidate.
+- **An item's own run is 1 in the stage that begins a round**, whichever attempt of the stage that is, and the position's number in a re-run.
+- **`commit=` is always a word**, and `fact=candidate` beside it: the first is what an item and a gate are of, the second is the round's fact.
+- **The first record's directory and the name of its gate are the other path's** (`record-test-r<N>-a<A>-<n>`); its subject is *the findings of the test stage*. `T6a`'s second record needs a name and a subject of its own.
+- **The refusal of a continuation is a `refused` return, not a halt**: nothing ran and no attempt was begun, as for every refusal the position gives.
+- **`verify` is not added to the values of `next` the script knows.** The return carries it verbatim, with `returned_to_orchestrator` and the state's counts, as for any value the script cannot act on; `T7` owns the return.
+- **One scenario stands for *killed*: a stage stopped after its instruments.** The stand-in has no kill; a stopped stage ends before its record with its attempt counted and its jobs standing, which is the state that matters.
+- **The plan's `a_test_stages_records_are_composed_by_the_tool_and_no_executor_is_launched` is not a scenario of its own here.** Every scenario of the path asserts it through one helper; `T6a` has both records to name it by.
+
+**Red first.** The scenarios, the fence's arms and the carried names were written before the harness changed and run on the parent's: **24 red** of 74 in the two suites.
+
+| Arm | On the parent |
+|---|---|
+| the six of this task | the stage halts at its record (`not_built: record`); the second stage of *killed* starts every command again; the red gate's stage is asked under another name |
+| the four of `T5a` that reach the path's end | the same halt |
+| ten scenarios of a run without an order | a job's name: `build-c1-a1`, `gate-c1-a1`, `<item>-c1-a1` |
+| fence (l) · (n) · (t) · (s) | `compose` is an act no stage asks for and no row lists · no function `composeRecord` · no row for `composePrompt` |
+
+**What followed its code, and says so:** the self-test's eight checks; three scenarios of the builder's naming — a failed build passed over, every void's word, and the red gate an invocation started itself — each written where a mutant about to be run would have survived, and green at its first run; the late red check in the continuation's second case, for the same reason; and two expected values read off the first green run: `next` is `stop` where a round ends with nothing open under the opening's *every round*, and a re-run is asked for only after the human's go.
+
+**Mutants of the finished harness** — thirty-six, each one edit, each run on the self-test, on the arm that names its property and, for most, on the fence. All died.
+
+| The edit | What went red |
+|---|---|
+| the canonical form's last line is not ended · the words are sorted | the self-test; arm (n); every scenario that records — the script refuses twice |
+| a void typed green · a reporter that left no report is a word · no word from the report check · another word for an unasserted driver, for a check that could not run · another key for a check nobody provided, none for a trial arm | `every_void_says_why_in_one_word_and_a_reporter_that_left_no_report_is_no_word` |
+| a red check names the first preflight · is typed green | `a_continuation_is_refused_on_the_new_path_until_it_is_built`, its second case |
+| a held check named by the stage's attempt · a green job passed over | `a_stage_killed_before_its_first_record_holds_its_green_gate_and_its_regression_set_once` |
+| the gate that stands red is the answer · a red job of this invocation's own dead start is passed over | `a_gate_that_stands_red_is_not_the_answer_to_a_stage_started_again` |
+| a failed build is the answer · a second build read at the first one's path | `a_build_that_stands_failed_is_passed_over_and_its_binary_is_written_at_a_path_of_its_own` |
+| a continuation is not refused · only `verify` is · only `triage` is · a run without an order is refused too | the continuation's scenario; `an_unverified_finding_is_finished_by_the_next_invocation_and_after_one_more_it_is_the_humans`; arms (t), (r) |
+| asked again never · twice · told nothing · the halt without the record script's word | `a_step_that_types_one_status_wrong_is_refused_by_the_hash` |
+| the commit step not held to what was applied · no `commit=` · no `fact=candidate` · the stage says `triaged` | `a_stage_with_nothing_to_grade_launches_no_triage_on_the_new_path` |
+| no `gate=` · no `fact=base` · a held check typed by its status | `a_stage_records_its_findings_before_anything_is_verified` |
+| a re-run numbers a held check 1 · writes the round's facts · names a gate | `a_held_check_that_left_no_verdict_is_started_under_its_next_name_in_its_rerun` |
+| a refusal `check` is asked again | the self-test, and nothing else: no scenario drives that word |
+
+**The assertions this task carried.**
+
+- *The simulation:* every name of a held job a scenario of a run without an order pins, in ten scenarios, through four helpers (`candidate_build`, `candidates_gate`, `held_check`, `candidate_bin`); a re-run and a finishing lap now *start* the candidate's build and wait for none; the golden trace, four lines, each a name; the stand-in's pattern for a held check's item.
+- *The fence:* arm (l), the `NO_STAGES` row `compose` gone; (j), the gate's hold; (k), the builds; (r), fifteen composers of a step, the `test` stage's `buildBoth` line, a held check's void row, `hasQueue` asked in two places, and the branch's last line; (s), rows for `composePrompt` and `wordsAgain`; (t), `composeRecord` among the helpers that halt nothing.
+- *The canary's suite,* one assertion: `a_stage_over_the_default_opening_starts_its_held_checks_and_records_the_tools_verdicts` names three held jobs.
+
+**What the next tasks owe because of this.**
+
+- `T6a`: the verify phase begins after the first record's read-back, where the branch returns today. Its second record is `composeRecord` with every reporter of the attempt, a subject and a directory of its own, and `no-change` taken as no halt. The fence's arm (t) pins that the branch names no verifier, and arm (r) its last line; both turn. **And the contested verdict, above, is owed a shape before a verifier's return is taken.**
+- `T6b`: the refusal goes. A killed stage's first record that was applied and not committed is found by the next first read and finished by `finishRecord`, which reads no path.
+- `T7`: the `hunted` return holds `counts`, `held`, `scope` and `unasserted` as the other path's does.
+- `K8b`, `K7b`, `K6`: a name is the commit's now. A hold started with one more flag under a name that stands is refused `taken`, and the check is void by that word; a new held kind is named by its commit and is `stands`.
+- `T10`: the document says nothing of the first record, the names or the words; `wf-fork-serial` is discharged for the removal only.
+
+**What is not established.**
+
+- **No agent has typed a composing step.** How often forty to a hundred words come back altered, and whether one more ask is enough, is the first supervised run's.
+- **A contested verdict**, as above.
+- **`check`, `pending`, `no-change` and an unknown word at a first record**: read and held by the self-test; no scenario drives one.
+- **Three void words no scenario drives**: `chain-lost`, `off-tree`, `unanswered`; and `taken` on this path.
+- **A job that stands void or dead, passed over; one that stands running, taken over by a later invocation; the ninth name.** Red is driven for a gate and a build.
+- **A stage killed between its composing step and its commit**, through the harness: the step tool's own arm holds the states.
+- **A re-run inside a round that is not the run's latest**, where the other path hands `apply` another round than its calls; a re-run with a cross-model pass; the cross-model facts as words, which the self-test alone holds.
+- **That a held gate's verdict is of the tree its commit names** (`wf-held-gate-tree`).
+- **Not read whole for this task**: the harness's `runFix`, its probes and its prompts beyond the ones named; the simulation beyond its rig, its runtime, the scenarios of a run with a queue and the lines that pin a job's name; the fence beyond the arms and tables named; the two scripts beyond `compose`, `verdict`, the position and the step tool's hold; [stabilization-workflow.md](implementation/stabilization-workflow.md), [dev-workflow.md](implementation/dev-workflow.md), [public-hygiene.md](implementation/public-hygiene.md) and [decisions-pending.md](implementation/decisions-pending.md) beyond what the plan, the project's instructions and the fences carry of them.
+
 ## 2026-10-12 — A file of a held command is under its name whole or not at all, and a hold's two stamps say how long it was held: two arms that went red in a full gate on a loaded machine and passed alone, each traced to the tool and not to the arm (a finding two builders reported; the fixer's choices inside it)
 
 **What was reported.** Two arms of the tooling suites went red in a full gate while two lanes' gates ran side by side, and each passed alone: `dev_stabilize_step::what_the_tool_leaves_running_ends_when_the_command_does`, on *EOF while parsing a value*, and `dev_stabilize_probe::a_hold_ends_only_after_its_seconds_is_started_once_and_is_answered_within_a_slice`, on a hold of two seconds whose own stamps were 1.99995 s apart. A run of the workflow is at least as loaded as that machine was, so what the load showed of the tools is what a run meets. **In both the tool was wrong, and the arm read what it should.**

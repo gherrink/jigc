@@ -5,12 +5,12 @@ agent git:begin · build-git · sonnet · State
 phase Preflight and scope
 parallel 2 {
   agent preflight · stabilize-preflight · opus · Preflight and scope
-  agent git:hold-start:build-c1-a1 · build-git · sonnet · Preflight and scope
-  agent git:hold-wait:build-c1-a1 · build-git · sonnet · Preflight and scope
+  agent git:hold-start:build-candidate-<the candidate> · build-git · sonnet · Preflight and scope
+  agent git:hold-wait:build-candidate-<the candidate> · build-git · sonnet · Preflight and scope
   agent git:hold-start:build-previous-<its commit> · build-git · sonnet · Preflight and scope
   agent git:hold-wait:build-previous-<its commit> · build-git · sonnet · Preflight and scope
-  agent git:hold-start:gate-c1-a1 · build-git · sonnet · Preflight and scope
-  agent git:hold-wait:gate-c1-a1 · build-git · sonnet · Preflight and scope
+  agent git:hold-start:gate-<the candidate> · build-git · sonnet · Preflight and scope
+  agent git:hold-wait:gate-<the candidate> · build-git · sonnet · Preflight and scope
   agent scope · stabilize-scope · opus · Preflight and scope
 }
 agent git:state:test-2 · build-git · sonnet · State

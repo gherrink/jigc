@@ -1012,7 +1012,7 @@ fn j_what_the_record_script_decides_from_reaches_it_and_what_it_decides_is_passe
         tested.contains(
             "const facts = rerun ? null : { candidate: sha, binary: built.candidate.sha256 }"
         ) && tested.contains("if (!rerun) steps.push(() => roleStep('scope', 'scope',")
-            && tested.contains("const gate = rerun ? null : await hold({ name: 'gate-' + label + '-a' + ctx.attempt, kind: 'gate',")
+            && tested.contains("const gate = rerun ? null : await hold({ name: 'gate-' + sha.slice(0, 12), stands: true, kind: 'gate',")
             && tested.contains("gate: pre.gate ? { commit: sha, file: pre.gate.output } : null")
             && !source.contains("alone"),
         "a re-run writes no fact of the round, resolves no scope and records no candidate's gate"
@@ -1262,13 +1262,25 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
     // THE PREVIOUS RELEASE'S BINARY IS BUILT BY THE TOOL, from the commit and to the version
     // the record names (the second repair plan's `K11`): it is handed to the function that
     // holds the two builds, never to a preflight, and the tool's verdict is held to it.
+    // AND EACH BUILD IS NAMED BY ITS COMMIT (the reshape's plan, `T5b`): the name and the path
+    // of a binary carry the commit it is built from, and a job that stands under the name is
+    // the answer only while it runs or where it is green.
     let builds = function(&full, "buildBoth");
+    let build = function(&full, "buildOf");
     assert!(
-        builds.contains(
-            "String(previous.commit), 'bin/previous-' + short + '/jigc', previous.version,"
-        ) && function(&full, "buildOf").contains("(version && f.version !== version)")
-            && function(&full, "buildOf").contains("' --version ' + version"),
+        builds.contains("await buildOf('previous', String(previous.commit), previous.version,")
+            && builds.contains("await buildOf('candidate', sha, null,")
+            && build.contains("(version && f.version !== version)")
+            && build.contains("' --version ' + version"),
         "the previous release's binary is built from the record's commit, and held to the record's version"
+    );
+    assert!(
+        build.contains("const short = sha.slice(0, 12)")
+            && build.contains("const at = (n) => 'bin/' + whose + '-' + short + (n > 1 ? '-' + n : '') + '/jigc'")
+            && build.contains("await hold({ name: 'build-' + whose + '-' + short, stands: true, kind: 'build', flags: (n) => '--commit ' + sha + ' --to ' + at(n)")
+            && build.contains("const to = at(job.asked)")
+            && function(&full, "hold").contains("if (job.stands && ['red', 'void', 'dead'].includes(at.ends) && seen.tries < 2) {"),
+        "a build is named by its commit, and written at a path of its name's own; a job that stands red, void or dead is passed over"
     );
     let scope = function(&full, "scopePrompt");
     assert!(
@@ -1442,6 +1454,82 @@ fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_
     assert!(
         executor.contains("no commit of yours") && !executor.contains("its `GATE: PASS`"),
         "build-executor.md still has the record step's executor commit"
+    );
+
+    // IN A RUN WITH A QUEUE A `test` STAGE'S RECORD HAS NO EXECUTOR (the reshape's plan, `K3`
+    // and `T5b`): the batch is composed BY THE TOOL — one step, handed plain words and the
+    // sha256 of their canonical form, which this script computes — and what follows it is the
+    // record step that applies nothing: the gate, the one commit, held to what the composing
+    // step said it applied.
+    let composing = function(&full, "composeRecord");
+    assert!(
+        composing.contains("await toolStep('compose:' + label + (n ? ':again' + n : ''), 'Record', 'compose', composePrompt(ctx, branch, subject, words)")
+            && composing.contains("return { rec: { text: null, hold: recordHold(dir), expect: { calls: c.applied.calls, checks: c.applied.checks } } }")
+            && !composing.contains("roleStep("),
+        "a composed record is ONE step of the tool, and no agent types a batch: {composing}"
+    );
+    assert!(
+        function(&full, "composePrompt").contains(
+            "' --sha256 ' + sha256(wordsText(ctx.run, ctx.round, ctx.attempt, subject, words))"
+        ) && function(&full, "wordsText").contains("].concat(words).join('\\n') + '\\n'"),
+        "the words are held to the sha256 of their canonical form — the run, the round, the attempt, the subject, then a line a word, each ended by a line feed — computed here"
+    );
+    let tested = function(&full, "runTest");
+    let queued = &tested[tested
+        .find("\n  if (hasQueue(state)) {\n")
+        .expect("the path of a run with a queue")..];
+    let queued = &queued[..queued
+        .find("\n  }\n  // And the rows whose triage nobody finished")
+        .expect("the path closes before the other path's triage")];
+    let composed = queued
+        .find("await composeRecord(")
+        .expect("the path composes its record");
+    let gated = queued
+        .find("await recordStep('test:r' + ctx.round, loopBranch, composed.rec)")
+        .expect(
+            "the composed record is gated and committed by the record step, which applies nothing",
+        );
+    assert!(composed < gated, "composed, then gated and committed");
+    for typed in [
+        "recordPrompt(",
+        "stageRecordCommands(",
+        "roleStep('record'",
+        "triageRecord(",
+    ] {
+        assert!(
+            !queued.contains(typed),
+            "the path of a run with a queue types a batch, or launches an executor: `{typed}`"
+        );
+    }
+    // THE WORDS THE RECORD SCRIPT REFUSES A COMPOSED RECORD WITH, as the step tool relays
+    // them (`refusal`): each has its row here, and no row outlives its word.
+    let tool_words: BTreeSet<String> = {
+        let table = &tool[tool
+            .find("\nCOMPOSE_THEN = {\n")
+            .expect("the tool's table of a composing step's refusals")..];
+        table[..table.find("\n}\n").expect("the table closes")]
+            .lines()
+            .filter_map(|line| line.strip_prefix("    \""))
+            .map(|rest| rest[..rest.find('"').expect("a word closes")].to_owned())
+            .collect()
+    };
+    let rows: BTreeSet<String> = {
+        let table = &full[full
+            .find("\nconst COMPOSE_REFUSALS = {\n")
+            .expect("the script's table of a composing step's refusals")..];
+        table[..table.find("\n}\n").expect("the table closes")]
+            .lines()
+            .filter_map(|line| line.strip_prefix("  '"))
+            .map(|rest| rest[..rest.find('\'').expect("a word closes")].to_owned())
+            .collect()
+    };
+    assert!(
+        tool_words.len() >= 4,
+        "the scan found the tool's words: {tool_words:?}"
+    );
+    assert_eq!(
+        rows, tool_words,
+        "the words a composing step's refusal can say (right: the tool's COMPOSE_THEN) each have a row of COMPOSE_REFUSALS (left)"
     );
 
     // An invocation that finds a batch applied and not committed finishes it first — before
@@ -1662,13 +1750,6 @@ const NO_STAGES: &[(&str, &str)] = &[
     (
         "table",
         "the tool's table of acts and arrival states, printed for a reader and for the tool's own suite",
-    ),
-    // THE COMPOSING STEP (the build plan of the reshaped `test` stage, `K3`): the tool has it,
-    // and no stage asks for it YET — the harness's half is that plan's `T5b` (a stage's first
-    // record) and `T6a` (its second), which take this row away.
-    (
-        "compose",
-        "no stage asks for it yet: the tool composes a `test` stage's record from plain words since the plan's `K3`, and the harness's record step still hands an executor a typed batch until `T5b`",
     ),
     // A HELD COMMAND (the second repair plan's `K10` and `K11`): `hold-start` and
     // `hold-wait` are steps of a stage. The two acts beside them are asked for by NO STEP:
@@ -2498,8 +2579,8 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
     let composers = git_prompts(&full);
     assert_eq!(
         composers.len(),
-        14,
-        "the composers of a step — the twelve of the acts, and the two of a held command: {composers:?}"
+        15,
+        "the composers of a step — the thirteen of the acts, and the two of a held command: {composers:?}"
     );
     for name in &composers {
         assert_eq!(
@@ -2794,7 +2875,7 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
         "const sha = rerun ? String((state.rounds.find((r) => r.round === rerun.round) || {}).candidate || '') : String(gs.head)",
         "const moved = sha !== String(gs.head)",
         "checks: moved ? [] : always, crossModel: crossNamed.length > 0, tested: moved }",
-        "const binaries = await buildBoth(ctx, label, sha, previousOf(state), 'Preflight and scope')",
+        "const binaries = await buildBoth(label, sha, previousOf(state), 'Preflight and scope')",
         "const unbegun = await beginAttempt(ctx, launch, sha)",
         "gate: pre.gate ? { commit: sha, file: pre.gate.output } : null, results: { commit: sha, rows: resultRows(unitStatus) }",
         "flags: '--previous ' + previousOf(state).commit + ' --candidate ' + sha + ' --list ' + REGRESSION_LIST,",
@@ -2854,7 +2935,7 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
     );
     assert!(
         function(&full, "runTest")
-            .contains("{ item: h.item, status: 'void', reason: heldVoid(h) }"),
+            .contains("{ item: h.item, status: 'void', reason: heldVoid(h), word: heldVoid(h) }"),
         "a held check that left no verdict is recorded void, by that word"
     );
 
@@ -2871,8 +2952,8 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
     );
     assert_eq!(
         without(&full, &["selfTest"]).matches("hasQueue(").count(),
-        2,
-        "the two kinds of run are told apart in one place: `hasQueue` is declared, and asked once"
+        3,
+        "the two kinds of run are told apart in one place: `hasQueue` is declared, and asked where the path forks — and where a continuation of that path is refused as not built"
     );
     let test_stage = function(&full, "runTest");
     let branch = test_stage
@@ -2894,14 +2975,13 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
         new_path.contains("await triageOnce(ctx, launch, ")
             && new_path.contains("redSources(")
             && new_path.contains("ledgerSource(v.run, state)")
-            && new_path
-                .lines()
-                .last()
-                .is_some_and(|line| line.starts_with("    return haltAfter('record', "))
+            && new_path.lines().last().is_some_and(|line| {
+                line == "    }, nextOf(state), rerun ? { named: namedOf(state, rerun.round) } : {})"
+            })
+            && new_path.contains("\n      status: 'hunted',\n")
             && !new_path.contains("triagePasses(")
-            && !new_path.contains("recordStep(")
             && !new_path.contains("triageRecord("),
-        "on the new path the one triage is handed the red results and the rows nobody graded beside the reporters' findings, and the branch ends in a return — the halt at the record that is not built: nothing of the other path's triage, verification or record runs for a run with a queue"
+        "on the new path the one triage is handed the red results and the rows nobody graded beside the reporters' findings, and the branch ends in a return — the stage's own, `hunted`, after its first record: nothing of the other path's triage, verification or typed record runs for a run with a queue"
     );
     let filed = &full[full
         .find("\nconst FILED_SCHEMA = {\n")
@@ -3515,6 +3595,16 @@ const PROMPTS: &[(&str, &str, &str)] = &[
         "",
         "probePayloadPrompt('/s', 20, probeBatch('/s', 20))",
     ),
+    (
+        "composePrompt",
+        "",
+        "composePrompt(CTX, 'fix/rc24', 'docs(record): rc24 r1 - the findings of the test stage', ['reporter=attempt', 'reporter=triage', 'commit=' + SHA, 'gate=gate-0123456789ab', 'item=area-a:green', 'item=gate:held:gate-0123456789ab', 'item=ci:red:preflight', 'item=arm-a:void:no-image:preflight-second', 'fact=candidate:' + SHA, 'fact=binary:' + HASH])",
+    ),
+    (
+        "wordsAgain",
+        "what a composing step asked again is told",
+        "wordsAgain(1)",
+    ),
     ("LOOK_AGAIN", "what an agent's retry is told", "LOOK_AGAIN"),
     ("RUN_AGAIN", "what a step's retry is told", "RUN_AGAIN"),
     (
@@ -4123,6 +4213,7 @@ fn t_a_field_a_stage_needs_has_its_cell_and_what_halts_after_an_instrument_is_a_
         "runUnits",
         "triagePasses",
         "triageOnce",
+        "composeRecord",
         "driveFork",
         "settleReports",
         "preflightOf",
@@ -4134,6 +4225,66 @@ fn t_a_field_a_stage_needs_has_its_cell_and_what_halts_after_an_instrument_is_a_
             "`{helper}` is called once an instrument is launched, and halts nothing itself: what it could not do it returns"
         );
     }
+    // THE ADVOCATE LEFT THE `test` STAGE OF A RUN WITH A QUEUE (the reshape's plan, `T5b`; the
+    // row `wf-fork-serial`, its removal): that path launches no verifier's pass, no advocate
+    // and no independent drive — and THE `advocate` AND `proposal` ROWS OF `NEEDS` ARE STILL
+    // REACHED, by the path of a run without an order, whose cells the simulation drives.
+    let tested = function(&full, "runTest");
+    let branch_at = tested
+        .find("\n  if (hasQueue(state)) {\n")
+        .expect("the path of a run with a queue");
+    let branch_ends = branch_at
+        + tested[branch_at..]
+            .find("\n  }\n  // And the rows whose triage nobody finished")
+            .expect("the path closes before the other path's triage");
+    let queued = code(&tested[branch_at..branch_ends]);
+    for other in [
+        "triagePasses(",
+        "driveFork(",
+        "advocatePrompt(",
+        "proposalPrompt(",
+        "verifyPrompt(",
+    ] {
+        assert!(
+            !queued.contains(other),
+            "the path of a run with a queue reaches `{other}`: the advocate and the pass that verifies are the other path's"
+        );
+    }
+    assert!(
+        queued
+            .trim_end()
+            .ends_with("}, nextOf(state), rerun ? { named: namedOf(state, rerun.round) } : {})")
+            && !code(&tested[branch_at..branch_ends]).contains("not_built"),
+        "every way out of that path is a return, and its last is the stage's — nothing of it is refused as not built any more"
+    );
+    let passes = function(&full, "triagePasses");
+    let fork = function(&full, "driveFork");
+    assert!(
+        tested[branch_ends..].contains("await triagePasses(ctx, launch, built, sources, [])")
+            && passes.contains("await driveFork(")
+            && fork.contains("await roleStep('advocate', ")
+            && fork.contains("await roleStep('proposal', ")
+            && fork.contains("unasserted('advocate', ")
+            && fork.contains("unasserted('proposal', "),
+        "the `advocate` and `proposal` rows of NEEDS are reached by the path of a run without an order"
+    );
+    // AND A CONTINUATION ON THAT PATH IS REFUSED AS NOT BUILT, before the lap of the other
+    // path — which would grade every row again and launch an advocate — can be entered.
+    let refused = tested
+        .find("if (hasQueue(state) && (at.triage || at.verify)) return { status: 'refused', stage: 'test', run: v.run, not_built: 'continuation',")
+        .expect("a continuation of a run with a queue is refused as not built");
+    assert!(
+        refused
+            < tested
+                .find("\n  if (at.triage) {\n")
+                .expect("the other path's lap")
+            && refused
+                < tested
+                    .find("await beginAttempt(")
+                    .expect("an attempt begins"),
+        "the refusal stands before the other path's lap, and before any attempt is begun"
+    );
+
     // A halt put back without a row, and a row nobody wrote, are each red.
     for (planted, names) in [
         (

@@ -8,7 +8,7 @@
 //
 // run from the root of the repository the stage works on. The scenario is the suite's:
 // { args, checks, gate, held, builds, unreleased, scope, agents, record, wrongBinary,
-// wrongPrevious, endings, omits, violation, garbles, relays, overwrites, meanwhile } — the
+// wrongPrevious, endings, omits, violation, garbles, relays, mistypes, overwrites, meanwhile } — the
 // invocation's arguments, and what the scripted agents say (below). WHAT A HELD COMMAND
 // PRINTS is the scenario's too, and nothing else of one is: `gate` — what the candidate's
 // gate shows red ({ steps, tests }), or { void: true } for an output that holds no verdict;
@@ -31,6 +31,10 @@
 // a stage read until 2026-10-07; `byte` — the digest with one character changed;
 // `non-ascii` — the digest with one character replaced by one outside ASCII AND ITS HASH MADE
 // TO FIT, so that nothing but the harness's own look at the line can tell it.
+// `mistypes` gives, by a git step's label, [what stands in the step's ONE command, what its
+// agent typed there]: A STEP THAT DID NOT TYPE ITS COMMAND AS IT STANDS — one word of it
+// altered on its way through an agent, a status typed `green` for `void`. The command that
+// runs is the altered one; a step whose command does not hold the first text fails the run.
 // `overwrites` gives, by an agent's label, a text that agent writes OVER its own report once
 // the record script has written it — by a plain file write, as a shell's redirect does: a
 // reporter has a shell, and a file at a report's path is whatever its last writer left.
@@ -238,7 +242,9 @@ function heldEnv(command) {
     prints = said && said.void ? 'gate: mode   quick (scripted by the simulation: no gate ran)\nPRE-CHECK: PASS\n' : gateOutput(said)
     exit = said && !said.void && (said.steps || []).length ? 1 : 0
   } else if (kind === 'regression') {
-    const said = (scenario.held || {})[name.replace(/-c[0-9]+-a[0-9]+$/, '')] || { status: 'green' }
+    // A held check is named for its item, the candidate's commit and the item's own run in
+    // the round — and, where a job that stood under that name was passed over, a number.
+    const said = (scenario.held || {})[name.replace(/-[0-9a-f]{12}-a[0-9]+(-[0-9]+)?$/, '')] || { status: 'green' }
     const line = { tool: 'regression-set', status: said.status }
     if (said.status === 'void') Object.assign(line, { reason: said.reason, detail: 'scripted by the simulation: no test ran' })
     else Object.assign(line, { previous: { commit: flag('previous') }, candidate: { commit: flag('candidate') }, list: { path: flag('list'), commit: flag('candidate'), sha256: 'c'.repeat(64) }, counts: { differences: said.status === 'red' ? 1 : 0, not_on_list: said.status === 'red' ? 1 : 0, excluded: 0, excluded_by_no_row: 0 } })
@@ -304,9 +310,14 @@ function gitStep(label, prompt) {
   if (again != null && !label.startsWith('git:probe:') && (/git (status|log|clean)/.test(again) || !again.includes('Run the ONE command above again'))) fail('the retry of the git step `' + label + '` is not told to run its one command again: ' + again)
   const how = (scenario.relays || {})[label]
   if (how) used.add(label)
+  // A step that did not type its command as it stands: the altered command is what runs.
+  const slip = (scenario.mistypes || {})[label]
+  if (slip) used.add(label)
+  if (slip && !command.includes(slip[0])) fail('the scenario has the git step `' + label + '` type `' + slip[1] + '` for `' + slip[0] + '`, and its command holds no such text: ' + command)
+  const typed = slip ? command.replace(slip[0], slip[1]) : command
   // The line the tool prints unasked: the command, without the flag that asks for a digest.
   const starts = command.startsWith('dev/stabilize-step hold-start ') ? heldEnv(command) : null
-  let out = sh(how === 'document' ? command.replace(/ --digest \S+/, '') : command, starts)
+  let out = sh(how === 'document' ? command.replace(/ --digest \S+/, '') : typed, starts)
   // A STEP THAT ASKS AFTER A HELD COMMAND asks again while its line says `running` — unless
   // its agent's turn ends on the first line.
   if (command.startsWith('dev/stabilize-step hold-wait ')) {
@@ -683,7 +694,7 @@ try {
 } catch (e) {
   fatal.push('the script threw: ' + ((e && e.stack) || e))
 }
-const unused = Object.keys(scripted).concat(Object.keys(endings), Object.keys(omits), Object.keys(scenario.relays || {}), Object.keys(scenario.meanwhile || {}), scenario.garbles || []).filter((label) => !used.has(label))
+const unused = Object.keys(scripted).concat(Object.keys(endings), Object.keys(omits), Object.keys(scenario.relays || {}), Object.keys(scenario.mistypes || {}), Object.keys(scenario.meanwhile || {}), scenario.garbles || []).filter((label) => !used.has(label))
 process.stdout.write(JSON.stringify({ result: result === undefined ? null : result, trace, prompts, reads, ran, logs, reporters, swallowed, unused, fatal }) + '\n')
 if (fatal.length) {
   process.stderr.write(fatal.join('\n') + '\n')
