@@ -2,6 +2,19 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The builder of the prepared states takes its binary as a value: a state is built on the binary handed in, and every later child of the corpus, and of a copy of it, is that binary (the byte table's pilot, task `B2a`)
+
+**What.** The third task of the byte table's pilot ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §4, *Added*, 3; §8). The table runs a cell on the state **the binary under test built** — on another release's binary the state must be that release's own — and [`TrialCorpus`](crates/cli/tests/support/trial_corpus.rs) named cargo's binary of this tree itself, at the two places it starts a child. It now holds the binary as a value: cargo's where nobody hands one in, so **no call site of the suites that name the builder moves**, and `TrialCorpus::build_on(binary, state)` for a caller that hands one in. No product source changes, and what a state holds is what it held.
+
+**Red first.** One arm, [`byte_table::a_prepared_state_is_built_on_the_binary_handed_in`](crates/cli/tests/byte_table.rs): the binary is a script that writes down, under the `$HOME` it was given, the arguments it was started with — placed by a child process, as the Linux rule asks of a file that may be executed — so what the builder started is read off the corpus. Against a `build_on` that took the binary and built on cargo's it was red at its own assertion: the corpus's home held no line where `setup` was expected. Three changes to the built one, each named by the arm at an assertion of its own: the plain child on cargo's binary (no `setup`) · the child fed its stdin on cargo's (its line missing) · a copy of a state on cargo's (the copy's line missing).
+
+**Decided here — as a builder.**
+
+- **The never-adopted shape gains no second constructor.** `build_never_adopted()` starts no binary while it builds — it is `git init` and one commit — so there is nothing for a handed-in binary to build; the byte frame brings that repository into its own sandbox and runs the binary under test there. A constructor that took a binary and used it for nothing would be dead.
+- **`build_with_pack` stays on cargo's binary**: no caller hands a fixture pack and a binary together.
+
+**Not established.** That the six states build on the previous release's binary through this builder — the plan's `B2e` runs it; through the shell rig they do (the plan's §1.3).
+
 ## 2026-10-12 — The byte table's frame: a sandbox's picture as data, a row as quoted lines, and a comparison that starts no process — eighteen arms red first against a comparison that answered *holds* to everything, thirty-one changes to the built one each named by its arm; and two fences stand before the first row and the first cell (the pilot's task `B1`)
 
 **What.** The second task of the byte table's pilot ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §4, §8; the entry below this one is its first). [byte_cell.rs](crates/cli/tests/support/byte_cell.rs) is the frame and [byte_table.rs](crates/cli/tests/byte_table.rs) the suite; under the suite's directory stand its two lists, [`scheduled.tsv`](crates/cli/tests/byte_table/scheduled.tsv) and [`owed.rs`](crates/cli/tests/byte_table/owed.rs). No row is data yet and no cell exists: this is what both are born into. No product source changes; no process is started by anything here, and nothing names a binary.

@@ -32,8 +32,18 @@
 //! its reason) or a row of the owed list ([`OWED`], `byte_table/owed.rs`: the leaves the pilot's tasks owe a row,
 //! each under the task that owes it, a list the later tasks empty). So a writing command
 //! the product gains tomorrow is on no list, and is named until it has its answer.
+//!
+//! **A prepared state is built on the binary handed in**
+//! ([`a_prepared_state_is_built_on_the_binary_handed_in`], the plan's task `B2a`): the
+//! table runs a cell on the state the binary under test built, so the builder of the
+//! prepared states takes its binary as a value
+//! ([`TrialCorpus::build_on`](crate::support::trial_corpus::TrialCorpus::build_on)).
 
 use std::collections::BTreeSet;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+use std::process::{Command, Stdio};
 
 use cli::cli::{VERB_KINDS, VerbKind};
 
@@ -46,6 +56,8 @@ use crate::support::byte_cell::{
     self, Allows, Checkout, Classification, Commit, Ended, Entry, Holding, Line, Listed, Manifest,
     May, Planted, Quote, REPO, Row, Seen, Staged, Stands, When, Where, blob_of,
 };
+use crate::support::scratch::ScratchDir;
+use crate::support::trial_corpus::{State, TrialCorpus};
 
 // ---------------------------------------------------------------------------
 // The table — its rows, and the two lists beside them
@@ -1665,5 +1677,69 @@ fn the_excused_are_counted_line_by_line() {
     comes_out(
         &Cell::of(TWO, &before, &stray),
         Classification::WrittenOutside,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A prepared state — built on the binary handed in
+// ---------------------------------------------------------------------------
+
+/// Place an executable script at `path`, as the Linux rule asks of a file that may be
+/// executed (`implementation/dev-workflow.md` → Gate): written by a child process, so no
+/// thread of this one ever holds its write handle and no sibling's fork can inherit one.
+fn place_script(path: &Path, body: &str) {
+    let staged = path.with_extension("staged");
+    fs::write(&staged, body).expect("stage the script");
+    let placed = Command::new("cp")
+        .arg("--")
+        .arg(&staged)
+        .arg(path)
+        .stdin(Stdio::null())
+        .status()
+        .expect("run cp");
+    assert!(placed.success(), "cp to place {}", path.display());
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+        .expect("make the script executable");
+}
+
+/// **A prepared state is built on the binary handed in, and every later child of the
+/// corpus is that binary** (the plan's task `B2a`). The binary here is a script that
+/// writes down, under the `$HOME` it was given, the arguments it was started with — so
+/// what the builder started is read off the corpus, and cargo's binary of this tree,
+/// which the builder named itself until this task, leaves no line there. `fresh` is one
+/// `jigc setup`: the builder started the script with `setup` and nothing else. Then the
+/// two places a corpus starts its binary from — a plain child and one fed its stdin —
+/// and a copy of the state, which keeps the binary its source was built on.
+#[test]
+fn a_prepared_state_is_built_on_the_binary_handed_in() {
+    let scratch = ScratchDir::new("byte-table-a-binary-handed-in");
+    let script = scratch.path().join("jigc");
+    place_script(
+        &script,
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/started\"\n",
+    );
+    let started = |corpus: &TrialCorpus| {
+        fs::read_to_string(corpus.home().join("started")).unwrap_or_default()
+    };
+
+    let corpus = TrialCorpus::build_on(&script, State::Fresh);
+    assert_eq!(
+        started(&corpus),
+        "setup\n",
+        "`fresh` is one `jigc setup`, started on the binary handed in"
+    );
+    corpus.jigc(&["doc", "list"]);
+    corpus.jigc_stdin(&["doc", "author", "--from-file", "-"], "");
+    assert_eq!(
+        started(&corpus),
+        "setup\ndoc list\ndoc author --from-file -\n",
+        "every later child of the corpus is the binary it was built on"
+    );
+    let copy = corpus.copy_state();
+    copy.jigc(&["validate"]);
+    assert_eq!(
+        started(&copy),
+        "setup\ndoc list\ndoc author --from-file -\nvalidate\n",
+        "a copy of a state keeps the binary its source was built on"
     );
 }
