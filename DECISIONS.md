@@ -62,7 +62,7 @@ A planted pause makes a schedule that can happen into the one that does; it adds
 - **Across processes** the gate bounds nothing, as before; the runner's test group does.
 - **Linux**: every run here is one machine's, macOS.
 
-## 2026-10-13 — The thirty cases under the ruled question, followed again: each cited line held to what its route promised — all thirty hold on this tree's binary, thirteen leave the expected-red list and six keys the findings file (the human's ruling of 2026-10-13, carried out)
+## 2026-10-12 — The thirty cases under the ruled question, followed again: each cited line held to what its route promised — all thirty hold on this tree's binary, thirteen leave the expected-red list and six keys the findings file (the human's ruling of 2026-10-12, carried out)
 
 **What.** The cases' half of the ruling in the entry below this one. Each of the thirty cases the catalog had marked under *a command a route cites for what it prints* now says which printed line is cited and states what the route promised of it; none of them is marked `doubt` any more. The frame grew by one piece, red first; the expected-red list lost thirteen entries and six keys; and the records follow — the list for the human ([route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md), its head and its section R), the findings file, the pilot's record (§15) and its two tables. No product source changes; nothing is fixed.
 
@@ -131,9 +131,11 @@ From one run of the named-binary arm over the whole catalog, on the cases and th
 - **A second run of the named-binary arm**: it ran once.
 - **Linux**: the run follows this commit and is in the task's return.
 
-## 2026-10-13 — A command a route cites for what it prints is held to its words, not to exit 0 (the human's ruling, option A of two); and the route catalog's frame runs a cited line and holds its own output to what the route promised
+## 2026-10-12 — A command a route cites for what it prints is held to its words, not to exit 0 (the human's ruling, option A of two); and the route catalog's frame runs a cited line and holds its own output to what the route promised
 
-**The ruling — the human's, 2026-10-13.** On the question *is a command that a route cites for what it prints held to exit 0?* — the first of the nine questions the catalog's marked cases hang on ([route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md) → R) — the human took option A of two:
+*[Date corrected on 2026-10-12: this entry and the one above it, and every file that cites the ruling, first said 2026-10-13 — a day that had not come. The ruling was given on 2026-10-12; the orchestrating session's brief carried the wrong day. Nothing else in either entry changed.]*
+
+**The ruling — the human's, 2026-10-12.** On the question *is a command that a route cites for what it prints held to exit 0?* — the first of the nine questions the catalog's marked cases hang on ([route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md) → R) — the human took option A of two:
 
 > **A line a route cites for what it prints is held to its words**: it passes when its output says what the route promised, whatever it exits with. The promised text is a witness of the case, so the check stays strict.
 >
@@ -222,7 +224,7 @@ Its reading of `config.repoint-failed` gave the cause *a managed doc stands at t
 
 | cases | the route says | which question |
 |---|---|---|
-| 2 | *`jigc describe` lists the doctype surface — check the id you typed against it* | a command cited for what it prints — **ruled by the human on 2026-10-13: held to its words**; both hold, held to exit 0 |
+| 2 | *`jigc describe` lists the doctype surface — check the id you typed against it* | a command cited for what it prints — **ruled by the human on 2026-10-12: held to its words**; both hold, held to exit 0 |
 | 2 | `jigc rename … --slug <other-slug>` | a placeholder for a value that is the reader's own |
 | 2 | *then `jigc rename` the other onto a free identity or `jigc unmanage` it* | a product command printed without its id |
 
@@ -336,7 +338,7 @@ Both take an operand, so the arm that refuses the marked form wherever a path is
 | 1 | *re-run `jigc task finalize <id>` to review the fidelity diff and `… --approve` to land it* | the same |
 | 4 | `… --slug <other-slug>` · `jigc doc create <type> --title <title> --slug <slug> --task <id>` · `… --from-file <payload> …` | what the pilot's first question left open, over a value nobody but the reader has |
 
-**The first of these questions was ruled by the human on 2026-10-13, as this task was told by the session that orchestrates it: a line a route cites for what it prints is held to its words — it passes when its output says what the route promised, whatever it exits with.** Nothing here carries the ruling out: the sixteen cases are marked and followed as before, held to exit 0, and their marks say they are to be followed again; the act that holds a cited line to a witness, and the ruling's own entry, are the next task's. No new question.
+**The first of these questions was ruled by the human on 2026-10-12, as this task was told by the session that orchestrates it: a line a route cites for what it prints is held to its words — it passes when its output says what the route promised, whatever it exits with.** Nothing here carries the ruling out: the sixteen cases are marked and followed as before, held to exit 0, and their marks say they are to be followed again; the act that holds a cited line to a witness, and the ruling's own entry, are the next task's. No new question.
 
 ### The previous release's binary, side by side
 

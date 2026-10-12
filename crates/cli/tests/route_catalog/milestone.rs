@@ -1241,7 +1241,7 @@ const PROVISION_OVER_AN_UNLINKED_CHECKOUT: [Case; 1] = [Case {
 // `unlanded_work_finding` · `milestone.unlanded-work` — `jigc milestone finalize`
 
 /// **What a worktree door promises of a command it cites for what it prints** — held to
-/// its words, whatever the command exits with (the human's ruling of 2026-10-13). The
+/// its words, whatever the command exits with (the human's ruling of 2026-10-12). The
 /// promise is the refusal's own, on the line of the path or in its route, and the cited
 /// command is refused again, as the refusal says it will be.
 ///

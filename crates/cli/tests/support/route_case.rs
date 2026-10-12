@@ -119,7 +119,7 @@
 //! sandbox is not handed to any command.
 //!
 //! **A line a route cites for what it prints is held to its words, and not to its exit**
-//! ([`Act::RunCited`], [`Cited`], [`Promise`]) — the human's ruling of 2026-10-13
+//! ([`Act::RunCited`], [`Cited`], [`Promise`]) — the human's ruling of 2026-10-12
 //! (`DECISIONS.md` → *A command a route cites for what it prints is held to its words*).
 //! *Run `git …` to see what git reports*, *`jigc task finalize <id>` to review the fidelity
 //! diff*, *`jigc milestone discard <id>`, which answers for the same path with its own
@@ -352,7 +352,7 @@ pub enum Act {
     /// the command line; then the line is run as [`Act::Run`] runs one.
     RunFilled(Filled),
     /// **Run a printed line the route cites for what it prints, and hold its output to
-    /// what the route promised** ([`Cited`]) — the human's ruling of 2026-10-13: such a
+    /// what the route promised** ([`Cited`]) — the human's ruling of 2026-10-12: such a
     /// line *is held to its words*. It is run as [`Act::Run`] runs one; its exit code is
     /// not held; its output — stdout, then stderr — must keep every promise, or the case
     /// comes out [`Classification::CitedLineUnsaid`]. The promise is the case's to state,

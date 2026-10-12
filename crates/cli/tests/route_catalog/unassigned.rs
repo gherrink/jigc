@@ -130,7 +130,7 @@ const THE_DESTINATION: &str = "docs/decisions/use-spaces.md";
 
 /// What the route promises of the command it cites — *`jigc describe` lists the doctype
 /// surface — check the id you typed against it*: the surface, with the doctype of the id
-/// that was typed in it. Held to its words (the human's ruling of 2026-10-13): the line
+/// that was typed in it. Held to its words (the human's ruling of 2026-10-12): the line
 /// that opens the doc-types `jigc describe` lists, with `adr`, the first of them, on it.
 const THE_DOCTYPE_SURFACE_WITH_THE_IDS_DOCTYPE: &[Promise] = &[Promise::Line(&[Says::Text(
     "The doc-types you can author. adr is ",

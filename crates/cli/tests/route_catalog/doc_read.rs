@@ -355,7 +355,7 @@ const THE_MIGRATIONS_COMMIT_DOC: [Step; 3] = commit_doc!("migrate-adr-notes-old-
 /// What the route promises of the review it cites — *re-run `jigc task finalize <id>` to
 /// review the fidelity diff*: the diff itself, the foreign note's own line against the
 /// rewrite's, under the home the doc promotes to. The review exits 4 by design, and a
-/// cited line is held to its words (the human's ruling of 2026-10-13); the approval behind
+/// cited line is held to its words (the human's ruling of 2026-10-12); the approval behind
 /// it is held to exit 0.
 const THE_FIDELITY_DIFF: &[Promise] = &[
     Promise::Line(&[Says::Text(

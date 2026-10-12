@@ -690,7 +690,7 @@ const A_WRITE_FROM_A_LINKED_WORKTREE_WITH_CODE_STAGED: [Case; 3] = [
 
 /// The same door where the task already stages a doc that promotes: it does not finalize
 /// from the worktree, and the route says which command names where it lands — a line cited
-/// for what it prints, and held to its words (the human's ruling of 2026-10-13): the path
+/// for what it prints, and held to its words (the human's ruling of 2026-10-12): the path
 /// the doc promotes to, and the checkout that is — the main one, by its place. The cited
 /// command is itself refused, under this refusal's own code, and says it there.
 const A_SECOND_WRITE: &str = "a `jigc doc` write is asked from a linked worktree in a task \

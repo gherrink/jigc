@@ -2795,7 +2795,7 @@ const UNVERIFIED: &str = "crates/engine/src/finalize.rs::setup_unasked_install_f
 
 /// **git cannot answer, followed with the question asked as the route prints it, and
 /// without.** *Run `git …` to see what git reports* cites the line for what it prints, and
-/// such a line is held to its words (the human's ruling of 2026-10-13): what git reports
+/// such a line is held to its words (the human's ruling of 2026-10-12): what git reports
 /// of the file the case's state broke, whatever git exits with. What *resolves that* is in
 /// git's words and never in the route, so the object is the case's to name, by the marked
 /// form: the one file git's words name, removed.

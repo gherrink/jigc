@@ -159,7 +159,7 @@
 //! reader of a printed line used to end the whole arm over one.
 //!
 //! **And a line a route cites for what it prints is held to its words** — the tenth
-//! classification, and the human's ruling of 2026-10-13 (`DECISIONS.md` → *A command a
+//! classification, and the human's ruling of 2026-10-12 (`DECISIONS.md` → *A command a
 //! route cites for what it prints is held to its words*): *run `git …` to see what git
 //! reports*, *`jigc task validate <task>` names where it lands*, *`jigc config list` shows
 //! the value in force and the layer it wins from*. A case says which printed line is cited
@@ -5708,7 +5708,7 @@ const WHAT_THE_LINES_SAY: &[Step] = &[
 ];
 
 /// **A line a route cites for what it prints is held to its words, and not to its exit** —
-/// the human's ruling of 2026-10-13 (`DECISIONS.md` → *A command a route cites for what it
+/// the human's ruling of 2026-10-12 (`DECISIONS.md` → *A command a route cites for what it
 /// prints is held to its words*). A case says which printed line is cited and what the
 /// route promised of it ([`Cited`]); the line is run as printed, whatever it exits with,
 /// and its output must keep the promise — or the case comes out with a word of its own,

@@ -15,7 +15,7 @@
 //! root is the reader's own and an argument of the refused command; the frame runs a
 //! refusing command again only as it was typed, and only where a route prints no command
 //! line. So a case runs the one line the route prints — cited for what it prints, and held
-//! to its words (the human's ruling of 2026-10-13): the knob's value in force and the layer
+//! to its words (the human's ruling of 2026-10-12): the knob's value in force and the layer
 //! it wins from, on the knob's own line ([`in_force`]). The re-run under another root is a
 //! way with a reason in [`READINGS`], driven by hand.
 //!
