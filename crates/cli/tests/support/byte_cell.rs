@@ -6,13 +6,23 @@
 //! bytes no git object holds or commits content the user did not ask for*, and *where jigc
 //! cannot tell it refuses before writing* (`DECISIONS.md` → *2026-10-04 — The exit rule,
 //! revised*). The byte table runs one writing command between two pictures of a sandbox
-//! and says what the difference is. This file is the half of it that starts no process:
+//! and says what the difference is. The first half of this file starts no process:
 //! **the picture as data** ([`Manifest`]), **what a command may change, as its design doc
 //! declares it** ([`Row`], [`Line`]), and **the comparison** ([`compare`]) — a function
 //! from two manifests, how the command ended and a row to one of eight
-//! [`Classification`]s. What takes a manifest off a sandbox, and what runs the command, is
-//! the plan's task `B2b`; until then nothing here can run a child, and nothing here names a
-//! binary.
+//! [`Classification`]s.
+//!
+//! **The second half runs a cell** ([`run`], the plan's task `B2b`): a sandbox over a copy
+//! of a prepared state ([`Built`], [`Prepared`]); a manifest; the cell's leads ([`Lead`])
+//! — its lead-ins on the binary under test, and what is put into the state by hand
+//! ([`Plant`]); a manifest; the command; a manifest; the comparison. **The binary is
+//! handed in** — a state is built on it, and neither this frame nor a cell names one —
+//! and every child is the route catalog's frame's: its sandbox, its mask, its one function
+//! that runs a child and waits no longer than a limit, its gate
+//! ([`route_case`](super::route_case) → *A second frame runs its children through this
+//! runner*). A suite can start a child of a cell in one way only, which is to hand the
+//! cell to [`run`]. **What takes a manifest off a sandbox is one reader** ([`Reader`]):
+//! the file layer off the disk, git's layer asked of git.
 //!
 //! **A row is written from the docs, never from what the command did.** A line of a row is
 //! a place, what may happen there, when, and whether it holds when the command refuses —
@@ -46,6 +56,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use super::route_case::{self, Sandbox, Step};
+use super::trial_corpus::{State, TrialCorpus};
 
 /// Where the repository stands under a sandbox's root: a manifest's paths are from the
 /// root, so the repository's `CLAUDE.md` is `repo/CLAUDE.md`, beside `home/…`,
@@ -1084,4 +1101,843 @@ pub fn unquoted(quote: &Quote, text_of: impl Fn(&str) -> Option<&'static str>) -
         .collect();
     (!section.join("\n").contains(words))
         .then(|| format!("`{doc}` → `{heading}` does not hold the words quoted from it: `{words}`"))
+}
+
+// ---------------------------------------------------------------------------
+// The half that starts processes — a prepared state, the reader, the runner
+// ---------------------------------------------------------------------------
+
+/// **A prepared state**, by the name the suites know it under (the plan's §3): the
+/// never-adopted repository, or one of the builder's named states.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Prepared {
+    /// A repository with one commit that jigc was never set up in.
+    Bare,
+    Of(State),
+}
+
+impl Prepared {
+    pub fn name(self) -> &'static str {
+        match self {
+            Prepared::Bare => "bare",
+            Prepared::Of(state) => state.name(),
+        }
+    }
+}
+
+/// **A prepared state, built** — once, by the arm that runs its cells, **on the binary
+/// handed in**, which is then the binary every cell of it is run on: a state is the
+/// binary's own, and neither this frame nor a cell names a binary. A cell runs on a copy.
+pub struct Built {
+    binary: PathBuf,
+    state: Prepared,
+    corpus: TrialCorpus,
+}
+
+impl Built {
+    pub fn on(binary: &Path, state: Prepared) -> Built {
+        let corpus = match state {
+            Prepared::Bare => TrialCorpus::build_never_adopted(),
+            Prepared::Of(state) => TrialCorpus::build_on(binary, state),
+        };
+        Built {
+            binary: binary.to_path_buf(),
+            state,
+            corpus,
+        }
+    }
+}
+
+/// **One thing put into a prepared state by hand** before the command runs — the user's,
+/// by construction: it carries bytes found nowhere else, which the frame makes
+/// ([`marker`]), and the comparison asks where those bytes stand afterwards.
+#[derive(Clone, Copy, Debug)]
+pub enum Plant {
+    /// A file in no commit, at this path of the repository.
+    File(&'static str),
+}
+
+/// **One thing a cell does before its command**, in order — data, like the cell.
+#[derive(Clone, Copy, Debug)]
+pub enum Lead {
+    /// A step of the route catalog's frame, as it stands there: a lead-in on the binary
+    /// under test ([`Step::Jigc`], [`Step::JigcAt`]), which must exit 0, or an act on
+    /// files or through git that builds what the cell stands on.
+    Step(Step),
+    Plant(Plant),
+    /// What stands at this path, from the sandbox's root, is moved to the sandbox's
+    /// `moved/` under the name it had.
+    MovedAway(&'static str),
+}
+
+/// **A cell** — a write leaf with one argv, a prepared state with what is put into it, and
+/// what the command is listed as (the plan's §2). **It names no path it expects to
+/// change**: what the command may change is its leaf's row.
+#[derive(Clone, Copy, Debug)]
+pub struct Cell {
+    pub name: &'static str,
+    /// The leaf, as `cli::cli::VERB_KINDS` holds it: whose row the cell is compared under.
+    pub leaf: &'static [&'static str],
+    pub state: Prepared,
+    pub leads: &'static [Lead],
+    /// The command: the words after `jigc`. It runs the row's consent spelling where it
+    /// holds the row's consent flag.
+    pub argv: &'static [&'static str],
+    pub listed: Listed,
+}
+
+/// What running one cell came to.
+pub struct Ran {
+    pub verdict: Verdict,
+    /// How the command ended, in words.
+    pub exit: String,
+    /// The sandbox before the command, the plants in, and after it.
+    pub before: Manifest,
+    pub after: Manifest,
+    /// What the command said and why the verdict is what it is, with the sandbox's root
+    /// written `<sandbox>`.
+    pub detail: String,
+}
+
+/// The bytes the plant at place `at` of a cell's leads carries: found nowhere else in the
+/// sandbox, not empty, and no other plant's bytes begin with them.
+fn marker(at: usize) -> String {
+    format!("byte-table-plant-{at}-of-its-cell")
+}
+
+/// The limit of a cell's command: the route catalog's frame's.
+pub const LIMIT: Duration = route_case::LIMIT;
+
+/// **Run one cell on the binary its state was built on.** `Err` is a fault of the cell as
+/// written, which no classification covers — a lead-in that was refused, a plant that
+/// cannot be put where the cell says, a state that is not the one handed in.
+pub fn run(built: &Built, row: &Row, cell: &Cell) -> Result<Ran, String> {
+    run_within(built, row, cell, LIMIT)
+}
+
+/// [`run`], with the limit the **command under test** is ended at — for the arm that holds
+/// the limit itself. The lead-ins and the reader's own children keep [`LIMIT`]. Every cell
+/// passes the one gate of this process that the route catalog's cases pass
+/// ([`route_case::admitted`]) before its sandbox is made.
+pub fn run_within(
+    built: &Built,
+    row: &Row,
+    cell: &Cell,
+    under_test: Duration,
+) -> Result<Ran, String> {
+    route_case::admitted(|| ran(built, row, cell, under_test))
+}
+
+/// One cell, run — inside the gate. In order: a sandbox over a copy of the prepared state;
+/// a manifest; the leads; a manifest; the command; a manifest; the comparison.
+fn ran(built: &Built, row: &Row, cell: &Cell, under_test: Duration) -> Result<Ran, String> {
+    if cell.state != built.state {
+        return Err(format!(
+            "the cell stands in `{}`, and the state handed in is `{}`",
+            cell.state.name(),
+            built.state.name()
+        ));
+    }
+    if cell.leaf != row.leaf {
+        return Err(format!(
+            "the cell is of `jigc {}`, and the row handed in is of `jigc {}`",
+            cell.leaf.join(" "),
+            row.leaf.join(" ")
+        ));
+    }
+    let copy = built.corpus.copy_state();
+    let sandbox = Sandbox::over(cell.name, under_test, |repo, home| {
+        fs::rename(copy.repo(), repo).expect("bring the prepared repository in");
+        fs::rename(copy.home(), home).expect("bring the prepared home in");
+    });
+    let mut planted = Vec::new();
+    for (at, lead) in cell.leads.iter().enumerate() {
+        if let Lead::Plant(plant) = lead {
+            planted.push(plant.planted(at));
+        }
+    }
+    let mut reader = Reader {
+        sandbox: &sandbox,
+        markers: planted.iter().map(|plant| plant.marker.clone()).collect(),
+        commits: BTreeMap::new(),
+        holding: BTreeMap::new(),
+        lists: 0,
+    };
+
+    let base = reader.read()?;
+    for (at, lead) in cell.leads.iter().enumerate() {
+        lead.done(&sandbox, &built.binary, at)
+            .map_err(|why| sandbox.shown(&why))?;
+    }
+    let before = if cell.leads.is_empty() {
+        base.clone()
+    } else {
+        reader.read()?
+    };
+    let mut command = sandbox.child(&built.binary);
+    command.args(cell.argv);
+    let ended = sandbox.run(&mut command, under_test);
+    let after = reader.read()?;
+
+    let verdict = compare(
+        row,
+        &Seen {
+            base: &base,
+            before: &before,
+            after: &after,
+            planted: &planted,
+            ended: Ended {
+                ended: ended.held.is_none(),
+                code: ended.code,
+                said: &ended.said,
+            },
+            consent: row.consent.is_some_and(|flag| cell.argv.contains(&flag)),
+            listed: cell.listed,
+        },
+    )?;
+    let detail = sandbox.shown(&format!(
+        "`jigc {}`: {}\n{}\n{}",
+        cell.argv.join(" "),
+        ended.exit(),
+        ended.said.trim_end(),
+        verdict.why.join("\n")
+    ));
+    Ok(Ran {
+        verdict,
+        exit: ended.exit(),
+        before,
+        after,
+        detail,
+    })
+}
+
+impl Plant {
+    /// The plant as the comparison needs it: where it stands, from the sandbox's root, and
+    /// its marker.
+    fn planted(self, at: usize) -> Planted {
+        match self {
+            Plant::File(path) => Planted {
+                at: format!("{REPO}/{path}"),
+                marker: marker(at),
+            },
+        }
+    }
+
+    /// Put the plant in. Nothing stands where a plant goes: one written over a file of the
+    /// state would be an edit, which is another plant.
+    fn put(self, sandbox: &Sandbox, at: usize) -> Result<(), String> {
+        match self {
+            Plant::File(path) => {
+                let file = sandbox.repo().join(path);
+                if fs::symlink_metadata(&file).is_ok() {
+                    return Err(format!(
+                        "a plant goes to `{path}`, and something stands there already"
+                    ));
+                }
+                let parent = file.parent().expect("a planted file has a parent");
+                fs::create_dir_all(parent)
+                    .and_then(|()| fs::write(&file, format!("{}\n", marker(at))))
+                    .map_err(|why| format!("the plant at `{path}` could not be written: {why}"))
+            }
+        }
+    }
+}
+
+impl Lead {
+    /// Do the lead, the `at`-th of its cell. A lead-in that is refused is a fault of the
+    /// cell: the route catalog's runner says so by a panic, which is caught here and
+    /// handed back as the fault it is.
+    fn done(self, sandbox: &Sandbox, binary: &Path, at: usize) -> Result<(), String> {
+        match self {
+            Lead::Step(step) => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                sandbox.plant(binary, &[step]);
+            }))
+            .map_err(|panic| {
+                let said = panic
+                    .downcast_ref::<String>()
+                    .map(String::as_str)
+                    .or_else(|| panic.downcast_ref::<&str>().copied())
+                    .unwrap_or("a step of the cell failed");
+                format!("the lead {at} of the cell was not done: {said}")
+            }),
+            Lead::Plant(plant) => plant.put(sandbox, at),
+            Lead::MovedAway(path) => {
+                let from = sandbox.root().join(path);
+                let name = from
+                    .file_name()
+                    .ok_or_else(|| format!("`{path}` names nothing to move away"))?;
+                let moved = sandbox.root().join("moved");
+                fs::create_dir_all(&moved)
+                    .and_then(|()| fs::rename(&from, moved.join(name)))
+                    .map_err(|why| format!("`{path}` could not be moved away: {why}"))
+            }
+        }
+    }
+}
+
+/// **What takes a manifest off a sandbox** (the plan's §2, *The manifest*). The file layer
+/// is read off the disk, every entry under the sandbox's root but the frame's own
+/// `staging/` and the inside of a `.git` directory; git's layer is **asked of git**, by
+/// children under the sandbox's mask that take no lock they can do without, so that
+/// reading refreshes nothing; and of a `.git` directory the reader takes the files nobody
+/// else reads — the hooks that are no samples, `info/exclude`, and the admin files of a
+/// registration whose directory is gone. A file's id is the one git gives its bytes
+/// **through the filters of the checkout it stands in** (`git hash-object`, by its path).
+/// Modification times are read by nothing here.
+struct Reader<'a> {
+    sandbox: &'a Sandbox,
+    /// The markers of the cell's plants.
+    markers: Vec<String>,
+    /// What each commit changed against its first parent. A commit does not change, so git
+    /// is asked once a cell.
+    commits: BTreeMap<String, Commit>,
+    /// Which of the markers each blob of the store holds. A blob does not change either.
+    holding: BTreeMap<String, Vec<bool>>,
+    /// How many lists the reader has handed a child as its stdin.
+    lists: usize,
+}
+
+/// A regular file the reader found, still to be given its id.
+struct Found {
+    path: PathBuf,
+    mode: u32,
+    bytes: Vec<u8>,
+}
+
+/// Whether `held` holds `bytes` somewhere in it.
+fn holds(held: &[u8], bytes: &[u8]) -> bool {
+    !bytes.is_empty() && held.windows(bytes.len()).any(|window| window == bytes)
+}
+
+fn text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+/// A mode as git prints it — octal — or `0` where it is none.
+fn mode_of(printed: &str) -> u32 {
+    u32::from_str_radix(printed, 8).unwrap_or(0)
+}
+
+impl Reader<'_> {
+    /// `path` from the sandbox's root, as a manifest names it.
+    fn named(&self, path: &Path) -> String {
+        let path = match path
+            .parent()
+            .and_then(|parent| fs::canonicalize(parent).ok())
+        {
+            Some(parent) => parent.join(path.file_name().unwrap_or_default()),
+            None => path.to_path_buf(),
+        };
+        path.strip_prefix(self.sandbox.root())
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    /// One `git` child of the reader's, started in `at`: its exit code and its stdout.
+    /// `fed` is its stdin; `index` is the index file it reads in place of the checkout's.
+    fn git(
+        &mut self,
+        at: &Path,
+        args: &[&str],
+        fed: Option<&[u8]>,
+        index: Option<&Path>,
+    ) -> Result<(Option<i32>, Vec<u8>), String> {
+        let mut command = self.sandbox.child(Path::new("git"));
+        command
+            .current_dir(at)
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            .args(args);
+        if let Some(index) = index {
+            command.env("GIT_INDEX_FILE", index);
+        }
+        if let Some(bytes) = fed {
+            let list = self
+                .sandbox
+                .staging()
+                .join(format!("reader-{}.in", self.lists));
+            self.lists += 1;
+            let opened = fs::write(&list, bytes).and_then(|()| fs::File::open(&list));
+            command.stdin(opened.map_err(|why| format!("the reader's list: {why}"))?);
+        }
+        let ran = self.sandbox.run(&mut command, route_case::LIMIT);
+        if ran.held.is_some() {
+            return Err(format!(
+                "the reader's `git {}` {}",
+                args.join(" "),
+                ran.exit()
+            ));
+        }
+        Ok((ran.code, ran.out))
+    }
+
+    /// [`Reader::git`], for a question git must answer: its stdout, or the fault.
+    fn asked(
+        &mut self,
+        at: &Path,
+        args: &[&str],
+        fed: Option<&[u8]>,
+        index: Option<&Path>,
+    ) -> Result<Vec<u8>, String> {
+        match self.git(at, args, fed, index)? {
+            (Some(0), out) => Ok(out),
+            (code, out) => Err(self.sandbox.shown(&format!(
+                "the reader's `git {}` in `{}` came to {code:?}: {}",
+                args.join(" "),
+                at.display(),
+                text(&out)
+            ))),
+        }
+    }
+
+    /// The file layer under `dir`: every entry by its path from the sandbox's root, a
+    /// regular file set aside to be given its id. A `.git` directory is an entry and is
+    /// not walked; `staging/`, under the root, is the frame's own and is no entry.
+    fn walk(&self, dir: &Path, manifest: &mut Manifest, found: &mut Vec<Found>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        let mut paths: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
+        paths.sort();
+        for path in paths {
+            if dir == self.sandbox.root() && path == self.sandbox.staging() {
+                continue;
+            }
+            let Ok(entry) = fs::symlink_metadata(&path) else {
+                continue;
+            };
+            let name = self.named(&path);
+            let mode = entry.permissions().mode() & 0o7777;
+            if entry.file_type().is_symlink() {
+                let target = fs::read_link(&path).unwrap_or_default();
+                manifest
+                    .files
+                    .insert(name, Entry::Link(target.to_string_lossy().into_owned()));
+            } else if entry.is_dir() {
+                manifest.files.insert(name, Entry::Dir(mode));
+                if path.file_name().is_none_or(|name| name != ".git") {
+                    self.walk(&path, manifest, found);
+                }
+            } else if entry.is_file() {
+                found.push(Found {
+                    bytes: fs::read(&path).unwrap_or_default(),
+                    path,
+                    mode,
+                });
+            } else {
+                manifest.files.insert(name, Entry::Special);
+            }
+        }
+    }
+
+    /// A regular file at `path`, set aside to be given its id — where one stands there.
+    fn file(path: &Path, found: &mut Vec<Found>) {
+        if let Ok(entry) = fs::symlink_metadata(path)
+            && entry.is_file()
+        {
+            found.push(Found {
+                bytes: fs::read(path).unwrap_or_default(),
+                path: path.to_path_buf(),
+                mode: entry.permissions().mode() & 0o7777,
+            });
+        }
+    }
+
+    /// The regular files under `dir`, however deep, set aside.
+    fn files_under(dir: &Path, found: &mut Vec<Found>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        let mut paths: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
+        paths.sort();
+        for path in paths {
+            if fs::symlink_metadata(&path).is_ok_and(|entry| entry.is_dir()) {
+                Self::files_under(&path, found);
+            } else {
+                Self::file(&path, found);
+            }
+        }
+    }
+
+    /// One checkout, asked of git in its directory: its `HEAD`, its branch, its index.
+    fn checkout(&mut self, dir: &Path) -> Result<Checkout, String> {
+        let head = match self.git(
+            dir,
+            &["rev-parse", "-q", "--verify", "HEAD^{commit}"],
+            None,
+            None,
+        )? {
+            (Some(0), out) => text(&out).trim().to_string(),
+            _ => String::new(),
+        };
+        let branch = match self.git(dir, &["symbolic-ref", "-q", "--short", "HEAD"], None, None)? {
+            (Some(0), out) => Some(text(&out).trim().to_string()),
+            _ => None,
+        };
+        let listed = self.asked(dir, &["ls-files", "-s", "-v", "-z"], None, None)?;
+        Ok(Checkout {
+            head,
+            branch,
+            index: index_of(&listed, true),
+        })
+    }
+
+    /// **Take the sandbox's picture.**
+    fn read(&mut self) -> Result<Manifest, String> {
+        let (root, repo) = (self.sandbox.root().to_path_buf(), self.sandbox.repo());
+        let mut manifest = Manifest::default();
+        let mut found = Vec::new();
+        self.walk(&root, &mut manifest, &mut found);
+
+        let git_dir = repo.join(".git");
+        // The checkouts whose directory is there, the main one first.
+        let mut checkouts: Vec<PathBuf> = Vec::new();
+        if git_dir.is_dir() {
+            checkouts.push(repo.clone());
+            // The files of git's that nobody else reads.
+            let hooks =
+                text(&self.asked(&repo, &["rev-parse", "--git-path", "hooks"], None, None)?);
+            let hooks = repo.join(hooks.trim());
+            manifest.hooks = self.named(&hooks);
+            if let Ok(entries) = fs::read_dir(&hooks) {
+                let mut paths: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
+                paths.sort();
+                for path in paths {
+                    if path.extension().is_none_or(|kind| kind != "sample") {
+                        Self::file(&path, &mut found);
+                    }
+                }
+            }
+            Self::file(&git_dir.join("info/exclude"), &mut found);
+
+            // The registrations, as the admin directory names them — which is what git
+            // lists from. A registration whose directory is gone is read from its admin
+            // files: no child runs in a directory that is not there.
+            let mut roots: Vec<String> = Vec::new();
+            let mut held: BTreeSet<String> = BTreeSet::new();
+            let mut names: Vec<PathBuf> = fs::read_dir(git_dir.join("worktrees"))
+                .map(|entries| entries.flatten().map(|entry| entry.path()).collect())
+                .unwrap_or_default();
+            names.sort();
+            for admin in names {
+                let Ok(points_at) = fs::read_to_string(admin.join("gitdir")) else {
+                    continue;
+                };
+                let dir = Path::new(points_at.trim())
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_default();
+                let name = admin
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                manifest.registrations.insert(name, self.named(&dir));
+                if dir.is_dir() {
+                    checkouts.push(dir);
+                    continue;
+                }
+                Self::file(&admin.join("HEAD"), &mut found);
+                Self::file(&admin.join("index"), &mut found);
+                Self::files_under(&admin.join("logs"), &mut found);
+                let head = fs::read_to_string(admin.join("HEAD")).unwrap_or_default();
+                if !head.starts_with("ref:") && !head.trim().is_empty() {
+                    roots.push(head.trim().to_string());
+                }
+                if admin.join("index").is_file() {
+                    let listed = self.asked(
+                        &repo,
+                        &["ls-files", "-s", "-z"],
+                        None,
+                        Some(&admin.join("index")),
+                    )?;
+                    held.extend(
+                        index_of(&listed, false)
+                            .into_values()
+                            .map(|staged| staged.blob),
+                    );
+                }
+            }
+            for dir in &checkouts {
+                let checkout = self.checkout(dir)?;
+                if !checkout.head.is_empty() {
+                    roots.push(checkout.head.clone());
+                }
+                held.extend(checkout.index.values().map(|staged| staged.blob.clone()));
+                manifest.checkouts.insert(self.named(dir), checkout);
+            }
+
+            // The rest of git's layer.
+            for line in text(&self.asked(
+                &repo,
+                &["for-each-ref", "--format=%(refname) %(objectname)"],
+                None,
+                None,
+            )?)
+            .lines()
+            {
+                if let Some((name, id)) = line.split_once(' ') {
+                    manifest.refs.insert(name.to_string(), id.to_string());
+                }
+            }
+            manifest.stash =
+                text(&self.asked(&repo, &["stash", "list", "--format=%H"], None, None)?)
+                    .lines()
+                    .map(str::to_string)
+                    .collect();
+            manifest.config =
+                text(&self.asked(&repo, &["config", "--local", "--list"], None, None)?);
+            let mut blobs: Vec<String> = Vec::new();
+            for line in text(&self.asked(
+                &repo,
+                &[
+                    "cat-file",
+                    "--batch-all-objects",
+                    "--batch-check=%(objectname) %(objecttype)",
+                ],
+                None,
+                None,
+            )?)
+            .lines()
+            {
+                if let Some((id, kind)) = line.split_once(' ') {
+                    manifest.objects.insert(id.to_string());
+                    if kind == "blob" {
+                        blobs.push(id.to_string());
+                    }
+                }
+            }
+
+            // What is held, under the narrowest reading: what a ref, a registered
+            // checkout's `HEAD` or its index, or the newest stash entry reaches.
+            let mut reach = vec!["rev-list", "--objects", "--all"];
+            reach.extend(roots.iter().map(String::as_str));
+            for line in text(&self.asked(&repo, &reach, None, None)?).lines() {
+                held.insert(line.split(' ').next().unwrap_or_default().to_string());
+            }
+            manifest.held = held;
+            let mut within = vec!["rev-list", "--parents", "--all"];
+            within.extend(roots.iter().map(String::as_str));
+            for line in text(&self.asked(&repo, &within, None, None)?).lines() {
+                let mut ids = line.split(' ');
+                let (Some(id), parent) = (ids.next(), ids.next()) else {
+                    continue;
+                };
+                if !self.commits.contains_key(id) {
+                    let changed = match parent {
+                        Some(parent) => self.asked(
+                            &repo,
+                            &["diff-tree", "-r", "--raw", "--no-renames", "-z", parent, id],
+                            None,
+                            None,
+                        )?,
+                        None => self.asked(
+                            &repo,
+                            &[
+                                "diff-tree",
+                                "-r",
+                                "--raw",
+                                "--no-renames",
+                                "-z",
+                                "--root",
+                                "--no-commit-id",
+                                id,
+                            ],
+                            None,
+                            None,
+                        )?,
+                    };
+                    self.commits.insert(
+                        id.to_string(),
+                        Commit {
+                            parent: parent.map(str::to_string),
+                            changed: changed_of(&changed),
+                        },
+                    );
+                }
+                manifest
+                    .commits
+                    .insert(id.to_string(), self.commits[id].clone());
+            }
+
+            // Which blobs of the store hold a marker.
+            let unread: Vec<String> = blobs
+                .iter()
+                .filter(|id| !self.markers.is_empty() && !self.holding.contains_key(*id))
+                .cloned()
+                .collect();
+            if !unread.is_empty() {
+                let list = unread.join("\n") + "\n";
+                let out =
+                    self.asked(&repo, &["cat-file", "--batch"], Some(list.as_bytes()), None)?;
+                let mut rest = &out[..];
+                for id in &unread {
+                    let read = (|| {
+                        let end = rest.iter().position(|byte| *byte == b'\n')?;
+                        let size: usize = text(&rest[..end]).rsplit(' ').next()?.parse().ok()?;
+                        let body = rest.get(end + 1..end + 1 + size)?;
+                        rest = rest.get(end + 2 + size..).unwrap_or_default();
+                        Some(body)
+                    })();
+                    let Some(body) = read else {
+                        return Err(format!("git handed the reader no blob `{id}`"));
+                    };
+                    let has = self
+                        .markers
+                        .iter()
+                        .map(|marker| holds(body, marker.as_bytes()))
+                        .collect();
+                    self.holding.insert(id.clone(), has);
+                }
+            }
+        }
+
+        // Every file its id, through the filters of the checkout it stands in; a file that
+        // stands in none, or inside a `.git` directory, as its bytes are.
+        let mut groups: BTreeMap<Option<PathBuf>, Vec<usize>> = BTreeMap::new();
+        for (at, file) in found.iter().enumerate() {
+            let of_gits = file
+                .path
+                .strip_prefix(&root)
+                .is_ok_and(|rel| rel.components().any(|part| part.as_os_str() == ".git"));
+            let checkout = checkouts
+                .iter()
+                .filter(|dir| !of_gits && file.path.starts_with(dir))
+                .max_by_key(|dir| dir.components().count());
+            groups.entry(checkout.cloned()).or_default().push(at);
+        }
+        let mut ids: Vec<String> = vec![String::new(); found.len()];
+        for (checkout, files) in groups {
+            let mut list = String::new();
+            for at in &files {
+                let path = match &checkout {
+                    Some(dir) => found[*at]
+                        .path
+                        .strip_prefix(dir)
+                        .unwrap_or(&found[*at].path),
+                    None => &found[*at].path,
+                };
+                let path = path.to_string_lossy();
+                if path.contains('\n') {
+                    return Err(format!(
+                        "`{path}` has a line break in its name, and git is handed names by the line"
+                    ));
+                }
+                list.push_str(&path);
+                list.push('\n');
+            }
+            let out = match &checkout {
+                Some(dir) => self.asked(
+                    dir,
+                    &["hash-object", "--stdin-paths"],
+                    Some(list.as_bytes()),
+                    None,
+                )?,
+                None => self.asked(
+                    &root,
+                    &["hash-object", "--no-filters", "--stdin-paths"],
+                    Some(list.as_bytes()),
+                    None,
+                )?,
+            };
+            let out = text(&out);
+            let mut given = out.lines();
+            for at in files {
+                ids[at] = given
+                    .next()
+                    .ok_or_else(|| "git gave the reader fewer ids than files".to_string())?
+                    .to_string();
+            }
+        }
+        for (file, blob) in found.into_iter().zip(ids) {
+            manifest.files.insert(
+                self.named(&file.path),
+                Entry::File {
+                    mode: file.mode,
+                    blob,
+                    bytes: file.bytes,
+                },
+            );
+        }
+
+        // Where each plant's marker stands.
+        for (at, marker) in self.markers.iter().enumerate() {
+            let files = manifest
+                .files
+                .iter()
+                .filter(|(_, entry)| match entry {
+                    Entry::File { bytes, .. } => holds(bytes, marker.as_bytes()),
+                    Entry::Link(target) => holds(target.as_bytes(), marker.as_bytes()),
+                    _ => false,
+                })
+                .map(|(path, _)| path.clone())
+                .collect();
+            let has = |id: &String| self.holding.get(id).is_some_and(|has| has[at]);
+            manifest.markers.insert(
+                marker.clone(),
+                Stands {
+                    files,
+                    held: manifest.held.iter().any(has),
+                    stored: manifest.objects.iter().any(has),
+                },
+            );
+        }
+        Ok(manifest)
+    }
+}
+
+/// An index as `git ls-files -s -z` lists it, by path — with `-v`, each entry opens with
+/// the tag git prints for its flags, which is then kept with its stage.
+fn index_of(listed: &[u8], tagged: bool) -> BTreeMap<String, Staged> {
+    let mut index = BTreeMap::new();
+    for entry in listed
+        .split(|byte| *byte == 0)
+        .filter(|entry| !entry.is_empty())
+    {
+        let entry = text(entry);
+        let Some((meta, path)) = entry.split_once('\t') else {
+            continue;
+        };
+        let mut meta = meta.split(' ');
+        let tag = if tagged {
+            meta.next().unwrap_or_default()
+        } else {
+            ""
+        };
+        let (mode, blob, stage) = (
+            meta.next().unwrap_or_default(),
+            meta.next().unwrap_or_default(),
+            meta.next().unwrap_or_default(),
+        );
+        index.insert(
+            path.to_string(),
+            Staged {
+                mode: mode_of(mode),
+                blob: blob.to_string(),
+                flags: format!("{tag} {stage}").trim().to_string(),
+            },
+        );
+    }
+    index
+}
+
+/// What a commit changed, as `git diff-tree -r --raw -z` prints it: a path to the mode and
+/// blob it holds there now, or to nothing where the path was removed.
+fn changed_of(raw: &[u8]) -> BTreeMap<String, Option<(u32, String)>> {
+    let mut changed = BTreeMap::new();
+    let mut pieces = raw
+        .split(|byte| *byte == 0)
+        .filter(|piece| !piece.is_empty());
+    while let (Some(meta), Some(path)) = (pieces.next(), pieces.next()) {
+        let meta = text(meta);
+        let fields: Vec<&str> = meta.trim_start_matches(':').split(' ').collect();
+        let [_, mode, _, blob, status] = fields[..] else {
+            continue;
+        };
+        changed.insert(
+            text(path),
+            (status != "D").then(|| (mode_of(mode), blob.to_string())),
+        );
+    }
+    changed
 }

@@ -242,6 +242,19 @@
 //! its refusal is over ([`Case::over`]), with what that was read from. **A bound makes no
 //! case green**: the runner reads none, and no classification moves by one.
 //!
+//! **A second frame runs its children through this runner, and no suite does**
+//! ([`Sandbox::over`]; `support::byte_cell`, the byte table's frame). What it is handed is
+//! visible to the modules under `support/` and to nothing else (`pub(super)`): the sandbox
+//! and where its places stand, a child under the mask, the one function that runs a child
+//! and waits no longer than a limit, a state's steps, and the gate every chain of this
+//! process passes ([`admitted`]). A suite still starts a child of a case in one way only —
+//! by handing a case to [`follow`], or a cell to that frame's runner. **A sandbox made
+//! over a prepared state is not initialised here**: the repository and the home are
+//! brought in as they were built, nothing is committed, and it has a `tmp/` that every
+//! child of it has as `TMPDIR` — the product writes under the system's temporary
+//! directory, and that frame reads what it left there. A sandbox of a case
+//! ([`Sandbox::new`]) has none and is what it was.
+//!
 //! **What it does not decide.** Whether a refusal *should* have been printed, what a route's
 //! prose means beyond the acts a case lists, and whether a red case is a regression — a
 //! classification is what happened on the binary handed in, and no more.
@@ -1305,22 +1318,24 @@ pub struct Followed {
 }
 
 /// What one child of a case came to.
-struct Ran {
+pub(super) struct Ran {
     /// Its exit code — `None` where a signal ended it, the runner's own included.
-    code: Option<i32>,
+    pub(super) code: Option<i32>,
     /// The limit it was ended at, where it did not end by itself.
-    held: Option<Duration>,
+    pub(super) held: Option<Duration>,
     /// Its stdout, then its stderr, as text.
-    said: String,
+    pub(super) said: String,
+    /// Its stdout, as the bytes it wrote.
+    pub(super) out: Vec<u8>,
 }
 
 impl Ran {
-    fn success(&self) -> bool {
+    pub(super) fn success(&self) -> bool {
         self.held.is_none() && self.code == Some(0)
     }
 
     /// How it ended, in words.
-    fn exit(&self) -> String {
+    pub(super) fn exit(&self) -> String {
         match (self.held, self.code) {
             (Some(limit), _) => format!("did not end within {limit:?} and was ended"),
             (None, Some(code)) => format!("exit {code}"),
@@ -1340,7 +1355,7 @@ struct Printed<'a> {
 }
 
 /// A case's sandbox: one scratch root, removed when dropped.
-struct Sandbox {
+pub(super) struct Sandbox {
     /// The canonical root, so a path the product prints canonical compares equal.
     root: PathBuf,
     /// How long a command under test — the refusing command, a command a route prints —
@@ -1351,6 +1366,9 @@ struct Sandbox {
     /// Where the route has sent its reader ([`Act::Cd`]), once it has: the directory the
     /// route's later commands are started in. Until then the case stands where it says.
     went: Mutex<Option<PathBuf>>,
+    /// Whether the sandbox has a `tmp/` of its own, which every child of it then has as
+    /// `TMPDIR` — one made over a prepared state has ([`Sandbox::over`]).
+    own_tmp: bool,
     _scratch: ScratchDir,
 }
 
@@ -1364,6 +1382,7 @@ impl Sandbox {
             under_test,
             children: AtomicUsize::new(0),
             went: Mutex::new(None),
+            own_tmp: false,
             _scratch: scratch,
         };
         for dir in [
@@ -1382,20 +1401,65 @@ impl Sandbox {
         sandbox
     }
 
-    fn repo(&self) -> PathBuf {
+    /// **A sandbox over a repository and a home that already exist** — a prepared state,
+    /// for the byte table's frame. `bring` is handed where the sandbox's `repo/` and
+    /// `home/` are to stand and puts both there; nothing is initialised and nothing is
+    /// committed here, so the repository is the one that was built. Beside them stand
+    /// `outside/`, `staging/` and a `tmp/`, which every child of this sandbox has as
+    /// `TMPDIR`.
+    pub(super) fn over(
+        label: &str,
+        under_test: Duration,
+        bring: impl FnOnce(&Path, &Path),
+    ) -> Sandbox {
+        let scratch = ScratchDir::new(&format!("byte-cell-{label}"));
+        let root = fs::canonicalize(scratch.path()).expect("the scratch root is there");
+        let sandbox = Sandbox {
+            root,
+            under_test,
+            children: AtomicUsize::new(0),
+            went: Mutex::new(None),
+            own_tmp: true,
+            _scratch: scratch,
+        };
+        for dir in [sandbox.outside(), sandbox.staging(), sandbox.tmp()] {
+            fs::create_dir_all(&dir).expect("create a sandbox directory");
+        }
+        bring(&sandbox.repo(), &sandbox.home());
+        for dir in [sandbox.repo(), sandbox.home()] {
+            assert!(
+                dir.is_dir(),
+                "a prepared state brings a `{}` in",
+                sandbox.shown(&dir.display().to_string())
+            );
+        }
+        sandbox
+    }
+
+    /// The sandbox's root, canonical.
+    pub(super) fn root(&self) -> &Path {
+        &self.root
+    }
+
+    pub(super) fn repo(&self) -> PathBuf {
         self.root.join("repo")
     }
 
-    fn home(&self) -> PathBuf {
+    pub(super) fn home(&self) -> PathBuf {
         self.root.join("home")
     }
 
-    fn outside(&self) -> PathBuf {
+    pub(super) fn outside(&self) -> PathBuf {
         self.root.join("outside")
     }
 
-    fn staging(&self) -> PathBuf {
+    pub(super) fn staging(&self) -> PathBuf {
         self.root.join("staging")
+    }
+
+    /// The temporary directory of a sandbox made over a prepared state.
+    pub(super) fn tmp(&self) -> PathBuf {
+        self.root.join("tmp")
     }
 
     fn moved(&self) -> PathBuf {
@@ -1412,7 +1476,7 @@ impl Sandbox {
 
     /// `text` with this sandbox's root written `<sandbox>` — a failure reads the same on
     /// every machine.
-    fn shown(&self, text: &str) -> String {
+    pub(super) fn shown(&self, text: &str) -> String {
         text.replace(&self.root.display().to_string(), "<sandbox>")
     }
 
@@ -1420,7 +1484,8 @@ impl Sandbox {
     /// configuration, no global file, `$HOME` in the sandbox, and the embedded packs —
     /// **and the sandbox's identity**, as configuration git reads from the environment, so
     /// that it holds in every repository under the sandbox and none is invented in any.
-    fn child(&self, program: &Path) -> Command {
+    /// In a sandbox that has a `tmp/` of its own, that is the child's `TMPDIR`.
+    pub(super) fn child(&self, program: &Path) -> Command {
         let mut command = Command::new(program);
         command
             .current_dir(self.repo())
@@ -1436,6 +1501,9 @@ impl Sandbox {
             .env("GIT_CONFIG_VALUE_2", "true")
             .env_remove("JIGC_PACK_DIR")
             .stdin(Stdio::null());
+        if self.own_tmp {
+            command.env("TMPDIR", self.tmp());
+        }
         command
     }
 
@@ -1459,7 +1527,7 @@ impl Sandbox {
     /// is not kept waiting for a reader; one that has not ended at the limit is killed —
     /// this child, by its handle — and says so ([`Ran::exit`]). A product that holds would
     /// otherwise hold the suite: a read of a FIFO does not return.
-    fn run(&self, command: &mut Command, limit: Duration) -> Ran {
+    pub(super) fn run(&self, command: &mut Command, limit: Duration) -> Ran {
         let at = self.children.fetch_add(1, Ordering::Relaxed);
         let (out, err) = (
             self.staging().join(format!("child-{at}.out")),
@@ -1483,12 +1551,17 @@ impl Sandbox {
             }
             std::thread::sleep(Duration::from_millis(5));
         };
-        let text =
-            |path: &Path| String::from_utf8_lossy(&fs::read(path).unwrap_or_default()).into_owned();
+        let bytes = |path: &Path| fs::read(path).unwrap_or_default();
+        let (out, err) = (bytes(&out), bytes(&err));
         Ran {
             code: status.code(),
             held,
-            said: format!("{}{}", text(&out), text(&err)),
+            said: format!(
+                "{}{}",
+                String::from_utf8_lossy(&out),
+                String::from_utf8_lossy(&err)
+            ),
+            out,
         }
     }
 
@@ -1501,7 +1574,7 @@ impl Sandbox {
 
     /// Plant a case's state, step by step. `binary` is the binary under test, for the step
     /// that runs it ([`Step::Jigc`]).
-    fn plant(&self, binary: &Path, state: &[Step]) {
+    pub(super) fn plant(&self, binary: &Path, state: &[Step]) {
         for (at, step) in state.iter().enumerate() {
             match *step {
                 Step::Script(place, body) => {
@@ -2786,6 +2859,13 @@ impl Gate {
 fn chains() -> &'static Gate {
     static CHAINS: OnceLock<Gate> = OnceLock::new();
     CHAINS.get_or_init(|| Gate::new(width()))
+}
+
+/// **Run `job` inside this process's one gate** — for the second frame that runs chains of
+/// child processes here (`support::byte_cell`): its cells and the cases followed in this
+/// process are one machine's worth together.
+pub(super) fn admitted<R>(job: impl FnOnce() -> R) -> R {
+    chains().admit(job)
 }
 
 /// **The tests the running test binary holds, as its harness names them** — asked of the

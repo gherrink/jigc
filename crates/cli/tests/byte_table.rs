@@ -4,19 +4,28 @@
 //! `completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md`).
 //!
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
-//! manifest, a row and a classification are. **This file holds no cell yet**: it is the
-//! plan's task `B1` — the arms that hold the comparison to its rules, and the two fences
-//! that stand before the first row and the first cell are born.
+//! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
+//! cell. **This file holds no cell of the table yet**: it is the plan's tasks `B1` to
+//! `B2b` — the arms that hold the comparison, the reader and the runner to their rules,
+//! and the two fences that stand before the first row and the first cell are born.
 //!
 //! **The arms of the comparison** drive [`byte_cell::compare`] over manifests built as
 //! data: a repository with one commit, changed by hand to what a command would have left.
 //! Each was red against a comparison that declared its classifications and answered
 //! *holds* to everything, and each names the change to the built comparison it catches
-//! (`DECISIONS.md`, the entry of this task, has both tables). What they cannot hold is the
-//! half that reads a sandbox — that *held* is asked through git's filters, that a
-//! registration whose directory is gone is read from its admin files, that a modification
-//! time is in no layer: those arms need a sandbox and are the task's that builds the
-//! reader.
+//! (`DECISIONS.md`, the entry of the task `B1`, has both tables). What they cannot hold is
+//! the half that reads a sandbox.
+//!
+//! **The arms of that half** run cells on a **stand-in** — a script handed to the frame as
+//! the binary under test, which does one known act between two manifests
+//! ([`the_reader_reads_what_the_comparison_reads`], over [`ON_A_STAND_IN`]): that *held*
+//! is asked through git's filters, that a registration whose directory is gone is read
+//! from its admin files, that a modification time and a plain `git status` are in no
+//! layer and one changed byte is, and each other layer the comparison reads. A command
+//! that does not end is ended ([`a_command_that_does_not_end_is_ended`]). And a prepared
+//! state brought into a sandbox is the state the frame's own steps would have made
+//! ([`a_state_brought_in_and_the_state_made_in_the_sandbox_agree_in_what_can_agree`]), on
+//! the binary this suite was built with — the one arm here that hands a real one in.
 //!
 //! **The quote fence** ([`a_lines_quote_is_held_to_its_docs_text`]): an allowance line
 //! rests on a sentence of a design doc, quoted, and the quote is held to the doc's text
@@ -42,8 +51,9 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use cli::cli::{VERB_KINDS, VerbKind};
 
@@ -53,9 +63,11 @@ mod owed;
 use owed::{OWED, OWING};
 
 use crate::support::byte_cell::{
-    self, Allows, Checkout, Classification, Commit, Ended, Entry, Holding, Line, Listed, Manifest,
-    May, Planted, Quote, REPO, Row, Seen, Staged, Stands, When, Where, blob_of,
+    self, Allows, Built, Checkout, Classification, Commit, Ended, Entry, Holding, Lead, Line,
+    Listed, Manifest, May, Plant, Planted, Prepared, Quote, REPO, Row, Seen, Staged, Stands, When,
+    Where, blob_of,
 };
+use crate::support::route_case::{self, Place, Step};
 use crate::support::scratch::ScratchDir;
 use crate::support::trial_corpus::{State, TrialCorpus};
 
@@ -1741,5 +1753,676 @@ fn a_prepared_state_is_built_on_the_binary_handed_in() {
         started(&copy),
         "setup\ndoc list\ndoc author --from-file -\nvalidate\n",
         "a copy of a state keeps the binary its source was built on"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The half that reads a sandbox — the reader and the runner, on a stand-in
+// ---------------------------------------------------------------------------
+
+/// **The stand-in**: a script an arm hands the frame as the binary under test. It does
+/// what its first word says and nothing else, in the directory it is started in — the
+/// sandbox's repository — so that each cell of [`ON_A_STAND_IN`] is one known act between
+/// two manifests, and what the reader and the comparison make of it is the arm's to hold.
+const STAND_IN: &str = r#"#!/bin/sh
+case "$1" in
+removes-the-plant) rm .jigc/logs/notes.md ;;
+removes-and-names) rm .jigc/logs/notes.md && echo "removed .jigc/logs/notes.md" ;;
+moves-the-plant) mv .jigc/logs/notes.md elsewhere.md ;;
+stages-then-removes) git add .jigc/logs/notes.md && rm .jigc/logs/notes.md ;;
+stores-then-removes) git hash-object -w .jigc/logs/notes.md >/dev/null && rm .jigc/logs/notes.md ;;
+writes-outside) echo left > ../outside/left ;;
+writes-home) echo left > "$HOME/left" ;;
+writes-tmp) echo left > "$TMPDIR/left" ;;
+the-same-under-conversion) printf 'one\ntwo\n' > notes.txt ;;
+one-byte-under-conversion) printf 'one\ntwO\n' > notes.txt ;;
+a-gone-worktrees-index) GIT_INDEX_FILE=.git/worktrees/own/index git rm -q --cached README.md ;;
+status-and-a-time) git status >/dev/null && touch -t 200001010000 README.md ;;
+one-byte-size-and-time-back)
+    touch -r README.md "$TMPDIR/as-it-was" && printf 'trial corpuS\n' > README.md &&
+        touch -r "$TMPDIR/as-it-was" README.md && rm "$TMPDIR/as-it-was" ;;
+removes-in-the-other-checkout) rm ../outside/own/README.md ;;
+unstages-in-the-other-checkout) git -C ../outside/own rm -q --cached README.md ;;
+drops-the-registration) git worktree remove --force ../outside/own ;;
+drops-a-stash-entry) git stash drop -q ;;
+moves-a-branch) git branch -f other HEAD ;;
+unstages-a-path) git rm -q --cached staged.txt ;;
+commits-a-link) ln -s nowhere link && git add link && git commit -q -m link ;;
+commits-the-index) git commit -q -m staged ;;
+commits-a-removal) git rm -q README.md && git commit -q -m gone ;;
+prunes) git prune --expire=now ;;
+configures) git config user.name Somebody ;;
+writes-the-hook) mkdir -p .git/hooks && printf '#!/bin/sh\n' > .git/hooks/pre-commit ;;
+changes-a-mode) chmod 755 README.md ;;
+repoints-a-link) rm a-link && ln -s two a-link ;;
+writes-the-exclude) mkdir -p .git/info && echo ignored >> .git/info/exclude ;;
+marks-an-entry) git update-index --assume-unchanged README.md ;;
+refuses-and-writes) echo left > left; exit 1 ;;
+refuses) exit 1 ;;
+writes-its-own) mkdir -p .jigc && echo own > .jigc/own.txt ;;
+rewrites-its-own) echo other > .jigc/own.txt ;;
+sleeps) exec sleep 30 ;;
+*) echo "the stand-in knows no '$1'" >&2; exit 64 ;;
+esac
+"#;
+
+/// One cell on the stand-in: the row it is compared under, what it must come out as, and
+/// a piece of why. `hangs` is whether the verdict must say it hangs on what *held* means.
+struct OnAStandIn {
+    cell: byte_cell::Cell,
+    row: Row,
+    expected: Classification,
+    why: &'static str,
+    hangs: bool,
+}
+
+const fn on_a_stand_in(
+    argv: &'static [&'static str],
+    leads: &'static [Lead],
+    row: Row,
+    expected: Classification,
+    why: &'static str,
+) -> OnAStandIn {
+    OnAStandIn {
+        cell: byte_cell::Cell {
+            name: argv[0],
+            leaf: &["probe"],
+            state: Prepared::Bare,
+            leads,
+            argv,
+            listed: Listed::Acts,
+        },
+        row,
+        expected,
+        why,
+        hangs: false,
+    }
+}
+
+/// A file somebody planted under the workbench — [`PLANT`]'s place, in a sandbox.
+const A_PLANT: &[Lead] = &[Lead::Plant(Plant::File(".jigc/logs/notes.md"))];
+
+/// A tracked file with CRLF line ends in a repository that converts them: the commit
+/// holds it with LF.
+const UNDER_CONVERSION: &[Lead] = &[
+    Lead::Step(Step::Git(&["config", "core.autocrlf", "true"])),
+    Lead::Step(Step::File(Place::Repo("notes.txt"), "one\r\ntwo\r\n")),
+    Lead::Step(Step::Git(&["add", "notes.txt"])),
+    Lead::Step(Step::Git(&["commit", "-q", "-m", "notes"])),
+];
+
+/// A linked worktree of the user's, outside the repository.
+const A_WORKTREE: Lead = Lead::Step(Step::Git(&[
+    "worktree",
+    "add",
+    "-q",
+    "--detach",
+    "../outside/own",
+    "HEAD",
+]));
+
+/// A file the user staged.
+const STAGED: &[Lead] = &[
+    Lead::Step(Step::File(Place::Repo("staged.txt"), "staged\n")),
+    Lead::Step(Step::Git(&["add", "staged.txt"])),
+];
+
+/// A row that lets its command write the `pre-commit` hook.
+const HOOKS: Row = row(&[line("H1", Allows::Files(Where::Hook, May::MergeInto))]);
+
+/// A row that lets its command write one file of its own.
+const ITS_OWN: Row = row(&[line(
+    "O1",
+    Allows::Files(Where::Path(".jigc/own.txt"), May::WriteWhole),
+)]);
+
+/// **The cells on the stand-in**, a layer of the manifest each — what the reader must
+/// read for the comparison to come out as it did over manifests built by hand.
+const ON_A_STAND_IN: &[OnAStandIn] = &[
+    // --- where a plant's bytes stand: at a path, within reach, in the store, nowhere ---
+    on_a_stand_in(
+        &["removes-the-plant"],
+        A_PLANT,
+        REMOVES,
+        Classification::Lost,
+        "its bytes stand at no path of the sandbox and in no object within reach",
+    ),
+    on_a_stand_in(
+        &["removes-and-names", "--force"],
+        A_PLANT,
+        REMOVES,
+        Classification::Holds,
+        "",
+    ),
+    on_a_stand_in(
+        &["removes-and-names"],
+        A_PLANT,
+        REMOVES,
+        Classification::Lost,
+        "is gone",
+    ),
+    on_a_stand_in(
+        &["moves-the-plant"],
+        A_PLANT,
+        REMOVES,
+        Classification::WrittenOutside,
+        "its bytes stand at {\"repo/elsewhere.md\"}",
+    ),
+    on_a_stand_in(
+        &["stages-then-removes"],
+        A_PLANT,
+        REMOVES,
+        Classification::GitMoved,
+        "an object within reach still has its bytes",
+    ),
+    OnAStandIn {
+        hangs: true,
+        ..on_a_stand_in(
+            &["stores-then-removes"],
+            A_PLANT,
+            REMOVES,
+            Classification::Lost,
+            "in no object within reach",
+        )
+    },
+    // --- the file layer beside the repository, `tmp/` as every child's `TMPDIR` ---
+    on_a_stand_in(
+        &["writes-outside"],
+        &[],
+        NOTHING,
+        Classification::WrittenOutside,
+        "`outside/left` was made",
+    ),
+    on_a_stand_in(
+        &["writes-home"],
+        &[],
+        NOTHING,
+        Classification::WrittenOutside,
+        "`home/left` was made",
+    ),
+    on_a_stand_in(
+        &["writes-tmp"],
+        &[],
+        NOTHING,
+        Classification::WrittenOutside,
+        "`tmp/left` was made",
+    ),
+    on_a_stand_in(
+        &["changes-a-mode"],
+        &[],
+        NOTHING,
+        Classification::WrittenOutside,
+        "`repo/README.md` is not what it was",
+    ),
+    on_a_stand_in(
+        &["repoints-a-link"],
+        &[Lead::Step(Step::LinkTo(Place::Repo("a-link"), "one"))],
+        NOTHING,
+        Classification::WrittenOutside,
+        "`repo/a-link` is not what it was",
+    ),
+    // --- *held* is asked through git's filters ---
+    on_a_stand_in(
+        &["the-same-under-conversion"],
+        UNDER_CONVERSION,
+        NOTHING,
+        Classification::Holds,
+        "",
+    ),
+    on_a_stand_in(
+        &["one-byte-under-conversion"],
+        UNDER_CONVERSION,
+        NOTHING,
+        Classification::WrittenOutside,
+        "`repo/notes.txt` is not what it was",
+    ),
+    // --- what is not compared stays quiet, and what is compared is not missed ---
+    on_a_stand_in(
+        &["status-and-a-time"],
+        &[],
+        NOTHING,
+        Classification::Holds,
+        "",
+    ),
+    on_a_stand_in(
+        &["one-byte-size-and-time-back"],
+        &[],
+        NOTHING,
+        Classification::WrittenOutside,
+        "`repo/README.md` is not what it was",
+    ),
+    // --- another checkout, and a registration whose directory is gone ---
+    on_a_stand_in(
+        &["removes-in-the-other-checkout"],
+        &[A_WORKTREE],
+        NOTHING,
+        Classification::WrittenOutside,
+        "`outside/own/README.md` is gone",
+    ),
+    on_a_stand_in(
+        &["unstages-in-the-other-checkout"],
+        &[A_WORKTREE],
+        NOTHING,
+        Classification::GitMoved,
+        "the index entry at `README.md`, in the checkout at `outside/own`, is not what it was",
+    ),
+    on_a_stand_in(
+        &["drops-the-registration"],
+        &[A_WORKTREE],
+        NOTHING,
+        Classification::GitMoved,
+        "the registration `own`, of the worktree at `outside/own`, is gone",
+    ),
+    on_a_stand_in(
+        &["a-gone-worktrees-index"],
+        &[A_WORKTREE, Lead::MovedAway("outside/own")],
+        NOTHING,
+        Classification::GitMoved,
+        "`repo/.git/worktrees/own/index`, a file of git's, is not what it was",
+    ),
+    // --- git's layer ---
+    on_a_stand_in(
+        &["drops-a-stash-entry"],
+        &[
+            Lead::Step(Step::File(Place::Repo("README.md"), "edited\n")),
+            Lead::Step(Step::Git(&["stash"])),
+        ],
+        NOTHING,
+        Classification::GitMoved,
+        "the stash is not what it was",
+    ),
+    on_a_stand_in(
+        &["moves-a-branch"],
+        &[
+            Lead::Step(Step::Git(&["branch", "other"])),
+            Lead::Step(Step::File(Place::Repo("more.txt"), "more\n")),
+            Lead::Step(Step::Git(&["add", "more.txt"])),
+            Lead::Step(Step::Git(&["commit", "-q", "-m", "more"])),
+        ],
+        NOTHING,
+        Classification::GitMoved,
+        "the ref `refs/heads/other` is not what it was",
+    ),
+    on_a_stand_in(
+        &["unstages-a-path"],
+        STAGED,
+        NOTHING,
+        Classification::GitMoved,
+        "the index entry at `staged.txt`, in the checkout at `repo`, is not what it was",
+    ),
+    on_a_stand_in(
+        &["commits-a-link"],
+        &[],
+        COMMITS_THE_INDEX,
+        Classification::GitMoved,
+        "a commit the command made holds a link at `link`",
+    ),
+    on_a_stand_in(
+        &["commits-the-index"],
+        STAGED,
+        COMMITS_THE_INDEX,
+        Classification::Holds,
+        "",
+    ),
+    on_a_stand_in(
+        &["commits-a-removal"],
+        &[],
+        COMMITS_THE_INDEX,
+        Classification::GitMoved,
+        "a commit the command made removes `README.md`, which no line declares",
+    ),
+    on_a_stand_in(
+        &["prunes"],
+        &[Lead::Step(Step::Git(&["hash-object", "-w", "--stdin"]))],
+        NOTHING,
+        Classification::GitMoved,
+        "was in the store and is gone",
+    ),
+    on_a_stand_in(
+        &["configures"],
+        &[],
+        NOTHING,
+        Classification::GitMoved,
+        "the repository's configuration is not what it was",
+    ),
+    on_a_stand_in(
+        &["writes-the-hook"],
+        &[],
+        NOTHING,
+        Classification::GitMoved,
+        "`repo/.git/hooks/pre-commit`, a file of git's, was made",
+    ),
+    on_a_stand_in(&["writes-the-hook"], &[], HOOKS, Classification::Holds, ""),
+    on_a_stand_in(
+        &["writes-the-exclude"],
+        &[],
+        NOTHING,
+        Classification::GitMoved,
+        "`repo/.git/info/exclude`, a file of git's,",
+    ),
+    on_a_stand_in(
+        &["marks-an-entry"],
+        &[],
+        NOTHING,
+        Classification::GitMoved,
+        "the index entry at `README.md`, in the checkout at `repo`, is not what it was",
+    ),
+    // --- how the command ended ---
+    on_a_stand_in(
+        &["refuses-and-writes"],
+        &[],
+        NOTHING,
+        Classification::RefusedAndChanged,
+        "`repo/left` was made",
+    ),
+    OnAStandIn {
+        cell: byte_cell::Cell {
+            name: "refuses",
+            leaf: &["probe"],
+            state: Prepared::Bare,
+            leads: &[],
+            argv: &["refuses"],
+            listed: Listed::Refuses,
+        },
+        row: NOTHING,
+        expected: Classification::RefusesNothingChanged,
+        why: "",
+        hangs: false,
+    },
+    // --- what a lead-in of the cell wrote is the product's own ---
+    on_a_stand_in(
+        &["rewrites-its-own"],
+        &[Lead::Step(Step::Jigc(&["writes-its-own"]))],
+        NOTHING,
+        Classification::WrittenOutside,
+        "`repo/.jigc/own.txt` is not what it was, and no line covers it",
+    ),
+    on_a_stand_in(
+        &["rewrites-its-own"],
+        &[Lead::Step(Step::Jigc(&["writes-its-own"]))],
+        ITS_OWN,
+        Classification::Holds,
+        "",
+    ),
+];
+
+/// The stand-in, placed in `scratch` as a binary.
+fn the_stand_in(scratch: &ScratchDir) -> PathBuf {
+    let script = scratch.path().join("jigc");
+    place_script(&script, STAND_IN);
+    script
+}
+
+/// **The reader reads what the comparison reads, and the runner runs one command between
+/// two manifests** — every cell of [`ON_A_STAND_IN`] on a script handed in as the binary,
+/// in the never-adopted repository. Each cell is one known act: a plant removed, moved,
+/// staged or stored and then removed; a write under `outside/`, `home/` and `tmp/` —
+/// which is every child's `TMPDIR`; a permission bit; a file rewritten to the same content
+/// under a line-ending conversion, which is no difference, and with one byte changed,
+/// which is one; a plain `git status` and a modification time, which are in no layer, and
+/// one byte changed with its size and time put back, which is seen; a file removed in
+/// another checkout, a registration dropped, and the admin index of a registration whose
+/// directory is gone rewritten, and an entry of another checkout's index dropped; a link
+/// pointed elsewhere; a stash entry, a branch, an index entry and an index entry's flag, a
+/// link committed, the index committed, a removal committed, an object pruned, the configuration, the hook and
+/// `info/exclude`; a refusal that wrote and one that did not; and a file a lead-in of the
+/// cell wrote, rewritten.
+///
+/// Then the faults of a cell, which no classification covers: a lead-in that is refused,
+/// a plant where something stands, a state that is not the one handed in, a row of
+/// another leaf.
+#[test]
+fn the_reader_reads_what_the_comparison_reads() {
+    let scratch = ScratchDir::new("byte-table-stand-in");
+    let built = Built::on(&the_stand_in(&scratch), Prepared::Bare);
+    let ran = route_case::pooled(route_case::width(), ON_A_STAND_IN, |on| {
+        byte_cell::run(&built, &on.row, &on.cell)
+    });
+    let mut wrong = Vec::new();
+    for (on, ran) in ON_A_STAND_IN.iter().zip(&ran) {
+        let named = format!(
+            "`{}` under {} line(s)",
+            on.cell.argv.join(" "),
+            on.row.lines.len()
+        );
+        match ran {
+            Err(fault) => wrong.push(format!("{named} could not be run as written: {fault}")),
+            Ok(ran) => {
+                let verdict = &ran.verdict;
+                // Why: the piece stands in a line of it — or it says nothing, as expected.
+                let says = verdict.why.iter().any(|why| why.contains(on.why))
+                    || on.why.is_empty() && verdict.why.is_empty();
+                if verdict.classification != on.expected
+                    || !says
+                    || verdict.hangs_on_reach != on.hangs
+                {
+                    wrong.push(format!(
+                        "{named} came out *{}* (hangs on reach: {}), and *{}* with `{}` was \
+                         expected (hangs on reach: {}):\n{}",
+                        verdict.classification,
+                        verdict.hangs_on_reach,
+                        on.expected,
+                        on.why,
+                        on.hangs,
+                        ran.detail
+                    ));
+                }
+                if ran
+                    .before
+                    .files
+                    .keys()
+                    .any(|path| path.starts_with("staging"))
+                {
+                    wrong.push(format!(
+                        "{named}: the frame's own `staging/` is in the manifest"
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "the cells on the stand-in:\n\n{}",
+        wrong.join("\n\n")
+    );
+
+    // The commit the stand-in made is excused by the line that lets it commit.
+    let committed = ON_A_STAND_IN
+        .iter()
+        .zip(&ran)
+        .find(|(on, _)| on.cell.argv == ["commits-the-index"])
+        .and_then(|(_, ran)| ran.as_ref().ok())
+        .expect("the cell that commits the index ran");
+    assert_eq!(
+        committed.verdict.excused,
+        [("K1", 0), ("K2", 2)],
+        "the branch that moved and the path the commit holds, both under the commit's line"
+    );
+
+    // The faults of a cell.
+    let cell = |name, state, leads, leaf| byte_cell::Cell {
+        name,
+        leaf,
+        state,
+        leads,
+        argv: &["refuses"],
+        listed: Listed::Refuses,
+    };
+    for (cell, says) in [
+        (
+            cell(
+                "a-lead-in-refused",
+                Prepared::Bare,
+                &[Lead::Step(Step::Jigc(&["refuses"]))],
+                &["probe"],
+            ),
+            "was not done",
+        ),
+        (
+            cell(
+                "a-plant-over-a-file",
+                Prepared::Bare,
+                &[Lead::Plant(Plant::File("README.md"))],
+                &["probe"],
+            ),
+            "something stands there already",
+        ),
+        (
+            cell("another-state", Prepared::Of(State::Fresh), &[], &["probe"]),
+            "the state handed in is `bare`",
+        ),
+        (
+            cell("another-leaf", Prepared::Bare, &[], &["setup"]),
+            "the row handed in is of `jigc probe`",
+        ),
+    ] {
+        let fault = byte_cell::run(&built, &NOTHING, &cell).err();
+        assert!(
+            fault.as_deref().is_some_and(|fault| fault.contains(says)),
+            "`{}` is a fault of the cell that says `{says}`: {fault:?}",
+            cell.name
+        );
+    }
+}
+
+/// **A command that does not end is ended, and says so.** The stand-in sleeps; the frame
+/// waits for the command under test no longer than the limit the arm hands in and ends it
+/// — the process itself, by its handle — and the cell comes out *the command did not end*.
+#[test]
+fn a_command_that_does_not_end_is_ended() {
+    let scratch = ScratchDir::new("byte-table-stand-in-held");
+    let built = Built::on(&the_stand_in(&scratch), Prepared::Bare);
+    let held = on_a_stand_in(&["sleeps"], &[], NOTHING, Classification::DidNotEnd, "");
+    let started = std::time::Instant::now();
+    let ran = byte_cell::run_within(&built, &held.row, &held.cell, Duration::from_secs(2))
+        .expect("the cell is one the frame can run");
+    assert_eq!(
+        ran.verdict.classification,
+        Classification::DidNotEnd,
+        "{}",
+        ran.detail
+    );
+    assert!(
+        ran.exit.contains("did not end within 2s and was ended"),
+        "{}",
+        ran.exit
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(25),
+        "the command was ended at the limit, and not waited out: {:?}",
+        started.elapsed()
+    );
+}
+
+/// The ids of a manifest's commits, written `<commit>` in `bytes` — whole, or cut to the
+/// seven characters git abbreviates one to.
+fn without_commit_ids(manifest: &Manifest, bytes: &[u8]) -> String {
+    let mut text = String::from_utf8_lossy(bytes).into_owned();
+    for id in manifest.commits.keys() {
+        text = text.replace(id.as_str(), "<commit>");
+    }
+    for id in manifest.commits.keys() {
+        text = text.replace(&id[..7], "<commit>");
+    }
+    text
+}
+
+/// **A prepared state brought into the sandbox and the same state made in the sandbox
+/// agree in what can agree** — `fresh` as the builder of the prepared states made it,
+/// copied in, beside the never-adopted repository with one `jigc setup` run in the sandbox
+/// on the same binary. The same paths, kinds, permission bits and bytes outside `.git` —
+/// but for a commit's id where a file holds one; the same index, by path, mode and blob;
+/// the same refs by name; the same hooks. **Not the commits' ids**: a commit carries its
+/// time and its author, and the builder commits under its own identity where the sandbox
+/// has the mask's. So a state built outside the frame is the state the frame's own steps
+/// would have made, and a cell's lead-ins and its prepared state are one kind of thing.
+#[test]
+fn a_state_brought_in_and_the_state_made_in_the_sandbox_agree_in_what_can_agree() {
+    let binary = Path::new(env!("CARGO_BIN_EXE_jigc"));
+    let cell = |name, state, leads| byte_cell::Cell {
+        name,
+        leaf: &["probe"],
+        state,
+        leads,
+        argv: &["--version"],
+        listed: Listed::Acts,
+    };
+    let brought = byte_cell::run(
+        &Built::on(binary, Prepared::Of(State::Fresh)),
+        &NOTHING,
+        &cell("fresh-brought-in", Prepared::Of(State::Fresh), &[]),
+    )
+    .expect("`fresh`, brought in");
+    let made = byte_cell::run(
+        &Built::on(binary, Prepared::Bare),
+        &NOTHING,
+        &cell(
+            "bare-then-setup",
+            Prepared::Bare,
+            &[Lead::Step(Step::Jigc(&["setup"]))],
+        ),
+    )
+    .expect("the never-adopted repository, then `jigc setup` in the sandbox");
+    for ran in [&brought, &made] {
+        assert_eq!(
+            ran.verdict.classification,
+            Classification::Holds,
+            "`jigc --version` changes nothing: {}",
+            ran.detail
+        );
+    }
+
+    let (a, b) = (&brought.before, &made.before);
+    let mut differ = Vec::new();
+    let paths: BTreeSet<&String> = a.files.keys().chain(b.files.keys()).collect();
+    for path in paths {
+        let same = match (a.files.get(path), b.files.get(path)) {
+            (
+                Some(Entry::File { mode, bytes, .. }),
+                Some(Entry::File {
+                    mode: other,
+                    bytes: others,
+                    ..
+                }),
+            ) => mode == other && without_commit_ids(a, bytes) == without_commit_ids(b, others),
+            (one, other) => one == other,
+        };
+        if !same {
+            differ.push(format!("`{path}` is not the same entry in both"));
+        }
+    }
+    let index = |manifest: &Manifest| -> Vec<(String, u32, String)> {
+        manifest.checkouts[REPO]
+            .index
+            .iter()
+            .map(|(path, staged)| (path.clone(), staged.mode, staged.blob.clone()))
+            .collect()
+    };
+    if index(a) != index(b) {
+        differ.push(format!("the index: {:#?}\nand {:#?}", index(a), index(b)));
+    }
+    let refs = |manifest: &Manifest| manifest.refs.keys().cloned().collect::<Vec<_>>();
+    if refs(a) != refs(b) {
+        differ.push(format!("the refs: {:?} and {:?}", refs(a), refs(b)));
+    }
+    if a.hooks != b.hooks {
+        differ.push(format!(
+            "the hooks directory: `{}` and `{}`",
+            a.hooks, b.hooks
+        ));
+    }
+    assert!(
+        differ.is_empty(),
+        "`fresh` brought in, and the never-adopted repository after `jigc setup` in the \
+         sandbox:\n\n  {}",
+        differ.join("\n  ")
+    );
+    assert!(
+        a.files.len() > 10 && a.checkouts[REPO].index.len() > 3 && a.commits.len() == 2,
+        "the arm compares a state that holds something: {} entries, {} index entries, {} \
+         commits",
+        a.files.len(),
+        a.checkouts[REPO].index.len(),
+        a.commits.len()
     );
 }

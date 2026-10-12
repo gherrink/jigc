@@ -2,6 +2,79 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-13 — The byte table reads a sandbox and runs a cell: one reader takes the picture — the files off the disk, git's layer asked of git — and one runner puts a command between two of them, over a copy of a prepared state, through the route catalog's frame and no other way; thirty-five cells on a stand-in, twenty-nine of them red against a reader that read nothing, and thirty changes to the built one each named (the byte table's pilot, task `B2b`)
+
+**What.** The fourth task of the byte table's pilot ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §2, §4, §8). The comparison of the task before the last was driven over manifests built by hand; [byte_cell.rs](crates/cli/tests/support/byte_cell.rs) now has the half that starts processes — **a prepared state built on the binary handed in and copied a cell** (`Built`, `Prepared`), **the reader** that takes a manifest off a sandbox, and **the runner** (`run`): a sandbox over the copy · a manifest · the cell's leads · a manifest · the command · a manifest · the comparison. No row is data yet and no cell of the table exists: the cells of this commit run a script. No product source changes.
+
+### The seam into the route catalog's frame — what is exposed, line by line
+
+[route_case.rs](crates/cli/tests/support/route_case.rs), 116 changed lines, all of them one of these. **Everything named is `pub(super)`: visible to the modules under `support/`, and to no suite.**
+
+| what | was | is |
+|---|---|---|
+| `struct Ran`, its fields `code`, `held`, `said`, and `success()`, `exit()` | private | `pub(super)` |
+| `Ran::out` — the child's stdout as the bytes it wrote | — | new, `pub(super)`; `said` is built from the same bytes as before |
+| `struct Sandbox` | private | `pub(super)`; no field is visible |
+| `Sandbox::over(label, limit, bring)` — **the second constructor**: a sandbox over a repository and a home that already exist; nothing is initialised, nothing committed; beside them `outside/`, `staging/` and `tmp/` | — | new |
+| `Sandbox::root()`, `Sandbox::tmp()` | — | new |
+| `Sandbox::repo()`, `home()`, `outside()`, `staging()`, `shown()` | private | `pub(super)` |
+| `Sandbox::child(program)` — a child under the mask | private | `pub(super)`; in a sandbox made by `over` it also sets `TMPDIR` to the sandbox's `tmp/` |
+| `Sandbox::run(command, limit)` — the one function that runs a child and ends it at a limit | private | `pub(super)` |
+| `Sandbox::plant(binary, steps)` — a state's steps | private | `pub(super)` |
+| `admitted(job)` — `job` inside this process's one gate | — | new |
+| a private field, `own_tmp` | — | new; `false` in a sandbox of a case |
+
+**Not exposed:** `Sandbox::new`, `tested`, `git`, `place_script`, `perform`, `check`, `witnesses`, `contains`, the gate itself, and every act, check and classification. **A suite can start a child of a cell in one way only** — by handing the cell to `byte_cell::run` — as it can start a child of a case only by handing the case to `follow`.
+
+**`tmp/` is a directory of the sandbox and not a `Place`** — where the plan has *`tmp/` as a place, so that `TMPDIR` can be set through `Var::Path`*. A `Var` is a case's, and the byte frame has no case; what the plan wants of it is that the command under test **and its lead-ins** have the sandbox's `tmp/` as `TMPDIR`, and a lead-in is run by the catalog's own `plant`. So the sandbox sets it on every child it makes, where it was made over a prepared state. No variant joins `Place`, and nothing a catalog case can name changes.
+
+**The catalog's own arms.** No act, check or classification changed, and a sandbox of a case is what it was. The catalog's table on a named binary was printed once after the seam, on the previous release's binary: its `cases` block, 633 lines, and its `sites` block, 93 lines, are **byte for byte** the two tables committed before it ([route-catalog-pilot-cases.tsv](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot-cases.tsv), [route-catalog-pilot-sites.tsv](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot-sites.tsv)) — every case on both binaries, with its exit and its witnesses. The run took 371 s at a load of 7 to 16.
+
+### The reader
+
+- **The file layer, off the disk**: every entry under the sandbox's root by its path from it — a directory with its permission bits, a link with its target, a regular file with its bits, its bytes and its id — but the frame's own `staging/` and the inside of a `.git` directory. **A file's id is asked of git through the filters of the checkout it stands in** (`git hash-object --stdin-paths`, started in that checkout, one child a checkout); a file that stands in none, or inside a `.git` directory, as its bytes are.
+- **Of a `.git` directory, the files nobody else reads**: the hooks that are no samples, in the hooks directory git resolves; `info/exclude`; and **for a registration whose directory is gone, the files of its admin directory** — `HEAD`, `index`, its logs.
+- **Git's layer, asked of git** by children under the sandbox's mask that take no lock they can do without: each checkout's `HEAD`, branch and index with the tag git prints for an entry's flags; the refs; the stash; the local configuration; every object id of the store; the ids within reach; and the commits within reach, each with its first parent and what it changed against it.
+- **Where each plant's marker stands**: the files whose bytes hold it — and the links whose target does — whether a blob within reach holds it, whether any blob of the store does.
+
+A commit and a blob do not change, so git is asked for each once a cell. Modification times are read by nothing.
+
+### Decided here — as a builder, and open to being overturned
+
+- **A prepared state is built by the arm that runs its cells, and handed to the runner** — not kept by the frame for the life of the process: a state the process never drops leaves its root behind in the machine's temporary directory on every run.
+- **The copy is the builder's own** (`TrialCorpus::copy_state`, which refuses a state that holds a worktree), moved into the sandbox; nothing copies a tree a second way.
+- **The registrations are read off the admin directory** — a name and a path each — which is what git lists them from; `git worktree list` is not asked a second time.
+- ***Held*, under the narrowest reading, counts every registered checkout's `HEAD` and index — one whose directory is gone too**, read from its admin files. The plan's words are *each registered checkout's `HEAD`*, and git itself keeps what such a registration reaches.
+- **A link's target is where a link carries its marker.** A plant that is a link has no bytes of its own.
+- **Whether a cell runs the consent spelling is read off its argv** — it holds the row's consent flag, or it does not — and is no second field of a cell that could disagree with the first.
+- **A lead-in that is refused is a fault of the cell, handed back as one**: the catalog's runner says so by a panic, which the byte frame catches. A plant where something already stands is a fault too; so is a state that is not the one handed in, and a row of another leaf.
+- **A cell's leads are one list** — a step of the catalog's frame as it stands there, a plant, or a directory moved away to the sandbox's `moved/` — because a plant's position among the lead-ins is what the plan's §3 is about. This task builds one plant, a file in no commit; the others and the two conditions are the task `B2d`'s.
+- **The stand-in is one script that does what its first word says**, so one state is built for the arm and every cell of it is one known act.
+
+### Red first
+
+**Against a reader that read nothing, 29 of the 35 cells on the stand-in were red**, each at the arm's own comparison: the six with a plant because the plant did not stand in the picture taken before the command, the others because the cell came out *holds* — or, for a refusal that wrote, *not the listed outcome*. The six that were not red are the ones that must come out *holds* or *refuses, nothing changed*, each the pair of a red one. The arm that holds the two builders together was red there too; the arm of a command that does not end was not — what it holds is the runner's, and it is named by a change below.
+
+**Thirty changes to the built reader and runner, one at a time, each over the whole suite — every one named**, by [`the_reader_reads_what_the_comparison_reads`](crates/cli/tests/byte_table.rs) and the cell in brackets unless another arm is given:
+
+a file's id without the filters [`the-same-under-conversion`] · the frame's `staging/` read [seven cells, and the arm of the two builders] · a `.git` directory walked [`status-and-a-time`, `commits-the-index`] · the hooks not read · the hooks directory not named [`writes-the-hook`, each] · `info/exclude` not read [`writes-the-exclude`] · a gone registration's index not read [`a-gone-worktrees-index`] · the registrations not read [`drops-the-registration`] · the other checkouts not read [`unstages-in-the-other-checkout`] · the refs [`moves-a-branch`] · the stash [`drops-a-stash-entry`] · the configuration [`configures`] · the store [`prunes`, `stores-then-removes`] · an index that does not hold [`stages-then-removes`] · whatever the store has is held [`stores-then-removes`] · the commits not read [`commits-a-link`, `commits-the-index`] · a commit's modes not read [`commits-a-link`] · a removal in a commit not read [`commits-a-removal`] · a marker not looked for in the files [all six planted cells] · in the store [`stores-then-removes`] · within reach [`stages-then-removes`] · the permission bits [`changes-a-mode`] · a link's target [`repoints-a-link`] · an index entry's flags [`marks-an-entry`] · a command that did not end read as one that did [the arm `a_command_that_does_not_end_is_ended`] · the state before the leads taken for the state before the command [`rewrites-its-own`] · the consent never read [`removes-and-names --force`] · a plant written over what stands there · the row of another leaf taken · another state taken [the arm's faults].
+
+**Five of the cells were added because a change survived or had nothing to name it** — an entry of another checkout's index, `info/exclude`, an index entry's flag, a link's target, a removal in a commit.
+
+### The two builders, held to what can agree
+
+[`a_state_brought_in_and_the_state_made_in_the_sandbox_agree_in_what_can_agree`](crates/cli/tests/byte_table.rs): `fresh` as the builder of the prepared states made it, copied in, beside the never-adopted repository with one `jigc setup` run in the sandbox on the same binary. **They agree in everything the arm asks, with no exception written for any path**: the same paths, kinds and permission bits; the same bytes once a commit's id is written `<commit>` where a file holds one; the same index by path, mode and blob; the same refs by name; the same hooks. Not the commits' ids, which carry a time and an identity. So a prepared state and a cell's lead-ins are one kind of thing, and `jigc setup` left nothing under `tmp/` or `home/` in either.
+
+### Not established
+
+- **Linux**: no run in the container was made for this commit; the stand-in is `sh`, `touch -r`, `ln -s`, and git.
+- **That the reader takes no lock** (`GIT_OPTIONAL_LOCKS=0`): nothing a manifest holds would show a refreshed index, so no arm can name the line.
+- **That a file in another checkout gets its id through that checkout's own filters** and not the main one's: no cell gives two checkouts different attributes.
+- **That every child of a prepared sandbox has `tmp/` as `TMPDIR`** is held from the cell's side (`writes-tmp` finds its file under `tmp/`); the line of the catalog's frame that sets it was not taken out to see the arm name it — the stand-in would then have written into the machine's own temporary directory.
+- **The reading in between** — bytes only a reflog reaches — is still not carried apart from the store.
+- **A name with a line break** is a fault of the reader: git is handed names by the line. The plan's plant **N** will need another way.
+- **What a cell costs**: the arm of 35 cells ran in about five seconds here, with the suite's other arms, on a machine at a load of about 10; a cell on the real binary is the next tasks'.
+
 ## 2026-10-12 — The builder of the prepared states takes its binary as a value: a state is built on the binary handed in, and every later child of the corpus, and of a copy of it, is that binary (the byte table's pilot, task `B2a`)
 
 **What.** The third task of the byte table's pilot ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §4, *Added*, 3; §8). The table runs a cell on the state **the binary under test built** — on another release's binary the state must be that release's own — and [`TrialCorpus`](crates/cli/tests/support/trial_corpus.rs) named cargo's binary of this tree itself, at the two places it starts a child. It now holds the binary as a value: cargo's where nobody hands one in, so **no call site of the suites that name the builder moves**, and `TrialCorpus::build_on(binary, state)` for a caller that hands one in. No product source changes, and what a state holds is what it held.
