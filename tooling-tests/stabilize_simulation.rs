@@ -163,6 +163,17 @@
 //! account's limit, naming the filed verdicts. *The scenarios of a lap, of an unverified
 //! finding and of an advocate in `test` are moved to an opening with an order or retired,
 //! each where it stood, with where its cells live now.*
+//! **What an invocation of that path returns, and the rulings about its queue** (the plan's
+//! `T7`; the row `wf-return-names`): the status is `hunted`, `verified` or `continued`, for
+//! what the invocation itself put on record; beside `next` every return says the budget, the
+//! queue's length class by class, the hit rate and the stop's view by its path and its hash —
+//! each held here to the state document the return names ([`says_what_the_state_says`]) — and
+//! what the stage is continued for; and it holds no list of the harness's own making
+//! ([`holds_no_list`]). A budget raised, another order and a row put into the queue by key are
+//! recorded by the one step that records rulings, start nothing, and are followed by an
+//! invocation that continues the stage. **The golden trace is such a stage's** since that
+//! task: the scenario that ran a run without an order through a triage pass, an advocate and
+//! an independent drive to the return `triaged` is moved, under its name.
 //!
 //! **The `fix` stage refuses to start**, and that is all that is asserted of it; the rig,
 //! the scenario and the stand-in are shaped so that its half's tasks add its agents here.
@@ -727,7 +738,8 @@ fn golden(rel: &str, text: &str) {
 // ---------------------------------------------------------------------------
 
 /// One item of every kind the harness has a chain for, a deterministic check, and one
-/// item the round's doors do not reach.
+/// item the round's doors do not reach — in A RUN WITH A QUEUE: the row its opening seeds
+/// carries its class, as every row of such a run does.
 fn every_kind() -> Opening {
     Opening {
         clauses: vec!["gate-green", "no-lost-files", "adoptable", "audit-clean"],
@@ -762,7 +774,8 @@ fn every_kind() -> Opening {
         rows: json!([{
             "key": "setup-on-windows", "doctype": "jigc-feedback", "round": 0,
             "source": "known at the opening", "door": "jigc setup", "clause": "adoptable",
-            "repro": "the opening record",
+            "repro": "the opening record", "kind": "behaviour", "origin": "seed",
+            "commands": "jigc setup, on a machine nobody here has",
         }]),
     }
 }
@@ -773,24 +786,28 @@ const OUTSIDE: &str = "rename-loses-a-referrer";
 const REFUTED: &str = "doc-set-exit-code";
 const SEEDED: &str = "setup-on-windows";
 
-/// What the scripted agents of that stage say: a finding inside the round's test set (and
-/// contested, so that it is a fork), one outside it, one the verifier refutes, a row seeded
-/// at the opening that triage grades out of scope under a declared bound — and nothing
-/// from every other reporter.
+/// What the verifier of the finding inside the round's test set says a settled decision is
+/// against it with: the basis of a contested verdict, which is text of its filing alone.
+const BASIS: &str = "the decision of the write boundary says that a refusal never writes";
+
+/// What the scripted agents of that stage say: a finding inside the round's test set, whose
+/// verifier confirms and CONTESTS it, so that it is the human's; one outside it — a route
+/// item, which the queue ranks first; one the verifier refutes; a row seeded at the opening
+/// that the one triage grades out of scope under a declared bound — and nothing from every
+/// other reporter.
 fn every_kind_script() -> Value {
-    let verified = |key: &str, verdict: &str, basis: &str| {
-        let mut v = json!({"status": "verified", "key": key, "verdict": verdict,
-                           "basis": basis, "repro": format!("the block of {key}"),
-                           "pinnable": true, "left_open": []});
-        if verdict == "confirmed" {
-            v["regression"] = json!(false);
+    let keyed_at = |key: &str, kind: &str, grade: &str, door: &str, folds: Value| {
+        let mut entry = keyed(key, kind, grade, folds);
+        entry["door"] = json!(door);
+        entry["clause"] = json!("no-lost-files");
+        if kind == "route" {
+            entry["route"] = json!(format!("Run: jigc rename --repair {key}"));
+        } else {
+            entry["commands"] = json!(format!("jigc doc set {key}"));
         }
-        v
+        entry
     };
-    let mut contested = verified(INSIDE, "confirmed", "reproduces as written");
-    contested["contested"] = json!(true);
-    let mut seeded = entry(SEEDED, "ledger", "jigc setup", "adoptable", "out-of-scope");
-    seeded["new"] = json!(false);
+    let mut seeded = found_again(SEEDED, "out-of-scope", json!({"ledger": [1]}));
     seeded["bound"] = json!("windows");
     json!({
         "checks": {"gate": "green"},
@@ -809,43 +826,39 @@ fn every_kind_script() -> Value {
             "area-a:review": nothing(),
             "cross:review": nothing(),
             "drive-a:drive": found(&[finding("d-1", "a wrong exit code", "jigc doc set", "no-lost-files")]),
-            "triage:p1": graded(
-                &[
-                    entry(INSIDE, "row-a-source s-1", "jigc doc set", "no-lost-files", "breaks"),
-                    entry(OUTSIDE, "arm-a-score t-1", "jigc rename", "no-lost-files", "breaks"),
-                    entry(REFUTED, "drive-a-drive d-1", "jigc doc set", "no-lost-files", "unclear"),
-                    seeded,
-                ],
-                &["row-a-source", "arm-a-score", "drive-a-drive", "ledger"],
-            ),
-            format!("verify:{INSIDE}"): contested,
-            format!("verify:{OUTSIDE}"): verified(OUTSIDE, "confirmed", "reproduces as written"),
-            format!("verify:{REFUTED}"): verified(REFUTED, "refuted", "does-not-reproduce: exit 0 on a fresh rig"),
-            format!("advocate:{INSIDE}"): {
-                "status": "argued", "verdict": "robust-now", "case": "The robust case.",
-                "proposal": "A change somebody else can apply.",
-                "driven": [{"step": "the next step", "command": "jigc doc set", "result": "exit 0"}],
-                "undriven": [], "left_open": [],
-            },
-            format!("proposal:{INSIDE}"): {
-                "status": "driven", "holds": true,
-                "steps": [{"step": "the next step", "command": "jigc doc set", "result": "exit 0", "agrees": true}],
-                "undriven": [], "left_open": [],
-            },
+            "triage": {"entries": [
+                keyed_at(INSIDE, "behaviour", "breaks", "jigc doc set", json!({"row-a-source": [1]})),
+                keyed_at(OUTSIDE, "route", "breaks", "jigc rename", json!({"arm-a-score": [1]})),
+                keyed_at(REFUTED, "behaviour", "unclear", "jigc doc set", json!({"drive-a-drive": [1]})),
+                seeded,
+            ]},
+            format!("verify:{INSIDE}"): files(json!({"verdict": "confirmed", "regression": false, "contested": BASIS})),
+            format!("verify:{OUTSIDE}"): files(json!({"verdict": "confirmed", "regression": false})),
+            format!("verify:{REFUTED}"): refutes("does-not-reproduce"),
         },
     })
 }
 
+/// **A whole `test` stage of a run with a queue, from the git state to its second pushed
+/// record** — THE GOLDEN TRACE (the reshape's plan, `T7`, which moved it: until then it ran a
+/// run without an order through a triage pass, three verifiers, an advocate and an independent
+/// drive, to ONE record and the return `triaged`). One item of every kind: the preflight, the
+/// held builds and the candidate's gate beside the scope step; the instruments; THE ONE
+/// TRIAGE; THE FIRST RECORD, composed by the tool; THE VERIFY PHASE — one wave, the queue's
+/// three rows in its rank, the route item first — and THE SECOND RECORD. No advocate and no
+/// independent drive: the verdict its verifier contests is the human's by that filing. Then
+/// what the orchestrator reads, and the invocations that follow: the stage refused while the
+/// round is open, and the human's rulings recorded by the one step.
 #[test]
 fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
     if !can_run() {
         return;
     }
-    let sim = Sim::opened("whole", &every_kind());
+    let sim = Sim::budgeted("whole", &every_kind(), 30);
     let candidate = sim.rig.rev("HEAD");
     let ran = sim.invoke(sim.args("test", json!({})), every_kind_script());
     let result = &ran.result;
-    assert_eq!(result["status"], "triaged", "{result}");
+    assert_eq!(result["status"], "verified", "{result}");
 
     // (1) WHAT WAS LAUNCHED, AND IN WHICH ORDER: the golden.
     // The previous release's build is named by its commit — the rig's — and the candidate's
@@ -857,14 +870,19 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
             .replace(&previous_build(&sim), "build-previous-<its commit>")
             .replace(&sim.opened_at()[..12], "<the candidate>"),
     );
+    assert_eq!(
+        verified(&ran),
+        [OUTSIDE, INSIDE, REFUTED],
+        "one wave, in the queue's rank: the route item first, then the behaviour items as the ledger has them"
+    );
 
-    // (2) EXACTLY ONE REPORT PER LAUNCHED REPORTER, on disk and committed. The launched
-    // are those whose prompt handed them a report to write; the stand-in wrote each
-    // through the record script, under the name the prompt gave.
+    // (2) EXACTLY ONE REPORT PER LAUNCHED REPORTER, on disk and committed — by the stage's two
+    // records. The launched are those whose prompt handed them a report to write, and the one
+    // triage, whose report the record script rendered from its entries.
     let launched = sorted(ran.reporters.clone());
     assert_eq!(
         launched.len(),
-        19,
+        17,
         "the reporters this stage launched, and the marker its attempt began with: {launched:?}"
     );
     assert!(launched.contains(&"attempt".to_owned()), "{launched:?}");
@@ -878,31 +896,53 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
         ),
         "one report per launched reporter, and no other"
     );
-    assert_eq!(result["counts"]["reporters"], 19, "{result}");
+    assert_eq!(result["counts"]["reporters"], 17, "{result}");
     assert_eq!(
         sim.rig.status(),
         "",
         "every report is committed, and the tree is clean"
     );
-    let committed = sim.rig.git(&["show", "--name-only", "--format=%s", "HEAD"]);
-    let mut committed = committed.lines();
+    let words = ends_at_its_second_record(&sim, &ran, &candidate);
     assert_eq!(
-        committed.next(),
-        Some("docs(record): rc24 r1 - the record of the test stage"),
-        "the record is ONE commit, with the subject the step names"
+        sorted(words),
+        sorted(
+            launched
+                .iter()
+                .map(|name| format!("reporter={name}"))
+                .collect()
+        ),
+        "the second record names every reporter of the attempt"
     );
-    let paths: Vec<&str> = committed.filter(|line| !line.is_empty()).collect();
+    let commit_paths = |rev: &str| -> Vec<String> {
+        sim.rig
+            .git(&["show", "--name-only", "--format=", rev])
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(str::to_owned)
+            .collect()
+    };
+    let (first_paths, second_paths) = (commit_paths("HEAD~1"), commit_paths("HEAD"));
+    assert_eq!(
+        sim.rig.git(&["show", "-s", "--format=%s", "HEAD~1"]).trim(),
+        first_record_subject()
+    );
     assert!(
-        paths
+        first_paths
             .iter()
+            .chain(&second_paths)
             .all(|path| path.starts_with(&format!("{RUN_DIR}/"))),
-        "of the run directory's paths and nothing else: {paths:?}"
+        "of the run directory's paths and nothing else: {first_paths:?} {second_paths:?}"
     );
     for name in &launched {
         let report = format!("{RUN_DIR}/r1/reports/test/{name}.a1.md");
+        let (holds, says) = if name.starts_with("verify-") {
+            (&second_paths, "second")
+        } else {
+            (&first_paths, "first")
+        };
         assert!(
-            paths.contains(&report.as_str()),
-            "`{report}` is in the record commit"
+            holds.contains(&report),
+            "`{report}` is in the {says} record's commit"
         );
     }
 
@@ -940,9 +980,9 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
             "included",
             "confirmed",
             "human",
-            "fork"
+            "contested"
         ]),
-        "M3: a contested finding is the human's, though it is inside the round's test set"
+        "a contested finding is the human's, though it is inside the round's test set"
     );
     assert_eq!(
         read(OUTSIDE),
@@ -1001,7 +1041,7 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
             round["record"],
             round["test_reports"]
         ]),
-        json!([true, true, true, 19])
+        json!([true, true, true, 17])
     );
     for clause in state["clauses"].as_array().expect("the clause table") {
         assert_eq!(
@@ -1011,24 +1051,24 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
         );
     }
 
-    // (4) THE REMOTE BRANCH STANDS AT THE RECORDED HEAD.
+    // (4) THE REMOTE BRANCH STANDS AT THE SECOND RECORD.
     let head = sim.rig.rev("HEAD");
-    assert_eq!(result["record"], head.as_str(), "{result}");
+    assert_eq!(
+        json!([result["record"], result["verify"]["record"]]),
+        json!([sim.rig.rev("HEAD~1"), head]),
+        "{result}"
+    );
     assert_eq!(
         sim.rig.remote(LOOP),
         Some(head.clone()),
         "the loop branch is pushed"
     );
-    assert_eq!(
-        sim.rig.rev("HEAD~1"),
-        candidate,
-        "the record is the one commit on the candidate"
-    );
-    // THE CANDIDATE'S GATE IS ON RECORD, in that commit: what the preflight's run showed —
-    // green here — as a table of the round, which every record commit of it is held to.
+    // THE CANDIDATE'S GATE IS ON RECORD, in the first record's commit: what the stage's run of
+    // it showed — green here — as a table of the round, which every record commit of it is
+    // held to.
     assert!(
-        paths.contains(&format!("{RUN_DIR}/r1/gate.md").as_str()),
-        "the candidate's gate is a file of the record commit: {paths:?}"
+        first_paths.contains(&format!("{RUN_DIR}/r1/gate.md")),
+        "the candidate's gate is a file of the first record's commit: {first_paths:?}"
     );
     let gate = sim.rig.read(&format!("{RUN_DIR}/r1/gate.md"));
     assert!(
@@ -1039,10 +1079,10 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
     assert_eq!(
         sim.record(&["pending", "--run", RUN], "")["batch"],
         Value::Null,
-        "and the batch the record step applied is settled"
+        "and the batch the last record applied is settled"
     );
 
-    // EVERY STEP ASKED FOR ITS DIGEST, under the invocation's scratch root (K3) — and the
+    // EVERY STEP ASKED FOR ITS DIGEST, under the invocation's scratch root (K3) — and each
     // record's push was a record's: held to publishing the run's records and nothing else.
     let scratch = sim.rig.scratch.display().to_string();
     for step in ran
@@ -1050,22 +1090,25 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
         .iter()
         .filter(|ran| ran.starts_with("dev/stabilize-step "))
     {
-        // The one command of the step tool that is no step: the hash the independent drive
-        // of a proposal asks of the tool, and reads itself.
+        // The one command of the step tool that is no step: the hash a driving agent asks of
+        // the tool, and reads itself.
         assert!(
             step.contains(&format!(" --digest {scratch}"))
-                || step
-                    == &format!(
-                        "dev/stabilize-step hash --scratch {scratch} --file {}",
-                        candidate_bin(&candidate)
-                    ),
+                || step.starts_with(&format!(
+                    "dev/stabilize-step hash --scratch {scratch} --file bin/"
+                )),
             "a step of the stage asked for the line the tool prints unasked: {step}"
         );
     }
-    assert!(
-        ran.commands.contains(&format!(
-            "dev/stabilize-step push --branch {LOOP} --run-dir {RUN_DIR} --digest {scratch}"
-        )),
+    assert_eq!(
+        ran.commands
+            .iter()
+            .filter(|command| **command
+                == format!(
+                    "dev/stabilize-step push --branch {LOOP} --run-dir {RUN_DIR} --digest {scratch}"
+                ))
+            .count(),
+        2,
         "{:?}",
         ran.commands
     );
@@ -1077,11 +1120,12 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
         "`next` is relayed, never computed: {result}"
     );
     // THE HUMAN'S LIST IS A COUNT IN THE RETURN, AND A LIST IN THE FILE THE RETURN NAMES
-    // (K3): no row of the record passes through the harness.
+    // (K3): no row of the record passes through the harness — and which finding its verifier
+    // contests, with the basis, is that file's to say.
     assert_eq!(result["rule"]["findings"], 2, "{result}");
     assert_eq!(
         document(result)["human_list"],
-        json!([{"key": INSIDE, "why": "fork"}, {"key": OUTSIDE, "why": "outside"}])
+        json!([{"key": INSIDE, "why": "contested", "basis": BASIS}, {"key": OUTSIDE, "why": "outside"}])
     );
     assert_eq!(
         document(result),
@@ -1089,10 +1133,12 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
         "the file is the state, as the record script reads it"
     );
     assert!(
-        result.get("human_list").is_none() && result.get("blockers").is_none(),
+        result.get("human_list").is_none()
+            && result.get("blockers").is_none()
+            && result.get("forks").is_none()
+            && result.get("unverified").is_none(),
         "{result}"
     );
-    assert_eq!(result["unverified"], json!([]));
     assert_eq!(result["round"], 1);
     assert_eq!(
         json!([
@@ -1112,13 +1158,62 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
     );
     assert_eq!(
         result["counts"],
-        json!({"items": 7, "items_run": 6, "reporters": 19, "findings_in": 4, "entries": 4,
-               "by_grade": {"confirmed": 2, "refuted": 1, "out-of-scope": 1},
-               "blockers": 0, "for_the_human": 2, "voided": []})
+        json!({"items": 7, "items_run": 6, "reporters": 17, "findings_in": 4,
+               "blockers": 0, "for_the_human": 2, "voided": 0, "unasserted": 0, "held": 0})
     );
     assert_eq!(
         result["scope"],
-        json!({"status": "written", "uncovered": [], "reached_but_excluded": ["jigc rename"]})
+        json!({"status": "written", "uncovered": 0, "reached_but_excluded": 1}),
+        "the doors the scope step left out are HOW MANY in the return, and the round's scope names them"
+    );
+    assert_eq!(
+        json!([result["verify"], result["budget"], result["continues"]]),
+        json!([
+            {"waves": 1, "launched": 3, "verdicts": 3, "record": head, "unverified": 0,
+             "unheld": 0, "contested": 1, "silent": 0, "last": null},
+            {"limit": 30, "spent": 3, "left": 27},
+            []
+        ]),
+        "{result}"
+    );
+    assert_eq!(
+        json!([
+            result["view"]["verified"],
+            result["view"]["confirmed"],
+            result["view"]["refuted"],
+            result["view"]["inside"],
+            result["view"]["outside"],
+            result["view"]["unreached"]
+        ]),
+        json!([3, 2, 1, 0, 1, 0]),
+        "the hit rate, and how long the view's lists are — two confirmed, and one of them in the list of what was confirmed outside the round's test set: the other is the finding its verifier contests, which the view lists apart, AND OF THAT LIST THE DIGEST HOLDS NO COUNT: {result}"
+    );
+    assert_eq!(
+        document(result)["view"]["contested"]
+            .as_array()
+            .map(|rows| rows
+                .iter()
+                .map(|row| row["key"].clone())
+                .collect::<Vec<_>>()),
+        Some(vec![json!(INSIDE)]),
+        "which finding is contested is the document's to say, and the view's file's"
+    );
+    says_what_the_state_says(&sim, result);
+    holds_no_list(
+        result,
+        &[
+            INSIDE,
+            OUTSIDE,
+            REFUTED,
+            SEEDED,
+            "verify-",
+            "row-a",
+            "arm-a",
+            "drive-a",
+            "jigc rename",
+            "jigc doc set",
+            "write boundary",
+        ],
     );
     assert!(
         ran.logs
@@ -1128,49 +1223,31 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
         ran.logs
     );
 
-    // REPAIRED — M3 (harness-agents-gate.md): A FORK IS ON RECORD. The contested finding
-    // comes back in `forks`, with the advocate's case and the independent drive — and the
-    // round's triage record holds it with the verdict it rides on, so the state a later
-    // invocation starts from says that there is one, of which kind, what the advocate's
-    // verdict is and whether the independent drive holds. It is on the human's list, and
-    // no fixer's: the next step is `rule`.
-    let forks = result["forks"].as_array().expect("the forks");
-    assert_eq!(forks.len(), 1, "{result}");
-    assert_eq!(
-        json!([
-            forks[0]["key"],
-            forks[0]["kind"],
-            forks[0]["advocate"]["verdict"],
-            forks[0]["independent_drive"]["holds"],
-            forks[0]["driven_by"]
-        ]),
-        json!([INSIDE, "contested", "robust-now", true, "general-purpose"])
+    // A CONTESTED VERDICT IS ON RECORD BY ITS VERIFIER'S OWN FILING — and no advocate and no
+    // independent drive was launched for it: it is on the human's list, and no fixer's.
+    assert!(
+        !ran.agents()
+            .iter()
+            .any(|label| label.starts_with("advocate:")
+                || label.starts_with("proposal:")
+                || label.starts_with("triage:p")
+                || label.starts_with("record:")),
+        "{:?}",
+        ran.agents()
     );
     assert_eq!(
         state["blockers"],
         json!([]),
-        "M3: an unruled fork is no fixer's"
-    );
-    assert_eq!(
-        row(INSIDE)["triage"]["fork"],
-        json!({"kind": "contested", "case": "robust-now", "drive": "holds"}),
-        "M3: the fork is a row the next invocation reads"
+        "a contested finding nobody ruled is no fixer's"
     );
     assert!(
         sim.rig
             .read(&format!("{RUN_DIR}/r1/triage.md"))
-            .contains("| contested: robust-now, holds |"),
-        "M3: in the round's committed triage record"
+            .lines()
+            .any(|line| line.starts_with(&format!("| `{INSIDE}` |"))
+                && line.ends_with("| contested |")),
+        "in the round's committed triage record"
     );
-    for name in [
-        format!("advocate-p1-{INSIDE}"),
-        format!("proposal-p1-{INSIDE}"),
-    ] {
-        assert!(
-            launched.contains(&name),
-            "the case and the independent drive are reports of the stage: {launched:?}"
-        );
-    }
 
     // WHAT THE RECORD SCRIPT SAYS NEXT, and what a second invocation does with it.
     assert_eq!(
@@ -1240,34 +1317,24 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
     assert_eq!(ruled.result["status"], "ruled", "{}", ruled.result);
     assert_eq!(
         ruled.agents(),
-        [
-            "git:state",
-            "git:state:test-1",
-            "record:rulings:r1",
-            "git:hold-start:record-rulings-r1-1",
-            "git:hold-wait:record-rulings-r1-1",
-            "git:record:rulings:r1",
-            "git:push:rulings",
-            "git:state:test-2"
-        ],
+        only_rules(1),
         "two reads, the one step that records rulings, its gate — held — its commit, the push, the state: nothing is started"
     );
-    // M3: THE FORK IS STILL UNRULED, so the next step is still the human's — never `fix`,
-    // though nothing else is left to rule on.
+    // THE CONTESTED FINDING IS STILL UNRULED, so the next step is still the human's — never
+    // `fix`, though nothing else is left to rule on.
     assert_eq!(
         json!([ruled.result["next"], ruled.result["rule"]["findings"]]),
         json!(["rule", 1]),
-        "M3: {}",
+        "{}",
         ruled.result
     );
     assert_eq!(
         document(&ruled.result)["human_list"],
-        json!([{"key": INSIDE, "why": "fork"}]),
-        "M3"
+        json!([{"key": INSIDE, "why": "contested", "basis": BASIS}])
     );
-    // THE HUMAN'S RULING ON THE FORK is a ruling like the others, written by the same one
-    // step: admitted, with the note that reaches the fixer.
-    let fork_ruled = sim.invoke(
+    // THE HUMAN'S RULING ON IT is a ruling like the others, written by the same one step:
+    // admitted, with the note that reaches the fixer.
+    let contested_ruled = sim.invoke(
         sim.args(
             "test",
             json!({"rulings": [{"key": INSIDE, "ruling": "admitted", "note": "take the robust path"}]}),
@@ -1275,27 +1342,16 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
         json!({}),
     );
     assert_eq!(
-        fork_ruled.result["status"], "ruled",
+        contested_ruled.result["status"], "ruled",
         "{}",
-        fork_ruled.result
+        contested_ruled.result
     );
     assert_eq!(
-        fork_ruled
-            .agents()
-            .into_iter()
-            .filter(|label| label.contains("rulings"))
-            .collect::<Vec<_>>(),
-        [
-            "record:rulings:r1",
-            "git:hold-start:record-rulings-r1-1",
-            "git:hold-start:record-rulings-r1-2",
-            "git:hold-wait:record-rulings-r1-2",
-            "git:record:rulings:r1",
-            "git:push:rulings"
-        ],
-        "M3: by the one step that records rulings — whose gate is held under the NEXT name: the first is the gate of the rulings recorded before these, on the tree as it stood then"
+        contested_ruled.agents(),
+        only_rules(2),
+        "by the one step that records rulings — whose gate is held under the NEXT name: the first is the gate of the rulings recorded before these, on the tree as it stood then"
     );
-    let ruled = fork_ruled;
+    let ruled = contested_ruled;
     let after = sim.state();
     let disposition = |key: &str| -> Value {
         let row = after["ledger"]
@@ -1309,7 +1365,7 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
     assert_eq!(
         disposition(INSIDE),
         json!(["admitted", "take the robust path", "fix"]),
-        "M3: the ruled fork is a fixer's, with the human's note"
+        "the ruled finding is a fixer's, with the human's note"
     );
     assert_eq!(after["blockers"], json!([INSIDE]));
     assert_eq!(
@@ -1463,11 +1519,20 @@ fn an_unverified_finding_is_finished_by_the_next_invocation_and_after_one_more_i
         "the stage says which finding it left without a verdict, and why — in its log: {:?}",
         ran.logs
     );
-    // A VALUE OF `next` THE SCRIPT HAS NO SENTENCE FOR goes back with the state attached, as
-    // what the digest holds of it — and the file the document lies in.
-    assert_eq!(result["returned_to_orchestrator"], true);
+    // `verify` IS A VALUE OF `next` THE SCRIPT KNOWS (`T7`): it goes back with what the stage
+    // is continued for, and with no state attached — the document lies in the file the return
+    // names.
     assert_eq!(
-        result["state"]["position"]["test"],
+        json!([
+            result["returned_to_orchestrator"],
+            result["state"],
+            result["continues"]
+        ]),
+        json!([null, null, ["verify"]]),
+        "{result}"
+    );
+    assert_eq!(
+        document(result)["position"]["test"],
         json!({"round": 1, "attempt": 2, "verify": true}),
         "the stage that left the finding unverified continues"
     );
@@ -1598,8 +1663,8 @@ fn an_unverified_finding_is_finished_by_the_next_invocation_and_after_one_more_i
             nothing["verify"]["unverified"],
             nothing["next"]
         ]),
-        json!(["hunted", null, null, null, 1, 1, "verify"]),
-        "{nothing}"
+        json!(["continued", null, null, null, 1, 1, "verify"]),
+        "an invocation that continued a stage and recorded nothing hunted nothing, and does not say that it did (`T7`): {nothing}"
     );
     assert!(
         left_nothing.agents().last() == Some(&"git:state:test-2")
@@ -7086,7 +7151,10 @@ fn an_entry_without_its_kinds_evidence_is_recorded_as_a_lead() {
     for of_an_entry in [
         "a-route-nobody-quoted",
         "a-route-with-its-line",
-        "\"lead\"",
+        // (The WORD `lead` stands in the return, since `T7`: as one of the words that keep a
+        // row out of the queue, with how many rows it keeps out — the view's, as the digest
+        // has it. A kind of an entry does not.)
+        "\"kind\":\"lead\"",
         "Run: jigc doc set",
     ] {
         assert!(
@@ -7926,21 +7994,24 @@ fn every_void_says_why_in_one_word_and_a_reporter_that_left_no_report_is_no_word
             "`{sentence}` is a sentence, and the results hold it: {recorded}"
         );
     }
-    assert_eq!(
-        sorted(
-            ran.result["counts"]["voided"]
-                .as_array()
-                .expect("the void items")
-                .iter()
-                .map(text)
-                .collect()
-        ),
-        sorted(lines(&[
-            "area-a", "area-b", "arm-a", "cross", "drive-a", "gate", "lint", "tarball"
-        ])),
-        "{}",
-        ran.result
-    );
+    // WHICH ITEMS ARE VOID IS A LINE OF THE LOG, each with its word; the return says how many
+    // (`T7`: a return holds no list of the stage's own making).
+    assert_eq!(ran.result["counts"]["voided"], 8, "{}", ran.result);
+    let named: Vec<&String> = ran
+        .logs
+        .iter()
+        .filter(|line| line.starts_with("VOID, AND ON RECORD AS VOID: "))
+        .collect();
+    assert_eq!(named.len(), 1, "{:?}", ran.logs);
+    for item in [
+        "area-a", "area-b", "arm-a", "cross", "drive-a", "gate", "lint", "tarball",
+    ] {
+        assert!(
+            named[0].contains(&format!("`{item}` (`")),
+            "the log names the void item `{item}`, with its word: {}",
+            named[0]
+        );
+    }
 }
 
 /// **A step that types one status wrong is refused by the hash** (the plan's `K3`, its harness
@@ -8573,7 +8644,7 @@ fn handed_on_items_are_verified_in_the_stage_that_found_them_and_the_stage_ends_
             result["verify"]["waves"],
             result["verify"]["launched"],
             result["verify"]["verdicts"],
-            result["verify"]["left"],
+            result["budget"]["left"],
             result["verify"]["unverified"],
             result["verify"]["unheld"],
             result["verify"]["contested"]
@@ -8790,7 +8861,7 @@ fn a_lead_and_an_item_under_a_parent_that_did_not_reproduce_are_never_launched()
             ran.result["verify"]["waves"],
             ran.result["verify"]["launched"],
             ran.result["verify"]["verdicts"],
-            ran.result["verify"]["left"]
+            ran.result["budget"]["left"]
         ]),
         json!([1, 1, 1, 29]),
         "{}",
@@ -10369,7 +10440,7 @@ fn a_rerun_inside_a_round_hunts_its_due_items_grades_once_and_spends_the_rounds_
             result["candidate"]["sha"],
             result["verify"]["launched"],
             result["verify"]["verdicts"],
-            result["verify"]["left"],
+            result["budget"]["left"],
             result["next"]
         ]),
         json!(["verified", "no-lost-files", candidate, 1, 1, 0, "rule"]),
@@ -11122,7 +11193,7 @@ fn a_stage_whose_last_wave_spent_the_budget_is_handed_its_record_before_the_huma
             result["status"],
             result["continued"],
             result["verify"]["launched"],
-            result["verify"]["left"],
+            result["budget"]["left"],
             result["verify"]["record"],
             result["next"],
             result["rule"]["findings"]
@@ -11205,6 +11276,1302 @@ fn a_stage_whose_last_wave_spent_the_budget_is_handed_its_record_before_the_huma
         filed_as(&sim.state()),
         [json!([true, true]), json!([true, true])]
     );
+}
+
+// ---------------------------------------------------------------------------
+// A run with a queue: what a stage returns, and the rulings about the queue (the reshape's
+// plan, `T7`; the row `wf-return-names`)
+// ---------------------------------------------------------------------------
+
+/// Every list a return holds, by where it stands: `a.b` for a member, and an element of a list
+/// under its list's own name.
+fn lists_of(value: &Value, at: &str, found: &mut std::collections::BTreeSet<String>) {
+    match value {
+        Value::Array(items) => {
+            found.insert(at.to_owned());
+            for item in items {
+                lists_of(item, at, found);
+            }
+        }
+        Value::Object(members) => {
+            for (name, member) in members {
+                let below = if at.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{at}.{name}")
+                };
+                lists_of(member, &below, found);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// THE LISTS A RETURN OF A RUN WITH A QUEUE MAY HOLD — each one THE STEP TOOL'S, printed by a
+/// digest whose shape bounds it, or the position's words: what the first read met, what the
+/// stage is continued for, the clauses that forbid the close, the items no round selected, the
+/// queue's and the view's classes, the words that keep a row out of the queue, and the human's
+/// three lists beside `rule`. NONE IS OF THE HARNESS'S MAKING: what an agent returned and what
+/// the script launched are counts in a return, and names in the log.
+const THE_TOOLS_LISTS: [&str; 13] = [
+    "arrived.finished",
+    "arrived.found",
+    "arrived.owed",
+    "continued",
+    "continues",
+    "forbids_close.clauses",
+    "named.never_selected",
+    "queue.classes",
+    "rule.clauses",
+    "rule.reverify",
+    "rule.stages",
+    "view.listed",
+    "view.rates",
+];
+
+/// Hold a return of a run with a queue to HOLDING NO LIST OF ITS OWN: every list in it is one
+/// of [`THE_TOOLS_LISTS`] — or lies in the state as the digest has it, which goes back whole
+/// where the script does not know `next` — and none of `names`, the keys, reporters, items and
+/// doors of the scenario, stands anywhere in it.
+fn holds_no_list(result: &Value, names: &[&str]) {
+    let mut found = std::collections::BTreeSet::new();
+    lists_of(result, "", &mut found);
+    let strangers: Vec<&String> = found
+        .iter()
+        .filter(|at| !THE_TOOLS_LISTS.contains(&at.as_str()) && !at.starts_with("state."))
+        .collect();
+    assert!(
+        strangers.is_empty(),
+        "a return of a run with a queue holds a list that is no digest's: {strangers:?}\n{result}"
+    );
+    let returned = result.to_string();
+    for name in names {
+        assert!(
+            !returned.contains(name),
+            "`{name}` is a key, a reporter, an item or a door, and the return holds it: {returned}"
+        );
+    }
+}
+
+/// Hold what a return says of the queue, the budget and the stop's view TO THE STATE DOCUMENT
+/// IT NAMES — the record script's, which the harness read a digest of: the budget whole; the
+/// queue's length and its length class by class; and the view by its path, its hash and how
+/// the file on disk stands to that hash — where it says `written`, THE FILE'S BYTES HASH TO IT.
+fn says_what_the_state_says(sim: &Sim, result: &Value) {
+    let state = document(result);
+    assert_eq!(result["budget"], state["budget"], "{result}");
+    assert_eq!(
+        json!([
+            result["queue"]["length"],
+            result["queue"]["classes"],
+            result["queue"]["hand_on"]
+        ]),
+        json!([
+            state["queue"]["ranked"].as_array().map(Vec::len),
+            state["queue"]["classes"],
+            state["facts"]["hand-on"]
+        ]),
+        "{result}"
+    );
+    let (said, shown) = (&result["view"], &state["view"]);
+    assert_eq!(
+        json!([said["round"], said["file"], said["sha256"], said["on_disk"]]),
+        json!([
+            shown["round"],
+            shown["file"],
+            shown["sha256"],
+            shown["on_disk"]
+        ]),
+        "{result}"
+    );
+    assert_eq!(
+        json!([said["verified"], said["unreached"]]),
+        json!([
+            state["budget"]["spent"],
+            shown["unreached"].as_array().map(Vec::len)
+        ]),
+        "the hit rate adds up to what the budget spent, and the list's length is the list's: {result}"
+    );
+    if said["on_disk"] == "written" {
+        assert_eq!(
+            said["sha256"],
+            sha256(&sim.rig.read(&text(&said["file"]))).as_str(),
+            "the file the return names is the view the state renders"
+        );
+    }
+}
+
+/// The names of a return's members.
+fn members(result: &Value) -> Vec<String> {
+    result
+        .as_object()
+        .unwrap_or_else(|| panic!("a return is an object: {result}"))
+        .keys()
+        .cloned()
+        .collect()
+}
+
+/// **The return names what happened, and holds no list** (the reshape's plan, `T7`; the row
+/// `wf-return-names`: *`status: "triaged"` with the triage unfinished; `unverified` naming one
+/// row beside `untriaged.count: 118`*). ON THE PATH OF A RUN WITH A QUEUE the status is one of
+/// three words, each for what THE INVOCATION did: `hunted` — a stage whose findings are on
+/// record, and which made no record of its verify phase; `verified` — the record of the verify
+/// phase was made; `continued` — an invocation that continued a stage and made no such record.
+/// BESIDE IT the return says what the record script counts, as the state's digest has it: THE
+/// BUDGET (its limit, what is spent, what is left), THE QUEUE'S LENGTH, CLASS BY CLASS, THE HIT
+/// RATE and THE STOP'S VIEW by its path and its hash — and WHAT AN INVOCATION OF `test`
+/// CONTINUES THE STAGE FOR (`continues`), which is how a reader tells verification that is owed
+/// from a stage that has nothing left. AND NO LIST OF ITS OWN: what the stage launched, what
+/// its agents returned, the items it voided and the doors nobody covers are HOW MANY.
+#[test]
+fn the_return_names_what_happened_and_holds_no_list() {
+    if !can_run() {
+        return;
+    }
+    // (1) A STAGE THAT VERIFIED, AND ENDED AT ITS BUDGET: two route items, one verdict.
+    let sim = Sim::budgeted("return-verified", &one_area(), 1);
+    let candidate = sim.rig.rev("HEAD");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"agents": {
+            "area-a:review": findings(&["a refusal prints a route that leads nowhere", "another route is dead"]),
+            "triage": {"entries": [a_route(ROUTE, 1), a_route(ELSEWHERE, 2)]},
+            format!("verify:{ROUTE}"): refutes("intended"),
+        }})),
+    );
+    let result = &ran.result;
+    ends_at_its_second_record(&sim, &ran, &candidate);
+    assert_eq!(
+        members(result),
+        [
+            "arrived",
+            "budget",
+            "candidate",
+            "continues",
+            "counts",
+            "cross_model",
+            "forbids_close",
+            "named",
+            "next",
+            "queue",
+            "record",
+            "rerun",
+            "round",
+            "rule",
+            "run",
+            "scope",
+            "stage",
+            "status",
+            "triage",
+            "verify",
+            "view"
+        ],
+        "{result}"
+    );
+    let head = sim.rig.rev("HEAD");
+    assert_eq!(
+        json!([
+            result["status"],
+            result["next"],
+            result["continues"],
+            result["rule"]
+        ]),
+        json!(["verified", "rule", [], {"findings": 1, "reverify": [], "clauses": [], "stages": []}]),
+        "it verified, the budget is spent with a route item unreached, and nothing of the stage is left to continue: {result}"
+    );
+    assert_eq!(
+        result["verify"],
+        json!({"waves": 1, "launched": 1, "verdicts": 1, "record": head, "unverified": 0,
+               "unheld": 0, "contested": 0, "silent": 0, "last": null}),
+        "what the phase did, as counts — and what the budget has left is the budget's to say: {result}"
+    );
+    assert_eq!(
+        json!([
+            result["budget"],
+            result["queue"]["length"],
+            result["queue"]["hand_on"]
+        ]),
+        json!([{"limit": 1, "spent": 1, "left": 0}, 1, 2]),
+        "{result}"
+    );
+    assert_eq!(
+        result["queue"]["classes"],
+        json!([
+            {"kind": "route", "origin": "under-confirmed", "length": 0},
+            {"kind": "behaviour", "origin": "under-confirmed", "length": 0},
+            {"kind": "route", "origin": "hunt", "length": 1},
+            {"kind": "behaviour", "origin": "hunt", "length": 0},
+        ]),
+        "the queue's length, class by class, in the order's own order: {result}"
+    );
+    assert_eq!(
+        json!([
+            result["view"]["on_disk"],
+            result["view"]["file"],
+            result["view"]["verified"],
+            result["view"]["confirmed"],
+            result["view"]["refuted"],
+            result["view"]["undrivable"],
+            result["view"]["unreached"]
+        ]),
+        json!(["written", format!("{RUN_DIR}/r1/view.md"), 1, 0, 1, 0, 1]),
+        "the hit rate, and the stop's view by its path: {result}"
+    );
+    says_what_the_state_says(&sim, result);
+    assert_eq!(
+        json!([
+            result["counts"],
+            result["scope"],
+            result["cross_model"],
+            result["rerun"]
+        ]),
+        json!([
+            {"items": 1, "items_run": 1, "reporters": 6, "findings_in": 2, "blockers": 0,
+             "for_the_human": 1, "voided": 0, "unasserted": 0, "held": 0},
+            {"status": "written", "uncovered": 0, "reached_but_excluded": 0},
+            {"named": 0, "ran": 0, "void": 0},
+            null
+        ]),
+        "what it launched, voided and left uncovered is HOW MANY: {result}"
+    );
+    holds_no_list(
+        result,
+        &[
+            ROUTE,
+            ELSEWHERE,
+            "verify-",
+            "area-a",
+            "jigc doc set",
+            "Run: ",
+        ],
+    );
+
+    // (2) A STAGE THAT HUNTED, AND WHOSE VERIFIER LEFT NOTHING: verification is owed, and the
+    // return says so — `next` is `verify`, a value the script knows, and the stage is continued
+    // for it. THEN THE INVOCATION THAT CONTINUES IT, whose verifier leaves nothing either: it
+    // hunted nothing and recorded nothing, and says `continued`.
+    let sim = Sim::budgeted("return-hunted", &one_area(), 30);
+    let script = nobody_verifies(
+        small_stage(json!({"agents": {
+            "area-a:review": findings(&["a refusal prints a route that leads nowhere"]),
+            "triage": {"entries": [a_route(ROUTE, 1)]},
+        }})),
+        &[ROUTE],
+    );
+    let ran = sim.invoke(sim.args("test", json!({})), script);
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["next"],
+            result["returned_to_orchestrator"],
+            result["continues"],
+            result["record"],
+            result["verify"]["record"],
+            result["verify"]["launched"],
+            result["verify"]["verdicts"],
+            result["verify"]["unverified"],
+            result["budget"],
+            result["queue"]["length"]
+        ]),
+        json!(["hunted", "verify", null, ["verify"], sim.rig.rev("HEAD"), null, 1, 0, 1,
+               {"limit": 30, "spent": 0, "left": 30}, 1]),
+        "{result}"
+    );
+    assert!(
+        result.get("state").is_none() && result.get("rule").is_none(),
+        "{result}"
+    );
+    says_what_the_state_says(&sim, result);
+    holds_no_list(result, &[ROUTE, "verify-", "area-a", "jigc doc set"]);
+    let again = sim.invoke(
+        sim.args("test", json!({})),
+        nobody_verifies(json!({}), &[ROUTE]),
+    );
+    let result = &again.result;
+    assert_eq!(
+        members(result),
+        [
+            "arrived",
+            "budget",
+            "candidate",
+            "continued",
+            "continues",
+            "counts",
+            "forbids_close",
+            "named",
+            "next",
+            "queue",
+            "record",
+            "round",
+            "run",
+            "stage",
+            "status",
+            "triage",
+            "verify",
+            "view"
+        ],
+        "{result}"
+    );
+    assert_eq!(
+        json!([
+            result["status"],
+            result["continued"],
+            result["next"],
+            result["continues"],
+            result["record"],
+            result["triage"],
+            result["verify"]["record"],
+            result["verify"]["launched"],
+            result["counts"]
+        ]),
+        json!(["continued", ["verify"], "verify", ["verify"], null, null, null, 1,
+               {"reporters": 1, "findings_in": 0, "blockers": 0, "for_the_human": 0}]),
+        "an invocation that continued a stage and recorded no verdict hunted nothing, and does not say that it did: {result}"
+    );
+    says_what_the_state_says(&sim, result);
+    holds_no_list(result, &[ROUTE, "verify-", "area-a", "jigc doc set"]);
+
+    // (3) A STAGE THAT HAD NOTHING TO VERIFY: it hunted, the queue printed no key, and no wave
+    // was launched. `next` is a value the script does not act on — the run stops after every
+    // round — so the state goes back as the digest has it, and that is where its lists are.
+    let sim = Sim::budgeted("return-nothing", &one_area(), 30);
+    let ran = sim.invoke(sim.args("test", json!({})), small_stage(json!({})));
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["next"],
+            result["returned_to_orchestrator"],
+            result["continues"],
+            result["verify"],
+            result["budget"],
+            result["queue"]["length"],
+            result["view"]["on_disk"],
+            result["view"]["verified"]
+        ]),
+        json!(["hunted", "stop", true, [],
+               {"waves": 0, "launched": 0, "verdicts": 0, "record": null, "unverified": 0,
+                "unheld": 0, "contested": 0, "silent": 0, "last": null},
+               {"limit": 30, "spent": 0, "left": 30}, 0, "written", 0]),
+        "{result}"
+    );
+    says_what_the_state_says(&sim, result);
+    // (The state that goes back names the test set's items, as the digest does; nothing
+    // beside it names one.)
+    holds_no_list(result, &["verify-", "jigc doc set"]);
+    let mut beside = result.clone();
+    beside
+        .as_object_mut()
+        .expect("a return is an object")
+        .remove("state");
+    holds_no_list(&beside, &["area-a"]);
+}
+
+/// The agents of an invocation that ONLY RECORDS RULINGS, in round 1: its two reads, the one
+/// step that records them, its gate — held, under the name `gate` — its commit, its push, and
+/// the state read back. NOTHING IS STARTED.
+fn only_rules(gate: u32) -> Vec<String> {
+    let mut agents = lines(&["git:state", "git:state:test-1", "record:rulings:r1"]);
+    for earlier in 1..gate {
+        agents.push(format!("git:hold-start:record-rulings-r1-{earlier}"));
+    }
+    agents.extend([
+        format!("git:hold-start:record-rulings-r1-{gate}"),
+        format!("git:hold-wait:record-rulings-r1-{gate}"),
+        "git:record:rulings:r1".to_owned(),
+        "git:push:rulings".to_owned(),
+        "git:state:test-2".to_owned(),
+    ]);
+    agents
+}
+
+/// The calls of the batch the one rulings step applied, read from the file its `apply` names:
+/// each as `[its arguments, what it read]`.
+fn ruled_calls(ran: &Ran) -> Vec<Value> {
+    let apply = ran
+        .commands
+        .iter()
+        .find(|command| command.starts_with("dev/stabilize-record apply "))
+        .unwrap_or_else(|| panic!("the rulings step applied its batch: {:?}", ran.commands));
+    let file = flag_of(apply, "--from");
+    let batch: Value = serde_json::from_str(
+        fs::read_to_string(file)
+            .unwrap_or_else(|e| panic!("read {file}: {e}"))
+            .trim_end(),
+    )
+    .expect("a batch is one line of JSON");
+    batch
+        .as_array()
+        .expect("a batch is a list of calls")
+        .iter()
+        .map(|call| {
+            json!([
+                call["argv"],
+                serde_json::from_str::<Value>(call["stdin"].as_str().expect("what the call reads"))
+                    .expect("the call reads JSON")
+            ])
+        })
+        .collect()
+}
+
+/// **A budget ruled at a stop is recorded, and starts nothing** (the reshape's plan, `T7`;
+/// ruling 1 of 2026-10-10: *one budget*; `T2b`: *a budget the human raises reopens the queue*).
+/// A stage ends at its budget with a route item nobody reached, and the step is the human's.
+/// THE RAISE TAKES THE ONE ROAD EVERY RULING ABOUT THE RUN TAKES: an invocation that carries it
+/// records it — the one step that records rulings, its gate, its commit, its push — STARTS
+/// NOTHING, and returns the state's `next`, which is now `verify`: the stage is continued, by
+/// the invocation that follows. Where the state does not ask for a raise the invocation is
+/// refused after its two reads, IN THE RECORD SCRIPT'S OWN WORDS, and no record step is
+/// launched; and THE NUMBER A VERIFIER HANDS ON IS NO RULING — the record script writes it
+/// once — so an invocation that carries one is refused BEFORE ANY AGENT.
+#[test]
+fn a_budget_ruled_at_a_stop_is_recorded_and_starts_nothing() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::budgeted("rule-budget", &one_area(), 1);
+    let stage = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"agents": {
+            "area-a:review": findings(&["a refusal prints a route that leads nowhere", "another route is dead"]),
+            "triage": {"entries": [a_route(ROUTE, 1), a_route(ELSEWHERE, 2)]},
+            format!("verify:{ROUTE}"): refutes("intended"),
+        }})),
+    );
+    assert_eq!(
+        json!([
+            stage.result["status"],
+            stage.result["next"],
+            stage.result["budget"]
+        ]),
+        json!(["verified", "rule", {"limit": 1, "spent": 1, "left": 0}]),
+        "{}",
+        stage.result
+    );
+    let stopped_at = sim.rig.rev("HEAD");
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            state["position"]["test"],
+            queued_keys(&state),
+            row_of(&state, ELSEWHERE)["route"],
+            row_of(&state, ELSEWHERE)["why"]
+        ]),
+        json!([{"refused": "round-open", "round": 1}, [ELSEWHERE], "human", "unreached"]),
+        "the budget is spent, and a route item nobody reached is the human's: {state}"
+    );
+
+    // (1) WHAT IS NO RULING IS REFUSED BEFORE ANY AGENT: the number a verifier hands on, alone
+    // or beside a raise — with the record script's reason, and no read.
+    for rulings in [
+        json!([{"hand-on": 3}]),
+        json!([{"budget": 3}, {"hand-on": 3}]),
+    ] {
+        let refused = sim.invoke(sim.args("test", json!({"rulings": rulings})), json!({}));
+        let message = text(&refused.result["message"]);
+        assert_eq!(refused.result["status"], "refused", "{}", refused.result);
+        assert!(
+            message.starts_with("`hand-on` is no ruling")
+                && message.contains("written ONCE")
+                && message.contains("`exists`")
+                && message.contains("Nothing was run."),
+            "{message}"
+        );
+        assert_eq!(
+            refused.trace,
+            Vec::<String>::new(),
+            "no agent ran, not a read"
+        );
+    }
+    // … AND A RAISE THE STATE DOES NOT ASK FOR, AFTER THE TWO READS: one that raises nothing.
+    let same = sim.invoke(
+        sim.args("test", json!({"rulings": [{"budget": 1}]})),
+        json!({}),
+    );
+    assert_eq!(
+        json!([same.result["status"], same.result["next"]]),
+        json!(["refused", "rule"]),
+        "{}",
+        same.result
+    );
+    assert!(
+        text(&same.result["message"]).contains("`budget` raises it, and 1 does not")
+            && text(&same.result["message"]).ends_with("Nothing was recorded."),
+        "{}",
+        same.result
+    );
+    assert_eq!(
+        same.trace,
+        lines(&TWO_READS),
+        "nothing ran beyond the two reads"
+    );
+    assert_eq!(sim.rig.rev("HEAD"), stopped_at);
+
+    // (2) THE RAISE, AT ITS OWN STOP: recorded by the one step, in ONE commit, pushed — and
+    // nothing is started: no attempt is begun, no binary asked for, no verifier launched.
+    let ruled = sim.invoke(
+        sim.args("test", json!({"rulings": [{"budget": 3}]})),
+        json!({}),
+    );
+    let result = &ruled.result;
+    assert_eq!(result["status"], "ruled", "{result}");
+    assert_eq!(
+        ruled.agents(),
+        only_rules(1),
+        "two reads, the one step that records rulings, its gate, its commit, its push, the state: nothing is started"
+    );
+    assert_eq!(
+        ruled_calls(&ruled),
+        [json!([["run-set", "--run", RUN], {"budget": 3}])],
+        "the raise is ONE call of the record script's, in the batch of the one step"
+    );
+    let recorded = sim.rig.rev("HEAD");
+    let (subject, paths) = head_commit(&sim);
+    assert_eq!(
+        json!([
+            subject,
+            sim.rig.rev("HEAD~1"),
+            sim.rig.remote(LOOP),
+            result["record"],
+            sim.rig.status()
+        ]),
+        json!([
+            format!("docs(record): {RUN} r1 - the rulings of the human"),
+            stopped_at,
+            recorded,
+            recorded,
+            ""
+        ]),
+        "one commit, on the stage's last record, pushed: {result}"
+    );
+    assert_eq!(
+        sorted(paths),
+        [format!("{RUN_DIR}/r1/view.md"), format!("{RUN_DIR}/run.md")],
+        "the run's facts, and the view of the round they changed — written by the record, and so no file is behind"
+    );
+    // WHAT THE RETURN SAYS: the budget as raised, the queue, the view the record wrote — and
+    // `next`, now `verify`, with what the invocation that follows continues the stage for.
+    assert_eq!(
+        json!([
+            result["next"],
+            result["continues"],
+            result["budget"],
+            result["queue"]["length"],
+            result["view"]["on_disk"]
+        ]),
+        json!(["verify", ["verify"], {"limit": 3, "spent": 1, "left": 2}, 1, "written"]),
+        "{result}"
+    );
+    says_what_the_state_says(&sim, result);
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            state["facts"]["budget"],
+            state["next"],
+            state["position"]["test"],
+            row_of(&state, ELSEWHERE)["route"]
+        ]),
+        json!([3, "verify", {"round": 1, "attempt": 2, "verify": true}, "verify"]),
+        "the state hands the stage that verifies its next attempt: {state}"
+    );
+    // A RAISE ANYWHERE ELSE IS REFUSED IN THE RECORD SCRIPT'S WORDS: budget is left now.
+    let early = sim.invoke(
+        sim.args("test", json!({"rulings": [{"budget": 5}]})),
+        json!({}),
+    );
+    assert_eq!(early.result["status"], "refused", "{}", early.result);
+    assert!(
+        text(&early.result["message"]).contains(
+            "raised only while it is spent and the queue holds a row nobody reached (1 of 3 spent, 1 in the queue)"
+        ),
+        "{}",
+        early.result
+    );
+    assert_eq!(early.trace, lines(&TWO_READS));
+    assert_eq!(sim.rig.rev("HEAD"), recorded);
+
+    // (3) THE INVOCATION AFTER THE RULING CONTINUES THE STAGE: no instrument, the one row the
+    // raised budget reaches, and its record.
+    let again = sim.invoke(
+        sim.args("test", json!({})),
+        json!({"agents": {
+            format!("verify:{ELSEWHERE}"): files(json!({"verdict": "confirmed", "regression": false})),
+        }}),
+    );
+    let result = &again.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["continued"],
+            result["budget"],
+            result["queue"]["length"],
+            result["continues"],
+            result["next"]
+        ]),
+        json!(["verified", ["verify"], {"limit": 3, "spent": 2, "left": 1}, 0, [], "fix"]),
+        "{result}"
+    );
+    assert_eq!(verified(&again), [ELSEWHERE], "{:?}", again.agents());
+    assert_eq!(
+        again.agents()[..5],
+        continuation_opens(&sim, &text(&stage.result["candidate"]["sha"])),
+        "{:?}",
+        again.agents()
+    );
+
+    // (4) A RUN WITHOUT AN ORDER HAS NO QUEUE TO RULE ON: there each of the three is refused
+    // after the two reads, and the record script is not asked — what a ruling writes at a
+    // run's opening is the opening's to write. Such a run is what it was.
+    let plain = Sim::opened("rule-no-queue", &one_area());
+    let opened_at = plain.rig.rev("HEAD");
+    for ruling in [
+        json!({"budget": 3}),
+        json!({"order": ["route hunt"]}),
+        json!({"queued": [ELSEWHERE]}),
+    ] {
+        let refused = plain.invoke(
+            plain.args("test", json!({"rulings": [ruling.clone()]})),
+            json!({}),
+        );
+        assert_eq!(
+            json!([refused.result["status"], refused.result["next"]]),
+            json!(["refused", "test"]),
+            "{ruling}: {}",
+            refused.result
+        );
+        assert!(
+            text(&refused.result["message"])
+                .contains("this run has no queue: its opening holds no order")
+                && text(&refused.result["message"]).ends_with("Nothing was recorded."),
+            "{ruling}: {}",
+            refused.result
+        );
+        assert_eq!(refused.trace, lines(&TWO_READS), "{ruling}");
+        assert!(
+            refused.result.get("budget").is_none() && refused.result.get("continues").is_none(),
+            "a return of a run without an order says nothing of a queue: {}",
+            refused.result
+        );
+    }
+    assert_eq!(plain.rig.rev("HEAD"), opened_at);
+    assert!(
+        plain.state().get("queue").is_none(),
+        "and it has none still"
+    );
+}
+
+/// A rig whose run is opened with an order that ranks BEHAVIOUR ITEMS ONLY, the budget a
+/// scenario names and the hand-on number 2 — and the stage both scenarios of an order ruled at
+/// a stop run on it: a behaviour item, which is verified and whose verifier contests it, so
+/// that the step is the human's; and two route items, which are IN NO QUEUE — their class is
+/// off the order — and hold nothing.
+fn off_the_order(label: &str, budget: u32) -> (Sim, Ran) {
+    let sim = Sim::new(label);
+    sim.open_with(
+        &one_area(),
+        &json!({"order": ["behaviour hunt"], "budget": budget, "hand-on": 2}),
+    );
+    let basis = "the decision of the write boundary says that a refusal never writes";
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"agents": {
+            "area-a:review": findings(&["a slot is dropped", "a refusal prints a route that leads nowhere", "another route is dead"]),
+            "triage": {"entries": [a_behaviour(INSIDE, 1), a_route(ROUTE, 2), a_route(ELSEWHERE, 3)]},
+            format!("verify:{INSIDE}"): files(json!({"verdict": "confirmed", "regression": false, "contested": basis})),
+        }})),
+    );
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            ran.result["status"],
+            ran.result["next"],
+            ran.result["queue"]["length"],
+            state["next"],
+            state["position"]["test"],
+            queued_keys(&state),
+            row_of(&state, ROUTE)["route"],
+            row_of(&state, ROUTE)["why"],
+            row_of(&state, ELSEWHERE)["why"]
+        ]),
+        json!(["verified", "rule", 0, "rule", {"refused": "round-open", "round": 1},
+               [], "listed", "class-off-the-order", "class-off-the-order"]),
+        "the step is the human's, and two rows nobody will verify are listed: {}\n{state}",
+        ran.result
+    );
+    (sim, ran)
+}
+
+/// **An order ruled at a stop puts its rows into the queue, and the stage is continued** (the
+/// reshape's plan, `T7`; `T2b`: *another order is taken at any step*; the ruling of 2026-10-11,
+/// 3: *a class the human took off the order … is shown … and the human may put any of them into
+/// the queue by key*). A stage returned with `next: rule` and two route items listed as *class
+/// off the order*: nobody verifies them. THE HUMAN PUTS ONE IN BY ITS KEY, and then RULES
+/// ANOTHER ORDER, which names their class — each by an invocation that RECORDS IT AND STARTS
+/// NOTHING. After each the state ranks the row in the queue, `next` is `verify`, and the
+/// position hands the stage that verifies its next attempt: THE INVOCATION THAT FOLLOWS IS A
+/// CONTINUATION, and it verifies what the rulings put in.
+#[test]
+fn an_order_ruled_at_a_stop_puts_its_rows_into_the_queue_and_the_stage_is_continued() {
+    if !can_run() {
+        return;
+    }
+    let (sim, stage) = off_the_order("rule-order", 30);
+    let stopped_at = sim.rig.rev("HEAD");
+
+    // (1) A ROW PUT IN BY ITS KEY: one call, one commit, nothing started — and that row alone
+    // is in the queue, ranked after every class the order names.
+    let put_in = sim.invoke(
+        sim.args("test", json!({"rulings": [{"queued": [ELSEWHERE]}]})),
+        json!({}),
+    );
+    let result = &put_in.result;
+    assert_eq!(result["status"], "ruled", "{result}");
+    assert_eq!(put_in.agents(), only_rules(1), "nothing is started");
+    assert_eq!(
+        ruled_calls(&put_in),
+        [json!([["run-set", "--run", RUN], {"queued": [ELSEWHERE]}])]
+    );
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            result["next"],
+            result["continues"],
+            result["queue"]["length"],
+            result["queue"]["classes"],
+            state["position"]["test"],
+            queued_keys(&state),
+            row_of(&state, ROUTE)["route"]
+        ]),
+        json!(["verify", ["verify"], 1,
+               [{"kind": "behaviour", "origin": "hunt", "length": 0},
+                {"kind": "route", "origin": "hunt", "length": 1}],
+               {"round": 1, "attempt": 2, "verify": true}, [ELSEWHERE], "listed"]),
+        "{result}\n{state}"
+    );
+    says_what_the_state_says(&sim, result);
+    assert_eq!(sim.rig.rev("HEAD~1"), stopped_at, "one commit");
+
+    // (2) ANOTHER ORDER: recorded, nothing started — and every row of the class it names is in
+    // the queue, the one put in by key in its class's own place.
+    let order = json!(["route hunt", "behaviour hunt"]);
+    let ruled = sim.invoke(
+        sim.args("test", json!({"rulings": [{"order": order}]})),
+        json!({}),
+    );
+    let result = &ruled.result;
+    assert_eq!(result["status"], "ruled", "{result}");
+    assert_eq!(ruled.agents(), only_rules(2), "nothing is started");
+    assert_eq!(
+        ruled_calls(&ruled),
+        [json!([["run-set", "--run", RUN], {"order": order}])]
+    );
+    let recorded = sim.rig.rev("HEAD");
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            result["next"],
+            result["continues"],
+            result["budget"],
+            result["queue"]["length"],
+            result["queue"]["classes"],
+            result["record"],
+            sim.rig.remote(LOOP),
+            state["facts"]["order"],
+            state["next"],
+            state["position"]["test"],
+            queued_keys(&state)
+        ]),
+        json!(["verify", ["verify"], {"limit": 30, "spent": 1, "left": 29}, 2,
+               [{"kind": "route", "origin": "hunt", "length": 2},
+                {"kind": "behaviour", "origin": "hunt", "length": 0}],
+               recorded, recorded, order, "verify",
+               {"round": 1, "attempt": 2, "verify": true}, [ROUTE, ELSEWHERE]]),
+        "{result}\n{state}"
+    );
+    says_what_the_state_says(&sim, result);
+    holds_no_list(
+        &json!({"next": result["next"], "continues": result["continues"],
+                          "budget": result["budget"], "queue": result["queue"],
+                          "view": result["view"], "named": result["named"]}),
+        &[ROUTE, ELSEWHERE, INSIDE],
+    );
+
+    // (3) THE INVOCATION THAT FOLLOWS CONTINUES THE STAGE'S VERIFICATION: no instrument, the
+    // two rows the rulings put into the queue, and its record.
+    let again = sim.invoke(
+        sim.args("test", json!({})),
+        json!({"agents": {
+            format!("verify:{ROUTE}"): refutes("intended"),
+            format!("verify:{ELSEWHERE}"): refutes("does-not-reproduce"),
+        }}),
+    );
+    let result = &again.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["continued"],
+            result["budget"],
+            result["queue"]["length"]
+        ]),
+        json!(["verified", ["verify"], {"limit": 30, "spent": 3, "left": 27}, 0]),
+        "{result}"
+    );
+    assert_eq!(verified(&again), [ROUTE, ELSEWHERE], "{:?}", again.agents());
+    assert_eq!(
+        again.agents()[..5],
+        continuation_opens(&sim, &text(&stage.result["candidate"]["sha"])),
+        "{:?}",
+        again.agents()
+    );
+}
+
+/// **An order ruled while the run is stopped after a round puts the round's rows into the
+/// queue, and no go is owed first** (the reshape's plan, `T7`; the state the first real use is
+/// likeliest to meet). The order a stage ran under names no class any row has: every row is
+/// listed as *class off the order*, nothing is open, nothing was verified — and the run stops
+/// after every round, so `next` is `stop`, the stop's next step would be the close, and the
+/// `test` stage is refused as `stopped`. THE HUMAN RULES ANOTHER ORDER THERE. The invocation is
+/// taken, the order is recorded by the one step — and nothing is started. AFTERWARDS THE ROUND
+/// IS NOT OVER ANY MORE: the rows are in the queue, the state names no stop, `next` is `verify`,
+/// and the position hands the stage that verifies its next attempt. THE INVOCATION THAT
+/// FOLLOWS IS A CONTINUATION — it verifies the rows and records — and NO `go` WAS RECORDED OR
+/// ASKED FOR: the stop that would have asked for one is not the state's any more.
+#[test]
+fn an_order_ruled_while_the_run_is_stopped_after_a_round_reopens_its_queue_and_no_go_is_owed() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::new("rule-order-at-stop");
+    sim.open_with(
+        &one_area(),
+        &json!({"order": ["behaviour hunt"], "budget": 30, "hand-on": 2}),
+    );
+    let stage = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"agents": {
+            "area-a:review": findings(&["a refusal prints a route that leads nowhere", "another route is dead"]),
+            "triage": {"entries": [a_route(ROUTE, 1), a_route(ELSEWHERE, 2)]},
+        }})),
+    );
+    let stopped_at = sim.rig.rev("HEAD");
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            stage.result["status"],
+            stage.result["next"],
+            stage.result["continues"],
+            stage.result["verify"]["waves"],
+            stage.result["queue"]["length"],
+            state["stop"],
+            state["position"]["test"],
+            row_of(&state, ROUTE)["route"],
+            row_of(&state, ROUTE)["why"],
+            row_of(&state, ELSEWHERE)["why"]
+        ]),
+        json!(["hunted", "stop", [], 0, 0,
+               {"why": "every-round", "round": 1, "then": "close"},
+               {"refused": "stopped", "round": 1},
+               "listed", "class-off-the-order", "class-off-the-order"]),
+        "every row is listed, nothing is open, and the run is stopped after its round: {}\n{state}",
+        stage.result
+    );
+    assert_eq!(
+        stage.result["view"]["listed"]
+            .as_array()
+            .expect("the words that keep a row out of the queue")
+            .iter()
+            .find(|word| word["why"] == "class-off-the-order")
+            .map(|word| word["rows"].clone()),
+        Some(json!(2)),
+        "the return says how many rows the order keeps out, and names none: {}",
+        stage.result
+    );
+
+    // THE ORDER, RULED AT THAT STOP: taken, recorded in one commit, pushed — nothing started.
+    let order = json!(["route hunt", "behaviour hunt"]);
+    let ruled = sim.invoke(
+        sim.args("test", json!({"rulings": [{"order": order}]})),
+        json!({}),
+    );
+    let result = &ruled.result;
+    assert_eq!(result["status"], "ruled", "{result}");
+    assert_eq!(ruled.agents(), only_rules(1), "nothing is started");
+    assert_eq!(
+        ruled_calls(&ruled),
+        [json!([["run-set", "--run", RUN], {"order": order}])],
+        "the order, and no go beside it"
+    );
+    let recorded = sim.rig.rev("HEAD");
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            sim.rig.rev("HEAD~1"),
+            sim.rig.remote(LOOP),
+            result["record"],
+            result["next"],
+            result["continues"],
+            result["budget"],
+            result["queue"]["length"],
+            state["facts"]["order"],
+            state["next"],
+            state["stop"],
+            state["position"]["test"],
+            state["rounds"][0]["facts"]["go"],
+            queued_keys(&state),
+            row_of(&state, ROUTE)["route"],
+            row_of(&state, ROUTE)["why"]
+        ]),
+        json!([stopped_at, recorded, recorded, "verify", ["verify"],
+               {"limit": 30, "spent": 0, "left": 30}, 2, order, "verify", null,
+               {"round": 1, "attempt": 2, "verify": true}, false,
+               [ROUTE, ELSEWHERE], "verify", "queued"]),
+        "the round is open again, the state names no stop, and no go is on record: {result}\n{state}"
+    );
+    says_what_the_state_says(&sim, result);
+
+    // THE INVOCATION AFTER IT IS A CONTINUATION, with no go between: no instrument, the two
+    // rows the order put into the queue, and the record of what was filed.
+    let again = sim.invoke(
+        sim.args("test", json!({})),
+        json!({"agents": {
+            format!("verify:{ROUTE}"): refutes("intended"),
+            format!("verify:{ELSEWHERE}"): refutes("does-not-reproduce"),
+        }}),
+    );
+    let result = &again.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["continued"],
+            result["budget"],
+            result["queue"]["length"],
+            result["continues"],
+            result["next"]
+        ]),
+        json!(["verified", ["verify"], {"limit": 30, "spent": 2, "left": 28}, 0, [], "stop"]),
+        "{result}"
+    );
+    assert_eq!(verified(&again), [ROUTE, ELSEWHERE], "{:?}", again.agents());
+    assert_eq!(
+        again.agents()[..5],
+        continuation_opens(&sim, &text(&stage.result["candidate"]["sha"])),
+        "{:?}",
+        again.agents()
+    );
+    assert_eq!(
+        sim.state()["position"]["test"],
+        json!({"refused": "stopped", "round": 1}),
+        "with every row verified the round is over, and the run is stopped after it — as it was"
+    );
+}
+
+/// **An order and a budget ruled in one invocation are one record of two calls** (the
+/// reshape's plan, `T7`; an arm the plan does not list, which the first real use opens with).
+/// The record script holds a raise to the state as it stands BEFORE its call: the budget
+/// spent, and a row of the queue unreached. HERE THE BUDGET IS SPENT AND THE QUEUE IS EMPTY —
+/// the rows nobody verified are off the order — so a raise alone is refused, and so would one
+/// call that holds both facts be: the order it carries is not written when it is judged. SO
+/// THE TWO ARE TWO CALLS OF ONE BATCH, THE ORDER FIRST, WHICHEVER WAS SAID FIRST: a call of a
+/// batch reads what the calls before it wrote, the order puts the rows into the queue, and the
+/// raise is judged on that. ONE record, one gate, one commit; nothing is started; and the
+/// invocation after it continues the stage. WHERE THE RAISE IS REFUSED ON THE STATE THE ORDER
+/// LEAVES, THE BATCH IS REFUSED WHOLE: the order is not written either, the halt carries the
+/// record script's own line, and nothing is committed or left pending.
+#[test]
+fn an_order_and_a_budget_ruled_in_one_invocation_are_one_record_of_two_calls() {
+    if !can_run() {
+        return;
+    }
+    let (sim, stage) = off_the_order("rule-both", 1);
+    let stopped_at = sim.rig.rev("HEAD");
+    let state = sim.state();
+    assert_eq!(
+        json!([state["budget"], queued_keys(&state)]),
+        json!([{"limit": 1, "spent": 1, "left": 0}, []]),
+        "the budget is spent, and the queue holds no row: {state}"
+    );
+
+    // (1) THE RAISE ALONE: refused after the two reads, in the record script's words.
+    let alone = sim.invoke(
+        sim.args("test", json!({"rulings": [{"budget": 3}]})),
+        json!({}),
+    );
+    assert_eq!(alone.result["status"], "refused", "{}", alone.result);
+    assert!(
+        text(&alone.result["message"]).contains(
+            "raised only while it is spent and the queue holds a row nobody reached (1 of 1 spent, 0 in the queue)"
+        ),
+        "{}",
+        alone.result
+    );
+    assert_eq!(alone.trace, lines(&TWO_READS));
+
+    // (2) BESIDE AN ORDER THAT PUTS NO ROW INTO THE QUEUE: the harness cannot read the state
+    // the order leaves, so the batch is composed — and THE RECORD SCRIPT REFUSES IT WHOLE at
+    // its second call. Nothing is written: not the order either.
+    let empty = sim.invoke(
+        sim.args(
+            "test",
+            json!({"rulings": [{"budget": 3}, {"order": ["behaviour hunt", "behaviour seed"]}]}),
+        ),
+        json!({}),
+    );
+    let result = &empty.result;
+    assert_eq!(
+        json!([result["status"], result["halted"]["phase"]]),
+        json!(["halted", "rulings"]),
+        "{result}"
+    );
+    assert_eq!(
+        empty.agents(),
+        ["git:state", "git:state:test-1", "record:rulings:r1"],
+        "the batch is refused where it is applied: no gate, no commit step, no push"
+    );
+    assert!(
+        result
+            .to_string()
+            .contains("the budget: the state does not ask for it"),
+        "the halt carries the record script's own line: {result}"
+    );
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            state["facts"]["order"],
+            state["facts"]["budget"],
+            sim.rig.rev("HEAD"),
+            sim.record(&["pending", "--run", RUN], "")["batch"],
+            sim.rig.status()
+        ]),
+        json!([["behaviour hunt"], 1, stopped_at, null, ""]),
+        "a batch is whole or nothing: the order its first call wrote is on no disk: {state}"
+    );
+
+    // (3) BESIDE THE ORDER THAT NAMES THE ROWS' CLASS — the raise said FIRST: one record, its
+    // two calls the order and then the raise.
+    let order = json!(["route hunt", "behaviour hunt"]);
+    let ruled = sim.invoke(
+        sim.args(
+            "test",
+            json!({"rulings": [{"budget": 3}, {"order": order}]}),
+        ),
+        json!({}),
+    );
+    let result = &ruled.result;
+    assert_eq!(result["status"], "ruled", "{result}");
+    assert_eq!(
+        ruled_calls(&ruled),
+        [
+            json!([["run-set", "--run", RUN], {"order": order}]),
+            json!([["run-set", "--run", RUN], {"budget": 3}]),
+        ],
+        "the order first, whichever was said first: the raise is judged on the state it leaves"
+    );
+    assert_eq!(
+        ruled.agents(),
+        [
+            "git:state",
+            "git:state:test-1",
+            "record:rulings:r1",
+            "git:hold-start:record-rulings-r1-1",
+            "git:hold-wait:record-rulings-r1-1",
+            "git:record:rulings:r1",
+            "git:push:rulings",
+            "git:state:test-2"
+        ],
+        "ONE record — one gate, one commit, one push — and nothing is started"
+    );
+    let recorded = sim.rig.rev("HEAD");
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            sim.rig.rev("HEAD~1"),
+            sim.rig.remote(LOOP),
+            result["record"],
+            result["next"],
+            result["continues"],
+            result["budget"],
+            result["queue"]["length"],
+            state["facts"]["order"],
+            state["facts"]["budget"],
+            state["position"]["test"],
+            queued_keys(&state)
+        ]),
+        json!([stopped_at, recorded, recorded, "verify", ["verify"],
+               {"limit": 3, "spent": 1, "left": 2}, 2, order, 3,
+               {"round": 1, "attempt": 2, "verify": true}, [ROUTE, ELSEWHERE]]),
+        "{result}\n{state}"
+    );
+    says_what_the_state_says(&sim, result);
+
+    // (4) THE INVOCATION AFTER IT CONTINUES THE STAGE: the two rows, inside the raised budget.
+    let again = sim.invoke(
+        sim.args("test", json!({})),
+        json!({"agents": {
+            format!("verify:{ROUTE}"): refutes("intended"),
+            format!("verify:{ELSEWHERE}"): files(json!({"verdict": "confirmed", "regression": false})),
+        }}),
+    );
+    let result = &again.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["continued"],
+            result["budget"],
+            result["queue"]["length"]
+        ]),
+        json!(["verified", ["verify"], {"limit": 3, "spent": 3, "left": 0}, 0]),
+        "{result}"
+    );
+    assert_eq!(verified(&again), [ROUTE, ELSEWHERE], "{:?}", again.agents());
+    assert_eq!(
+        again.agents()[..5],
+        continuation_opens(&sim, &text(&stage.result["candidate"]["sha"])),
+        "{:?}",
+        again.agents()
+    );
+
+    // (5) THE SAME TWO RULINGS, SAID IN THE OTHER ORDER, ARE THE SAME BATCH, BYTE FOR BYTE: a
+    // second rig, the order said first.
+    let (other, _) = off_the_order("rule-both-reversed", 1);
+    let reversed = other.invoke(
+        other.args(
+            "test",
+            json!({"rulings": [{"order": order}, {"budget": 3}]}),
+        ),
+        json!({}),
+    );
+    assert_eq!(reversed.result["status"], "ruled", "{}", reversed.result);
+    assert_eq!(ruled_calls(&reversed), ruled_calls(&ruled));
+    let batch_of = |ran: &Ran, scratch: &Path| {
+        let apply = ran
+            .commands
+            .iter()
+            .find(|command| command.starts_with("dev/stabilize-record apply "))
+            .expect("the batch was applied")
+            .clone();
+        let file = flag_of(&apply, "--from").to_owned();
+        (
+            file.trim_start_matches(&scratch.display().to_string())
+                .to_owned(),
+            fs::read(&file).expect("the batch"),
+            flag_of(&apply, "--sha256").to_owned(),
+        )
+    };
+    assert_eq!(
+        batch_of(&reversed, &other.rig.scratch),
+        batch_of(&ruled, &sim.rig.scratch),
+        "one file under one name, the same bytes and the same hash, whichever ruling was said first"
+    );
+    let state = other.state();
+    assert_eq!(
+        json!([
+            state["facts"]["order"],
+            state["facts"]["budget"],
+            queued_keys(&state),
+            state["next"]
+        ]),
+        json!([order, 3, [ROUTE, ELSEWHERE], "verify"]),
+        "{state}"
+    );
+}
+
+/// **A halt after silent calls says that it may be the limit** (the reshape's plan, `T7`, for
+/// what `T6b` built: §2.2 — *the account's usage limit reaches the script as a null return*; the
+/// row `wf-return-names`: *a halt the usage limit caused that says "the report check could not
+/// be read"*). Two verifier calls of a wave return nothing, the wave's third files — AND THEN
+/// THE WAVE'S OWN REPORT CHECK RETURNS NOTHING TOO, or the read of the queue after it. THE HALT
+/// SAYS WHAT IT MAY BE, in a member of its own (`limit`), and NAMES WHAT WAS FILED: here by the
+/// path the verifier returned, HELD BY NOTHING (`unconfirmed`) — neither the report check nor
+/// the queue came back to hold it — with the state's count AS IT WAS LAST READ, which is before
+/// the wave. And it carries what every return of a run with a queue carries, as last read: the
+/// budget, the queue and the stop's view. The verdict is on disk, the state counts it, and the
+/// invocation that follows is handed the stage's record.
+#[test]
+fn a_halt_after_silent_calls_says_that_it_may_be_the_limit() {
+    if !can_run() {
+        return;
+    }
+    for (label, silent, phase, tried) in [
+        (
+            "limit-check",
+            "git:check-reports:wave1",
+            "reports",
+            "git:check-reports:wave1",
+        ),
+        (
+            "limit-read",
+            "git:state:test-4",
+            "state",
+            "git:state:test-4",
+        ),
+    ] {
+        let sim = Sim::budgeted(label, &one_area(), 30);
+        let handed_on = "the-repair-route-is-dead";
+        let (mut script, elsewhere) = three_in_a_wave("the repair route is dead");
+        script["endings"] = json!({
+            format!("verify:{ROUTE}"): "dies",
+            format!("verify:{elsewhere}"): "dies",
+            silent: "dies",
+        });
+        let ran = sim.invoke(sim.args("test", json!({})), script);
+        let result = &ran.result;
+        assert_eq!(
+            json!([
+                result["status"],
+                result["halted"]["phase"],
+                result["halted"]["transient"],
+                result["halted"]["limit"],
+                result["halted"]["filed"]
+            ]),
+            json!(["halted", phase, true, {"possible": true, "wave": 1, "silent": 2},
+                   {"counted": 0, "files": [], "unconfirmed": [filed_at(INSIDE)],
+                    "directory": format!("{RUN_DIR}/r1/verdicts")}]),
+            "{label}: {result}"
+        );
+        assert_eq!(tries_of(&ran, tried), 3, "{label}: {:?}", ran.agents());
+        let message = text(&result["message"]);
+        assert!(
+            message.contains("THIS MAY BE THE ACCOUNT'S USAGE LIMIT")
+                && message.contains("2 verifier call(s) of wave 1 returned nothing")
+                && message.contains(&format!("held by nothing: {}", filed_at(INSIDE)))
+                && !message.contains("is the account's limit"),
+            "{label}: the halt says what it may be, never that it is, and names the path nothing held: {message}"
+        );
+        // WHAT EVERY RETURN OF A RUN WITH A QUEUE CARRIES, AS THE STATE WAS LAST READ — before
+        // the wave: nothing spent, three rows in the queue, the view the first record wrote.
+        assert_eq!(
+            json!([
+                result["budget"],
+                result["queue"]["length"],
+                result["view"]["on_disk"],
+                result["view"]["verified"],
+                result["continues"]
+            ]),
+            json!([{"limit": 30, "spent": 0, "left": 30}, 3, "written", 0, ["verify"]]),
+            "{label}: {result}"
+        );
+        says_what_the_state_says(&sim, result);
+        assert!(
+            document(result)["filed"] == json!([]),
+            "{label}: the document the halt names is the state as it was last read, and lists no filing"
+        );
+        // THE VERDICT IS ON DISK, AND THE STATE COUNTS IT: the invocation that follows is
+        // handed the stage — its verification, and the record of what was filed.
+        assert!(sim.rig.root.join(filed_at(INSIDE)).exists(), "{label}");
+        let state = sim.state();
+        assert_eq!(
+            json!([
+                state["budget"]["spent"],
+                state["next"],
+                state["position"]["test"],
+                queued_keys(&state)
+            ]),
+            json!([1, "verify", {"round": 1, "attempt": 2, "verify": true, "filed": true},
+                   [handed_on, ROUTE, elsewhere]]),
+            "{label}: {state}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

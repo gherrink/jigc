@@ -37,6 +37,11 @@
 //! - **(f)** the human's rulings enter in one place: the declared-bounds list and the three
 //!   dispositions that are the human's are written by the one step that records the
 //!   `rulings` argument, and no other prompt carries those commands.
+//!   **And the rulings about the queue of a run take that road** (the reshape's plan, `T7`):
+//!   another order, the rows put in by key and the budget raised are facts the record
+//!   script's `run-set` takes of a queue — one call each, the raise last, whichever was said
+//!   first — and the one fact of a queue that script writes once, the number a verifier
+//!   hands on, is no ruling: it is refused before any agent.
 //! - **(g)** the cross-model pass is launched only for an item the invocation names:
 //!   everything the script says about that tool lies in the `crossModel*` functions, each
 //!   call of one sits where the naming is tested, and no definition the script launches
@@ -106,6 +111,11 @@
 //!   breaker is asked before every try of every other call, and every halt of the phase
 //!   passes through the one function that says what a halt after such a wave may be, and
 //!   names the filed verdicts by the path a filing has.
+//!   **And what a return says of a run with a queue is the digest's** (the reshape's plan,
+//!   `T7`): one function hands on the budget, the queue's length class by class and the stop's
+//!   view as the state's digest has them — it counts nothing and names no key — every return
+//!   that says `next` and every halt carries it, and a return of that path composes no list of
+//!   its own: what a stage launched, voided and left uncovered is how many.
 //!
 //! - **(s)** every command a prompt names is one plain invocation of a tool (the second
 //!   repair plan's task `K11`; the human's ruling of 2026-10-07 that no step of a stage may
@@ -775,6 +785,80 @@ fn f_the_humans_rulings_are_written_by_one_step_and_no_other() {
         "which hands it the argument: {}",
         callers[0]
     );
+
+    // THE RULINGS ABOUT THE QUEUE OF A RUN TAKE THAT ONE ROAD (the reshape's plan, `T7`):
+    // another order, the rows put in by key, the budget raised — each a fact the record
+    // script's `run-set` takes of a queue, each ONE call of the rulings step, IN THE ORDER THE
+    // SCRIPT'S LIST HAS THEM, whichever was said first: the record script holds a raise to the
+    // state before its call, and the other two may be what puts a row into the queue.
+    let record_script =
+        fs::read_to_string(repo_root().join(RECORD_SCRIPT)).expect("read the record script");
+    let tuple = |declaration: &str| -> Vec<String> {
+        let line = record_script
+            .lines()
+            .find(|line| line.starts_with(declaration))
+            .unwrap_or_else(|| panic!("{RECORD_SCRIPT} declares `{declaration}`"));
+        line.split('"')
+            .skip(1)
+            .step_by(2)
+            .map(str::to_owned)
+            .collect()
+    };
+    let queue_rulings = quoted_in(&full, "const QUEUE_RULINGS = ");
+    assert_eq!(
+        queue_rulings,
+        ["order", "queued", "budget"],
+        "the rulings about a queue, in the order their calls are made: the raise last"
+    );
+    let (of_a_queue, once) = (tuple("RUN_QUEUE = ("), tuple("RUN_ONCE = ("));
+    let no_ruling: Vec<&String> = of_a_queue
+        .iter()
+        .filter(|fact| !queue_rulings.contains(fact))
+        .collect();
+    assert_eq!(
+        no_ruling,
+        ["hand-on"],
+        "every fact {RECORD_SCRIPT} holds of a queue ({of_a_queue:?}) is a ruling of {HARNESS} — but the one it writes once"
+    );
+    assert!(
+        once.contains(&"hand-on".to_owned())
+            && queue_rulings.iter().all(|fact| !once.contains(fact)),
+        "and that one is written once there, as no ruling is: {once:?}"
+    );
+    assert!(
+        full.contains("\nconst RUN_RULINGS = ['go', 'rerun', 'rounds', 'cycles', 'reverify', 'again'].concat(QUEUE_RULINGS)\n"),
+        "the rulings about the run are the six, and the queue's"
+    );
+    let validate = function(&full, "validateRulings");
+    let refused = validate
+        .find("\n    if (r['hand-on'] != null) return ONCE\n")
+        .expect("the number a verifier hands on is refused where a ruling is checked");
+    assert!(
+        refused
+            < validate
+                .find("\n    if (runRuling(r)) {\n")
+                .expect("a ruling about the run is checked")
+            && full.contains("\nconst ONCE = '`hand-on` is no ruling: ")
+            && function(&full, "validateArgs").contains("const why = validateRulings(a.rulings)"),
+        "`hand-on` is refused before any agent, whatever stands beside it: before a ruling is asked what it is about"
+    );
+    assert!(
+        step.contains(
+            "for (const name of QUEUE_RULINGS) for (const r of about.filter((x) => x[name] != null)) calls.push(call('run-set --run ' + v.run, [], { [name]: r[name] }))"
+        ) && step.contains("for (const r of about.filter((x) => !QUEUE_RULINGS.some((name) => x[name] != null))) {"),
+        "the rulings step writes each fact of the queue by one call of its own, in the list's order, after the calls of the other rulings about the run"
+    );
+    let asked = function(&full, "runRulingsFault");
+    assert!(
+        asked.contains("const moves = rulings.some((r) => r.order != null || r.queued != null)")
+            && asked.contains("&& !moves && !(queue.left === 0 && queue.length > 0)) return 'the budget: the state does not ask for it — it is written at the run\\'s opening, and raised only while it is spent and the queue holds a row nobody reached ('")
+            && asked.contains("if (about && !queue) return "),
+        "a raise is asked of the state's digest only where no order and no key stands beside it — in the record script's words — and a ruling about a queue only of a run that has one"
+    );
+    assert!(
+        record_script.contains("it is written at the run's opening, and raised only while it is spent and the queue holds a row nobody reached%s"),
+        "the words are {RECORD_SCRIPT}'s own refusal of a raise"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1085,10 +1169,12 @@ fn j_what_the_record_script_decides_from_reaches_it_and_what_it_decides_is_passe
     );
 
     // `next` is relayed as the state document gives it. The values this script acts on
-    // are the three it was built with; every other value goes back with the state.
+    // are the three it was built with, and `verify` — the step of a run with a queue, which
+    // goes back with what the stage is continued for (the reshape's plan, `T7`); every other
+    // value goes back with the state.
     assert_eq!(
         quoted_in(&full, "const KNOWN_NEXT = "),
-        ["fix", "rule", "close"],
+        ["fix", "rule", "close", "verify"],
         "the values of `next` the script acts on"
     );
     assert_eq!(
@@ -3043,9 +3129,21 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
     );
     assert_eq!(
         without(&full, &["selfTest"]).matches("hasQueue(").count(),
-        3,
-        "the two kinds of run are told apart in one place: `hasQueue` is declared, and asked where the path forks — and where an invocation is found to continue a stage of that path (`continuing`)"
+        5,
+        "the two kinds of run are told apart in one place: `hasQueue` is declared, and asked where the path forks, where an invocation is found to continue a stage of that path (`continuing`) — and, since the plan's `T7`, where a return says what such a run's digest holds (`queueSaid`) and where a ruling about a queue is asked of a run that has one (`runRulingsFault`)"
     );
+    for (name, asks) in [
+        ("queueSaid", "if (!state || !hasQueue(state)) return {}"),
+        (
+            "runRulingsFault",
+            "const queue = hasQueue(state) ? state.queue : null",
+        ),
+    ] {
+        assert!(
+            function(&full, name).contains(asks),
+            "`{name}` asks whether the run has a queue before it reads one: `{asks}`"
+        );
+    }
     let test_stage = function(&full, "runTest");
     let branch = test_stage
         .find("\n  if (hasQueue(state)) {\n")
@@ -3069,10 +3167,14 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
             && new_path.lines().last().is_some_and(|line| {
                 line == "    }, nextOf(state), rerun ? { named: namedOf(state, rerun.round) } : {})"
             })
-            && new_path.contains("\n      status: second ? 'verified' : 'hunted',\n")
+            && new_path.contains("\n      status: statusOf([], second),\n")
+            && function(&full, "continueTest")
+                .contains("\n    status: statusOf(words, closing.second),\n")
+            && function(&full, "statusOf")
+                .contains("return second ? 'verified' : words.length ? 'continued' : 'hunted'")
             && !new_path.contains("triagePasses(")
             && !new_path.contains("triageRecord("),
-        "on the new path the one triage is handed the red results and the rows nobody graded beside the reporters' findings, and the branch ends in a return — the stage's own, `verified` where its second record was made and `hunted` where its first is its only one: nothing of the other path's triage, verification or typed record runs for a run with a queue"
+        "on the new path the one triage is handed the red results and the rows nobody graded beside the reporters' findings, and the branch ends in a return — the stage's own, `verified` where its second record was made and `hunted` where its first is its only one, as an invocation that continues says `verified` or `continued` and never that it hunted: nothing of the other path's triage, verification or typed record runs for a run with a queue"
     );
     let filed = &full[full
         .find("\nconst FILED_SCHEMA = {\n")
@@ -3383,6 +3485,94 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
             assert!(
                 !code(body).contains(of_a_row),
                 "`{name}` reads `{of_a_row}`: no row of the ledger and nothing of a verdict passes through this script"
+            );
+        }
+    }
+
+    // (12) WHAT A RETURN SAYS OF A RUN WITH A QUEUE IS THE DIGEST'S, AND A RETURN OF THAT PATH
+    // HOLDS NO LIST OF THE SCRIPT'S OWN MAKING (the reshape's plan, `T7`; the row
+    // `wf-return-names`). One function says the budget, the queue and the stop's view, each a
+    // field of the state's digest handed on as it came — it adds nothing up, and names no key
+    // of the queue; every return that says `next` says it, and so does every halt, as the
+    // state was last read. And what a stage of the path launched, voided and left uncovered is
+    // HOW MANY in its return.
+    let queue_said = code(function(&full, "queueSaid"));
+    for handed_on in [
+        "continues: continuing(state, state.position.test),",
+        "budget: { limit: queue.budget, spent: queue.spent, left: queue.left },",
+        "queue: { length: queue.length, hand_on: queue.hand_on, classes: queue.classes },",
+        "view: state.view || null,",
+    ] {
+        assert!(
+            queue_said.contains(handed_on),
+            "`queueSaid` hands on what the digest holds: `{handed_on}`"
+        );
+    }
+    for computed in [
+        "first", " + ", " - ", ".map(", ".filter(", ".reduce(", ".length",
+    ] {
+        assert!(
+            !queue_said.replace("queue.length", "").contains(computed),
+            "`queueSaid` holds `{computed}`: it names a key of the queue, or computes what the record script counts"
+        );
+    }
+    let declared = tool_keys(&tool, "\nSTATE = {\n");
+    assert!(
+        declared.contains("queue") && declared.contains("view"),
+        "what it hands on are fields the state's digest declares: {declared:?}"
+    );
+    let next = function(&full, "nextOf");
+    assert!(
+        next.contains("const queued = queueSaid(state)")
+            && next.matches("}, queued)").count() == 3
+            && next.matches("return ").count() == 3,
+        "every return that says `next` says what a run with a queue's digest holds beside it"
+    );
+    assert!(
+        function(&full, "halt")
+            .trim_end()
+            .ends_with("}, queueSaid(lastState))\n}"),
+        "and so does every halt, as the state was last read"
+    );
+    let branch = test_stage
+        .find("\n  if (hasQueue(state)) {\n")
+        .expect("the path of a run with a queue");
+    let returned = &test_stage[branch..];
+    let returned = &returned[returned
+        .find("\n    return Object.assign({\n      status: statusOf([], second),\n")
+        .expect("the return of a stage of that path")..];
+    let returned = &returned[..returned.find("\n    }, nextOf(state)").expect("it closes")];
+    for counted in [
+        "rerun: rerun ? { clause: rerun.clause, round: rerun.round, items: rerun.items.length } : null,",
+        "cross_model: { named: crossNamed.length, ran: crossRan.length, void: crossVoid.length },",
+        "voided: voided.length, unasserted: unassertedBy.length, held: heldRan.length },",
+        "scope: { status: sc.status, uncovered: (sc.uncovered || []).length, reached_but_excluded: (sc.reached_but_excluded || []).length },",
+    ] {
+        assert!(
+            returned.contains(counted),
+            "a stage of a run with a queue returns HOW MANY: `{counted}`"
+        );
+    }
+    for (name, returned) in [
+        ("the stage's", returned),
+        ("a continuation's", {
+            let body = function(&full, "continueTest");
+            let from = body
+                .find("\n  return Object.assign({\n    status: statusOf(words, closing.second),\n")
+                .expect("the return of an invocation that continues");
+            &body[from..]
+        }),
+    ] {
+        for listed in [
+            ".map(",
+            ".filter(",
+            ".concat(",
+            "launch.names,",
+            ": launch.names }",
+        ] {
+            assert!(
+                !returned.contains(listed),
+                "{name} return of that path composes a list (`{listed}`): what it launched and what its agents returned are counts in a return, and names in the log"
             );
         }
     }

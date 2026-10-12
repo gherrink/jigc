@@ -75,7 +75,19 @@
 // records `args.rulings`. A go after a stop, one more re-run of a clause that is still not
 // green, and a raised bound are facts of the record (`round-set`, `run-set`) — an invocation
 // that carries them records them on the loop branch, starts nothing, and returns the state's
-// `next`, which then names the step the stop was holding.
+// `next`, which then names the step the stop was holding. SO ARE THE RULINGS ABOUT THE QUEUE
+// OF A RUN THAT HAS ONE (the reshape's plan, T7; QUEUE_RULINGS): ANOTHER ORDER of its
+// classes, THE ROWS THE HUMAN PUTS INTO IT BY KEY, and ITS BUDGET, RAISED — each one call of
+// `run-set`, in that order whichever was said first, in the batch of the one step. The record
+// script holds each to the state as it stands before its call, a call of a batch reads what
+// the calls before it wrote, and a batch is written whole or not at all: a raise is taken
+// only while the budget is spent and a row of the queue is unreached, an order or a key may
+// be what puts a row there, and a raise refused on the state they leave refuses them with it.
+// After such a ruling `next` is `verify` wherever a row of the queue has budget left — also
+// where the run was stopped after a round whose rows were all off the order: the round is
+// open again, no go is owed, and the invocation that follows continues the stage. THE NUMBER
+// A VERIFIER HANDS ON IS NO RULING: that script writes it once, and an invocation that
+// carries one is refused before any agent (ONCE).
 //
 // AN UNFINISHED TRIAGE (`next: 'triage'`) is finished by the stage that left it: the position
 // marks that stage `triage: true`, and its next invocation grades, verifies and records the
@@ -195,6 +207,30 @@
 // the invocation that follows continues and records them. EVERY OTHER ROLE IS RETRIED AS IT
 // WAS, bounded by the breaker — which is asked before every try, and no longer only before
 // a call's first.
+// WHAT AN INVOCATION OF THAT PATH RETURNS (that plan's T7; the row `wf-return-names`: three
+// names in a stage's return read other than they meant). ITS STATUS IS ONE OF THREE WORDS,
+// EACH FOR WHAT THE INVOCATION ITSELF PUT ON RECORD (`statusOf`): `hunted` — a stage whose
+// findings are on record, and which made no record of a verify phase: it had nothing to
+// verify, or its verifiers left nothing; `verified` — the record of the verify phase was made,
+// by a stage or by an invocation that continued one; `continued` — an invocation that
+// continued a stage and made no such record: it hunted nothing, and does not say that it
+// did. `next` IS THE STATE'S, VERBATIM, and `verify` is a value this script knows: the `test`
+// stage again, continued. BESIDE `next` EVERY RETURN OF SUCH A RUN — a stage's, a
+// continuation's, a ruling's, a halt's as the state was last read — SAYS WHAT THE RECORD
+// SCRIPT COUNTS, AS THE STATE'S DIGEST HAS IT (`queueSaid`): THE BUDGET (its limit, what is
+// spent, what is left), THE QUEUE'S LENGTH, in all and class by class, THE HIT RATE and THE
+// STOP'S VIEW by its path and its hash, with how the file on disk stands to that hash — and
+// WHAT AN INVOCATION OF `test` CONTINUES THE STAGE FOR (`continues`): `triage` or `verify` —
+// grading or verification is owed — or `filed` and nothing else — ONLY A RECORD IS OWED, and
+// the invocation that follows launches nobody — or nothing. None of it is counted here.
+// AND NO LIST OF THIS SCRIPT'S OWN MAKING: what a stage launched, what its agents returned,
+// the items it voided and the doors nobody covers are HOW MANY in a return, and names in the
+// log and on record; the lists a return holds are the step tool's — a digest's, each bounded
+// by its shape — and the position's words. A HALT IS THE EXCEPTION, AND SAYS SO: it names the
+// reporters it launched, and the limit's halt the paths of what was filed — what must not be
+// lost before the stage is invoked again. WHAT NO STEP PRINTS IS IN NO RETURN: which findings
+// are the human's and which of them a verifier contests are the state document's and the
+// view's file's, each named by its path and its hash.
 // NO ADVOCATE IS LAUNCHED ON THAT PATH: a contested fix is the `fix` half's. A RUN WITHOUT AN
 // ORDER TAKES THE PATH ABOVE, UNCHANGED.
 //
@@ -606,15 +642,20 @@
 //               — the road they take while the `fix` stage refuses to start.
 //               About the run, either stage — the invocation records them and starts nothing:
 //               [{ go: true } | { rerun: '<clause>' } | { rounds: N } | { cycles: N }
-//               | { reverify: '<key>' } | { again: 'test' | 'fix' }] — the go after the
+//               | { reverify: '<key>' } | { again: 'test' | 'fix' }
+//               | { order: ['<kind> <origin>', …] } | { queued: ['<key>', …] } | { budget: N }]
+//               — the go after the
 //               stop the state names (`stop.why: 'every-round'`), which answers that stop and
 //               no later one; one more re-run of a clause the state lists in `human_clauses`;
 //               the bound across rounds, raised (the go after `stop.why: 'round-bound'`), and
 //               the bound on a round's fix cycles, raised (after `stop.why: 'cycle-bound'`);
 //               one more triage of a finding the state's `human_list` names as still ungraded
 //               or unverified after its retry; one more attempt of a stage the state lists in
-//               `human_stages`. The record script takes each only while its state asks for it.
-//               The two kinds are two invocations.
+//               `human_stages`; and, of a run with a queue, another order of its classes,
+//               the rows put into its queue by key, and its budget, raised — recorded in
+//               that order by one record (above: WHAT THE HUMAN RULES ABOUT THE RUN). The
+//               record script takes each only while its state asks for it. `hand-on` is no
+//               ruling: it is written once, at the opening. The two kinds are two invocations.
 //   raise     — OPTIONAL, `fix` only: { cycles: N }, the human's raise of the cycle bound.
 //   exit      — OPTIONAL, `fix` only: 'drop' or { part: [ … ] }, the human's exit at a bound.
 //   stopAfter — OPTIONAL: return after a named step (STOPS), for tuning. NO RECORD STEP RUNS
@@ -673,8 +714,10 @@ const MAX_CYCLES = 99
 const MAX_ROUNDS = 99
 // The values of the state document's `next` this script knows what to say about. Any other
 // value — the script's own `unsettled` among them — goes back to the orchestrator with the
-// state attached. The set grows in dev/stabilize-record, never here first.
-const KNOWN_NEXT = ['fix', 'rule', 'close']
+// state attached. The set grows in dev/stabilize-record, never here first. `verify` is the
+// step of a run with a queue (that script's second table): the `test` stage again, which an
+// invocation CONTINUES — and what it continues the stage for goes back beside it (`queueSaid`).
+const KNOWN_NEXT = ['fix', 'rule', 'close', 'verify']
 // What an agent leaves open is triaged like any finding (ruling 5), and what triage sends on
 // is verified. A verifier leaves things open too, so the two alternate — this many times with
 // verification, then once more to give every entry its row.
@@ -1134,8 +1177,28 @@ function distinct(list) {
 // human's three dispositions on a finding, or a declared bound; nothing else is one.
 // runRuling — whether a ruling is about the RUN and not about a finding or a bound: the go
 // after a stop, one more re-run of a clause, one more triage of a finding, one more attempt
-// of a stage, and either bound raised.
-const RUN_RULINGS = ['go', 'rerun', 'rounds', 'cycles', 'reverify', 'again']
+// of a stage, and either bound raised. AND, OF A RUN WITH A QUEUE (the reshape's plan, T7;
+// dev/stabilize-record run-set: A BUDGET AND AN ORDER THE HUMAN CHANGES ARE FACTS A RULING
+// WRITES; `queued`), the three in QUEUE_RULINGS: another order, the rows the human puts into
+// the queue by key, and the budget raised.
+// QUEUE_RULINGS IS THE ORDER THEIR CALLS ARE MADE IN, whichever was said first
+// (`rulingsRecordPrompt`): that script holds a raise to the state as it stands before its
+// call — the budget spent, and a row of the queue nobody reached — and another order, or a
+// row put in by key, may be what puts a row there. A call of a batch reads what the calls
+// before it wrote, so the raise is judged on what the other two leave.
+// THE NUMBER A VERIFIER HANDS ON IS NO RULING (`hand-on`, ONCE): that script writes it once,
+// at the run's opening, and refuses a second write (`exists`) — the plan names it a third
+// ruling about the run, and the committed script has none. An invocation that carries one is
+// refused before any agent, with that reason.
+const QUEUE_RULINGS = ['order', 'queued', 'budget']
+const RUN_RULINGS = ['go', 'rerun', 'rounds', 'cycles', 'reverify', 'again'].concat(QUEUE_RULINGS)
+const ONCE = '`hand-on` is no ruling: how many items a verifier hands on to the queue is written ONCE, at the run\'s opening, and `' + RECORD_TOOL + ' run-set` refuses a second write of it (`exists`) — no ruling changes it, and nothing was recorded. What the human rules about a run\'s queue is its budget, raised (`budget`), another order of its classes (`order`), and the rows he puts into it by key (`queued`)'
+// A number of the record script's: a positive whole number of at most six digits (its NUMBER).
+const MAX_NUMBER = 999999
+// A class, as an order names one: `<kind> <origin>`, two words. WHICH kinds and origins there
+// are is the record script's (its CLASS), and its refusal of one it does not know is the
+// rulings' batch's own — as a ruling on a key the ledger lacks is.
+const CLASS_RE = /^[a-z]+(-[a-z]+)* [a-z]+(-[a-z]+)*$/
 function runRuling(r) {
   return plain(r) && RUN_RULINGS.some((name) => r[name] != null)
 }
@@ -1145,6 +1208,7 @@ function validateRulings(rulings) {
   const about = []
   for (const r of rulings) {
     if (!plain(r)) return 'a ruling must be an object, not ' + JSON.stringify(r)
+    if (r['hand-on'] != null) return ONCE
     if (runRuling(r)) {
       const named = Object.keys(r)
       if (named.length !== 1) return 'a ruling about the run names one thing — ' + RUN_RULINGS.map((name) => '`' + name + '`').join(', ') + ' — and nothing beside it: ' + JSON.stringify(r)
@@ -1154,6 +1218,9 @@ function validateRulings(rulings) {
       if (r.cycles != null && !(Number.isInteger(r.cycles) && r.cycles > DEFAULT_CYCLES && r.cycles <= MAX_CYCLES)) return '`cycles` is the bound on a round\'s fix cycles, raised: a whole number above ' + DEFAULT_CYCLES + ' and at most ' + MAX_CYCLES + ', not ' + JSON.stringify(r.cycles)
       if (r.reverify != null && !isSlug(r.reverify)) return '`reverify` names the finding that is granted one more triage, by its ledger key: ' + JSON.stringify(r)
       if (r.again != null && !STAGES.includes(r.again)) return '`again` names the stage that is granted one more attempt — ' + STAGES.join(' or ') + ': ' + JSON.stringify(r)
+      if (r.budget != null && !(Number.isInteger(r.budget) && r.budget >= 1 && r.budget <= MAX_NUMBER)) return '`budget` is how many verdicts a round\'s `test` stage may spend, raised: a whole number from 1 to ' + MAX_NUMBER + ', not ' + JSON.stringify(r.budget)
+      if (r.order != null && !(Array.isArray(r.order) && r.order.length > 0 && r.order.every((entry) => typeof entry === 'string' && CLASS_RE.test(entry)) && distinct(r.order))) return '`order` is the order of classes the queue is ranked by: a non-empty list of classes, each `<kind> <origin>` and none twice, not ' + JSON.stringify(r.order)
+      if (r.queued != null && !(Array.isArray(r.queued) && r.queued.length > 0 && r.queued.every(isSlug) && distinct(r.queued))) return '`queued` is the rows the human puts into the queue: a non-empty list of ledger keys, none twice, not ' + JSON.stringify(r.queued)
       about.push(named[0] + ':' + (r.rerun || r.reverify || r.again || ''))
       continue
     }
@@ -1471,7 +1538,21 @@ function refusalOf(at) {
 // here first, so that a ruling nobody was asked for costs no record step.
 function runRulingsFault(rulings, state) {
   const facts = state.facts || {}
+  // WHAT THE HUMAN RULES ABOUT THE QUEUE, held to the state's digest of it (`queue`). A run
+  // without an order has no queue, and its opening is where one is written. A RAISE THAT
+  // STANDS ALONE is held to what the digest shows of the budget's own stop — nothing left of
+  // it, and a row in the queue — and refused IN THE RECORD SCRIPT'S OWN WORDS (its `run-set`:
+  // budget), with the three numbers that script would name. BESIDE ANOTHER ORDER OR A ROW PUT
+  // IN BY KEY IT IS NOT ASKED HERE: those calls are made first, this script cannot read the
+  // state they leave, and the raise's own call is the check — refused, it refuses the batch
+  // whole, and nothing of the order is written either.
+  const queue = hasQueue(state) ? state.queue : null
+  const moves = rulings.some((r) => r.order != null || r.queued != null)
   for (const r of rulings) {
+    const about = QUEUE_RULINGS.find((name) => r[name] != null)
+    if (about && !queue) return '`' + about + '` rules on the queue of a run, and this run has no queue: its opening holds no order. The order, the budget and the number a verifier hands on are written at a run\'s opening (`' + RECORD_TOOL + ' run-set`)'
+    if (r.budget != null && queue.budget != null && r.budget <= queue.budget) return 'the budget is ' + queue.budget + ': `budget` raises it, and ' + r.budget + ' does not'
+    if (r.budget != null && queue.budget != null && !moves && !(queue.left === 0 && queue.length > 0)) return 'the budget: the state does not ask for it — it is written at the run\'s opening, and raised only while it is spent and the queue holds a row nobody reached (' + queue.spent + ' of ' + queue.budget + ' spent, ' + queue.length + ' in the queue)'
     if (r.go != null && !(state.next === 'stop' && state.stop && state.stop.why === 'every-round')) return 'the run is not stopped after a round for the human\'s go — its `next` is `' + state.next + '`' + (state.stop ? ' (' + state.stop.why + ')' : '') + ': a go is recorded for that stop and for no other state'
     if (r.rerun != null && !(state.human_clauses || []).some((c) => c.clause === r.rerun)) return 'the clause `' + r.rerun + '` is not the human\'s: one more re-run is granted to a clause that is still not green after its re-run — the state\'s `human_clauses` names ' + ((state.human_clauses || []).map((c) => c.clause).join(', ') || 'none')
     if (r.rounds != null && facts.rounds != null && r.rounds <= facts.rounds) return 'the bound across rounds is ' + facts.rounds + ': `rounds` raises it, and ' + r.rounds + ' does not'
@@ -1665,6 +1746,60 @@ function namedOf(state, round) {
   const within = round == null ? state.round : round
   const bare = (state.uncovered || []).find((u) => u.round === within)
   return { never_selected: state.never_selected || [], uncovered: { round: within == null ? null : within, doors: bare ? bare.doors : 0 }, regression_unknown: (state.regression_unknown || []).length, document: state.document || null }
+}
+
+// queueSaid — WHAT EVERY RETURN SAYS OF A RUN WITH A QUEUE, BESIDE `next` (the reshape's plan,
+// T7; the row `wf-return-names`): the budget — its limit, what is spent, what is left — the
+// queue's length, in all and class by class, with the number a verifier hands on, and THE
+// STOP'S VIEW: its round, the file it lies in, the sha256 that file must have, how the file
+// on disk stands to it (`on_disk` — it is the stop's view only where that says `written`),
+// the hit rate in all and class by class, and how long each of its lists is. EACH IS THE
+// STATE'S DIGEST'S, AS THE STEP TOOL PRINTS IT (dev/stabilize-step: THE STATE'S DIGEST,
+// `queue` and `view`): nothing here is counted, added up or ranked by this script, and NO KEY
+// IS IN IT — the queue's first keys are what a wave is launched from, and stay there.
+// AND WHAT AN INVOCATION OF `test` CONTINUES THE STAGE FOR, AS THE STATE STANDS (`continues`,
+// the position's words: CONTINUES) — which is how a reader of a return whose `next` is
+// `verify` tells VERIFICATION THAT IS OWED (`triage`, `verify`) from A RECORD THAT IS OWED AND
+// NOTHING ELSE (`filed` alone: the invocation that follows launches nobody and records), and
+// both from a stage of which nothing is left (none).
+// WHAT IT DOES NOT SAY, because no step prints it: which findings are the human's — the
+// digest counts his list (`for_the_human`, and `rule.findings` beside `rule`) — and which of
+// them a verifier contests: the digest says nothing of that at all. Both are in the state
+// document the return names, and in the view's file; a return's `verify.contested` counts
+// what the verifiers' RETURNS of that invocation said, which nothing holds.
+// A run without an order says none of it: its returns are what they were.
+function queueSaid(state) {
+  if (!state || !hasQueue(state)) return {}
+  const queue = state.queue
+  return {
+    continues: continuing(state, state.position.test),
+    budget: { limit: queue.budget, spent: queue.spent, left: queue.left },
+    queue: { length: queue.length, hand_on: queue.hand_on, classes: queue.classes },
+    view: state.view || null,
+  }
+}
+// statusOf — WHAT AN INVOCATION OF THE `test` STAGE OF A RUN WITH A QUEUE SAYS HAPPENED (that
+// plan's T7; the row `wf-return-names`: `triaged` was said by a stage whose triage was not
+// finished). ONE OF THREE WORDS, EACH FOR WHAT THE INVOCATION ITSELF PUT ON RECORD:
+//   hunted     A STAGE — it began a round, or ran an item again: its instruments ran, its one
+//              triage graded, and its findings are on record (`record`). It made no record of
+//              a verify phase: the queue printed no key or the budget had nothing left
+//              (`verify.waves` is 0 — it had nothing to verify), or every verifier it
+//              launched left neither a report nor a verdict.
+//   verified   THE RECORD OF THE VERIFY PHASE WAS MADE BY THIS INVOCATION (`verify.record`) —
+//              a stage's second record, or the record of an invocation that continued one:
+//              what was filed is in a commit. `verify.verdicts` says how many verdicts the
+//              state counts since the phase began, and may say none: a verifier's report
+//              with no verdict is recorded too, and its launch counted; and a continuation
+//              that was handed only a filed verdict (`continued`: `filed`) launched nobody.
+//   continued  AN INVOCATION THAT CONTINUED A STAGE AND MADE NO RECORD OF A VERIFY PHASE. It
+//              hunted nothing — no instrument ran — so it does not say that it did: it
+//              graded rows nobody had graded and recorded those (`record`), or its verifiers
+//              left nothing, or it had nothing to record at all.
+// `words` is what the invocation continued the stage for (none: it is a stage); `second`,
+// the commit of the record it made after its verify phase, or null.
+function statusOf(words, second) {
+  return second ? 'verified' : words.length ? 'continued' : 'hunted'
 }
 
 // readStep — a git step's return as the object its command printed. The relayed line must
@@ -2622,7 +2757,7 @@ function rulingsRecordPrompt(v, round, branch, rulings, ran, at) {
   // record counts them; one more attempt of a stage — a fact of the round it is spent in;
   // and either bound, raised. The record script takes each only while the state asks for it.
   const about = rulings.filter((r) => runRuling(r))
-  for (const r of about) {
+  for (const r of about.filter((x) => !QUEUE_RULINGS.some((name) => x[name] != null))) {
     const facts = r.go != null ? [{ value: { go: true }, call: 'round-set --run ' + v.run + ' --round ' + round }]
       : r.rerun != null ? ran[r.rerun].map((spentIn) => ({ value: { granted: r.rerun }, call: 'round-set --run ' + v.run + ' --round ' + spentIn }))
         : r.reverify != null ? [{ value: { reverify: r.reverify }, call: 'round-set --run ' + v.run + ' --round ' + at.round }]
@@ -2631,6 +2766,13 @@ function rulingsRecordPrompt(v, round, branch, rulings, ran, at) {
               : [{ value: { rounds: r.rounds }, call: 'run-set --run ' + v.run }]
     for (const fact of facts) calls.push(call(fact.call, [], fact.value))
   }
+  // WHAT THE HUMAN RULED ABOUT THE QUEUE — another order, the rows put in by key, the budget
+  // raised: ONE CALL EACH, IN THAT ORDER, WHICHEVER WAS SAID FIRST (QUEUE_RULINGS). The record
+  // script holds each to the state as it stands before ITS call, and a call of a batch reads
+  // what the calls before it wrote: the raise is judged on the queue the order and the keys
+  // leave. A batch is written whole or not at all, so a raise refused there refuses the
+  // order beside it.
+  for (const name of QUEUE_RULINGS) for (const r of about.filter((x) => x[name] != null)) calls.push(call('run-set --run ' + v.run, [], { [name]: r[name] }))
   const bounds = rulings.filter((r) => r.bound != null)
   for (const r of bounds) calls.push(call('bound-set --run ' + v.run + ' --bound ' + r.bound + ' --scratch ' + v.scratch, ['--reach', r.reach, '--ruling', r.where, '--pin', r.pin]))
   const patches = rulings.filter((r) => r.key != null).map((r) => {
@@ -2759,6 +2901,10 @@ function selfTest() {
     ['a bound that is no number', Object.assign({}, fix, { rulings: [{ rounds: '4' }] })], ['a bound of no round', Object.assign({}, base, { rulings: [{ rounds: 0 }] })], ['half a round', Object.assign({}, base, { rulings: [{ rounds: 3.5 }] })],
     ['a cycle bound that raises nothing', Object.assign({}, base, { rulings: [{ cycles: DEFAULT_CYCLES }] })], ['a cycle bound that is no number', Object.assign({}, fix, { rulings: [{ cycles: '4' }] })], ['one more triage of no finding', Object.assign({}, base, { rulings: [{ reverify: 'Not a key' }] })], ['one more triage granted twice', Object.assign({}, base, { rulings: [{ reverify: 'f-1' }, { reverify: 'f-1' }] })], ['one more attempt of no stage', Object.assign({}, base, { rulings: [{ again: 'triage' }] })], ['one more attempt beside a finding\'s ruling', Object.assign({}, base, { rulings: [{ again: 'test' }, { key: 'f-1', ruling: later }] })], ['one more triage and one more attempt in one entry', Object.assign({}, base, { rulings: [{ reverify: 'f-1', again: 'test' }] })],
     ['a go beside a scope', Object.assign({}, base, { scope: 'everything', rulings: [{ go: true }] })], ['a go beside a clause', Object.assign({}, base, { clause: 'no-lost-files', rulings: [{ go: true }] })], ['a raised bound beside an exit', Object.assign({}, fix, { exit: 'drop', rulings: [{ rounds: 4 }] })], ['a go beside a tuning stop', Object.assign({}, fix, { stopAfter: 'rulings', rulings: [{ go: true }] })],
+    ['a budget of no verdict', Object.assign({}, base, { rulings: [{ budget: 0 }] })], ['a budget that is no number', Object.assign({}, base, { rulings: [{ budget: '40' }] })], ['half a verdict', Object.assign({}, base, { rulings: [{ budget: 2.5 }] })], ['a budget said twice', Object.assign({}, base, { rulings: [{ budget: 40 }, { budget: 41 }] })], ['a budget beside a finding\'s ruling', Object.assign({}, base, { rulings: [{ budget: 40 }, { key: 'f-1', ruling: later }] })], ['a budget beside a scope', Object.assign({}, base, { scope: 'everything', rulings: [{ budget: 40 }] })],
+    ['an order of no class', Object.assign({}, base, { rulings: [{ order: [] }] })], ['an order that is no list', Object.assign({}, base, { rulings: [{ order: 'route hunt' }] })], ['an order that names a class twice', Object.assign({}, base, { rulings: [{ order: ['route hunt', 'route hunt'] }] })], ['an order of half a class', Object.assign({}, base, { rulings: [{ order: ['route'] }] })], ['an order and a budget in one entry', Object.assign({}, base, { rulings: [{ order: ['route hunt'], budget: 40 }] })], ['an order beside a tuning stop', Object.assign({}, base, { stopAfter: 'state', rulings: [{ order: ['route hunt'] }] })],
+    ['a hand-on number, which no ruling changes', Object.assign({}, base, { rulings: [{ 'hand-on': 3 }] })], ['a hand-on number on fix', Object.assign({}, fix, { rulings: [{ 'hand-on': 2 }] })], ['a hand-on number beside a budget', Object.assign({}, base, { rulings: [{ budget: 40 }, { 'hand-on': 2 }] })], ['a hand-on number in a budget\'s entry', Object.assign({}, base, { rulings: [{ budget: 40, 'hand-on': 2 }] })],
+    ['no row put into the queue', Object.assign({}, base, { rulings: [{ queued: [] }] })], ['a row put into the queue that is no key', Object.assign({}, base, { rulings: [{ queued: ['Not a key'] }] })], ['a row put into the queue twice', Object.assign({}, base, { rulings: [{ queued: ['f-1', 'f-1'] }] })],
     ['an exit on test', Object.assign({}, base, { exit: 'drop' })], ['no ruling at all', Object.assign({}, fix, { rulings: [] })],
     ['a ruling that is not the human\'s', Object.assign({}, fix, { rulings: [{ key: 'f-1', ruling: 'fixed' }] })],
     ['a ruling that reopens', Object.assign({}, fix, { rulings: [{ key: 'f-1', ruling: 'open' }] })],
@@ -2794,6 +2940,7 @@ function selfTest() {
     Object.assign({}, base, { clause: 'no-lost-files' }), Object.assign({}, base, { crossModel: ['row-3'] }), Object.assign({}, base, { crossModel: ['row-3', 'row-7'] }),
     Object.assign({}, fix, { raise: { cycles: DEFAULT_CYCLES + 1 } }), Object.assign({}, fix, { exit: 'drop' }), Object.assign({}, fix, { exit: { part: ['abcdef1', '0123456789abcdef0123456789abcdef01234567'] } }),
     Object.assign({}, base, { rulings: [{ go: true }] }), Object.assign({}, fix, { rulings: [{ go: true }, { rerun: 'no-lost-files' }, { rerun: 'no-regression' }] }), Object.assign({}, fix, { rulings: [{ rounds: 4 }] }), Object.assign({}, base, { rulings: [{ rounds: 4 }, { rerun: 'no-lost-files' }] }), Object.assign({}, base, { rulings: [{ reverify: 'f-1' }, { reverify: 'f-2' }, { again: 'test' }] }), Object.assign({}, fix, { rulings: [{ cycles: 4 }, { again: 'fix' }] }),
+    Object.assign({}, base, { rulings: [{ budget: 40 }] }), Object.assign({}, base, { rulings: [{ order: ['route under-confirmed', 'behaviour hunt'] }, { budget: 40 }] }), Object.assign({}, fix, { rulings: [{ order: ['route hunt'] }] }), Object.assign({}, base, { rulings: [{ queued: ['f-1', 'f-2'] }, { budget: 40 }, { order: ['route hunt'] }, { go: true }] }),
     Object.assign({}, base, { rulings: [{ key: 'f-1', ruling: later }] }), Object.assign({}, base, { rulings: [{ key: 'f-1', ruling: admitted, note: 'n' }, { bound: 'b', reach: 'x', where: 'y', pin: 'unpinned' }] }),
     Object.assign({}, fix, { rulings: [{ key: 'f-1', ruling: admitted, note: 'build the robust path' }, { key: 'f-2', ruling: later }, { key: 'f-3', ruling: bound, bound: 'non-jigc-writer', reach: 'races against a writer that is not jigc', where: 'the stop after round 1, item 3', pin: 'unpinned' }, { bound: 'planted-state', reach: 'a state nobody reaches', where: 'the stop after round 1', pin: 'flow12::planted' }] }),
   ])
@@ -2847,9 +2994,9 @@ function selfTest() {
   check('a step that halted without a line is passed on as its halt', readStep({ status: 'halted', halt: { root_cause: 'x' } }, 'state').halt.root_cause === 'x' && !readStep({ status: 'halted' }, 'state').relay && readStep({ status: 'halted' }, 'state').halt === null)
   const refusedLine = printed({ act: 'land', status: 'halted', refused: 'merge-differs', merge_commit: 'a'.repeat(40), halt: { root_cause: 'merge-differs: x', evidence: 'e', tree_state: 't', recommendation: 'r' } })
   check('a refusal is read as a halted step that says why, with what the act had established', relay(refusedLine, 'land').status === 'halted' && relay(refusedLine, 'land').halt.root_cause === 'merge-differs: x' && relay(refusedLine, 'land').merge_commit === 'a'.repeat(40) && !relay(refusedLine, 'land').relay)
-  for (const next of ['fix', 'rule', 'close', 'unsettled', 'retest', 'stop', 'test', 'triage', 'not-ready', '', null, 7]) {
+  for (const next of ['fix', 'rule', 'close', 'verify', 'unsettled', 'retest', 'stop', 'test', 'triage', 'not-ready', '', null, 7]) {
     const out = outcomeOf({ next })
-    check('next relayed verbatim: ' + JSON.stringify(next), out.next === next && out.known === ['fix', 'rule', 'close'].includes(next))
+    check('next relayed verbatim: ' + JSON.stringify(next), out.next === next && out.known === ['fix', 'rule', 'close', 'verify'].includes(next))
   }
   const ruled = outcomeOf({ next: 'rule', human_list: 2, reverify: ['f-1'], human_clauses: [{ clause: 'no-lost-files', why: 'not-green-after-its-rerun' }] })
   check('`rule` goes back with all three of the human\'s lists', JSON.stringify(ruled.rule) === JSON.stringify({ findings: 2, reverify: ['f-1'], clauses: [{ clause: 'no-lost-files', why: 'not-green-after-its-rerun' }], stages: [] }) && JSON.stringify(outcomeOf({ next: 'rule', human_stages: [{ stage: 'test', round: 1 }] }).rule) === JSON.stringify({ findings: 0, reverify: [], clauses: [], stages: [{ stage: 'test', round: 1 }] }) && outcomeOf({ next: 'fix', human_list: 1 }).rule === undefined)
@@ -2872,6 +3019,25 @@ function selfTest() {
   check('one more triage is granted to a finding that is the human\'s after its retry, and to no other', runRulingsFault([{ reverify: 'f-1' }], retriedState) === null && typeof runRulingsFault([{ reverify: 'f-2' }], retriedState) === 'string' && typeof runRulingsFault([{ reverify: 'f-1' }], stoppedState) === 'string' && typeof runRulingsFault([{ reverify: 'f-1' }], {}) === 'string')
   check('one more attempt is granted to a stage that is the human\'s, and to no other', runRulingsFault([{ again: 'test' }], retriedState) === null && typeof runRulingsFault([{ again: 'fix' }], retriedState) === 'string' && typeof runRulingsFault([{ again: 'test' }], stoppedState) === 'string')
   check('which rulings are about the run', runRuling({ reverify: 'f-1' }) && runRuling({ again: 'test' }) && runRuling({ cycles: 4 }) && runRuling({ go: true }) && runRuling({ rerun: 'x' }) && runRuling({ rounds: 4 }) && !runRuling({ key: 'f-1', ruling: later }) && !runRuling({ bound: 'b', reach: 'x', where: 'y', pin: 'z' }) && !runRuling(null) && !runRuling('go'))
+  // THE RULINGS ABOUT THE QUEUE (the reshape's plan, T7): a budget raised, another order, and
+  // the rows the human puts into the queue. Each is refused BEFORE ANY AGENT where it is not
+  // what it says — by its own name, so that the refusal is the ruling's and no other's — and
+  // THE NUMBER A VERIFIER HANDS ON IS REFUSED THERE WHATEVER IT SAYS: the record script
+  // writes it once. After the two reads a ruling is refused where the run has no queue, and
+  // a raise standing alone where the state's digest does not show the budget's own stop.
+  const whyNot = (rulings) => String(validateRulings(rulings))
+  check('which rulings are about the queue of a run', runRuling({ budget: 40 }) && runRuling({ order: ['route hunt'] }) && runRuling({ queued: ['f-1'] }) && JSON.stringify(RUN_RULINGS.slice(-3)) === '["order","queued","budget"]')
+  check('a budget is refused before any agent as anything but a whole number of verdicts', [0, -1, 2.5, '40', true, 1000000].every((n) => whyNot([{ budget: n }]).startsWith('`budget` is ')) && validateRulings([{ budget: 1 }]) === null && validateRulings([{ budget: 999999 }]) === null)
+  check('an order is refused before any agent as anything but a list of classes, each a kind and where it comes from, none twice', [[], 'route hunt', ['route'], ['route hunt', 'route hunt'], ['Route hunt'], [3], ['route  hunt'], ['route hunt '], ['route hunt seed']].every((order) => whyNot([{ order }]).startsWith('`order` is ')) && validateRulings([{ order: ['route under-confirmed', 'behaviour under-not-a-break', 'route hunt'] }]) === null)
+  check('the rows put into the queue are refused before any agent as anything but ledger keys, none twice', [[], 'f-1', ['Not a key'], ['f-1', 'f-1'], [7]].every((queued) => whyNot([{ queued }]).startsWith('`queued` is ')) && validateRulings([{ queued: ['f-1', 'f-2'] }]) === null)
+  check('the number a verifier hands on is refused before any agent, whatever it says and whatever stands beside it: it is written once', [[{ 'hand-on': 2 }], [{ 'hand-on': 0 }], [{ 'hand-on': '2' }], [{ budget: 40 }, { 'hand-on': 3 }], [{ budget: 40, 'hand-on': 3 }], [{ key: 'f-1', ruling: later, 'hand-on': 3 }]].every((rulings) => whyNot(rulings).startsWith('`hand-on` is no ruling') && whyNot(rulings).includes('written ONCE') && whyNot(rulings).includes('`exists`')) && !runRuling({ 'hand-on': 2 }))
+  check('each ruling about the queue is said once, in an entry of its own, and never beside a ruling on a finding', whyNot([{ budget: 40 }, { budget: 41 }]).includes('more than once') && whyNot([{ budget: 40, order: ['route hunt'] }]).includes('names one thing') && whyNot([{ order: ['route hunt'] }, { key: 'f-1', ruling: later }]).includes('mixes') && validateRulings([{ order: ['route hunt'] }, { budget: 40 }, { queued: ['f-1'] }]) === null)
+  const queueAt = (queue) => ({ next: 'rule', stop: null, queue: Object.assign({ budget: 3, hand_on: 2, spent: 3, left: 0, length: 1, first: ['f-9'], classes: [] }, queue) })
+  check('a ruling about the queue is refused where the run has none', [{ budget: 40 }, { order: ['route hunt'] }, { queued: ['f-1'] }].every((r) => String(runRulingsFault([r], { next: 'rule', stop: null, queue: null })).includes('has no queue') && String(runRulingsFault([r], {})).includes('has no queue')))
+  check('a raise with no order and no key beside it is taken only where the digest shows the budget spent and a row of the queue unreached, and is never a lower number or the same', runRulingsFault([{ budget: 4 }], queueAt({})) === null && String(runRulingsFault([{ budget: 3 }], queueAt({}))).includes('`budget` raises it, and 3 does not') && String(runRulingsFault([{ budget: 2 }], queueAt({}))).includes('does not') && String(runRulingsFault([{ budget: 4 }], queueAt({ spent: 2, left: 1 }))).includes('raised only while it is spent and the queue holds a row nobody reached (2 of 3 spent, 1 in the queue)') && String(runRulingsFault([{ budget: 4 }], queueAt({ length: 0, first: [] }))).includes('(3 of 3 spent, 0 in the queue)'))
+  check('a raise beside another order or a row put into the queue is the record script\'s to judge, on the state those leave', runRulingsFault([{ budget: 4 }, { order: ['route hunt'] }], queueAt({ length: 0, first: [] })) === null && runRulingsFault([{ queued: ['f-1'] }, { budget: 4 }], queueAt({ length: 0, first: [] })) === null && String(runRulingsFault([{ order: ['route hunt'] }, { budget: 3 }], queueAt({ length: 0 }))).includes('does not'))
+  check('a budget is written at any state where the run holds none', runRulingsFault([{ budget: 4 }], queueAt({ budget: null, left: null, spent: 0, length: 0 })) === null)
+  check('another order, and a row put into the queue, are taken at any state of a run with a queue', [queueAt({}), queueAt({ spent: 1, left: 2 }), Object.assign(queueAt({}), { next: 'verify' }), Object.assign(queueAt({}), { next: 'stop', stop: { why: 'every-round', round: 1, then: 'test' } })].every((state) => runRulingsFault([{ order: ['route hunt'] }, { queued: ['f-1'] }], state) === null))
 
   // Every triage is handed the rows of the ledger whose triage nobody finished.
   const awaiting = { untriaged: { count: 2, why: [{ why: 'ungraded', count: 1 }, { why: 'unverified', count: 1 }] }, ledger: 3 }
@@ -3112,6 +3278,16 @@ function selfTest() {
   check('a ruling about the run writes no bound and no disposition', !aboutCalls.some((made) => ['bound-set', 'ledger-set'].includes(made.argv[0])) && aboutTheRun.text.includes('3 about the run') && rulingsText.includes('0 about the run') && !rulingsCalls.some((made) => ['round-set', 'run-set'].includes(made.argv[0])) && JSON.stringify(aboutTheRun.expect) === JSON.stringify({ calls: 4, checks: 0 }))
   check('the rulings step writes the bounds and the dispositions', JSON.stringify(rulingsCalls[0].argv) === JSON.stringify(['bound-set', '--run', 'rc24-tier1', '--bound', 'non-jigc-writer', '--scratch', '/tmp/scratch-1', '--reach', 'races against a writer that is not jigc', '--ruling', 'the stop after round 1, item 3', '--pin', 'unpinned']) && spelled(rulingsCalls[1]).startsWith('bound-set --run rc24-tier1 --bound planted-state ') && rulingsCalls[2].stdin === JSON.stringify([{ key: 'f-1', disposition: admitted, detail: 'build the robust path' }, { key: 'f-2', disposition: later }, { key: 'f-3', disposition: bound, detail: 'races against a writer that is not jigc' }]) && spelled(rulingsCalls[3]) === 'check-ledger --run rc24-tier1 -- f-1 f-2 f-3' && rulingsCalls.length === 4)
   check('a quote in a ruling cannot leave its argument', shq('it\'s a "bound" $(x) `y`') === '\'it\'\\\'\'s a "bound" $(x) `y`\'')
+  // WHAT THE HUMAN RULES ABOUT THE QUEUE IS ONE RECORD, ITS CALLS IN ONE ORDER (the reshape's
+  // plan, T7): another order first, then the rows put in by key, then the raise — each a
+  // call of `run-set`, judged on the state the one before it leaves — whichever was said
+  // first. A raise is taken only where a row of the queue is unreached, and an order or a
+  // key may be what puts one there.
+  const ofTheQueue = (rulings) => rulingsRecordPrompt(base, 1, 'fix/rc24-tier1', rulings, {}, { round: 1, stages: {} })
+  const raisedAndReordered = [{ budget: 40 }, { order: ['route under-confirmed', 'route hunt'] }]
+  check('a budget and an order ruled in one invocation are ONE record of two calls: the order, and then the raise', JSON.stringify(batchOf(ofTheQueue(raisedAndReordered).text)) === JSON.stringify([{ argv: ['run-set', '--run', 'rc24-tier1'], stdin: '{"order":["route under-confirmed","route hunt"]}' }, { argv: ['run-set', '--run', 'rc24-tier1'], stdin: '{"budget":40}' }]) && JSON.stringify(ofTheQueue(raisedAndReordered).expect) === JSON.stringify({ calls: 2, checks: 0 }))
+  check('the record is the same, byte for byte, whichever ruling was said first', ofTheQueue(raisedAndReordered).text === ofTheQueue(raisedAndReordered.slice().reverse()).text && ofTheQueue([{ queued: ['f-2', 'f-1'] }, { order: ['route hunt'] }, { budget: 40 }]).text === ofTheQueue([{ budget: 40 }, { queued: ['f-2', 'f-1'] }, { order: ['route hunt'] }]).text)
+  check('the rows put in by key stand between the two, and the calls of the other rulings about the run before all three', JSON.stringify(batchOf(rulingsRecordPrompt(base, 2, 'fix/rc24-tier1', [{ budget: 40 }, { queued: ['f-2', 'f-1'] }, { go: true }, { rounds: 4 }, { order: ['route hunt'] }], {}, { round: 2, stages: {} }).text)) === JSON.stringify([{ argv: ['round-set', '--run', 'rc24-tier1', '--round', '2'], stdin: '{"go":true}' }, { argv: ['run-set', '--run', 'rc24-tier1'], stdin: '{"rounds":4}' }, { argv: ['run-set', '--run', 'rc24-tier1'], stdin: '{"order":["route hunt"]}' }, { argv: ['run-set', '--run', 'rc24-tier1'], stdin: '{"queued":["f-2","f-1"]}' }, { argv: ['run-set', '--run', 'rc24-tier1'], stdin: '{"budget":40}' }]) && ofTheQueue(raisedAndReordered).text.includes('2 about the run'))
 
   // What a test stage records of its items: one result each, and nothing about a clause.
   const results = (units) => JSON.stringify(resultRows(units))
@@ -3170,6 +3346,16 @@ function selfTest() {
   const namedState = { round: 2, never_selected: ['row-b'], uncovered: [{ round: 1, doors: 3 }, { round: 2, doors: 1 }], document: { file: '/tmp/scratch-1/state/test-2.json', sha256: 'f'.repeat(64) }, ledger: 60, blockers: 2, human_list: 5, untriaged: { count: 1, why: [{ why: 'ungraded', count: 1 }] } }
   check('every return names the items no round selected, the doors of the round no item names, and the file', JSON.stringify(namedOf(namedState)) === JSON.stringify({ never_selected: ['row-b'], uncovered: { round: 2, doors: 1 }, regression_unknown: 0, document: namedState.document }) && namedOf(Object.assign({}, namedState, { regression_unknown: ['f-1', 'f-2'] })).regression_unknown === 2 && namedOf(namedState, 1).uncovered.doors === 3 && namedOf(namedState, 3).uncovered.doors === 0 && namedOf(null) === null && JSON.stringify(namedOf({ opened: false })) === JSON.stringify({ never_selected: [], uncovered: { round: null, doors: 0 }, regression_unknown: 0, document: null }))
   check('what a return holds of the state is counts and words, never a list of rows', attached(namedState).ledger === 60 && attached(namedState).blockers === 2 && attached(namedState).human_list === 5 && attached(namedState).untriaged.count === 1 && !('document' in attached(namedState)) && !('items' in attached(namedState)))
+  // WHAT A RETURN SAYS OF A RUN WITH A QUEUE (the reshape's plan, T7; the row
+  // `wf-return-names`): the budget, the queue's length by class and the stop's view AS THE
+  // STATE'S DIGEST HAS THEM, what an invocation of `test` continues the stage for — and no
+  // key of the queue; and the three words for what an invocation did.
+  const shown = { round: 1, file: 'completions/artifacts/rc24-tier1/r1/view.md', sha256: 'c'.repeat(64), on_disk: 'written', verified: 3, confirmed: 2, refuted: 1, undrivable: 0, rates: [{ kind: 'route', origin: 'hunt', verified: 3, confirmed: 2, refuted: 1, undrivable: 0, queued: 2 }], inside: 1, outside: 1, unreached: 2, listed: [{ why: 'lead', rows: 4 }], other: 6, codes: 1, sites: 0 }
+  const queuedState = { next: 'verify', queue: { budget: 30, hand_on: 2, spent: 3, left: 27, length: 2, first: ['f-1', 'f-2'], classes: [{ kind: 'route', origin: 'hunt', length: 2 }] }, view: shown, position: { test: { round: 1, attempt: 2, verify: true, filed: true } } }
+  check('a return of a run with a queue says the budget, the queue by class and the stop\'s view as the digest has them, and what the stage is continued for', JSON.stringify(queueSaid(queuedState)) === JSON.stringify({ continues: ['verify', 'filed'], budget: { limit: 30, spent: 3, left: 27 }, queue: { length: 2, hand_on: 2, classes: [{ kind: 'route', origin: 'hunt', length: 2 }] }, view: shown }))
+  check('no key of the queue is in it, and a run without an order says none of it', !JSON.stringify(queueSaid(queuedState)).includes('f-1') && JSON.stringify(queueSaid({ next: 'fix', queue: null, position: { test: { refused: 'round-open', round: 1 } } })) === '{}' && JSON.stringify(queueSaid(null)) === '{}')
+  check('only a record is owed where the stage is continued for a filed verdict and nothing else, and nothing where the position hands no continuation', JSON.stringify(queueSaid(Object.assign({}, queuedState, { position: { test: { round: 1, attempt: 2, filed: true } } })).continues) === '["filed"]' && JSON.stringify(queueSaid(Object.assign({}, queuedState, { position: { test: { refused: 'round-open', round: 1 } } })).continues) === '[]' && queueSaid(Object.assign({}, queuedState, { view: undefined })).view === null)
+  check('what an invocation says happened: it hunted, it verified, or it continued a stage and recorded no verdict', statusOf([], null) === 'hunted' && statusOf([], 'a'.repeat(40)) === 'verified' && statusOf(['verify'], 'a'.repeat(40)) === 'verified' && statusOf(['filed'], 'a'.repeat(40)) === 'verified' && statusOf(['verify'], null) === 'continued' && statusOf(['triage', 'verify'], null) === 'continued')
 
   // A held command, as this script reads it: the tool's words, and the tool's verdict.
   const job = { act: 'hold-wait', name: 'gate-c1-a1', kind: 'gate', output: 'hold/gate-c1-a1/output' }
@@ -3404,10 +3590,12 @@ function roleStep(role, label, phaseTitle, prompt, schema, once) {
 }
 
 // halt — every way a stage stops short, as one shape. Committed work stands; the next
-// invocation is a fresh one.
+// invocation is a fresh one. A halt of a run with a queue carries what every return of such a
+// run carries (`queueSaid`) — AS THE STATE WAS LAST READ, which after a wave whose check or
+// whose read did not come back is before that wave.
 function halt(phaseName, why, more) {
   const transient = !!(more && more.transient)
-  return {
+  return Object.assign({
     status: 'halted',
     stage: v.stage,
     run: v.run,
@@ -3415,7 +3603,7 @@ function halt(phaseName, why, more) {
     arrived,
     named: namedOf(lastState),
     message: 'stabilize ' + v.stage + ' of `' + v.run + '` HALTED at ' + phaseName + ': ' + why + (breakerTripped ? ' The rate-limit breaker is tripped (' + exhaustedLabels.join(', ') + '): wait for the window before invoking again.' : transient ? ' An agent returned no result after retries: that is infrastructure, not a verdict about the run.' : '') + ((more && more.then) || ' What was committed stands; a report a reporter wrote and no record step committed is still untracked under ' + runDir(v.run) + '/ and stays there. Once the cause is dealt with, invoke the stage again with the same args: it reads the state as it stands and works the next attempt.'),
-  }
+  }, queueSaid(lastState))
 }
 // haltAfter — a halt of a `test` stage ONCE AN INSTRUMENT IS LAUNCHED: it names its row of
 // HALTS_AFTER, and that row's phase is the phase the halt carries.
@@ -3933,7 +4121,7 @@ async function verifyThenRecord(ctx, launch, built, from, made) {
       second = taken.result.commit
     }
   }
-  return { state, second, verify: { waves: ver.waves, launched: ver.launched, verdicts: state.queue.spent - spent, left: state.queue.left, record: second, unverified: ver.unverified, unheld: ver.unheld, contested: ver.contested, silent: ver.silent, last: ver.last ? ver.last.wave : null } }
+  return { state, second, verify: { waves: ver.waves, launched: ver.launched, verdicts: state.queue.spent - spent, record: second, unverified: ver.unverified, unheld: ver.unheld, contested: ver.contested, silent: ver.silent, last: ver.last ? ver.last.wave : null } }
 }
 
 // continueTest — AN INVOCATION THAT CONTINUES A `test` STAGE, IN A RUN WITH A QUEUE (the
@@ -4004,11 +4192,13 @@ async function continueTest(ctx, state, words) {
   const closing = await verifyThenRecord(ctx, launch, built, state, made)
   if (closing.halted) return closing.halted
   state = closing.state
-  // WHAT IT RETURNS: what the stage returns of the same things — which record is its last,
-  // the record it made of what it graded (`record`: null where it graded nothing), and what
-  // the phase did, as counts — and `continued`: what of the stage it was handed to finish.
+  // WHAT IT RETURNS: what it did, in one word (`statusOf`: `verified` where it made the
+  // record of its verify phase, else `continued` — never `hunted`, which it did not); the
+  // record it made of what it graded (`record`: null where it graded nothing); what the
+  // phase did, as counts; `continued`: what of the stage it was handed to finish — and,
+  // beside `next`, what every return of a run with a queue says (`queueSaid`). No list.
   return Object.assign({
-    status: closing.second ? 'verified' : 'hunted',
+    status: statusOf(words, closing.second),
     stage: 'test',
     run: v.run,
     round: ctx.round,
@@ -4080,9 +4270,12 @@ function attached(state) {
 function nextOf(state) {
   const o = outcomeOf(state)
   const named = namedOf(state)
-  if (!o.known) return { next: o.next, returned_to_orchestrator: true, state: attached(state), named, arrived }
-  if (o.rule) return { next: o.next, rule: o.rule, named, arrived }
-  return o.next === 'close' ? { next: o.next, close: closeOf(), evidence: evidenceOf(state), named, arrived } : { next: o.next, named, arrived }
+  // … AND, OF A RUN WITH A QUEUE, WITH EVERY VALUE: the budget, the queue, the stop's view,
+  // and what the stage is continued for (`queueSaid`).
+  const queued = queueSaid(state)
+  if (!o.known) return Object.assign({ next: o.next, returned_to_orchestrator: true, state: attached(state), named, arrived }, queued)
+  if (o.rule) return Object.assign({ next: o.next, rule: o.rule, named, arrived }, queued)
+  return Object.assign(o.next === 'close' ? { next: o.next, close: closeOf(), evidence: evidenceOf(state), named, arrived } : { next: o.next, named, arrived }, queued)
 }
 
 // rulingsStep — the ONE call of the step that records what the human ruled: its record, the
@@ -4544,32 +4737,42 @@ async function runTest() {
     if (closing.halted) return closing.halted
     const second = closing.second
     state = closing.state
-    // WHAT THE STAGE RETURNS: it HUNTED — its findings are on record, graded — and, where its
-    // second record was made, it VERIFIED: `record` is the first record's commit, and
-    // `verify` what the phase did — how many waves and launches, HOW MANY VERDICTS THE STATE
-    // COUNTS SINCE THE FIRST RECORD (the script's count, never this one's), what the budget
-    // has left, the second record's commit, and HOW MANY findings a launch left without a
-    // verdict, how many returns were not held and how many say contested — each of those a
-    // line of the log, by its key — how many calls returned nothing, and the wave their
-    // silence made the last. `next` is the state's, verbatim: `verify` while a row of
-    // the queue is unverified and budget is left. No entry, no key, no grade, no verdict and
-    // no basis is in the return. (What a stage of this path returns is the plan's T7: until
-    // then the status says which record is the stage's last.)
+    // WHAT THE STAGE RETURNS (the reshape's plan, T7): WHAT IT DID, IN ONE WORD (`statusOf`) —
+    // `hunted`: its findings are on record, graded, and it made no record of a verify phase;
+    // `verified`: its second record was made. `record` is the first record's commit, and
+    // `verify` what the phase did, AS COUNTS: how many waves and launches, HOW MANY VERDICTS
+    // THE STATE COUNTS SINCE THE FIRST RECORD (the script's count, never this one's), the
+    // second record's commit, HOW MANY findings a launch left without a verdict, how many
+    // returns were not held and how many say contested — each of those a line of the log,
+    // by its key — how many calls returned nothing, and the wave their silence made the
+    // last. `next` is the state's, verbatim, and BESIDE IT what the record script counts, as
+    // the digest has it (`nextOf`, `queueSaid`): the budget, the queue's length class by
+    // class, the hit rate and the stop's view by its path and its hash, and what the stage
+    // is continued for.
+    // AND NO LIST OF THIS SCRIPT'S OWN MAKING: no entry, no key, no grade, no verdict and no
+    // basis — and WHAT IT LAUNCHED, WHAT ITS AGENTS RETURNED AND WHAT IT VOIDED ARE HOW MANY:
+    // the items it voided and the reporters that did not assert the binary are named in the
+    // log, each with its word, and are on record as void results; how each held check ended
+    // is the log's and the record's; the doors nobody covers and the doors reached and left
+    // out are the round's scope's; a re-run names its clause, its round and how many items;
+    // and a cross-model pass is counted. The lists a return holds are the step tool's — a
+    // digest's, each bounded by its shape — and the position's words.
+    const voided = unitStatus.filter((u) => u.status === 'void')
+    if (voided.length) log('VOID, AND ON RECORD AS VOID: ' + voided.map((u) => '`' + u.item + '` (`' + (u.word || u.reason) + '`)').join(', ') + ' — the state asks for the re-run of each where it owes one')
+    if (heldRan.length) log('the held checks: ' + heldRan.map((h) => '`' + h.item + '` ' + (h.ends === 'not-run' ? 'not run' : 'ended ' + h.ends) + (h.name ? ' (the held command `' + h.name + '`' + (h.output ? ', its output ' + h.output : '') + ')' : '')).join('; '))
     return Object.assign({
-      status: second ? 'verified' : 'hunted',
+      status: statusOf([], second),
       stage: 'test',
       run: v.run,
       round: ctx.round,
-      rerun,
-      cross_model: { named: crossNamed, ran: crossRan, void: crossVoid },
+      rerun: rerun ? { clause: rerun.clause, round: rerun.round, items: rerun.items.length } : null,
+      cross_model: { named: crossNamed.length, ran: crossRan.length, void: crossVoid.length },
       candidate: built.candidate,
       record: recorded.result.commit,
       triage: once.triage,
       verify: closing.verify,
-      counts: { items: state.items.length, items_run: hunting.length + always.length + late.length + held.length, reporters: launch.names.length, findings_in: once.handed, blockers: state.blockers, for_the_human: state.human_list, voided: unitStatus.filter((u) => u.status === 'void').map((u) => u.item) },
-      unasserted: unassertedBy,
-      held: heldRan.map((h) => Object.assign({ item: h.item }, heldSaid(h))),
-      scope: { status: sc.status, uncovered: sc.uncovered || [], reached_but_excluded: sc.reached_but_excluded || [] },
+      counts: { items: state.items.length, items_run: hunting.length + always.length + late.length + held.length, reporters: launch.names.length, findings_in: once.handed, blockers: state.blockers, for_the_human: state.human_list, voided: voided.length, unasserted: unassertedBy.length, held: heldRan.length },
+      scope: { status: sc.status, uncovered: (sc.uncovered || []).length, reached_but_excluded: (sc.reached_but_excluded || []).length },
       forbids_close: state.forbids_close,
     }, nextOf(state), rerun ? { named: namedOf(state, rerun.round) } : {})
   }
