@@ -58,7 +58,9 @@
 //!   a function that runs no instrument, and every triage is handed the ledger's rows that
 //!   still await one; the previous release and the default scope reach a prompt from the
 //!   run's recorded facts, never from prose; `close` goes back with each clause's evidence;
-//!   and the verifier's definition says what an unverified finding means.
+//!   and the verifier's definition says what becomes of a finding its launch left without a
+//!   filed verdict (the reshape's plan, `T6a`: the pin stands on the sentence the definition
+//!   gained for a run with a queue, and nothing pins the other path's any more).
 //!
 //! - **(n)** a record is accepted on its commit step's own line, and on nothing an agent says
 //!   of it: one function runs a record step — the executor, which applies the batch and
@@ -92,7 +94,13 @@
 //!   brief, a door's derivation, a ledger row or a pending batch's subject — an agent is
 //!   handed the read, the orchestrator the file; the script has a row for every word the
 //!   step tool refuses with, and for no other; and a held check's kind is a kind the tool
-//!   holds. The functions that are the `fix` half's own are named, each with its reason.
+//!   holds. The functions that are the `fix` half's own are named, each with its reason. AND
+//!   IN A RUN WITH A QUEUE (the reshape's plan, `T5a`, `T5b`, `T6a`) the one triage's entries
+//!   and every verifier's verdict are files the record script holds: the script launches a
+//!   verifier for the keys the queue prints and for no other, at most as many as the digest
+//!   prints and the budget has left, hands it its key and the read that prints its row, and
+//!   holds its return to the one path a filing has, a word a filing says and a truth value —
+//!   then to the queue, read again.
 //!
 //! - **(s)** every command a prompt names is one plain invocation of a tool (the second
 //!   repair plan's task `K11`; the human's ruling of 2026-10-07 that no step of a stage may
@@ -115,7 +123,9 @@
 //!   rows; and — under `node` — every field a driving role's schema describes and does not
 //!   require is a row of the script's `NEEDS` or of this suite's [`NOT_NEEDED`], no needed
 //!   field is one a schema requires, every cell that voids is an arm of the simulation, and
-//!   every cell that still halts is owed to a task by name ([`OWED`]).
+//!   every cell that still halts is owed to a task by name ([`OWED`]). A role that is
+//!   launched under another schema in a run with a queue ([`QUEUED_SCHEMAS`]) NEEDS NOTHING
+//!   of that return: every field of it is a row of [`NOT_NEEDED`].
 //!
 //! **Driven, where `node` is on `PATH`** (it is on this project's development machines and
 //! on GitHub's hosted runners; where it is not, the arm fails under CI and passes anywhere
@@ -1330,13 +1340,15 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
         assert!(evidence.contains(field), "the evidence carries `{field}`");
     }
 
-    // And the verifier's definition says what the record script computes: a finding it
-    // left without a verdict leaves the round's triage unfinished.
+    // And the verifier's definition says what the record script computes IN A RUN WITH A
+    // QUEUE: a finding a launch left without a filed verdict awaits its verdict again — a
+    // verifier is launched for it once more, never a fixer (the reshape's plan, `T6a`; its
+    // review's `S6`). THE PIN STANDS ON THE SENTENCE THE DEFINITION GAINED FOR THAT PATH; the
+    // sentence it stood on — the other path's — is pinned by nothing any more.
     let verifier = &definitions()["finding-verifier"];
     assert!(
-        verifier.contains("the round's triage is not finished")
-            && !verifier.contains("hands to the human"),
-        "finding-verifier.md still says that an unverified finding goes to the human"
+        verifier.contains("awaits its verdict again") && !verifier.contains("hands to the human"),
+        "finding-verifier.md says what becomes of a finding its launch left without a filed verdict"
     );
     let triage = &definitions()["finding-triage"];
     assert!(
@@ -1490,6 +1502,31 @@ fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_
             "the composed record is gated and committed by the record step, which applies nothing",
         );
     assert!(composed < gated, "composed, then gated and committed");
+    // … AND ITS SECOND RECORD, AFTER THE VERIFIERS, IS COMPOSED THE SAME WAY (the reshape's
+    // plan, `T6a`): over every reporter of the attempt that left a report, and no other word
+    // — the record script takes the filed verdicts itself — with a subject, a directory and a
+    // gate of its own; and refused as one that changes nothing, it is no halt.
+    let second = queued
+        .find("await composeRecord('verdicts:r' + ctx.round, loopBranch, ctx, v.scratch + '/record/verdicts-r' + ctx.round + '-a' + ctx.attempt, 'docs(record): ' + subjectOf(v.run, ctx.round, 'the verdicts of the test stage'), launch.names.map((name) => 'reporter=' + name))")
+        .expect("the path composes its second record, over the reporters and nothing else");
+    let second_gated = queued
+        .find("await recordStep('verdicts:r' + ctx.round, loopBranch, again.rec)")
+        .expect("the second record is gated and committed by the record step");
+    assert!(
+        gated < second && second < second_gated,
+        "the first record, then the second: composed, then gated and committed"
+    );
+    assert_eq!(
+        queued.matches("await composeRecord(").count(),
+        2,
+        "a stage of a run with a queue records twice"
+    );
+    assert!(
+        queued.contains(
+            "if (again.fault && again.refusal !== NO_CHANGE) return recordHalt('record', again,"
+        ) && queued[gated..second].contains("if (ver.launched) {"),
+        "the second record is composed only where a verifier was launched, and `no-change` is no halt of it"
+    );
     for typed in [
         "recordPrompt(",
         "stageRecordCommands(",
@@ -1700,12 +1737,16 @@ fn p_an_attempt_begins_on_record_and_a_reporter_leaves_the_list_only_on_the_chec
         2,
         "the report check is asked for in one place"
     );
-    // After the instruments, and after every triage pass.
+    // After the instruments, after every triage pass — and, in a run with a queue, after
+    // every wave of verifiers.
     assert!(
         tested.contains("await settleReports(ctx, launch, 'check-reports', 'Instruments')")
             && function(&full, "triagePasses")
-                .contains("await settleReports(ctx, launch, 'check-reports:p' + pass, 'Triage')"),
-        "the reports are checked after the instruments and after every triage pass"
+                .contains("await settleReports(ctx, launch, 'check-reports:p' + pass, 'Triage')")
+            && function(&full, "verifyWaves").contains(
+                "await settleReports(ctx, launch, 'check-reports:wave' + out.waves, 'Verify')"
+            ),
+        "the reports are checked after the instruments, after every triage pass and after every wave of verifiers"
     );
 
     // THE CANDIDATE A FINISHING LAP ASKS THE PREFLIGHT FOR IS THE ONE THE ROUND TESTED, and
@@ -2978,10 +3019,10 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
             && new_path.lines().last().is_some_and(|line| {
                 line == "    }, nextOf(state), rerun ? { named: namedOf(state, rerun.round) } : {})"
             })
-            && new_path.contains("\n      status: 'hunted',\n")
+            && new_path.contains("\n      status: second ? 'verified' : 'hunted',\n")
             && !new_path.contains("triagePasses(")
             && !new_path.contains("triageRecord("),
-        "on the new path the one triage is handed the red results and the rows nobody graded beside the reporters' findings, and the branch ends in a return — the stage's own, `hunted`, after its first record: nothing of the other path's triage, verification or typed record runs for a run with a queue"
+        "on the new path the one triage is handed the red results and the rows nobody graded beside the reporters' findings, and the branch ends in a return — the stage's own, `verified` where its second record was made and `hunted` where its first is its only one: nothing of the other path's triage, verification or typed record runs for a run with a queue"
     );
     let filed = &full[full
         .find("\nconst FILED_SCHEMA = {\n")
@@ -3061,6 +3102,147 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
         ) && record.contains("parts = [\"r\" + round_number, \"reports\", \"test\", \"%s.a%s.md\" % (reporter, attempt)]"),
         "where a `test` report lies is the record script's layout, spelled once here"
     );
+
+    // (10) IN A RUN WITH A QUEUE THE STAGE VERIFIES WHAT THE QUEUE PRINTS, AND NO ROW AND NO
+    // VERDICT PASSES THROUGH THIS SCRIPT (the reshape's plan, `T6a`). The phase follows the
+    // first record's read-back; a wave is the keys of the digest's `queue.first`, in its
+    // order — as many as the digest prints at most, never more than `queue.left`, and none
+    // this invocation took already; after it the reports are checked and THE STATE IS READ
+    // AGAIN, and a key the queue prints again has no verdict, whatever came back.
+    let waves = function(&full, "verifyWaves");
+    let first_record = new_path
+        .find("await recordStep('test:r' + ctx.round, loopBranch, composed.rec)")
+        .expect("the first record");
+    let phase = new_path
+        .find("const ver = await verifyWaves(ctx, launch, built, state)")
+        .expect("the stage verifies, in waves, from the state it read back");
+    assert!(
+        first_record < phase,
+        "nothing is verified before the stage's first record"
+    );
+    for held in [
+        "const room = queue.left == null ? WAVE : Math.min(WAVE, queue.left)",
+        "for (const key of queue.first || []) {",
+        "if (named.length >= room) break",
+        "if (seen.includes(key)) continue",
+        "if (!named.length) return out",
+        "roleStep('verify', 'verify:' + key, 'Verify', verdictPrompt(ctx, launch, name, key, built, queue.hand_on), VERDICT_SCHEMA)",
+        "const read = await readState()",
+        "if ((out.state.queue.first || []).includes(key)) unverified(key, ",
+    ] {
+        assert!(waves.contains(held), "`verifyWaves` holds `{held}`");
+    }
+    assert_eq!(
+        waves.matches("launch.add(").count(),
+        1,
+        "a verifier is launched for a key of the queue's print, and from no other list"
+    );
+    let printed = tool
+        .lines()
+        .find_map(|line| line.strip_prefix("QUEUE_FIRST = "))
+        .expect("the step tool declares how many keys of the queue its digest prints");
+    assert!(
+        source.contains(&format!("\nconst WAVE = {printed}\n")),
+        "a wave is as many verifiers as the digest prints keys of the queue ({printed})"
+    );
+    assert!(
+        source.contains("\nconst FILED_WORDS = ['confirmed', 'refuted', 'undrivable']\n")
+            && record.contains("\nVERDICTS = (\"confirmed\", \"refuted\")\n")
+            && record.contains("\nUNDRIVABLE = \"undrivable\"\n"),
+        "the verdicts a filing says are the record script's"
+    );
+    assert!(
+        function(&full, "verdictFile").contains(
+            "runDir(ctx.run) + '/r' + ctx.round + '/verdicts/' + name + '.a' + ctx.attempt + '.json'"
+        ) && record.contains("filed_parts = [\"r\" + round_number, \"verdicts\"]")
+            && record.contains("filed_parts + [\"%s.a%s.json\" % (reporter, attempt)]"),
+        "where a verdict is filed is the record script's layout, spelled once here"
+    );
+    // WHAT A VERIFIER IS HANDED: its key, the two reads and the one call that files its
+    // verdict, spelled whole — which is what the definition's paragraph binds on.
+    let prompt = function(&full, "verdictPrompt");
+    assert!(
+        prompt.contains("typed(RECORD_TOOL, 'verdict --run ' + ctx.run + ' --round ' + ctx.round + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + ' --from ' + filingFile(ctx, name))")
+            && prompt.contains("typed(RECORD_TOOL, kitRead(ctx.run, 'verify'))")
+            && prompt.contains("typed(RECORD_TOOL, rowRead(ctx.run, key))")
+            && prompt.contains("launch.line(name)")
+            && prompt.contains("binaryLine(built, false, ctx.scratch)")
+            && prompt.contains("held to `' + verdictFile(ctx, name) + '`")
+            && function(&full, "kitRead").contains("'kit --run ' + run + ' --role ' + role")
+            && function(&full, "rowRead").contains("'row --run ' + run + ' --key ' + key")
+            && definitions()["finding-verifier"]
+                .contains("Where your prompt spells a `dev/stabilize-record verdict` call"),
+        "a verifier's prompt spells the call that files its verdict whole — the run, the round, the reporter, the attempt, the file — names the kit and the read of its row, carries the report and the binary lines, and says what the return is held to"
+    );
+    assert!(
+        prompt.find("kitRead(").expect("as above") < prompt.find("rowRead(").expect("as above")
+            && prompt.find("rowRead(").expect("as above")
+                < prompt.find("'verdict --run '").expect("as above"),
+        "the kit first, then the row, then the filing"
+    );
+    let filed = &full[full
+        .find("\nconst VERDICT_SCHEMA = {\n")
+        .expect("the schema a verifier of a run with a queue returns under")..];
+    let filed = &filed[..filed.find("\n}\n").expect("the schema closes")];
+    let fields: BTreeSet<String> = filed
+        .lines()
+        .filter_map(|line| line.strip_prefix("    "))
+        .filter(|line| !line.starts_with(' '))
+        .map(|line| line[..line.find(':').expect("a field")].to_owned())
+        .collect();
+    assert_eq!(
+        fields,
+        [
+            "asserted_sha256",
+            "contested",
+            "filing",
+            "halt",
+            "report",
+            "status",
+            "word"
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>(),
+        "what a verifier that files returns: the path and the word its call printed, `contested` as that line has it, the hash it asserted — and no verdict"
+    );
+    assert!(
+        filed.contains("required: ['status'],"),
+        "and its schema requires the status alone"
+    );
+    let held_to = function(&full, "verdictFault");
+    assert!(
+        held_to.contains("r.filing !== verdictFile(ctx, name)")
+            && held_to.contains("!FILED_WORDS.includes(r.word)")
+            && held_to.contains("typeof r.contested !== 'boolean'")
+            && held_to.contains("r.asserted_sha256 !== expected"),
+        "the return is held to the path a filing of that reporter and attempt has, to a word a filing says, to a truth value, and to the hash the verifier was handed"
+    );
+    for (name, body) in [
+        ("verifyWaves", waves),
+        ("verdictFault", held_to),
+        ("verdictPrompt", prompt),
+    ] {
+        for of_a_row in [
+            ".door",
+            ".clause",
+            ".repro",
+            ".grade",
+            ".kind",
+            ".verdict",
+            ".regression",
+            ".basis",
+            ".refutation",
+            ".hands_on",
+            ".left_open",
+            ".ledger",
+        ] {
+            assert!(
+                !code(body).contains(of_a_row),
+                "`{name}` reads `{of_a_row}`: no row of the ledger and nothing of a verdict passes through this script"
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3546,6 +3728,16 @@ const PROMPTS: &[(&str, &str, &str)] = &[
         "verifyPrompt(CTX, launcher(CTX), 'verify-p1-a-key', { key: 'a-key', door: 'a door', clause: 'a-clause', grade: 'breaks', repro: 'a block' }, 'what to drive again', BUILT)",
     ),
     (
+        "verdictPrompt",
+        "a verifier that files, with the number it hands on",
+        "verdictPrompt(CTX, launcher(CTX), 'verify-a-key', 'a-key', BUILT, 2)",
+    ),
+    (
+        "verdictPrompt",
+        "in a run whose opening names no number",
+        "verdictPrompt(CTX, launcher(CTX), 'verify-a-key', 'a-key', BUILT, null)",
+    ),
+    (
         "advocatePrompt",
         "",
         "advocatePrompt(CTX, launcher(CTX), 'advocate-p1-a-key', { key: 'a-key', kind: 'contested', door: 'a door', clause: 'a-clause', repro: 'a block', statement: 'a statement' }, BUILT)",
@@ -3658,7 +3850,7 @@ function schemaWords() {
     if (typeof value.description === 'string') said.push(value.description)
     for (const inner of Object.values(value)) walk(inner)
   }
-  for (const schema of [STEP_SCHEMA, CARRY_SCHEMA, PREFLIGHT_SCHEMA, SCOPE_SCHEMA, UNIT_SCHEMA, PROBE_UNIT_SCHEMA, TRIAGE_SCHEMA, FILED_SCHEMA, VERIFY_SCHEMA, ADVOCATE_SCHEMA, PROPOSAL_SCHEMA, FIXER_SCHEMA, RECORD_SCHEMA]) walk(schema)
+  for (const schema of [STEP_SCHEMA, CARRY_SCHEMA, PREFLIGHT_SCHEMA, SCOPE_SCHEMA, UNIT_SCHEMA, PROBE_UNIT_SCHEMA, TRIAGE_SCHEMA, FILED_SCHEMA, VERIFY_SCHEMA, VERDICT_SCHEMA, ADVOCATE_SCHEMA, PROPOSAL_SCHEMA, FIXER_SCHEMA, RECORD_SCHEMA]) walk(schema)
   return said.join('\\n')
 }
 `
@@ -3971,6 +4163,36 @@ const NOT_NEEDED: &[(&str, &str, &str)] = &[
         "a path handed on as text: whether a report is there is the report check's word, never a return's",
     ),
     (
+        "VERDICT_SCHEMA",
+        "halt",
+        "read only where the status is `halted`, for the words a finding the queue prints again is named with",
+    ),
+    (
+        "VERDICT_SCHEMA",
+        "filing",
+        "held to the one path a verdict of that reporter and attempt is filed at: absent or another, the return is named as not held — and the filed file, which the record script reads, decides whether there is a verdict",
+    ),
+    (
+        "VERDICT_SCHEMA",
+        "word",
+        "held to the verdicts a filing says: absent or another, the return is named as not held — the verdict is the filed file's, and no code reads this copy of it",
+    ),
+    (
+        "VERDICT_SCHEMA",
+        "contested",
+        "held to a truth value: absent, the return is named as not held — whether the filing gave a basis is the filed file's, and the state names a contested finding",
+    ),
+    (
+        "VERDICT_SCHEMA",
+        "asserted_sha256",
+        "held to the candidate's hash: absent or another, the return is named as not held — the filing holds the hash too, and the record script refuses one that is not the round's binary",
+    ),
+    (
+        "VERDICT_SCHEMA",
+        "report",
+        "a path handed on as text: whether a report is there is the report check's word, never a return's",
+    ),
+    (
         "ADVOCATE_SCHEMA",
         "halt",
         "read only where the status is `halted`, for the words an unverified finding's reason carries",
@@ -4021,6 +4243,17 @@ const NOT_NEEDED: &[(&str, &str, &str)] = &[
         "a path handed on as text: whether a report is there is the report check's word, never a return's",
     ),
 ];
+
+/// THE SCHEMA A ROLE IS LAUNCHED UNDER IN A RUN WITH A QUEUE, where that is another than the
+/// one its row of `NEEDS` is of (the reshape's plan, `T6a`) — each with why the stage NEEDS
+/// NOTHING of that return: every field such a schema describes and does not require is a row
+/// of [`NOT_NEEDED`], and none is a row of `NEEDS`. A role listed here that is not launched
+/// under its schema is red; so is a role launched under two schemas that is not listed.
+const QUEUED_SCHEMAS: &[(&str, &str, &str)] = &[(
+    "verify",
+    "VERDICT_SCHEMA",
+    "a verifier of a run with a queue FILES its verdict: the record script reads the filed file, the state counts it, and the queue — read again after every wave — says which finding has none. The return is held to what the script can hold of it and names what is not; it decides nothing, so no field of it voids, unverifies or halts anything",
+)];
 
 /// The cells of `NEEDS` whose word is still `halts`: a field whose absence halts the stage
 /// after its instruments ran — each with the task it is owed to, and why this commit could
@@ -4213,6 +4446,7 @@ fn t_a_field_a_stage_needs_has_its_cell_and_what_halts_after_an_instrument_is_a_
         "runUnits",
         "triagePasses",
         "triageOnce",
+        "verifyWaves",
         "composeRecord",
         "driveFork",
         "settleReports",
@@ -4226,9 +4460,11 @@ fn t_a_field_a_stage_needs_has_its_cell_and_what_halts_after_an_instrument_is_a_
         );
     }
     // THE ADVOCATE LEFT THE `test` STAGE OF A RUN WITH A QUEUE (the reshape's plan, `T5b`; the
-    // row `wf-fork-serial`, its removal): that path launches no verifier's pass, no advocate
-    // and no independent drive — and THE `advocate` AND `proposal` ROWS OF `NEEDS` ARE STILL
-    // REACHED, by the path of a run without an order, whose cells the simulation drives.
+    // row `wf-fork-serial`, its removal): that path launches no pass of a triage, no advocate
+    // and no independent drive — ITS VERIFIERS ARE LAUNCHED BY `verifyWaves`, under the prompt
+    // of a verifier that files (`T6a`), never under the other path's — and THE `advocate` AND
+    // `proposal` ROWS OF `NEEDS` ARE STILL REACHED, by the path of a run without an order,
+    // whose cells the simulation drives.
     let tested = function(&full, "runTest");
     let branch_at = tested
         .find("\n  if (hasQueue(state)) {\n")
@@ -4238,18 +4474,33 @@ fn t_a_field_a_stage_needs_has_its_cell_and_what_halts_after_an_instrument_is_a_
             .find("\n  }\n  // And the rows whose triage nobody finished")
             .expect("the path closes before the other path's triage");
     let queued = code(&tested[branch_at..branch_ends]);
+    let waves = code(function(&full, "verifyWaves"));
     for other in [
         "triagePasses(",
         "driveFork(",
         "advocatePrompt(",
         "proposalPrompt(",
         "verifyPrompt(",
+        "VERIFY_SCHEMA",
+        "roleStep('advocate'",
+        "roleStep('proposal'",
+        "roleStep('triage'",
     ] {
         assert!(
-            !queued.contains(other),
-            "the path of a run with a queue reaches `{other}`: the advocate and the pass that verifies are the other path's"
+            !queued.contains(other) && !waves.contains(other),
+            "the path of a run with a queue reaches `{other}`: the advocate, the pass that verifies and its verifier's prompt are the other path's"
         );
     }
+    assert!(
+        queued.contains("await verifyWaves(ctx, launch, built, state)")
+            && waves.contains("verdictPrompt(")
+            && waves.contains("VERDICT_SCHEMA")
+            && without(&full, &["selfTest", "verifyWaves"])
+                .matches("VERDICT_SCHEMA")
+                .count()
+                == 1,
+        "that path's verifiers are launched in one place, under the schema of a verifier that files"
+    );
     assert!(
         queued
             .trim_end()
@@ -4362,10 +4613,51 @@ fn t_a_field_a_stage_needs_has_its_cell_and_what_halts_after_an_instrument_is_a_
     let mut faults = Vec::new();
     let mut unneeded: BTreeSet<(String, String)> = BTreeSet::new();
     for role in &driving {
-        let schema = match by_role.get(role).map(|set| set.iter().collect::<Vec<_>>()) {
-            Some(one) if one.len() == 1 => one[0].clone(),
-            other => panic!("the role `{role}` is launched under exactly one schema: {other:?}"),
+        // THE SCHEMA `NEEDS` IS OF — and, where the role is launched under another in a run
+        // with a queue, that one: of its return the stage needs nothing, field by field.
+        let under = by_role.get(role).cloned().unwrap_or_default();
+        let queued = QUEUED_SCHEMAS
+            .iter()
+            .find(|(of, _, _)| of == role)
+            .map(|(_, schema, why)| {
+                assert!(
+                    why.split_whitespace().count() >= 12,
+                    "QUEUED_SCHEMAS: `{role}` carries its reason"
+                );
+                (*schema).to_owned()
+            });
+        let own: Vec<&String> = under
+            .iter()
+            .filter(|schema| Some(*schema) != queued.as_ref())
+            .collect();
+        let schema = match own.as_slice() {
+            [one] => (*one).clone(),
+            other => panic!(
+                "the role `{role}` is launched under exactly one schema — and one more in a run with a queue, where QUEUED_SCHEMAS names it: {other:?}"
+            ),
         };
+        if let Some(queued) = &queued {
+            assert!(
+                under.contains(queued),
+                "QUEUED_SCHEMAS: the role `{role}` is not launched under {queued}: the row is stale"
+            );
+            for field in read["optional"][queued]
+                .as_array()
+                .expect("a schema's optional fields")
+            {
+                let field = field.as_str().expect("a path").to_owned();
+                if NOT_NEEDED
+                    .iter()
+                    .any(|(of, name, _)| of == queued && *name == field)
+                {
+                    unneeded.insert((queued.clone(), field));
+                } else {
+                    faults.push(format!(
+                        "{queued}.{field} (the role `{role}`, in a run with a queue): an optional field with no row of NOT_NEEDED — of that return the stage needs nothing, and each field says why"
+                    ));
+                }
+            }
+        }
         let optional: BTreeSet<String> = read["optional"][&schema]
             .as_array()
             .expect("a schema's optional fields")

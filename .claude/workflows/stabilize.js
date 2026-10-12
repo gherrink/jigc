@@ -115,12 +115,49 @@
 // returns `hunted` with the state's `next`. HOW THE COMPOSING STEP CAN BE REFUSED is one
 // table (COMPOSE_REFUSALS): `words` — a word was altered on its way through the step's agent
 // — is asked for again, exactly, once; every other word halts the stage at its record with
-// nothing written. WHAT OF THAT PATH IS BUILT ENDS THERE: its verification and its
-// continuation are the tasks that follow, and until they are built AN INVOCATION THAT WOULD
-// CONTINUE — the state's position says `verify`, or `triage` — IS REFUSED, after its two
-// reads, as not built: a refusal of that path, never of the stage. NO ADVOCATE IS LAUNCHED
-// ON THAT PATH: a contested fix is the `fix` half's. A RUN WITHOUT AN ORDER TAKES THE PATH
-// ABOVE, UNCHANGED.
+// nothing written. THEN THE STAGE VERIFIES, IN WAVES, IN THE SAME INVOCATION (that plan's T6a;
+// the rulings of 2026-10-10, 1 and 4, and of 2026-10-11, 1 and 2). WHAT IS VERIFIED, IN WHICH
+// ORDER AND HOW MUCH OF IT IS THE RECORD SCRIPT'S, read as the state's digest after the first
+// record and AGAIN AFTER EVERY WAVE (`verifyWaves`): a wave is the keys the queue prints
+// (`queue.first`), in its rank — AT MOST EIGHT (WAVE), NEVER MORE THAN THE BUDGET HAS LEFT
+// (`queue.left`), and never a key this invocation launched already: a verdict is filed under
+// the reporter `verify-<key>`, and a reporter is launched once an attempt. This script keeps
+// no order, no budget and no list of what is verified; it launches a verifier for NO KEY THE
+// QUEUE DID NOT PRINT, and reads NO ROW: a verifier is handed ITS KEY and the read that prints
+// its row (`dev/stabilize-record row`), the two binaries, the lookup kit's call, which is its
+// first read (`kit`), how many items it may hand on to the queue — the opening's number, as
+// the digest has it — and THE ONE PLAIN CALL THAT FILES ITS VERDICT, spelled whole
+// (`verdictPrompt`: `dev/stabilize-record verdict`, the run, the round, the reporter, the
+// attempt, the file it reads). THE TWO HASHES ARE MEMBERS OF THAT FILE AND NO WORD OF THE CALL
+// — the plan had them as plain words; the committed call takes none. A VERDICT COUNTS FROM
+// THE MOMENT IT IS FILED, AND NOT ONE WORD OF IT PASSES THROUGH THIS SCRIPT: what a verifier
+// returns is the path and the word its call printed, and `contested` as that line has it,
+// HELD TO WHAT THIS SCRIPT CAN HOLD (`verdictFault`: the one path a filing of that reporter,
+// attempt and round has; a word a filing says; a truth value; the hash it asserted) — AND THEN
+// TO THE QUEUE, READ AGAIN: a finding the queue prints again after its wave HAS NO VERDICT,
+// WHATEVER ITS VERIFIER RETURNED, and is named so; a return that is not held, of a finding
+// the queue does not print again, is named too, and decides nothing — the filed file does.
+// `undrivable` is a filed verdict like any: the queue does not print its key again, and no
+// code here knows the word. WHAT A VERIFIER HANDS ON is a row of the state from the moment
+// its filing is taken, and is in the next read of the queue. A CONTESTED VERDICT IS THE
+// HUMAN'S BY ITS VERIFIER'S OWN FILING: nothing is launched and nothing typed for it. After
+// each wave THE REPORTS ARE CHECKED, as after every other launch. THEN THE STAGE'S SECOND
+// RECORD, where a verifier was launched: `composeRecord` again, with a subject and a
+// directory of its own, over EVERY REPORTER OF THE ATTEMPT THAT LEFT A REPORT — the record
+// script holds a record's report check to the whole attempt — and no other word: the script
+// takes the filed verdicts, the handed-on rows and what a stop shows itself. REFUSED AS ONE
+// THAT CHANGES NOTHING (`no-change`), IT IS NO HALT: nothing was filed, and the stage returns
+// as it hunted. The stage returns `verified` where its second record was made, else
+// `hunted`, with the state's `next` and WHAT THE PHASE DID AS COUNTS (`verify`) — how many
+// verdicts the state counts since the first record among them, the record script's number
+// and never this script's. No key is in the return: each finding a launch left without a
+// verdict, each return that was not held and each that says contested is A LINE OF THE LOG,
+// by its key, with why.
+// WHAT OF THAT PATH IS NOT BUILT IS ITS CONTINUATION, the task that follows: AN INVOCATION
+// THAT WOULD CONTINUE — the state's position says `verify`, or `triage` — IS REFUSED, after
+// its two reads, as not built: a refusal of that path, never of the stage. NO ADVOCATE IS
+// LAUNCHED ON THAT PATH: a contested fix is the `fix` half's. A RUN WITHOUT AN ORDER TAKES
+// THE PATH ABOVE, UNCHANGED.
 //
 // WHAT A STAGE HOLDS IS NAMED BY ITS COMMIT, AND NOTHING IS BUILT TWICE (that plan's T5b; its
 // review's S12 — for BOTH kinds of run). The two builds, the candidate's gate and every held
@@ -569,6 +606,7 @@ export const meta = {
     { title: 'Instruments' },
     { title: 'Fix' },
     { title: 'Triage' },
+    { title: 'Verify' },
     { title: 'Record' },
     { title: 'Land' },
   ],
@@ -599,6 +637,14 @@ const KNOWN_NEXT = ['fix', 'rule', 'close']
 // is verified. A verifier leaves things open too, so the two alternate — this many times with
 // verification, then once more to give every entry its row.
 const VERIFY_PASSES = 3
+// THE MOST VERIFIERS ONE WAVE LAUNCHES, IN A RUN WITH A QUEUE (the reshape's plan, T6a): as
+// many keys as the state's digest prints of the queue (dev/stabilize-step: THE STATE'S DIGEST,
+// `queue.first` — "at most eight, as many as one wave of verifiers launches"; the fence holds
+// the two numbers together). A wave is never larger than what the budget has left, either.
+const WAVE = 8
+// The verdicts a filing says (dev/stabilize-record: verdict), one of which the call that
+// files it prints as `word`. The fence holds the list to that script's.
+const FILED_WORDS = ['confirmed', 'refuted', 'undrivable']
 const GIT_MODEL = 'sonnet'
 // The one tool a git step runs a command of, and relays the line of.
 const STEP_TOOL = 'dev/stabilize-step'
@@ -906,13 +952,13 @@ const NEEDS = {
 // or the record is committed — and each says what the next invocation finishes.
 const HALTS_AFTER = {
   'names': { phase: 'state', when: 'a reporter name cannot be made for a step of an item the round runs: the item\'s id is too long to carry its step inside a slug' },
-  'report-check': { phase: 'reports', when: 'the report check after the instruments could not be read — its step died, refused, or the breaker is tripped — or it names a file no launched reporter wrote' },
+  'report-check': { phase: 'reports', when: 'the report check after the instruments could not be read — its step died, refused, or the breaker is tripped — or it names a file no launched reporter wrote. IN A RUN WITH A QUEUE, the same of the report check after a wave of verifiers: the first record is committed, and what was filed is on disk' },
   'scope-aside': { phase: 'scope', when: 'the round\'s scope was set aside by the report check: the file at its path is not what the record script would have written' },
   'stood-on': { phase: 'reports', when: 'a reporter the stage stands on left no report: the attempt\'s marker, the first preflight, the scope step, a second preflight that provided, the preflight of a finishing lap' },
   'triage': { phase: 'triage', when: 'ANY ending of triage but its grades with its report — no result, a halt, counts that do not balance, a key that is none or is given twice, no report — and, inside a pass, a verifier\'s name that cannot be made and a report check that could not be read. IN A RUN WITH A QUEUE, any ending of the one triage but its entries handed over, with their rendered report: a halt, a return that names another path than that report\'s or no hash, a call typed with other counts than the stage handed' },
-  'record': { phase: 'record', when: 'the record step: the executor applied nothing or its batch was refused, the record\'s gate left no verdict, or the commit step refused — the batch stays applied where it was, and the next invocation finishes it. IN A RUN WITH A QUEUE, where the tool composes the batch: the composing step returned nothing, or was refused — by a word of the record script (COMPOSE_REFUSALS; `words` only once it was asked for again), with nothing written, or by a word of the tool' },
+  'record': { phase: 'record', when: 'the record step: the executor applied nothing or its batch was refused, the record\'s gate left no verdict, or the commit step refused — the batch stays applied where it was, and the next invocation finishes it. IN A RUN WITH A QUEUE, where the tool composes the batch: the composing step returned nothing, or was refused — by a word of the record script (COMPOSE_REFUSALS; `words` only once it was asked for again), with nothing written, or by a word of the tool. Of such a run\'s SECOND record the same, but for `no-change`, which is no halt: nothing was filed, and there is nothing to record' },
   'push': { phase: 'push', when: 'the push of the record\'s commit failed or was refused: the record is committed, the push is owed, and the next invocation\'s first read makes it' },
-  'read-back': { phase: 'state', when: 'the state could not be read back once the record was committed and pushed: nothing is lost, and the next invocation reads it' },
+  'read-back': { phase: 'state', when: 'the state could not be read back once the record was committed and pushed: nothing is lost, and the next invocation reads it. IN A RUN WITH A QUEUE, also the read of the queue after a wave of verifiers: what was filed is on disk, and the state the next invocation reads counts it' },
 }
 
 // VOID_WORDS — WHY AN ITEM DID NOT RUN TO ITS END, AS ONE WORD: what the record of a run with
@@ -1468,6 +1514,38 @@ function filedFault(ctx, name, sources, t) {
   return null
 }
 
+// verdictFile — WHERE THE RECORD SCRIPT FILES THE VERDICT OF A REPORTER (its header: verdict,
+// `r<N>/verdicts/<reporter>.a<A>.json`; the fence holds the two together): the ONE path a
+// filing of that reporter, that attempt and that round is written at — and so what the
+// return of a verifier that files is held to.
+function verdictFile(ctx, name) {
+  return runDir(ctx.run) + '/r' + ctx.round + '/verdicts/' + name + '.a' + ctx.attempt + '.json'
+}
+// The file a verifier of a run with a queue writes its filing to before it files it.
+function filingFile(ctx, name) {
+  return ctx.scratch + '/verdict/r' + ctx.round + '/' + name + '.a' + ctx.attempt + '.json'
+}
+// verdictFault — WHY THE RETURN OF A VERIFIER THAT FILES IS NOT HELD, or null (the reshape's
+// plan, T6a: "a verifier's return is a word and a path, held to the filing's digest"). The
+// call that files a verdict prints ONE line, and the return carries three things of it:
+// `filing`, which must be the path a verdict of that reporter and attempt is filed at — the
+// script writes it there and nowhere else; `word`, a verdict a filing says; and `contested`,
+// a truth value. And `asserted_sha256`, as every driving role returns it. THAT IS ALL THIS
+// SCRIPT CAN HOLD OF A RETURN: it has no file system, and no step relays a filed file — the
+// state's digest holds how many verdicts count and which keys the queue prints, never a
+// filing. SO A RETURN DECIDES NOTHING: whether a verdict was filed, which word it says and
+// whether it is contested are the filed file's, read by the record script; a held return of
+// a finding the queue prints again left no verdict (`verifyWaves`), and a return that is not
+// held is named and nothing else. What comes back is printed only where it is a hash: a
+// return's text is an agent's.
+function verdictFault(ctx, name, r, expected) {
+  if (r.filing !== verdictFile(ctx, name)) return 'returned ' + (isText(r.filing) ? 'a path' : 'no path') + ' that is not where a verdict of `' + name + '`, attempt ' + ctx.attempt + ', is filed — `' + verdictFile(ctx, name) + '`: the call was typed under another name, round or attempt, or was not made'
+  if (!FILED_WORDS.includes(r.word)) return 'returned ' + (r.word == null ? 'no word' : 'a word') + ' that is no verdict a filing says — ' + FILED_WORDS.join(', ') + ' — which the call prints as `word`'
+  if (typeof r.contested !== 'boolean') return 'did not return `contested` as true or false: whether its filing gave a basis, as the call prints it'
+  if (r.asserted_sha256 !== expected) return 'returned ' + (r.asserted_sha256 == null ? 'no `asserted_sha256`' : SHA256_RE.test(String(r.asserted_sha256)) ? 'the `asserted_sha256` ' + r.asserted_sha256 : 'an `asserted_sha256` that is no sha256') + ', which is not the candidate\'s binary (' + expected + ')'
+  return null
+}
+
 // previousOf — the release the run measures against, as its record names it: what the
 // second binary is built from, and what "a regression of the run" is green on.
 function previousOf(state) {
@@ -1874,6 +1952,24 @@ const VERIFY_SCHEMA = {
     report: { type: 'string' },
   },
 }
+// What A VERIFIER OF A RUN WITH A QUEUE returns: NO VERDICT — its verdict is one file, filed by
+// the call its prompt spells — and of the ONE line that call printed, what `verdictFault`
+// holds. Nothing but the status is required, and NO FIELD OF IT IS NEEDED BY THE STAGE (the
+// fence, arm (t)): what is filed decides, and a return that lacks a field is named and
+// nothing else.
+const VERDICT_SCHEMA = {
+  type: 'object',
+  required: ['status'],
+  properties: {
+    status: { type: 'string', enum: ['filed', 'halted'] },
+    halt: HALT,
+    filing: { type: 'string', description: 'the path the call that filed your verdict printed as `verdict`' },
+    word: { type: 'string', description: 'the verdict that call printed as `word`: confirmed, refuted or undrivable' },
+    contested: { type: 'boolean', description: 'what that call printed as `contested`: true where your filing gave a basis, false where it gave none' },
+    asserted_sha256: { type: 'string', description: 'the sha256 you asserted for the candidate before you drove it' },
+    report: { type: 'string', description: 'the path the call that handed your report over printed' },
+  },
+}
 const DRIVEN = { type: 'array', items: { type: 'object', required: ['step', 'command', 'result'], properties: { step: { type: 'string' }, command: { type: 'string' }, result: { type: 'string' } } } }
 const ADVOCATE_SCHEMA = {
   type: 'object',
@@ -2154,6 +2250,15 @@ function itemRead(run, item) {
 function doorsRead(run, round, item) {
   return 'item-doors --run ' + run + ' --round ' + round + ' --item ' + item
 }
+// kitRead / rowRead — the two reads a verifier of a run with a queue is handed (dev/stabilize-
+// record: `kit`, `row`): what every agent of its role looks up, in one read — its FIRST — and
+// its finding's row, whole, by its key. No text of either passes through this script.
+function kitRead(run, role) {
+  return 'kit --run ' + run + ' --role ' + role
+}
+function rowRead(run, key) {
+  return 'row --run ' + run + ' --key ' + key
+}
 // briefLine / doorLines — a unit's brief and its door list, as its prompt says them: by the
 // read, for an item of the test set; as given, for the one unit that is this script's own
 // (the audit of a fix diff, whose brief is this script's sentence).
@@ -2245,6 +2350,34 @@ function verifyPrompt(ctx, launch, name, entry, redrive, built) {
     redrive ? 'What triage asks you to re-drive: ' + redrive : '',
     'Scratch root: `' + ctx.scratch + '` — mint your own directory under it.',
   ].filter(Boolean).join('\n')
+}
+// verdictPrompt — THE PROMPT OF A VERIFIER THAT FILES ITS VERDICT, IN A RUN WITH A QUEUE (the
+// reshape's plan, T6a). The definition's paragraph for it binds on THE CALL, SPELLED WHOLE
+// (finding-verifier.md: "Where your prompt spells a `dev/stabilize-record verdict` call"): the
+// run, the round, the reporter (`verify-<key>`), the attempt and the file it reads — so this
+// prompt is what switches that paragraph on. IT HANDS THE VERIFIER ITS KEY AND NOTHING OF ITS
+// ROW: the read that prints the row is named, and the verifier runs it. THE KIT'S CALL STANDS
+// FIRST of the calls it is to make of the record script, as the definition has it its first
+// read. THE `REPORT:` AND `BINARY:` LINES STAY: the report comes before the filing, a halt is
+// reported by it, and the two hashes a filing holds — `candidate`, `previous` — are the ones
+// asserted under the binary line: MEMBERS OF THE FILE, AND NO WORD OF THE CALL, which takes
+// none. `handOn` is the opening's number, as the state's digest has it: how many of what the
+// verifier hands on enter the queue — or null, where the opening wrote none and nothing does.
+// AND THE LAST LINE BUT ONE SAYS WHAT THE RETURN IS HELD TO (`verdictFault`), and what counts.
+function verdictPrompt(ctx, launch, name, key, built, handOn) {
+  return [
+    'VERIFY-REAL — stabilization run `' + ctx.run + '`, round ' + ctx.round + ', ONE finding: the row `' + key + '` of the run\'s ledger. ' + opening(ctx),
+    launch.line(name),
+    binaryLine(built, false, ctx.scratch),
+    'YOUR FIRST READ, before anything else: ' + typed(RECORD_TOOL, kitRead(ctx.run, 'verify')) + ' — it prints what every verifier looks up: the rules of a report, the slug rule, the rig and how a binary is named to it, the format of a repro block, and the run\'s closing condition. Read them there, and look none of them up again.',
+    'THE FINDING IS A ROW, AND YOU READ IT BY ITS KEY: ' + typed(RECORD_TOOL, rowRead(ctx.run, key)) + ' prints it whole — its door, the clause it is said to break, its repro, its grade where triage graded it, its class, and for an item a verifier handed on, who handed it on and under which finding. This prompt carries none of it.',
+    'YOUR VERDICT IS ONE FILE, AND YOU FILE IT ONCE — after your report is handed over, and before you return. Write it — ONE JSON object, its members as your definition has them — to the file `' + filingFile(ctx, name) + '` WITH YOUR FILE TOOL, and file it by ONE plain call, typed as it stands: ' + typed(RECORD_TOOL, 'verdict --run ' + ctx.run + ' --round ' + ctx.round + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + ' --from ' + filingFile(ctx, name)) + ' (with one more `--scratch` for each scratch root of your own outside that one). THE TWO HASHES ARE MEMBERS OF THAT FILE, and no word of the call: `candidate` is the sha256 you asserted for the candidate\'s binary under the `' + LABELS.binary + '` line, and `previous` the one you asserted for the previous release\'s, wherever you drove it.',
+    handOn == null
+      ? 'WHAT YOU HAND ON ENTERS NO QUEUE: the run\'s opening names no number of items a verifier hands on, so every entry of `hands_on` is recorded as what it is, in no queue, and the human may put one in by its key.'
+      : 'WHAT YOU HAND ON — AT MOST ' + handOn + ' ENTER THE QUEUE: that is the number of the run\'s opening. `hands_on` is in the order you would have them verified: the first ' + handOn + ' that carry the evidence of their kind are handed on to the queue, and a later one is recorded as what it is, in no queue.',
+    'WHAT YOUR RETURN IS HELD TO, and it holds no verdict. That call prints ONE line of JSON. Return status = filed with three things of it: `filing`, the path it printed as `verdict` — held to `' + verdictFile(ctx, name) + '`, the one path a verdict of your name and attempt is filed at; `word`, the verdict as it printed it — held to ' + FILED_WORDS.join(', ') + '; and `contested`, true or false as it printed it. Nothing else of your verdict is read from your return: no basis, no block and no item you hand on is typed a second time. WHAT COUNTS IS WHAT IS FILED: once your wave is over the harness reads the run\'s queue again, and a finding the queue prints again has no verdict, whatever its verifier returned. Where you halt, return status = halted with the halt report, a refusal\'s line verbatim in it — and file nothing.',
+    'Scratch root: `' + ctx.scratch + '` — mint your own directory under it.',
+  ].join('\n')
 }
 function advocatePrompt(ctx, launch, name, fork, built) {
   return [
@@ -2732,6 +2865,27 @@ function selfTest() {
   check('the composing step is ONE command of the tool: the branch, the run\'s directory, the round, the attempt, the subject as one quoted word, the sha256 of the words\' canonical form, and the words after `--`', composing.includes('\n1. `dev/stabilize-step compose --branch fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --round 2 --attempt 4 --subject \'' + subjectSaid + '\' --sha256 ' + sha256(wordsText('rc24-tier1', 2, 4, subjectSaid, said)) + ' --scratch /tmp/scratch-1 --digest /tmp/scratch-1 -- ' + said.join(' ') + '`\n') && composing.startsWith('GIT STEP — ') && !composing.includes(LABELS.record) && !composing.includes(PAYLOAD_ENDS))
   check('a composing step that is asked for again is told that the tool refused the words, and to type the command as it stands', wordsAgain(1).startsWith('AGAIN (1): ') && wordsAgain(1).includes('typed as it stands') && wordsAgain(1).includes('nothing was written') && !wordsAgain(1).includes('`'))
   check('of the words a composed record is refused with, `words` is asked for again — once — and every other halts, each saying what it means', WORDS_AGAIN === 1 && Object.keys(COMPOSE_REFUSALS).filter((word) => COMPOSE_REFUSALS[word].again).join() === 'words' && ['words', 'check', 'pending', 'no-change'].every((word) => COMPOSE_REFUSALS[word] && COMPOSE_REFUSALS[word].says.split(' ').length >= 10) && COMPOSE_REFUSALS['no-change'].then.includes('NO BATCH IS LEFT') && COMPOSE_REFUSALS.pending.then === 'pending')
+  // THEN THE STAGE VERIFIES, IN WAVES: a verifier is handed its key and the read that prints
+  // its row, the kit's call first, and the ONE call that files its verdict, spelled whole —
+  // and what comes back is held to that call's line, as far as this script can hold one.
+  const filer = 'verify-f-1'
+  const files = verdictPrompt(tested, launcher(tested), filer, 'f-1', built, 2)
+  const [kitCall, rowCall, filingCall] = ['`dev/stabilize-record kit --run rc24-tier1 --role verify`', '`dev/stabilize-record row --run rc24-tier1 --key f-1`', '`dev/stabilize-record verdict --run rc24-tier1 --round 2 --reporter verify-f-1 --attempt 4 --scratch /tmp/scratch-1 --from /tmp/scratch-1/verdict/r2/verify-f-1.a4.json`']
+  check('a wave is as many verifiers as the digest prints keys of the queue, and a filing says one of three verdicts', WAVE === 8 && FILED_WORDS.join() === 'confirmed,refuted,undrivable')
+  check('a verdict is filed where the record script files one, and written first to a file under the scratch root', verdictFile(tested, filer) === 'completions/artifacts/rc24-tier1/r2/verdicts/verify-f-1.a4.json' && filingFile(tested, filer) === '/tmp/scratch-1/verdict/r2/verify-f-1.a4.json' && verdictFile(Object.assign({}, tested, { attempt: 5 }), filer) !== verdictFile(tested, filer))
+  check('a verifier that files is handed the kit\'s call, the read of its row and the call that files its verdict, each spelled whole and in that order', [kitCall, rowCall, filingCall].every((call) => files.includes(call)) && files.indexOf(kitCall) < files.indexOf(rowCall) && files.indexOf(rowCall) < files.indexOf(filingCall) && files.includes('to the file `/tmp/scratch-1/verdict/r2/verify-f-1.a4.json` WITH YOUR FILE TOOL'))
+  check('it is handed its key, and nothing of its row: no door, no clause, no grade and no repro is in the prompt', files.includes('ONE finding: the row `f-1` of the run\'s ledger') && files.includes('This prompt carries none of it.') && !files.includes(entry.door) && !files.includes(entry.clause) && !files.includes(entry.repro) && !files.includes('triage\'s grade'))
+  check('it carries its report line and its binary line with both binaries, and the two hashes are members of its file and no word of its call', carries(files, 'report') && carries(files, 'binary') && files.includes('; previous release `/tmp/scratch-1/bin/previous/jigc`') && files.includes('THE TWO HASHES ARE MEMBERS OF THAT FILE, and no word of the call') && !filingCall.includes('b'.repeat(64)) && !filingCall.includes('a'.repeat(64)))
+  check('it is told how many of what it hands on enter the queue — the opening\'s number — or that none does where the opening names none', files.includes('AT MOST 2 ENTER THE QUEUE') && files.includes('the first 2 that carry the evidence of their kind') && !files.includes('ENTERS NO QUEUE') && verdictPrompt(tested, launcher(tested), filer, 'f-1', built, null).includes('WHAT YOU HAND ON ENTERS NO QUEUE') && !verdictPrompt(tested, launcher(tested), filer, 'f-1', built, null).includes('AT MOST') && verdictPrompt(tested, launcher(tested), filer, 'f-1', built, 0).includes('AT MOST 0 ENTER THE QUEUE'))
+  check('it is told what its return is held to, and that what counts is what is filed', files.includes('WHAT YOUR RETURN IS HELD TO') && files.includes('held to `completions/artifacts/rc24-tier1/r2/verdicts/verify-f-1.a4.json`') && files.includes('held to confirmed, refuted, undrivable') && files.includes('a finding the queue prints again has no verdict') && !files.includes('left_open') && !files.includes('pass '))
+  const filedBack = { status: 'filed', filing: verdictFile(tested, filer), word: 'confirmed', contested: false, asserted_sha256: 'b'.repeat(64) }
+  const heldWith = (more) => verdictFault(tested, filer, Object.assign({}, filedBack, more), 'b'.repeat(64))
+  check('a return of a verifier that files is held where it is its call\'s line: the path a filing of its name has, a verdict a filing says, `contested` as a truth value, and the hash it was handed', heldWith({}) === null && FILED_WORDS.every((word) => heldWith({ word }) === null) && heldWith({ contested: true }) === null && heldWith({ report: 'anything', basis: 'anything' }) === null)
+  check('a return that names another path, or none, is not held, and says which path a filing has', heldWith({ filing: verdictFile(tested, 'verify-f-2') }).includes('a path that is not where a verdict of `verify-f-1`, attempt 4, is filed — `completions/artifacts/rc24-tier1/r2/verdicts/verify-f-1.a4.json`') && heldWith({ filing: undefined }).startsWith('returned no path that is not where') && isText(heldWith({ filing: verdictFile(Object.assign({}, tested, { attempt: 5 }), filer) })) && isText(heldWith({ filing: testReport(tested, filer) })))
+  check('a return whose word is no verdict a filing says is not held, and what came back is not printed', [undefined, '', 'verified', 'Confirmed', 'regression', true].every((word) => isText(heldWith({ word })) && heldWith({ word }).includes('no verdict a filing says') && !heldWith({ word }).includes('`' + word + '`')) && heldWith({ word: undefined }).startsWith('returned no word'))
+  check('a return that does not say `contested` as true or false is not held', [undefined, null, 'true', 'a basis', 1].every((contested) => isText(heldWith({ contested })) && heldWith({ contested }).includes('`contested` as true or false')))
+  check('a return without the hash it asserted, or with another, is not held', heldWith({ asserted_sha256: undefined }).startsWith('returned no `asserted_sha256`') && heldWith({ asserted_sha256: 'a'.repeat(64) }).includes('the `asserted_sha256` ' + 'a'.repeat(64) + ', which is not the candidate\'s binary (' + 'b'.repeat(64) + ')') && heldWith({ asserted_sha256: 'a sentence' }).includes('an `asserted_sha256` that is no sha256') && !heldWith({ asserted_sha256: 'a sentence' }).includes('a sentence'))
+  check('a verifier that files returns no verdict, and its schema requires nothing but its status', JSON.stringify(Object.keys(VERDICT_SCHEMA.properties)) === JSON.stringify(['status', 'halt', 'filing', 'word', 'contested', 'asserted_sha256', 'report']) && JSON.stringify(VERDICT_SCHEMA.required) === JSON.stringify(['status']) && VERDICT_SCHEMA.properties.word.enum === undefined && !('verdict' in VERDICT_SCHEMA.properties) && !('left_open' in VERDICT_SCHEMA.properties))
   const finishing = preflightPrompt(ctx, launcher(ctx), 'preflight', { image: false, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', checks: [], crossModel: false, tested: true })
   check('a finishing preflight is told that the candidate is the commit the round tested, and not HEAD', finishing.includes('the commit round 2 tested, an ancestor of `fix/rc24-tier1`') && finishing.includes('THE CANDIDATE IS NOT `HEAD` HERE') && finishing.includes('commit ' + 'c'.repeat(40) + ' must be an ancestor of `HEAD`') && !finishing.includes('`git ') && !prompts.preflight.includes('NOT `HEAD`'))
   check('a fork is recorded with the verdict it rides on, and with no other entry', JSON.stringify(triageRecord(ctx, [{ key: 'f-1', new: false, grade: 'breaks', verdict: 'confirmed', regression: false, fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }, { key: 'f-2', new: false, grade: 'breaks', fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }]).triage) === JSON.stringify([{ key: 'f-1', grade: 'breaks', verdict: 'confirmed', regression: false, fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }, { key: 'f-2', grade: 'breaks' }]))
@@ -3517,6 +3671,78 @@ async function triageOnce(ctx, launch, sources) {
   return { triage: { reporter: tName, report: t.report, sha256: t.sha256 }, handed: count }
 }
 
+// verifyWaves — THE VERIFY PHASE OF A `test` STAGE, IN A RUN WITH A QUEUE (the header: THEN THE
+// STAGE VERIFIES, IN WAVES). `from` is the state as it was read back after the stage's first
+// record. PER WAVE: the keys the queue prints (`queue.first`), in its rank, that this
+// invocation has not taken already — AT MOST `WAVE`, AND NEVER MORE THAN THE BUDGET HAS LEFT
+// (`queue.left`; a run that holds no budget bounds nothing) — a verifier for each, in
+// parallel, handed its key (`verdictPrompt`); THE REPORTS CHECKED; and THE QUEUE READ AGAIN,
+// which says what the wave left. It ends where the queue prints no key that is still to be
+// launched, or the budget has nothing left. A KEY IS LAUNCHED ONCE AN INVOCATION, whatever
+// its verifier left: its verdict is filed under the reporter `verify-<key>`, and a reporter
+// reports once an attempt — so a finding a launch left without a verdict is the next
+// invocation's, and the record script counts the launch by its report. A key no verifier can
+// be named for is passed over, and named.
+// WHAT A WAVE LEFT IS READ OFF THE QUEUE, AND NEVER OFF A RETURN: a finding the queue prints
+// again has no verdict that counts (`unverified`, with how its verifier ended — a return that
+// names a filing among them); a return that is not a filing's (`verdictFault`), a halt or no
+// return at all, of a finding the queue does NOT print again, is named (`unheld`) and decides
+// nothing — the state says where the finding stands. `contested` is the keys whose verifier's
+// held return says so: WHETHER THE FILING GAVE A BASIS IS THE FILED FILE'S, which this script
+// cannot read — the state's list of what is the human's names a contested finding with its
+// basis, and a key named here that it does not list filed none and is routed by its verdict.
+// EACH OF THE THREE IS A LINE OF THE LOG, by its key and with why; what goes back is HOW MANY.
+// It returns the state as it was last read, and `fault` where the report check (`unread`
+// absent) or the read of the queue (`unread`) could not be made. It halts nothing itself.
+async function verifyWaves(ctx, launch, built, from) {
+  const out = { state: from, waves: 0, launched: 0, unverified: 0, unheld: 0, contested: 0 }
+  const seen = []
+  const unverified = (key, why) => {
+    out.unverified++
+    log('NOT VERIFIED: `' + key + '` — ' + why + '. It awaits its verdict again, and nothing of the budget was spent on it')
+  }
+  for (;;) {
+    const queue = out.state.queue
+    const room = queue.left == null ? WAVE : Math.min(WAVE, queue.left)
+    const named = []
+    for (const key of queue.first || []) {
+      if (named.length >= room) break
+      if (seen.includes(key)) continue
+      seen.push(key)
+      const name = reporterName(['verify', key])
+      if (name && !launch.names.includes(name)) named.push({ key, name: launch.add(['verify', key]) })
+      else unverified(key, 'no verifier can be named for it: a verdict is filed under the reporter `verify-<key>`, which for this key is no slug of at most ' + SLUG_MAX + ' characters, or is a name this attempt has launched already')
+    }
+    if (!named.length) return out
+    out.waves++
+    out.launched += named.length
+    log('verify-real, wave ' + out.waves + ': ' + named.length + ' of the ' + queue.length + ' finding(s) the queue holds — ' + (queue.left == null ? 'the run holds no budget' : queue.left + ' verdict(s) of the budget left'))
+    const back = await parallel(named.map(({ key, name }) => () => roleStep('verify', 'verify:' + key, 'Verify', verdictPrompt(ctx, launch, name, key, built, queue.hand_on), VERDICT_SCHEMA)))
+    // THE REPORTS OF THIS WAVE, CHECKED — and then THE QUEUE, which says what the wave left.
+    const settled = await settleReports(ctx, launch, 'check-reports:wave' + out.waves, 'Verify')
+    if (settled.fault) return Object.assign(out, { fault: settled.fault, transient: !!settled.transient, step: settled.file ? { file: v.scratch + '/' + settled.file.file, sha256: settled.file.sha256 } : null })
+    const read = await readState()
+    if (!read.state) return Object.assign(out, { unread: true, fault: read.error, transient: !!read.transient, step: read.step || null })
+    out.state = read.state
+    named.forEach(({ key, name }, i) => {
+      const r = back[i]
+      const filed = !!r && r.status === 'filed'
+      const moved = setAside(settled.aside, name)
+      const ended = !filed ? endingOf(r)
+        : settled.missing.includes(name) ? (moved ? 'left a file at its report\'s path that is no report (`' + moved + '`), which was set aside' : 'returned and left no report')
+          : verdictFault(ctx, name, r, built.candidate.sha256)
+      if ((out.state.queue.first || []).includes(key)) unverified(key, 'its verifier ' + (ended || 'returned the path and the word of a filing') + ', and the queue prints the finding again: no verdict of it counts')
+      else if (ended) {
+        out.unheld++
+        log('NOT HELD: `' + key + '` — its verifier ' + ended + ' — and the queue does not print the finding again: the state says where it stands, and no return decides it')
+      } else if (r.contested) {
+        out.contested++
+        log('CONTESTED, BY ITS VERIFIER\'S RETURN: `' + key + '` — where its filing gave a basis the finding is the human\'s, and the state\'s list of what is the human\'s names it with that basis; where that list does not name it so, the filing gave none, and the finding is routed by its verdict. This script reads no filing, and cannot tell the two apart')
+      }
+    })
+  }
+}
+
 // driveFork — ruling 5: a contested fix, or one that needs a new mechanism, goes to the
 // human with a robust-advocate's case, and the proposal is driven before the human sees it —
 // by the advocate, as its definition has it, and then by an agent that is not the advocate.
@@ -3783,13 +4009,14 @@ async function runTest() {
   const ctx = { run: v.run, round: at.round, stage: 'test', attempt: at.attempt, scratch: v.scratch }
   const label = 'c' + ctx.round
   // IN A RUN WITH A QUEUE AN INVOCATION THAT WOULD CONTINUE IS NOT BUILT YET (the header: A
-  // RUN WITH A QUEUE TAKES ANOTHER PATH; the reshape's plan, T5b — its T6a and T6b build it).
-  // After its first record such a run stands where a row of its queue is unverified
+  // RUN WITH A QUEUE TAKES ANOTHER PATH; the reshape's plan, T5b — its T6b builds it; the
+  // stage verifies in the invocation that recorded its findings, which is its T6a).
+  // After that invocation such a run stands where a row of its queue is unverified
   // (`verify`) or a row nobody graded is left (`triage`). The lap below is the other path's:
   // it would grade every row a second time and launch an advocate. So the invocation is
   // refused here, by name, before any attempt is begun — a refusal of that path, never of
   // the stage: a stage that begins a round, or runs an item again, is taken as it stands.
-  if (hasQueue(state) && (at.triage || at.verify)) return { status: 'refused', stage: 'test', run: v.run, not_built: 'continuation', position: at, message: 'IN A RUN WITH A QUEUE THE CONTINUATION OF A `test` STAGE IS NOT BUILT YET: round ' + at.round + ' has its first record, and its position says ' + ['triage', 'verify'].filter((word) => at[word]).map((word) => '`' + word + '`').join(' and ') + ' (`next` is `' + state.next + '`) — ' + (at.verify ? 'a row of the queue is unverified, and budget is left' : '') + (at.verify && at.triage ? '; ' : '') + (at.triage ? 'a row nobody graded is left' : '') + '. This harness verifies nothing on that path and grades no row a second time until those steps are built (the build plan of the reshaped `test` stage, T6a and T6b). Nothing is to be repaired in the run. Nothing was run beyond the two reads, and no attempt was begun.', next: state.next, untriaged: state.untriaged, named: namedOf(state), arrived }
+  if (hasQueue(state) && (at.triage || at.verify)) return { status: 'refused', stage: 'test', run: v.run, not_built: 'continuation', position: at, message: 'IN A RUN WITH A QUEUE THE CONTINUATION OF A `test` STAGE IS NOT BUILT YET: round ' + at.round + ' has its first record, and its position says ' + ['triage', 'verify'].filter((word) => at[word]).map((word) => '`' + word + '`').join(' and ') + ' (`next` is `' + state.next + '`) — ' + (at.verify ? 'a row of the queue is unverified, and budget is left' : '') + (at.verify && at.triage ? '; ' : '') + (at.triage ? 'a row nobody graded is left' : '') + '. A stage of that path verifies in the invocation that records its findings; an invocation that CONTINUES one — no instrument, the filed verdicts taken, only what is missing launched — is not built yet (the build plan of the reshaped `test` stage, T6b). Nothing is to be repaired in the run. Nothing was run beyond the two reads, and no attempt was begun.', next: state.next, untriaged: state.untriaged, named: namedOf(state), arrived }
   // The round's triage is not finished, and this stage left it: finish it, and run nothing.
   if (at.triage) {
     if (v.scope != null || v.clause != null || v.crossModel != null) return { status: 'refused', stage: 'test', run: v.run, message: 'round ' + at.round + '\'s triage is not finished (`next` is `' + state.next + '`): this invocation finishes it and runs no instrument, so it takes no scope, clause or crossModel. Nothing was run beyond the two reads.', next: state.next, untriaged: state.untriaged, named: namedOf(state), arrived }
@@ -4001,8 +4228,9 @@ async function runTest() {
   // item's result and the triage's reporter in ONE batch, so that the row a red result is
   // filed as is graded by the entry that names it — then gated, committed and pushed as
   // every record is. NO BATCH IS TYPED, NO EXECUTOR IS LAUNCHED, AND NOTHING IS VERIFIED
-  // HERE: no pass, no verifier, no advocate. EVERY WAY OUT OF THIS BLOCK IS A RETURN: nothing
-  // below it runs for a run with a queue.
+  // BEFORE THAT RECORD. THEN THE VERIFY PHASE, AND THE SECOND RECORD (`verifyWaves`): no pass
+  // of a triage and no advocate. EVERY WAY OUT OF THIS BLOCK IS A RETURN: nothing below it
+  // runs for a run with a queue.
   if (hasQueue(state)) {
     const reds = unitStatus.filter((u) => u.status === 'red').map((u) => {
       const h = heldRan.find((x) => x.item === u.item)
@@ -4026,11 +4254,48 @@ async function runTest() {
     const last = await readState()
     if (!last.state) return haltAfter('read-back', 'the stage\'s first record is committed and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + last.error, { transient: !!last.transient, step: last.step || null })
     state = last.state
-    // WHAT THE STAGE RETURNS: it HUNTED — its findings are on record, graded, and nothing of
-    // them is verified. `next` is the state's, verbatim: `verify` while a row of the queue
-    // is unverified and budget is left. No entry, no key and no grade is in the return.
+    // THEN THE STAGE VERIFIES, IN WAVES (the header; the reshape's plan, T6a): what the queue
+    // prints, while the budget has verdicts left — the queue read again after every wave.
+    phase('Verify')
+    const spent = state.queue.spent
+    const ver = await verifyWaves(ctx, launch, built, state)
+    if (ver.fault && ver.unread) return haltAfter('read-back', 'the stage\'s first record is committed and pushed (' + recorded.result.commit + '), wave ' + ver.waves + ' of its verifiers ran, and the queue could not be read after it: ' + ver.fault + '. What a verifier filed is on disk, and the state counts it', { transient: !!ver.transient, step: ver.step, launched: launch.names })
+    if (ver.fault) return haltAfter('report-check', 'after wave ' + ver.waves + ' of the stage\'s verifiers ' + ver.fault + '. The stage\'s first record is committed and pushed (' + recorded.result.commit + '), and what a verifier filed is on disk', { transient: !!ver.transient, step: ver.step, launched: launch.names })
+    state = ver.state
+    // THE STAGE'S SECOND RECORD, where a verifier was launched: composed by the tool over
+    // EVERY REPORTER OF THE ATTEMPT THAT LEFT A REPORT — the last report check took every
+    // other off the list — and no other word: the record script takes what was filed itself.
+    // REFUSED AS ONE THAT CHANGES NOTHING, IT IS NO HALT: nothing was filed, and nothing is
+    // to be recorded. Every other refusal halts the stage at its record, as the first's does.
+    let second = null
+    if (ver.launched) {
+      phase('Record')
+      const again = await composeRecord('verdicts:r' + ctx.round, loopBranch, ctx, v.scratch + '/record/verdicts-r' + ctx.round + '-a' + ctx.attempt, 'docs(record): ' + subjectOf(v.run, ctx.round, 'the verdicts of the test stage'), launch.names.map((name) => 'reporter=' + name))
+      if (again.fault && again.refusal !== NO_CHANGE) return recordHalt('record', again, { refusal: again.refusal || null, launched: launch.names, first: recorded.result.commit })
+      if (again.fault) log('NOTHING TO RECORD after the verifiers: the record script refused the stage\'s second record as one that changes nothing (`' + NO_CHANGE + '`) — no verdict was filed since the first, and no batch is left. That is no halt')
+      else {
+        const taken = await recordStep('verdicts:r' + ctx.round, loopBranch, again.rec)
+        if (taken.fault) return recordHalt('record', taken, { launched: launch.names, first: recorded.result.commit })
+        const published = await pushRecord('push:verdicts', loopBranch)
+        if (!onIt(published, loopBranch, true)) return pushHalt(published, loopBranch, 'the stage\'s second record is committed on ' + loopBranch + ' (' + taken.result.commit + ') and the branch was not pushed')
+        const after = await readState()
+        if (!after.state) return haltAfter('read-back', 'the stage\'s second record is committed and pushed (' + taken.result.commit + '), and the state could not be read back: ' + after.error, { transient: !!after.transient, step: after.step || null })
+        state = after.state
+        second = taken.result.commit
+      }
+    }
+    // WHAT THE STAGE RETURNS: it HUNTED — its findings are on record, graded — and, where its
+    // second record was made, it VERIFIED: `record` is the first record's commit, and
+    // `verify` what the phase did — how many waves and launches, HOW MANY VERDICTS THE STATE
+    // COUNTS SINCE THE FIRST RECORD (the script's count, never this one's), what the budget
+    // has left, the second record's commit, and HOW MANY findings a launch left without a
+    // verdict, how many returns were not held and how many say contested — each of those a
+    // line of the log, by its key. `next` is the state's, verbatim: `verify` while a row of
+    // the queue is unverified and budget is left. No entry, no key, no grade, no verdict and
+    // no basis is in the return. (What a stage of this path returns is the plan's T7: until
+    // then the status says which record is the stage's last.)
     return Object.assign({
-      status: 'hunted',
+      status: second ? 'verified' : 'hunted',
       stage: 'test',
       run: v.run,
       round: ctx.round,
@@ -4039,6 +4304,7 @@ async function runTest() {
       candidate: built.candidate,
       record: recorded.result.commit,
       triage: once.triage,
+      verify: { waves: ver.waves, launched: ver.launched, verdicts: state.queue.spent - spent, left: state.queue.left, record: second, unverified: ver.unverified, unheld: ver.unheld, contested: ver.contested },
       counts: { items: state.items.length, items_run: hunting.length + always.length + late.length + held.length, reporters: launch.names.length, findings_in: once.handed, blockers: state.blockers, for_the_human: state.human_list, voided: unitStatus.filter((u) => u.status === 'void').map((u) => u.item) },
       unasserted: unassertedBy,
       held: heldRan.map((h) => Object.assign({ item: h.item }, heldSaid(h))),

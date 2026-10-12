@@ -114,6 +114,30 @@
 //                                  its rendered report, as over any. Its return is read off the
 //                                  ONE line the call printed, which is reported (`reads`):
 //                                  the path, the hash, what each source handed
+//   verify:*   finding-verifier    A VERIFIER THAT FILES ITS VERDICT, IN A RUN WITH A QUEUE — what
+//                                  its definition has it do where the prompt spells a
+//                                  `dev/stabilize-record verdict` call (under any other prompt
+//                                  it is a scripted reporter like any, the other path's): THE
+//                                  KIT'S CALL FIRST, as the prompt spells it — a prompt that
+//                                  spells none fails the run, and so does a kit that exits with
+//                                  anything but 0 or 27, its word for a part it does not print;
+//                                  THE READ THAT PRINTS ITS FINDING'S ROW, which must print the
+//                                  row of the key the filing's call names; the hash asserted by
+//                                  the call of its binary line; ITS REPORT, written and handed
+//                                  over; THEN THE FILING — the members the scenario scripts
+//                                  (`files`: verdict, refutation, reason, regression, contested,
+//                                  hands_on), with the key of the call, the hash it asserted as
+//                                  `candidate` and, beside a regression, the previous release's
+//                                  as `previous` — written as ONE JSON object to the file the
+//                                  call names and filed by THE CALL AS THE PROMPT SPELLS IT. Its
+//                                  return is read off the ONE line the call printed, which is
+//                                  reported (`reads`): the path, the word, `contested`. A call
+//                                  the script refuses is its HALT, the line verbatim. A script
+//                                  with NO `files` is A VERIFIER THAT FILED NOTHING AND SAYS IT
+//                                  DID: it returns the path its prompt says the return is held
+//                                  to. `returns` is laid over what it returns: a verifier that
+//                                  did not return what the call printed. A scripted halt
+//                                  (`status: halted`) reports and files nothing
 //   record:*   build-executor      the steps the prompt lists, in its order: the payload
 //                                  written to the file the prompt names — by a file write,
 //                                  as an agent's file tool writes one — and the batch
@@ -122,9 +146,9 @@
 //                                  both are git steps (`git:hold-*:record-*`, `git:record:*`)
 //
 // AND EVERY AGENT RUNS THE READS ITS PROMPT NAMES — `dev/stabilize-record item`, `item-doors`,
-// `untriaged`, `pending`, each as the prompt spells it: what a brief, a door list, the
-// untriaged rows and a pending batch's subject are, an agent reads from the record by key,
-// and a read that fails fails the run. What each read printed is reported (`reads`), and
+// `untriaged`, `pending`, `row`, each as the prompt spells it: what a brief, a door list, the
+// untriaged rows, a pending batch's subject and a finding's row are, an agent reads from the
+// record by key, and a read that fails fails the run. What each read printed is reported (`reads`), and
 // every prompt an agent was handed (`prompts`): the suite holds both.
 //
 // AND EVERY COMMAND AN AGENT RUNS IS TAKEN OUT OF ITS PROMPT, AS IT IS SPELLED THERE: a
@@ -292,7 +316,7 @@ function writeReport(label, prompt, said) {
 // ---- what an agent reads by key ----
 // Every read of the record its prompt names, run as spelled: the commands are the prompt's.
 function readByKey(label, prompt) {
-  for (const [, command] of prompt.matchAll(/`(dev\/stabilize-record (?:item|item-doors|untriaged|pending) [^`]+)`/g)) {
+  for (const [, command] of prompt.matchAll(/`(dev\/stabilize-record (?:item|item-doors|untriaged|pending|row) [^`]+)`/g)) {
     const out = sh(command)
     if (out.code !== 0) fail('the read `' + command + '` that the prompt of `' + label + '` names was refused: ' + out.stderr)
     reads.push({ label, command, printed: out.stdout.trim() })
@@ -579,11 +603,66 @@ function reporter(label, prompt, opts) {
   return back
 }
 
+// ---- a verifier, in a run with a queue: it files its verdict ----
+// Under a prompt that spells no `dev/stabilize-record verdict` call it is the other path's: a
+// scripted reporter, whose verdict goes back in its return.
+function verifier(label, prompt, opts) {
+  if (!(label in scripted)) fail('no agent is scripted for the label `' + label + '`')
+  const command = span(prompt, 'dev/stabilize-record verdict --run ')
+  if (!command) return reporter(label, prompt, opts)
+  used.add(label)
+  const said = scripted[label]
+  const file = / --from (\S+)/.exec(command)
+  const name = / --reporter (\S+)/.exec(command)
+  if (!file || !name || !name[1].startsWith('verify-')) fail('the prompt of `' + label + '` spells a `dev/stabilize-record verdict` call that names no file to read, or no verifier\'s reporter: ' + command)
+  const key = name[1].slice('verify-'.length)
+  // THE KIT FIRST: what every verifier looks up, by the call the prompt spells. It exits 27
+  // where a part is not printed — an answer, and no halt.
+  const kit = span(prompt, 'dev/stabilize-record kit --run ')
+  if (!kit || prompt.indexOf('`' + kit + '`') > prompt.indexOf('`' + command + '`')) fail('the prompt of `' + label + '` spells no lookup kit\'s call ahead of the call that files its verdict')
+  const looked = sh(kit)
+  if (looked.code !== 0 && looked.code !== 27) fail('the kit the prompt of `' + label + '` spells was refused: ' + looked.stderr)
+  reads.push({ label, command: kit, printed: 'exit ' + looked.code })
+  // THE FINDING IS A ROW IT READ BY ITS KEY (`readByKey`): the row of the key it files for.
+  const row = reads.find((r) => r.label === label && r.command.startsWith('dev/stabilize-record row '))
+  if (!row || JSON.parse(row.printed).row.key !== key) fail('the prompt of `' + label + '` names no read that prints the row of `' + key + '`, the finding its verdict is filed for')
+  const binary = /^BINARY: candidate `([^`]+)` sha256 [0-9a-f]{64} \(commit [0-9a-f]{40}, label [^)]+\); previous release `([^`]+)`/m.exec(prompt)
+  const spelled = span(prompt, 'dev/stabilize-step hash ')
+  if (!binary || !spelled) fail('the prompt of `' + label + '` hands it no two binaries, or no call that asserts the candidate\'s hash')
+  const hashed = sh(spelled)
+  if (hashed.code !== 0 || JSON.parse(hashed.stdout).content_sha256 !== sha256Of(binary[1])) fail('the hash call the prompt of `' + label + '` spells is not of the binary on its BINARY: line: ' + hashed.stderr)
+  const asserted = (scenario.wrongBinary || []).includes(label) ? '0'.repeat(64) : JSON.parse(hashed.stdout).content_sha256
+  // A HALT FILES NOTHING: it is reported, and returned.
+  if (said.status === 'halted') {
+    const report = writeReport(label, prompt, 'Halted: ' + JSON.stringify(said.halt || null))
+    return Object.assign({}, said, report ? { report } : {})
+  }
+  // THE REPORT, THEN THE FILING, THEN THE RETURN.
+  const report = writeReport(label, prompt, 'Verified: ' + JSON.stringify(said.files || null))
+  let back = { status: 'filed' }
+  if (said.files) {
+    const filing = Object.assign({ key, candidate: asserted }, 'regression' in said.files ? { previous: sha256Of(binary[2]) } : {}, said.files)
+    fileTool(file[1], JSON.stringify(filing))
+    const out = sh(command)
+    if (out.code !== 0) return Object.assign({ status: 'halted', halt: { root_cause: 'the filing was refused, and the refusal is not one a corrected file answers', evidence: command + '\n' + out.stderr.trim(), tree_state: treeState(), recommendation: 'nothing was filed: the finding awaits its verdict again' } }, report ? { report } : {})
+    const line = JSON.parse(out.stdout)
+    reads.push({ label, command, printed: out.stdout.trim() })
+    back = { status: 'filed', filing: line.verdict, word: line.word, contested: line.contested }
+  } else {
+    // IT FILED NOTHING, AND SAYS IT DID: the path is the one its prompt says a return is held to.
+    const held = /held to `([^`]+\/verdicts\/[^`]+\.json)`/.exec(prompt)
+    if (!held) fail('the prompt of `' + label + '` does not say which path the return of a verifier is held to')
+    back.filing = held[1]
+  }
+  return Object.assign(back, { asserted_sha256: asserted }, report ? { report } : {}, said.returns || {})
+}
+
 const KINDS = [
   { labels: /^git:/, agentType: 'build-git', play: gitStep },
   { labels: /^preflight(-second)?$/, agentType: 'stabilize-preflight', play: preflight },
   { labels: /^scope$/, agentType: 'stabilize-scope', play: scopeStep },
   { labels: /^triage$/, agentType: 'finding-triage', play: oneTriage },
+  { labels: /^verify:/, agentType: 'finding-verifier', play: verifier },
   { labels: /^record:/, agentType: 'build-executor', play: recordStep },
   { labels: /^probe:required:/, agentType: 'milestone-code-reviewer', play: probeReviewer },
   { labels: /^probe:payload:/, agentType: 'build-executor', play: probePayload },
