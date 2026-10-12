@@ -153,11 +153,45 @@
 // and never this script's. No key is in the return: each finding a launch left without a
 // verdict, each return that was not held and each that says contested is A LINE OF THE LOG,
 // by its key, with why.
-// WHAT OF THAT PATH IS NOT BUILT IS ITS CONTINUATION, the task that follows: AN INVOCATION
-// THAT WOULD CONTINUE — the state's position says `verify`, or `triage` — IS REFUSED, after
-// its two reads, as not built: a refusal of that path, never of the stage. NO ADVOCATE IS
-// LAUNCHED ON THAT PATH: a contested fix is the `fix` half's. A RUN WITHOUT AN ORDER TAKES
-// THE PATH ABOVE, UNCHANGED.
+// AN INVOCATION THAT CONTINUES (that plan's §3 and T6b; the rulings of 2026-10-10, 4: nothing
+// runs twice). A stage that returned or died after its first record leaves the round where
+// the state's position says `verify` — a row of the queue is unverified, and budget is left
+// — or `triage` — a row nobody graded is left, which no triage saw: a red row a batch filed
+// under its own key, a seed added since. THE INVOCATION THAT FOLLOWS CONTINUES THE STAGE
+// (`continuing`, `continueTest`), FROM THE COMMITTED STATE AND FROM GIT: its two reads — a
+// record that was applied and not committed is finished by the first, and by nothing else
+// of that invocation (`finishRecord`) — its attempt begun on record, on the candidate the
+// round tested, and the two binaries, answered by the builds that stand. NO INSTRUMENT RUNS:
+// no preflight, no scope step, no gate, no held check, no reporter of an item. A TRIAGE RUNS
+// ONLY OVER ROWS NOBODY GRADED — one source, the read that prints them — AND NO ROW IS GRADED
+// A SECOND TIME; what it graded is recorded before anything is verified, composed by the
+// tool from that attempt's rendering. THE FILED VERDICTS ARE TAKEN AS THEY STAND — the state
+// counted each from the moment it was filed, so the queue prints none of their findings, and
+// `undrivable` is one of them — AND ONLY WHAT IS MISSING IS LAUNCHED: the same phase
+// (`verifyThenRecord`), under the continuation's own attempt, so that a finding a launch
+// left without a verdict gets a verifier whose report and whose filing are names the record
+// script takes, and whose launch that script counts — left so twice, the finding is the
+// human's. ITS RECORD AFTER THE PHASE takes what its verifiers filed, what an earlier
+// invocation's had — the first read says that one is owed a record (`filed`) — and every
+// report an earlier invocation left pending. AND WHERE IT HAS NOTHING TO RECORD — no
+// verifier of it left a report, no filed verdict is owed — IT COMPOSES NONE: its attempt is
+// then one that left its marker and no record, the record script counts those, and after
+// two in a row the stage is the human's. A finding whose verifier leaves nothing at all has
+// no other counter.
+// A WAVE THAT IS THE LAST (that plan's §2.2 and E7). The account's usage limit never reaches
+// this script as a message — it is handed nothing. So A VERIFIER CALL IS NEVER TRIED TWICE
+// (`agentR`, `once`): one that returns nothing leaves ITS finding unverified, named, and the
+// phase goes on; A WAVE IN WHICH TWO CALLS RETURNED NOTHING (SILENT_LAST) IS THE LAST — its
+// reports are checked, the queue is read, the stage records what was filed, and no further
+// wave is launched. AND A STAGE WHOSE STEPS THEN RETURN NOTHING TOO HALTS AS WHAT MAY BE THE
+// ACCOUNT'S LIMIT, NAMING THE FILED VERDICTS (`limitSaid`): by the path of each one this
+// invocation's verifiers filed, by the state's count, by the directory they lie in and by
+// the state document that lists them — files of this machine's disk, and of no commit, until
+// the invocation that follows continues and records them. EVERY OTHER ROLE IS RETRIED AS IT
+// WAS, bounded by the breaker — which is asked before every try, and no longer only before
+// a call's first.
+// NO ADVOCATE IS LAUNCHED ON THAT PATH: a contested fix is the `fix` half's. A RUN WITHOUT AN
+// ORDER TAKES THE PATH ABOVE, UNCHANGED.
 //
 // WHAT A STAGE HOLDS IS NAMED BY ITS COMMIT, AND NOTHING IS BUILT TWICE (that plan's T5b; its
 // review's S12 — for BOTH kinds of run). The two builds, the candidate's gate and every held
@@ -642,6 +676,12 @@ const VERIFY_PASSES = 3
 // `queue.first` — "at most eight, as many as one wave of verifiers launches"; the fence holds
 // the two numbers together). A wave is never larger than what the budget has left, either.
 const WAVE = 8
+// HOW MANY VERIFIER CALLS OF ONE WAVE MAY RETURN NOTHING BEFORE THAT WAVE IS THE LAST, IN A
+// RUN WITH A QUEUE (the reshape's plan, T6b; its §2.2 and E7). The account's usage limit never
+// reaches this script as a message: observed once, 2026-10-10, it was handed NOTHING, 297
+// times. One call that returns nothing is one finding left unverified, and no stop — a stop
+// costs a record and a restart; at a real limit every call of the wave is silent.
+const SILENT_LAST = 2
 // The verdicts a filing says (dev/stabilize-record: verdict), one of which the call that
 // files it prints as `word`. The fence holds the list to that script's.
 const FILED_WORDS = ['confirmed', 'refuted', 'undrivable']
@@ -955,8 +995,8 @@ const HALTS_AFTER = {
   'report-check': { phase: 'reports', when: 'the report check after the instruments could not be read — its step died, refused, or the breaker is tripped — or it names a file no launched reporter wrote. IN A RUN WITH A QUEUE, the same of the report check after a wave of verifiers: the first record is committed, and what was filed is on disk' },
   'scope-aside': { phase: 'scope', when: 'the round\'s scope was set aside by the report check: the file at its path is not what the record script would have written' },
   'stood-on': { phase: 'reports', when: 'a reporter the stage stands on left no report: the attempt\'s marker, the first preflight, the scope step, a second preflight that provided, the preflight of a finishing lap' },
-  'triage': { phase: 'triage', when: 'ANY ending of triage but its grades with its report — no result, a halt, counts that do not balance, a key that is none or is given twice, no report — and, inside a pass, a verifier\'s name that cannot be made and a report check that could not be read. IN A RUN WITH A QUEUE, any ending of the one triage but its entries handed over, with their rendered report: a halt, a return that names another path than that report\'s or no hash, a call typed with other counts than the stage handed' },
-  'record': { phase: 'record', when: 'the record step: the executor applied nothing or its batch was refused, the record\'s gate left no verdict, or the commit step refused — the batch stays applied where it was, and the next invocation finishes it. IN A RUN WITH A QUEUE, where the tool composes the batch: the composing step returned nothing, or was refused — by a word of the record script (COMPOSE_REFUSALS; `words` only once it was asked for again), with nothing written, or by a word of the tool. Of such a run\'s SECOND record the same, but for `no-change`, which is no halt: nothing was filed, and there is nothing to record' },
+  'triage': { phase: 'triage', when: 'ANY ending of triage but its grades with its report — no result, a halt, counts that do not balance, a key that is none or is given twice, no report — and, inside a pass, a verifier\'s name that cannot be made and a report check that could not be read. IN A RUN WITH A QUEUE, any ending of the one triage but its entries handed over, with their rendered report: a halt, a return that names another path than that report\'s or no hash, a call typed with other counts than the stage handed — and the same of the triage an invocation that continues such a stage launches over the rows nobody graded' },
+  'record': { phase: 'record', when: 'the record step: the executor applied nothing or its batch was refused, the record\'s gate left no verdict, or the commit step refused — the batch stays applied where it was, and the next invocation finishes it. IN A RUN WITH A QUEUE, where the tool composes the batch: the composing step returned nothing, or was refused — by a word of the record script (COMPOSE_REFUSALS; `words` only once it was asked for again), with nothing written, or by a word of the tool. Of such a run\'s SECOND record the same, but for `no-change`, which is no halt: nothing was filed, and there is nothing to record. Of the records of an invocation that continues the same: of what it graded as of a first, of what its verifiers filed as of a second' },
   'push': { phase: 'push', when: 'the push of the record\'s commit failed or was refused: the record is committed, the push is owed, and the next invocation\'s first read makes it' },
   'read-back': { phase: 'state', when: 'the state could not be read back once the record was committed and pushed: nothing is lost, and the next invocation reads it. IN A RUN WITH A QUEUE, also the read of the queue after a wave of verifiers: what was filed is on disk, and the state the next invocation reads counts it' },
 }
@@ -1544,6 +1584,43 @@ function verdictFault(ctx, name, r, expected) {
   if (typeof r.contested !== 'boolean') return 'did not return `contested` as true or false: whether its filing gave a basis, as the call prints it'
   if (r.asserted_sha256 !== expected) return 'returned ' + (r.asserted_sha256 == null ? 'no `asserted_sha256`' : SHA256_RE.test(String(r.asserted_sha256)) ? 'the `asserted_sha256` ' + r.asserted_sha256 : 'an `asserted_sha256` that is no sha256') + ', which is not the candidate\'s binary (' + expected + ')'
   return null
+}
+// continuing — WHAT OF A `test` STAGE AN INVOCATION CONTINUES, IN A RUN WITH A QUEUE (the
+// reshape's plan, §3 and T6b): the words the state's position says of the stage that left the
+// round open, in the order they are worked — `triage`: a row nobody graded is left, one no
+// triage saw; `verify`: a row of the queue is unverified, and budget is left. None: the
+// invocation begins a round or runs an item again — or the run has no queue, and what its
+// position says is the other path's lap.
+function continuing(state, at) {
+  return hasQueue(state) ? ['triage', 'verify'].filter((word) => at[word] === true) : []
+}
+// continueFault — why an invocation that continues takes nothing of what it was passed, or
+// null. It runs no instrument and resolves no scope, so it takes no scope, no clause and no
+// cross-model pass; and it has no preflight, no instrument and no step of its own to be
+// stopped after — but its first read, which only looks.
+function continueFault(a) {
+  const passed = ['scope', 'clause', 'crossModel'].filter((name) => a[name] != null).concat(a.stopAfter != null && a.stopAfter !== 'state' ? ['stopAfter: \'' + a.stopAfter + '\''] : [])
+  return passed.length ? 'this invocation CONTINUES the round\'s `test` stage — it runs no instrument, resolves no scope and grades only rows nobody graded — so it takes no scope, clause or crossModel, and can be stopped after nothing but its first read (stopAfter: \'state\'): it was passed ' + passed.join(', ') : null
+}
+// limitSaid — WHAT A HALT SAYS, AND NAMES, WHERE IT MAY BE THE ACCOUNT'S USAGE LIMIT (the
+// reshape's plan, T6b; its §2.2). The limit never reaches this script as a message, so the
+// halt says what it saw and never what it is: `last` is the wave that was made the last —
+// its number, and how many of its verifier calls returned nothing — and the step that halted
+// returned nothing too. AND IT NAMES THE FILED VERDICTS, because until the stage's record
+// takes them they are files of this machine's disk and of no commit: `counted`, how many
+// verdicts the state counts in the round, as it was last read — on record or filed;
+// `files`, the path of each one a verifier of THIS invocation filed — held by its return and
+// by the queue, which did not print the finding again; `unconfirmed`, the paths returned as
+// filed in a wave whose report check or whose read of the queue did not come back, which
+// nothing held; and `directory`, where every filed verdict of the round lies. Which of them
+// count is the state document's `filed`, in the file every return names (`named.document`):
+// no step relays a filing, and this script reads none.
+function limitSaid(ctx, last, counted, files, unconfirmed) {
+  const directory = runDir(ctx.run) + '/r' + ctx.round + '/verdicts'
+  return {
+    more: { limit: { possible: true, wave: last.wave, silent: last.silent }, filed: { counted, files, unconfirmed, directory } },
+    says: ' THIS MAY BE THE ACCOUNT\'S USAGE LIMIT — this script cannot tell: a limit never reaches it as a message, it is handed nothing. ' + last.silent + ' verifier call(s) of wave ' + last.wave + ' returned nothing, so that wave was made the last, and then this step returned nothing too. WHAT WAS FILED IS NOT LOST, AND IS IN NO COMMIT YET: the state counts ' + counted + ' verdict(s) in round ' + ctx.round + ', and each one that is filed is a file under ' + directory + '/ on this machine\'s disk' + (files.length ? ' — of this invocation\'s verifiers: ' + files.join(', ') : ' — no verifier of this invocation filed one') + (unconfirmed.length ? '; returned as filed in the wave whose report check or whose read of the queue did not come back, and held by nothing: ' + unconfirmed.join(', ') : '') + '. The state document this return names lists every filed verdict with whether it counts (`filed`). Wait for the window, then invoke the stage again with the same args: where the state\'s position still hands it the stage, it CONTINUES — no instrument, the filed verdicts taken as they stand, and only what is missing launched; where it does not, nothing is left to verify, and the run\'s next record takes what is filed.',
+  }
 }
 
 // previousOf — the release the run measures against, as its record names it: what the
@@ -2886,6 +2963,15 @@ function selfTest() {
   check('a return that does not say `contested` as true or false is not held', [undefined, null, 'true', 'a basis', 1].every((contested) => isText(heldWith({ contested })) && heldWith({ contested }).includes('`contested` as true or false')))
   check('a return without the hash it asserted, or with another, is not held', heldWith({ asserted_sha256: undefined }).startsWith('returned no `asserted_sha256`') && heldWith({ asserted_sha256: 'a'.repeat(64) }).includes('the `asserted_sha256` ' + 'a'.repeat(64) + ', which is not the candidate\'s binary (' + 'b'.repeat(64) + ')') && heldWith({ asserted_sha256: 'a sentence' }).includes('an `asserted_sha256` that is no sha256') && !heldWith({ asserted_sha256: 'a sentence' }).includes('a sentence'))
   check('a verifier that files returns no verdict, and its schema requires nothing but its status', JSON.stringify(Object.keys(VERDICT_SCHEMA.properties)) === JSON.stringify(['status', 'halt', 'filing', 'word', 'contested', 'asserted_sha256', 'report']) && JSON.stringify(VERDICT_SCHEMA.required) === JSON.stringify(['status']) && VERDICT_SCHEMA.properties.word.enum === undefined && !('verdict' in VERDICT_SCHEMA.properties) && !('left_open' in VERDICT_SCHEMA.properties))
+  // AN INVOCATION THAT CONTINUES, AND A WAVE THAT IS THE LAST: where a stage is continued and
+  // what such an invocation takes; how many silent calls end the phase; and what the halt
+  // after them says and names.
+  const withQueue = { queue: { budget: 30, hand_on: 2, spent: 1, left: 29, length: 1, first: ['f-1'], classes: [] } }
+  check('an invocation continues a stage where the run has a queue and the position says `triage` or `verify` — worked in that order — and nowhere else', JSON.stringify(continuing(withQueue, { round: 2, attempt: 2, verify: true })) === '["verify"]' && JSON.stringify(continuing(withQueue, { round: 2, attempt: 2, verify: true, triage: true })) === '["triage","verify"]' && JSON.stringify(continuing(withQueue, { round: 2, attempt: 2, triage: true })) === '["triage"]' && continuing(withQueue, { round: 3, attempt: 1 }).length === 0 && continuing(withQueue, { round: 2, attempt: 2, rerun: { clause: 'c' } }).length === 0 && continuing({ queue: null }, { round: 2, attempt: 2, triage: true }).length === 0 && continuing({}, { round: 2, attempt: 2, verify: true }).length === 0)
+  check('an invocation that continues takes no scope, clause or cross-model pass, and is stopped after nothing but its first read', continueFault(base) === null && continueFault(Object.assign({}, base, { stopAfter: 'state' })) === null && [['scope', 'everything'], ['clause', 'no-lost-files'], ['crossModel', ['row-3']]].every(([name, value]) => isText(continueFault(Object.assign({}, base, { [name]: value }))) && continueFault(Object.assign({}, base, { [name]: value })).endsWith('it was passed ' + name)) && ['preflight', 'instruments', 'triage'].every((stop) => continueFault(Object.assign({}, base, { stopAfter: stop })).endsWith('it was passed stopAfter: \'' + stop + '\'')))
+  check('two verifier calls of one wave that return nothing make it the last', SILENT_LAST === 2)
+  const limit = limitSaid(tested, { wave: 3, silent: 2 }, 7, [verdictFile(tested, filer)], [verdictFile(tested, 'verify-f-2')])
+  check('a halt that may be the account\'s limit says what it saw and never that it is one, and names the filed verdicts: the state\'s count, each path, what nothing held, and where they lie', JSON.stringify(limit.more) === JSON.stringify({ limit: { possible: true, wave: 3, silent: 2 }, filed: { counted: 7, files: ['completions/artifacts/rc24-tier1/r2/verdicts/verify-f-1.a4.json'], unconfirmed: ['completions/artifacts/rc24-tier1/r2/verdicts/verify-f-2.a4.json'], directory: 'completions/artifacts/rc24-tier1/r2/verdicts' } }) && limit.says.includes('THIS MAY BE THE ACCOUNT\'S USAGE LIMIT') && limit.says.includes('2 verifier call(s) of wave 3 returned nothing') && limit.says.includes('the state counts 7 verdict(s) in round 2') && limit.says.includes('held by nothing: completions/artifacts/rc24-tier1/r2/verdicts/verify-f-2.a4.json') && limit.says.includes('it CONTINUES') && limitSaid(tested, { wave: 1, silent: 8 }, 0, [], []).says.includes('no verifier of this invocation filed one') && !limitSaid(tested, { wave: 1, silent: 8 }, 0, [], []).says.includes('held by nothing'))
   const finishing = preflightPrompt(ctx, launcher(ctx), 'preflight', { image: false, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', checks: [], crossModel: false, tested: true })
   check('a finishing preflight is told that the candidate is the commit the round tested, and not HEAD', finishing.includes('the commit round 2 tested, an ancestor of `fix/rc24-tier1`') && finishing.includes('THE CANDIDATE IS NOT `HEAD` HERE') && finishing.includes('commit ' + 'c'.repeat(40) + ' must be an ancestor of `HEAD`') && !finishing.includes('`git ') && !prompts.preflight.includes('NOT `HEAD`'))
   check('a fork is recorded with the verdict it rides on, and with no other entry', JSON.stringify(triageRecord(ctx, [{ key: 'f-1', new: false, grade: 'breaks', verdict: 'confirmed', regression: false, fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }, { key: 'f-2', new: false, grade: 'breaks', fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }]).triage) === JSON.stringify([{ key: 'f-1', grade: 'breaks', verdict: 'confirmed', regression: false, fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }, { key: 'f-2', grade: 'breaks' }]))
@@ -3157,7 +3243,8 @@ const cycleLimit = v.raise ? v.raise.cycles : DEFAULT_CYCLES
 // ---- running agents ----
 // agentR — an agent() call retried on a transient failure (a throw, or a null return: a
 // subagent that died on a terminal API error), with milestone-build.js's rate-limit breaker:
-// once two DIFFERENT calls have exhausted their retries the run stops spawning. A retry is
+// once two DIFFERENT calls have exhausted their retries the run stops spawning — a call that
+// is between two of its own tries included. A retry is
 // told what a dead attempt may have left; it is never told to clean the tree, because the
 // untracked files under the run's directory are other agents' reports.
 const TRANSIENT_RETRIES = 2
@@ -3168,14 +3255,23 @@ let breakerTripped = false
 let triesSeen = null
 // `seen`, where a caller hands one: how often the call was tried (`tries`) — what tells a
 // held command this invocation's own dead try started from one that was there before it.
-async function agentR(prompt, opts, again, seen) {
+// THE BREAKER IS ASKED BEFORE EVERY TRY, not only before a call's first (the reshape's plan,
+// T6b; the row `wf-breaker-parallel`, in part): a call that is between two tries when the
+// breaker trips — beside others, in a `parallel` — is not spawned again.
+// `once`: A CALL THAT IS NEVER TRIED TWICE — a verifier's, in a run with a queue (that plan's
+// §2.2 and E7). What it returned nothing for is ONE FINDING LEFT UNVERIFIED, which its wave
+// counts (`verifyWaves`: two in a wave make it the last) — so such a call exhausts nothing
+// and feeds no breaker: two stray deaths in two waves must not end every step that follows,
+// the stage's record among them. EVERY OTHER ROLE IS RETRIED AS IT WAS.
+async function agentR(prompt, opts, again, seen, once) {
   const lbl = (opts && opts.label) ? opts.label : 'agent'
-  if (breakerTripped) {
-    log('rate-limit breaker is tripped — NOT spawning ' + lbl)
-    return null
-  }
+  const tries = once ? 1 : TRANSIENT_RETRIES + 1
   let lastErr
-  for (let attempt = 0; attempt <= TRANSIENT_RETRIES; attempt++) {
+  for (let attempt = 0; attempt < tries; attempt++) {
+    if (breakerTripped) {
+      log('rate-limit breaker is tripped — NOT spawning ' + lbl + (attempt ? ' again (try ' + (attempt + 1) + ' of ' + tries + ')' : ''))
+      return null
+    }
     const note = attempt === 0 ? '' : '\n\n' + (again || LOOK_AGAIN)
     if (seen) seen.tries = attempt + 1
     try {
@@ -3183,13 +3279,14 @@ async function agentR(prompt, opts, again, seen) {
       if (triesSeen) triesSeen.push({ ended: result != null ? 'returned' : 'nothing' })
       if (result != null) return result
       lastErr = new Error('agent returned null')
-      log('null return on ' + lbl + ' (attempt ' + (attempt + 1) + '/' + (TRANSIENT_RETRIES + 1) + ')')
+      log('null return on ' + lbl + ' (attempt ' + (attempt + 1) + '/' + tries + ')')
     } catch (e) {
       lastErr = e
       if (triesSeen) triesSeen.push({ ended: 'threw', message: String((e && e.message) || e) })
-      log('transient failure on ' + lbl + ' (attempt ' + (attempt + 1) + '/' + (TRANSIENT_RETRIES + 1) + ') — ' + ((e && e.message) || e))
+      log('transient failure on ' + lbl + ' (attempt ' + (attempt + 1) + '/' + tries + ') — ' + ((e && e.message) || e))
     }
   }
+  if (once) return null
   log('exhausted ' + (TRANSIENT_RETRIES + 1) + ' attempts on ' + lbl + ' (' + ((lastErr && lastErr.message) || lastErr) + ')')
   if (!exhaustedLabels.includes(lbl)) exhaustedLabels.push(lbl)
   if (exhaustedLabels.length >= 2 && !breakerTripped) {
@@ -3289,8 +3386,9 @@ async function buildBoth(label, sha, previous, phaseTitle) {
   if (before.fault) return before
   return { candidate: { label, sha, binary: built.binary, sha256: built.sha256 }, previous: { version: before.version, binary: before.binary, sha256: before.sha256 }, image: null }
 }
-function roleStep(role, label, phaseTitle, prompt, schema) {
-  return agentR(prompt, { label, phase: phaseTitle, agentType: ROLES[role].agentType, schema })
+// (`once`: a call that is never tried twice — `agentR`.)
+function roleStep(role, label, phaseTitle, prompt, schema, once) {
+  return agentR(prompt, { label, phase: phaseTitle, agentType: ROLES[role].agentType, schema }, null, null, once)
 }
 
 // halt — every way a stage stops short, as one shape. Committed work stands; the next
@@ -3692,10 +3790,20 @@ async function triageOnce(ctx, launch, sources) {
 // cannot read — the state's list of what is the human's names a contested finding with its
 // basis, and a key named here that it does not list filed none and is routed by its verdict.
 // EACH OF THE THREE IS A LINE OF THE LOG, by its key and with why; what goes back is HOW MANY.
+// A VERIFIER CALL IS NEVER TRIED TWICE, AND A WAVE IN WHICH `SILENT_LAST` OF THEM RETURNED
+// NOTHING IS THE LAST (the reshape's plan, T6b; its §2.2 and E7). The account's usage limit
+// reaches this script as nothing at all, so one silent call is its finding's alone — named,
+// unverified, and the phase goes on — and two in one wave end the phase: that wave's reports
+// are still checked and the queue still read, and no further wave is launched (`last`: the
+// wave, and how many of its calls were silent; `silent`: how many in the whole phase). WHAT
+// THIS INVOCATION'S VERIFIERS FILED is kept as the one path a filing of each has
+// (`filings`) — a return that is held, of a finding the queue does not print again — for the
+// halt that names them where the steps after such a wave return nothing too; `unconfirmed`
+// is the same of a wave whose check or read did not come back, held by the returns alone.
 // It returns the state as it was last read, and `fault` where the report check (`unread`
 // absent) or the read of the queue (`unread`) could not be made. It halts nothing itself.
 async function verifyWaves(ctx, launch, built, from) {
-  const out = { state: from, waves: 0, launched: 0, unverified: 0, unheld: 0, contested: 0 }
+  const out = { state: from, waves: 0, launched: 0, unverified: 0, unheld: 0, contested: 0, silent: 0, last: null, filings: [], unconfirmed: [] }
   const seen = []
   const unverified = (key, why) => {
     out.unverified++
@@ -3717,12 +3825,18 @@ async function verifyWaves(ctx, launch, built, from) {
     out.waves++
     out.launched += named.length
     log('verify-real, wave ' + out.waves + ': ' + named.length + ' of the ' + queue.length + ' finding(s) the queue holds — ' + (queue.left == null ? 'the run holds no budget' : queue.left + ' verdict(s) of the budget left'))
-    const back = await parallel(named.map(({ key, name }) => () => roleStep('verify', 'verify:' + key, 'Verify', verdictPrompt(ctx, launch, name, key, built, queue.hand_on), VERDICT_SCHEMA)))
+    const back = await parallel(named.map(({ key, name }) => () => roleStep('verify', 'verify:' + key, 'Verify', verdictPrompt(ctx, launch, name, key, built, queue.hand_on), VERDICT_SCHEMA, true)))
+    // HOW MANY CALLS OF THE WAVE RETURNED NOTHING — each was tried once: with SILENT_LAST of
+    // them the wave is the last, whatever its check and the queue then say.
+    const silent = back.filter((r) => r == null).length
+    out.silent += silent
+    if (silent >= SILENT_LAST) out.last = { wave: out.waves, silent }
+    const returned = named.filter(({ name }, i) => back[i] && back[i].status === 'filed' && !verdictFault(ctx, name, back[i], built.candidate.sha256)).map(({ name }) => verdictFile(ctx, name))
     // THE REPORTS OF THIS WAVE, CHECKED — and then THE QUEUE, which says what the wave left.
     const settled = await settleReports(ctx, launch, 'check-reports:wave' + out.waves, 'Verify')
-    if (settled.fault) return Object.assign(out, { fault: settled.fault, transient: !!settled.transient, step: settled.file ? { file: v.scratch + '/' + settled.file.file, sha256: settled.file.sha256 } : null })
+    if (settled.fault) return Object.assign(out, { fault: settled.fault, transient: !!settled.transient, step: settled.file ? { file: v.scratch + '/' + settled.file.file, sha256: settled.file.sha256 } : null, unconfirmed: returned })
     const read = await readState()
-    if (!read.state) return Object.assign(out, { unread: true, fault: read.error, transient: !!read.transient, step: read.step || null })
+    if (!read.state) return Object.assign(out, { unread: true, fault: read.error, transient: !!read.transient, step: read.step || null, unconfirmed: returned })
     out.state = read.state
     named.forEach(({ key, name }, i) => {
       const r = back[i]
@@ -3735,12 +3849,162 @@ async function verifyWaves(ctx, launch, built, from) {
       else if (ended) {
         out.unheld++
         log('NOT HELD: `' + key + '` — its verifier ' + ended + ' — and the queue does not print the finding again: the state says where it stands, and no return decides it')
-      } else if (r.contested) {
-        out.contested++
-        log('CONTESTED, BY ITS VERIFIER\'S RETURN: `' + key + '` — where its filing gave a basis the finding is the human\'s, and the state\'s list of what is the human\'s names it with that basis; where that list does not name it so, the filing gave none, and the finding is routed by its verdict. This script reads no filing, and cannot tell the two apart')
+      } else {
+        out.filings.push(verdictFile(ctx, name))
+        if (r.contested) {
+          out.contested++
+          log('CONTESTED, BY ITS VERIFIER\'S RETURN: `' + key + '` — where its filing gave a basis the finding is the human\'s, and the state\'s list of what is the human\'s names it with that basis; where that list does not name it so, the filing gave none, and the finding is routed by its verdict. This script reads no filing, and cannot tell the two apart')
+        }
       }
     })
+    if (out.last) {
+      log('THE LAST WAVE: ' + silent + ' verifier call(s) of wave ' + out.waves + ' returned nothing — each was tried once, and none is tried again. That is how the account\'s usage limit shows, which never reaches this script as a message, and it is also what ' + silent + ' stray deaths look like: no further wave is launched, though the queue holds ' + out.state.queue.length + ' finding(s) and ' + (out.state.queue.left == null ? 'the run holds no budget' : out.state.queue.left + ' verdict(s) of the budget are left') + '. What was filed is recorded now, and the invocation that follows continues')
+      return out
+    }
   }
+}
+
+// verifyThenRecord — THE VERIFY PHASE AND THE RECORD THAT FOLLOWS IT, IN A RUN WITH A QUEUE:
+// what a stage does after its first record, and what an invocation that continues one does
+// after its reads (the header: THEN THE STAGE VERIFIES, IN WAVES; AN INVOCATION THAT
+// CONTINUES). `from` is the state as it was last read. `made` says what THIS INVOCATION has
+// recorded before the phase: `commit` — a stage's first record, or a continuation's record
+// of the rows it graded — or null, where it has made none: a continuation that had nothing
+// to grade; `owed`, for that one: whether its first read met a filed verdict no commit
+// holds; and `says`, the fact as a halt says it.
+//   THE RECORD is `composeRecord` over EVERY REPORTER OF THE ATTEMPT THAT LEFT A REPORT — the
+//   last report check took every other off the list — and no other word: the record script
+//   takes what was filed itself. AFTER A RECORD OF THIS INVOCATION'S OWN it is composed where
+//   a verifier was launched, and REFUSED AS ONE THAT CHANGES NOTHING IT IS NO HALT: nothing
+//   was filed since. WHERE THE INVOCATION HAS MADE NONE it would be the first of its attempt
+//   — the one that says the attempt reached a record, which always changes something — so
+//   IT IS COMPOSED ONLY WHERE THERE IS SOMETHING TO RECORD: a verifier of the invocation left
+//   a report — its verdict, or its launch, which the record script counts by that report —
+//   or an earlier invocation's filed verdict is owed a record. WHERE NEITHER HOLDS NOTHING IS
+//   RECORDED, and the attempt is one that left its marker and no record: the record script
+//   counts those, and after two in a row the stage is the human's. That is the ONE EXIT of a
+//   finding whose verifier leaves nothing at all — no report, so no launch anybody counts:
+//   a record of nothing but its own attempt would make every such invocation one that
+//   reached its record, and the loop would have no counter. Every other refusal halts the
+//   stage at its record.
+//   A HALT AFTER A WAVE THAT WAS THE LAST FOR ITS SILENCE, OF A STEP THAT RETURNED NOTHING
+//   TOO, SAYS THAT IT MAY BE THE ACCOUNT'S LIMIT, AND NAMES THE FILED VERDICTS (`limitSaid`):
+//   the wave's own report check, the read of the queue, the composing step, the record's
+//   gate and its commit, the push, the read-back. A step that REFUSED is no such halt.
+// It returns `halted` — the halt, whole — or the state as it was last read, `second`: the
+// commit of the record it made, or null; and `verify`: WHAT THE PHASE DID, AS COUNTS.
+async function verifyThenRecord(ctx, launch, built, from, made) {
+  phase('Verify')
+  const spent = from.queue.spent
+  const ver = await verifyWaves(ctx, launch, built, from)
+  const said = ver.last ? limitSaid(ctx, ver.last, ver.state.queue.spent, ver.filings, ver.unconfirmed) : null
+  const limited = (h) => (said && h.halted.transient ? Object.assign(h, { halted: Object.assign(h.halted, said.more), message: h.message + said.says }) : h)
+  if (ver.fault && ver.unread) return { halted: limited(haltAfter('read-back', made.says + ', wave ' + ver.waves + ' of its verifiers ran, and the queue could not be read after it: ' + ver.fault + '. What a verifier filed is on disk, and the state counts it', { transient: !!ver.transient, step: ver.step, launched: launch.names })) }
+  if (ver.fault) return { halted: limited(haltAfter('report-check', 'after wave ' + ver.waves + ' of the stage\'s verifiers ' + ver.fault + '. ' + made.says.charAt(0).toUpperCase() + made.says.slice(1) + ', and what a verifier filed is on disk', { transient: !!ver.transient, step: ver.step, launched: launch.names })) }
+  let state = ver.state
+  let second = null
+  const records = made.commit ? ver.launched > 0 : made.owed || launch.names.some((name) => name !== ATTEMPT)
+  if (!records && !made.commit) log('NOTHING TO RECORD: no verifier of this invocation left a report, and no filed verdict is owed a record — so no record is composed, and attempt ' + ctx.attempt + ' is one that left its marker and no record. The record script counts those: after two in a row the stage is the human\'s, who grants one more')
+  if (records) {
+    phase('Record')
+    const again = await composeRecord('verdicts:r' + ctx.round, loopBranch, ctx, v.scratch + '/record/verdicts-r' + ctx.round + '-a' + ctx.attempt, 'docs(record): ' + subjectOf(v.run, ctx.round, 'the verdicts of the test stage'), launch.names.map((name) => 'reporter=' + name))
+    if (again.fault && again.refusal !== NO_CHANGE) return { halted: limited(recordHalt('record', again, { refusal: again.refusal || null, launched: launch.names, first: made.commit })) }
+    if (again.fault) log('NOTHING TO RECORD after the verifiers: the record script refused the record as one that changes nothing (`' + NO_CHANGE + '`) — no verdict was filed since the record before it, and no batch is left. That is no halt')
+    else {
+      const taken = await recordStep('verdicts:r' + ctx.round, loopBranch, again.rec)
+      if (taken.fault) return { halted: limited(recordHalt('record', taken, { launched: launch.names, first: made.commit })) }
+      const published = await pushRecord('push:verdicts', loopBranch)
+      if (!onIt(published, loopBranch, true)) return { halted: limited(pushHalt(published, loopBranch, 'the record of what the verifiers filed is committed on ' + loopBranch + ' (' + taken.result.commit + ') and the branch was not pushed')) }
+      const after = await readState()
+      if (!after.state) return { halted: limited(haltAfter('read-back', 'the record of what the verifiers filed is committed and pushed (' + taken.result.commit + '), and the state could not be read back: ' + after.error, { transient: !!after.transient, step: after.step || null })) }
+      state = after.state
+      second = taken.result.commit
+    }
+  }
+  return { state, second, verify: { waves: ver.waves, launched: ver.launched, verdicts: state.queue.spent - spent, left: state.queue.left, record: second, unverified: ver.unverified, unheld: ver.unheld, contested: ver.contested, silent: ver.silent, last: ver.last ? ver.last.wave : null } }
+}
+
+// continueTest — AN INVOCATION THAT CONTINUES A `test` STAGE, IN A RUN WITH A QUEUE (the
+// header: AN INVOCATION THAT CONTINUES; the reshape's plan, §3 and T6b). `words` is what the
+// state's position says is left of the stage (`continuing`). IT STARTS FROM THE COMMITTED
+// STATE AND FROM GIT, and from nothing an earlier invocation knew:
+//   NO INSTRUMENT RUNS — no preflight, no scope step, no gate of the candidate's, no held
+//   check and no reporter of an item: every report of the round is on record, the round's
+//   scope stands, and what the stage holds is the commit's. THE TWO BINARIES are asked for
+//   under their commits' names, and answered by the builds that stand (`buildBoth`).
+//   THE ATTEMPT IS BEGUN ON RECORD, ON THE CANDIDATE THE ROUND TESTED — the round's record
+//   commits lie on top of it — and every reporter of the invocation reports under that
+//   attempt: so a verifier that is launched for a finding a second time has a name the
+//   record script takes, and the launch is counted by its report.
+//   A TRIAGE ONLY OVER ROWS NOBODY GRADED (`triage`): the one triage, handed ONE source —
+//   the rows the state lists as untriaged, by the read that prints them: in a run with a
+//   queue those are the rows no triage saw and no verifier handed on — a red row a batch
+//   filed under its own key, a seed added since. No reporter's finding, no red result and
+//   no graded row is handed over, so NO ROW IS GRADED A SECOND TIME. Then ITS RECORD OF WHAT
+//   IT GRADED, composed by the tool from that attempt's rendering, so that the rows are in
+//   the queue the phase reads.
+//   THE FILED VERDICTS ARE TAKEN AS THEY STAND: the state counted each from the moment it was
+//   filed, so the queue does not print its finding, and no verifier is launched for it —
+//   `undrivable` among them. ONLY WHAT IS MISSING IS LAUNCHED: what the queue prints, while
+//   the budget has verdicts left (`verifyThenRecord`), and then the record — which takes
+//   what this invocation's verifiers filed, what an earlier one's had, and every report an
+//   earlier invocation left pending; or none, where there is nothing to record.
+// It returns the stage's return, a refusal, or a halt.
+async function continueTest(ctx, state, words) {
+  const label = 'c' + ctx.round
+  const said = '(`next` is `' + state.next + '`): ' + (words.includes('triage') ? 'a row nobody graded is left' : '') + (words.length > 1 ? ', and ' : '') + (words.includes('verify') ? 'a row of the queue is unverified, and budget is left' : '')
+  const why = continueFault(v)
+  if (why) return { status: 'refused', stage: 'test', run: v.run, message: 'round ' + ctx.round + ' is tested and its `test` stage is not finished ' + said + ' — ' + why + '. Nothing was run beyond the two reads.', next: state.next, untriaged: state.untriaged, position: state.position.test, named: namedOf(state), arrived }
+  // THE CANDIDATE THE ROUND TESTED: its findings are about that commit, and the round's
+  // record commits have moved the branch on since.
+  const tested = String((state.rounds.find((r) => r.round === ctx.round) || {}).candidate || '')
+  if (!SHA_RE.test(tested)) return halt('state', 'the state says that round ' + ctx.round + '\'s `test` stage is to be continued and names no candidate for that round: a verdict is of the candidate its round tested, and of no other commit')
+  log('round ' + ctx.round + ', attempt ' + ctx.attempt + ' of the test stage: A CONTINUATION ' + said + ' — on ' + tested + ', the candidate the round tested. No instrument runs; the verdicts that are filed stand, and only what is missing is launched')
+  if (v.stopAfter === 'state') return { status: 'stopped', after: 'state', stage: 'test', run: v.run, round: ctx.round, attempt: ctx.attempt, continues: words, candidate: { label, sha: tested }, owed: arrived.owed, state: attached(state), named: namedOf(state), arrived }
+  const launch = launcher(ctx)
+  const unbegun = await beginAttempt(ctx, launch, tested)
+  if (unbegun) return unbegun
+  const built = await buildBoth(label, tested, previousOf(state), 'State')
+  if (built.fault) return halt(built.phase, built.fault, { transient: !!built.transient, held: built.held || null, then: built.then })
+  let made = { commit: null, owed: arrived.owed.includes('filed'), says: 'the stage\'s first record stands, committed by an earlier invocation' }
+  let once = { triage: null, handed: 0 }
+  if (words.includes('triage')) {
+    phase('Triage')
+    once = await triageOnce(ctx, launch, ledgerSource(v.run, state))
+    if (once.fault) return haltAfter('triage', once.fault, { transient: !!once.transient, halt: once.halt || null, step: once.step || null })
+    if (once.triage) {
+      phase('Record')
+      const composed = await composeRecord('graded:r' + ctx.round, loopBranch, ctx, v.scratch + '/record/graded-r' + ctx.round + '-a' + ctx.attempt, 'docs(record): ' + subjectOf(v.run, ctx.round, 'the rows nobody had graded'), launch.names.map((name) => 'reporter=' + name))
+      if (composed.fault) return recordHalt('record', composed, { refusal: composed.refusal || null, launched: launch.names, triage: once.triage })
+      const recorded = await recordStep('graded:r' + ctx.round, loopBranch, composed.rec)
+      if (recorded.fault) return recordHalt('record', recorded, { launched: launch.names, triage: once.triage })
+      const pushed = await pushRecord('push:graded', loopBranch)
+      if (!onIt(pushed, loopBranch, true)) return pushHalt(pushed, loopBranch, 'the record of the rows this invocation graded is committed on ' + loopBranch + ' (' + recorded.result.commit + ') and the branch was not pushed')
+      const read = await readState()
+      if (!read.state) return haltAfter('read-back', 'the record of the rows this invocation graded is committed and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + read.error, { transient: !!read.transient, step: read.step || null })
+      state = read.state
+      made = { commit: recorded.result.commit, says: 'the record of the rows this invocation graded is committed and pushed (' + recorded.result.commit + ')' }
+    }
+  }
+  const closing = await verifyThenRecord(ctx, launch, built, state, made)
+  if (closing.halted) return closing.halted
+  state = closing.state
+  // WHAT IT RETURNS: what the stage returns of the same things — which record is its last,
+  // the record it made of what it graded (`record`: null where it graded nothing), and what
+  // the phase did, as counts — and `continued`: what of the stage it was handed to finish.
+  return Object.assign({
+    status: closing.second ? 'verified' : 'hunted',
+    stage: 'test',
+    run: v.run,
+    round: ctx.round,
+    continued: words,
+    candidate: built.candidate,
+    record: made.commit,
+    triage: once.triage,
+    verify: closing.verify,
+    counts: { reporters: launch.names.length, findings_in: once.handed, blockers: state.blockers, for_the_human: state.human_list },
+    forbids_close: state.forbids_close,
+  }, nextOf(state))
 }
 
 // driveFork — ruling 5: a contested fix, or one that needs a new mechanism, goes to the
@@ -4008,15 +4272,15 @@ async function runTest() {
   if (at.refused) return { status: 'refused', stage: 'test', run: v.run, refused: at, message: 'the `test` stage is refused (' + at.refused + ', round ' + at.round + '): ' + refusalOf(at) + '. Nothing was run beyond the two reads.', next: state.next, not_ready: state.not_ready, stop: state.stop, named: namedOf(state), arrived }
   const ctx = { run: v.run, round: at.round, stage: 'test', attempt: at.attempt, scratch: v.scratch }
   const label = 'c' + ctx.round
-  // IN A RUN WITH A QUEUE AN INVOCATION THAT WOULD CONTINUE IS NOT BUILT YET (the header: A
-  // RUN WITH A QUEUE TAKES ANOTHER PATH; the reshape's plan, T5b — its T6b builds it; the
-  // stage verifies in the invocation that recorded its findings, which is its T6a).
-  // After that invocation such a run stands where a row of its queue is unverified
-  // (`verify`) or a row nobody graded is left (`triage`). The lap below is the other path's:
-  // it would grade every row a second time and launch an advocate. So the invocation is
-  // refused here, by name, before any attempt is begun — a refusal of that path, never of
-  // the stage: a stage that begins a round, or runs an item again, is taken as it stands.
-  if (hasQueue(state) && (at.triage || at.verify)) return { status: 'refused', stage: 'test', run: v.run, not_built: 'continuation', position: at, message: 'IN A RUN WITH A QUEUE THE CONTINUATION OF A `test` STAGE IS NOT BUILT YET: round ' + at.round + ' has its first record, and its position says ' + ['triage', 'verify'].filter((word) => at[word]).map((word) => '`' + word + '`').join(' and ') + ' (`next` is `' + state.next + '`) — ' + (at.verify ? 'a row of the queue is unverified, and budget is left' : '') + (at.verify && at.triage ? '; ' : '') + (at.triage ? 'a row nobody graded is left' : '') + '. A stage of that path verifies in the invocation that records its findings; an invocation that CONTINUES one — no instrument, the filed verdicts taken, only what is missing launched — is not built yet (the build plan of the reshaped `test` stage, T6b). Nothing is to be repaired in the run. Nothing was run beyond the two reads, and no attempt was begun.', next: state.next, untriaged: state.untriaged, named: namedOf(state), arrived }
+  // IN A RUN WITH A QUEUE AN INVOCATION THAT FINDS THE ROUND'S `test` STAGE UNFINISHED
+  // CONTINUES IT (the header: AN INVOCATION THAT CONTINUES; the reshape's plan, T6b): such a
+  // run stands, after the invocation that recorded its findings, where a row nobody graded
+  // is left (`triage`) or a row of its queue is unverified and budget is left (`verify`).
+  // The lap below is the other path's — it would grade every row a second time and launch
+  // an advocate — and is never entered for a run with a queue: every way out of
+  // `continueTest` is a return.
+  const continues = continuing(state, at)
+  if (continues.length) return await continueTest(ctx, state, continues)
   // The round's triage is not finished, and this stage left it: finish it, and run nothing.
   if (at.triage) {
     if (v.scope != null || v.clause != null || v.crossModel != null) return { status: 'refused', stage: 'test', run: v.run, message: 'round ' + at.round + '\'s triage is not finished (`next` is `' + state.next + '`): this invocation finishes it and runs no instrument, so it takes no scope, clause or crossModel. Nothing was run beyond the two reads.', next: state.next, untriaged: state.untriaged, named: namedOf(state), arrived }
@@ -4254,43 +4518,21 @@ async function runTest() {
     const last = await readState()
     if (!last.state) return haltAfter('read-back', 'the stage\'s first record is committed and pushed (' + recorded.result.commit + '), and the state could not be read back: ' + last.error, { transient: !!last.transient, step: last.step || null })
     state = last.state
-    // THEN THE STAGE VERIFIES, IN WAVES (the header; the reshape's plan, T6a): what the queue
-    // prints, while the budget has verdicts left — the queue read again after every wave.
-    phase('Verify')
-    const spent = state.queue.spent
-    const ver = await verifyWaves(ctx, launch, built, state)
-    if (ver.fault && ver.unread) return haltAfter('read-back', 'the stage\'s first record is committed and pushed (' + recorded.result.commit + '), wave ' + ver.waves + ' of its verifiers ran, and the queue could not be read after it: ' + ver.fault + '. What a verifier filed is on disk, and the state counts it', { transient: !!ver.transient, step: ver.step, launched: launch.names })
-    if (ver.fault) return haltAfter('report-check', 'after wave ' + ver.waves + ' of the stage\'s verifiers ' + ver.fault + '. The stage\'s first record is committed and pushed (' + recorded.result.commit + '), and what a verifier filed is on disk', { transient: !!ver.transient, step: ver.step, launched: launch.names })
-    state = ver.state
-    // THE STAGE'S SECOND RECORD, where a verifier was launched: composed by the tool over
-    // EVERY REPORTER OF THE ATTEMPT THAT LEFT A REPORT — the last report check took every
-    // other off the list — and no other word: the record script takes what was filed itself.
-    // REFUSED AS ONE THAT CHANGES NOTHING, IT IS NO HALT: nothing was filed, and nothing is
-    // to be recorded. Every other refusal halts the stage at its record, as the first's does.
-    let second = null
-    if (ver.launched) {
-      phase('Record')
-      const again = await composeRecord('verdicts:r' + ctx.round, loopBranch, ctx, v.scratch + '/record/verdicts-r' + ctx.round + '-a' + ctx.attempt, 'docs(record): ' + subjectOf(v.run, ctx.round, 'the verdicts of the test stage'), launch.names.map((name) => 'reporter=' + name))
-      if (again.fault && again.refusal !== NO_CHANGE) return recordHalt('record', again, { refusal: again.refusal || null, launched: launch.names, first: recorded.result.commit })
-      if (again.fault) log('NOTHING TO RECORD after the verifiers: the record script refused the stage\'s second record as one that changes nothing (`' + NO_CHANGE + '`) — no verdict was filed since the first, and no batch is left. That is no halt')
-      else {
-        const taken = await recordStep('verdicts:r' + ctx.round, loopBranch, again.rec)
-        if (taken.fault) return recordHalt('record', taken, { launched: launch.names, first: recorded.result.commit })
-        const published = await pushRecord('push:verdicts', loopBranch)
-        if (!onIt(published, loopBranch, true)) return pushHalt(published, loopBranch, 'the stage\'s second record is committed on ' + loopBranch + ' (' + taken.result.commit + ') and the branch was not pushed')
-        const after = await readState()
-        if (!after.state) return haltAfter('read-back', 'the stage\'s second record is committed and pushed (' + taken.result.commit + '), and the state could not be read back: ' + after.error, { transient: !!after.transient, step: after.step || null })
-        state = after.state
-        second = taken.result.commit
-      }
-    }
+    // THEN THE STAGE VERIFIES, IN WAVES, AND RECORDS A SECOND TIME (`verifyThenRecord`; the
+    // header; the reshape's plan, T6a): what the queue prints, while the budget has verdicts
+    // left — the queue read again after every wave — and then what was filed.
+    const closing = await verifyThenRecord(ctx, launch, built, state, { commit: recorded.result.commit, says: 'the stage\'s first record is committed and pushed (' + recorded.result.commit + ')' })
+    if (closing.halted) return closing.halted
+    const second = closing.second
+    state = closing.state
     // WHAT THE STAGE RETURNS: it HUNTED — its findings are on record, graded — and, where its
     // second record was made, it VERIFIED: `record` is the first record's commit, and
     // `verify` what the phase did — how many waves and launches, HOW MANY VERDICTS THE STATE
     // COUNTS SINCE THE FIRST RECORD (the script's count, never this one's), what the budget
     // has left, the second record's commit, and HOW MANY findings a launch left without a
     // verdict, how many returns were not held and how many say contested — each of those a
-    // line of the log, by its key. `next` is the state's, verbatim: `verify` while a row of
+    // line of the log, by its key — how many calls returned nothing, and the wave their
+    // silence made the last. `next` is the state's, verbatim: `verify` while a row of
     // the queue is unverified and budget is left. No entry, no key, no grade, no verdict and
     // no basis is in the return. (What a stage of this path returns is the plan's T7: until
     // then the status says which record is the stage's last.)
@@ -4304,7 +4546,7 @@ async function runTest() {
       candidate: built.candidate,
       record: recorded.result.commit,
       triage: once.triage,
-      verify: { waves: ver.waves, launched: ver.launched, verdicts: state.queue.spent - spent, left: state.queue.left, record: second, unverified: ver.unverified, unheld: ver.unheld, contested: ver.contested },
+      verify: closing.verify,
       counts: { items: state.items.length, items_run: hunting.length + always.length + late.length + held.length, reporters: launch.names.length, findings_in: once.handed, blockers: state.blockers, for_the_human: state.human_list, voided: unitStatus.filter((u) => u.status === 'void').map((u) => u.item) },
       unasserted: unassertedBy,
       held: heldRan.map((h) => Object.assign({ item: h.item }, heldSaid(h))),

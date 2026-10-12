@@ -149,10 +149,17 @@
 //! and a scenario can script a verifier that files nothing and says it did, or that returns
 //! what its call did not print. **Then the SECOND RECORD**, composed by the tool over the
 //! attempt's reporters ([`ends_at_its_second_record`]) — or none, where no verifier left
-//! anything ([`ends_at_its_first_record`], [`nobody_verifies`]). **What of that path is not
-//! built is its continuation**: an invocation that would CONTINUE — the state's position
-//! says `verify`, or `triage` — is refused on that path as not built, with nothing run beyond
-//! the two reads.
+//! anything ([`ends_at_its_first_record`], [`nobody_verifies`]). **And an invocation that finds
+//! such a stage unfinished CONTINUES it** (the plan's `T6b`; [`continuation_opens`]): the
+//! state's position says `verify` — a row of the queue is unverified — or `triage` — a row
+//! nobody graded is left. It runs no instrument: its reads, its attempt, the two binaries
+//! that stand; a triage only over rows nobody graded; the verdicts an earlier invocation
+//! filed taken as the state counts them; a verifier only for what has none; and its record.
+//! **A verifier call is never tried twice**, and a wave in which two of them return nothing is
+//! the last: where the steps after it return nothing too, the stage halts as what may be the
+//! account's limit, naming the filed verdicts. *The scenarios of a lap, of an unverified
+//! finding and of an advocate in `test` are moved to an opening with an order or retired,
+//! each where it stood, with where its cells live now.*
 //!
 //! **The `fix` stage refuses to start**, and that is all that is asserted of it; the rig,
 //! the scenario and the stand-in are shaped so that its half's tasks add its agents here.
@@ -1405,104 +1412,113 @@ fn finishing_lap(sim: &Sim, attempt: u32, verified: &[&str], last_state: &str) -
     agents
 }
 
+/// **An unverified finding is finished by the next invocation, and after one more it is the
+/// human's** — MOVED TO AN OPENING WITH AN ORDER (the reshape's plan, `T6b`: *the old scenarios
+/// about a lap, an unverified finding, a second pass and an advocate in `test` are moved*).
+/// On the other path this was the lap: an invocation that graded every untriaged row again,
+/// verified it, and launched an advocate where it was contested. IN A RUN WITH A QUEUE IT IS
+/// A CONTINUATION: the finding is a row of the queue, no triage grades it a second time, and
+/// the invocation that follows launches its verifier once more — under its own attempt, on
+/// the candidate the round tested (`M6`) — and reaches its record. WHAT IS COUNTED IS THE
+/// LAUNCHES THAT LEFT NO VERDICT, by the verifier's reports (`F3`, as the record script counts
+/// it in such a run): left so twice, the finding is the human's, who rules it or grants one
+/// more; and a stage that leaves reports and no record twice in a row is the human's too.
 #[test]
 fn an_unverified_finding_is_finished_by_the_next_invocation_and_after_one_more_it_is_the_humans() {
     if !can_run() {
         return;
     }
-    let sim = Sim::opened("unverified", &one_area());
-    let key = "doc-set-drops-a-slot";
-    let script = json!({
-        "scope": one_door(),
-        "agents": {
-            "area-a:review": found(&[finding("a-1", "a slot is dropped", "jigc doc set", "audit-clean")]),
-            "triage:p1": graded(
-                &[entry(key, "area-a-review a-1", "jigc doc set", "audit-clean", "breaks")],
-                &["area-a-review"],
-            ),
+    let sim = Sim::budgeted("unverified", &one_area(), 30);
+    let candidate = sim.rig.rev("HEAD");
+    let key = INSIDE;
+    let undriven = || halts_reported("the repro can be neither driven nor reconstructed");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"agents": {
+            "area-a:review": one_finding(),
+            "triage": one_entry(),
             // The verifier could not drive it: a halt, with its report, and no verdict.
-            format!("verify:{key}"): undriven(key),
-        },
-    });
-    let ran = sim.invoke(sim.args("test", json!({})), script);
+            format!("verify:{key}"): undriven(),
+        }})),
+    );
     let result = &ran.result;
-    assert_eq!(result["status"], "triaged", "{result}");
-    assert_eq!(result["counts"]["by_grade"], json!({"breaks": 1}));
     assert_eq!(
-        result["unverified"],
-        json!([{"key": key, "why": "its verifier halted (the repro can be neither driven nor reconstructed)"}]),
-        "the stage says which finding it left without a verdict, and why"
+        json!([
+            result["status"],
+            result["next"],
+            result["verify"]["unverified"],
+            result["verify"]["verdicts"]
+        ]),
+        json!(["hunted", "verify", 1, 0]),
+        "{result}"
     );
-
-    // A VALUE OF `next` THE SCRIPT HAS NO SENTENCE FOR goes back with the state attached:
-    // never a guess, never a loop.
-    assert_eq!(result["next"], "triage", "{result}");
+    assert_eq!(
+        said_of(&ran, "NOT VERIFIED", key),
+        [format!(
+            "NOT VERIFIED: `{key}` — its verifier halted (the repro can be neither driven nor reconstructed), and the queue prints the finding again: no verdict of it counts. It awaits its verdict again, and nothing of the budget was spent on it"
+        )],
+        "the stage says which finding it left without a verdict, and why — in its log: {:?}",
+        ran.logs
+    );
+    // A VALUE OF `next` THE SCRIPT HAS NO SENTENCE FOR goes back with the state attached, as
+    // what the digest holds of it — and the file the document lies in.
     assert_eq!(result["returned_to_orchestrator"], true);
-    // … AS WHAT THE DIGEST HOLDS OF IT, AND THE FILE THE DOCUMENT LIES IN (K3; the plan's X2):
-    // the rows are a count in the return, and a list in the file it names.
-    assert_eq!(
-        result["state"]["untriaged"],
-        json!({"count": 1, "why": [{"why": "unverified", "count": 1}]})
-    );
-    assert_eq!(
-        document(result)["untriaged"],
-        json!([{"key": key, "why": "unverified"}])
-    );
     assert_eq!(
         result["state"]["position"]["test"],
-        json!({"round": 1, "attempt": 2, "triage": true}),
-        "the stage that left the triage unfinished finishes it"
+        json!({"round": 1, "attempt": 2, "verify": true}),
+        "the stage that left the finding unverified continues"
     );
-    let candidate = sim.rig.rev("HEAD~1");
+    assert_eq!(
+        row_of(&document(result), key)["awaits"],
+        json!({"why": "unverified", "passes": 1, "retry": "due"}),
+        "one launch of its verifier left no verdict"
+    );
     let recorded = sim.rig.rev("HEAD");
+    assert_eq!(sim.rig.rev("HEAD~1"), candidate);
 
-    // REPAIRED — M6 (harness-agents-gate.md): THE FINISHING LAP REACHES ITS RECORD. It asks
-    // the preflight for the commit the round tested, which the record commit has moved
-    // `HEAD` off — and the preflight's contract takes that: a candidate that is a commit
-    // `HEAD` holds is built from the commit, and nothing of that call reads the tree. The
-    // lap grades the ledger's row again, sends it to a verifier once more, and records.
-    // No instrument runs, and no scope step.
-    let lap = json!({"agents": {
-        "triage:p1": graded(&[again(key, "jigc doc set", "audit-clean", "breaks")], &["ledger"]),
-        format!("verify:{key}"): undriven(key),
-    }});
-    let finishing = sim.invoke(sim.args("test", json!({})), lap.clone());
+    // THE NEXT INVOCATION FINISHES IT — AND REACHES ITS RECORD (`M6`): no instrument, no scope
+    // step and NO TRIAGE — the row is graded — but the verifier, once more, on the commit the
+    // round tested, which the record commit has moved `HEAD` off.
+    let lap = json!({"agents": {format!("verify:{key}"): undriven()}});
+    let finishing = sim.invoke(sim.args("test", json!({})), lap);
     let finished = &finishing.result;
-    assert_eq!(finished["status"], "triaged", "M6: {finished}");
-    assert_eq!(finished["triage_only"], true, "M6: {finished}");
+    let mut expected = continuation_opens(&sim, &candidate);
+    expected.push(format!("verify:{key}"));
+    expected.extend(lines(&["git:check-reports:wave1", "git:state:test-2"]));
+    expected.extend(continuation_records("verdicts", 2, 3));
     assert_eq!(
         finishing.agents(),
-        finishing_lap(&sim, 2, &[key], "git:state:test-2"),
-        "M6: the attempt begun, the preflight, triage, the verifier, the reports checked, the record, its commit, the push, the state"
+        expected,
+        "the attempt begun, the binaries that stand, the verifier, the reports checked, the queue read, the record, its commit, the push, the state"
     );
     assert_eq!(
-        json!([finished["candidate"]["sha"], finished["candidate"]["label"]]),
-        json!([candidate, "c1"]),
-        "M6: the verifier drove the commit the round tested, not the record commit ({recorded})"
+        json!([
+            finished["continued"],
+            finished["candidate"]["sha"],
+            finished["candidate"]["label"]
+        ]),
+        json!([["verify"], candidate, "c1"]),
+        "M6: the verifier drove the commit the round tested, not the record commit ({recorded}): {finished}"
     );
     let (subject, paths) = head_commit(&sim);
-    assert_eq!(
-        subject,
-        format!("docs(record): {RUN} r1 - the triage of the round, finished")
-    );
+    assert_eq!(subject, second_record_subject());
     assert_eq!(sim.rig.rev("HEAD~1"), recorded, "one record commit");
     assert_eq!(sim.rig.remote(LOOP), Some(sim.rig.rev("HEAD")), "pushed");
     for name in [
-        "attempt",
-        "preflight",
-        "triage-p1",
-        &format!("verify-p1-{key}"),
+        "attempt.a2".to_owned(),
+        format!("verify-{key}.a1"),
+        format!("verify-{key}.a2"),
     ] {
         assert!(
-            paths.contains(&format!("{RUN_DIR}/r1/reports/test/{name}.a2.md")),
-            "the lap's report `{name}` is in its record commit: {paths:?}"
+            paths.contains(&format!("{RUN_DIR}/r1/reports/test/{name}.md")),
+            "the report `{name}` is in the continuation's record commit — the one the first stage's halted verifier left among them: {paths:?}"
         );
     }
     assert_eq!(sim.rig.status(), "");
 
-    // REPAIRED — F3 (state-machine.md), now THROUGH THE HARNESS: the lap's own record
-    // counted the pass. The finding, left unverified a second time, is the human's — with
-    // the reason — and no call of this suite into the record script wrote that.
+    // REPAIRED — F3 (state-machine.md), THROUGH THE HARNESS: the finding, left without a
+    // verdict by a second launch, is the human's — with the reason — and no call of this
+    // suite into the record script wrote that.
     let state = sim.state();
     assert_eq!(finished["next"], "rule", "F3: {finished}");
     assert_eq!(
@@ -1513,27 +1529,27 @@ fn an_unverified_finding_is_finished_by_the_next_invocation_and_after_one_more_i
             finished["rule"]["reverify"]
         ]),
         json!(["rule", [{"key": key, "why": "unverified-after-retry"}], 1, [key]]),
-        "F3: how many the human's list holds, and the key that may be granted one more triage: {state}"
+        "F3: how many the human's list holds, and the key that may be granted one more launch: {state}"
     );
     assert_eq!(
         json!([
             state["rounds"][0]["facts"]["recorded"],
             state["rounds"][0]["test_unrecorded"],
-            state["rounds"][0]["facts"]["awaiting"]
+            row_of(&state, key)["awaits"]
         ]),
-        json!([["test a2"], 0, [format!("{key} unverified 2")]]),
-        "F3: the lap reached its record, and the round's triage has left the finding without a verdict twice: {state}"
+        json!([["test a2"], 0, {"why": "unverified", "passes": 2, "retry": "spent"}]),
+        "F3: the continuation reached its record, and two launches have left the finding without a verdict: {state}"
     );
     let refused = sim.invoke(sim.args("test", json!({})), json!({}));
     assert_eq!(refused.result["status"], "refused", "{}", refused.result);
     assert_eq!(
         refused.result["refused"],
         json!({"refused": "round-open", "round": 1}),
-        "F3: no invocation finishes that triage again unasked"
+        "F3: no invocation verifies that finding again unasked"
     );
     assert_eq!(refused.trace, lines(&TWO_READS));
-    // What the human may do is rule it — or grant one more triage, a fact the one step
-    // that records rulings writes, and that the record script takes only here.
+    // What the human may do is rule it — or grant one more, a fact the one step that records
+    // rulings writes, and that the record script takes only here.
     let early = sim.invoke(
         sim.args("test", json!({"rulings": [{"again": "test"}]})),
         json!({}),
@@ -1549,28 +1565,49 @@ fn an_unverified_finding_is_finished_by_the_next_invocation_and_after_one_more_i
         json!({}),
     );
     assert_eq!(granted.result["status"], "ruled", "{}", granted.result);
-    assert_eq!(granted.result["next"], "triage", "{}", granted.result);
+    assert_eq!(granted.result["next"], "verify", "{}", granted.result);
     let state = sim.state();
     assert_eq!(
         json!([
             state["rounds"][0]["facts"]["reverify"],
             state["position"]["test"]
         ]),
-        json!([[format!("{key} p3")], {"round": 1, "attempt": 3, "triage": true}]),
-        "F3: one grant, one more triage: {state}"
+        json!([[format!("{key} p3")], {"round": 1, "attempt": 3, "verify": true}]),
+        "F3: one grant, one more launch: {state}"
     );
 
-    // A STAGE THAT HALTS BEFORE ITS RECORD, TWICE IN A ROW, IS THE HUMAN'S TOO. The granted
-    // lap's triage halts — a report of the round is cut off, say — and so does the lap
-    // after it: each left its marker, its preflight's report and triage's, and no record.
-    let stuck = json!({"agents": {"triage:p1": {
-        "status": "halted", "entries": [], "counts": {"findings_in": [], "entries": 0, "merged": 0},
-        "halt": {"root_cause": "a report the prompt lists is cut off", "evidence": "scripted",
-                 "tree_state": "clean", "recommendation": "none"},
-    }}});
-    let halted = sim.invoke(sim.args("test", json!({})), stuck.clone());
-    assert_eq!(halted.result["status"], "halted", "{}", halted.result);
-    assert_eq!(halted.result["halted"]["phase"], "triage");
+    // A STAGE THAT LEAVES ITS MARKER AND NO RECORD, TWICE IN A ROW, IS THE HUMAN'S TOO — and
+    // that is the one exit of a finding whose verifier leaves NOTHING AT ALL, whose launches
+    // nothing counts. The granted continuation's verifier leaves no report and no verdict:
+    // THERE IS NOTHING TO RECORD, so the invocation composes no record — a record that held
+    // nothing but its own attempt would make every such attempt one that reached its record,
+    // and the loop would have no counter. It returns, says so, and the attempt is counted.
+    let stuck = || nobody_verifies(json!({}), &[key]);
+    let left_nothing = sim.invoke(sim.args("test", json!({})), stuck());
+    let nothing = &left_nothing.result;
+    assert_eq!(
+        json!([
+            nothing["status"],
+            nothing["halted"],
+            nothing["record"],
+            nothing["verify"]["record"],
+            nothing["verify"]["launched"],
+            nothing["verify"]["unverified"],
+            nothing["next"]
+        ]),
+        json!(["hunted", null, null, null, 1, 1, "verify"]),
+        "{nothing}"
+    );
+    assert!(
+        left_nothing.agents().last() == Some(&"git:state:test-2")
+            && composing(&left_nothing).is_empty()
+            && left_nothing
+                .logs
+                .iter()
+                .any(|line| line.starts_with("NOTHING TO RECORD")),
+        "no record is composed where the invocation has nothing to record, and it says so: {:?}",
+        left_nothing.agents()
+    );
     let state = sim.state();
     assert_eq!(
         json!([
@@ -1578,11 +1615,22 @@ fn an_unverified_finding_is_finished_by_the_next_invocation_and_after_one_more_i
             state["position"]["test"],
             state["rounds"][0]["test_unrecorded"]
         ]),
-        json!(["triage", {"round": 1, "attempt": 4, "triage": true}, 1]),
+        json!(["verify", {"round": 1, "attempt": 4, "verify": true}, 1]),
         "one attempt without a record is tried once more without the human: {state}"
     );
-    let halted_again = sim.invoke(sim.args("test", json!({})), stuck);
-    assert_eq!(halted_again.result["halted"]["phase"], "triage");
+    // … and the one after it HALTS before its record: its wave's report check never comes back.
+    let mut dying = stuck();
+    dying["endings"]["git:check-reports:wave1"] = json!("dies");
+    let halted_again = sim.invoke(sim.args("test", json!({})), dying);
+    assert_eq!(
+        json!([
+            halted_again.result["status"],
+            halted_again.result["halted"]["phase"]
+        ]),
+        json!(["halted", "reports"]),
+        "{}",
+        halted_again.result
+    );
     let state = sim.state();
     assert_eq!(state["next"], "rule", "F3: {state}");
     assert_eq!(
@@ -1610,7 +1658,7 @@ fn an_unverified_finding_is_finished_by_the_next_invocation_and_after_one_more_i
         json!({}),
     );
     assert_eq!(once_more.result["status"], "ruled", "{}", once_more.result);
-    assert_eq!(once_more.result["next"], "triage", "{}", once_more.result);
+    assert_eq!(once_more.result["next"], "verify", "{}", once_more.result);
     let state = sim.state();
     assert_eq!(
         json!([
@@ -1618,23 +1666,17 @@ fn an_unverified_finding_is_finished_by_the_next_invocation_and_after_one_more_i
             state["position"]["test"],
             state["human_stages"]
         ]),
-        json!([["test a5"], {"round": 1, "attempt": 5, "triage": true}, []]),
+        json!([["test a5"], {"round": 1, "attempt": 5, "verify": true}, []]),
         "F3: one grant, one more attempt: {state}"
     );
 
-    // THE GRANTED LAP VERIFIES IT, and the triage is finished: a verdict, through the
-    // harness, on the candidate the round tested.
-    let mut verdict = json!({"status": "verified", "key": key, "verdict": "refuted",
-                             "basis": "does-not-reproduce: exit 0 on a fresh rig",
-                             "repro": "the block", "pinnable": true, "left_open": []});
+    // THE GRANTED CONTINUATION VERIFIES IT: a verdict, filed, on the candidate the round
+    // tested — and the round is over.
     let settled = sim.invoke(
         sim.args("test", json!({})),
-        json!({"agents": {
-            "triage:p1": graded(&[again(key, "jigc doc set", "audit-clean", "breaks")], &["ledger"]),
-            format!("verify:{key}"): verdict.take(),
-        }}),
+        json!({"agents": {format!("verify:{key}"): refutes("does-not-reproduce")}}),
     );
-    assert_eq!(settled.result["status"], "triaged", "{}", settled.result);
+    assert_eq!(settled.result["status"], "verified", "{}", settled.result);
     let state = sim.state();
     assert_eq!(
         json!([
@@ -1642,10 +1684,11 @@ fn an_unverified_finding_is_finished_by_the_next_invocation_and_after_one_more_i
             state["stop"]["then"],
             state["untriaged"],
             state["human_list"],
-            state["rounds"][0]["facts"]["awaiting"]
+            queued_keys(&state),
+            row_of(&state, key)["grade"]
         ]),
-        json!(["stop", "close", [], [], []]),
-        "the triage is finished by the verdict, and the round is over: {state}"
+        json!(["stop", "close", [], [], [], "refuted"]),
+        "the finding is finished by the verdict, and the round is over: {state}"
     );
     assert_eq!(sim.rig.status(), "");
 }
@@ -3334,216 +3377,31 @@ fn an_attempt_whose_agents_all_died_is_counted_and_a_dead_second_preflight_voids
     assert_eq!(sim.rig.status(), "");
 }
 
-/// **A verifier, an advocate or the independent drive that does not finish leaves its
-/// finding unverified** — never a verdict nobody can read a report for, and never half a
-/// fork. The record counts the pass; the invocation that finishes the round's triage
-/// verifies the finding again and drives the fork again; and left so a second time the
-/// finding is the human's.
-#[test]
-fn a_verifier_an_advocate_or_a_proposal_driver_that_does_not_finish_leaves_the_finding_unverified()
-{
-    if !can_run() {
-        return;
-    }
-    let key = "doc-set-drops-a-slot";
-    let stage = |more: Value| {
-        let mut script = json!({
-            "scope": one_door(),
-            "agents": {
-                "area-a:review": found(&[finding("a-1", "a slot is dropped", "jigc doc set", "audit-clean")]),
-                "triage:p1": graded(
-                    &[entry(key, "area-a-review a-1", "jigc doc set", "audit-clean", "breaks")],
-                    &["area-a-review"],
-                ),
-            },
-        });
-        for (label, value) in more["agents"].as_object().expect("agents") {
-            script["agents"][label] = value.clone();
-        }
-        script["endings"] = more["endings"].clone();
-        script
-    };
-    let mut contested = verdict(key, "confirmed");
-    contested["contested"] = json!(true);
-    let advocate = json!({"status": "argued", "verdict": "robust-now", "case": "The robust case.",
-                          "proposal": "A change.", "driven": [], "undriven": [], "left_open": []});
-    let drive =
-        json!({"status": "driven", "holds": false, "steps": [], "undriven": [], "left_open": []});
-
-    // (1) THE ADVOCATE DIES. The verdict was returned, with its report — and it is not
-    // recorded: a contested finding with no case is no fork, and without the fork it would
-    // be a fixer's. The state holds no fork and no verdict.
-    let sim = Sim::opened("dead-advocate", &one_area());
-    let ran = sim.invoke(
-        sim.args("test", json!({})),
-        stage(json!({
-            "agents": {format!("verify:{key}"): contested, format!("advocate:{key}"): advocate},
-            "endings": {format!("advocate:{key}"): "dies"},
-        })),
-    );
-    let result = &ran.result;
-    assert_eq!(result["status"], "triaged", "M9: {result}");
-    assert_eq!(
-        json!([result["forks"], result["unverified"], result["next"]]),
-        json!([[], [{"key": key, "why": "it is contested, and its advocate returned nothing"}], "triage"]),
-        "{result}"
-    );
-    let state = sim.state();
-    assert_eq!(
-        json!([
-            state["ledger"][0]["grade"],
-            state["ledger"][0]["triage"]["verdict"],
-            state["ledger"][0]["triage"]["fork"],
-            state["blockers"]
-        ]),
-        json!(["breaks", null, null, []]),
-        "{state}"
-    );
-    assert!(
-        sim.reports(1).contains(&format!("verify-p1-{key}.a1.md"))
-            && !sim
-                .reports(1)
-                .iter()
-                .any(|name| name.starts_with("advocate-")),
-        "the verifier's report is on record, and the dead advocate is held to none: {:?}",
-        sim.reports(1)
-    );
-    // THE FINISHING LAP DRIVES THE FORK AGAIN — and this time the independent drive writes
-    // its report and dies: still no fork, still unverified, and now the human's.
-    let lap = sim.invoke(
-        sim.args("test", json!({})),
-        json!({
-            "agents": {
-                "triage:p1": graded(&[again(key, "jigc doc set", "audit-clean", "breaks")], &["ledger"]),
-                format!("verify:{key}"): contested,
-                format!("advocate:{key}"): advocate,
-                format!("proposal:{key}"): drive,
-            },
-            "endings": {format!("proposal:{key}"): "dies-after-report"},
-        }),
-    );
-    assert_eq!(lap.result["status"], "triaged", "M9: {}", lap.result);
-    assert_eq!(
-        lap.result["unverified"],
-        json!([{"key": key, "why": "it is contested, and the independent drive of the advocate's proposal returned nothing"}])
-    );
-    assert!(
-        sim.reports(1).contains(&format!("proposal-p1-{key}.a2.md")),
-        "a report written before its agent died is the stage's, and is committed: {:?}",
-        sim.reports(1)
-    );
-    assert_eq!(sim.rig.status(), "");
-    let state = sim.state();
-    assert_eq!(
-        json!([state["next"], state["human_list"]]),
-        json!(["rule", [{"key": key, "why": "unverified-after-retry"}]]),
-        "counted, bounded, and the human's: {state}"
-    );
-    // The third time the fork is whole: the advocate's case and a drive that DIFFERS.
-    let granted = sim.invoke(
-        sim.args("test", json!({"rulings": [{"reverify": key}]})),
-        json!({}),
-    );
-    assert_eq!(granted.result["next"], "triage", "{}", granted.result);
-    let whole = sim.invoke(
-        sim.args("test", json!({})),
-        json!({"agents": {
-            "triage:p1": graded(&[again(key, "jigc doc set", "audit-clean", "breaks")], &["ledger"]),
-            format!("verify:{key}"): contested,
-            format!("advocate:{key}"): advocate,
-            format!("proposal:{key}"): drive,
-        }}),
-    );
-    assert_eq!(whole.result["forks"].as_array().map(Vec::len), Some(1));
-    let state = sim.state();
-    assert_eq!(
-        json!([state["ledger"][0]["triage"]["fork"], state["human_list"]]),
-        json!([{"kind": "contested", "case": "robust-now", "drive": "differs"}, [{"key": key, "why": "fork"}]]),
-        "{state}"
-    );
-
-    // … AND A CASE OR A DRIVE THAT WAS RETURNED WITH NO REPORT is none: what the human would
-    // be brought has nothing on record behind it.
-    for (label, who, why) in [
-        (
-            "unreported-case",
-            "advocate",
-            "it is contested, and its advocate left no report",
-        ),
-        (
-            "unreported-drive",
-            "proposal",
-            "it is contested, and the independent drive of the advocate's proposal left no report",
-        ),
-    ] {
-        let sim = Sim::opened(label, &one_area());
-        let ran = sim.invoke(
-            sim.args("test", json!({})),
-            stage(json!({
-                "agents": {format!("verify:{key}"): contested, format!("advocate:{key}"): advocate,
-                           format!("proposal:{key}"): drive},
-                "endings": {format!("{who}:{key}"): "unreported"},
-            })),
-        );
-        assert_eq!(ran.result["status"], "triaged", "{label}: {}", ran.result);
-        assert_eq!(
-            json!([ran.result["forks"], ran.result["unverified"]]),
-            json!([[], [{"key": key, "why": why}]]),
-            "{label}"
-        );
-        assert_eq!(
-            sim.state()["ledger"][0]["triage"]["fork"],
-            Value::Null,
-            "{label}"
-        );
-        assert_eq!(sim.rig.status(), "", "{label}");
-    }
-
-    // (2) THE VERIFIER: dead; a verdict with no report; a verdict for another finding. None
-    // is a verdict on record.
-    for (label, said, ending, why) in [
-        (
-            "dead-verifier",
-            verdict(key, "confirmed"),
-            Some("dies"),
-            "its verifier returned nothing",
-        ),
-        (
-            "unreported-verdict",
-            verdict(key, "confirmed"),
-            Some("unreported"),
-            "its verifier returned a verdict and left no report",
-        ),
-        (
-            "another-finding",
-            verdict("some-other-finding", "refuted"),
-            None,
-            "its verifier returned a verdict for `some-other-finding`, another finding",
-        ),
-    ] {
-        let sim = Sim::opened(label, &one_area());
-        let ran = sim.invoke(
-            sim.args("test", json!({})),
-            stage(json!({
-                "agents": {format!("verify:{key}"): said},
-                "endings": ending.map_or(json!({}), |ending| json!({format!("verify:{key}"): ending})),
-            })),
-        );
-        assert_eq!(ran.result["status"], "triaged", "{label}: {}", ran.result);
-        assert_eq!(
-            ran.result["unverified"],
-            json!([{"key": key, "why": why}]),
-            "{label}"
-        );
-        let state = sim.state();
-        assert_eq!(
-            json!([state["untriaged"], state["rounds"][0]["facts"]["awaiting"]]),
-            json!([[{"key": key, "why": "unverified"}], [format!("{key} unverified 1")]]),
-            "{label}: {state}"
-        );
-        assert_eq!(sim.rig.status(), "", "{label}");
-    }
-}
+// RETIRED WITH THE CONTINUATION (the reshape's plan, `T6b`: *the old scenarios about … an
+// advocate in `test` are moved to an opening with an order, each rewritten for the new path
+// or retired with its cell's new home named*): the scenario that stood here,
+// `a_verifier_an_advocate_or_a_proposal_driver_that_does_not_finish_leaves_the_finding_unverified`.
+// A run with a queue launches no advocate and no independent drive in `test`, so five of its
+// cells have no subject there. Where each one's cell lives now:
+//   the advocate dies · returns its case   a contested verdict has no case and no drive in
+//   with no report · the independent       `test`: `a_contested_verdict_is_the_humans_and_no_
+//   drive dies after its report · returns  advocate_is_launched_on_the_new_path`. A fork — a
+//   with no report · a fork that is whole, case and a drive, whole or none — is the `fix`
+//   its drive differing                    half's, and returns with that half's repair (the
+//                                          row `wf-fork-serial`).
+//   the verifier dies                      `one_silent_verifier_call_leaves_its_finding_
+//                                          unverified_and_the_phase_goes_on`
+//   a verdict returned with no report      that scenario too: a verifier that returns a
+//                                          filing and left no report
+//   a verdict for another finding          a verdict is filed under the reporter of its own
+//                                          key or refused (`dev_stabilize_record::a_filing_
+//                                          under_a_reporter_that_is_not_the_keys_is_refused`),
+//                                          and a return that names another filing's path is
+//                                          not held (`a_verifier_that_returns_a_verdict_and_
+//                                          filed_none_left_no_verdict`)
+//   the lap verifies again, and after one  `an_unverified_finding_is_finished_by_the_next_
+//   more the finding is the human's, who   invocation_and_after_one_more_it_is_the_humans`,
+//   grants one more                        moved to an opening with an order
 
 /// **A cross-model pass is limited and rare, chosen per item — and never fails the pass
 /// that runs regardless** (the human's rulings of 2026-10-06; the harness review's `M5`).
@@ -8082,145 +7940,6 @@ fn every_void_says_why_in_one_word_and_a_reporter_that_left_no_report_is_no_word
     );
 }
 
-/// **A continuation is refused on the new path until it is built** (`T5b`; the plan's §4,
-/// Phase B: *a step that is not built yet is a refusal of that path, which the task's own
-/// scenario asserts — never a refusal of the stage*). After its first record a run with a
-/// queue stands at a position this harness has no path for yet: `verify` — a row of the
-/// queue is unverified, and budget is left — or `triage` — a row nobody graded. Until both
-/// are built (`T6a`, `T6b`) an invocation that meets either IS REFUSED, BY NAME, AFTER ITS TWO
-/// READS: no attempt is begun, no agent is launched, and nothing of the other path's lap —
-/// which would grade every row again and launch an advocate — runs for such a run.
-#[test]
-fn a_continuation_is_refused_on_the_new_path_until_it_is_built() {
-    if !can_run() {
-        return;
-    }
-    let refused = |sim: &Sim, word: &str| {
-        let before = sim.rig.rev("HEAD");
-        let position = sim.state()["position"]["test"].clone();
-        assert_eq!(
-            position[word], true,
-            "the position says `{word}`: {position}"
-        );
-        let ran = sim.invoke(sim.args("test", json!({})), json!({}));
-        let result = &ran.result;
-        assert_eq!(
-            json!([
-                result["status"],
-                result["not_built"],
-                result["next"],
-                result["position"]
-            ]),
-            json!(["refused", "continuation", word, position]),
-            "{result}"
-        );
-        assert_eq!(
-            ran.agents(),
-            ["git:state", "git:state:test-1"],
-            "nothing runs beyond the two reads"
-        );
-        assert!(
-            text(&result["message"]).contains("NOT BUILT YET")
-                && text(&result["message"]).contains("Nothing was run beyond the two reads"),
-            "{result}"
-        );
-        assert_eq!(sim.rig.rev("HEAD"), before);
-        assert_eq!(
-            sim.state()["position"]["test"],
-            position,
-            "no attempt was begun: the position is what it was"
-        );
-    };
-
-    // (1) `verify`: the first record left a row in the queue.
-    let sim = Sim::queued("queue-continue-verify", &one_area());
-    let candidate = sim.rig.rev("HEAD");
-    let ran = sim.invoke(
-        sim.args("test", json!({})),
-        nobody_verifies(
-            small_stage(json!({"agents": {"area-a:review": one_finding(), "triage": one_entry()}})),
-            &[INSIDE],
-        ),
-    );
-    ends_at_its_first_record(&sim, &ran, &candidate, 1, "verify");
-    refused(&sim, "verify");
-
-    // (2) `triage`: a red check the triage folded under a key of its own minting — the record
-    // files the red result's row under ITS key, and nobody graded that row.
-    let sim = Sim::queued(
-        "queue-continue-triage",
-        &Opening {
-            clauses: vec!["gate-green", "audit-clean"],
-            items: json!([
-                item("gate", "check", "gate-green"),
-                in_scope("ci", "check", "gate-green", &["jigc doc set"], &[]),
-                item("area-a", "audit-area", "audit-clean"),
-            ]),
-            bounds: vec![],
-            rows: json!([]),
-        },
-    );
-    let candidate = sim.rig.rev("HEAD");
-    let mut minted = keyed(
-        "the-gate-is-red",
-        "behaviour",
-        "no-break",
-        json!({"red-gate": [1]}),
-    );
-    minted["commands"] = json!("dev/gate");
-    // (The queue holds the late red check's row, which the triage graded a break: the stage
-    // launches its verifier beside the row nobody graded, which waits for its triage.)
-    let ran = sim.invoke(
-        sim.args("test", json!({})),
-        nobody_verifies(
-            small_stage(json!({
-                "checks": {"gate": "red", "ci": "red"},
-                "agents": {"area-a:review": nothing(), "triage": {"entries": [
-                    minted,
-                    found_again("red-ci", "breaks", json!({"red-ci": [1]})),
-                ]}},
-            })),
-            &["red-ci"],
-        ),
-    );
-    let words = ends_at_its_first_record(&sim, &ran, &candidate, 1, "triage");
-    assert!(
-        words.contains(&"item=gate:red:preflight".to_owned())
-            && words.contains(&"item=ci:red:preflight-second".to_owned()),
-        "a check an agent read red names the preflight whose report says so — the second's for a check the scope selected: {words:?}"
-    );
-    let state = sim.state();
-    let filed = state["ledger"]
-        .as_array()
-        .expect("the ledger")
-        .iter()
-        .find(|row| row["key"] == "red-gate")
-        .unwrap_or_else(|| panic!("the red result's row is filed: {state}"));
-    assert_eq!(
-        json!([filed["grade"], filed["repro"]]),
-        json!([
-            "ungraded",
-            format!("{RUN_DIR}/r1/reports/test/preflight.a1.md")
-        ]),
-        "its evidence is the preflight's report, by path, and nobody graded it: {state}"
-    );
-    let late = state["ledger"]
-        .as_array()
-        .expect("the ledger")
-        .iter()
-        .find(|row| row["key"] == "red-ci")
-        .unwrap_or_else(|| panic!("the late red check's row is filed: {state}"));
-    assert_eq!(
-        json!([late["grade"], late["repro"]]),
-        json!([
-            "breaks",
-            format!("{RUN_DIR}/r1/reports/test/preflight-second.a1.md")
-        ]),
-        "a check the scope selected is filed from the second preflight's report, and graded by the batch that files it: {state}"
-    );
-    refused(&sim, "triage");
-}
-
 /// **A step that types one status wrong is refused by the hash** (the plan's `K3`, its harness
 /// half; `T5b`). The composing step is an agent that types forty words: THE HARNESS HASHES THE
 /// WORDS' CANONICAL FORM IN JAVASCRIPT, and the record script hashes what the step typed. A
@@ -9823,6 +9542,1256 @@ fn a_contested_verdict_is_the_humans_and_no_advocate_is_launched_on_the_new_path
         !result.to_string().contains("write boundary")
             && !ran.logs.iter().any(|line| line.contains("write boundary")),
         "the basis is text of a filing, and the harness holds none of it: {result}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A run with a queue: an invocation that continues, and a wave that is the last (the
+// reshape's plan, `T6b`)
+// ---------------------------------------------------------------------------
+
+/// How AN INVOCATION THAT CONTINUES a `test` stage opens (the reshape's plan, §3 and `T6b`):
+/// its two reads, its attempt begun on record, and THE TWO BINARIES — each asked for under
+/// its commit's name and answered by the job that stands: a start step, and no wait. No
+/// preflight, no scope step, no gate of the candidate's, no held check and no instrument.
+fn continuation_opens(sim: &Sim, candidate: &str) -> Vec<String> {
+    let mut agents = lines(&["git:state", "git:state:test-1", "git:begin"]);
+    agents.push(format!("git:hold-start:{}", candidate_build(candidate)));
+    agents.push(format!("git:hold-start:{}", previous_build(sim)));
+    agents
+}
+
+/// The steps of a record an invocation that continues composes in round 1, under `name` —
+/// `graded`: the rows it graded; `verdicts`: what its verifiers filed, and what an earlier
+/// invocation's had — in its attempt, and the read of the state that follows the push.
+fn continuation_records(name: &str, attempt: u32, read: u32) -> Vec<String> {
+    let gate = format!("record-{name}-r1-a{attempt}-1");
+    vec![
+        format!("git:compose:{name}:r1"),
+        format!("git:hold-start:{gate}"),
+        format!("git:hold-wait:{gate}"),
+        format!("git:record:{name}:r1"),
+        format!("git:push:{name}"),
+        format!("git:state:test-{read}"),
+    ]
+}
+
+/// A verifier that HALTS, WITH ITS REPORT: nothing is filed, and its launch is one the record
+/// script counts — by that report.
+fn halts_reported(why: &str) -> Value {
+    json!({"status": "halted", "halt": {"root_cause": why, "evidence": "scripted",
+                                        "tree_state": "clean", "recommendation": "none"}})
+}
+
+/// How often the agent `label` was tried in an invocation: every try is a line of the trace.
+fn tries_of(ran: &Ran, label: &str) -> usize {
+    ran.agents().iter().filter(|a| **a == label).count()
+}
+
+/// The words the stage's one triage was handed its sources with: the `<source>=<count>` words
+/// of the call it made.
+fn triaged_from(ran: &Ran) -> Vec<String> {
+    let call = ran
+        .commands
+        .iter()
+        .find(|command| command.starts_with("dev/stabilize-record triage "))
+        .unwrap_or_else(|| panic!("the triage handed its entries over: {:?}", ran.commands));
+    call.split_once(" -- ")
+        .expect("the call names its sources")
+        .1
+        .split(' ')
+        .map(str::to_owned)
+        .collect()
+}
+
+/// **A verdict filed by an invocation that died is not verified again** (the reshape's plan,
+/// `T6b`; ruling 4 of 2026-10-10: *a verdict is recorded when it returns … nothing runs twice*;
+/// §3: *an invocation that continues … reads the queue, takes the verdicts already filed, and
+/// launches only what is missing*). The canary's second invocation lost nineteen verdicts, six
+/// of them confirmed, and verified every one of them again. HERE THE FIRST INVOCATION DIES
+/// AFTER ITS VERIFIERS FILED — its wave's report check never comes back — with one finding
+/// confirmed, one that NOBODY HERE CAN DRIVE, and one whose verifier halted. THE INVOCATION
+/// THAT FOLLOWS CONTINUES: no instrument and no triage; the two filed verdicts count as they
+/// stand — the state said so before any record held them — and ONE verifier is launched, for
+/// the finding that has none: under the continuation's own attempt, so that its report and
+/// its filing are names the record script takes. No verifier is launched again for the
+/// finding nobody can drive (`B4`: *none after `undrivable` is filed*). Its ONE record takes
+/// what both invocations filed, and the report the halted verifier of the dead one left.
+#[test]
+fn a_verdict_filed_by_an_invocation_that_died_is_not_verified_again() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::budgeted("continue-filed", &one_area(), 30);
+    let candidate = sim.rig.rev("HEAD");
+    let elsewhere = "another-route-is-dead";
+    let mut script = small_stage(json!({"agents": {
+        "area-a:review": findings(&["a refusal prints a route that leads nowhere", "another route is dead", "a slot is dropped"]),
+        "triage": {"entries": [a_route(ROUTE, 1), a_route(elsewhere, 2), a_behaviour(INSIDE, 3)]},
+        format!("verify:{ROUTE}"): files(json!({"verdict": "confirmed", "regression": false})),
+        format!("verify:{elsewhere}"): files(json!({"verdict": "undrivable", "reason": "needs-a-linux-host"})),
+        format!("verify:{INSIDE}"): halts_reported("the session ended while it drove"),
+    }}));
+    script["endings"] = json!({"git:check-reports:wave1": "dies"});
+    let died = sim.invoke(sim.args("test", json!({})), script);
+    assert_eq!(
+        json!([died.result["status"], died.result["halted"]["phase"]]),
+        json!(["halted", "reports"]),
+        "{}",
+        died.result
+    );
+    let first_record = sim.rig.rev("HEAD");
+    assert_eq!(
+        json!([sim.rig.rev("HEAD~1"), head_commit(&sim).0]),
+        json!([candidate, first_record_subject()]),
+        "the dead invocation left its first record, and nothing after it"
+    );
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            state["budget"]["spent"],
+            queued_keys(&state),
+            state["position"]["test"],
+            state["next"]
+        ]),
+        json!([2, [INSIDE], {"round": 1, "attempt": 2, "verify": true}, "verify"]),
+        "two verdicts are filed and count, in no commit; one row awaits its verdict: {state}"
+    );
+    assert!(
+        state["filed"]
+            .as_array()
+            .is_some_and(|filed| filed.len() == 2
+                && filed
+                    .iter()
+                    .all(|entry| entry["counts"] == true && entry["recorded"] == false)),
+        "{state}"
+    );
+
+    // THE INVOCATION THAT FOLLOWS CONTINUES: its reads, its attempt, the binaries that stand —
+    // and ONE verifier, for the finding that has no verdict.
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        json!({"agents": {format!("verify:{INSIDE}"): refutes("intended")}}),
+    );
+    let mut expected = continuation_opens(&sim, &candidate);
+    expected.push(format!("verify:{INSIDE}"));
+    expected.extend(lines(&["git:check-reports:wave1", "git:state:test-2"]));
+    expected.extend(continuation_records("verdicts", 2, 3));
+    assert_eq!(
+        ran.agents(),
+        expected,
+        "no instrument, no triage, no verifier for a finding whose verdict is filed — the one that nobody here can drive among them"
+    );
+    assert_eq!(verified(&ran), [INSIDE]);
+    assert_eq!(
+        ran.result["arrived"]["owed"],
+        json!(["filed"]),
+        "the first read met the filed verdicts no commit holds, and left them to the stage: {}",
+        ran.result
+    );
+    let scratch = sim.rig.scratch.display().to_string();
+    let prompt = verifier_prompt(&ran, INSIDE);
+    assert!(
+        prompt.contains(&format!(
+            "`dev/stabilize-record verdict --run {RUN} --round 1 --reporter verify-{INSIDE} --attempt 2 --scratch {scratch} --from {scratch}/verdict/r1/verify-{INSIDE}.a2.json`"
+        )) && prompt.contains(&format!(
+            "held to `{RUN_DIR}/r1/verdicts/verify-{INSIDE}.a2.json`"
+        )) && prompt.contains(&format!("(commit {candidate}, label c1)")),
+        "the verifier files under the continuation's own attempt, and drives the candidate the round tested:\n{prompt}"
+    );
+
+    // WHAT IT RETURNS: that it continued, and what it did — one launch, one verdict since it
+    // began, by the script's count — and its one record.
+    let result = &ran.result;
+    let head = sim.rig.rev("HEAD");
+    assert_eq!(
+        json!([
+            result["status"],
+            result["halted"],
+            result["continued"],
+            result["record"],
+            result["verify"]["record"],
+            result["verify"]["waves"],
+            result["verify"]["launched"],
+            result["verify"]["verdicts"],
+            result["verify"]["unverified"]
+        ]),
+        json!(["verified", null, ["verify"], null, head, 1, 1, 1, 0]),
+        "{result}"
+    );
+    assert_eq!(
+        json!([
+            sim.rig.rev("HEAD~1"),
+            head_commit(&sim).0,
+            sim.rig.remote(LOOP),
+            sim.rig.status()
+        ]),
+        json!([first_record, second_record_subject(), head, ""]),
+        "ONE record, on the dead invocation's first, pushed, and nothing left pending"
+    );
+    let composed = composing(&ran);
+    assert!(
+        composed.len() == 1
+            && composed[0].0.contains(" --round 1 --attempt 2 --subject ")
+            && composed[0].1
+                == [
+                    "reporter=attempt".to_owned(),
+                    format!("reporter=verify-{INSIDE}")
+                ],
+        "its record names its own reporters, and no item, no gate and no fact: {composed:?}"
+    );
+    let (_, paths) = head_commit(&sim);
+    for rel in [
+        format!("r1/verdicts/verify-{ROUTE}.a1.json"),
+        format!("r1/verdicts/verify-{elsewhere}.a1.json"),
+        format!("r1/verdicts/verify-{INSIDE}.a2.json"),
+        format!("r1/reports/test/verify-{ROUTE}.a1.md"),
+        // THE REPORT A HALTED VERIFIER OF THE DEAD INVOCATION LEFT, which no record had taken.
+        format!("r1/reports/test/verify-{INSIDE}.a1.md"),
+        format!("r1/reports/test/verify-{INSIDE}.a2.md"),
+        "r1/reports/test/attempt.a2.md".to_owned(),
+    ] {
+        assert!(
+            paths.contains(&format!("{RUN_DIR}/{rel}")),
+            "`{rel}` is in the continuation's record: {paths:?}"
+        );
+    }
+
+    // WHAT IS ON RECORD: three verdicts, each filed once; the attempt reached its record.
+    let state = sim.state();
+    let routes = |key: &str| {
+        let row = row_of(&state, key);
+        json!([row["grade"], row["route"], row["why"]])
+    };
+    assert_eq!(
+        json!([
+            state["budget"]["spent"],
+            queued_keys(&state),
+            state["rounds"][0]["facts"]["recorded"],
+            state["rounds"][0]["test_unrecorded"],
+            state["next"],
+            state["human_list"]
+        ]),
+        json!([3, [], ["test a2"], 0, "rule", [{"key": elsewhere, "why": "undrivable"}]]),
+        "{state}"
+    );
+    assert_eq!(
+        routes(ROUTE),
+        json!(["confirmed", "fix", "inside"]),
+        "{state}"
+    );
+    assert_eq!(
+        routes(INSIDE),
+        json!(["refuted", "recorded", "not-a-break"]),
+        "{state}"
+    );
+    assert!(
+        state["filed"]
+            .as_array()
+            .is_some_and(|filed| filed.len() == 3
+                && filed
+                    .iter()
+                    .all(|entry| entry["counts"] == true && entry["recorded"] == true)),
+        "every filed verdict counts, and the record holds it: {state}"
+    );
+}
+
+/// **A stage killed after its first record is continued without an instrument** (`T6b`; §3:
+/// *an invocation that continues runs no instrument*; ruling 4: *nothing runs twice* — the
+/// canary's second invocation ran 45 minutes of gate and regression set again). HERE THE
+/// STAGE IS KILLED BETWEEN ITS FIRST RECORD'S BATCH AND ITS COMMIT: the record's gate leaves no
+/// verdict. THE NEXT INVOCATION'S FIRST READ FINDS THE BATCH, gates and commits it, pushes, and
+/// starts nothing (`finishRecord`, which reads no path of a stage). AND THE ONE AFTER THAT
+/// CONTINUES, from the committed state and from git: its two reads, its attempt begun on the
+/// candidate the round tested, the two binaries answered by the builds that stand — and then
+/// the verifiers the queue prints, and its one record. NO PREFLIGHT, NO SCOPE STEP, NO GATE OF
+/// THE CANDIDATE'S, NO HELD CHECK, NO REVIEWER AND NO TRIAGE: the only long command that runs
+/// is its own record's gate.
+#[test]
+fn a_stage_killed_after_its_first_record_is_continued_without_an_instrument() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::queued("continue-killed", &with_held_checks(&["regression-set"]));
+    let candidate = sim.rig.rev("HEAD");
+    let killed = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({
+            "agents": {"area-a:review": one_finding(), "triage": one_entry()},
+            "record": {"gate": {"void": true}},
+        })),
+    );
+    assert_eq!(
+        json!([
+            killed.result["status"],
+            killed.result["halted"]["phase"],
+            killed.result["halted"]["held"]["name"],
+            sim.rig.rev("HEAD")
+        ]),
+        json!(["halted", "record", "record-test-r1-a1-1", candidate]),
+        "the first record's batch is applied, and no commit holds it: {}",
+        killed.result
+    );
+    assert!(verified(&killed).is_empty(), "{:?}", killed.agents());
+
+    // (1) THE NEXT INVOCATION FINISHES THE RECORD, AND NOTHING ELSE.
+    let finished = sim.invoke(sim.args("test", json!({})), json!({}));
+    let mut finishing = lines(&["git:state"]);
+    finishing.extend(held_steps("record-pending-1"));
+    finishing.extend(lines(&[
+        "git:record:pending",
+        "git:push:pending",
+        "git:state:test-1",
+    ]));
+    assert_eq!(finished.agents(), finishing);
+    assert_eq!(
+        json!([
+            finished.result["status"],
+            finished.result["next"],
+            sim.rig.rev("HEAD~1"),
+            head_commit(&sim).0,
+            sim.rig.remote(LOOP)
+        ]),
+        json!([
+            "recorded",
+            "verify",
+            candidate,
+            first_record_subject(),
+            sim.rig.rev("HEAD")
+        ]),
+        "the stage's first record, committed and pushed by the invocation that found it applied: {}",
+        finished.result
+    );
+    let first_record = sim.rig.rev("HEAD");
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            state["position"]["test"],
+            state["budget"]["spent"],
+            queued_keys(&state)
+        ]),
+        json!([{"round": 1, "attempt": 2, "verify": true}, 0, [INSIDE]]),
+        "{state}"
+    );
+    // AN INVOCATION THAT WOULD CONTINUE TAKES NO SCOPE, AND ONE THAT ONLY LOOKS BEGINS NOTHING:
+    // each ends after the two reads, and the position is what it was.
+    let position = state["position"]["test"].clone();
+    let refused = sim.invoke(sim.args("test", json!({"scope": "everything"})), json!({}));
+    assert_eq!(
+        json!([refused.result["status"], refused.result["position"]]),
+        json!(["refused", position]),
+        "{}",
+        refused.result
+    );
+    assert!(
+        text(&refused.result["message"]).contains("it was passed scope")
+            && text(&refused.result["message"]).contains("Nothing was run beyond the two reads"),
+        "{}",
+        refused.result
+    );
+    let looked = sim.invoke(sim.args("test", json!({"stopAfter": "state"})), json!({}));
+    assert_eq!(
+        json!([
+            looked.result["status"],
+            looked.result["after"],
+            looked.result["continues"],
+            looked.result["attempt"],
+            looked.result["candidate"]["sha"]
+        ]),
+        json!(["stopped", "state", ["verify"], 2, candidate]),
+        "{}",
+        looked.result
+    );
+    for ran in [&refused, &looked] {
+        assert_eq!(ran.trace, lines(&TWO_READS));
+    }
+    assert_eq!(
+        sim.state()["position"]["test"],
+        position,
+        "no attempt was begun"
+    );
+    let before = sim.long_commands();
+
+    // (2) AND THE ONE AFTER IT CONTINUES.
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        json!({"agents": {format!("verify:{INSIDE}"): files(json!({"verdict": "confirmed", "regression": false}))}}),
+    );
+    let mut expected = continuation_opens(&sim, &candidate);
+    expected.push(format!("verify:{INSIDE}"));
+    expected.extend(lines(&["git:check-reports:wave1", "git:state:test-2"]));
+    expected.extend(continuation_records("verdicts", 2, 3));
+    assert_eq!(
+        ran.agents(),
+        expected,
+        "the two reads, the attempt, the binaries that stand, the verifier, its report checked, the queue read, the record"
+    );
+    assert_eq!(
+        ran.reporters,
+        ["attempt".to_owned(), format!("verify-{INSIDE}")],
+        "the reporters of an invocation that continues are its marker and its verifiers"
+    );
+    let after = sim.long_commands();
+    assert_eq!(
+        after[before.len()..],
+        ["gate --keep-going".to_owned()],
+        "no build, no gate of the candidate's and no regression set runs again: the one long command is the record's own gate"
+    );
+    let begun = ran
+        .commands
+        .iter()
+        .find(|command| command.starts_with("dev/stabilize-step begin "))
+        .expect("the attempt is begun on record");
+    assert!(
+        begun.contains(&format!(
+            " --attempt 2 --reporter attempt --commit {candidate} "
+        )) && verifier_prompt(&ran, INSIDE).contains(&format!("(commit {candidate}, label c1)")),
+        "the attempt is begun on, and the verifier drives, THE CANDIDATE THE ROUND TESTED — not the record commit {first_record}: {begun}"
+    );
+    let result = &ran.result;
+    let head = sim.rig.rev("HEAD");
+    assert_eq!(
+        json!([
+            result["status"],
+            result["continued"],
+            result["candidate"]["sha"],
+            result["verify"]["record"],
+            result["verify"]["verdicts"],
+            result["next"]
+        ]),
+        json!(["verified", ["verify"], candidate, head, 1, "fix"]),
+        "{result}"
+    );
+    assert_eq!(
+        json!([
+            sim.rig.rev("HEAD~1"),
+            head_commit(&sim).0,
+            sim.rig.remote(LOOP),
+            sim.rig.status()
+        ]),
+        json!([first_record, second_record_subject(), head, ""])
+    );
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            row_of(&state, INSIDE)["grade"],
+            state["budget"]["spent"],
+            standing(&state, "gate"),
+            standing(&state, "regression-set")
+        ]),
+        json!(["confirmed", 1, ["green", null], ["green", null]]),
+        "the verdict is on record, and what the stage held stands as its first record left it: {state}"
+    );
+}
+
+/// **A continuation grades a row nobody graded, and no row a second time** (`T6b`; the plan's
+/// review, `B1`: *a row that appears after the one triage has no grader* — a red row a batch
+/// filed under its own key while the triage folded the red check under another). The first
+/// invocation leaves such a row: `next` is `triage`, and the position says so beside
+/// `verify`. THE INVOCATION THAT FOLLOWS GRADES IT FIRST: its triage is handed ONE source —
+/// the rows nobody graded, by the read that prints them — and no reporter's finding, no red
+/// result and NO ROW A TRIAGE HAS GRADED: the read prints the one row, and the entries the
+/// triage hands over are one. THEN ITS RECORD OF WHAT IT GRADED, composed by the tool from
+/// that attempt's rendering; then the queue, which now holds the row beside the one the first
+/// invocation left unverified; then its verifiers, and the record of what they filed.
+#[test]
+fn a_continuation_grades_a_row_nobody_graded_and_no_row_a_second_time() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::queued(
+        "continue-triage",
+        &Opening {
+            clauses: vec!["gate-green", "audit-clean"],
+            items: json!([
+                item("gate", "check", "gate-green"),
+                in_scope("ci", "check", "gate-green", &["jigc doc set"], &[]),
+                item("area-a", "audit-area", "audit-clean"),
+            ]),
+            bounds: vec![],
+            rows: json!([]),
+        },
+    );
+    let candidate = sim.rig.rev("HEAD");
+    let folded = "the-gate-is-red";
+    let mut minted = keyed(folded, "behaviour", "no-break", json!({"red-gate": [1]}));
+    minted["commands"] = json!("dev/gate");
+    // The triage folds the red gate under a key of its own minting: the batch files the red
+    // result's row under ITS key, `red-gate`, and nobody graded that row. The late red check
+    // is graded a break under its own key, and its verifier leaves nothing.
+    let first = sim.invoke(
+        sim.args("test", json!({})),
+        nobody_verifies(
+            small_stage(json!({
+                "checks": {"gate": "red", "ci": "red"},
+                "agents": {"area-a:review": nothing(), "triage": {"entries": [
+                    minted,
+                    found_again("red-ci", "breaks", json!({"red-ci": [1]})),
+                ]}},
+            })),
+            &["red-ci"],
+        ),
+    );
+    ends_at_its_first_record(&sim, &first, &candidate, 1, "triage");
+    let first_record = sim.rig.rev("HEAD");
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            state["position"]["test"],
+            state["untriaged"],
+            row_of(&state, "red-gate")["grade"],
+            queued_keys(&state)
+        ]),
+        json!([
+            {"round": 1, "attempt": 2, "triage": true, "verify": true},
+            [{"key": "red-gate", "why": "ungraded"}],
+            "ungraded",
+            ["red-ci"]
+        ]),
+        "{state}"
+    );
+    let graded_before = sim.rig.read(&format!("{RUN_DIR}/r1/triage.md"));
+
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        json!({"agents": {
+            "triage": {"entries": [found_again("red-gate", "breaks", json!({"ledger": [1]}))]},
+            "verify:red-ci": refutes("intended"),
+            "verify:red-gate": files(json!({"verdict": "confirmed", "regression": false})),
+        }}),
+    );
+    let mut expected = continuation_opens(&sim, &candidate);
+    expected.extend(lines(&["triage", "git:check-reports:triage"]));
+    expected.extend(continuation_records("graded", 2, 2));
+    expected.extend(lines(&[
+        // (In the queue's rank: two rows of one class, in the ledger's order.)
+        "verify:red-gate",
+        "verify:red-ci",
+        "git:check-reports:wave1",
+        "git:state:test-3",
+    ]));
+    expected.extend(continuation_records("verdicts", 2, 4));
+    assert_eq!(
+        ran.agents(),
+        expected,
+        "the triage of the rows nobody graded, its record, the verifiers of what the queue then prints, their record — and no instrument"
+    );
+
+    // (1) WHAT THE TRIAGE WAS HANDED: one source, the rows nobody graded, by the read — and
+    // that read printed the one row. No graded row is in it, and none is graded again.
+    assert_eq!(
+        triaged_from(&ran),
+        ["ledger=1"],
+        "the triage of an invocation that continues is handed the rows nobody graded, and nothing else"
+    );
+    let prompt = one_triage(&ran);
+    assert!(
+        !prompt.contains("\n- red-")
+            && !prompt.contains("\n- area-a-review")
+            && prompt.contains("THE ROWS NOBODY GRADED"),
+        "no red result of an earlier invocation and no reporter's finding is handed over again:\n{prompt}"
+    );
+    let (_, _, printed) = ran
+        .reads
+        .iter()
+        .find(|(label, command, _)| {
+            label == "triage" && command.starts_with("dev/stabilize-record untriaged ")
+        })
+        .expect("the triage ran the read its prompt names");
+    let printed: Value = serde_json::from_str(printed).expect("one line of JSON");
+    assert_eq!(
+        json!([printed["count"], printed["untriaged"][0]["key"]]),
+        json!([1, "red-gate"]),
+        "the read prints the row nobody graded, and neither row a triage graded: {printed}"
+    );
+    let entries = sim.rendered(1, 2);
+    assert_eq!(
+        json!([
+            entries["entries"].as_array().map(Vec::len),
+            entries["entries"][0]["key"],
+            entries["entries"][0]["found"]
+        ]),
+        json!([1, "red-gate", "again"]),
+        "the continuation's rendering holds one entry, under the row's own key: {entries}"
+    );
+    let graded_after = sim.rig.read(&format!("{RUN_DIR}/r1/triage.md"));
+    let row_in = |text: &str, key: &str| -> String {
+        text.lines()
+            .find(|line| line.starts_with(&format!("| `{key}` |")))
+            .unwrap_or_else(|| panic!("the round's triage record holds `{key}`:\n{text}"))
+            .to_owned()
+    };
+    assert_eq!(
+        row_in(&graded_before, folded),
+        row_in(&graded_after, folded),
+        "the row the first invocation's triage graded is as that triage left it"
+    );
+
+    // (2) ITS TWO RECORDS: what it graded — composed from that attempt's rendering — and what
+    // its verifiers filed.
+    let composed = composing(&ran);
+    assert_eq!(
+        composed
+            .iter()
+            .map(|(_, words)| words.clone())
+            .collect::<Vec<_>>(),
+        [
+            lines(&["reporter=attempt", "reporter=triage"]),
+            lines(&[
+                "reporter=attempt",
+                "reporter=triage",
+                "reporter=verify-red-gate",
+                "reporter=verify-red-ci"
+            ]),
+        ],
+        "each record names the reporters the invocation has launched, and nothing else"
+    );
+    let subject = format!("docs(record): {RUN} r1 - the rows nobody had graded");
+    assert!(
+        composed[0].0.contains(&format!(
+            " --round 1 --attempt 2 --subject '{subject}' --sha256 "
+        )) && flag_of(&composed[0].0, "--sha256")
+            == sha256(&canonical(1, 2, &subject, &composed[0].1)),
+        "{composed:?}"
+    );
+    let head = sim.rig.rev("HEAD");
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["continued"],
+            result["record"],
+            result["verify"]["record"],
+            result["triage"]["report"],
+            result["counts"]["findings_in"],
+            result["verify"]["launched"],
+            result["verify"]["verdicts"]
+        ]),
+        json!([
+            "verified",
+            ["triage", "verify"],
+            sim.rig.rev("HEAD~1"),
+            head,
+            rendering(1, 2),
+            1,
+            2,
+            2
+        ]),
+        "{result}"
+    );
+    assert_eq!(
+        json!([
+            sim.rig.rev("HEAD~2"),
+            sim.rig
+                .git(&["show", "--no-patch", "--format=%s", "HEAD~1"])
+                .trim(),
+            head_commit(&sim).0,
+            sim.rig.remote(LOOP),
+            sim.rig.status()
+        ]),
+        json!([first_record, subject, second_record_subject(), head, ""]),
+        "two records of the continuation, on the first invocation's one"
+    );
+
+    // (3) WHAT IS ON RECORD: the row is graded by the triage that met it, and verified; no
+    // row awaits a triage, and the queue is empty.
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            state["untriaged"],
+            queued_keys(&state),
+            row_of(&state, "red-gate")["grade"],
+            row_of(&state, "red-ci")["grade"],
+            row_of(&state, folded)["grade"],
+            state["budget"]["spent"]
+        ]),
+        json!([[], [], "confirmed", "refuted", "no-break", 2]),
+        "{state}"
+    );
+}
+
+/// **A re-run inside a round hunts its due items, grades once, and spends the round's own
+/// budget** (`T6b`; the plan's review, `B1`: *three arms, a re-run's among them*; `E3`: *the
+/// budget is the round's `test` stage's, counted on record across its invocations*). An item
+/// whose reviewer died is void; the round's other finding is verified — ONE of the budget's
+/// two — and closed, the human gives his go, and the state asks for the item's re-run. THE
+/// RE-RUN IS A STAGE OF THE PATH LIKE ANY: it hunts THE DUE ITEM AND NO OTHER, with no scope
+/// step; ITS ONE TRIAGE IS HANDED WHAT THAT HUNT FOUND, and no row the round's first triage
+/// graded; its first record; and then IT VERIFIES ON WHAT THE ROUND'S BUDGET HAS LEFT — one
+/// verdict, though two rows are in the queue — so the second, a route item nobody reached, is
+/// the human's.
+#[test]
+fn a_rerun_inside_a_round_hunts_its_due_items_grades_once_and_spends_the_rounds_own_budget() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::budgeted(
+        "rerun-budget",
+        &Opening {
+            clauses: vec!["audit-clean", "no-lost-files"],
+            items: json!([
+                item("area-a", "audit-area", "audit-clean"),
+                item("area-b", "audit-area", "no-lost-files"),
+            ]),
+            bounds: vec![],
+            rows: json!([]),
+        },
+        2,
+    );
+    let candidate = sim.rig.rev("HEAD");
+    let mut script = small_stage(json!({"agents": {
+        "area-a:review": findings(&["a refusal prints a route that leads nowhere"]),
+        "area-b:review": nothing(),
+        "triage": {"entries": [a_route(ROUTE, 1)]},
+        format!("verify:{ROUTE}"): refutes("intended"),
+    }}));
+    script["endings"] = json!({"area-b:review": "dies"});
+    let first = sim.invoke(sim.args("test", json!({})), script);
+    ends_at_its_second_record(&sim, &first, &candidate);
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            state["budget"],
+            state["next"],
+            state["stop"]["then"],
+            standing(&state, "area-b")[0]
+        ]),
+        json!([{"limit": 2, "spent": 1, "left": 1}, "stop", "retest", "void"]),
+        "one verdict of the round's two is spent, nothing is open, and the void item is due again: {state}"
+    );
+    let go = sim.invoke(
+        sim.args("test", json!({"rulings": [{"go": true}]})),
+        json!({}),
+    );
+    assert_eq!(
+        json!([go.result["status"], go.result["next"]]),
+        json!(["ruled", "retest"]),
+        "{}",
+        go.result
+    );
+    let before = sim.rig.rev("HEAD");
+
+    // THE RE-RUN: the due item, its findings graded once, and one verdict.
+    let (reached, unreached) = ("a-lost-file-route-is-dead", "another-lost-file-route");
+    let of_b = |key: &str, n: u32| {
+        let mut entry = keyed(key, "route", "breaks", json!({"area-b-review": [n]}));
+        entry["route"] = json!(format!("Run: jigc doc set --repair {key}"));
+        entry
+    };
+    let ran = sim.invoke(
+        sim.args("test", json!({"clause": "no-lost-files"})),
+        json!({"agents": {
+            "area-b:review": findings(&["a file is lost behind a dead route", "another file is lost"]),
+            "triage": {"entries": [of_b(reached, 1), of_b(unreached, 2)]},
+            format!("verify:{reached}"): files(json!({"verdict": "confirmed", "regression": false})),
+        }}),
+    );
+    let agents = ran.agents();
+    assert_eq!(
+        agents
+            .iter()
+            .filter(|label| !label.starts_with("git:"))
+            .copied()
+            .collect::<Vec<_>>(),
+        [
+            "preflight",
+            "area-b:review",
+            "triage",
+            format!("verify:{reached}").as_str()
+        ],
+        "the due item's hunt and no other, no scope step, ONE triage, and one verifier: {agents:?}"
+    );
+    assert_eq!(
+        triaged_from(&ran),
+        ["area-b-review=2"],
+        "the re-run's triage is handed what its own hunt found: the row the round's first triage graded is not handed again"
+    );
+    let entries = sim.rendered(1, 2);
+    assert_eq!(
+        entries["entries"]
+            .as_array()
+            .expect("the entries")
+            .iter()
+            .map(|entry| text(&entry["key"]))
+            .collect::<Vec<_>>(),
+        [reached, unreached],
+        "{entries}"
+    );
+    // THE ROUND'S OWN BUDGET: at the re-run's first record one verdict is spent already — the
+    // first stage's — and one is left; a wave is never more than that.
+    let read = |n: u32| {
+        let state = sim.read_at(n);
+        json!([
+            queued_keys(&state),
+            state["budget"]["spent"],
+            state["budget"]["left"],
+            state["next"]
+        ])
+    };
+    assert_eq!(read(3), json!([[reached, unreached], 1, 1, "verify"]));
+    assert_eq!(read(4), json!([[unreached], 2, 0, "rule"]));
+    assert_eq!(verified(&ran), [reached], "{agents:?}");
+    let composed = composing(&ran);
+    assert_eq!(
+        composed[0].1,
+        [
+            "reporter=attempt".to_owned(),
+            "reporter=preflight".to_owned(),
+            "reporter=area-b-review".to_owned(),
+            "reporter=triage".to_owned(),
+            format!("commit={candidate}"),
+            "item=area-b:green".to_owned(),
+        ],
+        "the re-run's first record: its reporters, the round's candidate, and the due item's result"
+    );
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["rerun"]["clause"],
+            result["candidate"]["sha"],
+            result["verify"]["launched"],
+            result["verify"]["verdicts"],
+            result["verify"]["left"],
+            result["next"]
+        ]),
+        json!(["verified", "no-lost-files", candidate, 1, 1, 0, "rule"]),
+        "{result}"
+    );
+    assert_eq!(
+        json!([sim.rig.rev("HEAD~2"), sim.rig.status()]),
+        json!([before, ""]),
+        "the re-run's two records, on the go's"
+    );
+    let state = sim.state();
+    let routes = |key: &str| {
+        let row = row_of(&state, key);
+        json!([row["grade"], row["route"], row["why"]])
+    };
+    assert_eq!(
+        json!([state["budget"], standing(&state, "area-b")[0]]),
+        json!([{"limit": 2, "spent": 2, "left": 0}, "green"]),
+        "{state}"
+    );
+    assert_eq!(
+        routes(ROUTE),
+        json!(["refuted", "recorded", "not-a-break"]),
+        "the row the first stage verified is as it was: {state}"
+    );
+    assert_eq!(
+        routes(reached),
+        json!(["confirmed", "fix", "inside"]),
+        "{state}"
+    );
+    assert_eq!(
+        routes(unreached),
+        json!(["breaks", "human", "unreached"]),
+        "{state}"
+    );
+}
+
+/// The stage both scenarios of a silent wave run: three rows in the queue — two route items
+/// and a behaviour item — and the behaviour item's verifier confirms it and hands one on.
+fn three_in_a_wave(handed_on: &str) -> (Value, &'static str) {
+    let elsewhere = "another-route-is-dead";
+    (
+        small_stage(json!({"agents": {
+            "area-a:review": findings(&["a refusal prints a route that leads nowhere", "another route is dead", "a slot is dropped"]),
+            "triage": {"entries": [a_route(ROUTE, 1), a_route(elsewhere, 2), a_behaviour(INSIDE, 3)]},
+            format!("verify:{INSIDE}"): files(json!({
+                "verdict": "confirmed", "regression": false,
+                "hands_on": [handed(handed_on, Some("Run: jigc doc set --again"))],
+            })),
+        }})),
+        elsewhere,
+    )
+}
+
+/// **One silent verifier call leaves its finding unverified, and the phase goes on** (`T6b`;
+/// the plan's §2.2 and `E7`: *one stray death costs one unverified finding and no stop — a
+/// stop costs a record and a restart*). The account's usage limit never reaches the script as
+/// a message: it is handed NOTHING. So A VERIFIER CALL IS NEVER TRIED TWICE — the canary's
+/// second invocation tried every dead verifier three times — and one call of a wave that
+/// returns nothing is that finding's alone: named, unverified, nothing spent, no launch
+/// counted, and THE NEXT WAVE IS LAUNCHED. Beside it, the cell the other path's scenario of a
+/// verifier that does not finish held: A VERIFIER THAT RETURNS A FILING AND LEFT NO REPORT has
+/// filed nothing — the record script files no verdict before its report — and is named so.
+#[test]
+fn one_silent_verifier_call_leaves_its_finding_unverified_and_the_phase_goes_on() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::budgeted("verify-one-silent", &one_area(), 30);
+    let candidate = sim.rig.rev("HEAD");
+    let handed_on = "the-repair-route-is-dead";
+    let (mut script, elsewhere) = three_in_a_wave("the repair route is dead");
+    script["agents"][format!("verify:{elsewhere}")] = json!({});
+    script["agents"][format!("verify:{handed_on}")] = refutes("does-not-reproduce");
+    script["endings"] = json!({
+        format!("verify:{ROUTE}"): "dies",
+        format!("verify:{elsewhere}"): "unreported",
+    });
+    let ran = sim.invoke(sim.args("test", json!({})), script);
+
+    // (1) THE SILENT CALL IS TRIED ONCE, and the phase goes on to its second wave.
+    assert_eq!(
+        tries_of(&ran, &format!("verify:{ROUTE}")),
+        1,
+        "a verifier call is never tried twice: {:?}",
+        ran.agents()
+    );
+    assert_eq!(
+        verified(&ran),
+        [ROUTE, elsewhere, INSIDE, handed_on],
+        "the wave, and then the item its one verdict handed on: {:?}",
+        ran.agents()
+    );
+    assert!(
+        ran.agents().contains(&"git:check-reports:wave2"),
+        "{:?}",
+        ran.agents()
+    );
+    assert!(
+        !ran.logs
+            .iter()
+            .any(|line| line.contains("breaker") || line.contains("exhausted")),
+        "one silent verifier call is no exhausted call, and trips nothing: {:?}",
+        ran.logs
+    );
+
+    // (2) EACH IS NAMED, WITH WHY — and neither is a launch the record script counts.
+    assert_eq!(
+        said_of(&ran, "NOT VERIFIED", ROUTE),
+        [format!(
+            "NOT VERIFIED: `{ROUTE}` — its verifier returned nothing, and the queue prints the finding again: no verdict of it counts. It awaits its verdict again, and nothing of the budget was spent on it"
+        )],
+        "{:?}",
+        ran.logs
+    );
+    assert_eq!(
+        said_of(&ran, "NOT VERIFIED", elsewhere),
+        [format!(
+            "NOT VERIFIED: `{elsewhere}` — its verifier returned and left no report, and the queue prints the finding again: no verdict of it counts. It awaits its verdict again, and nothing of the budget was spent on it"
+        )],
+        "{:?}",
+        ran.logs
+    );
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["next"],
+            result["verify"]["waves"],
+            result["verify"]["launched"],
+            result["verify"]["verdicts"],
+            result["verify"]["unverified"],
+            result["verify"]["silent"],
+            result["verify"]["last"]
+        ]),
+        json!(["verified", "verify", 2, 4, 2, 2, 1, null]),
+        "{result}"
+    );
+    ends_at_its_second_record(&sim, &ran, &candidate);
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            queued_keys(&state),
+            state["budget"]["spent"],
+            row_of(&state, ROUTE)["awaits"],
+            row_of(&state, elsewhere)["awaits"]
+        ]),
+        json!([
+            [ROUTE, elsewhere],
+            2,
+            {"why": "unverified", "passes": 0, "retry": "due"},
+            {"why": "unverified", "passes": 0, "retry": "due"}
+        ]),
+        "both await their verdict, and no launch of either is counted: {state}"
+    );
+    assert!(
+        !sim.rig.root.join(filed_at(elsewhere)).exists(),
+        "a verifier that left no report filed nothing"
+    );
+}
+
+/// **Two silent calls in a wave make it the last, and none is tried again** (`T6b`; §2.2:
+/// *a wave in which two verifier calls return nothing is the last wave; no verifier call is
+/// tried a second time*; `E7`: *at a real limit every call of the wave is silent*). Two of a
+/// wave's three verifiers return nothing. EACH WAS TRIED ONCE. The wave's third files, and
+/// hands an item on — which stands first in the queue at the next read, with twenty-nine
+/// verdicts of the budget left: AND NO SECOND WAVE IS LAUNCHED. The stage says so, checks the
+/// wave's reports, reads the queue, and RECORDS — every step that follows the wave answers
+/// here, so this is no limit, and the stage returns with what it verified on record and
+/// `next: verify`.
+#[test]
+fn two_silent_calls_in_a_wave_make_it_the_last_and_none_is_tried_again() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::budgeted("verify-two-silent", &one_area(), 30);
+    let candidate = sim.rig.rev("HEAD");
+    let handed_on = "the-repair-route-is-dead";
+    let (mut script, elsewhere) = three_in_a_wave("the repair route is dead");
+    script["endings"] = json!({
+        format!("verify:{ROUTE}"): "dies",
+        format!("verify:{elsewhere}"): "dies",
+    });
+    let ran = sim.invoke(sim.args("test", json!({})), script);
+    for key in [ROUTE, elsewhere, INSIDE] {
+        assert_eq!(
+            tries_of(&ran, &format!("verify:{key}")),
+            1,
+            "`{key}`: no verifier call is tried a second time: {:?}",
+            ran.agents()
+        );
+    }
+    let after_wave = sim.read_at(4);
+    assert_eq!(
+        json!([
+            queued_keys(&after_wave),
+            after_wave["budget"]["left"],
+            after_wave["next"]
+        ]),
+        json!([[handed_on, ROUTE, elsewhere], 29, "verify"]),
+        "a row is in the queue that this invocation has not launched, and budget is left: {after_wave}"
+    );
+    assert_eq!(
+        verified(&ran),
+        [ROUTE, elsewhere, INSIDE],
+        "and no second wave is launched: {:?}",
+        ran.agents()
+    );
+    assert!(
+        !ran.agents().contains(&"git:check-reports:wave2"),
+        "{:?}",
+        ran.agents()
+    );
+    let last: Vec<&String> = ran
+        .logs
+        .iter()
+        .filter(|line| line.starts_with("THE LAST WAVE"))
+        .collect();
+    assert!(
+        last.len() == 1
+            && last[0].contains("2 verifier call(s) of wave 1 returned nothing")
+            && last[0].contains("no further wave is launched"),
+        "the stage says that the wave was the last, and why: {:?}",
+        ran.logs
+    );
+    assert!(
+        !ran.logs.iter().any(|line| line.contains("breaker")),
+        "the breaker is every other role's: {:?}",
+        ran.logs
+    );
+
+    // THE STEPS THAT FOLLOW ANSWER: the stage records what was filed, and returns.
+    ends_at_its_second_record(&sim, &ran, &candidate);
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["halted"],
+            result["next"],
+            result["verify"]["waves"],
+            result["verify"]["launched"],
+            result["verify"]["verdicts"],
+            result["verify"]["unverified"],
+            result["verify"]["silent"],
+            result["verify"]["last"]
+        ]),
+        json!(["verified", null, "verify", 1, 3, 1, 2, 2, 1]),
+        "{result}"
+    );
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            queued_keys(&state),
+            state["budget"]["spent"],
+            row_of(&state, INSIDE)["grade"]
+        ]),
+        json!([[handed_on, ROUTE, elsewhere], 1, "confirmed"]),
+        "{state}"
+    );
+}
+
+/// **A stage whose record step is silent after that halts naming the filed verdicts** (`T6b`;
+/// §2.2: *the first message of the account's usage limit cannot be seen*; §6, told with the
+/// questions: *a filed verdict is on this machine's disk until the stage's second record*).
+/// After a wave that was the last for its silence THE STEP THAT COMPOSES THE RECORD RETURNS
+/// NOTHING TOO — on every try: that step is no verifier's, and is tried as every step is. THE
+/// STAGE HALTS AT ITS RECORD AND SAYS THAT THIS MAY BE THE ACCOUNT'S LIMIT — never that it is:
+/// it was handed nothing, and nothing says why — AND NAMES THE FILED VERDICTS: each verdict a
+/// verifier of this invocation filed, by the one path a filing of its name has, held by the
+/// queue's own read; how many verdicts the state counts in the round; where they lie; and the
+/// state document, by its path and its hash, whose `filed` lists every one with whether it
+/// counts. Nothing was applied, the first record stands, and the invocation that follows
+/// CONTINUES: it launches what is missing, and its record takes the verdict the halt named.
+#[test]
+fn a_stage_whose_record_step_is_silent_after_that_halts_naming_the_filed_verdicts() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::budgeted("verify-limit", &one_area(), 30);
+    let candidate = sim.rig.rev("HEAD");
+    let handed_on = "the-repair-route-is-dead";
+    let (mut script, elsewhere) = three_in_a_wave("the repair route is dead");
+    script["endings"] = json!({
+        format!("verify:{ROUTE}"): "dies",
+        format!("verify:{elsewhere}"): "dies",
+        "git:compose:verdicts:r1": "dies",
+    });
+    let ran = sim.invoke(sim.args("test", json!({})), script);
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["halted"]["phase"],
+            result["halted"]["transient"],
+            result["halted"]["limit"]
+        ]),
+        json!(["halted", "record", true, {"possible": true, "wave": 1, "silent": 2}]),
+        "{result}"
+    );
+    assert_eq!(
+        tries_of(&ran, "git:compose:verdicts:r1"),
+        3,
+        "the step that composes the record is no verifier's: it is tried as every step is: {:?}",
+        ran.agents()
+    );
+    let message = text(&result["message"]);
+    assert!(
+        message.contains("THIS MAY BE THE ACCOUNT'S USAGE LIMIT")
+            && message.contains("2 verifier call(s) of wave 1 returned nothing")
+            && message.contains(&filed_at(INSIDE))
+            && !message.contains("is the account's limit"),
+        "the halt says what it may be, and never that it is: {message}"
+    );
+
+    // THE FILED VERDICTS, NAMED: by path, by the state's count, by where they lie — and by the
+    // state document, which lists each with whether it counts.
+    assert_eq!(
+        result["halted"]["filed"],
+        json!({
+            "counted": 1,
+            "files": [filed_at(INSIDE)],
+            "unconfirmed": [],
+            "directory": format!("{RUN_DIR}/r1/verdicts"),
+        }),
+        "{result}"
+    );
+    let listed = document(result)["filed"].clone();
+    assert_eq!(
+        json!([
+            listed.as_array().map(Vec::len),
+            listed[0]["file"],
+            listed[0]["counts"],
+            listed[0]["recorded"]
+        ]),
+        json!([1, filed_at(INSIDE), true, false]),
+        "the document the halt names lists the filed verdict, and that it counts: {listed}"
+    );
+    assert!(sim.rig.root.join(filed_at(INSIDE)).exists());
+    let first_record = sim.rig.rev("HEAD");
+    assert_eq!(
+        json!([
+            sim.rig.rev("HEAD~1"),
+            head_commit(&sim).0,
+            sim.rig.remote(LOOP)
+        ]),
+        json!([candidate, first_record_subject(), first_record]),
+        "the first record stands, pushed, and nothing of a second is applied"
+    );
+    assert!(
+        sim.rig.status().lines().all(|line| line.starts_with("?? ")),
+        "{}",
+        sim.rig.status()
+    );
+
+    // THE INVOCATION THAT FOLLOWS CONTINUES: the three rows the queue holds are launched once
+    // more, under the next attempt. HERE ITS VERIFIERS LEAVE NOTHING — AND ITS RECORD IS MADE
+    // ALL THE SAME, because the first read said that a filed verdict is owed one: THE VERDICT
+    // THE HALT NAMED IS TAKEN, and is in a commit, pushed.
+    let state = sim.state();
+    assert_eq!(
+        json!([state["position"]["test"], queued_keys(&state)]),
+        json!([{"round": 1, "attempt": 2, "verify": true}, [handed_on, ROUTE, elsewhere]]),
+        "{state}"
+    );
+    let again = sim.invoke(
+        sim.args("test", json!({})),
+        nobody_verifies(json!({}), &[handed_on, ROUTE, elsewhere]),
+    );
+    assert_eq!(
+        verified(&again),
+        [handed_on, ROUTE, elsewhere],
+        "{:?}",
+        again.agents()
+    );
+    let head = sim.rig.rev("HEAD");
+    assert_eq!(
+        json!([
+            again.result["status"],
+            again.result["continued"],
+            again.result["arrived"]["owed"],
+            again.result["verify"]["verdicts"],
+            again.result["verify"]["record"],
+            again.result["halted"]
+        ]),
+        json!(["verified", ["verify"], ["filed"], 0, head, null]),
+        "{}",
+        again.result
+    );
+    let (subject, paths) = head_commit(&sim);
+    assert!(
+        subject == second_record_subject()
+            && paths.contains(&filed_at(INSIDE))
+            && sim.rig.rev("HEAD~1") == first_record
+            && sim.rig.remote(LOOP).as_deref() == Some(head.as_str()),
+        "the record takes the verdict the halted stage filed: {paths:?}"
+    );
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            state["budget"]["spent"],
+            state["filed"][0]["recorded"],
+            queued_keys(&state),
+            sim.rig.status()
+        ]),
+        json!([1, true, [handed_on, ROUTE, elsewhere], ""]),
+        "{state}"
+    );
+
+    // AND A STEP THAT REFUSES AFTER SUCH A WAVE IS NO SUCH HALT: the composing step answered —
+    // twice, with the record script's refusal of a word its agent altered — so nothing here
+    // looks like a limit, and the halt says what a refused record says and no more.
+    let sim = Sim::budgeted("verify-silent-refused", &one_area(), 30);
+    let (mut script, elsewhere) = three_in_a_wave("the repair route is dead");
+    script["endings"] = json!({
+        format!("verify:{ROUTE}"): "dies",
+        format!("verify:{elsewhere}"): "dies",
+    });
+    const WORD: &str = "reporter=area-a-review";
+    script["mistypes"] = json!({
+        "git:compose:verdicts:r1": [WORD, "reporter=area-a-reviewer"],
+        "git:compose:verdicts:r1:again1": [WORD, "reporter=area-a-reviewer"],
+    });
+    let refused = sim.invoke(sim.args("test", json!({})), script);
+    let result = &refused.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["halted"]["phase"],
+            result["halted"]["refusal"],
+            result["halted"]["transient"],
+            result["halted"]["limit"],
+            result["halted"]["filed"]
+        ]),
+        json!(["halted", "record", "words", false, null, null]),
+        "{result}"
+    );
+    assert!(
+        !text(&result["message"]).contains("USAGE LIMIT"),
+        "{result}"
     );
 }
 

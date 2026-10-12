@@ -100,7 +100,12 @@
 //!   verifier for the keys the queue prints and for no other, at most as many as the digest
 //!   prints and the budget has left, hands it its key and the read that prints its row, and
 //!   holds its return to the one path a filing has, a word a filing says and a truth value —
-//!   then to the queue, read again.
+//!   then to the queue, read again. **And an invocation that continues such a stage** (the
+//!   plan's `T6b`) is handed no row either: a verifier call is the one call of the script that
+//!   is never tried twice, a wave in which two of them returned nothing is the last, the
+//!   breaker is asked before every try of every other call, and every halt of the phase
+//!   passes through the one function that says what a halt after such a wave may be, and
+//!   names the filed verdicts by the path a filing has.
 //!
 //! - **(s)** every command a prompt names is one plain invocation of a tool (the second
 //!   repair plan's task `K11`; the human's ruling of 2026-10-07 that no step of a stage may
@@ -117,7 +122,8 @@
 //!
 //! - **(t)** what a stage needs of a return has its cell, and what still halts once an
 //!   instrument is launched is a stated list (the second repair plan's task `X1`): from the
-//!   stage's first held check on, and in a finishing lap from its triage on, every halt
+//!   stage's first held check on, in a finishing lap from its triage on, and in an
+//!   invocation that continues a stage of a run with a queue from its triage on, every halt
 //!   goes through `haltAfter` and names a row of the script's `HALTS_AFTER`, every row is
 //!   met, no helper of that stretch halts by itself, and the workflow doc states the same
 //!   rows; and — under `node` — every field a driving role's schema describes and does not
@@ -1238,8 +1244,8 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
     );
     assert_eq!(
         source.matches("ledgerSource(v.run, state)").count(),
-        4,
-        "and each of the three is handed the ledger's rows — the test stage's on either of its two paths, which is the fourth: the one triage of a run with a queue (arm (r), 9)"
+        5,
+        "and each of the three is handed the ledger's rows — the test stage's on either of its two paths, which is the fourth: the one triage of a run with a queue (arm (r), 9) — and the fifth is the triage of an invocation that continues such a stage, which is handed NOTHING ELSE (arm (r), 11)"
     );
     assert!(
         test_stage.contains("for (const source of ledgerSource(v.run, state)) sources.push(source)\n  const tri = await triagePasses(ctx, launch, built, sources, [])"),
@@ -1309,8 +1315,8 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
         );
     }
     assert_eq!(
-        built, 2,
-        "a `test` stage and the lap that finishes a triage each build both binaries"
+        built, 3,
+        "a `test` stage, the lap that finishes a triage and an invocation that continues a stage of a run with a queue each build both binaries"
     );
     assert!(
         !function(&full, "preflightPrompt").contains("plan.previous")
@@ -1506,27 +1512,71 @@ fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_
     // plan, `T6a`): over every reporter of the attempt that left a report, and no other word
     // — the record script takes the filed verdicts itself — with a subject, a directory and a
     // gate of its own; and refused as one that changes nothing, it is no halt.
-    let second = queued
+    // (Since `T6b` the phase and the record that follows it are ONE function, which a stage
+    // calls after its first record and an invocation that continues calls after its reads.)
+    let closing = function(&full, "verifyThenRecord");
+    let phase = queued
+        .find("await verifyThenRecord(ctx, launch, built, state, { commit: recorded.result.commit, says: ")
+        .expect("the path verifies and records a second time, after its first record");
+    let waves = closing
+        .find("await verifyWaves(ctx, launch, built, from)")
+        .expect("the phase");
+    let second = closing
         .find("await composeRecord('verdicts:r' + ctx.round, loopBranch, ctx, v.scratch + '/record/verdicts-r' + ctx.round + '-a' + ctx.attempt, 'docs(record): ' + subjectOf(v.run, ctx.round, 'the verdicts of the test stage'), launch.names.map((name) => 'reporter=' + name))")
         .expect("the path composes its second record, over the reporters and nothing else");
-    let second_gated = queued
+    let second_gated = closing
         .find("await recordStep('verdicts:r' + ctx.round, loopBranch, again.rec)")
         .expect("the second record is gated and committed by the record step");
     assert!(
-        gated < second && second < second_gated,
-        "the first record, then the second: composed, then gated and committed"
+        gated < phase && waves < second && second < second_gated,
+        "the first record, then the verifiers, then the second: composed, then gated and committed"
     );
     assert_eq!(
-        queued.matches("await composeRecord(").count(),
-        2,
+        [
+            queued.matches("await composeRecord(").count(),
+            closing.matches("await composeRecord(").count()
+        ],
+        [1, 1],
         "a stage of a run with a queue records twice"
     );
     assert!(
-        queued.contains(
-            "if (again.fault && again.refusal !== NO_CHANGE) return recordHalt('record', again,"
-        ) && queued[gated..second].contains("if (ver.launched) {"),
-        "the second record is composed only where a verifier was launched, and `no-change` is no halt of it"
+        closing.contains(
+            "if (again.fault && again.refusal !== NO_CHANGE) return { halted: limited(recordHalt('record', again,"
+        ) && closing[waves..second].contains(
+            "const records = made.commit ? ver.launched > 0 : made.owed || launch.names.some((name) => name !== ATTEMPT)"
+        ) && closing[waves..second].contains("\n  if (records) {\n")
+            && function(&full, "continueTest").contains(
+                "let made = { commit: null, owed: arrived.owed.includes('filed'), says: "
+            ),
+        "the second record is composed where a verifier was launched, and `no-change` is no halt of it; where the invocation has made no record — a continuation that graded nothing — it is composed only where there is something to record: a verifier of it left a report, or the first read met a filed verdict no commit holds"
     );
+    // AN INVOCATION THAT CONTINUES RECORDS WHAT IT GRADED THE SAME WAY (`T6b`): composed by
+    // the tool over its reporters, before its verifiers, and nothing of it is typed.
+    let continued = function(&full, "continueTest");
+    let graded = continued
+        .find("await composeRecord('graded:r' + ctx.round, loopBranch, ctx, v.scratch + '/record/graded-r' + ctx.round + '-a' + ctx.attempt, 'docs(record): ' + subjectOf(v.run, ctx.round, 'the rows nobody had graded'), launch.names.map((name) => 'reporter=' + name))")
+        .expect("a continuation composes the record of the rows it graded, over its reporters and nothing else");
+    let graded_gated = continued
+        .find("await recordStep('graded:r' + ctx.round, loopBranch, composed.rec)")
+        .expect("that record is gated and committed by the record step, which applies nothing");
+    let continued_phase = continued
+        .find("await verifyThenRecord(ctx, launch, built, state, made)")
+        .expect("a continuation verifies and records what was filed");
+    assert!(
+        graded < graded_gated && graded_gated < continued_phase,
+        "what a continuation graded is on record before anything is verified"
+    );
+    for typed in [
+        "recordPrompt(",
+        "stageRecordCommands(",
+        "roleStep('record'",
+        "triageRecord(",
+    ] {
+        assert!(
+            !continued.contains(typed) && !closing.contains(typed),
+            "an invocation that continues types a batch, or launches an executor: `{typed}`"
+        );
+    }
     for typed in [
         "recordPrompt(",
         "stageRecordCommands(",
@@ -2994,7 +3044,7 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
     assert_eq!(
         without(&full, &["selfTest"]).matches("hasQueue(").count(),
         3,
-        "the two kinds of run are told apart in one place: `hasQueue` is declared, and asked where the path forks — and where a continuation of that path is refused as not built"
+        "the two kinds of run are told apart in one place: `hasQueue` is declared, and asked where the path forks — and where an invocation is found to continue a stage of that path (`continuing`)"
     );
     let test_stage = function(&full, "runTest");
     let branch = test_stage
@@ -3114,11 +3164,17 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
         .find("await recordStep('test:r' + ctx.round, loopBranch, composed.rec)")
         .expect("the first record");
     let phase = new_path
-        .find("const ver = await verifyWaves(ctx, launch, built, state)")
+        .find("const closing = await verifyThenRecord(ctx, launch, built, state, {")
         .expect("the stage verifies, in waves, from the state it read back");
     assert!(
-        first_record < phase,
-        "nothing is verified before the stage's first record"
+        first_record < phase
+            && function(&full, "verifyThenRecord")
+                .contains("const ver = await verifyWaves(ctx, launch, built, from)")
+            && without(&full, &["selfTest"])
+                .matches("await verifyWaves(")
+                .count()
+                == 1,
+        "nothing is verified before the stage's first record, and the waves are launched in one place"
     );
     for held in [
         "const room = queue.left == null ? WAVE : Math.min(WAVE, queue.left)",
@@ -3126,7 +3182,7 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
         "if (named.length >= room) break",
         "if (seen.includes(key)) continue",
         "if (!named.length) return out",
-        "roleStep('verify', 'verify:' + key, 'Verify', verdictPrompt(ctx, launch, name, key, built, queue.hand_on), VERDICT_SCHEMA)",
+        "roleStep('verify', 'verify:' + key, 'Verify', verdictPrompt(ctx, launch, name, key, built, queue.hand_on), VERDICT_SCHEMA, true)",
         "const read = await readState()",
         "if ((out.state.queue.first || []).includes(key)) unverified(key, ",
     ] {
@@ -3218,10 +3274,97 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
             && held_to.contains("r.asserted_sha256 !== expected"),
         "the return is held to the path a filing of that reporter and attempt has, to a word a filing says, to a truth value, and to the hash the verifier was handed"
     );
+    // (11) AN INVOCATION THAT CONTINUES TAKES WHAT IS FILED AS THE STATE SAYS IT, AND A WAVE
+    // CAN BE THE LAST (the reshape's plan, `T6b`; its §2.2). The continuation is handed no
+    // row and no verdict either: its triage names the read, its verifiers are the phase's,
+    // and what it knows of a filing is the one path a filing of a name has. A VERIFIER CALL
+    // IS NEVER TRIED TWICE — the one call of the script that is — and a wave in which
+    // `SILENT_LAST` of them returned nothing is the last, once its reports are checked and
+    // the queue is read; THE BREAKER IS ASKED BEFORE EVERY TRY of every other call; and
+    // every halt of the phase passes through the one function that says what a halt after
+    // such a wave may be.
+    let retried = function(&full, "agentR");
+    let tries = retried
+        .find(
+            "\n  for (let attempt = 0; attempt < tries; attempt++) {\n    if (breakerTripped) {\n",
+        )
+        .expect("the breaker is asked before every try of a call, as the first thing of the try");
+    assert!(
+        tries < retried.find("await agent(").expect("the call")
+            && retried.matches("if (breakerTripped) {").count() == 1
+            && retried.contains("\n  const tries = once ? 1 : TRANSIENT_RETRIES + 1\n"),
+        "the breaker is asked in one place, inside the tries; a call that is tried once has one try, and every other as many as it had"
+    );
+    let gives_up = retried
+        .find("\n  if (once) return null\n")
+        .expect("a call that is tried once exhausts nothing");
+    assert!(
+        gives_up
+            < retried
+                .find("exhaustedLabels.push(")
+                .expect("an exhausted call is counted"),
+        "a verifier call that returned nothing feeds no breaker: its wave counts it"
+    );
+    assert!(
+        function(&full, "roleStep").contains("schema }, null, null, once)")
+            && without(&full, &["selfTest"])
+                .lines()
+                .filter(|line| line.contains("_SCHEMA, true)"))
+                .count()
+                == 1
+            && source.contains("\nconst SILENT_LAST = 2\n"),
+        "one call of the script is never tried twice — a verifier's, in a run with a queue — and no other role's retry changed"
+    );
+    let counted = waves
+        .find("const silent = back.filter((r) => r == null).length")
+        .expect("the calls of a wave that returned nothing are counted");
+    let made_last = waves
+        .find("if (silent >= SILENT_LAST) out.last = { wave: out.waves, silent }")
+        .expect("with that many the wave is the last");
+    let ends = waves
+        .find("\n    if (out.last) {\n")
+        .expect("no wave follows the last");
+    assert!(
+        counted < made_last
+            && made_last
+                < waves
+                    .find("await settleReports(")
+                    .expect("the wave's report check")
+            && waves
+                .find("const read = await readState()")
+                .expect("the queue, read again")
+                < ends
+            && waves[ends..].contains("\n      return out\n"),
+        "a wave is made the last before anything else of it is asked — so that a check or a read that does not come back is known to follow such a wave — and the phase ends only once its reports are checked and the queue is read"
+    );
+    let closing = function(&full, "verifyThenRecord");
+    assert!(
+        closing.contains("const said = ver.last ? limitSaid(ctx, ver.last, ver.state.queue.spent, ver.filings, ver.unconfirmed) : null")
+            && closing.contains("const limited = (h) => (said && h.halted.transient ? Object.assign(h, { halted: Object.assign(h.halted, said.more), message: h.message + said.says }) : h)")
+            && closing.matches("return { halted: limited(").count() == 6
+            && closing.matches("return { halted: ").count() == 6,
+        "every halt of the phase and of its record passes through the one function that says what a halt after a silent wave may be — and it says so only of a step that returned nothing"
+    );
+    let says = function(&full, "limitSaid");
+    assert!(
+        says.contains("limit: { possible: true, wave: last.wave, silent: last.silent }")
+            && says.contains("filed: { counted, files, unconfirmed, directory }")
+            && says.contains("THIS MAY BE THE ACCOUNT\\'S USAGE LIMIT")
+            && says.contains("runDir(ctx.run) + '/r' + ctx.round + '/verdicts'"),
+        "the halt says what it may be, and names the filed verdicts: the state's count, the path of each one this invocation's verifiers filed, what nothing held, and the directory the record script files them in"
+    );
+    assert!(
+        waves.contains("out.filings.push(verdictFile(ctx, name))")
+            && waves.matches("unconfirmed: returned").count() == 2,
+        "what the halt names of a filing is the one path a filing of that name has — never a text of one — held by the queue where the wave's read came back, and by the return alone where it did not"
+    );
     for (name, body) in [
         ("verifyWaves", waves),
         ("verdictFault", held_to),
         ("verdictPrompt", prompt),
+        ("verifyThenRecord", closing),
+        ("continueTest", function(&full, "continueTest")),
+        ("limitSaid", says),
     ] {
         for of_a_row in [
             ".door",
@@ -4386,17 +4529,27 @@ fn halts_in(region: &str, rows: &BTreeSet<String>, faults: &mut Vec<String>) -> 
     named
 }
 
-/// The two stretches of the script in which an instrument, or a verifier, is launched and
-/// the record is not yet read back: `runTest` from its held checks on, and the lap that
-/// finishes a triage from its triage on.
-fn after_launch(full: &str) -> (String, String) {
+/// The stretches of the script in which an instrument, or a verifier, is launched and
+/// the record is not yet read back: `runTest` from its held checks on — with the phase a
+/// stage of a run with a queue ends in, `verifyThenRecord`, whole — and the lap that
+/// finishes a triage from its triage on. And, the third: an invocation that CONTINUES a
+/// stage of a run with a queue, from its triage on.
+fn after_launch(full: &str) -> (String, String, String) {
     let tested = function(full, "runTest");
     let stage = &tested[tested
         .find("\n  const heldRan = []\n")
         .expect("the stage's first instrument: its held checks")..];
     let lap = function(full, "finishTriage");
     let lap = &lap[lap.find("await triagePasses(").expect("the lap's triage")..];
-    (stage.to_owned(), lap.to_owned())
+    let continued = function(full, "continueTest");
+    let continued = &continued[continued
+        .find("await triageOnce(")
+        .expect("the continuation's triage")..];
+    (
+        format!("{stage}\n{}", function(full, "verifyThenRecord")),
+        lap.to_owned(),
+        continued.to_owned(),
+    )
 }
 
 #[test]
@@ -4427,11 +4580,20 @@ fn t_a_field_a_stage_needs_has_its_cell_and_what_halts_after_an_instrument_is_a_
             line.contains("': { phase: '").then(|| name.to_owned())
         })
         .collect();
-    let (stage, lap) = after_launch(&full);
+    let (stage, lap, continued) = after_launch(&full);
     let mut faults = Vec::new();
     let met = halts_in(&stage, &rows, &mut faults);
     let met_by_lap = halts_in(&lap, &rows, &mut faults);
+    let met_by_continuation = halts_in(&continued, &rows, &mut faults);
     assert_eq!(faults, Vec::<String>::new());
+    assert_eq!(
+        met_by_continuation,
+        ["push", "read-back", "record", "triage"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<BTreeSet<_>>(),
+        "an invocation that continues halts, from its triage on, on rows of the same list — and its phase's halts are the stage's own (`verifyThenRecord`)"
+    );
     assert_eq!(
         met, rows,
         "every row of HALTS_AFTER (right) is a halt the `test` stage can meet after its first instrument (left): a row no halt names is stale"
@@ -4492,7 +4654,9 @@ fn t_a_field_a_stage_needs_has_its_cell_and_what_halts_after_an_instrument_is_a_
         );
     }
     assert!(
-        queued.contains("await verifyWaves(ctx, launch, built, state)")
+        queued.contains("await verifyThenRecord(ctx, launch, built, state, {")
+            && code(function(&full, "verifyThenRecord"))
+                .contains("await verifyWaves(ctx, launch, built, from)")
             && waves.contains("verdictPrompt(")
             && waves.contains("VERDICT_SCHEMA")
             && without(&full, &["selfTest", "verifyWaves"])
@@ -4519,21 +4683,73 @@ fn t_a_field_a_stage_needs_has_its_cell_and_what_halts_after_an_instrument_is_a_
             && fork.contains("unasserted('proposal', "),
         "the `advocate` and `proposal` rows of NEEDS are reached by the path of a run without an order"
     );
-    // AND A CONTINUATION ON THAT PATH IS REFUSED AS NOT BUILT, before the lap of the other
-    // path — which would grade every row again and launch an advocate — can be entered.
-    let refused = tested
-        .find("if (hasQueue(state) && (at.triage || at.verify)) return { status: 'refused', stage: 'test', run: v.run, not_built: 'continuation',")
-        .expect("a continuation of a run with a queue is refused as not built");
+    // AND AN INVOCATION THAT FINDS SUCH A STAGE UNFINISHED CONTINUES IT (`T6b`), before the
+    // lap of the other path — which would grade every row again and launch an advocate —
+    // can be entered: every way out of `continueTest` is a return, and nothing of the
+    // script is refused as not built any more. THE CONTINUATION REACHES NOTHING OF THE OTHER
+    // PATH, AND NO INSTRUMENT: no preflight, no scope step, no unit, no gate and no held
+    // check — the one triage, over the rows nobody graded and nothing else, and the phase.
+    let continues = tested
+        .find("\n  const continues = continuing(state, at)\n  if (continues.length) return await continueTest(ctx, state, continues)\n")
+        .expect("an invocation that finds the stage of a run with a queue unfinished continues it");
     assert!(
-        refused
+        continues
             < tested
                 .find("\n  if (at.triage) {\n")
                 .expect("the other path's lap")
-            && refused
+            && continues
                 < tested
                     .find("await beginAttempt(")
-                    .expect("an attempt begins"),
-        "the refusal stands before the other path's lap, and before any attempt is begun"
+                    .expect("an attempt begins")
+            && !code(&full).contains("not_built"),
+        "the continuation stands before the other path's lap, and before any attempt of that path is begun"
+    );
+    assert!(
+        function(&full, "continuing").contains(
+            "return hasQueue(state) ? ['triage', 'verify'].filter((word) => at[word] === true) : []"
+        ),
+        "what is continued is what the position says of a run with a queue: a row nobody graded, a row of the queue — and nothing of a run without an order"
+    );
+    let continued = code(function(&full, "continueTest"));
+    for other in [
+        "triagePasses(",
+        "driveFork(",
+        "finishTriage(",
+        "advocatePrompt(",
+        "proposalPrompt(",
+        "verifyPrompt(",
+        "VERIFY_SCHEMA",
+        "roleStep(",
+        "runUnits(",
+        "preflightOf(",
+        "scopePrompt(",
+        "unitPrompt(",
+        "redSources(",
+        "recordWords(",
+        "regressionFlags(",
+        "hold(",
+    ] {
+        assert!(
+            !continued.contains(other),
+            "an invocation that continues reaches `{other}`: it runs no instrument, holds nothing but its two builds, and launches nothing of the other path"
+        );
+    }
+    let begins = continued
+        .find("await beginAttempt(ctx, launch, tested)")
+        .expect("a continuation begins its attempt on record, on the candidate the round tested");
+    let builds = continued
+        .find("await buildBoth(label, tested, previousOf(state), 'State')")
+        .expect("its two binaries are the commits', asked for under their names");
+    let grades = continued
+        .find("once = await triageOnce(ctx, launch, ledgerSource(v.run, state))")
+        .expect("its triage is handed the rows nobody graded, and no other source");
+    assert!(
+        begins < builds
+            && builds < grades
+            && continued[..grades].contains("if (words.includes('triage')) {")
+            && continued.matches("triageOnce(").count() == 1
+            && continued.matches("await verifyThenRecord(").count() == 1,
+        "begun, built, a triage only where the position says a row nobody graded is left, and then the phase"
     );
 
     // A halt put back without a row, and a row nobody wrote, are each red.
