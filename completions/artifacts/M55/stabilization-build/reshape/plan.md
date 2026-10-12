@@ -2,6 +2,8 @@
 
 *First cut 2026-10-10 on `fix/rc24-tier1`; **revised 2026-10-11 against an independent review** (4 blocking, 12 should-fix — §12 is the disposition, finding by finding, each checked at the lines it cites) and against a third count of the canary, of what its agents spent their turns on. The record this plan is held to is committed and pushed (`d591f656`). A plan: nothing is built, nothing is ruled, no gate, test or stage was run for it, and it restates no decision — every task cites the ruling or the row it builds. Its links are written for a home beside the count's files, `completions/artifacts/M55/stabilization-build/reshape/plan.md`.*
 
+**[Noted 2026-10-12: by the human's ruling of that day the reshaped stage is run for real in four parts before §9's one whole canary, which stays owed, and the tasks that remain are built in the order those parts need — the plan for the parts, approved the same day and held to beside this one, is [staged-canary.md](staged-canary.md) ([DECISIONS.md](../../../../../DECISIONS.md) → *2026-10-12 — The reshaped `test` stage is run for real in parts*).]**
+
 **What it builds.** Two things ruled on 2026-10-10 ([DECISIONS.md](../../../../../DECISIONS.md) → *The reshaped `test` stage, corrected by a count the same day*, rulings 1–3; the entry below it, ruling 4 only):
 
 - **Stream T** — the stabilization workflow's `test` stage as ruled: the harness, the two scripts, the definitions, the workflow doc, the fences (rows `wf-verify-fan-out`, `wf-route-walk`).

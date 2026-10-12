@@ -2,6 +2,86 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The reshaped `test` stage is run for real in parts, now, and not once at the end of its build: the plan for the four parts approved, a scoped review before the first, the tasks that remain re-ordered around them and the whole canary still owed — and with it the byte table for the exit rule's first clause piloted now, and the regression set's second part left until before the port (four rulings of the human's; the orchestrating session's record, no code)
+
+**What.** One commit of the orchestrating session's own, a record and no code. Four rulings of the human of 2026-10-12 go on record. The plan one of them approved is committed as [staged-canary.md](completions/artifacts/M55/stabilization-build/reshape/staged-canary.md) — below, *the plan* — beside the build's plan it cuts across ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md), below *the build's plan*), which gains one dated sentence that points at it. Four rows of [decisions-pending.md](implementation/decisions-pending.md) move: two ruled, one added, one discharged. **Nothing is built by this commit, and no part has run.**
+
+**1. The tool is run for real in parts, now.** *What was put beside the question:* everything built since the first canary has run only against the simulation's stand-ins — no real agent has read the new triage prompt, typed a composing step, filed a verdict or continued a stage — and the build's plan has one whole canary at its very end, after every task that remains (its §9). The human's words:
+
+> *"In general we should try to wrapup the tooling since we have no good base data we can pass down … in the flow. May it's a good idea to test in parts. Run one part verify. And then run the next part."*
+
+The cut, as the orchestrating session put it back and the human agreed to it:
+
+> **The tool is run for real in parts, now, instead of one whole canary at the end.** Each part runs in a throwaway clone, driven by the human in a session of the human's own; its result is read and what it shows is repaired before the next part is run.
+>
+> | Part | What runs | What it shows |
+> |---|---|---|
+> | 1 | the two builds, the gate, the regression set | no permission prompt; the held commands; the kept baseline |
+> | 2 | one review instrument, the one triage, the first record — no verifier | triage types its entries once; the record is composed by the tool, with no executor agent |
+> | 3 | verification in waves over the planted findings, the second record | verifiers file their own verdicts; at most two follow-ups handed on; nothing verified twice |
+> | 4 | the human ends the session mid-wave and invokes again | the continuation re-runs no instrument and keeps the filed verdicts |
+> | later | the route hunter, the scripted trial arm, the trial image | each measured once it is built |
+>
+> **Needed first:** a canary setup for the new path (today's `dev/stabilize-canary setup` opens a run with no queue and no budget), cut down to leave out the hunter and the scripted arm; a clean end after each part (the harness's tuning stops `stopAfter` run no record step, and none stands after the first record); and the plan's `T7` (what a stage returns, and a budget changed at a stop), which is next anyway.
+>
+> **Held back until the parts have run:** the route hunter (`T8`), the scripted arm (`K6`), the trial image as a held command (`K7`, `K7b`), the old path's deletion (`T11`, `T12`), the definitions' last edits (`O4`, `O5`, `KR`) and the doc pass (`T10`).
+>
+> **Not taken:** finishing the build in the plan's order and running one whole canary at the end.
+
+*Why, in the human's own words above:* there is no good base data to pass down — a part that has run gives the tasks that remain numbers from real agents, where the build has none.
+
+**The plan for it, approved.** The plan says, for each part, what it starts from, what the human invokes, how it ends, what it is checked against and what to watch. The human's table could not be built as worded in nine places, and the plan names each with the lines that show it and the nearest thing that can be built (its §3). An independent reviewer read the draft against the committed tools at `e619cee8` and drove the committed record script through the planned opening in a throwaway repository; it found the plan's fourteen facts about the tools and its eight such places true, and no step at which a part cannot start from what the part before leaves. **What the review changed** — the plan's §14 is the disposition, finding by finding:
+
+- part 2 ends by the stage's own return, and **no new stop is built**: the opening's order names no class a row can have before a verdict, so the queue is empty, and part 3 opens with a ruling of the order;
+- the end of part 3 no longer rests on what a verifier hands on — a budget of 9 over a queue of thirteen planted rows, ten of them small false claims that only fill it — so the budget is spent with rows unreached in every case, and part 4 opens with a raise alone;
+- the plants are a table in the plan and are driven once before anything is built on them, the cost is stated as an addition, and the whole canary stays owed, with a list of what it must still show.
+
+**2. The review before part 1 — the one deviation that was the human's to overrule.** The build's plan says, at its join (`J2`): *a `milestone-code-reviewer` over the build's whole diff before any stage is run with it.* The parts are stages, and they run before the build is whole. Two options were put, and the human took A:
+
+> **A — before part 1, a `milestone-code-reviewer` reads only the code the parts run, for the three dangers: can it publish unscanned, can it record falsely, can it strand state. The review of the build's whole diff stays at the join.**
+>
+> **Not taken: B** — holding to the committed plan's sentence, and reviewing everything built so far before part 1.
+
+*What it rests on:* the three dangers are the ones the human's rule of 2026-10-07 has repaired before a run, and the whole diff does not exist until the join. *What follows:* the plan's `R0` — the orchestrating session launches a reviewer that built none of it and checks each finding before it is worked in; what it finds in the three classes is repaired before part 1, and everything else it finds is a row.
+
+**3. `wf-pre-byte-matrix` — the byte table for the exit rule's first clause.** Every writing command against every prepared state, the tree's bytes compared before and after, no model at run time. *What was put beside the question:* the route catalog, the same kind of bet — as the orchestrating session relayed it, 627 cases, 231 of them red under 50 keys when the question was put, at no model tokens a run once built. The human took A:
+
+> **A — piloted now, bounded as the route catalog was bounded: only the writing commands the fix pass touched, against the prepared states; the rest before the port (M56). In the product-test lane, on the branch `fix/rc24-route-catalog`, beside the tooling work.**
+>
+> **Not taken:** all of it before the port, and none now.
+
+Not built. *What follows:* the pilot, in that lane, and its numbers; the rest is owed before the port, in the row.
+
+**4. `wf-pre-regression-part-two` — the regression set's second part.** 61 commands in 9 fixtures on both binaries; none of the fixtures exists. The human took B:
+
+> **B — built before the port, and not now. Its cut is decided after the byte table's pilot, which builds prepared states of the same kind and may supply some of the nine.**
+>
+> **Not taken:** now.
+
+Not built. *What follows:* nothing before the pilot of ruling 3 has landed; the row's trigger is now *before the port (M56's planning), after the byte table's pilot*.
+
+**The order of what remains of the build** — the plan's §10 holds each task's row, and none is restated here:
+
+- *Before part 1, in this order:* `T7` — what a stage returns, and a budget's and an order's ruling as the record script has them, a hand-on ruling refused, which is no longer the build's plan's own text for that task → `P0`, the plants' words driven once on both binaries, which commits nothing, and after which nothing is built if the planted regression does not reproduce → `SC2`, the setup's opening with a queue and its plants, the first part of `T9` → `SC3`, the setup's prompt file for each act and what its `check` reads → `R0`. Then the harness's self-test by the script's path, and CI read for the pushed tip.
+- *Held back until the parts have run:* `T8`, `K6`, `K7b`, `K1b`, `O4`, `O5`, `KR`, the rest of `T9`, `T11`, `T12` and `T10`; `K7` may be built beside the parts and is not gated while one runs. `J1`, `J2`, `O6` and the review of the whole diff stay at the join.
+- *Between two parts:* what a part shows is repaired before the next where it can publish unscanned, record falsely or strand state — and, a fourth class the plan adds and names as its own, where the next part cannot run without it. Everything else is a row.
+
+**What the parts are expected to cost** (the plan's §7, on the first canary's rates): about 106 agents, 4.9 to 6.8 hours of run time, 0.85 to 1.35 M output tokens — about 44 to 70 USD — and about two and a half hours of the human's own attention. **That is an addition and no trade.** The whole canary of the build's plan stays owed after the parts (the plan's §11, with the list of what no part shows), and how much of it is still run is the human's to decide after part 4: the row `wf-whole-canary-after-parts`.
+
+**The pending list.** `wf-pre-byte-matrix` and `wf-pre-regression-part-two` are marked ruled, each with its old trigger struck and its new one written; neither row is struck, because nothing of either is built. `wf-whole-canary-after-parts` is added. `wf-ci-tooling-leg` is discharged, by the read that follows.
+
+**The tooling leg's first completed run, read with this commit.** The entry *The tooling leg runs in three parts* owed the read of the first completed CI run of the commit that cut the leg. It is run `38281758029` at `72ca156a`, read from the run's jobs and from the three parts' logs: all three parts completed and are green, each inside its bound and under fifteen minutes, and `ci-ok` is red for `test (g_migrate)` alone, as that entry said it would stay. Each part's wall time against its bound and against what was expected, its tests, its `nproc`, and the three tests no hosted run had shown green are in the discharged row and are not restated here. No part's `minutes` was set again, and the row says why.
+
+**What is not established** — the plan's §13 has all of it; the five that the parts rest on most:
+
+- what ending a session does to a workflow's running agents, which the interruption of part 4 rests on;
+- whether trusting a clone applies its committed allow rules to the agents a workflow launches;
+- that an order ruled at the stop after a round is taken by the harness and re-opens the stage — read from the two scripts, driven by nothing, and part 3 opens on it;
+- the plants: the planted regression has been driven by nobody since the first canary, and the ten reserve claims by nobody at all, until `P0`;
+- whether any of it runs: no gate, self-test, stage or tool act was run for the plan, and every rate its §7 marks as nobody's measurement is an estimate.
+
+*And of this entry:* the route catalog's three numbers beside ruling 3 are that branch's, relayed, and are on no record in this tree, whose own numbers for the catalog are the pilot's.
+
 ## 2026-10-12 — The harness: what a stage returns, and the rulings about the run — an invocation of a run with a queue says in one of three words what it put on record, and beside `next` what the record script counts, as the digest has it: the budget, the queue class by class, the hit rate and the stop's view by its path and its hash, what the stage is continued for, and no list of its own; another order, a row put into the queue by key and a raised budget take the one road every ruling takes, in that order and by one record; and the number a verifier hands on is no ruling (the plan's `T7`; the builder's choices inside it, four corrections of the orchestrating session's taken while it was built, and three places built to the committed scripts against the plan's words)
 
 **What.** [`.claude/workflows/stabilize.js`](.claude/workflows/stabilize.js) says what an invocation of a run with a queue did, and takes what the human rules about such a run's queue ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §4, `T7`, Phase B; ruling 1 of *2026-10-10 — The reshaped `test` stage, corrected by a count the same day*; ruling 3 of *2026-10-11 — The reshaped `test` stage's three open questions, ruled*; the row `wf-return-names`). The script's header holds it as the paragraph *WHAT AN INVOCATION OF THAT PATH RETURNS* and as the second half of *WHAT THE HUMAN RULES ABOUT THE RUN*. A run without an order returns what it returned, byte for byte: every function this task added answers `{}` or refuses for such a run. In one place:
