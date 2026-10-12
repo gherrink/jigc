@@ -19086,8 +19086,8 @@ fn a_filed_verdict_counts_before_any_record_holds_it() {
     );
     assert_eq!(
         json!([read["next"], read["budget"], queued(&read)]),
-        json!(["rule", {"limit": 3, "spent": 3, "left": 0}, []]),
-        "{read}"
+        json!(["verify", {"limit": 3, "spent": 3, "left": 0}, []]),
+        "counted, and in no record: the step is the stage's record, before the human's — {read}"
     );
     assert_eq!(
         json!([
@@ -19867,19 +19867,38 @@ fn rows_said(read: &Value) -> Vec<Value> {
         .collect()
 }
 
-/// What follows from a state, beside its rows: the step, the queue, the budget, and whose
-/// each open finding is.
+/// What follows from a state, beside its rows: the queue, the budget, whose each open
+/// finding is and what forbids the close — WITHOUT what says that a filed verdict is owed
+/// its record, which is the one thing the record that takes the file moves beside where a
+/// verdict and a row are held ([`owes`]): the step, a stage's position, and the file's own
+/// entry among what forbids the close.
 fn follows(read: &Value) -> Value {
+    let forbids: Vec<&Value> = read["forbids_close"]
+        .as_array()
+        .expect("what forbids the close")
+        .iter()
+        .filter(|entry| entry.get("filed").is_none())
+        .collect();
     json!([
-        read["next"],
         read["queue"],
         read["budget"],
         read["human_list"],
         read["blockers"],
-        read["forbids_close"],
-        read["regression_unknown"],
-        read["position"]
+        forbids,
+        read["regression_unknown"]
     ])
+}
+
+/// What a state says of the record a filed verdict is owed: the step, whether the `test`
+/// stage's position says `filed`, and how many files forbid the close.
+fn owes(read: &Value) -> Value {
+    let filed = read["forbids_close"]
+        .as_array()
+        .expect("what forbids the close")
+        .iter()
+        .filter(|entry| entry.get("filed").is_some())
+        .count();
+    json!([read["next"], read["position"]["test"].get("filed"), filed])
 }
 
 /// The keys of the ledger's own rows, in the table's order.
@@ -20062,6 +20081,11 @@ fn the_record_takes_its_verdicts_from_the_files_and_from_no_caller() {
     let after = rig.state();
     assert_eq!(rows_said(&after), rows_said(&before), "{after}");
     assert_eq!(follows(&after), follows(&before), "{after}");
+    assert_eq!(
+        json!([owes(&before), owes(&after)]),
+        json!([["verify", true, 3], ["verify", null, 0]]),
+        "… and that three files were owed their record: the step is the one it was, for the rows that still await a verdict"
+    );
     assert_eq!(
         json!([
             after["filed"]
@@ -20320,6 +20344,11 @@ fn a_verdict_for_a_row_nobody_graded_is_recorded_beside_no_grade() {
     let after = rig.state();
     assert_eq!(rows_said(&after), rows_said(&before), "{after}");
     assert_eq!(follows(&after), follows(&before), "{after}");
+    assert_eq!(
+        json!([owes(&before), owes(&after)]),
+        json!([["verify", true, 4], ["rule", null, 0]]),
+        "… and that four files were owed their record: with it made, the step is the human's"
+    );
     assert_eq!(
         json!([
             routed(&after, "hop-a"),
@@ -20736,6 +20765,304 @@ fn a_key_a_filing_minted_is_taken_by_no_callers_row() {
         "one row a key"
     );
     assert_eq!(held(&rig), json!(["route", "r-1", "verify-r-1"]));
+}
+
+// ---------------------------------------------------------------------------
+// A filed verdict no record took is the stage's to record, before anything else follows
+// (a finding the builder of the continuation reported: a stage that dies after its last
+// verifier filed, or whose budget that wave spent, was handed to nobody)
+// ---------------------------------------------------------------------------
+
+/// What a state hands on: the step, the stop, each stage's position, and the round a write
+/// may begin.
+fn handed_on_by(read: &Value) -> Value {
+    json!([
+        read["next"],
+        read["stop"],
+        read["position"]["test"],
+        read["position"]["fix"],
+        read["begins"]
+    ])
+}
+
+/// The filed verdicts a state names among what forbids the close, by their files.
+fn owed_a_record(read: &Value) -> Vec<String> {
+    read["forbids_close"]
+        .as_array()
+        .expect("what forbids the close")
+        .iter()
+        .filter_map(|entry| entry["filed"].as_str().map(str::to_owned))
+        .collect()
+}
+
+/// **A filed verdict no record took is recorded before any other step is handed** (the
+/// finding `T6b`'s builder reported and did not build: *a stage that dies after its last
+/// verifier filed, or whose budget that wave spent, leaves no row the position says to
+/// verify … where `next` is then `close`, nothing of this harness records them*; the rule
+/// for this tooling: what can strand state is repaired before a first run). The state counts
+/// a verdict from the moment it is filed, so with the queue's last row filed nothing of the
+/// round awaited anybody, and the step was whatever the verdicts left — a fixer's, the
+/// human's, the close — computed over a file no commit holds. HERE THE STATE SAYS THAT THE
+/// FILE IS OWED ITS RECORD: the step is `verify`, the stage that verifies is handed its next
+/// attempt with the word `filed`, the close is forbidden by the file's name, no stop is
+/// handed and no round is begun — UNTIL A RECORD TAKES THE FILE, and then every one of them
+/// is what it would have been. Whatever the verdict says, whatever it left open, and where
+/// the wave that filed it spent the budget.
+#[test]
+fn a_filed_verdict_no_record_took_is_recorded_before_any_other_step_is_handed() {
+    let continues = |more: Value| {
+        let mut at = json!({"round": 1, "attempt": 2});
+        for (word, value) in more.as_object().expect("the words").iter() {
+            at[word] = value.clone();
+        }
+        at
+    };
+    let open = json!({"refused": "round-open", "round": 1});
+    let cycle = |land: bool| json!({"round": 1, "cycle": 1, "attempt": 1, "land": land});
+
+    // (a) THE LAST ROW OF THE QUEUE IS FILED, and its stage ended before its record: by a
+    // verdict that leaves nothing open, one that is a fixer's, and one that is the human's.
+    for (word, then, test, blocks) in [
+        ("refuted", "close", json!({"round": 2, "attempt": 1}), false),
+        ("confirmed", "fix", open.clone(), true),
+        ("undrivable", "rule", open.clone(), true),
+    ] {
+        let rig = a_filing_run(&format!("owed-{word}"), Some(9), Some(2));
+        hunted(&rig, &[("r-1", "route")]);
+        begun_attempt(&rig, "1");
+        let mut given = filing("r-1", word);
+        if word == "confirmed" {
+            given["regression"] = json!(false);
+            given["previous"] = json!(sha256('d'));
+        }
+        verified(&rig, "1", &given);
+        let path = filed_path("verify-r-1", "1");
+        let read = rig.state();
+        assert_eq!(
+            json!([
+                queued(&read),
+                read["filed"][0]["counts"],
+                read["filed"][0]["recorded"]
+            ]),
+            json!([[], true, false]),
+            "{word} — the control: no row awaits a verdict, and no record holds the one that is filed: {read}"
+        );
+        assert_eq!(
+            handed_on_by(&read),
+            json!([
+                "verify",
+                null,
+                continues(json!({"filed": true})),
+                cycle(false),
+                null
+            ]),
+            "{word}: the stage is handed its record, and nothing else is handed — {read}"
+        );
+        assert_eq!(owed_a_record(&read), [path.as_str()], "{word}: {read}");
+
+        // THE RECORD TAKES IT — a batch that names no verdict — and the step is the one the
+        // verdict left.
+        recorded(&rig, &["r-1"]).must(OK, "the record that takes the filing");
+        settled(&rig);
+        let read = rig.state();
+        assert_eq!(
+            handed_on_by(&read),
+            json!([
+                then,
+                null,
+                test,
+                cycle(false),
+                if blocks { json!(null) } else { json!(2) }
+            ]),
+            "{word}: recorded, and the step is what the verdict left — {read}"
+        );
+        assert_eq!(owed_a_record(&read), Vec::<String>::new(), "{word}: {read}");
+    }
+
+    // … AND NO STOP IS HANDED OVER IT: in a run that stops after every round, the round is
+    // not over while a verdict of it is in no record.
+    let rig = two_clause_run("owed-stop", EVERY_ROUND);
+    ordered(&rig, &ORDER);
+    rig.run(&run_set(RUN), &json!({"budget": 9}).to_string())
+        .must(OK, "the opening's budget");
+    tested_round(&rig, 1, true, &BOTH_GREEN, json!({"binary": driven()}));
+    hunted(&rig, &[("r-1", "route")]);
+    begun_attempt(&rig, "1");
+    verified(&rig, "1", &filing("r-1", "refuted"));
+    let read = rig.state();
+    assert_eq!(
+        handed_on_by(&read),
+        json!([
+            "verify",
+            null,
+            continues(json!({"filed": true})),
+            cycle(false),
+            null
+        ]),
+        "no stop while a filed verdict is in no record: {read}"
+    );
+    rig.run(&round_set(RUN, "1"), &json!({"go": true}).to_string())
+        .refused(BAD_VALUE, "a go for a stop the state does not hand");
+    recorded(&rig, &["r-1"]).must(OK, "the record that takes the filing");
+    settled(&rig);
+    let read = rig.state();
+    assert_eq!(
+        json!([read["next"], read["stop"]]),
+        json!(["stop", {"why": "every-round", "round": 1, "then": "close"}]),
+        "recorded, and the round is over: {read}"
+    );
+
+    // (b) THE WAVE THAT SPENT THE BUDGET FILED: a route item nobody reached is the human's,
+    // as it was — and the step is the stage's record first.
+    let rig = a_filing_run("owed-spent", Some(1), Some(2));
+    hunted(&rig, &[("r-1", "route"), ("r-2", "route")]);
+    begun_attempt(&rig, "1");
+    verified(&rig, "1", &filing("r-1", "refuted"));
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            read["budget"],
+            queued(&read),
+            routed(&read, "r-2"),
+            read["human_list"]
+        ]),
+        json!([{"limit": 1, "spent": 1, "left": 0}, ["r-2"], at("human", "unreached"),
+               [{"key": "r-2", "why": "unreached"}]]),
+        "the control: the budget is spent, and one route item is unreached — {read}"
+    );
+    assert_eq!(
+        handed_on_by(&read),
+        json!([
+            "verify",
+            null,
+            continues(json!({"filed": true})),
+            cycle(false),
+            null
+        ]),
+        "a spent budget ends in the human's step once what it bought is on record: {read}"
+    );
+    recorded(&rig, &["r-1"]).must(OK, "the record that takes the filing");
+    settled(&rig);
+    let read = rig.state();
+    assert_eq!(
+        handed_on_by(&read),
+        json!(["rule", null, open, cycle(false), null]),
+        "{read}"
+    );
+
+    // WHAT THE CLAUSE TABLE ASKS IS NOT ASKED OVER IT EITHER: a clause no round's scope has
+    // reached is `unsettled` once it is all that is left to ask — and a filed verdict in no
+    // record is left.
+    let rig = two_clause_run("owed-unsettled", BOUNDED);
+    ordered(&rig, &ORDER);
+    rig.run(&run_set(RUN), &json!({"budget": 9}).to_string())
+        .must(OK, "the opening's budget");
+    tested_round(
+        &rig,
+        1,
+        false,
+        &[("check-clause-a", "green")],
+        json!({"binary": driven()}),
+    );
+    hunted(&rig, &[("r-1", "route")]);
+    begun_attempt(&rig, "1");
+    verified(&rig, "1", &filing("r-1", "refuted"));
+    let read = rig.state();
+    assert_eq!(
+        json!([read["next"], read["unsettled"]]),
+        json!(["verify", []]),
+        "{read}"
+    );
+    recorded(&rig, &["r-1"]).must(OK, "the record that takes the filing");
+    settled(&rig);
+    let read = rig.state();
+    assert_eq!(
+        json!([read["next"], read["unsettled"]]),
+        json!(["unsettled", [{"cell": "judged-and-never-selected", "clauses": ["clause-b"]}]]),
+        "{read}"
+    );
+
+    // BESIDE A ROW THAT STILL AWAITS ITS VERDICT the position says both, and the step is the
+    // one it was: the continuation that verifies records what it finds.
+    let rig = a_filing_run("owed-beside", Some(9), Some(2));
+    hunted(&rig, &[("r-1", "route"), ("r-2", "route")]);
+    begun_attempt(&rig, "1");
+    verified(&rig, "1", &filing("r-1", "refuted"));
+    let read = rig.state();
+    assert_eq!(
+        json!([read["next"], read["position"]["test"], holding(&read)]),
+        json!([
+            "verify",
+            continues(json!({"verify": true, "filed": true})),
+            ["r-2"]
+        ]),
+        "{read}"
+    );
+    assert_eq!(owed_a_record(&read), [filed_path("verify-r-1", "1")]);
+    recorded(&rig, &["r-1"]).must(OK, "the record that takes the filing");
+    settled(&rig);
+    let read = rig.state();
+    assert_eq!(
+        json!([read["next"], read["position"]["test"]]),
+        json!(["verify", continues(json!({"verify": true}))]),
+        "{read}"
+    );
+
+    // THE STAGE'S ATTEMPTS ARE COUNTED AS EVER: two that left reports and no record, and the
+    // step is the human's — who grants one more — with the file still named.
+    let rig = a_filing_run("owed-attempts", Some(9), Some(2));
+    hunted(&rig, &[("r-1", "route")]);
+    begun_attempt(&rig, "1");
+    verified(&rig, "1", &filing("r-1", "refuted"));
+    begun_attempt(&rig, "2");
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            read["next"],
+            read["human_stages"][0]["stage"],
+            read["position"]["test"]
+        ]),
+        json!(["rule", "test", {"refused": "attempts-spent", "round": 1}]),
+        "the one `rule` over a filed verdict no record took is the grant of one more attempt: {read}"
+    );
+    assert_eq!(owed_a_record(&read), [filed_path("verify-r-1", "1")]);
+
+    // A FILE THAT DOES NOT COUNT IS OWED NOTHING: its report rewritten, the verdict is none,
+    // its finding awaits one again, and what hands the stage on is that row.
+    let rig = a_filing_run("owed-none", Some(9), Some(2));
+    hunted(&rig, &[("r-1", "route")]);
+    begun_attempt(&rig, "1");
+    verified(&rig, "1", &filing("r-1", "refuted"));
+    fs::write(
+        rig.root.join(report_path("1", "verify-r-1", "1")),
+        format!("# verify-real of r-1\n\nIt was confirmed.\n{ENDS}\n"),
+    )
+    .expect("the report, rewritten");
+    let read = rig.state();
+    assert_eq!(
+        json!([filed(&read), read["position"]["test"]]),
+        json!([
+            [["r-1", false, "report-changed"]],
+            continues(json!({"verify": true}))
+        ]),
+        "{read}"
+    );
+    assert_eq!(owed_a_record(&read), Vec::<String>::new(), "{read}");
+
+    // IN A RUN WITHOUT AN ORDER nothing is filed, and a file that lies where a filed verdict
+    // would is read by nothing: the step and the position are the ones they always were.
+    let bare = two_clause_run("owed-no-order", BOUNDED);
+    tested_round(&bare, 1, true, &BOTH_GREEN, json!({"binary": driven()}));
+    let lies = bare.root.join(filed_path("verify-r-1", "1"));
+    fs::create_dir_all(lies.parent().expect("a directory")).expect("the directory");
+    fs::write(&lies, rig.read(&filed_path("verify-r-1", "1"))).expect("a file of another run");
+    let read = bare.state();
+    assert_eq!(
+        handed_on_by(&read),
+        json!(["close", null, {"round": 2, "attempt": 1}, cycle(false), 2]),
+        "{read}"
+    );
+    assert_eq!(read["forbids_close"], json!([]), "{read}");
 }
 
 // ---------------------------------------------------------------------------
@@ -25211,6 +25538,11 @@ fn a_contested_finding_is_the_humans_and_never_a_fixers_on_its_verifiers_word() 
         json!(["regression", null]),
         "the verdict stands as it was filed — a regression, and a row nobody graded: {read}"
     );
+    // (The step is the stage's record while a filed verdict is in no record; then it is his.)
+    assert_eq!(read["next"], "verify", "{read}");
+    recorded(&rig, &["r-plain"]).must(OK, "the record that takes the filings");
+    settled(&rig);
+    let read = rig.state();
     assert_eq!(
         json!([
             routed(&read, "r-plain"),
@@ -25235,8 +25567,9 @@ fn a_contested_finding_is_the_humans_and_never_a_fixers_on_its_verifiers_word() 
 /// finding the human must rule on does, and by the road that exists for a ruling: a
 /// disposition of its row (`ledger-set`). Refuted and contested, it forbids the close where
 /// the same verdict uncontested closes; `no-action` is no ruling; the record that takes the
-/// filing moves nothing of it; `later` and `bound` record it and release the close;
-/// `admitted` makes it a fixer's — before any record holds the verdict, too.
+/// filing moves nothing of it but the step — which is that record, until it is made; `later`
+/// and `bound` record it and release the close; `admitted` makes it a fixer's — before any
+/// record holds the verdict, too.
 #[test]
 fn a_contested_finding_holds_the_close_until_it_carries_the_humans_ruling() {
     let stand = |label: &str, given: fn(&str) -> Value| {
@@ -25263,8 +25596,19 @@ fn a_contested_finding_holds_the_close_until_it_carries_the_humans_ruling() {
         ])
     };
 
-    // THE CONTROL: the same verdict, contested by nobody, closes.
+    // What the state says while the filing is in no record: the finding is his already, and
+    // the step is the stage's record first.
+    let unrecorded = json!([
+        at("human", "contested"),
+        "verify",
+        [{"finding": "r-1", "route": "human"}, {"filed": filed_path("verify-r-1", "1")}],
+        {"round": 1, "attempt": 2, "filed": true}
+    ]);
+
+    // THE CONTROL: the same verdict, contested by nobody, closes — once it is on record.
     let plain = stand("contested-close-plain", |key| filing(key, "refuted"));
+    recorded(&plain, &["r-1"]).must(OK, "the record that takes the filing");
+    settled(&plain);
     let read = plain.state();
     assert_eq!(
         json!([routed(&read, "r-1"), read["next"], read["forbids_close"]]),
@@ -25273,14 +25617,14 @@ fn a_contested_finding_holds_the_close_until_it_carries_the_humans_ruling() {
     );
 
     let rig = stand("contested-close", refuted_and_contested);
-    assert_eq!(stands(&rig), held, "contested, it holds the close");
+    assert_eq!(stands(&rig), unrecorded, "contested, it holds the close");
     // `no-action` is neither a fix nor a ruling.
     rig.run(
         &ledger_set(RUN),
         &json!({"key": "r-1", "disposition": "no-action"}).to_string(),
     )
     .must(OK, "no ruling");
-    assert_eq!(stands(&rig), held, "`no-action` rules nothing");
+    assert_eq!(stands(&rig), unrecorded, "`no-action` rules nothing");
     // The record takes the filing, and the finding is still his.
     recorded(&rig, &["r-1"]).must(OK, "the record that takes the filing");
     settled(&rig);
@@ -25310,6 +25654,8 @@ fn a_contested_finding_holds_the_close_until_it_carries_the_humans_ruling() {
             &json!({"key": "r-1", "disposition": "bound", "detail": "a planted state"}).to_string(),
         )
         .must(OK, "the human's ruling: a bound");
+    recorded(&bound, &["r-1"]).must(OK, "the record that takes the filing");
+    settled(&bound);
     let read = bound.state();
     assert_eq!(
         json!([routed(&read, "r-1"), read["next"]]),
@@ -25333,9 +25679,12 @@ fn a_contested_finding_holds_the_close_until_it_carries_the_humans_ruling() {
             read["next"],
             the_humans(&read)
         ]),
-        json!([at("fix", "admitted"), ["r-1"], "fix", []]),
-        "{read}"
+        json!([at("fix", "admitted"), ["r-1"], "verify", []]),
+        "a fixer's finding by the human's word — and the stage's record is the step before a fixer is: {read}"
     );
+    recorded(&admitted, &["r-1"]).must(OK, "the record that takes the filing");
+    settled(&admitted);
+    assert_eq!(admitted.state()["next"], "fix");
 }
 
 /// **The record takes a contested verdict, and nothing the state says of it moves** (`T3b`:
@@ -25410,6 +25759,11 @@ fn the_record_takes_a_contested_verdict_and_nothing_the_state_says_of_it_moves()
         "nothing the state says of a row moved at the record"
     );
     assert_eq!(follows(&after), follows(&before));
+    assert_eq!(
+        json!([owes(&before), owes(&after)]),
+        json!([["verify", true, 2], ["verify", null, 0]]),
+        "… and that two files were owed their record: the item handed on still awaits its verdict"
+    );
     assert_eq!(
         json!([
             routed(&after, "review-f1"),

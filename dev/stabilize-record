@@ -982,7 +982,8 @@
 #         unsettled    [{cell, clauses}] — what the rulings do not settle      } clause
 #                      table is all that is left to ask (below)
 #         forbids_close  [{clause, status} | {"clauses": "no row"} | {finding, route}
-#                      | {"candidate": "not-tested", round}]
+#                      | {"candidate": "not-tested", round}] — and, in a run with a queue,
+#                      {"filed": FILE}: a filed verdict no record took (below)
 #         next         not-ready | test | triage | rule | fix | retest | close | stop
 #                      | unsettled — and, in a run with a queue only, verify
 #         stop         null — or, when next is stop, {why: every-round | round-bound |
@@ -1278,22 +1279,44 @@
 #                    after the one triage, a seed added between two invocations — and
 #                    first, whatever the queue holds: the next invocation grades it
 #         verify     a row is routed verify: a row of the queue is unverified, and budget
-#                    is left. The stage that left the queue continues it — the filed
-#                    verdicts taken, only what is missing launched, no instrument run
-#                    again — ahead of the human's list and of a fixer
+#                    is left — OR A FILED VERDICT IS IN NO RECORD (below). The stage that
+#                    left the queue continues it — the filed verdicts taken, only what is
+#                    missing launched, no instrument run again — ahead of the human's
+#                    list and of a fixer
 #         rule       as in the first table — and so once the budget is spent with a route
 #                    item unreached, which is on the human's list
-#       — so a spent budget never ends in `verify`; with only behaviour items unreached it
-#       ends in whatever else the state asks, `close` among them.
+#       — so a spent budget never ends in `verify` once what it bought is on record; with
+#       only behaviour items unreached it ends in whatever else the state asks, `close`
+#       among them.
+#       A FILED VERDICT IS RECORDED BEFORE ANYTHING FOLLOWS FROM IT. A verdict counts from
+#       the moment it is filed, so a stage that ends after its last verifier filed — or
+#       after the wave that spent its budget — leaves no row that awaits anybody, and what
+#       the verdicts left would be the step: a fixer's, the human's, the close — over a
+#       file no commit of a record holds. So WHILE A FILED VERDICT COUNTS AND NO RECORD
+#       TOOK IT (the round's record does not name its file: `verdicts`) the latest round,
+#       once tested and while its outcome is not set, IS NOT OVER: the step is `verify`
+#       where it is not `triage`, never `rule`, `fix`, `close` or a stop, no round is
+#       begun, and the file is named among what forbids the close ({"filed": FILE}). The
+#       stage that verifies is handed its next attempt with the word `filed`, and the
+#       record of that attempt takes the file (apply) — as every record does, which is
+#       why a record of the human's rulings made first takes it too. Then the step is
+#       what the verdicts left. A file that does not count is owed nothing: its finding
+#       awaits a verdict again, and that row is what hands the stage on. The one step
+#       that is the human's over such a file is the grant of one more attempt, where two
+#       attempts in a row left no record (THE ATTEMPTS OF A STAGE).
 #       WHAT HOLDS THE CLOSE in such a run is therefore what forbids it in every run — a
 #       clause that is not green, a finding that is verified and neither fixed nor ruled,
-#       one on the human's list — and A ROUTE ITEM IN THE QUEUE THAT NOBODY REACHED. Not a
-#       behaviour item nobody reached, and not a route item that is in no queue.
-#       THE POSITION gains one flag, where the first table's says `triage: true`: the stage
-#       that left the round unfinished carries `triage: true` where a row is routed
-#       triage, `verify: true` where a row is routed verify, and both where both are —
-#       test {round R, attempt, verify: true} is THE INVOCATION THAT CONTINUES. With the
-#       budget spent and no row routed triage, test is refused (round-open) as ever.
+#       one on the human's list — and A ROUTE ITEM IN THE QUEUE THAT NOBODY REACHED, and A
+#       FILED VERDICT NO RECORD TOOK. Not a behaviour item nobody reached, and not a route
+#       item that is in no queue.
+#       THE POSITION gains two flags, where the first table's says `triage: true`: the
+#       stage that left the round unfinished carries `triage: true` where a row is routed
+#       triage, `verify: true` where a row is routed verify, `filed: true` where a filed
+#       verdict is in no record, and each that holds —
+#       test {round R, attempt, verify: true} is THE INVOCATION THAT CONTINUES, and
+#       test {round R, attempt, filed: true} the one that only has the stage's record to
+#       make. With the budget spent, no row routed triage and nothing filed that no
+#       record took, test is refused (round-open) as ever.
 #
 #       THE CANDIDATE, AND WHEN A FIX STAGE IS ON RECORD. A round whose record names its
 #       candidate is TESTED. A FIX STAGE IS ON RECORD in a round whose record counts a
@@ -1424,8 +1447,9 @@
 #                      the human's ruling on the list, and a clause's re-run. Only the
 #                      human raises the bound, and the raise is the go (run-set).
 #       Close is forbidden by every clause that is not green, by a census with no
-#       clause, by every finding not routed recorded, and by a candidate that is not
-#       tested — forbids_close lists them all.
+#       clause, by every finding not routed recorded, by a candidate that is not
+#       tested, and — in a run with a queue — by every filed verdict no record took —
+#       forbids_close lists them all.
 #       UNSETTLED is not a decision: it names a state the recorded rulings do not
 #       settle, and hands it to the human instead of guessing. The cells left, both with
 #       nothing open on a current candidate: not-green-and-no-instrument (no item of the
@@ -2512,6 +2536,10 @@ VERIFIER = "verify-"
 # about it in this run, or it is shown and holds nothing.
 VERIFY, LISTED, UNREACHED = "verify", "listed", "unreached"
 CLOSED = ("recorded", LISTED)
+# A FILED VERDICT NO RECORD TOOK IS OWED ITS RECORD (state: A FILED VERDICT IS RECORDED BEFORE
+# ANYTHING FOLLOWS FROM IT): the word the position of the stage that verifies carries, and the
+# name of the entry that forbids the close — the state's own word for what is filed.
+OWED = "filed"
 # WHAT A STOP SHOWS (the build plan of the reshaped `test` stage, T4): the round's view, one
 # file of the round in a run with a queue, rendered by every record that changes it — and
 # the line it ends with, ITS SEAL: the sha256 of everything before that line. A file at
@@ -5829,17 +5857,20 @@ def stage_view(run_dir, run):
     return {"file": shown["file"], "sha256": shown["sha256"], "was": shown["on_disk"], "wrote": wrote}
 
 
-def over(rounds, findings):
-    """Whether the latest round is over: tested, and its outcome set or nothing open."""
+def over(rounds, findings, unrecorded):
+    """Whether the latest round is over: tested, and its outcome set or nothing open — and a
+    filed verdict no record took (`unrecorded`) is open: the round's stage has its record
+    to make."""
     if not rounds or rounds[-1]["facts"]["candidate"] is None:
         return False
-    return rounds[-1]["facts"]["outcome"] is not None or all(finding["route"] in CLOSED for finding in findings)
+    return rounds[-1]["facts"]["outcome"] is not None or (not unrecorded and all(finding["route"] in CLOSED for finding in findings))
 
 
-def next_of(findings, clauses, rounds, facts, owed):
+def next_of(findings, clauses, rounds, facts, owed, unrecorded):
     """What follows from the state, as the document's fields from `candidate` to `stop` —
-    a pure function of the routes, the clause table, the rounds' records and the run's
-    facts; the header's table is this function."""
+    a pure function of the routes, the clause table, the rounds' records, the run's facts
+    and the filed verdicts no record took (`unrecorded`, by their files); the header's
+    table is this function."""
     forbids = [{"clause": row["clause"], "status": row["status"]} for row in clauses if row["status"] != "green"]
     if not clauses:
         forbids.append({"clauses": "no row"})
@@ -5847,10 +5878,13 @@ def next_of(findings, clauses, rounds, facts, owed):
     # with a queue, `listed`: shown at every stop, and holding nothing.
     still = [finding for finding in findings if finding["route"] not in CLOSED]
     forbids += [{"finding": finding["key"], "route": finding["route"]} for finding in still]
+    # … AND A FILED VERDICT NO RECORD TOOK FORBIDS THE CLOSE, by its file: the state counts
+    # it, and no commit of a record holds what it says.
+    forbids += [{OWED: file} for file in unrecorded]
     routes = {finding["route"] for finding in still}
     last = rounds[-1] if rounds else None
     tested = bool(rounds) and last["facts"]["candidate"] is not None
-    done = over(rounds, findings)
+    done = over(rounds, findings, unrecorded)
     # The candidate the latest round tested is the run's for as long as no fix stage is on
     # record in that round. Close is reachable from nothing else.
     current = tested and not fixed_in(last)
@@ -5858,7 +5892,7 @@ def next_of(findings, clauses, rounds, facts, owed):
         forbids.append({"candidate": "not-tested", "round": last["round"] if rounds else None})
     fix_rounds = sum(fixed_in(held) for held in rounds)
     # What the clause table asks for, once it is all that is left to ask.
-    left = not owed and current and not still
+    left = not owed and current and not still and not unrecorded
     asked = {word: [row["clause"] for row in clauses if left and row["retry"] == word] for word in ("spent", "no-instrument", "never-selected", "due")}
     unsettled = [{"cell": cell, "clauses": asked[word]} for cell, word in ((NO_INSTRUMENT, "no-instrument"), (NEVER_SELECTED, "never-selected")) if asked[word]]
     if owed:
@@ -5867,8 +5901,10 @@ def next_of(findings, clauses, rounds, facts, owed):
         step = "test"
     elif "triage" in routes:
         step = "triage"
-    elif VERIFY in routes:
-        # A run with a queue only: a row of the queue is unverified, and budget is left.
+    elif VERIFY in routes or unrecorded:
+        # A run with a queue only: a row of the queue is unverified, and budget is left — or
+        # A FILED VERDICT IS IN NO RECORD: the stage that verifies has its record to make,
+        # ahead of the human's list, of a fixer and of the close, whatever the verdicts left.
         step = VERIFY
     elif "human" in routes:
         step = "rule"
@@ -6020,12 +6056,13 @@ def unreached(item_rows, rounds):
     return never, [{"door": as_data(door), "registry": as_data(registry), "rounds": within} for (door, registry), within in bare.items()]
 
 
-def position_of(rounds, findings, owed, stop, rerun):
+def position_of(rounds, findings, owed, stop, rerun, unrecorded):
     """What an invocation of each stage would work on — the round, the cycle and the
     attempt — or why it is refused. A pure function of the rounds' records, the routes,
-    what the opening owes and the stop the next step computed from the run's facts; the
-    header's table is this function. The third entry, `spent`, is no stage's position: it
-    names the stages refused because their attempts are spent."""
+    what the opening owes, the stop the next step computed from the run's facts and the
+    filed verdicts no record took (`unrecorded`); the header's table is this function. The
+    third entry, `spent`, is no stage's position: it names the stages refused because
+    their attempts are spent."""
     number_ = rounds[-1]["round"] if rounds else None
     spent = []
 
@@ -6061,7 +6098,7 @@ def position_of(rounds, findings, owed, stop, rerun):
         onward = refused("stopped")
     if last["facts"]["outcome"] is not None:
         return placed_(onward, refused("round-over"))
-    still = not over(rounds, findings)
+    still = not over(rounds, findings, unrecorded)
     cycle = last["facts"]["cycles"] + 1
     # The fix stage's attempts may be spent too — but its position is refused for that only
     # where the step is that stage's (the state, below): a round whose last cycle left
@@ -6082,12 +6119,14 @@ def position_of(rounds, findings, owed, stop, rerun):
     elif bound == "cycle-bound":
         # And so is one more fix cycle in this round.
         fix = refused("cycle-bound")
-    elif any(finding["route"] in ("triage", VERIFY) for finding in findings):
-        # The round's triage is not finished — or, in a run with a queue, its queue is not:
-        # the stage that left it finishes it — the fix stage where one has left a counted
-        # cycle or a report in the round, else `test` — and the position says which of the
-        # two it finds: a row nobody graded (`triage`), a row of the queue (`verify`).
+    elif unrecorded or any(finding["route"] in ("triage", VERIFY) for finding in findings):
+        # The round's triage is not finished — or, in a run with a queue, its queue is not,
+        # or a filed verdict of it is in no record: the stage that left it finishes it — the
+        # fix stage where one has left a counted cycle or a report in the round, else `test`
+        # — and the position says which of the three it finds: a row nobody graded
+        # (`triage`), a row of the queue (`verify`), a filed verdict no record took (`filed`).
         finishes = {word: True for word in ("triage", VERIFY) if any(finding["route"] == word for finding in findings)}
+        finishes.update({OWED: True} if unrecorded else {})
         if fixed_in(last) or any(held["reports"] for held in last["fix_cycles"]):
             fix.update(finishes)
         else:
@@ -6576,7 +6615,12 @@ def read_state(run_dir, run):
             entry["reason"] = entry["reason"] and as_data(entry["reason"])
     never_selected, uncovered = unreached(item_rows, grounded)
     owed = owed_by(facts)
-    following = next_of(findings, clauses, rounds, facts, owed)
+    # A FILED VERDICT IS RECORDED BEFORE ANYTHING FOLLOWS FROM IT (the header: state). The rows
+    # above are read as the record that takes each filed file would leave them — and until a
+    # record has TAKEN the file (the round's record names it: `verdicts`), that record is the
+    # step: these are the files the next `apply` takes (take_filed), by name.
+    unrecorded = [entry["file"] for entry in filings if entry["counts"] and (entry["round"], entry["reporter"], entry["attempt"]) not in took]
+    following = next_of(findings, clauses, rounds, facts, owed, unrecorded)
     # A re-run, when it is the step: the first clause that is due, and of its items that
     # are due those the lowest round selected — one invocation works inside one round.
     rerun = None
@@ -6590,7 +6634,7 @@ def read_state(run_dir, run):
             "items": [{"item": entry["item"], "attempt": (entry["attempt"] or 0) + 1} for entry in due if entry["round"] == within],
             "doors": [{"door": as_data(row[0]), "registry": as_data(row[2]), "derivation": as_data(row[3])} for row in inside if row[1] == "included"],
         }
-    position = position_of(rounds, findings, owed, following["stop"], rerun)
+    position = position_of(rounds, findings, owed, following["stop"], rerun, unrecorded)
     # THE ATTEMPTS OF A STAGE: where the step is a stage's and that stage's attempts are
     # spent, the step is the human's — who may grant one more (round-set: again).
     step = following["stop"]["then"] if following["stop"] else following["next"]
@@ -6602,7 +6646,7 @@ def read_state(run_dir, run):
         following.update(retest=[], **({"stop": dict(following["stop"], then="rule")} if following["stop"] else {"next": "rule"}))
     # THE ROUND A WRITE MAY BEGIN: the one a `test` stage is handed that no directory holds
     # yet — asked as if the opening were done, whose own order is not this script's to hold.
-    free = position_of(rounds, findings, [], following["stop"], rerun)["test"]
+    free = position_of(rounds, findings, [], following["stop"], rerun, unrecorded)["test"]
     read = {
         "run": run,
         "opened": True,

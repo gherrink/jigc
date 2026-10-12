@@ -152,9 +152,12 @@
 //! anything ([`ends_at_its_first_record`], [`nobody_verifies`]). **And an invocation that finds
 //! such a stage unfinished CONTINUES it** (the plan's `T6b`; [`continuation_opens`]): the
 //! state's position says `verify` — a row of the queue is unverified — or `triage` — a row
-//! nobody graded is left. It runs no instrument: its reads, its attempt, the two binaries
-//! that stand; a triage only over rows nobody graded; the verdicts an earlier invocation
-//! filed taken as the state counts them; a verifier only for what has none; and its record.
+//! nobody graded is left — or `filed`: a filed verdict is in no record, which is all a stage
+//! leaves that died after its last verifier filed, or after the wave that spent its budget
+//! ([`dies_after_its_wave_filed`]). It runs no instrument: its reads, its attempt, the two
+//! binaries that stand; a triage only over rows nobody graded; the verdicts an earlier
+//! invocation filed taken as the state counts them; a verifier only for what has none; and
+//! its record.
 //! **A verifier call is never tried twice**, and a wave in which two of them return nothing is
 //! the last: where the steps after it return nothing too, the stage halts as what may be the
 //! account's limit, naming the filed verdicts. *The scenarios of a lap, of an unverified
@@ -8472,7 +8475,9 @@ fn handed_on_items_are_verified_in_the_stage_that_found_them_and_the_stage_ends_
     };
     assert_eq!(read(3), json!([[ROUTE, INSIDE], 0, 3, "verify"]));
     assert_eq!(read(4), json!([[first, second], 2, 1, "verify"]));
-    assert_eq!(read(5), json!([[second], 3, 0, "rule"]));
+    // (The step after the last wave is the stage's own record: three verdicts are filed, and
+    // no record took one. The human's step follows it — (5).)
+    assert_eq!(read(5), json!([[second], 3, 0, "verify"]));
 
     // (4) THE SECOND RECORD: every reporter of the attempt that left a report, and what it
     // took — three filed verdicts, three handed-on rows, the round's triage, what a stop shows.
@@ -8763,11 +8768,12 @@ fn a_lead_and_an_item_under_a_parent_that_did_not_reproduce_are_never_launched()
             after_wave["budget"]["left"],
             after_wave["next"]
         ]),
-        json!([[], 29, "stop"]),
-        "{after_wave}"
+        json!([[], 29, "verify"]),
+        "the wave's verdict is filed, and until the stage's second record takes it the step is that record: {after_wave}"
     );
     ends_at_its_second_record(&sim, &ran, &candidate);
     let state = sim.state();
+    assert_eq!(state["next"], "stop", "recorded: {state}");
     let routes = |key: &str| {
         let row = row_of(&state, key);
         json!([row["route"], row["why"]])
@@ -9654,8 +9660,8 @@ fn a_verdict_filed_by_an_invocation_that_died_is_not_verified_again() {
             state["position"]["test"],
             state["next"]
         ]),
-        json!([2, [INSIDE], {"round": 1, "attempt": 2, "verify": true}, "verify"]),
-        "two verdicts are filed and count, in no commit; one row awaits its verdict: {state}"
+        json!([2, [INSIDE], {"round": 1, "attempt": 2, "verify": true, "filed": true}, "verify"]),
+        "two verdicts are filed and count, in no commit — the position says that they are owed a record; one row awaits its verdict: {state}"
     );
     assert!(
         state["filed"]
@@ -9716,7 +9722,17 @@ fn a_verdict_filed_by_an_invocation_that_died_is_not_verified_again() {
             result["verify"]["verdicts"],
             result["verify"]["unverified"]
         ]),
-        json!(["verified", null, ["verify"], null, head, 1, 1, 1, 0]),
+        json!([
+            "verified",
+            null,
+            ["verify", "filed"],
+            null,
+            head,
+            1,
+            1,
+            1,
+            0
+        ]),
         "{result}"
     );
     assert_eq!(
@@ -10329,7 +10345,8 @@ fn a_rerun_inside_a_round_hunts_its_due_items_grades_once_and_spends_the_rounds_
         ])
     };
     assert_eq!(read(3), json!([[reached, unreached], 1, 1, "verify"]));
-    assert_eq!(read(4), json!([[unreached], 2, 0, "rule"]));
+    // (After its wave the step is the stage's own record of the verdict that wave filed.)
+    assert_eq!(read(4), json!([[unreached], 2, 0, "verify"]));
     assert_eq!(verified(&ran), [reached], "{agents:?}");
     let composed = composing(&ran);
     assert_eq!(
@@ -10709,13 +10726,13 @@ fn a_stage_whose_record_step_is_silent_after_that_halts_naming_the_filed_verdict
 
     // THE INVOCATION THAT FOLLOWS CONTINUES: the three rows the queue holds are launched once
     // more, under the next attempt. HERE ITS VERIFIERS LEAVE NOTHING — AND ITS RECORD IS MADE
-    // ALL THE SAME, because the first read said that a filed verdict is owed one: THE VERDICT
-    // THE HALT NAMED IS TAKEN, and is in a commit, pushed.
+    // ALL THE SAME, because the state's position says that a filed verdict is in no record:
+    // THE VERDICT THE HALT NAMED IS TAKEN, and is in a commit, pushed.
     let state = sim.state();
     assert_eq!(
         json!([state["position"]["test"], queued_keys(&state)]),
-        json!([{"round": 1, "attempt": 2, "verify": true}, [handed_on, ROUTE, elsewhere]]),
-        "{state}"
+        json!([{"round": 1, "attempt": 2, "verify": true, "filed": true}, [handed_on, ROUTE, elsewhere]]),
+        "three rows await their verdicts, and the verdict the halt named is in no record: {state}"
     );
     let again = sim.invoke(
         sim.args("test", json!({})),
@@ -10737,7 +10754,7 @@ fn a_stage_whose_record_step_is_silent_after_that_halts_naming_the_filed_verdict
             again.result["verify"]["record"],
             again.result["halted"]
         ]),
-        json!(["verified", ["verify"], ["filed"], 0, head, null]),
+        json!(["verified", ["verify", "filed"], ["filed"], 0, head, null]),
         "{}",
         again.result
     );
@@ -10792,6 +10809,401 @@ fn a_stage_whose_record_step_is_silent_after_that_halts_naming_the_filed_verdict
     assert!(
         !text(&result["message"]).contains("USAGE LIMIT"),
         "{result}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A run with a queue: a filed verdict no record took is recorded before anything else follows
+// (a finding `T6b`'s builder reported, read from two scripts and driven by nobody: a stage
+// that dies after its last verifier filed, or whose budget that wave spent, was handed to
+// nobody — and its filed verdicts waited for whichever record came next, or for none)
+// ---------------------------------------------------------------------------
+
+/// Another route item of the scenarios below.
+const ELSEWHERE: &str = "another-route-is-dead";
+
+/// A stage that finds `keys` — route items, in that order — whose verifiers file `filings`,
+/// and whose invocation DIES BEFORE ITS WAVE'S REPORTS ARE CHECKED: after the filings, and
+/// before the stage's second record. Returns the commit of its first record.
+fn dies_after_its_wave_filed(sim: &Sim, keys: &[&str], filings: &[(&str, Value)]) -> String {
+    let candidate = sim.rig.rev("HEAD");
+    let titles: Vec<String> = keys
+        .iter()
+        .map(|key| format!("the finding {key}"))
+        .collect();
+    let titles: Vec<&str> = titles.iter().map(String::as_str).collect();
+    let entries: Vec<Value> = keys
+        .iter()
+        .zip(1..)
+        .map(|(key, n)| a_route(key, n))
+        .collect();
+    let mut script = small_stage(json!({"agents": {
+        "area-a:review": findings(&titles),
+        "triage": {"entries": entries},
+    }}));
+    for (key, filing) in filings {
+        script["agents"][format!("verify:{key}")] = filing.clone();
+    }
+    script["endings"] = json!({"git:check-reports:wave1": "dies"});
+    let died = sim.invoke(sim.args("test", json!({})), script);
+    assert_eq!(
+        json!([died.result["status"], died.result["halted"]["phase"]]),
+        json!(["halted", "reports"]),
+        "{}",
+        died.result
+    );
+    assert_eq!(
+        verified(&died),
+        filings.iter().map(|(key, _)| *key).collect::<Vec<_>>(),
+        "the wave: {:?}",
+        died.agents()
+    );
+    let first_record = sim.rig.rev("HEAD");
+    assert_eq!(
+        json!([sim.rig.rev("HEAD~1"), head_commit(sim).0]),
+        json!([candidate, first_record_subject()]),
+        "the dead invocation left its first record, and nothing after it"
+    );
+    first_record
+}
+
+/// `[counts, recorded]` of every file among the filed verdicts, as a state document has them.
+fn filed_as(state: &Value) -> Vec<Value> {
+    state["filed"]
+        .as_array()
+        .unwrap_or_else(|| panic!("a run with a queue says what is filed: {state}"))
+        .iter()
+        .map(|entry| json!([entry["counts"], entry["recorded"]]))
+        .collect()
+}
+
+/// **A stage that died after its last verifier filed is handed its record, and nothing else
+/// first** (the finding `T6b`'s builder reported and did not build; the rule for this tooling:
+/// what can strand state is repaired before a first run). The state counts a verdict from the
+/// moment it is filed. So where an invocation dies after THE LAST ROW OF THE QUEUE was filed,
+/// no row awaits a verdict, and the step was the one the verdicts left — here a fixer's —
+/// with the `test` stage refused as a round that is open: two verdicts the state counts, in
+/// no commit, and nothing of the harness that would ever record them. HERE THE STATE HANDS THE
+/// STAGE ITS RECORD: `next` is `verify`, the position says `filed`, and THE INVOCATION THAT
+/// FOLLOWS CONTINUES — its reads, its attempt, the binaries that stand, NO VERIFIER, and the
+/// one record, composed by the tool, which takes what was filed and every report the dead
+/// invocation left. ONCE: the invocation after it is refused as it always was. And AN
+/// INVOCATION THAT ONLY LOOKS says that the stage is to be continued, and for what.
+#[test]
+fn a_stage_that_died_after_its_last_verifier_filed_is_handed_its_record_and_nothing_else_first() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::budgeted("filed-last", &one_area(), 30);
+    let candidate = sim.rig.rev("HEAD");
+    let first_record = dies_after_its_wave_filed(
+        &sim,
+        &[ROUTE, ELSEWHERE],
+        &[
+            (
+                ROUTE,
+                files(json!({"verdict": "confirmed", "regression": false})),
+            ),
+            (ELSEWHERE, refutes("intended")),
+        ],
+    );
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            state["budget"]["spent"],
+            queued_keys(&state),
+            filed_as(&state)
+        ]),
+        json!([2, [], [[true, false], [true, false]]]),
+        "the control: both verdicts are filed and count, no record holds one, and no row awaits a verdict: {state}"
+    );
+    assert_eq!(
+        json!([state["next"], state["position"]["test"], state["stop"]]),
+        json!(["verify", {"round": 1, "attempt": 2, "filed": true}, null]),
+        "the stage is handed its record — not a fixer the findings: {state}"
+    );
+
+    // AN INVOCATION THAT ONLY LOOKS reads the state across a filed verdict — nothing is to be
+    // finished first — and says what the stage is continued for. It begins nothing.
+    let status = sim.rig.status();
+    let looked = sim.invoke(sim.args("test", json!({"stopAfter": "state"})), json!({}));
+    assert_eq!(
+        json!([
+            looked.result["status"],
+            looked.result["after"],
+            looked.result["continues"],
+            looked.result["owed"],
+            looked.result["attempt"],
+            looked.result["candidate"]["sha"]
+        ]),
+        json!(["stopped", "state", ["filed"], ["filed"], 2, candidate]),
+        "{}",
+        looked.result
+    );
+    assert_eq!(looked.trace, lines(&TWO_READS));
+    assert!(
+        looked.commands[0].contains(" --look "),
+        "{:?}",
+        looked.commands
+    );
+    assert_eq!(
+        json!([sim.rig.rev("HEAD"), sim.rig.status()]),
+        json!([first_record, status]),
+        "a look records nothing"
+    );
+
+    // THE INVOCATION THAT FOLLOWS CONTINUES, AND ONLY RECORDS.
+    let ran = sim.invoke(sim.args("test", json!({})), json!({}));
+    let mut expected = continuation_opens(&sim, &candidate);
+    expected.extend(continuation_records("verdicts", 2, 2));
+    assert_eq!(
+        ran.agents(),
+        expected,
+        "its reads, its attempt, the binaries that stand, and the record: no verifier, no report check, no triage"
+    );
+    assert!(
+        ran.logs.iter().any(|line| line.contains(
+            "A CONTINUATION (`next` is `verify`): a filed verdict is in no record — on "
+        )),
+        "the log says what the stage is continued for: {:?}",
+        ran.logs
+    );
+    let result = &ran.result;
+    let head = sim.rig.rev("HEAD");
+    assert_eq!(
+        json!([
+            result["status"],
+            result["halted"],
+            result["continued"],
+            result["record"],
+            result["verify"]["record"],
+            result["verify"]["waves"],
+            result["verify"]["launched"],
+            result["verify"]["verdicts"],
+            result["next"]
+        ]),
+        json!(["verified", null, ["filed"], null, head, 0, 0, 0, "fix"]),
+        "{result}"
+    );
+    assert_eq!(
+        json!([
+            sim.rig.rev("HEAD~1"),
+            head_commit(&sim).0,
+            sim.rig.remote(LOOP),
+            sim.rig.status()
+        ]),
+        json!([first_record, second_record_subject(), head, ""]),
+        "ONE record, on the dead invocation's first, pushed, and nothing left pending"
+    );
+    let composed = composing(&ran);
+    assert!(
+        composed.len() == 1
+            && composed[0].0.contains(" --round 1 --attempt 2 --subject ")
+            && composed[0].1 == ["reporter=attempt".to_owned()],
+        "its record names its marker, and nothing else: {composed:?}"
+    );
+    let (_, paths) = head_commit(&sim);
+    for rel in [
+        format!("r1/verdicts/verify-{ROUTE}.a1.json"),
+        format!("r1/verdicts/verify-{ELSEWHERE}.a1.json"),
+        format!("r1/reports/test/verify-{ROUTE}.a1.md"),
+        format!("r1/reports/test/verify-{ELSEWHERE}.a1.md"),
+        "r1/reports/test/attempt.a2.md".to_owned(),
+        "r1/triage.md".to_owned(),
+        "r1/view.md".to_owned(),
+    ] {
+        assert!(
+            paths.contains(&format!("{RUN_DIR}/{rel}")),
+            "`{rel}` is in the record: {paths:?}"
+        );
+    }
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            filed_as(&state),
+            state["next"],
+            state["position"]["test"],
+            state["rounds"][0]["facts"]["recorded"],
+            state["rounds"][0]["test_unrecorded"],
+            row_of(&state, ROUTE)["route"],
+            row_of(&state, ELSEWHERE)["route"]
+        ]),
+        json!([
+            [[true, true], [true, true]],
+            "fix",
+            {"refused": "round-open", "round": 1},
+            ["test a2"],
+            0,
+            "fix",
+            "recorded"
+        ]),
+        "every filed verdict is on record, and the step is the one the verdicts left: {state}"
+    );
+
+    // ONCE: nothing is owed a record any more, and the stage is refused as it always was.
+    let after = sim.invoke(sim.args("test", json!({})), json!({}));
+    assert_eq!(
+        json!([
+            after.result["status"],
+            after.result["refused"]["refused"],
+            after.result["arrived"]["owed"],
+            sim.rig.rev("HEAD")
+        ]),
+        json!(["refused", "round-open", [], head]),
+        "{}",
+        after.result
+    );
+    assert_eq!(after.trace, lines(&TWO_READS));
+}
+
+/// **A stage whose last wave spent the budget and filed is handed its record before the
+/// human's step** (the same finding, its second shape). The wave that spends the budget
+/// files, and the invocation dies before the second record: a route item nobody reached is
+/// the human's, so the step was `rule` — over two verdicts no commit holds, with a stop's
+/// view on disk that shows neither. HERE THE STEP IS THE STAGE'S RECORD FIRST: the
+/// invocation that follows continues, launches NOBODY — the budget has nothing left — and
+/// records; and then the step is the human's, with what the budget bought on record and in
+/// the view. AND A FILED VERDICT A COMMIT HOLDS AND NO RECORD TOOK — what a filing that
+/// arrives between a record's batch and its commit leaves, reached here by a commit made by
+/// hand — is recorded the same way: the first read finds nothing owed, and THE STATE'S WORD
+/// IS WHAT THE RECORD IS COMPOSED ON.
+#[test]
+fn a_stage_whose_last_wave_spent_the_budget_is_handed_its_record_before_the_humans_step() {
+    if !can_run() {
+        return;
+    }
+    let third = "a-third-route-is-dead";
+    let filings = [
+        (
+            ROUTE,
+            files(json!({"verdict": "confirmed", "regression": false})),
+        ),
+        (ELSEWHERE, refutes("intended")),
+    ];
+    let sim = Sim::budgeted("filed-spent", &one_area(), 2);
+    let candidate = sim.rig.rev("HEAD");
+    let first_record = dies_after_its_wave_filed(&sim, &[ROUTE, ELSEWHERE, third], &filings);
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            state["budget"],
+            queued_keys(&state),
+            filed_as(&state),
+            state["human_list"],
+            state["view"]["on_disk"]
+        ]),
+        json!([
+            {"limit": 2, "spent": 2, "left": 0},
+            [third],
+            [[true, false], [true, false]],
+            [{"key": third, "why": "unreached"}],
+            "behind"
+        ]),
+        "the control: the budget is spent on two verdicts no record holds, one route item is unreached, and the view on disk shows neither verdict: {state}"
+    );
+    assert_eq!(
+        json!([state["next"], state["position"]["test"]]),
+        json!(["verify", {"round": 1, "attempt": 2, "filed": true}]),
+        "the stage's record comes before the human's step: {state}"
+    );
+
+    let ran = sim.invoke(sim.args("test", json!({})), json!({}));
+    let mut expected = continuation_opens(&sim, &candidate);
+    expected.extend(continuation_records("verdicts", 2, 2));
+    assert_eq!(
+        ran.agents(),
+        expected,
+        "nobody is launched: the budget has nothing left"
+    );
+    let result = &ran.result;
+    let head = sim.rig.rev("HEAD");
+    assert_eq!(
+        json!([
+            result["status"],
+            result["continued"],
+            result["verify"]["launched"],
+            result["verify"]["left"],
+            result["verify"]["record"],
+            result["next"],
+            result["rule"]["findings"]
+        ]),
+        json!(["verified", ["filed"], 0, 0, head, "rule", 1]),
+        "{result}"
+    );
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            sim.rig.rev("HEAD~1"),
+            sim.rig.remote(LOOP),
+            sim.rig.status(),
+            filed_as(&state),
+            state["next"],
+            state["position"]["test"],
+            state["view"]["on_disk"]
+        ]),
+        json!([
+            first_record,
+            head,
+            "",
+            [[true, true], [true, true]],
+            "rule",
+            {"refused": "round-open", "round": 1},
+            "written"
+        ]),
+        "recorded, pushed, and the step is the human's — with a view that shows what the budget bought: {state}"
+    );
+
+    // A FILED VERDICT A COMMIT HOLDS AND NO RECORD TOOK. A commit step adds every pending
+    // file of the run, so a verdict filed between a record's batch and its commit rides that
+    // commit, and no table holds it. Here a hand makes such a commit.
+    let sim = Sim::budgeted("filed-committed", &one_area(), 30);
+    let candidate = sim.rig.rev("HEAD");
+    dies_after_its_wave_filed(&sim, &[ROUTE, ELSEWHERE], &filings);
+    sim.rig.git(&["add", "--", RUN_DIR]);
+    sim.rig.git(&[
+        "commit",
+        "-q",
+        "-m",
+        "docs(record): a filing that arrived after its record's batch",
+    ]);
+    sim.rig.git(&["push", "-q", "origin", LOOP]);
+    let rode = sim.rig.rev("HEAD");
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            sim.rig.status(),
+            filed_as(&state),
+            state["next"],
+            state["position"]["test"]
+        ]),
+        json!([
+            "",
+            [[true, false], [true, false]],
+            "verify",
+            {"round": 1, "attempt": 2, "filed": true}
+        ]),
+        "a commit holds both files, and no record took either: {state}"
+    );
+    let ran = sim.invoke(sim.args("test", json!({})), json!({}));
+    let mut expected = continuation_opens(&sim, &candidate);
+    expected.extend(continuation_records("verdicts", 2, 2));
+    assert_eq!(ran.agents(), expected);
+    let head = sim.rig.rev("HEAD");
+    assert_eq!(
+        json!([
+            ran.result["status"],
+            ran.result["continued"],
+            ran.result["arrived"]["owed"],
+            ran.result["verify"]["record"],
+            sim.rig.rev("HEAD~1")
+        ]),
+        json!(["verified", ["filed"], [], head, rode]),
+        "the first read found nothing owed, and the record was composed on the state's word: {}",
+        ran.result
+    );
+    assert_eq!(
+        filed_as(&sim.state()),
+        [json!([true, true]), json!([true, true])]
     );
 }
 

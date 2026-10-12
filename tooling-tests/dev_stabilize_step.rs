@@ -11896,6 +11896,58 @@ fn a_stage_killed_between_a_filing_and_its_record_ends_in_one_of_two_states() {
     });
 }
 
+/// **The state's digest says that a filed verdict is owed its record** (a finding the builder
+/// of the continuation reported: *a stage that dies after its last verifier filed … leaves no
+/// row the position says to verify*). The record script's position hands the stage that
+/// verifies its next attempt where a filed verdict counts and no record took it — the word
+/// `filed`, beside `verify` where a row of the queue awaits its verdict too — and names the
+/// file among what forbids the close. THE DIGEST CARRIES BOTH, the word as a flag and the
+/// files as a count: the harness has no file system, and acts on nothing else. Once the
+/// record took the file neither is there.
+#[test]
+fn the_state_digest_says_that_a_filed_verdict_is_owed_its_record() {
+    let stage = Stage::between_its_two_records("digest-filed");
+    let said = |tag: &str| {
+        let (seen, document) = stage.rig.state_digest(tag);
+        assert_eq!(seen.line["unfit"], json!([]), "{}", seen.raw);
+        (
+            json!([
+                seen.line["state"]["next"],
+                seen.line["state"]["position"]["test"],
+                seen.line["state"]["forbids_close"]["filed"],
+                seen.line["state"]["forbids_close"]["findings"]
+            ]),
+            document,
+        )
+    };
+    assert_eq!(
+        said("test-1").0,
+        json!(["verify", {"round": 1, "attempt": 3, "verify": true}, 0, 2]),
+        "the control: two rows of the queue, and nothing filed"
+    );
+    stage.verified("f-1");
+    let (digest, document) = said("test-2");
+    assert_eq!(
+        digest,
+        json!(["verify", {"round": 1, "attempt": 3, "verify": true, "filed": true}, 1, 2]),
+        "a filed verdict no record took: the position's word, and how many forbid the close"
+    );
+    assert!(
+        document["forbids_close"]
+            .as_array()
+            .expect("what forbids the close")
+            .contains(&json!({"filed": filed_verdict("f-1")})),
+        "the control: the document names the file — {}",
+        document["forbids_close"]
+    );
+    stage.records_what_was_filed();
+    assert_eq!(
+        said("test-3").0,
+        json!(["verify", {"round": 1, "attempt": 3, "verify": true}, 0, 2]),
+        "the record took it: f-2 and the item handed on await their verdicts"
+    );
+}
+
 /// **A filed verdict overwritten by hand is set aside, and its finding is unverified again**
 /// (`T3b`; the tool's header: *What is vetted, and where*, the first boundary). The report
 /// check vets every pending written-once file, a filed verdict among them — as one: the

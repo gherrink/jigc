@@ -157,7 +157,11 @@
 // runs twice). A stage that returned or died after its first record leaves the round where
 // the state's position says `verify` — a row of the queue is unverified, and budget is left
 // — or `triage` — a row nobody graded is left, which no triage saw: a red row a batch filed
-// under its own key, a seed added since. THE INVOCATION THAT FOLLOWS CONTINUES THE STAGE
+// under its own key, a seed added since — or `filed`: A FILED VERDICT COUNTS AND NO RECORD
+// TOOK IT, which is all a stage leaves that died after its last verifier filed, or after the
+// wave that spent its budget: the state then hands no fixer, no ruling and no close before
+// the stage's record (dev/stabilize-record: A FILED VERDICT IS RECORDED BEFORE ANYTHING
+// FOLLOWS FROM IT). THE INVOCATION THAT FOLLOWS CONTINUES THE STAGE
 // (`continuing`, `continueTest`), FROM THE COMMITTED STATE AND FROM GIT: its two reads — a
 // record that was applied and not committed is finished by the first, and by nothing else
 // of that invocation (`finishRecord`) — its attempt begun on record, on the candidate the
@@ -172,8 +176,9 @@
 // left without a verdict gets a verifier whose report and whose filing are names the record
 // script takes, and whose launch that script counts — left so twice, the finding is the
 // human's. ITS RECORD AFTER THE PHASE takes what its verifiers filed, what an earlier
-// invocation's had — the first read says that one is owed a record (`filed`) — and every
-// report an earlier invocation left pending. AND WHERE IT HAS NOTHING TO RECORD — no
+// invocation's had — THE STATE'S POSITION SAYS THAT ONE IS OWED A RECORD (`filed`), and with
+// that word alone the invocation launches nobody and records — and every report an earlier
+// invocation left pending. AND WHERE IT HAS NOTHING TO RECORD — no
 // verifier of it left a report, no filed verdict is owed — IT COMPOSES NONE: its attempt is
 // then one that left its marker and no record, the record script counts those, and after
 // two in a row the stage is the human's. A finding whose verifier leaves nothing at all has
@@ -385,7 +390,10 @@
 //     under stopAfter: 'state'    THE READ ONLY LOOKS (`--look`): nothing is finished, no
 //                               head moves, and what the next invocation would finish is
 //                               returned as `owed` — a pending batch and an owed push among
-//                               them — with status `stopped`.
+//                               them — with status `stopped`. (A filed verdict no commit
+//                               holds is owed to the stage, and finished by no read: the
+//                               look goes on to the state, and says what the stage is
+//                               continued for.)
 //     locked                      the orchestrator's: git's own lock stands. No git process
 //                               running, the file the step's line names is removed, and
 //                               the stage is invoked again.
@@ -1588,11 +1596,15 @@ function verdictFault(ctx, name, r, expected) {
 // continuing — WHAT OF A `test` STAGE AN INVOCATION CONTINUES, IN A RUN WITH A QUEUE (the
 // reshape's plan, §3 and T6b): the words the state's position says of the stage that left the
 // round open, in the order they are worked — `triage`: a row nobody graded is left, one no
-// triage saw; `verify`: a row of the queue is unverified, and budget is left. None: the
-// invocation begins a round or runs an item again — or the run has no queue, and what its
-// position says is the other path's lap.
+// triage saw; `verify`: a row of the queue is unverified, and budget is left; `filed`: A
+// FILED VERDICT COUNTS AND NO RECORD TOOK IT (CONTINUES, with what each says in a log and
+// in a refusal; dev/stabilize-record: A FILED VERDICT IS RECORDED BEFORE ANYTHING FOLLOWS
+// FROM IT) — the stage's record is owed, whatever else is left: with that word alone the
+// invocation launches nobody and records. None: the invocation begins a round or runs an
+// item again — or the run has no queue, and what its position says is the other path's lap.
+const CONTINUES = { triage: 'a row nobody graded is left', verify: 'a row of the queue is unverified, and budget is left', filed: 'a filed verdict is in no record' }
 function continuing(state, at) {
-  return hasQueue(state) ? ['triage', 'verify'].filter((word) => at[word] === true) : []
+  return hasQueue(state) ? Object.keys(CONTINUES).filter((word) => at[word] === true) : []
 }
 // continueFault — why an invocation that continues takes nothing of what it was passed, or
 // null. It runs no instrument and resolves no scope, so it takes no scope, no clause and no
@@ -2967,7 +2979,7 @@ function selfTest() {
   // what such an invocation takes; how many silent calls end the phase; and what the halt
   // after them says and names.
   const withQueue = { queue: { budget: 30, hand_on: 2, spent: 1, left: 29, length: 1, first: ['f-1'], classes: [] } }
-  check('an invocation continues a stage where the run has a queue and the position says `triage` or `verify` — worked in that order — and nowhere else', JSON.stringify(continuing(withQueue, { round: 2, attempt: 2, verify: true })) === '["verify"]' && JSON.stringify(continuing(withQueue, { round: 2, attempt: 2, verify: true, triage: true })) === '["triage","verify"]' && JSON.stringify(continuing(withQueue, { round: 2, attempt: 2, triage: true })) === '["triage"]' && continuing(withQueue, { round: 3, attempt: 1 }).length === 0 && continuing(withQueue, { round: 2, attempt: 2, rerun: { clause: 'c' } }).length === 0 && continuing({ queue: null }, { round: 2, attempt: 2, triage: true }).length === 0 && continuing({}, { round: 2, attempt: 2, verify: true }).length === 0)
+  check('an invocation continues a stage where the run has a queue and the position says `triage`, `verify` or `filed` — worked in that order — and nowhere else', JSON.stringify(continuing(withQueue, { round: 2, attempt: 2, verify: true })) === '["verify"]' && JSON.stringify(continuing(withQueue, { round: 2, attempt: 2, verify: true, triage: true })) === '["triage","verify"]' && JSON.stringify(continuing(withQueue, { round: 2, attempt: 2, triage: true })) === '["triage"]' && JSON.stringify(continuing(withQueue, { round: 2, attempt: 2, filed: true })) === '["filed"]' && JSON.stringify(continuing(withQueue, { round: 2, attempt: 2, filed: true, verify: true, triage: true })) === '["triage","verify","filed"]' && continuing({ queue: null }, { round: 2, attempt: 2, filed: true }).length === 0 && continuing(withQueue, { round: 3, attempt: 1 }).length === 0 && continuing(withQueue, { round: 2, attempt: 2, rerun: { clause: 'c' } }).length === 0 && continuing({ queue: null }, { round: 2, attempt: 2, triage: true }).length === 0 && continuing({}, { round: 2, attempt: 2, verify: true }).length === 0)
   check('an invocation that continues takes no scope, clause or cross-model pass, and is stopped after nothing but its first read', continueFault(base) === null && continueFault(Object.assign({}, base, { stopAfter: 'state' })) === null && [['scope', 'everything'], ['clause', 'no-lost-files'], ['crossModel', ['row-3']]].every(([name, value]) => isText(continueFault(Object.assign({}, base, { [name]: value }))) && continueFault(Object.assign({}, base, { [name]: value })).endsWith('it was passed ' + name)) && ['preflight', 'instruments', 'triage'].every((stop) => continueFault(Object.assign({}, base, { stopAfter: stop })).endsWith('it was passed stopAfter: \'' + stop + '\'')))
   check('two verifier calls of one wave that return nothing make it the last', SILENT_LAST === 2)
   const limit = limitSaid(tested, { wave: 3, silent: 2 }, 7, [verdictFile(tested, filer)], [verdictFile(tested, 'verify-f-2')])
@@ -3870,8 +3882,8 @@ async function verifyWaves(ctx, launch, built, from) {
 // CONTINUES). `from` is the state as it was last read. `made` says what THIS INVOCATION has
 // recorded before the phase: `commit` — a stage's first record, or a continuation's record
 // of the rows it graded — or null, where it has made none: a continuation that had nothing
-// to grade; `owed`, for that one: whether its first read met a filed verdict no commit
-// holds; and `says`, the fact as a halt says it.
+// to grade; `owed`, for that one: whether the state's position says that a filed verdict is
+// in no record (`filed`); and `says`, the fact as a halt says it.
 //   THE RECORD is `composeRecord` over EVERY REPORTER OF THE ATTEMPT THAT LEFT A REPORT — the
 //   last report check took every other off the list — and no other word: the record script
 //   takes what was filed itself. AFTER A RECORD OF THIS INVOCATION'S OWN it is composed where
@@ -3952,7 +3964,7 @@ async function verifyThenRecord(ctx, launch, built, from, made) {
 // It returns the stage's return, a refusal, or a halt.
 async function continueTest(ctx, state, words) {
   const label = 'c' + ctx.round
-  const said = '(`next` is `' + state.next + '`): ' + (words.includes('triage') ? 'a row nobody graded is left' : '') + (words.length > 1 ? ', and ' : '') + (words.includes('verify') ? 'a row of the queue is unverified, and budget is left' : '')
+  const said = '(`next` is `' + state.next + '`): ' + words.map((word) => CONTINUES[word]).join(', and ')
   const why = continueFault(v)
   if (why) return { status: 'refused', stage: 'test', run: v.run, message: 'round ' + ctx.round + ' is tested and its `test` stage is not finished ' + said + ' — ' + why + '. Nothing was run beyond the two reads.', next: state.next, untriaged: state.untriaged, position: state.position.test, named: namedOf(state), arrived }
   // THE CANDIDATE THE ROUND TESTED: its findings are about that commit, and the round's
@@ -3966,7 +3978,10 @@ async function continueTest(ctx, state, words) {
   if (unbegun) return unbegun
   const built = await buildBoth(label, tested, previousOf(state), 'State')
   if (built.fault) return halt(built.phase, built.fault, { transient: !!built.transient, held: built.held || null, then: built.then })
-  let made = { commit: null, owed: arrived.owed.includes('filed'), says: 'the stage\'s first record stands, committed by an earlier invocation' }
+  // WHETHER A FILED VERDICT IS OWED A RECORD IS THE STATE'S WORD (`filed`), never the first
+  // read's: that read names a file no COMMIT holds, and a verdict filed between a record's
+  // batch and its commit rides that commit with no table holding it — owed all the same.
+  let made = { commit: null, owed: words.includes('filed'), says: 'the stage\'s first record stands, committed by an earlier invocation' }
   let once = { triage: null, handed: 0 }
   if (words.includes('triage')) {
     phase('Triage')
@@ -4261,7 +4276,10 @@ async function runTest() {
   arrived = { found: gs.found || [], finished: gs.finished || [], owed: gs.owed || [] }
   if (arrived.finished.length) log('the first read finished what an earlier invocation left: ' + arrived.finished.join(', '))
   stageHead = String(gs.head)
-  if (looks && arrived.owed.length) return { status: 'stopped', after: 'state', stage: 'test', run: v.run, owed: arrived.owed, pending: gs.pending || null, head: gs.head, remote_head: gs.remote_head || null, arrived, message: 'this invocation only looked (stopAfter: \'state\'), and FINISHED NOTHING: no write was finished, no batch gated or committed, nothing pushed, and the state was not read across it. What an invocation without that stop finishes before it does anything else is `owed` — ' + arrived.owed.join(', ') + ' — as `' + STEP_TOOL + ' table` names each.' }
+  // … BUT A FILED VERDICT NO COMMIT HOLDS IS NOTHING THE FIRST READ FINISHES: it is owed to
+  // the stage, the state is read across it, and the look goes on to say what the stage is
+  // continued for (`continues`, with `filed` among it where a record is owed).
+  if (looks && arrived.owed.some((word) => word !== 'filed')) return { status: 'stopped', after: 'state', stage: 'test', run: v.run, owed: arrived.owed, pending: gs.pending || null, head: gs.head, remote_head: gs.remote_head || null, arrived, message: 'this invocation only looked (stopAfter: \'state\'), and FINISHED NOTHING: no write was finished, no batch gated or committed, nothing pushed, and the state was not read across it. What an invocation without that stop finishes before it does anything else is `owed` — ' + arrived.owed.join(', ') + ' — as `' + STEP_TOOL + ' table` names each.' }
   if (gs.pending) return await finishRecord(gs)
   const first = await readState()
   if (!first.state) return halt('state', 'the run\'s state could not be read: ' + first.error, { transient: !!first.transient, halt: first.halt || null, step: first.step || null })
@@ -4275,7 +4293,8 @@ async function runTest() {
   // IN A RUN WITH A QUEUE AN INVOCATION THAT FINDS THE ROUND'S `test` STAGE UNFINISHED
   // CONTINUES IT (the header: AN INVOCATION THAT CONTINUES; the reshape's plan, T6b): such a
   // run stands, after the invocation that recorded its findings, where a row nobody graded
-  // is left (`triage`) or a row of its queue is unverified and budget is left (`verify`).
+  // is left (`triage`), a row of its queue is unverified and budget is left (`verify`), or a
+  // filed verdict is in no record (`filed`).
   // The lap below is the other path's — it would grade every row a second time and launch
   // an advocate — and is never entered for a run with a queue: every way out of
   // `continueTest` is a return.

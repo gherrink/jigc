@@ -1546,9 +1546,9 @@ fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_
             "const records = made.commit ? ver.launched > 0 : made.owed || launch.names.some((name) => name !== ATTEMPT)"
         ) && closing[waves..second].contains("\n  if (records) {\n")
             && function(&full, "continueTest").contains(
-                "let made = { commit: null, owed: arrived.owed.includes('filed'), says: "
+                "let made = { commit: null, owed: words.includes('filed'), says: "
             ),
-        "the second record is composed where a verifier was launched, and `no-change` is no halt of it; where the invocation has made no record — a continuation that graded nothing — it is composed only where there is something to record: a verifier of it left a report, or the first read met a filed verdict no commit holds"
+        "the second record is composed where a verifier was launched, and `no-change` is no halt of it; where the invocation has made no record — a continuation that graded nothing — it is composed only where there is something to record: a verifier of it left a report, or the state's position says that a filed verdict is in no record — the state's word, never the first read's, which names what no COMMIT holds"
     );
     // AN INVOCATION THAT CONTINUES RECORDS WHAT IT GRADED THE SAME WAY (`T6b`): composed by
     // the tool over its reporters, before its verifiers, and nothing of it is typed.
@@ -4706,9 +4706,11 @@ fn t_a_field_a_stage_needs_has_its_cell_and_what_halts_after_an_instrument_is_a_
     );
     assert!(
         function(&full, "continuing").contains(
-            "return hasQueue(state) ? ['triage', 'verify'].filter((word) => at[word] === true) : []"
+            "return hasQueue(state) ? Object.keys(CONTINUES).filter((word) => at[word] === true) : []"
+        ) && code(&full).contains(
+            "\nconst CONTINUES = { triage: 'a row nobody graded is left', verify: 'a row of the queue is unverified, and budget is left', filed: 'a filed verdict is in no record' }\n"
         ),
-        "what is continued is what the position says of a run with a queue: a row nobody graded, a row of the queue — and nothing of a run without an order"
+        "what is continued is what the position says of a run with a queue: a row nobody graded, a row of the queue, a filed verdict no record took — in that order — and nothing of a run without an order"
     );
     let continued = code(function(&full, "continueTest"));
     for other in [

@@ -598,8 +598,8 @@
 #       `untriaged`, `pending`.
 #       THE STATE'S DIGEST is {branch, state}, and `state` is: run, opened, next,
 #       not_ready, stop, round, fix_rounds, candidate {round, commit, current}, position
-#       {test, fix: each {refused | round, attempt, cycle, land, triage, verify, rerun
-#       {clause, round, items: [{item, attempt, doors: how many}]}}}, facts {previous,
+#       {test, fix: each {refused | round, attempt, cycle, land, triage, verify, filed,
+#       rerun {clause, round, items: [{item, attempt, doors: how many}]}}}, facts {previous,
 #       previous-commit, scope, rounds, cycles}, rounds [{round, candidate, cycles}], doors
 #       {included, excluded: how many} of the latest round with a scope, uncovered [{round,
 #       doors: how many of that round's doors no item names}], items [{item, kind, clause,
@@ -624,6 +624,11 @@
 #       under by the human}. That field is how the harness tells the two kinds of run
 #       apart; in such a run `next` may be `verify` — a row of the queue is unverified and
 #       budget is left — and a position then carries `verify`, as it carries `triage`. AND
+#       WHERE A FILED VERDICT COUNTS AND NO RECORD TOOK IT, such a run's position carries
+#       `filed` — the stage has its record to make before anything else follows (the
+#       record script's state: A FILED VERDICT IS RECORDED BEFORE ANYTHING FOLLOWS FROM
+#       IT) — and its forbids_close carries `filed`: how many such files forbid the
+#       close. A run without an order has neither field, and its digest is what it was. AND
 #       view — WHAT A STOP SHOWS (the build plan of the reshaped `test` stage, T4), ONLY
 #       WHERE THE DOCUMENT SAYS IT, which a run with a queue does: the digest of a run
 #       without an order has no such field, and is byte for byte what it was. Null before
@@ -2268,7 +2273,7 @@ QUEUE_CLASSES = 10
 # what keeps a row out of the queue may hold before a digest stops naming them (four today).
 VIEW_CLASSES = 15
 VIEW_WORDS = 20
-PLACE ={"refused": "word", "round": "count?", "attempt": "count", "cycle": "count", "land": "flag", "triage": "flag", "verify": "flag", "rerun": {"clause": "id", "round": "count", "items": [{"item": "id", "attempt": "count", "doors": "count"}, 200]}}
+PLACE ={"refused": "word", "round": "count?", "attempt": "count", "cycle": "count", "land": "flag", "triage": "flag", "verify": "flag", "filed": "flag", "rerun": {"clause": "id", "round": "count", "items": [{"item": "id", "attempt": "count", "doors": "count"}, 200]}}
 STATE = {
     "run": "id",
     "opened": "flag",
@@ -2296,7 +2301,7 @@ STATE = {
     "human_stages": [{"stage": "word", "round": "count", "cycle": "count?", "at": "word", "attempt": "count", "attempts": "count", "why": "word"}, 10],
     "retest": ["id", 50],
     "unsettled": [{"cell": "word", "clauses": ["id", 50]}, 10],
-    "forbids_close": {"clauses": [{"clause": "id", "status": "word"}, 50], "no_clauses": "flag", "findings": "count", "candidate": "flag"},
+    "forbids_close": {"clauses": [{"clause": "id", "status": "word"}, 50], "no_clauses": "flag", "findings": "count", "candidate": "flag", "filed": "count"},
     "queue": (NULL, {"budget": "count?", "hand_on": "count?", "spent": "count", "left": "count?", "length": "count", "first": ["id", QUEUE_FIRST], "classes": [{"kind": "word", "origin": "word", "length": "count"}, QUEUE_CLASSES]}),
     "view": (NULL, {"round": "count", "file": "path", "sha256": "sha256", "on_disk": "word", "verified": "count", "confirmed": "count", "refuted": "count", "undrivable": "count", "rates": [{"kind": "word", "origin": "word", "verified": "count", "confirmed": "count", "refuted": "count", "undrivable": "count", "queued": "count"}, VIEW_CLASSES], "inside": "count", "outside": "count", "unreached": "count", "listed": [{"why": "word", "rows": "count"}, VIEW_WORDS], "other": "count", "codes": "count", "sites": "count"}),
 }
@@ -2387,7 +2392,8 @@ def state_brief(document):
         human_list=len(document["human_list"]),
         # The findings the human may grant one more triage: the record script's own suffix.
         reverify=[finding["key"] for finding in document["human_list"] if finding["why"].endswith("-after-retry")],
-        forbids_close={"clauses": [entry for entry in forbids if "clause" in entry], "no_clauses": any("clauses" in entry for entry in forbids), "findings": sum("finding" in entry for entry in forbids), "candidate": any("candidate" in entry for entry in forbids)},
+        # … and, in a run with a queue only, how many filed verdicts no record took forbid it.
+        forbids_close={"clauses": [entry for entry in forbids if "clause" in entry], "no_clauses": any("clauses" in entry for entry in forbids), "findings": sum("finding" in entry for entry in forbids), "candidate": any("candidate" in entry for entry in forbids), **({"filed": sum("filed" in entry for entry in forbids)} if queue else {})},
         # The queue as keys and counts: what bounds it and what of that is spent and left,
         # how long it is, its first keys, and its length class by class, in the order's
         # own order. No row of it is here.
