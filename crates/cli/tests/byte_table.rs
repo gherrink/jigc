@@ -5,9 +5,10 @@
 //!
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
-//! cell. **This file holds no cell of the table yet**: it is the plan's tasks `B1` to
-//! `B2b` — the arms that hold the comparison, the reader and the runner to their rules,
-//! and the two fences that stand before the first row and the first cell are born.
+//! cell. **The table has four rows and no cell yet**: this file is the plan's tasks `B1`
+//! to `B2c` — the arms that hold the comparison, the reader and the runner to their
+//! rules, the two fences, and the rows of the four commands the pilot's acceptance needs,
+//! a family a file under `byte_table/` ([`FAMILIES`]).
 //!
 //! **The arms of the comparison** drive [`byte_cell::compare`] over manifests built as
 //! data: a repository with one commit, changed by hand to what a command would have left.
@@ -29,14 +30,15 @@
 //!
 //! **The quote fence** ([`a_lines_quote_is_held_to_its_docs_text`]): an allowance line
 //! rests on a sentence of a design doc, quoted, and the quote is held to the doc's text
-//! under the heading it names. No row is data yet, so the fence holds what the rows will
-//! be lifted from — **every quotation of the committed record**
-//! (`…/reshape/byte-table-acceptance-rows.md`) — and a design doc that moves under one
-//! reddens here from this commit on.
+//! under the heading it names. It holds **every quotation of the committed record**
+//! (`…/reshape/byte-table-acceptance-rows.md`) and every quote of a row; a row's quote
+//! must be one the record has, its line's number one the record has, and **a line that
+//! rests on no sentence is none** — so a design doc that moves under a line reddens here,
+//! and a line cannot be written from what a command did.
 //!
 //! **The leaf fence** ([`every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row`]):
 //! every `Write` row of the product's own registry (`cli::cli::VERB_KINDS`) has exactly one
-//! answer — a row of the table ([`ROWS`]), a row of the scheduled list
+//! answer — a row of the table ([`rows`]), a row of the scheduled list
 //! (`byte_table/scheduled.tsv`: the leaves the pilot leaves for before the port, each with
 //! its reason) or a row of the owed list ([`OWED`], `byte_table/owed.rs`: the leaves the pilot's tasks owe a row,
 //! each under the task that owes it, a list the later tasks empty). So a writing command
@@ -60,6 +62,39 @@ use cli::cli::{VERB_KINDS, VerbKind};
 #[path = "byte_table/owed.rs"]
 mod owed;
 
+/// One family's file under `byte_table/`, as the suite reads it.
+struct Family {
+    /// Its rows, a leaf each.
+    rows: &'static [Row],
+}
+
+/// **A family's file is wired in by its declaration inside this macro's one call, and
+/// nowhere else** — the `#[path]` line the registration fence reads
+/// (`test_target_registration.rs`), which the macro makes the file's row of [`FAMILIES`].
+/// The file exports `ROWS`. It makes no arm of its own.
+macro_rules! families {
+    ($(#[path = $file:literal] mod $name:ident;)*) => {
+        $(
+            #[path = $file]
+            mod $name;
+        )*
+
+        /// Every family's file, in the order declared.
+        const FAMILIES: &[Family] = &[$(Family {
+            rows: $name::ROWS,
+        }),*];
+    };
+}
+
+families! {
+    #[path = "byte_table/install.rs"]
+    mod install;
+    #[path = "byte_table/task.rs"]
+    mod task;
+    #[path = "byte_table/milestone.rs"]
+    mod milestone;
+}
+
 use owed::{OWED, OWING};
 
 use crate::support::byte_cell::{
@@ -75,9 +110,95 @@ use crate::support::trial_corpus::{State, TrialCorpus};
 // The table — its rows, and the two lists beside them
 // ---------------------------------------------------------------------------
 
-/// **The rows of the table**, a leaf each. None yet: the four of the acceptance become
-/// data in the plan's task `B2c`, lifted quote for quote from the committed record.
-const ROWS: &[Row] = &[];
+/// **The rows of the table**, a leaf each: every family's, in the order declared.
+fn rows() -> Vec<&'static Row> {
+    FAMILIES.iter().flat_map(|family| family.rows).collect()
+}
+
+/// A line of [`ON_A_REFUSAL`]: a cache at `place`, rebuilt, when the command refused.
+const fn rebuilt_on_a_refusal(id: &'static str, place: Where, quotes: &'static [Quote]) -> Line {
+    Line {
+        id,
+        allows: Allows::Files(place, May::Rebuilt),
+        when: When::Refused,
+        on_refusal: true,
+        quotes,
+    }
+}
+
+/// **What a refusal may do to a cache** — the lines `C1` to `C3` of the committed record
+/// (its §4a), which stand in every row: the human's ruling of 2026-10-12 on the record's
+/// first silence (`DECISIONS.md` → *A refusal may rebuild a cache*). The places are the
+/// ones `design/storage.md` declares rebuildable derived state — the edge index, the
+/// file↔state hashes, and a milestone's `base.json` and `tasks.json` — and no other. A
+/// line here holds **when the command refused, and only then**; what a command that exits
+/// 0 may write to a cache is its own row's to say.
+const ON_A_REFUSAL: [Line; 4] = [
+    rebuilt_on_a_refusal(
+        "C1",
+        Where::Under(".jigc/index"),
+        &[
+            Quote {
+                doc: "design/storage.md",
+                heading: "Derived caches",
+                words: "The edge index and the file↔state hashes are **rebuildable from the committed docs**, so they are gitignored, never committed",
+            },
+            Quote {
+                doc: "design/storage.md",
+                heading: "Repository layout & state location",
+                words: "gitignored — edge index (rebuildable cache)",
+            },
+        ],
+    ),
+    rebuilt_on_a_refusal(
+        "C2",
+        Where::Under(".jigc/state"),
+        &[
+            Quote {
+                doc: "design/storage.md",
+                heading: "Derived caches",
+                words: "The edge index and the file↔state hashes are **rebuildable from the committed docs**, so they are gitignored, never committed",
+            },
+            Quote {
+                doc: "design/storage.md",
+                heading: "Repository layout & state location",
+                words: "gitignored — file↔CLI-state hashes (rebuildable)",
+            },
+        ],
+    ),
+    rebuilt_on_a_refusal(
+        "C3, the base pin",
+        Where::Path(".jigc/milestones/*/base.json"),
+        &[
+            Quote {
+                doc: "design/storage.md",
+                heading: "Source of truth",
+                words: "**demotes** that JSON to exactly a *rebuildable cache* (re-derived from the record when absent or stale)",
+            },
+            Quote {
+                doc: "design/storage.md",
+                heading: "Repository layout & state location",
+                words: "gitignored — milestone WIP (merge staging, worktrees) + the {base,tasks}.json cache re-derived from the committed milestone-record (M39; team-ready-state.md)",
+            },
+        ],
+    ),
+    rebuilt_on_a_refusal(
+        "C3, the task list",
+        Where::Path(".jigc/milestones/*/tasks.json"),
+        &[
+            Quote {
+                doc: "design/storage.md",
+                heading: "Source of truth",
+                words: "**demotes** that JSON to exactly a *rebuildable cache* (re-derived from the record when absent or stale)",
+            },
+            Quote {
+                doc: "design/storage.md",
+                heading: "Repository layout & state location",
+                words: "gitignored — milestone WIP (merge staging, worktrees) + the {base,tasks}.json cache re-derived from the committed milestone-record (M39; team-ready-state.md)",
+            },
+        ],
+    ),
+];
 
 /// **The scheduled list** — the write leaves the pilot leaves for before the port: one
 /// file of data, a line a leaf with its reason.
@@ -238,7 +359,7 @@ fn every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row() {
             &leaves,
             &in_order.0,
             &in_order.1,
-            &[(create, "B6"), (setup, "B2c")],
+            &[(create, "B6"), (setup, "B4")],
         ),
         &[(
             "`jigc setup`",
@@ -274,7 +395,12 @@ fn every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row() {
          from; a leaf more or less is a row, a scheduled row or an owed row to write or to \
          take away, and this number with it"
     );
-    let rows: Vec<&[&str]> = ROWS.iter().map(|row| row.leaf).collect();
+    let rows: Vec<&[&str]> = rows().iter().map(|row| row.leaf).collect();
+    assert_eq!(
+        rows.len(),
+        4,
+        "the table has the four rows of the pilot's acceptance: {rows:?}"
+    );
     let wrong = unanswered(&here, &rows, &scheduled(SCHEDULED), OWED);
     assert!(
         wrong.is_empty(),
@@ -360,6 +486,53 @@ fn quotations(record: &'static str) -> Vec<Quote> {
         .collect()
 }
 
+/// The numbers of a record's entries: every line that opens `**<number> — `.
+fn numbers(record: &'static str) -> BTreeSet<&'static str> {
+    record
+        .lines()
+        .filter_map(|line| line.strip_prefix("**")?.split_once(" — "))
+        .map(|(number, _)| number)
+        .collect()
+}
+
+/// **Every way a row's lines do not rest on the record**: a line that quotes no sentence,
+/// a line whose number — its `id` up to a comma — is no entry of the record, a quote the
+/// record does not have, a number two lines of one row share.
+fn unrested(rows: &[&Row], numbers: &BTreeSet<&str>, quoted: &[Quote]) -> Vec<String> {
+    let mut out = Vec::new();
+    for row in rows {
+        let leaf = row.leaf.join(" ");
+        for (at, line) in row.lines.iter().enumerate() {
+            let named = format!("the line `{}` of `jigc {leaf}`", line.id);
+            if line.quotes.is_empty() {
+                out.push(format!(
+                    "{named} quotes no sentence: a line that rests on nothing is none"
+                ));
+            }
+            let number = line.id.split(',').next().unwrap_or_default();
+            if !numbers.contains(number) {
+                out.push(format!(
+                    "{named} has the number `{number}`, which is no entry of the record"
+                ));
+            }
+            for quote in line.quotes {
+                if !quoted.contains(quote) {
+                    out.push(format!(
+                        "{named} quotes what the record does not: `{}`",
+                        quote.words
+                    ));
+                }
+            }
+            if row.lines[..at].iter().any(|other| other.id == line.id) {
+                out.push(format!(
+                    "{named} shares its `id` with another line of its row"
+                ));
+            }
+        }
+    }
+    out
+}
+
 /// **An allowance line's quote is held to its doc's text**: the words stand, byte for
 /// byte, under the heading the line names.
 ///
@@ -369,6 +542,10 @@ fn quotations(record: &'static str) -> Vec<Quote> {
 /// read, or a quote of no words; and a `#` line inside a fenced block ends no section. Then
 /// the committed record: it holds quotations, every one names a doc and a heading, and
 /// every one stands in its doc — so a design doc that moves under a line reddens here.
+///
+/// Then the rows: on a fixture, a line that quotes nothing is named, and so is a line
+/// whose number the record does not have, a quote the record does not have, and a number
+/// two lines of a row share; and the table's own rows rest on the record, line by line.
 #[test]
 fn a_lines_quote_is_held_to_its_docs_text() {
     const FIXTURE: &str = "# A doc\n\nNot in a section of its own.\n\n## The first\n\n\
@@ -441,26 +618,9 @@ fn a_lines_quote_is_held_to_its_docs_text() {
         "the committed record holds {} quotations — it held 57 when the fence was built",
         quoted.len()
     );
-    let lines: BTreeSet<&str> = ROWS
-        .iter()
-        .flat_map(|row| row.lines)
-        .flat_map(|line| line.quotes)
-        .map(|quote| quote.words)
-        .collect();
     let wrong: Vec<String> = quoted
         .iter()
-        .chain(
-            ROWS.iter()
-                .flat_map(|row| row.lines)
-                .flat_map(|line| line.quotes),
-        )
         .filter_map(|quote| byte_cell::unquoted(quote, doc))
-        .chain(
-            lines
-                .iter()
-                .filter(|words| !quoted.iter().any(|quote| quote.words == **words))
-                .map(|words| format!("a line of a row quotes what the record does not: `{words}`")),
-        )
         .collect();
     assert!(
         wrong.is_empty(),
@@ -468,6 +628,65 @@ fn a_lines_quote_is_held_to_its_docs_text() {
          had:\n\n  {}\n\na line is written from the doc's sentence and quotes it; where the \
          doc moved, the line is read against the doc again — it is never bent to what the \
          command does",
+        wrong.join("\n  ")
+    );
+
+    // The rows, on a fixture.
+    const HELD: Quote = Quote {
+        doc: "design/fixture.md",
+        heading: "The first",
+        words: "Still the first.",
+    };
+    const RESTS: Line = Line {
+        quotes: &[HELD],
+        ..line("F1", Allows::Staged)
+    };
+    const FIXTURE_ROW: Row = row(&[
+        RESTS,
+        line("F2", Allows::Staged),
+        Line {
+            id: "G1, a second place",
+            ..RESTS
+        },
+        Line {
+            quotes: &[Quote {
+                words: "Other words.",
+                ..HELD
+            }],
+            ..line("F3", Allows::Staged)
+        },
+        Line { id: "F1", ..RESTS },
+    ]);
+    let entries: BTreeSet<&str> = ["F1", "F2", "F3"].into();
+    says(
+        &unrested(&[&FIXTURE_ROW], &entries, &[HELD]),
+        &[
+            ("the line `F2` of `jigc probe`", "quotes no sentence"),
+            (
+                "the line `G1, a second place` of `jigc probe`",
+                "has the number `G1`, which is no entry of the record",
+            ),
+            (
+                "the line `F3` of `jigc probe`",
+                "quotes what the record does not: `Other words.`",
+            ),
+            ("the line `F1` of `jigc probe`", "shares its `id`"),
+        ],
+    );
+
+    // The table's own.
+    let rows = rows();
+    let lines = rows.iter().flat_map(|row| row.lines).count();
+    assert!(
+        lines >= 40,
+        "the four rows hold {lines} lines — they held 54 when they became data"
+    );
+    let wrong = unrested(&rows, &numbers(RECORD), &quoted);
+    assert!(
+        wrong.is_empty(),
+        "a line of a row does not rest on the committed record:\n\n  {}\n\na row is lifted \
+         from the record quote for quote, and a line changes only with the record, in one \
+         commit",
         wrong.join("\n  ")
     );
 }
@@ -1545,6 +1764,96 @@ fn a_refusal_may_change_only_what_a_line_that_holds_on_a_refusal_covers() {
             ..Cell::of(REMOVES, &planted, &gone)
         },
         Classification::RefusedAndChanged,
+    );
+}
+
+/// **A refusal may rebuild a cache, and may not take one away** — the two words the
+/// human's ruling of 2026-10-12 added to a line ([`May::Rebuilt`], [`When::Refused`]). A
+/// command that refused and left a cache's file written whole, a file made under it, a
+/// directory made on the way and one made with nothing in it yet *refuses, nothing
+/// changed*, each difference counted under the cache's line. The same refusal with a file of the cache **gone** is red: that is
+/// no rebuild. So is a link put in a cache file's place, and a write beside the cache.
+/// And **the line holds on a refusal only**: the same file made by a command that exited
+/// 0 is *written outside its allowance* — what an acting command may write to a cache is
+/// its own row's to say.
+#[test]
+fn a_refusal_may_rebuild_a_cache_and_may_not_take_one_away() {
+    const CACHE: Row = row(&[Line {
+        when: When::Refused,
+        on_refusal: true,
+        ..line(
+            "C1",
+            Allows::Files(Where::Under(".jigc/index"), May::Rebuilt),
+        )
+    }]);
+    let before = then(&sandbox(), |m| {
+        dir(m, "repo/.jigc");
+        dir(m, "repo/.jigc/index");
+        put(m, "repo/.jigc/index/edges.json", "built against c0\n");
+    });
+    let refused = |after: &Manifest| {
+        Cell {
+            code: Some(1),
+            listed: Listed::Refuses,
+            ..Cell::of(CACHE, &before, after)
+        }
+        .verdict()
+        .expect("a cell")
+    };
+    let rebuilt = refused(&then(&before, |m| {
+        put(m, "repo/.jigc/index/edges.json", "built against the tree\n");
+        dir(m, "repo/.jigc/index/by-doc");
+        put(m, "repo/.jigc/index/by-doc/vision.json", "[]\n");
+        dir(m, "repo/.jigc/index/by-task");
+    }));
+    assert_eq!(
+        rebuilt.classification,
+        Classification::RefusesNothingChanged,
+        "{:#?}",
+        rebuilt.why
+    );
+    assert_eq!(
+        rebuilt.excused,
+        [("C1", 4)],
+        "the file written whole, the file made, the directory on its way, and a directory \
+         made with nothing in it yet"
+    );
+    for (what, after) in [
+        (
+            "a file of the cache gone",
+            then(&before, |m| {
+                m.files.remove("repo/.jigc/index/edges.json");
+            }),
+        ),
+        (
+            "a link in a cache file's place",
+            then(&before, |m| {
+                m.files.insert(
+                    "repo/.jigc/index/edges.json".to_string(),
+                    Entry::Link("elsewhere".to_string()),
+                );
+            }),
+        ),
+        (
+            "a write beside the cache",
+            then(&before, |m| put(m, "repo/.jigc/notes.md", "notes\n")),
+        ),
+    ] {
+        let verdict = refused(&after);
+        assert_eq!(
+            verdict.classification,
+            Classification::RefusedAndChanged,
+            "{what}: {:#?}",
+            verdict.why
+        );
+    }
+    // The same file made at exit 0: the line holds on a refusal, and only then.
+    let made = then(&before, |m| {
+        put(m, "repo/.jigc/index/stamp", "the tree\n");
+    });
+    comes_out(
+        &Cell::of(CACHE, &before, &made),
+        Classification::WrittenOutside,
     );
 }
 

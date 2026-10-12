@@ -4,17 +4,14 @@
 //! and the last of them removes this file with it.
 
 /// The tasks of the plan that owe a leaf its row.
-pub const OWING: &[&str] = &["B2c", "B4", "B5", "B6", "B7", "B8", "B9"];
+pub const OWING: &[&str] = &["B4", "B5", "B6", "B7", "B8", "B9"];
 
 /// **The owed list** — the pilot's write leaves that have no row yet, each under the task
-/// of the plan that owes it. `B2c` and `B4` are the first cut's; `B5` to `B9` are what
-/// would follow if the human rules for it at the stop, and until then their leaves stand
-/// here rather than on the scheduled list, which is for a leaf with a reason to wait.
+/// of the plan that owes it. `B4` is the first cut's; `B5` to `B9` are what would follow if
+/// the human rules for it at the stop, and until then their leaves stand here rather than
+/// on the scheduled list, which is for a leaf with a reason to wait. The four leaves of the
+/// acceptance left this list with the task `B2c`, which brought their rows.
 pub const OWED: &[(&[&str], &str)] = &[
-    (&["setup"], "B2c"),
-    (&["uninstall"], "B2c"),
-    (&["task", "finalize"], "B2c"),
-    (&["milestone", "finalize"], "B2c"),
     (&["task", "discard"], "B4"),
     (&["doc", "create"], "B6"),
     (&["doc", "add-item"], "B6"),

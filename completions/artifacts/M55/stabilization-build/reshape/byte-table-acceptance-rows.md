@@ -2,6 +2,9 @@
 
 *Written 2026-10-12 on the branch `fix/rc24-route-catalog`, as task `B0` of [the pilot's plan](byte-table-plan.md) (§2, *The row and its allowance*; §8). A record: it runs nothing and decides nothing. No binary was run to learn what a command writes, and no list of files was taken from the product's source; every line below was read off a design doc, at the heading named.*
 
+*Changed 2026-10-13, with the task `B2c` that lifts the rows into data
+([install.rs](../../../../../crates/cli/tests/byte_table/install.rs), [task.rs](../../../../../crates/cli/tests/byte_table/task.rs), [milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)): the first entry of §6 is rewritten as the human ruled it on 2026-10-12, three lines stand in every row for it (§4a), and `M5` gains the sentence that names its place. No other line moved.*
+
 **What a row is.** The byte table compares a repository's bytes before and after one writing command. A leaf's *row* says what that command may change — its *allowance* — line by line, and each line rests on one sentence of the design doc that owns the command. This file holds the rows of the four commands the plan's acceptance needs: `jigc setup`, `jigc uninstall`, `jigc task finalize` and `jigc milestone finalize`.
 
 **How a line is written.** Its number; the place it speaks of; what may happen there; when, where the doc gives a condition; and whether it still holds when the command refuses. Under it, set off as a quotation, **the sentence the line rests on — a run of the doc's own bytes, markup included, never a paraphrase** — and under that the doc and the heading the sentence stands under. A line that needs two sentences quotes both, each with its own source. The quotation is what `B1`'s fence holds against the doc: a doc that moves reddens the row.
@@ -126,7 +129,7 @@ Owner docs: `design/assistant-adapter.md`, `design/project-setup.md`.
 
 — `design/assistant-adapter.md` → *`jigc setup` has assistant-*neutral* install responsibilities too*
 
-**What the docs do not say of `setup`:** where the record of S12 is kept (§6, entry 3); where *the spawn launch-template* of the boundary table is written (§6, entry 4); whether a `setup` that exits 0 writes under `.jigc/index/` or `.jigc/state/` (§6, entry 1). **Declared, and not a line here:** a `CLAUDE.md` or a settings file that is a link is followed to a regular file inside the checkout, which then becomes a member of the install (*`jigc setup` has assistant-*neutral* install responsibilities too*, the paragraph on a file the install replaces) — the row gains that line with its sentence when a cell plants a link there, which no cell of the first cut does.
+**What the docs do not say of `setup`:** where the record of S12 is kept (§6, entry 3); where *the spawn launch-template* of the boundary table is written (§6, entry 4); whether a `setup` that exits 0 writes under `.jigc/index/` or `.jigc/state/` (§6, entry 1 — which the ruling of 2026-10-12 leaves open: it speaks of a refusal). **Declared, and not a line here:** a `CLAUDE.md` or a settings file that is a link is followed to a regular file inside the checkout, which then becomes a member of the install (*`jigc setup` has assistant-*neutral* install responsibilities too*, the paragraph on a file the install replaces) — the row gains that line with its sentence when a cell plants a link there, which no cell of the first cut does.
 
 ---
 
@@ -238,7 +241,7 @@ Owner doc: `design/finalize.md`.
 
 — `design/finalize.md` → *5. Stage*
 
-**T5 — `.jigc/index/` and `.jigc/state/`: written — the edge index's stamp, the file-state hashes.** When: the commit landed. On a refusal: the doc is silent (§6, entry 1).
+**T5 — `.jigc/index/` and `.jigc/state/`: written — the edge index's stamp, the file-state hashes.** When: the commit landed. On a refusal: no — what a refusal may do there is `C1` and `C2` (§4a; §6, entry 1, as ruled).
 
 > - **Invalidate the edge-index stamp** ([storage.md](storage.md) → Derived caches).
 
@@ -276,7 +279,7 @@ Owner doc: `design/finalize.md`.
 
 — `design/finalize.md` → *The doc-only arm*
 
-**What the docs do not say of `task finalize`:** whether a refused finalize may leave `.jigc/index/` or `.jigc/state/` changed (§6, entry 1); where the rendered message's temporary file stands (*6. Commit* says *a temp file, deleted after* and names no directory — §6, entry 6). **Not read, so the row may be short:** the amend arm, and `--dry-run`.
+**What the docs do not say of `task finalize`:** whether a refused finalize may leave `.jigc/index/` or `.jigc/state/` changed (§6, entry 1 — ruled on 2026-10-12, and carried by `C1` and `C2`); where the rendered message's temporary file stands (*6. Commit* says *a temp file, deleted after* and names no directory — §6, entry 6). **Not read, so the row may be short:** the amend arm, and `--dry-run`.
 
 ---
 
@@ -312,11 +315,15 @@ Owner doc: `design/finalize.md` → *`fan-out` finalize*, with `design/team-read
 
 — `design/finalize.md` → *`fan-out` finalize*
 
-**M5 — the milestone's committed record: written — its status flipped, inside M3's commit.** When: always. On a refusal: no (M8).
+**M5 — the milestone's committed record, `docs/milestone-records/<slug>.md`: written — its status flipped, inside M3's commit.** When: always. On a refusal: no (M8). The second sentence is where the place comes from — added on 2026-10-13, when the line became data and had to name one; the home is under the docs root as the prepared states have it.
 
 > the record's `status`-flip write **folds into the existing join commit** (path-added alongside the promoted docs), not a second commit
 
 — `design/team-ready-state.md` → *The commit model — path-scoped commit at each milestone op*
+
+> M39 graduates it to a committed **`milestone-record`** doctype (`docs/milestone-records/<slug>.md`)
+
+— `design/storage.md` → *Source of truth*
 
 **M6 — `.jigc/worktrees/<sub-task-id>/`, each sub-task's working area under `.jigc/tasks/`, and `.jigc/milestones/<id>/`: removed — and what jigc did not write in an area is moved aside to `.jigc/displaced/<unit-id>/`.** When: the boundary landed. On a refusal: no (M8).
 
@@ -346,13 +353,47 @@ Owner doc: `design/finalize.md` → *`fan-out` finalize*, with `design/team-read
 
 — `design/finalize.md` → *2. Validate*
 
-**M10 — `.jigc/index/` and `.jigc/state/`: written, as T5.** When: the boundary landed. On a refusal: the doc is silent (§6, entry 1).
+**M10 — `.jigc/index/` and `.jigc/state/`: written, as T5.** When: the boundary landed. On a refusal: no — what a refusal may do there is `C1` and `C2` (§4a; §6, entry 1, as ruled).
 
 > 4. **Post-commit** runs once for the whole batch.
 
 — `design/finalize.md` → *`fan-out` finalize*
 
-**What the docs do not say of `milestone finalize`:** the caches on a refusal (§6, entry 1). **Declared, and not a line here:** the two worktrees the boundary makes for itself and removes on every exit — the dedicated one it commits from and the detached one its `doc-code` check reads (*2. Validate*: *torn down on both exits*) — leave no difference between the two manifests where they are removed as declared; one left behind is a registration under `.jigc/worktrees/` that M7 does not cover on a refusal, and is red. The plan's §7 lists this command's commit as *not read for this plan*: it is read now, and M3 to M5 are what the docs declare it holds.
+**What the docs do not say of `milestone finalize`:** the caches on a refusal (§6, entry 1 — ruled on 2026-10-12, and carried by `C1` to `C3`). **Declared, and not a line here:** the two worktrees the boundary makes for itself and removes on every exit — the dedicated one it commits from and the detached one its `doc-code` check reads (*2. Validate*: *torn down on both exits*) — leave no difference between the two manifests where they are removed as declared; one left behind is a registration under `.jigc/worktrees/` that M7 does not cover on a refusal, and is red. The plan's §7 lists this command's commit as *not read for this plan*: it is read now, and M3 to M5 are what the docs declare it holds.
+
+---
+
+## 4a. The caches, on a refusal — three lines that stand in every row
+
+Written on 2026-10-13 from the human's ruling of 2026-10-12 on §6, entry 1, which that entry now quotes. **What a cache is comes from the doc and not from the ruling's two examples**: `design/storage.md` declares three things rebuildable derived state — the edge index, the file↔state hashes, and a milestone's `{base,tasks}.json` — and names where each stands in its layout. Each line below quotes the sentence that declares the cache, and what the layout says of its directory: the comment that stands on the line of `index/`, of `state/` and of `milestones/` in that block, from its first word (the line's own columns of spaces are left out of the quotation). Nothing else under `.jigc/` is declared so: a task's working area is *a transient working copy* and one line of it is *authority* (→ *Source of truth*, the paragraph on `source-path`); `displaced/` is *the one gitignored subdir whose contents no operation can reconstruct*; a milestone's `merged/` has its own line, `M1`.
+
+**What *rebuilt* lets a refusal do, and what it does not.** A file of a cache may be made, or written whole; a directory of one may be made. **No file of a cache may be taken away and left gone** — that is no rebuild — and nothing outside the three places is touched by these lines. They hold **when the command refused, and only then**: what a command that exits 0 may write there is its own row's to say (`T5`, `M10`; `U1` removes the workbench whole), and where a row says nothing — `setup` — the ruling does not speak (§6, entry 1, *what the ruling leaves open*).
+
+**C1 — `.jigc/index/` and everything under it: rebuilt.** When: the command refused. On a refusal: yes.
+
+> The edge index and the file↔state hashes are **rebuildable from the committed docs**, so they are gitignored, never committed
+
+— `design/storage.md` → *Derived caches*
+
+> gitignored — edge index (rebuildable cache)
+
+— `design/storage.md` → *Repository layout & state location*
+
+**C2 — `.jigc/state/` and everything under it: rebuilt.** When: the command refused. On a refusal: yes. The first sentence is C1's first.
+
+> gitignored — file↔CLI-state hashes (rebuildable)
+
+— `design/storage.md` → *Repository layout & state location*
+
+**C3 — `.jigc/milestones/<id>/base.json` and `.jigc/milestones/<id>/tasks.json`: rebuilt.** When: the command refused. On a refusal: yes.
+
+> **demotes** that JSON to exactly a *rebuildable cache* (re-derived from the record when absent or stale)
+
+— `design/storage.md` → *Source of truth*
+
+> gitignored — milestone WIP (merge staging, worktrees) + the {base,tasks}.json cache re-derived from the committed milestone-record (M39; team-ready-state.md)
+
+— `design/storage.md` → *Repository layout & state location*
 
 ---
 
@@ -365,7 +406,7 @@ Each line of the plan's §5, with the rule or the line that makes it red on `1.0
 | `setup` · `bare`, `HEAD` unborn · an untracked file at `.jigc/AGENT.md`, at `.jigc/config/packs.yaml` | exit 0; both replaced, the bytes in no object | **the plant's rule** — *lost*. S1 and S4 let the command write those paths, and S4's second sentence says it refuses over a file no commit holds *on an unborn `HEAD` as on a born one*; no line is needed to make it red, and none can make it green |
 | — the same, `HEAD` born | exit 1, nothing changed | not red: S13 |
 | `task finalize` · `committed-singletons`, no file-state baseline · a line added by hand after the task's first write | exit 0; the line in no object | **the plant's rule** — *lost*. T1 lets the command write the doc's home; the line that stood there is the user's |
-| — the same, the baseline present | a refusal | not red, if the refusal changed nothing but what §6, entry 1 asks about |
+| — the same, the baseline present | a refusal | not red, if the refusal changed nothing but what `C1` and `C2` let a refusal rebuild (ruled on 2026-10-12; this cell read *what §6, entry 1 asks about* until then) |
 | `milestone finalize` · `fresh` · an untracked file at the id the join numbered onto | exit 0; the bytes in no object | **the plant's rule** — *lost*; and M2's sentence, which says the refusal is taken there |
 | `milestone finalize` · `fresh` · a committed doc at that id, committed before `milestone create` | exit 0; the doc's content replaced, history holds it | **M2 and M3** — *git's state moved outside its allowance*: the commit changes a path a commit already held to a doc the unit minted, which M2's sentence says never happens. The planted bytes stand in history, so it is not *lost* |
 | `task finalize` · `fresh` · a link to nothing at the created doc's home | exit 0; the commit holds a link; the prose at the link's target | **T1 and T8** — *git's state moved outside its allowance*: T1's second sentence declares *a regular file at exactly its canonical path*, and the commit holds a link there; the staged doc stands in no commit. The prose stands at another path, so it is not *lost*; that path is also a write no line covers |
@@ -379,15 +420,21 @@ Six of the seven red lines are red by the plant's rule or by a sentence that nam
 
 ## 6. Where a doc is silent, or says two things — the list for the human
 
-One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked.
+One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entry 1 is ruled** (2026-10-12) and says how it is carried; entries 2 to 6 are open.
 
-**1. *Either a rebuildable cache or a transient working copy* — may a command that refuses leave the caches rebuilt?**
+**1. *Either a rebuildable cache or a transient working copy* — may a command that refuses leave the caches rebuilt? Ruled on 2026-10-12: it may.**
 
 - *The words.* `design/storage.md` → *Source of truth*: *"Every other artifact — the staging working area, the edge index, the file↔state hashes — is either a rebuildable cache or a transient working copy."* And `design/finalize.md` → *What `finalize` is*, T7's sentence: a failure before the commit *"rolls back to "as if `finalize` was never called" — the working area is intact, canonical paths unchanged"*; → *2. Validate*: *"**Blocking findings present** → abort with the finding list. No side effects."*
-- *Reading (a)* — what can be rebuilt may be rebuilt, by any command, at any exit: the sentence of `storage.md` is the allowance, and a refusal that leaves `.jigc/index/` or `.jigc/state/` changed is no finding. The plan's §7 takes this reading and calls the question answered.
-- *Reading (b)* — the sentence says what those files **are**, and not which command may write them when: no sentence found says that a refused `task finalize` leaves the index rebuilt, and two of `finalize.md` say that a refusal leaves no side effect. Under it the change is *refused, and changed what a refusal may not*.
-- *What each makes of the cells.* The acceptance's `task finalize` cell on this tree — a refusal that leaves three new files under `.jigc/index/` (the plan's §1.2, run by the planner) — is not red under (a) and red under (b); so is every refusing cell of a leaf that reads the committed store, which is most of them. `milestone finalize`'s `merged/` is **not** part of this entry: M1's sentence says in so many words that it is written on a refusal. And S's row: whether a `setup` at exit 0 may write there is the same question at exit 0 for a command whose doc names no such write.
-- *Until ruled:* (b). The rows carry T5 and M10 for exit 0 only.
+- *The two readings it was put with.* (a) What can be rebuilt may be rebuilt by a command that refuses: a refusal that leaves a cache changed is no finding. (b) The sentence of `storage.md` says what those files **are**, and not which command may write them when; two sentences of `finalize.md` say a refusal leaves no side effect; under it the change is *refused, and changed what a refusal may not*.
+- *The ruling* — the human's, of 2026-10-12, option A of two, as the orchestrating session handed it on:
+
+  > **A refusal may rebuild a cache: nothing is lost, and such a cell is not red for it.** The exit rule's first clause is about lost files, and a rebuilt cache loses none. The sentence *No side effects* in `design/finalize.md` is an inconsistency between two design docs, to be recorded as one and corrected — not a rule the table holds a command to.
+  > **Not taken:** *a refusal leaves every byte as it was, caches included* — under which most refusing cells are red for a behaviour the storage design intends.
+
+- *How it is carried.* By three lines that stand in every row, `C1` to `C3` (§4a): the places are the ones `design/storage.md` declares rebuildable derived state — **three, not the two the question named**: the edge index under `.jigc/index/`, the file↔state hashes under `.jigc/state/`, and a milestone's `base.json` and `tasks.json` under `.jigc/milestones/<id>/`. `M1` is as it was. `T5` and `M10` are as they were, for a command that exits 0.
+- *Bounded by what rebuilt means.* A refusal may write a cache whole from what the tree holds. Under these lines it may not take a cache file away and leave it gone — **held**: the frame's word for the lines covers a file made or written and no file gone. Nor may it write a cache that the next acting command would read as other than the tree says — **not held by the frame**: a manifest shows that a cache was written, never whether what was written is true. The check that would hold it is the same command run again once the refusal's cause is gone, coming out as it does on a tree whose cache nobody touched; removing the cause is the route's act, and the byte table follows no route. One narrower form the frame could run and no cell does: the refused command run a second time over what the first left — it must refuse again, and the plant must still stand.
+- *What the ruling leaves open.* **(i) Exit 0.** The ruling speaks of a refusal. Whether a command that exits 0 may write a cache its own doc names no write to — `setup` is the one of the four — is not said; the lines hold on a refusal only, so such a write is *written outside its allowance* until somebody rules. No cell of the first cut turns on it. **(ii) The file↔state hashes are called rebuildable and have no rebuild.** The sentence C1 and C2 quote says both caches are *rebuildable from the committed docs*; the next paragraph of the same section says the hashes *"carry **no stamp and no rebuild path**"*. So a refusal that writes under `.jigc/state/` is not rebuilding from the tree: it is recording a baseline, and a baseline recorded over a file somebody edited is exactly a cache that says other than the commit does. `C2` lets the write, by the doc's first sentence and the ruling's word; whether that is what was meant is the human's, and it is where the bound that is not held would bite. **(iii) A minted work unit is no cache.** A task area or a milestone area that a refusal leaves behind, and that a later command reads as authority, is covered by none of the three lines and stays red, cell by cell, until ruled (the plan's §7, question 2).
+- *The inconsistency* between the two docs is recorded, and fixed by nobody here: [byte-table-findings.md](byte-table-findings.md) → `r1-finalize-design-says-no-side-effects-where-storage-design-says-caches-are-rebuilt`.
 
 **2. `setup` refuses in two ways, and the docs tell them apart by the moment, which no manifest shows.**
 
@@ -420,14 +467,15 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 
 | a line says | which lines needed it |
 |---|---|
-| a place that is **one path** of the repository | S1 to S9; U2, U3, U5; T2 |
-| a place that is **everything under a directory** | S4; U1; T5, T6; M1, M6, M10 |
+| a place that is **one path** of the repository | S1 to S9; U2, U3, U5; T2; M5 and C3, with one component left open for a milestone's id or its record's name |
+| a place that is **everything under a directory** | S4; U1; T5, T6; M1, M6, M10; C1, C2 |
 | a place that is **the `pre-commit` hook in the hooks directory git resolves** — not a fixed path | S10; U4 |
 | a place that is **wherever a staged doc of the unit lands** — known by its bytes, since the path is the product's to compute | T1; M2 |
 | **written whole** — made, or replaced by any bytes | S1, S4, S5, S6, S8; T2, T5; M1, M5, M10 |
 | **merged into** — every line that stood there stays, in order | S2, S3, S7, S9, S10 |
 | **taken out of** — every line that stands there afterwards stood there before, in order | U2, U3, U4 |
 | **removed** | S6; U1, U4, U5; T6; M6 |
+| **rebuilt** — a file made or written whole, a directory made; nothing taken away (added 2026-10-13, for the ruling) | C1, C2, C3 |
 | **a copy of a staged doc**, as a regular file | T1; M2 |
 | **moved aside** — gone from its place, and standing with the same bytes under a named directory | T6; M6 |
 | **a commit** on the checked-out branch, holding **only what the row's other lines wrote** | S11 |
@@ -436,7 +484,8 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 | **the index staged** at the places the row's other lines wrote | T3 (and S11, M3, through their commits) |
 | **a worktree's registration removed**, at a path under a named directory | U6; M7 |
 | a condition read off the state before the command: **the repository has no commit** | S9 |
-| **holds on a refusal** — yes or no, from a sentence | M1 (yes); every other line (no) |
+| a condition read off how the command ended: **it refused** (added 2026-10-13, for the ruling) | C1, C2, C3 |
+| **holds on a refusal** — yes or no, from a sentence | M1 (yes); C1, C2, C3 (yes, by the ruling); every other line (no) |
 | **the consent's flag**, under which a planted path named in the output may go | S14; U8 |
 
 Three conditions a doc gives could not be put as something a manifest shows, and are words in their lines only: *where its install commit can carry the settings file* (S6), *what stands there is jigc's own copy* (S8, U5; T2), and *git tracks the settings file and the record* (U3). Each lets the command do **less** — leave a file alone — so a line without the condition allows no write the doc forbids to anything but a file somebody edited, and such a file is a plant, which no line excuses.

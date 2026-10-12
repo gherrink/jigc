@@ -2,6 +2,65 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-13 — A refusal may rebuild a cache — the human's ruling on the first of the six silences, carried by three lines that stand in every row — and the four acceptance rows are data, lifted from the committed record quote for quote (the human's ruling of 2026-10-12, option A of two; the byte table's pilot, task `B2c`)
+
+**What.** The fifth task of the byte table's pilot ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §8), and with it the first ruling on [the record's list of silences](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) (§6). The ruling rides this commit and is none of its own: until now no row was data and no cell existed, so there was nothing built under the other reading to build again — the rows are born under the ruling. No product source changes, and no design doc is edited.
+
+### The ruling
+
+The question, as it was put to the human: *may a command that refuses leave jigc's rebuildable caches changed?* `design/storage.md` declares the files under `.jigc/index/` and `.jigc/state/` caches that are rebuilt at will; `design/finalize.md` says a blocked finalize has *No side effects*; on this tree a refused `task finalize` leaves three new files under `.jigc/index/`. **The human took option A of two, on 2026-10-12**, in the words the orchestrating session handed on:
+
+> **A refusal may rebuild a cache: nothing is lost, and such a cell is not red for it.** The exit rule's first clause is about lost files, and a rebuilt cache loses none. The sentence *No side effects* in `design/finalize.md` is an inconsistency between two design docs, to be recorded as one and corrected — not a rule the table holds a command to.
+>
+> **Not taken:** *a refusal leaves every byte as it was, caches included* — under which most refusing cells are red for a behaviour the storage design intends.
+
+### How it is carried
+
+- **What a cache is comes from the doc, and the doc's list is three, not the two the question named.** `design/storage.md` declares rebuildable derived state in three places: the edge index (`.jigc/index/`), the file↔state hashes (`.jigc/state/`), and a milestone's `base.json` and `tasks.json` under `.jigc/milestones/<id>/` — *"**demotes** that JSON to exactly a *rebuildable cache*"*. Nothing else under `.jigc/` is declared so: a task's working area is *a transient working copy*, with one line that is *authority*; `displaced/` is what *no operation can reconstruct*; a milestone's `merged/` already has its own line that holds on a refusal (`M1`), and is left as it was.
+- **Three lines, `C1` to `C3`, in every one of the four rows** (the record's new §4a; in the suite, `ON_A_REFUSAL`), each over the sentence of `design/storage.md` that declares the cache and what its layout says of the cache's directory — five quotations, held by the fence like every other. **The layout's lines are quoted from their comment on, not whole**: this commit's first full gate was red on it — 5085 passed, 1 failed, `message_whitespace_fence` — because a line of that block carries a column of twenty spaces, and no string literal in the workspace may carry a run of nine. Nothing was committed on the red gate.
+- **Two words joined the vocabulary, each red first** ([`a_refusal_may_rebuild_a_cache_and_may_not_take_one_away`](crates/cli/tests/byte_table.rs)): `May::Rebuilt` — a file made or written whole, a directory made, **nothing gone** — and `When::Refused` — the line holds when the command refused, **and only then**.
+- **The inconsistency is recorded, and fixed by nobody here**: [byte-table-findings.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → `r1-finalize-design-says-no-side-effects-where-storage-design-says-caches-are-rebuilt`, both sentences with their headings, for the stabilization run's ledger as an `inconsistency`.
+- **The record's §6, entry 1, is rewritten as ruled.**
+
+### Bounded by what *rebuilt* means
+
+- **A cache file taken away and left gone is no rebuild — held.** `May::Rebuilt` covers a file made or written and no file gone; the arm's refusal with a file of the cache gone is *refused, and changed what a refusal may not*, and so is one with a link in a cache file's place.
+- **A cache written so that the next acting command reads it as other than the tree says — not held by the frame, and named so.** A manifest shows that a cache was written and never whether what was written is true. What would hold it is the same command run again once the refusal's cause is gone, coming out as on a tree whose cache nobody touched — and removing the cause is the route's act, which the byte table does not follow. *One narrower form the frame could run, and no cell does:* the refused command run a second time over what the first left, which must refuse again with the plant still standing. It would need a lead-in that is allowed to refuse, which the frame does not have.
+
+### What the ruling leaves open
+
+1. **Exit 0.** The ruling speaks of a refusal. Whether a command that exits 0 may write a cache its own doc names no write to — `setup`, of the four — is not said, and **the three lines hold on a refusal only**: such a write is *written outside its allowance* until somebody rules. `task finalize` and `milestone finalize` have their own lines for exit 0 (`T5`, `M10`), and `uninstall` removes the workbench whole. No cell of the first cut turns on it.
+2. **The file↔state hashes are called rebuildable and have no rebuild.** The sentence `C1` and `C2` quote says both caches are *rebuildable from the committed docs*; the next paragraph of the same section says the hashes *"carry **no stamp and no rebuild path**"*. A refusal that writes under `.jigc/state/` is therefore recording a baseline, not rebuilding a cache — and a baseline recorded over a file somebody edited is exactly a cache that says other than the commit does. `C2` lets the write, by the doc's first sentence and the ruling's word. Whether that is meant is the human's; it is where the bound that is not held would bite, and the lost line of the acceptance's `task finalize` cell is the same neighbourhood.
+3. **A minted work unit is no cache.** A task area or a milestone area a refusal leaves behind is covered by none of the three lines, and stays red until ruled, cell by cell. *Which cells that leaves is not known yet*: no cell exists; the next task's entry says it of the twelve.
+
+### The rows, as data
+
+[install.rs](crates/cli/tests/byte_table/install.rs) (`setup`, `uninstall`), [task.rs](crates/cli/tests/byte_table/task.rs) (`task finalize`) and [milestone.rs](crates/cli/tests/byte_table/milestone.rs) (`milestone finalize`) — a family a file, wired in by one line of the suite's `families!`. **54 lines over the record's quotations — 16 · 11 · 12 · 15 for `setup`, `uninstall`, `task finalize` and `milestone finalize`**: 38 lifted from the record's four sections, and the four of `ON_A_REFUSAL` in each row. The owed list is four leaves shorter and `B2c` owes nothing.
+
+**Not every entry of the record is a line, as the builder before said.** `S13`, `U7`, `T7` and `M8` are where *on a refusal: no* comes from; `S14` and `U8` are the rows' consent flag; `S15` is the condition the cells construct; `T8` is the frame's rule for a staged doc; `M9` is no difference to a table that only asks that no object be gone; `S12` is no line while the record's second silence is open; `M4` and the doc-only arm are second spellings no cell names. **And one entry is more than one line where it names more than one place or more than one manner**: `S6` (written · removed), `U4` (taken out of · removed), `T5` and `M10` (the edge index · the hashes), `T6` (removed · moved aside), `M6` (the worktrees · the sub-tasks' areas · their complement moved aside · the milestone's area), `C3` (the base pin · the task list). A line's `id` is its entry's number, with what tells it apart after a comma.
+
+**Decided here — as a builder, and open to being overturned.**
+
+- **`M5` has a place, and the record gained the sentence for it.** The record gave the milestone's committed record no path, and neither the record's §7 nor the frame's vocabulary table listed `M5` under a place. As data it must name one: `docs/milestone-records/*`, from `design/storage.md` → *Source of truth* — *"a committed **`milestone-record`** doctype (`docs/milestone-records/<slug>.md`)"* — added to the record's `M5` in this commit, with why. It is the home under the docs root as the prepared states have it; a cell that moved that knob would need a place read off the cascade, which the vocabulary cannot say.
+- **The record's two sentences for `M6` stand under each of its four lines**, as the record has them under the one entry: it does not say which sentence carries which place, and this task does not decide it for it.
+- **The lines of the ruling stand in every row, `setup`'s and `uninstall`'s too** — the ruling is about a command that refuses, not about two commands.
+- **A family's file exports `ROWS`, and the suite's macro makes the table from the files** — one line wires a family in, and a file under `byte_table/` that is not wired in is the registration fence's to name.
+
+### The fences, over rows that are data
+
+[`a_lines_quote_is_held_to_its_docs_text`](crates/cli/tests/byte_table.rs) now holds, beside the record's 63 quotations against their docs: **every line of a row quotes a sentence** — a line that rests on nothing is none; **every quote of a row is one the record has**, by doc, heading and words; **every line's number is an entry of the record**; and no two lines of a row share an `id`. Red first on a fixture against a helper that named nothing. The leaf fence counts four rows and 24 owed.
+
+### Red first
+
+- **The ruling's vocabulary.** Against a comparison that declared the two words and did nothing with them — `Rebuilt` covering nothing, `Refused` read as *always* — the arm was red at its first assertion: a refusal that rebuilt a cache came out *refused, and changed what a refusal may not*. Three changes to the built comparison, each named by the arm: a line under *refused* that holds at exit 0 too · a rebuilt cache that may be anything, or gone · a directory made under a cache that is not rebuilt — the last survived the arm as first written, because a directory on the way to a covered file is covered with it; the arm gained a directory made with nothing in it yet.
+- **The fence over the rows.** Against a helper that named nothing, the fixture's four faults went unnamed and the arm was red there. Seven changes, each named: each of the helper's four checks taken out · a quote of `S1` one word off the record · `T2` under a number the record does not have · `setup` left on the owed list beside its row (the leaf fence).
+
+### Not established
+
+- **That any cell comes out as the plan's §5 says** — the cells are the next task's. The rows are committed before a cell runs, and a row is not touched from what a cell shows.
+- **That the rows are complete** — as the record's own head says: four sections of the docs were not read for it.
+- **Whether a refusal on this tree writes under `.jigc/state/`**, which is what the second open point above turns on: nothing was run to learn what a command writes.
+
 ## 2026-10-13 — The byte table reads a sandbox and runs a cell: one reader takes the picture — the files off the disk, git's layer asked of git — and one runner puts a command between two of them, over a copy of a prepared state, through the route catalog's frame and no other way; thirty-five cells on a stand-in, twenty-nine of them red against a reader that read nothing, and thirty changes to the built one each named (the byte table's pilot, task `B2b`)
 
 **What.** The fourth task of the byte table's pilot ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §2, §4, §8). The comparison of the task before the last was driven over manifests built by hand; [byte_cell.rs](crates/cli/tests/support/byte_cell.rs) now has the half that starts processes — **a prepared state built on the binary handed in and copied a cell** (`Built`, `Prepared`), **the reader** that takes a manifest off a sandbox, and **the runner** (`run`): a sandbox over the copy · a manifest · the cell's leads · a manifest · the command · a manifest · the comparison. No row is data yet and no cell of the table exists: the cells of this commit run a script. No product source changes.

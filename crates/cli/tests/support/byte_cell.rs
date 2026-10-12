@@ -31,7 +31,8 @@
 //! doc's text: a doc that moves reddens the row. The vocabulary — [`Where`], [`May`],
 //! [`Holding`], [`When`] — is what the four rows of the pilot's acceptance needed and no
 //! more (`…/reshape/byte-table-acceptance-rows.md` → §7, which says for each word which
-//! lines needed it).
+//! lines needed it) — and two words one ruling added, for what a refusal may do to a cache
+//! ([`May::Rebuilt`], [`When::Refused`]; the record's §4a).
 //!
 //! **Whose bytes they are is settled by construction, never by a list copied out of the
 //! product.** A planted entry is the user's ([`Planted`]): where its bytes stand nowhere
@@ -247,6 +248,9 @@ pub enum May {
     /// order.
     TakeOutOf,
     Removed,
+    /// Made, or written whole, as a regular file — or a directory made. **Nothing is
+    /// gone**: what a refusal may do to a cache, which is rebuilt and never taken away.
+    Rebuilt,
     /// Made or replaced by a regular file that is, byte for byte, a doc staged in a work
     /// unit.
     CopyOfAStagedDoc,
@@ -281,12 +285,16 @@ pub enum Allows {
     Unregistered(&'static str),
 }
 
-/// A condition a line carries, read off the manifest taken before the command.
+/// A condition a line carries: read off the manifest taken before the command, or off how
+/// the command ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum When {
     Always,
     /// The repository has no commit: its `HEAD` is unborn.
     NoCommitYet,
+    /// The command refused. A line under it holds on a refusal and **only** then: what
+    /// the command may do where it exits 0 is another line's to say.
+    Refused,
 }
 
 /// **One line of an allowance.** `id` is the line's number in the committed record; a
@@ -458,6 +466,7 @@ impl<'a> Tally<'a> {
                 && match line.when {
                     When::Always => true,
                     When::NoCommitYet => unborn,
+                    When::Refused => !self.acted,
                 }
         })
     }
@@ -512,6 +521,8 @@ impl<'a> Tally<'a> {
                         _ => false,
                     },
                     (May::Removed, Some(_), None) => true,
+                    (May::Rebuilt, _, Some(Entry::File { .. })) => true,
+                    (May::Rebuilt, None, Some(Entry::Dir(_))) => true,
                     (May::CopyOfAStagedDoc, _, Some(is)) => {
                         is.blob().is_some_and(|blob| self.staged.contains(blob))
                     }
