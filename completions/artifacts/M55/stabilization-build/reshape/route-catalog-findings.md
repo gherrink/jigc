@@ -6,7 +6,7 @@ What a case of the route catalog ([route_catalog.rs](../../../../../crates/cli/t
 
 **Three of the keys are about a state only a variable reaches** — `JIGC_ADAPTERS_DIR` for two, `$HOME` taken away for one. **Whether a route owes anything there is ruled** ([DECISIONS.md](../../../../../DECISIONS.md) → *2026-10-11 — Which states a route must work in*): a state only `JIGC_ADAPTERS_DIR` reaches is a declared bound of the catalog — a red case that stands on one is recorded, stays red, and does not block; `$HOME` taken away is no bound.
 
-**[2026-10-12: and of three families beyond the pilot's two commands** — the gate (§5), `jigc milestone` (§6) and the `jigc doc` verbs that write (§7), the sites of each that the fix pass touched.**]** **The cases are those of every blocking site of `jigc setup`** — thirty-six sites, four of them with a reason and no case — **and of every blocking site of `jigc uninstall`** (§4), eighteen, each with a case: the door, the four guards over what `.jigc/` holds the only copy of, and the seven steps that remove.
+**[2026-10-12: and of six families beyond the pilot's two commands** — the gate (§5), `jigc milestone` (§6), the `jigc doc` verbs that write (§7), `jigc config` and composition (§8, no red case) and the store's own refusals (§9), the sites of each that the fix pass touched.**]** **The cases are those of every blocking site of `jigc setup`** — thirty-six sites, four of them with a reason and no case — **and of every blocking site of `jigc uninstall`** (§4), eighteen, each with a case: the door, the four guards over what `.jigc/` holds the only copy of, and the seven steps that remove.
 
 **A case's name says its cause and its way.** The cases of one cause are a group, and a name ends with the way the route was followed: `-removed`, `-pointed-at-a-committed-file`, `-pointed-at-a-new-file`, and each of those again with `-committed-and-` in front where the link was committed and the change was committed as the route's clause says.
 
@@ -807,3 +807,71 @@ Each was driven once more for this section, on this tree's binary.
 - **Driven by hand, the second reading:** `jigc doc create adr --title 'Use spaces' --task again` exits 0 (`adr:use-spaces`); the printed line with the title kept and `--slug other` exits 0 (`adr:other`); a payload titled *Use spaces* exits 0; `jigc doc create jigc-feedback --title 'Another' --task report-a-bug` and the same with `--slug other` exit 0. The migration's line was not driven filled.
 - *Why no key that stands:* `r1-clobber-task-and-migration-routes-print-lines-with-placeholders-the-refusal-lists-nothing-for` is the clobber guard's — another function, at the finalize, whose placeholders are an id and a doctype the product knows; `r1-uninstall-routes-print-lines-with-a-placeholder-for-the-id` is `jigc uninstall`'s. Neighbours.
 - **Beside it, and green:** the same refusal over the task's own staged doc, whose route prints the rename whole — `jigc doc rename adr:use-tabs --to 'Use Tabs!' --task decide-tabs` — four cases; and `create.already-exists` in a task that holds its doc already, whose route prints the task's exits and the next task's start — four cases, a milestone's sub-task among them.
+
+## 8. `config` and `start` — the sites the fix pass touched: no red case
+
+*Added 2026-10-12, with the cases of [route_catalog/config.rs](../../../../../crates/cli/tests/route_catalog/config.rs) and [route_catalog/start.rs](../../../../../crates/cli/tests/route_catalog/start.rs): the five sites of `jigc config set` and the one of composition taken in by the human's ruling of 2026-10-11 — 24 cases and 3. None came out red, so no key is minted here.*
+
+### Seen by hand, and no case
+
+Each was driven for this section, on this tree's binary.
+
+- **A re-point refused over a doc whose home is a link prints two `route:` lines under one finding.** `config.repoint-failed` carries its cause in its message, and where the cause is the store's refusal the message is that refusal whole — its head, its `at:` and its `route:` line — followed by the re-point's own `at:` and `route:`. (An ADR's home turned into a committed link to a copy; `jigc config set docs-root handbook`: exit 1, two indented `route:` lines.) The first says *put the doc itself at … as a regular file … and commit that; then re-run this command*; the second, *Fix what this message names, then re-run `jigc config set docs-root handbook`*. A reader of the finding's first route line reads the store's. The two cases of this state follow that first line, and hold.
+- **The clause the fix pass added to the re-point's route — the file it parked on its way — is followed by no case.** Reached by hand: the committed decisions log deleted from the working tree, a file somebody wrote at `handbook/decisions-log.md`, `jigc config set placement-root handbook` — exit 1, *reading the stranded doc … No such file or directory*, and the route names the parked file both ways (`handbook/decisions-log.md` → `.jigc/displaced/decisions-log.md`). With the doc brought back (`git checkout -- docs/decisions-log.md`) the printed re-run exits 0; the parked file stays in the workbench. The frame refuses an object of a case's own wherever a route prints a path, and the object to mend here is the doc, which the message names.
+- **`workflow-refs.workflow-mismatch` calls an ordinary task a sub-task.** `jigc workflow dev-task --task pick-tabs`, over a task `jigc start --workflow record-decision` minted: *… but sub-task `pick-tabs` was minted with `record-decision`* and *or re-seed the sub-task with the intended `--workflow`*. No milestone has the task, and nothing re-seeds it. The route's first way — `jigc workflow record-decision --task pick-tabs` — holds.
+
+## 9. `doc read` — the store's refusal over a home that is no regular file
+
+*Added 2026-10-12, with the cases of [route_catalog/doc_read.rs](../../../../../crates/cli/tests/route_catalog/doc_read.rs): the one site of the family taken in by the human's ruling of 2026-10-11 — the constructor of `store.home-not-regular-file`, new with the fix pass — at every door the shipped packs reach it from: 30 cases. Every case here stands at a site the fix pass made; what the previous release's binary does with each is not said in this file.*
+
+### `r1-home-shape-edited-doc-route-says-copy-what-the-link-points-at-over-a-link-to-nothing`
+
+- **Classification:** followed, the same refusal again. **One case:** `home-shape-task-edited-over-a-link-to-nothing-the-file-itself-put-there-and-finalized-as-printed`.
+- **State:** a committed ADR, a second task that edits it (one slot written, its commit doc complete), and the ADR's home turned into a symbolic link that leads nowhere — the file removed, the link in no commit.
+- **Refusing command:** `jigc task finalize again` — exit 3, `store.home-not-regular-file`: *`docs/decisions/use-tabs.md` is a symbolic link, not a regular file — … so this task's doc `adr:use-tabs` is not promoted there*.
+- **Printed route:**
+
+  ```text
+  route: nothing was committed and this task's staged docs are intact. jigc writes regular files only, so the link at `docs/decisions/use-tabs.md` is not one it put there, and what becomes of it is yours to decide: put the regular file itself at `docs/decisions/use-tabs.md` — for a link, a copy of the file it points at, in the link's place; then re-run `jigc task finalize again` — this task's staged edit lands over it
+  ```
+
+- **What was done:** the link's target was to be copied into its place; it points at nothing, so nothing was put there. The printed finalize.
+- **What went wrong:** the same refusal. The route's one way names where the regular file comes from — *the file it points at* — and this link has none; the committed doc is in `HEAD`, which the route does not say.
+- **Driven by hand:** with the link removed and the doc brought back (`git checkout HEAD -- docs/decisions/use-tabs.md`), the printed finalize exits 0 and the edit lands.
+- **Beside it, and green:** the same route over a link to a copy of the doc (`…-edited-over-a-link-to-a-copy-…`); and the record's doors, whose route for the same shape prints the `git checkout HEAD -- <record>` line.
+
+### `r1-home-shape-destination-routes-print-a-line-with-a-placeholder-for-another-slug`
+
+- **Classification:** followed, a printed line no shell can split. **Two cases, both marked `doubt`:** `home-shape-rename-destination-a-link-another-slug-line-run-as-printed`, `home-shape-doc-rename-destination-a-link-another-slug-line-run-as-printed`.
+- **State:** a symbolic link that leads nowhere at the home of the id a doc is renamed to — a committed ADR at `jigc rename`, a task's staged ADR at `jigc doc rename`.
+- **Refusing command:** `jigc rename adr:use-tabs --to "Use spaces"` · `jigc doc rename adr:use-tabs --to "Use spaces" --task pick-tabs` — exit 1, `store.home-not-regular-file` at `docs/decisions/use-spaces.md`.
+- **Printed route** (the store door's):
+
+  ```text
+  route: give this doc an id whose home is free — re-run `jigc rename adr:use-tabs --to 'Use spaces' --slug <other-slug>`; or move the link out of the doc's home, so that `docs/decisions/use-spaces.md` is free (commit that where git tracks the link), and re-run `jigc rename adr:use-tabs --to 'Use spaces'`. jigc writes regular files only, so the link is not one it put there, and what becomes of it is yours to decide
+  ```
+
+- **What was done:** the first printed line, as printed.
+- **What went wrong:** no shell splits it: `<other-slug>` is a redirection. The slug is the reader's own to choose.
+- **The doubt:** what the pilot's first question left open, over a value nobody but the reader has.
+- *Why one key for two functions:* `rename.rs::foreign_destination` and `doc.rs::free_destination` print the same sentence for the same state at the two renames. *Why no key that stands:* the distinct-identity key of §7 is another function's line, with other placeholders.
+- **Beside it, and green:** the route's other way at both doors — the link moved out, and at `jigc rename` the printed re-run; a committed link moved out and the move committed; a directory moved away.
+
+### `r1-home-shape-migration-route-review-step-exits-4`
+
+- **Classification:** followed, another failure. **One case, marked `doubt`:** `home-shape-migration-over-a-link-link-moved-out-reviewed-and-approved-as-printed`.
+- **State:** a foreign note migrated into an ADR, authored, its commit doc complete; a link that leads nowhere at the home the ADR promotes to.
+- **Refusing command:** `jigc task finalize migrate-adr-notes-old-…` — exit 3, `store.home-not-regular-file`.
+- **What the route says, behind its two ways:** *then re-run `jigc task finalize <id>` to review the fidelity diff and `jigc task finalize <id> --approve` to land it*.
+- **What was done:** the link moved out; the printed review; the printed approval.
+- **What went wrong:** the review exits 4 by design — *migration review required — nothing committed* — and the frame holds every printed command to exit 0.
+- **The doubt:** a command cited for what it shows — the gate's third question and the pilot's fourth, **ruled by the human on 2026-10-13: held to its words**. The case is to be followed again once the frame holds a cited line to a witness; the review's output, as recorded, says what the route promised.
+- *Why no key that stands:* `r1-clobber-held-migration-route-review-step-exits-4` is the clobber guard's arm, another function of the same file; a neighbour.
+
+### Under a key that stands — `r1-distinct-identity-routes-print-a-line-with-placeholders-for-the-readers-own-choice`
+
+Two more cases, both marked `doubt`: `home-shape-create-only-create-over-a-link-line-run-as-printed`, `home-shape-create-only-author-over-a-link-line-run-as-printed` — a create under an entry that only creates, over a link at the home. *Why the same and no neighbour:* the route is built by the function the key is about, `distinct_identity_route`, and is its line word for word but for the occupant's name — *to mint beside the link that is there*.
+
+### Seen by hand, and no case
+
+- **`jigc migrate-corpus` prints the refusal as a row of its report**, not as a finding: *blocked `docs/decisions/use-tabs.md`*, then `store.home-not-regular-file:` and the store's message and route, indented, at exit 1 (an ADR with its `schema-version:` stamp taken off, behind a committed link). The frame reads a refusal by its finding's head line, and has no case here.

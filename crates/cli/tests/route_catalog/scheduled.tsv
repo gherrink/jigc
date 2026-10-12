@@ -36,6 +36,8 @@ crates/cli/src/ingest.rs::near_miss_finding::dynamic#1	unchanged	-
 crates/cli/src/ingest.rs::near_miss_finding::ingest.needs-reconcile#1	unchanged	-
 crates/cli/src/ingest.rs::unaddressable_identity_finding::ingest.unaddressable-identity#1	unchanged	-
 crates/cli/src/ingest.rs::wrong_location_finding::ingest.wrong-location#1	unchanged	-
+crates/cli/src/migrate.rs::adjudicate_source_path::migrate.source-untrackable#1	unchanged	caller: `crates/cli/src/migrate.rs::migrate_in_repo` changed — a binding ahead of this refusal that refuses nothing, and behind it a refusal of its own for a migration asked from a linked worktree, ranked below this one by its own comment
+crates/cli/src/migrate.rs::adjudicate_source_tracked::migrate.source-untracked#1	unchanged	caller: `crates/cli/src/migrate.rs::migrate_in_repo` changed — a refusal of its own for a migration asked from a linked worktree now stands ahead of this one and answers earlier under its own code, whose site has its cases: states taken from this refusal, none brought. What git says of the source is asked as it was
 crates/cli/src/milestone.rs::ensure_workflow_provided::workflow-refs.unknown-workflow#1	unchanged	-
 crates/cli/src/milestone.rs::foreign_bytes_finding::milestone.foreign-bytes#1	unchanged	-
 crates/cli/src/milestone.rs::mint_foreign_bytes_finding::milestone.foreign-bytes#1	unchanged	-
@@ -59,6 +61,7 @@ crates/cli/src/start.rs::pack_resource_missing::pack.resource-missing#1	unchange
 crates/cli/src/start.rs::project_step::overrides.project-step-missing#1	unchanged	-
 crates/cli/src/start.rs::read_named_workflow::workflow-refs.suppressed-malformed#1	unchanged	-
 crates/cli/src/start.rs::read_named_workflow::workflow.verb-routed#1	unchanged	-
+crates/cli/src/start.rs::read_workflow::workflow-refs.unknown-workflow#1	unchanged	caller: `crates/cli/src/start.rs::compose_core`, `compose_minted_in_repo` and `compose_task_workflow` changed — each gained one field of what it composes, which checkout the compose stands in, and `compose_core` a refusal of its own for a doc-only workflow minted from a linked worktree; all of it stands behind the workflow's definition being read, which is where this refuses
 crates/cli/src/start.rs::shadowed_definition_ids::config.shadow-id-collision#1	unchanged	-
 crates/cli/src/task.rs::amend_index_dirty_finding::finalize.amend-index-dirty#1	unchanged	-
 crates/cli/src/task.rs::bind::task-bind.role-type-mismatch#1	unchanged	-
@@ -68,7 +71,9 @@ crates/cli/src/task.rs::discard_staged_prose_finding::task-discard.staged-prose#
 crates/cli/src/task.rs::discard_unverified_foreign_finding::task-discard.foreign-bytes#1	unchanged	-
 crates/cli/src/task.rs::discard_unverified_prose_finding::task-discard.staged-prose#1	unchanged	-
 crates/cli/src/task.rs::no_committed_doc::store.not-found#1	unchanged	-
+crates/cli/src/task.rs::reject_fixed_identity_slug::store.fixed-identity#1	unchanged	caller: `crates/cli/src/rename.rs::run` changed — the question of what stands at the doc's own home, at a referrer's and at the destination is asked of the entry itself; this refusal is asked ahead of all three, by its own comment ahead of every other gate of the door
 crates/cli/src/task.rs::reject_malformed_slug_head::store.malformed-slug#1	unchanged	-
+crates/cli/src/task.rs::reject_malformed_work_unit_id::work-unit.malformed-id#1	unchanged	caller: `crates/cli/src/doc.rs::resolve` changed — one field more on the active task, the checkout the invocation stands in, read behind this refusal, which is the first statement there as at every other door that calls it. The other two callers the count names by name do not call it
 crates/cli/src/task.rs::reject_slug_head_over_name_ceiling::write.slug-name-ceiling#1	unchanged	-
 crates/cli/src/task.rs::reject_slug_over_name_ceiling::write.slug-name-ceiling#1	unchanged	caller: `crates/cli/src/migrate.rs::migrate_in_repo` and `crates/cli/src/rename.rs::run` changed — at the first, a binding ahead of this refusal and a guard over a linked worktree behind it; at the second, the question of what stands at the doc's own home is asked of the entry and no longer through a link, ahead of this refusal, and answers earlier under the store's code. The slug's length is asked as it was at all four doors
 crates/cli/src/task.rs::retire_untrackable_finding::finalize.retire-untrackable#1	unchanged	-
@@ -78,6 +83,7 @@ crates/engine/src/compose.rs::anchor_position::workflow-refs.structural-anchor-r
 crates/engine/src/compose.rs::blocking_workflow_refs::dynamic#1	unchanged	-
 crates/engine/src/compose.rs::find_fan_out_join_pairing::workflow-refs.fan-out-join-paired#1	unchanged	-
 crates/engine/src/compose.rs::find_fan_out_join_pairing::workflow-refs.fan-out-join-paired#2	unchanged	-
+crates/engine/src/compose.rs::workflow_refs_with_fills::workflow-refs.slot-fill-orphan#1	unchanged	caller: `crates/cli/src/start.rs::compose_core`, `compose_minted_in_repo` and `compose_task_workflow` changed — each gained one field of what it composes; and in `compose_core` a refusal of its own now answers earlier for a doc-only workflow minted from a linked worktree, under its own code, whose site has its cases. No changed line computes the fills this check walks
 crates/engine/src/file_state.rs::rename_strong_finding::reconciliation.rename#1	unchanged	-
 crates/engine/src/file_state.rs::rename_weak_finding::reconciliation.rename#1	unchanged	-
 crates/engine/src/finalize.rs::base_mismatch_finding::finalize.base-mismatch#1	unchanged	caller: `crates/engine/src/finalize.rs::plan_finalize` and `plan_milestone_finalize` changed — each gained parameters (the claims git holds at a home, a merged doc's origins) that it hands to the clobber guard, which it calls once the promotions are planned; this refusal returns before either, so the change stands behind it

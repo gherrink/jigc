@@ -9,7 +9,8 @@
 //! the runner does; this file is the **expected-red list** ([`EXPECTED_RED`]) and the arms
 //! that hold the frame to its rules. **A command's cases are a file of their own under
 //! `route_catalog/`**, declared here by `#[path]` inside [`tables!`] — `setup.rs`,
-//! `uninstall.rs`, `task_finalize.rs`, `milestone.rs` and `doc_write.rs`.
+//! `uninstall.rs`, `task_finalize.rs`, `milestone.rs`, `doc_write.rs`, `config.rs`,
+//! `start.rs` and `doc_read.rs`.
 //! They stand there, and not beside this file, because that directory also holds the
 //! committed list of refusal sites: a suite file beside a directory of its own name makes
 //! the directory an aggregation for the registration fence
@@ -80,7 +81,14 @@
 //! ([`a_state_step_runs_the_binary_under_test`]). **The third is `doc_write.rs`** — the
 //! `jigc doc` verbs that write: three sites with a reading, and ten more whose caller's
 //! diff against the previous release was read and found off the path, each a row of the
-//! scheduled list with which change that is. The frame grew by nothing for it.
+//! scheduled list with which change that is. The frame grew by nothing for it. **Then
+//! `config.rs`, `start.rs` and `doc_read.rs`** — `jigc config set`'s five sites, four with a
+//! reading and one with a reason; the one site of composition, a task re-entered under
+//! another workflow; and the one constructor of the store's refusal over a home that is no
+//! regular file, at every door the shipped packs reach it from. With the last the frame
+//! grew by two acts, red first: a link is moved out of its path, and the regular file
+//! itself is put in a link's place
+//! ([`a_link_is_moved_out_of_its_path_and_the_file_itself_is_put_in_a_links_place`]).
 //!
 //! **A site with a case says what was read to count its causes**
 //! ([`Reading`], a command's `READINGS`): the functions, the count with its derivation,
@@ -314,6 +322,12 @@ tables! {
     mod milestone;
     #[path = "route_catalog/doc_write.rs"]
     mod doc_write;
+    #[path = "route_catalog/config.rs"]
+    mod config;
+    #[path = "route_catalog/start.rs"]
+    mod start;
+    #[path = "route_catalog/doc_read.rs"]
+    mod doc_read;
 }
 
 use setup::{HOOK, HOOK_LINK_SITE};
@@ -860,11 +874,33 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "already-exists-author-line-run-as-printed",
             "already-exists-create-line-run-as-printed",
             "already-exists-create-under-a-slug-line-run-as-printed",
+            "home-shape-create-only-author-over-a-link-line-run-as-printed",
+            "home-shape-create-only-create-over-a-link-line-run-as-printed",
             "title-ignored-committed-author-line-run-as-printed",
             "title-ignored-committed-create-line-run-as-printed",
             "title-ignored-committed-create-under-a-slug-line-run-as-printed",
             "title-ignored-committed-under-a-migrations-slug-discarded-and-re-migrated-as-printed",
         ],
+    ),
+    (
+        ANOTHER_SLUG_LINE,
+        Classification::UnsplittableLine,
+        &[
+            "home-shape-doc-rename-destination-a-link-another-slug-line-run-as-printed",
+            "home-shape-rename-destination-a-link-another-slug-line-run-as-printed",
+        ],
+    ),
+    (
+        COPY_WHAT_A_LINK_TO_NOTHING_POINTS_AT,
+        Classification::SameRefusalAgain,
+        &[
+            "home-shape-task-edited-over-a-link-to-nothing-the-file-itself-put-there-and-finalized-as-printed",
+        ],
+    ),
+    (
+        HOME_SHAPE_REVIEW_STEP_EXITS_4,
+        Classification::AnotherFailure,
+        &["home-shape-migration-over-a-link-link-moved-out-reviewed-and-approved-as-printed"],
     ),
 ];
 
@@ -1098,6 +1134,20 @@ const RECORD_VERBS_WITHOUT_THEIR_IDS: &str =
 /// bare word in angle brackets. Rests on a reading — every case under it is marked.
 const A_LINE_FOR_THE_READERS_OWN_CHOICE: &str =
     "r1-distinct-identity-routes-print-a-line-with-placeholders-for-the-readers-own-choice";
+
+// The keys of `doc read` — the store's refusal over a home that is no regular file.
+/// The two renames whose destination's home is no regular file print the way to another
+/// id as a command line with a bare `<other-slug>`. Rests on a reading — every case under
+/// it is marked.
+const ANOTHER_SLUG_LINE: &str =
+    "r1-home-shape-destination-routes-print-a-line-with-a-placeholder-for-another-slug";
+/// A task that edits a committed doc whose home became a link is told to put there *a
+/// copy of the file it points at*; over a link that leads nowhere there is no such file.
+const COPY_WHAT_A_LINK_TO_NOTHING_POINTS_AT: &str =
+    "r1-home-shape-edited-doc-route-says-copy-what-the-link-points-at-over-a-link-to-nothing";
+/// The route of a migration whose doc's home is no regular file ends in the review, which
+/// exits 4 by design, and the approval. Rests on a reading — the case under it is marked.
+const HOME_SHAPE_REVIEW_STEP_EXITS_4: &str = "r1-home-shape-migration-route-review-step-exits-4";
 
 /// **The keys the human admitted by name** — a row a key, and the heading of the entry of
 /// `DECISIONS.md` that holds the ruling. Every red case under an admitted key can block,
@@ -1553,8 +1603,10 @@ fn every_case_names_a_site_of_the_list_and_has_a_name_of_its_own() {
 
 /// **The code prefixes whose vocabulary the catalog is held to** — the families of
 /// `jigc setup` (`setup`, `adapter-guide`) and of `jigc uninstall`, the eleven of the gate
-/// (`task finalize`), the three of `milestone` (`combine`, `join`, `milestone`) and the two
-/// of `doc write` (`create`, `write`), as [`refusal_sites::FAMILIES`] assigns them. A prefix joins when its command's file does.
+/// (`task finalize`), the three of `milestone` (`combine`, `join`, `milestone`), the two of
+/// `doc write` (`create`, `write`), the two of `config` (`config`, `overrides`), the three
+/// of `start` (`pack`, `workflow`, `workflow-refs`), the two of `doc read` (`store`,
+/// `work-unit`) and `migrate`'s own, as [`refusal_sites::FAMILIES`] assigns them. A prefix joins when its command's file does.
 /// The sites are held family or no family
 /// ([`every_blocking_refusal_site_has_a_case_a_reason_an_owed_row_or_a_scheduled_row`]);
 /// this is the list for the arm beside it, which asks after every code a prefix spells.
@@ -1564,19 +1616,27 @@ const CATALOGUED: &[&str] = &[
     "changelog-recording",
     "combine",
     "commit-recording",
+    "config",
     "conformance",
     "create",
     "doc-code",
     "file-state",
     "finalize",
     "join",
+    "migrate",
     "milestone",
+    "overrides",
     "owner-artifact",
+    "pack",
     "reconciliation",
     "schema-conformance",
     "setup",
+    "store",
     "task",
     "uninstall",
+    "work-unit",
+    "workflow",
+    "workflow-refs",
     "write",
 ];
 
@@ -1725,6 +1785,11 @@ const NO_CODE: &[(&str, &str)] = &[
         "a declared contract identifier (`cli::pack::SINGLETON_COPY_IN_CODE`): the name of \
          a constraint a migrate step's guide prose must state, which the pack-load fence \
          checks for; its own comment says it is no minted finding code",
+    ),
+    (
+        "migrate.review-pending",
+        "an error identity of the invocation log (`cli::invocation_log::ERROR_REVIEW_PENDING`): \
+         the exit-4 review hold of a migration's finalize, which prints no finding",
     ),
     (
         "file-state.json",
@@ -1894,11 +1959,226 @@ const MINTED_AT: &[MintedAt] = &[
         site: RELOCATE_REFUSE,
         why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
     },
+    // `rollback::rollback_conflict_finding`, again: the third of its five door codes.
+    MintedAt {
+        code: "config.rollback-conflict",
+        site: ROLLBACK_CONFLICT,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_DOORS,
+    },
+    // `engine::store::block(code, …)`: the store's read refusals, a code a kind — a
+    // literal at the call, or one of the two constants `NO_SUCH_LEAF` and `UNKNOWN_TYPE`.
+    MintedAt {
+        code: "store.no-such-item",
+        site: STORE_BLOCK,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "store.no-such-leaf",
+        site: STORE_BLOCK,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "store.no-such-section",
+        site: STORE_BLOCK,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "store.not-staged",
+        site: STORE_BLOCK,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "store.transient-type",
+        site: STORE_BLOCK,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "store.unknown-type",
+        site: STORE_BLOCK,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "store.unparseable",
+        site: STORE_BLOCK,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    // `engine::milestone::store_block(code, …)`: the same three codes where a milestone
+    // seeds its sub-tasks from a spec's criteria (`read_spec_criteria`).
+    MintedAt {
+        code: "store.no-such-section",
+        site: MILESTONE_STORE_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_REJECTS,
+    },
+    MintedAt {
+        code: "store.transient-type",
+        site: MILESTONE_STORE_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_REJECTS,
+    },
+    MintedAt {
+        code: "store.unparseable",
+        site: MILESTONE_STORE_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_REJECTS,
+    },
+    // `rename::refuse` and `relocate::refuse`, again: a transient doctype at either door.
+    MintedAt {
+        code: "store.transient-type",
+        site: RENAME_REFUSE,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "store.transient-type",
+        site: RELOCATE_REFUSE,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    // `engine::compose::blocking_workflow_refs(code, …)`: the composition's blocks, a code
+    // a check — the constructor's thirty-eight calls in `compose.rs` and `data_value.rs`.
+    MintedAt {
+        code: "workflow-refs.allows-create-duplicate-type",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.at-marker-on-non-scalar",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.body-include-only",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.catalog-not-navigable",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.checkpoint-marker-not-shadowed",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.collection-not-lone",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.command-ref-resolves",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.duplicate-command-id",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.fill-survivor",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.include-cycle-absent",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.include-resolves",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.malformed-command-arg",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.malformed-command-catalog",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.malformed-data-value",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.malformed-front-matter",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.milestone-not-navigable",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.missing-front-matter",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.not-utf8",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.run-marker-not-shadowed",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.schema-ref-resolves",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.spawn-marker-not-shadowed",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.step-kind-malformed",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.store-not-navigable",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.task-ref-in-no-task-workflow",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.undeclared-role",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.undeclared-root",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
+    MintedAt {
+        code: "workflow-refs.unresolved",
+        site: WORKFLOW_REFS_BLOCK,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
+    },
 ];
 
 const COMMIT_REJECTION: &str = "crates/cli/src/render.rs::commit_rejection_finding::dynamic#1";
 const ROLLBACK_CONFLICT: &str = "crates/cli/src/rollback.rs::rollback_conflict_finding::dynamic#1";
 const BLOCKING_CONFORMANCE: &str = "crates/engine/src/validate.rs::blocking_conformance::dynamic#1";
+const STORE_BLOCK: &str = "crates/engine/src/store.rs::block::dynamic#1";
+const MILESTONE_STORE_BLOCK: &str = "crates/engine/src/milestone.rs::store_block::dynamic#1";
+const WORKFLOW_REFS_BLOCK: &str = "crates/engine/src/compose.rs::blocking_workflow_refs::dynamic#1";
+const A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION: &str = "the site is the one \
+    constructor of the composition's blocks, a code a check of a workflow's definition, its \
+    steps or its placeholders; the count classes it unchanged and it stands whole on the \
+    scheduled list, to get a case a code it mints before the port";
 const BLOCKING_WRITE: &str = "crates/engine/src/write.rs::blocking_write::dynamic#1";
 const PAYLOAD_REJECT: &str = "crates/cli/src/author.rs::reject::dynamic#1";
 const RENAME_REFUSE: &str = "crates/cli/src/rename.rs::refuse::dynamic#1";
@@ -1930,56 +2210,15 @@ struct Owed {
 /// is still to be read, its row of the scheduled list with why the caller's change is off
 /// the path; a row that stays beside an answer is named. The list is emptied family by
 /// family and deleted, with this type, when the last is in.
-const OWED: &[Owed] = &[
-    Owed {
-        task: "P7 · config — a case or a reason",
-        sites: &[
-            "crates/cli/src/config.rs::repoint_failed::config.repoint-failed#1",
-            "crates/cli/src/config.rs::run_set::config.untrackable-root#1",
-            "crates/cli/src/config.rs::run_set::config.unusable-root#1",
-            "crates/cli/src/config.rs::run_set::config.value-rejected#1",
-            "crates/cli/src/config.rs::run_set::config.workbench-root#1",
-        ],
-    },
-    Owed {
-        task: "P7 · doc read — a case or a reason",
-        sites: &["crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file#1"],
-    },
-    Owed {
-        task: "P7 · doc read — the caller's diff is read: a case, or a scheduled row that says why the change is off the path",
-        sites: &[
-            "crates/cli/src/task.rs::reject_fixed_identity_slug::store.fixed-identity#1",
-            "crates/cli/src/task.rs::reject_malformed_work_unit_id::work-unit.malformed-id#1",
-        ],
-    },
-    Owed {
-        task: "P7 · migrate — the caller's diff is read: a case, or a scheduled row that says why the change is off the path",
-        sites: &[
-            "crates/cli/src/migrate.rs::adjudicate_source_path::migrate.source-untrackable#1",
-            "crates/cli/src/migrate.rs::adjudicate_source_tracked::migrate.source-untracked#1",
-        ],
-    },
-    Owed {
-        task: "P7 · start — a case or a reason",
-        sites: &["crates/cli/src/start.rs::reenter_in_repo::workflow-refs.workflow-mismatch#1"],
-    },
-    Owed {
-        task: "P7 · start — the caller's diff is read: a case, or a scheduled row that says why the change is off the path",
-        sites: &[
-            "crates/cli/src/start.rs::read_workflow::workflow-refs.unknown-workflow#1",
-            "crates/engine/src/compose.rs::workflow_refs_with_fills::workflow-refs.slot-fill-orphan#1",
-        ],
-    },
-    Owed {
-        task: "P7 · unassigned — the caller's diff is read: a case, or a scheduled row that says why the change is off the path",
-        sites: &[
-            "crates/cli/src/migrate_corpus.rs::blocked_finding::dynamic#1",
-            "crates/cli/src/relocate.rs::refuse::dynamic#1",
-            "crates/cli/src/rename.rs::refuse::dynamic#1",
-            "crates/engine/src/store.rs::block::dynamic#1",
-        ],
-    },
-];
+const OWED: &[Owed] = &[Owed {
+    task: "P7 · unassigned — the caller's diff is read: a case, or a scheduled row that says why the change is off the path",
+    sites: &[
+        "crates/cli/src/migrate_corpus.rs::blocked_finding::dynamic#1",
+        "crates/cli/src/relocate.rs::refuse::dynamic#1",
+        "crates/cli/src/rename.rs::refuse::dynamic#1",
+        "crates/engine/src/store.rs::block::dynamic#1",
+    ],
+}];
 
 /// **A site the ruling leaves for the port**: its id, the class the count gave it
 /// ([`THE_COUNT`]), and a note — `-`, or, where a direct caller of the site's function
@@ -4142,7 +4381,9 @@ fn a_path_git_does_not_ignore_does_not_hold() {
 
 /// Every act that takes an operand, with the marked form naming the directory the planted
 /// refusals below are about.
-const MARKED: [&[Act]; 13] = [
+const MARKED: [&[Act]; 15] = [
+    &[Act::MoveLinkOut(Operand::Unprinted("in/the-way"))],
+    &[Act::PutTheFileItself(Operand::Unprinted("in/the-way"))],
     &[Act::Unstage(Operand::Unprinted("in/the-way"))],
     &[Act::Revert(Operand::Unprinted("in/the-way"))],
     &[Act::Remove(Operand::Unprinted("in/the-way"))],
@@ -4234,6 +4475,8 @@ fn no_file_act_is_done_outside_the_sandbox() {
         acts: &[
             Act::MoveAway(Operand::Span(0)),
             Act::MoveOut(Operand::Span(0)),
+            Act::MoveLinkOut(Operand::Span(0)),
+            Act::PutTheFileItself(Operand::Span(1)),
             Act::ReplaceWithDirectory(Operand::Span(1)),
             Act::PointAtCommitted(Operand::Span(1)),
             Act::PointAtNew(Operand::Span(1)),
@@ -4257,8 +4500,8 @@ fn no_file_act_is_done_outside_the_sandbox() {
                 .matches("not done — it names nothing inside")
                 .count()
         ),
-        (Classification::AnotherFailure, 12),
-        "all twelve acts are refused, and the case is red for it:\n{}",
+        (Classification::AnotherFailure, 14),
+        "all fourteen acts are refused, and the case is red for it:\n{}",
         followed.detail,
     );
 
@@ -5081,6 +5324,108 @@ fn a_file_is_moved_out_of_its_path() {
                      `jigc -c \"test -f in/the-way/kept\"`'; exit 1",
                 ],
                 acts: &[Act::MoveOut(Operand::Span(0)), Act::Run(1)],
+                ..PLANTED
+            },
+            Classification::AnotherFailure,
+        ),
+    ]);
+}
+
+/// **A link is moved out of its path, and the file itself is put in a link's place**
+/// ([`Act::MoveLinkOut`], [`Act::PutTheFileItself`]) — the two ways the store's refusal
+/// over a home that is no regular file routes its reader. *Move the link out of the doc's
+/// home*: the link goes to the sandbox's `moved/`, whether it leads somewhere or nowhere,
+/// what it led to is not touched, and what is no link is not moved by this act. *For a
+/// link, a copy of the file it points at, in the link's place*: the link is gone and a
+/// regular file stands there with the bytes of the file it led to, which is still what it
+/// was; over a link that leads nowhere there is nothing to copy, and the act is not done.
+#[test]
+fn a_link_is_moved_out_of_its_path_and_the_file_itself_is_put_in_a_links_place() {
+    const A_LINK_IN_THE_WAY: &[&str] = &[
+        "-c",
+        "test -L in/the-way || exit 0; \
+         printf '%s\\n' 'blocking · setup.install-hook — refused' \
+         '  route: move the link out of `in/the-way`, then re-run \
+         `jigc -c \"test ! -e in/the-way && test ! -L in/the-way && test -d in\"`'; exit 1",
+    ];
+    const A_LINK_WHERE_A_FILE_BELONGS: &[&str] = &[
+        "-c",
+        "test -L in/the-way || exit 0; \
+         printf '%s\\n' 'blocking · setup.install-hook — refused' \
+         '  route: put the file itself at `in/the-way`, then re-run \
+         `jigc -c \"test ! -L in/the-way && test -f in/the-way\"`'; exit 1",
+    ];
+    come_out(&[
+        (
+            Case {
+                name: "planted-a-link-to-a-file-to-move-out",
+                state: &[
+                    Step::File(Place::Outside("kept"), "kept\n"),
+                    Step::Link(Place::Repo("in/the-way"), Place::Outside("kept")),
+                ],
+                refusing: A_LINK_IN_THE_WAY,
+                acts: &[Act::MoveLinkOut(Operand::Span(0)), Act::Run(1)],
+                witnesses: &["kept"],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+        (
+            Case {
+                name: "planted-a-link-to-nothing-to-move-out",
+                state: &[
+                    Step::Dir(Place::Repo("in")),
+                    Step::LinkTo(Place::Repo("in/the-way"), "nowhere"),
+                ],
+                refusing: A_LINK_IN_THE_WAY,
+                acts: &[Act::MoveLinkOut(Operand::Span(0)), Act::Run(1)],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+        (
+            Case {
+                name: "planted-a-file-where-a-link-is-to-move-out",
+                state: &[Step::File(Place::Repo("in/the-way"), "kept\n")],
+                refusing: &[
+                    "-c",
+                    "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: move the link out of `in/the-way`, then re-run \
+                     `jigc -c \"test -f in/the-way\"`'; exit 1",
+                ],
+                acts: &[Act::MoveLinkOut(Operand::Span(0)), Act::Run(1)],
+                ..PLANTED
+            },
+            Classification::AnotherFailure,
+        ),
+        (
+            Case {
+                name: "planted-a-link-to-a-file-and-the-file-itself-put-in-its-place",
+                state: &[
+                    Step::File(Place::Outside("real"), "the doc\n"),
+                    Step::Link(Place::Repo("in/the-way"), Place::Outside("real")),
+                ],
+                refusing: A_LINK_WHERE_A_FILE_BELONGS,
+                acts: &[Act::PutTheFileItself(Operand::Span(0)), Act::Run(1)],
+                holds: &[
+                    Check::RegularFile(Place::Repo("in/the-way")),
+                    Check::Contains(Place::Repo("in/the-way"), "the doc"),
+                ],
+                witnesses: &["real"],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+        (
+            Case {
+                name: "planted-a-link-to-nothing-and-no-file-to-put-in-its-place",
+                state: &[
+                    Step::Dir(Place::Repo("in")),
+                    Step::LinkTo(Place::Repo("in/the-way"), "nowhere"),
+                ],
+                refusing: A_LINK_WHERE_A_FILE_BELONGS,
+                acts: &[Act::PutTheFileItself(Operand::Span(0))],
+                holds: &[Check::Absent(Place::Repo("in/nowhere"))],
                 ..PLANTED
             },
             Classification::AnotherFailure,

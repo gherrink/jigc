@@ -133,6 +133,16 @@
 //! form, and the git is the runner's — run in the directory that holds the path, since a
 //! linked worktree's index is its own.
 //!
+//! **And where a route says what must stand at a home in a link's place, the runner does
+//! it with the link's own target** ([`Act::MoveLinkOut`], [`Act::PutTheFileItself`]). The
+//! store's refusal over a home that is no regular file routes two ways: *move the link out
+//! of the doc's home* — the link itself goes to `moved/`, as a file or a directory does,
+//! and what it led to is not touched — and *put the regular file itself there — for a
+//! link, a copy of the file it points at, in the link's place*: the link is removed and a
+//! regular file is written at its path with the bytes of the file it led to. Those bytes
+//! are the product's state and never a case's; a link that leads to no regular file has
+//! none, and the act is not done.
+//!
 //! **No more chains run at once in one process than the machine is wide** ([`Gate`]).
 //! A case is one child process at a time; [`pooled`] bounds how many cases one caller
 //! follows at once, and every case followed in this process — by whichever arm, through a
@@ -297,6 +307,18 @@ pub enum Act {
     /// it had ([`Place::Moved`]). A regular file, and the entry itself: a link is not one,
     /// nor a directory.
     MoveOut(Operand),
+    /// Move the link the operand names out of its path — what a route asks for with *move
+    /// the link out of the doc's home*: the link itself, never what it leads to, out of the
+    /// repository to the sandbox's `moved/` under the path it had ([`Place::Moved`]). An
+    /// entry that is no link is not moved by it: a file has [`Act::MoveOut`], a directory
+    /// [`Act::MoveAway`].
+    MoveLinkOut(Operand),
+    /// Put the regular file itself where the link the operand names stands — what a route
+    /// asks for with *for a link, a copy of the file it points at, in the link's place*:
+    /// the link is removed and a regular file with the bytes of the file it led to is
+    /// written at its path. The bytes are the link's target's, never the case's; a link
+    /// that leads to no regular file has none to copy, and the act is not done.
+    PutTheFileItself(Operand),
     /// Replace the link the operand names with a real directory: the link is removed —
     /// never what it leads to — and an empty directory is made at its path.
     ReplaceWithDirectory(Operand),
@@ -373,6 +395,8 @@ impl Act {
             Act::Remove(operand)
             | Act::MoveAway(operand)
             | Act::MoveOut(operand)
+            | Act::MoveLinkOut(operand)
+            | Act::PutTheFileItself(operand)
             | Act::ReplaceWithDirectory(operand)
             | Act::PointAtCommitted(operand)
             | Act::PointAtNew(operand)
@@ -1319,6 +1343,10 @@ impl Sandbox {
                 Act::Remove(_) => format!("remove `{named}` ({how})"),
                 Act::MoveAway(_) => format!("move `{named}` out of the way ({how})"),
                 Act::MoveOut(_) => format!("move the file `{named}` out of its path ({how})"),
+                Act::MoveLinkOut(_) => format!("move the link `{named}` out of its path ({how})"),
+                Act::PutTheFileItself(_) => {
+                    format!("put the file itself in the place of the link `{named}` ({how})")
+                }
                 Act::ReplaceWithDirectory(_) => {
                     format!("replace the link `{named}` with a real directory ({how})")
                 }
@@ -1357,6 +1385,8 @@ impl Sandbox {
                     .map_err(|e| e.to_string()),
                 Act::MoveAway(_) => self.move_away(&path),
                 Act::MoveOut(_) => self.move_out(&path),
+                Act::MoveLinkOut(_) => self.a_link(&path).and_then(|()| self.to_moved(&path)),
+                Act::PutTheFileItself(_) => self.put_the_file_itself(&path),
                 Act::ReplaceWithDirectory(_) => self
                     .a_link(&path)
                     .and_then(|()| fs::remove_file(&path).map_err(|e| e.to_string()))
@@ -1697,6 +1727,20 @@ impl Sandbox {
             return Err("not done — no regular file stands there".to_string());
         }
         self.to_moved(path)
+    }
+
+    /// Put the regular file itself where the link at `path` stands: the bytes of the file
+    /// the link leads to, written to a regular file at the link's own path once the link
+    /// is gone. What the link led to is read and never written.
+    fn put_the_file_itself(&self, path: &Path) -> Result<String, String> {
+        self.a_link(path)?;
+        if !fs::metadata(path).is_ok_and(|target| target.is_file()) {
+            return Err("not done — the link leads to no regular file to copy".to_string());
+        }
+        let bytes = fs::read(path).map_err(|e| e.to_string())?;
+        fs::remove_file(path).map_err(|e| e.to_string())?;
+        fs::write(path, bytes).map_err(|e| e.to_string())?;
+        Ok("the link is gone and a copy of the file it led to stands there".to_string())
     }
 
     /// Move the entry at `path` to `moved/`, under the path it had from the repository

@@ -2,6 +2,133 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The route catalog's sites of `config`, `start` and `doc read`, and `migrate`'s two rows: `jigc config set`'s five refusals, a task re-entered under another workflow, and the store's refusal over a home that is no regular file at every door that raises it — 57 cases, 6 of them red under three new keys and one that stands; a link is moved out of its path and the file itself put in a link's place (the human's ruling of 2026-10-11, four families)
+
+**What.** Three more files wired through `tables!` — [route_catalog/config.rs](crates/cli/tests/route_catalog/config.rs), [start.rs](crates/cli/tests/route_catalog/start.rs), [doc_read.rs](crates/cli/tests/route_catalog/doc_read.rs) — each with its arm by construction, in the runner's one-at-a-time group: the five sites of `config`, the one of `start` and the one of `doc read` the ruling takes in. Six rows whose caller's diff was read move from the owed list to the scheduled list, `migrate`'s two among them. **What is left on the owed list is the four dynamic sites no family has.** No product source changes; nothing is fixed.
+
+### The caller reading — 6 sites, none in
+
+Read by the rule of the entry below this one: in where a changed line computes the refusal's condition or its route, out where the change is a refusal of its own that answers earlier, a binding, or a line behind.
+
+| site | the caller, and the changed lines read | | the reason |
+|---|---|---|---|
+| `start.rs::read_workflow` · `workflow-refs.unknown-workflow` | `compose_core`, `compose_minted_in_repo`, `compose_task_workflow` — one field more on what each composes; in `compose_core` a refusal of its own for a doc-only workflow minted from a linked worktree | out | all of it stands behind the definition's read |
+| `engine/compose.rs::workflow_refs_with_fills` · `workflow-refs.slot-fill-orphan` | the same three | out | the field decides nothing; the new refusal answers earlier under its own code, and no changed line computes the fills |
+| `task.rs::reject_fixed_identity_slug` · `store.fixed-identity` | `rename.rs::run` — the home's own entry asked at three places | out | asked ahead of all three |
+| `task.rs::reject_malformed_work_unit_id` · `work-unit.malformed-id` | `doc.rs::resolve` — one field more on the active task | out | the first statement there; the other two callers the count names do not call it |
+| `migrate.rs::adjudicate_source_path` · `migrate.source-untrackable` | `migrate_in_repo` — a binding ahead, a refusal of its own behind | out | ranked ahead of the new refusal by its own comment |
+| `migrate.rs::adjudicate_source_tracked` · `migrate.source-untracked` | `migrate_in_repo` — the same refusal, ahead of this one | out | it answers earlier from a linked worktree under its own code, whose site has its cases: states taken away, none brought |
+
+**The most doubtful of the six** is the last: a guard now stands directly in front of the refusal. It is left out as `base_mismatch_finding` was — the guard is a site of its own, catalogued, and what git says of the source is asked as it was.
+
+### The sites
+
+| site | class in the count | functions read | causes | followed | a reason | cases | red | minutes | new vocabulary |
+|---|---|---|---|---|---|---|---|---|---|
+| `config.rs::run_set` · `config.untrackable-root` | unchanged · callee changed | 3 | 4 | 4 | 0 | 5 | 0 | 3 | — |
+| `config.rs::run_set` · `config.workbench-root` | unchanged · callee changed | 2 | 2 | 2 | 0 | 2 | 0 | 1 | — |
+| `config.rs::run_set` · `config.unusable-root` | unchanged · callee changed | 2 groups | 8 | 8 | 0 | 8 | 0 | 3 | — |
+| `config.rs::run_set` · `config.value-rejected` | unchanged · callee changed | — | — | — | the site: `not-constructible` | 0 | 0 | 2 | — |
+| `config.rs::repoint_failed` · `config.repoint-failed` | route-changed | 5 groups | 13 | 9 | 4 `not-constructible` — one a declared bound | 9 | 0 | 12 | — |
+| `start.rs::reenter_in_repo` · `workflow-refs.workflow-mismatch` | unchanged · callee changed | 3 | 3 | 3 | 0 | 3 | 0 | 3 | — |
+| `engine/store.rs::home_shape_refusal` · `store.home-not-regular-file` | new-code | 8 groups | 32 | 25 | 7 `not-constructible` | 30 | 6 | 22 | `Act::MoveLinkOut` · `Act::PutTheFileItself` |
+| **seven sites** | | | **62** | **51** | **11, and 1 site** | **57** | **6** | **46** | |
+
+What each count is derived from, the causes without a case and the ways not followed are the files' `READINGS`. *Minutes* are the machine's clock from a family's first probe to its arm green, split by estimate; the frame's two pieces, the gate and the named-binary run are not in them. Of the 51 cases that hold, 16 hold with the operand implied: the nine of the re-point — an object the message names and the route does not print, or the refused command again — and seven at the record's doors and the milestone's create, where the route prints no line for the re-run.
+
+**The four sites of `run_set` are taken in by the ruling's second clause** — the function they stand in calls `reject_repoint`, which changed — and the change is one argument at the function's end, behind all four.
+
+- **Three of them name one act and print no line for it**: *re-run with a root …*. The root is the reader's own, and the route cites `jigc config list` beside it, so the frame's re-run is refused there. A case runs the cited line — fifteen cases, all marked, all hold — and the re-run under another root is a way with a reason, driven by hand at each refusal: exit 0.
+- **`config.value-rejected` has a reason and no case**: *set a value matching the knob's declared type* prints nothing to run, the value is the reader's, and the refused command again is the refusal again. Driven by hand over an enum knob and a bool knob.
+
+**The re-point's refusal, and what of its changed route is followed.** The fix pass added one clause to the route — the file the sweep parked on its way, where it stood and where it is now. **No case follows that clause**: the one constructible state that prints it (a doc gone from the working tree, a file in the way parked first) wants the doc brought back, the route then prints two paths, and the frame refuses an object of a case's own wherever a route prints a path. It was driven by hand and is in the findings file (§8). Nine other causes have a case. Two of them are a doc whose own home is a link: the cause the refusal carries is then the store's whole refusal, the finding prints two `route:` lines, and the frame lifts the first — the store's — which the case follows.
+
+**`store.home-not-regular-file`: one constructor, a door a route.** Followed at the task's finalize (a doc minted, under a fixed identity, edited; a migration's), the milestone's finalize (a sub-task's doc minted, under a fixed identity, edited), `jigc milestone create`, four of the five doors that rewrite the record, `jigc rename` at three homes, `jigc doc rename`, and a create under an entry that only creates. Seven causes have a reason: three doors print the refusal where the frame does not read one (inside another refusal's message at the two root knobs — followed at that site; as a row of `jigc migrate-corpus`'s report), two take a pack of the reader's own, one is a race, one names no source for the file it asks for, and `add-from-spec` shares a preflight with four doors that have a case.
+
+### The frame, grown twice — each piece red first against a runner that declared it and did nothing
+
+- **`Act::MoveLinkOut(operand)` — a link moved out of its path.** *Move the link out of the doc's home* says where from and never where to: the link itself goes to the sandbox's `moved/`, as a file and a directory do, whether it leads somewhere or nowhere, and what it led to is not touched. An entry that is no link is not moved by it.
+- **`Act::PutTheFileItself(operand)` — the regular file itself, in a link's place.** *Put the regular file itself there — for a link, a copy of the file it points at, in the link's place*: the link is removed and a regular file with the bytes of the file it led to is written at its path. The bytes are the link's target's — the product's state, never a case's; a link that leads to no regular file has none, and the act is not done.
+
+Both take an operand, so the arm that refuses the marked form wherever a path is printed and the arm that holds file acts to the sandbox each gained them (fifteen and fourteen acts). Red, the five planted cases: `planted-a-link-to-a-file-to-move-out — followed, another failure, where followed, holds was planted`, and so the other four. `route_catalog::a_link_is_moved_out_of_its_path_and_the_file_itself_is_put_in_a_links_place`.
+
+**The frame's panic over a deleted directory was not met**: no case of these families stands in a directory its route removes.
+
+### The red cases — three keys new, one that stands, in the pilot's findings file (§9)
+
+| key | cases | classification | `doubt` |
+|---|---|---|---|
+| `r1-distinct-identity-routes-print-a-line-with-placeholders-for-the-readers-own-choice` — stands, from the entry below | 2 more | followed, a printed line no shell can split | 2 |
+| `r1-home-shape-destination-routes-print-a-line-with-a-placeholder-for-another-slug` | 2 | followed, a printed line no shell can split | 2 |
+| `r1-home-shape-edited-doc-route-says-copy-what-the-link-points-at-over-a-link-to-nothing` | 1 | followed, the same refusal again | 0 |
+| `r1-home-shape-migration-route-review-step-exits-4` | 1 | followed, another failure | 1 |
+
+- **One of the six rests on no reading**: a task that edits a committed doc whose home became a link to nothing is told to put there *a copy of the file it points at*.
+- **None of the 57 cases stands on a declared bound.**
+
+### The doubts — each one of the questions already listed
+
+| cases | the route says | which question |
+|---|---|---|
+| 15, all hold | *re-run with a root … ; `jigc config list` shows the value in force and the layer it wins from* | a command cited for what it prints — the gate's third and the pilot's fourth |
+| 1 | *re-run `jigc task finalize <id>` to review the fidelity diff and `… --approve` to land it* | the same |
+| 4 | `… --slug <other-slug>` · `jigc doc create <type> --title <title> --slug <slug> --task <id>` · `… --from-file <payload> …` | what the pilot's first question left open, over a value nobody but the reader has |
+
+**The first of these questions was ruled by the human on 2026-10-13, as this task was told by the session that orchestrates it: a line a route cites for what it prints is held to its words — it passes when its output says what the route promised, whatever it exits with.** Nothing here carries the ruling out: the sixteen cases are marked and followed as before, held to exit 0, and their marks say they are to be followed again; the act that holds a cited line to a witness, and the ruling's own entry, are the next task's. No new question.
+
+### The previous release's binary, side by side
+
+From one run of the named-binary arm over the whole catalog, on the cases and the frame of this commit (the binary of `jigc 1.0.0-rc.24`, sha256 `accf3996ae4a66d13adb4bb03253606e0037b5ddb7be653a314a908f6b88ab5d`; 1028.6 s over 617 cases, load average 112 at its start and 91 at its end, other lanes' gates beside it, none of this branch's). What a line says and does not say is the pilot's record, §8: a state is built by the binary that is asked; *not provoked* is not *nothing happened*; a case's acts were written by reading this tree's route.
+
+| family | lines | the same classification on both | not provoked on `rc.24` | other |
+|---|---|---|---|---|
+| `config` | 24 | 22 — over the same route in all: holds 15 · holds, operand implied 7 | 2 | 0 |
+| `start` | 3 | 3 — over the same route: holds | 0 | 0 |
+| `doc read` | 28 | 0 | 28 | 0 |
+| `doc write`, again | 18 | 18 — as the entry below this one has them | 0 | 0 |
+
+- **`config`'s two** are the cases of a doc whose own home is a link: on `rc.24` the same `jigc config set` exits 0, and the witness — the copy the link leads to — is as it was.
+- **`doc read`'s twenty-eight are all of it**: `rc.24` has no such code. Its refusing command exits 0 in 18 of them, 1 in 8, 3 in 1 and 4 in 1; and in 7 of the 18 a witness changed — the file outside the repository that the link leads to: the edit of a committed doc over a link to a copy, the four doors of the record, and `jigc rename` at the doc's own home and at a referrer's.
+- **So all six red cases of this commit are *not provoked* on `rc.24`**: they stand at a refusal the fix pass made.
+- **Two cases of `doc read` are in no line of that run**: the milestone's boundary over a sub-task's doc under a fixed identity and over one it edits were added after it. Both hold on this tree's binary.
+
+### The fence
+
+- **`CATALOGUED` holds eight prefixes more** — `config`, `overrides`; `pack`, `workflow`, `workflow-refs`; `store`, `work-unit`; `migrate` — thirty in all. **Red by data when they joined: thirty-six code-shaped literals no listed site spells.**
+
+| literals | what they are | answered by |
+|---|---|---|
+| 27 of `workflow-refs.*` | a finding's code, handed to `engine::compose::blocking_workflow_refs` — the constructor's thirty-eight calls in `compose.rs` and `data_value.rs` | `MINTED_AT` — the site is scheduled, classed `unchanged` |
+| 7 of `store.*` — `no-such-item`, `no-such-leaf`, `no-such-section`, `not-staged`, `transient-type`, `unknown-type`, `unparseable` | a finding's code, handed to `engine::store::block`; three of them to `engine::milestone::store_block` as well, one to the two doors' `refuse` | `MINTED_AT` — the first site is one of the four still owed |
+| `config.rollback-conflict` | the third of the five door codes of `rollback::rollback_conflict_finding` | `MINTED_AT` |
+| `migrate.review-pending` | an error identity of the invocation log, for the exit-4 review hold; no finding carries it | `NO_CODE` |
+
+  **None is a site the list misses.** The twenty-seven were answered by the constructor's calls and not each traced to its own.
+- **What the two lists hold when this commit lands.**
+
+| family | owed — a case or a reason | owed — the caller's diff to be read | scheduled |
+|---|---|---|---|
+| `task finalize` · `milestone` · `doc write` | 0 | 0 | 42 · 23 · 20 |
+| `config` | 0 | 0 | 14 |
+| `start` | 0 | 0 | 9 |
+| `doc read` | 0 | 0 | 4 |
+| `migrate` | 0 | 0 | 2 |
+| `task discard` · `ingest` · `task bind` · `validate` | 0 | 0 | 11 |
+| `unassigned` — the dynamic sites | 0 | 4 | 16 |
+| **together** | **0** | **4** | **141** |
+
+*Red first:* with the four families' thirteen rows taken off the owed list and nothing in their place, the fence named all thirteen.
+
+**Not established.**
+
+- **The clause the fix pass added to the re-point's route**: driven by hand, followed by no case.
+- **`jigc relocate`, `jigc migrate-corpus` and `add-from-spec`** over a home that is no regular file: no case; the product's own suite drives each door (`home_shape_one_code.rs`).
+- **A special file at a home** — the constructor's third shape: a declared bound, never planted.
+- **That each of the twenty-seven `workflow-refs.*` literals is handed to the one constructor**: read by the calls, not literal by literal.
+- **The six sites left out**: that a change is off the path is this task's reading, in each row's note.
+- **A cause nobody constructed** beyond the eleven given a reason.
+- **Linux**: the run follows the task's last commit.
+
 ## 2026-10-12 — The route catalog's three sites of `doc write`, and ten whose caller's change is off the path: a retitle in the milestone's record, a create whose title would never be written, a create over a home that is taken — 18 cases, 10 of them red under two new keys; the family's two prefixes join the vocabulary the fence holds (the human's ruling of 2026-10-11, the sites of `doc write`)
 
 **What.** A fifth command's file, [route_catalog/doc_write.rs](crates/cli/tests/route_catalog/doc_write.rs), wired through `tables!` — so its arm, `route_catalog::the_cases_are_followed_and_the_expected_red_list_is_exact::doc_write`, exists by construction and stands in the runner's one-at-a-time group — with the cases of the three sites of `doc write` the ruling takes in; and ten rows moved from the owed list to the scheduled list, each with the change of a caller that was read and why it is off the path. **Nothing of `doc write` is on the owed list.** No product source changes; nothing is fixed; the frame grew by nothing.
