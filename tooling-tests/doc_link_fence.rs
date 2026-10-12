@@ -159,6 +159,7 @@ const LIVE_DOCS: &[&str] = &[
     "ideas/project-authored-doctype-packs.md",
     "ideas/reference-doctype.md",
     "ideas/root-changelog-render.md",
+    "ideas/route-self-check.md",
     "ideas/scheduled-staleness-sweep.md",
     "ideas/sequential-milestone.md",
     "ideas/slug-minting-ergonomics.md",

@@ -2,6 +2,69 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The triage's definition follows the reshaped `test` stage: its entries are one file, typed once, a kind with its evidence on every new one, a lead that is graded and not verified, a red result under its own key — each bound on a call no prompt spells yet; and with it one idea parked, the route catalog's row discharged on the human's ruling, and two rows added (the orchestrating session's own edit, the plan's step `O2`; one ruling of the human's and one rule agreed with the human, relayed)
+
+**What this entry is.** One commit of the orchestrating session's own: the definition [finding-triage.md](.claude/agents/finding-triage.md), edited as the build's plan reserves it ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §4, *The orchestrating session's own steps*, `O2`) — the definition's half of `K2` and of `K1a`, and the sentence the row `wf-r-m5` owed — and four things beside it: an idea parked, two rows of the pending list discharged, two added, and one line of the link fence's list. No script, no harness, no product source. It was drafted outside the repository by an agent that wrote nothing in it, and applied here, because no builder edits a definition.
+
+**1. What the definition now says.** Everything it said stands but one sentence (part 3). Three paragraphs changed — *Read first* gained the kit's sentences, the last sentence under the grades and one of *What you may touch* were reworded — and one paragraph with its list was added, between *Return* and *Halt*.
+
+- **The kit, in *Read first*.** Where the prompt spells the lookup kit's call, it is the triage's first — `dev/stabilize-record kit --run <run> --role triage` — in the words the entry of `K1a` gave: the role is `triage`, the sentence names no rig, the closing condition is the kit's last part, and the opening record is read only where the kit says the run names no entry.
+- **The entries are one file, typed once** (`K2`). A JSON array the triage writes with its file tool and hands over by the one call the prompt spells; the script renders the report from it. Every handed finding has a number, every entry says which it folds, every number is in exactly one entry and no entry folds nothing — the script's partition takes the place of *count them in and count them out*. A new finding brings its row's cells; **a finding found again says five things — its key, `found`, the grade, why, what it folds — and nothing of a row.**
+- **A kind with its evidence, and the rule that assigns it.** Read off the report, the first that holds: `route` — it quotes the line a refusal printed as its route, with the refusal's code where the report shows one; `behaviour` — it quotes none and carries the commands that show the misbehaviour; `lead` — neither. The triage copies and never completes: no route line rebuilt from a description, no code or site the report does not show.
+- **A lead is graded, and is not verified.** *A finding that came without a repro block is graded unclear* becomes, under that call, *one that quotes no printed route and carries no commands is a lead*: graded as the report supports, kept out of the queue by its kind, listed for the human by its door.
+- **Two sources are no reporter.** A red result is a source under the key its row is filed with (`red-<item>`), and gets one entry under that key, found again; the rows nobody graded are each found again under their own.
+- **The report and the return.** For a graded stage the triage writes no report of its own: the call writes it. Its return is the line the call printed — a path and a hash — and no entry is typed a second time.
+- **The sentence `wf-r-m5` owed.** A missing block is said in the entry's `why` and in the report, and is no entry of its own.
+
+**2. What makes each addition inert.** The harness's triage prompt is unchanged by this commit, and `T5a` is what changes it.
+
+| Addition | It binds only when the prompt | Today's prompt |
+|---|---|---|
+| the kit's sentences | spells the kit's call | names no `kit`: of the record script it spells `state`, `untriaged` and `report` |
+| the entries' paragraph and its whole list — the file, the numbers, the kind, the lead, the two sources, the rendered report, the return | spells a `dev/stabilize-record triage` call | spells none; and the script refuses that writer in a run without an order, so a call made by mistake writes nothing |
+| *What you may touch* names the `kit` read and the `triage` call | *only where your prompt spells them* | spells neither |
+
+**3. One sentence is not inert, and is meant not to be.** `wf-r-m5`'s. The definition asked for an entry the harness's arithmetic refuses — entries plus merged must equal the findings handed in, or the stage halts — so the old sentence was wrong under the prompt a stage sends today, and the new one is right under both. Its trigger was *before a stage runs with real agents*, and the canary ran before it was made; its triage read the row and its counts balanced.
+
+**4. Chosen where the plan and the entries left a word open.**
+
+- **A paragraph binds on the call, not on a labelled line.** The other contracts of a definition bind on a label (`REPORT:`). A label for this one would be a key of the harness's `LABELS`, which the harness fence's arm (d) holds to a definition that binds on it — a name this commit would have to choose for `T5a`, whose builder cannot edit a definition. The call is what the entry of `K2` already has `T5a` spell.
+- **`route` before `behaviour`.** A finding that quotes a route and carries commands is a route item: the ruling ranks by what an item is about, the script takes one kind's evidence and refuses the other's beside it, and the commands stay in the repro block.
+- **A kind on every *new* entry.** The plan's row says *on every entry*; the script refuses a kind on a finding found again, whose row keeps its own (the entry of `K2`). The definition follows the script.
+- **A lead still has a grade.** The script takes no entry without one of the five. The definition has the lead graded by the doubt rules as they stand, and says that its kind, not its grade, keeps it out of the queue.
+- **A red result's entry is under its source's key and no other**, and no key is minted for it. Whether a reporter's finding may be folded into it is left to the merge rule that stands: the same door and the same broken behaviour.
+- **A halt is a report like any other.** A halted triage hands over no entries, and reports by the `REPORT:` line's call where its prompt carries that line. Whether the new prompt carries it is `T5a`'s.
+- **Nothing is named to verify, *unless the prompt's return asks for it*.** The queue is the script's; the clause leaves `T5a` its schema.
+- **The old sentences stay.** *Becomes*, in the plan's row, is built as *is replaced under that call*: struck outright, the sentence about a missing block, the *Return* paragraph and the arithmetic would change what a triage does under today's prompt.
+- **One example, with made-up values**, of an entries file — the first fenced block in any definition. The arms that read the definitions read labels, the bold sentence a paragraph opens with and the sentences they name; the block holds none of them.
+
+**5. An idea parked.** A route check inside jigc itself — a verb that, for the cascade of the project it runs in, provokes the refusals that cascade can produce, follows each printed route and reports the ones that do not work — because the route catalog protects only what this repository ships. The human's, 2026-10-11: [ideas/route-self-check.md](ideas/route-self-check.md), indexed from [VISION.md](VISION.md) → Open questions; its triggers are an outside pack author's first report of a route that led nowhere, or the port.
+
+**6. The pending list** ([decisions-pending.md](implementation/decisions-pending.md)).
+
+- **`wf-route-catalog`, discharged.** The pilot is built on the branch `fix/rc24-route-catalog` — two commands, `setup` and `uninstall`, 54 sites, 353 cases — and reaches this branch at the join, with its record and its entries. **The human ruled on 2026-10-11**, on a count of the blocking refusal sites sorted against the previous release's source — outside the two commands 183 blocking sites in 12 families, about 14 of them touched by the fix pass, against 33 of the two commands' 39: **catalogue now only the sites the fix pass touched outside the two commands; the rest before the port begins**, in the human's words *so we can detect misleading routes we may need that need to be fixed before the migration*. The entry of record for that ruling, with what was built on it, is the other branch's (*Which families the route catalog takes in*) and arrives with the merge; this one records the ruling where the row is struck.
+- **`wf-r-m5`, discharged** by part 3.
+- **Added, `wf-route-catalog-rest`** — the rest, due **before the port (M56) begins: after the 1.0.0 publish, before the port's first act**, and what it finds is fixed before the migration. It carries what the struck row leaves unruled: what *works as printed* means for a route that prints no operand, or that is prose.
+- **Added, `wf-route-cases-same-commit`** — the rule agreed with the human the same day, for the build workflow: *a task that adds or changes a refusal writes its route-catalog cases in the same commit, one per cause found by reading the callee; a new route may not be born red: a new expected-red entry is a halt to the human.* One sentence each in the dev workflow, the increment workflow and the two build definitions, due **at the join** (the plan's `J2`), because they name a suite this branch does not hold.
+- **Not written here.** The human's ruling of the same day on which states are declared bounds for *every refusal's route works as printed* is the other branch's entry too. No row waits on it; the one list of declared bounds and the row of what the opening record carries owe it once it is in this tree.
+
+**7. One line of a test.** [doc_link_fence.rs](tooling-tests/doc_link_fence.rs) lists every live doc by name, so the new idea file is one more line of `LIVE_DOCS`. The idea file links nothing this branch lacks: the pilot's record and the catalog's section of the pinning document are named in words, and it says that they arrive with the merge.
+
+**8. What the next steps owe because of this.**
+
+- `T5a`: the new prompt spells the `triage` call whole — the file after `--from`, a `<source>=<count>` word for every source — and numbers every handed finding from 1; a red result's source is named by its key. If it names the kit ahead of `K1b`, the role's word is `triage`. It decides whether the prompt still carries the `REPORT:` line, which is how a halted triage reports, and what the return's schema asks beyond the path and the hash.
+- `O3`, `O4`: the kit's sentence in the form used here — *where your prompt spells the kit's call, that call is your first* — so that each is inert until `K1b`.
+- `O5`, or a step beside it: **the plan's row for `O5` does not name this definition.** After `T12` no prompt lacks the call, and the sentences the entries' paragraph replaces — the *Return* paragraph's list, the arithmetic, the sentence about a missing block, *names what an independent verifier must re-drive* in the description — are then read by nobody.
+- `KR`: the paragraph all eight reporters repeat says that the file tool writes the report *and, where your prompt names one, the one file of a scope or a batch*. The entries' file is a third, and the verifier's filed verdict (`O3`) a fourth; the list is changed in every copy or in none.
+- `T10`: `wf-triage-reads-harness` keeps its other half until `T5a`'s prompt says what the return is held to.
+
+**9. Not established.**
+
+- **No agent has read the definition under either prompt.** That an agent given today's prompt leaves the new paragraph alone is what its words say, and nothing drives it; no fence holds a definition's wording to its prompt (`wf-defs-fence`).
+- **That the definition and `T5a`'s prompt agree** — the prompt is not written.
+- **The rule that assigns a kind, on real reports.** It was written from the script's contract and the rulings, and no report was sorted by it; what a triage does with a route a reporter paraphrased is the first supervised run's to show.
+- **The definition's size**: 11.3 KB before, 19.1 KB now, read by one agent a stage.
+
 ## 2026-10-12 — A cell of a round's triage record has one owner where two writers write the row: an entry that says no verdict writes triage's grade and leaves the verifier's three, and the ledger's grade follows from the row as the entry leaves it (a finding `K3`'s builder reported and did not touch; the fixer's choices inside it)
 
 **What.** In a run with a queue [`dev/stabilize-record`](dev/stabilize-record) `triage-set` no longer takes a verdict off a row. The script's header is the contract; in one place:
