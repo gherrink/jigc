@@ -312,6 +312,19 @@ pub enum Act {
     /// target git repository* asks of a reader who stands outside one. The repository is
     /// the runner's, as every object is that a route names and does not print.
     RerunInTheRepository,
+    /// **Go where the route says** — the span of this index is `cd <directory>`, as
+    /// printed: every command of the route that follows is started there, and a path the
+    /// route prints is read from there. The directory is the route's, never the case's; a
+    /// span that is no `cd` line is a fault of the case, and a directory outside the
+    /// sandbox is gone to by nobody — the act is recorded as not done.
+    Cd(usize),
+    /// **[`Act::Rerun`] with the flag the route prints** — what *re-run … with
+    /// `--carry-staged`* asks for: the refusing command once more, where the case stands,
+    /// with the printed span of this index appended as its last word. The span is the
+    /// flag, one word that opens with `--`; any other span is a fault of the case. Held as
+    /// a re-run is: refused wherever the printed route holds a command line of the
+    /// product, and no better than [`Classification::HoldsOperandImplied`].
+    RerunWith(usize),
 }
 
 impl Act {
@@ -329,7 +342,12 @@ impl Act {
             | Act::Mend(operand)
             | Act::MakeReadable(operand)
             | Act::MakeWritable(operand) => Some(operand),
-            Act::Run(_) | Act::RunFilled(_) | Act::Rerun | Act::RerunInTheRepository => None,
+            Act::Run(_)
+            | Act::RunFilled(_)
+            | Act::Cd(_)
+            | Act::Rerun
+            | Act::RerunInTheRepository
+            | Act::RerunWith(_) => None,
         }
     }
 }
@@ -931,6 +949,9 @@ struct Sandbox {
     under_test: Duration,
     /// How many children have run — each writes to files of its own.
     children: AtomicUsize,
+    /// Where the route has sent its reader ([`Act::Cd`]), once it has: the directory the
+    /// route's later commands are started in. Until then the case stands where it says.
+    went: Mutex<Option<PathBuf>>,
     _scratch: ScratchDir,
 }
 
@@ -943,6 +964,7 @@ impl Sandbox {
             root,
             under_test,
             children: AtomicUsize::new(0),
+            went: Mutex::new(None),
             _scratch: scratch,
         };
         for dir in [
@@ -1184,7 +1206,12 @@ impl Sandbox {
         seen: &mut Seen,
     ) -> Result<String, String> {
         let code = case.code();
-        let stand = self.at(case.from);
+        let stand = self
+            .went
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .unwrap_or_else(|| self.at(case.from));
         let span = |at: usize| {
             spans.get(at).copied().ok_or_else(|| {
                 format!(
@@ -1215,7 +1242,12 @@ impl Sandbox {
                 Act::Mend(_) => format!("mend the file `{named}` ({how})"),
                 Act::MakeReadable(_) => format!("make `{named}` readable ({how})"),
                 Act::MakeWritable(_) => format!("make `{named}` writable ({how})"),
-                Act::Run(_) | Act::RunFilled(_) | Act::Rerun | Act::RerunInTheRepository => {
+                Act::Run(_)
+                | Act::RunFilled(_)
+                | Act::Cd(_)
+                | Act::Rerun
+                | Act::RerunInTheRepository
+                | Act::RerunWith(_) => {
                     unreachable!("a run takes no operand")
                 }
             };
@@ -1262,7 +1294,12 @@ impl Sandbox {
                 }
                 Act::MakeReadable(_) => self.permit(&path, 0o400, "its owner may read it"),
                 Act::MakeWritable(_) => self.permit(&path, 0o200, "its owner may write it"),
-                Act::Run(_) | Act::RunFilled(_) | Act::Rerun | Act::RerunInTheRepository => {
+                Act::Run(_)
+                | Act::RunFilled(_)
+                | Act::Cd(_)
+                | Act::Rerun
+                | Act::RerunInTheRepository
+                | Act::RerunWith(_) => {
                     unreachable!("a run takes no operand")
                 }
             };
@@ -1357,6 +1394,62 @@ impl Sandbox {
                     format!("run `{line}` (span {at}{how})"),
                     self.run(
                         self.tested(case, program, &stand).args(&words[1..]),
+                        self.under_test,
+                    ),
+                )
+            }
+            Act::Cd(at) => {
+                let line = span(at)?;
+                // Split from the sandbox's root, which stands whatever the route's earlier
+                // commands removed: a command that lands a milestone takes the worktree its
+                // reader stood in with it, and `cd` is how that reader leaves.
+                let words =
+                    super::shell_words_or(line, &self.root, &self.home()).unwrap_or_default();
+                let [cd, to] = words.as_slice() else {
+                    return Err(format!(
+                        "an act goes where span {at} says, and `{line}` is no `cd` line: \
+                         `cd` and one directory"
+                    ));
+                };
+                if cd != "cd" {
+                    return Err(format!(
+                        "an act goes where span {at} says, and `{line}` is no `cd` line: \
+                         `cd` and one directory"
+                    ));
+                }
+                let there = stand.join(to);
+                // The directory itself is asked, resolved: a `cd` follows a link.
+                let inside = fs::canonicalize(&there)
+                    .is_ok_and(|there| there.is_dir() && there.starts_with(&self.root));
+                if !inside {
+                    seen.failed = true;
+                    return Ok(format!(
+                        "go where `{line}` says (span {at}): not done — it names no \
+                         directory inside the case's sandbox"
+                    ));
+                }
+                *self.went.lock().unwrap_or_else(PoisonError::into_inner) = Some(there);
+                return Ok(format!("go where `{line}` says (span {at}): there"));
+            }
+            Act::RerunWith(at) => {
+                let flag = span(at)?;
+                if !flag.starts_with("--") || flag.split_whitespace().count() != 1 {
+                    return Err(format!(
+                        "an act runs the refusing command again with span {at}, `{flag}`, \
+                         which is no flag: one word that opens with `--`"
+                    ));
+                }
+                (
+                    format!(
+                        "run the refusing command again with the printed `{flag}` (span \
+                         {at}), `jigc {} {flag}`, where the case stands (no command line is \
+                         printed)",
+                        case.refusing.join(" ")
+                    ),
+                    self.run(
+                        self.tested(case, binary, &stand)
+                            .args(case.refusing)
+                            .arg(flag),
                         self.under_test,
                     ),
                 )
@@ -1831,7 +1924,10 @@ fn followed(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed
             }
         }
         for act in case.acts {
-            if matches!(act, Act::Rerun | Act::RerunInTheRepository) {
+            if matches!(
+                act,
+                Act::Rerun | Act::RerunInTheRepository | Act::RerunWith(_)
+            ) {
                 seen.implied = true;
                 if let Some(at) = command_spans(&spans).first() {
                     return Err(sandbox.shown(&format!(

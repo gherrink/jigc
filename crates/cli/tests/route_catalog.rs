@@ -8,8 +8,8 @@
 //! [`support::route_case`](crate::support::route_case), which says what a case is and what
 //! the runner does; this file is the **expected-red list** ([`EXPECTED_RED`]) and the arms
 //! that hold the frame to its rules. **A command's cases are a file of their own under
-//! `route_catalog/`**, declared here by `#[path]` inside [`tables!`] — `setup.rs` and
-//! `uninstall.rs`.
+//! `route_catalog/`**, declared here by `#[path]` inside [`tables!`] — `setup.rs`,
+//! `uninstall.rs` and `task_finalize.rs`.
 //! They stand there, and not beside this file, because that directory also holds the
 //! committed list of refusal sites: a suite file beside a directory of its own name makes
 //! the directory an aggregation for the registration fence
@@ -62,6 +62,12 @@
 //! changed on the path to the refusal, get their cases now, family by family, and are rows
 //! of [`OWED`] until they have them; every other blocking site is a row of the scheduled
 //! list ([`SCHEDULED`], `route_catalog/scheduled.tsv`), owed a case before the port begins.
+//! The first of those families has its file, `task_finalize.rs` — the gate — with seven of
+//! its fifteen sites so far. With them the frame grew twice, each piece red first: the
+//! refusing command is run again with the flag a route prints
+//! ([`the_refusing_command_is_run_again_only_where_the_route_prints_no_command_line`]),
+//! and a reader goes where a route sends them, and nowhere outside the sandbox
+//! ([`a_reader_goes_where_the_route_says_and_nowhere_outside_the_sandbox`]).
 //!
 //! **A site with a case says what was read to count its causes**
 //! ([`Reading`], a command's `READINGS`): the functions, the count with its derivation,
@@ -285,6 +291,8 @@ tables! {
     mod setup;
     #[path = "route_catalog/uninstall.rs"]
     mod uninstall;
+    #[path = "route_catalog/task_finalize.rs"]
+    mod task_finalize;
 }
 
 use setup::{HOOK, HOOK_LINK_SITE};
@@ -645,6 +653,35 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "uninstall-settings-a-special-file",
         ],
     ),
+    (
+        FINALIZE_WITHOUT_ITS_ID,
+        Classification::AnotherFailure,
+        &[
+            "finalize-nothing-staged-a-new-file-added-and-finalized-as-printed",
+            "finalize-nothing-staged-a-tracked-file-deleted-added-and-finalized-as-printed",
+            "finalize-nothing-staged-a-tracked-file-modified-added-and-finalized-as-printed",
+        ],
+    ),
+    (
+        STAGE_ROUTE_NAMES_OTHER_CAUSES,
+        Classification::SameRefusalAgain,
+        &["finalize-stage-failed-the-docs-home-ignored-re-run-as-printed"],
+    ),
+    (
+        START_LINE_MINTS_NOTHING,
+        Classification::AnotherFailure,
+        &["finalize-amend-staged-doc-an-edit-refused-and-the-front-door-run-as-printed"],
+    ),
+    (
+        POINTER_REFUSES,
+        Classification::SameRefusalAgain,
+        &["linked-doc-second-write-refused-the-preview-asked-where-it-lands"],
+    ),
+    (
+        POINTER_REFUSES,
+        Classification::AnotherFailure,
+        &["linked-doc-write-refused-on-a-detached-head-the-finalize-asked-for-its-route"],
+    ),
 ];
 
 // The canary's keys — the route of the hook's link refusal names where the link leads, and
@@ -758,6 +795,26 @@ const LATE_REFUSAL: &str =
 /// A FIFO at a file the teardown reads — `CLAUDE.md`, the settings file, the hook: the
 /// command does not end, with `.jigc/` already removed.
 const UNINSTALL_HELD: &str = "r1-uninstall-fifo-at-a-file-the-teardown-reads-holds-the-command";
+
+/// `jigc task finalize` refuses over a dirty tree with an empty index, and the route's
+/// second printed line is `jigc task finalize` with no task id: run as printed it is
+/// refused by the argument parser.
+const FINALIZE_WITHOUT_ITS_ID: &str =
+    "r1-finalize-nothing-staged-route-prints-finalize-without-its-id";
+
+/// git refuses to stage a promoted doc whose home an ignore rule covers; the route names
+/// a lock and a rule over three other paths, and the printed re-run refuses again.
+const STAGE_ROUTE_NAMES_OTHER_CAUSES: &str =
+    "r1-finalize-stage-failed-route-names-a-lock-and-three-paths-and-the-docs-home-is-ignored";
+
+/// An edit refused in an amend task: the route says the printed front-door line mints an
+/// ordinary task, and under the shipped default it presents the workflows and mints none.
+const START_LINE_MINTS_NOTHING: &str =
+    "r1-finalize-amend-staged-doc-route-says-the-start-line-mints-and-it-presents-the-workflows";
+
+/// A route cites a command for what it prints — *names where it lands*, *names that
+/// route* — and the command is itself refused.
+const POINTER_REFUSES: &str = "r1-linked-doc-route-cites-a-command-that-is-itself-refused";
 
 /// **The keys the human admitted by name** — a row a key, and the heading of the entry of
 /// `DECISIONS.md` that holds the ruling. Every red case under an admitted key can block,
@@ -1451,17 +1508,10 @@ const OWED: &[Owed] = &[
     Owed {
         task: "P7 · task finalize — a case or a reason",
         sites: &[
-            "crates/cli/src/task.rs::amend_staged_doc_finding::finalize.amend-staged-doc#1",
-            "crates/cli/src/task.rs::linked_worktree_doc_finding::finalize.linked-worktree-doc#1",
-            "crates/cli/src/task.rs::linked_worktree_mint_finding::finalize.linked-worktree-doc#1",
-            "crates/cli/src/task.rs::nothing_staged_finding::finalize.nothing-staged#1",
-            "crates/cli/src/task.rs::stage_failed_finding::finalize.stage-failed#1",
             "crates/engine/src/file_state.rs::conflict_block_finding::reconciliation.conflict-block#1",
             "crates/engine/src/file_state.rs::conformance_block_finding::reconciliation.conformance-block#1",
             "crates/engine/src/file_state.rs::drift_store_finding::file-state.hash-matches#1",
             "crates/engine/src/file_state.rs::unanswered_pin_finding::reconciliation.conflict-block#1",
-            "crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1",
-            "crates/engine/src/finalize.rs::carried_staged_finding::finalize.carried-staged#1",
             "crates/engine/src/finalize.rs::clobber_finding::finalize.promote-clobber#1",
             "crates/engine/src/finalize.rs::provenance_io_finding::finalize.provenance-io#1",
             "crates/engine/src/finalize.rs::source_path_io_finding::finalize.source-path-io#1",
@@ -3940,8 +3990,8 @@ fn a_case_stands_where_it_says_in_the_environment_it_says() {
     ]);
 }
 
-/// The two acts that run the refusing command again.
-const AGAIN: [Act; 2] = [Act::Rerun, Act::RerunInTheRepository];
+/// The three acts that run the refusing command again.
+const AGAIN: [Act; 3] = [Act::Rerun, Act::RerunInTheRepository, Act::RerunWith(0)];
 
 /// **The refusing command is run again where the route prints no command line — and only
 /// there.** *Run jigc from inside the repository* and *reinstall jigc* name an act and print
@@ -3988,6 +4038,22 @@ fn the_refusing_command_is_run_again_only_where_the_route_prints_no_command_line
             },
             Classification::HoldsOperandImplied,
         ),
+        // The flag a route prints for the re-run is the re-run's last word.
+        (
+            Case {
+                name: "planted-a-route-that-prints-a-flag-for-the-re-run",
+                refusing: &[
+                    "-c",
+                    "test \"$0\" = --consent && { : > ran-with-the-flag; exit 0; }; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: unstage `it`, or re-run with `--consent` to declare it'; exit 1",
+                ],
+                acts: &[Act::RerunWith(1)],
+                holds: &[Check::RegularFile(Place::Repo("ran-with-the-flag"))],
+                ..PLANTED
+            },
+            Classification::HoldsOperandImplied,
+        ),
         (
             Case {
                 name: "planted-a-route-whose-act-changes-nothing",
@@ -4002,6 +4068,30 @@ fn the_refusing_command_is_run_again_only_where_the_route_prints_no_command_line
             Classification::SameRefusalAgain,
         ),
     ]);
+
+    // A span that is no flag is no word a re-run takes.
+    match route_case::follow(
+        Path::new("/bin/sh"),
+        &Case {
+            name: "planted-a-re-run-with-a-span-that-is-no-flag",
+            refusing: &[
+                "-c",
+                "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                 '  route: unstage `it`, or re-run with `--consent`'; exit 1",
+            ],
+            acts: &[Act::RerunWith(0)],
+            ..PLANTED
+        },
+    ) {
+        Err(fault) => assert!(
+            fault.contains("span 0") && fault.contains("is no flag"),
+            "the fault names the span and says it is no flag: {fault}",
+        ),
+        Ok(followed) => panic!(
+            "a re-run took a span that is no flag: {}\n{}",
+            followed.classification, followed.detail
+        ),
+    }
 
     let prints_the_command = Case {
         name: "planted-a-re-run-beside-a-printed-command-line",
@@ -4031,6 +4121,71 @@ fn the_refusing_command_is_run_again_only_where_the_route_prints_no_command_line
                 followed.classification, followed.detail
             ),
         }
+    }
+}
+
+/// **A reader goes where the route says, and nowhere outside the sandbox.** A route can
+/// send its reader to another directory before the next line — *run it from the main
+/// checkout: `cd <there>`, then `jigc …`* — and the line then runs there, not where the
+/// case stands. The directory is a span of the printed route. One that lies outside the
+/// sandbox is gone to by nobody: the act is recorded as not done, and the case is red for
+/// it. A span that is no `cd` line is a fault of the case.
+#[test]
+fn a_reader_goes_where_the_route_says_and_nowhere_outside_the_sandbox() {
+    come_out(&[
+        (
+            Case {
+                name: "planted-a-route-that-sends-its-reader-elsewhere",
+                state: &[Step::Dir(Place::Outside("there"))],
+                refusing: &[
+                    "-c",
+                    "test -e ../outside/there/ran-there && exit 0; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     \"  route: \\`cd $(cd ../outside/there && pwd -P)\\`, then \
+                     \\`jigc -c ': > ran-there'\\`\"; exit 1",
+                ],
+                acts: &[Act::Cd(0), Act::Run(1)],
+                holds: &[Check::RegularFile(Place::Outside("there/ran-there"))],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+        (
+            Case {
+                name: "planted-a-route-that-sends-its-reader-out-of-the-sandbox",
+                refusing: &[
+                    "-c",
+                    "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: `cd /`, then `jigc -c \"test $PWD != /\"`'; exit 1",
+                ],
+                acts: &[Act::Cd(0), Act::Run(1)],
+                ..PLANTED
+            },
+            Classification::AnotherFailure,
+        ),
+    ]);
+
+    match route_case::follow(
+        Path::new("/bin/sh"),
+        &Case {
+            name: "planted-a-span-that-is-no-cd-line",
+            refusing: &[
+                "-c",
+                "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                 '  route: go `elsewhere`, then `jigc -c true`'; exit 1",
+            ],
+            acts: &[Act::Cd(0), Act::Run(1)],
+            ..PLANTED
+        },
+    ) {
+        Err(fault) => assert!(
+            fault.contains("span 0") && fault.contains("is no `cd` line"),
+            "the fault names the span and says what it is not: {fault}",
+        ),
+        Ok(followed) => panic!(
+            "a reader went by a span that is no `cd` line: {}\n{}",
+            followed.classification, followed.detail
+        ),
     }
 }
 

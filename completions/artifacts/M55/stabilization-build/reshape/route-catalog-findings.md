@@ -430,3 +430,73 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 
 - **`jigc uninstall` writes through a link, to a file outside the repository, at exit 0.** With `CLAUDE.md` a link to a file outside that holds the reference, the teardown takes the reference out of *that file*; with the `pre-commit` hook a link to a script outside that holds jigc's block, it writes the script back without the block. Driven by hand: both files' bytes change, the link at `CLAUDE.md` stays, and the summary says *unwired bootstrap reference ← CLAUDE.md* and *removed pre-commit hook*. What is written is the file less jigc's lines. Where the outside file may not be written, the step refuses — the two `…-a-link-to-a-read-only-…-outside` cases above — and its route says to make `CLAUDE.md`, or the hooks directory, writable; a reader who does so through the link has the outside file rewritten by the re-run. The frame gives no permission through a link, so no case shows that, and the outside files of both cases are witnesses that did not change.
 - **After a clean `jigc uninstall` the settings file is not what it was before the install**: an emptied `"SessionStart": []` under `"hooks"` and an empty `"deny": []` stay behind in a file that had neither.
+
+## 5. The gate — `task finalize`, the sites the fix pass touched
+
+*Added 2026-10-12, with the cases of [route_catalog/task_finalize.rs](../../../../../crates/cli/tests/route_catalog/task_finalize.rs): seven sites of the family, taken in by the human's ruling of 2026-10-11 ([DECISIONS.md](../../../../../DECISIONS.md) → *Which families the route catalog takes in*). Every case here stands at a site the fix pass touched; what the previous release's binary does with each is not said in this file.* Each state starts from `jigc setup` and an open task whose `commit` doc is complete, made by the binary under test.
+
+### `r1-finalize-nothing-staged-route-prints-finalize-without-its-id`
+
+- **Classification:** followed, another failure. **Three cases, all marked `doubt`:** `finalize-nothing-staged-a-tracked-file-modified-added-and-finalized-as-printed`, `…-a-new-file-…`, `…-a-tracked-file-deleted-…`.
+- **State:** the working tree holds a change — a tracked file modified, a file git does not track, a tracked file deleted — and nothing is staged.
+- **Refusing command:** `jigc task finalize write-a-note` — exit 3, `finalize.nothing-staged`.
+- **Printed route:**
+
+  ```text
+  route: `git add` your changes, then re-run `jigc task finalize`
+  ```
+
+- **What was done:** the two printed lines, as printed: `git add` — exit 0, *Nothing specified, nothing added* — and `jigc task finalize`.
+- **What went wrong:** exit 2 — *error: the following required arguments were not provided: `<ID>`*. The command requires the task's id and the route prints the command without it. The refusal one step on, `finalize.empty-commit`, prints `jigc task finalize write-a-note`.
+- **The doubt:** whether the second span is a line to run or the name of the command the reader has just run. Driven by hand under the second reading — the change added by its path, the finalize run with its id — it exits 0 with one commit.
+
+### `r1-finalize-stage-failed-route-names-a-lock-and-three-paths-and-the-docs-home-is-ignored`
+
+- **Classification:** followed, the same refusal again. **One case:** `finalize-stage-failed-the-docs-home-ignored-re-run-as-printed`.
+- **State:** the root `.gitignore`, committed, holds `docs/`; the task creates the decisions log, which promotes to `docs/decisions-log.md`.
+- **Refusing command:** `jigc task finalize write-a-note` — exit 3, `finalize.stage-failed`; the message quotes git: *The following paths are ignored by one of your .gitignore files: docs*.
+- **Printed route:**
+
+  ```text
+  route: `jigc task finalize write-a-note` once the embedded git failure is resolved — a stale `.git/index.lock` removed, or the `.gitignore` rule dropped that covers `.jigc/config`, `.jigc/.gitignore` or `.jigc/version`: jigc commits those three with the work, and git will not add a path it ignores — the task survives intact, so the same re-run lands the commit
+  ```
+
+- **What was done:** no lock stands and no rule covers any of the three paths, so nothing the route names is there to act on; the printed re-run.
+- **What went wrong:** the same refusal. The route names two causes and a third refused: the `git add` it embeds also stages the promoted doc, and the rule is over the doc's home. Where the rule is over one of the three paths the route names, the route holds (`finalize-stage-failed-the-stamp-ignored-and-in-no-index-ignore-file-removed`).
+
+### `r1-finalize-amend-staged-doc-route-says-the-start-line-mints-and-it-presents-the-workflows`
+
+- **Classification:** followed, another failure. **One case, marked `doubt`:** `finalize-amend-staged-doc-an-edit-refused-and-the-front-door-run-as-printed`.
+- **State:** a committed decisions log, and an amend task minted over the commit that landed it.
+- **Refusing command:** `jigc doc add-item decisions-log:decisions-log#entries --task fix-the-message --title "A decision"` — exit 1, `finalize.amend-staged-doc`.
+- **Printed route:**
+
+  ```text
+  route: `jigc start "<intent>"` mints an ordinary task, whose finalize commits the promoted doc; this amend task keeps its own job, repairing `HEAD`'s message
+  ```
+
+- **What was done:** the printed line, with the placeholder's own bytes as the intent — the refusal lists no value for it.
+- **What went wrong:** exit 0, and no task was minted: under the shipped default the front door presents the workflows to pick one from. The route says the line *mints an ordinary task*. The linked-worktree refusal's route says of the same line *the front door there, which mints a task or presents the workflows to pick one from*.
+- **The doubt:** whether *mints* is said of the printed line or of the door the reader then goes through.
+
+### `r1-linked-doc-route-cites-a-command-that-is-itself-refused`
+
+- **Classification:** followed, the same refusal again (one case) · followed, another failure (one case). **Both marked `doubt`.**
+- **State:** a task minted in the main checkout that may create the decisions log; a linked worktree of the user's beside the repository. (1) the task already stages the log, staged from the main checkout; (2) the worktree's `HEAD` is detached.
+- **Refusing command:** a `jigc doc` write of the log, asked from the worktree — exit 1, `finalize.linked-worktree-doc`.
+- **Printed route**, its last sentence in each:
+
+  ```text
+  (1) … Task `write-a-note` already stages a managed doc, so it does not finalize from here — `jigc task validate write-a-note` names where it lands
+  (2) … This worktree's HEAD is detached, so task `write-a-note` commits nothing from here until it is on a branch — `jigc task finalize write-a-note` names that route
+  ```
+
+- **What was done:** the cited line, run where the case stands.
+- **What went wrong:** (1) `jigc task validate write-a-note` exits 3 under `finalize.linked-worktree-doc` — it does name where the task lands, in that refusal's route; (2) `jigc task finalize write-a-note` exits 1 under `repo.head-detached`, whose route is the one meant. The frame holds every printed command to exit 0.
+- **The doubt:** whether a line a route cites for what it prints owes an exit of 0. The pilot's fourth question is the same one, over a `git` line (`r1-setup-unverified-route-opens-with-the-question-that-failed`).
+- **Cases `linked-doc-second-write-refused-the-preview-asked-where-it-lands`, `linked-doc-write-refused-on-a-detached-head-the-finalize-asked-for-its-route`.**
+
+### Seen, and no case
+
+- **`finalize.stage-failed` over an ignored doc home names the doc's path in git's quoted words and in no word of jigc's**: the route's two causes are the only ones it names.
+- **The backstop of the linked-worktree guard is not reached from jigc's own fan-out worktree**: `jigc task finalize` and `jigc task validate` of a task that stages a doc exit 1 there under `repo.head-detached` first, whose route — *give this work a branch of its own with `git switch -c <new-branch>`* — would put a commit of that task's on a new branch in the sub-task's worktree. Not followed.

@@ -2,6 +2,61 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The route catalog's first seven sites of the gate: nothing staged, git refusing jigc's own stage, a path staged before the work unit, the two amend refusals and the two of a doc in a linked worktree — 42 cases, 7 of them red under four new keys; a re-run takes the flag a route prints, and a reader goes where a route sends them (the human's ruling of 2026-10-11, the sites of `task finalize`, first part)
+
+**What.** A third command's file, [route_catalog/task_finalize.rs](crates/cli/tests/route_catalog/task_finalize.rs), wired through `tables!` — so its arm, `route_catalog::the_cases_are_followed_and_the_expected_red_list_is_exact::task_finalize`, exists by construction and stands in the runner's one-at-a-time group — with the cases of seven of the fifteen sites of `task finalize` the ruling takes in. Their seven rows are off the owed list; eight of the family stay on it. No product source changes; nothing is fixed.
+
+**Every state is made by the binary under test and by file acts**, from the sandbox's bare repository: `jigc setup`; `jigc start --workflow dev-task` (or `decided-task`, where a doc that promotes is wanted) and the two writes a `commit` doc requires; `jigc doc create decisions-log`; `jigc task amend "<intent>"`, whose id slugs from the intent; `jigc milestone create` · `add-task` · `provision`; `git worktree add` for a linked worktree of the user's. **A task minted in the main checkout and asked about from a linked worktree reaches every arm of the linked-worktree guard**, so no state step runs the binary anywhere but the repository's root.
+
+### The sites
+
+| site | class in the count | functions read | causes | followed | a reason | cases | red | minutes | new vocabulary |
+|---|---|---|---|---|---|---|---|---|---|
+| `task.rs::nothing_staged_finding` | unchanged · caller changed, on the path | 3 | 3 | 3 | 0 | 3 | 3 | 2 | — |
+| `task.rs::stage_failed_finding` | route-changed | 5 | 4 | 3 | 1 `not-constructible` | 3 | 1 | 4 | — |
+| `engine/finalize.rs::carried_staged_finding` | function-changed | 2 | 6 | 6 | 0 | 12 | 0 | 3 | `Act::RerunWith` |
+| `task.rs::amend_staged_doc_finding` | unchanged · caller changed, on the path | 4 | 3 | 3 | 0 | 3 | 1 | 3 | — |
+| `engine/finalize.rs::amend_base_mismatch_finding` | unchanged · caller changed, on the path | 2 | 2 | 2 | 0 | 2 | 0 | 1 | — |
+| `task.rs::linked_worktree_doc_finding` | new-code | 5 | 12 | 11 | 1 `not-constructible` | 15 | 2 | 7 | `Act::Cd` |
+| `task.rs::linked_worktree_mint_finding` | new-code | 3 | 4 | 4 | 0 | 4 | 0 | 2 | — |
+| **seven sites** | | | **34** | **32** | **2** | **42** | **7** | **22** | |
+
+What each count is derived from, the cause without a case and the ways not followed are the file's `READINGS`. *Minutes* are the clock's from the first probe to the suite green, 22 for the seven together and split by estimate; the gates and the frame's two pieces are not in them. Five ways out of a route are not followed, each with why: the reader's own re-run where the route prints the product's command without its id; a rule dropped from an ignore file that holds others; `HEAD` returned to a commit by an act the route does not name; the write made in the task the front door mints; a branch merged where only it carries a migration's source.
+
+### The frame, grown twice — each piece red first against a runner that declared it and did nothing
+
+- **`Act::RerunWith(span)` — the refusing command again, with the flag the route prints.** *Re-run the finalize with `--carry-staged`* prints a flag and no command line. The span must be one word that opens with `--`, or the case is at fault; it is held as a re-run is — refused wherever the printed route holds a command line of the product, and no better than *holds, operand implied*. Red: the planted case came out *followed, another failure* where *holds, operand implied* was planted; `route_catalog::the_refusing_command_is_run_again_only_where_the_route_prints_no_command_line` holds it, with the two acts that were there.
+- **`Act::Cd(span)` — the reader goes where the route says.** *Run it from the main checkout: `cd <there>`, then `jigc …`*: the span is `cd <directory>` as printed, and every later command of the route is started there. A directory outside the sandbox is gone to by nobody — the act is recorded as not done and the case is red for it; a span that is no `cd` line is a fault of the case. Red: the planted line ran where the case stood (*another failure* where *holds* was planted), and the planted `cd /` came out *holds*. `route_catalog::a_reader_goes_where_the_route_says_and_nowhere_outside_the_sandbox`. **Found while following a real route:** a command that lands a milestone removes the worktree its reader stood in, and the runner then started a shell in a directory that was gone and panicked; the act splits its line from the sandbox's root.
+- **Not built, and why:** a state step that runs the binary in another directory (no state needs it, above); an act that takes one line out of a file (one way, given a reason).
+
+### The red cases — four keys, all new, in the pilot's findings file (§5)
+
+| key | cases | classification | `doubt` |
+|---|---|---|---|
+| `r1-finalize-nothing-staged-route-prints-finalize-without-its-id` | 3 | followed, another failure | 3 |
+| `r1-finalize-stage-failed-route-names-a-lock-and-three-paths-and-the-docs-home-is-ignored` | 1 | followed, the same refusal again | 0 |
+| `r1-finalize-amend-staged-doc-route-says-the-start-line-mints-and-it-presents-the-workflows` | 1 | followed, another failure | 1 |
+| `r1-linked-doc-route-cites-a-command-that-is-itself-refused` | 2 | the same refusal again 1 · another failure 1 | 2 |
+
+None of the 42 cases stands on a declared bound. **What the previous release's binary does with each red case is not in this entry**: the named-binary arm is run once the family's cases are in.
+
+### The doubts — three questions for the human, each read against the surface contract first
+
+1. **A product command printed without the id it requires** — *`git add` your changes, then re-run `jigc task finalize`* (3 cases). (a) a line to run as printed, which the argument parser refuses; (b) the name of the command the reader just ran. [surface-contract.md](design/surface-contract.md) says of a `git` span with no operand that it *names a command rather than a file* (the printed-path fence) and names `git add` as one; of a `jigc` span it says nothing of the kind, and its rule that a placeholder derivable from the finding's target is printed concrete (P6) is about mechanical routes — this one is prose, over a finding whose target *is* the task.
+2. **A line the route says *mints*** — *`jigc start "<intent>"` mints an ordinary task* (1 case). (a) the printed line mints; (b) it is the front door, and the reader mints through it. The contract makes the quoted placeholder legal and the reader's to fill, and does not say what a line owes that a route describes.
+3. **A command a route cites for what it prints** — *`jigc task validate <task>` names where it lands* (2 cases). (a) a step held to exit 0; (b) there for its words. The contract is silent; it is the pilot's fourth question again, over a `jigc` line.
+
+### The vocabulary half — unchanged, and what it will ask
+
+`CATALOGUED` still holds `adapter-guide`, `setup` and `uninstall`: the family's prefixes join with its last site. Run once with `finalize` in the list, the arm named **seven codes no listed site spells** — `finalize.amend-rejected`, `finalize.commit-rejected`, `finalize.fan-out`, `finalize.fan-out.squash`, `finalize.forward-ref-dangling`, `finalize.left-out`, `finalize.rollback-conflict` — each of which then wants a claim for the dynamic site that mints it or a row that says why it is no finding's code. Not read here.
+
+**Not established.**
+
+- **The eight sites of the family still owed**: the three of the reconciliation, the store-scope drift, the two of the clobber guard's reads, the working area's I/O refusal, and `clobber_finding` — whose route is chosen among seven arms.
+- **The previous release**, and **Linux**: both follow the family's last commit.
+- **A second kind of repository.** Every state is one repository with one branch and, where a worktree is wanted, one more.
+- **A cause nobody constructed** beyond the two given a reason; a fence holds sites, never causes.
+
 ## 2026-10-12 — Which families the route catalog takes in: the sites the fix pass touched now, the rest scheduled before the port — and the fence holds every blocking site of every family to a case, a reason, an owed row or a scheduled row (the human's ruling of 2026-10-11, the first of three options)
 
 **The ruling — the human's, 2026-10-11.** The pilot catalogued two commands. Asked which other families get a catalog, on a count ([route-catalog-sites-changed-since-rc24.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-sites-changed-since-rc24.md), committed with this entry as it was handed over) — outside `setup` and `uninstall` there are **183 blocking sites in 12 families, of which the fix pass since the previous release touched about 14, while it changed 33 of the two commands' 39** — the human ruled, of three options (the sites the pass touched now and the rest later · every family now · none now, leave it to round 1's hunters):
