@@ -2,6 +2,66 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — Two more questions ruled for the reading their cases already follow: *the route is held to any file in the checkout*, and *the route owes every value it needs that is not the reader's own to choose* — sixteen cases lose their mark and stay red, as findings of the product (the human's rulings, option A of two each)
+
+**What.** Two rulings of the human's, both of 2026-10-12, on two of the questions the route catalog's marked cases hang on ([route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md) → 3 and 1). Neither changes the frame or what any case comes to: the cases followed the words already. Sixteen cases lose their `doubt` mark and stay on the expected-red list under the word they had; the four keys they stand under are findings of the product, and their rows say so. No product source changes; nothing is fixed.
+
+### The route is held to any file in the checkout — the list's question 3
+
+**The ruling — the human's, 2026-10-12.** On *a regular file inside this repository — any, or a committed one* — the route of a symbolic link at a path `jigc setup` writes: *point it at a regular file inside this repository* · *point it at a script inside this repository* — the human took option A of two:
+
+> **The route is held to any file in the checkout** — one written a moment ago and in no commit included — because that is what its words say, and a new file is the most natural thing for a reader to point the link at. The eleven cases stay red and are findings of the product.
+>
+> **Not taken:** *a committed file* — under which the route is read as meaning what it does not say, and the eleven are no cases.
+
+- **The eleven**: `…-pointed-at-a-new-script` (3, under `r1-setup-hook-link-pointed-at-uncommitted-script-draws-dirty-install-path`) and `…-committed-and-pointed-at-a-new-file` (8, under `r1-setup-link-pointed-at-uncommitted-file-draws-dirty-install-path`), *another failure* as they were: the link pointed at a file in no commit, the re-run draws `setup.dirty-install-path` over it. The sibling case of each, with a committed file, holds.
+- **What would make the route true** — an observation, and no fix: the route naming a committed file, or the re-run taking one that is in no commit.
+- **Where the second refusal's own route leads — driven by hand, per case, and recorded; it makes no case green.** In all eleven the second refusal prints one route with three ways. *Commit the work at those path(s)*, then `jigc setup`: **the chain ends**, 11 of 11. *`jigc setup --force`*: **the chain ends**, 11 of 11. *`git stash -u`*, then `jigc setup`: **the chain does not end** in 10 — the stash takes the new file away, the link leads to nothing, and the first refusal answers again with the route the reader began at; in the eleventh it ends, the stash having taken the reader's uncommitted hooks directory with the link in it. Per case: the list, section 3.
+- **In the three cases of the hook the second refusal comes after the install's writes** — nine install files are staged. A reader who then commits the index commits the install under a message of their own, and `jigc setup` exits 0 without a commit of its own; with the commit held to the script's path it makes the install commit.
+
+*The frame:* no change. Its head said *which of the two a route means is a reading*; it says the ruling now, and a case still says which file it pointed the link at. The two constants that held the readings are gone from `setup.rs`, with the parameter of one macro that carried the mark.
+
+### The route owes every value it needs that is not the reader's own to choose — the list's question 1
+
+**The ruling — the human's, 2026-10-12.** On *a placeholder for a value the product knows and the refusal does not list* — `jigc milestone discard <milestone-id> --force` over a refusal that lists a worktree's path and no milestone · `jigc doc create <doctype> --title <title> --slug <slug> --task <id>` and `jigc migrate <path> --as <doctype>` over a refusal that lists only the destination — the human took option A of two:
+
+> **The route owes every value it needs that is not the reader's own to choose**: a value the product knows comes from the refusal's own output, and where the refusal does not list it the case is red as it stands. The five cases stay red and are findings of the product.
+>
+> **Not taken:** *the reader knows it from somewhere else* — under which the frame has no case, and a reader who has never seen the id is left with a line that cannot be run.
+
+**Three rulings of this day read as one rule about a value a printed line needs.** A value that is **the reader's own to choose** is named by the case, which fills it (the list's question 2, two entries below). An operand **the reader has just typed** is the reader's own command run again (question 7, ruled the same day; carried out after this entry). A value **the product knows and the reader may never have seen** is owed by the refusal — this one.
+
+- **The five**: one under `r1-uninstall-routes-print-lines-with-a-placeholder-for-the-id`, four under `r1-clobber-task-and-migration-routes-print-lines-with-placeholders-the-refusal-lists-nothing-for`, *a printed line no shell can split* on both binaries, as they were. Per case, which value is missing from the refusal's output and where the product has it — the milestone's area for the milestone's id; the refused command's own argument for a task's id; the staged doc's address, or the migration's workflow, for the doctype — is in the findings file's two rows and in the list's section 1.
+- **The overlap with the ruling on the reader's own value — pinned, as an engineer.** Two of the five lines hold placeholders of both kinds: `<title>` and `<slug>` beside `<doctype>` and `<id>`; `<different-slug>` beside `<doctype>`. **The case names the reader's own, and the frame fills those and no other.** What the shell is handed is `jigc doc create <doctype> --title 'Use tabs' --slug tabs --task <id>`, which it cannot split: the case is red for a value the product owes, and for nothing else. *Why name them at all, where the line is red either way:* run as printed, the record would show a line red for four placeholders, two of which are no defect by the ruling two entries below.
+- **What holds that the fill cannot make such a line run**: `route_catalog::a_placeholder_for_a_value_of_the_readers_own_is_filled_with_the_value_the_case_names` — its planted line `jigc takes <id> <slug>`, with `<slug>` named, is *a printed line no shell can split*, and the mutant that fills the placeholder the case did not name is named by it. And the two cases themselves: listed red as *a printed line no shell can split*, they fail the list if the line ever runs.
+
+*The frame:* no change.
+
+### Red first — there is none to show
+
+Neither ruling asks the frame for anything, and no case's outcome moves: the expected-red list is as it was, entry for entry. What changed is what the cases *say* — sixteen marks off — and the two cases that now name a value: **followed again, they came out as listed**, in the three files' arms and in the run below.
+
+### The previous release's binary, side by side
+
+From one run of the named-binary arm over the whole catalog, on the cases of this commit (the binary of `jigc 1.0.0-rc.24`, sha256 `accf3996ae4a66d13adb4bb03253606e0037b5ddb7be653a314a908f6b88ab5d`; 345.0 s over 627 cases, load average 14.0 at its start and 14.5 at its end, no gate of this branch beside it).
+
+- **The eleven on `rc.24`**: not provoked 9 · holds 2 — as before. **The five**: *a printed line no shell can split*, 5 — as before, over the same printed route.
+- **The catalog after this commit**: 627 cases · 218 red · 47 keys, of which 37 can block with 149 cases — as before it. 17 cases are marked `doubt`, where there were 33. **54 red cases stand at a refusal `rc.24` does not provoke**, under 15 keys, as before — the eleven of question 3 hold 9 of them.
+
+### The records
+
+- **[route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md)**: 17 cases marked under five questions; sections 3 and 1 as ruled, beside R and 2. The 17 lines of the other five questions were held against this run: each came to what its table says.
+- **[route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md)**: the four keys' rows rewritten as ruled — with what would make each route true, as an observation; for the two keys of question 3, the chain by its three ways; for the two of question 1, the missing value per case and where the product has it.
+- **[route-catalog-pilot.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot.md) → §17**, and one dated line at its head. **The two committed tables are that run's blocks `cases` and `sites`, byte for byte, printed after the last edit to anything the arm reads**: 16 lines of cases differ from the ones committed before — the mark, and `chosen` for two — and no line of sites.
+- **[pinning.md](implementation/pinning.md)** states neither reading, and is not changed.
+
+**Not established.**
+
+- **The chain on `rc.24`**: nine of the eleven are not provoked there. And each way of the second route was driven once, by hand, on this tree's binary; no case holds it.
+- **Where the product has a value its route leaves out**: read off the state and the constructor's arguments, by one person.
+- **The rulings on questions 6 and 7**, given the same day: carried out in the commit after this one.
+- **Linux**: the run follows the task's last commit.
+
 ## 2026-10-12 — The thirteen cases under the second ruled question, followed again: each printed line filled with the value its reader would choose — all thirteen hold on this tree's binary, and they leave the expected-red list with three keys (the human's ruling of 2026-10-12, carried out)
 
 **What.** The cases' half of the ruling in the entry below this one. Each of the thirteen cases the catalog had marked under *a placeholder for a value that is the reader's own to choose* now names, for every such placeholder of its printed line, the value a reader would choose in the case's state, and says why; none of them is marked `doubt` any more. The expected-red list lost thirteen entries and three keys; an arm holds eight second cases, each a value outside what its route says; and the records follow — the list for the human ([route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md), its head and its section 2, which now stands beside R), the findings file, the pilot's record (§16) and its two tables, and [pinning.md](implementation/pinning.md) → §6. No product source changes; nothing is fixed; the frame is as the entry below left it.

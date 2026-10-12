@@ -166,19 +166,13 @@ const UNBORN: Step = Step::Git(&["update-ref", "-d", "HEAD"]);
 /// point at *a script inside this repository* — committed by the steps behind it.
 const A_SCRIPT: Step = Step::Script(Place::Repo(SCRIPT), "#!/bin/sh\nexit 0\n");
 
-/// The two readings of *a regular file inside this repository*.
-const WHICH_FILE: &str = "*point it at a regular file inside this repository*: (a) any regular \
-                          file in the checkout, one written a moment ago and in no commit \
-                          included — followed here; (b) a file the repository already holds \
-                          committed — the case beside this one that ends \
-                          `-committed-and-pointed-at-a-committed-file`";
-
-/// The two readings of *a script inside this repository*.
-const WHICH_SCRIPT: &str = "*point it at a script inside this repository*: (a) any script in \
-                            the checkout, one written a moment ago and in no commit included \
-                            — followed here; (b) a script the repository already holds \
-                            committed — the case beside this one that ends \
-                            `-pointed-at-a-committed-script`";
+// **What *a regular file inside this repository* and *a script inside this repository* are
+// held to is ruled** — the human's, 2026-10-12 (`DECISIONS.md` → *The route is held to any
+// file in the checkout*): any file in the checkout, one written a moment ago and in no
+// commit included, because that is what the words say. So a case that points a link at a
+// new file follows its route as much as the case beside it that points it at a committed
+// one; where the first is red and the second holds, the red one is a finding of the
+// product, and carries no mark.
 
 // ---------------------------------------------------------------------------
 // The shapes of route, each followed every way it offers
@@ -192,8 +186,7 @@ macro_rules! hook_ways {
         $prefix:literal, $cause:expr,
         plant: [$($plant:expr),* $(,)?],
         installed: [$($installed:expr),* $(,)?],
-        witnesses: [$($witness:literal),* $(,)?],
-        doubt: $doubt:expr $(,)?
+        witnesses: [$($witness:literal),* $(,)?] $(,)?
     ) => {
         [
             Case {
@@ -214,7 +207,6 @@ macro_rules! hook_ways {
                 acts: POINT_AT_SCRIPT,
                 holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
                 witnesses: &[$($witness,)*],
-                doubt: $doubt,
                 ..SETUP
             },
             Case {
@@ -423,7 +415,6 @@ macro_rules! link_ways {
                 acts: POINT_AT_NEW_AND_COMMIT,
                 holds: &[Check::RegularFile(Place::Repo(AGENT_MD)), $($kept,)*],
                 witnesses: &[$($witness,)*],
-                doubt: Some(WHICH_FILE),
                 ..SETUP
             },
         ]
@@ -508,7 +499,6 @@ pub const HOOK_OUT: [Case; 3] = hook_ways!(
     plant: [OUR_HOOK, Step::Link(Place::Repo(HOOK), Place::Outside("pre-commit"))],
     installed: [Check::RegularFile(Place::Repo(HOOK))],
     witnesses: ["pre-commit"],
-    doubt: None,
 );
 const HOOK_TO_NOTHING: [Case; 3] = hook_ways!(
     "setup-hook-link-to-nothing",
@@ -516,7 +506,6 @@ const HOOK_TO_NOTHING: [Case; 3] = hook_ways!(
     plant: [Step::Link(Place::Repo(HOOK), Place::Outside("pre-commit"))],
     installed: [Check::RegularFile(Place::Repo(HOOK))],
     witnesses: ["pre-commit"],
-    doubt: Some(WHICH_SCRIPT),
 );
 const HOOK_OUT_RELATIVELY: [Case; 3] = hook_ways!(
     "setup-hook-relative-link-out-to-a-script",
@@ -525,7 +514,6 @@ const HOOK_OUT_RELATIVELY: [Case; 3] = hook_ways!(
     plant: [OUR_HOOK, Step::LinkTo(Place::Repo(HOOK), "../../../outside/pre-commit")],
     installed: [Check::RegularFile(Place::Repo(HOOK))],
     witnesses: ["pre-commit"],
-    doubt: None,
 );
 const HOOK_OUT_TO_A_DIRECTORY: [Case; 3] = hook_ways!(
     "setup-hook-link-out-to-a-directory",
@@ -536,7 +524,6 @@ const HOOK_OUT_TO_A_DIRECTORY: [Case; 3] = hook_ways!(
     ],
     installed: [Check::RegularFile(Place::Repo(HOOK))],
     witnesses: ["hooks/theirs"],
-    doubt: None,
 );
 const HOOK_TO_A_DEVICE: [Case; 3] = hook_ways!(
     "setup-hook-link-to-dev-null",
@@ -544,7 +531,6 @@ const HOOK_TO_A_DEVICE: [Case; 3] = hook_ways!(
     plant: [Step::LinkTo(Place::Repo(HOOK), "/dev/null")],
     installed: [Check::RegularFile(Place::Repo(HOOK))],
     witnesses: [],
-    doubt: None,
 );
 const HOOKS_PATH_INSIDE_TO_NOTHING: [Case; 3] = hook_ways!(
     "setup-hooks-path-inside-link-to-nothing",
@@ -556,7 +542,6 @@ const HOOKS_PATH_INSIDE_TO_NOTHING: [Case; 3] = hook_ways!(
     ],
     installed: [Check::RegularFile(Place::Repo(".githooks/pre-commit"))],
     witnesses: ["pre-commit"],
-    doubt: Some(WHICH_SCRIPT),
 );
 const HOOKS_PATH_INSIDE_OUT: [Case; 3] = hook_ways!(
     "setup-hooks-path-inside-link-out-to-a-script",
@@ -569,7 +554,6 @@ const HOOKS_PATH_INSIDE_OUT: [Case; 3] = hook_ways!(
     ],
     installed: [Check::RegularFile(Place::Repo(".githooks/pre-commit"))],
     witnesses: ["pre-commit"],
-    doubt: None,
 );
 const HOOKS_PATH_OUTSIDE_TO_NOTHING: [Case; 3] = hook_ways!(
     "setup-hooks-path-outside-link-to-nothing",
@@ -581,7 +565,6 @@ const HOOKS_PATH_OUTSIDE_TO_NOTHING: [Case; 3] = hook_ways!(
     ],
     installed: [Check::RegularFile(Place::Outside("hooks/pre-commit"))],
     witnesses: ["nothing"],
-    doubt: Some(WHICH_SCRIPT),
 );
 const HOOKS_PATH_OUTSIDE_OUT: [Case; 3] = hook_ways!(
     "setup-hooks-path-outside-link-out-of-it-to-a-script",
@@ -594,7 +577,6 @@ const HOOKS_PATH_OUTSIDE_OUT: [Case; 3] = hook_ways!(
     ],
     installed: [Check::RegularFile(Place::Outside("hooks/pre-commit"))],
     witnesses: ["pre-commit"],
-    doubt: None,
 );
 
 /// The one way the hook's route does not name and a repository can still be in: the link

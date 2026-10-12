@@ -897,11 +897,13 @@ const PERMISSION_ROUTE: &str = "r1-p3-setup-writability-route-printed-for-other-
 /// says: the re-run refuses it as uncommitted work.
 const UNTRACKED_LINK: &str = "r1-setup-untracked-link-repointed-draws-dirty-install-path";
 /// A committed link pointed at a file in no commit, the link's change committed: the
-/// re-run refuses over the file. Rests on a reading — every case under it is marked.
+/// re-run refuses over the file. The route says *a regular file inside this repository*,
+/// and is held to any file in the checkout by the human's ruling of 2026-10-12.
 const NEW_FILE: &str = "r1-setup-link-pointed-at-uncommitted-file-draws-dirty-install-path";
 /// The hook's link pointed at a script in no commit: the re-run writes and stages the
-/// install, splices its block into the script, and then refuses to commit. Rests on a
-/// reading — every case under it is marked.
+/// install, splices its block into the script, and then refuses to commit. The route says
+/// *a script inside this repository*, and is held to any script in the checkout by the
+/// human's ruling of 2026-10-12.
 const NEW_SCRIPT: &str =
     "r1-setup-hook-link-pointed-at-uncommitted-script-draws-dirty-install-path";
 /// On an unborn `HEAD`, the root `.gitignore`'s route followed by its second way out: the
@@ -945,7 +947,8 @@ const UNSTAGING_LINE_REFUSED: &str =
 // The pilot's keys for `jigc uninstall`.
 /// A route prints, between backticks, a line with `<milestone-id>` where an id belongs that
 /// the refusal lists nowhere: the line cannot be filled from what was printed, and as
-/// printed no shell splits it. Rests on a reading — the case under it is marked. (Until
+/// printed no shell splits it. The id is a value the product knows, and the route owes it
+/// by the human's ruling of 2026-10-12. (Until
 /// the surface contract was read for it, the key held four more cases, whose placeholders
 /// the refusal does list a value for: filled, each holds.)
 const PLACEHOLDER_LINE: &str = "r1-uninstall-routes-print-lines-with-a-placeholder-for-the-id";
@@ -1021,8 +1024,8 @@ const REVERT_DRAWS_THE_CONFLICT: &str =
 
 /// The clobber guard's task arm and its migration arm route at lines every placeholder of
 /// which is one the refusal lists no value for — `<doctype>`, `<slug>`, `<id>` — and the
-/// task arm's last line is the finalize without its id. Rests on a reading — every case
-/// under it is marked.
+/// task arm's last line is the finalize without its id. The doctype and the task's id are
+/// values the product knows, and the route owes them by the human's ruling of 2026-10-12.
 const CLOBBER_LINES_NOBODY_CAN_FILL: &str = "r1-clobber-task-and-migration-routes-print-lines-with-placeholders-the-refusal-lists-nothing-for";
 
 /// The fixed-identity arm says to move a staged file out of the doc's home *with `git mv`*

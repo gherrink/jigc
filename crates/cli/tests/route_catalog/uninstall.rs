@@ -42,8 +42,9 @@
 //! in the route. Such a line is a shape the reader fills (the surface contract's span
 //! fence), and a case fills it with the value the refusal lists, by index
 //! ([`Act::RunFilled`]). One route prints `<milestone-id>` over a refusal that lists no
-//! milestone: that line cannot be filled, and its case is marked `doubt`
-//! ([`WHERE_THE_ID_COMES_FROM`]).
+//! milestone: that line cannot be filled, and its case is red as it stands — **the route
+//! owes every value it needs that is not the reader's own to choose**, the human's ruling
+//! of 2026-10-12 (`DECISIONS.md` → *The route owes every value it needs that is not the reader's own to choose*).
 
 use super::{Reading, Reason, Why};
 use crate::support::route_case::{Act, Case, Check, Filled, Operand, Over, Place, Step, Var};
@@ -175,22 +176,6 @@ macro_rules! shut {
         ])
     };
 }
-
-/// The two readings of a printed line whose placeholder the refusal lists no value for.
-const WHERE_THE_ID_COMES_FROM: &str = "*abandon the milestone with `jigc milestone discard \
-                                       <milestone-id> --force`*, over a refusal that lists \
-                                       the worktree's path and no milestone. The surface \
-                                       contract decides that the line is a shape the reader \
-                                       fills (the span fence: *a `<placeholder>` the reader \
-                                       fills is legal*) and declares `<milestone-id>` not \
-                                       derivable from a finding's target; it does not say \
-                                       where the reader takes the id from. (a) from the \
-                                       refusal's own output, as every other value a route \
-                                       needs — followed here: the output lists none, the \
-                                       line cannot be filled, and run as printed no shell \
-                                       splits it; (b) from somewhere else the reader knows \
-                                       of — then the frame has no case: an id of the case's \
-                                       own is no operand";
 
 /// The two readings of *make sure … is readable*.
 const WHICH_READABLE: &str = "*make sure `.jigc/…` is readable*: (a) the entry the route \
@@ -401,7 +386,10 @@ const A_PATH_NOTHING_CAN_BE_READ_AT: [Case; 2] = unregistered_ways!(
 );
 
 /// **A fan-out worktree with work in no commit** — registered here, so the route offers a
-/// third way: the milestone abandoned, by a line that holds `<milestone-id>`.
+/// third way: the milestone abandoned, by a line that holds `<milestone-id>`. The refusal
+/// lists the worktree's path and no milestone, and the id is the product's to give: the
+/// line is run as printed, which no shell splits, and the case is a finding of the product
+/// (the human's ruling of 2026-10-12, `DECISIONS.md` → *The route owes every value it needs that is not the reader's own to choose*).
 const A_LIVE_WORKTREE: &str = "a fan-out sub-task's worktree, registered with this \
                                repository, holds a file in no commit";
 const A_LIVE_FAN_OUT_WORKTREE: [Case; 3] = [
@@ -422,7 +410,6 @@ const A_LIVE_FAN_OUT_WORKTREE: [Case; 3] = [
         acts: &[Act::Run(1), Act::Run(2)],
         holds: torn_down![],
         untouched: &["README.md", "notes.md", SUB_TASK_WORK],
-        doubt: Some(WHERE_THE_ID_COMES_FROM),
         ..UNINSTALL
     },
     Case {

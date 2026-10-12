@@ -49,7 +49,7 @@
 
 use super::{Reading, Reason, Why};
 use crate::support::route_case::{
-    Act, Case, Check, Cited, Operand, Place, Promise, Says, Step,
+    Act, Case, Check, Chosen, Cited, Operand, Own, Place, Promise, Says, Step,
 };
 
 // The sites, as the committed list of refusal sites names them.
@@ -1581,22 +1581,21 @@ macro_rules! an_adr_task_after {
 /// The finalize of the task that minted the ADR.
 const THE_ADR_TASKS_FINALIZE: &[&str] = &["task", "finalize", "pick-tabs"];
 
-/// The two readings of a printed line none of whose placeholders the refusal lists a value
-/// for.
-const WHERE_AN_UNLISTED_VALUE_COMES_FROM: &str = "*`jigc doc create <doctype> --title <title> \
-    --slug <slug> --task <id>`* · *`jigc migrate <file> --as <doctype>`* · *`jigc task discard \
-    <id> --force`* · *`jigc task finalize <id>`*: the surface contract reads a backticked line \
-    with a word in angle brackets as a shape the reader fills, and the frame fills one with a \
-    value the refusal's own output lists. This refusal lists the destination and nothing \
-    else — no task id, no doctype, no slug — so no placeholder of these lines can be filled \
-    from what was printed. (a) A value comes from the refusal's own output, as every other \
-    value a route needs: then the route owes them and is red as it stands; (b) from somewhere \
-    else the reader knows of: then the frame has no case, a value of the case's own being no \
-    operand. The case runs the lines as printed, which no shell splits. It is what the \
-    pilot's first question left open, over another route; the contract's nearest line is its \
-    reason for `<workflow-id>` — *the set it must be filled from is named in the message \
-    instead* — and it declares `<task-id>` not derivable from a finding's target";
+// **A printed line with a placeholder for a value the product knows and the refusal does
+// not list is red as it stands** — the human's ruling of 2026-10-12 (`DECISIONS.md` → *The route owes every value it needs that is not the reader's own to choose*).
+// The clobber guard's refusal lists the destination and nothing else — no task id, no
+// doctype — and the lines of its task arm and its migration arm hold `<id>` and
+// `<doctype>`. Three kinds of placeholder stand in these lines, and the three rulings of
+// that day read them as one rule: a value that is the reader's own to choose — `<title>`,
+// `<slug>`, `<different-slug>` — is named by the case, which fills it; a value the product
+// knows — `<doctype>`, the task's `<id>` — is the refusal's to list, is listed nowhere,
+// and is filled by nobody. So each line below stays one no shell can split, for the
+// product's placeholders and for no other.
 
+/// A slug nothing answers to, where a route says *re-create it with an explicit `--slug`*
+/// or *re-mint with … `--slug <different-slug>`*: the occupied home is `use-tabs`'s.
+const A_SLUG_THAT_SLUGS_DIFFERENTLY: &str = "a slug that is free, as the route asks: other \
+    than `use-tabs`, at whose home the file stands — nothing answers to `tabs`";
 /// **An ordinary task's ADR, and a file that turned up at its home after the mint** — the
 /// arm the guard was built for. Every way the route offers ends in a line with a
 /// placeholder the refusal lists no value for, or names an act and prints no line.
@@ -1610,10 +1609,29 @@ const A_TASKS_DOC_OVER_A_FILE: [Case; 2] = [
         cause: A_FILE_AT_THE_HOME_OF_A_TASKS_DOC,
         state: an_adr_task_after!([], by_hand_at!(THE_ADRS_HOME)),
         refusing: THE_ADR_TASKS_FINALIZE,
-        acts: &[Act::Run(2), Act::Run(4)],
+        // The reader's own title and slug are named; `<doctype>` and `<id>` are the
+        // product's, listed nowhere, and stay.
+        acts: &[
+            Act::RunChosen(Chosen {
+                line: 2,
+                own: &[
+                    Own {
+                        placeholder: "<title>",
+                        value: "Use tabs",
+                        why: "the doc's own title, kept: the route says to re-create it \
+                              with an explicit `--slug`, and asks nothing of the title",
+                    },
+                    Own {
+                        placeholder: "<slug>",
+                        value: "tabs",
+                        why: A_SLUG_THAT_SLUGS_DIFFERENTLY,
+                    },
+                ],
+            }),
+            Act::Run(4),
+        ],
         holds: &[Check::Absent(Place::Repo(ADR_AREA))],
         untouched: &[THE_ADRS_HOME],
-        doubt: Some(WHERE_AN_UNLISTED_VALUE_COMES_FROM),
         ..FINALIZE
     },
     Case {
@@ -1625,7 +1643,6 @@ const A_TASKS_DOC_OVER_A_FILE: [Case; 2] = [
         acts: &[Act::Run(3), Act::Run(4)],
         holds: &[Check::Absent(Place::Repo(ADR_AREA))],
         untouched: &[THE_ADRS_HOME],
-        doubt: Some(WHERE_AN_UNLISTED_VALUE_COMES_FROM),
         ..FINALIZE
     },
 ];
@@ -1675,10 +1692,23 @@ const A_MIGRATIONS_DOC_OVER_A_FILE: [Case; 2] = [
         cause: A_FILE_AT_A_MIGRATIONS_DESTINATION,
         state: an_adr_migration_after!([], by_hand_at!(THE_ADRS_HOME)),
         refusing: THE_ADRS_MIGRATIONS_FINALIZE,
-        acts: &[Act::Run(2), Act::Run(3), Act::Run(5), Act::Run(6)],
+        // The reader's own slug is named in the line that mints again; its `<doctype>`
+        // and every `<id>` are the product's, listed nowhere, and stay.
+        acts: &[
+            Act::Run(2),
+            Act::RunChosen(Chosen {
+                line: 3,
+                own: &[Own {
+                    placeholder: "<different-slug>",
+                    value: "tabs",
+                    why: A_SLUG_THAT_SLUGS_DIFFERENTLY,
+                }],
+            }),
+            Act::Run(5),
+            Act::Run(6),
+        ],
         holds: &[Check::Absent(Place::Repo(THE_ADRS_MIGRATION_AREA))],
         untouched: &[THE_ADRS_HOME, "notes/old.md"],
-        doubt: Some(WHERE_AN_UNLISTED_VALUE_COMES_FROM),
         ..FINALIZE
     },
     Case {
@@ -1690,7 +1720,6 @@ const A_MIGRATIONS_DOC_OVER_A_FILE: [Case; 2] = [
         acts: &[Act::Run(5), Act::Run(6)],
         holds: &[Check::Absent(Place::Repo(THE_ADRS_MIGRATION_AREA))],
         untouched: &[THE_ADRS_HOME, "notes/old.md"],
-        doubt: Some(WHERE_AN_UNLISTED_VALUE_COMES_FROM),
         ..FINALIZE
     },
 ];

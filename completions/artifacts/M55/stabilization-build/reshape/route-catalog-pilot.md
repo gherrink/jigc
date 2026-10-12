@@ -12,6 +12,8 @@
 
 **[2026-10-12 — the two tables were printed with the second ruling carried out, and §16 counts the catalog after it.** They are the arm's blocks `cases` and `sites` as one run printed them on 2026-10-12, byte for byte, over the cases, the readings and the frame of the commit that carries this line, made after the last edit to anything the arm reads (the variable naming `rc.24`'s binary of §8; 408.4 s, load average 14.0 at its start and 23.4 at its end; no gate of this branch beside it): 627 lines of cases and 92 of sites under a header each — **13 lines of cases and 4 of sites differ from the tables committed before, and no other**: the thirteen cases the ruling on a placeholder for a value of the reader's own was carried out on, and the four sites that count them listed red. The table's column `operand` has a third word since that commit, `chosen`, for a case that names such a value. Every count of §1 to §15 is as counted then; what stands after this ruling is §16's.**]**
 
+**[2026-10-12 — the two tables were printed with two more rulings recorded, and §17 counts the catalog after them.** They are the arm's blocks `cases` and `sites` as one run printed them on 2026-10-12, byte for byte, over the cases, the readings and the frame of the commit that carries this line, made after the last edit to anything the arm reads (the variable naming `rc.24`'s binary of §8; 345.0 s, load average 14.0 at its start and 14.5 at its end; no gate of this branch beside it): 627 lines of cases and 92 of sites under a header each — **16 lines of cases differ from the table committed before, and no line of sites**: the sixteen cases that lost their `doubt` mark, two of which now say `chosen` in the column `operand`. No classification moved on either binary.**]**
+
 **Where a number comes from.** Three sources, and every table says which.
 
 - **(arm)** — the suite's one ignored arm, run by hand on this tree at the commit that carries this record:
@@ -811,3 +813,41 @@ Inside a gate, one behind the other (the gate of the commit before this section'
 - **The other seven questions**: 33 cases, marked and red as they were.
 - **The frame over a route that removes the directory its reader stands in and then prints a command without a `cd`**: not met, not changed.
 - **Linux**: the run follows the commit and is in the task's return.
+
+## 17. 2026-10-12 — two rulings that change no case's outcome: *any file in the checkout*, and *the route owes every value it needs that is not the reader's own to choose*
+
+**What this section is.** The human ruled two more of the questions the catalog's marked cases hang on, both on 2026-10-12 and both for the reading the cases already followed ([DECISIONS.md](../../../../../DECISIONS.md) → *Two more questions ruled for the reading their cases already follow*): the list's question 3 — *a regular file inside this repository* is any file in the checkout, one in no commit included — and its question 1 — a value the product knows and the refusal does not list is owed by the route. Sixteen cases lose their mark and stay red, as findings of the product. The frame is as it was. This section counts the catalog when that entry lands, and judges nothing.
+
+**Where a number comes from.** One run of the ignored arm, on the tree of the commit that carries this section, the variable naming `rc.24`'s binary of §8: **345.0 s over 627 cases**, load average 14.0 at its start and 14.5 at its end, no gate of this branch beside it. The two committed tables are its blocks `cases` and `sites`, byte for byte. *Before* is §16. What the eleven cases' second refusal leads to is not the arm's: it was driven by hand, and stands in [route-catalog-doubts.md](route-catalog-doubts.md) → 3.
+
+### The catalog's totals (blocks `cases` and `bounds`)
+
+| | before | after |
+|---|---|---|
+| cases | 627 | 627 |
+| red — the cases the expected-red list holds | 218 | 218 |
+| keys | 47 | 47 |
+| red cases that can block · keys that can block | 149 · 37 | 149 · 37 |
+| red cases on a declared bound — a permission bit · a FIFO · the override | 47 · 7 · 19 | 47 · 7 · 19 |
+| the cases no entry lists | 409 | 409 |
+| cases marked `doubt` — of them red | 33 — 33 | **17 — 17** |
+| cases that name a value of the reader's own — column `operand`, `chosen` | 13 | 15 |
+| **red cases at a refusal `rc.24` does not provoke** — listed red here, *not provoked* there | 54 | 54 |
+
+No case's classification moved on this tree's binary or on `rc.24`: holds 324 · holds, operand implied 85 · the same refusal again 129 · another failure 73 · the command did not end 7 · a printed line no shell can split 5 · a witness changed 4. The 54 red cases at a refusal `rc.24` does not provoke are §16's, key for key.
+
+### The sixteen cases
+
+- **Question 3, eleven**: `…-pointed-at-a-new-script` (3) and `…-committed-and-pointed-at-a-new-file` (8), under two keys, *another failure* — the re-run draws `setup.dirty-install-path` over the new file. On `rc.24`: not provoked 9 · holds 2. **By hand, the second refusal's route ends at a completed `jigc setup` by two of its three ways in all eleven** — the file committed, or `--force` — **and by the third, `git stash -u`, leads back to the first refusal in ten**.
+- **Question 1, five**: under two keys, *a printed line no shell can split* on both binaries — the line holds a placeholder for the milestone's id, the task's id or the doctype, which the refusal lists nowhere. Two of the five lines also hold a placeholder for a value of the reader's own, which the case now names and the frame fills; the line stays one no shell can split, for the product's placeholder.
+
+### The arms' seconds
+
+Inside a gate, one behind the other (the gate of the commit before this section's, `tests passed=5062`, its record of seconds, under a load average of 36 to 80): `start` 8.0 · `unassigned` 15.9 · `doc_write` 24.0 · `config` 24.6 · `doc_read` 41.3 · `uninstall` 70.9 · `setup` 123.9 · `milestone` 134.2 · `task_finalize` 254.8 — 697.7 s together, where the gate before it, under a lighter load, took 272.0 s over the same cases; the arm of the eight second cases, 17.8 s; the arm that fills a placeholder with the value a case names, 11.2 s. The ignored arm: 345.0 s.
+
+### Not established
+
+- **What the second refusal's route leads to on `rc.24`**: nine of the eleven are not provoked there; the chain was driven on this tree's binary, each way once.
+- **Where the product has a value its route leaves out**: read off the state and the constructor's arguments, by one person.
+- **The other five questions**: 17 cases, marked and red as they were — two of them ruled the same day and not yet carried out.
+- **Linux**: the run follows the task's last commit and is in its return.

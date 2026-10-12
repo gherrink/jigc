@@ -35,11 +35,26 @@ The first way out — remove the link — holds at every end a link was driven a
 
 ### `r1-setup-link-pointed-at-uncommitted-file-draws-dirty-install-path`
 
-- **Classification:** followed, another failure. **Marked `doubt`** — every case rests on a reading the human has not given. **Eight cases:** `setup-host-link-<end>-committed-and-pointed-at-a-new-file` and the same under `setup-settings-link-<end>-`, four ends each.
+- **Classification:** followed, another failure. **Eight cases, none marked:** `setup-host-link-<end>-committed-and-pointed-at-a-new-file` and the same under `setup-settings-link-<end>-`, four ends each.
+- **The reading is ruled — the human's, 2026-10-12** ([DECISIONS.md](../../../../../DECISIONS.md) → *The route is held to any file in the checkout*): the route says *a regular file inside this repository*, and is held to any file in the checkout, one written a moment ago and in no commit included, because that is what its words say. The eight are findings of the product. Until that day each was marked `doubt`.
 - **State:** as above, and the link is committed.
 - **What was done:** the link pointed at a regular file inside the repository that was written a moment before and is in no commit; the link's change committed, as the route says where git tracks the link; `jigc setup` again.
-- **What went wrong:** the re-run exits 1 with `setup.dirty-install-path` over the file the link now leads to — the route says *a regular file inside this repository* and the install takes only one git already holds.
-- **The two readings:** (a) any regular file in the checkout, one in no commit included — followed here, red; (b) a file the repository already holds committed — `…-committed-and-pointed-at-a-committed-file`, green.
+- **What went wrong:** the re-run exits 1 with `setup.dirty-install-path` over the file the link now leads to — *nothing was installed and no install commit was made*. The route says *a regular file inside this repository* and the install takes only one git already holds.
+- **Beside it, and green:** the sibling case that points the link at a file the repository holds committed, `…-committed-and-pointed-at-a-committed-file` — eight cases.
+- **What would make the route true** — an observation, and no fix: the route naming a committed file, or the re-run taking one that is in no commit.
+- **Where the second refusal's own route leads** — driven by hand on this tree's binary, 2026-10-12, each of the eight from its own state, a way a fresh sandbox. The second refusal lists the new file and prints, in all eight:
+
+  ```text
+  route: commit or stash the work at those path(s) — `git stash -u` where git does not track them yet — then re-run `jigc setup`; `jigc setup --force` is the single consent, and it lets the install run and commit those paths as it leaves them — which at a path jigc regenerates whole is jigc's own content, not yours
+  ```
+
+  | the way the second route offers | what was done | then `jigc setup` | in how many of the eight |
+  |---|---|---|---|
+  | *commit … the work at those path(s)* | `git add` the listed file, `git commit` | exit 0, the install commit made | **the chain ends** — 8 |
+  | *or stash … — `git stash -u`* | `git stash -u` | exit 1, **the first refusal again** — `setup.inject-reference` or `setup.inject-allowlist`: the stash takes the file away, and the committed link leads to nothing | **the chain does not end** — 8 |
+  | *`jigc setup --force` is the single consent* | — | `jigc setup --force`: exit 0, the install commit made, `setup.forced-install-path` as an advisory | **the chain ends** — 8 |
+
+  So a reader who points the link at a new file is refused once more and reaches a completed install by two of the three ways that refusal names; the third leads back to where the reader began. Per case: [route-catalog-doubts.md](route-catalog-doubts.md) → 3.
 
 ### `r1-setup-seeded-ignore-route-followed-leaves-no-secrets-floor`
 
@@ -53,7 +68,8 @@ The first way out — remove the link — holds at every end a link was driven a
 
 ### `r1-setup-hook-link-pointed-at-uncommitted-script-draws-dirty-install-path`
 
-- **Classification:** followed, another failure. **Marked `doubt`.** **Three cases:** `setup-hook-link-to-nothing-pointed-at-a-new-script`, `setup-hooks-path-inside-link-to-nothing-pointed-at-a-new-script`, `setup-hooks-path-outside-link-to-nothing-pointed-at-a-new-script`.
+- **Classification:** followed, another failure. **Three cases, none marked:** `setup-hook-link-to-nothing-pointed-at-a-new-script`, `setup-hooks-path-inside-link-to-nothing-pointed-at-a-new-script`, `setup-hooks-path-outside-link-to-nothing-pointed-at-a-new-script`.
+- **The reading is ruled — the human's, 2026-10-12** ([DECISIONS.md](../../../../../DECISIONS.md) → *The route is held to any file in the checkout*): the route says *a script inside this repository*, and is held to any script in the checkout, one written a moment ago and in no commit included. The three are findings of the product. Until that day each was marked `doubt`.
 - **State:** the `pre-commit` hook — in git's default hooks directory, or where `core.hooksPath` names one inside or outside the repository — is a link to a path that holds nothing.
 - **Refusing command:** `jigc setup` — exit 1, `setup.install-hook`.
 - **Printed route** (default hooks directory):
@@ -64,7 +80,21 @@ The first way out — remove the link — holds at every end a link was driven a
 
 - **What was done:** the link pointed at a script inside the repository that was written a moment before and is in no commit; `jigc setup` again.
 - **What went wrong:** the re-run exits 1 with `setup.dirty-install-path` over the script — and this refusal comes **after** the install's writes: it says *the install files are written and staged, and no install commit was made*, and the script the link was pointed at now carries jigc's block. The hook's route has no clause about committing at all.
-- **The two readings:** (a) any script in the checkout, one in no commit included — followed here, red; (b) a script the repository already holds committed — `…-pointed-at-a-committed-script`, green in all three.
+- **Beside it, and green:** the sibling case that points the link at a script the repository holds committed, `…-pointed-at-a-committed-script` — in all three.
+- **What would make the route true** — an observation, and no fix: the route naming a committed script, or the re-run taking one that is in no commit.
+- **Where the second refusal's own route leads** — driven by hand on this tree's binary, 2026-10-12, each of the three from its own state, a way a fresh sandbox. The second refusal lists the script and prints the route the eight cases of the key above draw:
+
+  ```text
+  route: commit or stash the work at those path(s) — `git stash -u` where git does not track them yet — then re-run `jigc setup`; `jigc setup --force` is the single consent, and it lets the install run and commit those paths as it leaves them — which at a path jigc regenerates whole is jigc's own content, not yours
+  ```
+
+  | the way the second route offers | what was done | then `jigc setup` | in how many of the three |
+  |---|---|---|---|
+  | *commit … the work at those path(s)* | `git add` the script, `git commit` | exit 0 — **and the commit that was made is the reader's, with the install in it**: the refused run left nine install files staged, and a commit of the index takes them along under the reader's message; `jigc setup` then makes no commit of its own. With the commit held to the script's path (`git commit -- <script>`), `jigc setup` exits 0 and makes the install commit | **the chain ends** — 3 |
+  | *or stash … — `git stash -u`* | `git stash -u` | default hooks directory, and a hooks directory outside the repository: exit 1, **the first refusal again**, `setup.install-hook` — the stash takes the script and the staged install away, and the link leads to nothing. A hooks directory inside the repository, in no commit: exit 0 — the stash took the hooks directory, the link in it included | **the chain does not end** — 2 · it ends, with the reader's hooks directory in the stash — 1 |
+  | *`jigc setup --force` is the single consent* | — | `jigc setup --force`: exit 0, the install commit made | **the chain ends** — 3 |
+
+  Per case: [route-catalog-doubts.md](route-catalog-doubts.md) → 3.
 
 ### `r1-setup-fifo-at-install-path-holds-the-command`
 
@@ -275,7 +305,8 @@ Every case starts from one state: somebody's repository — their `CLAUDE.md`, t
 
 ### `r1-uninstall-routes-print-lines-with-a-placeholder-for-the-id`
 
-- **Classification:** followed, a printed line no shell can split. **Marked `doubt`.** **Three cases:** `uninstall-staged-doc-read-and-discarded-as-printed`, `uninstall-staged-doc-finalized-as-printed` (`uninstall.staged-prose`); `uninstall-fan-out-worktree-uncommitted-work-milestone-abandoned-as-printed` (`uninstall.dirty-worktree`).
+- **[2026-10-12 — the reading is ruled, and the one case left under this key is a finding of the product, with no mark.** The human ruled that *the route owes every value it needs that is not the reader's own to choose* ([DECISIONS.md](../../../../../DECISIONS.md) → *The route owes every value it needs that is not the reader's own to choose*): a value the product knows comes from the refusal's own output, and where the refusal does not list it the case is red as it stands. **The case:** `uninstall-fan-out-worktree-uncommitted-work-milestone-abandoned-as-printed`. **The value that is missing:** the milestone's id, for `<milestone-id>` in `jigc milestone discard <milestone-id> --force` — the refusal lists the worktree's path, `.jigc/worktrees/do-a-thing`, and no milestone. **Where the product has it:** the milestone's own area, `.jigc/milestones/<id>/tasks.json`, names the sub-task whose worktree that path is; the function that words the refusal is handed the held paths and no milestone. **What would make the route true** — an observation, and no fix: the refusal listing the milestone beside the path, or the route printing the id. By hand, filled in, the line holds — below.**]**
+- **Classification:** followed, a printed line no shell can split. **Marked `doubt`** until the ruling above. **Three cases:** `uninstall-staged-doc-read-and-discarded-as-printed`, `uninstall-staged-doc-finalized-as-printed` (`uninstall.staged-prose`); `uninstall-fan-out-worktree-uncommitted-work-milestone-abandoned-as-printed` (`uninstall.dirty-worktree`).
 - **State:** an open task that stages a doc (`jigc start --workflow decided-task "write a note"`); or a fan-out — a milestone, one sub-task, its worktree provisioned — with a file in no commit in the worktree.
 - **Refusing command:** `jigc uninstall` — exit 1.
 - **Printed routes:**
@@ -523,7 +554,19 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 
 *Added 2026-10-12, with the cases of the clobber guard (`clobber_finding`, forty-one cases over seven arms).*
 
-- **Classification:** followed, a printed line no shell can split. **Four cases, all marked `doubt`:** `clobber-task-file-at-the-home-re-created-with-a-slug-as-printed`, `clobber-task-file-at-the-home-occupant-migrated-as-printed`; `clobber-migration-file-at-the-destination-discarded-and-minted-again-as-printed`, `clobber-migration-file-at-the-destination-finalized-and-approved-as-printed`.
+- **Classification:** followed, a printed line no shell can split. **Four cases, none marked:** `clobber-task-file-at-the-home-re-created-with-a-slug-as-printed`, `clobber-task-file-at-the-home-occupant-migrated-as-printed`; `clobber-migration-file-at-the-destination-discarded-and-minted-again-as-printed`, `clobber-migration-file-at-the-destination-finalized-and-approved-as-printed`.
+- **The reading is ruled — the human's, 2026-10-12** ([DECISIONS.md](../../../../../DECISIONS.md) → *The route owes every value it needs that is not the reader's own to choose*): *the route owes every value it needs that is not the reader's own to choose* — a value the product knows comes from the refusal's own output, and where the refusal does not list it the case is red as it stands. The four are findings of the product. Until that day each was marked `doubt`.
+- **Which value is missing, per case, and where the product has it.** The refusal lists one line, the destination. The constructor of the refusal is handed that destination and, for a migration, its recorded source — no task and no doctype; the finalize that calls it was started with the task's id as its argument and promotes a doc whose address opens with its doctype.
+
+  | case | the line | missing from the refusal's output | where the product has it | the reader's own, named by the case |
+  |---|---|---|---|---|
+  | `…-re-created-with-a-slug-as-printed` | `jigc doc create <doctype> --title <title> --slug <slug> --task <id>` | the doctype, `adr` · the task's id, `pick-tabs` | the staged doc's address, `adr:use-tabs` · the refused command's own argument | `<title>` = `Use tabs` · `<slug>` = `tabs` |
+  | `…-occupant-migrated-as-printed` | `jigc migrate <the occupant's path> --as <doctype>` | the doctype the occupant would be adopted as, `adr` | the doc being promoted is an `adr`, and the occupant stands at its home: the doctype is the head of the staged doc's address | — |
+  | `…-discarded-and-minted-again-as-printed` | `jigc task discard <id> --force` · `jigc migrate <the source's path> --as <doctype> --slug <different-slug>` · `jigc task finalize <id>` · `… --approve` | the migration's id, `migrate-adr-notes-old-…` · its doctype, `adr` | the refused command's own argument · the migration's workflow, `migrate-adr` | `<different-slug>` = `tabs` |
+  | `…-finalized-and-approved-as-printed` | `jigc task finalize <id>` · `jigc task finalize <id> --approve` | the migration's id | the refused command's own argument | — |
+
+  **A line that holds both kinds stays one no shell can split for the product's placeholder, and for no other**: the two cases whose lines carry a placeholder for a value of the reader's own name it, the frame fills it and leaves the rest — `jigc doc create <doctype> --title 'Use tabs' --slug tabs --task <id>` is what the shell was handed. The arm that holds this of the frame is `route_catalog::a_placeholder_for_a_value_of_the_readers_own_is_filled_with_the_value_the_case_names`.
+- **What would make the route true** — an observation, and no fix: the lines printing the doctype and the task's id concrete, as every other arm of the same function does.
 - **State:** a task that minted an ADR (`jigc start --workflow record-decision`, `jigc doc author adr`), or a migration of a foreign file to one (`jigc migrate notes/old.md --as adr`), and a file written by hand at the doc's home, `docs/decisions/use-tabs.md`, after the mint.
 - **Refusing command:** `jigc task finalize <the task>` — exit 3, `finalize.promote-clobber`. The refusal lists one line, `at: docs/decisions/use-tabs.md`.
 - **Printed routes:**
@@ -535,7 +578,7 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 
 - **What was done:** each printed line of a way, as printed. No shell splits a line that holds a bare word in angle brackets; and the task arm's last line, `jigc task finalize`, exits 2 — *the following required arguments were not provided: `<ID>`*.
 - **What went wrong:** every line these two routes print for a way out holds a placeholder the refusal lists no value for — the task's id, the doctype, the slug — and the one line without a placeholder is the finalize without its id. Every other arm of the same function prints the id and the address concrete (`jigc doc rename adr:use-tabs --to "<title>" --task pick-tabs`, `jigc task finalize pick-tabs`).
-- **The doubt:** what the pilot's first question left open — a placeholder is the reader's to fill, and the contract does not say from where when the refusal lists no value. And, for the last line, the gate's first question: a product command printed without the id it requires (`r1-finalize-nothing-staged-route-prints-finalize-without-its-id` is that question at another site).
+- **What was the doubt, until the ruling:** what the pilot's first question left open — a placeholder is the reader's to fill, and the contract does not say from where when the refusal lists no value. And, for the task arm's last line, the gate's first question: a product command printed without the id it requires (`r1-finalize-nothing-staged-route-prints-finalize-without-its-id` is that question at another site).
 - **Driven by hand, the lines filled with the reader's own values — the task arm's three ways:**
   - *re-create it with an explicit `--slug`*: `jigc doc create adr --title "Use tabs" --slug other --task pick-tabs` exits 1 under `write.identity-change` — *this task's `decision` is already `adr:use-tabs` … a second document beside the first, not a correction of it* — whose own route prints `jigc doc rename adr:use-tabs --to 'Use tabs' --slug other --task pick-tabs`. The way the route prints a line for is refused.
   - *retitle this task's doc*, for which no line is printed: `jigc doc rename adr:use-tabs --to "Use spaces" --task pick-tabs`, then `jigc task finalize pick-tabs` — exit 0, one commit.

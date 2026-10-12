@@ -6,14 +6,16 @@
 
 *Rewritten in its head again, and in section 2, on 2026-10-12, with the commit that carried the second ruling out; the numbers of that section are from one run of the same arm on that commit's tree (408.4 s over 627 cases, load average 14 at its start and 23 at its end, no gate of this branch beside it). In that run the 33 cases of questions 1 and 3 to 8 came to what the tables below say of them.*
 
-**33 cases are marked, under seven questions. Two more questions are ruled and carried out — R, whose 30 cases state what their route promised, and 2, whose 13 name the value their reader would choose — and none of those 43 carries a mark.** The pilot's record listed six questions (its §7), and the three returns after it named three more — *a product command printed without its id*, *a line the route says mints*, *a command cited for what it prints*. Read together they are nine, not twelve:
+*Rewritten in its head a third time, and in sections 3 and 1, on 2026-10-12, with the commit that recorded two more rulings; the numbers of those sections are from one run of the same arm on that commit's tree (345.0 s over 627 cases, load average 14.0 at its start and 14.5 at its end, no gate of this branch beside it), and what the eleven cases' second refusal leads to was driven by hand that day. In that run the 17 cases of questions 4 to 8 came to what the tables below say of them.*
+
+**17 cases are marked, under five questions. Four more questions are ruled, and none of their 59 cases carries a mark: R, whose 30 cases state what their route promised, and 2, whose 13 name the value their reader would choose — carried out, all 43 holding on this tree; and 3 and 1, whose 11 and 5 cases follow the route by its words and stay red, as findings of the product.** The pilot's record listed six questions (its §7), and the three returns after it named three more — *a product command printed without its id*, *a line the route says mints*, *a command cited for what it prints*. Read together they are nine, not twelve:
 
 | | the question | where it was first named | cases | inside a declared bound |
 |---|---|---|---|---|
 | **R** | a command a route cites for what it prints — **ruled, and carried out: no case of it is marked** | the pilot's fourth; the gate's third — **one question**: both ask whether a printed line that is there for its output is held to exit 0 | 30, none marked | 0 |
 | **2** | a placeholder for a value that is the reader's own to choose — **ruled, and carried out: no case of it is marked** | what was left of the pilot's first, **a second question**: no refusal could list such a value, so the first question's reading (a) — *the route owes it* — has no meaning here | 13, none marked | 0 |
-| 1 | a placeholder for a value the product knows and the refusal does not list | what was left of the pilot's first | 5 | 0 |
-| 3 | *a regular file inside this repository* — any, or a committed one | the pilot's second | 11 | 0 |
+| **3** | *a regular file inside this repository* — any, or a committed one — **ruled: any file in the checkout; the eleven stay red, and no case of it is marked** | the pilot's second | 11, none marked | 0 |
+| **1** | a placeholder for a value the product knows and the refusal does not list — **ruled: the route owes it; the five stay red, and no case of it is marked** | what was left of the pilot's first | 5, none marked | 0 |
 | 4 | *make sure `.jigc/…` is readable* — the entry named, or everything under it | the pilot's third | 3 | 3 |
 | 5 | a clause quoted as a route, with a backticked shape in it | the pilot's fifth | 1 | 1 |
 | 6 | a `git` verb printed with no operand | the pilot's sixth | 4 | 1 |
@@ -22,7 +24,9 @@
 
 **What [surface-contract.md](../../../../../design/surface-contract.md) says, by its line.** Line 44, the span fence: every backticked `git …` / `jigc …` span *must carry only shell-safe tokens (a `<placeholder>` the reader fills is legal bare or as a quoted span)*. Line 34, P6: *a placeholder whose value is derivable from the finding's own `key.target` must be substituted before the finding is projected* — for a mechanical route, and exactly two placeholders are derivable, `<address>` and `<doctype>`. Line 71, the printed-path fence: a `git` span is admitted in three shapes, one of them *a span with **no operand**, which names a command rather than a file (`git add`, `git worktree list`, `git stash -u`)*. It has no sentence on a `jigc` span without its operands, on a command a route cites, or on what a route may say a line does.
 
-**Read in this order:** the two questions that are ruled, R and 2, as carried out; then the seven that are open, 1 and 3 to 8.
+**Read in this order:** the four questions that are ruled — R and 2 as carried out, 3 and 1 as ruled; then the five that are open, 4 to 8.
+
+**Three of the rulings read as one rule about a value a printed line needs.** A value that is *the reader's own to choose* is named by the case, which fills it (2). A value *the product knows and the reader may never have seen* is owed by the refusal, and where the refusal does not list it the line is red as it stands (1). And an operand *the reader has just typed* — a product command printed without its id — is the reader's own command run again: that is question 7's ruling of the same day, and its cases below are as they were until it is carried out.
 
 ---
 
@@ -129,49 +133,65 @@ The routes: *choose a distinct `--title`, or keep this one and pass `--slug <slu
 
 ---
 
-## 1. A placeholder for a value the product knows and the refusal does not list
+## 3. *A regular file inside this repository* — any, or a committed one — ruled
 
-**The route says:** `jigc milestone discard <milestone-id> --force` over a refusal that lists a worktree's path and no milestone · `jigc doc create <doctype> --title <title> --slug <slug> --task <id>` and `jigc migrate <path> --as <doctype>` over a refusal that lists only the destination — and, in the same routes, `jigc task finalize` with no id.
+**The ruling — the human's, 2026-10-12** ([DECISIONS.md](../../../../../DECISIONS.md) → *The route is held to any file in the checkout*): *the route is held to any file in the checkout* — one written a moment ago and in no commit included — because that is what its words say, and a new file is the most natural thing for a reader to point the link at. The eleven cases stay red and are findings of the product. Not taken: *a committed file*, under which the route is read as meaning what it does not say, and the eleven are no cases.
 
-- **(a)** the value comes from the refusal's own output, as every other value a route needs: the route owes it, and the case is red as it stands.
-- **(b)** the reader knows it from somewhere else: then the frame, which fills a placeholder with a value the refusal lists or — since question 2 was ruled — with one a case names as the reader's own to choose, has no case: a milestone's id and a doctype are neither.
+**What that changed.** Nothing in the frame, and no classification: the eleven cases followed the words already. They lose their mark, stay on the expected-red list under the word they had — *another failure* — and their two keys' rows in [route-catalog-findings.md](route-catalog-findings.md) say that the reading is ruled.
 
-**The cases — 5, none inside a bound:** under (a) all 5 are red (*a printed line no shell can split*). Under (b) none is a case. Driven by hand with the values put in, as an earlier entry records: the uninstall route holds; of the clobber guard's task arm the printed way is refused, an unprinted one holds, and a third is refused first.
+**The route says:** *point it at a regular file inside this repository* · *point it at a script inside this repository* — of a symbolic link at a path `jigc setup` writes. **What happens:** the link pointed at a file written a moment before (and the link's change committed, where git tracks the link), `jigc setup` again — exit 1, `setup.dirty-install-path` over the new file. The case beside each one points the link at a file the repository holds committed, and holds: eleven cases, never marked.
 
-**The contract:** line 44 makes the placeholder legal; line 34 asks for `<address>` and `<doctype>` concrete where the finding's own target gives them, on a mechanical route — these are prose routes. It does not say where a reader takes any other value from.
+**What would make the route true** — an observation, and no fix: the route naming a committed file, or the re-run taking one that is in no commit.
 
-| case | on this tree's binary | on `rc.24` |
-|---|---|---|
-| `uninstall-fan-out-worktree-uncommitted-work-milestone-abandoned-as-printed` | a printed line no shell can split | a printed line no shell can split |
-| `clobber-task-file-at-the-home-re-created-with-a-slug-as-printed` | a printed line no shell can split | a printed line no shell can split |
-| `clobber-task-file-at-the-home-occupant-migrated-as-printed` | a printed line no shell can split | a printed line no shell can split |
-| `clobber-migration-file-at-the-destination-discarded-and-minted-again-as-printed` | a printed line no shell can split | a printed line no shell can split |
-| `clobber-migration-file-at-the-destination-finalized-and-approved-as-printed` | a printed line no shell can split | a printed line no shell can split |
+**Where the second refusal's own route leads** — it decides how much the finding costs its reader, and makes no case green. Driven by hand on this tree's binary, 2026-10-12: each case from its own state, each way from a fresh sandbox. In all eleven the second refusal lists the new file and prints one route — *commit or stash the work at those path(s) — `git stash -u` where git does not track them yet — then re-run `jigc setup`; `jigc setup --force` is the single consent* — three ways:
 
-## 3. *A regular file inside this repository* — any, or a committed one
+| case | this tree's binary · `rc.24` | *commit* the file, then `jigc setup` | `git stash -u`, then `jigc setup` | `jigc setup --force` |
+|---|---|---|---|---|
+| `setup-hook-link-to-nothing-pointed-at-a-new-script` | another failure · not provoked | **ends** — exit 0 | **does not end** — `setup.install-hook` again | **ends** — exit 0 |
+| `setup-hooks-path-inside-link-to-nothing-pointed-at-a-new-script` | another failure · not provoked | **ends** — exit 0 | ends — exit 0, the reader's hooks directory in the stash | **ends** — exit 0 |
+| `setup-hooks-path-outside-link-to-nothing-pointed-at-a-new-script` | another failure · not provoked | **ends** — exit 0 | **does not end** — `setup.install-hook` again | **ends** — exit 0 |
+| `setup-host-link-to-nothing-committed-and-pointed-at-a-new-file` | another failure · not provoked | **ends** — exit 0 | **does not end** — `setup.inject-reference` again | **ends** — exit 0 |
+| `setup-host-link-out-of-the-repository-committed-and-pointed-at-a-new-file` | another failure · not provoked | **ends** — exit 0 | **does not end** — `setup.inject-reference` again | **ends** — exit 0 |
+| `setup-host-link-to-a-directory-committed-and-pointed-at-a-new-file` | another failure · holds | **ends** — exit 0 | **does not end** — `setup.inject-reference` again | **ends** — exit 0 |
+| `setup-host-link-into-gits-directory-committed-and-pointed-at-a-new-file` | another failure · not provoked | **ends** — exit 0 | **does not end** — `setup.inject-reference` again | **ends** — exit 0 |
+| `setup-settings-link-to-nothing-committed-and-pointed-at-a-new-file` | another failure · not provoked | **ends** — exit 0 | **does not end** — `setup.inject-allowlist` again | **ends** — exit 0 |
+| `setup-settings-link-out-of-the-repository-committed-and-pointed-at-a-new-file` | another failure · not provoked | **ends** — exit 0 | **does not end** — `setup.inject-allowlist` again | **ends** — exit 0 |
+| `setup-settings-link-to-a-directory-committed-and-pointed-at-a-new-file` | another failure · holds | **ends** — exit 0 | **does not end** — `setup.inject-allowlist` again | **ends** — exit 0 |
+| `setup-settings-link-into-gits-directory-committed-and-pointed-at-a-new-file` | another failure · not provoked | **ends** — exit 0 | **does not end** — `setup.inject-allowlist` again | **ends** — exit 0 |
 
-**The route says:** *point it at a regular file inside this repository* · *point it at a script inside this repository* — of a symbolic link at a path `jigc setup` writes.
+**What the table says, and does not.**
 
-- **(a)** any file, or script, in the checkout — one written a moment ago and in no commit included.
-- **(b)** one the repository already holds committed.
+- **In all eleven the chain ends at a completed `jigc setup` by two of the three ways the second refusal names** — the new file committed, or `--force` — so the reader is refused once more than the route says, and is not left without a way.
+- **By the third way, `git stash -u`, the chain does not end in ten**: the stash takes the new file away, the link leads to nothing, and the reader is back at the first refusal, whose route says again to point the link at a regular file inside this repository. In the eleventh it ends because the stash took the whole hooks directory, which was in no commit — the link is gone with it.
+- **In the three cases of the hook, the commit that ends the chain may be the reader's own with the install in it.** That second refusal comes after the install's writes — *the install files are written and staged* — so a commit of the index takes nine install files along under the reader's message, and `jigc setup` then exits 0 and makes no commit of its own. With the commit held to the script's path, `jigc setup` makes the install commit. And the script the reader pointed the link at carries jigc's block either way.
+- **Not established**: `rc.24`'s side of the chain — nine of the eleven are not provoked there, and the second route was followed on this tree's binary only. And each way was driven once.
 
-**The cases — 11, none inside a bound:** under (a) all 11 are red (*another failure*: the re-run draws `setup.dirty-install-path` over the new file). Under (b) the case beside each one points the link at a committed file and holds — eleven cases, not marked.
+---
 
-**The contract:** silent.
+## 1. A placeholder for a value the product knows and the refusal does not list — ruled
 
-| case | on this tree's binary | on `rc.24` |
-|---|---|---|
-| `setup-hook-link-to-nothing-pointed-at-a-new-script` | another failure | not provoked |
-| `setup-hooks-path-inside-link-to-nothing-pointed-at-a-new-script` | another failure | not provoked |
-| `setup-hooks-path-outside-link-to-nothing-pointed-at-a-new-script` | another failure | not provoked |
-| `setup-host-link-to-nothing-committed-and-pointed-at-a-new-file` | another failure | not provoked |
-| `setup-host-link-out-of-the-repository-committed-and-pointed-at-a-new-file` | another failure | not provoked |
-| `setup-host-link-to-a-directory-committed-and-pointed-at-a-new-file` | another failure | holds |
-| `setup-host-link-into-gits-directory-committed-and-pointed-at-a-new-file` | another failure | not provoked |
-| `setup-settings-link-to-nothing-committed-and-pointed-at-a-new-file` | another failure | not provoked |
-| `setup-settings-link-out-of-the-repository-committed-and-pointed-at-a-new-file` | another failure | not provoked |
-| `setup-settings-link-to-a-directory-committed-and-pointed-at-a-new-file` | another failure | holds |
-| `setup-settings-link-into-gits-directory-committed-and-pointed-at-a-new-file` | another failure | not provoked |
+**The ruling — the human's, 2026-10-12** ([DECISIONS.md](../../../../../DECISIONS.md) → *The route owes every value it needs that is not the reader's own to choose*): *the route owes every value it needs that is not the reader's own to choose* — a value the product knows comes from the refusal's own output, and where the refusal does not list it the case is red as it stands. The five cases stay red and are findings of the product. Not taken: *the reader knows it from somewhere else*, under which the frame has no case, and a reader who has never seen the id is left with a line that cannot be run.
+
+**What that changed.** Nothing in the frame, and no classification. The five lose their mark and stay on the expected-red list under the word they had, *a printed line no shell can split*; their two keys' rows in [route-catalog-findings.md](route-catalog-findings.md) say that the reading is ruled. **Two of the five lines carry a placeholder of the other kind too** — `<title>` and `<slug>`, `<different-slug>`: the reader's own. Those the case now names and the frame fills, by the ruling of question 2; the product's placeholders stay, and the line with them — so each of the five is red for a value the product owes, and for nothing else.
+
+**The route says:** `jigc milestone discard <milestone-id> --force` over a refusal that lists a worktree's path and no milestone · `jigc doc create <doctype> --title <title> --slug <slug> --task <id>` and `jigc migrate <path> --as <doctype>` over a refusal that lists only the destination.
+
+| case | missing from the refusal's output | where the product has it | this tree's binary · `rc.24` |
+|---|---|---|---|
+| `uninstall-fan-out-worktree-uncommitted-work-milestone-abandoned-as-printed` | the milestone's id, for `<milestone-id>` | the milestone's area, `.jigc/milestones/<id>/tasks.json`, names the sub-task whose worktree the refusal lists | a printed line no shell can split · the same |
+| `clobber-task-file-at-the-home-re-created-with-a-slug-as-printed` | the doctype, `adr` · the task's id | the staged doc's address · the refused command's own argument | a printed line no shell can split · the same |
+| `clobber-task-file-at-the-home-occupant-migrated-as-printed` | the doctype to adopt the occupant as | the head of the staged doc's address: the occupant stands at that doc's home | a printed line no shell can split · the same |
+| `clobber-migration-file-at-the-destination-discarded-and-minted-again-as-printed` | the migration's id · its doctype | the refused command's own argument · the migration's workflow | a printed line no shell can split · the same |
+| `clobber-migration-file-at-the-destination-finalized-and-approved-as-printed` | the migration's id | the refused command's own argument | a printed line no shell can split · the same |
+
+**What the table says, and does not.**
+
+- **What would make each route true** — an observation, and no fix: the refusal listing the value, or the route printing it concrete, as the other arms of the same functions do.
+- **Driven by hand with the values put in**, as an earlier entry records: the uninstall route holds; of the clobber guard's task arm the printed way is refused under another code, an unprinted one holds, and a third is refused first. Nothing here was driven again for the ruling.
+- **Three of the clobber routes' lines are a product command printed without its id** — `jigc task finalize`, `jigc migrate`: question 7's, and no part of what these five are red for.
+- **Not established**: where the product has a value is read off the state and the constructor's arguments, by one person.
+
+---
 
 ## 4. *Make sure `.jigc/…` is readable* — the entry named, or everything under it
 

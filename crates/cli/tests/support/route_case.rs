@@ -47,9 +47,11 @@
 //! goes to the sandbox's `moved/` under the path it had ([`Place::Moved`]) — as a file does
 //! that a route says to move out of its path ([`Act::MoveOut`]) — and a link is
 //! re-pointed at one of two files of the runner's, the one the sandbox's repository holds
-//! committed ([`COMMITTED`]) or one written new, in no commit ([`NEW_FILE`]). Which of the
-//! two a route means is a reading, and a case says which it followed
-//! ([`Act::PointAtCommitted`], [`Act::PointAtNew`]). Where the route asks for *a script*,
+//! committed ([`COMMITTED`]) or one written new, in no commit ([`NEW_FILE`]). **The route
+//! is held to either** — the human's ruling of 2026-10-12 (`DECISIONS.md` → *The route is
+//! held to any file in the checkout*): *a regular file inside this repository* is any file
+//! in the checkout, one in no commit included — and a case says which of the two it
+//! pointed the link at ([`Act::PointAtCommitted`], [`Act::PointAtNew`]). Where the route asks for *a script*,
 //! the file is [`SCRIPT`] ([`Act::PointAtScript`]): the one the case's state planted there,
 //! committed or not, or one the runner writes new.
 //!
