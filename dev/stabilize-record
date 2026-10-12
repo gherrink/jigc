@@ -31,6 +31,8 @@
 #   run.md                                  the run's facts: its stop mode, its two bounds,
 #                                           the previous release, the default scope and
 #                                           the clauses of its closing condition — and,
+#                                           where its opening named it, the entry of the
+#                                           log that states that condition — and,
 #                                           where its opening wrote them, what its queue is
 #                                           bounded and ranked by, and the rows the human
 #                                           put into it by key (run-set)
@@ -716,6 +718,22 @@
 #                      refused whole (bad-value): the clause is typed twice at an opening
 #                      — here, and in every item's row — and the two are held to each
 #                      other in both orders of writing (item-set).
+#         condition    WHERE THE CLOSING CONDITION IS STATED (the build plan of the reshaped
+#                      `test` stage, §5, K1a): the heading of the entry of DECISIONS.md
+#                      that states it — the line that entry opens with, after its `## `,
+#                      whole. The opening record holds the condition BY REFERENCE (ruling
+#                      14), and this is that reference as data: nothing of the entry is
+#                      copied into the run's record, and `kit` prints the entry from the
+#                      log, by this heading, at every call. So it is no free text: TAKEN
+#                      ONLY AS THE HEADING OF EXACTLY ONE ENTRY THE LOG HOLDS (bad-value:
+#                      no line of the log is `## <it>`, or more than one is, or there is
+#                      no log), and as one line a table's cell holds to the byte
+#                      (bad-value). Written ONCE (exists): the condition does not change
+#                      under a run. OPTIONAL, FOR GOOD: nothing owes it and nothing ever
+#                      will — a run that names none is ready as it was, prints its facts
+#                      without it, and is told by `kit` where its opening points. Its row
+#                      in run.md is the heading itself, as a cell: the one fact whose
+#                      value stands in no backticks, which a heading may end with.
 #         budget       THE OPENING'S NUMBERS, AND THE ORDER (the build plan of the reshaped
 #         hand-on      `test` stage, T2a; the rulings of 2026-10-10, 1, and of 2026-10-11,
 #         order        2). budget: how many verdicts a round's `test` stage may spend.
@@ -789,8 +807,9 @@
 #         facts        {stop, rounds, cycles, previous, previous-commit, scope, clauses}
 #                      as run-set wrote them (null where it did not; the bound on a
 #                      round's cycles is three where it is null), and findings: the
-#                      ledger's census — and, ONLY WHERE THE RUN HOLDS IT, each of budget,
-#                      hand-on, order and queued: a run that holds none has no such field
+#                      ledger's census — and, ONLY WHERE THE RUN HOLDS IT, each of
+#                      condition, budget, hand-on, order and queued: a run that holds none
+#                      has no such field
 #         not_ready    what the opening still owes, or []: no-clause-row (the census names
 #                      no clause, so the clause table has no row) · no-stop-mode ·
 #                      no-round-bound (the mode is at-the-bound, and no number is written)
@@ -1670,6 +1689,48 @@
 #                      carries one: {"run", "row": {...}}. A key the ledger lacks is
 #                      refused (no-such-row).
 #
+#   dev/stabilize-record kit --run R --role ROLE
+#       WHAT EVERY AGENT OF A ROLE LOOKS UP, IN ONE READ (the build plan of the reshaped
+#       `test` stage, §5, K1a; the third count's candidate 1: 283 of the verifiers' 2,095
+#       turns did nothing but look these up). TEXT, for the agent that runs it: no line
+#       of it is relayed, and it writes nothing. EVERY PART IS READ AT THIS CALL FROM THE
+#       FILE THAT OWNS IT and printed as it stands there, under a title line (`=== … ===`)
+#       that names the file. This script holds where each part opens and where it ends,
+#       and no word of one — so no rule has a second home here:
+#         the report's rules    this help: the call a report is handed over by, with the
+#                               line a report ends with — and what every writer does to
+#                               a text, in order (host paths, a cell, the fences, the
+#                               scan, the write)
+#         the slug rule         this help: what an identifier is
+#         the rig               the help of dev/jigc-rig, which is its header: the
+#                               two-step eval, its usage and its states, its options
+#                               (`--binary` names the jigc to drive) — not its git states
+#         the repro block       implementation/pinning.md: the section that owns the
+#                               block's format, to where its conversion discipline begins
+#         the closing condition DECISIONS.md: THE ENTRY THE RUN NAMES (run-set: condition),
+#                               from its heading to the next entry's. Where the run names
+#                               none, the kit says so, and WHERE THE OPENING POINTS:
+#                               completions/artifacts/<run>/opening.md holds the
+#                               condition by reference. The log is then not read.
+#       ROLE is one of review, drive, verify, advocate, proposal — a role that is handed a
+#       binary: every part — and triage, which drives nothing: every part but the rig.
+#       Any other word is refused (bad-id), as a stage is.
+#       NOTHING OF A FINDING, OF THE RUN'S STATE OR OF A BINARY IS IN IT. Of the run it
+#       reads the one fact — under the shared lock and never across a killed write, as
+#       `state` does — and a run without an order is answered as a run with one. The two
+#       binaries with their hashes, the scratch root and the key stay the prompt's, which
+#       names this call as an agent's first.
+#       A PART IS FOUND BY THE LINE IT OPENS WITH, AND NEVER GUESSED AT. A stretch whose
+#       opening line is not in its file, or whose closing line does not follow it (moved),
+#       or whose opening line stands there more than once (twice) — or whose file is
+#       gone, is no text, or is a link, which is not followed (gone) — is NOT PRINTED: in
+#       its place one line says the word, the file and the line; EVERY OTHER PART IS
+#       PRINTED AS IT STANDS; and the call exits 27. The condition's entry is found by its
+#       heading WHOLE: a heading that only opens so is another entry.
+#       WHAT IT DOES NOT HOLD: that an entry reads as it read at the opening. The heading
+#       is held; the text under it is the log's, as it stands at the call. And a part is
+#       printed from the working tree, as every read of this script is.
+#
 #   dev/stabilize-record pending --run R
 #       What of the run is written and in no commit yet, AS THIS SCRIPT KNOWS IT; writes
 #       nothing. Prints {"run", "opened", "journal", "interrupted", "batch", "once",
@@ -1842,7 +1903,8 @@
 #               human for exactly that (round-set).
 #   once        the run's stop mode, previous release, default scope and clauses: where
 #               the run does not hold them yet, and then never again. And how many items
-#               a verifier hands on (hand-on), the same.
+#               a verifier hands on (hand-on), the same; and the entry of the log that
+#               states the closing condition (condition), the same.
 #   spent       the budget: where the run holds none; and after that RAISED, only while
 #               it is spent and the queue holds a row nobody reached — its own stop, as
 #               each bound has one. The raise is the human's answer to that stop.
@@ -1988,7 +2050,8 @@
 #    6  exists        the report's path is taken — pass the next attempt; or a round's
 #                     scope, a fact of its record, the run's stop mode, previous
 #                     release, default scope or clauses — or how many items a verifier
-#                     hands on — are written once and stand; or
+#                     hands on, or the entry its condition is stated in — are written
+#                     once and stand; or
 #                     an item has its result in a round that is not tested yet; or an
 #                     item a round has run or owes a run keeps its clause, runs, doors
 #                     and registries; or a row that has a verdict keeps its kind; or a
@@ -2018,7 +2081,8 @@
 #                     found again that brings a row's cells, or in a run without an order;
 #                     a report that opens as a triage's rendered entries and is not that
 #                     rendering, or is handed to `report`; a word of a composed record
-#                     outside its grammar, or such a record in a run without an order
+#                     outside its grammar, or such a record in a run without an order;
+#                     a condition that is not the heading of exactly one entry of the log
 #    8  no-such-row   ledger-set names a key the ledger lacks, or result-set an item the
 #                     test set lacks; a row is handed on under a parent the ledger lacks;
 #                     a key is put into the queue that the ledger lacks; a verdict is
@@ -2053,6 +2117,8 @@
 #                     is nothing to record, and nothing was written
 #   26  words         the plain words a record is composed of are not the words their
 #                     composer hashed: one was altered, dropped, added or moved
+#   27  kit           failed: a part is not where its file had it — moved, twice or gone
+#                     (the result is on stdout: every other part, and that one named)
 #
 # Needs python3, git and bash (dev/hygiene-scan), which the gate needs already, and
 # gitleaks and a denylist to write anything at all.
@@ -2099,6 +2165,7 @@ REPORTS_MISMATCH = 20
 LEDGER_MISMATCH = 21
 GATE_MISMATCH = 22
 VET_MISMATCH = 24
+KIT_MISMATCH = 27
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 ROOT = os.path.dirname(SCRIPT_DIR)
@@ -2278,7 +2345,7 @@ GO = re.compile(r"c(0|[1-9][0-9]{0,5})")
 OUTCOMES = ("dropped", "part")
 # The run's facts, in the order their table holds them, and when a run stops for the
 # human of its own accord.
-RUN_FACTS = ("stop", "rounds", "cycles", "previous", "previous-commit", "scope", "clauses", "budget", "hand-on", "order", "queued", "findings")
+RUN_FACTS = ("stop", "rounds", "cycles", "previous", "previous-commit", "scope", "clauses", "condition", "budget", "hand-on", "order", "queued", "findings")
 STOP_MODES = ("every-round", "at-the-bound")
 # THE OPENING'S NUMBERS, AND THE ORDER (the build plan of the reshaped `test` stage, T2a):
 # how many verdicts a round's `test` stage may spend, how many items a verifier hands on,
@@ -2288,10 +2355,19 @@ STOP_MODES = ("every-round", "at-the-bound")
 # THE RUN HOLDS IT: a run that holds none prints the facts it always printed, and no key
 # more. A run that holds an `order` is A RUN WITH A QUEUE.
 RUN_QUEUE = ("budget", "hand-on", "order", "queued")
+# WHERE THE CLOSING CONDITION IS STATED (the build plan of the reshaped `test` stage, §5,
+# K1a): the heading of the entry of the log that states it — the reference the opening
+# record holds in prose (ruling 14), as data. OPTIONAL FOR GOOD, and, like the queue's four,
+# a fact only where the run holds it. The log, and what a line that opens an entry of it
+# opens with.
+CONDITION = "condition"
+LOG = "DECISIONS.md"
+ENTRY = "## "
 # The facts written once: when a run stops, the release it measures against, its default
 # scope and the clauses it must satisfy do not change under it — nor how many items a
-# verifier hands on. (The budget and the order are the human's to change, by a ruling: T2b.)
-RUN_ONCE = ("stop", "previous", "previous-commit", "scope", "clauses", "hand-on")
+# verifier hands on, nor where its condition is stated. (The budget and the order are the
+# human's to change, by a ruling: T2b.)
+RUN_ONCE = ("stop", "previous", "previous-commit", "scope", "clauses", "hand-on", CONDITION)
 # The two bounds, which only go up, and the stop at which the human raises each.
 RUN_BOUNDS = {"rounds": "round-bound", "cycles": "cycle-bound"}
 # The facts that are a positive whole number.
@@ -2456,7 +2532,31 @@ WRITERS = {
     "verdict": "filed",
     "triage": "handed",
 }
-READERS = ("state", "item", "item-doors", "untriaged", "row", "pending", "check-reports", "check-ledger", "gate-check", "vet")
+READERS = ("state", "item", "item-doors", "untriaged", "row", "kit", "pending", "check-reports", "check-ledger", "gate-check", "vet")
+# THE LOOKUP KIT (the build plan of the reshaped `test` stage, §5, K1a; the header: kit).
+# A PART is (its title, the file that owns it, how that file is read — `header`: a script's
+# help, which is its leading comment block; `text`: the file — and its stretches, each as
+# (the line it opens with, the line it ends before — None: the file's last line)). THIS
+# TABLE HOLDS WHERE A PART IS, AND NO WORD OF ONE: the text is read at the call.
+HEADER, TEXT = "header", "text"
+KIT_PARTS = {
+    "rules": ("THE REPORT'S RULES", "dev/" + PROG, HEADER, (("  dev/%s report --run R" % PROG, "  dev/%s ledger-add" % PROG), ("What a writer does to its text, in order", "WHAT IT IS HANDED NEVER ENDS IN A TRACEBACK"))),
+    "slug": ("THE SLUG RULE", "dev/" + PROG, HEADER, (("Identifiers.", "Usage:"),)),
+    "rig": ("THE RIG: ITS STATES, AND HOW A BINARY IS NAMED TO IT", "dev/jigc-rig", HEADER, (("It prints SHELL ASSIGNMENTS", "THERE IS NO TEARDOWN"), ("Usage:", "Git states ("), ("Options:", None))),
+    "repro": ("THE REPRO BLOCK'S FORMAT", "implementation/pinning.md", TEXT, (("## 3. The repro-block pipeline (fact drift)", "**Conversion discipline:**"),)),
+}
+# THE ROLES, as the harness launches them (.claude/workflows/stabilize.js, ROLES), and the
+# parts each is printed: a role that is handed a binary reads every part; the triage drives
+# nothing, and reads nothing of the rig. A role without a row is refused. (A second place
+# for who drives, declared: the harness's own table says it of its roles, and nothing holds
+# the two to each other until the task that makes a prompt name this call — K1b.)
+KIT_DRIVES = ("review", "drive", "verify", "advocate", "proposal")
+KIT_ROLES = dict({role: ("rules", "slug", "rig", "repro", CONDITION) for role in KIT_DRIVES}, triage=("rules", "slug", "repro", CONDITION))
+# Why a stretch is not printed: its opening line is not in its file, or its closing line
+# does not follow; its opening line stands there more than once; its file is no file of
+# this repository that reads as text. And the line that stands between two stretches.
+KIT_MOVED, KIT_TWICE, KIT_GONE = "moved", "twice", "gone"
+KIT_GAP = "[…]"
 KEEPERS = ("discard", "settle", "recover", "set-aside")
 ROUND_TAKES = {
     "candidate": "untested",
@@ -2481,6 +2581,7 @@ RUN_TAKES = {
     "previous-commit": "once",
     "scope": "once",
     "clauses": "once",
+    "condition": "once",
     "budget": "spent",
     "hand-on": "once",
     "order": "ruled",
@@ -2521,11 +2622,20 @@ def shown(value):
     return json.dumps(value, ensure_ascii=True)
 
 
-def usage_help():
-    for line in open(__file__, encoding="utf-8").read().split("\n")[1:]:
+def header_of(text):
+    """A script's header as its help prints it: the comment lines that follow its first
+    line, each without its `#` and the one blank after it."""
+    lines = []
+    for line in text.split("\n")[1:]:
         if not line.startswith("#"):
             break
-        print(re.sub(r"^# ?", "", line))
+        lines.append(re.sub(r"^# ?", "", line))
+    return lines
+
+
+def usage_help():
+    for line in header_of(open(__file__, encoding="utf-8").read()):
+        print(line)
 
 
 # --- identifiers and paths ----------------------------------------------------
@@ -3359,7 +3469,8 @@ def run_facts(rel, rows):
     this script's is refused."""
     held = {}
     for name, row in zip(unique_rows(rel, rows), rows):
-        value = untick(row[1])
+        # The condition's cell is the heading itself, which may open or end with a backtick.
+        value = as_data(row[1]) if name == CONDITION else untick(row[1])
         listed = value.split(ITEMS_BREAK)
         slugs = all(SLUG.fullmatch(entry) for entry in listed) and len(set(listed)) == len(listed)
         holds = {
@@ -3370,6 +3481,7 @@ def run_facts(rel, rows):
             "previous-commit": FULL_SHA.fullmatch(value),
             "scope": value in DEFAULT_SCOPES,
             "clauses": slugs,
+            CONDITION: cell(value) == row[1],
             "budget": NUMBER.fullmatch(value),
             "hand-on": NUMBER.fullmatch(value),
             "order": all(CLASS.fullmatch(entry) for entry in listed) and len(set(listed)) == len(listed),
@@ -3384,9 +3496,10 @@ def run_facts(rel, rows):
 
 def in_order(held):
     """The run's facts in the order their table holds them: every fact named, None where
-    the run does not hold it — but of the queue's four, which nothing owes, only what the
-    run holds. So a run that holds none of them says what it always said."""
-    return {name: held.get(name) for name in RUN_FACTS if name in held or name not in RUN_QUEUE}
+    the run does not hold it — but of the queue's four, which nothing owes, and of where the
+    condition is stated, which nothing ever will, only what the run holds. So a run that
+    holds none of them says what it always said."""
+    return {name: held.get(name) for name in RUN_FACTS if name in held or name not in RUN_QUEUE + (CONDITION,)}
 
 
 def has_queue(run_dir):
@@ -3397,8 +3510,9 @@ def has_queue(run_dir):
 
 
 def run_rows(facts):
-    """The run's facts as the rows of their table."""
-    return [[tick(name), tick(ITEMS_BREAK.join(facts[name]) if name in RUN_LISTS else str(facts[name]))] for name in RUN_FACTS if facts.get(name) is not None]
+    """The run's facts as the rows of their table — the condition's heading as a cell of
+    its own, in no backticks: a heading may end with one."""
+    return [[tick(name), cell(facts[name]) if name == CONDITION else tick(ITEMS_BREAK.join(facts[name]) if name in RUN_LISTS else str(facts[name]))] for name in RUN_FACTS if facts.get(name) is not None]
 
 
 def round_facts(rel, rows):
@@ -4153,13 +4267,15 @@ def run_set(args):
         if not isinstance(given["clauses"], list) or not given["clauses"]:
             refuse("bad-value", "clauses is the closing condition's clauses, a non-empty array of slugs, not %s" % shown(given["clauses"]))
         distinct([slug(clause, "a clause of the closing condition") for clause in given["clauses"]], "clause")
+    if CONDITION in given:
+        a_condition(given[CONDITION])
     one_writer(run_dir)
     read = standing(run_dir, args.run)
     rel, above, rows = read_run(run_dir)
     facts = run_facts(rel, rows)
     for name in RUN_ONCE:
         if name in given and facts.get(name) not in (None, given[name]):
-            refuse("exists", "%s holds %s %s — when a run stops, the release it measures against, its default scope, the clauses it must satisfy, and how many items a verifier hands on are written once, at its opening; nothing was written" % (rel, name, ITEMS_BREAK.join(facts[name]) if name in RUN_LISTS else facts[name]))
+            refuse("exists", "%s holds %s %s — when a run stops, the release it measures against, its default scope, the clauses it must satisfy, how many items a verifier hands on, and the entry its condition is stated in are written once, at its opening; nothing was written" % (rel, name, ITEMS_BREAK.join(facts[name]) if name in RUN_LISTS else facts[name]))
     if "order" in given and facts.get("order") is None:
         # A RUN WITH AN ORDER IS A RUN WITH A QUEUE, and the queue is ranked by a row's
         # class: every row of the ledger carries one from then on (ledger-add), so the
@@ -4202,6 +4318,19 @@ def run_set(args):
     publish(run_dir, ["run.md"], render_table(above, ROUND_COLUMNS, run_rows(facts)), replace=True)
     render_view(run_dir)
     say(json.dumps({"run": rel, "facts": facts}))
+
+
+def a_condition(given):
+    """Refuse a condition that names no entry: it is THE HEADING OF EXACTLY ONE ENTRY OF THE
+    LOG, whole — the line that entry opens with, after its marker — and one line a table's
+    cell holds to the byte, so that what is read back is what was written. It is held to the
+    log where it is written, at the opening, and not first by the agents the entry is
+    printed for (kit)."""
+    if not isinstance(given, str) or as_data(cell(given)) != given:
+        refuse("bad-value", "condition is the heading of the entry of %s that states the run's closing condition — the line that entry opens with, after its `%s`, as one line a table's cell holds to the byte — not %s; nothing was written" % (LOG, ENTRY, shown(given)))
+    found, why = kit_stretch(kit_file(LOG, TEXT), LOG, TEXT, ENTRY + given, ENTRY, entry=True)
+    if found is None:
+        refuse("bad-value", "condition: %s — a run names the entry that states its closing condition by that entry's heading, whole, and the log holds exactly one such entry; nothing was written" % why[1])
 
 
 def put_in(read, facts, keys):
@@ -5870,6 +5999,84 @@ def read_row(args):
     say(json.dumps({"run": args.run, "row": rows[0]}))
 
 
+def kit_file(home, read):
+    """The lines of a file the kit reads — a script's header, or the file — or None: it is
+    no regular file of this repository that reads as text. A LINK IS NOT FOLLOWED, at the
+    file or on the way to it: it could name any file of the machine, and what the kit
+    prints an agent may put into a report."""
+    path = os.path.join(ROOT, *home.split("/"))
+    if os.path.realpath(path) != path or not os.path.isfile(path):
+        return None
+    try:
+        text = open(path, encoding="utf-8", newline="").read()
+    except (OSError, ValueError):
+        return None
+    return header_of(text) if read == HEADER else text.split("\n")
+
+
+def kit_stretch(lines, home, read, opens, ends, entry=False):
+    """(the stretch of a file from the ONE line that opens with `opens` to the line before
+    the next that opens with `ends` — to the file's last line where `ends` is None —
+    without the blank lines it ends with, None); or (None, why it is not printed: the word,
+    and a sentence that names the file — as an agent asks for it — and the line). `lines`
+    is None where the file is none (kit_file). AN ENTRY of the log is found by its heading
+    WHOLE — the line IS `opens` — and ends where the next entry opens, or where the log
+    does."""
+    named = "`%s --help`" % home if read == HEADER else home
+    if lines is None:
+        return None, (KIT_GONE, "%s is no file of this repository that reads as text" % home)
+    at = [n for n, line in enumerate(lines) if (line == opens if entry else line.startswith(opens))]
+    if len(at) > 1:
+        return None, (KIT_TWICE, "%s has %d lines that %s `%s`" % (named, len(at), "are" if entry else "open", opens))
+    if not at:
+        return None, (KIT_MOVED, "%s has no line that %s `%s`" % (named, "is" if entry else "opens", opens))
+    rest = lines[at[0] + 1:]
+    end = len(rest) if ends is None else next((n for n, line in enumerate(rest) if line.startswith(ends)), len(rest) if entry else None)
+    if end is None:
+        return None, (KIT_MOVED, "%s has no line that opens `%s` after the one that opens `%s`" % (named, ends, opens))
+    found = lines[at[0]:at[0] + 1 + end]
+    while found and not found[-1].strip():
+        found.pop()
+    return found, None
+
+
+def kit(args):
+    """THE LOOKUP KIT: what every agent of a role looks up, each part read at this call from
+    the file that owns it. It reads one fact of the run — where its closing condition is
+    stated — and nothing else of it; it writes nothing."""
+    if args.role not in KIT_ROLES:
+        refuse("bad-id", "role %s is not one of %s" % (shown(args.role), ", ".join(KIT_ROLES)))
+    run_dir = open_run(args.run)
+    fcntl.flock(os.open(run_dir, os.O_RDONLY), fcntl.LOCK_SH)
+    interrupted(run_dir, args.run)
+    named = run_facts(*read_run(run_dir)[::2]).get(CONDITION)
+    said = ["THE KIT of run %s, for `%s` — what an agent of this role looks up, each part read at this call from the file its title names and printed as it stands there. Nothing of a finding, of the run's state or of a binary is in it: those are your prompt's." % (args.run, args.role)]
+    whole = True
+    for part in KIT_ROLES[args.role]:
+        by_hand = "it is looked up there by hand."
+        if part == CONDITION:
+            points = "The opening record holds the run's closing condition by reference: %s says which decision states it — read it there, and then the entry it points at." % "/".join(ARTIFACTS + (args.run, "opening.md"))
+            if named is None:
+                # THE LOG IS NOT READ: the run names no entry, and none is guessed at.
+                said += ["", "=== THE CLOSING CONDITION — the run names no entry of %s ===" % LOG, "The run's record names no entry (run-set: condition). " + points]
+                continue
+            home, read, stretches, by_hand = LOG, TEXT, ((ENTRY + named, ENTRY),), by_hand + " " + points
+            said += ["", "=== THE CLOSING CONDITION — from %s, the entry the run names ===" % LOG]
+        else:
+            title, home, read, stretches = KIT_PARTS[part]
+            said += ["", "=== %s — from %s ===" % (title, "`%s --help`" % home if read == HEADER else home)]
+        lines = kit_file(home, read)
+        for n, (opens, ends) in enumerate(stretches):
+            found, why = kit_stretch(lines, home, read, opens, ends, entry=part == CONDITION)
+            said += [KIT_GAP] * bool(n) + (found or ["NOT PRINTED (%s): %s — %s" % (why + (by_hand,))])
+            whole = whole and found is not None
+            if lines is None:
+                # A file that is none is said once, however many stretches of it a part has.
+                break
+    say("\n".join(said))
+    return 0 if whole else KIT_MISMATCH
+
+
 def interrupted(run_dir, run):
     """Refuse to read a run one of whose writes was killed between its files. The reader
     holds the shared lock, so the write is not alive: its journal is what is left."""
@@ -7265,6 +7472,7 @@ def arguments(argv):
     command("item-doors", item_doors, [("round", True), ("item", True)])
     command("untriaged", untriaged, [])
     command("row", read_row, [("key", True)])
+    command("kit", kit, [("role", True)])
     command("gate-set", gate_set, [("round", True), ("commit", True), ("summary", True)], writes=True)
     command("gate-check", gate_check, [("round", False), ("summary", True)], writes=True)
     command("apply", apply, [("round", False), ("subject", True), ("from", False), ("sha256", False)], writes=True)

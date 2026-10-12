@@ -2,6 +2,116 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The lookup kit: one read prints what every agent of a role looks up, each part from the file that owns it and found by the line it opens with — and a run may name the entry its closing condition is stated in, a fact nothing will ever owe (the plan's `K1a`; the builder's choices inside it)
+
+**What.** [`dev/stabilize-record`](dev/stabilize-record) has one more read, `kit`, and the run one more fact, `condition` ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §5, `K1a`, the migration order's Phase A; the third count's candidate 1, [prebuild-census.md](completions/artifacts/M55/stabilization-build/reshape/prebuild-census.md): 283 of the verifiers' 2,095 turns did nothing but look up the report's rules, the opening, the repro format, the rig's help and the exit rule's text). The script's header is the contract; in one place:
+
+- **The call, as an agent types it:** `dev/stabilize-record kit --run R --role ROLE` — one plain invocation of a tool the allow rules already hold. It prints text for the agent that runs it, relays nothing, and writes nothing.
+- **Every part is read at the call from the file that owns it**, and printed as it stands there under a title line that names the file. The script holds where each part opens and where it ends, and no word of one: no rule has a second home in it.
+- **`ROLE`** is `review`, `drive`, `verify`, `advocate` or `proposal` — a role that is handed a binary: five parts — or `triage`, which drives nothing: four, without the rig. Any other word is refused (`bad-id`), as a stage is.
+- **The fact:** `run-set` takes `condition` — the heading of the entry of `DECISIONS.md` that states the run's closing condition, the line that entry opens with after its `## `, whole. Ruling 14 has the opening hold the condition by reference; this is that reference as data. **Nothing of the entry is copied into the run's record.**
+- **A status of its own, 27**, for a kit one of whose parts is not where its file had it: the rest is on stdout.
+
+**What it prints, part by part** — on this tree's files, for a run whose `condition` names the exit rule's entry (*2026-10-04 — The exit rule, revised*), which is the example and no opening's choice:
+
+| Part | Read from | Found by the line that opens | Ends before the line that opens | Bytes | Lines |
+|---|---|---|---|---|---|
+| one line that says whose kit it is | — | — | — | 255 | 1 |
+| the report's rules | the script's own header, as `--help` prints it | `  dev/stabilize-record report --run R` · `What a writer does to its text, in order` | `  dev/stabilize-record ledger-add` · `WHAT IT IS HANDED NEVER ENDS IN A TRACEBACK` | 3,319 | 45 |
+| the slug rule | the same header | `Identifiers.` | `Usage:` | 442 | 6 |
+| the rig: its states, and how a binary is named to it | the header of [`dev/jigc-rig`](dev/jigc-rig), which is its help | `It prints SHELL ASSIGNMENTS` · `Usage:` · `Options:` | `THERE IS NO TEARDOWN` · `Git states (` · the header's end | 4,274 | 67 |
+| the repro block's format | [pinning.md](implementation/pinning.md) | `## 3. The repro-block pipeline (fact drift)` | `**Conversion discipline:**` | 882 | 19 |
+| the closing condition | `DECISIONS.md`, the entry the run names | the line that **is** `## <the fact>` | the next entry's heading, or the log's end | 3,294 | 18 |
+
+**12,841 bytes in 166 lines** for a role that is handed a binary; 8,473 in 97 for the triage. On the suite's fullest stage, whose log the suite writes, 9,843 in 155 and 5,475 in 86; the arm holds a verifier's kit there under 16,000 bytes and 220 lines. A call over this tree's log, which is 9 MB, took 0.11 seconds.
+
+**The five lookups the plan counts, and what an agent still looks up afterwards.**
+
+| Lookup (agents in the canary) | Where the kit takes it from | Still the agent's own |
+|---|---|---|
+| the report's rules (97) | two stretches of the script's help: the call a report is handed over by, with its last line — and what every writer does to a text | the table of refusals, which a refusal names itself when it happens; the fields of the file a triage or a verifier hands over, which are the `triage` and the `verdict` usage and no part of the kit |
+| the opening (95) | **not printed.** What the agents went there for is: the entry the opening points at. Where the run names none, the kit says the opening record's path and what to read there | the opening record's prose, where a definition still sends an agent to it — the candidate, the test set and the bounds are the prompt's and the state's as data |
+| the repro format (85) | the section of `pinning.md` that owns it, to where its conversion discipline begins | nothing of the block; what a fixer does with one is not printed |
+| the rig's help (81) | three stretches of the rig tool's header: the two-step eval, the usage with the states, the options with `--binary` | the rig's git states (`dev/jigc-rig --list-git-states`), which no verifier of the canary named |
+| the exit rule's text (76) | the log, by the heading the run names | nothing, where the run names its entry |
+
+The slug rule (22 agents) is a part too. **Not in the kit, and not meant to be:** the hash of a binary, the run's state, the scratch root and the key — the prompt's.
+
+**What it does when something it reads is not as it was.** A stretch is found by the line it opens with and is never guessed at.
+
+| What happened | The word | What is printed | Exit |
+|---|---|---|---|
+| a heading was reworded, or the line a stretch ends before is gone | `moved` | in that stretch's place one line — the word, the file, the line — and **every other part as it stands** | 27 |
+| a second line opens as the stretch does | `twice` | the same | 27 |
+| the file is gone, is no text, or is a link | `gone` | the same, said once for the part | 27 |
+| the entry the run names was reworded in its heading, stands twice, or the log is gone | `moved` · `twice` · `gone` | the same, and where the opening points | 27 |
+| the entry's **text** was changed under an unchanged heading | — | the entry as it now reads. **Nothing says that it changed** | 0 |
+| the run names no entry | — | every other part; in the condition's place the opening record's path. The log is not read | 0 |
+| the run's table is no table of the script's, or a write of the run was killed between its files | `corrupt` · `interrupted` | nothing: refused whole, as `state` is | 13 · 17 |
+
+**Chosen where the plan left it to the builder — and what was rejected.**
+
+- **Text, and not a line of JSON.** Every other read of the script is one line of JSON because an agent relays it; this one is read by the agent that runs it and reaches no script. Twelve kilobytes of escaped line breaks would be the lookup made harder.
+- **The roles are the names the harness launches a role under**, so that a prompt and a definition say their own. *Rejected:* two words for *handed a binary* and *not* — the harness would map onto them, and a part that is one role's alone later (the fields of a verifier's file) would have no row to go into. It makes this script a second place that says who drives; declared in the table's comment, and held by nothing until `K1b`.
+- **Only the roles that report on findings have a row.** The scope step, the preflight, the fixer, the record's executor and the cross-model pass are refused: the count names one agent a stage for the scope step and for the preflight and none for the rest, and no step of the plan gives any of them the call. A row is one line.
+- **The fact is the entry's heading, whole.** *Rejected:* a part of the heading, as the project's prose cites an entry — two entries can open alike, and one that cites an earlier ruling does; a line number — the log grows at its top, so every one moves with every entry; the entry's date — 1,491 headings, many a day.
+- **The fact is held to the log where it is written.** `run-set` takes it only as the heading of exactly one entry the log holds, so a mistyped heading is refused at the opening, in front of the human, and not first by eighty agents. That keeps the script's sentence true that none of a run's facts is free text. *Rejected:* holding it only at the kit.
+- **Written once**, as the census is: the condition does not change under a run. An entry whose heading is reworded afterwards is named `moved` by every kit, and the way out is the log's heading put back, or the run opened again.
+- **Its cell is the heading itself, in no backticks** — the one fact so written. The table's reader strips backticks from a value, and 33 of the log's headings open or end with one. A pipe is escaped as a cell's is; a heading a cell cannot hold to the byte is refused at the write.
+- **Optional for good, and a fact only where the run holds it**: the state of a run that names none has no such key, and its table no row.
+- **A missing part does not refuse the kit.** The rest is printed and the call exits 27 with nothing on stderr, as the checks of the script do that put their result on stdout. *Rejected:* a refusal that prints nothing — one reworded heading would send every agent of a stage back to four lookups by hand. What keeps a heading where it is, is the suite: the rig tool and the pinning document are copied into its rig from this tree, so a commit that moves one is red at its own gate.
+- **The opening record is not printed.** The workflow's rule is that nothing is read out of its prose, and no scan of the script has seen it. *Rejected:* printing it whole to save the read — it would put a text the script neither wrote nor held on its stdout as its own.
+- **A link is not followed**, at a file or on the way to it: it could name any file of the machine.
+- **Of the rig's help, three stretches and not the whole**: its opening story, its paragraph on teardown and its seventeen git states are left out — 4.3 KB of 8.5.
+- **The repro block's section ends where its conversion discipline begins**: what a fixer does with a block is no reporter's lookup.
+- **A role is refused as an identifier** (`bad-id`), as a stage is — a word of a closed list.
+- **Read as the state is read**: under the shared lock, and never across a write that was killed.
+- **A run without an order is answered as a run with one.** The kit is no part of the queue, and the prompts of both paths of the harness will name it.
+- **The help and the kit read the header by one function**, so *from the script's own help* holds by construction; an assertion holds `--help` to the header, whole.
+
+**Phase A, shown.** `a_run_without_an_order_holds_the_bytes_it_held` is green **unmodified**. Nothing calls the read. The fact is written only where a call names it; a run that names none prints the facts it printed, in the bytes it printed them in — the arm of `T2a` that holds those bytes as a literal is green unmodified too.
+
+**Red first.** Three arms, written before the script knew the call or the fact, and run on the parent's script: three red, each at the first write of the fact (*a run's facts has no field "condition"*). The third was then reordered to ask for the kit before any fact is written, and was red at the call (*"kit" is not a subcommand*). Five table arms of the record suite that hold the script's lists were red beside them for want of the subcommand and the fact, and the one of the step suite. **What followed its code, and says so:**
+
+- *Two of the arms' own mistakes, found on the first green:* a heading reworded so that it still opened as it had — a stretch is found by how its line **opens**, so `--run R` said as `--run RUN` moves nothing — and an assertion that a run's table holds no word *condition*, which its own preamble does.
+- *One assertion written against a wrong reading of the script:* a cell a hand put into backticks is another heading, not a corrupt table; the kit names it `moved`. The arm follows the script, and holds as corrupt the cell the script would not have written.
+- *Assertions added after the first green, each where a mutant about to be run would have survived:* the kit over a write that was killed; `--help` held to the header whole; a missing file said once; a part ending where its text does.
+- *After the first run of the mutants, two changes so that the assertion that names a property is the one that kills:* the block that holds the kit free of this machine's paths moved ahead of the comparison with an empty run; and a case added for an entry that cites the condition's heading, added to the log after the opening.
+- *The size the arm holds* was set from what the script printed.
+
+**Mutants of the finished script** — thirty-four, each one edit, each run on the arm that names its property; the whole set was run again on the arms as they finally stood. All died.
+
+| The edit | The arm that went red |
+|---|---|
+| a stretch runs to its file's end · the report's rules run on into the next usages · the rig's help into its git states · the repro block into its whole section · a stretch keeps the blank lines it ends with · the triage is printed the rig · a role nobody tabled is printed a verifier's kit · the repository's root is named · a row of the ledger is named · the kit is refused in a run without an order · it reads across a write that was killed · an entry is found by how its heading opens | `the_kit_prints_what_a_reporter_looks_up_and_nothing_of_a_finding` |
+| of two lines that open a stretch the first is taken · a stretch that is not found is printed from where its file opens · two stretches stand with nothing between them · a link is followed · bytes that are no text are a fault · a missing part exits 0 · a file that is gone is said for every stretch of it · the last entry of the log has no end · the help is every comment line of the script · the kit alone reads an entry by how its heading opens · a condition that moved is not told where the opening is · the fact is not held to the log · nor to what a cell holds · is taken of any type · is written again and again · its cell is in backticks · is read as every fact's is · is read with its pipe escaped · any cell is one the script wrote | `the_kits_parts_are_read_from_their_homes` |
+| a run that names no entry is printed the log's first · is not told where its opening is · every run says a condition, `null` where it names none | `a_run_that_names_no_condition_is_told_where_the_opening_points` |
+
+Two died on an assertion beside the one that names them, and it is said here: *an entry found by how its heading opens*, edited in the function both the write and the read use, dies at the write, which refuses the heading as standing twice — the read alone is a mutant of its own, in the second row; and *the kit refused in a run without an order* dies at the kit of the empty run, which holds no order either, before the line that says so of the fullest one.
+
+**The assertions this task carried.** In the step suite, one: `no_act_reaches_main_a_release_branch_a_tag_or_a_branch_outside_the_model` holds the record script's subcommands to a row each of what they reach — `kit`, `no-ref`. In the record suite, the tables held to the script's own lists grew by what it grew: the readers' list; the call of every subcommand on a run that was never opened; two identifier sites, the run and the role; the row `run-set condition` of the writers' table; the status 27 in the arm that holds `--help` to every exit. **Nothing else under `tooling-tests/` pinned a text this task moved**: the whole `g_tooling` target ran on the script as it is committed — 518 of 518, the simulation's scenarios, the canary's suite and the probe's suite among them — before the last assertions of this task's own arms were added. The commit's gate is the measure. No act was added to the step tool, so the harness's fence gained no row.
+
+**What the next tasks owe because of this.**
+
+- `O2`, and `O3`, `O4` after it — each definition's *Read first* gains one sentence, with the role the definition is launched as. As this builder would word it: ***Your first call is the lookup kit** — `dev/stabilize-record kit --run <run> --role <role>`, typed as your prompt spells it. It prints the report's rules, the slug rule, the rig's states and how a binary is named to it, the repro block's format and the run's closing condition, each read from the file that owns it: read them there, and look none of them up. A part it says is NOT PRINTED you read at the file it names, and you say so in your return.* The triage's role is `triage`, and its sentence names no rig. Where a definition sends its agent to the opening record for the closing condition, that clause becomes: *the condition is the kit's last part; the opening record is read only where the kit says the run names no entry.*
+- `T5a`: nothing of the script. If its new triage prompt names the call ahead of `K1b`, the role's word is `triage`.
+- `K1b`: the call in every driving role's prompt as its first, spelled whole, with the role's own key. **The fence that holds this script's list of who drives to the harness's `drives`** — the second place declared above. **The simulation's rig holds the two scripts and no other file of the tree**, so a stand-in's kit there names the rig tool and the pinning document `gone` and exits 27: the fixture plants the two files, or the stand-in takes 27 for what it is — an answer, and no halt. A prompt of a role without a row is refused `bad-id`.
+- `T9`: the canary's tool may write `condition` at its opening; the clone holds the log.
+- `T10`: the workflow's document says nothing of the fact or the read; the table of *Opening a run* gains a row. `T12`: the fact stays optional when the queue's three become owed.
+- The first run's opening: one more key of its `run-set`, the heading copied from the log, whole.
+
+**What is not established.**
+
+- **Nothing calls it.** No prompt, no definition and no scenario names the kit.
+- **The saving.** 254 k output tokens is the count's ceiling for turns that did nothing else. Whether an agent that has the kit stops looking these up is the first supervised run's to show, and for the opening it depends on what the definitions then say.
+- **That the entry reads as it read at the opening.** The heading is held; the text under it is the log's at the call. A hash of the entry in the run's record would hold it, and was not built: the plan has nothing copied, and nothing was ruled.
+- **That a heading stays.** This tree's headings in the script, the rig tool and the pinning document are held by the suite at every gate. The log's are held by nothing but the fact's refusal at the opening.
+- **A stretch that grows at its far end** — a heading that keeps its opening words — is still found, and one that gains a first word is not.
+- **The parts are read from the working tree**, as every read of the script is: an uncommitted edit of a file is printed.
+- **The kit on a real run.** No run is opened; the sizes above are for an example entry.
+- **Which roles look what up** beyond the count's totals: the triage is printed the report's rules although, on the new path, its report is rendered for it.
+- **Not read whole for this task**: the record script beyond its header's sections on a report, the run's facts, the reads and the exits, its tables and the functions of a run's facts and of the state's reads; the record suite beyond its rig, its tables and the arms of `T2a` and `K3` this task stands beside; the step suite beyond its table of what an act reaches; the harness beyond its roles; [stabilization-workflow.md](implementation/stabilization-workflow.md) beyond *Opening a run*.
+
 ## 2026-10-12 — The record's batch is composed by a tool: plain words held to a hash in one canonical form, every row read from what is filed, both records of a stage composed — and a step of the tool that composes, answers again and says the record script's own word (the plan's `K3`; the builder's choices inside it)
 
 **What.** In a run with a queue no step types a `test` stage's record any more: [`dev/stabilize-record`](dev/stabilize-record) composes the batch from what the stage's agents filed and from plain words, and [`dev/stabilize-step`](dev/stabilize-step) has the step that asks for it ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §5, `K3`, the migration order's Phase A; the third count's candidate 3, [prebuild-census.md](completions/artifacts/M55/stabilization-build/reshape/prebuild-census.md): *the record's batch composed by a tool* — 118 k output tokens and 13.4 minutes a record, typed from a prompt that held it verbatim; ruling 1 of *2026-10-11 — The reshaped `test` stage's three open questions, ruled*: a stage records twice). The two scripts' headers are the contract; in one place:

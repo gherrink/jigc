@@ -251,6 +251,32 @@
 //! unverified one, and a fix standing over one; a refutation's word not written beside its
 //! verdict; a held check's red run given what the call says for evidence, and not the
 //! verdict on record.
+//!
+//! **And on thirty-four more, for the lookup kit** (the build plan of the reshaped `test`
+//! stage, §5, `K1a`; the last section). The three arms were written before the script knew
+//! the call or the fact, and were red on its parent: two at the first write of the fact that
+//! names where a run's closing condition is stated, one at the call. `kit` writes nothing,
+//! so it is one more of [`READERS`]; the fact is one more row of [`HERE`]. **The kit's files
+//! are this tree's own** — the script's header, and the rig tool and the pinning document
+//! copied into the rig as data — so a heading the kit finds a part by, moved by a commit,
+//! reddens these arms at that commit's gate; the log is one this suite writes. Each mutant
+//! one edit, run on the arm that names it, none survived. *What is printed:* a stretch run
+//! to its file's end; the report's rules run on into the next usages, the rig's help into
+//! its git states, the repro block into its whole section; a stretch keeping the blank
+//! lines it ends with; two stretches with nothing between them; the triage printed the
+//! rig; a role nobody tabled printed a verifier's kit; the repository's root named; a row
+//! of the ledger named; the kit refused in a run without an order, and read across a write
+//! that was killed; the help taken for every comment line of the script. *What is not
+//! found:* of two lines that open a stretch the first taken; a stretch that is not found
+//! printed from where its file opens; a link followed; bytes that are no text a fault; a
+//! missing part an exit of 0; a file that is gone said once for every stretch of it; the
+//! last entry of the log without an end. *The condition:* an entry found by how its heading
+//! opens — in the function, and in the kit's read alone; a run that names none printed the
+//! log's first entry, and not told where its opening is; one whose entry moved not told
+//! either. *The fact:* not held to the log where it is written, nor to what a cell holds;
+//! taken of any type; written again and again; said `null` by every run that names none;
+//! its cell put into backticks, read as every other fact's is, read with its pipe escaped;
+//! any cell at all taken for one this script wrote.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -314,6 +340,8 @@ const FAULT: i32 = 23;
 const VET_MISMATCH: i32 = 24;
 const NO_CHANGE: i32 = 25;
 const WORDS: i32 = 26;
+/// A kit one of whose parts is not where its file had it: the rest is on stdout.
+const KIT_MISMATCH: i32 = 27;
 
 /// Every refusal class with its status, as `--help` must list them.
 const REFUSALS: &[(i32, &str)] = &[
@@ -1372,7 +1400,7 @@ const WRITERS: &[Writer] = &[
 ];
 
 /// The subcommands that write nothing.
-const READERS: [&str; 10] = [
+const READERS: [&str; 11] = [
     "check-reports",
     "check-ledger",
     "state",
@@ -1383,6 +1411,7 @@ const READERS: [&str; 10] = [
     "item-doors",
     "untriaged",
     "row",
+    "kit",
 ];
 
 /// The subcommands that settle a batch and take no text of a caller's: they finish a write
@@ -2022,6 +2051,17 @@ const ID_SITES: &[IdSite] = &[
             rig.run(&composing(RUN, "1", "1", &words), "")
         },
     },
+    IdSite {
+        name: "kit --run",
+        numeric: false,
+        call: |rig, v| rig.run(&kit(v, "verify"), ""),
+    },
+    IdSite {
+        // A role is a word of a closed list, as a stage is: refused as an identifier.
+        name: "kit --role",
+        numeric: false,
+        call: |rig, v| rig.run(&kit(RUN, v), ""),
+    },
 ];
 
 #[test]
@@ -2160,6 +2200,7 @@ fn every_subcommand(rig: &Rig, run: &str) -> Vec<(&'static str, Seen)> {
             "compose",
             rig.run(&composing(run, "1", "1", &["reporter=attempt"]), ""),
         ),
+        ("kit", rig.run(&kit(run, "verify"), "")),
     ]
 }
 
@@ -4196,6 +4237,7 @@ fn help_is_the_header_and_states_every_subcommand_and_every_exit_status() {
     statuses.push((LEDGER_MISMATCH, "check-ledger"));
     statuses.push((GATE_MISMATCH, "gate-check"));
     statuses.push((VET_MISMATCH, "vet"));
+    statuses.push((KIT_MISMATCH, "kit"));
     for (status, class) in statuses {
         assert!(
             seen.stdout
@@ -12246,6 +12288,18 @@ const HERE: &[Taken] = &[
         name: "run-set clauses",
         takes: AT_THE_OPENING,
         call: |rig, _, _| fact_of_run(rig, json!({"clauses": ["another-clause"]})),
+    },
+    Taken {
+        // The entry the closing condition is stated in is taken where the run does not
+        // name one yet, and no place of this table holds one. Where it is refused — a
+        // heading the log does not hold, another entry for a run that names one — is
+        // `the_kits_parts_are_read_from_their_homes`.
+        name: "run-set condition",
+        takes: ANYWHERE,
+        call: |rig, _, _| {
+            put_home(rig, LOG, the_log());
+            fact_of_run(rig, json!({"condition": CONDITION}))
+        },
     },
     Taken {
         // The bound across rounds: at the opening and before any round — and raised only
@@ -24456,5 +24510,1060 @@ fn a_composed_second_record_is_the_same_whatever_order_the_verifiers_filed_in() 
         differing(&files(&typed), &ends[0]),
         Vec::<String>::new(),
         "and it is the record a step would have typed"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The lookup kit (the build plan of the reshaped `test` stage, §5, K1a)
+// ---------------------------------------------------------------------------
+
+/// The files the kit reads beside the script's own header, repository-relative: the rig's
+/// tool, whose help is its header; the document that owns the repro block; and the log.
+const RIG_TOOL: &str = "dev/jigc-rig";
+const PINNING: &str = "implementation/pinning.md";
+const LOG: &str = "DECISIONS.md";
+
+/// The heading of the entry that states the closing condition of the run this suite opens:
+/// the line the entry opens with in the log, after its `## `. It holds a pipe and ends
+/// with a backtick, so a cell of the run's table that did not escape the one, or that
+/// stripped the other, would not hold it.
+const CONDITION: &str =
+    "2026-10-04 — The exit rule of this run | two clauses, each with a scope, as `the human ruled`";
+
+/// The title line of each part of the kit, as the script prints it.
+const KIT_RULES: &str = "=== THE REPORT'S RULES — from `dev/stabilize-record --help` ===";
+const KIT_SLUG: &str = "=== THE SLUG RULE — from `dev/stabilize-record --help` ===";
+const KIT_RIG: &str =
+    "=== THE RIG: ITS STATES, AND HOW A BINARY IS NAMED TO IT — from `dev/jigc-rig --help` ===";
+const KIT_REPRO: &str = "=== THE REPRO BLOCK'S FORMAT — from implementation/pinning.md ===";
+const KIT_CONDITION: &str =
+    "=== THE CLOSING CONDITION — from DECISIONS.md, the entry the run names ===";
+const KIT_NO_CONDITION: &str =
+    "=== THE CLOSING CONDITION — the run names no entry of DECISIONS.md ===";
+
+/// The line that stands between two stretches of one file, where a part is more than one.
+const KIT_GAP: &str = "\n[…]\n";
+
+/// The entry [`CONDITION`] heads, as the kit prints it: from its heading to the line before
+/// the next entry's, without the blank lines it ends with. A heading of a lower level is
+/// inside it.
+fn the_entry() -> String {
+    format!(
+        "## {CONDITION}\n\n**Clause 1 — no lost files.** CLAUSE-ONE-TEXT, with its scope and its one instrument.\n\n### A heading inside the entry, which does not end it\n\n**Clause 2 — a working product.** CLAUSE-TWO-TEXT."
+    )
+}
+
+/// A log as this suite plants it: lines that are no entry, an entry above the condition's,
+/// the condition's, one WHOSE HEADING OPENS AS THE CONDITION'S and goes on, and one below.
+fn the_log() -> String {
+    format!(
+        "# Decisions\n\nThe log's own opening lines, which are no entry.\n\n## 2026-10-05 — A later entry, which states no condition\n\nLATER-ENTRY-TEXT\n\n{}\n\n## {CONDITION} — and what a later ruling said of it\n\nTHE-TEXT-OF-AN-ENTRY-WHOSE-HEADING-ONLY-OPENS-SO\n\n## 2026-10-03 — An earlier entry\n\nEARLIER-ENTRY-TEXT\n",
+        the_entry()
+    )
+}
+
+/// The kit's call, as an agent types it.
+fn kit(run: &str, role: &str) -> Vec<String> {
+    vec![
+        "kit".to_owned(),
+        format!("--run={run}"),
+        format!("--role={role}"),
+    ]
+}
+
+/// Write `text` at `home`, a path of the rig's repository. A home is read, never run.
+fn put_home(rig: &Rig, home: &str, text: impl AsRef<[u8]>) {
+    let path = rig.root.join(home);
+    fs::create_dir_all(path.parent().expect("a home lies in a directory"))
+        .expect("create a home's directory");
+    if path.is_symlink() {
+        // An arm put a link there: the text goes where the home is, never through it.
+        fs::remove_file(&path).expect("remove a link where a home is");
+    }
+    fs::write(&path, text).unwrap_or_else(|e| panic!("write `{home}`: {e}"));
+}
+
+/// This tree's own text of `home`.
+fn this_trees(home: &str) -> String {
+    fs::read_to_string(repo_root().join(home)).unwrap_or_else(|e| panic!("read `{home}`: {e}"))
+}
+
+/// The files the kit reads, put into a rig: THIS TREE'S OWN rig tool and pinning document
+/// — so a heading the kit finds a part by, moved by a commit, reddens this suite at that
+/// commit's gate — and the log this suite writes ([`the_log`]).
+fn kit_homes(rig: &Rig) {
+    for home in [RIG_TOOL, PINNING] {
+        put_home(rig, home, this_trees(home));
+    }
+    put_home(rig, LOG, the_log());
+}
+
+/// The run names the entry its closing condition is stated in, as an opening writes it.
+fn conditioned(rig: &Rig) {
+    rig.run(&run_set(RUN), &json!({"condition": CONDITION}).to_string())
+        .must(OK, "the entry the run's closing condition is stated in");
+}
+
+/// A script's header as its `--help` prints it: the comment lines that follow its first
+/// line, each without its `#` and the one space after it.
+fn header_of(script: &str) -> String {
+    script
+        .lines()
+        .skip(1)
+        .take_while(|line| line.starts_with('#'))
+        .map(|line| {
+            let line = &line[1..];
+            line.strip_prefix(' ').unwrap_or(line)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A kit's output as (what stands above its first part, each part as its title line and the
+/// text under it) — a part opens with a line that opens `=== `, and no other line does.
+fn kit_parts(text: &str) -> (String, Vec<(String, String)>) {
+    let mut above = String::new();
+    let mut parts: Vec<(String, String)> = Vec::new();
+    for line in text.lines() {
+        if line.starts_with("=== ") {
+            parts.push((line.to_owned(), String::new()));
+            continue;
+        }
+        let into = parts.last_mut().map_or(&mut above, |part| &mut part.1);
+        into.push_str(line);
+        into.push('\n');
+    }
+    let trimmed = |text: String| text.trim_matches('\n').to_owned();
+    (
+        trimmed(above),
+        parts
+            .into_iter()
+            .map(|(title, text)| (title, trimmed(text)))
+            .collect(),
+    )
+}
+
+/// The text under the part `title` of a kit's output.
+fn kit_part(text: &str, title: &str) -> String {
+    let found: Vec<String> = kit_parts(text)
+        .1
+        .into_iter()
+        .filter(|(named, _)| named == title)
+        .map(|(_, text)| text)
+        .collect();
+    assert_eq!(found.len(), 1, "one part `{title}` in:\n{text}");
+    found.into_iter().next().expect("the part")
+}
+
+/// The title lines of a kit's output, in its order.
+fn kit_titles(text: &str) -> Vec<String> {
+    kit_parts(text)
+        .1
+        .into_iter()
+        .map(|(title, _)| title)
+        .collect()
+}
+
+/// **The kit prints what a reporter looks up, and nothing of a finding** (the build plan of
+/// the reshaped `test` stage, §5, `K1a`: *one read that prints, for a role, what every agent
+/// of it looked up: the report's rules, the rig's states and how a binary is named to it, the
+/// repro block's format, the slug rule — and the closing condition's own text, read from the
+/// entry the opening names*; the third count's candidate 1: 283 of the verifiers' 2,095
+/// turns did nothing but look these up). ONE CALL, `kit --run R --role ROLE`, which writes
+/// nothing: five parts for a role that is handed a binary, each under a title line that
+/// names the file it was read from; four for the triage, which drives nothing and so reads
+/// nothing of the rig. A part is the stretch of its file that an agent went there for, and
+/// NOT THE FILE: of the script's help the call a report is handed over by and what every
+/// writer does to a text — never the canonical form of a composed record's words, which is
+/// a section in capitals of that help and no rule of a report; of the rig's help its states
+/// and its options, never its git states; of the pinning document the block, never what a
+/// fixer does with one. NOTHING OF THE RUN IS READ BUT THE ONE FACT THAT NAMES THE ENTRY:
+/// the kit of the suite's fullest stage — rows, reports, a triage's entries — is, to the
+/// byte, the kit of a run that holds nothing. No path of this machine is in it. A role
+/// nobody tabled is refused by name. And a run WITHOUT AN ORDER is answered the same: the
+/// prompts of both paths of the harness name this call.
+#[test]
+fn the_kit_prints_what_a_reporter_looks_up_and_nothing_of_a_finding() {
+    let stage = a_stage_before_its_first_record("kit-full", true);
+    let rig = &stage.rig;
+    kit_homes(rig);
+    conditioned(rig);
+    let before = rig.snapshot();
+    let seen = rig.run(&kit(RUN, "verify"), "");
+    seen.must(OK, "the kit of a verifier");
+    assert_eq!(seen.stderr, "", "a whole kit says nothing beside itself");
+    assert_eq!(
+        rig.snapshot(),
+        before,
+        "the kit is a read: nothing is written"
+    );
+    let said = &seen.stdout;
+
+    // THE PARTS, in their order, each under the file it was read from.
+    assert_eq!(
+        kit_titles(said),
+        [KIT_RULES, KIT_SLUG, KIT_RIG, KIT_REPRO, KIT_CONDITION],
+        "{said}"
+    );
+    let above = kit_parts(said).0;
+    assert!(
+        above.starts_with(&format!("THE KIT of run {RUN}, for `verify`"))
+            && above.lines().count() == 1,
+        "one line says whose kit it is: {above}"
+    );
+    for (title, looked_up) in [
+        (
+            KIT_RULES,
+            &[
+                "dev/stabilize-record report --run R --round N --stage test|fix",
+                "--from FILE",
+                ENDS,
+                "(truncated)",
+                "Host paths become the public placeholders",
+                "<scratch>",
+                "would redden a standing fence",
+                "DID NOT",
+            ][..],
+        ),
+        (
+            KIT_SLUG,
+            &[
+                "are slugs",
+                "a-z0-9 words joined by single `-`, at most 100 characters",
+                "positive integers without a leading zero",
+            ][..],
+        ),
+        (
+            KIT_RIG,
+            &[
+                "rig=$(dev/jigc-rig committed-singletons) || exit; eval \"$rig\"",
+                "dev/jigc-rig <state> [options]",
+                "refs-post-hoc",
+                "  bare ",
+                "--binary <path>       jigc to drive",
+                "--start <wf> <intent>",
+                "Env in: SCRATCH if set, else TMPDIR",
+            ][..],
+        ),
+        (
+            KIT_REPRO,
+            &[
+                "## 3. The repro-block pipeline (fact drift)",
+                "**Block shape**",
+                "verdict: REFUTED",
+                "pinned-by:",
+                "UNPINNED: <why>",
+            ][..],
+        ),
+    ] {
+        let part = kit_part(said, title);
+        for text in looked_up {
+            assert!(
+                part.contains(text),
+                "`{title}` holds `{text}`, which its reader looked up:\n{part}"
+            );
+        }
+    }
+    assert_eq!(
+        kit_part(said, KIT_CONDITION),
+        the_entry(),
+        "the closing condition is the entry the run names, whole and to the byte — and no other entry's line"
+    );
+
+    // A PART IS A STRETCH OF ITS FILE, AND NOT THE FILE: what stands beside it does not ride
+    // along — the canonical form of a composed record's words least of all.
+    for (stranger, why) in [
+        (
+            "THE CANONICAL FORM",
+            "a section in capitals of the help that is no rule of a report",
+        ),
+        ("dev/stabilize-record compose", "another subcommand's usage"),
+        (
+            "dev/stabilize-record ledger-add",
+            "the usage the report's ends before",
+        ),
+        (
+            "WHAT IT IS HANDED NEVER ENDS",
+            "the section the writers' rules end before",
+        ),
+        ("Exit status, and the word", "the table of exits"),
+        (
+            "THERE IS NO TEARDOWN",
+            "the rig's own essay on its teardown",
+        ),
+        ("Git states (", "the rig's git states"),
+        ("Conversion discipline", "what a fixer does with a block"),
+        ("LATER-ENTRY-TEXT", "the entry above the condition's"),
+        (
+            "THE-TEXT-OF-AN-ENTRY-WHOSE-HEADING-ONLY-OPENS-SO",
+            "an entry whose heading only opens as the condition's",
+        ),
+        ("EARLIER-ENTRY-TEXT", "the entry below the condition's"),
+    ] {
+        assert!(
+            !said.contains(stranger),
+            "the kit holds `{stranger}` — {why}:\n{said}"
+        );
+    }
+
+    // NO PATH OF THIS MACHINE: a part is printed as its file holds it, and a file is named
+    // from the repository's root.
+    for path in [
+        rig.dir.path().to_path_buf(),
+        rig.root.clone(),
+        rig.home.clone(),
+        rig.tmp.clone(),
+        repo_root(),
+        fs::canonicalize(rig.dir.path()).expect("the rig's directory, resolved"),
+    ] {
+        assert!(
+            !said.contains(&path.display().to_string()),
+            "the kit names {}: {said}",
+            path.display()
+        );
+    }
+    assert!(!said.contains(HOSTILE_ROOT), "{said}");
+
+    // NOTHING OF A FINDING, and nothing of the run but the one fact: the stage holds rows,
+    // reports and a triage's entries, and its kit is the kit of a run that holds none.
+    for of_the_run in [
+        "review-f1",
+        "review-f2",
+        "seed-hook",
+        "red-regression-set",
+        "non-jigc-writer",
+        HOOK,
+        HOOK_SITE,
+        "clause-a",
+        "1.0.0-rc.24",
+    ] {
+        assert!(
+            !said.contains(of_the_run),
+            "the kit names `{of_the_run}`, which is the run's: {said}"
+        );
+    }
+    let bare = Rig::new("kit-bare");
+    kit_homes(&bare);
+    conditioned(&bare);
+    let of_nothing = bare.run(&kit(RUN, "verify"), "");
+    of_nothing.must(OK, "the kit of a run that holds no row");
+    assert_eq!(
+        &of_nothing.stdout, said,
+        "the kit is the same whatever the run holds"
+    );
+
+    // THE ROLE: every role that is handed a binary reads the same five parts; the triage
+    // drives nothing, and reads the other four.
+    for role in ["drive", "review", "advocate", "proposal"] {
+        let other = rig.run(&kit(RUN, role), "");
+        other.must(OK, &format!("the kit of `{role}`"));
+        assert_eq!(
+            other.stdout,
+            said.replacen("for `verify`", &format!("for `{role}`"), 1),
+            "`{role}` is handed a binary, as a verifier is"
+        );
+    }
+    let triage = rig.run(&kit(RUN, TRIAGE), "");
+    triage.must(OK, "the kit of the triage");
+    assert_eq!(
+        kit_titles(&triage.stdout),
+        [KIT_RULES, KIT_SLUG, KIT_REPRO, KIT_CONDITION],
+        "the triage drives nothing: {}",
+        triage.stdout
+    );
+    for title in [KIT_RULES, KIT_SLUG, KIT_REPRO, KIT_CONDITION] {
+        assert_eq!(
+            kit_part(&triage.stdout, title),
+            kit_part(said, title),
+            "`{title}` is one text whoever reads it"
+        );
+    }
+    assert!(
+        !triage.stdout.contains("jigc-rig"),
+        "nothing of the rig: {}",
+        triage.stdout
+    );
+    for role in [
+        "scope",
+        "preflight",
+        "fixer",
+        "record",
+        "verifier",
+        "Verify",
+    ] {
+        let refused = rig.run(&kit(RUN, role), "");
+        refused.refused(
+            BAD_ID,
+            &format!("the kit of `{role}`, a role nobody tabled"),
+        );
+        assert!(
+            refused
+                .stderr
+                .contains("is not one of review, drive, verify, advocate, proposal, triage"),
+            "the refusal names the roles: {}",
+            refused.stderr
+        );
+    }
+    assert_eq!(rig.snapshot(), before, "and no call of these wrote");
+
+    // A RUN WITHOUT AN ORDER is answered the same: the kit is no part of the queue.
+    let plain = a_stage_before_its_first_record("kit-plain", false);
+    kit_homes(&plain.rig);
+    conditioned(&plain.rig);
+    let unordered = plain.rig.run(&kit(RUN, "verify"), "");
+    unordered.must(OK, "the kit of a run without an order");
+    assert_eq!(&unordered.stdout, said);
+
+    // AS THE STATE IS READ: under the shared lock, and never across a write that was killed
+    // between its files — the fact it reads may be half of such a batch.
+    let mut killed = triaged_once("kit-killed");
+    kit_homes(&killed);
+    with_kill_switch(&mut killed, "STUB_KILL_AT_REPLACE", 3);
+    let seen = killed.run(&triage_set(RUN, "1"), &found_again());
+    assert_eq!((seen.code, seen.signal), (None, Some(9)), "{seen:?}");
+    killed.env.truncate(0);
+    killed
+        .run(&kit(RUN, "verify"), "")
+        .refused(INTERRUPTED, "the kit over half a batch");
+    killed
+        .run(&keeper("recover", RUN), "")
+        .must(OK, "the batch, finished");
+    killed
+        .run(&kit(RUN, "verify"), "")
+        .must(OK, "the kit, once the batch is whole");
+
+    // A PART ENDS WHERE ITS TEXT DOES: one blank line stands before a title and none before
+    // the line between two stretches, whatever blank lines the file has there.
+    assert!(
+        !said.contains("\n\n\n") && !said.contains("\n\n[…]") && said.ends_with(".\n"),
+        "{said:?}"
+    );
+
+    // IT ENTERS EVERY AGENT'S CONTEXT ONCE, so its size is held: a part that grows into its
+    // whole file shows here.
+    assert!(
+        said.len() < 16_000 && said.lines().count() < 220,
+        "the kit of a verifier is {} bytes in {} lines",
+        said.len(),
+        said.lines().count()
+    );
+}
+
+/// What a kit says of a stretch it did not find, in that stretch's place.
+fn not_printed(word: &str) -> String {
+    format!("NOT PRINTED ({word}): ")
+}
+
+/// How an arm bends a file the kit reads, before it asks for the kit.
+enum Bent {
+    /// The one place `from` stands in the file, said as `to`.
+    Reworded(&'static str, &'static str, &'static str),
+    /// The heading of the condition's entry in the log, said otherwise.
+    EntryReworded,
+    /// A second entry of the log under the heading of the condition's.
+    EntryTwice,
+    /// The file removed.
+    Gone(&'static str),
+    /// A link to a file outside the repository where the file was.
+    Linked(&'static str),
+    /// The file's text, and after it bytes that are no text.
+    NotText(&'static str),
+}
+
+/// **The kit's parts are read from their homes** (`K1a`: *the report rules from the script's
+/// own help, the repro format from the section of `pinning.md` that owns it, the condition
+/// from the log, each by its heading, and a heading that moved is named*; *nothing is copied
+/// into the run's record*). EVERY STRETCH THE KIT PRINTS IS ITS FILE'S OWN TEXT, contiguous:
+/// of the help as `--help` prints it, of the rig tool's header, of this tree's pinning
+/// document, of the log. A stretch is found by THE LINE IT OPENS WITH and ended by the line
+/// the next thing opens with, so one that MOVED — its heading reworded, the line it ends
+/// before gone, a second line opening the same way — is NOT GUESSED AT: the kit says, in
+/// that stretch's place, which file and which line, prints every other part as it stands,
+/// and exits with a status of its own. A file that is gone, is no text, or is A LINK — which
+/// could name any file of the machine — is not read. THE CONDITION'S ENTRY is found by its
+/// heading WHOLE: a heading that only opens so is another entry. And the fact that names it
+/// is held where it is written (`run-set`): the heading of exactly one entry of the log, as
+/// the run's table can hold it, written once — in a cell that is the heading, to the byte.
+#[test]
+fn the_kits_parts_are_read_from_their_homes() {
+    let rig = Rig::new("kit-homes");
+    kit_homes(&rig);
+    conditioned(&rig);
+    let whole = rig.run(&kit(RUN, "verify"), "");
+    whole.must(OK, "the kit, every part at its home");
+    let titles = kit_titles(&whole.stdout);
+
+    // EVERY STRETCH IS ITS FILE'S OWN TEXT. And the help the kit reads is what `--help`
+    // prints: the script's header, whole, and no line of its code.
+    let help = rig.run(&strings(&["--help"]), "").stdout;
+    assert_eq!(
+        help,
+        format!("{}\n", header_of(&rig.read(SCRIPT))),
+        "the help is the header"
+    );
+    let rigs_help = header_of(&this_trees(RIG_TOOL));
+    let pinning = this_trees(PINNING);
+    let log = the_log();
+    for (title, home, stretches) in [
+        (KIT_RULES, &help, 2),
+        (KIT_SLUG, &help, 1),
+        (KIT_RIG, &rigs_help, 3),
+        (KIT_REPRO, &pinning, 1),
+        (KIT_CONDITION, &log, 1),
+    ] {
+        let part = kit_part(&whole.stdout, title);
+        let found: Vec<&str> = part.split(KIT_GAP).collect();
+        assert_eq!(
+            found.len(),
+            stretches,
+            "the stretches of `{title}`:\n{part}"
+        );
+        for stretch in found {
+            assert!(
+                stretch.lines().count() > 2 && home.contains(stretch),
+                "a stretch of `{title}` is not its file's own text:\n{stretch}"
+            );
+        }
+    }
+
+    // A STRETCH THAT IS NOT WHERE ITS FILE HAD IT IS NAMED, AND THE REST IS PRINTED.
+    let script = rig.read(SCRIPT);
+    let rig_tool = this_trees(RIG_TOOL);
+    let opening = format!("completions/artifacts/{RUN}/opening.md");
+    let outside = rig.dir.path().join("outside.md");
+    fs::write(&outside, &pinning).expect("a file outside the repository");
+    let no_file = |home: &str| format!("{home} is no file of this repository that reads as text");
+    let cases: Vec<(&str, &str, &str, String, &str, &str, Bent)> = vec![
+        (
+            "the heading of a report's usage, reworded",
+            KIT_RULES,
+            "moved",
+            "`dev/stabilize-record --help` has no line that opens `  dev/stabilize-record report --run R`".to_owned(),
+            "What a writer does to its text, in order",
+            ENDS,
+            Bent::Reworded(
+                SCRIPT,
+                "#   dev/stabilize-record report --run R ",
+                "#   dev/stabilize-record report --the-run R ",
+            ),
+        ),
+        (
+            "the line the writers' rules end before, gone",
+            KIT_RULES,
+            "moved",
+            "`dev/stabilize-record --help` has no line that opens `WHAT IT IS HANDED NEVER ENDS IN A TRACEBACK` after the one that opens `What a writer does to its text, in order`".to_owned(),
+            ENDS,
+            "Host paths become",
+            Bent::Reworded(
+                SCRIPT,
+                "# WHAT IT IS HANDED NEVER ENDS IN A TRACEBACK",
+                "# What it is handed never ends in a traceback",
+            ),
+        ),
+        (
+            "the heading of the slug rule, reworded",
+            KIT_SLUG,
+            "moved",
+            "`dev/stabilize-record --help` has no line that opens `Identifiers.`".to_owned(),
+            "",
+            "a-z0-9 words",
+            Bent::Reworded(SCRIPT, "# Identifiers. ", "# The identifiers. "),
+        ),
+        (
+            "the heading of the rig's options, reworded",
+            KIT_RIG,
+            "moved",
+            "`dev/jigc-rig --help` has no line that opens `Options:`".to_owned(),
+            "dev/jigc-rig <state> [options]",
+            "--binary <path>",
+            Bent::Reworded(RIG_TOOL, "\n# Options:\n", "\n# The options:\n"),
+        ),
+        (
+            "a second line of the rig's help that opens as its usage does",
+            KIT_RIG,
+            "twice",
+            "`dev/jigc-rig --help` has 2 lines that open `Usage:`".to_owned(),
+            "--binary <path>",
+            "refs-post-hoc",
+            Bent::Reworded(
+                RIG_TOOL,
+                "\n# Options:\n",
+                "\n# Usage: of the options —\n# Options:\n",
+            ),
+        ),
+        (
+            "the heading of the repro block's section, reworded",
+            KIT_REPRO,
+            "moved",
+            "implementation/pinning.md has no line that opens `## 3. The repro-block pipeline (fact drift)`".to_owned(),
+            "",
+            "pinned-by:",
+            Bent::Reworded(
+                PINNING,
+                "\n## 3. The repro-block pipeline (fact drift)\n",
+                "\n## 3. The repro block (fact drift)\n",
+            ),
+        ),
+        (
+            "the line the repro block's format ends before, gone",
+            KIT_REPRO,
+            "moved",
+            "implementation/pinning.md has no line that opens `**Conversion discipline:**` after the one that opens `## 3. The repro-block pipeline (fact drift)`".to_owned(),
+            "",
+            "pinned-by:",
+            Bent::Reworded(
+                PINNING,
+                "\n**Conversion discipline:**",
+                "\n**The conversion discipline:**",
+            ),
+        ),
+        (
+            "the pinning document, gone",
+            KIT_REPRO,
+            "gone",
+            no_file(PINNING),
+            "",
+            "pinned-by:",
+            Bent::Gone(PINNING),
+        ),
+        (
+            "the pinning document, a link to a file outside the repository",
+            KIT_REPRO,
+            "gone",
+            no_file(PINNING),
+            "",
+            "pinned-by:",
+            Bent::Linked(PINNING),
+        ),
+        (
+            "the pinning document, bytes that are no text",
+            KIT_REPRO,
+            "gone",
+            no_file(PINNING),
+            "",
+            "pinned-by:",
+            Bent::NotText(PINNING),
+        ),
+        (
+            "the rig's tool, gone",
+            KIT_RIG,
+            "gone",
+            no_file(RIG_TOOL),
+            "",
+            "refs-post-hoc",
+            Bent::Gone(RIG_TOOL),
+        ),
+        (
+            "the heading of the condition's entry, reworded since the opening",
+            KIT_CONDITION,
+            "moved",
+            format!("DECISIONS.md has no line that is `## {CONDITION}`"),
+            opening.as_str(),
+            "CLAUSE-ONE-TEXT",
+            Bent::EntryReworded,
+        ),
+        (
+            "a second entry of the log under the condition's heading",
+            KIT_CONDITION,
+            "twice",
+            format!("DECISIONS.md has 2 lines that are `## {CONDITION}`"),
+            opening.as_str(),
+            "CLAUSE-ONE-TEXT",
+            Bent::EntryTwice,
+        ),
+        (
+            "the log, gone",
+            KIT_CONDITION,
+            "gone",
+            no_file(LOG),
+            opening.as_str(),
+            "CLAUSE-ONE-TEXT",
+            Bent::Gone(LOG),
+        ),
+    ];
+    for (what, title, word, names, still, absent, bent) in &cases {
+        let texts = [
+            (SCRIPT, &script),
+            (RIG_TOOL, &rig_tool),
+            (PINNING, &pinning),
+            (LOG, &log),
+        ];
+        let text_of = |home: &str| -> &String {
+            texts
+                .iter()
+                .find(|(named, _)| *named == home)
+                .map(|(_, text)| *text)
+                .expect("a home of the kit")
+        };
+        let written = |home: &str, text: String| {
+            if home == SCRIPT {
+                placed_executable::write(&rig.root.join(SCRIPT), text);
+            } else {
+                put_home(&rig, home, text);
+            }
+        };
+        match bent {
+            Bent::Reworded(home, from, to) => {
+                let text = text_of(home);
+                assert_eq!(
+                    text.matches(from).count(),
+                    1,
+                    "{what}: `{from}` stands once in `{home}`"
+                );
+                written(home, text.replacen(from, to, 1));
+            }
+            Bent::EntryReworded => {
+                let heading = format!("\n## {CONDITION}\n");
+                assert_eq!(log.matches(&heading).count(), 1);
+                written(
+                    LOG,
+                    log.replacen(&heading, &format!("\n## {CONDITION}, reworded\n"), 1),
+                );
+            }
+            Bent::EntryTwice => {
+                written(LOG, format!("{log}\n## {CONDITION}\n\nONE-ENTRY\n"));
+            }
+            Bent::Gone(home) => {
+                fs::remove_file(rig.root.join(home)).expect("remove a home");
+            }
+            Bent::Linked(home) => {
+                fs::remove_file(rig.root.join(home)).expect("remove a home");
+                symlink(&outside, rig.root.join(home)).expect("a link where the home was");
+            }
+            Bent::NotText(home) => {
+                let mut bytes = text_of(home).clone().into_bytes();
+                bytes.extend([0xff, 0xfe]);
+                put_home(&rig, home, bytes);
+            }
+        }
+        let before = rig.snapshot();
+        let seen = rig.run(&kit(RUN, "verify"), "");
+        seen.must(KIT_MISMATCH, what);
+        assert_eq!(seen.stderr, "", "{what}: the result is on stdout");
+        assert_eq!(rig.snapshot(), before, "{what}: nothing is written");
+        assert_eq!(
+            kit_titles(&seen.stdout),
+            titles,
+            "{what}: every part has its place"
+        );
+        let part = kit_part(&seen.stdout, title);
+        let line = format!("{}{names}", not_printed(word));
+        assert!(
+            part.lines().any(|said| said.starts_with(&line)),
+            "{what}: `{title}` says `{line}`:\n{part}"
+        );
+        assert_eq!(
+            seen.stdout.matches(&not_printed(word)).count(),
+            1,
+            "{what}: said once, and of this stretch alone:\n{}",
+            seen.stdout
+        );
+        assert_eq!(seen.stdout.matches("NOT PRINTED (").count(), 1, "{what}");
+        assert!(
+            part.contains(still),
+            "{what}: `{title}` still holds `{still}`:\n{part}"
+        );
+        assert!(
+            !part.contains(absent) && !part.contains("ONE-ENTRY"),
+            "{what}: `{title}` holds `{absent}` — a stretch that is not found is not printed on a guess:\n{part}"
+        );
+        for other in titles.iter().filter(|other| other != title) {
+            assert_eq!(
+                kit_part(&seen.stdout, other),
+                kit_part(&whole.stdout, other),
+                "{what}: `{other}` is printed as it stands"
+            );
+        }
+        // Put back, and the kit is whole again: it keeps nothing of a call.
+        placed_executable::write(&rig.root.join(SCRIPT), &script);
+        kit_homes(&rig);
+        let again = rig.run(&kit(RUN, "verify"), "");
+        again.must(OK, &format!("{what}: put back"));
+        assert_eq!(again.stdout, whole.stdout, "{what}: put back");
+    }
+
+    // AN ENTRY THAT IS THE LOG'S LAST ends where the log does.
+    put_home(
+        &rig,
+        LOG,
+        format!(
+            "# Decisions\n\n## 2026-10-05 — A later entry\n\nLATER-ENTRY-TEXT\n\n{}\n\n",
+            the_entry()
+        ),
+    );
+    let last = rig.run(&kit(RUN, "verify"), "");
+    last.must(OK, "the condition's entry, the last of the log");
+    assert_eq!(kit_part(&last.stdout, KIT_CONDITION), the_entry());
+    kit_homes(&rig);
+
+    // AN ENTRY ADDED TO THE LOG AFTER THE OPENING, WHOSE HEADING OPENS AS THE CONDITION'S —
+    // a later ruling that cites it — is another entry: the kit finds the one the run names
+    // by its heading whole, and prints it as before.
+    let later = Rig::new("kit-later");
+    kit_homes(&later);
+    let cites = format!(
+        "## {CONDITION} — and what a later ruling said of it\n\nTHE-TEXT-OF-AN-ENTRY-WHOSE-HEADING-ONLY-OPENS-SO\n\n"
+    );
+    assert_eq!(log.matches(&cites).count(), 1);
+    put_home(&later, LOG, log.replacen(&cites, "", 1));
+    conditioned(&later);
+    put_home(&later, LOG, &log);
+    let seen = later.run(&kit(RUN, "verify"), "");
+    seen.must(
+        OK,
+        "the kit, an entry that cites the condition's added since the opening",
+    );
+    assert_eq!(kit_part(&seen.stdout, KIT_CONDITION), the_entry());
+
+    // THE FACT, WHERE IT IS WRITTEN. It is in the run's table as the heading, to the byte —
+    // a pipe escaped as a cell's is, and no backtick taken off its end — and in the state.
+    assert_eq!(
+        table(&rig.read(&run_path()), &ROUND_COLUMNS),
+        [["`condition`", CONDITION]],
+        "the fact, in the run's own record"
+    );
+    assert!(
+        rig.read(&run_path()).contains(&format!(
+            "| `condition` | {} |\n",
+            CONDITION.replace('|', "\\|")
+        )),
+        "{}",
+        rig.read(&run_path())
+    );
+    assert_eq!(rig.state()["facts"]["condition"], CONDITION);
+    // WRITTEN ONCE: said again it stands, and another entry is refused.
+    let before = rig.snapshot();
+    rig.run(&run_set(RUN), &json!({"condition": CONDITION}).to_string())
+        .must(OK, "the same entry, said again");
+    assert_eq!(rig.snapshot(), before, "said again, it changes nothing");
+    rig.run(
+        &run_set(RUN),
+        &json!({"condition": "2026-10-03 — An earlier entry"}).to_string(),
+    )
+    .refused(EXISTS, "another entry for a run that names one");
+    assert_eq!(rig.snapshot(), before);
+    // A CELL A HAND CHANGED names another heading, and the kit says that the log has none
+    // such: nothing is printed on a guess. And a cell this script would not have written —
+    // a backslash before an escaped pipe — is no row of its table: neither the state nor
+    // the kit reads it.
+    let cell = format!("| {} |\n", CONDITION.replace('|', "\\|"));
+    let written = rig.read(&run_path());
+    assert_eq!(written.matches(&cell).count(), 1, "{written}");
+    let ticked = format!("| `{}` |\n", CONDITION.replace('|', "\\|"));
+    fs::write(
+        rig.root.join(run_path()),
+        written.replacen(&cell, &ticked, 1),
+    )
+    .expect("bend the run's table");
+    let seen = rig.run(&kit(RUN, "verify"), "");
+    seen.must(
+        KIT_MISMATCH,
+        "the kit over a heading a hand put into backticks",
+    );
+    assert!(
+        kit_part(&seen.stdout, KIT_CONDITION).starts_with(&format!(
+            "{}DECISIONS.md has no line that is `## `{CONDITION}``",
+            not_printed("moved")
+        )),
+        "{}",
+        seen.stdout
+    );
+    fs::write(
+        rig.root.join(run_path()),
+        written.replacen(&cell, "| a \\\\| b |\n", 1),
+    )
+    .expect("bend the run's table");
+    rig.run(&state(RUN), "")
+        .refused(CORRUPT, "the state over a cell this script does not write");
+    rig.run(&kit(RUN, "verify"), "")
+        .refused(CORRUPT, "the kit over a cell this script does not write");
+
+    // WHAT IS NO CONDITION: taken only as the heading of exactly one entry of the log.
+    let fresh = Rig::new("kit-fact");
+    kit_homes(&fresh);
+    let unholdable = "2026-10-02 — An entry whose heading a cell cannot hold: a \\| b";
+    put_home(
+        &fresh,
+        LOG,
+        format!(
+            "{log}\n## {unholdable}\n\nITS-TEXT\n\n## 2026-10-01 — Said twice\n\nONE\n\n## 2026-10-01 — Said twice\n\nTWO\n"
+        ),
+    );
+    let before = fresh.snapshot();
+    for (value, why, says) in [
+        (
+            json!("2026-10-04 — An entry nobody wrote"),
+            "a heading the log does not hold",
+            "DECISIONS.md has no line that is `## 2026-10-04 — An entry nobody wrote`",
+        ),
+        (
+            json!(&CONDITION[..CONDITION.len() - 1]),
+            "a heading cut short",
+            "DECISIONS.md has no line that is `## ",
+        ),
+        (
+            json!(format!("## {CONDITION}")),
+            "a heading with the marker it stands behind",
+            "DECISIONS.md has no line that is `## ## ",
+        ),
+        (
+            json!("2026-10-01 — Said twice"),
+            "a heading two entries stand under",
+            "DECISIONS.md has 2 lines that are `## 2026-10-01 — Said twice`",
+        ),
+        (
+            json!(unholdable),
+            "a heading the run's table cannot hold",
+            "as one line a table's cell holds to the byte",
+        ),
+        (
+            json!(format!("{CONDITION} ")),
+            "a heading with a blank after it",
+            "as one line a table's cell holds to the byte",
+        ),
+        (
+            json!(format!("{CONDITION}\n## 2026-10-03 — An earlier entry")),
+            "two lines",
+            "as one line a table's cell holds to the byte",
+        ),
+        (
+            json!(""),
+            "no text",
+            "as one line a table's cell holds to the byte",
+        ),
+        (
+            json!([CONDITION]),
+            "a list",
+            "as one line a table's cell holds to the byte",
+        ),
+        (
+            json!(7),
+            "a number",
+            "as one line a table's cell holds to the byte",
+        ),
+    ] {
+        let seen = fresh.run(&run_set(RUN), &json!({"condition": value}).to_string());
+        seen.refused(BAD_VALUE, why);
+        assert!(seen.stderr.contains(says), "{why}: {}", seen.stderr);
+        assert_eq!(fresh.snapshot(), before, "{why}: nothing was written");
+    }
+    fs::remove_file(fresh.root.join(LOG)).expect("remove the log");
+    let before = fresh.snapshot();
+    let seen = fresh.run(&run_set(RUN), &json!({"condition": CONDITION}).to_string());
+    seen.refused(BAD_VALUE, "a condition where there is no log");
+    assert!(
+        seen.stderr
+            .contains("DECISIONS.md is no file of this repository that reads as text"),
+        "{}",
+        seen.stderr
+    );
+    assert_eq!(fresh.snapshot(), before);
+    // The control: with the log, the same call is taken — beside the other facts, in the
+    // table's own order.
+    kit_homes(&fresh);
+    let seen = fresh.run(
+        &run_set(RUN),
+        &json!({"condition": CONDITION, "stop": "every-round", "clauses": ["clause-a"], "budget": 9})
+            .to_string(),
+    );
+    seen.must(OK, "an opening that names the entry");
+    assert_eq!(
+        table(&fresh.read(&run_path()), &ROUND_COLUMNS),
+        [
+            ["`stop`", "`every-round`"],
+            ["`clauses`", "`clause-a`"],
+            ["`condition`", CONDITION],
+            ["`budget`", "`9`"],
+        ]
+    );
+    assert_eq!(seen.json()["facts"]["condition"], CONDITION);
+}
+
+/// **A run that names no condition is told where the opening points** (`K1a`: *ruling 14
+/// has the opening hold the condition by reference, and it stays so: the opening may name
+/// that entry's heading as a fact … where the fact is absent the kit says where the opening
+/// points*; the migration table's row: *`K1a`'s fact is optional for good*). The fact is
+/// owed by nothing, ever: a run without it is ready as it was, its state says no word of a
+/// condition, and its kit is whole — exit 0 — with, in the condition's place, the path of
+/// the run's opening record and what to read there. THE LOG IS NOT READ FOR SUCH A RUN: no
+/// line of it is printed, and the kit is the same where there is none.
+#[test]
+fn a_run_that_names_no_condition_is_told_where_the_opening_points() {
+    let rig = Rig::new("kit-unnamed");
+    kit_homes(&rig);
+    let before = rig.snapshot();
+    let seen = rig.run(&kit(RUN, "verify"), "");
+    seen.must(OK, "the kit of a run that names no condition");
+    assert_eq!(seen.stderr, "");
+    assert_eq!(rig.snapshot(), before);
+    let named = Rig::new("kit-named");
+    kit_homes(&named);
+    conditioned(&named);
+    let with = named.run(&kit(RUN, "verify"), "");
+    with.must(OK, "the kit of a run that names its condition");
+    assert_eq!(
+        kit_titles(&seen.stdout),
+        [KIT_RULES, KIT_SLUG, KIT_RIG, KIT_REPRO, KIT_NO_CONDITION],
+        "{}",
+        seen.stdout
+    );
+    assert_eq!(
+        kit_part(&seen.stdout, KIT_NO_CONDITION),
+        format!(
+            "The run's record names no entry (run-set: condition). The opening record holds the run's closing condition by reference: completions/artifacts/{RUN}/opening.md says which decision states it — read it there, and then the entry it points at."
+        ),
+    );
+    for title in [KIT_RULES, KIT_SLUG, KIT_RIG, KIT_REPRO] {
+        assert_eq!(
+            kit_part(&seen.stdout, title),
+            kit_part(&with.stdout, title),
+            "`{title}` is printed whether or not the run names its condition"
+        );
+    }
+    for of_the_log in [
+        "CLAUSE-ONE-TEXT",
+        "LATER-ENTRY-TEXT",
+        "EARLIER-ENTRY-TEXT",
+        CONDITION,
+    ] {
+        assert!(
+            !seen.stdout.contains(of_the_log),
+            "no entry is guessed at: {}",
+            seen.stdout
+        );
+    }
+    // The triage is told the same.
+    let triage = rig.run(&kit(RUN, TRIAGE), "");
+    triage.must(OK, "the triage's kit of a run that names no condition");
+    assert_eq!(
+        kit_part(&triage.stdout, KIT_NO_CONDITION),
+        kit_part(&seen.stdout, KIT_NO_CONDITION)
+    );
+
+    // THE LOG IS NOT READ: where there is none, the kit is the same.
+    fs::remove_file(rig.root.join(LOG)).expect("remove the log");
+    let without = rig.run(&kit(RUN, "verify"), "");
+    without.must(OK, "the kit of such a run, where there is no log");
+    assert_eq!(without.stdout, seen.stdout);
+
+    // OPTIONAL FOR GOOD: the state says no word of a condition, and the run owes none.
+    let read = rig.state();
+    assert!(
+        read["facts"].get("condition").is_none(),
+        "a run that names no condition has no such fact: {}",
+        read["facts"]
+    );
+    rig.run(&run_set(RUN), &format!("{{{BOUNDED}, {RELEASE}}}"))
+        .must(OK, "the run's other facts");
+    let read = rig.state();
+    assert_eq!(
+        read["not_ready"],
+        json!(["no-clause-row"]),
+        "what an opening owes is what it owed: {read}"
+    );
+    assert!(read["facts"].get("condition").is_none(), "{read}");
+    assert!(
+        !rig.read(&run_path()).contains("`condition`"),
+        "and the run's table holds no row of it"
     );
 }
