@@ -10,7 +10,7 @@
 //! that hold the frame to its rules. **A command's cases are a file of their own under
 //! `route_catalog/`**, declared here by `#[path]` inside [`tables!`] — `setup.rs`,
 //! `uninstall.rs`, `task_finalize.rs`, `milestone.rs`, `doc_write.rs`, `config.rs`,
-//! `start.rs` and `doc_read.rs`.
+//! `start.rs`, `doc_read.rs` and `unassigned.rs`.
 //! They stand there, and not beside this file, because that directory also holds the
 //! committed list of refusal sites: a suite file beside a directory of its own name makes
 //! the directory an aggregation for the registration fence
@@ -60,9 +60,11 @@
 //! **And beyond the two commands, the sites the fix pass touched** — the human's ruling of
 //! 2026-10-11 (`DECISIONS.md` → [`THE_RULING_ON_FAMILIES`]): the blocking sites of every
 //! other family that are new or changed since the previous release, or whose direct caller
-//! changed on the path to the refusal, get their cases now, family by family, and are rows
-//! of [`OWED`] until they have them; every other blocking site is a row of the scheduled
-//! list ([`SCHEDULED`], `route_catalog/scheduled.tsv`), owed a case before the port begins.
+//! changed on the path to the refusal, got their cases family by family — rows of an owed
+//! list until they had them, a list that is gone with its last row: **the fence has no
+//! answer of that kind any more**, so a site cannot be parked as owed. Every other blocking
+//! site is a row of the scheduled list ([`SCHEDULED`], `route_catalog/scheduled.tsv`),
+//! owed a case before the port begins.
 //! The first of those families has its file, `task_finalize.rs` — the gate — with its
 //! sixteen sites, two of them by a reason. With them the frame grew, each
 //! piece red first: an edit in no commit is reverted by the runner's git
@@ -89,6 +91,10 @@
 //! grew by two acts, red first: a link is moved out of its path, and the regular file
 //! itself is put in a link's place
 //! ([`a_link_is_moved_out_of_its_path_and_the_file_itself_is_put_in_a_links_place`]).
+//! **And last `unassigned.rs`** — the dynamic sites no family has, three of them taken in
+//! for the codes whose path the fix pass changed and for no other: a claim makes such a
+//! code a site, and the dynamic site keeps its own row of the scheduled list for the rest
+//! ([`IN_PART`]).
 //!
 //! **A site with a case says what was read to count its causes**
 //! ([`Reading`], a command's `READINGS`): the functions, the count with its derivation,
@@ -203,12 +209,11 @@
 //! `refusal_site_list.rs` holds byte-equal to the committed list, and the literals are
 //! [`support::rust_source`](crate::support::rust_source)'s. Two arms:
 //!
-//!   * [`every_blocking_refusal_site_has_a_case_a_reason_an_owed_row_or_a_scheduled_row`]
+//!   * [`every_blocking_refusal_site_has_a_case_a_reason_or_a_scheduled_row`]
 //!     — a blocking site, of whatever family, has exactly one answer: a case in its
-//!     command's file, a [`Reason`] there, a row of [`OWED`] or a row of the scheduled
-//!     list. **So a blocking site production source gains is on no list and is named until
-//!     it has its case**: the two lists are one ruling's, and the scheduled one is held to
-//!     the count that ruling was put on
+//!     command's file, a [`Reason`] there or a row of the scheduled list. **So a blocking
+//!     site production source gains is on no list and is named until it has its case**:
+//!     the scheduled list is one ruling's, and is held to the count that ruling was put on
 //!     ([`a_scheduled_site_is_one_the_count_holds_unchanged`]).
 //!   * [`every_code_of_a_catalogued_prefix_is_a_listed_sites_or_is_claimed`] — over the
 //!     prefixes [`CATALOGUED`] names, which a family joins when its file does: the list
@@ -328,6 +333,8 @@ tables! {
     mod start;
     #[path = "route_catalog/doc_read.rs"]
     mod doc_read;
+    #[path = "route_catalog/unassigned.rs"]
+    mod unassigned;
 }
 
 use setup::{HOOK, HOOK_LINK_SITE};
@@ -898,6 +905,27 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         ],
     ),
     (
+        RENAME_ANOTHER_SLUG_LINE,
+        Classification::UnsplittableLine,
+        &[
+            "rename-destination-taken-by-a-committed-doc-another-slug-line-run-as-printed",
+            "rename-destination-taken-by-a-file-in-no-commit-another-slug-line-run-as-printed",
+        ],
+    ),
+    (
+        RENAME_CALLS_A_FILE_A_DOC,
+        Classification::AnotherFailure,
+        &["rename-destination-taken-by-a-file-in-no-commit-that-doc-read-as-printed"],
+    ),
+    (
+        TWO_MANAGED_DOCS_OVER_A_STALE_KEY,
+        Classification::AnotherFailure,
+        &[
+            "repoint-failed-a-stale-key-and-a-file-at-the-new-home-what-is-managed-listed-and-the-rename-run-as-printed",
+            "repoint-failed-a-stale-key-and-a-link-to-nothing-at-the-new-home-what-is-managed-listed-and-the-rename-run-as-printed",
+        ],
+    ),
+    (
         HOME_SHAPE_REVIEW_STEP_EXITS_4,
         Classification::AnotherFailure,
         &["home-shape-migration-over-a-link-link-moved-out-reviewed-and-approved-as-printed"],
@@ -1148,6 +1176,28 @@ const COPY_WHAT_A_LINK_TO_NOTHING_POINTS_AT: &str =
 /// The route of a migration whose doc's home is no regular file ends in the review, which
 /// exits 4 by design, and the approval. Rests on a reading — the case under it is marked.
 const HOME_SHAPE_REVIEW_STEP_EXITS_4: &str = "r1-home-shape-migration-route-review-step-exits-4";
+
+// The key of `config`, minted with the dynamic sites: a cause the commit before had given a
+// reason, found constructible.
+/// A re-point over a new home the record still holds a key for, where a file or a link to
+/// nothing stands: the refusal it carries says *two managed docs claim* the home and names
+/// `jigc rename` and `jigc unmanage` without an id. Rests on a reading for its
+/// classification — every case under it is marked — and on none for what it says.
+const TWO_MANAGED_DOCS_OVER_A_STALE_KEY: &str =
+    "r1-repoint-over-a-stale-record-key-says-two-managed-docs-claim-the-home";
+
+// The keys of the dynamic sites.
+/// `jigc rename` onto an id whose home holds a regular file prints the way to another id
+/// as a command line with a bare `<other-slug>`. Rests on a reading — every case under it
+/// is marked.
+const RENAME_ANOTHER_SLUG_LINE: &str =
+    "r1-rename-occupied-route-prints-a-line-with-a-placeholder-for-another-slug";
+
+/// The same refusal over a file somebody wrote at the destination, in no commit: the
+/// message calls it *a different doc* and the route says to read it with `jigc doc show`,
+/// which is refused — the file is no doc.
+const RENAME_CALLS_A_FILE_A_DOC: &str =
+    "r1-rename-occupied-route-calls-a-file-in-no-commit-a-doc-and-its-read-is-refused";
 
 /// **The keys the human admitted by name** — a row a key, and the heading of the entry of
 /// `DECISIONS.md` that holds the ruling. Every red case under an admitted key can block,
@@ -1608,7 +1658,7 @@ fn every_case_names_a_site_of_the_list_and_has_a_name_of_its_own() {
 /// of `start` (`pack`, `workflow`, `workflow-refs`), the two of `doc read` (`store`,
 /// `work-unit`) and `migrate`'s own, as [`refusal_sites::FAMILIES`] assigns them. A prefix joins when its command's file does.
 /// The sites are held family or no family
-/// ([`every_blocking_refusal_site_has_a_case_a_reason_an_owed_row_or_a_scheduled_row`]);
+/// ([`every_blocking_refusal_site_has_a_case_a_reason_or_a_scheduled_row`]);
 /// this is the list for the arm beside it, which asks after every code a prefix spells.
 const CATALOGUED: &[&str] = &[
     "adapter-guide",
@@ -1624,6 +1674,7 @@ const CATALOGUED: &[&str] = &[
     "finalize",
     "join",
     "migrate",
+    "migrate-corpus",
     "milestone",
     "overrides",
     "owner-artifact",
@@ -1771,6 +1822,17 @@ const CLAIMS: &[Claim] = &[
     claim("setup.inject-allowlist", MERGED_THROUGH),
     claim("setup.secrets-gitignore", MERGED_THROUGH),
     claim("setup.init-project-layer", MERGED_THROUGH),
+    // By reading, and in part ([`IN_PART`]) — the codes of three dynamic sites whose path
+    // the fix pass changed, each read where the door hands it to its `refuse`:
+    // `RefusalKind::NoSuchDoc` and `OccupiedDestination` at `jigc rename`, whose two
+    // conditions are asked of the home's own entry now;
+    claim("store.not-found", RENAME_REFUSE),
+    claim("write.already-present", RENAME_REFUSE),
+    // `RelocateRefusal::OccupiedDestination`, reached now by a link to nothing at a home
+    // the record holds a key for;
+    claim("write.already-present", RELOCATE_REFUSE),
+    // and the relocation's destination at `jigc migrate-corpus`, by what stands there.
+    claim("migrate-corpus.destination-collision", CORPUS_BLOCKED),
 ];
 
 /// The two dynamic sites of `setup.rs` whose codes are listed sites' codes as well.
@@ -2167,6 +2229,66 @@ const MINTED_AT: &[MintedAt] = &[
         site: WORKFLOW_REFS_BLOCK,
         why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS_OF_COMPOSITION,
     },
+    // `migrate_corpus::blocked_finding(code, …)`: the corpus migration's refusals of one
+    // doc, a code a kind, each spelled in the function that words it. The site is answered
+    // in part — one code of it is claimed — and these ten are its own row's.
+    MintedAt {
+        code: "migrate-corpus.deferred",
+        site: CORPUS_BLOCKED,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "migrate-corpus.fold-refused",
+        site: CORPUS_BLOCKED,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "migrate-corpus.item-unmodelled-content",
+        site: CORPUS_BLOCKED,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "migrate-corpus.missing-snapshot",
+        site: CORPUS_BLOCKED,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "migrate-corpus.narrowed-cardinality",
+        site: CORPUS_BLOCKED,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "migrate-corpus.prose-needed",
+        site: CORPUS_BLOCKED,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "migrate-corpus.removed-field",
+        site: CORPUS_BLOCKED,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "migrate-corpus.removed-item-slot",
+        site: CORPUS_BLOCKED,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "migrate-corpus.schema-version-ahead",
+        site: CORPUS_BLOCKED,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "migrate-corpus.unclassified-change",
+        site: CORPUS_BLOCKED,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    // `render::commit_rejection_finding`, again: the corpus migration's own commit,
+    // handed over as `invocation_log::ERROR_MIGRATE_CORPUS_REJECTED`.
+    MintedAt {
+        code: "migrate-corpus.commit-rejected",
+        site: COMMIT_REJECTION,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_DOORS,
+    },
 ];
 
 const COMMIT_REJECTION: &str = "crates/cli/src/render.rs::commit_rejection_finding::dynamic#1";
@@ -2183,6 +2305,7 @@ const BLOCKING_WRITE: &str = "crates/engine/src/write.rs::blocking_write::dynami
 const PAYLOAD_REJECT: &str = "crates/cli/src/author.rs::reject::dynamic#1";
 const RENAME_REFUSE: &str = "crates/cli/src/rename.rs::refuse::dynamic#1";
 const RELOCATE_REFUSE: &str = "crates/cli/src/relocate.rs::refuse::dynamic#1";
+const CORPUS_BLOCKED: &str = "crates/cli/src/migrate_corpus.rs::blocked_finding::dynamic#1";
 const A_SCHEDULED_SITE_OF_SEVERAL_REJECTS: &str = "the site is the one constructor of a \
     write door's rejects, a code a kind of reject; the count classes it unchanged and it \
     stands whole on the scheduled list, to get a case a code it mints before the port";
@@ -2197,28 +2320,6 @@ const A_SCHEDULED_SITE_OF_SEVERAL_DOORS: &str = "the site is one function that w
 const A_SCHEDULED_SITE_OF_SEVERAL_CHECKS: &str = "the site is the one constructor of the \
     conformance gate's blocks, a code a check; the count classes it unchanged and it stands \
     whole on the scheduled list, to get a case a code it mints before the port";
-
-/// The sites one task owes an answer.
-struct Owed {
-    task: &'static str,
-    sites: &'static [&'static str],
-}
-
-/// **The owed list: the sites the ruling takes in now that have no answer yet, under the
-/// task of the ruling that owes it** (`DECISIONS.md` → [`THE_RULING_ON_FAMILIES`]). A row
-/// goes in the commit that brings its site's case or reason — or, for a site whose caller
-/// is still to be read, its row of the scheduled list with why the caller's change is off
-/// the path; a row that stays beside an answer is named. The list is emptied family by
-/// family and deleted, with this type, when the last is in.
-const OWED: &[Owed] = &[Owed {
-    task: "P7 · unassigned — the caller's diff is read: a case, or a scheduled row that says why the change is off the path",
-    sites: &[
-        "crates/cli/src/migrate_corpus.rs::blocked_finding::dynamic#1",
-        "crates/cli/src/relocate.rs::refuse::dynamic#1",
-        "crates/cli/src/rename.rs::refuse::dynamic#1",
-        "crates/engine/src/store.rs::block::dynamic#1",
-    ],
-}];
 
 /// **A site the ruling leaves for the port**: its id, the class the count gave it
 /// ([`THE_COUNT`]), and a note — `-`, or, where a direct caller of the site's function
@@ -2392,10 +2493,11 @@ struct Rows {
     no_code: Vec<(&'static str, &'static str)>,
     /// The codes a dynamic site mints that answers under its own id ([`MINTED_AT`]).
     minted_at: Vec<MintedAt>,
-    /// `(site, the task that owes its answer)` — [`OWED`], a row a site.
-    owed: Vec<(&'static str, &'static str)>,
     /// The sites the ruling leaves for the port ([`scheduled`]).
     scheduled: Vec<Scheduled>,
+    /// The dynamic sites a claim names that answer under their own id as well
+    /// ([`IN_PART`]).
+    in_part: Vec<&'static str>,
 }
 
 /// The tables this suite holds.
@@ -2410,11 +2512,8 @@ fn rows() -> Rows {
         claims: CLAIMS.to_vec(),
         no_code: NO_CODE.to_vec(),
         minted_at: MINTED_AT.to_vec(),
-        owed: OWED
-            .iter()
-            .flat_map(|owed| owed.sites.iter().map(|site| (*site, owed.task)))
-            .collect(),
         scheduled: scheduled(SCHEDULED),
+        in_part: IN_PART.to_vec(),
     }
 }
 
@@ -2424,6 +2523,14 @@ fn claimed_at(site: &Site, id: &str) -> bool {
         .iter()
         .any(|claim| claim.minted_at == site.id() && claim.id().as_deref() == Some(id))
 }
+
+/// **The dynamic sites that are answered in part** — a claim names each, for the codes the
+/// ruling takes in there, and the site answers under its own id all the same: it words
+/// every refusal of its door, a code a kind, and the codes no claim names are the port's,
+/// on the site's one row of the scheduled list. Without a row here a claimed dynamic site
+/// owes nothing under its own id ([`owing`]) — right for a site whose every code is
+/// claimed, and wrong for one taken in for two codes of eleven.
+const IN_PART: &[&str] = &[CORPUS_BLOCKED, RELOCATE_REFUSE, RENAME_REFUSE];
 
 /// A site that owes the catalog a case.
 struct Owing {
@@ -2443,9 +2550,12 @@ fn blocks(site: &Site) -> bool {
 /// site a claim names owes nothing under its own id — it is answered through the codes
 /// claimed for it; one no claim names owes like a listed site. A claim that names no such
 /// site adds nothing here and is named by [`idle_rows`].
-fn owing(read: &Read, claims: &[Claim]) -> Vec<Owing> {
-    let claimed =
-        |site: &Site| site.code == DYNAMIC && claims.iter().any(|c| c.minted_at == site.id());
+fn owing(read: &Read, claims: &[Claim], in_part: &[&str]) -> Vec<Owing> {
+    let claimed = |site: &Site| {
+        site.code == DYNAMIC
+            && claims.iter().any(|c| c.minted_at == site.id())
+            && !in_part.contains(&site.id().as_str())
+    };
     let mut out: Vec<Owing> = read
         .sites
         .iter()
@@ -2473,17 +2583,15 @@ fn owing(read: &Read, claims: &[Claim]) -> Vec<Owing> {
     out
 }
 
-/// **Every site that does not have exactly one answer** — a case, a reason, a row of the
-/// owed list or a row of the scheduled list. None is named; so is a case beside a reason,
-/// a row of either list beside an answer or beside the other list's, and
-/// `no-route-printed` given to a site whose route the list reads at its call.
+/// **Every site that does not have exactly one answer** — a case, a reason or a row of the
+/// scheduled list. None is named; so is a case beside a reason, a row of the list beside an
+/// answer, and `no-route-printed` given to a site whose route the list reads at its call.
 fn uncovered(read: &Read, rows: &Rows) -> Vec<String> {
     let mut out = Vec::new();
-    for site in owing(read, &rows.claims) {
+    for site in owing(read, &rows.claims, &rows.in_part) {
         let id = &site.id;
         let case = rows.cases.contains(&id.as_str());
         let reason = rows.reasons.iter().find(|reason| reason.site == id);
-        let owed = rows.owed.iter().find(|(owed, _)| owed == id);
         let scheduled = rows.scheduled.iter().any(|row| row.site == id);
         let answer = match (case, reason.is_some()) {
             (true, _) => Some("case"),
@@ -2491,8 +2599,8 @@ fn uncovered(read: &Read, rows: &Rows) -> Vec<String> {
             (false, false) => None,
         };
         match (case, reason) {
-            (false, None) if owed.is_none() && !scheduled => out.push(format!(
-                "`{id}` has no case, no reason, no owed row and no scheduled row"
+            (false, None) if !scheduled => out.push(format!(
+                "`{id}` has no case, no reason and no scheduled row"
             )),
             (true, Some(reason)) => out.push(format!(
                 "`{id}` has a case and the reason `{}` for having none — one of the two is \
@@ -2512,17 +2620,6 @@ fn uncovered(read: &Read, rows: &Rows) -> Vec<String> {
                     reason.why, site.route
                 ))
             }
-            _ => {}
-        }
-        match (answer, owed, scheduled) {
-            (Some(answer), Some((_, task)), _) => out.push(format!(
-                "`{id}` has a {answer} and is still owed by `{task}` — the row goes in the \
-                 commit that brings the answer"
-            )),
-            (None, Some((_, task)), true) => out.push(format!(
-                "`{id}` is owed by `{task}` and is on the scheduled list — a site the \
-                 ruling takes in now is not one it leaves for the port"
-            )),
             _ => {}
         }
         if let (Some(answer), true) = (answer, scheduled) {
@@ -2582,24 +2679,9 @@ fn unclaimed(read: &Read, rows: &Rows) -> Vec<String> {
 /// dynamic one or whose code no production source spells, a row for a literal that is no
 /// longer spelled; and a row that is there twice, or says nothing where it must say why.
 fn idle_rows(read: &Read, rows: &Rows) -> Vec<String> {
-    let owing = owing(read, &rows.claims);
+    let owing = owing(read, &rows.claims, &rows.in_part);
     let owes = |id: &str| owing.iter().any(|site| site.id == id);
     let mut out = Vec::new();
-
-    for (at, (site, task)) in rows.owed.iter().enumerate() {
-        if task.is_empty() {
-            out.push(format!("the owed row for `{site}` names no task"));
-        }
-        if !owes(site) {
-            out.push(format!(
-                "the owed list (`{task}`) names `{site}`, which is no blocking site that \
-                 owes an answer: it is gone, renamed, was never one, or is a dynamic site \
-                 answered through its claims"
-            ));
-        } else if rows.owed[..at].iter().any(|(other, _)| other == site) {
-            out.push(format!("`{site}` is on the owed list twice"));
-        }
-    }
 
     for (at, row) in rows.scheduled.iter().enumerate() {
         let site = row.site;
@@ -2672,7 +2754,10 @@ fn idle_rows(read: &Read, rows: &Rows) -> Vec<String> {
                 "a row says `{code}` is minted at `{site}`, which is no dynamic site — its \
                  code is spelled at the call"
             )),
-            Some(_) if rows.claims.iter().any(|claim| claim.minted_at == site) => {
+            Some(_)
+                if rows.claims.iter().any(|claim| claim.minted_at == site)
+                    && !rows.in_part.contains(&site) =>
+            {
                 out.push(format!(
                     "a row says `{code}` is minted at `{site}`, which answers whole — and \
                      that site is answered through its claims: the code wants a claim there"
@@ -2697,6 +2782,28 @@ fn idle_rows(read: &Read, rows: &Rows) -> Vec<String> {
             .any(|other| other.code == code && other.site == site)
         {
             out.push(format!("`{code}` is said to be minted at `{site}` twice"));
+        }
+    }
+
+    for (at, site) in rows.in_part.iter().enumerate() {
+        match read.sites.iter().find(|listed| listed.id() == *site) {
+            None => out.push(format!(
+                "a row says `{site}` is answered in part, which the list does not hold"
+            )),
+            Some(listed) if listed.code != DYNAMIC => out.push(format!(
+                "a row says `{site}` is answered in part, which is no dynamic site — its \
+                 code is spelled at the call"
+            )),
+            Some(_) if !rows.claims.iter().any(|claim| claim.minted_at == *site) => {
+                out.push(format!(
+                    "a row says `{site}` is answered in part, and no claim names it: it \
+                     answers whole, under its own id, without the row"
+                ))
+            }
+            Some(_) if rows.in_part[..at].contains(site) => {
+                out.push(format!("`{site}` is said to be answered in part twice"))
+            }
+            Some(_) => {}
         }
     }
 
@@ -2825,8 +2932,8 @@ fn in_order() -> Rows {
         claims: vec![BY_A_MATCH],
         no_code: vec![("setup.rs", "a file's name")],
         minted_at: Vec::new(),
-        owed: Vec::new(),
         scheduled: vec![left(ANOTHER)],
+        in_part: Vec::new(),
     }
 }
 
@@ -2843,11 +2950,16 @@ fn says(said: &[String], expected: &[(&str, &str)]) {
 }
 
 /// **Every blocking refusal site of the product has exactly one answer**: a case in its
-/// command's file, a reason there, a row of the owed list under the task of the ruling
-/// that owes it, or a row of the scheduled list — the sites the ruling leaves for the port
-/// (`DECISIONS.md` → [`THE_RULING_ON_FAMILIES`]). Every family, and the dynamic sites no
-/// family has: one that a claim names is answered through the codes claimed for it, each a
-/// site of its own; one no claim names answers under its own id.
+/// command's file, a reason there, or a row of the scheduled list — the sites the ruling
+/// leaves for the port (`DECISIONS.md` → [`THE_RULING_ON_FAMILIES`]). Every family, and
+/// the dynamic sites no family has: one that a claim names is answered through the codes
+/// claimed for it, each a site of its own — and under its own id as well where it is
+/// answered in part ([`IN_PART`]); one no claim names answers under its own id.
+///
+/// **There is no fourth answer.** While the ruling's families were taken in, a site could
+/// be a row of an owed list under the task that owed it; the list was emptied and is gone
+/// with its type, so a blocking site that has neither a case, a reason nor a scheduled row
+/// is named, whatever it is waiting for.
 ///
 /// On a fixture: the advisory site owes nothing; **a site of a family no command's file is
 /// there for owes like any other**; a claim makes the code at its dynamic site owe like a
@@ -2856,7 +2968,7 @@ fn says(said: &[String], expected: &[(&str, &str)]) {
 /// with one blocking site more than it has, in a family nobody catalogued: **a site
 /// production source gains tomorrow is on no list, and is named until it has its case**.
 #[test]
-fn every_blocking_refusal_site_has_a_case_a_reason_an_owed_row_or_a_scheduled_row() {
+fn every_blocking_refusal_site_has_a_case_a_reason_or_a_scheduled_row() {
     let fixture = fixture();
     says(
         &uncovered(&fixture, &Rows::default()),
@@ -2892,18 +3004,26 @@ fn every_blocking_refusal_site_has_a_case_a_reason_an_owed_row_or_a_scheduled_ro
                 ..in_order()
             },
         ),
-        &[(
-            ANOTHER,
-            "no case, no reason, no owed row and no scheduled row",
-        )],
+        &[(ANOTHER, "no case, no reason and no scheduled row")],
     );
-    // An owed row answers as a scheduled one does.
+    // A dynamic site answered in part: the claimed code owes a case and the site itself an
+    // answer of its own, which a row of the scheduled list is.
     says(
         &uncovered(
             &fixture,
             &Rows {
-                owed: vec![(ANOTHER, "P7")],
-                scheduled: Vec::new(),
+                in_part: vec![MINTED],
+                ..in_order()
+            },
+        ),
+        &[(MINTED, "no case, no reason")],
+    );
+    says(
+        &uncovered(
+            &fixture,
+            &Rows {
+                in_part: vec![MINTED],
+                scheduled: vec![left(ANOTHER), left(MINTED)],
                 ..in_order()
             },
         ),
@@ -2946,21 +3066,7 @@ fn every_blocking_refusal_site_has_a_case_a_reason_an_owed_row_or_a_scheduled_ro
             "a case and the reason `not-constructible: nothing reaches it`",
         )],
     );
-    // A row of either list beside an answer, and a row of both.
-    says(
-        &uncovered(
-            &fixture,
-            &Rows {
-                owed: vec![(SPELLED, "P7"), (ROUTELESS, "P7"), (ANOTHER, "P7")],
-                ..in_order()
-            },
-        ),
-        &[
-            (ANOTHER, "is owed by `P7` and is on the scheduled list"),
-            (SPELLED, "a case and is still owed by `P7`"),
-            (ROUTELESS, "a reason and is still owed by `P7`"),
-        ],
-    );
+    // A row of the scheduled list beside an answer.
     says(
         &uncovered(
             &fixture,
@@ -2999,11 +3105,11 @@ fn every_blocking_refusal_site_has_a_case_a_reason_an_owed_row_or_a_scheduled_ro
          product:\n\n  {}\n\na site is answered by a case in its command's file under \
          `route_catalog/`, or by a reason there; a code that a dynamic site mints is a site \
          once `CLAIMS` holds it. **A site that is new has its case in the commit that adds \
-         it**: the owed list and `route_catalog/scheduled.tsv` are the lists of one ruling \
-         (`DECISIONS.md` → {THE_RULING_ON_FAMILIES}) and take no site that ruling did not \
-         count.",
+         it**: `route_catalog/scheduled.tsv` is the list of one ruling (`DECISIONS.md` → \
+         {THE_RULING_ON_FAMILIES}) and takes no site that ruling did not count, and there \
+         is no list of sites that are owed.",
         wrong.len(),
-        owing(&here, CLAIMS).len(),
+        owing(&here, CLAIMS, IN_PART).len(),
         wrong.join("\n  "),
     );
 
@@ -3017,7 +3123,7 @@ fn every_blocking_refusal_site_has_a_case_a_reason_an_owed_row_or_a_scheduled_ro
         &uncovered(&read(&sources), &rows()),
         &[(
             "`crates/cli/src/planted.rs::planted::ingest.planted#1`",
-            "no case, no reason, no owed row and no scheduled row",
+            "no case, no reason and no scheduled row",
         )],
     );
 }
@@ -3323,30 +3429,8 @@ fn a_row_for_a_site_that_is_gone_is_named() {
         ],
     );
 
-    // A row of the owed list, and one of the scheduled list, for a site that is gone, was
-    // never blocking, or is there twice; an owed row that names no task; a scheduled row
-    // that has no class.
-    says(
-        &idle_rows(
-            &fixture,
-            &Rows {
-                owed: vec![
-                    (GONE, "P7"),
-                    (ADVISED, "P7"),
-                    (ANOTHER, ""),
-                    (ANOTHER, "P7"),
-                ],
-                scheduled: Vec::new(),
-                ..in_order()
-            },
-        ),
-        &[
-            (GONE, "the owed list (`P7`) names"),
-            (ADVISED, "which is no blocking site"),
-            (ANOTHER, "names no task"),
-            (ANOTHER, "on the owed list twice"),
-        ],
-    );
+    // A row of the scheduled list for a site that is gone, was never blocking, or is there
+    // twice; and one that has no class.
     says(
         &idle_rows(
             &fixture,
@@ -3370,6 +3454,49 @@ fn a_row_for_a_site_that_is_gone_is_named() {
             (ANOTHER, "on the scheduled list twice"),
             (ROUTELESS, "has no class"),
         ],
+    );
+    // A row that says a site is answered in part, for a site the list does not hold, one
+    // that is not dynamic, one no claim names, and twice; and beside it a scheduled row
+    // and a row that says where a code is minted, which such a site may have.
+    says(
+        &idle_rows(
+            &fixture,
+            &Rows {
+                in_part: vec![MINTED],
+                scheduled: vec![left(ANOTHER), left(MINTED)],
+                minted_at: vec![minted_at("setup.spelled", MINTED, "why")],
+                ..in_order()
+            },
+        ),
+        &[],
+    );
+    says(
+        &idle_rows(
+            &fixture,
+            &Rows {
+                in_part: vec![GONE, SPELLED, MINTED, MINTED],
+                scheduled: vec![left(ANOTHER), left(MINTED)],
+                ..in_order()
+            },
+        ),
+        &[
+            (GONE, "which the list does not hold"),
+            (SPELLED, "is no dynamic site"),
+            (MINTED, "twice"),
+        ],
+    );
+    says(
+        &idle_rows(
+            &fixture,
+            &Rows {
+                claims: Vec::new(),
+                cases: vec![SPELLED],
+                in_part: vec![MINTED],
+                scheduled: vec![left(ANOTHER), left(MINTED)],
+                ..in_order()
+            },
+        ),
+        &[(MINTED, "no claim names")],
     );
     // A dynamic site a claim names is answered through its claims: a row under its own id
     // is about nothing.
@@ -3466,9 +3593,10 @@ fn the_fence_is_not_vacuous() {
 
     let bare = Rows {
         claims: CLAIMS.to_vec(),
+        in_part: IN_PART.to_vec(),
         ..Rows::default()
     };
-    let owing = owing(&read, CLAIMS);
+    let owing = owing(&read, CLAIMS, IN_PART);
     let claimed = owing
         .iter()
         .filter(|site| site.id.contains(&format!("#{DYNAMIC}-")))

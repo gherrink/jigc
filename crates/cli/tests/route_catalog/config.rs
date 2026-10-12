@@ -521,6 +521,70 @@ const THE_LOGS_HOME_A_LINK: [Case; 1] = the_home_a_link!(
     holds: THE_LOG_AT_ITS_NEW_HOME,
 );
 
+/// **The record of what jigc manages holds a key at the new home, and something stands
+/// there.** Made by a re-point that went through, then undone by hand: the doc moved back
+/// with `git mv`, the knob's manifest removed, both committed — the record still holds the
+/// key the re-point wrote. The sweep then reads the new home as a managed doc's, and the
+/// cause it carries is the relocation's own refusal, message and route; the frame lifts
+/// that route, the first under the finding.
+macro_rules! a_stale_key_at_the_new_home {
+    ($($plant:expr),* $(,)?) => {
+        a_committed_log![
+            Step::Jigc(PLACEMENT_ROOT),
+            Step::Git(&["add", "-A"]),
+            Step::Git(&["commit", "-q", "-m", "re-pointed"]),
+            Step::Dir(Place::Repo("docs")),
+            Step::Git(&["mv", THE_LOG_MOVED, THE_LOG]),
+            sh!("rm .jigc/config/manifest.yaml"),
+            Step::Git(&["add", "-A"]),
+            Step::Git(&["commit", "-q", "-m", "moved back by hand"]),
+            $($plant,)*
+        ]
+    };
+}
+/// The two readings of a product command a route names without the operands it requires.
+const WHICH_VERBS: &str = "*decide which one keeps the home, then `jigc rename` the other onto \
+    a free identity or `jigc unmanage` it; `jigc doc list` names what is managed there*: (a) \
+    the backticked spans are command lines to run as printed, like every `jigc` line a route \
+    prints — `jigc rename` and `jigc unmanage` have no id, which both require; (b) they name \
+    two verbs, to be run on the doc the reader decides for — then the route prints no line \
+    for either. The case follows (a): the cited list, then the rename. The surface contract \
+    says of a `git` span with no operand that it *names a command rather than a file* (the \
+    printed-path fence), and of a `jigc` span nothing of the kind; it is the gate's first \
+    question — a product command printed without its id";
+macro_rules! over_a_stale_key {
+    ($name:literal, $cause:literal, $($plant:expr),+ $(,)?) => {
+        [Case {
+            name: concat!(
+                "repoint-failed-a-stale-key-and-",
+                $name,
+                "-at-the-new-home-what-is-managed-listed-and-the-rename-run-as-printed"
+            ),
+            site: REPOINT_FAILED,
+            cause: $cause,
+            state: a_stale_key_at_the_new_home![$($plant,)+],
+            refusing: PLACEMENT_ROOT,
+            acts: &[Act::Run(3), Act::Run(1)],
+            holds: THE_LOG_AT_ITS_NEW_HOME,
+            doubt: Some(WHICH_VERBS),
+            ..C
+        }]
+    };
+}
+const A_FILE_AT_A_HOME_THE_RECORD_HOLDS: [Case; 1] = over_a_stale_key!(
+    "a-file",
+    "`placement-root`: the record holds a key for the new home, where a file somebody wrote \
+     stands — the relocation reads it as a managed doc's",
+    Step::File(Place::Repo(THE_LOG_MOVED), "mine\n"),
+);
+const A_LINK_AT_A_HOME_THE_RECORD_HOLDS: [Case; 1] = over_a_stale_key!(
+    "a-link-to-nothing",
+    "`placement-root`: the record holds a key for the new home, where a symbolic link that \
+     leads nowhere stands — the relocation reads it as a managed doc's",
+    Step::Dir(Place::Repo("handbook")),
+    Step::LinkTo(Place::Repo(THE_LOG_MOVED), "nowhere"),
+);
+
 /// The cases of the family, a group a cause — and, within a group, a case a way out of the
 /// cause's route.
 pub const CASES: &[&[Case]] = &[
@@ -547,6 +611,8 @@ pub const CASES: &[&[Case]] = &[
     &THE_DOC_GONE_FROM_THE_WORKING_TREE,
     &THE_ADRS_HOME_A_LINK,
     &THE_LOGS_HOME_A_LINK,
+    &A_FILE_AT_A_HOME_THE_RECORD_HOLDS,
+    &A_LINK_AT_A_HOME_THE_RECORD_HOLDS,
 ];
 
 /// The sites of the family that have no case, each with why.
@@ -638,15 +704,16 @@ pub const READINGS: &[Reading] = &[
             "crates/cli/src/config.rs::route_placement_root_repoint_strands, crates/cli/src/relocate.rs::relocate_stranded, relocate_one, displace_foreign_squatter, move_doc — the `placement-root` floor: the source's shape, the file in the way moved into the workbench, the read, the move",
             "crates/cli/src/config.rs::write_scalar — the knob's write: the manifest read, parsed, written",
         ],
-        causes: 13,
+        causes: 14,
         derivation: "the `docs-root` floor, a failure a doc: the destination cannot be \
                      captured — a file where a directory of the new home must be; the move \
                      fails — a file at the destination, git's index locked, the doc's own \
                      home no regular file — 4. The `placement-root` floor: the file in the \
                      way cannot be parked — git's index locked; the stranded doc cannot be \
                      read — gone from the working tree, with no file in the way and with \
-                     one that was parked first; the doc's own home no regular file; a \
-                     managed doc at the new home — 5. The knob's write: the manifest a \
+                     one that was parked first; the doc's own home no regular file; the \
+                     new home one the record holds a key for, with a file or with a link \
+                     to nothing standing at it — 6. The knob's write: the manifest a \
                      directory, no YAML, not writable — 3. And any of them where the undo \
                      could not put a path back — 1",
         without_case: &[
@@ -661,15 +728,6 @@ pub const READINGS: &[Reading] = &[
                      the parked file both ways; with the doc brought back (`git checkout \
                      -- docs/decisions-log.md`) the printed re-run exits 0, the doc lands \
                      at its new home and the parked file stays in the workbench",
-                ),
-            ),
-            (
-                "a managed doc stands at the new home",
-                Why::NotConstructible(
-                    "it takes a record of what jigc manages that holds a key at the new \
-                     home while a doc is still stranded at the prior one; no sequence of \
-                     the product's verbs that leaves one was found, and no file act \
-                     writes the record",
                 ),
             ),
             (

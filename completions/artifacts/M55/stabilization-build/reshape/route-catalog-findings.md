@@ -6,7 +6,7 @@ What a case of the route catalog ([route_catalog.rs](../../../../../crates/cli/t
 
 **Three of the keys are about a state only a variable reaches** — `JIGC_ADAPTERS_DIR` for two, `$HOME` taken away for one. **Whether a route owes anything there is ruled** ([DECISIONS.md](../../../../../DECISIONS.md) → *2026-10-11 — Which states a route must work in*): a state only `JIGC_ADAPTERS_DIR` reaches is a declared bound of the catalog — a red case that stands on one is recorded, stays red, and does not block; `$HOME` taken away is no bound.
 
-**[2026-10-12: and of six families beyond the pilot's two commands** — the gate (§5), `jigc milestone` (§6), the `jigc doc` verbs that write (§7), `jigc config` and composition (§8, no red case) and the store's own refusals (§9), the sites of each that the fix pass touched.**]** **The cases are those of every blocking site of `jigc setup`** — thirty-six sites, four of them with a reason and no case — **and of every blocking site of `jigc uninstall`** (§4), eighteen, each with a case: the door, the four guards over what `.jigc/` holds the only copy of, and the seven steps that remove.
+**[2026-10-12: and of every other family the ruling takes in, beyond the pilot's two commands** — the gate (§5), `jigc milestone` (§6), the `jigc doc` verbs that write (§7), `jigc config` and composition (§8), the store's own refusals (§9) and the dynamic sites no family has (§10), the sites of each that the fix pass touched.**]** **The cases are those of every blocking site of `jigc setup`** — thirty-six sites, four of them with a reason and no case — **and of every blocking site of `jigc uninstall`** (§4), eighteen, each with a case: the door, the four guards over what `.jigc/` holds the only copy of, and the seven steps that remove.
 
 **A case's name says its cause and its way.** The cases of one cause are a group, and a name ends with the way the route was followed: `-removed`, `-pointed-at-a-committed-file`, `-pointed-at-a-new-file`, and each of those again with `-committed-and-` in front where the link was committed and the change was committed as the route's clause says.
 
@@ -808,9 +808,9 @@ Each was driven once more for this section, on this tree's binary.
 - *Why no key that stands:* `r1-clobber-task-and-migration-routes-print-lines-with-placeholders-the-refusal-lists-nothing-for` is the clobber guard's — another function, at the finalize, whose placeholders are an id and a doctype the product knows; `r1-uninstall-routes-print-lines-with-a-placeholder-for-the-id` is `jigc uninstall`'s. Neighbours.
 - **Beside it, and green:** the same refusal over the task's own staged doc, whose route prints the rename whole — `jigc doc rename adr:use-tabs --to 'Use Tabs!' --task decide-tabs` — four cases; and `create.already-exists` in a task that holds its doc already, whose route prints the task's exits and the next task's start — four cases, a milestone's sub-task among them.
 
-## 8. `config` and `start` — the sites the fix pass touched: no red case
+## 8. `config` and `start` — the sites the fix pass touched
 
-*Added 2026-10-12, with the cases of [route_catalog/config.rs](../../../../../crates/cli/tests/route_catalog/config.rs) and [route_catalog/start.rs](../../../../../crates/cli/tests/route_catalog/start.rs): the five sites of `jigc config set` and the one of composition taken in by the human's ruling of 2026-10-11 — 24 cases and 3. None came out red, so no key is minted here.*
+*Added 2026-10-12, with the cases of [route_catalog/config.rs](../../../../../crates/cli/tests/route_catalog/config.rs) and [route_catalog/start.rs](../../../../../crates/cli/tests/route_catalog/start.rs): the five sites of `jigc config set` and the one of composition taken in by the human's ruling of 2026-10-11 — 24 cases and 3. None of those came out red. **[The commit after it added two cases of `config`, both red, under one key — the last entry of this section.]***
 
 ### Seen by hand, and no case
 
@@ -819,6 +819,25 @@ Each was driven for this section, on this tree's binary.
 - **A re-point refused over a doc whose home is a link prints two `route:` lines under one finding.** `config.repoint-failed` carries its cause in its message, and where the cause is the store's refusal the message is that refusal whole — its head, its `at:` and its `route:` line — followed by the re-point's own `at:` and `route:`. (An ADR's home turned into a committed link to a copy; `jigc config set docs-root handbook`: exit 1, two indented `route:` lines.) The first says *put the doc itself at … as a regular file … and commit that; then re-run this command*; the second, *Fix what this message names, then re-run `jigc config set docs-root handbook`*. A reader of the finding's first route line reads the store's. The two cases of this state follow that first line, and hold.
 - **The clause the fix pass added to the re-point's route — the file it parked on its way — is followed by no case.** Reached by hand: the committed decisions log deleted from the working tree, a file somebody wrote at `handbook/decisions-log.md`, `jigc config set placement-root handbook` — exit 1, *reading the stranded doc … No such file or directory*, and the route names the parked file both ways (`handbook/decisions-log.md` → `.jigc/displaced/decisions-log.md`). With the doc brought back (`git checkout -- docs/decisions-log.md`) the printed re-run exits 0; the parked file stays in the workbench. The frame refuses an object of a case's own wherever a route prints a path, and the object to mend here is the doc, which the message names.
 - **`workflow-refs.workflow-mismatch` calls an ordinary task a sub-task.** `jigc workflow dev-task --task pick-tabs`, over a task `jigc start --workflow record-decision` minted: *… but sub-task `pick-tabs` was minted with `record-decision`* and *or re-seed the sub-task with the intended `--workflow`*. No milestone has the task, and nothing re-seeds it. The route's first way — `jigc workflow record-decision --task pick-tabs` — holds.
+
+### `r1-repoint-over-a-stale-record-key-says-two-managed-docs-claim-the-home`
+
+*Added with the commit after this section's: a cause that commit gave a reason — *a managed doc stands at the new home* — and that was then found constructible.*
+
+- **Classification:** followed, another failure. **Two cases, both marked `doubt`:** `repoint-failed-a-stale-key-and-a-file-at-the-new-home-…`, `repoint-failed-a-stale-key-and-a-link-to-nothing-at-the-new-home-…`, each ending `-what-is-managed-listed-and-the-rename-run-as-printed`.
+- **State:** the committed decisions log; `jigc config set placement-root handbook`, committed; then the re-point undone by hand — `git mv handbook/decisions-log.md docs/decisions-log.md`, the project layer's manifest removed, both committed. The record of what jigc manages still holds the key `handbook/decisions-log.md`. A file somebody wrote, or a symbolic link that leads nowhere, stands at that path.
+- **Refusing command:** `jigc config set placement-root handbook` — exit 1, `config.repoint-failed`, whose message carries the relocation's refusal whole: *blocking · write.already-present — the destination `handbook/decisions-log.md` is occupied by a managed instance — a managed move-INTO the destination is deferred*.
+- **Printed route** (the first of the finding's two `route:` lines, the relocation's):
+
+  ```text
+  route: two managed docs claim `handbook/decisions-log.md` — decide which one keeps the home, then `jigc rename` the other onto a free identity or `jigc unmanage` it; `jigc doc list` names what is managed there — the re-point was undone
+  ```
+
+- **What was done:** `jigc doc list`, as printed (exit 0); `jigc rename`, as printed.
+- **What went wrong:** `jigc rename` exits 2 — *the following required arguments were not provided* — the classification, which rests on the reading below. **And what the refusal says of the state rests on none**: nothing managed stands at the home. `jigc doc list` names one doc, `decisions-log:decisions-log` at `docs/decisions-log.md`; what stands at `handbook/decisions-log.md` is a file nobody manages, or a link to nothing, over a key the record kept. *Two managed docs claim* it, and *occupied by a managed instance*, are both said of that.
+- **The doubt:** the gate's first question — a product command printed without its id.
+- **Driven by hand:** with the entry moved out of `handbook/`, the same `jigc config set placement-root handbook` exits 0 and the doc lands. And `jigc unmanage decisions-log:decisions-log` in that state prints *no-op: … is not managed (nothing to drop)* beside a `jigc doc list` that says `managed`.
+- **The link to nothing is a cause the fix pass brought**: the previous release's relocation asked whether the destination exists by following the link, saw nothing and moved on to `git mv`.
 
 ## 9. `doc read` — the store's refusal over a home that is no regular file
 
@@ -875,3 +894,34 @@ Two more cases, both marked `doubt`: `home-shape-create-only-create-over-a-link-
 ### Seen by hand, and no case
 
 - **`jigc migrate-corpus` prints the refusal as a row of its report**, not as a finding: *blocked `docs/decisions/use-tabs.md`*, then `store.home-not-regular-file:` and the store's message and route, indented, at exit 1 (an ADR with its `schema-version:` stamp taken off, behind a committed link). The frame reads a refusal by its finding's head line, and has no case here.
+
+## 10. The dynamic sites no family has — the three the fix pass touched
+
+*Added 2026-10-12, with the cases of [route_catalog/unassigned.rs](../../../../../crates/cli/tests/route_catalog/unassigned.rs): `jigc rename`'s two refusals whose condition the fix pass changed — 6 cases — and a reason each for one code of `jigc relocate`'s and one of `jigc migrate-corpus`'s.*
+
+### `r1-rename-occupied-route-calls-a-file-in-no-commit-a-doc-and-its-read-is-refused`
+
+- **Classification:** followed, another failure. **One case:** `rename-destination-taken-by-a-file-in-no-commit-that-doc-read-as-printed`.
+- **State:** a committed ADR, `adr:use-tabs`; a file somebody wrote at `docs/decisions/use-spaces.md`, in no commit, that is no doc.
+- **Refusing command:** `jigc rename adr:use-tabs --to "Use spaces"` — exit 1, `write.already-present`: *cannot rename to `adr:use-spaces` — a different doc already exists at docs/decisions/use-spaces.md*.
+- **Printed route:**
+
+  ```text
+  route: give this doc an id nothing else answers to — re-run `jigc rename adr:use-tabs --to 'Use spaces' --slug <other-slug>`; or, if `adr:use-spaces` is the doc you meant to work on, read it with `jigc doc show adr:use-spaces` and rename that one instead
+  ```
+
+- **What was done:** the second way's printed line, `jigc doc show adr:use-spaces`.
+- **What went wrong:** exit 1 under `store.unparseable` — *does not parse: required section heading `## context` is missing … it is a foreign file, not an unmigrated managed doc*. The refusal calls the file *a different doc* and its route offers to read it as one.
+- **Beside it, and green:** the same line where the destination is another committed doc.
+
+### `r1-rename-occupied-route-prints-a-line-with-a-placeholder-for-another-slug`
+
+- **Classification:** followed, a printed line no shell can split. **Two cases, both marked `doubt`:** `rename-destination-taken-by-a-committed-doc-another-slug-line-run-as-printed`, `rename-destination-taken-by-a-file-in-no-commit-another-slug-line-run-as-printed`.
+- **The route's first way**, above: `jigc rename adr:use-tabs --to 'Use spaces' --slug <other-slug>`, run as printed — no shell splits it.
+- **The doubt:** what the pilot's first question left open, over a value nobody but the reader has.
+- **Driven by hand, the second reading:** with `--slug other` the rename exits 0, over the file in no commit and over a link to nothing alike.
+- *Why no key that stands:* the key of §9 is for the two functions that word the store's refusal at a destination; this is `rename.rs::run`'s own arm, the sentence those two were written from. A neighbour.
+
+### Seen by hand, and no case
+
+- **`store.not-found` at `jigc rename` over a committed doc that is gone from the working tree routes at the id.** `rm docs/decisions/use-tabs.md; jigc rename adr:use-tabs --to "Use spaces"`: exit 1, *no managed doc `adr:use-tabs` to rename*, route *`jigc describe` lists the doctype surface — check the id you typed against it*. The id is right; the doc is in `HEAD`. The case of this state runs the cited `jigc describe`, which exits 0.

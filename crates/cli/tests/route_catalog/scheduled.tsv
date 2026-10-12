@@ -38,6 +38,7 @@ crates/cli/src/ingest.rs::unaddressable_identity_finding::ingest.unaddressable-i
 crates/cli/src/ingest.rs::wrong_location_finding::ingest.wrong-location#1	unchanged	-
 crates/cli/src/migrate.rs::adjudicate_source_path::migrate.source-untrackable#1	unchanged	caller: `crates/cli/src/migrate.rs::migrate_in_repo` changed — a binding ahead of this refusal that refuses nothing, and behind it a refusal of its own for a migration asked from a linked worktree, ranked below this one by its own comment
 crates/cli/src/migrate.rs::adjudicate_source_tracked::migrate.source-untracked#1	unchanged	caller: `crates/cli/src/migrate.rs::migrate_in_repo` changed — a refusal of its own for a migration asked from a linked worktree now stands ahead of this one and answers earlier under its own code, whose site has its cases: states taken from this refusal, none brought. What git says of the source is asked as it was
+crates/cli/src/migrate_corpus.rs::blocked_finding::dynamic#1	unchanged	answered in part: the code `migrate-corpus.destination-collision` is claimed there and has its answer — its caller `destination_collision_finding` changed, and what stands at a relocation's destination now picks the refusal and its route; the eleven other codes the function mints are handed over by callers that are the previous release's
 crates/cli/src/milestone.rs::ensure_workflow_provided::workflow-refs.unknown-workflow#1	unchanged	-
 crates/cli/src/milestone.rs::foreign_bytes_finding::milestone.foreign-bytes#1	unchanged	-
 crates/cli/src/milestone.rs::mint_foreign_bytes_finding::milestone.foreign-bytes#1	unchanged	-
@@ -49,6 +50,8 @@ crates/cli/src/orphan.rs::home_vacated_finding::schema-conformance.home-vacated#
 crates/cli/src/orphan.rs::orphaned_instance_finding::schema-conformance.orphaned-instance#1	unchanged	caller: `crates/cli/src/cli.rs::validate_store_in_repo` changed — one closure, the file-state family's question of what git says of a drifted doc against `HEAD` (it read the blob before); the walk that finds an orphaned instance asks it nothing
 crates/cli/src/relocate.rs::installed_root_refusal::config.unusable-root#1	unchanged	-
 crates/cli/src/relocate.rs::installed_root_refusal::config.workbench-root#1	unchanged	-
+crates/cli/src/relocate.rs::refuse::dynamic#1	unchanged	answered in part: the code `write.already-present` is claimed there and has its answer — in its caller `displace_foreign_squatter` the destination's own entry is asked and no longer through a link, so a link to nothing at a recorded home reaches the refusal; `move_doc`'s change stands behind its call, and the other callers are the previous release's
+crates/cli/src/rename.rs::refuse::dynamic#1	unchanged	answered in part: the codes `store.not-found` and `write.already-present` are claimed there and have their cases — in its caller `run` both conditions are asked of the home's own entry and no longer through a link; the door's other kinds of refusal are worded by lines that are the previous release's, behind the question of the doc's own home
 crates/cli/src/render.rs::commit_rejection_finding::dynamic#1	unchanged	-
 crates/cli/src/render.rs::validation_store::pack-probe-integrity.probe-failure#1	unchanged	-
 crates/cli/src/render.rs::validation_store::reconciliation.rename#1	unchanged	-
@@ -140,6 +143,7 @@ crates/engine/src/state.rs::instance_collision_finding::create.serial-collision#
 crates/engine/src/state.rs::residual_collision_finding::task.serial-collision#1	unchanged	-
 crates/engine/src/state.rs::unknown_doctype_finding::create.unknown-doctype#1	unchanged	caller: `crates/engine/src/state.rs::create` changed — two parameters more and the one probe of the home, all behind this refusal, which is its first statement; the other caller, `create_admission`, is the previous release's
 crates/engine/src/state.rs::unslugable_title_finding::write.unslugable-title#1	unchanged	-
+crates/engine/src/store.rs::block::dynamic#1	unchanged	caller: none changed — every caller of this `block` stands in `crates/engine/src/store.rs`, whose diff adds items and changes no function that calls it; the changed callers the count's rule names are functions of `crates/cli/src/doc.rs`, which call that file's own `block` and `DocFailure::block`, of the same name
 crates/engine/src/target_surface.rs::scalar::doc-code.multi-valued-anchor#1	unchanged	-
 crates/engine/src/validate.rs::blocking_conformance::dynamic#1	unchanged	-
 crates/engine/src/validate.rs::owner_artifact_present::owner-artifact.present#1	unchanged	-

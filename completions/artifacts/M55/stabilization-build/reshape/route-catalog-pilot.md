@@ -6,6 +6,8 @@
 
 **[2026-10-12, again — the two tables were printed with the cases of `jigc milestone`.** They are the arm's blocks `cases` and `sites` as one run printed them on 2026-10-12, byte for byte, over the cases, the readings and the reasons of the commit that carries this line (the variable naming `rc.24`'s binary of §8; 303.9 s, load average 7.0 at its start and 13.3 at its end; no gate of this branch beside it) — **and a run after the last edit to anything the arm reads, a change to how the runner is handed what a refusal printed, printed both blocks byte for byte the same** (676.6 s, beside another lane's gate, load average 38): 544 lines of cases and 78 of sites under a header each. They hold the pilot's two commands, the gate's 107 cases over sixteen sites — fourteen with a reading, two with a reason — and `jigc milestone`'s 84 over eight ([DECISIONS.md](../../../../../DECISIONS.md) → *2026-10-12 — The route catalog's eight sites of `milestone`*, and the entry below it). Every count of this record is still `P5`'s, over the pilot's two commands, as counted then.**]**
 
+**[2026-10-12, a third time — the two tables were printed with every family the ruling takes in, and §14 counts the catalog beyond the pilot.** They are the arm's blocks `cases` and `sites` as one run printed them on 2026-10-12, byte for byte, over the cases, the readings and the reasons of the commit that carries this line, made after the last edit to anything the arm reads (the variable naming `rc.24`'s binary of §8; 467.8 s, load average 8.8 at its start and 38.7 at its end; no gate of this branch beside it): 627 lines of cases and 92 of sites under a header each. Every count of §1 to §13 is still `P5`'s, over the pilot's two commands, as counted then; what stands beyond them is §14's.**]**
+
 **Where a number comes from.** Three sources, and every table says which.
 
 - **(arm)** — the suite's one ignored arm, run by hand on this tree at the commit that carries this record:
@@ -564,3 +566,104 @@ None of the seven cases stands on a bound, so the five that hold now come off th
 **What a bound does not do.** It takes no case off the expected-red list, moves no classification and makes no case green: the list is what it was at §5, strict three ways, and the 73 are in it. And the human may admit a bounded case by its key at any stop of a run; the table of admitted keys is one constant of the suite (`ADMITTED`).
 
 **What this section does not establish.** That a case that *can* block is a finding a run would grade as blocking — a key certifies itself until a run's ledger holds it (§12). That the three bounds are rows of a run's declared-bounds list: no run is open, and the opening record takes them when one is. And anything about a state the function cannot read as a second one beside a bound — a file's bytes, a directory, what a `git add` leaves: the count's §1c and §4 name such conditions beside a permission — a `.jigc/` entry the state plants by hand under eleven of the permission cases, a file that must lack an entry under one, a refusing command that carries `--force` under one — read there by a person and here by nobody.
+
+## 14. 2026-10-12 — the catalog beyond the pilot, as it stands
+
+**What this section is.** The human's ruling of 2026-10-11 ([DECISIONS.md](../../../../../DECISIONS.md) → *Which families the route catalog takes in*) took in, beyond the pilot's two commands, the blocking sites the fix pass touched; six entries of 2026-10-12 above that one carry them out, family by family. This section counts what stands when the last of them lands. It judges nothing: not what a difference between two binaries is, and not which reading a marked case wants — those cases are one list, [route-catalog-doubts.md](route-catalog-doubts.md).
+
+**Where a number comes from.** One run of the ignored arm (§ *Where a number comes from*, at the head), on the tree of the commit that carries this section, the variable naming `rc.24`'s binary of §8: **467.8 s over 627 cases**, load average 8.8 at its start and 38.7 at its end, no gate of this branch beside it. Each table names the arm's block it is read from; a count over a block is a sum over its columns. [route-catalog-pilot-cases.tsv](route-catalog-pilot-cases.tsv) and [route-catalog-pilot-sites.tsv](route-catalog-pilot-sites.tsv) are the blocks `cases` and `sites` of that same run, byte for byte — 627 lines of cases and 92 of sites under a header each; the 544 and 78 lines committed before are in them unchanged.
+
+### Sites, causes, cases — per family (block `sites`)
+
+| family — its file under `route_catalog/` | sites with a reading | sites with a reason | causes | followed | a reason | ways not followed | cases | red |
+|---|---|---|---|---|---|---|---|---|
+| `task finalize` — `task_finalize.rs` | 14 | 2 | 98 | 84 | 14 | 15 | 107 | 26 |
+| `milestone` — `milestone.rs` | 8 | 0 | 79 | 69 | 10 | 10 | 84 | 32 |
+| `doc write` — `doc_write.rs` | 3 | 0 | 21 | 16 | 5 | 3 | 18 | 10 |
+| `config` — `config.rs` | 4 | 1 | 28 | 25 | 3 | 4 | 26 | 2 |
+| `start` — `start.rs` | 1 | 0 | 3 | 3 | 0 | 1 | 3 | 0 |
+| `doc read` — `doc_read.rs` | 1 | 0 | 32 | 25 | 7 | 2 | 30 | 6 |
+| the dynamic sites no family has — `unassigned.rs` | 2 | 2 | 4 | 4 | 0 | 2 | 6 | 3 |
+| **beyond the pilot** | **33** | **5** | **265** | **226** | **39** | **37** | **274** | **79** |
+| the pilot's two commands, as the same run prints them | 50 | 4 | 277 | 208 | 69 | 37 | 353 | 165 |
+| **the catalog** | **83** | **9** | **542** | **434** | **108** | **74** | **627** | **244** |
+
+`migrate` has no site with a case: its two were read and left for the port. A site of `unassigned.rs` is a code claimed at a dynamic site — two of `jigc rename`'s with cases, one of `jigc relocate`'s and one of `jigc migrate-corpus`'s with a reason.
+
+### Reasons, by word (block `reasons`)
+
+| what has the reason | `not-constructible` | `platform` | `no-route-printed` |
+|---|---|---|---|
+| a site — the catalog · beyond the pilot | 9 · 5 | 0 | 0 |
+| a cause — the catalog · beyond the pilot | 106 · 38 | 2 · 1 | 0 |
+| a way out of a route — the catalog · beyond the pilot | 74 · 37 | 0 | 0 |
+
+*Beyond the pilot* is the block less §4's numbers.
+
+### The keys minted beyond the pilot — 29, over 79 red cases (block `cases`, columns 5 and 6)
+
+| key | red cases | family |
+|---|---|---|
+| `r1-finalize-nothing-staged-route-prints-finalize-without-its-id` | 3 | task finalize |
+| `r1-finalize-stage-failed-route-names-a-lock-and-three-paths-and-the-docs-home-is-ignored` | 1 | task finalize |
+| `r1-finalize-amend-staged-doc-route-says-the-start-line-mints-and-it-presents-the-workflows` | 1 | task finalize |
+| `r1-linked-doc-route-cites-a-command-that-is-itself-refused` | 2 | task finalize |
+| `r1-conformance-block-in-a-migration-minted-over-the-edit-revert-draws-conflict-block` | 1 | task finalize |
+| `r1-finalize-provenance-io-route-says-disk-or-permissions-over-a-manifest-of-another-kind` | 3 | task finalize |
+| `r1-task-working-area-io-route-says-disk-or-permissions-over-an-entry-of-another-kind` | 3 | task finalize |
+| `r1-doc-create-refused-over-the-manifest-stages-the-body-and-the-re-run-exits-0` | 2 | task finalize |
+| `r1-clobber-task-and-migration-routes-print-lines-with-placeholders-the-refusal-lists-nothing-for` | 4 | task finalize |
+| `r1-clobber-fixed-route-prints-git-mv-without-a-path` | 2 | task finalize |
+| `r1-clobber-held-migration-route-review-step-exits-4` | 2 | task finalize |
+| `r1-clobber-route-drops-the-milestones-only-sub-task-and-the-re-run-draws-zero-contribution` | 1 | task finalize |
+| `r1-clobber-staged-by-two-worktrees-rename-way-draws-code-collision` | 1 | task finalize |
+| `r1-record-exists-route-says-continue-over-a-file-that-is-no-record` | 1 | milestone |
+| `r1-zero-contribution-route-prints-git-add-with-no-path-and-no-place` | 1 | milestone |
+| `r1-zero-contribution-route-abandon-line-is-refused-by-the-discard-doors-guards` | 3 | milestone |
+| `r1-milestone-area-io-route-says-disk-or-permissions-over-an-entry-of-another-kind` | 19 | milestone |
+| `r1-worktree-doors-route-re-run-is-for-the-next-command` | 3 | milestone |
+| `r1-leftover-consent-over-a-link-to-nothing-draws-provision-failed` | 1 | milestone |
+| `r1-unlanded-route-keeps-the-only-commit-and-the-re-run-draws-zero-contribution` | 1 | milestone |
+| `r1-unlanded-route-abandon-line-is-refused-by-the-discard-door` | 3 | milestone |
+| `r1-record-retitle-route-names-two-milestone-verbs-without-their-ids` | 3 | doc write |
+| `r1-distinct-identity-routes-print-a-line-with-placeholders-for-the-readers-own-choice` | 9 | doc read · doc write |
+| `r1-repoint-over-a-stale-record-key-says-two-managed-docs-claim-the-home` | 2 | config |
+| `r1-home-shape-edited-doc-route-says-copy-what-the-link-points-at-over-a-link-to-nothing` | 1 | doc read |
+| `r1-home-shape-migration-route-review-step-exits-4` | 1 | doc read |
+| `r1-home-shape-destination-routes-print-a-line-with-a-placeholder-for-another-slug` | 2 | doc read |
+| `r1-rename-occupied-route-prints-a-line-with-a-placeholder-for-another-slug` | 2 | unassigned |
+| `r1-rename-occupied-route-calls-a-file-in-no-commit-a-doc-and-its-read-is-refused` | 1 | unassigned |
+
+With the pilot's 27 keys the expected-red list holds **56 keys over 244 cases** (block `bounds`, its last two lines: *every key (56), of which 46 can block — 244 red cases, 175 that can block, 47 on a permission bit, 7 on a FIFO, 19 on the override, 1 admitted*; *the cases no entry lists — 383*). No red case beyond the pilot stands on a declared bound.
+
+### The two lists
+
+The owed list is empty and gone: the suite has no table for it and the fence no answer of that kind. **The scheduled list holds 145 sites**, every one classed `unchanged` by the count but one that the count did not class; 28 of them carry the change of a caller that was read and why it is off the path, and 3 that they are answered in part.
+
+### The same cases on the previous release's binary — totals per family (block `cases`, columns 6, 9 and 12)
+
+| family | lines | the same classification on both — of them over the same printed route | not provoked on `rc.24` | other |
+|---|---|---|---|---|
+| `task finalize` | 107 | 47 — 41 | 55 | 5 |
+| `milestone` | 84 | 59 — 55 | 25 | 0 |
+| `doc write` | 18 | 18 — 18 | 0 | 0 |
+| `config` | 26 | 23 — 23 | 2 | 1 |
+| `start` | 3 | 3 — 3 | 0 | 0 |
+| `doc read` | 30 | 0 | 30 | 0 |
+| the dynamic sites | 6 | 6 — 6 | 0 | 0 |
+| **beyond the pilot** | **274** | **156 — 146** | **112** | **6** |
+| `setup` · `uninstall` | 268 · 85 | 119 — 102 · 74 — 70 | 125 · 7 | 24 · 4 |
+
+*Other* is a line where `rc.24` came to another classification than this tree and to more than *not provoked* — or could not be followed there, the case's act naming a span that binary's route does not have. What a line says and does not say is §8's.
+
+### The arms' seconds
+
+Inside a gate, one behind the other (the gate of the commit before this section's, `tests passed=5058`, its log's `test-seconds`): `start` 1.2 · `config` 9.6 · `doc_write` 10.3 · `doc_read` 12.7 · `uninstall` 27.2 · `setup` 43.5 · `milestone` 51.3 · `task_finalize` 66.8 — 222.6 s together, at 617 cases. The gate before that one, under a heavier load: `doc_write` 25.3 · `uninstall` 29.4 · `setup` 71.7 · `task_finalize` 78.1 · `milestone` 111.2. The ignored arm, which follows every case twice: 1028.6 s at 617 cases under a load average of about 100, and 467.8 s at 627 under one of 9 to 39.
+
+### Not established
+
+- **Anything this section's tables do not count**: a cause nobody constructed, a way with a reason, and the 145 scheduled sites.
+- **The frame over a route that removes the directory its reader stands in and then prints a command without a `cd`**: the runner still starts that command in a directory that is gone and panics. No case of the seven families met it — none stands in a directory its route removes — and it was not changed.
+- **The clause the fix pass added to the re-point's route** (a file parked on the way): followed by no case; driven by hand ([route-catalog-findings.md](route-catalog-findings.md) → §8).
+- **That a site left for the port was rightly left**: 28 rows say which change was read and why it is off the path; that is a reading.
+- **Linux**: the run follows the commit and is in the task's return.

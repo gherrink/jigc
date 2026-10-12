@@ -2,6 +2,100 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The route catalog's owed list is empty and gone: the four dynamic sites no family has — one left for the port, three answered in part, a code at a time; 8 more cases, 5 of them red under three new keys; the catalog beyond the pilot counted, and every marked case on one list for the human (the human's ruling of 2026-10-11, the last of its families)
+
+**What.** A ninth file wired through `tables!`, [route_catalog/unassigned.rs](crates/cli/tests/route_catalog/unassigned.rs), for the dynamic sites the ruling takes in; a correction to the commit before this one; the owed list taken out of the suite; the record's section for the catalog beyond the pilot ([route-catalog-pilot.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot.md) → §14) with the two tables printed again; and [route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md), every case marked `doubt` under the question it hangs on. **Every blocking site of the product now has a case, a reason or a row of the scheduled list, and there is no fourth answer.** No product source changes; nothing is fixed.
+
+### The caller reading — the four dynamic sites
+
+A dynamic site is one function that words every refusal of its door, a code a kind. So a changed caller was read for *which code's* path it lies on.
+
+| site | the caller, and the changed lines read | | the reason |
+|---|---|---|---|
+| `rename.rs::refuse` | `run` — the doc's own home and the destination are asked for their own entry and no longer through a link | **in, for two codes** — `store.not-found`, `write.already-present` | the changed lines are the two conditions; each takes causes away (a link to nothing and a directory at the home; a link to a file at the destination — driven on both binaries) and brings none |
+| `relocate.rs::refuse` | `displace_foreign_squatter` — the destination's own entry asked, not `exists()`; `move_doc` — a guard behind its call | **in, for one code** — `write.already-present` | a link to nothing at a home the record holds a key for reaches the refusal now, where the previous release moved on to `git mv` |
+| `migrate_corpus.rs::blocked_finding` | `destination_collision_finding` — what stands at a relocation's destination picks the refusal and its route | **in, for one code** — `migrate-corpus.destination-collision` | the changed lines decide whether it fires and what its route says |
+| `engine/store.rs::block` | none | out | every caller of this `block` stands in `store.rs`, whose diff adds items and changes no function that calls it; the changed callers the count's rule names are functions of `doc.rs` that call that file's own `block`, of the same name |
+
+### A dynamic site answered in part — pinned, as an engineer
+
+Until this commit a claim took a dynamic site's own row away: the site was answered through the codes claimed for it. That is right where every code it mints is claimed, and wrong for a site taken in for two codes of eleven — the other nine would be owed by nobody. **`IN_PART` names the dynamic sites that a claim names and that answer under their own id all the same**: the claimed code is a site with its case or its reason, and the function keeps one row of the scheduled list for the codes nothing changed, with a note that says which were taken. *Why not claim every code of such a site:* a claim's code has to be one of a catalogued prefix, and `jigc rename` mints `rename.*`, a prefix the list has no family for. *Red first:* with the table declared and read by nothing, the fence's arm did not name an in-part site that had no row of its own (`left: 0  right: 1`), and named its scheduled row and a row that says where a code of it is minted as about nothing (`left: 2  right: 0`). The arm that names rows about nothing holds a row for a site the list does not hold, one that is not dynamic, one no claim names, and a row twice.
+
+### The sites
+
+| site — a code claimed at a dynamic site | functions read | causes | followed | a reason | cases | red | minutes |
+|---|---|---|---|---|---|---|---|
+| `rename.rs::refuse` · `store.not-found` | 3 | 2 | 2 | 0 | 2 | 0 | 3 |
+| `rename.rs::refuse` · `write.already-present` | 2 | 2 | 2 | 0 | 4 | 3 | 4 |
+| `relocate.rs::refuse` · `write.already-present` | — | — | — | the site: `not-constructible` | 0 | 0 | 6 |
+| `migrate_corpus.rs::blocked_finding` · `migrate-corpus.destination-collision` | — | — | — | the site: `not-constructible` | 0 | 0 | 2 |
+| **four** | | **4** | **4** | **2 sites** | **6** | **3** | **15** |
+
+- **`jigc relocate`'s refusal has a reason and is followed all the same, at another site.** No door of the shipped packs prints it as a finding of its own: `jigc relocate` moves the instances of a doctype no manifest governs, and a `placement-root` re-point carries it inside the message of `config.repoint-failed`. The state is constructible, and its two cases are `config.rs`'s — below.
+- **`jigc migrate-corpus`'s takes a pack of the reader's own**: a doctype whose home moved at a version bump.
+
+### A correction to the commit before this one (`8d1ba94c`)
+
+Its reading of `config.repoint-failed` gave the cause *a managed doc stands at the new home* the reason that no sequence of the product's verbs leaves a record with a key there. **A sequence with one move by hand does**, and a state may be made by file acts and by git: a re-point that went through, then undone by hand — `git mv` back, the knob's manifest removed, both committed — leaves the key the re-point wrote. Found while reading `jigc relocate`'s refusal for this commit, after that commit's gate had started. The reason is gone; the cause is two — a file at the recorded home, and a link to nothing there, which is the cause the fix pass brought — and each has a case, both red. The site now counts 14 causes, 11 followed and 3 with a reason; the family 26 cases.
+
+### The red cases — three keys, all new, in the pilot's findings file (§8, §10)
+
+| key | cases | classification | `doubt` |
+|---|---|---|---|
+| `r1-repoint-over-a-stale-record-key-says-two-managed-docs-claim-the-home` | 2 | followed, another failure | 2 |
+| `r1-rename-occupied-route-prints-a-line-with-a-placeholder-for-another-slug` | 2 | followed, a printed line no shell can split | 2 |
+| `r1-rename-occupied-route-calls-a-file-in-no-commit-a-doc-and-its-read-is-refused` | 1 | followed, another failure | 0 |
+
+- **The first is marked for its classification and rests on no reading for what it says**: over a file nobody manages, or a link to nothing, at a home the record kept a key for, the refusal says *occupied by a managed instance* and its route *two managed docs claim* the home — and `jigc doc list`, which the route cites, names one doc, somewhere else.
+- **The third rests on none**: `jigc rename` onto an id whose home holds a file in no commit calls the file *a different doc* and offers to read it with `jigc doc show`, which is refused under `store.unparseable`.
+- **None of the 8 cases stands on a declared bound.**
+
+### The doubts — each one of the questions already listed, and the list
+
+| cases | the route says | which question |
+|---|---|---|
+| 2 | *`jigc describe` lists the doctype surface — check the id you typed against it* | a command cited for what it prints — **ruled by the human on 2026-10-13: held to its words**; both hold, held to exit 0 |
+| 2 | `jigc rename … --slug <other-slug>` | a placeholder for a value that is the reader's own |
+| 2 | *then `jigc rename` the other onto a free identity or `jigc unmanage` it* | a product command printed without its id |
+
+**The list for the human is [route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md): 76 cases under nine questions, one of them ruled.** What this task decided in writing it — which of the names given so far are one question and which are two:
+
+- *A command cited for what it prints* is the pilot's fourth question: **one**. Thirty cases, twelve of them marked before this task. The ruling is quoted there under its own heading with its date; nothing carries it out, the cases are listed as to be followed again by the task after this one, and for each the list says whether the output the run recorded holds what the route promised — it does in eight of the thirteen red ones, the record does not keep it in four, holds another refusal in one, and keeps nothing of the seventeen that exit 0.
+- What was left of the pilot's first question is **two**: a placeholder for a value the product knows and the refusal does not list (5 cases), and one for a value that is the reader's own to choose (13) — no refusal could list the second, so *the route owes it* has no meaning there.
+- *A product command printed without its id* is **not** the pilot's sixth: the surface contract answers the sixth for a `git` span and says nothing of a `jigc` span. Two questions, 8 cases and 4.
+- *A line the route says mints* is its own question, 1 case.
+
+### The previous release's binary, side by side
+
+From the run that printed the committed tables — the named-binary arm over the whole catalog, on the cases and the frame of this commit (the binary of `jigc 1.0.0-rc.24`, sha256 `accf3996ae4a66d13adb4bb03253606e0037b5ddb7be653a314a908f6b88ab5d`; 467.8 s over 627 cases, load average 8.8 at its start and 38.7 at its end, no gate of this branch beside it).
+
+- **The six lines of the dynamic sites have the same classification on both, over the same route**: holds 3 · a printed line no shell can split 2 · another failure 1.
+- **`config`'s two new lines**: over a file at the recorded home, *another failure* on both, over the same route; over a link to nothing, `rc.24` is *not followed* — its route under the code has two spans where the case's act names the fourth: that binary does not read a link to nothing as an occupant.
+- **Per family, for the whole catalog beyond the pilot**: the record's §14 — 274 lines, 156 the same on both, 112 not provoked on `rc.24`, 6 other.
+
+### The owed list — deleted, and what holds that
+
+The table, its type, its column of the fence's rows and every planted owed row of the fence's two arms are gone, as `OWED` went after the pilot; the arm is `route_catalog::every_blocking_refusal_site_has_a_case_a_reason_or_a_scheduled_row`. *Why deleted and not kept empty:* an empty table with an arm that says *stay empty* is a rule a later commit edits in one line; with no table and no answer of that kind in `uncovered`, **a blocking site that has neither a case, a reason nor a scheduled row is named whatever it is waiting for** — which is the rule the build workflow is to carry: a refusal that is new comes with its cases. The arm that holds it is the fence's own, over this tree and over this tree with one planted site more; [pinning.md](implementation/pinning.md) → §6 says so now.
+
+### The fence
+
+- **`CATALOGUED` holds `migrate-corpus`**, thirty-one prefixes. **Red by data when it joined: eleven code-shaped literals no listed site spells** — ten kinds of refusal handed to `migrate_corpus::blocked_finding`, said to be minted there, the site answering in part; and `migrate-corpus.commit-rejected`, the door's rejection frame, handed to `render::commit_rejection_finding` like the gate's.
+- **The scheduled list holds 145 sites**: four more — `engine/store.rs::block`, and the three functions answered in part.
+
+### The record, and the tables
+
+[route-catalog-pilot.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot.md) gains §14 — per family the sites, causes, cases, red and reasons by word; the 29 keys minted beyond the pilot with their case counts; the lists' counts; the two-binary totals per family; the arms' seconds — each number from a named block of one run of the arm. **The two committed tables are that run's blocks `cases` and `sites`, byte for byte, printed after the last edit to anything the arm reads**: 627 lines and 92 under a header each, the 544 and 78 lines committed before in them unchanged.
+
+**The frame's panic** over a route that removes the directory its reader stands in and then prints a command without a `cd` **was not met by any case of this task and was not changed**; it is one line of the record's *not established*.
+
+**Not established.**
+
+- **The ruling on cited commands, carried out**: the act that holds a cited line to a witness, the thirty cases followed again, and the ruling's own entry are the next task's.
+- **`jigc relocate` and `jigc migrate-corpus` at their own doors**: a pack of the reader's own.
+- **Which codes a dynamic site mints beyond the ones a row names**: a claim and a row are a person's reading.
+- **That a site left for the port was rightly left**: 28 rows of the scheduled list say which change was read and why it is off the path.
+- **Linux**: the run follows this commit and is in the task's return.
+
 ## 2026-10-12 — The route catalog's sites of `config`, `start` and `doc read`, and `migrate`'s two rows: `jigc config set`'s five refusals, a task re-entered under another workflow, and the store's refusal over a home that is no regular file at every door that raises it — 57 cases, 6 of them red under three new keys and one that stands; a link is moved out of its path and the file itself put in a link's place (the human's ruling of 2026-10-11, four families)
 
 **What.** Three more files wired through `tables!` — [route_catalog/config.rs](crates/cli/tests/route_catalog/config.rs), [start.rs](crates/cli/tests/route_catalog/start.rs), [doc_read.rs](crates/cli/tests/route_catalog/doc_read.rs) — each with its arm by construction, in the runner's one-at-a-time group: the five sites of `config`, the one of `start` and the one of `doc read` the ruling takes in. Six rows whose caller's diff was read move from the owed list to the scheduled list, `migrate`'s two among them. **What is left on the owed list is the four dynamic sites no family has.** No product source changes; nothing is fixed.
