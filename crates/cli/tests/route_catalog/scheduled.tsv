@@ -74,7 +74,6 @@ crates/engine/src/file_state.rs::rename_strong_finding::reconciliation.rename#1	
 crates/engine/src/file_state.rs::rename_weak_finding::reconciliation.rename#1	unchanged	-
 crates/engine/src/finalize.rs::base_mismatch_finding::finalize.base-mismatch#1	unchanged	caller: `crates/engine/src/finalize.rs::plan_finalize` and `plan_milestone_finalize` changed — each gained parameters (the claims git holds at a home, a merged doc's origins) that it hands to the clobber guard, which it calls once the promotions are planned; this refusal returns before either, so the change stands behind it
 crates/engine/src/finalize.rs::base_overlap_finding::finalize.base-mismatch#1	unchanged	-
-crates/engine/src/finalize.rs::empty_commit_finding::finalize.empty-commit#1	unchanged	caller: `crates/engine/src/finalize.rs::plan_finalize` and `plan_milestone_finalize` changed — each gained parameters (the claims git holds at a home, a merged doc's origins) that it hands to the clobber guard, which it calls once the promotions are planned; this refusal returns before either, so the change stands behind it. Not read, being one level further out than the ruling reads: `crates/cli/src/task.rs::finalize` computes the `has_diff` this refusal turns on, and that computation changed
 crates/engine/src/finalize.rs::migration_no_replacement_finding::finalize.migration-no-replacement#1	unchanged	-
 crates/engine/src/finalize.rs::no_such_task_finding::finalize.no-task#1	unchanged	-
 crates/engine/src/finalize.rs::promote_io_finding::finalize.promote-io#1	unchanged	-

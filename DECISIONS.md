@@ -2,6 +2,111 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The route catalog's last two sites of the gate: the clobber guard, seven arms at two doors, and the empty commit, taken in by a second reading of the ruling — 45 cases, 10 of them red under five new keys; the gate's eleven prefixes join the vocabulary the fence holds, and a code a scheduled dynamic site mints is said to be minted there (the human's ruling of 2026-10-11, the sites of `task finalize`, third part)
+
+**What.** Forty-five more cases in [route_catalog/task_finalize.rs](crates/cli/tests/route_catalog/task_finalize.rs) over two sites. **The family is answered: sixteen sites, fourteen with a reading and two with a reason; 107 cases, 26 of them red; nothing of `task finalize` is on the owed list.** No product source changes; nothing is fixed.
+
+### The sites
+
+| site | class in the count | functions read | causes | followed | a reason | cases | red | minutes | new vocabulary |
+|---|---|---|---|---|---|---|---|---|---|
+| `engine/finalize.rs::clobber_finding` | function-changed | 7 groups — the constructor, the two guards, the occupancy predicate, the contest split, the two axes, the five text functions, and the schemas that fix an identity | 32 | 29 | 3 `not-constructible` | 41 | 10 | 19 | — |
+| `engine/finalize.rs::empty_commit_finding` | unchanged · caller's caller changed, on the path | 5 | 4 | 4 | 0 | 4 | 0 | 4 | — |
+| **two sites** | | | **36** | **33** | **3** | **45** | **10** | **23** | |
+
+*Minutes* are the machine's clock from a site's first probe to its cases green in the suite, the gate and the entry not in them; the two sites were worked one inside the other and the split is by the probes' own times. None of the 35 cases that hold needs an operand the route does not print.
+
+### `clobber_finding` — its arms, and which were followed
+
+The site picks its message and route among seven arms, and inside an arm by up to three more axes: the door (a task, a migration, a milestone's boundary), whether the doc's id is its author's to choose (`ShapeExit`), and what holds the home (`HEAD` or the index; a committed file or not; one staged file or two). **All seven arms were followed, at every door that reaches them with the shipped packs** — it stayed far inside the ninety minutes it was given.
+
+| arm | reached by | causes | followed | cases | red |
+|---|---|---|---|---|---|
+| the task's — a doc under an id its author chooses, over a file | a file written at the home after the mint | 1 | 1 | 2 | 2 |
+| the migration's — over a file that is not its source | the same, in a migration | 1 | 1 | 2 | 2 |
+| a fixed identity, over a file | the decisions log minted by a task, or by a sub-task; the file in no index, staged, or committed and brought back | 6 | 6 | 8 | 2 |
+| held — nothing on disk, and git holds a file | `HEAD` or the index, by a task's, a migration's, a sub-task's doc, by whether its id can change | 12 | 12 | 18 | 3 |
+| the sub-task's — over a file | the join's suffix or none, one rename or one a later sub-task | 4 | 4 | 4 | 0 |
+| staged — a file a sub-task staged in its worktree | one worktree or two; a minted doc, an edited one, one under a fixed identity | 4 | 4 | 6 | 1 |
+| contested — two docs of one plan, one path | two sub-tasks each minting the decisions log | 4 | 1 | 1 | 0 |
+
+**The three causes with a reason are the contested arm's other three**: two docs of one *task* on one path, and two sub-tasks' docs that could both be renamed. Each needs two doctypes on one `location:`, and the five doctypes of the shipped packs whose home does not carry the slug are each a singleton — it takes a pack of the reader's own.
+
+**How the states are made.** Every one by the binary under test and by file acts: a doc is authored whole in one payload (`jigc doc author`), in a task or — `--task <sub-task>` from the main checkout — in a sub-task; a sub-task that mints the decisions log is added with `--workflow decided-task`. A doc is `created` over an occupied home only where the home read free at the mint, so the occupant arrives afterwards (a file by hand) or is one the disk does not show (a committed file deleted from the working tree, a staged file taken out of it); `git checkout HEAD -- <home>` after the mint makes the committed file the occupant.
+
+**The rename is run as printed.** Five of the seven arms route at `jigc doc rename <address> --to "<title>" --task <id>` with the address and the id concrete and the title left to the reader. A quoted placeholder is one word to a shell, so the line is run as it stands and the doc is titled `<title>` — no word of a case's goes in, as none does into `jigc start "<intent>"` (→ *The route catalog's first seven sites of the gate*, below). Sixteen cases run it so; thirteen hold.
+
+### `empty_commit_finding` — taken in by the orchestrating session's reading of the ruling
+
+The caller reading had left the site out: its two direct callers changed behind it. **Read one level further out, as that builder's note asked: it is as noted.** `task.rs::finalize` computes the `has_diff` the refusal turns on, and against the previous release (`git show 91834b5e:crates/cli/src/task.rs`) one term of it changed — a pending path under `.jigc/config` is now asked of git with untracked files listed whatever the user's `status.showUntrackedFiles` says. So a changed line decides whether the refusal fires. **What the change does is remove a cause and add none**: under `status.showUntrackedFiles=no`, a task whose whole change is a new file under `.jigc/config` lands on this tree (driven: exit 0, the file committed) and is refused on the previous release's binary — under `finalize.nothing-staged`, the recoloured twin of this refusal (driven on that binary). The site has its four causes all the same: an ordinary task with nothing, an ordinary task whose one staged doc was written back unchanged, a doc-only task with an empty path set, and a milestone in a project whose packs resolve no milestone record — the dev pack alone, made by a committed edit of `.jigc/config/packs.yaml`; with the record the same milestone is refused one step on, under `milestone.zero-contribution`.
+
+**The sites that stay out, read again.** `base_mismatch_finding` and `task_missing_finding`: between the door's first line and the planner's call, `task.rs::finalize` differs from the previous release by one statement — the linked-worktree guard, which returns — and, behind `has_diff`, by a question to git about the homes (`git_home_claims`), which can only answer earlier with a plain error. Each takes states away from the two refusals and brings none. `record_flip_finding`: its three callers changed in one line each, the record's write, which stands behind the flip this refuses over; the write's own failure is `io_finding`'s, a site of `milestone`. No cause arrives through a change at any of the three, and they stay rows of the scheduled list.
+
+### The red cases — five keys, all new, in the pilot's findings file (§5)
+
+| key | cases | classification | `doubt` |
+|---|---|---|---|
+| `r1-clobber-task-and-migration-routes-print-lines-with-placeholders-the-refusal-lists-nothing-for` | 4 | followed, a printed line no shell can split | 4 |
+| `r1-clobber-fixed-route-prints-git-mv-without-a-path` | 2 | followed, the same refusal again | 2 |
+| `r1-clobber-held-migration-route-review-step-exits-4` | 2 | followed, another failure | 2 |
+| `r1-clobber-staged-by-two-worktrees-rename-way-draws-code-collision` | 1 | followed, another failure | 0 |
+| `r1-clobber-route-drops-the-milestones-only-sub-task-and-the-re-run-draws-zero-contribution` | 1 | followed, another failure | 0 |
+
+- **The first is the one arm pair whose route prints no id.** Every line the task's arm and the migration's arm print for a way out holds a placeholder the refusal lists no value for — `<id>`, `<doctype>`, `<slug>` — and the one line without a placeholder is `jigc task finalize` with no id. The five arms the fix pass wrote print the address and the id concrete. *Why no key that stands:* `r1-uninstall-routes-print-lines-with-a-placeholder-for-the-id` is the same question at `jigc uninstall`'s guard — another command, another function; a neighbour. **Driven by hand with the lines filled**, the task arm's printed way is refused (`jigc doc create … --slug other` exits 1 under `write.identity-change`, whose own route prints the `jigc doc rename` this arm does not), its unprinted way holds (`jigc doc rename`), and its third is refused first for a source git does not hold (`migrate.source-untracked`).
+- **None of the 45 cases stands on a declared bound.**
+
+### The doubts — each one of the questions already listed
+
+| cases | the route says | which question |
+|---|---|---|
+| 4 | a line with `<id>`, `<doctype>`, `<slug>` over a refusal that lists only the destination — and `jigc task finalize` with no id | what the pilot's first question left open (where a value comes from that the refusal does not list); and, for the last line, the gate's first (a product command printed without its id) |
+| 2 | *with `git mv` if git has it staged* | the pilot's sixth (a `git` verb printed with no operand); the surface contract: such a span *names a command rather than a file* |
+| 2 | *re-run `jigc task finalize <id>` to review the fidelity diff and `… --approve` to land it* — the review exits 4 by design | the gate's third and the pilot's fourth (a command cited for what it prints); the contract is silent |
+
+No new question.
+
+### The previous release's binary, side by side — the ten red cases
+
+From one run of the named-binary arm over the whole catalog, on the cases and the frame of this commit — made before its last edits, which are to prose (the binary of `jigc 1.0.0-rc.24`, sha256 `accf3996ae4a66d13adb4bb03253606e0037b5ddb7be653a314a908f6b88ab5d`; 466.6 s, another lane's gate beside it for part of the run, none of this branch's). What a line says and does not say is the pilot's record, §8: a state is built by the binary that is asked; *not provoked* is not *nothing happened*; a case's acts were written by reading this tree's route.
+
+| key | red cases | on this tree's binary | on `rc.24` | `rc.24`'s refusing command | the two routes |
+|---|---|---|---|---|---|
+| `r1-clobber-task-and-migration-routes-print-lines-with-placeholders-the-refusal-lists-nothing-for` | 4 | a printed line no shell can split | the same | exit 3 | the same |
+| `r1-clobber-fixed-route-prints-git-mv-without-a-path` | 2 | the same refusal again | not followed 1 — the act's span is `--slug` there: that binary answers the state with the task arm's route · not provoked 1 | — · exit 0 | — |
+| `r1-clobber-held-migration-route-review-step-exits-4` | 2 | another failure | not provoked, both | exit 4, both | — |
+| `r1-clobber-staged-by-two-worktrees-rename-way-draws-code-collision` | 1 | another failure | not provoked | exit 1 | — |
+| `r1-clobber-route-drops-the-milestones-only-sub-task-and-the-re-run-draws-zero-contribution` | 1 | another failure | not provoked | exit 0 | — |
+
+**Of the 45 lines, 8 have the same classification on both** — the four of the empty commit, which hold on both over the same route, and the four above that no shell splits — **and 37 do not**: 33 are *not provoked* on `rc.24` (its refusing command exits 0 in 25 of them, 4 in 6 — a migration's review hold — and 1 in 2; in 6 of the 25 a file the case holds still was changed), 3 are *not followed* there, an act naming a span that binary's route does not have, and 1 that holds here is *a printed line no shell can split* there, over another route. The lines themselves are the table's.
+
+### The vocabulary half — the gate's eleven prefixes are in
+
+`CATALOGUED` now holds `amend`, `changelog-recording`, `commit-recording`, `conformance`, `doc-code`, `file-state`, `finalize`, `owner-artifact`, `reconciliation`, `schema-conformance` and `task` beside the pilot's three. **Red by data when they joined: eleven code-shaped literals no listed site spells** — the seven `finalize.*` that the entry of the gate's first seven sites named, three `schema-conformance.*` and `file-state.json`. Each was read where it is spelled:
+
+| literal | what it is | answered by |
+|---|---|---|
+| `finalize.commit-rejected` · `finalize.amend-rejected` | a finding's code, handed to `render::commit_rejection_finding` by the commit phase | `MINTED_AT` |
+| `finalize.rollback-conflict` | a finding's code, one of five `ConflictDoor` values handed to `rollback::rollback_conflict_finding` | `MINTED_AT` |
+| `schema-conformance.required-field-present` · `.required-slot-present` · `.unknown-type` | a finding's code, handed to `validate::blocking_conformance` by the check | `MINTED_AT` |
+| `finalize.fan-out` · `finalize.fan-out.squash` | a namespace of knob keys, and a knob's key | `NO_CODE` |
+| `finalize.forward-ref-dangling` | minted by no producer; kept as a name in `render::FINALIZE_NON_MEMBERS` | `NO_CODE` |
+| `finalize.left-out` | a declared contract identifier whose one surface is a print | `NO_CODE` |
+| `file-state.json` | a file's name | `NO_CODE` |
+
+**None is a site the list misses**: the six that are a finding's code are minted at three dynamic sites the list holds, each a row of the scheduled list, classed `unchanged` by the count.
+
+**Pinned, as an engineer: a third table, `MINTED_AT`** — a code, the dynamic site that mints it, and why the code is no site of its own. *Why not a claim:* a claim makes the code a site that owes a case, and takes the dynamic site's own row away — the site is then answered through its claims. These three sites word the refusal of several doors, some of families whose prefix is not catalogued (`milestone-finalize.*`, `task-discard.*`, `rename.*`, `config.*`); claimed for the gate's codes, the site would owe nothing for the others, and three rows the ruling leaves for the port would be gone from the list that holds them. So the code is said to be minted there, and the site keeps its one row. The fence names a row whose site the list does not hold, is no dynamic site or is answered through claims; one for a code nothing spells, a row twice, a row with no reason; and a row for a code that a listed site or a claim already answers. *Red first:* both arms, against a table that was declared and read by nothing — `left: 1  right: 0` (the code named although a row said where it is minted), `left: 0  right: 5` (no idle row named).
+
+**And the fence's fixture changed families**: its site of a family nobody catalogued was spelled `task.spelled`; with `task` catalogued the arm was red (`left: [… "task.by-a-match", "task.spelled", …]`), and the fixture's other family is `ingest` now — the one the planted-site arm already uses.
+
+**Not established.**
+
+- **The contested arm at a task's door, and with docs that can be renamed.** Three causes, a reason each.
+- **A cause nobody constructed.** The clobber guard's 32 are a hand count over seven text functions; a fence holds sites, never causes.
+- **That the three dynamic sites mint no other code of a catalogued prefix.** A row says one code is minted at one site; nothing reads the callers.
+- **The eight sites of `milestone`**: the next commit's.
+- **Linux**: the run follows the task's last commit and is in its return.
+
 ## 2026-10-12 — The route catalog's next seven sites of the gate: the reconciliation's three refusals, the manifest and the working area that cannot be read, and two sites with a reason — 20 cases, 9 of them red under four new keys; an edit in no commit is reverted by the runner's git; and the pilot's two tables printed again (the human's ruling of 2026-10-11, the sites of `task finalize`, second part)
 
 **What.** Twenty more cases in [route_catalog/task_finalize.rs](crates/cli/tests/route_catalog/task_finalize.rs) over five sites, and a reason for two. **Fourteen of the fifteen sites of `task finalize` the ruling takes in are answered; one is owed — `clobber_finding`.** The family's file holds 62 cases, 16 of them red. No product source changes; nothing is fixed.

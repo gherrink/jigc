@@ -7,8 +7,8 @@
 //! **What stands here** is not the family: it is the sites of it that the fix pass since
 //! the previous release touched, as the human ruled on 2026-10-11 (`DECISIONS.md` →
 //! *Which families the route catalog takes in*) — the rest are rows of the scheduled list.
-//! So far fourteen — seven with cases first: nothing staged over a dirty tree; git refusing to stage jigc's own three
-//! paths; a path that was staged before the work unit existed, at the three boundaries
+//! Sixteen — seven with cases first: nothing staged over a dirty tree; git refusing to
+//! stage jigc's own three paths; a path that was staged before the work unit existed, at the three boundaries
 //! that ask; a promoting doc in a task whose commit is an amend, at the write door and at
 //! the finalize; an amend whose `HEAD` moved; and the two of a doc that promotes in a
 //! checkout that commits code only — a `jigc doc` write or a finalize asked from a linked
@@ -18,6 +18,18 @@
 //! provenance manifest unread; and an entry of a working area that cannot be read or made.
 //! Each of those twelve has a row of [`READINGS`]; two more have a reason and no case
 //! ([`REASONS`]) — a refusal printed at exit 0, and one an earlier read always answers.
+//! **And the last two**: the clobber guard — a doc a work unit minted whose home is taken,
+//! by a file, by what git holds where the disk shows nothing, by a file a sub-task staged,
+//! by another doc of the same plan; seven arms, at the task's door and at the milestone's
+//! boundary — and the empty commit, a site the caller reading had left for the port and
+//! the orchestrating session's reading of the ruling takes in: the lines that compute
+//! whether there is anything to commit changed, one level out from the refusal.
+//!
+//! **A route of the clobber guard prints the rename with the title left to its reader** —
+//! `jigc doc rename <address> --to "<title>" --task <id>`, the id and the address concrete.
+//! The quoted placeholder is a word a shell hands on as it stands, so the line is run as
+//! printed and the doc's title is `<title>`: no word of a case's goes into it, as none
+//! does into `jigc start "<intent>"` above.
 //!
 //! **Every case starts from an install and an open task whose commit doc is complete**
 //! ([`ready!`]) — made by the binary under test: `jigc setup`, `jigc start --workflow
@@ -64,6 +76,10 @@ const PROVENANCE_IO: &str =
 const SOURCE_PATH_IO: &str =
     "crates/engine/src/finalize.rs::source_path_io_finding::finalize.source-path-io#1";
 const WORKING_AREA_IO: &str = "crates/engine/src/state.rs::io_finding::task.working-area-io#1";
+const CLOBBER: &str =
+    "crates/engine/src/finalize.rs::clobber_finding::finalize.promote-clobber#1";
+const EMPTY_COMMIT: &str =
+    "crates/engine/src/finalize.rs::empty_commit_finding::finalize.empty-commit#1";
 
 /// The open task's working area, and the amend task's, from the repository root — gone
 /// once the task has landed or is discarded.
@@ -1480,6 +1496,1268 @@ const THE_MANIFEST_A_DIRECTORY_AT_A_COPY_IN: [Case; 1] = area_io!(
     ))],
 );
 
+// ---------------------------------------------------------------------------
+// `clobber_finding` · `finalize.promote-clobber` — a doc a work unit minted, whose home is
+// taken: by a file, by what git holds there, by a sub-task's staged file, by another doc
+// ---------------------------------------------------------------------------
+
+/// The home of an ADR titled *Use tabs*, and the home it has once the printed rename is
+/// run as printed — `--to "<title>"` slugs to `title`.
+const THE_ADRS_HOME: &str = "docs/decisions/use-tabs.md";
+const THE_RENAMED_ADRS_HOME: &str = "docs/decisions/title.md";
+
+/// A task that may create an ADR — its id slugs from the intent, `pick-tabs` — and the ADR
+/// authored whole in one payload, by whichever work unit.
+const AN_ADR_TASK: Step = Step::Jigc(&["start", "--workflow", "record-decision", "pick tabs"]);
+const ADR_AREA: &str = ".jigc/tasks/pick-tabs";
+const AN_ADR_PAYLOAD: Step = Step::File(
+    Place::Outside("adr.yaml"),
+    "title: \"Use tabs\"\nsections:\n  - id: context\n    set:\n      context: |-\n        \
+     <<Because.>>\n  - id: decision\n    set:\n      decision: |-\n        <<Tabs.>>\n  - id: \
+     consequences\n    set:\n      consequences: |-\n        <<None.>>\n",
+);
+macro_rules! the_adr_authored_by {
+    ($task:literal) => {
+        Step::Jigc(&[
+            "doc",
+            "author",
+            "adr",
+            "--from-file",
+            "../outside/adr.yaml",
+            "--task",
+            $task,
+        ])
+    };
+}
+const THE_ADRS_COMMIT_DOC: [Step; 3] = commit_doc!("pick-tabs");
+
+/// A file somebody wrote by hand at a doc's home; the same committed, staged, and taken
+/// out of the working tree again — a shell line a `git` alias runs, since a state has no
+/// step that removes.
+macro_rules! by_hand_at {
+    ($home:expr) => {
+        Step::File(Place::Repo($home), "by hand\n")
+    };
+}
+macro_rules! staged_at {
+    ($home:expr) => {
+        Step::Git(&["add", $home])
+    };
+}
+const COMMITTED: Step = Step::Git(&["commit", "-q", "-m", "a file by hand"]);
+const THE_ADRS_HOME_EMPTIED: Step =
+    Step::Git(&["-c", "alias.gone=!rm docs/decisions/use-tabs.md", "gone"]);
+const THE_LOGS_HOME_EMPTIED: Step =
+    Step::Git(&["-c", "alias.gone=!rm docs/decisions-log.md", "gone"]);
+
+/// **An install, what the case plants before the task exists, a task with an ADR authored
+/// and its commit doc complete, and what the case plants afterwards.**
+macro_rules! an_adr_task_after {
+    ([$($before:expr),* $(,)?] $(, $plant:expr)* $(,)?) => {
+        &[
+            Step::Jigc(&["setup"]),
+            $($before,)*
+            AN_ADR_TASK,
+            AN_ADR_PAYLOAD,
+            the_adr_authored_by!("pick-tabs"),
+            THE_ADRS_COMMIT_DOC[0],
+            THE_ADRS_COMMIT_DOC[1],
+            THE_ADRS_COMMIT_DOC[2],
+            $($plant,)*
+        ]
+    };
+}
+
+/// The finalize of the task that minted the ADR.
+const THE_ADR_TASKS_FINALIZE: &[&str] = &["task", "finalize", "pick-tabs"];
+
+/// The two readings of a printed line none of whose placeholders the refusal lists a value
+/// for.
+const WHERE_AN_UNLISTED_VALUE_COMES_FROM: &str = "*`jigc doc create <doctype> --title <title> \
+    --slug <slug> --task <id>`* · *`jigc migrate <file> --as <doctype>`* · *`jigc task discard \
+    <id> --force`* · *`jigc task finalize <id>`*: the surface contract reads a backticked line \
+    with a word in angle brackets as a shape the reader fills, and the frame fills one with a \
+    value the refusal's own output lists. This refusal lists the destination and nothing \
+    else — no task id, no doctype, no slug — so no placeholder of these lines can be filled \
+    from what was printed. (a) A value comes from the refusal's own output, as every other \
+    value a route needs: then the route owes them and is red as it stands; (b) from somewhere \
+    else the reader knows of: then the frame has no case, a value of the case's own being no \
+    operand. The case runs the lines as printed, which no shell splits. It is what the \
+    pilot's first question left open, over another route; the contract's nearest line is its \
+    reason for `<workflow-id>` — *the set it must be filled from is named in the message \
+    instead* — and it declares `<task-id>` not derivable from a finding's target";
+
+/// **An ordinary task's ADR, and a file that turned up at its home after the mint** — the
+/// arm the guard was built for. Every way the route offers ends in a line with a
+/// placeholder the refusal lists no value for, or names an act and prints no line.
+const A_FILE_AT_THE_HOME_OF_A_TASKS_DOC: &str = "an ordinary task minted a doc whose id is \
+    its author's to choose, and a file stands at the doc's home that was not there at the \
+    mint — written by hand, in no commit";
+const A_TASKS_DOC_OVER_A_FILE: [Case; 2] = [
+    Case {
+        name: "clobber-task-file-at-the-home-re-created-with-a-slug-as-printed",
+        site: CLOBBER,
+        cause: A_FILE_AT_THE_HOME_OF_A_TASKS_DOC,
+        state: an_adr_task_after!([], by_hand_at!(THE_ADRS_HOME)),
+        refusing: THE_ADR_TASKS_FINALIZE,
+        acts: &[Act::Run(2), Act::Run(4)],
+        holds: &[Check::Absent(Place::Repo(ADR_AREA))],
+        untouched: &[THE_ADRS_HOME],
+        doubt: Some(WHERE_AN_UNLISTED_VALUE_COMES_FROM),
+        ..FINALIZE
+    },
+    Case {
+        name: "clobber-task-file-at-the-home-occupant-migrated-as-printed",
+        site: CLOBBER,
+        cause: A_FILE_AT_THE_HOME_OF_A_TASKS_DOC,
+        state: an_adr_task_after!([], by_hand_at!(THE_ADRS_HOME)),
+        refusing: THE_ADR_TASKS_FINALIZE,
+        acts: &[Act::Run(3), Act::Run(4)],
+        holds: &[Check::Absent(Place::Repo(ADR_AREA))],
+        untouched: &[THE_ADRS_HOME],
+        doubt: Some(WHERE_AN_UNLISTED_VALUE_COMES_FROM),
+        ..FINALIZE
+    },
+];
+
+/// A foreign file the repository holds committed, a migration of it to an ADR — the id
+/// `jigc migrate` mints for that source — and its rewrite authored.
+const A_FOREIGN_ADR_COMMITTED: [Step; 3] = [
+    Step::File(Place::Repo("notes/old.md"), "# Use tabs\n\nWe use tabs.\n"),
+    Step::Git(&["add", "notes/old.md"]),
+    Step::Git(&["commit", "-q", "-m", "an old decision"]),
+];
+const THE_ADRS_MIGRATION: &str = "migrate-adr-notes-old-e1a7d84cafc2";
+const THE_ADRS_MIGRATION_AREA: &str = ".jigc/tasks/migrate-adr-notes-old-e1a7d84cafc2";
+const THE_ADRS_MIGRATION_MINTED: Step = Step::Jigc(&["migrate", "notes/old.md", "--as", "adr"]);
+const THE_ADRS_MIGRATIONS_COMMIT_DOC: [Step; 3] = commit_doc!("migrate-adr-notes-old-e1a7d84cafc2");
+
+/// **An install, a foreign decision committed, what the case plants before the migration
+/// exists, the migration minted with its rewrite authored and its commit doc complete, and
+/// what the case plants afterwards.**
+macro_rules! an_adr_migration_after {
+    ([$($before:expr),* $(,)?] $(, $plant:expr)* $(,)?) => {
+        &[
+            Step::Jigc(&["setup"]),
+            A_FOREIGN_ADR_COMMITTED[0],
+            A_FOREIGN_ADR_COMMITTED[1],
+            A_FOREIGN_ADR_COMMITTED[2],
+            $($before,)*
+            THE_ADRS_MIGRATION_MINTED,
+            AN_ADR_PAYLOAD,
+            the_adr_authored_by!("migrate-adr-notes-old-e1a7d84cafc2"),
+            THE_ADRS_MIGRATIONS_COMMIT_DOC[0],
+            THE_ADRS_MIGRATIONS_COMMIT_DOC[1],
+            THE_ADRS_MIGRATIONS_COMMIT_DOC[2],
+            $($plant,)*
+        ]
+    };
+}
+const THE_ADRS_MIGRATIONS_FINALIZE: &[&str] = &["task", "finalize", THE_ADRS_MIGRATION];
+
+const A_FILE_AT_A_MIGRATIONS_DESTINATION: &str = "a migration's doc promotes to a path that \
+    is not its recorded source, and a file stands there that was not there when the rewrite \
+    was authored";
+const A_MIGRATIONS_DOC_OVER_A_FILE: [Case; 2] = [
+    Case {
+        name: "clobber-migration-file-at-the-destination-discarded-and-minted-again-as-printed",
+        site: CLOBBER,
+        cause: A_FILE_AT_A_MIGRATIONS_DESTINATION,
+        state: an_adr_migration_after!([], by_hand_at!(THE_ADRS_HOME)),
+        refusing: THE_ADRS_MIGRATIONS_FINALIZE,
+        acts: &[Act::Run(2), Act::Run(3), Act::Run(5), Act::Run(6)],
+        holds: &[Check::Absent(Place::Repo(THE_ADRS_MIGRATION_AREA))],
+        untouched: &[THE_ADRS_HOME, "notes/old.md"],
+        doubt: Some(WHERE_AN_UNLISTED_VALUE_COMES_FROM),
+        ..FINALIZE
+    },
+    Case {
+        name: "clobber-migration-file-at-the-destination-finalized-and-approved-as-printed",
+        site: CLOBBER,
+        cause: A_FILE_AT_A_MIGRATIONS_DESTINATION,
+        state: an_adr_migration_after!([], by_hand_at!(THE_ADRS_HOME)),
+        refusing: THE_ADRS_MIGRATIONS_FINALIZE,
+        acts: &[Act::Run(5), Act::Run(6)],
+        holds: &[Check::Absent(Place::Repo(THE_ADRS_MIGRATION_AREA))],
+        untouched: &[THE_ADRS_HOME, "notes/old.md"],
+        doubt: Some(WHERE_AN_UNLISTED_VALUE_COMES_FROM),
+        ..FINALIZE
+    },
+];
+
+// The fixed-identity arm at the task's door: the decisions log, whose home is one path.
+
+/// The two readings of a `git` verb a route names with no operand.
+const WHAT_GIT_MV_IS: &str = "*move the file out of the doc's home … — with `git mv` if git \
+    has it staged, since the index entry has to move with it*: (a) the backticked span is a \
+    command line to run as printed, like every `git` line a route prints — it has no \
+    operand, and git answers with its usage; (b) it is the name of a git verb, to be run on \
+    the file's path with a destination of the reader's own — then the route prints no line \
+    for the move, and the frame's move is a file act that leaves the index entry behind. \
+    The case follows (a). The surface contract says of a `git` span with no operand that it \
+    *names a command rather than a file* (the printed-path fence); it is the pilot's sixth \
+    question, over another verb";
+
+const A_FILE_AT_THE_LOGS_HOME: &str = "an ordinary task minted the decisions log — a doc \
+    whose home is one fixed path — and a file in no commit stands at that home, written \
+    after the mint";
+const A_FIXED_DOC_OVER_A_FILE: [Case; 2] = [
+    Case {
+        name: "clobber-fixed-file-at-the-logs-home-moved-out-and-finalized-as-printed",
+        site: CLOBBER,
+        cause: A_FILE_AT_THE_LOGS_HOME,
+        state: decided![THE_LOG_CREATED, by_hand_at!(LOG)],
+        acts: &[Act::MoveOut(Operand::Span(0)), Act::Run(2)],
+        holds: &[
+            Check::Contains(Place::Repo(LOG), "# Decisions Log"),
+            Check::Contains(Place::Moved(LOG), "by hand"),
+            Check::Absent(Place::Repo(TASK_AREA)),
+        ],
+        ..FINALIZE
+    },
+    Case {
+        name: "clobber-fixed-file-at-the-logs-home-task-read-dropped-and-the-file-adopted-as-printed",
+        site: CLOBBER,
+        cause: A_FILE_AT_THE_LOGS_HOME,
+        state: decided![THE_LOG_CREATED, by_hand_at!(LOG)],
+        acts: &[Act::Run(4), Act::Run(3), Act::Run(5), Act::Run(6)],
+        holds: &[
+            Check::Absent(Place::Repo(TASK_AREA)),
+            Check::Directory(Place::Repo(
+                ".jigc/tasks/migrate-decisions-log-docs-decisions-log-b31ca3264f78",
+            )),
+        ],
+        untouched: &[LOG],
+        ..FINALIZE
+    },
+];
+const A_FIXED_DOC_OVER_A_STAGED_FILE: [Case; 1] = [Case {
+    name: "clobber-fixed-file-staged-at-the-logs-home-moved-with-git-mv-as-printed",
+    site: CLOBBER,
+    cause: "an ordinary task minted the decisions log, and a file stands at its home that \
+            was written and staged after the mint — in git's index, in no commit",
+    state: decided![THE_LOG_CREATED, by_hand_at!(LOG), staged_at!(LOG)],
+    acts: &[Act::Run(1), Act::Run(2)],
+    holds: &[
+        Check::Contains(Place::Repo(LOG), "# Decisions Log"),
+        Check::Absent(Place::Repo(TASK_AREA)),
+    ],
+    doubt: Some(WHAT_GIT_MV_IS),
+    ..FINALIZE
+}];
+
+/// **An install, a file committed by hand at the log's home and taken out of the working
+/// tree, then a task that mints the log — the create meets a free home — and what the case
+/// plants afterwards.**
+macro_rules! a_log_minted_over_a_committed_file {
+    ($($plant:expr),* $(,)?) => {
+        &[
+            Step::Jigc(&["setup"]),
+            by_hand_at!(LOG),
+            staged_at!(LOG),
+            COMMITTED,
+            THE_LOGS_HOME_EMPTIED,
+            A_DECIDED_TASK,
+            ITS_COMMIT_DOC[0],
+            ITS_COMMIT_DOC[1],
+            ITS_COMMIT_DOC[2],
+            THE_LOG_CREATED,
+            $($plant,)*
+        ]
+    };
+}
+const A_FIXED_DOC_OVER_A_COMMITTED_FILE: [Case; 1] = [Case {
+    name: "clobber-fixed-committed-file-at-the-logs-home-task-read-and-dropped-as-printed",
+    site: CLOBBER,
+    cause: "an ordinary task minted the decisions log while the committed file at its home \
+            was missing from the working tree, and the file is back: `HEAD` holds it and so \
+            does the disk",
+    state: a_log_minted_over_a_committed_file![Step::Git(&["checkout", "HEAD", "--", LOG])],
+    acts: &[Act::Run(2), Act::Run(1)],
+    holds: &[Check::Absent(Place::Repo(TASK_AREA))],
+    untouched: &[LOG],
+    ..FINALIZE
+}];
+
+// The held arm at the task's door: nothing on disk at the home, and git holds a file there.
+
+const AN_ADR_MINTED_OVER_A_FILE_IN_HEAD: &str = "a committed file is missing from the \
+    working tree — deleted and the deletion not committed — and an ordinary task minted a \
+    doc, under an id its author chooses, whose home is that path";
+const A_TASKS_DOC_OVER_A_FILE_IN_HEAD: [Case; 3] = [
+    Case {
+        name: "clobber-held-in-head-doc-renamed-and-finalized-as-printed",
+        site: CLOBBER,
+        cause: AN_ADR_MINTED_OVER_A_FILE_IN_HEAD,
+        state: an_adr_task_after!([
+            by_hand_at!(THE_ADRS_HOME),
+            staged_at!(THE_ADRS_HOME),
+            COMMITTED,
+            THE_ADRS_HOME_EMPTIED,
+        ]),
+        refusing: THE_ADR_TASKS_FINALIZE,
+        acts: &[Act::Run(0), Act::Run(1)],
+        holds: &[
+            Check::Contains(Place::Repo(THE_RENAMED_ADRS_HOME), "Because."),
+            Check::Absent(Place::Repo(ADR_AREA)),
+        ],
+        ..FINALIZE
+    },
+    Case {
+        name: "clobber-held-in-head-file-brought-back-doc-renamed-and-finalized-as-printed",
+        site: CLOBBER,
+        cause: AN_ADR_MINTED_OVER_A_FILE_IN_HEAD,
+        state: an_adr_task_after!([
+            by_hand_at!(THE_ADRS_HOME),
+            staged_at!(THE_ADRS_HOME),
+            COMMITTED,
+            THE_ADRS_HOME_EMPTIED,
+        ]),
+        refusing: THE_ADR_TASKS_FINALIZE,
+        acts: &[Act::Run(3), Act::Run(0), Act::Run(1)],
+        holds: &[
+            Check::Contains(Place::Repo(THE_ADRS_HOME), "by hand"),
+            Check::Contains(Place::Repo(THE_RENAMED_ADRS_HOME), "Because."),
+            Check::Absent(Place::Repo(ADR_AREA)),
+        ],
+        ..FINALIZE
+    },
+    Case {
+        name: "clobber-held-in-head-deletion-committed-task-read-and-dropped-as-printed",
+        site: CLOBBER,
+        cause: AN_ADR_MINTED_OVER_A_FILE_IN_HEAD,
+        state: an_adr_task_after!([
+            by_hand_at!(THE_ADRS_HOME),
+            staged_at!(THE_ADRS_HOME),
+            COMMITTED,
+            THE_ADRS_HOME_EMPTIED,
+        ]),
+        refusing: THE_ADR_TASKS_FINALIZE,
+        acts: &[Act::Commit(Operand::Span(4)), Act::Run(6), Act::Run(5)],
+        holds: &[
+            Check::Absent(Place::Repo(THE_ADRS_HOME)),
+            Check::Absent(Place::Repo(ADR_AREA)),
+        ],
+        ..FINALIZE
+    },
+];
+
+const AN_ADR_MINTED_OVER_A_FILE_IN_THE_INDEX: &str = "a file was staged at a path and taken \
+    out of the working tree — in git's index, in no commit — and an ordinary task minted a \
+    doc, under an id its author chooses, whose home is that path";
+const A_TASKS_DOC_OVER_A_FILE_IN_THE_INDEX: [Case; 2] = [
+    Case {
+        name: "clobber-held-in-the-index-doc-renamed-and-finalized-as-printed",
+        site: CLOBBER,
+        cause: AN_ADR_MINTED_OVER_A_FILE_IN_THE_INDEX,
+        state: an_adr_task_after!(
+            [],
+            by_hand_at!(THE_ADRS_HOME),
+            staged_at!(THE_ADRS_HOME),
+            THE_ADRS_HOME_EMPTIED,
+        ),
+        refusing: THE_ADR_TASKS_FINALIZE,
+        acts: &[Act::Run(0), Act::Run(1)],
+        holds: &[
+            Check::Contains(Place::Repo(THE_RENAMED_ADRS_HOME), "Because."),
+            Check::Absent(Place::Repo(ADR_AREA)),
+        ],
+        ..FINALIZE
+    },
+    Case {
+        name: "clobber-held-in-the-index-file-brought-back-doc-renamed-and-finalized-as-printed",
+        site: CLOBBER,
+        cause: AN_ADR_MINTED_OVER_A_FILE_IN_THE_INDEX,
+        state: an_adr_task_after!(
+            [],
+            by_hand_at!(THE_ADRS_HOME),
+            staged_at!(THE_ADRS_HOME),
+            THE_ADRS_HOME_EMPTIED,
+        ),
+        refusing: THE_ADR_TASKS_FINALIZE,
+        acts: &[Act::Run(3), Act::Run(0), Act::Run(1)],
+        holds: &[
+            Check::Contains(Place::Repo(THE_ADRS_HOME), "by hand"),
+            Check::Contains(Place::Repo(THE_RENAMED_ADRS_HOME), "Because."),
+            Check::Absent(Place::Repo(ADR_AREA)),
+        ],
+        ..FINALIZE
+    },
+];
+
+const THE_LOG_MINTED_OVER_A_FILE_GIT_HOLDS: [Case; 2] = [
+    Case {
+        name: "clobber-held-in-head-fixed-task-read-dropped-and-the-file-brought-back-as-printed",
+        site: CLOBBER,
+        cause: "a committed file is missing from the working tree, and an ordinary task \
+                minted the decisions log, whose one fixed home is that path",
+        state: a_log_minted_over_a_committed_file![],
+        acts: &[Act::Run(1), Act::Run(0), Act::Run(3)],
+        holds: &[
+            Check::Absent(Place::Repo(TASK_AREA)),
+            Check::Contains(Place::Repo(LOG), "by hand"),
+        ],
+        ..FINALIZE
+    },
+    Case {
+        name: "clobber-held-in-the-index-fixed-task-read-dropped-and-the-file-brought-back-as-printed",
+        site: CLOBBER,
+        cause: "a file was staged and taken out of the working tree, and an ordinary task \
+                minted the decisions log, whose one fixed home is that path",
+        state: decided![
+            THE_LOG_CREATED,
+            by_hand_at!(LOG),
+            staged_at!(LOG),
+            THE_LOGS_HOME_EMPTIED,
+        ],
+        acts: &[Act::Run(1), Act::Run(0), Act::Run(3)],
+        holds: &[
+            Check::Absent(Place::Repo(TASK_AREA)),
+            Check::Contains(Place::Repo(LOG), "by hand"),
+        ],
+        ..FINALIZE
+    },
+];
+
+// The held arm in a migration: the rename's exit ends at the migration's own boundary.
+
+/// The two readings of a printed command a route sends its reader to for a review.
+const WHAT_A_REVIEW_STEP_OWES: &str = "*re-run `jigc task finalize <id>` to review the \
+    fidelity diff and `jigc task finalize <id> --approve` to land it*: (a) both backticked \
+    lines are steps of the route, each held to exit 0 like every printed command — the \
+    first exits 4, *migration review required — nothing committed*, which is what a \
+    migration's plain finalize does by design; (b) the first line is there for what it \
+    prints, the diff, and its exit owes nothing. The case follows (a); the case beside it \
+    runs the rename and the approval, and holds. The surface contract is silent on what a \
+    line owes that a route cites for its output: it is the question of the linked-worktree \
+    route's pointer and of the pilot's fourth, here over a line whose non-zero exit is its \
+    design";
+
+/// **A migration's doc over a path git holds and the disk does not, followed two ways**:
+/// every printed line in the route's order, the review among them; and the rename and the
+/// approval alone.
+macro_rules! a_migrations_doc_held {
+    ($holder:literal, $cause:literal, state: $state:expr $(,)?) => {
+        [
+            Case {
+                name: concat!(
+                    "clobber-held-in-", $holder, "-migration-doc-renamed-reviewed-and-approved-as-printed"
+                ),
+                site: CLOBBER,
+                cause: $cause,
+                state: $state,
+                refusing: THE_ADRS_MIGRATIONS_FINALIZE,
+                acts: &[Act::Run(0), Act::Run(1), Act::Run(2)],
+                holds: &[
+                    Check::Contains(Place::Repo(THE_RENAMED_ADRS_HOME), "Because."),
+                    Check::Absent(Place::Repo(THE_ADRS_MIGRATION_AREA)),
+                    Check::Absent(Place::Repo("notes/old.md")),
+                ],
+                doubt: Some(WHAT_A_REVIEW_STEP_OWES),
+                ..FINALIZE
+            },
+            Case {
+                name: concat!(
+                    "clobber-held-in-", $holder, "-migration-doc-renamed-and-approved-as-printed"
+                ),
+                site: CLOBBER,
+                cause: $cause,
+                state: $state,
+                refusing: THE_ADRS_MIGRATIONS_FINALIZE,
+                acts: &[Act::Run(0), Act::Run(2)],
+                holds: &[
+                    Check::Contains(Place::Repo(THE_RENAMED_ADRS_HOME), "Because."),
+                    Check::Absent(Place::Repo(THE_ADRS_MIGRATION_AREA)),
+                    Check::Absent(Place::Repo("notes/old.md")),
+                ],
+                ..FINALIZE
+            },
+        ]
+    };
+}
+const A_MIGRATIONS_DOC_OVER_A_FILE_IN_HEAD: [Case; 2] = a_migrations_doc_held!(
+    "head",
+    "a committed file is missing from the working tree, and a migration's doc — under an \
+     id its author chooses — promotes to that path, which is not the migration's source",
+    state: an_adr_migration_after!([
+        by_hand_at!(THE_ADRS_HOME),
+        staged_at!(THE_ADRS_HOME),
+        COMMITTED,
+        THE_ADRS_HOME_EMPTIED,
+    ]),
+);
+const A_MIGRATIONS_DOC_OVER_A_FILE_IN_THE_INDEX: [Case; 2] = a_migrations_doc_held!(
+    "the-index",
+    "a file was staged and taken out of the working tree, and a migration's doc — under \
+     an id its author chooses — promotes to that path, which is not the migration's source",
+    state: an_adr_migration_after!(
+        [],
+        by_hand_at!(THE_ADRS_HOME),
+        staged_at!(THE_ADRS_HOME),
+        THE_ADRS_HOME_EMPTIED,
+    ),
+);
+
+/// A foreign log elsewhere, a migration of it to the decisions log, and its rewrite
+/// authored — the log's home is one fixed path, which is not the migration's source.
+const A_FOREIGN_LOG_COMMITTED: [Step; 3] = [
+    Step::File(Place::Repo("notes/old-log.md"), "# Old decisions\n\n- We use tabs.\n"),
+    Step::Git(&["add", "notes/old-log.md"]),
+    Step::Git(&["commit", "-q", "-m", "an old log"]),
+];
+const THE_NOTES_MIGRATIONS_COMMIT_DOC: [Step; 3] =
+    commit_doc!("migrate-decisions-log-notes-old-log-2173a5301d0e");
+const THE_NOTES_MIGRATION_AREA: &str =
+    ".jigc/tasks/migrate-decisions-log-notes-old-log-2173a5301d0e";
+macro_rules! a_log_migration_after {
+    ([$($before:expr),* $(,)?] $(, $plant:expr)* $(,)?) => {
+        &[
+            Step::Jigc(&["setup"]),
+            A_FOREIGN_LOG_COMMITTED[0],
+            A_FOREIGN_LOG_COMMITTED[1],
+            A_FOREIGN_LOG_COMMITTED[2],
+            $($before,)*
+            Step::Jigc(&["migrate", "notes/old-log.md", "--as", "decisions-log"]),
+            Step::File(Place::Outside("rewrite.yaml"), A_REWRITE),
+            Step::Jigc(&[
+                "doc",
+                "author",
+                "decisions-log",
+                "--from-file",
+                "../outside/rewrite.yaml",
+                "--task",
+                THE_NOTES_MIGRATION,
+            ]),
+            THE_NOTES_MIGRATIONS_COMMIT_DOC[0],
+            THE_NOTES_MIGRATIONS_COMMIT_DOC[1],
+            THE_NOTES_MIGRATIONS_COMMIT_DOC[2],
+            $($plant,)*
+        ]
+    };
+}
+const A_MIGRATED_LOG_OVER_A_FILE_GIT_HOLDS: [Case; 2] = [
+    Case {
+        name: "clobber-held-in-head-fixed-migration-read-dropped-and-the-file-brought-back-as-printed",
+        site: CLOBBER,
+        cause: "a committed file is missing from the working tree, and a migration's doc \
+                promotes to that path — the decisions log's one fixed home, which is not \
+                the migration's source",
+        state: a_log_migration_after!([
+            by_hand_at!(LOG),
+            staged_at!(LOG),
+            COMMITTED,
+            THE_LOGS_HOME_EMPTIED,
+        ]),
+        refusing: &["task", "finalize", THE_NOTES_MIGRATION],
+        acts: &[Act::Run(1), Act::Run(0), Act::Run(3)],
+        holds: &[
+            Check::Absent(Place::Repo(THE_NOTES_MIGRATION_AREA)),
+            Check::Contains(Place::Repo(LOG), "by hand"),
+        ],
+        untouched: &["notes/old-log.md"],
+        ..FINALIZE
+    },
+    Case {
+        name: "clobber-held-in-the-index-fixed-migration-read-dropped-and-the-file-brought-back-as-printed",
+        site: CLOBBER,
+        cause: "a file was staged and taken out of the working tree, and a migration's doc \
+                promotes to that path — the decisions log's one fixed home, which is not \
+                the migration's source",
+        state: a_log_migration_after!(
+            [],
+            by_hand_at!(LOG),
+            staged_at!(LOG),
+            THE_LOGS_HOME_EMPTIED,
+        ),
+        refusing: &["task", "finalize", THE_NOTES_MIGRATION],
+        acts: &[Act::Run(1), Act::Run(0), Act::Run(3)],
+        holds: &[
+            Check::Absent(Place::Repo(THE_NOTES_MIGRATION_AREA)),
+            Check::Contains(Place::Repo(LOG), "by hand"),
+        ],
+        untouched: &["notes/old-log.md"],
+        ..FINALIZE
+    },
+];
+
+// The same guard at the milestone's boundary: a sub-task's doc, and the homes of all of them.
+
+/// A milestone and its sub-tasks — under the default workflow, which may create an ADR, or
+/// under one that may create the decisions log — provisioned, with work staged in the
+/// first one's worktree so that something lands whichever doc is dropped.
+const A_MILESTONE: Step = Step::Jigc(&["milestone", "create", "Fan out"]);
+const A_FIRST_SUB_TASK: Step = Step::Jigc(&["milestone", "add-task", "fan-out", "do a thing"]);
+const A_SECOND_SUB_TASK: Step = Step::Jigc(&["milestone", "add-task", "fan-out", "second thing"]);
+const A_THIRD_SUB_TASK: Step = Step::Jigc(&["milestone", "add-task", "fan-out", "third thing"]);
+const A_FIRST_SUB_TASK_THAT_DECIDES: Step = Step::Jigc(&[
+    "milestone",
+    "add-task",
+    "fan-out",
+    "do a thing",
+    "--workflow",
+    "decided-task",
+]);
+const A_SECOND_SUB_TASK_THAT_DECIDES: Step = Step::Jigc(&[
+    "milestone",
+    "add-task",
+    "fan-out",
+    "second thing",
+    "--workflow",
+    "decided-task",
+]);
+const PROVISIONED: Step = Step::Jigc(&["milestone", "provision", "fan-out"]);
+const WORK_IN_THE_FIRST: [Step; 2] = [A_FAN_OUT_WITH_WORK[3], A_FAN_OUT_WITH_WORK[4]];
+const THE_MILESTONES_FINALIZE: &[&str] = &["milestone", "finalize", "fan-out"];
+macro_rules! the_log_created_by {
+    ($task:literal) => {
+        Step::Jigc(&[
+            "doc",
+            "create",
+            "decisions-log",
+            "--title",
+            "Decisions Log",
+            "--task",
+            $task,
+        ])
+    };
+}
+/// A file at a path in a sub-task's worktree, staged there.
+macro_rules! staged_in_the_worktree_of {
+    ($sub:literal, $path:literal) => {
+        [
+            Step::File(
+                Place::Repo(concat!(".jigc/worktrees/", $sub, "/", $path)),
+                "by hand\n",
+            ),
+            Step::Git(&["-C", concat!(".jigc/worktrees/", $sub), "add", $path]),
+        ]
+    };
+}
+
+const A_SUB_TASKS_DOC_OVER_A_FILE: [Case; 1] = [Case {
+    name: "clobber-sub-task-file-at-the-home-doc-renamed-and-milestone-finalized-as-printed",
+    site: CLOBBER,
+    cause: "one sub-task of a milestone minted a doc under an id its author chooses, and a \
+            file in no commit stands at the doc's home in the main checkout",
+    state: &[
+        Step::Jigc(&["setup"]),
+        A_MILESTONE,
+        A_FIRST_SUB_TASK,
+        PROVISIONED,
+        WORK_IN_THE_FIRST[0],
+        WORK_IN_THE_FIRST[1],
+        AN_ADR_PAYLOAD,
+        the_adr_authored_by!("do-a-thing"),
+        by_hand_at!(THE_ADRS_HOME),
+    ],
+    refusing: THE_MILESTONES_FINALIZE,
+    acts: &[Act::Run(0), Act::Run(1)],
+    holds: &[
+        Check::Contains(Place::Repo(THE_RENAMED_ADRS_HOME), "Because."),
+        Check::RegularFile(Place::Repo("work.txt")),
+    ],
+    untouched: &[THE_ADRS_HOME],
+    ..FINALIZE
+}];
+const THE_SECOND_OF_TWO_SUFFIXED_ONTO_A_FILE: [Case; 1] = [Case {
+    name: "clobber-sub-task-suffixed-onto-a-file-doc-renamed-and-milestone-finalized-as-printed",
+    site: CLOBBER,
+    cause: "two sub-tasks minted a doc of one id, the join suffixes the second's, and a \
+            file stands at the home of the suffixed id",
+    state: &[
+        Step::Jigc(&["setup"]),
+        A_MILESTONE,
+        A_FIRST_SUB_TASK,
+        A_SECOND_SUB_TASK,
+        PROVISIONED,
+        WORK_IN_THE_FIRST[0],
+        WORK_IN_THE_FIRST[1],
+        AN_ADR_PAYLOAD,
+        the_adr_authored_by!("do-a-thing"),
+        the_adr_authored_by!("second-thing"),
+        by_hand_at!("docs/decisions/use-tabs-2.md"),
+    ],
+    refusing: THE_MILESTONES_FINALIZE,
+    acts: &[Act::Run(0), Act::Run(1)],
+    holds: &[
+        Check::Contains(Place::Repo(THE_ADRS_HOME), "Because."),
+        Check::Contains(Place::Repo(THE_RENAMED_ADRS_HOME), "Because."),
+    ],
+    untouched: &["docs/decisions/use-tabs-2.md"],
+    ..FINALIZE
+}];
+const THE_FIRST_OF_TWO_OVER_A_FILE: [Case; 1] = [Case {
+    name: "clobber-sub-task-first-of-two-over-a-file-both-docs-renamed-and-milestone-finalized",
+    site: CLOBBER,
+    cause: "two sub-tasks minted a doc of one id, and a file stands at the home of the \
+            first's — the bare id: the route names a rename for each sub-task of the group",
+    state: &[
+        Step::Jigc(&["setup"]),
+        A_MILESTONE,
+        A_FIRST_SUB_TASK,
+        A_SECOND_SUB_TASK,
+        PROVISIONED,
+        WORK_IN_THE_FIRST[0],
+        WORK_IN_THE_FIRST[1],
+        AN_ADR_PAYLOAD,
+        the_adr_authored_by!("do-a-thing"),
+        the_adr_authored_by!("second-thing"),
+        by_hand_at!(THE_ADRS_HOME),
+    ],
+    refusing: THE_MILESTONES_FINALIZE,
+    acts: &[Act::Run(1), Act::Run(2), Act::Run(3)],
+    holds: &[
+        Check::Contains(Place::Repo(THE_RENAMED_ADRS_HOME), "Because."),
+        Check::Contains(Place::Repo("docs/decisions/title-2.md"), "Because."),
+    ],
+    untouched: &[THE_ADRS_HOME],
+    ..FINALIZE
+}];
+const THE_SECOND_OF_THREE_SUFFIXED_ONTO_A_FILE: [Case; 1] = [Case {
+    name: "clobber-sub-task-second-of-three-suffixed-onto-a-file-both-later-docs-renamed",
+    site: CLOBBER,
+    cause: "three sub-tasks minted a doc of one id, and a file stands at the home of the \
+            second's suffixed id: the route names a rename for the second and the third",
+    state: &[
+        Step::Jigc(&["setup"]),
+        A_MILESTONE,
+        A_FIRST_SUB_TASK,
+        A_SECOND_SUB_TASK,
+        A_THIRD_SUB_TASK,
+        PROVISIONED,
+        WORK_IN_THE_FIRST[0],
+        WORK_IN_THE_FIRST[1],
+        AN_ADR_PAYLOAD,
+        the_adr_authored_by!("do-a-thing"),
+        the_adr_authored_by!("second-thing"),
+        the_adr_authored_by!("third-thing"),
+        by_hand_at!("docs/decisions/use-tabs-2.md"),
+    ],
+    refusing: THE_MILESTONES_FINALIZE,
+    acts: &[Act::Run(1), Act::Run(2), Act::Run(3)],
+    holds: &[
+        Check::Contains(Place::Repo(THE_ADRS_HOME), "Because."),
+        Check::Contains(Place::Repo(THE_RENAMED_ADRS_HOME), "Because."),
+        Check::Contains(Place::Repo("docs/decisions/title-2.md"), "Because."),
+    ],
+    untouched: &["docs/decisions/use-tabs-2.md"],
+    ..FINALIZE
+}];
+
+const A_SUB_TASKS_DOC_OVER_A_FILE_GIT_HOLDS: [Case; 2] = [
+    Case {
+        name: "clobber-held-in-head-sub-task-doc-renamed-and-milestone-finalized-as-printed",
+        site: CLOBBER,
+        cause: "a committed file is missing from the main checkout's working tree, and a \
+                sub-task minted a doc, under an id its author chooses, whose home is that \
+                path",
+        state: &[
+            Step::Jigc(&["setup"]),
+            by_hand_at!(THE_ADRS_HOME),
+            staged_at!(THE_ADRS_HOME),
+            COMMITTED,
+            THE_ADRS_HOME_EMPTIED,
+            A_MILESTONE,
+            A_FIRST_SUB_TASK,
+            PROVISIONED,
+            WORK_IN_THE_FIRST[0],
+            WORK_IN_THE_FIRST[1],
+            AN_ADR_PAYLOAD,
+            the_adr_authored_by!("do-a-thing"),
+        ],
+        refusing: THE_MILESTONES_FINALIZE,
+        acts: &[Act::Run(0), Act::Run(1)],
+        holds: &[
+            Check::Contains(Place::Repo(THE_RENAMED_ADRS_HOME), "Because."),
+            Check::RegularFile(Place::Repo("work.txt")),
+        ],
+        ..FINALIZE
+    },
+    Case {
+        name: "clobber-held-in-the-index-sub-task-doc-renamed-and-milestone-finalized-as-printed",
+        site: CLOBBER,
+        cause: "a file was staged in the main checkout and taken out of its working tree, \
+                and a sub-task minted a doc, under an id its author chooses, whose home is \
+                that path",
+        state: &[
+            Step::Jigc(&["setup"]),
+            A_MILESTONE,
+            A_FIRST_SUB_TASK,
+            PROVISIONED,
+            WORK_IN_THE_FIRST[0],
+            WORK_IN_THE_FIRST[1],
+            AN_ADR_PAYLOAD,
+            the_adr_authored_by!("do-a-thing"),
+            by_hand_at!(THE_ADRS_HOME),
+            staged_at!(THE_ADRS_HOME),
+            THE_ADRS_HOME_EMPTIED,
+        ],
+        refusing: THE_MILESTONES_FINALIZE,
+        acts: &[Act::Run(0), Act::Run(1)],
+        holds: &[
+            Check::Contains(Place::Repo(THE_RENAMED_ADRS_HOME), "Because."),
+            Check::RegularFile(Place::Repo("work.txt")),
+        ],
+        ..FINALIZE
+    },
+];
+
+/// **An install, what the case plants before the milestone exists, a milestone of two
+/// sub-tasks — the first with staged work, the second having minted the decisions log —
+/// and what the case plants afterwards.**
+macro_rules! a_sub_task_minted_the_log_after {
+    ([$($before:expr),* $(,)?] $(, $plant:expr)* $(,)?) => {
+        &[
+            Step::Jigc(&["setup"]),
+            $($before,)*
+            A_MILESTONE,
+            A_FIRST_SUB_TASK,
+            A_SECOND_SUB_TASK_THAT_DECIDES,
+            PROVISIONED,
+            WORK_IN_THE_FIRST[0],
+            WORK_IN_THE_FIRST[1],
+            the_log_created_by!("second-thing"),
+            $($plant,)*
+        ]
+    };
+}
+const A_SUB_TASKS_LOG_OVER_A_FILE_IN_HEAD: &str = "a committed file is missing from the main \
+    checkout's working tree, and a sub-task minted the decisions log, whose one fixed home \
+    is that path";
+const A_SUB_TASKS_LOG_OVER_A_FILE_GIT_HOLDS: [Case; 3] = [
+    Case {
+        name: "clobber-held-in-head-fixed-only-sub-task-read-dropped-and-milestone-finalized-as-printed",
+        site: CLOBBER,
+        cause: A_SUB_TASKS_LOG_OVER_A_FILE_IN_HEAD,
+        state: &[
+            Step::Jigc(&["setup"]),
+            by_hand_at!(LOG),
+            staged_at!(LOG),
+            COMMITTED,
+            THE_LOGS_HOME_EMPTIED,
+            A_MILESTONE,
+            A_FIRST_SUB_TASK_THAT_DECIDES,
+            PROVISIONED,
+            the_log_created_by!("do-a-thing"),
+        ],
+        refusing: THE_MILESTONES_FINALIZE,
+        acts: &[Act::Run(2), Act::Run(1), Act::Run(3)],
+        holds: &[Check::Absent(Place::Repo(".jigc/tasks/do-a-thing"))],
+        ..FINALIZE
+    },
+    Case {
+        name: "clobber-held-in-head-fixed-sub-task-read-dropped-and-milestone-finalized-as-printed",
+        site: CLOBBER,
+        cause: A_SUB_TASKS_LOG_OVER_A_FILE_IN_HEAD,
+        state: a_sub_task_minted_the_log_after!([
+            by_hand_at!(LOG),
+            staged_at!(LOG),
+            COMMITTED,
+            THE_LOGS_HOME_EMPTIED,
+        ]),
+        refusing: THE_MILESTONES_FINALIZE,
+        acts: &[Act::Run(2), Act::Run(1), Act::Run(3)],
+        holds: &[
+            Check::RegularFile(Place::Repo("work.txt")),
+            Check::Absent(Place::Repo(".jigc/tasks/second-thing")),
+        ],
+        ..FINALIZE
+    },
+    Case {
+        name: "clobber-held-in-the-index-fixed-sub-task-read-dropped-and-milestone-finalized-as-printed",
+        site: CLOBBER,
+        cause: "a file was staged in the main checkout and taken out of its working tree, \
+                and a sub-task minted the decisions log, whose one fixed home is that path",
+        state: a_sub_task_minted_the_log_after!(
+            [],
+            by_hand_at!(LOG),
+            staged_at!(LOG),
+            THE_LOGS_HOME_EMPTIED,
+        ),
+        refusing: THE_MILESTONES_FINALIZE,
+        acts: &[Act::Run(2), Act::Run(1), Act::Run(3)],
+        holds: &[
+            Check::RegularFile(Place::Repo("work.txt")),
+            Check::Absent(Place::Repo(".jigc/tasks/second-thing")),
+        ],
+        ..FINALIZE
+    },
+];
+
+const A_FILE_AT_THE_HOME_OF_A_SUB_TASKS_LOG: &str = "a sub-task minted the decisions log, \
+    and a file in no commit stands at the log's one fixed home in the main checkout";
+const A_SUB_TASKS_LOG_OVER_A_FILE: [Case; 2] = [
+    Case {
+        name: "clobber-fixed-sub-task-file-at-the-logs-home-moved-out-and-milestone-finalized",
+        site: CLOBBER,
+        cause: A_FILE_AT_THE_HOME_OF_A_SUB_TASKS_LOG,
+        state: a_sub_task_minted_the_log_after!([], by_hand_at!(LOG)),
+        refusing: THE_MILESTONES_FINALIZE,
+        acts: &[Act::MoveOut(Operand::Span(0)), Act::Run(3)],
+        holds: &[
+            Check::Contains(Place::Repo(LOG), "# Decisions Log"),
+            Check::Contains(Place::Moved(LOG), "by hand"),
+            Check::RegularFile(Place::Repo("work.txt")),
+        ],
+        ..FINALIZE
+    },
+    Case {
+        name: "clobber-fixed-sub-task-file-at-the-logs-home-sub-task-dropped-milestone-landed-file-adopted",
+        site: CLOBBER,
+        cause: A_FILE_AT_THE_HOME_OF_A_SUB_TASKS_LOG,
+        state: a_sub_task_minted_the_log_after!([], by_hand_at!(LOG)),
+        refusing: THE_MILESTONES_FINALIZE,
+        acts: &[
+            Act::Run(6),
+            Act::Run(5),
+            Act::Run(7),
+            Act::Run(8),
+            Act::Run(9),
+        ],
+        holds: &[
+            Check::RegularFile(Place::Repo("work.txt")),
+            Check::Directory(Place::Repo(
+                ".jigc/tasks/migrate-decisions-log-docs-decisions-log-b31ca3264f78",
+            )),
+        ],
+        untouched: &[LOG],
+        ..FINALIZE
+    },
+];
+const A_SUB_TASKS_LOG_OVER_A_STAGED_FILE_IN_THE_MAIN_CHECKOUT: [Case; 1] = [Case {
+    name: "clobber-fixed-sub-task-file-staged-at-the-logs-home-moved-with-git-mv-as-printed",
+    site: CLOBBER,
+    cause: "a sub-task minted the decisions log, and a file stands at the log's home in the \
+            main checkout that was written and staged there after the milestone was \
+            created — in git's index, in no commit",
+    state: a_sub_task_minted_the_log_after!([], by_hand_at!(LOG), staged_at!(LOG)),
+    refusing: THE_MILESTONES_FINALIZE,
+    acts: &[Act::Run(1), Act::Run(3)],
+    holds: &[
+        Check::Contains(Place::Repo(LOG), "# Decisions Log"),
+        Check::RegularFile(Place::Repo("work.txt")),
+    ],
+    doubt: Some(WHAT_GIT_MV_IS),
+    ..FINALIZE
+}];
+const A_SUB_TASKS_LOG_OVER_A_COMMITTED_FILE: [Case; 1] = [Case {
+    name: "clobber-fixed-sub-task-committed-file-at-the-logs-home-sub-task-read-dropped-milestone-finalized",
+    site: CLOBBER,
+    cause: "a sub-task minted the decisions log while the committed file at its home was \
+            missing from the main checkout's working tree, and the file is back",
+    state: a_sub_task_minted_the_log_after!(
+        [
+            by_hand_at!(LOG),
+            staged_at!(LOG),
+            COMMITTED,
+            THE_LOGS_HOME_EMPTIED,
+        ],
+        Step::Git(&["checkout", "HEAD", "--", LOG]),
+    ),
+    refusing: THE_MILESTONES_FINALIZE,
+    acts: &[Act::Run(3), Act::Run(2), Act::Run(4)],
+    holds: &[
+        Check::RegularFile(Place::Repo("work.txt")),
+        Check::Absent(Place::Repo(".jigc/tasks/second-thing")),
+    ],
+    untouched: &[LOG],
+    ..FINALIZE
+}];
+
+const TWO_SUB_TASKS_MINTED_THE_LOG: [Case; 1] = [Case {
+    name: "clobber-contested-two-sub-tasks-minted-the-log-second-read-dropped-milestone-finalized",
+    site: CLOBBER,
+    cause: "two sub-tasks of one milestone each minted the decisions log: the join gives \
+            the second a second id, and both promote to the log's one fixed home",
+    state: &[
+        Step::Jigc(&["setup"]),
+        A_MILESTONE,
+        A_FIRST_SUB_TASK_THAT_DECIDES,
+        A_SECOND_SUB_TASK_THAT_DECIDES,
+        PROVISIONED,
+        WORK_IN_THE_FIRST[0],
+        WORK_IN_THE_FIRST[1],
+        the_log_created_by!("do-a-thing"),
+        the_log_created_by!("second-thing"),
+    ],
+    refusing: THE_MILESTONES_FINALIZE,
+    acts: &[Act::Run(5), Act::Run(4), Act::Run(6)],
+    holds: &[
+        Check::Contains(Place::Repo(LOG), "# Decisions Log"),
+        Check::RegularFile(Place::Repo("work.txt")),
+        Check::Absent(Place::Repo(".jigc/tasks/second-thing")),
+    ],
+    ..FINALIZE
+}];
+
+// The staged arm: the occupant is a file a sub-task staged in its worktree.
+
+const THE_ADRS_HOME_STAGED_IN_THE_FIRST: [Step; 2] =
+    staged_in_the_worktree_of!("do-a-thing", "docs/decisions/use-tabs.md");
+const THE_ADRS_HOME_STAGED_IN_THE_SECOND: [Step; 2] =
+    staged_in_the_worktree_of!("second-thing", "docs/decisions/use-tabs.md");
+const THE_LOGS_HOME_STAGED_IN_THE_FIRST: [Step; 2] =
+    staged_in_the_worktree_of!("do-a-thing", "docs/decisions-log.md");
+
+const A_STAGED_FILE_AT_THE_HOME_OF_A_SUB_TASKS_DOC: &str = "a sub-task minted a doc under an \
+    id its author chooses, and one sub-task's worktree has a file staged at the doc's home";
+const A_SUB_TASKS_DOC_OVER_A_STAGED_FILE: [Case; 2] = [
+    Case {
+        name: "clobber-staged-file-at-the-home-doc-renamed-and-milestone-finalized-as-printed",
+        site: CLOBBER,
+        cause: A_STAGED_FILE_AT_THE_HOME_OF_A_SUB_TASKS_DOC,
+        state: &[
+            Step::Jigc(&["setup"]),
+            A_MILESTONE,
+            A_FIRST_SUB_TASK,
+            PROVISIONED,
+            AN_ADR_PAYLOAD,
+            the_adr_authored_by!("do-a-thing"),
+            THE_ADRS_HOME_STAGED_IN_THE_FIRST[0],
+            THE_ADRS_HOME_STAGED_IN_THE_FIRST[1],
+        ],
+        refusing: THE_MILESTONES_FINALIZE,
+        acts: &[Act::Run(0), Act::Run(3)],
+        holds: &[
+            Check::Contains(Place::Repo(THE_ADRS_HOME), "by hand"),
+            Check::Contains(Place::Repo(THE_RENAMED_ADRS_HOME), "Because."),
+        ],
+        ..FINALIZE
+    },
+    Case {
+        name: "clobber-staged-file-at-the-home-stashed-and-milestone-finalized-as-printed",
+        site: CLOBBER,
+        cause: A_STAGED_FILE_AT_THE_HOME_OF_A_SUB_TASKS_DOC,
+        state: &[
+            Step::Jigc(&["setup"]),
+            A_MILESTONE,
+            A_FIRST_SUB_TASK,
+            PROVISIONED,
+            AN_ADR_PAYLOAD,
+            the_adr_authored_by!("do-a-thing"),
+            THE_ADRS_HOME_STAGED_IN_THE_FIRST[0],
+            THE_ADRS_HOME_STAGED_IN_THE_FIRST[1],
+        ],
+        refusing: THE_MILESTONES_FINALIZE,
+        acts: &[Act::Run(1), Act::Run(2), Act::Run(3)],
+        holds: &[Check::Contains(Place::Repo(THE_ADRS_HOME), "Because.")],
+        ..FINALIZE
+    },
+];
+
+const TWO_STAGED_FILES_AT_THE_HOME_OF_A_SUB_TASKS_DOC: &str = "a sub-task minted a doc under \
+    an id its author chooses, and two other sub-tasks' worktrees each have the same file \
+    staged at the doc's home";
+macro_rules! a_doc_over_two_staged_files {
+    ($name:literal, acts: $acts:expr, holds: $holds:expr $(,)?) => {
+        Case {
+            name: $name,
+            site: CLOBBER,
+            cause: TWO_STAGED_FILES_AT_THE_HOME_OF_A_SUB_TASKS_DOC,
+            state: &[
+                Step::Jigc(&["setup"]),
+                A_MILESTONE,
+                A_FIRST_SUB_TASK,
+                A_SECOND_SUB_TASK,
+                A_THIRD_SUB_TASK,
+                PROVISIONED,
+                AN_ADR_PAYLOAD,
+                the_adr_authored_by!("third-thing"),
+                THE_ADRS_HOME_STAGED_IN_THE_FIRST[0],
+                THE_ADRS_HOME_STAGED_IN_THE_FIRST[1],
+                THE_ADRS_HOME_STAGED_IN_THE_SECOND[0],
+                THE_ADRS_HOME_STAGED_IN_THE_SECOND[1],
+            ],
+            refusing: THE_MILESTONES_FINALIZE,
+            acts: $acts,
+            holds: $holds,
+            ..FINALIZE
+        }
+    };
+}
+const A_SUB_TASKS_DOC_OVER_TWO_STAGED_FILES: [Case; 2] = [
+    a_doc_over_two_staged_files!(
+        "clobber-staged-twice-at-the-home-doc-renamed-and-milestone-finalized-as-printed",
+        acts: &[Act::Run(0), Act::Run(4)],
+        holds: &[
+            Check::Contains(Place::Repo(THE_ADRS_HOME), "by hand"),
+            Check::Contains(Place::Repo(THE_RENAMED_ADRS_HOME), "Because."),
+        ],
+    ),
+    a_doc_over_two_staged_files!(
+        "clobber-staged-twice-at-the-home-both-stashed-and-milestone-finalized-as-printed",
+        acts: &[Act::Run(1), Act::Run(2), Act::Run(3), Act::Run(4)],
+        holds: &[Check::Contains(Place::Repo(THE_ADRS_HOME), "Because.")],
+    ),
+];
+
+const A_SUB_TASKS_EDIT_OVER_A_STAGED_FILE: [Case; 1] = [Case {
+    name: "clobber-staged-change-at-the-home-of-an-edited-doc-stashed-and-milestone-finalized",
+    site: CLOBBER,
+    cause: "a sub-task edited a committed doc — copied in, not minted — and another \
+            sub-task's worktree has a change staged at the doc's home",
+    state: &[
+        Step::Jigc(&["setup"]),
+        AN_ADR_TASK,
+        AN_ADR_PAYLOAD,
+        the_adr_authored_by!("pick-tabs"),
+        THE_ADRS_COMMIT_DOC[0],
+        THE_ADRS_COMMIT_DOC[1],
+        THE_ADRS_COMMIT_DOC[2],
+        Step::Jigc(&["task", "finalize", "pick-tabs"]),
+        A_MILESTONE,
+        A_FIRST_SUB_TASK,
+        A_SECOND_SUB_TASK,
+        PROVISIONED,
+        WORK_IN_THE_FIRST[0],
+        WORK_IN_THE_FIRST[1],
+        Step::File(Place::Outside("more"), "More.\n"),
+        Step::Jigc(&[
+            "doc",
+            "set-slot",
+            "adr:use-tabs#context",
+            "--task",
+            "do-a-thing",
+            "--from-file",
+            "../outside/more",
+        ]),
+        THE_ADRS_HOME_STAGED_IN_THE_SECOND[0],
+        THE_ADRS_HOME_STAGED_IN_THE_SECOND[1],
+    ],
+    refusing: THE_MILESTONES_FINALIZE,
+    acts: &[Act::Run(0), Act::Run(1), Act::Run(2)],
+    holds: &[
+        Check::Contains(Place::Repo(THE_ADRS_HOME), "More."),
+        Check::RegularFile(Place::Repo("work.txt")),
+    ],
+    ..FINALIZE
+}];
+const A_SUB_TASKS_LOG_OVER_A_STAGED_FILE: [Case; 1] = [Case {
+    name: "clobber-staged-file-at-the-logs-home-stashed-and-milestone-finalized-as-printed",
+    site: CLOBBER,
+    cause: "a sub-task minted the decisions log, whose home is one fixed path, and its \
+            worktree has a file staged at that path",
+    state: &[
+        Step::Jigc(&["setup"]),
+        A_MILESTONE,
+        A_FIRST_SUB_TASK_THAT_DECIDES,
+        PROVISIONED,
+        the_log_created_by!("do-a-thing"),
+        THE_LOGS_HOME_STAGED_IN_THE_FIRST[0],
+        THE_LOGS_HOME_STAGED_IN_THE_FIRST[1],
+    ],
+    refusing: THE_MILESTONES_FINALIZE,
+    acts: &[Act::Run(0), Act::Run(1), Act::Run(2)],
+    holds: &[Check::Contains(Place::Repo(LOG), "# Decisions Log")],
+    ..FINALIZE
+}];
+
+// ---------------------------------------------------------------------------
+// `empty_commit_finding` · `finalize.empty-commit` — a work unit that validated and has
+// nothing to commit
+// ---------------------------------------------------------------------------
+
+/// **Nothing to commit, followed the one way the route prints a line for**: the work unit
+/// abandoned. The other way — *make a change, then re-run* — names the reader's own work
+/// and is no act of the frame's ([`READINGS`]).
+const NOTHING_TO_COMMIT_IN_A_TASK: [Case; 1] = [Case {
+    name: "finalize-empty-commit-nothing-staged-and-a-clean-tree-task-discarded-as-printed",
+    site: EMPTY_COMMIT,
+    cause: "an ordinary task's commit doc is complete, nothing is staged, no doc of the \
+            task's promotes, and the working tree is clean",
+    state: ready![],
+    acts: &[Act::Run(1)],
+    holds: &[Check::Absent(Place::Repo(TASK_AREA))],
+    ..FINALIZE
+}];
+const A_DOC_WRITTEN_BACK_UNCHANGED: [Case; 1] = [Case {
+    name: "finalize-empty-commit-a-committed-doc-written-back-unchanged-task-discarded-as-printed",
+    site: EMPTY_COMMIT,
+    cause: "an ordinary task copied a committed doc in and wrote it back with the bytes it \
+            had: the doc is staged, its promotion changes no byte of `HEAD`, and nothing \
+            else is staged",
+    state: &[
+        Step::Jigc(&["setup"]),
+        AN_ADR_TASK,
+        AN_ADR_PAYLOAD,
+        the_adr_authored_by!("pick-tabs"),
+        THE_ADRS_COMMIT_DOC[0],
+        THE_ADRS_COMMIT_DOC[1],
+        THE_ADRS_COMMIT_DOC[2],
+        Step::Jigc(&["task", "finalize", "pick-tabs"]),
+        Step::Jigc(&["start", "--workflow", "record-decision", "same again"]),
+        Step::File(Place::Outside("same"), "Because.\n"),
+        Step::Jigc(&[
+            "doc",
+            "set-slot",
+            "adr:use-tabs#context",
+            "--task",
+            "same-again",
+            "--from-file",
+            "../outside/same",
+        ]),
+        THE_SAME_AGAIN_COMMIT_DOC[0],
+        THE_SAME_AGAIN_COMMIT_DOC[1],
+        THE_SAME_AGAIN_COMMIT_DOC[2],
+    ],
+    refusing: &["task", "finalize", "same-again"],
+    acts: &[Act::Run(1)],
+    holds: &[Check::Absent(Place::Repo(".jigc/tasks/same-again"))],
+    untouched: &[THE_ADRS_HOME],
+    ..FINALIZE
+}];
+const THE_SAME_AGAIN_COMMIT_DOC: [Step; 3] = commit_doc!("same-again");
+const THE_NOTES_COMMIT_DOC: [Step; 3] = commit_doc!("note-a-thing");
+const NOTHING_TO_COMMIT_IN_A_DOC_ONLY_TASK: [Case; 1] = [Case {
+    name: "finalize-empty-commit-doc-only-task-with-no-doc-task-discarded-as-printed",
+    site: EMPTY_COMMIT,
+    cause: "a task whose finalize commits its docs and nothing else has minted none: its \
+            path set is empty, whatever the working tree holds",
+    state: &[
+        Step::Jigc(&["setup"]),
+        Step::Jigc(A_DOC_ONLY_MINT),
+        THE_NOTES_COMMIT_DOC[0],
+        THE_NOTES_COMMIT_DOC[1],
+        THE_NOTES_COMMIT_DOC[2],
+        Step::File(Place::Repo("unrelated.txt"), "unrelated\n"),
+    ],
+    refusing: &["task", "finalize", "note-a-thing"],
+    acts: &[Act::Run(1)],
+    holds: &[Check::Absent(Place::Repo(".jigc/tasks/note-a-thing"))],
+    untouched: &["unrelated.txt"],
+    ..FINALIZE
+}];
+/// A project that composes the dev pack alone resolves no `milestone-record` doctype, so a
+/// milestone's finalize has no record to flip: with no sub-task's doc and no staged code
+/// it is the planner's own empty commit. (With the record, the same milestone is refused
+/// one step on, under `milestone.zero-contribution` — a site of the milestone's file.)
+const NOTHING_TO_COMMIT_IN_A_MILESTONE: [Case; 1] = [Case {
+    name: "finalize-empty-commit-milestone-without-a-record-doctype-milestone-discarded-as-printed",
+    site: EMPTY_COMMIT,
+    cause: "a milestone's finalize is asked in a project whose packs resolve no milestone \
+            record — the dev pack alone — where no sub-task holds a doc and no worktree \
+            holds staged code",
+    state: &[
+        Step::Jigc(&["setup"]),
+        Step::File(
+            Place::Repo(".jigc/config/packs.yaml"),
+            "compose-embedded-methodology: false\n",
+        ),
+        Step::Git(&["add", ".jigc/config/packs.yaml"]),
+        Step::Git(&["commit", "-q", "-m", "the dev pack alone"]),
+        A_FAN_OUT_WITH_WORK[0],
+        A_FAN_OUT_WITH_WORK[1],
+        A_FAN_OUT_WITH_WORK[2],
+    ],
+    refusing: &["milestone", "finalize", "fan-out"],
+    acts: &[Act::Run(1)],
+    holds: &[
+        Check::Absent(Place::Repo(".jigc/worktrees/do-a-thing")),
+        Check::Absent(Place::Repo(".jigc/tasks/do-a-thing")),
+    ],
+    ..FINALIZE
+}];
+
 /// The cases of the gate, a group a cause — and, within a group, a case a way out of the
 /// cause's route.
 pub const CASES: &[&[Case]] = &[
@@ -1526,6 +2804,35 @@ pub const CASES: &[&[Case]] = &[
     &THE_MANIFEST_A_DIRECTORY_AT_A_CREATE,
     &A_DIRECTORY_AT_THE_STAGED_DOCS_PATH,
     &THE_MANIFEST_A_DIRECTORY_AT_A_COPY_IN,
+    &NOTHING_TO_COMMIT_IN_A_TASK,
+    &A_DOC_WRITTEN_BACK_UNCHANGED,
+    &NOTHING_TO_COMMIT_IN_A_DOC_ONLY_TASK,
+    &NOTHING_TO_COMMIT_IN_A_MILESTONE,
+    &A_TASKS_DOC_OVER_A_FILE,
+    &A_MIGRATIONS_DOC_OVER_A_FILE,
+    &A_FIXED_DOC_OVER_A_FILE,
+    &A_FIXED_DOC_OVER_A_STAGED_FILE,
+    &A_FIXED_DOC_OVER_A_COMMITTED_FILE,
+    &A_TASKS_DOC_OVER_A_FILE_IN_HEAD,
+    &A_TASKS_DOC_OVER_A_FILE_IN_THE_INDEX,
+    &THE_LOG_MINTED_OVER_A_FILE_GIT_HOLDS,
+    &A_MIGRATIONS_DOC_OVER_A_FILE_IN_HEAD,
+    &A_MIGRATIONS_DOC_OVER_A_FILE_IN_THE_INDEX,
+    &A_MIGRATED_LOG_OVER_A_FILE_GIT_HOLDS,
+    &A_SUB_TASKS_DOC_OVER_A_FILE,
+    &THE_SECOND_OF_TWO_SUFFIXED_ONTO_A_FILE,
+    &THE_FIRST_OF_TWO_OVER_A_FILE,
+    &THE_SECOND_OF_THREE_SUFFIXED_ONTO_A_FILE,
+    &A_SUB_TASKS_DOC_OVER_A_FILE_GIT_HOLDS,
+    &A_SUB_TASKS_LOG_OVER_A_FILE_GIT_HOLDS,
+    &A_SUB_TASKS_LOG_OVER_A_FILE,
+    &A_SUB_TASKS_LOG_OVER_A_STAGED_FILE_IN_THE_MAIN_CHECKOUT,
+    &A_SUB_TASKS_LOG_OVER_A_COMMITTED_FILE,
+    &TWO_SUB_TASKS_MINTED_THE_LOG,
+    &A_SUB_TASKS_DOC_OVER_A_STAGED_FILE,
+    &A_SUB_TASKS_DOC_OVER_TWO_STAGED_FILES,
+    &A_SUB_TASKS_EDIT_OVER_A_STAGED_FILE,
+    &A_SUB_TASKS_LOG_OVER_A_STAGED_FILE,
 ];
 
 /// The sites of the family that have no case, each with why: none of the ones taken in so
@@ -1931,5 +3238,150 @@ pub const READINGS: &[Reading] = &[
             ),
         ],
         not_followed: &[],
+    },
+    Reading {
+        site: CLOBBER,
+        read: &[
+            "crates/engine/src/finalize.rs::clobber_finding and ClobberedBy — seven arms, a message and a route each",
+            "crates/engine/src/finalize.rs::plan_clobber_guard and plan_milestone_clobber_guard — the two doors, and which arm each hands a refused promotion to",
+            "crates/engine/src/finalize.rs::refused_promotions, Occupant and Holder — what a promotion would land on: a file, what git holds where the disk shows nothing, a file a sub-task staged",
+            "crates/engine/src/finalize.rs::split_contested and Contender — two promotions of one plan to one path",
+            "crates/engine/src/finalize.rs::ShapeExit and ShapeUnit — the second and third axes: whether the doc's id is its author's to choose, and whose doc it is",
+            "crates/engine/src/finalize.rs::sub_task_clobber_text and sub_task_renames, staged_clobber_text, contested_clobber_text, fixed_clobber_text, held_clobber_text — every clause each arm's route is put together from",
+            "crates/engine/src/schema.rs::fixed_title, and the five `placement:` schemas of the shipped packs — which doctypes have one fixed home",
+        ],
+        causes: 32,
+        derivation: "a cause is an arm by the axes its message and route are worded from. \
+                     The task arm — an ordinary task's doc under an id its author chooses, \
+                     over a file: 1. The migration arm, over a file that is not its source: \
+                     1. The fixed-identity arm, over a file: at a task's door the file in no \
+                     index, the file staged — the route has a clause for it — and the file \
+                     `HEAD` holds too; the same three at a milestone's boundary — 6, one of \
+                     them not followed apart from its sibling: the committed file is one \
+                     case a door. The held arm, where the disk shows nothing: where git \
+                     holds the file (`HEAD`, the index) by whose doc it is (a task's, a \
+                     migration's, a sub-task's) by whether its id can change — 12. The \
+                     sub-task arm, over a file: whether the join suffixed the doc's id by \
+                     whether the route names one rename or one for each later sub-task of \
+                     the group — 4. The staged arm, at the milestone's boundary only: a \
+                     minted doc whose id can change over one staged file and over two, a doc \
+                     copied in and edited, a minted doc under a fixed identity — 4. The \
+                     contested arm: the door by whether a contender is under a fixed \
+                     identity — 4. Two more arms of the text functions are reached by no \
+                     state and are no cause: a held promotion of a body no unit staged — the \
+                     held arm is asked only of a doc an origin says was minted — and a \
+                     staged file at a task's door, which folds in no worktree",
+        without_case: &[
+            (
+                "two docs of one task promote to one path, one of them under a fixed \
+                 identity",
+                Why::NotConstructible(
+                    "a task's two docs share a home only where two doctypes do, and no two \
+                     doctypes of the shipped packs share one: it takes a pack of the \
+                     reader's own with two schemas on one `location:`, which no state step \
+                     makes",
+                ),
+            ),
+            (
+                "two docs of one task promote to one path, both under ids their authors \
+                 choose",
+                Why::NotConstructible(
+                    "as above: two doctypes on one `location:`, in a pack of the reader's own",
+                ),
+            ),
+            (
+                "two sub-tasks' docs promote to one path, both under ids their authors \
+                 choose",
+                Why::NotConstructible(
+                    "the join's suffix gives two docs of one id two homes wherever the home \
+                     carries the slug, and the five doctypes of the shipped packs whose \
+                     home does not — `changelog`, `vision`, `roadmap`, `decisions-log`, \
+                     `deferral-ledger` — are each a singleton, under a fixed identity. \
+                     Again a pack of the reader's own",
+                ),
+            ),
+        ],
+        not_followed: &[
+            (
+                "*retitle this task's doc so it slugs differently* — the task arm's first way",
+                Why::NotConstructible(
+                    "the route names the act and prints no line for it; the product's line \
+                     is `jigc doc rename`, which this arm does not print and every other \
+                     arm does. Driven by hand: `jigc doc rename adr:use-tabs --to \"Use \
+                     spaces\" --task pick-tabs`, then the finalize with its id — exit 0, \
+                     one commit, the file at the old home left out",
+                ),
+            ),
+            (
+                "*re-author with a title that slugs differently* · *adopt it through its \
+                 own `jigc migrate` task first* — the migration arm's first and third way",
+                Why::NotConstructible(
+                    "each names an act and prints no line for it — the one backticked span \
+                     is `jigc migrate`, with no operand — and both end at the two finalize \
+                     lines, whose `<id>` the refusal lists no value for: that tail is \
+                     followed as printed by a case of its own",
+                ),
+            ),
+            (
+                "*and start the work again* · *commit the deletion of …* · *bring the file \
+                 back* where no line is printed for it · *carry what you want kept into the \
+                 doc that stays*",
+                Why::NotConstructible(
+                    "each names an act of the reader's own and prints no command for it: \
+                     the cases end at the last printed line — the task or the sub-task \
+                     dropped, the boundary run again — and hold what that leaves. Where the \
+                     route prints the path of the deletion to commit, the case commits it \
+                     by the runner's own git",
+                ),
+            ),
+            (
+                "the committed file at a fixed home, staged or not: one case a door",
+                Why::NotConstructible(
+                    "where `HEAD` holds the file the route offers one way, the drop, \
+                     whatever the index holds — the clause about `git mv` is the \
+                     uncommitted file's",
+                ),
+            ),
+        ],
+    },
+    Reading {
+        site: EMPTY_COMMIT,
+        read: &[
+            "crates/engine/src/finalize.rs::empty_commit_finding — two units, a message and a route each",
+            "crates/engine/src/finalize.rs::plan_finalize and plan_milestone_finalize — the guard, behind the validation and the base pin, on a `has_diff` the door hands in",
+            "crates/cli/src/task.rs::finalize — `has_diff`, arm by arm: an amend, a staged migration, a doc-only task, an ordinary one; and the arm that turns this refusal into `finalize.nothing-staged` where the tree is dirty",
+            "crates/cli/src/task.rs::finalize against the previous release (`git show 91834b5e:crates/cli/src/task.rs`) — the lines of `has_diff` that changed: what counts as a pending `.jigc/config` path",
+            "crates/cli/src/milestone.rs::run_milestone_finalize — the boundary's `has_diff`: a merged doc, staged code in a worktree, the record's flip; and the zero-contribution guard behind the planner",
+        ],
+        causes: 4,
+        derivation: "the task's arm is reached where `has_diff` is false and the refusal is \
+                     not recoloured. An amend's is always true; a staged migration's is true \
+                     once a doc is staged, and with none staged another refusal answers \
+                     first (`finalize.migration-no-replacement`, driven). An ordinary \
+                     task's is false two ways — nothing staged and no doc of its own, on a \
+                     clean tree (a dirty one is `finalize.nothing-staged`, a site with its \
+                     own cases); and a staged doc whose promotion changes no byte of \
+                     `HEAD`, beside nothing else. A doc-only task's is false where its path \
+                     set is empty, whatever the tree holds: followed with no doc minted (a \
+                     doc written back unchanged is the same term). The milestone's arm \
+                     needs no merged doc, no staged code and no record flip, and with the \
+                     shipped composition the record always flips — so it is reached only \
+                     where the packs resolve no milestone record: 1. **The changed lines \
+                     remove a cause and add none**: under the user's \
+                     `status.showUntrackedFiles=no`, a task whose whole change is a new \
+                     file under `.jigc/config` now has a diff and lands (driven: exit 0, \
+                     the file committed); the previous release's binary refuses that state \
+                     under `finalize.nothing-staged` (driven)",
+        without_case: &[],
+        not_followed: &[(
+            "*make a change, then re-run `jigc task finalize <id>`* · *make a change in a \
+             sub-task, then re-run `jigc milestone finalize <id>`*",
+            Why::NotConstructible(
+                "the change is the reader's own work, and the frame has no act that writes \
+                 or stages a file of a case's own. Driven by hand at the task's door: a \
+                 new file written and not staged, then the printed re-run — exit 3 under \
+                 `finalize.nothing-staged`, whose route says to `git add` it",
+            ),
+        )],
     },
 ];

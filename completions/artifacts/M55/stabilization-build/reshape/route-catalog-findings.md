@@ -433,7 +433,7 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 
 ## 5. The gate — `task finalize`, the sites the fix pass touched
 
-*Added 2026-10-12, with the cases of [route_catalog/task_finalize.rs](../../../../../crates/cli/tests/route_catalog/task_finalize.rs): seven sites of the family, taken in by the human's ruling of 2026-10-11 ([DECISIONS.md](../../../../../DECISIONS.md) → *Which families the route catalog takes in*). Every case here stands at a site the fix pass touched; what the previous release's binary does with each is not said in this file.* Each state starts from `jigc setup` and an open task whose `commit` doc is complete, made by the binary under test.
+*Added 2026-10-12, with the cases of [route_catalog/task_finalize.rs](../../../../../crates/cli/tests/route_catalog/task_finalize.rs): the sites of the family taken in by the human's ruling of 2026-10-11 — fourteen on that day, and its last two, the clobber guard and the empty commit, with the commit after ([DECISIONS.md](../../../../../DECISIONS.md) → *Which families the route catalog takes in*). Every case here stands at a site the fix pass touched; what the previous release's binary does with each is not said in this file.* Each state starts from `jigc setup` and an open task whose `commit` doc is complete, made by the binary under test.
 
 ### `r1-finalize-nothing-staged-route-prints-finalize-without-its-id`
 
@@ -547,9 +547,97 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 - **What was done:** the edit reverted — the file's bytes put back as the index holds them — and the finalize again.
 - **What went wrong:** exit 3 under `reconciliation.conflict-block`: *this path is the source the task is migrating, and it no longer holds what the migration recorded when it was minted*. The migration was minted over the edit, so the route's second way changes the source under it.
 
+### `r1-clobber-task-and-migration-routes-print-lines-with-placeholders-the-refusal-lists-nothing-for`
+
+*Added 2026-10-12, with the cases of the clobber guard (`clobber_finding`, forty-one cases over seven arms).*
+
+- **Classification:** followed, a printed line no shell can split. **Four cases, all marked `doubt`:** `clobber-task-file-at-the-home-re-created-with-a-slug-as-printed`, `clobber-task-file-at-the-home-occupant-migrated-as-printed`; `clobber-migration-file-at-the-destination-discarded-and-minted-again-as-printed`, `clobber-migration-file-at-the-destination-finalized-and-approved-as-printed`.
+- **State:** a task that minted an ADR (`jigc start --workflow record-decision`, `jigc doc author adr`), or a migration of a foreign file to one (`jigc migrate notes/old.md --as adr`), and a file written by hand at the doc's home, `docs/decisions/use-tabs.md`, after the mint.
+- **Refusing command:** `jigc task finalize <the task>` — exit 3, `finalize.promote-clobber`. The refusal lists one line, `at: docs/decisions/use-tabs.md`.
+- **Printed routes:**
+
+  ```text
+  route: a file already occupies `docs/decisions/use-tabs.md`: if it is another managed doc, retitle this task's doc so it slugs differently, or re-create it with an explicit `--slug` (`jigc doc create <doctype> --title <title> --slug <slug> --task <id>`); if it is a hand-authored/foreign file, bring it under management with `jigc migrate <sandbox>/repo/docs/decisions/use-tabs.md --as <doctype>` in its own task; then re-run `jigc task finalize`
+  route: a file already occupies `docs/decisions/use-tabs.md`, and this migration's recorded source is the different file `notes/old.md`: if the occupant is another managed doc, land this migration under a different id — re-author with a title that slugs differently, or `jigc task discard <id> --force` and re-mint with `jigc migrate <sandbox>/repo/notes/old.md --as <doctype> --slug <different-slug>`; if the occupant is itself foreign, adopt it through its own `jigc migrate` task first; then re-run `jigc task finalize <id>` to review the fidelity diff and `jigc task finalize <id> --approve` to land it (`--approve` also retires the recorded source)
+  ```
+
+- **What was done:** each printed line of a way, as printed. No shell splits a line that holds a bare word in angle brackets; and the task arm's last line, `jigc task finalize`, exits 2 — *the following required arguments were not provided: `<ID>`*.
+- **What went wrong:** every line these two routes print for a way out holds a placeholder the refusal lists no value for — the task's id, the doctype, the slug — and the one line without a placeholder is the finalize without its id. Every other arm of the same function prints the id and the address concrete (`jigc doc rename adr:use-tabs --to "<title>" --task pick-tabs`, `jigc task finalize pick-tabs`).
+- **The doubt:** what the pilot's first question left open — a placeholder is the reader's to fill, and the contract does not say from where when the refusal lists no value. And, for the last line, the gate's first question: a product command printed without the id it requires (`r1-finalize-nothing-staged-route-prints-finalize-without-its-id` is that question at another site).
+- **Driven by hand, the lines filled with the reader's own values — the task arm's three ways:**
+  - *re-create it with an explicit `--slug`*: `jigc doc create adr --title "Use tabs" --slug other --task pick-tabs` exits 1 under `write.identity-change` — *this task's `decision` is already `adr:use-tabs` … a second document beside the first, not a correction of it* — whose own route prints `jigc doc rename adr:use-tabs --to 'Use tabs' --slug other --task pick-tabs`. The way the route prints a line for is refused.
+  - *retitle this task's doc*, for which no line is printed: `jigc doc rename adr:use-tabs --to "Use spaces" --task pick-tabs`, then `jigc task finalize pick-tabs` — exit 0, one commit.
+  - *bring it under management with `jigc migrate … --as adr` in its own task*: exit 1 under `migrate.source-untracked` — the file is in no index; that refusal's route says to `git add` it. Staged, the line mints a migration task; `jigc task finalize pick-tabs` is then refused as before. Not driven further.
+
+### `r1-clobber-fixed-route-prints-git-mv-without-a-path`
+
+- **Classification:** followed, the same refusal again. **Two cases, both marked `doubt`:** `clobber-fixed-file-staged-at-the-logs-home-moved-with-git-mv-as-printed`, `clobber-fixed-sub-task-file-staged-at-the-logs-home-moved-with-git-mv-as-printed`.
+- **State:** a task — or a milestone's sub-task — minted the decisions log, whose home is the one path `docs/decisions-log.md`; a file was then written there and staged.
+- **Refusing command:** `jigc task finalize write-a-note` · `jigc milestone finalize fan-out` — exit 3, `finalize.promote-clobber`.
+- **Printed route** (the task's door, its first way):
+
+  ```text
+  route: nothing was committed and this task's staged docs are intact. A doc of this doctype has one fixed home, so it cannot be given another id. Either move the file out of the doc's home, so that `docs/decisions-log.md` is free — with `git mv` if git has it staged, since the index entry has to move with it — and re-run `jigc task finalize write-a-note`, which lands this task's doc there; or keep the file and drop this task (…)
+  ```
+
+- **What was done:** `git mv`, as printed — exit 129, git's usage; then the printed finalize.
+- **What went wrong:** the same refusal: the file is where it was. The route says which verb moves a staged file and prints neither the path, which it prints one clause earlier, nor a destination.
+- **The doubt:** the pilot's sixth question, over another verb — a `git` span with no operand is a line to run, or the name of a verb. The surface contract says such a span *names a command rather than a file*.
+- **Driven by hand under the second reading:** `git mv docs/decisions-log.md kept.md`, then the finalize — exit 0; the commit holds the log **and `kept.md`**, the moved file, which was staged. Moved by a plain file move instead, the index entry stays behind and the finalize is refused under the same code by the held arm.
+- **Beside it, and green:** the same route over a file in no index — moved out by the runner, the finalize lands (`clobber-fixed-file-at-the-logs-home-moved-out-and-finalized-as-printed`, and the sub-task's).
+
+### `r1-clobber-held-migration-route-review-step-exits-4`
+
+- **Classification:** followed, another failure. **Two cases, both marked `doubt`:** `clobber-held-in-head-migration-doc-renamed-reviewed-and-approved-as-printed`, `clobber-held-in-the-index-migration-doc-renamed-reviewed-and-approved-as-printed`.
+- **State:** a migration of a foreign file to an ADR, authored; git holds a file at the ADR's home that is not on disk — committed and deleted from the working tree, or staged and taken out of it.
+- **Refusing command:** `jigc task finalize <the migration>` — exit 3, `finalize.promote-clobber`.
+- **Printed route** (`HEAD` holds the file):
+
+  ```text
+  route: nothing was committed and this task's staged docs are intact: give this task's doc an id whose home is free (`jigc doc rename adr:use-tabs --to "<title>" --task migrate-adr-notes-old-e1a7d84cafc2`), then re-run `jigc task finalize migrate-adr-notes-old-e1a7d84cafc2` to review the fidelity diff and `jigc task finalize migrate-adr-notes-old-e1a7d84cafc2 --approve` to land it. The file git holds at `docs/decisions/use-tabs.md` is left exactly as it is: `git -C <sandbox>/repo checkout HEAD -- docs/decisions/use-tabs.md` brings it back into the worktree, and that is no commit
+  ```
+
+- **What was done:** the three printed lines in order. The rename exits 0; the plain finalize exits 4 — *migration review required — nothing committed* — and prints the diff; the approval exits 0 and lands the commit.
+- **What went wrong:** nothing but the second line's exit. The frame holds every printed command to exit 0, and a migration's plain finalize exits 4 by design.
+- **The doubt:** a command a route cites for what it prints — the gate's third question and the pilot's fourth, here over a line whose non-zero exit is its design.
+- **Beside it, and green:** the rename and the approval alone (`…-migration-doc-renamed-and-approved-as-printed`, two cases).
+
+### `r1-clobber-staged-by-two-worktrees-rename-way-draws-code-collision`
+
+- **Classification:** followed, another failure. **One case:** `clobber-staged-twice-at-the-home-doc-renamed-and-milestone-finalized-as-printed`.
+- **State:** a milestone of three sub-tasks; the third minted an ADR; the worktrees of the first and the second each have the same file, of the same bytes, staged at the ADR's home.
+- **Refusing command:** `jigc milestone finalize fan-out` — exit 3, `finalize.promote-clobber`, naming both sub-tasks.
+- **Printed route:**
+
+  ```text
+  route: nothing was committed and every sub-task's staged work is intact. Either give the doc a title that slugs to an id nothing holds (`jigc doc rename adr:use-tabs --to "<title>" --task third-thing`) — the staged file and the doc then both land — or take the staged file out of this milestone: `git -C <sandbox>/repo/.jigc/worktrees/do-a-thing stash push -- docs/decisions/use-tabs.md` and `git -C <sandbox>/repo/.jigc/worktrees/second-thing stash push -- docs/decisions/use-tabs.md` keeps its bytes in git's stash (`git stash list` shows it) and leaves the path to the doc; then re-run `jigc milestone finalize fan-out`. …
+  ```
+
+- **What was done:** the route's first way — the rename, then the printed finalize.
+- **What went wrong:** exit 1 under `combine.code-collision` — *`docs/decisions/use-tabs.md` (sub-tasks [do-a-thing, second-thing]) staged by more than one worktree*. The route says *the staged file and the doc then both land*; with the doc out of the way, the two staged files are refused for each other. The clobber guard answers ahead of the collision check, so the reader is told of the second refusal only by following the first one's route.
+- **Beside it, and green:** the route's second way from the same state, both files stashed (`…-both-stashed-and-milestone-finalized-as-printed`); and the first way where one worktree stages the file.
+
+### `r1-clobber-route-drops-the-milestones-only-sub-task-and-the-re-run-draws-zero-contribution`
+
+- **Classification:** followed, another failure. **One case:** `clobber-held-in-head-fixed-only-sub-task-read-dropped-and-milestone-finalized-as-printed`.
+- **State:** a committed file at `docs/decisions-log.md`, deleted from the working tree; a milestone whose one sub-task minted the decisions log.
+- **Refusing command:** `jigc milestone finalize fan-out` — exit 3, `finalize.promote-clobber`.
+- **Printed route:**
+
+  ```text
+  route: nothing was committed and every sub-task's staged work is intact. A doc of this doctype has one fixed home, so it cannot be given another id: drop sub-task `do-a-thing` (`jigc task discard do-a-thing --force` — that sub-task's whole staged work goes with it, so read what you want kept first: `jigc doc show decisions-log:decisions-log --task do-a-thing`), then re-run `jigc milestone finalize fan-out`; a task started once the milestone has landed meets the file that is there, and its create copies a managed doc in for update instead of minting over it. …
+  ```
+
+- **What was done:** the three printed lines: the doc read, the sub-task dropped, the milestone's finalize.
+- **What went wrong:** exit 3 under `milestone.zero-contribution` — the dropped sub-task was the milestone's only one, and nothing is left to land. That refusal's own route offers `jigc milestone discard fan-out`.
+- **Beside it, and green:** the same state with a second sub-task that holds staged work — the route holds (`clobber-held-in-head-fixed-sub-task-read-dropped-and-milestone-finalized-as-printed`).
+
 ### Seen, and no case
 
 - **`jigc validate` prints `file-state.hash-matches` as *blocking (gates at finalize)* and exits 0**, so the route it prints there is followed by no case (`drift_store_finding` has a reason).
 - **A finding of `task.working-area-io` can print two `route:` lines** — where the file-state record cannot be read during a copy-in, the inner fault's route, `rm <the record>`, stands above the `at:` line and this site's below it. Seen by the helper's probe; no case.
 - **`finalize.stage-failed` over an ignored doc home names the doc's path in git's quoted words and in no word of jigc's**: the route's two causes are the only ones it names.
 - **The backstop of the linked-worktree guard is not reached from jigc's own fan-out worktree**: `jigc task finalize` and `jigc task validate` of a task that stages a doc exit 1 there under `repo.head-detached` first, whose route — *give this work a branch of its own with `git switch -c <new-branch>`* — would put a commit of that task's on a new branch in the sub-task's worktree. Not followed.
+- **A route of the clobber guard prints its rename with the title left to the reader** — `jigc doc rename adr:use-tabs --to "<title>" --task pick-tabs`. Run as printed, the quoted placeholder is the title: the doc lands as `docs/decisions/title.md` under the heading `# <title>`. Sixteen cases run it so; thirteen of them hold, and the three that do not are red for another line of their route.
+- **`finalize.empty-commit`'s first way is *make a change, then re-run `jigc task finalize <id>`***: a file written and not staged, then the printed re-run, is refused under `finalize.nothing-staged`, whose route says to `git add` it. Driven by hand; the frame has no act that writes a file of a case's own.
+- **Under `status.showUntrackedFiles=no`, a task whose whole change is a new file under `.jigc/config` lands on this tree and is refused on the previous release's binary** (`finalize.nothing-staged`) — the one change the fix pass made to what counts as something to commit. Driven by hand on both.

@@ -62,8 +62,8 @@
 //! changed on the path to the refusal, get their cases now, family by family, and are rows
 //! of [`OWED`] until they have them; every other blocking site is a row of the scheduled
 //! list ([`SCHEDULED`], `route_catalog/scheduled.tsv`), owed a case before the port begins.
-//! The first of those families has its file, `task_finalize.rs` — the gate — with fourteen
-//! of its fifteen sites so far, two of them by a reason. With them the frame grew, each
+//! The first of those families has its file, `task_finalize.rs` — the gate — with its
+//! sixteen sites, two of them by a reason. With them the frame grew, each
 //! piece red first: an edit in no commit is reverted by the runner's git
 //! ([`an_edit_in_no_commit_is_reverted_to_what_the_index_holds`]), the
 //! refusing command is run again with the flag a route prints
@@ -197,9 +197,13 @@
 //!     through a `match`, a parameter or a table stands in no row of its family. So the
 //!     **vocabulary** is held as well: every code-shaped literal of a catalogued prefix
 //!     that production source spells is a listed site's code, is claimed by a row of
-//!     [`CLAIMS`] for the `dynamic` site that mints it, or has a row of [`NO_CODE`].
-//!     **A claim makes a site**: the code at the dynamic site it names owes a case like a
-//!     listed one, under the id [`Claim::id`] gives it.
+//!     [`CLAIMS`] for the `dynamic` site that mints it, is said by a row of
+//!     [`MINTED_AT`] to be minted at a dynamic site that answers whole, or has a row of
+//!     [`NO_CODE`]. **A claim makes a site**: the code at the dynamic site it names owes a
+//!     case like a listed one, under the id [`Claim::id`] gives it. **A row of
+//!     [`MINTED_AT`] makes none**: it is for a dynamic site that words the refusal of
+//!     several families and stands on the scheduled list as one row — claimed for one
+//!     family's codes, the site would owe nothing for the others.
 //!
 //! and beside them [`a_row_for_a_site_that_is_gone_is_named`], for a table that outlives
 //! what it is about; [`every_file_of_the_catalogs_directory_is_a_table_the_suite_reads`],
@@ -715,6 +719,44 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         Classification::AnotherFailure,
         &["conformance-hand-broken-doc-migrated-in-place-nothing-authored-edit-reverted"],
     ),
+    (
+        CLOBBER_LINES_NOBODY_CAN_FILL,
+        Classification::UnsplittableLine,
+        &[
+            "clobber-migration-file-at-the-destination-discarded-and-minted-again-as-printed",
+            "clobber-migration-file-at-the-destination-finalized-and-approved-as-printed",
+            "clobber-task-file-at-the-home-occupant-migrated-as-printed",
+            "clobber-task-file-at-the-home-re-created-with-a-slug-as-printed",
+        ],
+    ),
+    (
+        GIT_MV_WITHOUT_A_PATH,
+        Classification::SameRefusalAgain,
+        &[
+            "clobber-fixed-file-staged-at-the-logs-home-moved-with-git-mv-as-printed",
+            "clobber-fixed-sub-task-file-staged-at-the-logs-home-moved-with-git-mv-as-printed",
+        ],
+    ),
+    (
+        REVIEW_STEP_EXITS_4,
+        Classification::AnotherFailure,
+        &[
+            "clobber-held-in-head-migration-doc-renamed-reviewed-and-approved-as-printed",
+            "clobber-held-in-the-index-migration-doc-renamed-reviewed-and-approved-as-printed",
+        ],
+    ),
+    (
+        DROPPED_THE_ONLY_SUB_TASK,
+        Classification::AnotherFailure,
+        &[
+            "clobber-held-in-head-fixed-only-sub-task-read-dropped-and-milestone-finalized-as-printed",
+        ],
+    ),
+    (
+        RENAME_DRAWS_THE_COLLISION,
+        Classification::AnotherFailure,
+        &["clobber-staged-twice-at-the-home-doc-renamed-and-milestone-finalized-as-printed"],
+    ),
 ];
 
 // The canary's keys — the route of the hook's link refusal names where the link leads, and
@@ -869,6 +911,33 @@ const REFUSED_CREATE_STAGED_THE_BODY: &str =
 /// reverted, as the route offers, the same finalize is refused because the source changed.
 const REVERT_DRAWS_THE_CONFLICT: &str =
     "r1-conformance-block-in-a-migration-minted-over-the-edit-revert-draws-conflict-block";
+
+/// The clobber guard's task arm and its migration arm route at lines every placeholder of
+/// which is one the refusal lists no value for — `<doctype>`, `<slug>`, `<id>` — and the
+/// task arm's last line is the finalize without its id. Rests on a reading — every case
+/// under it is marked.
+const CLOBBER_LINES_NOBODY_CAN_FILL: &str = "r1-clobber-task-and-migration-routes-print-lines-with-placeholders-the-refusal-lists-nothing-for";
+
+/// The fixed-identity arm says to move a staged file out of the doc's home *with `git mv`*
+/// and prints the verb with no path. Rests on a reading — the case under it is marked.
+const GIT_MV_WITHOUT_A_PATH: &str = "r1-clobber-fixed-route-prints-git-mv-without-a-path";
+
+/// The held arm's route in a migration ends *re-run `jigc task finalize <id>` to review
+/// the fidelity diff and `… --approve` to land it*: the review exits 4 by design. Rests on
+/// a reading — both cases under it are marked.
+const REVIEW_STEP_EXITS_4: &str = "r1-clobber-held-migration-route-review-step-exits-4";
+
+/// The clobber guard's route for a sub-task's doc under a fixed identity says to drop the
+/// sub-task and re-run the milestone's finalize: where that sub-task was the milestone's
+/// only one, the re-run is refused under `milestone.zero-contribution`.
+const DROPPED_THE_ONLY_SUB_TASK: &str =
+    "r1-clobber-route-drops-the-milestones-only-sub-task-and-the-re-run-draws-zero-contribution";
+
+/// Two worktrees stage one file at a minted doc's home: the staged arm's first way — give
+/// the doc another id, *the staged file and the doc then both land* — leads into
+/// `combine.code-collision` over the two staged files.
+const RENAME_DRAWS_THE_COLLISION: &str =
+    "r1-clobber-staged-by-two-worktrees-rename-way-draws-code-collision";
 
 /// **The keys the human admitted by name** — a row a key, and the heading of the entry of
 /// `DECISIONS.md` that holds the ruling. Every red case under an admitted key can block,
@@ -1323,12 +1392,28 @@ fn every_case_names_a_site_of_the_list_and_has_a_name_of_its_own() {
 // ---------------------------------------------------------------------------
 
 /// **The code prefixes whose vocabulary the catalog is held to** — the families of
-/// `jigc setup` (`setup`, `adapter-guide`) and of `jigc uninstall`, as
-/// [`refusal_sites::FAMILIES`] assigns them. A prefix joins when its command's file does.
+/// `jigc setup` (`setup`, `adapter-guide`) and of `jigc uninstall`, and the eleven of the
+/// gate (`task finalize`), as [`refusal_sites::FAMILIES`] assigns them. A prefix joins
+/// when its command's file does.
 /// The sites are held family or no family
 /// ([`every_blocking_refusal_site_has_a_case_a_reason_an_owed_row_or_a_scheduled_row`]);
 /// this is the list for the arm beside it, which asks after every code a prefix spells.
-const CATALOGUED: &[&str] = &["adapter-guide", "setup", "uninstall"];
+const CATALOGUED: &[&str] = &[
+    "adapter-guide",
+    "amend",
+    "changelog-recording",
+    "commit-recording",
+    "conformance",
+    "doc-code",
+    "file-state",
+    "finalize",
+    "owner-artifact",
+    "reconciliation",
+    "schema-conformance",
+    "setup",
+    "task",
+    "uninstall",
+];
 
 /// Why a blocking site has no case. The three words are the plan's, and a reason is one of
 /// them by construction.
@@ -1469,7 +1554,101 @@ const MERGED_THROUGH: &str = "crates/cli/src/setup.rs::merged_through_links::dyn
 
 /// **The code-shaped literals of a catalogued prefix that are no finding's code**, each
 /// with why — a file name, say. None on this tree.
-const NO_CODE: &[(&str, &str)] = &[];
+const NO_CODE: &[(&str, &str)] = &[
+    (
+        "file-state.json",
+        "a file's name — the record under `.jigc/state/` that the reconciliation keeps \
+         (`engine::file_state::FILE_STATE_FILE`)",
+    ),
+    (
+        "finalize.fan-out",
+        "a namespace of cascade knob keys, spelled in `cli::render::FINALIZE_NON_MEMBERS`, \
+         which says so: no producer mints it",
+    ),
+    (
+        "finalize.fan-out.squash",
+        "a cascade knob's key, read by `cli::milestone::squash_of`",
+    ),
+    (
+        "finalize.forward-ref-dangling",
+        "minted by no production producer: `cli::render::FINALIZE_NON_MEMBERS` keeps the \
+         name so that the record can say it was once counted as a member",
+    ),
+    (
+        "finalize.left-out",
+        "a declared contract identifier (`cli::pack`'s ambush-class set): its one \
+         production surface is the left-out print at finalize, and no producer mints it \
+         as a finding",
+    ),
+];
+
+/// **A code of a catalogued prefix that a dynamic site mints, where that site answers under
+/// its own id** — the code, the site as the list holds it (`file::function::dynamic#n`),
+/// and why the code is no site of its own. A [`Claim`] makes a code a site that owes a
+/// case, and takes the dynamic site's own row away; that is wrong for a site that mints
+/// codes of several families, some of them outside [`CATALOGUED`], and stands whole on the
+/// scheduled list: claiming the codes of one prefix there would leave the others owed by
+/// nobody. So such a code is said to be minted there, and the site keeps its one row.
+#[derive(Clone, Copy, Debug)]
+struct MintedAt {
+    code: &'static str,
+    site: &'static str,
+    why: &'static str,
+}
+
+/// The codes of the catalogued families that a dynamic site mints which answers whole.
+const MINTED_AT: &[MintedAt] = &[
+    // `render::commit_rejection_finding(code, …)`, called by the finalize's commit phase
+    // with the door's own error identity (`invocation_log::ERROR_COMMIT_REJECTED`,
+    // `ERROR_AMEND_REJECTED`) — and with the milestone boundary's, whose prefix is none of
+    // this list's.
+    MintedAt {
+        code: "finalize.amend-rejected",
+        site: COMMIT_REJECTION,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_DOORS,
+    },
+    MintedAt {
+        code: "finalize.commit-rejected",
+        site: COMMIT_REJECTION,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_DOORS,
+    },
+    // `rollback::rollback_conflict_finding(…, door, …)`: `door.code` is one of five
+    // `ConflictDoor` values — this one, and `milestone.`, `task-discard.`, `rename.` and
+    // `config.rollback-conflict`.
+    MintedAt {
+        code: "finalize.rollback-conflict",
+        site: ROLLBACK_CONFLICT,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_DOORS,
+    },
+    // `validate::blocking_conformance(code, …)`: the gate blocks of the conformance
+    // family, a code a check (`CONFORMANCE_ROUTE_CODES`).
+    MintedAt {
+        code: "schema-conformance.required-field-present",
+        site: BLOCKING_CONFORMANCE,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS,
+    },
+    MintedAt {
+        code: "schema-conformance.required-slot-present",
+        site: BLOCKING_CONFORMANCE,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS,
+    },
+    MintedAt {
+        code: "schema-conformance.unknown-type",
+        site: BLOCKING_CONFORMANCE,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS,
+    },
+];
+
+const COMMIT_REJECTION: &str = "crates/cli/src/render.rs::commit_rejection_finding::dynamic#1";
+const ROLLBACK_CONFLICT: &str = "crates/cli/src/rollback.rs::rollback_conflict_finding::dynamic#1";
+const BLOCKING_CONFORMANCE: &str = "crates/engine/src/validate.rs::blocking_conformance::dynamic#1";
+const A_SCHEDULED_SITE_OF_SEVERAL_DOORS: &str = "the site is one function that words the \
+    refusal of several doors, some of them of families whose prefix is not catalogued; the \
+    count classes it unchanged and it stands whole on the scheduled list, to get a case a \
+    code it mints before the port";
+const A_SCHEDULED_SITE_OF_SEVERAL_CHECKS: &str = "the site is the one constructor of the \
+    conformance gate's blocks, a code a check; the count classes it unchanged and it stands \
+    whole on the scheduled list, to get a case a code it mints before the port";
 
 /// The sites one task owes an answer.
 struct Owed {
@@ -1558,10 +1737,6 @@ const OWED: &[Owed] = &[
             "crates/cli/src/start.rs::read_workflow::workflow-refs.unknown-workflow#1",
             "crates/engine/src/compose.rs::workflow_refs_with_fills::workflow-refs.slot-fill-orphan#1",
         ],
-    },
-    Owed {
-        task: "P7 · task finalize — a case or a reason",
-        sites: &["crates/engine/src/finalize.rs::clobber_finding::finalize.promote-clobber#1"],
     },
     Owed {
         task: "P7 · unassigned — the caller's diff is read: a case, or a scheduled row that says why the change is off the path",
@@ -1744,6 +1919,8 @@ struct Rows {
     claims: Vec<Claim>,
     /// `(literal, why it is no finding's code)`.
     no_code: Vec<(&'static str, &'static str)>,
+    /// The codes a dynamic site mints that answers under its own id ([`MINTED_AT`]).
+    minted_at: Vec<MintedAt>,
     /// `(site, the task that owes its answer)` — [`OWED`], a row a site.
     owed: Vec<(&'static str, &'static str)>,
     /// The sites the ruling leaves for the port ([`scheduled`]).
@@ -1761,6 +1938,7 @@ fn rows() -> Rows {
             .collect(),
         claims: CLAIMS.to_vec(),
         no_code: NO_CODE.to_vec(),
+        minted_at: MINTED_AT.to_vec(),
         owed: OWED
             .iter()
             .flat_map(|owed| owed.sites.iter().map(|site| (*site, owed.task)))
@@ -1896,21 +2074,33 @@ fn unclaimed(read: &Read, rows: &Rows) -> Vec<String> {
         let listed = read.sites.iter().any(|site| site.code == *code);
         let claimed = rows.claims.iter().any(|claim| claim.code == code);
         let excused = rows.no_code.iter().any(|(literal, _)| literal == code);
+        let minted = rows.minted_at.iter().find(|row| row.code == code);
+        let whose = if listed {
+            "the code of a listed site"
+        } else {
+            "claimed for a dynamic site"
+        };
         match (listed || claimed, excused) {
-            (false, false) => out.push(format!(
+            (false, false) if minted.is_none() => out.push(format!(
                 "`{code}` — spelled in {at} — is the code of no listed site, no row claims \
-                 it for the dynamic site that mints it, and no row says why it is no \
-                 finding's code"
+                 it for the dynamic site that mints it, no row says a dynamic site that \
+                 answers whole mints it, and no row says why it is no finding's code"
             )),
             (true, true) => out.push(format!(
-                "`{code}` has a row that says it is no finding's code, and it is {}",
-                if listed {
-                    "the code of a listed site"
-                } else {
-                    "claimed for a dynamic site"
-                }
+                "`{code}` has a row that says it is no finding's code, and it is {whose}"
+            )),
+            (false, true) if minted.is_some() => out.push(format!(
+                "`{code}` has a row that says it is no finding's code and a row that says \
+                 where it is minted — one of the two is wrong"
             )),
             _ => {}
+        }
+        if let (Some(row), true) = (minted, listed || claimed) {
+            out.push(format!(
+                "`{code}` has a row that says `{}` mints it and answers for it whole, and it \
+                 is {whose}: a code that has a site of its own is asked no further",
+                row.site
+            ));
         }
     }
     out
@@ -2001,6 +2191,44 @@ fn idle_rows(read: &Read, rows: &Rows) -> Vec<String> {
         }
     }
 
+    for (at, row) in rows.minted_at.iter().enumerate() {
+        let MintedAt { code, site, why } = *row;
+        match read.sites.iter().find(|listed| listed.id() == site) {
+            None => out.push(format!(
+                "a row says `{code}` is minted at `{site}`, which the list does not hold"
+            )),
+            Some(listed) if listed.code != DYNAMIC => out.push(format!(
+                "a row says `{code}` is minted at `{site}`, which is no dynamic site — its \
+                 code is spelled at the call"
+            )),
+            Some(_) if rows.claims.iter().any(|claim| claim.minted_at == site) => {
+                out.push(format!(
+                    "a row says `{code}` is minted at `{site}`, which answers whole — and \
+                     that site is answered through its claims: the code wants a claim there"
+                ))
+            }
+            Some(_) => {}
+        }
+        if !read.spelled.contains_key(code) {
+            out.push(format!(
+                "a row says `{code}` is minted at `{site}`: no production source spells \
+                 that code under a catalogued prefix"
+            ));
+        }
+        if why.is_empty() {
+            out.push(format!(
+                "the row that says `{code}` is minted at `{site}` does not say why the code \
+                 is no site of its own"
+            ));
+        }
+        if rows.minted_at[..at]
+            .iter()
+            .any(|other| other.code == code && other.site == site)
+        {
+            out.push(format!("`{code}` is said to be minted at `{site}` twice"));
+        }
+    }
+
     for (at, (literal, why)) in rows.no_code.iter().enumerate() {
         if why.is_empty() {
             out.push(format!(
@@ -2061,13 +2289,13 @@ fn advises() -> Finding {
 }
 
 fn another_familys() -> Finding {
-    Finding::block("task.spelled", "m", "r")
+    Finding::block("ingest.spelled", "m", "r")
 }
 
 fn code(door: Door) -> &'static str {
     match door {
         Door::Setup => "setup.by-a-match",
-        Door::Task => "task.by-a-match",
+        Door::Ingest => "ingest.by-a-match",
     }
 }
 
@@ -2095,7 +2323,7 @@ const MINTED: &str = "crates/cli/src/fixture.rs::minted::dynamic#1";
 const CLAIMED: &str = "crates/cli/src/fixture.rs::minted::setup.by-a-match#dynamic-1";
 const GONE: &str = "crates/cli/src/fixture.rs::removed::setup.removed#1";
 /// The fixture's site of a family no command's file is there for.
-const ANOTHER: &str = "crates/cli/src/fixture.rs::another_familys::task.spelled#1";
+const ANOTHER: &str = "crates/cli/src/fixture.rs::another_familys::ingest.spelled#1";
 
 /// A row of a scheduled list with nothing to note.
 const fn left(site: &'static str) -> Scheduled {
@@ -2125,6 +2353,7 @@ fn in_order() -> Rows {
         }],
         claims: vec![BY_A_MATCH],
         no_code: vec![("setup.rs", "a file's name")],
+        minted_at: Vec::new(),
         owed: Vec::new(),
         scheduled: vec![left(ANOTHER)],
     }
@@ -2445,6 +2674,40 @@ fn every_code_of_a_catalogued_prefix_is_a_listed_sites_or_is_claimed() {
         ],
     );
 
+    // A code minted at a dynamic site that answers under its own id is nobody's until a row
+    // says where it is minted; and such a row beside a claim, or for a listed site's code,
+    // is named.
+    let whole = |code| MintedAt {
+        code,
+        site: MINTED,
+        why: "the site stands whole on the scheduled list",
+    };
+    says(
+        &unclaimed(
+            &fixture,
+            &Rows {
+                cases: vec![SPELLED],
+                claims: Vec::new(),
+                minted_at: vec![whole("setup.by-a-match")],
+                ..in_order()
+            },
+        ),
+        &[],
+    );
+    says(
+        &unclaimed(
+            &fixture,
+            &Rows {
+                minted_at: vec![whole("setup.by-a-match"), whole("setup.spelled")],
+                ..in_order()
+            },
+        ),
+        &[
+            ("`setup.by-a-match`", "claimed for a dynamic site"),
+            ("`setup.spelled`", "the code of a listed site"),
+        ],
+    );
+
     let wrong = unclaimed(&tree(), &rows());
     assert!(
         wrong.is_empty(),
@@ -2528,6 +2791,46 @@ fn a_row_for_a_site_that_is_gone_is_named() {
             ("`setup.nothing-spells-it`", "no production source spells"),
             ("`setup.by-a-match`", "is claimed twice"),
         ],
+    );
+
+    // A row that says where a code is minted: its site gone, not dynamic, its code spelled
+    // nowhere, the row twice or without its why — and one that names a dynamic site a
+    // claim already answers through.
+    let minted_at = |code, site, why| MintedAt { code, site, why };
+    says(
+        &idle_rows(
+            &fixture,
+            &Rows {
+                cases: vec![SPELLED],
+                claims: Vec::new(),
+                scheduled: vec![left(ANOTHER), left(MINTED)],
+                minted_at: vec![
+                    minted_at("setup.by-a-match", MINTED, "the site is scheduled whole"),
+                    minted_at("setup.by-a-match", GONE, "why"),
+                    minted_at("setup.by-a-match", SPELLED, "why"),
+                    minted_at("setup.nothing-spells-it", MINTED, "why"),
+                    minted_at("setup.by-a-match", MINTED, ""),
+                ],
+                ..in_order()
+            },
+        ),
+        &[
+            (GONE, "which the list does not hold"),
+            (SPELLED, "is no dynamic site"),
+            ("`setup.nothing-spells-it`", "no production source spells"),
+            ("`setup.by-a-match`", "does not say why"),
+            ("`setup.by-a-match`", "twice"),
+        ],
+    );
+    says(
+        &idle_rows(
+            &fixture,
+            &Rows {
+                minted_at: vec![minted_at("setup.by-a-match", MINTED, "why")],
+                ..in_order()
+            },
+        ),
+        &[(MINTED, "is answered through its claims")],
     );
 
     says(
@@ -2740,6 +3043,7 @@ fn the_fence_is_not_vacuous() {
         &read,
         &Rows {
             no_code: NO_CODE.to_vec(),
+            minted_at: MINTED_AT.to_vec(),
             ..Rows::default()
         },
     );
